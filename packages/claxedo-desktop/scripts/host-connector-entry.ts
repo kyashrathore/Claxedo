@@ -104,26 +104,17 @@ export function runHostConnectorChild(port: ChildPort) {
     heartbeat: async (input) => {
       const name = HOST_ENROLLMENT_OPERATIONS.heartbeat
       const value = (await requestAccountOperation(name, { ...input })) as Record<string, unknown> | undefined
-      return { expires_at: requireNumber(value?.expires_at, "expires_at", name) }
-    },
-    linkChallenge: async ({ workspaceId, hostId }) => {
-      const name = HOST_ENROLLMENT_OPERATIONS.linkChallenge
-      // `id` is the path parameter the operation map substitutes.
-      const value = (await requestAccountOperation(name, { id: workspaceId, hostId })) as
-        | { challenge?: Record<string, unknown> }
-        | undefined
-      const challenge = value?.challenge
+      const assigned = Array.isArray(value?.assigned_workspace_ids)
+        ? (value.assigned_workspace_ids as unknown[]).filter((id): id is string => typeof id === "string")
+        : undefined
+      const tunnel = value?.hostTunnel && typeof value.hostTunnel === "object" && !Array.isArray(value.hostTunnel)
+        ? (value.hostTunnel as Record<string, unknown>)
+        : undefined
       return {
-        challenge_id: requireString(challenge?.challengeId, "challengeId", name),
-        nonce: requireString(challenge?.nonce, "nonce", name),
-        expires_at: requireNumber(challenge?.expiresAt, "expiresAt", name),
+        expires_at: requireNumber(value?.expires_at, "expires_at", name),
+        ...(assigned ? { assigned_workspace_ids: assigned } : {}),
+        ...(tunnel ? { hostTunnel: tunnel } : {}),
       }
-    },
-    linkRegister: async ({ workspaceId, ...rest }) => {
-      await requestAccountOperation(HOST_ENROLLMENT_OPERATIONS.linkRegister, { id: workspaceId, ...rest })
-    },
-    linkHeartbeat: async ({ workspaceId, ...rest }) => {
-      await requestAccountOperation(HOST_ENROLLMENT_OPERATIONS.linkHeartbeat, { id: workspaceId, ...rest })
     },
   }
 
@@ -167,6 +158,7 @@ export function runHostConnectorChild(port: ChildPort) {
           if (connector) send({ type: "status", status: snapshot() })
         })
       },
+      onServing: (tunnel) => send({ type: "serving", tunnel: tunnel ?? null }),
     })
     const started = await connector.start()
     // Re-establish the shares this machine held before the restart — AFTER
@@ -216,6 +208,19 @@ export function runHostConnectorChild(port: ChildPort) {
         : { status: "stopped" as const, reason: "closed" as const, detail: "connector closed" }
       send({ type: "status", status })
       send({ type: "response", requestId: message.requestId, ok: true, status })
+      return
+    }
+
+    if (message.type === "unshare-workspace") {
+      try {
+        if (!connector) throw new Error("Host Connector has not been bootstrapped")
+        await connector.unshareWorkspace(message.workspaceId)
+        const status = snapshot()
+        send({ type: "status", status })
+        send({ type: "response", requestId: message.requestId, ok: true, status })
+      } catch (error) {
+        send({ type: "response", requestId: message.requestId, ok: false, error: String(error) })
+      }
       return
     }
 

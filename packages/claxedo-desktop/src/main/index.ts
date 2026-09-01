@@ -739,6 +739,30 @@ const account = setupLazyAccount({
  * identity on its network and `identity-store.ts` explains at length why that
  * must not travel to the control plane.
  */
+/**
+ * Push the serving credential from each heartbeat ack to the daemon, which
+ * owns the workspace runtimes and therefore the relay connection. The last
+ * credential is retained so a daemon that becomes ready AFTER the first ack
+ * still starts serving immediately.
+ */
+let lastServingCredential: Record<string, unknown> | null = null
+const pushServing = async (tunnel: Record<string, unknown> | null) => {
+  lastServingCredential = tunnel
+  try {
+    const server = await serverReady.promise
+    await fetch(new URL("/api/claxedo/host-serving", server.url), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ credential: tunnel }),
+    })
+  } catch (error) {
+    logger.warn(`[host-serving] push failed: ${String(error)}`)
+  }
+}
+void serverReady.promise.then(() => {
+  if (lastServingCredential) void pushServing(lastServingCredential)
+})
+
 hostConnector = setupElectronHostConnector({
   runAccountOperation: (name, params) => account.run(name as never, params),
   safeStorage,
@@ -759,6 +783,7 @@ hostConnector = setupElectronHostConnector({
   // because this fires from a heartbeat timer.
   onStatusChange: (state) =>
     publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
+  onServing: (tunnel) => void pushServing(tunnel),
 })
 
 /** The two facts the connector's own state cannot carry. See `status-channel.ts`. */

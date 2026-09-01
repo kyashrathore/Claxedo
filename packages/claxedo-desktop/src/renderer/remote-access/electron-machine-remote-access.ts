@@ -57,10 +57,12 @@ export type HostConnectorBridge = {
   revoke: () => Promise<HostConnectorSnapshot>
   /** Publish one workspace: data-only input, the proof is main's and the child's. */
   share: (input: { workspaceId: string; displayName?: string }) => Promise<HostConnectorSnapshot>
+  /** Withdraw one workspace. */
+  unshare: (input: { workspaceId: string }) => Promise<HostConnectorSnapshot>
   onStatus: (listener: (snapshot: HostConnectorSnapshot) => void) => () => void
 }
 
-const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "share", "onStatus"] as const
+const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "share", "unshare", "onStatus"] as const
 
 /**
  * The bridge, if this build has one.
@@ -157,6 +159,13 @@ export function electronMachineRemoteAccess(bridge: HostConnectorBridge): Machin
 
     async shareWorkspace(input) {
       const snapshot = await bridge.share(input)
+      if (snapshot.status !== "enrolled") {
+        throw new Error(snapshot.detail ?? `Remote access is not active (${snapshot.status})`)
+      }
+    },
+
+    async unshareWorkspace(workspaceId) {
+      const snapshot = await bridge.unshare({ workspaceId })
       if (snapshot.status !== "enrolled") {
         throw new Error(snapshot.detail ?? `Remote access is not active (${snapshot.status})`)
       }

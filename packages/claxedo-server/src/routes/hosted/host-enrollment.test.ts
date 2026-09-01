@@ -1,5 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { HostEnrollmentRoutes } from "./host-enrollment"
@@ -32,7 +33,7 @@ function authority(overrides: Record<string, unknown> = {}) {
     auditAllow: vi.fn(async () => {}),
     createHostEnrollmentRequest: vi.fn(async () => ({ request_id: "req_1", nonce: "n", expires_at: 9_999 })),
     enrollHost: vi.fn(async () => ({ enrollment_id: "enr_1", host_id: "host_1", expires_at: 9_999, last_seen_at: 1, created_at: 1 })),
-    heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1 })),
+    heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1, assigned_workspace_ids: [] })),
     pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
     activeHostEnrollment: vi.fn(async () => ({ active: true, host_id: "host_1", enrollment_id: "enr_1", expires_at: 9_999, last_seen_at: 1, created_at: 1 })),
     ...overrides,
@@ -175,13 +176,30 @@ describe("POST /", () => {
 })
 
 describe("POST /heartbeat and /pause", () => {
-  test("heartbeat forwards the client signature", async () => {
+  test("heartbeat forwards the client signature and the served set it covers", async () => {
+    const { api, post } = routes()
+
+    const response = await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
+
+    expect(response.status).toBe(200)
+    expect(api.heartbeatHostEnrollment).toHaveBeenCalledWith(expect.anything(), {
+      hostId: "host_1",
+      signature: "sig",
+      workspaceIds: ["ws_1"],
+    })
+    expect(await response.json()).toMatchObject({ assigned_workspace_ids: [] })
+  })
+
+  test("heartbeat refuses the old shape with no workspaceIds", async () => {
+    // Heartbeat payload v2: the ONE signature per interval covers the served
+    // set, so a body without it cannot be verified and must fail before the
+    // authority is touched.
     const { api, post } = routes()
 
     const response = await post("/heartbeat", { hostId: "host_1", signature: "sig" })
 
-    expect(response.status).toBe(200)
-    expect(api.heartbeatHostEnrollment).toHaveBeenCalledWith(expect.anything(), { hostId: "host_1", signature: "sig" })
+    expect(response.status).toBe(400)
+    expect(api.heartbeatHostEnrollment).not.toHaveBeenCalled()
   })
 
   test("pause with no host id means every machine", async () => {
@@ -201,6 +219,76 @@ describe("POST /heartbeat and /pause", () => {
       action: "host_enrollment.resumed",
       metadata: { hostId: "host_1" },
     })
+  })
+})
+
+describe("the serving credential rides the heartbeat ack", () => {
+  const signer: HostTunnelTokenSigner = vi.fn(async (input) => ({
+    hostTunnelToken: `htt-for-${input.hostId}`,
+    tokenExpiresAt: 2_000_000,
+    jti: "jti_htt",
+  }))
+
+  test("mints ONE Host Tunnel Token for the assigned ∩ acked set when a signer is configured", async () => {
+    const { api, post } = routes(
+      {
+        heartbeatHostEnrollment: vi.fn(async () => ({
+          expires_at: 9_999,
+          last_seen_at: 1,
+          // ws_3 is assigned but not in this beat's acked set; ws_2 is acked
+          // but never assigned. Only ws_1 is routable, so only ws_1 may appear
+          // in the credential's claim.
+          assigned_workspace_ids: ["ws_1", "ws_3"],
+        })),
+      },
+      { hostTunnelTokenSigner: signer, relayUrl: "https://relay.test" },
+    )
+
+    const response = await post("/heartbeat", {
+      hostId: "host_1",
+      signature: "sig",
+      workspaceIds: ["ws_2", "ws_1"],
+    })
+
+    expect(response.status).toBe(200)
+    expect(signer).toHaveBeenCalledWith({ subject: "user_1", hostId: "host_1", workspaceIds: ["ws_1"] })
+    expect(await response.json()).toMatchObject({
+      expires_at: 9_999,
+      assigned_workspace_ids: ["ws_1", "ws_3"],
+      hostTunnel: {
+        hostTunnelToken: "htt-for-host_1",
+        hostId: "host_1",
+        workspaceIds: ["ws_1"],
+        relayUrl: "https://relay.test",
+      },
+    })
+    expect(api.heartbeatHostEnrollment).toHaveBeenCalledTimes(1)
+  })
+
+  test("mints nothing when the beat acks no assigned workspace", async () => {
+    const localSigner = vi.fn(async () => ({ hostTunnelToken: "unused", tokenExpiresAt: 1, jti: "j" }))
+    const { post } = routes({}, { hostTunnelTokenSigner: localSigner, relayUrl: "https://relay.test" })
+
+    const response = await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
+
+    expect(response.status).toBe(200)
+    expect(localSigner).not.toHaveBeenCalled()
+    expect(await response.json()).not.toHaveProperty("hostTunnel")
+  })
+
+  test("omits the credential entirely when no signer is configured", async () => {
+    const { post } = routes({
+      heartbeatHostEnrollment: vi.fn(async () => ({
+        expires_at: 9_999,
+        last_seen_at: 1,
+        assigned_workspace_ids: ["ws_1"],
+      })),
+    })
+
+    const response = await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).not.toHaveProperty("hostTunnel")
   })
 })
 
@@ -304,7 +392,7 @@ describe("per-account budget", () => {
     expect(
       (await post("/", { hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })).status,
     ).toBe(200)
-    expect((await post("/heartbeat", { hostId: "host_1", signature: "sig" })).status).toBe(200)
+    expect((await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: [] })).status).toBe(200)
   })
 
   test("renewal traffic is bounded too", async () => {
@@ -315,7 +403,7 @@ describe("per-account budget", () => {
 
     const statuses: number[] = []
     for (let attempt = 0; attempt < 130; attempt += 1) {
-      statuses.push((await post("/heartbeat", { hostId: "host_1", signature: "sig" })).status)
+      statuses.push((await post("/heartbeat", { hostId: "host_1", signature: "sig", workspaceIds: [] })).status)
     }
 
     expect(statuses.filter((status) => status === 200)).toHaveLength(120)

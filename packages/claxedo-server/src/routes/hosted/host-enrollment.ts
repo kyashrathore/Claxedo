@@ -35,8 +35,8 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import {
+  configuredHostTunnelTokenSigner,
   configuredRelayUrl,
-  hostTunnelCredential,
   parsedBody,
   signedOrError,
   type WorkspaceRouteOptions,
@@ -264,21 +264,31 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           workspaceIds: body.workspaceIds,
           ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
         })
-        // Serving credentials ride the ack: one Host Tunnel Token per
-        // workspace that is BOTH owner-assigned and inside the set this beat
-        // just acked, so the machine can (re)open its relay tunnels from the
-        // same response that renewed its lease. Local workspaces have no home
+        // The serving credential rides the ack: ONE Host Tunnel Token whose
+        // workspace_ids claim is exactly the set that is BOTH owner-assigned
+        // and covered by the signature this beat just verified. The machine
+        // (re)opens or re-registers its single relay connection from the same
+        // response that renewed its lease. Local workspaces have no home
         // region of their own; the deployment default names the relay.
         const assigned = new Set(result.assigned_workspace_ids ?? [])
-        const serveable = body.workspaceIds.filter((workspaceId) => assigned.has(workspaceId))
+        const serveable = body.workspaceIds.filter((workspaceId) => assigned.has(workspaceId)).sort()
+        const signer = configuredHostTunnelTokenSigner(options)
         const relayUrl = configuredRelayUrl(options)
-        const hostTunnels: Record<string, unknown> = {}
-        for (const workspaceId of serveable) {
-          const credential = await hostTunnelCredential(options, auth, { hostId: body.hostId, workspaceId })
-          if (!credential) continue
-          hostTunnels[workspaceId] = { ...credential, ...(relayUrl ? { relayUrl } : {}) }
+        if (!signer || serveable.length === 0) return result
+        const credential = await signer({
+          subject: auth.user.subject,
+          hostId: body.hostId,
+          workspaceIds: serveable,
+        })
+        return {
+          ...result,
+          hostTunnel: {
+            ...credential,
+            hostId: body.hostId,
+            workspaceIds: serveable,
+            ...(relayUrl ? { relayUrl } : {}),
+          },
         }
-        return { ...result, hostTunnels }
       }, "POST", {
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.heartbeat",

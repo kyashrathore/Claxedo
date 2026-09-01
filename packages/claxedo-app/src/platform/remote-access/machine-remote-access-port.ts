@@ -92,6 +92,8 @@ export type MachineRemoteAccessPort = {
    * account credential and no such local route exists.
    */
   shareWorkspace?: (input: { workspaceId: string; displayName?: string }) => Promise<void>
+  /** Withdraw one workspace this machine publishes. Paired with shareWorkspace. */
+  unshareWorkspace?: (workspaceId: string) => Promise<void>
   /**
    * Every machine on the account.
    *

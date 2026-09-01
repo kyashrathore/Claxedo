@@ -1,7 +1,4 @@
 import { describe, expect, test, vi } from "vitest"
-import { createPrivateKey, generateKeyPairSync, sign } from "node:crypto"
-import { createChallenge as convexCreateChallenge, register as convexRegister } from "../../../../../convex/localHostLinks"
-import { registerLocalForSharing as convexRegisterLocalForSharing } from "../../../../../convex/workspaces"
 import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
@@ -10,14 +7,21 @@ import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 
 /**
- * Hosted user-hosted workspace routes. These prove the hosted control plane:
- *   - accepts a CLIENT-supplied host identity + signature (the CLI owns the key),
- *   - mints tokens via injected signers,
- *   - records link state in Convex,
+ * Hosted workspace routes under machine-wide enrollment. These prove the
+ * hosted control plane:
+ *   - lets the OWNER assign/unassign a workspace to one of their enrolled
+ *     hosts (no challenge, no machine signature — machine consent is the
+ *     enrollment heartbeat's acked served set),
+ *   - mints the Host Tunnel Token via the injected signer on assignment,
+ *   - answers 404 on the retired per-workspace user-hosted quartet,
  *   - and NEVER starts a tunnel / reads local host identity / hits the disk.
  *
- * The "no local-only" guarantee at the import-graph level is enforced separately
- * by `worker.import-graph.test.ts`; here we assert the request *behaviour*.
+ * The signature-verification and routing policy behind assignment lives in
+ * the authorities (`authority/adapters/d1/host-access-authority.test.ts`, the
+ * Convex policy suite, `routes/hosted/host-enrollment.parity.test.ts`); here
+ * we assert the request *behaviour* of the routes. The "no local-only"
+ * guarantee at the import-graph level is enforced separately by
+ * `worker.import-graph.test.ts`.
  */
 
 const authConfig = {
@@ -43,7 +47,7 @@ function fakeConvexAuthority(overrides: Record<string, unknown> = {}) {
       role: "owner",
       workspace: { workspace_id: "ws_1", access: "user-hosted", backing: "local-worktree" },
     })),
-    activeLocalHostLink: vi.fn(async () => ({
+    activeWorkspaceHost: vi.fn(async () => ({
       active: true,
       host_id: "host_1",
       workspace_id: "ws_1",
@@ -53,24 +57,12 @@ function fakeConvexAuthority(overrides: Record<string, unknown> = {}) {
     recordRuntimeAccessToken: vi.fn(async () => ({})),
     revokeRuntimeAccessToken: vi.fn(async () => ({})),
     runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
-    registerLocalForSharing: vi.fn(async () => ({
-      workspace_id: "ws_1",
-      display_name: "demo",
-      home_region: "us-east",
-    })),
     listWorkspaces: vi.fn(async () => [
       { workspace_id: "ws_user", access: "user-hosted" },
       { workspace_id: "ws_cloud", access: "cloud" },
     ]),
-    createLocalHostLinkChallenge: vi.fn(async () => ({ challenge_id: "ch_1", nonce: "nonce_1", expires_at: 9_999 })),
-    registerLocalHostLink: vi.fn(async () => ({ host_id: "host_1", workspace_id: "ws_1", expires_at: 9_999 })),
-    heartbeatLocalHostLink: vi.fn(async () => ({
-      host_id: "host_1",
-      workspace_id: "ws_1",
-      home_region: "us-east",
-      expires_at: 9_999,
-    })),
-    pauseLocalHostLink: vi.fn(async () => ({ paused: true, count: 1 })),
+    assignWorkspaceHost: vi.fn(async () => ({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })),
+    unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
     auditAllow: vi.fn(async () => ({})),
     auditDeny: vi.fn(async () => ({})),
     ...overrides,
@@ -136,17 +128,16 @@ function get(path: string, token = "user_1") {
   })
 }
 
-describe("hosted register (client-owned host identity)", () => {
-  test("records the CLIENT signature/public key and mints a host tunnel token, without starting a tunnel", async () => {
-    const convex = fakeConvexAuthority({
-      registerLocalForSharing: vi.fn(async () => ({
-        workspace_id: "ws_1",
-        display_name: "demo",
-        home_region: "eu-west",
-      })),
-    })
-    const { app } = buildApp({
-      authority: convex,
+function del(path: string, token = "user_1") {
+  return new Request(`http://cp.test${path}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${token}` },
+  })
+}
+
+describe("host assignment (POST /:id/host-assignment)", () => {
+  test("records the owner assignment and mints a host tunnel token, without starting a tunnel", async () => {
+    const { app, convex, capture } = buildApp({
       options: {
         defaultHomeRegion: "eu-west",
         relayUrls: {
@@ -155,11 +146,8 @@ describe("hosted register (client-owned host identity)", () => {
       },
     })
     const res = await app.fetch(
-      post("/ws_1/user-hosted/register", {
+      post("/ws_1/host-assignment", {
         hostId: "host_1",
-        publicKey: "pub-key-jwk",
-        challengeId: "ch_1",
-        signature: "client-signature",
         displayName: "demo",
         repoName: "demo",
         gitBranch: "main",
@@ -167,431 +155,168 @@ describe("hosted register (client-owned host identity)", () => {
     )
     expect(res.status).toBe(200)
     const json = (await res.json()) as Record<string, any>
-    // Convex records the link with the CLIENT-supplied material (server holds no key).
-    expect(convex!.registerLocalHostLink).toHaveBeenCalledWith(
+    // No challenge and no machine signature here: liveness is the enrollment
+    // lease and machine consent is the heartbeat-acked served set. The route
+    // only records the OWNER's intent.
+    expect(convex!.assignWorkspaceHost).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({
+      {
         workspaceId: "ws_1",
         hostId: "host_1",
-        publicKey: "pub-key-jwk",
-        challengeId: "ch_1",
-        signature: "client-signature",
+        displayName: "demo",
+        repoName: "demo",
+        gitBranch: "main",
+      },
+    )
+    expect(convex!.auditAllow).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        action: "host_workspace_assignment.assigned",
+        workspaceId: "ws_1",
+        metadata: { hostId: "host_1" },
       }),
     )
-    expect(convex!.registerLocalForSharing).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ homeRegion: "eu-west" }),
-    )
-    // Workspace registration happens strictly AFTER the host signature was
-    // verified (registerLocalHostLink verifies the signed challenge).
-    expect(convex!.registerLocalHostLink.mock.invocationCallOrder[0]!).toBeLessThan(
-      convex!.registerLocalForSharing.mock.invocationCallOrder[0]!,
-    )
-    // Host Tunnel Token is minted and returned for the CLI to start its own tunnel.
+    expect(capture).toHaveBeenCalledWith("user_1", "host_workspace_assignment.assigned", {
+      workspaceId: "ws_1",
+      hostId: "host_1",
+    })
+    // Host Tunnel Token is minted immediately so the machine can open its
+    // relay tunnel without waiting for a beat.
+    expect(json.assignment).toMatchObject({ assigned: true, workspace_id: "ws_1", host_id: "host_1" })
     expect(json.hostTunnel).toMatchObject({
       hostTunnelToken: "htt-for-host_1",
       homeRegion: "eu-west",
       relayUrl: "https://relay.eu.test",
     })
-    expect(json.localHostLink.host_id).toBe("host_1")
   })
 
-  test("rejects when the request omits the host signature (schema fail-closed, stable 400)", async () => {
+  test("rejects a body with no host id (schema fail-closed, stable 400)", async () => {
     const { app, convex } = buildApp({})
-    const res = await app.fetch(post("/ws_1/user-hosted/register", { hostId: "host_1", publicKey: "p" }))
+    const res = await app.fetch(post("/ws_1/host-assignment", { displayName: "demo" }))
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: { code: "invalid_request_body" } })
-    // Validation failure never reaches Convex — no partial link, no mutation.
-    expect(convex!.registerLocalHostLink).not.toHaveBeenCalled()
-    expect(convex!.registerLocalForSharing).not.toHaveBeenCalled()
+    expect(convex!.assignWorkspaceHost).not.toHaveBeenCalled()
   })
 
-  test("a register whose host signature fails verification never mutates the workspace", async () => {
-    const convex = fakeConvexAuthority({
-      registerLocalHostLink: vi.fn(async () => {
-        throw new Error("Invalid host attestation")
-      }),
-    })
-    const { app } = buildApp({ authority: convex })
-    await expect(
-      app.fetch(
-        post("/ws_1/user-hosted/register", {
-          hostId: "host_1",
-          publicKey: "pub-key-jwk",
-          challengeId: "ch_1",
-          signature: "forged-signature",
-        }),
-      ),
-    ).resolves.toMatchObject({ status: 500 })
-    // registerLocalForSharing runs strictly AFTER signature verification.
-    expect(convex!.registerLocalForSharing).not.toHaveBeenCalled()
-  })
-
-  test("registering a cloud-backed workspace as user-hosted returns a 409 conflict", async () => {
-    const convex = fakeConvexAuthority({
-      registerLocalHostLink: vi.fn(async () => {
-        throw new Error("workspace_backing_conflict: cannot attach a local host link to a cloud workspace")
-      }),
-    })
-    const { app } = buildApp({ authority: convex })
+  test("refuses the retired per-workspace registration shape rather than ignoring it", async () => {
+    // `.strict()`. A caller still sending publicKey/challengeId/signature is
+    // using the old per-workspace flow, and silently dropping those fields
+    // would look like the old security property still held.
+    const { app, convex } = buildApp({})
     const res = await app.fetch(
-      post("/ws_1/user-hosted/register", {
+      post("/ws_1/host-assignment", {
         hostId: "host_1",
         publicKey: "pub-key-jwk",
         challengeId: "ch_1",
         signature: "client-signature",
       }),
     )
-    expect(res.status).toBe(409)
-    expect(await res.json()).toMatchObject({ error: { code: "workspace_backing_conflict" } })
-    expect(convex!.registerLocalForSharing).not.toHaveBeenCalled()
+    expect(res.status).toBe(400)
+    expect(convex!.assignWorkspaceHost).not.toHaveBeenCalled()
   })
 
-  test("fails closed (503) when no Convex authority is configured", async () => {
-    const { app } = buildApp({ authority: undefined })
-    const res = await app.fetch(
-      post("/ws_1/user-hosted/register", {
-        hostId: "host_1",
-        publicKey: "p",
-        challengeId: "ch_1",
-        signature: "s",
-      }),
-    )
-    expect(res.status).toBe(503)
-    expect(await res.json()).toMatchObject({ error: { code: "workspace_authority_unavailable" } })
-  })
-})
-
-// ——— Cold-path harness: the REAL Convex handlers behind a fake Convex db ———
-
-type ConvexRow = Record<string, unknown> & { _id: string }
-
-function fakeConvexDb(seed: Record<string, ConvexRow[]>) {
-  const rows = Object.fromEntries(Object.entries(seed).map(([key, value]) => [key, [...value]]))
-  return {
-    rows,
-    query(table: string) {
-      const filters: Array<[string, unknown]> = []
-      const query = {
-        withIndex(_name: string, build: (q: { eq: (key: string, value: unknown) => unknown }) => unknown) {
-          const index = {
-            eq(key: string, value: unknown) {
-              filters.push([key, value])
-              return index
-            },
-          }
-          build(index)
-          return query
-        },
-        async collect() {
-          return (rows[table] ?? []).filter((row) => filters.every(([key, value]) => row[key] === value))
-        },
-        async unique() {
-          return (await query.collect())[0]
-        },
-      }
-      return query
-    },
-    async insert(table: string, row: Record<string, unknown>) {
-      const id = `${table}:${(rows[table] ?? []).length + 1}`
-      rows[table] ??= []
-      rows[table].push({ _id: id, ...row })
-      return id
-    },
-    async get(id: string) {
-      for (const tableRows of Object.values(rows)) {
-        const row = tableRows.find((item) => item._id === id)
-        if (row) return row
-      }
-      return null
-    },
-    async patch(id: string, patch: Record<string, unknown>) {
-      for (const table of Object.keys(rows)) {
-        const index = rows[table]!.findIndex((row) => row._id === id)
-        if (index === -1) continue
-        rows[table]![index] = { ...rows[table]![index], ...patch }
-        return
-      }
-      throw new Error(`Missing row ${id}`)
-    },
-  }
-}
-
-function hostKey() {
-  const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
-  const privateKey = pair.privateKey.export({ format: "jwk" })
-  const publicKey = JSON.stringify(pair.publicKey.export({ format: "jwk" }))
-  return {
-    publicKey,
-    sign(payload: string) {
-      return sign("sha256", Buffer.from(payload), {
-        key: createPrivateKey({ key: privateKey, format: "jwk" }),
-        dsaEncoding: "ieee-p1363",
-      }).toString("base64url")
-    },
-  }
-}
-
-function registrationPayload(input: { workspaceId: string; hostId: string; challengeId: string; nonce: string }) {
-  return [
-    "claxedo.local-host-link.register.v1",
-    `workspace_id=${input.workspaceId}`,
-    `host_id=${input.hostId}`,
-    `challenge_id=${input.challengeId}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
-/**
- * A ConvexAuthority adapter that drives the REAL Convex mutation handlers
- * (localHostLinks.createChallenge/register + workspaces.registerLocalForSharing)
- * against an in-memory db — no mocks on the policy path.
- */
-function realConvexAuthority() {
-  const store = fakeConvexDb({
-    users: [{ _id: "user_owner", token_identifier: "owner_token" }],
-    workspaces: [],
-    workspace_memberships: [],
-    workspace_share_grants: [],
-    org_memberships: [],
-    local_host_links: [],
-    host_attestation_challenges: [],
-  })
-  const ctx = {
-    db: store,
-    auth: { getUserIdentity: async () => ({ tokenIdentifier: "owner_token" }) },
-  }
-  const handler = (fn: unknown) =>
-    (fn as { _handler: (ctx: unknown, args: Record<string, unknown>) => Promise<unknown> })._handler
-  const authority = {
-    ...fakeConvexAuthority(),
-    createLocalHostLinkChallenge: vi.fn(async (_auth: unknown, args: { workspaceId: string; hostId: string }) =>
-      handler(convexCreateChallenge)(ctx, {
-        workspace_id: args.workspaceId,
-        host_id: args.hostId,
-      }),
-    ),
-    registerLocalHostLink: vi.fn(
-      async (
-        _auth: unknown,
-        args: {
-          workspaceId: string
-          hostId: string
-          publicKey: string
-          challengeId: string
-          signature: string
-          displayName?: string
-          ttlMs?: number
-        },
-      ) =>
-        handler(convexRegister)(ctx, {
-          workspace_id: args.workspaceId,
-          host_id: args.hostId,
-          public_key: args.publicKey,
-          challenge_id: args.challengeId,
-          signature: args.signature,
-          ...(args.displayName ? { display_name: args.displayName } : {}),
-          ...(args.ttlMs === undefined ? {} : { ttl_ms: args.ttlMs }),
-        }),
-    ),
-    registerLocalForSharing: vi.fn(
-      async (
-        _auth: unknown,
-        args: {
-          workspaceId: string
-          displayName: string
-          homeRegion?: string
-          repoName?: string
-          gitBranch?: string
-        },
-      ) =>
-        handler(convexRegisterLocalForSharing)(ctx, {
-          workspace_id: args.workspaceId,
-          display_name: args.displayName,
-          ...(args.homeRegion ? { home_region: args.homeRegion } : {}),
-          ...(args.repoName ? { repo_name: args.repoName } : {}),
-          ...(args.gitBranch ? { git_branch: args.gitBranch } : {}),
-        }),
-    ),
-  } as ReturnType<typeof fakeConvexAuthority>
-  return { store, authority }
-}
-
-describe("hosted cold path against the REAL Convex handlers", () => {
-  test("a never-registered workspaceId completes challenge → signed register and ends owned + user-hosted", async () => {
-    const { store, authority } = realConvexAuthority()
-    const { app } = buildApp({ authority: authority })
-    const key = hostKey()
-
-    // 1. Challenge: must NOT 500 on the missing workspace doc and must not
-    //    create one (challenge mutates nothing about workspaces).
-    const challengeRes = await app.fetch(post("/ws_cold/user-hosted/challenge", { hostId: "host_1" }))
-    expect(challengeRes.status).toBe(200)
-    const { challenge } = (await challengeRes.json()) as {
-      challenge: { challengeId: string; nonce: string }
-    }
-    expect(store.rows.workspaces).toHaveLength(0)
-
-    // 2. CLI signs the challenge; register verifies the signature, creates the
-    //    workspace doc with user-hosted backing owned by the caller, then the
-    //    route's registerLocalForSharing patches metadata without conflict.
-    const registerRes = await app.fetch(
-      post("/ws_cold/user-hosted/register", {
-        hostId: "host_1",
-        publicKey: key.publicKey,
-        challengeId: challenge.challengeId,
-        signature: key.sign(
-          registrationPayload({
-            workspaceId: "ws_cold",
-            hostId: "host_1",
-            challengeId: challenge.challengeId,
-            nonce: challenge.nonce,
-          }),
-        ),
-        displayName: "demo",
-        repoName: "demo",
-      }),
-    )
-    expect(registerRes.status).toBe(200)
-    const json = (await registerRes.json()) as Record<string, any>
-    expect(json.localHostLink).toMatchObject({ host_id: "host_1", workspace_id: "ws_cold" })
-    expect(json.hostTunnel).toMatchObject({ hostTunnelToken: "htt-for-host_1" })
-    expect(store.rows.workspaces).toHaveLength(1)
-    expect(store.rows.workspaces[0]).toMatchObject({
-      workspace_id: "ws_cold",
-      owner_user_id: "user_owner",
-      backing: "local-worktree",
-      access: "user-hosted",
-      display_name: "demo",
-      repo_name: "demo",
-    })
-    expect(json.workspace).toMatchObject({ workspace_doc_id: store.rows.workspaces[0]!._id })
-    expect(store.rows.local_host_links).toHaveLength(1)
-    expect(store.rows.local_host_links[0]).toMatchObject({
-      workspace_id: store.rows.workspaces[0]!._id,
-      host_id: "host_1",
-      public_key: key.publicKey,
-    })
-
-    expect(store.rows.workspaces).toHaveLength(1)
-    expect(store.rows.local_host_links).toHaveLength(1)
-  })
-
-  test("a forged signature on the cold path creates neither workspace nor link", async () => {
-    const { store, authority } = realConvexAuthority()
-    const { app } = buildApp({ authority: authority })
-    const key = hostKey()
-    const forgedKey = hostKey()
-
-    const challengeRes = await app.fetch(post("/ws_cold/user-hosted/challenge", { hostId: "host_1" }))
-    const { challenge } = (await challengeRes.json()) as {
-      challenge: { challengeId: string; nonce: string }
-    }
-
-    const registerRes = await app.fetch(
-      post("/ws_cold/user-hosted/register", {
-        hostId: "host_1",
-        publicKey: key.publicKey,
-        challengeId: challenge.challengeId,
-        signature: forgedKey.sign(
-          registrationPayload({
-            workspaceId: "ws_cold",
-            hostId: "host_1",
-            challengeId: challenge.challengeId,
-            nonce: challenge.nonce,
-          }),
-        ),
-      }),
-    )
-    expect(registerRes.status).toBe(500)
-    expect(store.rows.workspaces).toHaveLength(0)
-    expect(store.rows.local_host_links).toHaveLength(0)
-    expect((authority as ReturnType<typeof fakeConvexAuthority>).registerLocalForSharing).not.toHaveBeenCalled()
-  })
-})
-
-describe("hosted challenge", () => {
-  test("returns a signing challenge WITHOUT mutating the workspace (no pre-proof registration)", async () => {
-    const { app, convex } = buildApp({})
-    const res = await app.fetch(post("/ws_1/user-hosted/challenge", { hostId: "host_1", displayName: "demo" }))
-    expect(res.status).toBe(200)
-    // Challenge issuance is read-plus-nonce only; registration for sharing
-    // happens in /register, after the host proves its key.
-    expect(convex!.registerLocalForSharing).not.toHaveBeenCalled()
-    expect(convex!.createLocalHostLinkChallenge).toHaveBeenCalledWith(expect.anything(), {
-      workspaceId: "ws_1",
-      hostId: "host_1",
-    })
-    expect(await res.json()).toMatchObject({ challenge: { challengeId: "ch_1", nonce: "nonce_1" } })
-  })
-
-  test("a challenge against a cloud-backed workspace conflicts (409) and never mutates it", async () => {
+  test("assigning a cloud-backed workspace returns a 409 conflict", async () => {
     const convex = fakeConvexAuthority({
-      createLocalHostLinkChallenge: vi.fn(async () => {
-        throw new Error("workspace_backing_conflict: cannot attach a local host link to a cloud workspace")
+      assignWorkspaceHost: vi.fn(async () => {
+        throw new Error("workspace_backing_conflict: cannot assign a host to a cloud workspace")
       }),
     })
     const { app } = buildApp({ authority: convex })
-    const res = await app.fetch(post("/ws_1/user-hosted/challenge", { hostId: "host_1" }))
+    const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
     expect(res.status).toBe(409)
     expect(await res.json()).toMatchObject({ error: { code: "workspace_backing_conflict" } })
-    expect(convex!.registerLocalForSharing).not.toHaveBeenCalled()
+    expect(convex.auditAllow).not.toHaveBeenCalled()
   })
-})
 
-describe("hosted heartbeat (client-signed)", () => {
-  test("forwards the client signature and re-mints the host tunnel token", async () => {
-    const convex = fakeConvexAuthority({
-      heartbeatLocalHostLink: vi.fn(async () => ({
-        host_id: "host_1",
-        workspace_id: "ws_1",
-        home_region: "apac-south",
-        expires_at: 9_999,
-      })),
-    })
-    const { app } = buildApp({
-      authority: convex,
-      options: {
-        relayUrls: {
-          "apac-south": "https://relay.apac.test",
-        },
-      },
-    })
+  test("fails closed (503) when no authority is configured", async () => {
+    const { app } = buildApp({ authority: undefined })
+    const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ error: { code: "workspace_authority_unavailable" } })
+  })
+
+  test("answers 501 when the composed authority has no assignment support", async () => {
+    const convex = fakeConvexAuthority({ assignWorkspaceHost: undefined })
+    const { app } = buildApp({ authority: convex })
+    const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
+    expect(res.status).toBe(501)
+    expect(await res.json()).toMatchObject({ error: { code: "not_implemented" } })
+  })
+
+  test("requires a signed bearer token", async () => {
+    const { app, convex } = buildApp({})
     const res = await app.fetch(
-      post("/ws_1/user-hosted/heartbeat", {
-        hostId: "host_1",
-        signature: "client-heartbeat-sig",
-        ttlMs: 60_000,
+      new Request("http://cp.test/ws_1/host-assignment", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ hostId: "host_1" }),
       }),
     )
-    expect(res.status).toBe(200)
-    expect(convex!.heartbeatLocalHostLink).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ hostId: "host_1", signature: "client-heartbeat-sig", ttlMs: 60_000 }),
-    )
-    expect(await res.json()).toMatchObject({
-      hostTunnel: {
-        hostTunnelToken: "htt-for-host_1",
-        homeRegion: "apac-south",
-        relayUrl: "https://relay.apac.test",
+    expect(res.status).toBe(401)
+    expect(convex!.assignWorkspaceHost).not.toHaveBeenCalled()
+  })
+
+  test("is rate limited per caller+workspace before any authority call", async () => {
+    const { app, convex } = buildApp({
+      options: {
+        controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 2, windowMs: 60_000 }),
       },
     })
+
+    // Rotating the client-supplied hostId cannot bypass the bucket.
+    const assign = (hostId: string) => app.fetch(post("/ws_1/host-assignment", { hostId }))
+    expect((await assign("host_a")).status).toBe(200)
+    expect((await assign("host_b")).status).toBe(200)
+    const limited = await assign("host_c")
+    expect(limited.status).toBe(429)
+    expect(await limited.json()).toMatchObject({ error: { code: "control_plane_rate_limited" } })
+    // The denied request was rejected BEFORE reaching authority resolution.
+    expect(convex!.usersMe).toHaveBeenCalledTimes(2)
+    expect(convex!.assignWorkspaceHost).toHaveBeenCalledTimes(2)
   })
 })
 
-describe("hosted pause", () => {
-  test("pauses the link in Convex and audits local_host_link.disabled", async () => {
+describe("host unassignment (DELETE /:id/host-assignment)", () => {
+  test("removes the assignment and audits it", async () => {
     const { app, convex } = buildApp({})
-    const res = await app.fetch(post("/ws_1/user-hosted/pause", { hostId: "host_1", paused: true }))
+    const res = await app.fetch(del("/ws_1/host-assignment"))
     expect(res.status).toBe(200)
-    expect(convex!.pauseLocalHostLink).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ workspaceId: "ws_1", hostId: "host_1", paused: true }),
-    )
+    expect(await res.json()).toMatchObject({ unassigned: true })
+    expect(convex!.unassignWorkspaceHost).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_1" })
     expect(convex!.auditAllow).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ action: "local_host_link.disabled" }),
+      expect.objectContaining({ action: "host_workspace_assignment.unassigned", workspaceId: "ws_1" }),
     )
+  })
+
+  test("answers 501 when the composed authority has no assignment support", async () => {
+    const convex = fakeConvexAuthority({ unassignWorkspaceHost: undefined })
+    const { app } = buildApp({ authority: convex })
+    const res = await app.fetch(del("/ws_1/host-assignment"))
+    expect(res.status).toBe(501)
+    expect(await res.json()).toMatchObject({ error: { code: "not_implemented" } })
+  })
+
+  test("requires a signed bearer token", async () => {
+    const { app, convex } = buildApp({})
+    const res = await app.fetch(new Request("http://cp.test/ws_1/host-assignment", { method: "DELETE" }))
+    expect(res.status).toBe(401)
+    expect(convex!.unassignWorkspaceHost).not.toHaveBeenCalled()
+  })
+})
+
+describe("the retired per-workspace user-hosted routes are gone", () => {
+  test("challenge/register/heartbeat/pause answer 404, not a handler", async () => {
+    // NO backward compatibility: a 400/401/409 here would mean a handler is
+    // still mounted behind the path. Machine enrollment + owner assignment
+    // replaced the whole quartet.
+    const { app, convex } = buildApp({})
+    for (const retired of ["challenge", "register", "heartbeat", "pause"]) {
+      const res = await app.fetch(post(`/ws_1/user-hosted/${retired}`, { hostId: "host_1" }))
+      expect(res.status, `POST /ws_1/user-hosted/${retired}`).toBe(404)
+    }
+    expect(convex!.assignWorkspaceHost).not.toHaveBeenCalled()
+    expect(convex!.usersMe).not.toHaveBeenCalled()
   })
 })
 
@@ -994,28 +719,6 @@ describe("hosted connection rate limiting (mint-only)", () => {
         workspaceId: "ws_1",
       }),
     )
-  })
-})
-
-describe("hosted heartbeat rate limiting", () => {
-  test("is keyed on caller+workspace — rotating the client-supplied hostId cannot bypass it — and runs before any Convex call", async () => {
-    const { app, convex } = buildApp({
-      options: {
-        controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 2, windowMs: 60_000 }),
-      },
-    })
-
-    const heartbeat = (hostId: string) => app.fetch(post("/ws_1/user-hosted/heartbeat", { hostId, signature: "sig" }))
-
-    expect((await heartbeat("host_a")).status).toBe(200)
-    expect((await heartbeat("host_b")).status).toBe(200)
-    // Third request rotates the hostId again — still the same bucket.
-    const limited = await heartbeat("host_c")
-    expect(limited.status).toBe(429)
-    expect(await limited.json()).toMatchObject({ error: { code: "control_plane_rate_limited" } })
-    // The denied request was rejected BEFORE reaching Convex user resolution.
-    expect(convex!.usersMe).toHaveBeenCalledTimes(2)
-    expect(convex!.heartbeatLocalHostLink).toHaveBeenCalledTimes(2)
   })
 })
 

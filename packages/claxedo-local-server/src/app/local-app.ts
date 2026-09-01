@@ -46,6 +46,7 @@ import { OpenCodeCompatRoutes } from "../opencode/compat-routes/index"
 import { CredentialRoutes } from "../credentials/routes/credential"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
 import { NetworkPolicyRoutes } from "../sandbox/network/network-policy-routes"
+import { UserHostedServingRoutes } from "../workspace/user-hosted-serving-routes"
 import { BootstrapRoutes } from "../deployments/shared-routes/bootstrap"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "../deployments/local/server-workspace-pty-proxy"
 import { resolveHarnessId } from "../opencode/compat-routes/provider-config"
@@ -319,6 +320,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/api/workspace", localWorkspaceRoutes)
   app.route("/api/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
+  app.route("/api/claxedo/host-serving", UserHostedServingRoutes())
   // User-extension manifests and modules from `dataDir()/extensions`. The
   // route family disables itself on hosted/signed deployments; mounting it
   // unconditionally keeps that decision in one place (the routes) instead of

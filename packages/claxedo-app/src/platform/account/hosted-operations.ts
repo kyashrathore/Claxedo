@@ -224,16 +224,13 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // is not retried at all — the connector stops, because re-enrolling would be
   // it overruling a revocation.
   "host.enrollmentHeartbeat": { safe: true, decode: object },
-  // Workspace shares (local-host links), signed by the Host Connector child
-  // with the machine key. All three are main-only like the enrollment trio —
-  // the renderer's route to sharing is the data-only hostConnector.share IPC.
-  // Unsafe: each challenge call mints one, so a retry burns it.
-  "hostLink.challenge": { safe: false, decode: withRecord("challenge", withStrings("challengeId", "nonce")) },
-  // Registration is an authority-side upsert on (workspace, host), but the
-  // signed challenge is single-use, so a blind retry cannot succeed anyway.
-  "hostLink.register": { safe: false, decode: object },
-  // Safe: renews an existing link; twice is still one link.
-  "hostLink.heartbeat": { safe: true, decode: object },
+  // Workspace shares under machine-wide enrollment: the OWNER assigns a
+  // workspace to an enrolled host (pure data — the machine's consent is the
+  // Host Connector's signed heartbeat set). Main-only like the enrollment
+  // trio; the renderer's route to sharing is the data-only
+  // hostConnector.share IPC.
+  "workspace.assignHost": { safe: false, decode: object },
+  "workspace.unassignHost": { safe: false, decode: object },
   // Control-plane session rows for a workspace (`{ sessions: [...] }`).
   "session.list": { safe: true, decode: withArrays("sessions") },
   // Paginated rail navigation list (`GET /api/control/session-list`).

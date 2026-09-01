@@ -58,9 +58,9 @@ export function workspaceShareUrl(input: { origin?: string; workspaceId: string 
   return new URL(workspaceRoute(input.workspaceId), origin).toString()
 }
 
-function workspaceUserHostedRegisterUrl(input: { serverUrl?: string; workspaceId: string }) {
+function workspaceHostAssignmentUrl(input: { serverUrl?: string; workspaceId: string }) {
   return new URL(
-    `/api/workspace/${encodeURIComponent(input.workspaceId)}/user-hosted/register`,
+    `/api/workspace/${encodeURIComponent(input.workspaceId)}/host-assignment`,
     normalizeUrl(input.serverUrl) ?? getClaxedoServerUrl(),
   )
 }
@@ -91,7 +91,7 @@ export async function registerUserHostedWorkspace(input: {
     })
     return
   }
-  const response = await (input.request ?? authFetch)(workspaceUserHostedRegisterUrl({
+  const response = await (input.request ?? authFetch)(workspaceHostAssignmentUrl({
     serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
     workspaceId: input.workspaceId,
   }), {
@@ -105,5 +105,27 @@ export async function registerUserHostedWorkspace(input: {
     }),
   })
   if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
+  return await responseJson(response)
+}
+
+/** Withdraw one workspace this machine publishes. Mirrors the register above. */
+export async function unregisterUserHostedWorkspace(input: {
+  workspaceId: string
+  serverUrl?: string
+  request?: typeof fetch
+}) {
+  const port = input.request ? undefined : machineRemoteAccess()
+  if (port?.unshareWorkspace) {
+    await port.unshareWorkspace(input.workspaceId)
+    return
+  }
+  const response = await (input.request ?? authFetch)(workspaceHostAssignmentUrl({
+    serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+    workspaceId: input.workspaceId,
+  }), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  })
+  if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Unshare workspace failed: ${response.status}`))
   return await responseJson(response)
 }

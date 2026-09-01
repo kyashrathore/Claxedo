@@ -36,6 +36,7 @@ export type RemoteAccessSurfaceProps = {
    */
   shareableWorkspaces?: readonly ShareableWorkspace[]
   onShare?: (workspaceIds: readonly string[]) => Promise<void>
+  onUnshare?: (workspaceId: string) => Promise<void>
   shareLinkFor?: (workspaceId: string) => string
 }
 
@@ -73,7 +74,12 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
       .finally(() => setEnabling(false))
   }
 
-  const shared = (workspace: ShareableWorkspace) => workspace.shared || justShared().has(workspace.workspaceId)
+  // Optimistic both ways: a fresh share counts before the device list
+  // refetches, and a fresh unshare stops counting even while the server
+  // still lists it.
+  const [justUnshared, setJustUnshared] = createSignal<ReadonlySet<string>>(new Set<string>())
+  const shared = (workspace: ShareableWorkspace) =>
+    (workspace.shared || justShared().has(workspace.workspaceId)) && !justUnshared().has(workspace.workspaceId)
   const sharedWorkspaces = createMemo(() => (props.shareableWorkspaces ?? []).filter(shared))
 
   const share = async (workspace: ShareableWorkspace) => {
@@ -82,8 +88,39 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
     setRowError(undefined)
     try {
       await props.onShare([workspace.workspaceId])
+      setJustUnshared((current) => {
+        const next = new Set(current)
+        next.delete(workspace.workspaceId)
+        return next
+      })
       setJustShared((current) => new Set(current).add(workspace.workspaceId))
       setQrWorkspaceId(workspace.workspaceId)
+    } catch (error) {
+      setRowError({
+        workspaceId: workspace.workspaceId,
+        message: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setInFlight((current) => {
+        const next = new Set(current)
+        next.delete(workspace.workspaceId)
+        return next
+      })
+    }
+  }
+
+  const unshare = async (workspace: ShareableWorkspace) => {
+    if (!props.onUnshare || !shared(workspace) || inFlight().has(workspace.workspaceId)) return
+    setInFlight((current) => new Set(current).add(workspace.workspaceId))
+    setRowError(undefined)
+    try {
+      await props.onUnshare(workspace.workspaceId)
+      setJustUnshared((current) => new Set(current).add(workspace.workspaceId))
+      setJustShared((current) => {
+        const next = new Set(current)
+        next.delete(workspace.workspaceId)
+        return next
+      })
     } catch (error) {
       setRowError({
         workspaceId: workspace.workspaceId,
@@ -217,9 +254,9 @@ export const RemoteAccessSurface: Component<RemoteAccessSurfaceProps> = (props) 
                                       <input
                                         type="checkbox"
                                         checked={shared(workspace)}
-                                        disabled={shared(workspace)}
-                                        aria-label={`Share ${workspace.label}`}
-                                        onChange={() => void share(workspace)}
+                                        disabled={shared(workspace) && !props.onUnshare}
+                                        aria-label={shared(workspace) ? `Stop sharing ${workspace.label}` : `Share ${workspace.label}`}
+                                        onChange={() => void (shared(workspace) ? unshare(workspace) : share(workspace))}
                                       />
                                     }
                                   >

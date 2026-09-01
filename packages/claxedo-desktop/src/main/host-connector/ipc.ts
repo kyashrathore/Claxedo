@@ -49,7 +49,7 @@ import { toStatusEvent, type HostConnectorStatusEvent } from "./status-channel"
  * The closed set. Declared as data so the registration is generated from it and
  * a test can assert the whole surface without re-listing it by hand.
  */
-export const HOST_CONNECTOR_OPERATIONS = ["status", "start", "pause", "revoke", "share"] as const
+export const HOST_CONNECTOR_OPERATIONS = ["status", "start", "pause", "revoke", "share", "unshare"] as const
 
 export type HostConnectorOperation = (typeof HOST_CONNECTOR_OPERATIONS)[number]
 
@@ -77,8 +77,10 @@ export type HostConnectorIpcTarget = {
 export type MachinePublication = {
   status: () => HostConnectorStatus
   start: () => Promise<HostConnectorStatus>
-  /** Publish one workspace from this machine (a signed local-host link). */
+  /** Publish one workspace from this machine (owner assignment + machine consent). */
   shareWorkspace: (input: { workspaceId: string; displayName?: string }) => Promise<HostConnectorStatus>
+  /** Withdraw one workspace: unassign at the control plane, drop consent. */
+  unshareWorkspace: (workspaceId: string) => Promise<HostConnectorStatus>
   /** Stop beating, keep the identity. */
   stop: () => void
   /** Stop beating, destroy the identity. */
@@ -173,6 +175,19 @@ export function registerHostConnectorIpc(input: {
       await connector.shareWorkspace(share)
       return snapshot()
     },
+
+    unshare: async (payload) => {
+      if (!connector) {
+        throw new Error("This build cannot publish a machine")
+      }
+      if (!signedIn()) {
+        throw new Error("Sign in to change shared workspaces")
+      }
+      const share = shareInput(payload)
+      if (!share) throw new Error("unshare requires a workspaceId")
+      await connector.unshareWorkspace(share.workspaceId)
+      return snapshot()
+    },
   }
 
   for (const operation of HOST_CONNECTOR_OPERATIONS) {
@@ -184,8 +199,8 @@ export function registerHostConnectorIpc(input: {
     // not what that channel does.
     ipcMain.handle(
       channel,
-      (operation === "share"
-        ? (_event: unknown, payload: unknown) => handlers.share(payload)
+      (operation === "share" || operation === "unshare"
+        ? (_event: unknown, payload: unknown) => handlers[operation](payload)
         : () => handlers[operation]()) as never,
     )
   }

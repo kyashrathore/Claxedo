@@ -30,6 +30,7 @@ export type HostConnectorSetup = {
    * share is re-established after a restart.
    */
   shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<HostConnectorStatus>
+  unshareWorkspace(workspaceId: string): Promise<HostConnectorStatus>
   stop(): void
   revoke(): void
   dispose(): void
@@ -82,6 +83,8 @@ export function setupHostConnectorChild(input: {
    */
   loadSharedWorkspaces?: () => readonly HostConnectorSharedWorkspace[]
   storeSharedWorkspaces?: (shares: readonly HostConnectorSharedWorkspace[]) => void
+  /** The serving credential from the latest heartbeat ack, for the tunnel owner. */
+  onServing?: (tunnel: Record<string, unknown> | null) => void
   displayName?: string
   heartbeatIntervalMs?: number
   startupTimeoutMs?: number
@@ -89,6 +92,7 @@ export function setupHostConnectorChild(input: {
   onStatusChange?: (status: HostConnectorStatus) => void
 }): HostConnectorSetup {
   let status: HostConnectorStatus = { status: "not-started" }
+  let identityHostId: string | undefined
   let sharedWorkspaces: HostConnectorSharedWorkspace[] = [...(input.loadSharedWorkspaces?.() ?? [])]
   let child: HostConnectorChildProcess | undefined
   let starting: Promise<HostConnectorStatus> | undefined
@@ -139,6 +143,10 @@ export function setupHostConnectorChild(input: {
       settle(message.status)
       return
     }
+    if (message.type === "serving") {
+      input.onServing?.(message.tunnel)
+      return
+    }
     if (message.type === "account-operation") {
       try {
         const value = await input.runAccountOperation(message.name, message.input)
@@ -151,6 +159,7 @@ export function setupHostConnectorChild(input: {
       return
     }
     if (message.type === "identity-created") {
+      identityHostId = message.identity.hostId
       try {
         const stored = await input.storeIdentity(message.identity)
         if (!stored.ok) throw new Error(stored.detail)
@@ -169,6 +178,7 @@ export function setupHostConnectorChild(input: {
     const restored = await Promise.race([input.loadIdentity(), cancelled])
     if (startedIn !== era) return status
     if (!restored.ok) return settle({ status: "unavailable", reason: restored.reason, detail: restored.detail })
+    identityHostId = restored.identity?.hostId
 
     const target = input.spawn()
     child = target
@@ -269,9 +279,18 @@ export function setupHostConnectorChild(input: {
     },
     async shareWorkspace(share: { workspaceId: string; displayName?: string }) {
       const target = child
-      if (!target || status.status !== "enrolled") {
+      if (!target || status.status !== "enrolled" || !identityHostId) {
         throw new Error("Remote access is not running on this machine — enable it in Settings first")
       }
+      // Owner intent first: the account credential (main's) assigns the
+      // workspace to this host at the control plane. Machine consent second:
+      // the child adds the id to its served set and forces one signed beat,
+      // and only a beat that comes back with the assignment counts as shared.
+      await input.runAccountOperation("workspace.assignHost", {
+        id: share.workspaceId,
+        hostId: identityHostId,
+        ...(share.displayName ? { displayName: share.displayName } : {}),
+      })
       const settled = await bounded(
         request(target, {
           type: "share-workspace",
@@ -286,6 +305,26 @@ export function setupHostConnectorChild(input: {
         ...sharedWorkspaces.filter((existing) => existing.workspaceId !== share.workspaceId),
         { workspaceId: share.workspaceId, ...(share.displayName ? { displayName: share.displayName } : {}) },
       ]
+      try {
+        input.storeSharedWorkspaces?.(sharedWorkspaces)
+      } catch (error) {
+        input.onError?.("share-store", error)
+      }
+      return settle(settled)
+    },
+
+    async unshareWorkspace(workspaceId: string) {
+      const target = child
+      if (!target || status.status !== "enrolled") {
+        throw new Error("Remote access is not running on this machine — enable it in Settings first")
+      }
+      await input.runAccountOperation("workspace.unassignHost", { id: workspaceId })
+      const settled = await bounded(
+        request(target, { type: "unshare-workspace", requestId: crypto.randomUUID(), workspaceId }),
+        input.startupTimeoutMs ?? 10_000,
+        "Host Connector workspace unshare",
+      )
+      sharedWorkspaces = sharedWorkspaces.filter((existing) => existing.workspaceId !== workspaceId)
       try {
         input.storeSharedWorkspaces?.(sharedWorkspaces)
       } catch (error) {

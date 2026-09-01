@@ -3,10 +3,8 @@ import { createHostConnector, type ConnectorTransport } from "./connector"
 import {
   createHostKeyPair,
   enrollmentPayload,
-  heartbeatPayload,
+  heartbeatPayloadV2,
   hostKeyPairFromJwk,
-  linkHeartbeatPayload,
-  linkRegistrationPayload,
 } from "./host-identity"
 
 /**
@@ -25,9 +23,9 @@ function transport(overrides: Partial<ConnectorTransport> = {}) {
     requests: 0,
     enrolls: [] as unknown[],
     beats: [] as unknown[],
-    linkChallenges: [] as unknown[],
-    linkRegisters: [] as unknown[],
-    linkBeats: [] as unknown[],
+    /** The owner's assignment view the fake control plane answers with. */
+    assigned: undefined as readonly string[] | undefined,
+    tunnel: undefined as Record<string, unknown> | undefined,
   }
   const base: ConnectorTransport = {
     createRequest: async () => {
@@ -40,17 +38,12 @@ function transport(overrides: Partial<ConnectorTransport> = {}) {
     },
     heartbeat: async (input) => {
       calls.beats.push(input)
-      return { expires_at: 2_000 }
-    },
-    linkChallenge: async (input) => {
-      calls.linkChallenges.push(input)
-      return { challenge_id: "chal_1", nonce: "link_nonce_1", expires_at: 9_999 }
-    },
-    linkRegister: async (input) => {
-      calls.linkRegisters.push(input)
-    },
-    linkHeartbeat: async (input) => {
-      calls.linkBeats.push(input)
+      return {
+        expires_at: 2_000,
+        // Default: the owner assigned exactly what the machine serves.
+        assigned_workspace_ids: calls.assigned ?? input.workspaceIds,
+        ...(calls.tunnel ? { hostTunnel: calls.tunnel } : {}),
+      }
     },
     ...overrides,
   }
@@ -59,7 +52,8 @@ function transport(overrides: Partial<ConnectorTransport> = {}) {
 
 async function connector(
   overrides: Partial<ConnectorTransport> = {},
-  onError?: (stage: "enroll" | "heartbeat" | "share" | "link-heartbeat", error: unknown) => void,
+  onError?: (stage: "enroll" | "heartbeat" | "share", error: unknown) => void,
+  onServing?: (tunnel: Record<string, unknown> | undefined) => void,
 ) {
   const t = transport(overrides)
   let tick: (() => void) | undefined
@@ -72,6 +66,7 @@ async function connector(
     transport: t.transport,
     heartbeatIntervalMs: 30_000,
     ...(onError ? { onError } : {}),
+    ...(onServing ? { onServing } : {}),
     setInterval: (fn) => {
       tick = fn
       ticks.push(fn)
@@ -434,10 +429,10 @@ describe("host identity", () => {
     expect(enrollmentPayload({ hostId: "h", requestId: "r", nonce: "n" })).toBe(
       "claxedo.host-enrollment.enroll.v1\nhost_id=h\nrequest_id=r\nnonce=n",
     )
-    expect(heartbeatPayload({ hostId: "h" })).toBe("claxedo.host-enrollment.heartbeat.v1\nhost_id=h\nttl_ms=")
-    expect(heartbeatPayload({ hostId: "h", ttlMs: 60_000 })).toBe(
-      "claxedo.host-enrollment.heartbeat.v1\nhost_id=h\nttl_ms=60000",
-    )
+    expect(heartbeatPayloadV2({ hostId: "h", workspaceIds: [] }))
+      .toBe("claxedo.host-enrollment.heartbeat.v2\nhost_id=h\nttl_ms=\nworkspaces=")
+    expect(heartbeatPayloadV2({ hostId: "h", ttlMs: 60_000, workspaceIds: ["b", "a"] }))
+      .toBe("claxedo.host-enrollment.heartbeat.v2\nhost_id=h\nttl_ms=60000\nworkspaces=a,b")
   })
 })
 
@@ -477,21 +472,32 @@ describe("a control-plane failure before enrollment", () => {
 })
 
 describe("workspace shares", () => {
-  test("registers a link with the signed challenge and renews it on each beat", async () => {
+  test("consenting to a workspace signs the new set into the next beat and gates on the owner's assignment", async () => {
     const { instance, calls } = await connector()
     await instance.start()
 
     await instance.shareWorkspace({ workspaceId: "ws_local_1", displayName: "opencode" })
-    expect(calls.linkChallenges).toEqual([{ workspaceId: "ws_local_1", hostId: HOST_ID }])
-    const registered = calls.linkRegisters[0] as { challengeId: string; signature: string; displayName?: string }
-    expect(registered.challengeId).toBe("chal_1")
-    expect(registered.displayName).toBe("opencode")
-    expect(typeof registered.signature).toBe("string")
     expect(instance.sharedWorkspaceIds()).toEqual(["ws_local_1"])
+    const beat = calls.beats.at(-1) as { workspaceIds: readonly string[]; signature: string }
+    expect(beat.workspaceIds).toEqual(["ws_local_1"])
+    expect(typeof beat.signature).toBe("string")
 
+    // Every beat re-signs the CURRENT set — no signature is ever reused.
     await instance.beat()
-    expect(calls.linkBeats).toHaveLength(1)
-    expect(calls.linkBeats[0]).toMatchObject({ workspaceId: "ws_local_1", hostId: HOST_ID })
+    const next = calls.beats.at(-1) as { signature: string }
+    expect(next.signature).not.toBe(beat.signature)
+  })
+
+  test("a share the owner never assigned fails and leaves the served set unchanged", async () => {
+    const failures: string[] = []
+    const { instance, calls } = await connector({}, (stage) => failures.push(stage))
+    await instance.start()
+    calls.assigned = []
+
+    await expect(instance.shareWorkspace({ workspaceId: "ws_unassigned" }))
+      .rejects.toThrow(/no assignment/)
+    expect(failures).toContain("share")
+    expect(instance.sharedWorkspaceIds()).toEqual([])
   })
 
   test("refuses to share while not enrolled, and clears shares when the connector stops", async () => {
@@ -504,29 +510,44 @@ describe("workspace shares", () => {
     expect(instance.sharedWorkspaceIds()).toEqual([])
   })
 
-  test("drops a link whose renewal is rejected without taking the machine offline", async () => {
-    const failures: string[] = []
-    const { instance } = await connector(
-      { linkHeartbeat: async () => { throw new Error("link revoked") } },
-      (stage) => failures.push(stage),
-    )
+  test("reconciles against the owner's view: an unassigned workspace leaves the set on the next beat", async () => {
+    const served: Array<Record<string, unknown>> = []
+    const { instance, calls } = await connector()
+    ;(instance as unknown as { options?: never })
     await instance.start()
-    await instance.shareWorkspace({ workspaceId: "ws_local_1" })
+    await instance.shareWorkspace({ workspaceId: "ws_a" })
+    await instance.shareWorkspace({ workspaceId: "ws_b" })
+    expect(instance.sharedWorkspaceIds()).toEqual(["ws_a", "ws_b"])
 
+    // The owner unassigned ws_b elsewhere.
+    calls.assigned = ["ws_a"]
     await instance.beat()
-    expect(failures).toContain("link-heartbeat")
-    expect(instance.sharedWorkspaceIds()).toEqual([])
-    expect(instance.state().status).toBe("enrolled")
+    expect(instance.sharedWorkspaceIds()).toEqual(["ws_a"])
+    void served
   })
 
-  test("share payload literals match the authority's verifiers", async () => {
-    // Same duplication contract as enrollment: the authority asserts these
-    // exact strings on its side (localHostRegistrationPayload /
-    // localHostHeartbeatPayload in host-access-authority.ts).
-    expect(
-      linkRegistrationPayload({ workspaceId: "ws_1", hostId: "host_1", challengeId: "chal_1", nonce: "n_1" }),
-    ).toBe("claxedo.local-host-link.register.v1\nworkspace_id=ws_1\nhost_id=host_1\nchallenge_id=chal_1\nnonce=n_1")
-    expect(linkHeartbeatPayload({ workspaceId: "ws_1", hostId: "host_1", ttlMs: 300000 }))
-      .toBe("claxedo.local-host-link.heartbeat.v1\nworkspace_id=ws_1\nhost_id=host_1\nttl_ms=300000")
+  test("unsharing drops consent and acks the smaller set immediately", async () => {
+    const { instance, calls } = await connector()
+    await instance.start()
+    await instance.shareWorkspace({ workspaceId: "ws_a" })
+
+    await instance.unshareWorkspace("ws_a")
+    expect(instance.sharedWorkspaceIds()).toEqual([])
+    const last = calls.beats.at(-1) as { workspaceIds: readonly string[] }
+    expect(last.workspaceIds).toEqual([])
+  })
+
+  test("the serving credential from the ack reaches the consumer", async () => {
+    const tunnels: Array<Record<string, unknown> | undefined> = []
+    const { instance, calls } = await connector({}, undefined, (t) => tunnels.push(t))
+    await instance.start()
+    calls.tunnel = { token: "htt", workspaceIds: ["ws_a"], relayUrl: "wss://relay.test" }
+    await instance.shareWorkspace({ workspaceId: "ws_a" })
+    expect(tunnels.at(-1)).toEqual({ token: "htt", workspaceIds: ["ws_a"], relayUrl: "wss://relay.test" })
+  })
+
+  test("share payload literal matches the authority's verifier", async () => {
+    expect(heartbeatPayloadV2({ hostId: "host_1", ttlMs: 300000, workspaceIds: ["ws_2", "ws_1"] }))
+      .toBe("claxedo.host-enrollment.heartbeat.v2\nhost_id=host_1\nttl_ms=300000\nworkspaces=ws_1,ws_2")
   })
 })

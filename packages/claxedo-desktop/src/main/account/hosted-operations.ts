@@ -230,7 +230,7 @@ export const HOSTED_OPERATIONS = {
   "host.enrollmentHeartbeat": {
     method: "POST",
     path: "/api/claxedo/host/enrollments/heartbeat",
-    body: ["hostId", "signature", "ttlMs"],
+    body: ["hostId", "signature", "ttlMs", "workspaceIds"],
   },
   // Session people (private share grants + participants). Hosted control plane
   // only — the desktop local sidecar deliberately does not mount these routes.
@@ -404,20 +404,14 @@ export const HOSTED_OPERATIONS = {
   },
   "billing.checkout": { method: "POST", path: "/api/billing/checkout", body: ["plan"] },
   "billing.portal": { method: "POST", path: "/api/billing/portal" },
-  "hostLink.challenge": {
+  "workspace.assignHost": {
     method: "POST",
-    path: "/api/workspace/:id/user-hosted/challenge",
-    body: ["hostId"],
+    path: "/api/workspace/:id/host-assignment",
+    body: ["hostId", "displayName", "orgId", "projectId", "repoUrl", "repoName", "gitBranch", "remoteDirectory"],
   },
-  "hostLink.register": {
-    method: "POST",
-    path: "/api/workspace/:id/user-hosted/register",
-    body: ["hostId", "publicKey", "challengeId", "signature", "displayName", "ttlMs"],
-  },
-  "hostLink.heartbeat": {
-    method: "POST",
-    path: "/api/workspace/:id/user-hosted/heartbeat",
-    body: ["hostId", "signature", "ttlMs"],
+  "workspace.unassignHost": {
+    method: "DELETE",
+    path: "/api/workspace/:id/host-assignment",
   },
   "usage.get": {
     method: "GET",

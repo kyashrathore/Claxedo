@@ -84,30 +84,21 @@ export function enrollmentPayload(input: { hostId: string; requestId: string; no
   ].join("\n")
 }
 
-export function heartbeatPayload(input: { hostId: string; ttlMs?: number }) {
-  return ["claxedo.host-enrollment.heartbeat.v1", `host_id=${input.hostId}`, `ttl_ms=${input.ttlMs ?? ""}`].join("\n")
-}
-
-export function linkRegistrationPayload(input: {
-  workspaceId: string
+/**
+ * Heartbeat v2: the machine's one signature per interval also covers the
+ * workspaces it currently serves. The authority verifies this exact literal
+ * (`hostEnrollmentHeartbeatPayloadV2` in host-access-authority.ts) — both
+ * sides assert the same string, so drift fails loudly at the first beat.
+ */
+export function heartbeatPayloadV2(input: {
   hostId: string
-  challengeId: string
-  nonce: string
+  ttlMs?: number
+  workspaceIds: readonly string[]
 }) {
   return [
-    "claxedo.local-host-link.register.v1",
-    `workspace_id=${input.workspaceId}`,
-    `host_id=${input.hostId}`,
-    `challenge_id=${input.challengeId}`,
-    `nonce=${input.nonce}`,
-  ].join("\n")
-}
-
-export function linkHeartbeatPayload(input: { workspaceId: string; hostId: string; ttlMs?: number }) {
-  return [
-    "claxedo.local-host-link.heartbeat.v1",
-    `workspace_id=${input.workspaceId}`,
+    "claxedo.host-enrollment.heartbeat.v2",
     `host_id=${input.hostId}`,
     `ttl_ms=${input.ttlMs ?? ""}`,
+    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
   ].join("\n")
 }

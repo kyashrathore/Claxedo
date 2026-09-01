@@ -19,13 +19,11 @@ export type HostConnectorChildState =
 export const HOST_ENROLLMENT_OPERATIONS = {
   createRequest: "host.enrollmentNonce",
   enroll: "host.enrollCurrentMachine",
+  // One signed beat per interval carries the lease renewal AND the served
+  // workspace set (heartbeat payload v2); its response carries the owner's
+  // assignment view and the serving credentials. The child owns it because
+  // it is the only process holding the machine key.
   heartbeat: "host.enrollmentHeartbeat",
-  // Workspace shares are local-host links, signed with the SAME machine key
-  // as enrollment. The child owns them because it is the only process that
-  // can produce the challenge signature the control plane demands.
-  linkChallenge: "hostLink.challenge",
-  linkRegister: "hostLink.register",
-  linkHeartbeat: "hostLink.heartbeat",
 } as const
 
 export type HostEnrollmentOperation = (typeof HOST_ENROLLMENT_OPERATIONS)[keyof typeof HOST_ENROLLMENT_OPERATIONS]
@@ -48,6 +46,7 @@ export type HostConnectorParentMessage =
       sharedWorkspaces?: readonly HostConnectorSharedWorkspace[]
     }
   | { type: "share-workspace"; requestId: string; workspaceId: string; displayName?: string }
+  | { type: "unshare-workspace"; requestId: string; workspaceId: string }
   | { type: "identity-stored"; requestId: string }
   | { type: "account-result"; requestId: string; ok: true; value: unknown }
   | { type: "account-result"; requestId: string; ok: false; error: string }
@@ -55,6 +54,13 @@ export type HostConnectorParentMessage =
 
 export type HostConnectorChildMessage =
   | { type: "ready" }
+  /**
+   * The serving credential from the latest heartbeat ack: ONE Host Tunnel
+   * token whose claim covers every workspace this machine is currently
+   * routable for, or null when nothing is. The parent forwards it to the
+   * daemon, which owns the relay connection.
+   */
+  | { type: "serving"; tunnel: Record<string, unknown> | null }
   | { type: "identity-created"; requestId: string; identity: HostConnectorBootstrapIdentity }
   | {
       type: "account-operation"
@@ -178,6 +184,12 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
     }
   }
 
+  if (input.type === "unshare-workspace") {
+    const id = requestId(input)
+    if (!id || !nonemptyString(input.workspaceId)) return
+    return { type: "unshare-workspace", requestId: id, workspaceId: input.workspaceId }
+  }
+
   if (input.type === "identity-stored" || input.type === "stop") {
     const id = requestId(input)
     return id ? { type: input.type, requestId: id } : undefined
@@ -198,6 +210,12 @@ export function parseHostConnectorChildMessage(value: unknown): HostConnectorChi
   const input = record(value)
   if (!input || !nonemptyString(input.type)) return
   if (input.type === "ready") return { type: "ready" }
+
+  if (input.type === "serving") {
+    if (input.tunnel === null) return { type: "serving", tunnel: null }
+    const tunnel = record(input.tunnel)
+    return tunnel ? { type: "serving", tunnel } : undefined
+  }
 
   if (input.type === "identity-created") {
     const id = requestId(input)

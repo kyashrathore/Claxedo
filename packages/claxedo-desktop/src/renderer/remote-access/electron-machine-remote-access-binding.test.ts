@@ -20,6 +20,7 @@ describe("desktop machine remote-access binding", () => {
       pause: async () => snapshot,
       revoke: async () => snapshot,
       share: async () => snapshot,
+      unshare: async () => snapshot,
       onStatus: () => () => {},
     }
 

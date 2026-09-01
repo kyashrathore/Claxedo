@@ -20,7 +20,7 @@ import {
 function bridge(snapshots: Partial<Record<keyof HostConnectorBridge, HostConnectorSnapshot>> = {}) {
   const calls: string[] = []
   const listeners: Array<(snapshot: HostConnectorSnapshot) => void> = []
-  const answer = (name: "status" | "start" | "pause" | "revoke" | "share") => async () => {
+  const answer = (name: "status" | "start" | "pause" | "revoke" | "share" | "unshare") => async () => {
     calls.push(name)
     return snapshots[name] ?? { status: "not-started", available: true, signedIn: true }
   }
@@ -33,6 +33,7 @@ function bridge(snapshots: Partial<Record<keyof HostConnectorBridge, HostConnect
       pause: answer("pause"),
       revoke: answer("revoke"),
       share: answer("share"),
+      unshare: answer("unshare"),
       onStatus: (listener: (snapshot: HostConnectorSnapshot) => void) => {
         listeners.push(listener)
         return () => listeners.splice(listeners.indexOf(listener), 1)
@@ -110,7 +111,7 @@ describe("enabling remote access on the desktop", () => {
 })
 
 describe("the closed operation set", () => {
-  test("the bridge names exactly the five operations and a subscription", () => {
+  test("the bridge names exactly the six operations and a subscription", () => {
     // A member shaped `run(url, method, body)` is the confused deputy this
     // whole arrangement exists to prevent: main holds the account bearer and
     // a machine key that never expires. `share` is a named operation carrying
@@ -124,6 +125,7 @@ describe("the closed operation set", () => {
       "share",
       "start",
       "status",
+      "unshare",
     ])
   })
 

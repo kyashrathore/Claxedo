@@ -79,6 +79,15 @@ function connectorHarness(input: { bearer?: string } = {}) {
       state = { ...state, sharedWorkspaceIds: [...(state.sharedWorkspaceIds ?? []), share.workspaceId].sort() }
       return state
     },
+    unshareWorkspace: async (workspaceId: string) => {
+      if (state.status !== "enrolled") throw new Error("Remote access is not running on this machine")
+      operations.push({ name: "workspace.unassignHost", params: { workspaceId } })
+      state = {
+        ...state,
+        sharedWorkspaceIds: (state.sharedWorkspaceIds ?? []).filter((id) => id !== workspaceId),
+      }
+      return state
+    },
     stop: () => {
       state = { status: "stopped", reason: "closed", detail: "connector closed" }
     },
@@ -195,7 +204,7 @@ describe("the lifecycle behind the user's hand", () => {
 })
 
 describe("the closed operation set", () => {
-  test("registers exactly five channels, all under one prefix", () => {
+  test("registers exactly six channels, all under one prefix", () => {
     const ipc = ipcMain()
     registerHostConnectorIpc({ ipcMain: ipc.target, signedIn: () => true })
 
@@ -205,6 +214,7 @@ describe("the closed operation set", () => {
       "claxedo.hostConnector.share",
       "claxedo.hostConnector.start",
       "claxedo.hostConnector.status",
+      "claxedo.hostConnector.unshare",
     ])
   })
 
@@ -220,7 +230,7 @@ describe("the closed operation set", () => {
     }
   })
 
-  test("only share declares a parameter to receive a message into", () => {
+  test("only share and unshare declare a parameter to receive a message into", () => {
     // The account's rule is that a renderer may supply reviewed PARAMETERS and
     // not a request. Four of five operations are stricter still — a handler
     // that read the message would have to declare somewhere to put it, and
@@ -231,7 +241,7 @@ describe("the closed operation set", () => {
     const ipc = ipcMain()
     registerHostConnectorIpc({ ipcMain: ipc.target, signedIn: () => true })
 
-    expect(ipc.arities().toSorted()).toEqual([0, 0, 0, 0, 2])
+    expect(ipc.arities().toSorted()).toEqual([0, 0, 0, 0, 2, 2])
   })
 
   test("no operation acts on anything the message carries", async () => {
@@ -312,13 +322,14 @@ describe("no credential crosses IPC", () => {
 
     const results = []
     for (const operation of HOST_CONNECTOR_OPERATIONS) {
-      if (operation === "share") continue
+      if (operation === "share" || operation === "unshare") continue
       results.push(await ipc.invoke(hostConnectorChannel(operation)))
     }
     // Started, so a result exists that COULD carry an enrollment — and a
     // share on top of it, so a result exists that COULD carry link material.
     results.push(await ipc.invoke(hostConnectorChannel("start")))
     results.push(await ipc.invoke(hostConnectorChannel("share"), { workspaceId: "ws-leak-probe" }))
+    results.push(await ipc.invoke(hostConnectorChannel("unshare"), { workspaceId: "ws-leak-probe" }))
 
     const payload = JSON.stringify(results)
     for (const secret of [bearer, "enr_1", "host_1", "privateKey", "publicKey", "signature", "jwk"]) {

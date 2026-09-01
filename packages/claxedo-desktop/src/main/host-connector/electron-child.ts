@@ -79,6 +79,7 @@ export function setupElectronHostConnector(input: {
   heartbeatIntervalMs?: number
   onError?: (stage: string, error: unknown) => void
   onStatusChange?: Parameters<typeof setupHostConnectorChild>[0]["onStatusChange"]
+  onServing?: Parameters<typeof setupHostConnectorChild>[0]["onServing"]
 }) {
   const file = machineIdentityFile(input.userDataDir)
   const platform = input.platform ?? process.platform
@@ -119,5 +120,6 @@ export function setupElectronHostConnector(input: {
     ...(input.heartbeatIntervalMs ? { heartbeatIntervalMs: input.heartbeatIntervalMs } : {}),
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStatusChange ? { onStatusChange: input.onStatusChange } : {}),
+    ...(input.onServing ? { onServing: input.onServing } : {}),
   })
 }

@@ -534,9 +534,10 @@ function mutatingRoutesMissingRateLimit(source = routeSource) {
 describe("hosted-workspace mutating routes are all rate limited", () => {
   test("the segmenter actually sees the routes (guard against a silently empty ratchet)", () => {
     const segments = routeSegments()
-    expect(segments.length).toBeGreaterThanOrEqual(9)
+    expect(segments.length).toBeGreaterThanOrEqual(8)
     expect(segments.map((segment) => segment.routePath)).toContain("/create")
-    expect(segments.filter((segment) => segment.method === "post").length).toBeGreaterThanOrEqual(6)
+    expect(segments.map((segment) => segment.routePath)).toContain("/:id/host-assignment")
+    expect(segments.filter((segment) => segment.method === "post").length).toBeGreaterThanOrEqual(4)
   })
 
   test("the ratchet actually fires on an unlimited mutating route", () => {
@@ -551,7 +552,7 @@ describe("hosted-workspace mutating routes are all rate limited", () => {
       "        const auth = await signedOrError(c.req.raw)",
       "        return c.json(await requireAuthority(services).createCloudWorkspace(auth, {}))",
       "      })",
-      '      .post("/:id/user-hosted/heartbeat", async (c) => {',
+      '      .post("/:id/host-assignment", async (c) => {',
       "        const rateLimit = await controlPlaneRateLimitError(services, limiter, auth, {})",
       "        return c.json({})",
       "      })",

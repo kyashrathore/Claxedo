@@ -16,7 +16,7 @@ import { OrgTeamSettingsSection } from "@/features/settings/ui/org-team-section"
 import claxedoPkg from "../../../package.json"
 import { RemoteAccessSurface, useRemoteAccessController } from "@/features/onboarding"
 import { remoteAccessAppOrigin, remoteAccessClientId, remoteAccessWorkspaceLink } from "@/features/onboarding/remote-access-state"
-import { localWorkspaceShareTarget, registerUserHostedWorkspace } from "@/features/workspaces/data/share-workspace"
+import { localWorkspaceShareTarget, registerUserHostedWorkspace, unregisterUserHostedWorkspace } from "@/features/workspaces/data/share-workspace"
 import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { useQuery, useQueryClient } from "@tanstack/solid-query"
@@ -69,6 +69,11 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
       const workspace = shareableWorkspaces()?.find((entry) => entry.workspaceId === workspaceId)
       await registerUserHostedWorkspace({ workspaceId, ...(workspace ? { displayName: workspace.label } : {}) })
     }
+    await queryClient.invalidateQueries({ queryKey: SHARED_WORKSPACES_QUERY_KEY })
+    await remoteAccess.devices.refetch()
+  }
+  const unshareWorkspace = async (workspaceId: string) => {
+    await unregisterUserHostedWorkspace({ workspaceId })
     await queryClient.invalidateQueries({ queryKey: SHARED_WORKSPACES_QUERY_KEY })
     await remoteAccess.devices.refetch()
   }
@@ -199,6 +204,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                 devices={remoteAccess.devices.data ?? []}
                 shareableWorkspaces={shareableWorkspaces()}
                 onShare={shareWorkspaces}
+                onUnshare={unshareWorkspace}
                 shareLinkFor={shareLinkFor}
                 startAtLogin={remoteAccess.startAtLogin()}
                 onStartAtLoginChange={(enabled) => void remoteAccess.setStartAtLogin(enabled)}
