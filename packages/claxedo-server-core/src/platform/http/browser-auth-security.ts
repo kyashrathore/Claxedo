@@ -52,6 +52,10 @@ function appendVaryOrigin(context: Context) {
 function stampCredentialedCors(context: Context, origin: string) {
   context.header("access-control-allow-origin", origin)
   context.header("access-control-allow-credentials", "true")
+  // Lets the app read this response's resource timing (connect, TLS,
+  // request, response, protocol) instead of a single masked duration — the
+  // evidence that says WHERE a slow or hung request spent its time.
+  context.header("timing-allow-origin", origin)
   appendVaryOrigin(context)
 }
 

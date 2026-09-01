@@ -173,6 +173,9 @@ describe("workspace relay server", () => {
       },
     })
     expect(selfHostOrigin.headers.get("access-control-allow-origin")).toBe("https://selfhost.example.com")
+    // An admitted origin may read the timing breakdown of relay responses.
+    expect(selfHostOrigin.headers.get("timing-allow-origin")).toBe("https://selfhost.example.com")
+    expect(productOrigin.headers.get("timing-allow-origin")).toBeNull()
   })
 
   test("default CORS policy still allows product and localhost origins", async () => {

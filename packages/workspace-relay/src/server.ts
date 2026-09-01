@@ -1275,6 +1275,15 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
   const app = new Hono() as WorkspaceRelayApp
   const originAllowed = originMatcherFor(options)
 
+  // Resource timing for the app: an admitted origin may read the timing
+  // breakdown of every relay response, not just a masked duration.
+  app.use("*", async (c, next) => {
+    await next()
+    const origin = c.res.headers.get("access-control-allow-origin")
+    if (origin && origin !== "*" && !c.res.headers.has("timing-allow-origin")) {
+      c.res.headers.set("timing-allow-origin", origin)
+    }
+  })
   app.use("*", cors({
     origin: (origin) => {
       if (!origin) return undefined

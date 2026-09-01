@@ -280,6 +280,12 @@ describe("resource-closed hosted core app", () => {
     expect(preflight.headers.get("access-control-allow-origin")).toBe("https://app.test")
     expect(preflight.headers.get("access-control-allow-credentials")).toBe("true")
 
+    // The app may read resource timing for an admitted origin.
+    const read = await app.fetch(new Request("https://core.test/api/claxedo/auth/descriptor", {
+      headers: { origin: "https://app.test" },
+    }))
+    expect(read.headers.get("timing-allow-origin")).toBe("https://app.test")
+
     const mutation = (headers: Record<string, string>) => app.fetch(new Request(
       "https://core.test/api/workspace/create",
       { method: "POST", headers, body: "{}" },

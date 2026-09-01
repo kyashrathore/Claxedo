@@ -175,6 +175,15 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ),
     )
   }
+  // Resource timing for the app: whichever CORS path admitted the origin,
+  // the browser may also read this response's timing breakdown.
+  app.use(async (c, next) => {
+    await next()
+    const origin = c.res.headers.get("access-control-allow-origin")
+    if (origin && origin !== "*" && !c.res.headers.has("timing-allow-origin")) {
+      c.res.headers.set("timing-allow-origin", origin)
+    }
+  })
   app.use(
     unsignedLocalRequestGuard({
       mode: "hosted",
