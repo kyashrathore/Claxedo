@@ -604,6 +604,118 @@ describe("OpenCodeHarnessAdapter prompt-stream lifecycle", () => {
   })
 })
 
+describe("OpenCodeHarnessAdapter command channel", () => {
+  test("shell posts command, agent, and model to the session shell route", async () => {
+    const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
+    const prev = globalThis.fetch
+    const seen: Array<{ method: string; path: string; directory: string | null; body: unknown }> = []
+
+    globalThis.fetch = (async (input, init) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      const url = new URL(req.url)
+      seen.push({
+        method: req.method,
+        path: url.pathname,
+        directory: req.headers.get("x-opencode-directory"),
+        body: req.method === "POST" ? await req.json() : undefined,
+      })
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    try {
+      await adapter.shell("s1", {
+        command: "ls -la",
+        agent: "build",
+        model: { providerID: "opencode", modelID: "model" },
+        messageID: "msg-shell",
+      }, path.resolve("/work"))
+
+      expect(seen).toEqual([{
+        method: "POST",
+        path: "/session/s1/shell",
+        directory: path.resolve("/work"),
+        body: {
+          command: "ls -la",
+          agent: "build",
+          model: { providerID: "opencode", modelID: "model" },
+          messageID: "msg-shell",
+        },
+      }])
+    } finally {
+      globalThis.fetch = prev
+    }
+  })
+
+  test("shell omits model and messageID from the body when the caller did not supply them", async () => {
+    const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
+    const prev = globalThis.fetch
+    const seen: unknown[] = []
+
+    globalThis.fetch = (async (input, init) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      seen.push(req.method === "POST" ? await req.json() : undefined)
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    try {
+      await adapter.shell("s1", { command: "pwd", agent: "build" }, path.resolve("/work"))
+      expect(seen).toEqual([{ command: "pwd", agent: "build" }])
+    } finally {
+      globalThis.fetch = prev
+    }
+  })
+
+  test("summarize posts providerID, modelID, and auto to the session summarize route", async () => {
+    const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
+    const prev = globalThis.fetch
+    const seen: Array<{ method: string; path: string; directory: string | null; body: unknown }> = []
+
+    globalThis.fetch = (async (input, init) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      const url = new URL(req.url)
+      seen.push({
+        method: req.method,
+        path: url.pathname,
+        directory: req.headers.get("x-opencode-directory"),
+        body: req.method === "POST" ? await req.json() : undefined,
+      })
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    try {
+      await adapter.summarize("s1", { providerID: "opencode", modelID: "model", auto: true }, path.resolve("/work"))
+
+      expect(seen).toEqual([{
+        method: "POST",
+        path: "/session/s1/summarize",
+        directory: path.resolve("/work"),
+        body: { providerID: "opencode", modelID: "model", auto: true },
+      }])
+    } finally {
+      globalThis.fetch = prev
+    }
+  })
+
+  test("summarize omits auto from the body when the caller did not supply it", async () => {
+    const adapter = new OpenCodeHarnessAdapter("http://127.0.0.1:4096")
+    const prev = globalThis.fetch
+    const seen: unknown[] = []
+
+    globalThis.fetch = (async (input, init) => {
+      const req = input instanceof Request ? input : new Request(String(input), init)
+      seen.push(req.method === "POST" ? await req.json() : undefined)
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+
+    try {
+      await adapter.summarize("s1", { providerID: "opencode", modelID: "model" }, path.resolve("/work"))
+      expect(seen).toEqual([{ providerID: "opencode", modelID: "model" }])
+    } finally {
+      globalThis.fetch = prev
+    }
+  })
+})
+
 describe("OpenCodeHarnessAdapter external transport", () => {
   test("removes stale compression headers after fetch decompresses a response", async () => {
     const prev = globalThis.fetch

@@ -34,7 +34,7 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
 } from "../../index"
-import type { AgentHarnessAdapter } from "../../adapter-contract"
+import type { AgentHarnessAdapter, ShellCommandInput, SummarizeSessionInput } from "../../adapter-contract"
 import {
   AgentMessagePageError,
   type AgentMessagePage,
@@ -687,6 +687,33 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       method: "POST",
       headers: this.headers(directory),
       body: JSON.stringify({ command }),
+    }))
+  }
+
+  async shell(id: string, input: ShellCommandInput, directory: string): Promise<void> {
+    const request = await this.requestFn()
+    await request(OpenCodeHarnessAdapter.request(`/session/${id}/shell`, {
+      method: "POST",
+      headers: this.headers(directory),
+      body: JSON.stringify({
+        command: input.command,
+        agent: input.agent,
+        ...(input.model ? { model: input.model } : {}),
+        ...(input.messageID ? { messageID: input.messageID } : {}),
+      }),
+    }))
+  }
+
+  async summarize(id: string, input: SummarizeSessionInput, directory: string): Promise<void> {
+    const request = await this.requestFn()
+    await request(OpenCodeHarnessAdapter.request(`/session/${id}/summarize`, {
+      method: "POST",
+      headers: this.headers(directory),
+      body: JSON.stringify({
+        providerID: input.providerID,
+        modelID: input.modelID,
+        ...(input.auto !== undefined ? { auto: input.auto } : {}),
+      }),
     }))
   }
 

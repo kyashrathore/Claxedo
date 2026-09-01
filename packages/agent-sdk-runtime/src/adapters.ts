@@ -20,8 +20,12 @@ export type {
   SupportsQuestions,
   SupportsRevert,
   SupportsRuntimeConfig,
+  SupportsShell,
+  SupportsSummarize,
   SupportsTodos,
   SupportsUnrevert,
+  ShellCommandInput,
+  SummarizeSessionInput,
 } from "./adapter-contract"
 export { AgentMessagePageError } from "./message-page"
 export {
