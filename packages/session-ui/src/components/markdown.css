@@ -430,6 +430,24 @@
     margin: 1.5rem 0;
     display: block;
   }
+
+  /* Stable stand-in for an image that has not (or cannot be) loaded — a
+     fixed single-line box instead of the browser's alt-text/broken-glyph
+     flicker while streaming re-renders the block. */
+  [data-component="markdown-image-fallback"] {
+    display: block;
+    margin: 1.5rem 0;
+    padding: 8px 12px;
+    border: 0.5px solid var(--v2-border-border-base);
+    border-radius: var(--radius-sm);
+    background: var(--v2-background-bg-layer-01);
+    color: var(--v2-text-text-weak);
+    font-size: var(--font-size-small, 0.85em);
+    line-height: 1.4;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 body[data-new-layout] .ui-markdown {
