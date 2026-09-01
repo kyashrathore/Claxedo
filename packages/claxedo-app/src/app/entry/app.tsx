@@ -24,9 +24,11 @@ import { syncIconLibraryWithTheme } from "@/ui/icons/config"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Router, Route, Navigate, useLocation, useNavigate } from "@solidjs/router"
 import {
+  type Accessor,
   type Component,
   createEffect,
   createResource,
+  createRoot,
   createSignal,
   ErrorBoundary,
   For,
@@ -114,6 +116,24 @@ function waitForLayoutRevealFrame() {
     }
     if (typeof requestAnimationFrame === "function") requestAnimationFrame(done)
     setTimeout(done, typeof requestAnimationFrame === "function" ? LAYOUT_REVEAL_TIMEOUT_MS : 0)
+  })
+}
+
+/** Resolves with the first defined value `healthy` settles on, or `false` after `timeoutMs`. */
+function waitForHealthy(healthy: Accessor<boolean | undefined>, timeoutMs: number) {
+  return new Promise<boolean>((resolve) => {
+    createRoot((dispose) => {
+      const settle = (value: boolean) => {
+        clearTimeout(timer)
+        dispose()
+        resolve(value)
+      }
+      const timer = setTimeout(() => settle(false), timeoutMs)
+      createEffect(() => {
+        const value = healthy()
+        if (value !== undefined) settle(value)
+      })
+    })
   })
 }
 
@@ -221,6 +241,22 @@ function ConnectionGate(props: ParentProps) {
     const { http, type } = server.current
     const revealBeforeHealth = location.pathname.startsWith("/s/") || location.pathname.startsWith("/w/")
 
+    if (revealBeforeHealth) {
+      // Already reveals unconditionally below, so this only needs to learn
+      // LATER whether to fall back to background mode — the same question
+      // the recovery effect two functions down answers from `server.healthy()`.
+      // That accessor is `server.tsx`'s own continuous /global/health poll;
+      // running server-health.ts's /api/claxedo/health loop here too was a
+      // second boot-time prober asking the same "is the connection up"
+      // question this route never blocks paint on.
+      void waitForHealthy(server.healthy, 10_000).then((healthy) => {
+        if (!healthy) setMode("background")
+      })
+      await layoutReady
+      await waitForLayoutRevealFrame()
+      return true
+    }
+
     // Poll until healthy, or give up after 10s — then drop to background mode.
     // (Plain async replaces an Effect.gen loop + timeoutOrElse + ensuring.)
     const poll = (async () => {
@@ -231,14 +267,6 @@ function ConnectionGate(props: ParentProps) {
       }
     })()
     const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000))
-    if (revealBeforeHealth) {
-      void Promise.race([poll, timeout]).then((healthy) => {
-        if (!healthy) setMode("background")
-      })
-      await layoutReady
-      await waitForLayoutRevealFrame()
-      return true
-    }
     const healthy = await Promise.race([poll, timeout])
     if (!healthy) {
       setMode("background")

@@ -26,6 +26,7 @@ import { useDirectorySessionCacheActions } from "../../features/session/data/syn
 import { useSessionInventoryActions } from "../../features/session/data/sync/session-inventory"
 import { useGlobalShellReady } from "../integrations/sync/global-sync-boundary"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { runIdleWarmup } from "@/app/boot/data/bootstrap"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
@@ -427,11 +428,11 @@ function createLayoutContextValue() {
       for (const { worktree, color } of plan.assignments) setColors(worktree, color)
       for (const { worktree, color } of plan.metaUpserts) upsertProjectMeta(worktree, { icon: { color } })
       for (const { worktree, id, color } of plan.remoteUpdates) {
-        void globalSdk.client.project
+        runIdleWarmup(() => globalSdk.client.project
           .update({ projectID: id, directory: worktree, icon: { color } })
           .catch(() => {
             if (colorRequested.get(worktree) === color) colorRequested.delete(worktree)
-          })
+          }).then(() => undefined))
       }
     })
 

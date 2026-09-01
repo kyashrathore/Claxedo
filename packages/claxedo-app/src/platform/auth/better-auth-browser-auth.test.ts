@@ -28,7 +28,7 @@ const descriptor = {
 }
 
 describe("Better Auth browser adapter", () => {
-  test("hydrates the cookie session and normalized profile only after validating the live descriptor", async () => {
+  test("hydrates the cookie session and normalized profile, validated against the live descriptor", async () => {
     const clientOptions: unknown[] = []
     const adapter = createBetterAuthBrowserAdapter({
       request: async () => Response.json(descriptor),
@@ -70,6 +70,49 @@ describe("Better Auth browser adapter", () => {
       primaryEmailAddress: { emailAddress: "ada@example.test" },
     })
     expect(auth.isSignedIn()).toBe(true)
+  })
+
+  // Falsifier for the boot request graph's serial descriptor→get-session
+  // chain: the descriptor only validates configuration, it supplies nothing
+  // the session client needs, so `initialize` fires both requests together.
+  // If it reverted to chaining them, one side's gate would never open before
+  // the other request is made, and this test would hang instead of resolving.
+  test("initialize validates the descriptor and hydrates the session concurrently", async () => {
+    const started: string[] = []
+    let openDescriptorGate: () => void = () => {}
+    let openSessionGate: () => void = () => {}
+    const descriptorGate = new Promise<void>((resolve) => { openDescriptorGate = resolve })
+    const sessionGate = new Promise<void>((resolve) => { openSessionGate = resolve })
+    const adapter = createBetterAuthBrowserAdapter({
+      request: async () => {
+        started.push("descriptor")
+        openDescriptorGate()
+        await sessionGate
+        return Response.json(descriptor)
+      },
+      createClient: () => ({
+        getSession: async () => {
+          started.push("session")
+          openSessionGate()
+          await descriptorGate
+          return {
+            data: { session: { id: "session_1" }, user: { id: "user_1" } },
+            error: null,
+          }
+        },
+        signIn: {
+          social: async () => ({ data: null, error: null }),
+          email: async () => ({ data: null, error: null }),
+        },
+        signUp: { email: async () => ({ data: null, error: null }) },
+        signOut: async () => ({ data: null, error: null }),
+      }),
+    })
+
+    await adapter.initialize({ apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test" })
+
+    expect(started.sort()).toEqual(["descriptor", "session"])
+    expect(adapter.useAuth().isSignedIn()).toBe(true)
   })
 
   test("pins Better Auth 1.7.1 origin baseURL routing and social redirect response semantics", async () => {

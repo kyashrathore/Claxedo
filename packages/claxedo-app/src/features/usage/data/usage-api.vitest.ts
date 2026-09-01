@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { fileURLToPath } from "node:url"
 import { beforeEach, describe, expect, test, vi } from "vitest"
 
 const authFetch = vi.fn()
@@ -49,5 +51,19 @@ describe("usage API", () => {
     await expect(syncUsageOutbox()).resolves.toMatchObject({ attempted: 1, pending: 0 })
     expect(new URL(authFetch.mock.calls[0]![0]).pathname).toBe("/api/claxedo/usage/sync")
     expect(authFetch.mock.calls[0]![1]).toMatchObject({ method: "POST" })
+  })
+
+  // Falsifier for a duplicated usage-outbox wakeup: it has no UI dependency,
+  // so it moved from the app shell's own mount (behind the lazy
+  // app-shell-bootstrap chunk) to `RuntimeProviders`, which mounts as soon as
+  // the provider tree does. One install site, one cleanup — never both.
+  test("installUsageOutboxWakeups has exactly one mount site: RuntimeProviders", () => {
+    const read = (relativePath: string) =>
+      readFileSync(fileURLToPath(new URL(relativePath, import.meta.url)), "utf8")
+    const runtimeProviders = read("../../../app/entry/runtime-providers.tsx")
+    const appShell = read("../../../app/app-shell.tsx")
+
+    expect(runtimeProviders).toContain("installUsageOutboxWakeups()")
+    expect(appShell).not.toContain("installUsageOutboxWakeups")
   })
 })

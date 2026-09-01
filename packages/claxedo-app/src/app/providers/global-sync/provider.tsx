@@ -1,7 +1,7 @@
 import { type Project, createOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import type { InitError } from "@/app/routes/error"
-import { createContext, useContext, onCleanup, onMount, createSignal, type ParentProps, Switch, Match } from "solid-js"
+import { createContext, useContext, onCleanup, onMount, createSignal, type ParentProps } from "solid-js"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
@@ -779,13 +779,12 @@ const GlobalSyncContext = createContext<ReturnType<typeof createGlobalSync>>()
 
 export function GlobalSyncProvider(props: ParentProps<{ flushNavigationPersistence: () => Promise<void> }>) {
   const value = createGlobalSync({ flushNavigationPersistence: props.flushNavigationPersistence })
-  return (
-    <Switch>
-      <Match when={value.ready}>
-        <GlobalSyncContext.Provider value={value}>{props.children}</GlobalSyncContext.Provider>
-      </Match>
-    </Switch>
-  )
+  // Children mount immediately instead of waiting on `value.ready` (the
+  // bootstrap fetch, already kicked off unconditionally above). Readers that
+  // care use `useGlobalShellReady()` (layout.tsx, app-shell-state.ts); every
+  // other reader goes through TanStack Query, which handles a pending first
+  // fetch on its own. This removed a boot dependency stage with no real data need.
+  return <GlobalSyncContext.Provider value={value}>{props.children}</GlobalSyncContext.Provider>
 }
 
 export function useGlobalSync() {

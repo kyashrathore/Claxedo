@@ -1,6 +1,7 @@
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
-import { createEffect, createSignal, type Component, type ParentProps } from "solid-js"
+import { createEffect, createSignal, onCleanup, onMount, type Component, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
+import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
 import { GlobalSyncProvider } from "@/app/providers/global-sync/provider"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
 import { LocalWorkspaceAutoShareProvider } from "@/features/workspaces/data/auto-share-local-workspaces"
@@ -63,6 +64,11 @@ export function RuntimeProviders(props: ParentProps) {
     scope: () => principalDataScope(principal()),
   })
   installPrincipalDataIsolation({ principal })
+  // No UI reads its result, so this no longer waits for the app shell chunk
+  // (previously mounted from inside `ClaxedoAppShellContent`, gated behind
+  // the lazy app-shell-bootstrap import above): it starts as soon as the
+  // provider tree itself mounts, alongside the rest of wave 1.
+  onMount(() => onCleanup(installUsageOutboxWakeups()))
   let didSignalPaint = false
 
   createEffect(() => {

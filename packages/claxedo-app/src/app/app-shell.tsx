@@ -11,7 +11,7 @@
 
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import "./styles/app-shell.css"
-import { createEffect, createMemo, lazy, onCleanup, onMount, type ParentProps } from "solid-js"
+import { createEffect, createMemo, lazy, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { AppShellLayout } from "./app-shell-layout"
 
@@ -29,7 +29,6 @@ import {
   useFocusedSessionRenderMetrics,
 } from "./integrations/process-diagnostics-context"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
-import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 import { useGlobalSessionAccessRevocations } from "@/app/integrations/sync/global-sync-boundary"
 
@@ -46,7 +45,6 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  onMount(() => onCleanup(installUsageOutboxWakeups()))
   const shell = useAppShellState({
     params,
     pathname: () => location.pathname,

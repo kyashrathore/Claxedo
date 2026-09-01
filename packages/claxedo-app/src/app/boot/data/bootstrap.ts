@@ -172,7 +172,17 @@ function postPaint(task: () => void) {
   setTimeout(task, 0)
 }
 
-function runIdleWarmup(task: () => Promise<void>) {
+/**
+ * Runs `task` off the render-blocking path: on the browser's idle callback
+ * where available, otherwise a macrotask tick. This module's own directory
+ * warmup (provider/vcs prefetch, below) uses it for exactly the same reason
+ * any other post-boot write should: the result was already applied locally,
+ * so the network call is bookkeeping, not something the first paint needs.
+ * Exported so other boot-adjacent callers (e.g. `layout.tsx`'s cold-boot
+ * project-color persistence) share the one scheduling policy instead of
+ * each re-implementing `requestIdleCallback` with its own fallback.
+ */
+export function runIdleWarmup(task: () => Promise<void>) {
   const run = () => {
     void task().catch(() => {})
   }

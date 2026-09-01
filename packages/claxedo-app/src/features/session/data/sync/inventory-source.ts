@@ -249,9 +249,15 @@ export function createSignedInventorySource(input: {
     directory: ProjectDirectory
     kind?: SignedWorkspaceKind
   }) {
-    // Signed inventory has one authoritative producer. Runtime lists are not
-    // participant-filtered and cached authority must never survive revocation.
-    return await requestControlPlaneSessions(sessionInput.workspaceId)
+    // This is a display read (snapshot rows, directory session lists), so it
+    // shares the deduping cache: the same workspace is asked for by both the
+    // signed-workspace snapshot and each directory's own bootstrap within the
+    // same boot window, and without the shared cache that turns into one
+    // request per caller instead of one per workspace. The security boundary
+    // is `hasControlPlaneSessionAccess`, not this list — it calls
+    // `requestControlPlaneSessions` directly so a revoke is never masked by a
+    // stale cache entry.
+    return await fetchControlPlaneSessions(sessionInput.workspaceId)
   }
 
   async function requestControlPlaneSessions(workspaceId: string) {
@@ -348,10 +354,14 @@ export function createSignedInventorySource(input: {
   }
 
   async function fetchSignedWorkspaceSnapshotUncached() {
-    const workspaces = [
-      ...await fetchControlPlaneWorkspaces("cloud"),
-      ...await fetchControlPlaneWorkspaces("user-hosted"),
-    ]
+    // Cloud and user-hosted are independent access lists on independent
+    // routes/operations — nothing here reads one to form the other — so they
+    // run concurrently instead of paying two serial round trips.
+    const [cloudWorkspaces, userHostedWorkspaces] = await Promise.all([
+      fetchControlPlaneWorkspaces("cloud"),
+      fetchControlPlaneWorkspaces("user-hosted"),
+    ])
+    const workspaces = [...cloudWorkspaces, ...userHostedWorkspaces]
     const sessionsByWorkspace = Object.fromEntries(await Promise.all(workspaces.flatMap((workspace) => {
       const row = rec(workspace)
       const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)

@@ -179,17 +179,28 @@ export function createBetterAuthBrowserAdapter(
       }
       configuredOrigins = nextOrigins
       appOrigin = nextOrigins.appOrigin
-      const live = await loadBrowserAuthDescriptor({
-        selectedAdapter: "better-auth",
-        ...nextOrigins,
-        ...(input.request ? { request: input.request } : {}),
-      })
-      setDescriptor(live)
+      // The descriptor call validates the live configuration (adapter,
+      // deployment, origins) against this build's expectations; it is not
+      // where the session client gets its base URL — `createClient` below
+      // only needs `nextOrigins.apiOrigin`, known before either request is
+      // made. So the descriptor fetch and the session hydration below no
+      // longer chain: they are two independent reads of the same origins,
+      // and firing them together turns two round trips gating first paint
+      // into one. A bad descriptor still fails boot the same way — it
+      // rejects this same `Promise.all`, same as before.
       client = (input.createClient ?? productionClientFactory)({
         baseURL: nextOrigins.apiOrigin,
         fetchOptions: { credentials: "include" },
       })
-      await hydrateSession()
+      const [live] = await Promise.all([
+        loadBrowserAuthDescriptor({
+          selectedAdapter: "better-auth",
+          ...nextOrigins,
+          ...(input.request ? { request: input.request } : {}),
+        }),
+        hydrateSession(),
+      ])
+      setDescriptor(live)
       setLoading(false)
     },
     useAuth() {

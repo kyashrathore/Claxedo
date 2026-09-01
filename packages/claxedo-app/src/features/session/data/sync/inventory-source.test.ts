@@ -302,6 +302,42 @@ describe("global sync inventory source helpers", () => {
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")).toBeUndefined()
   })
 
+  // Falsifier for the boot request graph's serial cloud→user-hosted pair: the
+  // two lists are independent reads (neither's result feeds the other), so a
+  // serial `await` chain here is pure round-trip latency. If the snapshot
+  // reverted to sequencing them, "user-hosted" would never start until
+  // "cloud" first awaits this test's gate, and the test would time out.
+  test("fetchSignedWorkspaceSnapshot requests cloud and user-hosted workspaces concurrently", async () => {
+    const started: string[] = []
+    let openCloudGate: () => void = () => {}
+    let openUserHostedGate: () => void = () => {}
+    const cloudGate = new Promise<void>((resolve) => { openCloudGate = resolve })
+    const userHostedGate = new Promise<void>((resolve) => { openUserHostedGate = resolve })
+    const source = createSignedInventorySource({
+      queryClient: immediateQueryClient(),
+      baseUrl: () => "https://app.test",
+      owner: () => "user_1",
+      authFetch: async (resource) => {
+        const access = new URL(String(resource)).searchParams.get("access")
+        started.push(access!)
+        if (access === "cloud") {
+          openCloudGate()
+          await userHostedGate
+        } else {
+          openUserHostedGate()
+          await cloudGate
+        }
+        return jsonResponse({ workspaces: [] })
+      },
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+    })
+
+    await source.fetchSignedWorkspaceSnapshot()
+
+    expect(started.sort()).toEqual(["cloud", "user-hosted"])
+  })
+
   test("signed directory fetch uses known workspace metadata before resolving runtime", async () => {
     let resolveCalls = 0
     const source = createSignedInventorySource({
@@ -397,17 +433,48 @@ describe("global sync inventory source helpers", () => {
       .rejects.toThrow("Control-plane session list failed with 503")
   })
 
+  // Falsifier for the boot request graph's ×8 control-plane session fan-out
+  // (4 workspaces asked for once by the signed-workspace snapshot and again
+  // by each directory's own bootstrap): `fetchSignedWorkspaceSessions` is the
+  // shared helper behind both callers, so routing it through
+  // `fetchControlPlaneSessions` collapses the pair into the one request the
+  // dedupe cache already keys by workspace id.
+  test("signed workspace session list shares the control-plane dedupe cache", async () => {
+    let requests = 0
+    const source = createSignedInventorySource({
+      queryClient: new QueryClient(),
+      baseUrl: () => "https://app.test",
+      owner: () => "signed:user_1",
+      authFetch: async () => {
+        requests++
+        return jsonResponse({ sessions: [{ session_id: "ses_shared" }] })
+      },
+      signedWorkspaceInfo: () => undefined,
+      resolveWorkspace: async () => undefined,
+    })
+
+    // One caller reads through the named cache entry point, the other
+    // through the helper `fetchSignedDirectorySessions`/the snapshot use —
+    // both resolve to the same workspace id and must land on one fetch.
+    const [viaSessions, viaWorkspace] = await Promise.all([
+      source.fetchControlPlaneSessions("ws_1"),
+      source.fetchSignedWorkspaceSessions({ workspaceId: "ws_1", directory: "workspace:ws_1", kind: "cloud" }),
+    ])
+
+    expect(requests).toBe(1)
+    expect(viaSessions).toEqual(viaWorkspace)
+  })
+
   test("signed workspace refresh bypasses cached authority after revocation", async () => {
     let authorized = true
-    let cached: unknown
     const source = createSignedInventorySource({
-      queryClient: {
-        fetchQuery: async (options: { queryFn: () => Promise<unknown> }) => {
-          if (cached !== undefined) return cached
-          cached = await options.queryFn()
-          return cached
-        },
-      } as never,
+      // A real query client, matching production: `fetchControlPlaneSessions`
+      // (used by the display-facing session list above) is allowed to reuse
+      // this cache. `hasControlPlaneSessionAccess` is the actual authority
+      // check and must never read it — it calls the network directly, so a
+      // revoke lands on its very next call even while the display cache is
+      // still warm.
+      queryClient: new QueryClient(),
       baseUrl: () => "https://app.test",
       owner: () => "signed:user_1",
       authFetch: async () => jsonResponse({
@@ -419,11 +486,7 @@ describe("global sync inventory source helpers", () => {
 
     expect(await source.fetchControlPlaneSessions("ws_1")).toHaveLength(1)
     authorized = false
-    expect(await source.fetchSignedWorkspaceSessions({
-      workspaceId: "ws_1",
-      directory: "workspace:ws_1",
-      kind: "cloud",
-    })).toEqual([])
+    expect(await source.hasControlPlaneSessionAccess({ workspaceId: "ws_1", sessionId: "ses_shared" })).toBe(false)
   })
 
   test("inventory page source uses local control sessions for loopback global pages", async () => {
