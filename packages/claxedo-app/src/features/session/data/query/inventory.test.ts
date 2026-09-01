@@ -142,6 +142,48 @@ describe("signedInventoryProjects", () => {
       time: { created: 1, updated: 10 },
     }])
   })
+
+  test("a signed echo of a locally shared workspace annotates nothing and replaces nothing", () => {
+    // Sharing a LOCAL workspace registers it at the control plane under the
+    // SAME id; the next signed snapshot echoes it back with `/workspace` as a
+    // placeholder directory. The echo must not shadow the local entry, add a
+    // phantom sandbox, or materialize a duplicate project.
+    const local = [{
+      id: "15e0fa38-1992-4636-bb60-665a57cd43df",
+      name: "opencode",
+      worktree: "/Users/me/opencode",
+      sandboxes: ["/Users/me/opencode"],
+      time: { created: 5, updated: 5 },
+      workspaces: {
+        "/Users/me/opencode": {
+          id: "15e0fa38-1992-4636-bb60-665a57cd43df",
+          kind: "local",
+          directory: "/Users/me/opencode",
+        },
+      },
+    }]
+    const echo = signedInventoryProjects({
+      workspaces: [{
+        workspace_id: "15e0fa38-1992-4636-bb60-665a57cd43df",
+        display_name: "opencode",
+        access: "user-hosted",
+        created_at: 1,
+        updated_at: 10,
+      }],
+    })
+
+    const merged = mergeSignedInventoryProjects(local as never, echo)
+    expect(merged).toHaveLength(1)
+    expect(merged[0]).toMatchObject({
+      name: "opencode",
+      worktree: "/Users/me/opencode",
+      sandboxes: ["/Users/me/opencode"],
+    })
+    expect(Object.keys((merged[0] as { workspaces?: Record<string, unknown> }).workspaces ?? {}))
+      .toEqual(["/Users/me/opencode"])
+    expect((merged[0] as { workspaces: Record<string, { kind?: string }> }).workspaces["/Users/me/opencode"]?.kind)
+      .toBe("local")
+  })
 })
 
 describe("signedInventoryProjects project naming", () => {

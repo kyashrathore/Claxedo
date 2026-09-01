@@ -1,6 +1,6 @@
 import { workspaceRoute } from "@/platform/identity/route"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
-import { isFilesystemDirectory, isWorkspaceIdRef } from "@/platform/identity/legacy-resolver"
+import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 
 type ProjectWorkspace = {
@@ -33,13 +33,10 @@ export function localWorkspaceShareTarget(input: {
   const directory = row?.directory ?? (input.directory === input.project.worktree ? input.project.worktree : undefined)
   const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
   if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return
-  if (row?.kind === "cloud") return
-  // A signed `ws_*` id is already a hosted workspace — a project row left
-  // behind by opening a web workspace (worktree `/workspace`, the container
-  // path). It has no local directory on this machine to publish, and ticking
-  // it can only fail; the local register route rejects it for the same
-  // reason (`local_host_link_local_workspace_required`).
-  if (isWorkspaceIdRef(workspaceId)) return
+  // Anything the engine marks non-local (cloud OR user-hosted) is a remote
+  // representation — including the control plane's echo of this machine's own
+  // registration — never a directory this machine can publish.
+  if (row?.kind && row.kind !== "local") return
   return { workspaceId, directory }
 }
 

@@ -128,13 +128,46 @@ export function signedInventoryProjects(input: { workspaces: unknown[] }) {
 
 export function mergeSignedInventoryProjects(existing: Project[], signed: Project[]) {
   if (signed.length === 0) return existing
+  // Every workspace id and directory the LOCAL engine already carries, across
+  // every project. A signed row about one of these is an echo of this
+  // machine's own registration (sharing a local workspace creates a
+  // control-plane row under the same id, with `/workspace` as its remote
+  // placeholder), not a remote workspace to display. Letting echoes through
+  // rendered phantom "/workspace" rows in the rail and the share list while
+  // the real local project's entries were shadowed. Signed keys arrive as
+  // `workspace:<id>` refs, so matching strips that prefix.
+  const localIds = new Set<string>()
+  for (const project of existing) {
+    localIds.add(project.id)
+    const workspaces = (project as Project & { workspaces?: Record<string, unknown> }).workspaces ?? {}
+    for (const [key, workspace] of Object.entries(workspaces)) {
+      localIds.add(key)
+      const entry = workspace as { id?: string; workspace_id?: string; workspaceId?: string }
+      for (const id of [entry.id, entry.workspace_id, entry.workspaceId]) if (id) localIds.add(id)
+    }
+  }
+  const locallyKnown = (ref: string) => localIds.has(ref) || localIds.has(ref.replace(/^workspace:/, ""))
+  const signedOnly = (project: Project) => {
+    const workspaces = (project as Project & { workspaces?: Record<string, unknown> }).workspaces ?? {}
+    const kept = Object.fromEntries(
+      Object.entries(workspaces).filter(([key, workspace]) => {
+        const entry = workspace as { id?: string; workspace_id?: string; workspaceId?: string }
+        return !locallyKnown(key) && !(entry.id && locallyKnown(entry.id))
+      }),
+    )
+    return {
+      workspaces: kept,
+      sandboxes: (project.sandboxes ?? []).filter((sandbox) => !locallyKnown(sandbox)),
+    }
+  }
+
   const signedByID = new Map(signed.map((project) => [project.id, project]))
   const seen = new Set<string>()
   const merged = existing.map((project) => {
     const signedProject = signedByID.get(project.id)
     if (!signedProject) return project
     seen.add(project.id)
-    const signedWorkspaces = (signedProject as Project & { workspaces?: Record<string, unknown> }).workspaces ?? {}
+    const additions = signedOnly(signedProject)
     const projectWorkspaces = (project as Project & { workspaces?: Record<string, unknown> }).workspaces ?? {}
     return {
       ...project,
@@ -143,10 +176,10 @@ export function mergeSignedInventoryProjects(existing: Project[], signed: Projec
       // id is a present-but-meaningless string that `??` happily preserves —
       // so a real repo-derived name arriving on the signed side lost to it.
       name: (project.name && project.name !== project.id ? project.name : undefined) ?? signedProject.name,
-      sandboxes: [...new Set([...(project.sandboxes ?? []), ...(signedProject.sandboxes ?? [])])],
+      sandboxes: [...new Set([...(project.sandboxes ?? []), ...additions.sandboxes])],
       workspaces: {
         ...projectWorkspaces,
-        ...signedWorkspaces,
+        ...additions.workspaces,
       },
       time: {
         created: Math.min(project.time?.created ?? signedProject.time.created, signedProject.time.created),
@@ -157,7 +190,15 @@ export function mergeSignedInventoryProjects(existing: Project[], signed: Projec
   })
   return [
     ...merged,
-    ...signed.filter((project) => !seen.has(project.id)),
+    // Signed projects this machine has no local counterpart for — minus the
+    // ones that are ENTIRELY echoes of local workspaces, which would render
+    // as duplicate "/workspace" projects beside the real local one.
+    ...signed.flatMap((project) => {
+      if (seen.has(project.id)) return []
+      const additions = signedOnly(project)
+      if (Object.keys(additions.workspaces).length === 0) return []
+      return [{ ...project, workspaces: additions.workspaces, sandboxes: additions.sandboxes }]
+    }),
   ]
 }
 
