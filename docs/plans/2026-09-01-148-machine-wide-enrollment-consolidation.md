@@ -254,3 +254,59 @@ uniqueness back.
    reconciliation (P1s); revocation cascades assignments (P2); share success
    gates on the ack (P1); the spike's end-to-end must include a real relay
    round trip, not just target resolution.
+
+---
+
+## Executed (2026-09-01)
+
+The consolidation shipped, and the hard cut with it: releases 33–35 on
+staging carry the machine-wide grain in all three authority adapters, the
+assignment routes, the relay-target resolver, the desktop/CLI/self-host
+clients, and migration `0015` dropping `local_host_links` and
+`host_attestation_challenges` from the live database. The repo-wide sweep is
+clean apart from the historical migrations that created those tables.
+
+Proven live: a browser on the public internet reached this laptop's workspace
+runtime through Cloudflare and the relay —
+`{"ok":true,"status":"ready","service":"workspace-runtime"}` — with the
+machine enrolled, both workspaces assigned and acked, and the lease renewing
+every ~20s.
+
+### What the plan did not anticipate
+
+Every remaining failure was a seam whose two sides were written apart, and
+none were visible to unit tests. Recorded here because the pattern, not the
+individual bugs, is what a future migration should expect:
+
+- The daemon's serving route validated a locally invented credential shape
+  while the control plane sent the signer's result, so **every real ack was
+  rejected 400** and no tunnel ever opened. Now pinned to
+  `HostTunnelTokenSignerResult` at compile time.
+- The tunnel replayed the remote caller's headers onto its own loopback
+  request; Cloudflare's `cf-connecting-ip`/`x-forwarded-*` and the browser's
+  `Origin` each independently made a genuinely local request look proxied to
+  the daemon's unsigned-local gate. Fixed for HTTP **and** the WebSocket
+  upgrade through one seam.
+- Bootstrap awaited three control-plane round trips inside a 10s budget on an
+  edge that stalls ~12s. Bootstrap now means "alive with an identity";
+  enrollment has its own 45s budget.
+- Serving outlived its credential, so the desktop claimed "Serving 2
+  workspaces" while the control plane answered 409 and a phone was correctly
+  told the host was offline. Serving is now leased to `tokenExpiresAt`.
+- Release 33's browser bundle shipped broken — its artifact gate **failed and
+  was overridden**. The deployed app loaded every asset, threw no errors and
+  rendered nothing. Do not proceed past that gate.
+- Boot awaited auth initialisation unbounded, so a stalled `get-session`
+  produced an infinite spinner with no error and no recovery. Bounded at 20s
+  into the startup-failure panel.
+- A ~2s deploy 503 permanently un-published the machine through a five-link
+  cascade ending in a Clerk-era reading of `invalid_bearer_token`. See
+  `reference_transient_auth_blip_cascade` in session memory; all five links
+  are fixed.
+
+### Not yet verified
+
+The workspace rendering in the hosted app end to end. The transport is proven
+(the health round trip above), but the desktop's refresh grant died during the
+token-rotation incident, so a fresh interactive sign-in is required before the
+final UI acceptance can run.
