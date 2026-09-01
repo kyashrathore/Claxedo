@@ -2,7 +2,9 @@ import {
   oauthProviderAuthServerMetadata,
 } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
+import { Hono } from "hono"
 import { AuthenticationError, type AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
+import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
 import { createBetterAuthD1AuthenticationEvidenceResolver } from "./better-auth-d1-authentication-evidence"
 import { BETTER_AUTH_NATIVE_SCOPES, betterAuthNativeRevocation, createBetterAuthD1Foundation } from "./better-auth-d1-foundation"
@@ -12,16 +14,25 @@ import {
   type AuthEmailMessage,
 } from "./better-auth-configuration"
 import { betterAuthNativeResource } from "./better-auth-native-clients"
+import { createD1CoreAuthority } from "../../authority/adapters/d1/core-authority"
+import { createD1UserHostedTargetResolver } from "../../authority/adapters/d1/user-hosted-relay-target"
+import type { ControlPlaneServices } from "../../authority/services"
+import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
+import { HostedWorkspaceRoutes } from "../../routes/hosted/workspace"
 
 const API_ORIGIN = "https://api.claxedo.test"
 const APP_ORIGIN = "https://app.claxedo.test"
 const SECRET = "unit-1-better-auth-d1-spike-secret-that-is-long-enough"
 const INTROSPECTION_SECRET = "test-introspection-secret-that-is-long-enough"
+const DEPLOYMENT_ID = "workerd-auth-evidence-test"
+const RELAY_URL = "https://relay.claxedo.test"
 
-type Env = { AUTH_DB: D1Database }
+type Env = { AUTH_DB: D1Database; CONTROL_PLANE_DB: D1Database }
 
 let auth: ReturnType<typeof createBetterAuthD1Foundation> | undefined
 let requestAuthentication: ReturnType<typeof createBetterAuthD1RequestAuthenticationAdapter> | undefined
+let coreAuthority: ReturnType<typeof createD1CoreAuthority> | undefined
+let controlPlane: Hono | undefined
 let lastEmail: AuthEmailMessage | undefined
 
 const configuration = resolveBetterAuthConfiguration({
@@ -57,11 +68,24 @@ function authentication(env: Env) {
   }))
 }
 
+/**
+ * The REAL D1 control-plane authority over CONTROL_PLANE_DB — the same
+ * `createD1CoreAuthority` composition the deployed Worker uses, so the spike's
+ * host-access flow exercises real principals, real signature verification, and
+ * real routing state rather than a stub.
+ */
+function controlPlaneAuthority(env: Env) {
+  return (coreAuthority ??= createD1CoreAuthority(env.CONTROL_PLANE_DB, {
+    deploymentId: DEPLOYMENT_ID,
+    product: { kind: "claxedo-hosted" },
+  }))
+}
+
 function controlPlaneAuthentication(env: Env) {
   const instance = authentication(env)
   const descriptor = {
     adapter: "better-auth",
-    deploymentId: "workerd-auth-evidence-test",
+    deploymentId: DEPLOYMENT_ID,
     configurationVersion: "auth-evidence-v1",
     expiresAt: 4_102_444_800_000,
     issuer: `${API_ORIGIN}/api/auth`,
@@ -111,12 +135,50 @@ function controlPlaneAuthentication(env: Env) {
       clientSecret: INTROSPECTION_SECRET,
     },
     resolveAuthenticationEvidence: createBetterAuthD1AuthenticationEvidenceResolver(env.AUTH_DB),
-    resolveIdentity: async (identity) => ({
-      state: "active",
-      userId: `application:${identity.subject}`,
-      actorId: `human:${identity.subject}`,
-    }),
+    // The production wiring: an authenticated Better Auth identity resolves to
+    // (and on first sight provisions) its D1 control-plane principal, so the
+    // host-access routes below act on real users/actors rows.
+    resolveIdentity: async (identity) => controlPlaneAuthority(env).ensureApplicationIdentity(identity),
   }))
+}
+
+/**
+ * The machine-sharing control plane, mounted at its REAL paths: machine-wide
+ * enrollment (`/api/claxedo/host/enrollments/*`) and owner assignment
+ * (`/api/workspace/:id/host-assignment`), authenticated by the same Better
+ * Auth adapter the rest of the Worker uses, over the same D1 authority.
+ *
+ * `/__test/relay-target` exposes the service-side routing read
+ * (`createD1UserHostedTargetResolver`) so the spike can assert the fact the
+ * relay would act on: a workspace routes to a host only while it is
+ * owner-assigned AND inside the machine's heartbeat-acked served set AND the
+ * enrollment lease is live. No `deploymentId` filter here: the hosted product
+ * policy stamps personal orgs with a NULL deployment id.
+ */
+function controlPlaneApp(env: Env) {
+  if (controlPlane) return controlPlane
+  const services = {
+    authority: controlPlaneAuthority(env),
+    sandbox: {},
+    telemetry: { capture() {} },
+  } as unknown as ControlPlaneServices
+  const hostTunnelTokenSigner: HostTunnelTokenSigner = async (input) => ({
+    hostTunnelToken: `htt-${input.hostId}:${[...input.workspaceIds].sort().join("+")}`,
+    tokenExpiresAt: 4_102_444_800_000,
+    jti: `jti-${crypto.randomUUID()}`,
+  })
+  const options = {
+    authentication: controlPlaneAuthentication(env),
+    relayUrl: RELAY_URL,
+    hostTunnelTokenSigner,
+  }
+  const resolveRelayTarget = createD1UserHostedTargetResolver(env.CONTROL_PLANE_DB)
+  return (controlPlane = new Hono()
+    .route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, options))
+    .route("/api/workspace", HostedWorkspaceRoutes(services, options))
+    .get("/__test/relay-target", async (context) =>
+      context.json(await resolveRelayTarget(context.req.query("workspaceId") ?? "")),
+    ))
 }
 
 function withCors(request: Request, response: Response) {
@@ -139,6 +201,14 @@ export default {
       return recipient && lastEmail?.recipient === recipient
         ? Response.json(lastEmail)
         : new Response("not found", { status: 404 })
+    }
+
+    if (
+      pathname.startsWith("/api/claxedo/host/enrollments")
+      || pathname.startsWith("/api/workspace")
+      || pathname === "/__test/relay-target"
+    ) {
+      return controlPlaneApp(env).fetch(request)
     }
 
     if (pathname === "/__test/authenticate" && request.method === "GET") {

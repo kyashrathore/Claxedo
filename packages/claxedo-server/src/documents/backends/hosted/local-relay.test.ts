@@ -270,7 +270,7 @@ describe("hosted local document relay", () => {
               backing: "local-worktree",
             },
           })),
-          activeLocalHostLink: vi.fn(async () => (active ? { active: true, host_id: "host_1" } : { active: false })),
+          activeWorkspaceHost: vi.fn(async () => (active ? { active: true, host_id: "host_1" } : { active: false })),
         },
         relay: {
           provider: {
@@ -483,7 +483,7 @@ async function relayFixture() {
             backing: "local-worktree",
           },
         })),
-        activeLocalHostLink: vi.fn(async () => ({ active: true, host_id: "host_1" })),
+        activeWorkspaceHost: vi.fn(async () => ({ active: true, host_id: "host_1" })),
       },
       relay: { provider: {
         mintRuntimeAccessToken: vi.fn(async () => ({ token: "runtime-token", expiresAt: Date.now() + 300_000 })),

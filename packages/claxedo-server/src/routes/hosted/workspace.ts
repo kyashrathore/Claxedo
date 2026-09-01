@@ -1,22 +1,12 @@
 /**
- * Hosted (Cloudflare Worker) user-hosted workspace control-plane routes.
+ * Hosted workspace routes.
  *
- * This is the Worker-side adapter over the shared, runtime-neutral logic in
- * `routes/workspace-user-hosted.ts` (the same module the local Node server uses).
- * It imports no disk store, host identity, supervisor, or tunnel.
- *
- * The one genuine behavioural difference from the local server: the host keypair
- * is owned by the CLI, not the server. So register/heartbeat are CLIENT-SIGNED,
- * via a two-step flow:
- *
- *   1. POST /:id/user-hosted/challenge → return a signing challenge. Never
- *      mutates the workspace — registration waits for host proof.
- *   2. CLI signs (workspaceId, hostId, challengeId, nonce) with its local key.
- *   3. POST /:id/user-hosted/register  → verify the signature + record the link
- *      (Convex), THEN register the workspace for sharing, and mint a Host
- *      Tunnel Token. Never starts the tunnel — the CLI does.
- *   4. POST /:id/user-hosted/heartbeat → client-signed; refresh + re-mint HTT.
- *   5. POST /:id/user-hosted/pause     → pause the link in Convex.
+ * Sharing a LOCAL workspace runs on machine-wide enrollment: the OWNER
+ * assigns the workspace to one of their enrolled hosts here
+ * (`POST /:id/host-assignment`, `DELETE` to withdraw), the machine's consent
+ * and liveness ride the enrollment heartbeat (`routes/hosted/host-enrollment.ts`),
+ * and routing requires assignment AND acked set AND a live lease. There is no
+ * per-workspace challenge or signature — that grain is retired.
  *
  * `GET /:id/connection` is shared with the local server (`userHostedConnectionInfo`).
  */

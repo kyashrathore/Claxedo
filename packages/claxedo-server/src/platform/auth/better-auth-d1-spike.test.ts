@@ -1,3 +1,4 @@
+import { createPrivateKey, generateKeyPairSync, sign as signData } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import { fileURLToPath } from "node:url"
 import { afterAll, beforeAll, describe, expect, test } from "vitest"
@@ -5,6 +6,11 @@ import Database from "better-sqlite3"
 import { getMigrations } from "better-auth/db/migration"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
+
+import {
+  hostEnrollmentHeartbeatPayloadV2,
+  hostEnrollmentPayload,
+} from "../../authority/adapters/d1/host-access-authority"
 
 import {
   BETTER_AUTH_SESSION_COOKIE,
@@ -33,6 +39,19 @@ const EVIDENCE_MIGRATION_PATH = fileURLToPath(
   new URL("../../../migrations/auth/0003_authentication_evidence.sql", import.meta.url),
 )
 const WORKER_PATH = fileURLToPath(new URL("./better-auth-d1-worker-spike.cf.ts", import.meta.url))
+// The control-plane tables the D1 authority + relay-target resolver read:
+// identities/orgs/workspaces (0002), host access + sharing (0004), and the
+// machine-wide grain — enrollments plus owner assignments (0012–0014).
+const CONTROL_PLANE_MIGRATION_PATHS = [
+  "0001_service_installations.sql",
+  "0002_workspace_authority.sql",
+  "0003_private_sessions.sql",
+  "0004_host_access_and_sharing.sql",
+  "0005_agent_extensions_and_audit.sql",
+  "0012_cold_local_host_challenges.sql",
+  "0013_org_team_session_sharing.sql",
+  "0014_host_workspace_assignments.sql",
+].map((name) => fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url)))
 
 function body(input: Record<string, string>) {
   return new URLSearchParams(input).toString()
@@ -88,7 +107,7 @@ describe("Better Auth + D1 inside Workerd", () => {
       script: output.text,
       compatibilityDate: "2025-05-01",
       compatibilityFlags: ["nodejs_compat", "global_fetch_strictly_public"],
-      d1Databases: ["AUTH_DB"],
+      d1Databases: ["AUTH_DB", "CONTROL_PLANE_DB"],
     })
     const database = await miniflare.getD1Database("AUTH_DB")
     const statements = executableMigration(migrationSql)
@@ -98,6 +117,13 @@ describe("Better Auth + D1 inside Workerd", () => {
       .map((statement) => database.prepare(statement))
     await database.batch(statements)
     await database.exec(executableMigration(evidenceMigrationSql))
+    const controlPlaneDatabase = await miniflare.getD1Database("CONTROL_PLANE_DB")
+    for (const migrationPath of CONTROL_PLANE_MIGRATION_PATHS) {
+      const migration = executableMigration(await readFile(migrationPath, "utf8"))
+      for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
+        await controlPlaneDatabase.prepare(statement).run()
+      }
+    }
     await provisionBetterAuthNativeClients(
       database,
       API_ORIGIN,
@@ -899,5 +925,143 @@ describe("Better Auth + D1 inside Workerd", () => {
         (select count(*) from "authenticationEvidence") as evidence`)
       .first<{ users: number; links: number; approved: number; evidence: number }>()
     expect(counts).toMatchObject({ users: 1, links: 3, evidence: 0 })
+  })
+
+  test("runs machine enrollment → owner assignment → heartbeat v2 → relay-target routing end-to-end", async () => {
+    // The whole remote-sharing grain, through the REAL routes inside workerd,
+    // against the REAL D1 authority, authenticated by Better Auth: enroll the
+    // machine once, assign a workspace to it, ack it with ONE P-256 signature
+    // over the exact v2 payload literal, and watch the service-side relay
+    // resolver flip to routable — then unassign and watch it flip back.
+    const email = "host-owner@example.test"
+    const signUp = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-up/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      body: JSON.stringify({ name: "Host Owner", email, password: "correct horse battery staple" }),
+    })
+    expect(signUp.status, await signUp.clone().text()).toBe(200)
+    const delivered = await miniflare.dispatchFetch(
+      `${API_ORIGIN}/__test/last-email?recipient=${encodeURIComponent(email)}`,
+    )
+    const { actionUrl } = (await delivered.json()) as { actionUrl: string }
+    await miniflare.dispatchFetch(actionUrl, { headers: { origin: APP_ORIGIN }, redirect: "manual" })
+    const signIn = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/sign-in/email`, {
+      method: "POST",
+      headers: { "content-type": "application/json", origin: APP_ORIGIN },
+      body: JSON.stringify({ email, password: "correct horse battery staple" }),
+    })
+    expect(signIn.status, await signIn.clone().text()).toBe(200)
+    const owner = cookieFrom(signIn)
+
+    const call = (path: string, init: { method?: string; body?: unknown } = {}) =>
+      miniflare.dispatchFetch(`${API_ORIGIN}${path}`, {
+        method: init.method ?? (init.body === undefined ? "GET" : "POST"),
+        headers: {
+          cookie: owner.value,
+          origin: APP_ORIGIN,
+          ...(init.body === undefined ? {} : { "content-type": "application/json" }),
+        },
+        ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+      })
+    const relayTarget = async (workspaceId: string) => {
+      const response = await miniflare.dispatchFetch(
+        `${API_ORIGIN}/__test/relay-target?workspaceId=${encodeURIComponent(workspaceId)}`,
+      )
+      expect(response.status).toBe(200)
+      return (await response.json()) as { active: boolean; hostId?: string; backing?: string }
+    }
+
+    // The Host Connector's machine key. The server only ever sees the public
+    // half; every proof below is a fresh ECDSA P-256 signature.
+    const hostId = "host_spike_machine"
+    const workspaceId = "ws_spike_e2e"
+    const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
+    const privateJwk = pair.privateKey.export({ format: "jwk" })
+    const publicKey = JSON.stringify(pair.publicKey.export({ format: "jwk" }))
+    const signPayload = (payload: string) =>
+      signData("sha256", Buffer.from(payload), {
+        key: createPrivateKey({ key: privateJwk, format: "jwk" }),
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url")
+
+    // 1. Machine enrollment: one-use nonce, then the signed enrollment.
+    const request = await call("/api/claxedo/host/enrollments/requests", { body: { hostId } })
+    expect(request.status, await request.clone().text()).toBe(200)
+    const challenge = (await request.json()) as { request_id: string; nonce: string }
+    const enroll = await call("/api/claxedo/host/enrollments", {
+      body: {
+        hostId,
+        publicKey,
+        requestId: challenge.request_id,
+        signature: signPayload(
+          hostEnrollmentPayload({ hostId, requestId: challenge.request_id, nonce: challenge.nonce }),
+        ),
+        displayName: "Spike laptop",
+      },
+    })
+    expect(enroll.status, await enroll.clone().text()).toBe(200)
+    expect(await enroll.json()).toMatchObject({ enrollment: { host_id: hostId, display_name: "Spike laptop" } })
+
+    // Enrolled but not yet assigned: nothing routes.
+    expect(await relayTarget(workspaceId)).toEqual({ active: false })
+
+    // 2. Owner assignment cold-registers the workspace and mints the Host
+    //    Tunnel Token immediately — no machine signature on this leg.
+    const assign = await call(`/api/workspace/${workspaceId}/host-assignment`, {
+      body: { hostId, displayName: "Spike workspace", repoName: "spike", gitBranch: "main" },
+    })
+    expect(assign.status, await assign.clone().text()).toBe(200)
+    expect(await assign.json()).toMatchObject({
+      assignment: { assigned: true, workspace_id: workspaceId, host_id: hostId },
+      hostTunnel: { hostTunnelToken: `htt-${hostId}:${workspaceId}`, relayUrl: "https://relay.claxedo.test" },
+    })
+
+    // Assigned but not yet acked by the machine: still not routable.
+    expect(await relayTarget(workspaceId)).toEqual({ active: false })
+
+    // 3. Heartbeat v2: ONE signature over the exact payload literal covers the
+    //    served set. A signature over a DIFFERENT set must be refused first.
+    const forged = await call("/api/claxedo/host/enrollments/heartbeat", {
+      body: {
+        hostId,
+        signature: signPayload(hostEnrollmentHeartbeatPayloadV2({ hostId, workspaceIds: [] })),
+        workspaceIds: [workspaceId],
+      },
+    })
+    expect(forged.status).toBe(500)
+    expect(await relayTarget(workspaceId)).toEqual({ active: false })
+
+    const beat = await call("/api/claxedo/host/enrollments/heartbeat", {
+      body: {
+        hostId,
+        signature: signPayload(hostEnrollmentHeartbeatPayloadV2({ hostId, workspaceIds: [workspaceId] })),
+        workspaceIds: [workspaceId],
+      },
+    })
+    expect(beat.status, await beat.clone().text()).toBe(200)
+    const beatBody = (await beat.json()) as Record<string, unknown>
+    expect(beatBody).toMatchObject({
+      assigned_workspace_ids: [workspaceId],
+      hostTunnel: {
+        hostTunnelToken: `htt-${hostId}:${workspaceId}`,
+        hostId,
+        workspaceIds: [workspaceId],
+        relayUrl: "https://relay.claxedo.test",
+      },
+    })
+    expect(beatBody.expires_at).toEqual(expect.any(Number))
+
+    // 4. Assigned ∩ acked ∩ live lease → the relay routes to this machine.
+    expect(await relayTarget(workspaceId)).toEqual({
+      active: true,
+      hostId,
+      backing: "local-worktree",
+    })
+
+    // 5. Unassign → nothing routes, even though the lease is still live.
+    const unassign = await call(`/api/workspace/${workspaceId}/host-assignment`, { method: "DELETE" })
+    expect(unassign.status, await unassign.clone().text()).toBe(200)
+    expect(await unassign.json()).toEqual({ unassigned: true })
+    expect(await relayTarget(workspaceId)).toEqual({ active: false })
   })
 })

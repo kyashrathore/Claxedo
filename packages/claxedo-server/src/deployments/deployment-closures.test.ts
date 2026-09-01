@@ -171,7 +171,10 @@ describe("server deployment entry closures", () => {
     expect(result.opaque).toEqual([])
     // The release operator, release identity, paired-recovery proof, and their
     // dependency-neutral gate modules are now explicit fail-closed edges.
-    expect(result.modules.length).toBeLessThanOrEqual(13)
+    // +1 settled-composition-cache.ts (2026-08-31): the per-isolate rule that a
+    // Better Auth composition may be reused only after its lazy init settled —
+    // the fix for the live wedged-isolate outage; reviewed owner of that rule.
+    expect(result.modules.length).toBeLessThanOrEqual(14)
     // +1 dependency-neutral package: the release identity now reads the
     // canonical empty-service manifest ID from @claxedo/service-contract
     // instead of owning a second string. No service implementation enters the
