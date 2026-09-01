@@ -394,6 +394,12 @@ export async function executeSessionNavigation(input: {
   await waitForPanelOwner(page, "diff", source, fixture, {
     expectedReviewOpenCount: preset.expandedReviewFileCount,
   })
+  // The untimed control seeding is itself a session switch. A follow-up switch
+  // inside the app's fast-switch window counts as rapid flicking and defers the
+  // hydrate above the first fold by 900 ms, which the shared first-fold rule
+  // then waits out. The measured return is a deliberate revisit, so let that
+  // window expire before the trusted click.
+  await waitForFastSessionSwitchQuiet(page)
   return measureNavigation(page, destination, {
     fixture,
     profile: "diff",
@@ -733,6 +739,14 @@ async function ensurePanelProfile(page: Page, profile: PanelProfile, fixture: Fi
  * the shell has settled or unmounted, matching the protocol rule that no
  * panel input is sent during an opening or closing transition.
  */
+async function waitForFastSessionSwitchQuiet(page: Page) {
+  await page.waitForFunction(() => {
+    const carrier = window as Window & { __claxedoFastSessionSwitch?: { until: number; networkQuietUntil?: number } }
+    const fast = carrier.__claxedoFastSessionSwitch
+    return !fast || Date.now() > Math.max(fast.until, fast.networkQuietUntil ?? 0)
+  }, undefined, { polling: "raf", timeout: READINESS_TIMEOUT_MS })
+}
+
 async function waitForPanelTransitionSettled(page: Page) {
   await page.waitForFunction(() => {
     const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")

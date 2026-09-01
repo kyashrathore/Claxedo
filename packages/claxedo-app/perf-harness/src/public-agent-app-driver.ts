@@ -1,7 +1,8 @@
 #!/usr/bin/env bun
 import { createHash } from "node:crypto"
 import { constants as fsConstants } from "node:fs"
-import { access, cp, mkdir, readFile, rm } from "node:fs/promises"
+import { access, cp, mkdir, readFile, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
 import path from "node:path"
 import { serveDriver, type DriverHandlers } from "agent-app-benchmark/driver-sdk"
 import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
@@ -447,10 +448,27 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
       })
       workspaceFixture = params.workspaceFixtureManifest ? fixtureEvidence(params.workspaceFixtureManifest) : undefined
       readinessTargets = materialization.readinessTargets
-      await cp(p0, p1, { recursive: true, errorOnExist: true, mode: fsConstants.COPYFILE_FICLONE })
-      await startState(p1, false)
-      const initialized = await closeCurrent()
-      if (initialized.survivors.length > 0) throw new Error("Claxedo P1 initialization left a surviving process")
+      const seedInitializedState = async () => {
+        await cp(p0, p1, { recursive: true, errorOnExist: true, mode: fsConstants.COPYFILE_FICLONE })
+        await startState(p1, false)
+        const initialized = await closeCurrent()
+        if (initialized.survivors.length > 0) throw new Error("Claxedo P1 initialization left a surviving process")
+      }
+      try {
+        await seedInitializedState()
+      } catch (error) {
+        // The unmeasured P1 launch has stalled before readiness on a busy host
+        // (empty session rail, renderer CDP silence) while every measured launch
+        // of the same bundle succeeded. A prepare failure aborts the whole
+        // comparison, so keep the launch's own logs for diagnosis and seed P1
+        // once more from an untouched P0 clone. The retried state still
+        // completed exactly one unmeasured launch; the failed clone is discarded.
+        const evidence = await preserveLaunchFailureEvidence(p1, error)
+        console.error(`[claxedo-driver] P1 unmeasured launch failed: ${error instanceof Error ? error.message : String(error)}; logs kept at ${evidence}; retrying once from a fresh P0 clone`)
+        await closeCurrent().catch(() => undefined)
+        await rm(p1, { recursive: true, force: true })
+        await seedInitializedState()
+      }
       return { materialization, stateHandles: { P0: p0, P1: p1 } }
     },
     launch: async (stateHandle, initialSessionId) => {
@@ -535,6 +553,17 @@ async function sessionRootVisible(page: { evaluate: <T>(fn: (id: string) => T, i
     const style = getComputedStyle(root)
     return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
   }, sessionId)
+}
+
+/** Copies the app-side logs of a failed unmeasured launch out of the private run directory before it is discarded. */
+async function preserveLaunchFailureEvidence(stateRoot: string, error: unknown) {
+  const root = path.join(tmpdir(), "claxedo-benchmark-launch-failures", new Date().toISOString().replaceAll(":", "-"))
+  await mkdir(root, { recursive: true, mode: 0o700 })
+  await writeFile(path.join(root, "error.txt"), `${error instanceof Error ? error.stack ?? error.message : String(error)}\n`)
+  for (const relative of ["ambient/Library/Logs", "ambient/.local/share/opencode/log", "app-stdout.log", "app-stderr.log"]) {
+    await cp(path.join(stateRoot, relative), path.join(root, relative), { recursive: true, force: true }).catch(() => undefined)
+  }
+  return root
 }
 
 async function discoverPackagedExecutable() {
