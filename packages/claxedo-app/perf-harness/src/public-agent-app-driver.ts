@@ -478,19 +478,13 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     },
     executePanelAction: async (benchmarkCase, target) => {
       if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
-      const activeTarget = await current.page.evaluate(() =>
-        document.querySelector<HTMLElement>("[data-testid='session-page-root'][data-session-id]")?.dataset.sessionId,
-      )
-      if (activeTarget && activeTarget !== target.sessionId)
+      if (!(await sessionRootVisible(current.page, target.sessionId)))
         throw new Error("Claxedo workspace-panel action is not on the control session")
       return executeWorkspacePanelAction({ page: current.page as never, benchmarkCase, fixture: workspaceFixture })
     },
     executePanelActionV2: async (benchmarkCase, target, preset) => {
       if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
-      const activeTarget = await current.page.evaluate(() =>
-        document.querySelector<HTMLElement>("[data-testid='session-page-root'][data-session-id]")?.dataset.sessionId,
-      )
-      if (activeTarget && activeTarget !== target.sessionId) {
+      if (!(await sessionRootVisible(current.page, target.sessionId))) {
         throw new Error("Claxedo workspace-panel-v2 action is not on the control session")
       }
       return executeWorkspacePanelActionV2({
@@ -523,6 +517,24 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     },
     shutdown: closeCurrent,
   }
+}
+
+/**
+ * Claxedo keeps previously visited session panes mounted, so the first session
+ * root in the DOM is not necessarily the focused one. The control-session guard
+ * therefore asks for the root that carries the target id and requires it to be
+ * laid out and visible, the same identity check the readiness observer uses.
+ */
+async function sessionRootVisible(page: { evaluate: <T>(fn: (id: string) => T, id: string) => Promise<T> }, sessionId: string) {
+  return page.evaluate((id) => {
+    const root = document.querySelector<HTMLElement>(
+      `[data-testid="session-page-root"][data-session-id="${CSS.escape(id)}"]`,
+    )
+    if (!root) return false
+    const rect = root.getBoundingClientRect()
+    const style = getComputedStyle(root)
+    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
+  }, sessionId)
 }
 
 async function discoverPackagedExecutable() {

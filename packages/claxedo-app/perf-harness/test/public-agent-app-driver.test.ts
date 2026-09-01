@@ -442,6 +442,7 @@ describe("Claxedo public driver", () => {
       const page = {
         evaluate: async (callback: (argument: unknown) => unknown, argument: unknown) => callback(argument),
       }
+      const before = performance.now()
       const at = await waitForPanelOwner(
         page as never,
         "closed",
@@ -459,8 +460,11 @@ describe("Claxedo public driver", () => {
         { markEnd: false },
       )
 
-      expect(at).toBe(5)
+      // Two identical closed frames are required (frames 4 and 5); the endpoint is the
+      // observation time of the second one, not the frame's scheduled timestamp.
       expect(frameCount).toBe(5)
+      expect(at).toBeGreaterThanOrEqual(before)
+      expect(at).toBeLessThanOrEqual(performance.now())
     } finally {
       for (const [name, descriptor] of original) {
         if (descriptor) Object.defineProperty(globalThis, name, descriptor)

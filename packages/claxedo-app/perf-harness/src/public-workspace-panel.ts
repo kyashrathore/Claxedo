@@ -725,7 +725,23 @@ async function ensurePanelProfile(page: Page, profile: PanelProfile, fixture: Fi
   return ensureDiffOpen(page, fixture)
 }
 
+/**
+ * Session activation restores the destination's remembered panel, which can
+ * leave the shell mounted mid-close (`data-open="false"`, `shellSettled`
+ * false) with its own Files/Changes buttons still laid out. Input sent into
+ * that closing shell is dropped with the shell, so untimed setup waits until
+ * the shell has settled or unmounted, matching the protocol rule that no
+ * panel input is sent during an opening or closing transition.
+ */
+async function waitForPanelTransitionSettled(page: Page) {
+  await page.waitForFunction(() => {
+    const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
+    return !shell || shell.dataset.shellSettled === "true"
+  }, undefined, { polling: "raf", timeout: READINESS_TIMEOUT_MS })
+}
+
 async function ensureFilesOpen(page: Page, fixture: FixtureEvidence) {
+  await waitForPanelTransitionSettled(page)
   const state = await panelState(page)
   if (!state.open) {
     const files = await optionalVisibleLocator(page, "button[aria-label='Open Files']")
@@ -757,6 +773,7 @@ async function ensureDiffOpen(page: Page, fixture: FixtureEvidence) {
 }
 
 async function ensurePanelClosed(page: Page, requireDisposed = false) {
+  await waitForPanelTransitionSettled(page)
   if ((await panelState(page)).open) {
     await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Close workspace panel']")
   }
@@ -814,17 +831,17 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence, requireAct
           }
         }
         const shell = document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell'][data-open='true']")
-        if (shell && visible(shell) && shellVisible === undefined) shellVisible = at
-        if (shell?.dataset.shellSettled === "true" && animationSettled === undefined) animationSettled = at
+        if (shell && visible(shell) && shellVisible === undefined) shellVisible = performance.now()
+        if (shell?.dataset.shellSettled === "true" && animationSettled === undefined) animationSettled = performance.now()
         const navigator = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']") ?? [])
           .find((element) => visible(element))
         const rows = navigator?.querySelectorAll("[data-file-tree-path], [data-component='filetree'] button").length ?? 0
         const ready = !!navigator && visible(navigator) && navigator.dataset.fileTreeDataReady === "true" && rows > 0 && !navigator.querySelector("[data-file-tree-loading], [aria-label='Loading files']")
-        if (ready && dataReady === undefined) dataReady = at
+        if (ready && dataReady === undefined) dataReady = performance.now()
         const signature = ready ? JSON.stringify([shell?.dataset.stateWorkspaceDir, rows, navigator?.innerText.length, expectedFiles]) : ""
         stable = ready && shellVisible !== undefined && signature === lastSignature ? stable + 1 : ready ? 1 : 0
         lastSignature = signature
-        if (stable >= 2 && aboveFoldPainted === undefined) aboveFoldPainted = at
+        if (stable >= 2 && aboveFoldPainted === undefined) aboveFoldPainted = performance.now()
         if (shellVisible !== undefined && animationSettled !== undefined && dataReady !== undefined && aboveFoldPainted !== undefined) {
           resolve({ shellVisible, animationSettled, dataReady, aboveFoldPainted })
           return
@@ -916,7 +933,7 @@ async function waitForPanelProfile(
         const tracedPresentations = requireActiveTrace
           ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
           : 2
-        if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
+        if (stable >= 2 && tracedPresentations >= 2) return resolve(performance.now())
         if (performance.now() >= deadline) return reject(new Error(`Claxedo Diff panel did not reach stable canonical readiness: ${JSON.stringify({
           shell: shell ? { ...shell.dataset } : undefined,
           root: root ? { ...root.dataset } : undefined,
@@ -958,7 +975,7 @@ async function waitForPanelClosed(page: Page, requireActiveTrace = false) {
         const tracedPresentations = mustHaveTrace
           ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
           : 2
-        if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
+        if (stable >= 2 && tracedPresentations >= 2) return resolve(performance.now())
         if (performance.now() >= deadline) return reject(new Error(`Claxedo workspace panel did not close: ${JSON.stringify(shell ? {
           data: { ...shell.dataset },
           rect: rect ? { left: rect.left, right: rect.right, width: rect.width } : undefined,
@@ -1134,7 +1151,7 @@ export async function waitForPanelOwner(
           const trace = (window as any).__claxedoPublicPanelTrace
           const terminal = trace?.active && markEnd
             ? (performance.clearMarks(endMark), performance.mark(endMark).startTime)
-            : at
+            : performance.now()
           return complete(terminal)
         }
         if (performance.now() >= deadline) return fail(new Error(`Claxedo workspace panel did not reach atomic destination readiness: ${JSON.stringify({
@@ -1212,7 +1229,7 @@ async function waitForPaintedFile(page: Page, file: string, requireActiveTrace =
         const tracedPresentations = requireActiveTrace
           ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
           : 2
-        if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
+        if (stable >= 2 && tracedPresentations >= 2) return resolve(performance.now())
         if (performance.now() >= deadline) {
           const tabs = Array.from(document.querySelectorAll<HTMLElement>("[data-slot='workspace-tab']"))
             .map((tab) => ({
@@ -1420,7 +1437,7 @@ async function waitForDiffState(
         const tracedPresentations = requireActiveTrace
           ? trace.frames.filter((frameAt: number) => frameAt >= trace.trustedInputAt && frameAt <= at).length
           : 2
-        if (stable >= 2 && tracedPresentations >= 2) return resolve(at)
+        if (stable >= 2 && tracedPresentations >= 2) return resolve(performance.now())
         if (performance.now() >= deadline) return reject(new Error(`Claxedo Diff state did not reach its authoritative endpoint: ${JSON.stringify({
           expected,
           root: root ? { ...root.dataset } : undefined,
@@ -1561,16 +1578,16 @@ async function beginTrace(
           const style = getComputedStyle(element)
           return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
         }
-        if (visible(shell) && openFiles.shellVisible === undefined) openFiles.shellVisible = at
+        if (visible(shell) && openFiles.shellVisible === undefined) openFiles.shellVisible = performance.now()
         if (openFiles.shellVisible !== undefined && shell?.dataset.shellSettled === "true" && openFiles.animationSettled === undefined) {
-          openFiles.animationSettled = at
+          openFiles.animationSettled = performance.now()
         }
         const navigator = Array.from(shell?.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator'][data-mode='files']") ?? [])
           .find((element) => visible(element))
         const rows = navigator?.querySelectorAll("[data-file-tree-path], [data-component='filetree'] button").length ?? 0
         const dataReady = !!navigator && navigator.dataset.fileTreeDataReady === "true" && rows > 0 &&
           !navigator.querySelector("[data-file-tree-loading], [aria-label='Loading files']")
-        if (dataReady && openFiles.dataReady === undefined) openFiles.dataReady = at
+        if (dataReady && openFiles.dataReady === undefined) openFiles.dataReady = performance.now()
         const signature = dataReady
           ? JSON.stringify([shell?.dataset.stateWorkspaceDir, rows, navigator?.innerText.length, openFiles.expectedFiles])
           : ""
@@ -1578,7 +1595,7 @@ async function beginTrace(
           ? openFiles.stable + 1
           : dataReady ? 1 : 0
         openFiles.lastSignature = signature
-        if (openFiles.stable >= 2 && openFiles.aboveFoldPainted === undefined) openFiles.aboveFoldPainted = at
+        if (openFiles.stable >= 2 && openFiles.aboveFoldPainted === undefined) openFiles.aboveFoldPainted = performance.now()
       }
       requestAnimationFrame(trace.frame)
     }
