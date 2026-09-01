@@ -51,6 +51,7 @@ const CONTROL_PLANE_MIGRATION_PATHS = [
   "0012_cold_local_host_challenges.sql",
   "0013_org_team_session_sharing.sql",
   "0014_host_workspace_assignments.sql",
+  "0015_drop_local_host_links.sql",
 ].map((name) => fileURLToPath(new URL(`../../../migrations/control-plane/${name}`, import.meta.url)))
 
 function body(input: Record<string, string>) {
@@ -663,6 +664,32 @@ describe("Better Auth + D1 inside Workerd", () => {
       revoked: null,
     })
 
+    // Lost-response retry: a client whose refresh POST was answered but whose
+    // response never arrived retries with the token that answer already
+    // burned. Within `refreshTokenReuseInterval` the server must replay the
+    // SAME successor pair instead of `invalid_grant` — a zero window turned
+    // one dropped response into a full desktop sign-out (observed live on
+    // staging: 400 on retry → credential invalidated → remote access torn
+    // down mid-share).
+    const replayed = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: body({
+        grant_type: "refresh_token",
+        refresh_token: tokens.refresh_token,
+        client_id: "claxedo-cli",
+        resource: NATIVE_RESOURCE,
+      }),
+    })
+    expect(replayed.status, await replayed.clone().text()).toBe(200)
+    const replayedTokens = (await replayed.json()) as { access_token?: unknown; refresh_token?: unknown }
+    expect(replayedTokens.refresh_token).toBe(rotatedRefreshToken)
+    expect(replayedTokens.access_token).toBe(rotatedAccessToken)
+    const rowsAfterReplay = await (await miniflare.getD1Database("AUTH_DB"))
+      .prepare(`select count(*) as "count" from "oauthRefreshToken"`)
+      .first<{ count: number }>()
+    expect(rowsAfterReplay?.count).toBe(2)
+
     const wrongClientRevoke = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/oauth2/revoke`, {
       method: "POST",
       headers: { "content-type": "application/x-www-form-urlencoded" },
@@ -825,20 +852,21 @@ describe("Better Auth + D1 inside Workerd", () => {
       }),
     })
     const raced = await Promise.all([raceRequest(), raceRequest()])
-    expect(raced.filter((response) => response.status === 200).length).toBeLessThanOrEqual(1)
     const racedBodies = await Promise.all(raced.map((response) => response.clone().json().catch(() => null)))
+    // Exactly one rotation happens; the second request either replays the
+    // SAME successor pair (`refreshTokenReuseInterval` — it read the parent
+    // after the winner committed) or loses the atomic rotation outright (it
+    // read the parent before the commit), which still invalidates the family
+    // as a double-spend. What must never happen: two DIFFERENT pairs, or
+    // zero successes.
+    const successBodies = raced
+      .map((response, index) => (response.status === 200 ? racedBodies[index] : undefined))
+      .filter((value): value is { access_token: string; refresh_token: string } =>
+        !!value && typeof value === "object" && "access_token" in value)
+    expect(successBodies.length).toBeGreaterThanOrEqual(1)
+    expect(new Set(successBodies.map((value) => `${value.access_token}\n${value.refresh_token}`)).size).toBe(1)
     for (const [index, response] of raced.entries()) {
       if (response.status !== 200) expect(racedBodies[index]).toMatchObject({ error: "invalid_grant" })
-    }
-    const racedTokenBody = racedBodies.find((value) => value && typeof value === "object" && "access_token" in value) as
-      | { access_token?: unknown }
-      | undefined
-    const racedAccessToken = racedTokenBody?.access_token
-    if (typeof racedAccessToken === "string") {
-      const raw = racedAccessToken.slice(BETTER_AUTH_ACCESS_TOKEN_PREFIX.length)
-      const surviving = await databaseForRace.prepare(`select count(*) as "count" from "oauthAccessToken"
-        where "token" = ?`).bind(await betterAuthOAuthTokenHash(raw)).first<{ count: number }>()
-      expect(surviving?.count).toBe(0)
     }
     const familyCounts = await databaseForRace.prepare(`select
       (select count(*) from "oauthRefreshToken" where "familyId" = 'concurrent-family') as "attackedRefresh",
@@ -846,7 +874,18 @@ describe("Better Auth + D1 inside Workerd", () => {
         (select 1 from "oauthRefreshToken" as refresh where refresh."id" = access."refreshId")) as "orphanedAccess",
       (select count(*) from "oauthRefreshToken" where "familyId" = 'unaffected-family') as "unaffectedRefresh"`)
       .first<{ attackedRefresh: number; orphanedAccess: number; unaffectedRefresh: number }>()
-    expect(familyCounts).toEqual({ attackedRefresh: 0, orphanedAccess: 0, unaffectedRefresh: 1 })
+    expect(familyCounts).toMatchObject({ orphanedAccess: 0, unaffectedRefresh: 1 })
+    // Replay path keeps parent+child; atomic-conflict path invalidates the
+    // family. Both requests succeeding REQUIRES the family to have survived.
+    expect([0, 2]).toContain(familyCounts?.attackedRefresh)
+    if (successBodies.length === 2) expect(familyCounts?.attackedRefresh).toBe(2)
+    const racedAccessToken = successBodies[0]?.access_token
+    if (typeof racedAccessToken === "string") {
+      const raw = racedAccessToken.slice(BETTER_AUTH_ACCESS_TOKEN_PREFIX.length)
+      const surviving = await databaseForRace.prepare(`select count(*) as "count" from "oauthAccessToken"
+        where "token" = ?`).bind(await betterAuthOAuthTokenHash(raw)).first<{ count: number }>()
+      expect(surviving?.count).toBe(familyCounts?.attackedRefresh === 0 ? 0 : 1)
+    }
 
     const desktopRedirectUri = "http://127.0.0.1:49152/claxedo/auth/callback"
     const desktopCodeVerifier = "desktop-pkce-verifier-that-is-forty-three-bytes"

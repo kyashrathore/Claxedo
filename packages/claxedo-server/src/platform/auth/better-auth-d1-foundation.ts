@@ -165,7 +165,19 @@ export function betterAuthD1FoundationOptions(input: BetterAuthD1FoundationInput
         clientPrivileges: async () => false,
         accessTokenExpiresIn: 300,
         refreshTokenExpiresIn: 30 * 24 * 60 * 60,
-        refreshTokenReuseInterval: 0,
+        // A rotated refresh token presented again within this window returns
+        // the SAME successor pair (Better Auth stores an encrypted replay of
+        // the rotation response) instead of `invalid_grant`. With 5-minute
+        // access tokens every session rotates every ~4 minutes forever, and
+        // this deployment's edge can withhold a POST response on a warm
+        // connection: the client times out, retries with the token the lost
+        // response already burned, and a zero window turned that single lost
+        // response into a full sign-out. The desktop times out at 30s and
+        // cools down 20s before retrying, so its second attempt lands at
+        // ~50s and a third at ~100s: 120s keeps both inside the window while
+        // the replay still only ever returns the pair the lost response
+        // already contained.
+        refreshTokenReuseInterval: 120,
         requireAtomicRefreshRotation: true,
       }),
       oauthDeviceAuthorization({

@@ -114,13 +114,17 @@ export function betterAuthD1Adapter(database: D1Database) {
           try {
             results = await database.batch([
               database.prepare(`update "oauthRefreshToken"
-                set "revoked" = ?, "rotatedAt" = ?, "rotationNonce" = ?
+                set "revoked" = ?, "rotatedAt" = ?, "rotationNonce" = ?, "rotationReplayExpiresAt" = ?
                 where "id" = ? and "clientId" = ? and "familyId" = ? and "generation" = ?
                   and "revoked" is null and "rotatedAt" is null`)
                 .bind(
                   d1Value(update.revoked),
                   d1Value(update.rotatedAt),
                   rotationNonce,
+                  // Absent when `refreshTokenReuseInterval` is 0. Dropping it
+                  // here silently disabled the lost-response replay window the
+                  // foundation config asks for.
+                  d1Value(update.rotationReplayExpiresAt) ?? null,
                   parent.id as string,
                   parent.clientId as string,
                   parent.familyId as string,
