@@ -164,6 +164,49 @@ describe("bound desktop account lifecycle", () => {
     await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
   })
 
+  /**
+   * A routine redeploy 503'd the descriptor for ~2s and the desktop went to
+   * "Sign in": remote access stopped, the enrollment lease lapsed, and every
+   * other device was told the host was offline. An endpoint we could not
+   * reach has made no statement about this credential, so the session must
+   * survive the blip and recover on the next attempt.
+   */
+  test("an unreachable descriptor does not end the session, and the next attempt recovers", async () => {
+    let reachable = false
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      auth: authHarness({
+        validate: async () => {
+          if (!reachable) throw new DesktopAuthDescriptorError("descriptor_unavailable", "failed: 503")
+        },
+      }),
+    })
+
+    await h.service.restore()
+    await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
+    // The blip must not be recorded as a verdict on the credential.
+    expect(h.service.state()).not.toMatchObject({ status: "unavailable", reason: "callback-failed" })
+    expect(h.store.held(), "the credential is intact — nothing rejected it").toBeDefined()
+    expect(h.store.rejected).toEqual([])
+
+    reachable = true
+    await expect(h.service.run("account.get")).resolves.toBeDefined()
+  })
+
+  test("a descriptor that answers and rejects still ends the session", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      auth: authHarness({
+        validate: async () => {
+          throw new DesktopAuthDescriptorError("invalid_descriptor", "not valid JSON")
+        },
+      }),
+    })
+
+    await h.service.restore()
+    expect(h.service.state()).toMatchObject({ status: "unavailable", reason: "callback-failed" })
+  })
+
   test("serializes refresh and compare-and-swap replaces the complete binding plus tokens", async () => {
     const selectedAuth = authHarness()
     const h = harness({

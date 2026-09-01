@@ -138,19 +138,58 @@ export function createAccountService(options: AccountServiceOptions) {
   const validated = async (held: StoredDesktopCredential) => {
     try {
       await options.auth.validate(held)
-      return true
+      return { ok: true as const, transient: false as const }
     } catch (error) {
       options.onError?.("descriptor", error)
       if (error instanceof DesktopAuthDescriptorError && error.code === "credential_binding_mismatch") {
         rejectHeld(held, error.message)
+      }
+      // A deployment we could not REACH has said nothing about this
+      // credential. Treating that silence as a verdict is what turned a ~2s
+      // 503 during a routine redeploy into a signed-out desktop: the session
+      // was intact, the credential was valid, and the only real fact was that
+      // the descriptor endpoint was briefly unavailable. Observed live —
+      // `[account] descriptor: ... failed: 503`, after which the desktop
+      // showed "Sign in" and remote access stayed down until someone noticed.
+      //
+      // The operation still fails (we will not use a credential this
+      // deployment has not validated), but the held session survives so the
+      // next attempt re-validates and recovers on its own. A descriptor that
+      // ANSWERS and rejects — a bad binding, a malformed document — is a real
+      // verdict and still ends the session.
+      if (error instanceof DesktopAuthDescriptorError && error.code === "descriptor_unavailable") {
+        return { ok: false as const, transient: true as const }
       }
       setState({
         status: "unavailable",
         reason: "callback-failed",
         detail: `the selected deployment could not validate this credential: ${String(error)}`,
       })
+      return { ok: false as const, transient: false as const }
+    }
+  }
+
+  /**
+   * A credential that could not be adopted only because the deployment was
+   * unreachable. Held so the next operation retries adoption instead of
+   * waiting for another `restore()` — without this, a blip during launch left
+   * the desktop signed out until it was restarted, which is how a 2s 503
+   * outlived itself by hours.
+   */
+  let deferredAdoption: StoredDesktopCredential | undefined
+
+  const adoptDeferred = async () => {
+    const pending = deferredAdoption
+    if (!pending) return false
+    const check = await validated(pending)
+    if (!check.ok) {
+      if (!check.transient) deferredAdoption = undefined
       return false
     }
+    deferredAdoption = undefined
+    credential = pending
+    publishSigned(pending.tokens.accessToken, era)
+    return true
   }
 
   const exchangeRefresh = async (held: StoredDesktopCredential): Promise<Credential> => {
@@ -186,7 +225,7 @@ export function createAccountService(options: AccountServiceOptions) {
         const winner = options.store.load(options.now())
         if (
           winner &&
-          (await validated(winner)) &&
+          (await validated(winner)).ok &&
           !shouldRefresh({ expiresAt: winner.tokens.expiresAt, now: options.now() })
         ) {
           credential = winner
@@ -231,9 +270,10 @@ export function createAccountService(options: AccountServiceOptions) {
   }
 
   const currentAccessToken = async (): Promise<Credential> => {
+    if (!credential) await adoptDeferred()
     const held = credential
     if (!held) return { ok: false, detail: "not signed in" }
-    if (!(await validated(held))) return { ok: false, detail: "not signed in" }
+    if (!(await validated(held)).ok) return { ok: false, detail: "not signed in" }
     if (!shouldRefresh({ expiresAt: held.tokens.expiresAt, now: options.now() })) {
       return { ok: true, token: held.tokens.accessToken }
     }
@@ -313,7 +353,14 @@ export function createAccountService(options: AccountServiceOptions) {
           await reconcilePendingRevocation()
           return state
         }
-        if (!(await validated(stored))) return state
+        const adoption = await validated(stored)
+        if (!adoption.ok) {
+          // Unreachable is not a refusal: keep it adoptable so the next
+          // operation tries again instead of the user seeing "Sign in".
+          deferredAdoption = adoption.transient ? stored : undefined
+          return state
+        }
+        deferredAdoption = undefined
         credential = stored
         const startedIn = era
         // Profile is best-effort and must not delay launch.
