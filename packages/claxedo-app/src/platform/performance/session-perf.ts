@@ -61,7 +61,10 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
     }
     : { now: () => Date.now() })
   const ring: PerfRecord[] = []
+  /** The open currently collecting phases, per session. */
   const opens = new Map<string, Open>()
+  /** Every open, oldest first — a return to a session is a new entry. */
+  const history: Open[] = []
   let lastOpened: string | undefined
   let sequence = 0
 
@@ -123,11 +126,15 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
     },
     /**
      * A session open begins: from a rail click, a URL load, or a route change.
-     * The previously opened session (if any) makes this a switch. Starting the
-     * same session twice keeps the first start — the click, not the mount.
+     * The previously opened session (if any) makes this a switch. Every open is
+     * its own record — returning to a session is a new open with its own
+     * timings, which is what a switch measurement is. A start while an open of
+     * the same session is still collecting phases keeps that one: the click
+     * starts it, the mount that follows must not restart it.
      */
     openStart(sessionId: string, from: string) {
-      if (opens.get(sessionId)) return
+      const current = opens.get(sessionId)
+      if (current && !current.phases["messages-ready"] && !current.phases["first-fold-ready"]) return
       const startMark = `${MARK_PREFIX}.open.${sessionId}.${++sequence}`
       const open: Open = {
         sessionId,
@@ -138,6 +145,7 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
         phases: {},
       }
       opens.set(sessionId, open)
+      history.push(open)
       lastOpened = sessionId
       mark(startMark)
       emit({ kind: "phase", name: "started", at: open.startedAt, sessionId, sinceStartMs: 0, attrs: { from, ...(open.previousSessionId ? { previousSessionId: open.previousSessionId } : {}) } })
@@ -157,7 +165,7 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
     },
     /** The last N session opens with their phase timings, newest first. */
     summary(limit = 10): SessionOpenSummary[] {
-      return [...opens.values()].slice(-limit).reverse().map((open) => ({
+      return history.slice(-limit).reverse().map((open) => ({
         sessionId: open.sessionId,
         from: open.from,
         ...(open.previousSessionId ? { previousSessionId: open.previousSessionId } : {}),
@@ -179,6 +187,7 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
     clear() {
       ring.length = 0
       opens.clear()
+      history.length = 0
       lastOpened = undefined
     },
   }

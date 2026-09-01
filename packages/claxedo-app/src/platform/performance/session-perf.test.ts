@@ -45,6 +45,26 @@ describe("session perf", () => {
     ])
   })
 
+  /** A switch back is a new open with its own timings, not a footnote on the first. */
+  test("returning to a session records a new open", () => {
+    const h = harness()
+    h.perf.openStart("ses_a", "rail")
+    h.tick(100)
+    h.perf.openPhase("ses_a", "messages-ready")
+    h.perf.openStart("ses_b", "rail")
+    h.tick(50)
+    h.perf.openPhase("ses_b", "messages-ready")
+    h.perf.openStart("ses_a", "rail")
+    h.tick(30)
+    h.perf.openPhase("ses_a", "messages-ready")
+
+    expect(h.perf.summary().map((open) => [open.sessionId, open.previousSessionId, open.phases["messages-ready"]])).toEqual([
+      ["ses_a", "ses_b", 30],
+      ["ses_b", "ses_a", 50],
+      ["ses_a", undefined, 100],
+    ])
+  })
+
   test("a phase without a recorded start attributes the open to the route", () => {
     const h = harness()
     h.perf.openPhase("ses_url", "screen-mounted")
