@@ -108,6 +108,18 @@ describe("user-hosted serving routes", () => {
     }
   })
 
+  /**
+   * `serving` is intent plus a live credential. It is NOT reachability, and
+   * reading it as reachability is how this surface lied: verified live with
+   * `lsof`, the daemon reported `serving: true` with ZERO established
+   * connections to the relay, while every client was correctly told the host
+   * was offline. `connected` is the tunnel's own account of the socket.
+   */
+  test("reports the tunnel as not connected until it opens", async () => {
+    await put(ackCredential())
+    expect(userHostedServingState()).toMatchObject({ serving: true, connected: false })
+  })
+
   test("rejects a credential without a relay to dial", async () => {
     const { relayUrl: _omitted, ...withoutRelay } = ackCredential()
     const response = await put(withoutRelay)

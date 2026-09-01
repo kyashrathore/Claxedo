@@ -77,6 +77,23 @@ type ActiveServing = {
   registration: { current: Set<string> }
   expiresAt: number
   lapse: ReturnType<typeof setTimeout>
+  /**
+   * Whether the relay connection is actually OPEN, as the tunnel reports it.
+   *
+   * Holding a fresh credential is not the same as being reachable, and
+   * conflating them is how this surface lied twice. First it kept reporting
+   * `serving: true` after the credential stopped being renewed (fixed by the
+   * lease). Then it reported `serving: true` with NO socket to the relay at
+   * all — verified with `lsof`: zero established connections to the relay's
+   * addresses while this said it was serving, and every client was correctly
+   * told the host was offline.
+   *
+   * The tunnel already emits `open` / `reconnecting` / `closed` /
+   * `auth-failed`. Recording them means the state can answer the question
+   * that actually matters — can a request reach this machine right now —
+   * instead of the question it happened to know the answer to.
+   */
+  connected: boolean
 }
 
 let active: ActiveServing | undefined
@@ -107,6 +124,13 @@ function normalized(input: string) {
   return input.trim().replace(/\/+$/, "")
 }
 
+/** The tunnel's own account of whether the relay connection is up. */
+function connectedAfter(event: WorkspaceRelayHostTunnelEvent, previous: boolean) {
+  if (event.type === "open") return true
+  if (event.type === "reconnecting" || event.type === "closed" || event.type === "auth-failed") return false
+  return previous
+}
+
 function logTunnelEvent(context: { hostId: string; relayUrl: string }, event: WorkspaceRelayHostTunnelEvent) {
   if (event.type === "auth-failed") {
     log.error("user-hosted serving tunnel auth failed", { ...context, attempt: event.attempt, error: event.error })
@@ -135,6 +159,10 @@ export function userHostedServingState() {
     relayUrl: active.relayUrl,
     workspaceIds: [...active.registration.current].sort(),
     credentialExpiresAt: active.expiresAt,
+    // `serving` is intent plus a live credential; `connected` is whether the
+    // relay can actually reach this machine. A reader that needs the truthful
+    // answer wants this one.
+    connected: active.connected,
   }
 }
 
@@ -192,7 +220,10 @@ export async function setUserHostedServing(
     },
     tokenProvider: async () => token.current,
     localReplayHeaders: loopbackReplayHeaders,
-    onEvent: (event) => logTunnelEvent(context, event),
+    onEvent: (event) => {
+      if (active) active.connected = connectedAfter(event, active.connected)
+      logTunnelEvent(context, event)
+    },
     pingIntervalMs: 15_000,
     reconnectIntervalMs: 1_000,
     ...hostTunnelPreOpenQueueFromEnv(),
@@ -205,6 +236,8 @@ export async function setUserHostedServing(
     registration,
     expiresAt: credential.expiresAt,
     lapse: armLapse(credential.expiresAt, context),
+    // Not connected until the tunnel says `open`.
+    connected: false,
   }
   log.info("user-hosted serving tunnel started", { ...context, workspaceIds, expiresAt: credential.expiresAt })
   return userHostedServingState()
