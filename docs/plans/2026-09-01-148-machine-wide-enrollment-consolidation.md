@@ -304,9 +304,78 @@ individual bugs, is what a future migration should expect:
   `reference_transient_auth_blip_cascade` in session memory; all five links
   are fixed.
 
-### Not yet verified
+### Executed 2026-09-01/02 — from "green dot" to a usable workspace
 
-The workspace rendering in the hosted app end to end. The transport is proven
-(the health round trip above), but the desktop's refresh grant died during the
-token-rotation incident, so a fresh interactive sign-in is required before the
-final UI acceptance can run.
+The hosted app reached "Self-hosted · Connected via relay" for a laptop
+workspace, and then every read the workspace needs failed one at a time.
+Each was a seam with two sides written apart; each is now pinned by a test
+that fails when its fix is removed.
+
+- **Deploy window revoked the machine** (`71202a3f08`). A control-plane
+  release answers `503 deployment_candidate_unavailable` for the seconds
+  between upload and dev-open; the connector read any heartbeat error as
+  revocation and stopped for good. Every deploy silently took remote access
+  down, and the daemon kept saying `serving: true` because its token lease
+  had not expired — the same symptom as a real revocation. Only a decisive
+  status (400/401/403/404/409/410) revokes now.
+- **Relay refused the machine's tunnel** (`09c229b82d`). Durable Object rooms
+  are per workspace; the daemon dialled one tunnel naming every workspace and
+  the relay rejected it at the gateway (`host_tunnel_single_workspace_required`).
+  One connection per workspace, one machine-wide token (the relay checks
+  membership, not equality). `connected` now means every served room has a
+  socket.
+- **Browser gates the server never sees**: `last-event-id` missing from the
+  control plane's CORS allow-list (`b136556ce3`), and the app sending the
+  control-plane cookie to the bearer-authenticated relay (`6c923c27d6`,
+  corrected for the app/API split-host topology in `7f37cbd352`). Both
+  refused in the browser before any request left; nothing logged anywhere.
+- **`/api/control/session-list` absent from the hosted roots** (`be1b60c813`).
+  The workerd migration dropped it (it lived only on the Node roots'
+  `ControlPlaneSessionRoutes`). Now ONE shared `signedSessionList` behind the
+  canonical route and both hosted roots; the redundant `x-opencode-directory`
+  client header — which the preflight refused — removed.
+- **`/provider` 403 through the relay** (`9a2e386102`). The tunnel guard
+  refused a route the ownership table called central while the workspace
+  runtime served it. Reclassified EXACT (children stay central), after giving
+  the runtime a host-injected `providerCatalog` seam so non-opencode
+  harnesses do not regress from the compat router's 200 to a 502.
+- **Control plane rendered "404 Not Found" as a page** (`222a9643d0`,
+  `678d8b5011`). Root now redirects to the app; unrouted paths answer JSON.
+  The first version read `CLAXEDO_APP_ORIGINS` while the locked worker binds
+  the singular — caught live on release 40.
+- **Staging desktop QR pointed phones at production** (`cad4fd0161`).
+  `VITE_CLAXEDO_APP_ORIGIN` was read but never forwarded through the
+  renderer's `define`.
+- **`acp-connections` 404 on hosted** (`e22c8e90a3`) — cosmetic; the client
+  already degrades to "no ACP group".
+
+Releases 37–40 carried the server-side fixes to staging. Release 41 (root
+redirect env name) is composed and pending.
+
+**Dev-launch trap, recorded because it cost most of a day:** `electron-vite dev`
+with no `VITE_AUTH_ENABLED=true` builds an UNSIGNED renderer. The Host
+Connector still works over raw IPC, but the renderer never binds its
+remote-access port or account surface, so Settings → Devices says "Remote
+access is coming soon" and there is no way to sign back in after logout —
+while the machine is enrolled and serving underneath. Launch a signed desktop
+with `VITE_AUTH_ENABLED=true VITE_CLAXEDO_APP_ORIGIN=<app origin>
+CLAXEDO_CORE_ORIGIN=<api origin>`.
+
+### Verified 2026-09-02
+
+The workspace renders in the hosted app end to end, observed in a browser
+rather than inferred from a server probe: `app-acc-stg-…/w/5f39af3e-…/session`
+shows `5f39af3e-… · Self-hosted`, the composer, and **Select model** — the
+model catalog reached the UI, which means `/provider` crossed the relay to the
+laptop (200 with a real `all[]`, where it had been an empty 403). Both shared
+rooms hold live sockets; `/session` through the relay returns the machine's
+real session list. The signed desktop's Devices panel shows Connect a device /
+Pause / Revoke rather than "coming soon".
+
+Still open: the hosted WEB app's Settings → Devices binds the retired HTTP
+remote-access port (`main.tsx`) and reads 404 → "locked"; the desktop is
+unaffected. The desktop's own account token refresh timed out against the
+control plane twice in one evening (`token endpoint timed out after 21998ms`,
+then `userinfo failed: 401`), which signed the desktop out and unpublished the
+machine; that transport stall is the same class recorded in
+`reference_transient_auth_blip_cascade` and is not addressed here.
