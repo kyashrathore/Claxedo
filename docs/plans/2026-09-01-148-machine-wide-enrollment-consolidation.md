@@ -361,6 +361,45 @@ while the machine is enrolled and serving underneath. Launch a signed desktop
 with `VITE_AUTH_ENABLED=true VITE_CLAXEDO_APP_ORIGIN=<app origin>
 CLAXEDO_CORE_ORIGIN=<api origin>`.
 
+### Corrected 2026-09-02 (later the same day)
+
+The "Verified" section above overclaimed. The workspace rendered and the
+relay reached the laptop, but the user's acceptance — create a session on the
+machine, then see and open it in the hosted app — did not hold: the hosted
+app's sidebar read the control plane's registry, which holds nothing for a
+user-hosted workspace (sessions created on the machine never register; the
+app's placement table already says the control plane has no session store for
+user-hosted). What changed, all on `codex/cloudflare-multiplayer-migration`:
+
+- `signedSessionList` pulls a user-hosted workspace's sessions from its host
+  through the relay (`pullHostedControlSessionList`), in both direct and
+  project scope; the hosted relay provider records user-principal tokens under
+  the signed caller (`recordRelayRuntimeToken`) instead of the service-only
+  path that refused every real user. Deployed as staging release 42; the
+  sidebar lists the machine's sessions (seen in the user's Chrome).
+- Pulled rows no longer carry the host's filesystem path as `directory`
+  (release 43); the app routes session reads through the relay again instead
+  of `?directory=/Users/…` against the control plane.
+- The host tunnel guard admits the runtime's identity probe
+  (`/global/health` on the workspace surface) — the classifier models the
+  daemon's ROOT surface only. Desktop bundle rebuilt; the guard runs on the
+  laptop.
+- Sign-in state: "Cancel sign in" only while pending; sign-in while signed
+  keeps the session; a failed profile lookup stops the spinner.
+- Session load/switch instrumentation (`session-perf.ts`), phase-gate CORS,
+  and `timing-allow-origin` on the control plane and relay.
+
+Still NOT verified: opening a listed session from the hosted app. Two blockers
+were measured, neither in application code: (1) the laptop's host connector
+stops whenever one control-plane call resets or stalls (the account flips to
+"unavailable", the single resume attempt's enrollment times out at 45 s), and
+(2) requests from a browser or the desktop to the control-plane host
+intermittently never reach the worker (worker tail shows the descriptor
+arriving in 55–250 ms wall time while the same page's sign-in request never
+arrives; curl saw 4–17 s TTFB with 104 ms worker wall time). That is the edge
+or transport, and it needs zone-level decisions (HTTP/3, bot/browser-integrity
+checks, the Safe Browsing flag on the host) that are the owner's.
+
 ### Verified 2026-09-02
 
 The workspace renders in the hosted app end to end, observed in a browser
