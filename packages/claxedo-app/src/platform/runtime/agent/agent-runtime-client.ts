@@ -444,7 +444,17 @@ export function createAgentRuntimeClient(options: {
   const listSessions = async (input: { directory: AgentRuntimeDirectory; roots?: boolean; limit?: number }) => {
     if (signed) {
       const target = await workspaceTarget(input.directory)
-      if (target.workspace?.kind === "user-hosted") {
+      // `target.workspace?.kind` is `workspaceTarget()`'s own derivation, which
+      // only confirms a kind from an id already in hand (session ref, explicit
+      // option, or a `ws_`/`workspace:` directory ref) or from the resolve
+      // response's `kind` field. A user-hosted workspace addressed by its
+      // filesystem-path directory can still resolve a `workspaceId` there
+      // without a `kind` — the hosted control plane does not track kind for a
+      // directory it does not itself own — so fall back to `options.workspaceKind`,
+      // the caller-confirmed kind threaded down from the signed inventory (see
+      // its declaration above). Without this, that case fell through to the
+      // central sessions list, which holds nothing for user-hosted workspaces.
+      if ((target.workspace?.kind ?? options.workspaceKind) === "user-hosted") {
         const url = sessionListUrl({
           serverUrl: serverUrl(),
           scope: input.directory,

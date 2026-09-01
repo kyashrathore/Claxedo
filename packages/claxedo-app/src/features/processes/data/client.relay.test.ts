@@ -152,4 +152,56 @@ describe("process client relay transport", () => {
       "https://relay.example.test/workspaces/ws_direct/api/wr/process",
     ])
   })
+
+  // Regression: a signed user-hosted workspace addressed by its filesystem-path
+  // directory has no `/api/workspace/resolve` entry on the hosted control
+  // plane (that liveness read answers null for it), so a caller with only that
+  // directory and no explicit workspaceId needs the synchronous signed
+  // inventory match (`resolveSignedWorkspace`) to still reach the relay
+  // instead of falling back to the plain central transport.
+  test("uses the signed workspace inventory match when the runtime resolve read comes back empty", async () => {
+    const calls: string[] = []
+    const request = (async (input, init) => {
+      const req = new Request(requestUrl(input), init)
+      calls.push(req.url)
+      if (req.url.startsWith("http://server.test/api/wr/process")) {
+        throw new Error(`Unexpected central process request: ${req.method} ${req.url}`)
+      }
+      if (req.url === "http://server.test/api/workspace/ws_uh1/connection") {
+        return Response.json({
+          access: "user-hosted",
+          backing: "local-worktree",
+          workspaceId: "ws_uh1",
+          role: "owner",
+          relayUrl: "https://relay.example.test",
+          runtimeAccessToken: "rat_uh1",
+          tokenExpiresAt: Date.now() + 120_000,
+        })
+      }
+      if (req.url === "https://relay.example.test/workspaces/ws_uh1/api/wr/process") {
+        return Response.json({ configs: [config], processes: [] })
+      }
+      throw new Error(`Unexpected request: ${req.method} ${req.url}`)
+    }) as typeof fetch
+
+    const client = createProcessClient({
+      baseUrl: "http://server.test",
+      directory: "/repo/user-hosted/ws_uh1-dir",
+      fetch: request,
+      // The hosted control plane's liveness read for this directory answers
+      // null — same as production for a user-hosted workspace it does not own.
+      resolveWorkspaceRuntime: async () => null,
+      resolveSignedWorkspace: (directory) =>
+        directory === "/repo/user-hosted/ws_uh1-dir"
+          ? { workspaceId: "ws_uh1", kind: "user-hosted", directory }
+          : undefined,
+    })
+
+    await client.list()
+
+    expect(calls).toEqual([
+      "http://server.test/api/workspace/ws_uh1/connection",
+      "https://relay.example.test/workspaces/ws_uh1/api/wr/process",
+    ])
+  })
 })

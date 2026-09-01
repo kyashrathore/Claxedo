@@ -10,6 +10,7 @@ import {
   harnessPreparedSessionSeqKey,
   harnessPreparingSessionKey,
   harnessStateFromSessionConfig,
+  harnessWorkspaceRuntimeRef,
   initialHarness,
   isDraftScope,
   modelOptionsUnavailableMessage,
@@ -160,6 +161,31 @@ describe("harness store policy", () => {
       directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
       workspaceKind: "user-hosted",
     })).toBe(false)
+  })
+
+  test("resolves the workspace runtime ref for a signed user-hosted directory only when the inventory is passed in", () => {
+    const projects = [{
+      worktree: "/repo",
+      workspaces: {
+        ws_uh1: {
+          id: "ws_uh1",
+          workspaceId: "ws_uh1",
+          kind: "user-hosted" as const,
+          directory: "/repo/user-hosted/ws_uh1-dir",
+        },
+      },
+    }]
+
+    // Without the signed inventory, a plain filesystem-path directory can't be
+    // told apart from an ordinary local one — the ref stays unresolved.
+    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/user-hosted/ws_uh1-dir" })).toBeUndefined()
+
+    // Threading the inventory through lets the directory match the signed
+    // user-hosted workspace and resolve to its real workspaceId.
+    expect(harnessWorkspaceRuntimeRef({ directory: "/repo/user-hosted/ws_uh1-dir" }, projects)).toEqual({
+      workspaceId: "ws_uh1",
+      kind: "user-hosted",
+    })
   })
 
   test("stays out of Solid state, query ownership, SDK, and localStorage", async () => {

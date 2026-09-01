@@ -813,6 +813,50 @@ describe("AgentRuntimeClient", () => {
     expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session?roots=true&limit=20")
   })
 
+  // Regression: when the client is not told the workspace id up front, `listSessions`
+  // resolves it live via `/api/workspace/resolve` — but that read confirms only a
+  // `workspaceId` for a user-hosted workspace addressed by its filesystem-path
+  // directory, never a `kind` (the hosted control plane does not track kind for a
+  // directory it does not own). The caller-confirmed `workspaceKind` (threaded down
+  // from the signed inventory) must still steer `listSessions` to the relay runtime
+  // instead of the central sessions list, which holds nothing for user-hosted.
+  it("signed user-hosted session lists use the caller-confirmed kind when the live resolve confirms only an id", async () => {
+    const calls: string[] = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "https://control.example/",
+      signedControlPlane: true,
+      workspaceKind: "user-hosted",
+      request: async (input, init) => {
+        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
+        if (String(input).includes("/api/workspace/resolve")) {
+          return ok({ workspaceId: "ws_cleantest1" })
+        }
+        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+          return ok({
+            access: "user-hosted",
+            backing: "local-worktree",
+            workspaceId: "ws_cleantest1",
+            relayUrl: "https://relay.example",
+            runtimeAccessToken: "runtime-token",
+            role: "owner",
+            tokenExpiresAt: Date.now() + 120_000,
+          })
+        }
+        return ok([{ id: "runtime-session-1", title: "Existing session" }])
+      },
+    })
+
+    const result = await client.listSessions({
+      directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+      roots: true,
+      limit: 20,
+    })
+
+    expect(result.sessions?.map((session) => session.id)).toEqual(["runtime-session-1"])
+    expect(calls.some((call) => call.includes("/api/control/sessions"))).toBe(false)
+    expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session?roots=true&limit=20")
+  })
+
   it("routes signed real-directory sends through the resolved workspace runtime", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({

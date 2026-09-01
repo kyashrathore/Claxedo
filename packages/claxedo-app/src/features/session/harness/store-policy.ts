@@ -5,7 +5,7 @@ import {
   panePreferenceScope,
 } from "@/features/session/preferences/pane"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
-import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { sessionWorkspaceRuntimeRef, type SessionWorkspaceRuntimeInput } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {
@@ -74,8 +74,20 @@ export function shouldHydrateDraftFromHarnessStatus(input: {
   return input.workspaceKind === "local"
 }
 
-export function harnessWorkspaceRuntimeRef(input?: HarnessScopeInput) {
-  return input?.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
+/**
+ * `projects` is the signed workspace inventory (the same shape
+ * `signedWorkspaceFromProjects` matches against). It is optional and defaults
+ * to none so existing callers that only know the directory keep their prior
+ * behavior; a caller that has the inventory in hand (the harness config
+ * runtime, which threads its own `input.projects()`) passes it so a
+ * user-hosted workspace addressed by its filesystem-path directory still
+ * resolves to its `workspaceId` instead of falling through unresolved.
+ */
+export function harnessWorkspaceRuntimeRef(
+  input?: HarnessScopeInput,
+  projects?: SessionWorkspaceRuntimeInput["projects"],
+) {
+  return input?.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory, projects }) : undefined
 }
 
 export function refreshHarnessTypeForScope(input: {

@@ -88,7 +88,7 @@ export function createHarnessConfigRuntime(input: {
   }
 
   function workspaceHarnessTransport(params?: HarnessScopeInput) {
-    const runtimeRef = harnessWorkspaceRuntimeRef(params)
+    const runtimeRef = harnessWorkspaceRuntimeRef(params, input.projects())
     const serverTransport = centralTransportForServer(input.base)
     return createTransport({
       placement: runtimeRef
@@ -109,7 +109,7 @@ export function createHarnessConfigRuntime(input: {
   }
 
   function workspaceRuntimeConfigFetch(params?: HarnessScopeInput): typeof fetch | undefined {
-    const runtimeRef = harnessWorkspaceRuntimeRef(params)
+    const runtimeRef = harnessWorkspaceRuntimeRef(params, input.projects())
     if (!runtimeRef) return undefined
     return workspaceHarnessTransport(params).sdkFetch
   }

@@ -151,4 +151,44 @@ describe("harness config runtime", () => {
     expect(harnessRuntime.useLocalHarnessConfig({ directory: "/repo/local" })).toBe(true)
   })
 
+  // Regression: a signed user-hosted workspace addressed by its filesystem-path
+  // directory (the registration-stored remote_directory, not a `ws_`/`workspace:`
+  // ref) must still resolve to its workspaceId and get a relay placement — not
+  // fall through to the plain central transport, which serves none of the
+  // `/api/wr/*` runtime paths.
+  test("routes signed user-hosted harness config options through the workspace relay for a filesystem directory", async () => {
+    const placements: unknown[] = []
+    const harnessRuntime = createHarnessConfigRuntime({
+      base: "https://claxedo.example.test",
+      request: responseFetch("request"),
+      projects: () => [{
+        worktree: "/repo",
+        workspaces: {
+          ws_uh1: {
+            id: "ws_uh1",
+            workspaceId: "ws_uh1",
+            kind: "user-hosted",
+            directory: "/repo/user-hosted/ws_uh1-dir",
+          },
+        },
+      }],
+      createTransport: (input: { placement: unknown }) => {
+        placements.push(input.placement)
+        return {
+          fetch: async () => Response.json({ ok: true }),
+          sdkFetch: responseFetch("sdk"),
+          json: async () => ({}),
+        }
+      },
+    })
+
+    await harnessRuntime.configOptionsFetch("claude-acp", { directory: "/repo/user-hosted/ws_uh1-dir" })
+
+    expect(placements).toEqual([{
+      workspaceId: "ws_uh1",
+      hosting: "workspace",
+      transport: "workspace-relay",
+    }])
+  })
+
 })
