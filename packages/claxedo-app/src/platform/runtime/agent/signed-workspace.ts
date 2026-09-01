@@ -1,4 +1,5 @@
 import { isRelayBackedWorkspaceKind, workspaceKind, type SignedWorkspaceKind } from "./workspace-kind"
+import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 export type { SignedWorkspaceKind }
 
 export type SignedWorkspaceInfo = {
@@ -43,10 +44,6 @@ function sameWorkspaceId(left: string | null | undefined, right: string | null |
   return !!left && !!right && left === right
 }
 
-function isFilesystemWorktree(input: string | undefined | null) {
-  return !!input && (input.startsWith("/") || /^[A-Za-z]:[\\/]/.test(input))
-}
-
 export function signedWorkspaceFromProjects(projects: readonly WorkspaceInventoryProject[], directory: string | undefined) {
   if (!directory) return undefined
   const cached = signedWorkspaceCache.get(projects)?.get(directory)
@@ -88,7 +85,7 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
     // That UUID is not relay-backed unless a signed cloud/user-hosted row also
     // claims it — routing it at Convex mints 403 `workspace_authorization_denied`.
     if (
-      isFilesystemWorktree(project.worktree) &&
+      isFilesystemDirectory(project.worktree ?? undefined) &&
       (sameWorkspaceId(project.id, ref) || sameWorkspaceDirectory(project.worktree, ref)) &&
       !findSignedWorkspaceFromProjects(projects, ref)
     ) {

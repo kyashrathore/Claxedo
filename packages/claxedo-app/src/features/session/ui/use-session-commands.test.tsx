@@ -401,12 +401,16 @@ describe("upstream contract", async () => {
     return commands
   }
 
-  test("keeps upstream model, file, MCP, fork, and navigation commands registered", () => {
+  // `mcp.toggle` is deliberately NOT here. Its dialog read Agent Extensions
+  // marketplace install state, so retiring that subsystem retired the command
+  // with it; plugin-contributed MCP servers are governed from the Agent Plugins
+  // catalog instead. This is a knowing divergence from upstream.
+  test("keeps upstream model, file, fork, and navigation commands registered", () => {
     const ids = collectCommands().map((command) => command.id)
 
     expect(ids).toContain("model.choose")
     expect(ids).toContain("file.open")
-    expect(ids).toContain("mcp.toggle")
+    expect(ids).not.toContain("mcp.toggle")
     expect(ids).toContain("session.fork")
     expect(ids).toContain("message.previous")
     expect(ids).toContain("message.next")
