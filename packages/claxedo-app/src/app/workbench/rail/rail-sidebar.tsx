@@ -14,6 +14,7 @@ import {
   syncUnfocusedRailBatchStatusToCache,
 } from "./rail-sidebar-status"
 import { markRendererPhase, measureRendererPhase } from "@/platform/performance/renderer-trace"
+import { sessionPerf } from "@/platform/performance/session-perf"
 
 // RETAINED INSTRUMENTATION — do not delete individual marks. Consumer:
 // `perf-harness/src/agent-claxedo-launcher.ts` reads marks WHOLESALE; see the
@@ -1248,6 +1249,9 @@ export function RailSidebar(props: RailSidebarProps) {
     prefetchSidebarSessionMessages.supersede(directory, session.id)
     // `activateSession` owns navigation; this notification only closes the
     // mobile drawer and must not open the session again.
+    // The open starts at the click, not at the mount: everything the user
+    // waits for is measured from here.
+    sessionPerf.openStart(session.id, "rail")
     measure("sessionActivate.onSessionSelect", () => props.onSessionSelect?.(sessionDirectory(session), session.id))
     const existingId = measure("sessionActivate.findContent", () => existingSessionContentId(session))
     const existingAlive = !!existingId && claxedoState.wb.state.contentIds.includes(existingId)

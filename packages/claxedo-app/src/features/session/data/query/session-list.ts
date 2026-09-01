@@ -8,6 +8,7 @@ import {
 import type { SessionNavigationRow } from "../../ui/navigation/session-navigation"
 import { queryKeys } from "@/platform/query/keys"
 import { queryClient } from "@/platform/query/query-client"
+import { sessionPerf } from "@/platform/performance/session-perf"
 
 export type SessionListQuery = ControlSessionNavigationListQuery
 
@@ -141,6 +142,12 @@ export function sessionListQueryOptions(input: {
   return queryOptions({
     queryKey: queryKeys.shell.sessionList(input.baseUrl, input.query),
     queryFn: async () => {
+      const span = sessionPerf.span("session.list", {
+        scope: input.query.scope,
+        ...(input.query.workspaceId ? { workspaceId: input.query.workspaceId } : {}),
+        ...(input.query.projectId ? { projectId: input.query.projectId } : {}),
+        paged: !!input.query.cursor,
+      })
       const res = await sessionListRequest(input)(sessionNavigationListUrl({
         baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
         ...input.query,
@@ -155,8 +162,12 @@ export function sessionListQueryOptions(input: {
         // page, with nothing logged server-side.
         headers: { Accept: "application/json" },
       })
-      if (!res.ok) throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
+      if (!res.ok) {
+        span.end({ status: res.status, ok: false })
+        throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
+      }
       const page = await res.json() as SessionListResponse
+      span.end({ status: res.status, ok: true, rows: page.items?.length ?? page.groups?.reduce((n, g) => n + g.items.length, 0) ?? 0 })
       if (input.query.cursor) return page
       return mergeSessionListResponses({
         current: queryClient.getQueryData<SessionListResponse>(

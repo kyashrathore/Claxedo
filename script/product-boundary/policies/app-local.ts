@@ -141,7 +141,10 @@ export const appLocal: Policy = {
   // halves (`share-workspace` decides what is local, `shared-workspaces` reads
   // what is published) and is the only layer allowed to import them —
   // `features/onboarding` may not. 945/38.
-  ceilings: { modules: 945, packages: 38 },
+  // Session open/switch instrumentation (`platform/performance/session-perf.ts`
+  // and its screen-side owner `features/session/ui/session-open-perf.ts`)
+  // adds two modules and no package edge: 947/38.
+  ceilings: { modules: 947, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

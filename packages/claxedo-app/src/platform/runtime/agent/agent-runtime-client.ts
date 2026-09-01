@@ -39,6 +39,7 @@ import {
   type AgentRuntimeDirectory,
   type AgentRuntimeSessionResource,
 } from "./agent-runtime-urls"
+import { requestName, sessionPerf } from "@/platform/performance/session-perf"
 export { centralRuntimePath } from "./central-runtime-path"
 export type { AgentRuntimeDirectory } from "./agent-runtime-urls"
 /**
@@ -329,6 +330,22 @@ export function createAgentRuntimeClient(options: {
       loopback: centralTransportForServer(agentRuntimeBaseUrl(serverUrl())) === "loopback",
       targetReachable: options.workspaceReachable,
     })
+    const span = sessionPerf.span("request.session", {
+      via: route.via,
+      resource: input.resource ?? "session",
+      sessionId: input.sessionID,
+      method: init?.method?.toUpperCase() ?? "GET",
+      url: requestName(runtimeUrl),
+    })
+    try {
+      const response = await sessionResourceResponse()
+      span.end({ status: response.status, ok: response.ok })
+      return response
+    } catch (error) {
+      span.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+    async function sessionResourceResponse() {
     switch (route.via) {
       case "runtime-session-ref":
         return await runtimeTransport({
@@ -353,6 +370,7 @@ export function createAgentRuntimeClient(options: {
         }), init)
       case "direct":
         return await request(runtimeUrl, init)
+    }
     }
   }
 
@@ -379,12 +397,25 @@ export function createAgentRuntimeClient(options: {
       ? await workspaceTarget(input.directory, { forceResolve: method !== "GET" && method !== "HEAD" })
       : undefined
     const sessionRef = signed && target?.workspaceId ? undefined : options.sessionRef
-    return await runtimeTransport({
-      directory: input.directory,
-      sessionRef,
-      workspaceId: target?.workspaceId,
-      preferRelayOnLoopback: signed,
-    }).fetch(centralRuntimePath(input.path, sessionRef), init)
+    const span = sessionPerf.span("request.runtime", {
+      method,
+      path: input.path.split("?")[0] ?? input.path,
+      ...(target?.workspaceId ? { workspaceId: target.workspaceId } : {}),
+      ...(target?.workspace?.kind ? { workspaceKind: String(target.workspace.kind) } : {}),
+    })
+    try {
+      const response = await runtimeTransport({
+        directory: input.directory,
+        sessionRef,
+        workspaceId: target?.workspaceId,
+        preferRelayOnLoopback: signed,
+      }).fetch(centralRuntimePath(input.path, sessionRef), init)
+      span.end({ status: response.status, ok: response.ok, url: requestName(response.url || input.path) })
+      return response
+    } catch (error) {
+      span.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
   }
 
   async function fetchRuntimeSession(input: {

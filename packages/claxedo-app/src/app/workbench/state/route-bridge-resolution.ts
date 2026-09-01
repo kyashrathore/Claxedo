@@ -8,6 +8,7 @@ import { centralSessionRef, retargetSessionRef, sessionRefForWorkspaceSession, t
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
+import { requestName, sessionPerf } from "@/platform/performance/session-perf"
 
 type RouteSessionDirectory = NonNullable<Parameters<typeof signedWorkspaceFromProjects>[1]>
 
@@ -246,7 +247,11 @@ const inflightSessionProbes = new Map<string, Promise<unknown>>()
 function shareSessionProbe<T>(key: string, run: () => Promise<T>): Promise<T> {
   const pending = inflightSessionProbes.get(key)
   if (pending) return pending as Promise<T>
-  const request = run().finally(() => inflightSessionProbes.delete(key))
+  const span = sessionPerf.span("session.resolveProbe", { url: requestName(key) })
+  const request = run().finally(() => {
+    inflightSessionProbes.delete(key)
+    span.end()
+  })
   inflightSessionProbes.set(key, request)
   return request
 }

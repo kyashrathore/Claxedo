@@ -96,6 +96,7 @@ import {
   preloadSessionMarkdownBodies,
   sessionMarkdownTimelineGate,
 } from "@/features/session/ui/content/session-markdown-preload"
+import { trackSessionOpen } from "@/features/session/ui/session-open-perf"
 export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
@@ -1246,6 +1247,7 @@ export default function SessionPage() {
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown)
   })
+  trackSessionOpen({ sessionId: sessionID, directory: dir, messagesReady, firstFoldReady, messageCount: () => messages().length })
 
   createEffect(() => {
     if (!paneActive()) return

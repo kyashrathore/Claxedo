@@ -242,7 +242,10 @@ export const desktopRendererUnsigned: Policy = {
   // now publishes every local workspace the machine holds rather than the ones
   // a user ticked, and this is the module that keeps the two sets equal.
   // Reviewed owner: the workspaces data domain (see app-local.ts). 1031/59.
-  ceilings: { modules: 1031, packages: 59 },
+  // Session open/switch instrumentation (`platform/performance/session-perf.ts`
+  // and its screen-side owner `features/session/ui/session-open-perf.ts`)
+  // adds two modules and no package edge: 1033/59.
+  ceilings: { modules: 1033, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
