@@ -274,9 +274,16 @@ function credentialsFor(url: string, requested: RequestCredentials | undefined):
   if (localUrl(url)) return cfg.browserCredentials
   try {
     const target = new URL(url, typeof window === "undefined" ? undefined : window.location.origin)
-    const controlPlane = cfg.base ?? (typeof window === "undefined" ? undefined : window.location.origin)
-    if (controlPlane && target.origin === new URL(controlPlane).origin) return cfg.browserCredentials
-    if (cfg.releaseValidation && target.origin === cfg.releaseValidation.coreOrigin) return cfg.browserCredentials
+    // `getClaxedoServerUrl()`, NOT the page's own origin. On a hosted
+    // deployment the app and the control plane are DIFFERENT hosts
+    // (`app-…` and `cf-…`), and `configureApiRuntime` is not called with a
+    // `baseUrl` there — so treating the page origin as the control plane
+    // withholds the cookie from the very service that needs it and every
+    // request 401s. Verified live, as a regression this function caused.
+    for (const origin of [getClaxedoServerUrl(), cfg.base, cfg.releaseValidation?.coreOrigin]) {
+      if (!origin) continue
+      if (target.origin === new URL(origin, target.origin).origin) return cfg.browserCredentials
+    }
   } catch {
     // An unparseable target is not the control plane.
   }

@@ -243,6 +243,28 @@ describe("authFetch", () => {
     expect(calls.map((call) => call.credentials)).toEqual(["include", "same-origin"])
   })
 
+  /**
+   * On a hosted deployment the app and the control plane are DIFFERENT hosts —
+   * `app-<id>.claxedo.dev` serves the page, `cf-<id>.claxedo.dev` serves the
+   * API — and `main.tsx` does not pass a `baseUrl`, so the control plane is
+   * known only through `getClaxedoServerUrl()`.
+   *
+   * The first version of the scoping above used the page's own origin as the
+   * control plane, which withheld the cookie from the API on exactly this
+   * topology and turned every request into a 401. Caught live, on staging.
+   */
+  test("sends the cookie to a control plane on a different host from the page", async () => {
+    setServerEnv({ claxedo: "https://cf-deployment.example.test" })
+    configureApiRuntime({ browserCredentials: "include" })
+    try {
+      await authFetch("https://cf-deployment.example.test/api/wr/events")
+      await authFetch("https://relay.example.test/workspaces/ws_1/api/wr/health")
+      expect(calls.map((call) => call.credentials)).toEqual(["include", "same-origin"])
+    } finally {
+      setServerEnv({ claxedo: originalClaxedoServerUrl, legacy: originalLegacyBackendUrl })
+    }
+  })
+
   test("identifies validation-build requests only to the exact control-plane origin", async () => {
     configureApiRuntime({
       releaseValidation: {
