@@ -125,8 +125,13 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/claxedo/agent-config/extensions/:id/enable",
     "/api/claxedo/agent-config/extensions/catalog",
     "/api/claxedo/agent-config/extensions/machine-scan",
+    "/api/claxedo/agent-config/harness",
     "/api/claxedo/agent-config/harness/acp-connections",
   ],
+  // Unified usage dashboard/sync, mounted only when the plane has a Convex
+  // workspace-authority binding to build a ledger from (`hostedUsageLedger`
+  // in `hosted-usage-ledger.ts`) — this fixture's plane does.
+  usage: ["/api/claxedo/usage", "/api/claxedo/usage/sync"],
   billing: ["/api/billing/checkout", "/api/billing/polar/webhook", "/api/billing/portal"],
   connections: ["/api/claxedo/integrations", "/api/claxedo/integrations/*"],
   sessions: [
@@ -305,5 +310,38 @@ describe("hosted product contract", () => {
     const plane = hostedPlane()
     ;(plane.services as unknown as { authority: undefined }).authority = undefined
     expect(() => createHostedApp(plane)).toThrow(/no workspace authority is composed/)
+  })
+})
+
+/**
+ * `/api/claxedo/usage` gating (`hosted-usage-ledger.ts`).
+ *
+ * The route table assertion above already proves the paths mount for THIS
+ * fixture's plane (which carries both Convex bindings). These two cases prove
+ * the two things the table can't: the auth gate is real, and a plane missing
+ * either binding gets no route at all rather than one that would 503 on
+ * every call.
+ */
+describe("hosted usage route", () => {
+  test("requires signed auth", async () => {
+    const app = createHostedApp(hostedPlane()) as unknown as Hono
+    const res = await app.request("/api/claxedo/usage?since=0&until=1")
+    expect(res.status).toBe(401)
+  })
+
+  test("stays unmounted for a plane with no Convex workspace-authority URL", async () => {
+    const plane = hostedPlane()
+    ;(plane as unknown as { env: Record<string, string | undefined> }).env = {
+      ...plane.env,
+      CLAXEDO_WORKSPACE_AUTHORITY_URL: undefined,
+    }
+    // Hosted WorkGraph independently requires this same URL (or an injected
+    // executor) to boot at all; supply the test executor seam so the app
+    // still composes and this test exercises `hostedUsageLedger`'s own gate,
+    // not WorkGraph's.
+    const app = createHostedApp(plane, { workGraphExecutor: {} as never }) as unknown as Hono
+    expect([...new Set(app.routes.map((route) => route.path))]).not.toContain("/api/claxedo/usage")
+    const res = await app.request("/api/claxedo/usage?since=0&until=1")
+    expect(res.status).toBe(404)
   })
 })

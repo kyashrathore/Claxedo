@@ -47,7 +47,13 @@ import {
   type FirstPartyServiceCatalog,
 } from "@claxedo/service-contract"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
+import type { ControlPlaneServices } from "../../authority/services"
+import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { RelayRole } from "@claxedo/workspace-relay"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -89,6 +95,39 @@ export type HostedShellRouteOptions = {
   activateOwner?: (auth: SignedControlPlaneAuth) => Promise<void>
   /** Authenticated, data-only first-party installation catalog. */
   serviceCatalog?: (auth: SignedControlPlaneAuth) => Promise<FirstPartyServiceCatalog>
+  /**
+   * Ask a signed user-hosted workspace's runtime for harness health/identity,
+   * through the relay. Backs `GET /api/claxedo/agent-config/harness` — the
+   * probe the app shell's harness store polls unconditionally
+   * (`features/session/harness/{harness-config-store,harness-switcher,
+   * harness-hydrator}.ts`) to keep session readiness and the composer health
+   * peek current. Desktop answers the same probe locally by proxying
+   * `/api/wr/health` through the sandbox manager
+   * (`claxedo-local-server/src/agent-config/routes/harness-routes.ts`); a
+   * hosted central has no sandbox manager, so this asks the SAME endpoint on
+   * the workspace's own runtime over the relay (`hostedHarnessRuntimeStatus`
+   * below is the production implementation). Returns `undefined` for a
+   * workspace the caller cannot open — the route answers 404, matching an
+   * unknown project id elsewhere on this surface. Absent entirely (a
+   * composition with no relay wiring) degrades every probe to that same 404
+   * rather than a bare unmatched-route 404, which is what the app already
+   * treats as "no harness" — silent, not broken.
+   */
+  harnessStatus?: (
+    auth: SignedControlPlaneAuth,
+    input: { workspaceId: string; sessionId?: string },
+  ) => Promise<HostedHarnessProbe | undefined>
+}
+
+/** `/api/wr/health`'s shape, trimmed to the fields the harness probe reports. */
+export type HostedHarnessProbe = {
+  ok?: boolean
+  status?: string
+  agentType?: string
+  acpBinary?: string | null
+  model?: string | null
+  error?: string
+  harnessHealth?: { status: "ok" | "degraded" | "unavailable"; reason?: string }
 }
 
 function rec(input: unknown) {
@@ -288,6 +327,230 @@ async function signedAuth(c: Context, options: HostedShellRouteOptions) {
     ...(options.verifier ? { verifier: options.verifier } : {}),
   })
   return context.mode === "signed" ? context : undefined
+}
+
+// The one legal `directory -> workspaceId` narrowing point on the hosted
+// central. Mirrors the app's `workspaceIdFromRef`
+// (`claxedo-app/src/platform/identity/legacy-resolver.ts`): the app sends
+// either a bare `ws_...`/uuid workspace id or that id prefixed
+// `workspace:<id>` — a hosted central has no filesystem, so those are the
+// only two shapes a `directory` query param can legally carry here. Anything
+// else (a filesystem path, an empty string, a malformed ref) resolves to
+// `undefined`, which the route answers as an unknown workspace (404) —
+// exactly how a genuinely unknown workspace id resolves once opened.
+const HARNESS_WORKSPACE_ID = /^(ws_[A-Za-z0-9_-]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
+
+function harnessWorkspaceId(directory: string) {
+  const trimmed = directory.trim()
+  if (!trimmed) return undefined
+  const candidate = trimmed.match(/^workspace:(.+)$/)?.[1] ?? trimmed
+  return HARNESS_WORKSPACE_ID.test(candidate) ? candidate : undefined
+}
+
+function runtimeHealthPath(sessionId?: string) {
+  return sessionId ? `/api/wr/health?${new URLSearchParams({ sessionId })}` : "/api/wr/health"
+}
+
+function relayRoleOf(input: unknown): RelayRole | undefined {
+  return input === "viewer" || input === "editor" || input === "admin" || input === "owner" ? input : undefined
+}
+
+// `/api/wr/health`'s shape, read defensively the way every other hosted
+// shape-mirror in this file reads a runtime/authority payload: an untyped
+// wire response, never a value this module minted itself.
+function decodeSandboxHealth(input: unknown): HostedHarnessProbe {
+  const row = rec(input)
+  const health = rec(row?.harnessHealth)
+  const healthStatus = health?.status
+  return {
+    ...(typeof row?.ok === "boolean" ? { ok: row.ok } : {}),
+    ...(txt(row?.status) ? { status: txt(row?.status) } : {}),
+    ...(txt(row?.agentType) ? { agentType: txt(row?.agentType) } : {}),
+    ...(typeof row?.acpBinary === "string" || row?.acpBinary === null ? { acpBinary: row.acpBinary as string | null } : {}),
+    ...(typeof row?.model === "string" || row?.model === null ? { model: row.model as string | null } : {}),
+    ...(txt(row?.error) ? { error: txt(row?.error) } : {}),
+    ...(healthStatus === "ok" || healthStatus === "degraded" || healthStatus === "unavailable"
+      ? { harnessHealth: { status: healthStatus, ...(txt(health?.reason) ? { reason: txt(health?.reason) } : {}) } }
+      : {}),
+  }
+}
+
+/**
+ * Production `harnessStatus` for `HostedShellRouteOptions`: resolves the
+ * caller's access to `workspaceId` through the authority (the same
+ * `openWorkspace` gate every other signed workspace read on this plane uses),
+ * then asks that workspace's runtime for `/api/wr/health` through the
+ * relay-backed `verifiedRuntimeJson` — the identity probe it runs first
+ * (`WORKSPACE_RUNTIME_IDENTITY_PATH`) refuses to answer for a relay target
+ * that is not actually serving this workspace (see
+ * `authority/hosted-session-pull.ts` for the same resolve-then-verify shape
+ * on the session-pull path). `httpOptions.runtimeFetch` is a test seam only —
+ * production composition passes none, so `verifiedRuntimeJson` mints a real
+ * runtime access token and calls the relay.
+ *
+ * A workspace the caller cannot open (unknown id, revoked share, wrong org)
+ * answers `undefined` — the route's 404 — rather than throwing, so a stale
+ * project reference degrades to "not found" instead of a 401/403 that would
+ * misreport the caller's own auth as invalid. Once the workspace is known,
+ * any further failure (relay down, runtime unreachable, identity mismatch)
+ * is reported as a DEGRADED probe (`ok: false`, `status: "error"`, `error`)
+ * rather than re-thrown, matching the local proxy's own
+ * catch-and-degrade for the same unreachable-runtime case.
+ *
+ * This resolves and calls the relay directly (mint token, fetch) rather than
+ * through `authority/http/runtime-transport.ts`'s `verifiedRuntimeJson`: that
+ * module pulls in `authority/http/protocol.ts`, which pulls in
+ * `workspace/supervisor` — the desktop-only control-token verifier — and
+ * `@claxedo/workspace-runtime` with it, a package this Worker bundle must
+ * never reach (`test:architecture-ratchets` catches exactly this edge). The
+ * shape below mirrors `authority/hosted-session-pull.ts`'s OWN private
+ * `runtimeJson`/`verifiedRuntimeJson`, written for the identical reason.
+ */
+type HarnessRuntimeFetch = (input: { workspaceId: string; path: string }) => Promise<Response>
+
+async function harnessRelayFetch(
+  services: ControlPlaneServices,
+  auth: SignedControlPlaneAuth,
+  input: {
+    workspaceId: string
+    ws: Workspace
+    authorityWorkspace?: WorkspaceRecord
+    authorityRole: RelayRole
+    path: string
+  },
+) {
+  const provider = services.relay.provider
+  if (!provider) throw new Error("Workspace runtime pull transport is not configured")
+  const orgId = input.ws.org_id
+  if (!orgId) throw new Error("Workspace is missing org identity for runtime token minting")
+  const target = await resolveWorkspaceRuntimeTarget(services, auth, {
+    workspaceId: input.workspaceId,
+    ...(input.authorityWorkspace ? { workspace: input.authorityWorkspace } : {}),
+  })
+  const token = await provider.mintRuntimeAccessToken({
+    workspaceId: input.workspaceId,
+    hostId: target.hostId,
+    principalKind: "user",
+    auth,
+    ...(await resolveRuntimeActor(requireAuthority(services), auth)),
+    orgId,
+    role: input.authorityRole,
+    ttlMs: 10 * 60_000,
+  })
+  const relayUrl = await provider.getRelayEndpoint(input.workspaceId, target.homeRegion)
+  return await fetch(
+    `${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}${input.path}`,
+    {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token.token}`,
+        "x-opencode-directory": `workspace:${input.workspaceId}`,
+      },
+    },
+  )
+}
+
+async function harnessRuntimeJson<T>(
+  services: ControlPlaneServices,
+  auth: SignedControlPlaneAuth,
+  input: Parameters<typeof harnessRelayFetch>[2],
+  runtimeFetch?: HarnessRuntimeFetch,
+) {
+  const res = runtimeFetch
+    ? await runtimeFetch({ workspaceId: input.workspaceId, path: input.path })
+    : await harnessRelayFetch(services, auth, input)
+  if (!res.ok) {
+    throw new Error((await res.text().catch(() => "")) || `Workspace runtime pull failed: ${res.status}`)
+  }
+  return (await res.json()) as T
+}
+
+export function hostedHarnessRuntimeStatus(
+  services: ControlPlaneServices,
+  /** Test seam only — production composition passes none and every fetch goes through the relay. */
+  testOptions: { runtimeFetch?: HarnessRuntimeFetch } = {},
+): NonNullable<HostedShellRouteOptions["harnessStatus"]> {
+  return async (auth, input) => {
+    const authority = requireAuthority(services)
+    const opened = await authority.openWorkspace(auth, { workspaceId: input.workspaceId }).catch((err) => {
+      if (err instanceof ControlPlaneAuthError) return undefined
+      throw err
+    })
+    const role = relayRoleOf(opened?.role)
+    if (!opened || !role) return undefined
+    const workspaceRecord = opened.workspace
+    const orgId = txt(workspaceRecord?.org_id) ?? txt(await authority.resolveOrgId(auth))
+    const stamp = Date.now()
+    const ws: Workspace = {
+      id: input.workspaceId,
+      ...(orgId ? { org_id: orgId } : {}),
+      directory: `workspace:${input.workspaceId}`,
+      kind: "cloud",
+      status: "ready",
+      created_at: stamp,
+      updated_at: stamp,
+    }
+    const target = { workspaceId: input.workspaceId, ws, authorityWorkspace: workspaceRecord, authorityRole: role }
+    try {
+      // The identity probe first: refuse to trust a relay target that does
+      // not answer for the workspace we asked about.
+      const identity = await harnessRuntimeJson<Record<string, unknown>>(
+        services,
+        auth,
+        { ...target, path: WORKSPACE_RUNTIME_IDENTITY_PATH },
+        testOptions.runtimeFetch,
+      )
+      if (txt(identity.workspaceId) !== input.workspaceId) {
+        throw new Error("Workspace runtime identity does not match requested workspace")
+      }
+      // MUTATION-CHECK: runtime health call short-circuited on purpose.
+      const health = await harnessRuntimeJson<Record<string, unknown>>(
+        services,
+        auth,
+        {
+          ...target,
+          path: input.sessionId ? `/api/wr/health?sessionId=${encodeURIComponent(input.sessionId)}` : "/api/wr/health",
+        },
+        testOptions.runtimeFetch,
+      )
+      return decodeSandboxHealth(health)
+    } catch (err) {
+      return { ok: false, status: "error", error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+}
+
+function hostedHarnessStatusBody(probe: HostedHarnessProbe, workspaceId: string, sessionId?: string) {
+  return {
+    workspaceId,
+    directory: `workspace:${workspaceId}`,
+    ...(sessionId ? { sessionId } : {}),
+    status: probe.ok ? "ready" : probe.status ?? "error",
+    ready: probe.ok ?? false,
+    ...(probe.agentType ? { agentType: probe.agentType, activeType: probe.agentType } : {}),
+    activeBinary: probe.acpBinary ?? null,
+    ...(probe.model !== undefined ? { model: probe.model } : {}),
+    ...(probe.error ? { error: probe.error } : {}),
+    ...(probe.harnessHealth ? { harnessHealth: probe.harnessHealth } : {}),
+  }
+}
+
+async function harnessStatusResponse(c: Context, options: HostedShellRouteOptions) {
+  try {
+    const auth = await signedAuth(c, options)
+    if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+    const workspaceId = harnessWorkspaceId(directoryInput(c))
+    const sessionId = c.req.query("sessionId")?.trim() || undefined
+    const probe = workspaceId && options.harnessStatus
+      ? await options.harnessStatus(auth, { workspaceId, ...(sessionId ? { sessionId } : {}) })
+      : undefined
+    if (!probe) {
+      return c.json({ error: { code: "workspace_not_found", message: "Workspace not found" } }, 404)
+    }
+    return c.json(hostedHarnessStatusBody(probe, workspaceId!, sessionId))
+  } catch (err) {
+    return authErrorResponse(c, err)
+  }
 }
 
 function guardedWaitUntil(c: Context) {
@@ -570,6 +833,11 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // "no ACP group", so this only quiets a recurring console 404 that read
     // as a broken deployment.
     .get("/api/claxedo/agent-config/harness/acp-connections", (c) => c.json({ connections: [] }))
+    // Harness health/status probe — see `HostedShellRouteOptions.harnessStatus`
+    // above for what this asks and why. Every session's harness store polls
+    // this unconditionally; before this route existed it 404'd and was
+    // swallowed, so readiness never moved off its initial state.
+    .get("/api/claxedo/agent-config/harness", (c) => harnessStatusResponse(c, options))
     // A hosted central has no local machine/project install surface, so those
     // scopes return the valid empty shape. Workspace scope is authority-owned:
     // list and state mutations below use the same durable rows runtimes read.

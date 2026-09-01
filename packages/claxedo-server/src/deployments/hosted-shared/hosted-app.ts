@@ -100,6 +100,8 @@ import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex/store
 import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
+import { UsageRoutes } from "@claxedo/server-core/usage/routes"
+import { hostedUsageLedger } from "./hosted-usage-ledger"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
@@ -595,6 +597,21 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   // is no workspace in any of these paths, and mounting it there would invite
   // the per-workspace shape back in.
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
+  // Unified usage dashboard/sync — same Convex ledger and mount shape as the
+  // Node hosted composition's `/api/claxedo/usage` (central-runtime.ts,
+  // self-hosted-node/app.ts, local-app.ts); this is that surface's Worker
+  // deployment, which had no usage route at all until now. `hostedUsageLedger`
+  // resolves `undefined` when the plane has no Convex workspace-authority
+  // binding, in which case this stays unmounted (404) exactly as today.
+  const usageLedger = hostedUsageLedger(plane.env)
+  if (usageLedger) {
+    app.route("/api/claxedo/usage", UsageRoutes({
+      ledger: usageLedger,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      telemetry: services.telemetry,
+    }))
+  }
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
     deviceLoginConfigured: true,
     relayConfigured: !!services.relay.provider,

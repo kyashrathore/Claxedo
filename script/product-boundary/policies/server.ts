@@ -75,8 +75,14 @@ export const serverCloudNode: Policy = {
   // The owner's view of their machines (`routes/remote-access.ts` owner routes
   // and `hosted-remote-access-service.ts`) is control-plane data every signed
   // deployment serves; two modules, no package edge.
-  // Full `verify:closure` measures the exact hosted Node graph at 149/28.
-  ceilings: { modules: 149, packages: 28 },
+  // `hosted-usage-ledger.ts` (deployments/hosted-shared) is the one Convex
+  // `UsageLedger` owner for `GET /api/claxedo/usage`/`POST .../sync` shared by
+  // every hosted composition — this Node composition mounts it through
+  // `hosted-app.ts` the same way it already reaches every other hosted-shared
+  // route; one module, no package edge (the `convex` package is already
+  // reached via the authority adapters this composition already requires).
+  // Full `verify:closure` measures the exact hosted Node graph at 150/28.
+  ceilings: { modules: 150, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -159,8 +165,19 @@ export const serverWorkerd: Policy = {
   // recording, shared with the Node compositions) adds one Worker-safe module.
   // The owner's view of their machines (`routes/remote-access.ts` owner routes
   // and `hosted-remote-access-service.ts`) adds two Worker-safe modules.
-  // Full `verify:closure` measures the exact workerd graph at 125/14.
-  ceilings: { modules: 125, packages: 14 },
+  // `hosted-usage-ledger.ts` (deployments/hosted-shared) is the one Convex
+  // `UsageLedger` owner for the hosted `GET /api/claxedo/usage`/
+  // `POST .../sync` surface (previously only mounted on the Node cloud and
+  // self-hosted compositions, never here) — one Worker-safe module, no
+  // package edge (`convex` is already required by this entry's own workspace
+  // authority). Deliberately built with `resolveWorkspaceRuntimeTarget` +
+  // `services.relay.provider` directly in `routes/hosted/shell.ts`'s harness
+  // probe rather than `authority/http/runtime-transport.ts`'s
+  // `verifiedRuntimeJson`, which pulls in `authority/http/protocol.ts` ->
+  // `workspace/supervisor` -> `@claxedo/workspace-runtime` — exactly the
+  // forbidden edge this policy exists to catch.
+  // Full `verify:closure` measures the exact workerd graph at 126/14.
+  ceilings: { modules: 126, packages: 14 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
