@@ -89,6 +89,12 @@ function hostedPaths() {
  * failure names the product area that changed, not just a path.
  */
 const HOSTED_FAMILIES: Record<string, string[]> = {
+  remoteAccessOwner: [
+    "/api/claxedo/remote-access",
+    "/api/claxedo/remote-access/devices",
+    "/api/claxedo/remote-access/devices/:hostId",
+    "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
+  ],
   identity: [
     "/.well-known/jwks.json",
     "/api/auth/cli/exchange",
@@ -110,6 +116,7 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/path",
     "/project",
     "/project/current",
+    "/project/:id",
     "/provider",
     "/provider/auth",
     "/api/claxedo/agent-config/extensions",
@@ -220,7 +227,7 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
  */
 const LOCAL_ONLY_PREFIXES = [
   "/api/claxedo/credentials",
-  "/api/claxedo/remote-access",
+  "/api/claxedo/remote-access/enable",
   "/api/claxedo/network-policy",
   "/api/claxedo/usage-limits",
   "/api/wr/pty",

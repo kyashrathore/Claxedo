@@ -224,6 +224,11 @@ export type WorkspaceAuthority = {
     /** Owner assignments for this host, for client-side set reconciliation. */
     assigned_workspace_ids: string[]
   }>
+  /** The owner destroys one of their machine enrollments; absent, the deployment cannot. */
+  revokeHostEnrollment?: (
+    auth: SignedControlPlaneAuth,
+    args: { hostId?: string },
+  ) => Promise<{ revoked: number; runtime_tokens_revoked: number }>
   pauseHostEnrollment: (
     auth: SignedControlPlaneAuth,
     args: { hostId?: string; paused: boolean },

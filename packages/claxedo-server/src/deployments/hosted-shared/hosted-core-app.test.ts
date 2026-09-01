@@ -564,3 +564,56 @@ describe("hosted-core session-list", () => {
     expect(response.headers.get("content-type")).toContain("application/json")
   })
 })
+
+describe("hosted-core remote access (the owner's view)", () => {
+  const signed = { authorization: "Bearer user-1" }
+  function core(authority: Record<string, unknown>) {
+    const base = plane()
+    const services = base.services as unknown as { authority: Record<string, unknown>; relay: Record<string, unknown> }
+    services.authority = { ...services.authority, ...authority }
+    services.relay = { ...services.relay, provider: {} }
+    return createHostedCoreApp(base, options) as unknown as Hono
+  }
+
+  test("lists the account's machines, including one that serves nothing yet", async () => {
+    const response = await core({
+      listHostAssignments: vi.fn(async () => [
+        { host_id: "host_a", display_name: "laptop", last_seen_at: 10, expires_at: 99, workspace_ids: ["ws_1", "ws_2"], acked_workspace_ids: ["ws_1"] },
+      ]),
+      activeHostEnrollment: vi.fn(async () => ({ active: true, host_id: "host_b", display_name: "desk", last_seen_at: 20, expires_at: 99 })),
+    }).request("/api/claxedo/remote-access/devices", { headers: signed })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      devices: [
+        { host_id: "host_b", display_name: "desk", last_seen_at: 20, workspace_ids: [] },
+        { host_id: "host_a", display_name: "laptop", last_seen_at: 10, workspace_ids: ["ws_1", "ws_2"] },
+      ],
+    })
+  })
+
+  test("revokes one of the account's machines", async () => {
+    const revokeHostEnrollment = vi.fn(async () => ({ revoked: 1, runtime_tokens_revoked: 2 }))
+    const response = await core({ revokeHostEnrollment }).request("/api/claxedo/remote-access/devices/host_a", {
+      method: "DELETE",
+      headers: signed,
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ revoked: true })
+    expect(revokeHostEnrollment).toHaveBeenCalledWith(expect.objectContaining({ token: "user-1" }), { hostId: "host_a" })
+  })
+
+  test("refuses an unsigned caller with JSON", async () => {
+    const response = await core({}).request("/api/claxedo/remote-access/devices")
+    expect(response.status).toBe(401)
+    expect(response.headers.get("content-type")).toContain("application/json")
+  })
+
+  test("has no machine side: enrolling happens in the desktop app on the machine", async () => {
+    const response = await core({}).request("/api/claxedo/remote-access/enable", {
+      method: "POST",
+      headers: { ...signed, "content-type": "application/json" },
+      body: JSON.stringify({ display_name: "browser" }),
+    })
+    expect(response.status).toBe(404)
+  })
+})

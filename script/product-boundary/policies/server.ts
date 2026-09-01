@@ -72,8 +72,11 @@ export const serverCloudNode: Policy = {
   // recorded — user tokens under the signed caller, service tokens through the
   // service path — shared with the self-hosted binary so the two compositions
   // cannot drift; it adds one module and no package edge.
-  // Full `verify:closure` measures the exact hosted Node graph at 147/28.
-  ceilings: { modules: 147, packages: 28 },
+  // The owner's view of their machines (`routes/remote-access.ts` owner routes
+  // and `hosted-remote-access-service.ts`) is control-plane data every signed
+  // deployment serves; two modules, no package edge.
+  // Full `verify:closure` measures the exact hosted Node graph at 149/28.
+  ceilings: { modules: 149, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -154,8 +157,10 @@ export const serverWorkerd: Policy = {
   // the shared stream/turn lease TTL contract; the graph remains Worker-safe.
   // `relay-token-record.ts` (the one owner of user-vs-service runtime token
   // recording, shared with the Node compositions) adds one Worker-safe module.
-  // Full `verify:closure` measures the exact workerd graph at 123/14.
-  ceilings: { modules: 123, packages: 14 },
+  // The owner's view of their machines (`routes/remote-access.ts` owner routes
+  // and `hosted-remote-access-service.ts`) adds two Worker-safe modules.
+  // Full `verify:closure` measures the exact workerd graph at 125/14.
+  ceilings: { modules: 125, packages: 14 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",

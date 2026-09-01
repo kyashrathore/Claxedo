@@ -66,7 +66,8 @@ describe("route family table", () => {
     // `/api/claxedo/network-policy` is a prefix of nothing else, but
     // `/api/claxedo/remote-access/devices` sits under a family whose bare path
     // also matches. Longest-entry-wins is what keeps those apart.
-    expect(routeFamilyFor("/api/claxedo/remote-access/devices")?.id).toBe("remote-access")
+    expect(routeFamilyFor("/api/claxedo/remote-access/devices")?.id).toBe("remote-access-owner")
+    expect(routeFamilyFor("/api/claxedo/remote-access/enable")?.id).toBe("remote-access-machine")
     expect(routeFamilyFor("/api/claxedo/network-policy/effective/:workspaceId")?.id).toBe("network-policy")
     expect(routeFamilyFor("/api/claxedo/workspace/resolve")?.id).toBe("local-workspace-resolve")
     expect(routeFamilyFor("/api/workspace/:id/host-assignment")?.id).toBe("workspace-authority")
@@ -236,6 +237,10 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/integrations/connections/:id/token",
       "/api/claxedo/integrations/connections/:id/webhook-secret",
       "/api/claxedo/project/remote",
+      "/api/claxedo/remote-access",
+      "/api/claxedo/remote-access/devices",
+      "/api/claxedo/remote-access/devices/:hostId",
+      "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
       "/api/runtime-authority/session-authorize",
       "/api/workspace",
       "/api/workspace/:id",
@@ -288,11 +293,7 @@ describe("desktop-local product contract", () => {
 
   test("records the machine-publication routes Host Connector takes over", () => {
     expect(pathsByOwner(localApp().routes, "host-connector")).toEqual([
-      "/api/claxedo/remote-access",
-      "/api/claxedo/remote-access/devices",
-      "/api/claxedo/remote-access/devices/:hostId",
       "/api/claxedo/remote-access/enable",
-      "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
     ])
   })
 

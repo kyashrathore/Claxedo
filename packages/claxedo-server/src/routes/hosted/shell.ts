@@ -506,6 +506,17 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       }
     })
     .get("/project/current", (c) => c.json(hostedProject(directoryInput(c))))
+    .get("/project/:id", async (c) => {
+      try {
+        const id = c.req.param("id")
+        const project = (await signedProjects(c, options)).find((item) => item.id === id)
+        return project
+          ? c.json(project)
+          : c.json({ error: { code: "project_not_found", message: "Project not found" } }, 404)
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
     .get("/path", (c) => c.json(hostedPath(directoryInput(c))))
     .get("/provider", async (c) => {
       if (c.req.query("harness") !== "pi") return c.json(emptyProvider())

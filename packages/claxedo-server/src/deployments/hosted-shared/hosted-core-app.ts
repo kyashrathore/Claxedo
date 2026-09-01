@@ -1,3 +1,4 @@
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { Hono } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { cors } from "hono/cors"
@@ -23,6 +24,8 @@ import { HostedShellRoutes } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
+import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
+import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { signedOrError } from "../../workspace/route-support"
 import { HostedControlRoutes } from "../../routes/hosted/control"
@@ -268,6 +271,17 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   app.route("/", JwksRoutes(plane.env))
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
+  app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
+    deviceLoginConfigured: true,
+    relayConfigured: !!services.relay.provider,
+    authenticate: async (request) => {
+      const result = await signedOrError(request, { authentication: options.authentication, requireSigned: true }, services)
+      if ("error" in result) return Response.json(result.error, { status: result.status })
+      if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
+      return result.auth
+    },
+    service: hostedRemoteAccessService(requireAuthority(services)),
+  }))
   app.route(
     "/api/workspace",
     WorkspaceCheckpointRoutes(services, {

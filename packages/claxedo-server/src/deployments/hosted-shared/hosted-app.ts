@@ -28,6 +28,7 @@
  *   POST /internal/workgraph/reconcile
  */
 
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { Hono, type Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { cors } from "hono/cors"
@@ -38,6 +39,8 @@ import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-r
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { convexActiveSandboxLeaseCounter, convexHostedSandboxUsage } from "../../authority/adapters/convex/hosted-sandbox-usage"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
+import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
+import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { signedOrError } from "../../workspace/route-support"
@@ -592,6 +595,17 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   // is no workspace in any of these paths, and mounting it there would invite
   // the per-workspace shape back in.
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
+  app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
+    deviceLoginConfigured: true,
+    relayConfigured: !!services.relay.provider,
+    authenticate: async (request) => {
+      const result = await signedOrError(request, { authConfig: services.auth.config, ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}), requireSigned: true }, services)
+      if ("error" in result) return Response.json(result.error, { status: result.status })
+      if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
+      return result.auth
+    },
+    service: hostedRemoteAccessService(requireAuthority(services)),
+  }))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     defaultHomeRegion: services.defaultHomeRegion,
     ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
