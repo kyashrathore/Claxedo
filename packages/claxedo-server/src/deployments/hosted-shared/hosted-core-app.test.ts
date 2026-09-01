@@ -3,7 +3,7 @@ import { describe, expect, test, vi } from "vitest"
 import type { Hono } from "hono"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
-import { createHostedCoreApp } from "./hosted-core-app"
+import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
@@ -348,5 +348,66 @@ describe("resource-closed hosted core app", () => {
       "build-secret",
       "lastHealthProbe",
     ]) expect(body).not.toContain(operatorOnly)
+  })
+})
+
+
+/**
+ * What a HUMAN gets when they point a browser at the control plane.
+ *
+ * Hono's default answers every unrouted path with the bare text
+ * "404 Not Found", which a browser renders as the entire document. A user who
+ * opened this host on their phone saw precisely that and reported it as "the
+ * app returns 404" — while the app, on its own origin, was serving fine. The
+ * control plane is an API; it has no page, and its root is the one path a
+ * person is actually likely to type.
+ */
+describe("control-plane root and unrouted paths", () => {
+  function appWith(origins: string | undefined) {
+    const base = plane()
+    const withOrigins = {
+      ...base,
+      env: { ...base.env, ...(origins === undefined ? {} : { CLAXEDO_APP_ORIGINS: origins }) },
+    } as unknown as HostedControlPlane
+    return createHostedCoreApp(withOrigins, options) as unknown as Hono
+  }
+
+  test("sends someone who opens the root to the app", async () => {
+    const response = await appWith("https://app.example.test").request("/")
+    expect(response.status).toBe(302)
+    expect(response.headers.get("location")).toBe("https://app.example.test")
+  })
+
+  test("answers an unrouted path as JSON, never as a rendered page", async () => {
+    const response = await appWith("https://app.example.test").request("/not-a-route")
+    expect(response.status).toBe(404)
+    expect(response.headers.get("content-type")).toContain("application/json")
+    expect(await response.json()).toMatchObject({ error: { code: "route_not_found" } })
+    // The exact shape that was rendered to a user as a whole web page.
+    expect(await appWith("https://app.example.test").request("/not-a-route").then((r) => r.text()))
+      .not.toBe("404 Not Found")
+  })
+
+  test("still answers JSON at the root when no app origin is configured", async () => {
+    const response = await appWith(undefined).request("/")
+    expect(response.status).toBe(404)
+    expect(await response.json()).toMatchObject({ error: { code: "route_not_found" } })
+  })
+})
+
+describe("coreAppHomeOrigin", () => {
+  test("takes the first exact origin", () => {
+    expect(coreAppHomeOrigin("https://a.test,https://b.test")).toBe("https://a.test")
+  })
+
+  /** A wildcard names a SHAPE, not a destination — redirecting to one emits a literal asterisk. */
+  test("skips wildcard entries", () => {
+    expect(coreAppHomeOrigin("https://*.example.test,https://real.test")).toBe("https://real.test")
+    expect(coreAppHomeOrigin("https://*.example.test")).toBeUndefined()
+  })
+
+  test("is absent when nothing is configured", () => {
+    expect(coreAppHomeOrigin(undefined)).toBeUndefined()
+    expect(coreAppHomeOrigin("")).toBeUndefined()
   })
 })

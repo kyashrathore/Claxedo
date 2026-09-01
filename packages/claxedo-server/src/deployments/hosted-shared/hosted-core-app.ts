@@ -79,6 +79,20 @@ export type HostedCoreAppOptions = {
   userDeployedIdentityAdmission?: UserDeployedIdentityAdmission
 }
 
+/**
+ * Where to send a human who lands on the control plane's root.
+ *
+ * The first EXACT origin in the allow-list, ignoring `https://*.` wildcard
+ * entries — a wildcard names a shape, not a destination, and redirecting to
+ * one produces a URL with a literal asterisk in it.
+ */
+export function coreAppHomeOrigin(raw: string | undefined) {
+  return (raw ?? "")
+    .split(",")
+    .map((item) => item.trim())
+    .find((item) => item.startsWith("https://") && !item.startsWith("https://*."))
+}
+
 export function configuredCoreAppOrigins(raw: string | undefined) {
   const entries = (raw ?? "")
     .split(",")
@@ -334,6 +348,31 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       sandboxManager: services.sandbox.sandboxManager,
       telemetry: services.telemetry,
     }),
+  )
+  // An API worker's unrouted paths must not render as a PAGE.
+  //
+  // Hono answers anything unmatched with the bare text "404 Not Found", and a
+  // browser renders that as the whole document. Someone who opened this host
+  // on their phone saw exactly that and reported "the app 404s" — while the
+  // app, on its own origin, was fine. The control plane has no page to show,
+  // so it should say so in the same error shape as every other failure here.
+  // (The plain-text body has bitten before: a client JSON.parse could not
+  // handle it — see the note in `live-claxedo-mcp-tools.spec.ts`.)
+  //
+  // The root gets a redirect rather than an error, because a person typing
+  // this hostname wants the product, not a diagnostic.
+  const appHome = coreAppHomeOrigin(plane.env.CLAXEDO_APP_ORIGINS)
+  if (appHome) app.get("/", (context) => context.redirect(appHome, 302))
+  app.notFound((context) =>
+    context.json(
+      {
+        error: {
+          code: "route_not_found",
+          message: "This is the Claxedo control-plane API; it serves no pages.",
+        },
+      },
+      404,
+    ),
   )
   return app
 }
