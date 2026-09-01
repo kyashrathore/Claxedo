@@ -131,7 +131,10 @@ export const appLocal: Policy = {
   // bootstrap-owner route, and canonical private-session reservation client.
   // `@claxedo/service-contract` is their dependency-neutral vocabulary owner.
   // The exact source closure is 942 modules and 38 packages.
-  ceilings: { modules: 942, packages: 38 },
+  // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + its loopback control
+  // routes — the machine's ONE relay serving connection under machine-wide
+  // enrollment (reviewed owner: local-server workspace domain). 944/38.
+  ceilings: { modules: 944, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

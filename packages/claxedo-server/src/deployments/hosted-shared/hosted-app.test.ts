@@ -882,7 +882,7 @@ describe("hosted app", () => {
         role: "owner",
         workspace: { workspace_id: "ws_1", access: "user-hosted", backing: "local-worktree", home_region: "us-east" },
       })),
-      activeLocalHostLink: vi.fn(async () => ({
+      activeWorkspaceHost: vi.fn(async () => ({
         active: true,
         host_id: "host_1",
         expires_at: 9_999,

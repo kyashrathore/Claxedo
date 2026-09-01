@@ -55,8 +55,18 @@ function enrollmentPayload(input: { hostId: string; requestId: string; nonce: st
   ].join("\n")
 }
 
-function heartbeatPayload(input: { hostId: string; ttlMs?: number }) {
-  return ["claxedo.host-enrollment.heartbeat.v1", `host_id=${input.hostId}`, `ttl_ms=${input.ttlMs ?? ""}`].join("\n")
+/**
+ * Heartbeat v2: one signature per interval covers the machine's served set
+ * (sorted, comma-joined). Deliberately spelled out here rather than imported —
+ * the test pins the exact bytes the adapter must verify.
+ */
+function heartbeatPayload(input: { hostId: string; ttlMs?: number; workspaceIds?: readonly string[] }) {
+  return [
+    "claxedo.host-enrollment.heartbeat.v2",
+    `host_id=${input.hostId}`,
+    `ttl_ms=${input.ttlMs ?? ""}`,
+    `workspaces=${[...(input.workspaceIds ?? [])].sort().join(",")}`,
+  ].join("\n")
 }
 
 /** Runs the whole handshake and returns the enrollment. */
@@ -248,10 +258,12 @@ describe("heartbeat", () => {
 
     const beat = await api.heartbeatHostEnrollment!(owner, {
       hostId,
+      workspaceIds: [],
       signature: signPayload(keys.privateKey, heartbeatPayload({ hostId })),
     })
 
     expect(beat.expires_at).toBeGreaterThanOrEqual(enrollment.expires_at)
+    expect(beat.assigned_workspace_ids).toEqual([])
   })
 
   test("rejects a heartbeat signed with a different key", async () => {
@@ -263,6 +275,7 @@ describe("heartbeat", () => {
     await expect(
       api.heartbeatHostEnrollment!(owner, {
         hostId,
+        workspaceIds: [],
         signature: signPayload(attacker.privateKey, heartbeatPayload({ hostId })),
       }),
     ).rejects.toThrow()
@@ -275,9 +288,157 @@ describe("heartbeat", () => {
     await expect(
       api.heartbeatHostEnrollment!(owner, {
         hostId: "host_ghost",
+        workspaceIds: [],
         signature: signPayload(keys.privateKey, heartbeatPayload({ hostId: "host_ghost" })),
       }),
     ).rejects.toThrow(/Host enrollment not found/)
+  })
+
+  test("rejects a signature over a different served set than the one claimed", async () => {
+    // The set IS the consent. Accepting a mismatch would let a caller ack
+    // workspaces the machine never signed for.
+    const api = authority()
+    const { keys, hostId } = await enroll(api)
+
+    await expect(
+      api.heartbeatHostEnrollment!(owner, {
+        hostId,
+        workspaceIds: ["ws_claimed"],
+        signature: signPayload(keys.privateKey, heartbeatPayload({ hostId, workspaceIds: [] })),
+      }),
+    ).rejects.toThrow(/Invalid host attestation/)
+  })
+})
+
+/** Signs and sends a heartbeat that acks exactly `workspaceIds`. */
+async function ackHeartbeat(
+  api: ReturnType<typeof authority>,
+  input: {
+    auth?: SignedControlPlaneAuth
+    hostId: string
+    keys: ReturnType<typeof hostKeyPair>
+    workspaceIds: readonly string[]
+    ttlMs?: number
+  },
+) {
+  return api.heartbeatHostEnrollment!(input.auth ?? owner, {
+    hostId: input.hostId,
+    ...(input.ttlMs === undefined ? {} : { ttlMs: input.ttlMs }),
+    workspaceIds: [...input.workspaceIds],
+    signature: signPayload(
+      input.keys.privateKey,
+      heartbeatPayload({ hostId: input.hostId, ttlMs: input.ttlMs, workspaceIds: input.workspaceIds }),
+    ),
+  })
+}
+
+describe("workspace assignments", () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  test("routes a workspace through owner assignment AND the machine's acked set", async () => {
+    const api = authority()
+    const { keys, hostId } = await enroll(api, { displayName: "Laptop B" })
+
+    // Assigning a never-registered workspace cold-registers it, exactly as
+    // the retired per-workspace registration did.
+    await expect(api.assignWorkspaceHost!(owner, { workspaceId: "ws_alpha", hostId }))
+      .resolves.toEqual({ assigned: true, workspace_id: "ws_alpha", host_id: hostId })
+    expect((await api.listWorkspaces(owner) as Array<{ workspace_id: string }>).map((w) => w.workspace_id))
+      .toContain("ws_alpha")
+
+    // Owner intent alone is not routable: no ack yet.
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toEqual({ active: false })
+
+    // Ack the set: now routable, and the response reconciles owner intent.
+    const beat = await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    expect(beat.assigned_workspace_ids).toEqual(["ws_alpha"])
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toMatchObject({
+      active: true,
+      host_id: hostId,
+      workspace_id: "ws_alpha",
+      display_name: "Laptop B",
+    })
+    expect(await api.listHostAssignments!(owner)).toMatchObject([
+      { host_id: hostId, display_name: "Laptop B", workspace_ids: ["ws_alpha"], acked_workspace_ids: ["ws_alpha"] },
+    ])
+  })
+
+  test("assigning requires a live enrollment for that machine", async () => {
+    const api = authority()
+    await enroll(api, { auth: owner })
+
+    // `other` never enrolled this machine; the assignment must not exist as a
+    // way to piggyback on someone else's laptop.
+    await expect(api.assignWorkspaceHost!(other, { workspaceId: "ws_alpha", hostId: "host_laptop" }))
+      .rejects.toThrow(/Host enrollment not found/)
+  })
+
+  test("unassign wins over a still-acked set: routing is intent AND consent", async () => {
+    const api = authority()
+    const { keys, hostId } = await enroll(api)
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_alpha", hostId })
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toMatchObject({ active: true })
+
+    await expect(api.unassignWorkspaceHost!(owner, { workspaceId: "ws_alpha" }))
+      .resolves.toEqual({ unassigned: true })
+
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toEqual({ active: false })
+  })
+
+  test("an expired lease makes everything inert without touching assignments", async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(1_000_000)
+    const api = authority()
+    const { keys, hostId } = await enroll(api)
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_alpha", hostId })
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"], ttlMs: 8_000 })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toMatchObject({ active: true })
+
+    vi.setSystemTime(1_000_000 + 8_001)
+
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toEqual({ active: false })
+    expect(await api.listHostAssignments!(owner)).toEqual([])
+
+    // The assignment survived the lapse: one fresh ack restores routing with
+    // no owner action.
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toMatchObject({ active: true })
+  })
+
+  test("revoking the enrollment cascades its assignments away entirely", async () => {
+    // Table-level assertion over a second connection, because nothing the
+    // authority returns is a function of dangling assignment rows.
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-assignments-")), "authority.db")
+    const api = createSqliteWorkspaceAuthority({ path: file })
+    const reader = new Database(file, { readonly: false })
+    const { keys, hostId } = await enroll(api)
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_alpha", hostId })
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+
+    await api.revokeHostEnrollment(owner, { hostId })
+
+    const dangling = reader.prepare(`SELECT COUNT(*) AS n FROM host_workspace_assignments`).get() as { n: number }
+    expect(dangling.n).toBe(0)
+    expect(await api.activeHostEnrollment!(owner)).toEqual({ active: false, reason: "revoked" })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toEqual({ active: false })
+  })
+
+  test("marking a second device open lands on the assignment", async () => {
+    const api = authority()
+    const { keys, hostId } = await enroll(api)
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_alpha", hostId })
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+
+    const marked = await api.markSecondDeviceOpen!(owner, { workspaceId: "ws_alpha" })
+
+    expect(marked.recorded).toBe(true)
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toMatchObject({
+      active: true,
+      second_device_open_at: marked.second_device_open_at,
+    })
   })
 })
 

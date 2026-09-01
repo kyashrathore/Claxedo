@@ -162,7 +162,7 @@ import { llmTurnRecord, workGraphSessionAttribution } from "../../platform/telem
 import { ClaxedoDB } from "../../platform/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
-import { localHostIdentity, registrationPayload, signHostPayload } from "../../workspace/local-host"
+import { localHostIdentity, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
@@ -896,6 +896,33 @@ export function createSelfHostedApp(
   }))
   const remoteAccessRelayUrl = services.relay.relayUrl ?? Object.values(services.relay.relayUrls ?? {})[0]
   const remoteAccessSigner = services.relay.hostTunnelTokenSigner
+  // One machine-share owner for the whole composition: the remote-access
+  // routes drive enable/devices/revoke through it, and the workspace routes'
+  // `/:id/host-assignment` verbs delegate their assign→beat→routable sequence
+  // to the same served set and heartbeat loop.
+  const remoteAccessService = services.authority ? createRemoteAccessService({
+    authority: services.authority,
+    relayUrl: remoteAccessRelayUrl ?? "",
+    hostTunnelTokenSigner: remoteAccessSigner ?? (async () => {
+      throw new ControlPlaneAuthError(503, "host_tunnel_token_signer_unavailable", "Host Tunnel Token signer is not configured")
+    }),
+    listLocalWorkspaces: async () => (await listWorkspaces()).map((workspace) => ({
+      id: workspace.id,
+      kind: workspace.kind,
+      displayName: workspace.workspace_name ?? workspace.project_name ?? workspace.repo_name ?? workspace.id,
+      projectId: workspace.project_id,
+      repoUrl: workspace.repo_url ?? workspace.git_remote,
+      repoName: workspace.repo_name,
+      gitBranch: workspace.git_branch,
+    })),
+    subscribeLocalWorkspaces: (listener) => subscribeLocalWorkspaceChanges(listener),
+    localHostIdentity,
+    signHostPayload,
+    startMachineTunnel: startUserHostedMachineTunnel,
+    stopMachineTunnel: stopUserHostedMachineTunnel,
+    machineTunnelActive: hasUserHostedMachineTunnel,
+    capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
+  }) : undefined
   app.route("/api/claxedo/remote-access", RemoteAccessRoutes({
     deviceLoginConfigured: !!process.env.CLAXEDO_DEVICE_LOGIN_ISSUER?.trim(),
     relayConfigured: !!remoteAccessRelayUrl && !!remoteAccessSigner,
@@ -907,30 +934,7 @@ export function createSelfHostedApp(
       if (auth.mode === "signed") return auth
       throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
     },
-    service: services.authority ? createRemoteAccessService({
-      authority: services.authority,
-      relayUrl: remoteAccessRelayUrl ?? "",
-      hostTunnelTokenSigner: remoteAccessSigner ?? (async () => {
-        throw new ControlPlaneAuthError(503, "host_tunnel_token_signer_unavailable", "Host Tunnel Token signer is not configured")
-      }),
-      listLocalWorkspaces: async () => (await listWorkspaces()).map((workspace) => ({
-        id: workspace.id,
-        kind: workspace.kind,
-        displayName: workspace.workspace_name ?? workspace.project_name ?? workspace.repo_name ?? workspace.id,
-        projectId: workspace.project_id,
-        repoUrl: workspace.repo_url ?? workspace.git_remote,
-        repoName: workspace.repo_name,
-        gitBranch: workspace.git_branch,
-      })),
-      subscribeLocalWorkspaces: (listener) => subscribeLocalWorkspaceChanges(listener),
-      localHostIdentity,
-      signHostPayload,
-      registrationPayload,
-      startMachineTunnel: startUserHostedMachineTunnel,
-      stopMachineTunnel: stopUserHostedMachineTunnel,
-      machineTunnelActive: hasUserHostedMachineTunnel,
-      capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
-    }) : unavailableRemoteAccessService(),
+    service: remoteAccessService ?? unavailableRemoteAccessService(),
   }))
 
   mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
@@ -1022,7 +1026,10 @@ export function createSelfHostedApp(
   app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
   app.route("/api/workspace", WorkspaceRoutes(
     services,
-    workspaceRouteOptions(services, connectionsHost, options.connectionRateLimiter),
+    {
+      ...workspaceRouteOptions(services, connectionsHost, options.connectionRateLimiter),
+      ...(remoteAccessService ? { hostAssignments: remoteAccessService } : {}),
+    },
   ))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     loopbackRelayUrl: services.relay.relayUrl,

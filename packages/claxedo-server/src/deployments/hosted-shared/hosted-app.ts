@@ -20,10 +20,8 @@
  *   GET  /api/control/sessions/:id/gateway | /messages
  *   GET  /api/workspace/:id/connection
  *   POST /api/workspace/:id/connection/refresh
- *   POST /api/workspace/:id/user-hosted/challenge
- *   POST /api/workspace/:id/user-hosted/register
- *   POST /api/workspace/:id/user-hosted/heartbeat
- *   POST /api/workspace/:id/user-hosted/pause
+ *   POST /api/workspace/:id/host-assignment
+ *   DELETE /api/workspace/:id/host-assignment
  *   GET  /internal/relay/target
  *   GET  /internal/relay/revocation
  *   POST /internal/sandbox-manager/gc

@@ -186,26 +186,19 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/workspace/:id/checkpoints/:checkpointId/restore",
     "/api/workspace/:id/connection",
     "/api/workspace/:id/connection/refresh",
+    // Owner assignment under machine-wide enrollment (POST assigns, DELETE
+    // unassigns — one path, two verbs). The replacement for the retired
+    // per-workspace `user-hosted/(challenge|register|heartbeat|pause)` quartet.
+    "/api/workspace/:id/host-assignment",
     "/api/workspace/:id/lifecycle/:operation",
     "/api/workspace/create",
     "/api/workspace/resolve",
   ],
   /**
-   * The user-hosted control path Unit 6 keeps in the hosted plane while the
-   * laptop-side orchestration moves to Host Connector. Recording it separately
-   * makes that division visible: these four stay, `remote-access` does not.
-   */
-  userHostedControl: [
-    "/api/workspace/:id/user-hosted/challenge",
-    "/api/workspace/:id/user-hosted/heartbeat",
-    "/api/workspace/:id/user-hosted/pause",
-    "/api/workspace/:id/user-hosted/register",
-  ],
-  /**
-   * Machine-wide enrollment, Unit 6's replacement for `userHostedControl`
-   * above. Listed as its own family rather than folded in, so the cutover is
-   * visible here as one list appearing and the other leaving — and so a build
-   * that somehow mounts neither is caught.
+   * Machine-wide enrollment, Unit 6's replacement for the retired
+   * per-workspace `userHostedControl` family. The cutover is complete: the
+   * old quartet is gone (see the 404 assertions below) and this family plus
+   * `host-assignment` above are what replaced it.
    *
    * No `:id` in any entry. That is the whole difference.
    */
@@ -259,6 +252,21 @@ describe("hosted product contract", () => {
     expect(
       hostedPaths().filter((path) => LOCAL_ONLY_PREFIXES.some((prefix) => path.startsWith(prefix))),
     ).toEqual([])
+  })
+
+  test("the retired per-workspace user-hosted quartet answers 404, not a handler", async () => {
+    // NO backward compatibility: machine-wide enrollment + owner assignment
+    // replaced the per-workspace challenge/register/heartbeat/pause flow. A
+    // 401/400/409 here would mean a handler still exists behind the path.
+    const app = createHostedApp(hostedPlane()) as unknown as Hono
+    for (const retired of ["challenge", "register", "heartbeat", "pause"]) {
+      const response = await app.request(`/api/workspace/ws_1/user-hosted/${retired}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      })
+      expect(response.status, `POST /api/workspace/ws_1/user-hosted/${retired}`).toBe(404)
+    }
   })
 
   /**

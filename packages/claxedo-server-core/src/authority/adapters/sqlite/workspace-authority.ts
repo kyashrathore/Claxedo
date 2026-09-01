@@ -85,6 +85,9 @@ const ENROLLMENT_CHALLENGE_TTL_MS = 60_000
 const ENROLLMENT_CONSUMED_RETENTION_MS = 10 * 60_000
 const ENROLLMENT_REQUEST_SWEEP_LIMIT = 500
 
+/** A signed heartbeat payload must stay small; 200 shares per machine is generous. Mirrors the D1 authority. */
+const MAX_ACKED_WORKSPACES = 200
+
 function ttl(input?: number) {
   if (!input || !Number.isFinite(input)) return DEFAULT_TTL_MS
   return Math.max(5_000, Math.min(input, MAX_TTL_MS))
@@ -146,11 +149,25 @@ function enrollmentPayload(input: { host_id: string; request_id: string; nonce: 
   ].join("\n")
 }
 
-function heartbeatEnrollmentPayload(input: { host_id: string; ttl_ms?: number }) {
+/**
+ * Heartbeat v2: the machine's ONE signature per interval also covers the
+ * workspaces it currently serves (sorted, comma-joined). Routing requires a
+ * workspace to be BOTH owner-assigned and inside this acked set, which
+ * preserves the retired per-workspace signature's security property — an
+ * owner session cannot conjure serving the machine never consented to — at
+ * one signature instead of N+1. Same literal as the D1 authority's
+ * `hostEnrollmentHeartbeatPayloadV2`: two authorities, one signed contract.
+ */
+function heartbeatEnrollmentPayloadV2(input: {
+  host_id: string
+  ttl_ms?: number
+  workspace_ids: readonly string[]
+}) {
   return [
-    "claxedo.host-enrollment.heartbeat.v1",
+    "claxedo.host-enrollment.heartbeat.v2",
     `host_id=${input.host_id}`,
     `ttl_ms=${input.ttl_ms ?? ""}`,
+    `workspaces=${[...input.workspace_ids].sort().join(",")}`,
   ].join("\n")
 }
 
@@ -164,6 +181,8 @@ type HostEnrollmentRow = {
   expires_at: number
   paused_at: number | null
   revoked_at: number | null
+  acked_workspace_ids: string | null
+  acked_at: number | null
   created_at: number
 }
 
@@ -453,7 +472,14 @@ type HostLinkRow = {
 
 export function createSqliteWorkspaceAuthority(
   options: SqliteWorkspaceAuthorityOptions = {},
-): WorkspaceAuthority & PrivateSessionAuthority & SessionTurnAuthority & { close(): void } {
+): WorkspaceAuthority & PrivateSessionAuthority & SessionTurnAuthority & {
+  close(): void
+  /** D1 parity: revoke the machine key and cascade its assignments and runtime tokens. */
+  revokeHostEnrollment(
+    auth: SignedControlPlaneAuth,
+    args: { hostId?: string },
+  ): Promise<{ revoked: number; runtime_tokens_revoked: number }>
+} {
   const database = openAuthorityDb(options)
 
   const user = (auth: SignedControlPlaneAuth): AuthorityUser => {
@@ -670,7 +696,13 @@ export function createSqliteWorkspaceAuthority(
 
   const privateSessions = createSqlitePrivateSessionAuthority({ database, principal: user })
 
-  const workspaceAuthority: Omit<WorkspaceAuthority, keyof PrivateSessionAuthority> & { close(): void } = {
+  const workspaceAuthority: Omit<WorkspaceAuthority, keyof PrivateSessionAuthority> & {
+    close(): void
+    revokeHostEnrollment(
+      auth: SignedControlPlaneAuth,
+      args: { hostId?: string },
+    ): Promise<{ revoked: number; runtime_tokens_revoked: number }>
+  } = {
     close() {
       database.close()
     },
@@ -1508,18 +1540,38 @@ export function createSqliteWorkspaceAuthority(
       const row = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
         .get(who.token_identifier, args.hostId) as HostEnrollmentRow | undefined
       if (!row || row.revoked_at) throw new Error("Host enrollment not found")
+      if (!Array.isArray(args.workspaceIds)) {
+        throw new Error("workspaceIds is required — the heartbeat signature covers the served set")
+      }
+      const workspaceIds = [...new Set(args.workspaceIds.map((id) => requiredText(id, "workspaceIds")))].sort()
+      if (workspaceIds.length > MAX_ACKED_WORKSPACES) {
+        throw new Error("workspaceIds exceeds the served-set cap")
+      }
       await verifyHostSignature({
         public_key: row.public_key,
-        payload: heartbeatEnrollmentPayload({ host_id: args.hostId, ttl_ms: args.ttlMs }),
+        payload: heartbeatEnrollmentPayloadV2({ host_id: args.hostId, ttl_ms: args.ttlMs, workspace_ids: workspaceIds }),
         signature: args.signature,
       })
       const now = Date.now()
       const expiresAt = now + ttl(args.ttlMs)
       db.prepare(`
-        UPDATE host_enrollments SET last_seen_at = ?, expires_at = ?, updated_at = ?
+        UPDATE host_enrollments SET
+          last_seen_at = ?, expires_at = ?, updated_at = ?, acked_workspace_ids = ?, acked_at = ?
         WHERE owner_token_identifier = ? AND host_id = ?
-      `).run(now, expiresAt, now, who.token_identifier, args.hostId)
-      return { expires_at: expiresAt, last_seen_at: now }
+      `).run(now, expiresAt, now, JSON.stringify(workspaceIds), now, who.token_identifier, args.hostId)
+      // The owner's assignment view rides back on every ack so the machine can
+      // reconcile its persisted set — without this, machine consent and owner
+      // intent drift apart silently forever.
+      const assigned = db.prepare(`
+        SELECT workspace_id FROM host_workspace_assignments
+        WHERE host_id = ? AND owner_token_identifier = ?
+        ORDER BY workspace_id
+      `).all(args.hostId, who.token_identifier) as Array<{ workspace_id: string }>
+      return {
+        expires_at: expiresAt,
+        last_seen_at: now,
+        assigned_workspace_ids: assigned.map((assignment) => assignment.workspace_id),
+      }
     },
     async pauseHostEnrollment(auth: SignedControlPlaneAuth, args) {
       const db = database()
@@ -1562,6 +1614,170 @@ export function createSqliteWorkspaceAuthority(
       if (row.paused_at) return { active: false as const, reason: "paused" as const }
       if (row.expires_at <= Date.now()) return { active: false as const, reason: "expired" as const }
       return { active: true as const, ...toHostEnrollment(row) }
+    },
+    async revokeHostEnrollment(auth: SignedControlPlaneAuth, args: { hostId?: string }) {
+      const db = database()
+      const who = user(auth)
+      const now = Date.now()
+      const revoked = db.prepare(`
+        UPDATE host_enrollments SET revoked_at = ?, updated_at = ?
+        WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?) AND revoked_at IS NULL
+      `).run(now, now, who.token_identifier, args.hostId ?? null, args.hostId ?? null).changes
+      // A revoked key's host id never returns (a later enable enrolls a NEW
+      // id), so its assignments could never become routable again — leaving
+      // them would only accumulate dangling rows that a later re-share must
+      // displace. The cascade keeps "revoke = nothing routable" exactly true.
+      db.prepare(`
+        DELETE FROM host_workspace_assignments
+        WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
+      `).run(who.token_identifier, args.hostId ?? null, args.hostId ?? null)
+      const runtimeTokensRevoked = db.prepare(`
+        UPDATE runtime_access_tokens SET revoked_at = ?
+        WHERE actor_id = ? AND (? IS NULL OR host_id = ?) AND revoked_at IS NULL
+      `).run(now, who.token_identifier, args.hostId ?? null, args.hostId ?? null).changes
+      return { revoked, runtime_tokens_revoked: runtimeTokensRevoked }
+    },
+    /**
+     * The OWNER's declaration that host H serves workspace X. Pure data: no
+     * challenge and no TTL — liveness is the enrollment lease, consent is the
+     * heartbeat's acked set, and routing requires all three. Cold-registers
+     * the workspace row exactly as the retired per-workspace registration did.
+     */
+    async assignWorkspaceHost(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      const enrollment = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
+        .get(who.token_identifier, args.hostId) as HostEnrollmentRow | undefined
+      if (!enrollment || enrollment.revoked_at) throw new Error("Host enrollment not found")
+      const now = Date.now()
+      const existing = workspaceByPublicId(db, args.workspaceId)
+      if (existing) {
+        if (existing.deleted_at || !authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
+        refuseCloudWorkspace(existing)
+      } else {
+        const { orgId, projectId } = ownedProject(db, who, args)
+        db.prepare(`
+          INSERT INTO workspaces (
+            workspace_id, org_id, project_id, owner_token_identifier, backing, access,
+            display_name, home_region, repo_url, repo_name, git_branch, remote_directory,
+            created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          args.workspaceId,
+          orgId,
+          projectId,
+          who.token_identifier,
+          args.displayName ?? args.workspaceId,
+          validatedHomeRegion(args.homeRegion) ?? null,
+          args.repoUrl ?? null,
+          args.repoName ?? null,
+          args.gitBranch ?? null,
+          args.remoteDirectory ?? null,
+          now,
+          now,
+        )
+      }
+      db.prepare(`
+        INSERT INTO host_workspace_assignments (
+          workspace_id, host_id, owner_token_identifier, second_device_open_at, assigned_at, updated_at
+        ) VALUES (?, ?, ?, NULL, ?, ?)
+        ON CONFLICT (workspace_id) DO UPDATE SET
+          host_id = excluded.host_id,
+          owner_token_identifier = excluded.owner_token_identifier,
+          updated_at = excluded.updated_at
+      `).run(args.workspaceId, args.hostId, who.token_identifier, now, now)
+      return { assigned: true as const, workspace_id: args.workspaceId, host_id: args.hostId }
+    },
+    async unassignWorkspaceHost(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      requireWorkspace(db, who, args.workspaceId, "admin")
+      const result = db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`)
+        .run(args.workspaceId)
+      return { unassigned: result.changes > 0 }
+    },
+    /** Routable host: owner-assigned AND machine-acked AND live lease. */
+    async activeWorkspaceHost(auth: SignedControlPlaneAuth, args) {
+      const db = database()
+      const who = user(auth)
+      requireWorkspace(db, who, args.workspaceId, "read")
+      const row = db.prepare(`
+        SELECT assignment.workspace_id, assignment.host_id, assignment.second_device_open_at,
+          enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at
+        FROM host_workspace_assignments assignment
+        JOIN host_enrollments enrollment ON enrollment.host_id = assignment.host_id
+          AND enrollment.owner_token_identifier = assignment.owner_token_identifier
+        WHERE assignment.workspace_id = ?
+          AND enrollment.revoked_at IS NULL AND enrollment.paused_at IS NULL
+          AND enrollment.expires_at > ?
+          AND EXISTS (
+            SELECT 1 FROM json_each(COALESCE(enrollment.acked_workspace_ids, '[]'))
+            WHERE json_each.value = assignment.workspace_id
+          )
+        LIMIT 1
+      `).get(args.workspaceId, Date.now()) as {
+        workspace_id: string
+        host_id: string
+        second_device_open_at: number | null
+        display_name: string | null
+        expires_at: number
+        last_seen_at: number
+      } | undefined
+      if (!row) return { active: false as const }
+      return {
+        active: true as const,
+        host_id: row.host_id,
+        workspace_id: row.workspace_id,
+        ...(row.display_name ? { display_name: row.display_name } : {}),
+        ...(row.second_device_open_at ? { second_device_open_at: row.second_device_open_at } : {}),
+        expires_at: row.expires_at,
+        last_seen_at: row.last_seen_at,
+      }
+    },
+    /** Every live assignment on the account, grouped for the devices surface. */
+    async listHostAssignments(auth: SignedControlPlaneAuth) {
+      const db = database()
+      const who = user(auth)
+      const rows = db.prepare(`
+        SELECT assignment.workspace_id, assignment.host_id,
+          enrollment.display_name, enrollment.last_seen_at, enrollment.expires_at,
+          COALESCE(enrollment.acked_workspace_ids, '[]') AS acked_workspace_ids
+        FROM host_workspace_assignments assignment
+        JOIN host_enrollments enrollment ON enrollment.host_id = assignment.host_id
+          AND enrollment.owner_token_identifier = assignment.owner_token_identifier
+        WHERE assignment.owner_token_identifier = ?
+          AND enrollment.revoked_at IS NULL AND enrollment.paused_at IS NULL
+          AND enrollment.expires_at > ?
+        ORDER BY assignment.host_id, assignment.workspace_id
+      `).all(who.token_identifier, Date.now()) as Array<{
+        workspace_id: string
+        host_id: string
+        display_name: string | null
+        last_seen_at: number
+        expires_at: number
+        acked_workspace_ids: string
+      }>
+      const groups = new Map<string, {
+        host_id: string
+        display_name: string
+        last_seen_at: number
+        expires_at: number
+        workspace_ids: string[]
+        acked_workspace_ids: string[]
+      }>()
+      for (const row of rows) {
+        const group = groups.get(row.host_id) ?? {
+          host_id: row.host_id,
+          display_name: row.display_name ?? row.host_id,
+          last_seen_at: row.last_seen_at,
+          expires_at: row.expires_at,
+          workspace_ids: [],
+          acked_workspace_ids: JSON.parse(row.acked_workspace_ids) as string[],
+        }
+        group.workspace_ids.push(row.workspace_id)
+        groups.set(row.host_id, group)
+      }
+      return [...groups.values()]
     },
 
     // --- local host links (convex/localHostLinks.ts) ------------------------
@@ -1767,8 +1983,9 @@ export function createSqliteWorkspaceAuthority(
       if (!workspace || !authorizeWorkspaceForUser(db, workspace, who, "read")) denied()
       const now = Date.now()
       const result = db.prepare(`
-        UPDATE local_host_links SET second_device_open_at = COALESCE(second_device_open_at, ?), updated_at = ?
-        WHERE workspace_id = ? AND owner_token_identifier = ? AND revoked_at IS NULL
+        UPDATE host_workspace_assignments
+        SET second_device_open_at = COALESCE(second_device_open_at, ?), updated_at = ?
+        WHERE workspace_id = ? AND owner_token_identifier = ?
       `).run(now, now, args.workspaceId, who.token_identifier)
       return { recorded: result.changes > 0, second_device_open_at: now }
     },

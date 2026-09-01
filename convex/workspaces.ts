@@ -508,7 +508,8 @@ export const ensureWorkGraph = serviceMutation({
   },
 })
 
-async function registerLocalForSharingAs(ctx: any, args: any, user: { _id: unknown; name?: string; email?: string }) {
+/** Shared with `hostEnrollments.assignWorkspace`, whose cold registration is exactly this. */
+export async function registerLocalForSharingAs(ctx: any, args: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = await workspaceByPublicId(ctx.db, args.workspace_id)
   if (existing && !(await authorizeWorkspaceForUser(ctx, existing, user, "admin"))) {
     throw new Error("Workspace not found")

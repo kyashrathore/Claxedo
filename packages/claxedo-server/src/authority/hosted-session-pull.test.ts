@@ -146,7 +146,7 @@ describe("hosted session pull", () => {
     const getRelayEndpoint = vi.fn(async () => "https://relay.eu.test")
     svc.defaultHomeRegion = "us-east"
     svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint } as never
-    const activeLocalHostLink = vi.fn(async () => ({
+    const activeWorkspaceHost = vi.fn(async () => ({
       active: true as const,
       host_id: "host_user_1",
       workspace_id: "ws_1",
@@ -167,7 +167,7 @@ describe("hosted session pull", () => {
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
       upsertSessionVisibility: vi.fn(async () => ({})),
-      activeLocalHostLink,
+      activeWorkspaceHost,
       syncSessionMessages,
     } as never
     const fetch = vi.fn(async (input: string | URL | Request) => {
@@ -200,7 +200,7 @@ describe("hosted session pull", () => {
       }),
     ).resolves.toMatchObject({ ok: true, messages: 1, maxEventOrdinal: 7 })
 
-    expect(activeLocalHostLink).toHaveBeenCalledWith(signed, { workspaceId: "ws_1" })
+    expect(activeWorkspaceHost).toHaveBeenCalledWith(signed, { workspaceId: "ws_1" })
     expect(svc.sandbox.sandboxManager).toBeUndefined()
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({
       workspaceId: "ws_1",
@@ -238,7 +238,7 @@ describe("hosted session pull", () => {
         },
       })),
       authorizeSessionWrite: vi.fn(async () => {}),
-      activeLocalHostLink: vi.fn(async () => ({ active: false as const })),
+      activeWorkspaceHost: vi.fn(async () => ({ active: false as const })),
     } as never
     const fetch = vi.fn()
     globalThis.fetch = fetch as unknown as typeof globalThis.fetch

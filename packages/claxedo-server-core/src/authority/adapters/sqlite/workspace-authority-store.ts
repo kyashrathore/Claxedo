@@ -262,12 +262,37 @@ CREATE TABLE IF NOT EXISTS host_enrollments (
   paused_by TEXT,
   paused_reason TEXT,
   revoked_at INTEGER,
+  -- The machine's last-acked served set (JSON array of public workspace ids),
+  -- written only by a verified heartbeat v2 signature, plus when it was acked.
+  acked_workspace_ids TEXT,
+  acked_at INTEGER,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE (owner_token_identifier, host_id)
 );
 CREATE INDEX IF NOT EXISTS host_enrollments_by_owner ON host_enrollments (owner_token_identifier);
 CREATE INDEX IF NOT EXISTS host_enrollments_by_expires_at ON host_enrollments (expires_at);
+-- The OWNER's declaration that host H serves workspace X (machine-wide
+-- enrollment, assignment grain). Pure data: no liveness of its own — the
+-- enrollment lease answers "is the machine here", the machine's consent is the
+-- heartbeat-acked set on host_enrollments, and routing requires all three.
+--
+-- One workspace, one host: a local association id names a directory on ONE
+-- machine, so workspace_id alone is the key. The retired local_host_links
+-- table was keyed (workspace_id, host_id) and quietly allowed several hosts to
+-- claim one workspace; that ambiguity does not carry over.
+CREATE TABLE IF NOT EXISTS host_workspace_assignments (
+  workspace_id TEXT PRIMARY KEY,
+  host_id TEXT NOT NULL,
+  owner_token_identifier TEXT NOT NULL,
+  second_device_open_at INTEGER,
+  assigned_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS host_workspace_assignments_by_host
+  ON host_workspace_assignments (host_id);
+CREATE INDEX IF NOT EXISTS host_workspace_assignments_by_owner
+  ON host_workspace_assignments (owner_token_identifier);
 -- The one-use nonce a machine signs to prove it holds the private key. Separate
 -- table from host_attestation_challenges because that one is keyed by workspace
 -- and this flow has no workspace to key by.
@@ -1004,6 +1029,10 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
         if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
           db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
         }
+        // Databases created before heartbeat v2: the CREATE above is IF NOT
+        // EXISTS, so the acked-set columns must be added in place.
+        addColumn(db, "host_enrollments", "acked_workspace_ids", "TEXT")
+        addColumn(db, "host_enrollments", "acked_at", "INTEGER")
         migrateAuthorityTenancySchema(db)
         const messageColumns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{ name: string }>
         if (!messageColumns.some((column) => column.name === "author_actor_id")) {

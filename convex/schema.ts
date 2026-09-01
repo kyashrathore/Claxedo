@@ -498,6 +498,11 @@ export default defineSchema({
     paused_by: v.optional(v.union(v.literal("user"), v.literal("killswitch"))),
     paused_reason: v.optional(v.string()),
     revoked_at: v.optional(v.number()),
+    // The machine's last-acked served set (PUBLIC workspace ids), written only
+    // by a verified heartbeat v2 signature, plus when it was acked. Routing
+    // requires a workspace to be BOTH owner-assigned and inside this set.
+    acked_workspace_ids: v.optional(v.array(v.string())),
+    acked_at: v.optional(v.number()),
     created_at: v.number(),
     updated_at: v.number(),
   })
@@ -505,6 +510,29 @@ export default defineSchema({
     .index("by_owner", ["owner_user_id"])
     .index("by_host_id", ["host_id"])
     .index("by_expires_at", ["expires_at"]),
+
+  // The OWNER's declaration that host H serves workspace X (machine-wide
+  // enrollment, assignment grain). Pure data: no liveness of its own — the
+  // enrollment lease answers "is the machine here", the machine's consent is
+  // the heartbeat-acked set on host_enrollments, and routing requires all
+  // three.
+  //
+  // One workspace, one host: a local association id names a directory on ONE
+  // machine, so the PUBLIC workspace id alone is the identity (`by_workspace`
+  // is read-then-patch enforced, the same device `by_owner_host` uses above).
+  // Public id rather than a doc reference because the heartbeat's acked set
+  // carries public ids and routing compares the two directly.
+  host_workspace_assignments: defineTable({
+    workspace_id: v.string(),
+    host_id: v.string(),
+    owner_user_id: v.id("users"),
+    second_device_open_at: v.optional(v.number()),
+    assigned_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_workspace", ["workspace_id"])
+    .index("by_owner_host", ["owner_user_id", "host_id"])
+    .index("by_owner", ["owner_user_id"]),
 
   // The one-use nonce a machine signs to prove it holds the private key.
   // Separate from host_attestation_challenges because that table is keyed by

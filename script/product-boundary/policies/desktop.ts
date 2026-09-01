@@ -61,7 +61,10 @@ export const desktopMainComposition: Policy = {
   // `account/no-reuse-fetch.ts` (fresh-connection node http(s) fetch), the
   // latter bringing `node:https` and `node:stream` into the main closure.
   // Keep the measured closure exact with no headroom.
-  ceilings: { modules: 82, packages: 24 },
+  // 2026-09-01: +1 `host-connector/child-protocol.ts` growth is internal; the
+  // new module is the serving push path in `main/index.ts` reaching the
+  // supervisor's onServing seam (machine-wide enrollment). 83/24.
+  ceilings: { modules: 83, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -116,7 +119,10 @@ export const desktopAccountComposition: Policy = {
   // Control-plane transport resilience: `account/no-reuse-fetch.ts` (reviewed
   // owner of the fresh-connection node http(s) fetch) joins through
   // `account/index.ts`, adding `node:https` to the composition closure.
-  ceilings: { modules: 16, packages: 7 },
+  // 2026-09-01: +1 — the account composition now reaches the host-connector
+  // protocol's shared types through the supervisor's assignment ops
+  // (workspace.assignHost via runAccountOperation). 17/7.
+  ceilings: { modules: 17, packages: 7 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
     minModules: 10,
@@ -228,7 +234,10 @@ export const desktopRendererUnsigned: Policy = {
   // private-session reservation client while retiring the monolithic hosted
   // contribution loader: net +5 modules. `@claxedo/service-contract` is the
   // one dependency-neutral package addition. Exact closure: 1028/59.
-  ceilings: { modules: 1028, packages: 59 },
+  // 2026-09-01: +2 `app/shell-revealed.ts` (the one window-once splash flag
+  // both shell boundaries consult) and the unshare path through
+  // `platform/remote-access` (machine-wide enrollment share toggle). 1030/59.
+  ceilings: { modules: 1030, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

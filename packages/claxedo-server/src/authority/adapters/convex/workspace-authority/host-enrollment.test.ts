@@ -79,9 +79,11 @@ function recorder() {
 async function driveEveryMethod(authority: ReturnType<typeof recorder>["authority"], auth: SignedControlPlaneAuth) {
   await authority.createHostEnrollmentRequest!(auth, { hostId: "host_1" })
   await authority.enrollHost!(auth, { hostId: "host_1", publicKey: "{}", requestId: "req_1", signature: "sig" })
-  await authority.heartbeatHostEnrollment!(auth, { hostId: "host_1", signature: "sig" })
+  await authority.heartbeatHostEnrollment!(auth, { hostId: "host_1", signature: "sig", workspaceIds: ["ws_1"] })
   await authority.pauseHostEnrollment!(auth, { hostId: "host_1", paused: true })
   await authority.activeHostEnrollment!(auth)
+  await authority.assignWorkspaceHost!(auth, { workspaceId: "ws_1", hostId: "host_1" })
+  await authority.unassignWorkspaceHost!(auth, { workspaceId: "ws_1" })
 }
 
 describe("enrollment routes a Clerk bearer to the authed Convex functions", () => {
@@ -96,6 +98,8 @@ describe("enrollment routes a Clerk bearer to the authed Convex functions", () =
       "hostEnrollments:heartbeat",
       "hostEnrollments:pause",
       "hostEnrollments:active",
+      "hostEnrollments:assignWorkspace",
+      "hostEnrollments:unassignWorkspace",
     ])
   })
 
@@ -106,6 +110,31 @@ describe("enrollment routes a Clerk bearer to the authed Convex functions", () =
 
     expect(calls.flatMap((call) => Object.keys(call.args))).not.toContain("service_token")
     expect(calls.flatMap((call) => Object.keys(call.args))).not.toContain("user")
+  })
+
+  test("the heartbeat body carries the served set the v2 signature covers", async () => {
+    const { calls, authority } = recorder()
+
+    await authority.heartbeatHostEnrollment!(clerkAuth, {
+      hostId: "host_1",
+      signature: "sig",
+      workspaceIds: ["ws_b", "ws_a"],
+    })
+
+    expect(calls[0]!.args.workspace_ids).toEqual(["ws_b", "ws_a"])
+  })
+
+  test("assignment reads use the caller's own bearer", async () => {
+    const { calls, authority } = recorder()
+
+    await authority.activeWorkspaceHost!(clerkAuth, { workspaceId: "ws_1" })
+    await authority.listHostAssignments!(clerkAuth)
+
+    expect(calls.map((call) => call.fn)).toEqual([
+      "hostEnrollments:activeWorkspaceHost",
+      "hostEnrollments:listAssignments",
+    ])
+    expect(calls.flatMap((call) => Object.keys(call.args))).not.toContain("service_token")
   })
 })
 
@@ -121,6 +150,8 @@ describe("enrollment routes a CLI session token to the service Convex functions"
       "hostEnrollments:heartbeatForService",
       "hostEnrollments:pauseForService",
       "hostEnrollments:activeForService",
+      "hostEnrollments:assignWorkspaceForService",
+      "hostEnrollments:unassignWorkspaceForService",
     ])
   })
 
@@ -196,6 +227,40 @@ describe("a CLI caller and a Clerk caller are the same account", () => {
       host_id: "host_cli",
       display_name: "Work laptop",
     })
+
+    // The assignment grain, end to end through the adapter: the owner assigns
+    // the workspace to the machine, the machine acks it with the ONE v2
+    // heartbeat signature over the exact payload literal, and only then is the
+    // workspace routable — with the acked set stored on the enrollment.
+    await expect(service.assignWorkspaceHost!(cliAuth, { workspaceId: "ws_adapter", hostId: "host_cli" }))
+      .resolves.toEqual({ assigned: true, workspace_id: "ws_adapter", host_id: "host_cli" })
+    await expect(browser.activeWorkspaceHost!(clerkAuth, { workspaceId: "ws_adapter" }))
+      .resolves.toEqual({ active: false })
+
+    const heartbeatPayload = [
+      "claxedo.host-enrollment.heartbeat.v2",
+      "host_id=host_cli",
+      "ttl_ms=",
+      "workspaces=ws_adapter",
+    ].join("\n")
+    const beat = await service.heartbeatHostEnrollment!(cliAuth, {
+      hostId: "host_cli",
+      workspaceIds: ["ws_adapter"],
+      signature: signData("sha256", Buffer.from(heartbeatPayload), {
+        key: createPrivateKey({ key: jwk, format: "jwk" }),
+        dsaEncoding: "ieee-p1363",
+      }).toString("base64url"),
+    })
+    expect(beat.assigned_workspace_ids).toEqual(["ws_adapter"])
+
+    await expect(browser.activeWorkspaceHost!(clerkAuth, { workspaceId: "ws_adapter" })).resolves.toMatchObject({
+      active: true,
+      host_id: "host_cli",
+      workspace_id: "ws_adapter",
+    })
+    await expect(browser.listHostAssignments!(clerkAuth)).resolves.toMatchObject([
+      { host_id: "host_cli", workspace_ids: ["ws_adapter"], acked_workspace_ids: ["ws_adapter"] },
+    ])
   })
 })
 

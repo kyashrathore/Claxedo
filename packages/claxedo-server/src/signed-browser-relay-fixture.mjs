@@ -46,7 +46,12 @@ import {
   stopUserHostedWorkspaceTunnel,
 } from "./user-hosted-tunnel.ts"
 import { HostEnrollmentRoutes } from "./routes/hosted/host-enrollment.ts"
-import { heartbeatPayload, localHostIdentity, registrationPayload, signHostPayload } from "./workspace/local-host.ts"
+import {
+  hostEnrollmentHeartbeatPayloadV2,
+  hostEnrollmentPayload,
+  localHostIdentity,
+  signHostPayload,
+} from "./workspace/local-host.ts"
 import { createFixedWindowConnectionRateLimiter } from "./platform/auth/rate-limit.ts"
 
 const execFileAsync = promisify(execFile)
@@ -569,48 +574,50 @@ if (access === "cloud") {
   })
 
   // Starting the relay tunnel above proves transport availability, while the
-  // signed Local Host Link is the authoritative control-plane presence record
-  // used to mint browser connection credentials. Register it through the real
-  // SQLite authority with the same challenge/signature contract as the public
-  // route, so terminal and runtime-event clients exercise the production flow.
-  const challenge = await authority.createLocalHostLinkChallenge(browserAuth, {
-    workspaceId,
-    hostId,
-  })
-  await authority.registerLocalHostLink(browserAuth, {
-    workspaceId,
+  // machine-wide enrollment + owner assignment + signed v2 heartbeat is the
+  // authoritative control-plane presence record used to mint browser
+  // connection credentials. Run it through the real SQLite authority with the
+  // same enroll/assign/beat contract as the public routes, so terminal and
+  // runtime-event clients exercise the production flow: routable = owner-
+  // assigned AND machine-acked AND live lease.
+  const enrollmentRequest = await authority.createHostEnrollmentRequest(browserAuth, { hostId })
+  await authority.enrollHost(browserAuth, {
     hostId,
     publicKey: fixtureLocalHostIdentity.publicKey,
-    challengeId: challenge.challenge_id,
+    requestId: enrollmentRequest.request_id,
     signature: signHostPayload(
       fixtureLocalHostIdentity,
-      registrationPayload({
-        workspaceId,
+      hostEnrollmentPayload({
         hostId,
-        challengeId: challenge.challenge_id,
-        nonce: challenge.nonce,
+        requestId: enrollmentRequest.request_id,
+        nonce: enrollmentRequest.nonce,
       }),
     ),
     displayName: "Signed Browser Relay Host",
   })
+  await authority.assignWorkspaceHost(browserAuth, { workspaceId, hostId })
+  const beatHostEnrollment = () => authority.heartbeatHostEnrollment(browserAuth, {
+    hostId,
+    ttlMs: 60_000,
+    workspaceIds: [workspaceId],
+    signature: signHostPayload(
+      fixtureLocalHostIdentity,
+      hostEnrollmentHeartbeatPayloadV2({ hostId, ttlMs: 60_000, workspaceIds: [workspaceId] }),
+    ),
+  })
+  // The first beat acks the served set so the assignment is routable before
+  // any spec asks for a connection.
+  await beatHostEnrollment()
 
   // The full browser matrix intentionally keeps one fixture alive across many
-  // fresh documents. Renew the real signed presence record just as the desktop
-  // host does; otherwise the default 60s lease expires halfway through the
-  // suite and later connection requests correctly fail with 409.
+  // fresh documents. Renew the real signed lease just as the desktop host
+  // does; otherwise the default 60s lease expires halfway through the suite
+  // and later connection requests correctly fail with 409.
   localHostHeartbeatTimer = setInterval(() => {
     localHostHeartbeatPromise = localHostHeartbeatPromise
-      .then(() => authority.heartbeatLocalHostLink(browserAuth, {
-        workspaceId,
-        hostId,
-        ttlMs: 60_000,
-        signature: signHostPayload(
-          fixtureLocalHostIdentity,
-          heartbeatPayload({ workspaceId, hostId, ttlMs: 60_000 }),
-        ),
-      }))
+      .then(beatHostEnrollment)
       .catch((error) => {
-        console.error("signed-browser-relay-fixture: Local Host Link heartbeat failed", error)
+        console.error("signed-browser-relay-fixture: host enrollment heartbeat failed", error)
       })
   }, 15_000)
 }

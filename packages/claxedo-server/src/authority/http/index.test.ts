@@ -481,7 +481,7 @@ describe("control plane HTTP protocol", () => {
       directory: "/tmp/demo",
       status: "ready",
     })
-    const activeLocalHostLink = vi.fn(async () => ({
+    const activeWorkspaceHost = vi.fn(async () => ({
       active: true as const,
       host_id: "host_user",
       workspace_id: "ws_1",
@@ -500,7 +500,7 @@ describe("control plane HTTP protocol", () => {
           home_region: "eu-west",
         },
       })),
-      activeLocalHostLink,
+      activeWorkspaceHost,
       upsertSessionVisibility: vi.fn(async () => ({})),
     } as never
     const mintRuntimeAccessToken = vi.fn(async () => ({ token: "runtime-token" }))
@@ -518,7 +518,7 @@ describe("control plane HTTP protocol", () => {
       sessionId: "session-1",
     })).resolves.toMatchObject({ ok: true })
 
-    expect(activeLocalHostLink).toHaveBeenCalledWith(signedAuth, { workspaceId: "ws_1" })
+    expect(activeWorkspaceHost).toHaveBeenCalledWith(signedAuth, { workspaceId: "ws_1" })
     expect(svc.sandbox.sandboxManager).toBeUndefined()
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ hostId: "host_user" }))
     expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ orgId: "org_1" }))
@@ -530,15 +530,15 @@ describe("control plane HTTP protocol", () => {
       name: "inactive user-hosted",
       workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "local-worktree", access: "user-hosted" },
       code: "user_hosted_workspace_unavailable",
-      activeLocalHostLink: vi.fn(async () => ({ active: false as const })),
+      activeWorkspaceHost: vi.fn(async () => ({ active: false as const })),
     },
     {
       name: "unsupported placement",
       workspace: { workspace_id: "ws_1", org_id: "org_1", backing: "local-worktree", access: "cloud" },
       code: "workspace_runtime_unavailable",
-      activeLocalHostLink: vi.fn(),
+      activeWorkspaceHost: vi.fn(),
     },
-  ])("fails closed for $name runtime authority", async ({ workspace, code, activeLocalHostLink }) => {
+  ])("fails closed for $name runtime authority", async ({ workspace, code, activeWorkspaceHost }) => {
     const svc = services()
     mocks.resolveWorkspace.mockResolvedValue({
       id: "ws_1",
@@ -550,7 +550,7 @@ describe("control plane HTTP protocol", () => {
     svc.authority = {
       usersMe: canonicalUsersMe(),
       openWorkspace: vi.fn(async () => ({ role: "owner", workspace })),
-      activeLocalHostLink,
+      activeWorkspaceHost,
     } as never
     const mintRuntimeAccessToken = vi.fn()
     svc.relay.provider = {

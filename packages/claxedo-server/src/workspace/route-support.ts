@@ -17,7 +17,36 @@ import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
+/** The owner-side facts one local workspace share carries to `assignWorkspaceHost`. */
+export type LocalWorkspaceShare = {
+  workspaceId: string
+  displayName?: string
+  orgId?: string
+  projectId?: string
+  repoUrl?: string
+  repoName?: string
+  gitBranch?: string
+  remoteDirectory?: string
+  homeRegion?: string
+}
+
+/**
+ * The local composition's machine-share seam. Implemented by the self-hosted
+ * remote-access service, which owns this machine's enrollment, served set, and
+ * heartbeat loop; the workspace routes only guard and delegate. `assignWorkspace`
+ * resolves only after a signed heartbeat acked the workspace — share success
+ * means routable.
+ */
+export type LocalHostAssignments = {
+  assignWorkspace(
+    auth: SignedControlPlaneAuth,
+    share: LocalWorkspaceShare,
+  ): Promise<{ assignment: { assigned: true; workspace_id: string; host_id: string }; hostTunnel?: unknown }>
+  unassignWorkspace(auth: SignedControlPlaneAuth, workspaceId: string): Promise<{ unassigned: boolean }>
+}
+
 export type WorkspaceRouteOptions = {
+  hostAssignments?: LocalHostAssignments
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier

@@ -75,7 +75,10 @@ export const localServer: Policy = {
   // hosted capability package: 56 + 1 = 57 modules.
   // 2026-08-29: +1 `embedded-relay-host-auth.ts` — verified actor hop stamp for
   // in-process embedded prompts (`claxedo.author` without managed authority).
-  ceilings: { modules: 58, packages: 21 },
+  // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + `-routes.ts` — the
+  // serving half of remote access (one relay connection for the assigned∩acked
+  // set, pushed from Electron main). Reviewed owner: workspace domain. 60/21.
+  ceilings: { modules: 60, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

@@ -719,6 +719,9 @@ export const ORG_WORKSPACE_DOC_TABLES: readonly ScopedRows[] = [
 /** Workspace children keyed on the PUBLIC workspace id string. */
 export const ORG_WORKSPACE_PUBLIC_TABLES: readonly ScopedRows[] = [
   { table: "host_attestation_challenges", index: "by_workspace", field: "workspace_id" },
+  // Owner intent that host H serves workspace X. Dies with the workspace: the
+  // enrollment (user-owned, retained) stays, but nothing routable remains.
+  { table: "host_workspace_assignments", index: "by_workspace", field: "workspace_id" },
   { table: "runtime_leases", index: "by_workspace_id", field: "workspace_id" },
   { table: "sandbox_lease_events", index: "by_workspace_id", field: "workspace_id" },
   { table: "wakes", index: "by_workspace_created", field: "workspace_id" },

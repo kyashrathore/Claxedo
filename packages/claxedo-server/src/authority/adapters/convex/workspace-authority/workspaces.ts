@@ -200,7 +200,9 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
       >
     },
     async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
-      return requireExecutor(input, auth).mutation(convexApi.localHostLinks.markSecondDeviceOpen, {
+      // Assignment grain: the "second device open" fact lives on the owner's
+      // host_workspace_assignments row, not on the retired per-workspace link.
+      return requireExecutor(input, auth).mutation(convexApi.hostEnrollments.markSecondDeviceOpen, {
         workspace_id: args.workspaceId,
       }) as Promise<{ recorded: boolean; second_device_open_at: number }>
     },

@@ -69,7 +69,7 @@ describe("route family table", () => {
     expect(routeFamilyFor("/api/claxedo/remote-access/devices")?.id).toBe("remote-access")
     expect(routeFamilyFor("/api/claxedo/network-policy/effective/:workspaceId")?.id).toBe("network-policy")
     expect(routeFamilyFor("/api/claxedo/workspace/resolve")?.id).toBe("local-workspace-resolve")
-    expect(routeFamilyFor("/api/workspace/:id/user-hosted/register")?.id).toBe("workspace-authority")
+    expect(routeFamilyFor("/api/workspace/:id/host-assignment")?.id).toBe("workspace-authority")
   })
 
   test("reports an unowned path instead of silently absorbing it", () => {
@@ -243,11 +243,9 @@ describe("desktop-local product contract", () => {
       "/api/workspace/:id/checkpoints/:checkpointId/restore",
       "/api/workspace/:id/connection",
       "/api/workspace/:id/connection/refresh",
+      "/api/workspace/:id/host-assignment",
       "/api/workspace/:id/lifecycle/:operation",
       "/api/workspace/:id/shares",
-      "/api/workspace/:id/user-hosted/heartbeat",
-      "/api/workspace/:id/user-hosted/pause",
-      "/api/workspace/:id/user-hosted/register",
       "/api/workspace/create",
       "/api/workspace/drivers",
       "/api/workspace/drivers/:id/auth",

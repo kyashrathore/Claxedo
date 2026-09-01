@@ -284,6 +284,20 @@ function services(): ControlPlaneServices {
         expires_at: 60_000,
         last_seen_at: 1,
       })),
+      activeWorkspaceHost: vi.fn(async () => ({
+        active: true,
+        host_id: "host_1",
+        workspace_id: "ws_1",
+        expires_at: 60_000,
+        last_seen_at: 1,
+      })),
+      assignWorkspaceHost: vi.fn(async (_auth, input: { workspaceId: string; hostId: string }) => ({
+        assigned: true as const,
+        workspace_id: input.workspaceId,
+        host_id: input.hostId,
+      })),
+      unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
+      listHostAssignments: vi.fn(async () => []),
       deleteWorkspace: vi.fn(async () => ({})),
       createCloudWorkspace: vi.fn(async () => ({})),
       grantWorkspaceShare: vi.fn(async () => ({})),
@@ -2384,7 +2398,7 @@ describe("workspace routes signed control plane authority", () => {
         message: "Workspace access denied",
       },
     })
-    expect(svc.authority?.activeLocalHostLink).not.toHaveBeenCalled()
+    expect(svc.authority?.activeWorkspaceHost).not.toHaveBeenCalled()
     expect(signer).not.toHaveBeenCalled()
     expect(svc.authority?.recordRuntimeAccessToken).not.toHaveBeenCalled()
     expect(svc.authority?.auditDeny).toHaveBeenCalledWith(expect.objectContaining({ token: "user_other" }), {
@@ -2473,7 +2487,7 @@ describe("workspace routes signed control plane authority", () => {
         access: "user-hosted" as const,
       },
     }))
-    svc.authority!.activeLocalHostLink = vi.fn(async () => ({ active: false as const }))
+    svc.authority!.activeWorkspaceHost = vi.fn(async () => ({ active: false as const }))
     const signer = vi.fn(async () => ({
       runtimeAccessToken: "rat_user_hosted",
       tokenExpiresAt: 789_000,
@@ -2750,8 +2764,8 @@ describe("workspace routes signed control plane authority", () => {
     )
   })
 
-  test("signed local workspace registration records user-hosted metadata in Convex", async () => {
-    mocks.resolveWorkspace.mockResolvedValueOnce({
+  function localWorkspaceRow() {
+    return {
       id: "ws_local",
       project_id: "project_1",
       project_name: "Local Project",
@@ -2763,11 +2777,31 @@ describe("workspace routes signed control plane authority", () => {
       git_branch: "dev",
       created_at: 1,
       updated_at: 1,
-    })
-    const svc = services()
-    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+    }
+  }
 
-    const res = await app.request("http://localhost/ws_local/user-hosted/register", {
+  function hostAssignments() {
+    return {
+      assignWorkspace: vi.fn(async (_auth: unknown, share: { workspaceId: string }) => ({
+        assignment: { assigned: true as const, workspace_id: share.workspaceId, host_id: "host_machine" },
+        hostTunnel: {
+          hostTunnelToken: "htt_1",
+          tokenExpiresAt: 456_000,
+          jti: "htt_jti_1",
+          relayUrl: "http://relay.test",
+        },
+      })),
+      unassignWorkspace: vi.fn(async () => ({ unassigned: true })),
+    }
+  }
+
+  test("signed local workspace share assigns this machine through the assignment service", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce(localWorkspaceRow())
+    const svc = services()
+    const assignments = hostAssignments()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments })
+
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
       method: "POST",
       headers: {
         Authorization: "Bearer user_1",
@@ -2775,90 +2809,85 @@ describe("workspace routes signed control plane authority", () => {
       },
       body: JSON.stringify({
         displayName: "Yash's MacBook",
-        ttlMs: 120_000,
       }),
     })
 
     expect(res.status).toBe(200)
-    const json = (await res.json()) as {
-      workspace: Record<string, never>
-      localHostLink: {
-        host_id: string
-        workspace_id: string
-        expires_at: number
-        paused: boolean
-      }
-    }
-    expect(json.localHostLink.host_id).toMatch(/^host_/)
-    expect(json.localHostLink.host_id).not.toBe("host_local")
-    expect(json).toEqual({
-      workspace: {},
-      localHostLink: {
-        host_id: json.localHostLink.host_id,
+    await expect(res.json()).resolves.toEqual({
+      assignment: {
+        assigned: true,
         workspace_id: "ws_local",
-        expires_at: 60_000,
-        paused: false,
+        host_id: "host_machine",
+      },
+      hostTunnel: {
+        hostTunnelToken: "htt_1",
+        tokenExpiresAt: 456_000,
+        jti: "htt_jti_1",
+        relayUrl: "http://relay.test",
       },
     })
     expect(svc.authority?.usersMe).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }))
-    expect(svc.authority?.registerLocalForSharing).toHaveBeenCalledWith(
+    // The share carries the OWNER's workspace facts; the machine identity is
+    // server-owned inside the assignment service.
+    expect(assignments.assignWorkspace).toHaveBeenCalledWith(
       expect.objectContaining({ token: "user_1" }),
       {
         workspaceId: "ws_local",
-        displayName: "Local Main",
+        displayName: "Yash's MacBook",
         projectId: "project_1",
         repoUrl: "https://github.com/acme/local.git",
         repoName: "local",
         gitBranch: "dev",
       },
     )
-    expect(svc.authority?.registerLocalHostLink).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "user_1" }),
-      {
-        workspaceId: "ws_local",
-        hostId: json.localHostLink.host_id,
-        publicKey: expect.any(String),
-        challengeId: "challenge_1",
-        signature: expect.any(String),
-        displayName: "Yash's MacBook",
-        ttlMs: 120_000,
-      },
-    )
-    expect(svc.authority?.createLocalHostLinkChallenge).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "user_1" }),
-      {
-        workspaceId: "ws_local",
-        hostId: json.localHostLink.host_id,
-      },
-    )
-    const createChallengeMock = svc.authority!.createLocalHostLinkChallenge as ReturnType<typeof vi.fn>
-    const registerLinkMock = svc.authority!.registerLocalHostLink as ReturnType<typeof vi.fn>
-    const registerWorkspaceMock = svc.authority!.registerLocalForSharing as ReturnType<typeof vi.fn>
-    expect(createChallengeMock.mock.invocationCallOrder[0]!).toBeLessThan(registerLinkMock.mock.invocationCallOrder[0]!)
-    expect(registerLinkMock.mock.invocationCallOrder[0]!).toBeLessThan(
-      registerWorkspaceMock.mock.invocationCallOrder[0]!,
-    )
     expect(svc.authority?.auditAllow).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
-      action: "local_host_link.enabled",
+      action: "host_workspace_assignment.assigned",
       workspaceId: "ws_local",
       metadata: {
-        hostId: json.localHostLink.host_id,
+        hostId: "host_machine",
       },
     })
-    expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "local_host_link.enabled", {
+    expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "host_workspace_assignment.assigned", {
       workspaceId: "ws_local",
-      hostId: json.localHostLink.host_id,
+      hostId: "host_machine",
     })
   })
 
-  test("unsigned local workspace registration is not shareable without signed auth", async () => {
+  test("signed local workspace share defaults the display name from the workspace row", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce(localWorkspaceRow())
     const svc = services()
+    const assignments = hostAssignments()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments })
+
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer user_1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(200)
+    expect(assignments.assignWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "user_1" }),
+      expect.objectContaining({
+        workspaceId: "ws_local",
+        displayName: "Local Main",
+      }),
+    )
+  })
+
+  test("unsigned local workspace share is refused without signed auth", async () => {
+    const svc = services()
+    const assignments = hostAssignments()
     const app = WorkspaceRoutes(svc, {
       authConfig: { enabled: false, mode: "local-only", reason: "local dev" },
       verifier,
+      hostAssignments: assignments,
     })
 
-    const res = await app.request("http://localhost/ws_local/user-hosted/register", {
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2874,25 +2903,16 @@ describe("workspace routes signed control plane authority", () => {
       },
     })
     expect(mocks.resolveWorkspace).not.toHaveBeenCalled()
-    expect(svc.authority?.registerLocalForSharing).not.toHaveBeenCalled()
-    expect(svc.authority?.registerLocalHostLink).not.toHaveBeenCalled()
+    expect(assignments.assignWorkspace).not.toHaveBeenCalled()
   })
 
-  test("signed local host link registration rejects caller-supplied host identity", async () => {
-    mocks.resolveWorkspace.mockResolvedValueOnce({
-      id: "ws_local",
-      project_id: "project_1",
-      project_name: "Local Project",
-      workspace_name: "Local Main",
-      directory: "/tmp/local",
-      kind: "local",
-      created_at: 1,
-      updated_at: 1,
-    })
+  test("signed local workspace share rejects caller-supplied host identity", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce(localWorkspaceRow())
     const svc = services()
-    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+    const assignments = hostAssignments()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments })
 
-    const res = await app.request("http://localhost/ws_local/user-hosted/register", {
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
       method: "POST",
       headers: {
         Authorization: "Bearer user_1",
@@ -2906,32 +2926,23 @@ describe("workspace routes signed control plane authority", () => {
     expect(res.status).toBe(400)
     await expect(res.json()).resolves.toEqual({
       error: {
-        code: "local_host_link_identity_server_owned",
-        message: "Local Host Link host identity is server-owned",
+        code: "host_assignment_identity_server_owned",
+        message: "Host assignment machine identity is server-owned",
       },
     })
-    expect(svc.authority?.registerLocalForSharing).not.toHaveBeenCalled()
-    expect(svc.authority?.registerLocalHostLink).not.toHaveBeenCalled()
+    expect(assignments.assignWorkspace).not.toHaveBeenCalled()
   })
 
-  test("signed local workspace registration does not write workspace metadata before host proof", async () => {
+  test("signed local workspace share requires a local workspace", async () => {
     mocks.resolveWorkspace.mockResolvedValueOnce({
-      id: "ws_local",
-      project_id: "project_1",
-      project_name: "Local Project",
-      workspace_name: "Local Main",
-      directory: "/tmp/local",
-      kind: "local",
-      created_at: 1,
-      updated_at: 1,
+      ...localWorkspaceRow(),
+      kind: "cloud",
     })
     const svc = services()
-    svc.authority!.registerLocalHostLink = vi.fn(async () => {
-      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Invalid host attestation")
-    }) as never
-    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+    const assignments = hostAssignments()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments })
 
-    const res = await app.request("http://localhost/ws_local/user-hosted/register", {
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
       method: "POST",
       headers: {
         Authorization: "Bearer user_1",
@@ -2940,80 +2951,103 @@ describe("workspace routes signed control plane authority", () => {
       body: JSON.stringify({}),
     })
 
-    expect(res.status).toBe(403)
-    expect(svc.authority?.createLocalHostLinkChallenge).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "user_1" }),
-      expect.objectContaining({ workspaceId: "ws_local" }),
-    )
-    expect(svc.authority?.registerLocalForSharing).not.toHaveBeenCalled()
-    expect(svc.authority?.auditAllow).not.toHaveBeenCalled()
+    expect(res.status).toBe(400)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "host_assignment_local_workspace_required",
+        message: "Only local workspaces can be assigned for user-hosted sharing",
+      },
+    })
+    expect(assignments.assignWorkspace).not.toHaveBeenCalled()
   })
 
-  test("signed local host link heartbeat and pause update Convex presence", async () => {
+  test("signed local workspace share answers 404 for an unknown workspace", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
+    const svc = services()
+    const assignments = hostAssignments()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments })
+
+    const res = await app.request("http://localhost/ws_missing/host-assignment", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer user_1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(404)
+    expect(assignments.assignWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("signed local workspace share answers 501 without an assignment service", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce(localWorkspaceRow())
     const svc = services()
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
-    const heartbeat = await app.request("http://localhost/ws_local/user-hosted/heartbeat", {
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
       method: "POST",
       headers: {
         Authorization: "Bearer user_1",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        hostId: "host_local",
-        ttlMs: 90_000,
-      }),
-    })
-    const pause = await app.request("http://localhost/ws_local/user-hosted/pause", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer user_1",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        hostId: "host_local",
-        paused: true,
-      }),
+      body: JSON.stringify({}),
     })
 
-    expect(heartbeat.status).toBe(200)
-    expect(pause.status).toBe(200)
-    expect(svc.authority?.heartbeatLocalHostLink).toHaveBeenCalledWith(
-      expect.objectContaining({ token: "user_1" }),
-      {
-        workspaceId: "ws_local",
-        hostId: "host_local",
-        signature: expect.any(String),
-        ttlMs: 90_000,
+    expect(res.status).toBe(501)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "not_implemented",
+        message: "This deployment does not support host assignments",
       },
-    )
-    expect(svc.authority?.pauseLocalHostLink).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
-      workspaceId: "ws_local",
-      hostId: "host_local",
-      paused: true,
-    })
-    expect(svc.authority?.auditAllow).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
-      action: "local_host_link.disabled",
-      workspaceId: "ws_local",
-      metadata: {
-        hostId: "host_local",
-      },
-    })
-    expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "local_host_link.disabled", {
-      workspaceId: "ws_local",
-      hostId: "host_local",
-    })
-    expect(mocks.stopUserHostedWorkspaceTunnel).toHaveBeenCalledWith({
-      workspaceId: "ws_local",
-      hostId: "host_local",
     })
   })
 
-  test("signed local host link heartbeat is rate limited before refreshing presence", async () => {
+  test("an unacked share surfaces the control-plane failure and skips the audit trail", async () => {
+    mocks.resolveWorkspace.mockResolvedValueOnce(localWorkspaceRow())
     const svc = services()
+    const assignments = hostAssignments()
+    assignments.assignWorkspace = vi.fn(async () => {
+      throw new ControlPlaneAuthError(
+        503,
+        "workspace_authority_unavailable",
+        "The workspace assignment was not acknowledged by the control plane",
+      )
+    }) as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments })
+
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
+      method: "POST",
+      headers: {
+        Authorization: "Bearer user_1",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({}),
+    })
+
+    expect(res.status).toBe(503)
+    await expect(res.json()).resolves.toEqual({
+      error: {
+        code: "workspace_authority_unavailable",
+        message: "The workspace assignment was not acknowledged by the control plane",
+      },
+    })
+    expect(svc.authority?.auditAllow).not.toHaveBeenCalled()
+    expect(svc.telemetry.capture).not.toHaveBeenCalledWith(
+      "user_1",
+      "host_workspace_assignment.assigned",
+      expect.anything(),
+    )
+  })
+
+  test("signed local workspace share is rate limited per workspace before delegation", async () => {
+    mocks.resolveWorkspace.mockResolvedValue(localWorkspaceRow())
+    const svc = services()
+    const assignments = hostAssignments()
     const app = WorkspaceRoutes(svc, {
       authConfig,
       verifier,
+      hostAssignments: assignments,
       controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({
         limit: 1,
         windowMs: 60_000,
@@ -3021,25 +3055,16 @@ describe("workspace routes signed control plane authority", () => {
       }),
     })
 
-    const body = JSON.stringify({
-      hostId: "host_local",
-    })
-    const first = await app.request("http://localhost/ws_local/user-hosted/heartbeat", {
+    const request = () => app.request("http://localhost/ws_local/host-assignment", {
       method: "POST",
       headers: {
         Authorization: "Bearer user_1",
         "Content-Type": "application/json",
       },
-      body,
+      body: JSON.stringify({}),
     })
-    const second = await app.request("http://localhost/ws_local/user-hosted/heartbeat", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer user_1",
-        "Content-Type": "application/json",
-      },
-      body,
-    })
+    const first = await request()
+    const second = await request()
 
     expect(first.status).toBe(200)
     expect(second.status).toBe(429)
@@ -3050,11 +3075,11 @@ describe("workspace routes signed control plane authority", () => {
         retryAfterMs: 60_000,
       },
     })
-    expect(svc.authority?.heartbeatLocalHostLink).toHaveBeenCalledTimes(1)
+    expect(assignments.assignWorkspace).toHaveBeenCalledTimes(1)
     expect(svc.authority?.auditDeny).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "signed", token: "user_1" }),
       {
-        action: "hostPresence.refresh.denied",
+        action: "host_workspace_assignment.assign.denied",
         reason: "control_plane_rate_limited",
         workspaceId: "ws_local",
         metadata: {
@@ -3062,90 +3087,49 @@ describe("workspace routes signed control plane authority", () => {
         },
       },
     )
+    mocks.resolveWorkspace.mockReset()
   })
 
-  test("signed local host link register and heartbeat return host tunnel credentials when configured", async () => {
-    mocks.resolveWorkspace.mockResolvedValue({
-      id: "ws_local",
-      project_id: "project_1",
-      project_name: "Local Project",
-      workspace_name: "Local Main",
-      directory: "/tmp/local",
-      kind: "local",
-      created_at: 1,
-      updated_at: 1,
-    })
+  test("signed local workspace unshare unassigns through the assignment service and audits", async () => {
     const svc = services()
-    const hostTunnelTokenSigner = vi.fn(async () => ({
-      hostTunnelToken: "htt_1",
-      tokenExpiresAt: 456_000,
-      jti: "htt_jti_1",
-    }))
-    const app = WorkspaceRoutes(svc, {
-      authConfig,
-      verifier,
-      hostTunnelTokenSigner,
-      relayUrl: "http://relay.test",
-    })
+    const assignments = hostAssignments()
+    const app = WorkspaceRoutes(svc, { authConfig, verifier, hostAssignments: assignments })
 
-    const register = await app.request("http://localhost/ws_local/user-hosted/register", {
-      method: "POST",
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
+      method: "DELETE",
       headers: {
         Authorization: "Bearer user_1",
-        "Content-Type": "application/json",
       },
-      body: JSON.stringify({}),
-    })
-    expect(register.status).toBe(200)
-    const registerJson = (await register.json()) as {
-      localHostLink: { host_id: string }
-      hostTunnel: {
-        hostTunnelToken: string
-        tokenExpiresAt: number
-        jti: string
-      }
-    }
-    const heartbeat = await app.request("http://localhost/ws_local/user-hosted/heartbeat", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer user_1",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        hostId: registerJson.localHostLink.host_id,
-      }),
     })
 
-    expect(heartbeat.status).toBe(200)
-    expect(registerJson.localHostLink.host_id).toMatch(/^host_/)
-    expect(registerJson.localHostLink.host_id).not.toBe("host_local")
-    expect(registerJson).toMatchObject({
-      hostTunnel: {
-        hostTunnelToken: "htt_1",
-        tokenExpiresAt: 456_000,
-        jti: "htt_jti_1",
-      },
-    })
-    await expect(heartbeat.json()).resolves.toMatchObject({
-      hostTunnel: {
-        hostTunnelToken: "htt_1",
-        tokenExpiresAt: 456_000,
-        jti: "htt_jti_1",
-      },
-    })
-    expect(hostTunnelTokenSigner).toHaveBeenCalledWith({
-      subject: "user_1",
-      hostId: registerJson.localHostLink.host_id,
-      workspaceIds: ["ws_local"],
-    })
-    expect(hostTunnelTokenSigner).toHaveBeenCalledTimes(2)
-    expect(mocks.startUserHostedWorkspaceTunnel).toHaveBeenCalledWith({
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toEqual({ unassigned: true })
+    expect(assignments.unassignWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({ token: "user_1" }),
+      "ws_local",
+    )
+    expect(svc.authority?.auditAllow).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
+      action: "host_workspace_assignment.unassigned",
       workspaceId: "ws_local",
-      hostId: registerJson.localHostLink.host_id,
-      relayUrl: "http://relay.test",
-      hostTunnelToken: "htt_1",
+      metadata: {},
     })
-    expect(mocks.startUserHostedWorkspaceTunnel).toHaveBeenCalledTimes(2)
+  })
+
+  test("unsigned local workspace unshare is refused without signed auth", async () => {
+    const svc = services()
+    const assignments = hostAssignments()
+    const app = WorkspaceRoutes(svc, {
+      authConfig: { enabled: false, mode: "local-only", reason: "local dev" },
+      verifier,
+      hostAssignments: assignments,
+    })
+
+    const res = await app.request("http://localhost/ws_local/host-assignment", {
+      method: "DELETE",
+    })
+
+    expect(res.status).toBe(401)
+    expect(assignments.unassignWorkspace).not.toHaveBeenCalled()
   })
 
   test("unsigned local workspace delete remains local-only", async () => {

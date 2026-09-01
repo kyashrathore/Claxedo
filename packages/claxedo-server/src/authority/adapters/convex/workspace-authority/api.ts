@@ -109,6 +109,13 @@ type ConvexApi = {
     pauseForService: ConvexMutation
     active: ConvexQuery
     activeForService: ConvexQuery
+    assignWorkspace: ConvexMutation
+    assignWorkspaceForService: ConvexMutation
+    unassignWorkspace: ConvexMutation
+    unassignWorkspaceForService: ConvexMutation
+    activeWorkspaceHost: ConvexQuery
+    listAssignments: ConvexQuery
+    markSecondDeviceOpen: ConvexMutation
   }
   workspaceShares: {
     grant: ConvexMutation
