@@ -15,7 +15,7 @@ import { SandboxSettingsSection } from "@/features/settings/ui/sandbox-section"
 import { OrgTeamSettingsSection } from "@/features/settings/ui/org-team-section"
 import claxedoPkg from "../../../package.json"
 import { RemoteAccessSurface, useRemoteAccessController } from "@/features/onboarding"
-import { remoteAccessClientId, remoteAccessWorkspaceLink } from "@/features/onboarding/remote-access-state"
+import { remoteAccessAppOrigin, remoteAccessClientId, remoteAccessWorkspaceLink } from "@/features/onboarding/remote-access-state"
 import { localWorkspaceShareTarget, registerUserHostedWorkspace } from "@/features/workspaces/data/share-workspace"
 import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
 import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
@@ -72,12 +72,8 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
     await queryClient.invalidateQueries({ queryKey: SHARED_WORKSPACES_QUERY_KEY })
     await remoteAccess.devices.refetch()
   }
-  const shareLinkFor = (workspaceId: string) => {
-    const origin = /^https?:$/.test(window.location.protocol) && !["localhost", "127.0.0.1"].includes(window.location.hostname)
-      ? window.location.origin
-      : "https://app.claxedo.com"
-    return remoteAccessWorkspaceLink({ appOrigin: origin, workspaceId, sourceClientId: remoteAccessClientId() })
-  }
+  const shareLinkFor = (workspaceId: string) =>
+    remoteAccessWorkspaceLink({ appOrigin: remoteAccessAppOrigin(), workspaceId, sourceClientId: remoteAccessClientId() })
   const [active, setActive] = createSignal(props.initialTab ?? "general")
   const [mobile, setMobile] = createSignal(false)
 

@@ -39,6 +39,34 @@ export function remoteAccessAvailability(input: RemoteAccessCapability): RemoteA
   return { state: "enabled", proven: input.secondDeviceOpen === true }
 }
 
+/**
+ * The origin a phone must open to reach a shared workspace.
+ *
+ * This is a DEPLOYMENT binding, not a runtime guess: the desktop renderer
+ * runs on localhost (dev) or a file/app scheme (packaged), so its own
+ * `window.location` never names the hosted app. `VITE_CLAXEDO_APP_ORIGIN` is
+ * baked per build the same way the auth flags are — a staging desktop links
+ * to the staging app, production to production. The window origin is only
+ * trusted for the browser product actually served FROM the hosted app, and
+ * the production origin is the final default rather than a hidden fallback.
+ *
+ * Two surfaces used to carry private copies of this heuristic and both
+ * silently linked a staging deployment's QR to production, which renders a
+ * blank page there — the workspace does not exist on that control plane.
+ */
+export function remoteAccessAppOrigin(): string {
+  const baked = (import.meta.env?.VITE_CLAXEDO_APP_ORIGIN as string | undefined)?.trim()
+  if (baked) return baked
+  if (
+    typeof window !== "undefined" &&
+    /^https?:$/.test(window.location.protocol) &&
+    !["localhost", "127.0.0.1"].includes(window.location.hostname)
+  ) {
+    return window.location.origin
+  }
+  return "https://app.claxedo.com"
+}
+
 export function remoteAccessWorkspaceLink(input: {
   appOrigin: string
   workspaceId: string

@@ -6,6 +6,7 @@ import type { OnboardingFunnelEvent } from "./funnel"
 import {
   remoteAccessAvailability,
   remoteAccessClientId,
+  remoteAccessAppOrigin,
   remoteAccessWorkspaceLink,
 } from "./remote-access-state"
 
@@ -86,11 +87,8 @@ export function useRemoteAccessController(input: {
   const workspaceLink = createMemo(() => {
     const workspaceId = devices.data?.flatMap((device) => device.workspaceIds)[0]
     if (!workspaceId || typeof window === "undefined") return
-    const origin = /^https?:$/.test(window.location.protocol) && !["localhost", "127.0.0.1"].includes(window.location.hostname)
-      ? window.location.origin
-      : "https://app.claxedo.com"
     return remoteAccessWorkspaceLink({
-      appOrigin: origin,
+      appOrigin: remoteAccessAppOrigin(),
       workspaceId,
       sourceClientId: remoteAccessClientId(),
     })
