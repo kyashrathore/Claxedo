@@ -1,6 +1,6 @@
 # Machine-wide enrollment consolidation (retire per-workspace host links)
 
-Date: 2026-09-01 · Branch: `codex/cloudflare-multiplayer-migration` · Status: PLANNED
+Date: 2026-09-01 · Branch: `codex/cloudflare-multiplayer-migration` · Status: PLANNED · Adversarially reviewed 2026-09-01 (see below — unit order revised)
 
 ## Why
 
@@ -159,3 +159,98 @@ served set.
   tests must cover each side missing.
 - **CLI divergence**: `claxedo up` shares must move in the same slice or the
   removed routes strand it — Unit 5 is not optional.
+
+## Adversarial review (2026-09-01, same session)
+
+Findings from attacking the plan against the live code and the live staging
+deployment, ordered by severity. The unit order above is superseded by the
+revision at the end of this section.
+
+### P0 — the desktop never SERVES what it registers (pre-existing, blocks everything)
+
+Registration is not serving. The relay reaches a workspace only through a
+host tunnel the machine holds open, and the tunnel client
+(`claxedo-server/src/user-hosted-tunnel.ts`, keyed `${workspaceId}\n${hostId}`
+with a per-workspace Host Tunnel Token) lives in the SELF-HOST NODE server —
+it was never ported to `@claxedo/local-server` in the split. Verified live:
+with two shares registered and heartbeat-renewed, the desktop daemon holds
+loopback connections ONLY — zero connections to the relay
+(`lsof -iTCP -sTCP:ESTABLISHED` on the daemon, and no process connected to
+`claxedo-workspace-relay-*`). A phone scanning the QR resolves the target and
+then finds no connected host. Every registration-side fix to date polished a
+pipeline whose serving half does not exist on desktop.
+
+Consequence: serving is Unit 0 of ANY plan here, and the tunnel-lifecycle
+question ("who starts a tunnel for a shared workspace, with which token, in
+which process") is a first-class design input, not an HTT footnote. The
+runtime and relay-exposure machinery live in the DAEMON
+(`claxedo-local-server` workspace-runtime exposure, kind "relay"); the share
+set and the HTT-bearing responses live in the CONNECTOR CHILD. The design
+must move the HTT + serving trigger across that boundary explicitly
+(child → main → daemon, or daemon fetches with its synced credential).
+
+### P1 — share success must gate on the heartbeat ack, or the QR lies
+
+Under the new model, assignment lands before the machine's consent ack. If
+the UI declares "Shared" (and renders the QR) on assignment alone, a failed
+or delayed beat leaves a link that routing refuses. The share operation's
+success is: assignment write + forced beat returning 200 WITH the workspace
+in the acked set. The surface's tick spinner holds until then.
+
+### P1 — set drift needs a reconciliation channel
+
+Owner intent (assignments) and machine consent (acked set) are written by
+different parties; without feedback they diverge silently (machine acks a
+workspace the owner unassigned, forever). The heartbeat RESPONSE must return
+the control plane's assignment view for this host; the child prunes its
+persisted set against it and pushes the reconciled state.
+
+### P2 — revocation and dangling assignments
+
+Revoking a machine destroys its key; a later enable enrolls a NEW host id,
+so old assignments can never become routable again. `revokeHostEnrollment`
+must cascade (unassign or tombstone) its assignments in the same batch, or
+the DoD's "zero routable assignments" is true while the table still grows
+dangling rows a re-shared workspace then has to displace.
+
+### P2 — single-host-per-workspace is a semantic change (accepted)
+
+`local_host_links` is unique on (workspace_id, host_id) — the old model
+tolerated multiple hosts claiming one workspace, and the routing query
+picked one arbitrarily. `host_workspace_assignments` keyed on workspace_id
+alone makes one-workspace-one-host explicit. This is correct (a local
+association id names a directory on one machine) and the ambiguity it
+removes was itself a latent routing bug; recorded so nobody "fixes" the
+uniqueness back.
+
+### Verified sound (attacks that did NOT land)
+
+- **Heartbeat replay:** `host_signature_uses.signature_hash` is a PRIMARY
+  KEY — every signature is single-use, and ECDSA signatures are randomized,
+  so each genuine beat differs even over an identical payload while a
+  captured one collides with its own prior use. The v2 route MUST keep the
+  `signatureUse` insert, and no client may ever retry a beat with a cached
+  signature (a retry must re-sign) — the connector already signs per call.
+- **Liveness window:** the enrollment lease uses the same TTL bounds as the
+  links it replaces (`normalizedTtl`, 5s–5min); off/on behaviour is strictly
+  better (intent survives; recovery is one beat), as argued in the plan body.
+- **"One relay connection" copy:** aspirational — today's tunnel client is
+  per-(workspace, host). The plan deliberately does NOT collapse tunnels into
+  one machine connection (that is a relay-protocol change); the enrollment
+  consolidation is about the CONTROL grain, and the beat-ack response
+  carrying per-workspace HTTs feeds the per-workspace tunnels unchanged.
+
+### Revised unit order
+
+0. **Serve before consolidating (fix on the CURRENT grain first).** Port the
+   user-hosted tunnel runner into the desktop stack: HTT flows from the
+   child's register/heartbeat responses through main to the daemon, the
+   daemon opens the relay host tunnel per shared workspace, and the
+   ACCEPTANCE (phone opens the QR live) passes on the existing link model.
+   This is the smallest change that makes remote sharing actually work, and
+   it de-risks the migration by proving the serving path independently.
+1–7. As above, with these amendments: heartbeat-ack response carries
+   (a) per-workspace HTTs for the acked set and (b) the assignment view for
+   reconciliation (P1s); revocation cascades assignments (P2); share success
+   gates on the ack (P1); the spike's end-to-end must include a real relay
+   round trip, not just target resolution.
