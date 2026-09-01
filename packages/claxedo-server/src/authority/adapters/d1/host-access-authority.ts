@@ -20,6 +20,10 @@ export const D1_HOST_ACCESS_AUTHORITY_METHODS = [
   "pauseHostEnrollment",
   "activeHostEnrollment",
   "markSecondDeviceOpen",
+  "assignWorkspaceHost",
+  "unassignWorkspaceHost",
+  "activeWorkspaceHost",
+  "listHostAssignments",
   "grantWorkspaceShare",
   "revokeWorkspaceShare",
 ] as const satisfies readonly (keyof WorkspaceAuthority)[]
@@ -142,6 +146,8 @@ type RuntimeTokenRow = {
 }
 
 const DEFAULT_TTL_MS = 60_000
+/** A signed heartbeat payload must stay small; 200 shares per machine is generous. */
+const MAX_ACKED_WORKSPACES = 200
 const MAX_TTL_MS = 5 * 60_000
 const CHALLENGE_TTL_MS = 60_000
 const CONSUMED_REQUEST_RETENTION_MS = 10 * 60_000
@@ -455,12 +461,172 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     await this.requireWorkspaceAccess(who, workspaceId, "read")
     const result = await this.database.prepare(`
       ${workspaceAccessCte(1)}
-      update local_host_links
+      update host_workspace_assignments
       set second_device_open_at = coalesce(second_device_open_at, ?), updated_at = ?
-      where workspace_id = ? and owner_actor_id = ? and revoked_at is null
+      where workspace_id = ? and owner_actor_id = ?
         and exists (select 1 from authorized_workspace)
     `).bind(who.actorId, workspaceId, now, now, workspaceId, who.actorId).run()
     return { recorded: changes(result) > 0, second_device_open_at: now }
+  }
+
+  /**
+   * The OWNER's declaration that host H serves workspace X. Pure data: no
+   * challenge and no TTL — liveness is the enrollment lease, consent is the
+   * heartbeat's acked set, and routing requires all three. Cold-registers the
+   * workspace row exactly as the retired per-workspace registration did.
+   */
+  async assignWorkspaceHost(
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      hostId: string
+      displayName?: string
+      orgId?: string
+      projectId?: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      remoteDirectory?: string
+      homeRegion?: string
+    },
+  ) {
+    const who = await this.requirePrincipal(auth)
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    const hostId = requireText(args.hostId, "hostId")
+    const displayName = optionalText(args.displayName, "displayName", 200)
+    const enrollment = await this.enrollment(who.actorId, hostId)
+    if (!enrollment || enrollment.revoked_at !== null) {
+      throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
+    }
+    let workspace = await this.workspace(workspaceId)
+    if (workspace) {
+      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
+      requireLocalWorkspace(workspace)
+    } else {
+      if (!this.options.registerLocalForSharing) {
+        throw new D1HostAccessAuthorityError("host_attestation_denied", "Cold local workspace registration is unavailable")
+      }
+      await this.options.registerLocalForSharing(auth, {
+        workspaceId,
+        displayName: displayName ?? workspaceId,
+        ...(args.orgId ? { orgId: args.orgId } : {}),
+        ...(args.projectId ? { projectId: args.projectId } : {}),
+        ...(args.repoUrl ? { repoUrl: args.repoUrl } : {}),
+        ...(args.repoName ? { repoName: args.repoName } : {}),
+        ...(args.gitBranch ? { gitBranch: args.gitBranch } : {}),
+        ...(args.remoteDirectory ? { remoteDirectory: args.remoteDirectory } : {}),
+        ...(args.homeRegion ? { homeRegion: args.homeRegion } : {}),
+      })
+      workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
+      requireLocalWorkspace(workspace)
+    }
+    const now = this.now()
+    await this.database.prepare(`
+      insert into host_workspace_assignments (
+        workspace_id, host_id, org_id, owner_user_id, owner_actor_id,
+        second_device_open_at, assigned_at, updated_at
+      ) values (?, ?, ?, ?, ?, null, ?, ?)
+      on conflict (workspace_id) do update set
+        host_id = excluded.host_id,
+        owner_user_id = excluded.owner_user_id,
+        owner_actor_id = excluded.owner_actor_id,
+        updated_at = excluded.updated_at
+    `).bind(workspaceId, hostId, workspace.org_id, who.userId, who.actorId, now, now).run()
+    return { assigned: true as const, workspace_id: workspaceId, host_id: hostId }
+  }
+
+  async unassignWorkspaceHost(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    await this.requireWorkspaceAccess(who, workspaceId, "admin")
+    const result = await this.database.prepare(`
+      delete from host_workspace_assignments where workspace_id = ?
+    `).bind(workspaceId).run()
+    return { unassigned: changes(result) > 0 }
+  }
+
+  /** Routable host: owner-assigned AND machine-acked AND live lease. */
+  async activeWorkspaceHost(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
+    const who = await this.requirePrincipal(auth)
+    const workspaceId = requireText(args.workspaceId, "workspaceId")
+    await this.requireWorkspaceAccess(who, workspaceId, "read")
+    const row = await this.database.prepare(`
+      select assignment.workspace_id, assignment.host_id, assignment.second_device_open_at,
+        enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at
+      from host_workspace_assignments assignment
+      inner join host_enrollments enrollment on enrollment.host_id = assignment.host_id
+        and enrollment.owner_actor_id = assignment.owner_actor_id
+      where assignment.workspace_id = ?
+        and enrollment.revoked_at is null and enrollment.paused_at is null
+        and enrollment.expires_at > ?
+        and exists (
+          select 1 from json_each(coalesce(enrollment.acked_workspace_ids, '[]'))
+          where json_each.value = assignment.workspace_id
+        )
+      limit 1
+    `).bind(workspaceId, this.now()).first<{
+      workspace_id: string
+      host_id: string
+      second_device_open_at: number | null
+      display_name: string | null
+      expires_at: number
+      last_seen_at: number
+    }>()
+    if (!row) return { active: false as const }
+    return {
+      active: true as const,
+      host_id: row.host_id,
+      workspace_id: row.workspace_id,
+      ...(row.display_name ? { display_name: row.display_name } : {}),
+      ...(row.second_device_open_at ? { second_device_open_at: row.second_device_open_at } : {}),
+      expires_at: row.expires_at,
+      last_seen_at: row.last_seen_at,
+    }
+  }
+
+  /** Every live assignment on the account, grouped for the devices surface. */
+  async listHostAssignments(auth: SignedControlPlaneAuth) {
+    const who = await this.requirePrincipal(auth)
+    const rows = await this.database.prepare(`
+      select assignment.workspace_id, assignment.host_id,
+        enrollment.display_name, enrollment.last_seen_at, enrollment.expires_at,
+        coalesce(enrollment.acked_workspace_ids, '[]') as acked_workspace_ids
+      from host_workspace_assignments assignment
+      inner join host_enrollments enrollment on enrollment.host_id = assignment.host_id
+        and enrollment.owner_actor_id = assignment.owner_actor_id
+      where assignment.owner_actor_id = ?
+        and enrollment.revoked_at is null and enrollment.paused_at is null
+        and enrollment.expires_at > ?
+      order by assignment.host_id, assignment.workspace_id
+    `).bind(who.actorId, this.now()).all<{
+      workspace_id: string
+      host_id: string
+      display_name: string | null
+      last_seen_at: number
+      expires_at: number
+      acked_workspace_ids: string
+    }>()
+    const groups = new Map<string, {
+      host_id: string
+      display_name: string
+      last_seen_at: number
+      expires_at: number
+      workspace_ids: string[]
+      acked_workspace_ids: string[]
+    }>()
+    for (const row of rows.results ?? []) {
+      const group = groups.get(row.host_id) ?? {
+        host_id: row.host_id,
+        display_name: row.display_name ?? row.host_id,
+        last_seen_at: row.last_seen_at,
+        expires_at: row.expires_at,
+        workspace_ids: [],
+        acked_workspace_ids: JSON.parse(row.acked_workspace_ids) as string[],
+      }
+      group.workspace_ids.push(row.workspace_id)
+      groups.set(row.host_id, group)
+    }
+    return [...groups.values()]
   }
 
   async revokeLocalHostLink(
@@ -616,7 +782,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
 
   async heartbeatHostEnrollment(
     auth: SignedControlPlaneAuth,
-    args: { hostId: string; signature: string; ttlMs?: number },
+    args: { hostId: string; signature: string; ttlMs?: number; workspaceIds: readonly string[] },
   ) {
     const who = await this.requirePrincipal(auth)
     const hostId = requireText(args.hostId, "hostId")
@@ -624,10 +790,17 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     if (!enrollment || enrollment.revoked_at !== null) {
       throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
     }
+    if (!Array.isArray(args.workspaceIds)) {
+      throw new D1HostAccessAuthorityError("invalid_input", "workspaceIds is required — the heartbeat signature covers the served set")
+    }
+    const workspaceIds = [...new Set(args.workspaceIds.map((id) => requireText(id, "workspaceIds")))].sort()
+    if (workspaceIds.length > MAX_ACKED_WORKSPACES) {
+      throw new D1HostAccessAuthorityError("invalid_input", "workspaceIds exceeds the served-set cap")
+    }
     const signatureHash = await verifyHostSignature({
       publicKey: enrollment.public_key_json,
       signature: args.signature,
-      payload: hostEnrollmentHeartbeatPayload({ hostId, ttlMs: args.ttlMs }),
+      payload: hostEnrollmentHeartbeatPayloadV2({ hostId, ttlMs: args.ttlMs, workspaceIds }),
     })
     const now = this.now()
     const expiresAt = now + normalizedTtl(args.ttlMs)
@@ -636,9 +809,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.signatureUse(signatureHash, "host-heartbeat", who.actorId, null, hostId, now),
       this.database.prepare(`
         update host_enrollments set
-          last_seen_at = ?, expires_at = ?, last_signature_hash = ?, updated_at = ?
+          last_seen_at = ?, expires_at = ?, last_signature_hash = ?, updated_at = ?,
+          acked_workspace_ids = ?, acked_at = ?
         where owner_actor_id = ? and host_id = ? and revoked_at is null
-      `).bind(now, expiresAt, signatureHash, now, who.actorId, hostId),
+      `).bind(now, expiresAt, signatureHash, now, JSON.stringify(workspaceIds), now, who.actorId, hostId),
       this.database.prepare(`
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (
@@ -649,7 +823,19 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       `).bind(assertionId, who.actorId, hostId, now, expiresAt, signatureHash),
       this.deleteAssertion(assertionId),
     ], "Host enrollment heartbeat raced with revocation")
-    return { expires_at: expiresAt, last_seen_at: now }
+    // The owner's assignment view rides back on every ack so the machine can
+    // reconcile its persisted set — without this, machine consent and owner
+    // intent drift apart silently forever.
+    const assigned = await this.database.prepare(`
+      select workspace_id from host_workspace_assignments
+      where host_id = ? and owner_actor_id = ?
+      order by workspace_id
+    `).bind(hostId, who.actorId).all<{ workspace_id: string }>()
+    return {
+      expires_at: expiresAt,
+      last_seen_at: now,
+      assigned_workspace_ids: (assigned.results ?? []).map((row) => row.workspace_id),
+    }
   }
 
   async pauseHostEnrollment(
@@ -688,6 +874,14 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         update host_enrollments set revoked_at = ?, updated_at = ?
         where owner_actor_id = ? and (? is null or host_id = ?) and revoked_at is null
       `).bind(now, now, who.actorId, hostId ?? null, hostId ?? null),
+      // A revoked key's host id never returns (a later enable enrolls a NEW
+      // id), so its assignments could never become routable again — leaving
+      // them would only accumulate dangling rows that a later re-share must
+      // displace. The cascade keeps "revoke = nothing routable" exactly true.
+      this.database.prepare(`
+        delete from host_workspace_assignments
+        where owner_actor_id = ? and (? is null or host_id = ?)
+      `).bind(who.actorId, hostId ?? null, hostId ?? null),
       this.database.prepare(`
         update runtime_access_tokens set revoked_at = ?
         where minted_for_actor_id = ? and (? is null or host_id = ?) and revoked_at is null
@@ -707,7 +901,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         now,
       ),
     ])
-    return { revoked: changes(results[0]!), runtime_tokens_revoked: changes(results[1]!) }
+    return { revoked: changes(results[0]!), runtime_tokens_revoked: changes(results[2]!) }
   }
 
   async grantWorkspaceShare(
@@ -1162,11 +1356,27 @@ export function hostEnrollmentPayload(input: { hostId: string; requestId: string
   ].join("\n")
 }
 
-export function hostEnrollmentHeartbeatPayload(input: { hostId: string; ttlMs?: number }) {
+/**
+ * Heartbeat v2: the machine's ONE signature per interval also covers the
+ * workspaces it currently serves (sorted, comma-joined). Routing requires a
+ * workspace to be BOTH owner-assigned and inside this acked set, which
+ * preserves the retired per-workspace signature's security property — an
+ * owner session cannot conjure serving the machine never consented to — at
+ * one signature instead of N+1. Replay is defended exactly like v1: every
+ * signature hash is single-use (`host_signature_uses` primary key) and ECDSA
+ * signatures are randomized, so a client must re-sign on every beat and a
+ * captured signature collides with its own prior use.
+ */
+export function hostEnrollmentHeartbeatPayloadV2(input: {
+  hostId: string
+  ttlMs?: number
+  workspaceIds: readonly string[]
+}) {
   return [
-    "claxedo.host-enrollment.heartbeat.v1",
+    "claxedo.host-enrollment.heartbeat.v2",
     `host_id=${input.hostId}`,
     `ttl_ms=${input.ttlMs ?? ""}`,
+    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
   ].join("\n")
 }
 

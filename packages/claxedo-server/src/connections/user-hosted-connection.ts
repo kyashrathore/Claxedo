@@ -38,7 +38,7 @@ export async function userHostedConnectionInfo(
     } as const
   }
 
-  const activeLink = await authority.activeLocalHostLink(auth, { workspaceId })
+  const activeLink = await authority.activeWorkspaceHost!(auth, { workspaceId })
   if (!activeLink.active) {
     await authority.auditDeny(auth, {
       action: "runtime_access_token.denied",

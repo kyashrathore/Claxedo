@@ -28,7 +28,7 @@ export async function resolveWorkspaceRuntimeTarget(
         "Workspace has no available runtime target",
       )
     }
-    const activeLink = await requireAuthority(services).activeLocalHostLink(auth, { workspaceId })
+    const activeLink = await requireAuthority(services).activeWorkspaceHost!(auth, { workspaceId })
     if (!activeLink.active) {
       throw new WorkspaceRuntimeTargetError(
         409,

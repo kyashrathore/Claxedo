@@ -128,33 +128,16 @@ const refreshConnectionBody = z
   })
   .strict()
 
-// The CLI owns the host identity, so register accepts the host's public key and
-// the client-produced signature over the challenge nonce.
-const registerBody = z
+const assignBody = z
   .object({
-    orgId: z.string().optional(),
     hostId: z.string(),
-    publicKey: z.string(),
-    challengeId: z.string(),
-    signature: z.string(),
     displayName: z.string().optional(),
-    ttlMs: z.number().optional(),
+    orgId: z.string().optional(),
     projectId: z.string().optional(),
     repoUrl: z.string().optional(),
     repoName: z.string().optional(),
     gitBranch: z.string().optional(),
     remoteDirectory: z.string().optional(),
-  })
-  .strict()
-
-const challengeBody = z
-  .object({
-    hostId: z.string(),
-    displayName: z.string().optional(),
-    projectId: z.string().optional(),
-    repoUrl: z.string().optional(),
-    repoName: z.string().optional(),
-    gitBranch: z.string().optional(),
   })
   .strict()
 
@@ -183,20 +166,6 @@ const createCloudBody = z
     message: "connectionId and repo must be provided together",
   })
 
-const heartbeatBody = z
-  .object({
-    hostId: z.string(),
-    signature: z.string(),
-    ttlMs: z.number().optional(),
-  })
-  .strict()
-
-const pauseBody = z
-  .object({
-    hostId: z.string().optional(),
-    paused: z.boolean().default(true),
-  })
-  .strict()
 
 function missingBearer() {
   return controlPlaneAuthErrorBody(
@@ -643,85 +612,39 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if (!body.ok) return c.json({ error: body.error }, body.status)
         return connectionResponse(c, body.body.previousJti)
       })
-      .post("/:id/user-hosted/challenge", async (c) => {
+      .post("/:id/host-assignment", async (c) => {
+        // Sharing under machine-wide enrollment: the OWNER assigns the
+        // workspace to one of their enrolled hosts. No challenge and no
+        // machine signature here — liveness is the enrollment lease and the
+        // machine's consent is its heartbeat-acked served set; routing needs
+        // all three. The Host Tunnel Token is minted immediately so the
+        // machine can open its relay tunnel without waiting for a beat.
         const workspaceId = c.req.param("id")
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
         const auth = authResult.auth
         if (!auth) return c.json(missingBearer(), 401)
-        const parsed = parsedBody(challengeBody, await c.req.json().catch(() => ({})))
+        const parsed = parsedBody(assignBody, await c.req.json().catch(() => ({})))
         if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
         const body = parsed.body
         try {
           const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
-            key: `userHosted.challenge:${workspaceId}`,
-            action: "local_host_link.challenge.denied",
+            key: `hostAssignment.assign:${workspaceId}`,
+            action: "host_workspace_assignment.assign.denied",
             workspaceId,
           })
           if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
           const authority = requireAuthority(services)
           await authority.usersMe(auth)
-          // Challenge issuance must NOT mutate the workspace: registering it for
-          // sharing happens in /register, only AFTER the host proved its key.
-          const challenge = await authority.createLocalHostLinkChallenge(auth, { workspaceId, hostId: body.hostId })
-          return c.json({
-            challenge: {
-              challengeId: challenge.challenge_id,
-              nonce: challenge.nonce,
-              expiresAt: challenge.expires_at,
-            },
-          })
-        } catch (err) {
-          if (isWorkspaceBackingConflict(err)) return c.json(workspaceBackingConflictBody(), 409)
-          if (err instanceof ControlPlaneAuthError)
-            return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
-          throw err
-        }
-      })
-      .post("/:id/user-hosted/register", async (c) => {
-        const workspaceId = c.req.param("id")
-        const authResult = await signedOrError(c.req.raw, authOptions(), services)
-        if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
-        const auth = authResult.auth
-        if (!auth) return c.json(missingBearer(), 401)
-        const parsed = parsedBody(registerBody, await c.req.json().catch(() => ({})))
-        if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
-        const body = parsed.body
-        try {
-          const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
-            key: `userHosted.register:${workspaceId}`,
-            action: "local_host_link.register.denied",
-            workspaceId,
-          })
-          if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-          const authority = requireAuthority(services)
-          await authority.usersMe(auth)
-          // The CLI signed the challenge with its own private key. The hosted
-          // control plane only records the link — it never holds the host key.
-          // Convex verifies the host signature here; nothing about the workspace
-          // is mutated until that proof succeeds.
-          const link = await authority.registerLocalHostLink(auth, {
+          const assign = authority.assignWorkspaceHost
+          if (!assign) {
+            return c.json({ error: apiError("not_implemented", "This control plane does not support host assignments") }, 501)
+          }
+          const assignment = await assign(auth, {
             workspaceId,
             hostId: body.hostId,
-            publicKey: body.publicKey,
-            challengeId: body.challengeId,
-            signature: body.signature,
             ...(body.displayName ? { displayName: body.displayName } : {}),
-            ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
             ...(body.orgId ? { orgId: body.orgId } : {}),
-            ...(body.projectId ? { projectId: body.projectId } : {}),
-            ...(body.repoUrl ? { repoUrl: body.repoUrl } : {}),
-            ...(body.repoName ? { repoName: body.repoName } : {}),
-            ...(body.gitBranch ? { gitBranch: body.gitBranch } : {}),
-            ...(body.remoteDirectory ? { remoteDirectory: body.remoteDirectory } : {}),
-            ...(options.defaultHomeRegion ? { homeRegion: options.defaultHomeRegion } : {}),
-          })
-          // Only after host proof: register/refresh the workspace for sharing.
-          const workspace = await authority.registerLocalForSharing(auth, {
-            workspaceId,
-            ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
-            displayName: body.displayName ?? workspaceId,
-            ...(options.defaultHomeRegion ? { homeRegion: options.defaultHomeRegion } : {}),
             ...(body.projectId ? { projectId: body.projectId } : {}),
             ...(body.repoUrl ? { repoUrl: body.repoUrl } : {}),
             ...(body.repoName ? { repoName: body.repoName } : {}),
@@ -729,24 +652,21 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             ...(body.remoteDirectory ? { remoteDirectory: body.remoteDirectory } : {}),
           })
           await authority.auditAllow(auth, {
-            action: "local_host_link.enabled",
+            action: "host_workspace_assignment.assigned",
             workspaceId,
             metadata: { hostId: body.hostId },
           })
           captureWorkspaceTelemetry({
             services,
             auth,
-            event: "local_host_link.enabled",
+            event: "host_workspace_assignment.assigned",
             workspaceId,
             properties: { hostId: body.hostId },
           })
-          // Mint the Host Tunnel Token and return it. The CLI/local runtime starts
-          // and owns the tunnel — the hosted control plane never does.
           const hostTunnel = await hostTunnelCredential(options, auth, { hostId: body.hostId, workspaceId })
           return c.json({
-            workspace,
-            localHostLink: link,
-            hostTunnel: regionalHostTunnel(options, workspace, hostTunnel),
+            assignment,
+            hostTunnel: regionalHostTunnel(options, undefined, hostTunnel),
           })
         } catch (err) {
           if (isWorkspaceBackingConflict(err)) return c.json(workspaceBackingConflictBody(), 409)
@@ -755,83 +675,31 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           throw err
         }
       })
-      .post("/:id/user-hosted/heartbeat", async (c) => {
+      .delete("/:id/host-assignment", async (c) => {
         const workspaceId = c.req.param("id")
         const authResult = await signedOrError(c.req.raw, authOptions(), services)
         if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
         const auth = authResult.auth
         if (!auth) return c.json(missingBearer(), 401)
-        const parsed = parsedBody(heartbeatBody, await c.req.json().catch(() => ({})))
-        if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
-        const body = parsed.body
         try {
-          // Rate limit FIRST (before any Convex call), keyed only on caller +
-          // workspace: a client-supplied hostId must not open a fresh bucket.
           const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
-            key: `hostPresence.refresh:${workspaceId}`,
-            action: "hostPresence.refresh.denied",
+            key: `hostAssignment.unassign:${workspaceId}`,
+            action: "host_workspace_assignment.unassign.denied",
             workspaceId,
           })
           if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
           const authority = requireAuthority(services)
           await authority.usersMe(auth)
-          // Client-signed: the signature is produced by the CLI, not the server.
-          const link = await authority.heartbeatLocalHostLink(auth, {
-            workspaceId,
-            hostId: body.hostId,
-            signature: body.signature,
-            ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
-          })
-          const hostTunnel = await hostTunnelCredential(options, auth, { hostId: body.hostId, workspaceId })
-          if (hostTunnel)
-            return c.json({ localHostLink: link, hostTunnel: regionalHostTunnel(options, link, hostTunnel) })
-          return c.json(link)
-        } catch (err) {
-          if (err instanceof ControlPlaneAuthError)
-            return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
-          throw err
-        }
-      })
-      .post("/:id/user-hosted/pause", async (c) => {
-        const workspaceId = c.req.param("id")
-        const authResult = await signedOrError(c.req.raw, authOptions(), services)
-        if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
-        const auth = authResult.auth
-        if (!auth) return c.json(missingBearer(), 401)
-        const parsed = parsedBody(pauseBody, await c.req.json().catch(() => ({})))
-        if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
-        const body = parsed.body
-        try {
-          // Pause was the other mutating route with no limiter. It writes to
-          // Convex and audits on every call, so an unthrottled loop is a Convex
-          // write amplifier even though it provisions nothing.
-          const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
-            key: `userHosted.pause:${workspaceId}`,
-            action: "local_host_link.pause.denied",
-            workspaceId,
-          })
-          if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
-          const authority = requireAuthority(services)
-          await authority.usersMe(auth)
-          const result = await authority.pauseLocalHostLink(auth, {
-            workspaceId,
-            ...(body.hostId ? { hostId: body.hostId } : {}),
-            paused: body.paused,
-          })
-          if (body.paused) {
-            await authority.auditAllow(auth, {
-              action: "local_host_link.disabled",
-              workspaceId,
-              metadata: { hostId: body.hostId },
-            })
-            captureWorkspaceTelemetry({
-              services,
-              auth,
-              event: "local_host_link.disabled",
-              workspaceId,
-              properties: { hostId: body.hostId },
-            })
+          const unassign = authority.unassignWorkspaceHost
+          if (!unassign) {
+            return c.json({ error: apiError("not_implemented", "This control plane does not support host assignments") }, 501)
           }
+          const result = await unassign(auth, { workspaceId })
+          await authority.auditAllow(auth, {
+            action: "host_workspace_assignment.unassigned",
+            workspaceId,
+            metadata: {},
+          })
           return c.json(result)
         } catch (err) {
           if (err instanceof ControlPlaneAuthError)

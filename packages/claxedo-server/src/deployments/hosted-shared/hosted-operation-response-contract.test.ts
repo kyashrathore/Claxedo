@@ -237,7 +237,7 @@ function contractAuthority(): WorkspaceAuthority {
     })),
     createHostEnrollmentRequest: vi.fn(async () => ({ request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 })),
     enrollHost: vi.fn(async () => ENROLLMENT),
-    heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1_000 })),
+    heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1_000, assigned_workspace_ids: [] as string[] })),
     pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
     activeHostEnrollment: vi.fn(async () => ({ active: true as const, ...ENROLLMENT })),
     markSecondDeviceOpen: vi.fn(async () => ({ recorded: true, second_device_open_at: 1_000 })),
@@ -853,7 +853,7 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
     displayName: "Yash laptop",
   },
   "host.enrollmentNonce": { hostId: "host_1" },
-  "host.enrollmentHeartbeat": { hostId: "host_1", signature: "sig", ttlMs: 60_000 },
+  "host.enrollmentHeartbeat": { hostId: "host_1", signature: "sig", ttlMs: 60_000, workspaceIds: ["ws_local_1"] },
   "session.list": { workspaceId: WORKSPACE_ID },
   "session.navigationList": { scope: "workspace", limit: 50, workspaceId: WORKSPACE_ID },
   "session.projection.register": {

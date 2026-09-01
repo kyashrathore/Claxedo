@@ -34,7 +34,13 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
-import { parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import {
+  configuredRelayUrl,
+  hostTunnelCredential,
+  parsedBody,
+  signedOrError,
+  type WorkspaceRouteOptions,
+} from "../../workspace/route-support"
 
 const hostId = z.string().trim().min(1).max(200)
 
@@ -52,7 +58,14 @@ const enrollBody = z
   .strict()
 
 const heartbeatBody = z
-  .object({ hostId, signature: z.string().min(1).max(4_000), ttlMs: z.number().int().positive().optional() })
+  .object({
+    hostId,
+    signature: z.string().min(1).max(4_000),
+    ttlMs: z.number().int().positive().optional(),
+    // The served set the signature covers (heartbeat payload v2): one
+    // signature per interval carries the machine's whole consent set.
+    workspaceIds: z.array(z.string().min(1).max(200)).max(200),
+  })
   .strict()
 
 const pauseBody = z.object({ hostId: hostId.optional(), paused: z.boolean() }).strict()
@@ -245,11 +258,27 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       "/heartbeat",
       handle<z.infer<typeof heartbeatBody>>(heartbeatBody, async ({ body, auth, authority }) => {
         const beat = required(authority.heartbeatHostEnrollment)
-        return beat(auth, {
+        const result = await beat(auth, {
           hostId: body.hostId,
           signature: body.signature,
+          workspaceIds: body.workspaceIds,
           ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
         })
+        // Serving credentials ride the ack: one Host Tunnel Token per
+        // workspace that is BOTH owner-assigned and inside the set this beat
+        // just acked, so the machine can (re)open its relay tunnels from the
+        // same response that renewed its lease. Local workspaces have no home
+        // region of their own; the deployment default names the relay.
+        const assigned = new Set(result.assigned_workspace_ids ?? [])
+        const serveable = body.workspaceIds.filter((workspaceId) => assigned.has(workspaceId))
+        const relayUrl = configuredRelayUrl(options)
+        const hostTunnels: Record<string, unknown> = {}
+        for (const workspaceId of serveable) {
+          const credential = await hostTunnelCredential(options, auth, { hostId: body.hostId, workspaceId })
+          if (!credential) continue
+          hostTunnels[workspaceId] = { ...credential, ...(relayUrl ? { relayUrl } : {}) }
+        }
+        return { ...result, hostTunnels }
       }, "POST", {
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.heartbeat",

@@ -8,7 +8,7 @@ import type { AuthIdentity, ControlPlanePrincipal } from "@claxedo/server-core/p
 import { D1WorkspaceAuthority } from "./workspace-authority"
 import {
   D1HostAccessAuthority,
-  hostEnrollmentHeartbeatPayload,
+  hostEnrollmentHeartbeatPayloadV2,
   hostEnrollmentPayload,
   localHostHeartbeatPayload,
   localHostRegistrationPayload,
@@ -21,6 +21,7 @@ const MIGRATIONS = [
   "0004_host_access_and_sharing.sql",
   "0012_cold_local_host_challenges.sql",
   "0013_org_team_session_sharing.sql",
+  "0014_host_workspace_assignments.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -399,6 +400,95 @@ describe("D1 host access and workspace sharing authority", () => {
     `).bind(expiredChallenge.challenge_id).first()).toBeNull()
   })
 
+  test("routes a workspace through owner assignment AND the machine's acked set on a live lease", async () => {
+    const input = await setup()
+    const { alice, outsider } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-b" })
+    await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-b",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(hostEnrollmentPayload({
+        hostId: "machine-b",
+        requestId: request.request_id,
+        nonce: request.nonce,
+      })),
+      displayName: "Laptop B",
+      ttlMs: 8_000,
+    })
+
+    // Owner intent alone is not routable: no ack yet.
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-b" })
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" }))
+      .toEqual({ active: false })
+
+    // A signature over a DIFFERENT set than the one claimed is rejected.
+    await expect(input.hostAccess.heartbeatHostEnrollment(alice, {
+      hostId: "machine-b",
+      signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({
+        hostId: "machine-b",
+        ttlMs: 8_000,
+        workspaceIds: [],
+      })),
+      ttlMs: 8_000,
+      workspaceIds: ["ws_local"],
+    })).rejects.toMatchObject({ code: "host_attestation_denied" })
+
+    // Ack the set: now routable, and the response reconciles owner intent.
+    const beat = await input.hostAccess.heartbeatHostEnrollment(alice, {
+      hostId: "machine-b",
+      signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({
+        hostId: "machine-b",
+        ttlMs: 8_000,
+        workspaceIds: ["ws_local"],
+      })),
+      ttlMs: 8_000,
+      workspaceIds: ["ws_local"],
+    })
+    expect(beat.assigned_workspace_ids).toEqual(["ws_local"])
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" }))
+      .toMatchObject({ active: true, host_id: "machine-b", workspace_id: "ws_local", display_name: "Laptop B" })
+    expect(await input.hostAccess.listHostAssignments(alice)).toMatchObject([
+      { host_id: "machine-b", display_name: "Laptop B", workspace_ids: ["ws_local"], acked_workspace_ids: ["ws_local"] },
+    ])
+
+    // A second local workspace on the same host groups into one device row.
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_local_2",
+      orgId: "org_acme",
+      displayName: "local-2",
+      backing: "local-worktree",
+      access: "user-hosted",
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local_2", hostId: "machine-b" })
+    expect(await input.hostAccess.listHostAssignments(alice)).toMatchObject([
+      { host_id: "machine-b", workspace_ids: ["ws_local", "ws_local_2"] },
+    ])
+
+    // An outsider can neither assign nor read the routable host.
+    await expect(input.hostAccess.assignWorkspaceHost(outsider, { workspaceId: "ws_local", hostId: "machine-b" }))
+      .rejects.toMatchObject({ code: "host_attestation_denied" })
+
+    // Unassign wins over a still-acked set: routing is intent AND consent.
+    await input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_local" })
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" }))
+      .toEqual({ active: false })
+
+    // The lease expiring makes everything inert without touching assignments.
+    input.advance(8_001)
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local_2" }))
+      .toEqual({ active: false })
+    expect(await input.hostAccess.listHostAssignments(alice)).toEqual([])
+
+    // Revoke cascades the remaining assignments away entirely.
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-b" })
+    const dangling = await input.database
+      .prepare("select count(*) as n from host_workspace_assignments")
+      .first<{ n: number }>()
+    expect(dangling?.n).toBe(0)
+  })
+
   test("enrolls a machine once per canonical owner with expiry, pause, revoke, and replay resistance", async () => {
     const input = await setup()
     const { alice, outsider } = await fixture(input)
@@ -432,16 +522,20 @@ describe("D1 host access and workspace sharing authority", () => {
     })).rejects.toMatchObject({ code: "host_attestation_denied" })
     expect(await input.hostAccess.activeHostEnrollment(alice)).toMatchObject({ active: true, host_id: "machine-a" })
 
-    const heartbeat = await key.sign(hostEnrollmentHeartbeatPayload({ hostId: "machine-a", ttlMs: 8_000 }))
+    const heartbeat = await key.sign(
+      hostEnrollmentHeartbeatPayloadV2({ hostId: "machine-a", ttlMs: 8_000, workspaceIds: [] }),
+    )
     await input.hostAccess.heartbeatHostEnrollment(alice, {
       hostId: "machine-a",
       signature: heartbeat,
       ttlMs: 8_000,
+      workspaceIds: [],
     })
     await expect(input.hostAccess.heartbeatHostEnrollment(alice, {
       hostId: "machine-a",
       signature: heartbeat,
       ttlMs: 8_000,
+      workspaceIds: [],
     })).rejects.toMatchObject({ code: "signature_replayed" })
 
     await input.hostAccess.pauseHostEnrollment(alice, { hostId: "machine-a", paused: true })

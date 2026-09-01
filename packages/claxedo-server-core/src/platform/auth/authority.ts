@@ -256,8 +256,24 @@ export type WorkspaceAuthority = {
   ) => Promise<HostEnrollment>
   heartbeatHostEnrollment?: (
     auth: SignedControlPlaneAuth,
-    args: { hostId: string; signature: string; ttlMs?: number },
-  ) => Promise<{ expires_at: number; last_seen_at: number }>
+    args: {
+      hostId: string
+      signature: string
+      ttlMs?: number
+      /**
+       * The workspaces this machine currently serves, sorted, covered by the
+       * heartbeat signature (payload v2). One signature per interval carries
+       * the machine's whole consent set; routing requires a workspace to be
+       * BOTH owner-assigned and inside the machine's last-acked set.
+       */
+      workspaceIds: readonly string[]
+    },
+  ) => Promise<{
+    expires_at: number
+    last_seen_at: number
+    /** Owner assignments for this host, for client-side set reconciliation. */
+    assigned_workspace_ids: string[]
+  }>
   pauseHostEnrollment?: (
     auth: SignedControlPlaneAuth,
     args: { hostId?: string; paused: boolean },
@@ -266,6 +282,55 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args?: Record<string, never>,
   ) => Promise<HostEnrollmentState>
+  /**
+   * Assign one workspace to one enrolled host — the OWNER's declaration that
+   * host H serves workspace X. Pure data: no challenge, no signature, no TTL
+   * of its own (liveness is the enrollment lease; consent is the heartbeat's
+   * acked set). Cold-registers the workspace row when it does not exist yet,
+   * exactly as the retired per-workspace registration did.
+   */
+  assignWorkspaceHost?: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      hostId: string
+      displayName?: string
+      orgId?: string
+      projectId?: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      remoteDirectory?: string
+      homeRegion?: string
+    },
+  ) => Promise<{ assigned: true; workspace_id: string; host_id: string }>
+  unassignWorkspaceHost?: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<{ unassigned: boolean }>
+  /**
+   * The routable host for a workspace: owner-assigned AND inside the host's
+   * last-acked served set AND the enrollment lease is live. The successor of
+   * `activeLocalHostLink` for every read-side consumer.
+   */
+  activeWorkspaceHost?: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<
+    | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
+    | { active: false }
+  >
+  /** Every live assignment on the account, grouped for the devices surface. */
+  listHostAssignments?: (
+    auth: SignedControlPlaneAuth,
+  ) => Promise<Array<{
+    host_id: string
+    display_name: string
+    last_seen_at: number
+    expires_at: number
+    workspace_ids: string[]
+    acked_workspace_ids: string[]
+  }>>
   markSecondDeviceOpen?: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },

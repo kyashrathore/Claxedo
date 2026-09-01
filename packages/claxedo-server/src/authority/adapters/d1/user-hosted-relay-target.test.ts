@@ -9,6 +9,7 @@ const MIGRATIONS = [
   "0002_workspace_authority.sql",
   "0003_private_sessions.sql",
   "0004_host_access_and_sharing.sql",
+  "0014_host_workspace_assignments.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 const active: Miniflare[] = []
 
@@ -48,15 +49,27 @@ async function database() {
         `insert into workspaces values (?, ?, ?, ?, 'local-worktree', 'user-hosted', ?, null, null, null, null, null, ?, ?, null)`,
       )
       .bind("workspace-1", "org-1", "project-1", "user-1", "Workspace", 1, 1),
+    // Enrollment (live lease, acked set) + owner assignment: the two facts
+    // routing now requires, replacing the per-workspace link row.
     database
-      .prepare(`insert into local_host_links values (?, ?, ?, ?, ?, ?, ?, null, ?, ?, null, null, null, null, ?, ?)`)
-      .bind("workspace-1", "org-1", "project-1", "host-1", "user-1", "actor-1", "{}", 90, 200, 1, 1),
+      .prepare(`insert into host_enrollments (
+        enrollment_id, owner_user_id, owner_actor_id, host_id, public_key_json,
+        display_name, last_seen_at, expires_at, paused_at, revoked_at,
+        last_signature_hash, created_at, updated_at, acked_workspace_ids, acked_at
+      ) values (?, ?, ?, ?, ?, ?, ?, ?, null, null, null, ?, ?, ?, ?)`)
+      .bind("enr-1", "user-1", "actor-1", "host-1", "{}", "Laptop", 90, 200, 1, 1, '["workspace-1"]', 90),
+    database
+      .prepare(`insert into host_workspace_assignments (
+        workspace_id, host_id, org_id, owner_user_id, owner_actor_id,
+        second_device_open_at, assigned_at, updated_at
+      ) values (?, ?, ?, ?, ?, null, ?, ?)`)
+      .bind("workspace-1", "host-1", "org-1", "user-1", "actor-1", 1, 1),
   ])
   return database
 }
 
 describe("D1 user-hosted relay target", () => {
-  test("returns only a current, unpaused, unrevoked link for an authoritative user-hosted workspace", async () => {
+  test("routes only an assigned, machine-acked workspace on a live enrollment lease", async () => {
     const db = await database()
     const resolve = createD1UserHostedTargetResolver(db, {
       now: () => 100,
@@ -68,11 +81,22 @@ describe("D1 user-hosted relay target", () => {
       backing: "local-worktree",
     })
 
-    await db.prepare("update local_host_links set paused_at = 100 where workspace_id = ?").bind("workspace-1").run()
+    await db.prepare("update host_enrollments set paused_at = 100 where host_id = 'host-1'").run()
     await expect(resolve("workspace-1")).resolves.toEqual({ active: false })
     await expect(resolve("missing")).resolves.toEqual({ active: false })
+    await db.prepare("update host_enrollments set paused_at = null where host_id = 'host-1'").run()
 
-    await db.prepare("update local_host_links set paused_at = null where workspace_id = ?").bind("workspace-1").run()
+    // Machine consent is required: an assignment whose workspace the machine
+    // has not acked in its served set is not routable.
+    await db.prepare("update host_enrollments set acked_workspace_ids = '[]' where host_id = 'host-1'").run()
+    await expect(resolve("workspace-1")).resolves.toEqual({ active: false })
+    await db.prepare(`update host_enrollments set acked_workspace_ids = '["workspace-1"]' where host_id = 'host-1'`).run()
+
+    // An expired lease makes the assignment inert.
+    await db.prepare("update host_enrollments set expires_at = 99 where host_id = 'host-1'").run()
+    await expect(resolve("workspace-1")).resolves.toEqual({ active: false })
+    await db.prepare("update host_enrollments set expires_at = 200 where host_id = 'host-1'").run()
+
     await db.prepare("update orgs set deployment_id = 'another-deployment' where org_id = 'org-1'").run()
     await expect(resolve("workspace-1")).resolves.toEqual({ active: false })
   })
