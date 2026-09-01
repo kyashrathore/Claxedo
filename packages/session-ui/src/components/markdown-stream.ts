@@ -19,6 +19,35 @@ function refs(text: string) {
   return /^[ \t]{0,3}\[[^\]]+\]:[ \t]*(?:\S+|\r?\n[ \t]+\S+)/m.test(text)
 }
 
+/**
+ * Reference-link support without collapsing the block projection.
+ *
+ * Blocks are parsed independently, so a `[docs][1]` use in one block cannot
+ * see a `[1]: url` definition that lives in another (or arrives later in the
+ * stream). Serializing the lexer's collected definitions and appending them
+ * to every prose block's parse source resolves the links per block, while
+ * the definitions themselves render as nothing. This is what lets a long
+ * document keep its frozen prefix when a definition appears: collapsing the
+ * whole text into one live blob re-renders the entire transcript as raw
+ * healed text on every delta ("one giant paragraph"), then reflows it at
+ * completion.
+ */
+function definitionSuffix(links: Record<string, { href: string | null; title?: string | null }>): string {
+  const entries = Object.entries(links)
+  if (entries.length === 0) return ""
+  return entries
+    .map(([id, def]) => {
+      const title = def.title ? ` "${def.title.replaceAll('"', '\\"')}"` : ""
+      return `\n\n[${id}]: ${def.href ?? ""}${title}`
+    })
+    .join("")
+}
+
+function withDefinitions(blocks: Block[], defs: string): Block[] {
+  if (!defs) return blocks
+  return blocks.map((block) => (block.mode === "code" ? block : { ...block, src: `${block.src}${defs}` }))
+}
+
 function language(value: string | undefined) {
   return value?.trim().split(/\s+/, 1)[0] || undefined
 }
@@ -50,8 +79,9 @@ function heal(text: string) {
 }
 
 function complete(text: string) {
-  if (refs(text)) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
-  return marked.lexer(text).reduce<Block[]>((result, token) => {
+  const tokens = marked.lexer(text)
+  const defs = refs(text) ? definitionSuffix(tokens.links ?? {}) : ""
+  return withDefinitions(tokens.reduce<Block[]>((result, token) => {
     if (token.type === "space") {
       const previous = result.at(-1)
       if (!previous) return result
@@ -72,13 +102,13 @@ function complete(text: string) {
     }
     result.push({ raw: token.raw, src: token.raw, mode: "full" })
     return result
-  }, [])
+  }, []), defs)
 }
 
 export function stream(text: string, live: boolean): Block[] {
   if (!live) return complete(text)
-  if (refs(text)) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
   const tokens = marked.lexer(text)
+  const defs = refs(text) ? definitionSuffix(tokens.links ?? {}) : ""
   const tail = tokens.findLastIndex((token) => token.type !== "space")
   if (tail < 0) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
   const last = tokens[tail]
@@ -102,12 +132,18 @@ export function stream(text: string, live: boolean): Block[] {
     .slice(tail)
     .map((token) => token.raw)
     .join("")
-  if (last.type !== "code") return [...result, { raw, src: heal(raw), mode: "live" }]
+  if (last.type !== "code") return withDefinitions([...result, { raw, src: heal(raw), mode: "live" }], defs)
 
   const code = last as Tokens.Code
   if (!open(code.raw))
-    return [...result, { raw, src: code.text, mode: "code", language: language(code.lang), complete: true }]
-  return [...result, { raw, src: openCode(code.raw), mode: "code", language: language(code.lang) }]
+    return withDefinitions(
+      [...result, { raw, src: code.text, mode: "code", language: language(code.lang), complete: true }],
+      defs,
+    )
+  return withDefinitions(
+    [...result, { raw, src: openCode(code.raw), mode: "code", language: language(code.lang) }],
+    defs,
+  )
 }
 
 export function canReusePendingBlock(current: Pick<Block, "mode" | "raw"> | undefined, next: Block) {
@@ -120,10 +156,11 @@ export function canReusePendingBlock(current: Pick<Block, "mode" | "raw"> | unde
 
 export function project(previous: Projection | undefined, text: string, live: boolean): Projection {
   // TODO: streaming `Run the `config` then `# User Guide` / `#userconfig` still
-  // wraps the heading in healed inline code; a later `[1]:` reference definition
-  // also collapses the live projection and drops already-frozen headings.
+  // wraps the heading in healed inline code.
   // Tried and reverted: reuse frozenPrefix (all-but-last blocks) plus close the
   // unclosed tick before `# `. That caused a duplicate prose line until complete().
+  // (Reference definitions no longer collapse the projection: `stream` keeps
+  // the frozen blocks and resolves refs per block via `definitionSuffix`.)
   if (!live || !previous || !text.startsWith(previous.text)) return { text, blocks: stream(text, live) }
   const tail = previous.blocks.at(-1)
   const suffix = text.slice(previous.text.length)
