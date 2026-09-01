@@ -15,11 +15,9 @@ import { SandboxSettingsSection } from "@/features/settings/ui/sandbox-section"
 import { OrgTeamSettingsSection } from "@/features/settings/ui/org-team-section"
 import claxedoPkg from "../../../package.json"
 import { RemoteAccessSurface, useRemoteAccessController } from "@/features/onboarding"
-import { remoteAccessAppOrigin, remoteAccessClientId, remoteAccessWorkspaceLink } from "@/features/onboarding/remote-access-state"
-import { localWorkspaceShareTarget, registerUserHostedWorkspace, unregisterUserHostedWorkspace } from "@/features/workspaces/data/share-workspace"
-import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
-import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
-import { useQuery, useQueryClient } from "@tanstack/solid-query"
+import { useLocalWorkspaceAutoShareStatus } from "@/features/workspaces/data/auto-share-local-workspaces"
+import { invalidateSharedWorkspaces } from "@/features/workspaces/data/shared-workspaces"
+import { useQueryClient } from "@tanstack/solid-query"
 import { useServer } from "@/app/connection/server"
 import { useNavigate } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
@@ -32,53 +30,23 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const navigate = useNavigate()
   const config = useConfigOptional()
   const productUi = createMemo(() => resolveProductUiFlags(config))
+  const queryClient = useQueryClient()
   const remoteAccess = useRemoteAccessController({
     serverUrl: server.url,
     signInAvailable: () => productUi().accountSignIn,
+    // Enabling/pausing/revoking changes what this machine publishes, and the
+    // reconciler decides from that set. Without this the browser product —
+    // whose port cannot push — would sit on a stale answer for 30s and publish
+    // nothing after the user pressed Enable.
+    onMachineChanged: () => invalidateSharedWorkspaces(queryClient),
   })
-  const queryClient = useQueryClient()
-  const shellQueries = useShellQueryOptions()
-  const projectsQuery = useQuery(() => shellQueries.projects())
-  const sharedWorkspaces = useSharedWorkspaceIds()
-  // Every local workspace across every open project, with its live shared
-  // state. The share ACTION lives here now — the rail rows only display state.
-  // Undefined while the project list is still loading, so the surface can
-  // show skeleton rows instead of an empty section.
-  const shareableWorkspaces = createMemo(() => {
-    const projects = projectsQuery.data
-    if (!projects) return undefined
-    return projects.flatMap((project: { worktree: string; workspaces?: Record<string, { directory?: string }> }) => {
-      const directories = new Set<string>([
-        project.worktree,
-        ...Object.values(project.workspaces ?? {}).map((workspace) => workspace.directory ?? ""),
-      ])
-      return [...directories].filter(Boolean).flatMap((candidate) => {
-        const target = localWorkspaceShareTarget({ project, directory: candidate })
-        if (!target) return []
-        return [{
-          workspaceId: target.workspaceId,
-          path: target.directory,
-          label: candidate.split("/").filter(Boolean).at(-1) ?? candidate,
-          shared: sharedWorkspaces.shared(target.workspaceId),
-        }]
-      })
-    })
-  })
-  const shareWorkspaces = async (workspaceIds: readonly string[]) => {
-    for (const workspaceId of workspaceIds) {
-      const workspace = shareableWorkspaces()?.find((entry) => entry.workspaceId === workspaceId)
-      await registerUserHostedWorkspace({ workspaceId, ...(workspace ? { displayName: workspace.label } : {}) })
-    }
-    await queryClient.invalidateQueries({ queryKey: SHARED_WORKSPACES_QUERY_KEY })
-    await remoteAccess.devices.refetch()
-  }
-  const unshareWorkspace = async (workspaceId: string) => {
-    await unregisterUserHostedWorkspace({ workspaceId })
-    await queryClient.invalidateQueries({ queryKey: SHARED_WORKSPACES_QUERY_KEY })
-    await remoteAccess.devices.refetch()
-  }
-  const shareLinkFor = (workspaceId: string) =>
-    remoteAccessWorkspaceLink({ appOrigin: remoteAccessAppOrigin(), workspaceId, sourceClientId: remoteAccessClientId() })
+  // Machine-level sharing: while remote access is on, every local workspace
+  // this machine holds is published, and one opened later is published as soon
+  // as the inventory reports it. The reconciler runs in the app shell for the
+  // whole session — this panel only reports what it found, because a driver
+  // that started when Settings opened would only keep the promise while
+  // Settings was open.
+  const autoShare = createMemo(useLocalWorkspaceAutoShareStatus)
   const [active, setActive] = createSignal(props.initialTab ?? "general")
   const [mobile, setMobile] = createSignal(false)
 
@@ -201,11 +169,12 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
             <div class="p-6">
               <RemoteAccessSurface
                 availability={remoteAccess.availability()}
+                identity={remoteAccess.identity()}
                 devices={remoteAccess.devices.data ?? []}
-                shareableWorkspaces={shareableWorkspaces()}
-                onShare={shareWorkspaces}
-                onUnshare={unshareWorkspace}
-                shareLinkFor={shareLinkFor}
+                serving={autoShare().serving}
+                servingPending={autoShare().pending}
+                shareFailure={autoShare().failure}
+                deviceLink={remoteAccess.deviceLink()}
                 startAtLogin={remoteAccess.startAtLogin()}
                 onStartAtLoginChange={(enabled) => void remoteAccess.setStartAtLogin(enabled)}
                 onEnable={() => void remoteAccess.enable()}
@@ -213,6 +182,7 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
                   dialog.close()
                   navigate("/login")
                 }}
+                onPause={remoteAccess.canPause() ? () => void remoteAccess.pause() : undefined}
                 onRevoke={(hostId) => void remoteAccess.revoke(hostId)}
               />
             </div>

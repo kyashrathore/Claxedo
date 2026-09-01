@@ -115,6 +115,13 @@ export function machineRemoteAccessStatus(snapshot: HostConnectorSnapshot): Mach
     // only the control plane holds, and reading it is not one of the four
     // operations. Reported false rather than guessed.
     secondDeviceOpen: false,
+    // The connector already reports what it publishes on every snapshot, so
+    // this costs no extra channel. Main OMITS the field when the set is empty
+    // (status-channel.ts spreads it conditionally), which is why absent reads
+    // as `[]` here and not as "unknown": on this product the connector always
+    // knows. A machine that is not enrolled publishes nothing, whatever a stale
+    // snapshot still lists.
+    sharedWorkspaceIds: enrolled ? [...(snapshot.sharedWorkspaceIds ?? [])] : [],
   }
 }
 
@@ -171,26 +178,13 @@ export function electronMachineRemoteAccess(bridge: HostConnectorBridge): Machin
       }
     },
 
-    /**
-     * The one machine this product can enumerate: itself.
-     *
-     * The account-wide device list stays absent on the desktop (fetching it is
-     * not one of the closed operations), but the connector DOES know which
-     * workspaces it is currently publishing, and the share surface needs that
-     * to show live shared state. One synthetic row; the host id stays behind
-     * the boundary, so the row carries a fixed marker the desktop's revoke —
-     * which can only ever mean "this machine" — does not read anyway.
-     */
-    async devices() {
-      const snapshot = await bridge.status()
-      if (snapshot.status !== "enrolled") return []
-      return [{
-        hostId: "this-machine",
-        displayName: "This machine",
-        lastSeenAt: Date.now(),
-        workspaceIds: snapshot.sharedWorkspaceIds ?? [],
-      }]
-    },
+    // `devices` stays ABSENT here, as the port documents. Enumerating the
+    // account's machines is not one of the closed operations, and the synthetic
+    // "this machine" row that used to stand in for it existed only to carry
+    // `sharedWorkspaceIds` to the share surface. That fact now travels on
+    // `status()` where it belongs, so the row would be a second, weaker source
+    // for the same truth — and it made a one-machine desktop render an
+    // "Enrolled machines" list it cannot actually enumerate.
 
     subscribe(listener) {
       return bridge.onStatus((snapshot) => listener(machineRemoteAccessStatus(snapshot)))

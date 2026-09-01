@@ -28,9 +28,10 @@ describe("desktop machine remote-access binding", () => {
     await machineRemoteAccess()?.enable({ displayName: "Mac", startAtLogin: false })
 
     expect(calls).toEqual(["start"])
-    // `devices` is the connector's own snapshot projected as one machine —
-    // present, and never a request beyond the bridge's status read.
-    expect(machineRemoteAccess()?.devices).toBeDefined()
+    // The account-wide device list is not one of the closed operations, so the
+    // bound port leaves it absent rather than synthesizing a row for the one
+    // machine it does know about.
+    expect(machineRemoteAccess()?.devices).toBeUndefined()
   })
 
   test("binds nothing when preload exposes no bridge", () => {

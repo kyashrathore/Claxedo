@@ -12,8 +12,8 @@
  * transient relay hiccups, that every workspace-scoped surface (session send, and whatever
  * else is exercised while ready) routes through the relay lane rather than any bare/local
  * endpoint, a workspace going from ready to paused (host taken offline) after a warm
- * reload, and the in-app "Share workspace" entry point that registers a workspace as
- * user-hosted. The DEEP half — real relay/JWT fixtures, genuine WS multiplexing, PTY/file
+ * reload, and the in-app entry point that publishes this machine's local workspaces for
+ * remote access. The DEEP half — real relay/JWT fixtures, genuine WS multiplexing, PTY/file
  * writes through a live tunnel, role enforcement — is Tier L's `live-user-hosted-relay`
  * (spec 25); this spec never makes a real network call.
  *
@@ -69,14 +69,16 @@
  *   lives in a session/turn sense — it is connection-authority state, entirely orthogonal
  *   to the session timeline, and (aside from the localStorage warm-start marker) is
  *   in-memory only, fully discarded by a real page reload.
- *   Share/register — `registerUserHostedWorkspace` (`src/utils/share-workspace.ts`) is a
- *   ONE-SHOT `POST /api/workspace/:id/user-hosted/register` fired from the sidebar's
- *   "Share workspace" action (`src/claxedo-ui/layouts/rail-sidebar.tsx`'s
- *   `HeaderActions`); it does not touch `workspaceConnection` at all — it is orthogonal to
- *   the connect pipeline above, just a call that marks a LOCAL project's workspace as
- *   registered/shareable server-side and copies a share URL. It is gated by
- *   `Can do="share.workspace"` (`src/shell/auth/role.tsx`) — available to `signed`/`org-
- *   member` principals, never `local`/`anonymous` — and by `localWorkspaceShareTarget`
+ *   Share/register — sharing is MACHINE level and no longer a per-workspace gesture.
+ *   Enabling remote access (Settings > Devices) publishes every local workspace this
+ *   machine holds, and one opened later is published as soon as the inventory reports it.
+ *   The reconciler is `useLocalWorkspaceAutoShareDriver` (`features/workspaces/data/auto-
+ *   share-local-workspaces.ts`), mounted once by the app shell in `app/entry/runtime-
+ *   providers.tsx`; per workspace it still fires the same ONE-SHOT
+ *   `registerUserHostedWorkspace` (`features/workspaces/data/share-workspace.ts`) →
+ *   `POST /api/workspace/:id/host-assignment`. It does not touch `workspaceConnection` at
+ *   all — it is orthogonal to the connect pipeline above. Which workspaces qualify is
+ *   still `localWorkspaceShareTarget`
  *   finding a non-cloud workspace row for the clicked directory (falls back to the
  *   project's own id/worktree when the directory equals the project's main worktree, so
  *   no prior workspace registration is required to reach it).
@@ -105,12 +107,11 @@
  *     renders and calls `retryWorkspaceConnection`.
  *   `[role="textbox"][aria-label*="Ask anything"]` — once the gate renders children, the
  *     draft composer appears exactly like a local/cloud session (proof the gate unlocked).
- *   Rail sidebar "Share workspace" — `DropdownMenu.Item` inside the workspace header's
- *     kebab menu (`aria-label="More options for <project label>"`), gated by
- *     `Can do="share.workspace"` and `!shareTarget() || sharing()` (disabled). Success
- *     shows a `[data-slot="toast-title"]` "Workspace shared" toast whose description is
- *     the copied share URL (or a "copied to clipboard" message when the clipboard write
- *     succeeds); failure shows `[data-slot="toast-title"]` "Failed to share workspace".
+ *   Settings > Devices — the one remote-access surface. Off state offers a single
+ *     "Enable remote access" button; once on, the machine card states `Serving N
+ *     workspaces` beside a live dot that is green only when the published set equals the
+ *     machine's local inventory. There is no per-workspace tick list and no per-workspace
+ *     QR: the rail's old "Share workspace" kebab item was removed with them.
  *
  * BEHAVIORS —
  *   1. Landing on a not-yet-ready user-hosted workspace renders the 3-step pipeline with
@@ -137,11 +138,11 @@
  *      moment and then flips to the offline view once the background health check
  *      confirms the host is unreachable — "pause" surfaces as a real state transition, not
  *      a stuck stale-ready UI.
- *   7. The in-app "Share workspace" entry point (rail sidebar kebab menu, gated by `Can
- *      do="share.workspace"`) calls `registerUserHostedWorkspace`, and on success shows
- *      the "Workspace shared" toast — the app-triggered path to `share-workspace.ts`
- *      reaches a registered state without any dedicated user-hosted connect flow required
- *      first (it targets the project's own main workspace).
+ *   7. Enabling remote access in Settings > Devices publishes this machine's local
+ *      workspaces on its own: the assignment POST reaches the wire with no per-workspace
+ *      gesture, and the panel reports `Serving 1 workspace`. The app-triggered path to
+ *      `share-workspace.ts` reaches a registered state without any dedicated user-hosted
+ *      connect flow required first (it targets the project's own main workspace).
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
  *   e2e/INVARIANTS.md, exercised via the oracle in behavior 3); harness ownership (#1) is
@@ -886,14 +887,17 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(page.getByTestId("workspace-offline")).toContainText("Workspace host is offline")
   })
 
-  test("the in-app Share workspace entry point registers the workspace and shows a confirmation toast — behavior 7", async ({ page }) => {
+  test("enabling remote access publishes this machine's workspaces with no per-workspace gesture — behavior 7", async ({ page }) => {
     test.setTimeout(120_000)
     await stampTestAuth(page.context())
-    // Deliberately NOT the user-hosted connect pipeline: `localWorkspaceShareTarget`
-    // resolves against the project's own main workspace directory, so a plain
-    // local session (no relay backing at all) is enough to reach the action —
-    // see this spec's STATE MODEL section on share/register.
-    const requests: string[] = []
+    // Deliberately NOT the user-hosted connect pipeline: the reconciler resolves
+    // against the project's own main workspace directory, so a plain local
+    // session (no relay backing at all) is enough — see this spec's STATE MODEL
+    // section on share/register.
+    const assignments: string[] = []
+    // The machine's own publication state, as the control plane would hold it.
+    const machine = { enabled: false, workspaceIds: [] as string[] }
+
     await page.route("**/*", async (route) => {
       if (!api(route)) return route.continue()
       const url = new URL(route.request().url())
@@ -943,10 +947,43 @@ test.describe("core user-hosted workspace @core", () => {
       if (isWorkspaceResolvePath(url.pathname)) {
         return json(route, { workspaceId: `local-${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
       }
+      // Reaching Settings means opening the rail account menu, which mounts the
+      // org/team switcher. Same fatal gap as `/permission/modes` above: the
+      // trailing `json(route, {}, 200)` would serve `{}`, the switcher would
+      // call `.find` on it, and the app would render its error boundary instead
+      // of the shell — which is exactly how this test first failed.
+      if (url.pathname === "/api/control/orgs") return json(route, [])
+      if (url.pathname.startsWith("/api/control/orgs/")) return json(route, [])
 
-      if (url.pathname === `/api/workspace/${encodeURIComponent(PROJECT_ID)}/user-hosted/register` && method === "POST") {
-        requests.push(`${method} ${url.pathname}`)
-        return json(route, { workspaceId: PROJECT_ID, registered: true })
+      // The three remote-access routes the browser product's port speaks. The
+      // devices list is this machine's own row, which is where the panel's
+      // served count and the reconciler's "already published" set both come
+      // from — so the two can never disagree in this test.
+      if (url.pathname === "/api/claxedo/remote-access/devices") {
+        return json(route, {
+          devices: machine.enabled
+            ? [{ host_id: "host_1", display_name: "This machine", last_seen_at: Date.now(), workspace_ids: machine.workspaceIds }]
+            : [],
+        })
+      }
+      if (url.pathname === "/api/claxedo/remote-access/enable" && method === "POST") {
+        machine.enabled = true
+        return json(route, { host_id: "host_1", connection_count: 0 })
+      }
+      if (url.pathname === "/api/claxedo/remote-access") {
+        return json(route, {
+          device_login_configured: true,
+          relay_configured: true,
+          hosted_signed_in: true,
+          enabled: machine.enabled,
+          enrolled: machine.enabled,
+          second_device_open: false,
+        })
+      }
+      if (url.pathname === `/api/workspace/${encodeURIComponent(PROJECT_ID)}/host-assignment` && method === "POST") {
+        assignments.push(`${method} ${url.pathname}`)
+        if (!machine.workspaceIds.includes(PROJECT_ID)) machine.workspaceIds.push(PROJECT_ID)
+        return json(route, { workspaceId: PROJECT_ID, assigned: true })
       }
 
       return json(route, {}, 200)
@@ -957,28 +994,26 @@ test.describe("core user-hosted workspace @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    // Header actions do not exist before engagement. Scope the probe to the
-    // exact project so another rail section cannot satisfy the Share contract.
-    const projectHeader = page.locator('[data-testid="project-header"]').filter({
-      hasText: "core-user-hosted-workspace",
-    })
-    await expect(projectHeader).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    const moreOptions = projectHeader.getByRole("button", { name: /More options for/i })
-    await expect(moreOptions).toHaveCount(0)
-    await projectHeader.hover()
-    await expect(moreOptions).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await moreOptions.click()
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: /settings/i }).click()
+    await page.getByRole("tab", { name: "Devices" }).click()
 
-    const shareItem = page.getByRole("menuitem", { name: /Share workspace/i })
-    await expect(shareItem).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await shareItem.click()
+    // Nothing is published before the machine is enabled — the reconciler must
+    // not post an assignment at a machine that is not up.
+    const enable = page.getByRole("button", { name: "Enable remote access" })
+    await expect(enable).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    expect(assignments).toEqual([])
 
-    // Await the confirmation toast explicitly (it appears only after the register
-    // POST resolves) — the register-request assertion below then confirms the exact
-    // network effect that produced it.
-    await expect(page.locator('[data-slot="toast-title"]')).toContainText("Workspace shared", {
-      timeout: CONTENTION_TIMEOUT,
-    })
-    expect(requests).toEqual([`POST /api/workspace/${encodeURIComponent(PROJECT_ID)}/user-hosted/register`])
+    await enable.click()
+
+    // One gesture, and the machine's whole local inventory is published: the
+    // assignment reaches the wire with nobody ticking anything, and the panel
+    // reports what it now serves.
+    await expect(page.getByText(/^Serving /)).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    await expect(page.getByText("Serving 1 workspace")).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    expect(assignments).toEqual([`POST /api/workspace/${encodeURIComponent(PROJECT_ID)}/host-assignment`])
+
+    // And no tick list came with it.
+    await expect(page.getByRole("checkbox", { name: /share/i })).toHaveCount(0)
   })
 })

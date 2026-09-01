@@ -1,6 +1,9 @@
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import { createEffect, createSignal, type Component, type ParentProps } from "solid-js"
+import { useQuery } from "@tanstack/solid-query"
 import { GlobalSyncProvider } from "@/app/providers/global-sync/provider"
+import { useShellQueryOptions } from "@/app/integrations/sync/query-options"
+import { LocalWorkspaceAutoShareProvider } from "@/features/workspaces/data/auto-share-local-workspaces"
 import { PermissionProvider } from "@/features/session/providers/permission"
 import { LayoutProvider } from "@/app/providers/layout"
 import { GlobalSDKProvider } from "@/app/providers/global-sdk/provider"
@@ -74,25 +77,54 @@ export function RuntimeProviders(props: ParentProps) {
     <GlobalSDKProvider>
       <SessionTitleProjectionProvider scope={() => principalDataScope(principal())}>
         <GlobalSyncProvider flushNavigationPersistence={flushQueryPersistence}>
-          <SettingsProvider>
-            <PermissionProvider>
-              <LayoutProvider>
-                <NotificationProvider>
-                  <ModelsProvider>
-                    <CommandProvider>
-                      <HighlightsProvider>{AppShell ? <AppShell>{props.children}</AppShell> : null}</HighlightsProvider>
-                    </CommandProvider>
-                  </ModelsProvider>
-                </NotificationProvider>
-              </LayoutProvider>
-            </PermissionProvider>
-          </SettingsProvider>
+          <LocalWorkspaceAutoShare>
+            <SettingsProvider>
+              <PermissionProvider>
+                <LayoutProvider>
+                  <NotificationProvider>
+                    <ModelsProvider>
+                      <CommandProvider>
+                        <HighlightsProvider>{AppShell ? <AppShell>{props.children}</AppShell> : null}</HighlightsProvider>
+                      </CommandProvider>
+                    </ModelsProvider>
+                  </NotificationProvider>
+                </LayoutProvider>
+              </PermissionProvider>
+            </SettingsProvider>
+          </LocalWorkspaceAutoShare>
         </GlobalSyncProvider>
       </SessionTitleProjectionProvider>
     </GlobalSDKProvider>
   )
   trace("runtime.providersMounted", performance.now() - started)
   return providers
+}
+
+/**
+ * Machine-level remote access, watching for the whole session.
+ *
+ * "A workspace you open shares itself" is only true while something is
+ * reconciling, so this is the app shell's own mount rather than a surface's:
+ * it runs from boot to teardown, and every panel below reads its result through
+ * `useLocalWorkspaceAutoShareStatus()`. Wrapping rather than sitting beside the
+ * other providers is what makes that reachable — and what makes a surface
+ * physically unable to start a second reconciler.
+ *
+ * It sits HERE and not beside `RemoteAccessMarkerRecorder` in `app.tsx` for a
+ * provider-ordering reason, not a taste one: the project inventory comes from
+ * `useShellQueryOptions()`, which reads `GlobalSyncProvider` — and that
+ * provider is mounted below `AuthenticatedProviders`, where the marker
+ * recorder lives. This is the highest point in the tree where the inventory
+ * exists at all.
+ */
+function LocalWorkspaceAutoShare(props: ParentProps) {
+  const shellQueries = useShellQueryOptions()
+  const projects = useQuery(() => shellQueries.projects())
+  return (
+    <LocalWorkspaceAutoShareProvider projects={() => projects.data}>
+      {props.children}
+    </LocalWorkspaceAutoShareProvider>
+  )
 }
 
 function trace(name: string, durationMs: number) {

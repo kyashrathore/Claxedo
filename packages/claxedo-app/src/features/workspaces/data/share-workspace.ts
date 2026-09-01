@@ -66,12 +66,12 @@ function workspaceHostAssignmentUrl(input: { serverUrl?: string; workspaceId: st
 }
 
 /**
- * Registration is CLIENT-SIGNED: the control plane demands a challenge signed
- * with this machine's host key, and only the local daemon holds that key
- * (`registerLocalHostLink` resolves the workspace, signs the challenge, and
- * registers with the control plane). Calling the control plane directly from
- * here can never work — the renderer has nothing to sign with, and the server
- * answered every such attempt with `invalid_request_body`.
+ * Sharing assigns the workspace to an ENROLLED machine, and the renderer
+ * cannot name that machine: the host id belongs to whoever holds the machine
+ * key, which on desktop is Electron main's Host Connector and never this
+ * process. So the port is the only path when one is bound; the self-hosted
+ * server has no port and performs the same assignment server-side from its own
+ * local route below.
  */
 export async function registerUserHostedWorkspace(input: {
   workspaceId: string

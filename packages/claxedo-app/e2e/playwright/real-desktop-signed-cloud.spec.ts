@@ -329,9 +329,10 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
       expect.objectContaining({ status: "enrolled" }),
       expect.objectContaining({ status: "enrolled" }),
     ])
-    await expect(app.page.getByRole("heading", { name: "Open this workspace on your phone" })).toBeVisible({
-      timeout: 30_000,
-    })
+    // Sharing is machine level: enabling publishes every local workspace this
+    // machine holds, so the proof of a live enrollment is the machine's own
+    // status line, not a per-workspace panel.
+    await expect(app.page.getByText(/^Serving /)).toBeVisible({ timeout: 30_000 })
 
     const enrollmentPaths = ["/api/claxedo/host/enrollments/requests", "/api/claxedo/host/enrollments"]
     await expect
@@ -422,7 +423,7 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
         return requests.at(-1)?.body?.hostId
       })
       .not.toBe(firstHostId)
-    await expect(app.page.getByRole("heading", { name: "Open this workspace on your phone" })).toBeVisible()
+    await expect(app.page.getByText(/^Serving /)).toBeVisible()
     await app.page.screenshot({ path: testInfo.outputPath("remote-access-enabled.png"), fullPage: true })
   })
 })

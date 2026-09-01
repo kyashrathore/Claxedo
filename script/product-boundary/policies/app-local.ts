@@ -134,7 +134,14 @@ export const appLocal: Policy = {
   // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + its loopback control
   // routes — the machine's ONE relay serving connection under machine-wide
   // enrollment (reviewed owner: local-server workspace domain). 944/38.
-  ceilings: { modules: 944, packages: 38 },
+  // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`.
+  // Remote access is machine level, so the published set is reconciled against
+  // this machine's local workspace inventory instead of a per-workspace tick
+  // list; reviewed owner is the workspaces data domain, which already owns both
+  // halves (`share-workspace` decides what is local, `shared-workspaces` reads
+  // what is published) and is the only layer allowed to import them —
+  // `features/onboarding` may not. 945/38.
+  ceilings: { modules: 945, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

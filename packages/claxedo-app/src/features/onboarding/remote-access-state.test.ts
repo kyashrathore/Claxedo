@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   remoteAccessAvailability,
+  remoteAccessDeviceLink,
   remoteAccessWorkspaceLink,
   shouldRecordSecondDeviceOpen,
 } from "./remote-access-state"
@@ -54,6 +55,33 @@ describe("remote access onboarding state", () => {
       enabled: true,
       secondDeviceOpen: true,
     })).toEqual({ state: "enabled", proven: true })
+  })
+
+  test("the device link is the app ROOT, because sharing is machine level", () => {
+    // Nothing to fetch and no workspace to choose: enabling remote access
+    // publishes every local workspace on the machine, so the destination is
+    // the account's own list. A staging build must land on staging, and a
+    // stale workspace path in the configured origin must not survive.
+    expect(remoteAccessDeviceLink({ appOrigin: "https://staging.claxedo.test", sourceClientId: "desktop-client" }))
+      .toBe("https://staging.claxedo.test/?claxedo_second_device=1&claxedo_source_client=desktop-client")
+    expect(new URL(remoteAccessDeviceLink({
+      appOrigin: "https://app.claxedo.test/w/ws_old",
+      sourceClientId: "desktop-client",
+    })).pathname).toBe("/")
+  })
+
+  test("the root link still proves a second device, so the funnel keeps its producer", () => {
+    // The marker moved off the per-workspace URL with the per-workspace QR, but
+    // the fact it records did not. `RemoteAccessMarkerRecorder` holds it from
+    // this landing until the first workspace the device opens.
+    const url = new URL(remoteAccessDeviceLink({
+      appOrigin: "https://app.claxedo.test",
+      sourceClientId: "desktop-client",
+    }))
+
+    expect(shouldRecordSecondDeviceOpen({ url, currentClientId: "phone-client", signedIn: true })).toBe(true)
+    expect(shouldRecordSecondDeviceOpen({ url, currentClientId: "desktop-client", signedIn: true })).toBe(false)
+    expect(shouldRecordSecondDeviceOpen({ url, currentClientId: "phone-client", signedIn: false })).toBe(false)
   })
 
   test("builds a marker link and rejects same-device or signed-out completion", () => {

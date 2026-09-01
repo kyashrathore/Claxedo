@@ -75,7 +75,7 @@ function connectorHarness(input: { bearer?: string } = {}) {
     },
     shareWorkspace: async (share: { workspaceId: string; displayName?: string }) => {
       if (state.status !== "enrolled") throw new Error("Remote access is not running on this machine")
-      operations.push({ name: "hostLink.register", params: { ...share } })
+      operations.push({ name: "workspace.assignHost", params: { ...share } })
       state = { ...state, sharedWorkspaceIds: [...(state.sharedWorkspaceIds ?? []), share.workspaceId].sort() }
       return state
     },
@@ -282,7 +282,7 @@ describe("the closed operation set", () => {
     // Malformed payloads never reach the connector.
     await expect(ipc.invoke(hostConnectorChannel("share"))).rejects.toThrow("workspaceId")
     await expect(ipc.invoke(hostConnectorChannel("share"), { workspaceId: 42 })).rejects.toThrow("workspaceId")
-    expect(harness.operations.some((operation) => operation.name === "hostLink.register")).toBe(false)
+    expect(harness.operations.some((operation) => operation.name === "workspace.assignHost")).toBe(false)
 
     // A hostile payload is reduced to the two reviewed fields.
     const result = await ipc.invoke(hostConnectorChannel("share"), {
@@ -291,7 +291,7 @@ describe("the closed operation set", () => {
       url: "https://evil.example/api/admin",
       body: { hostId: "someone-else" },
     })
-    const registered = harness.operations.find((operation) => operation.name === "hostLink.register")
+    const registered = harness.operations.find((operation) => operation.name === "workspace.assignHost")
     expect(registered?.params).toEqual({ workspaceId: "ws_local_1", displayName: "opencode" })
     expect(result).toMatchObject({ status: "enrolled", sharedWorkspaceIds: ["ws_local_1"] })
   })

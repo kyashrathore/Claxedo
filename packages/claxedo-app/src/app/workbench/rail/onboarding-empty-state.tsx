@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createSignal, Show, type JSX } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
+import { useQuery, useQueryClient } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useNavigate, useSearchParams } from "@solidjs/router"
@@ -36,6 +36,8 @@ import {
   type SetupPageStep,
   type SetupStepSubmit,
 } from "@/features/onboarding"
+import { useLocalWorkspaceAutoShareStatus } from "@/features/workspaces/data/auto-share-local-workspaces"
+import { invalidateSharedWorkspaces } from "@/features/workspaces/data/shared-workspaces"
 import { workspaceSandboxDriverAuthUrl } from "@/features/settings/ui/sandbox-section-logic"
 import { createIntegrationsRequest } from "@/platform/account/integrations-request"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -57,6 +59,7 @@ export function OnboardingEmptyState(props: {
   const productUi = createMemo(() => resolveProductUiFlags(config))
   const dialog = useDialog()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [searchParams, setSearchParams] = useSearchParams()
   const dismissals = createLocalOnboardingDismissals()
   // The answer to step 0, persisted. It replaces the inference this component
@@ -76,7 +79,13 @@ export function OnboardingEmptyState(props: {
     serverUrl: server.url,
     signInAvailable: () => productUi().accountSignIn,
     emit: funnel().emit,
+    // See the note in `app/dialogs/settings.tsx`: the reconciler reads the
+    // published set, and only this tells it the machine just came up.
+    onMachineChanged: () => invalidateSharedWorkspaces(queryClient),
   })
+  // Read-only: the reconciler that publishes this machine's workspaces runs in
+  // the app shell, so this step reports its state rather than starting it.
+  const autoShare = createMemo(useLocalWorkspaceAutoShareStatus)
   const [aiView, setAIView] = createSignal<AIConnectView>({ kind: "chooser" })
   // Set only by the go-further card, which opens the AI step straight on its
   // harness check with no click to start the scan.
@@ -501,7 +510,12 @@ export function OnboardingEmptyState(props: {
       return (
         <RemoteAccessSurface
           availability={remoteAccess.availability()}
+          identity={remoteAccess.identity()}
           devices={remoteAccess.devices.data ?? []}
+          deviceLink={remoteAccess.deviceLink()}
+          serving={autoShare().serving}
+          servingPending={autoShare().pending}
+          shareFailure={autoShare().failure}
           showDevices={false}
           startAtLogin={remoteAccess.startAtLogin()}
           onStartAtLoginChange={(enabled) => void remoteAccess.setStartAtLogin(enabled)}

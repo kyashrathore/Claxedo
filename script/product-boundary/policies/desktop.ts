@@ -237,7 +237,12 @@ export const desktopRendererUnsigned: Policy = {
   // 2026-09-01: +2 `app/shell-revealed.ts` (the one window-once splash flag
   // both shell boundaries consult) and the unshare path through
   // `platform/remote-access` (machine-wide enrollment share toggle). 1030/59.
-  ceilings: { modules: 1030, packages: 59 },
+  // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`,
+  // the same reconciler app-local took. Enabling remote access on the desktop
+  // now publishes every local workspace the machine holds rather than the ones
+  // a user ticked, and this is the module that keeps the two sets equal.
+  // Reviewed owner: the workspaces data domain (see app-local.ts). 1031/59.
+  ceilings: { modules: 1031, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -6,6 +6,19 @@ export type RemoteAccessCapability = {
   secondDeviceOpen?: boolean
 }
 
+/**
+ * Whose machine this is, as the panel may state it.
+ *
+ * "pending" covers BOTH sign-in in flight and signed-with-no-identity-yet,
+ * because both mean the same thing to a reader: we do not know the name yet.
+ * There is deliberately no "unknown name" variant carrying a placeholder —
+ * printing a generic word where a name belongs reads as a successful lookup.
+ */
+export type RemoteAccessIdentity =
+  | { state: "pending" }
+  | { state: "signed-out" }
+  | { state: "named"; label: string }
+
 export type RemoteAccessAvailability =
   | { state: "locked"; reason: string }
   | { state: "sign-in-required" }
@@ -67,6 +80,35 @@ export function remoteAccessAppOrigin(): string {
   return "https://app.claxedo.com"
 }
 
+/** The two params that identify a link followed from this machine's QR. */
+export const SECOND_DEVICE_PARAM = "claxedo_second_device"
+export const SECOND_DEVICE_SOURCE_PARAM = "claxedo_source_client"
+
+/** Where a carried-in marker waits until a workspace can be attributed to it. */
+export const SECOND_DEVICE_STASH_KEY = "claxedo.remote-access.second-device"
+
+/**
+ * The URL a second device opens to reach THIS machine.
+ *
+ * Machine-level sharing has no single workspace to point at — enabling remote
+ * access publishes every local workspace on the machine, including the ones
+ * opened afterwards — so the destination is the app root, where the account's
+ * workspaces are listed. It is a pure string over a baked deployment origin,
+ * which is what lets the surface render its QR with no round trip: there is
+ * nothing to ask anyone for.
+ *
+ * It still carries the two markers, because "someone opened this from another
+ * device" is the same fact it always was; only the moment it can be attributed
+ * moved. `RemoteAccessMarkerRecorder` holds the marker from this root landing
+ * until the first workspace this device opens.
+ */
+export function remoteAccessDeviceLink(input: { appOrigin: string; sourceClientId: string }) {
+  const url = new URL("/", input.appOrigin)
+  url.searchParams.set(SECOND_DEVICE_PARAM, "1")
+  url.searchParams.set(SECOND_DEVICE_SOURCE_PARAM, input.sourceClientId)
+  return url.toString()
+}
+
 export function remoteAccessWorkspaceLink(input: {
   appOrigin: string
   workspaceId: string
@@ -83,8 +125,8 @@ export function shouldRecordSecondDeviceOpen(input: {
   currentClientId: string
   signedIn: boolean
 }) {
-  if (!input.signedIn || input.url.searchParams.get("claxedo_second_device") !== "1") return false
-  const sourceClientId = input.url.searchParams.get("claxedo_source_client")
+  if (!input.signedIn || input.url.searchParams.get(SECOND_DEVICE_PARAM) !== "1") return false
+  const sourceClientId = input.url.searchParams.get(SECOND_DEVICE_SOURCE_PARAM)
   return !!sourceClientId && sourceClientId !== input.currentClientId
 }
 

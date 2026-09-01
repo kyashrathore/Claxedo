@@ -194,6 +194,10 @@ describe("status projection", () => {
       enrolled: true,
       enabled: true,
       secondDeviceOpen: false,
+      // Main omits the field when the connector publishes nothing, and on this
+      // product absent means empty rather than unknown — the connector always
+      // knows what it serves.
+      sharedWorkspaceIds: [],
     })
   })
 
@@ -219,30 +223,45 @@ describe("status projection", () => {
 })
 
 describe("capabilities this product does not have", () => {
-  test("offers no second-device marker, and a device list of exactly this machine", async () => {
+  test("offers neither a second-device marker nor an account-wide device list", async () => {
     // `markSecondDeviceOpen` stays absent — the machine that published itself
-    // is never the second device. `devices` IS offered now, but it enumerates
-    // only this machine from the connector's own snapshot: not enrolled means
-    // an empty list, and an enrolled snapshot yields one synthetic row whose
-    // workspace ids are the connector's live shares. The account-wide device
-    // list remains unfetchable from this product.
+    // is never the second device. `devices` stays absent too: enumerating the
+    // account's machines is not one of the closed operations, and the
+    // synthetic "this machine" row that used to stand in for it existed only
+    // to carry `sharedWorkspaceIds` — which now travels on `status()`, its
+    // authoritative producer.
     const idle = electronMachineRemoteAccess(bridge().handle)
     expect(idle.markSecondDeviceOpen).toBeUndefined()
+    expect(idle.devices).toBeUndefined()
     expect(typeof idle.pause).toBe("function")
     expect(typeof idle.subscribe).toBe("function")
-    expect(await idle.devices?.()).toEqual([])
+    expect(await idle.status()).toMatchObject({ enabled: false, sharedWorkspaceIds: [] })
+  })
 
+  test("status carries what this machine publishes, and nothing once it stops", async () => {
     const enrolled = electronMachineRemoteAccess(bridge({
       status: {
         status: "enrolled",
         available: true,
         signedIn: true,
+        sharedWorkspaceIds: ["ws_local_1", "ws_local_2"],
+      },
+    }).handle)
+    expect(await enrolled.status()).toMatchObject({
+      enabled: true,
+      sharedWorkspaceIds: ["ws_local_1", "ws_local_2"],
+    })
+
+    // A stopped connector publishes nothing, whatever a stale snapshot lists.
+    const stopped = electronMachineRemoteAccess(bridge({
+      status: {
+        status: "stopped",
+        available: true,
+        signedIn: true,
         sharedWorkspaceIds: ["ws_local_1"],
       },
     }).handle)
-    const rows = await enrolled.devices?.()
-    expect(rows).toHaveLength(1)
-    expect(rows?.[0]).toMatchObject({ hostId: "this-machine", workspaceIds: ["ws_local_1"] })
+    expect(await stopped.status()).toMatchObject({ enabled: false, sharedWorkspaceIds: [] })
   })
 
   test("revoking touches this machine, whatever id the caller names", async () => {
