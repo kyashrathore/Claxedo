@@ -17,7 +17,14 @@ function subject(order: string[]) {
   })
   const services = {
     authority: {
-      usersMe: vi.fn(async () => ({ subject: "user_1" })),
+      usersMe: vi.fn(async () => ({
+        subject: "user_1",
+        // `resolveRuntimeActor` refuses to mint without a full actor identity.
+        actor_id: "user_1",
+        actor_kind: "human",
+        actor_public_id: "user_1",
+        actor_name: "Signed User",
+      })),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
@@ -103,7 +110,14 @@ function userHostedSubject(order: string[]) {
   })
   const services = {
     authority: {
-      usersMe: vi.fn(async () => ({ subject: "user_1" })),
+      usersMe: vi.fn(async () => ({
+        subject: "user_1",
+        // `resolveRuntimeActor` refuses to mint without a full actor identity.
+        actor_id: "user_1",
+        actor_kind: "human",
+        actor_public_id: "user_1",
+        actor_name: "Signed User",
+      })),
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",

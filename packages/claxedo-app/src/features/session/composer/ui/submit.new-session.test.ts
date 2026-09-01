@@ -54,13 +54,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
 
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
-    console.log("DEBUG first test", JSON.stringify({
-      toasts,
-      sessionCreateCalls: sessionCreateCalls.length,
-      fetchCalls: fetchCalls.map((item) => item.url),
-      hostedOperationCalls,
-      boots,
-    }))
 
     // clearInput resets RAW {dir, id, draftId} scopes — `pick`/`promptScopeKey` applies
     // `sessionViewKey` exactly once, resolving each to the same persist key the

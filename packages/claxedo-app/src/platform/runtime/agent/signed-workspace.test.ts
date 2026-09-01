@@ -54,6 +54,8 @@ describe("signed workspace lookup", () => {
       directory: "ws_nullable",
       kind: "user-hosted",
     })
+  })
+
   test("treats a filesystem project's own UUID as local, not relay-backed", () => {
     const projectId = "c4955849-a3c1-4f3e-8481-1fd1bdec3962"
     const worktree = "/private/tmp/claxedo-agent-plugins-real-app/plugins-e2e"
