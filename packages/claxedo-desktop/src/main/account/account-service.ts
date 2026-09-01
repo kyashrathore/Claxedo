@@ -584,13 +584,25 @@ export function createAccountService(options: AccountServiceOptions) {
           error?: { code?: string; message?: string }
         } | undefined
         const code = body?.error?.code
-        // Opaque or wrong-shaped OAuth tokens fail JWKS as invalid_bearer_token.
-        // That is not a revoked refresh grant — do not wipe the local session.
-        if (code === "invalid_bearer_token" || code === "missing_bearer_token") {
-          throw new Error(
-            body?.error?.message
-              ?? "Control plane rejected the account token. Enable JWT access tokens on the Clerk OAuth app, then sign out and sign in again.",
-          )
+        // `missing_bearer_token` means WE sent no credential — a client bug,
+        // not a statement about the session, so it must not wipe it.
+        //
+        // `invalid_bearer_token` used to be treated the same way, on the
+        // Clerk-era assumption that it only ever meant a wrong-SHAPED token
+        // (JWKS refusing an opaque one) and therefore a misconfiguration no
+        // amount of renewing could fix. This deployment returns that exact
+        // code for an ordinary rejected token — expired, retired, unknown —
+        // which wedged the desktop completely: no renewal (this branch
+        // returned first), no invalidation, so the account read "Signed in"
+        // while every operation 401'd and remote access could not start.
+        // Verified against the live control plane: a junk bearer answers
+        // {"error":{"code":"invalid_bearer_token", ...}}.
+        //
+        // So it falls through to renew-once-and-retry below, which resolves
+        // both readings: a renewable session recovers, and one that is truly
+        // unusable fails its retry and reaches the honest sign-out.
+        if (code === "missing_bearer_token") {
+          throw new Error(body?.error?.message ?? "The account request carried no credential.")
         }
         // Renewal ahead of expiry covers a token that aged out, but not one
         // the server retired EARLY — a refresh-family rotation revokes the

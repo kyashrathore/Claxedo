@@ -498,18 +498,50 @@ describe("bound desktop account lifecycle", () => {
     expect(attempts).toBe(2)
   })
 
-  test("keeps a bound session when the control plane reports a token-shape error", async () => {
+  test("keeps a bound session when the request carried no credential at all", async () => {
     const store = memoryStore(CREDENTIAL)
     const h = harness({
       store,
       fetch: async () => Response.json({
-        error: { code: "invalid_bearer_token", message: "Bearer token is invalid" },
+        error: { code: "missing_bearer_token", message: "Bearer token is required" },
       }, { status: 401 }),
     })
     await h.service.restore()
 
-    await expect(h.service.run("account.get")).rejects.toThrow("Bearer token is invalid")
+    // Sending no credential is a client bug, not a statement about the
+    // session, so it must not cost the user their sign-in.
+    await expect(h.service.run("account.get")).rejects.toThrow("Bearer token is required")
     expect(store.held()).toBeDefined()
+    expect(h.service.state()).toMatchObject({ status: "signed" })
+  })
+
+  /**
+   * `invalid_bearer_token` is what this control plane returns for ANY rejected
+   * token — verified live against the deployment with a junk bearer. It was
+   * being read as a Clerk-era "wrong token shape, nothing to renew", which
+   * returned before the renewal path and left the desktop wedged: signed in
+   * by appearance, 401 on every operation, remote access unable to start.
+   */
+  test("an invalid_bearer_token is renewed and retried, not treated as a misconfiguration", async () => {
+    const seen: string[] = []
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async (url, init) => {
+        const token = String((init?.headers as Record<string, string>)?.authorization ?? "")
+        seen.push(token)
+        if (token.includes("at_1")) {
+          return Response.json(
+            { error: { code: "invalid_bearer_token", message: "Authentication credential is invalid" } },
+            { status: 401 },
+          )
+        }
+        return Response.json({ ok: true })
+      },
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("account.get")).resolves.toMatchObject({ ok: true })
+    expect(seen.length).toBe(2)
     expect(h.service.state()).toMatchObject({ status: "signed" })
   })
 
