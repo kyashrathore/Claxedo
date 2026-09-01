@@ -68,8 +68,12 @@ export const serverCloudNode: Policy = {
   // the canonical private-session reservation route, and the provider-neutral
   // runtime authority support they require. The relay-protocol package owns
   // the shared stream/turn lease TTL contract; no local-server edge is added.
-  // Full `verify:closure` measures the exact hosted Node graph at 146/28.
-  ceilings: { modules: 146, packages: 28 },
+  // `relay-token-record.ts` is the one owner of how a minted runtime token is
+  // recorded — user tokens under the signed caller, service tokens through the
+  // service path — shared with the self-hosted binary so the two compositions
+  // cannot drift; it adds one module and no package edge.
+  // Full `verify:closure` measures the exact hosted Node graph at 147/28.
+  ceilings: { modules: 147, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -148,8 +152,10 @@ export const serverWorkerd: Policy = {
   // the canonical private-session reservation route, and the provider-neutral
   // runtime authority support they require. The relay-protocol package owns
   // the shared stream/turn lease TTL contract; the graph remains Worker-safe.
-  // Full `verify:closure` measures the exact workerd graph at 122/14.
-  ceilings: { modules: 122, packages: 14 },
+  // `relay-token-record.ts` (the one owner of user-vs-service runtime token
+  // recording, shared with the Node compositions) adds one Worker-safe module.
+  // Full `verify:closure` measures the exact workerd graph at 123/14.
+  ceilings: { modules: 123, packages: 14 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
@@ -219,9 +225,11 @@ export const serverSelfHosted: Policy = {
   // routes, durable revision/provenance stores, outbox, scanner, pricing, and
   // host identity. The canonical private-session reservation route adds one
   // source module. Runtime authority now consumes the relay-protocol package's
-  // shared stream/turn lease TTL contract, so the exact measured graph is
-  // 150 modules and 35 packages (including `posthog-node` telemetry).
-  ceilings: { modules: 150, packages: 35 },
+  // shared stream/turn lease TTL contract. `relay-token-record.ts`, the one
+  // owner of user-vs-service runtime token recording shared with the hosted
+  // compositions, adds one source module, so the exact measured graph is
+  // 151 modules and 35 packages (including `posthog-node` telemetry).
+  ceilings: { modules: 151, packages: 35 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

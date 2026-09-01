@@ -1,3 +1,4 @@
+import type { SignedControlPlaneAuth } from "../platform/auth/auth"
 import type { ClaxedoRegion } from "../platform/runtime/region/index"
 import type { RelayRole } from "@claxedo/workspace-relay"
 
@@ -41,6 +42,18 @@ export type RelayTokenInput = {
   actorName?: string
   actorAvatarUrl?: string
   ttlMs: number
+  /**
+   * The signed caller a USER-principal token is minted for.
+   *
+   * A composition records user tokens through the caller-scoped authority
+   * path (`recordRuntimeAccessToken(auth, …)`), which checks that the token's
+   * actor IS the authenticated actor. Without the caller, the only path left
+   * is the service one — and that refuses every actor but the control plane's
+   * own, so a user mint through the provider was denied on the hosted worker
+   * while the same user minted fine through the workspace connection route.
+   * Absent on service mints.
+   */
+  auth?: SignedControlPlaneAuth
 }
 
 export type RelayToken = {

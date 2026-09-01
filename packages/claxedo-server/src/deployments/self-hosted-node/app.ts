@@ -176,6 +176,7 @@ import { scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { resolveHarnessForRequest } from "@claxedo/server-core/session/harness/resolution"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
+import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 
 const execFileAsync = promisify(execFile)
 
@@ -1341,17 +1342,7 @@ function localRelayFromEnv(
             runtimeAccessTokenSigner: runtimeSigner,
             hostTunnelTokenSigner: hostSigner,
             targetLookup: localRelayTargetLookup({ sandboxManager }),
-            recordRuntimeAccessToken: (input) =>
-              authority.recordRuntimeAccessTokenForService({
-                jti: input.jti,
-                workspaceId: input.workspaceId,
-                hostId: input.hostId,
-                actorId: input.actorId,
-                actorKind: input.actorKind,
-                principalKind: input.principalKind,
-                role: input.role,
-                expiresAt: input.expiresAt,
-              }),
+            recordRuntimeAccessToken: (input) => recordRelayRuntimeToken(authority, input),
           }),
         }
       : {}),

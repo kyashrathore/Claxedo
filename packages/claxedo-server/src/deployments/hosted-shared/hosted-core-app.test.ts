@@ -442,7 +442,11 @@ describe("hosted-core session-list", () => {
   function core(authority: Record<string, unknown>) {
     const base = plane()
     const services = base.services as unknown as { authority: Record<string, unknown> }
-    services.authority = { ...services.authority, ...authority }
+    services.authority = {
+      openWorkspace: vi.fn(async () => ({ role: "owner", workspace: { access: "cloud", backing: "cloud-vm" } })),
+      ...services.authority,
+      ...authority,
+    }
     return createHostedCoreApp(base, options) as unknown as Hono
   }
   const signed = { authorization: "Bearer user-1" }
@@ -474,6 +478,76 @@ describe("hosted-core session-list", () => {
     expect(response.status).toBe(200)
     expect(listWorkspaces).toHaveBeenCalled()
     expect(listSessions).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_9" })
+  })
+
+  /**
+   * The acceptance the user actually asked for: a session created ON the
+   * machine, in a shared workspace, listed by the hosted app. The registry has
+   * no row for it; the list must come from the host through the relay.
+   */
+  test("lists a user-hosted workspace's sessions from the host, not the empty registry", async () => {
+    const base = plane()
+    const services = base.services as unknown as {
+      authority: Record<string, unknown>
+      relay: Record<string, unknown>
+    }
+    services.authority = {
+      ...services.authority,
+      openWorkspace: vi.fn(async () => ({
+        role: "owner",
+        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1", project_id: "prj_1" },
+      })),
+      activeWorkspaceHost: vi.fn(async () => ({
+        active: true, host_id: "host_laptop", workspace_id: "ws_1",
+        expires_at: Date.now() + 60_000, last_seen_at: Date.now(),
+      })),
+      listSessions: vi.fn(async () => []),
+      usersMe: vi.fn(async () => ({ actor_id: "actor_user_1", actor_kind: "human" })),
+    }
+    services.relay = {
+      ...services.relay,
+      provider: {
+        mintRuntimeAccessToken: vi.fn(async () => ({ token: "rat", expiresAt: 0, jti: "j" })),
+        getRelayEndpoint: vi.fn(async () => "https://relay.test"),
+      },
+    }
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith("/workspaces/ws_1/global/health")) return Response.json({ workspaceId: "ws_1" })
+      if (url.endsWith("/workspaces/ws_1/session")) {
+        return Response.json([{ id: "ses_laptop", title: "created locally", directory: "/repo", time: { created: 5, updated: 6 } }])
+      }
+      return new Response("not found", { status: 404 })
+    }) as unknown as typeof globalThis.fetch
+    try {
+      const app = createHostedCoreApp(base, options) as unknown as Hono
+      const response = await app.request(
+        "/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1",
+        { headers: { authorization: "Bearer user-1" } },
+      )
+      expect(response.status).toBe(200)
+      const body = await response.json() as { items: Array<{ sessionId: string; title: string }> }
+      expect(body.items.map((item) => [item.sessionId, item.title])).toEqual([["ses_laptop", "created locally"]])
+      expect(services.authority.listSessions, "the registry is not the source for a user-hosted workspace").not.toHaveBeenCalled()
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
+  /** Direct workspace scope: an offline host is the answer, not an empty list. */
+  test("answers the host being offline with its own status, not an empty list", async () => {
+    const response = await core({
+      openWorkspace: vi.fn(async () => ({
+        role: "owner",
+        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1" },
+      })),
+      activeWorkspaceHost: vi.fn(async () => ({ active: false })),
+      listSessions: vi.fn(async () => []),
+      usersMe: vi.fn(async () => ({ actor_id: "actor_user_1", actor_kind: "human" })),
+    }).request("/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1", { headers: signed })
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({ error: { code: "user_hosted_workspace_unavailable", message: expect.any(String) } })
   })
 
   test("refuses an unsigned caller with JSON, not a rendered 404", async () => {

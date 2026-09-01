@@ -48,7 +48,7 @@ import {
   hostedRouteGuardExemptions,
   type RouteGuardExemption,
 } from "../../platform/auth/request-guard"
-import { parseSessionListQuery, sessionInventoryResponse, signedSessionList } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
@@ -419,13 +419,8 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
     try {
       return context.json(await signedSessionList(services, authResult.auth, parseSessionListQuery(new URL(context.req.url))))
     } catch (err) {
-      if (err instanceof ControlPlaneAuthError) return context.json(controlPlaneAuthErrorBody(err), err.status)
-      if (err instanceof Error && err.message === "invalid_session_list_cursor") {
-        return context.json(
-          { error: { code: "invalid_session_list_cursor", message: "Session list cursor does not match this query" } },
-          400,
-        )
-      }
+      const mapped = sessionListErrorResponse(err)
+      if (mapped) return mapped
       throw err
     }
   })

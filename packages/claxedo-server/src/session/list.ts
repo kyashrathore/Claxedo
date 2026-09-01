@@ -6,8 +6,11 @@ import {
   type SessionListQuery,
   type SessionListResponse,
 } from "@claxedo/server-core/session/navigation-list"
-import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthErrorBody, ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { ControlPlaneServices } from "../authority/services"
+import { HostedSessionPullError, pullHostedControlSessionList } from "../authority/hosted-session-pull"
+import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
 
 /** Canonical flat inventory response for `GET /api/control/sessions`. */
 export function sessionInventoryResponse(sessions: unknown) {
@@ -35,7 +38,7 @@ export function sessionInventoryResponse(sessions: unknown) {
  * local product and stays with the canonical route.
  */
 export async function signedSessionList(
-  services: { authority?: WorkspaceAuthority },
+  services: ControlPlaneServices,
   auth: SignedControlPlaneAuth,
   query: SessionListQuery,
 ): Promise<SessionListResponse> {
@@ -51,7 +54,12 @@ export async function signedSessionList(
     const projectId = query.projectId
     const sessions = (await Promise.all(
       workspaceIds.map(async (workspaceId) => {
-        const rows = await authority.listSessions(auth, { workspaceId })
+        // A user-hosted workspace's sessions live on its host, not here. One
+        // host being offline must not blank the whole project's list — the
+        // workspace page reports that on its own — so an offline host
+        // contributes nothing rather than an error.
+        const hosted = await hostedSessions(services, auth, workspaceId).catch(() => undefined)
+        const rows = hosted ?? await authority.listSessions(auth, { workspaceId })
         // The authority's per-workspace list carries neither the workspace id
         // it was asked for nor (always) a project id — see convex/sessions.ts
         // `list`. Both are known here, and without them every row would fail
@@ -67,7 +75,9 @@ export async function signedSessionList(
     return buildSessionListResponse({ query, sessions })
   }
   const workspaceId = requiredWorkspaceId(directWorkspaceId)
-  const sessions = await requireAuthority(services).listSessions(auth, { workspaceId })
+  // Direct workspace scope: an offline host is the answer, not an empty list.
+  const sessions = await hostedSessions(services, auth, workspaceId)
+    ?? await requireAuthority(services).listSessions(auth, { workspaceId })
   return buildSessionListResponse({
     query: {
       ...query,
@@ -78,6 +88,39 @@ export async function signedSessionList(
     },
     sessions: Array.isArray(sessions) ? sessions : [],
   })
+}
+
+/**
+ * The host's sessions for a user-hosted workspace, or undefined for any other
+ * kind. Pull failures (host offline, relay unreachable, denied) propagate as
+ * the pull layer's own errors; `sessionListErrorResponse` answers them.
+ */
+function hostedSessions(services: ControlPlaneServices, auth: SignedControlPlaneAuth, workspaceId: string) {
+  return pullHostedControlSessionList(services, auth, { workspaceId })
+}
+
+/**
+ * The one answer every session-list route gives for a failed read.
+ *
+ * Three routes serve this list (canonical, hosted, hosted-core). Each used to
+ * carry its own copy of the auth and cursor mapping; now that the read can
+ * also fail at the host — 409 host offline, 503 relay unavailable — the
+ * mapping lives once, and a route that cannot map the error re-throws it.
+ */
+export function sessionListErrorResponse(error: unknown): Response | undefined {
+  if (error instanceof ControlPlaneAuthError) {
+    return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
+  }
+  if (error instanceof Error && error.message === "invalid_session_list_cursor") {
+    return Response.json(
+      { error: { code: "invalid_session_list_cursor", message: "Session list cursor does not match this query" } },
+      { status: 400 },
+    )
+  }
+  if (error instanceof HostedSessionPullError || error instanceof WorkspaceRuntimeTargetError) {
+    return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
+  }
+  return undefined
 }
 
 export function requiredWorkspaceId(value: string | undefined) {

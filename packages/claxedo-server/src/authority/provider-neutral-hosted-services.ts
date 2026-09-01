@@ -41,6 +41,7 @@ import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT, createSandboxManager, type SandboxLeaseStore } from "@claxedo/sandbox-manager"
 import { HostedWorkerCompositionError } from "./composition-error"
+import { recordRelayRuntimeToken } from "./relay-token-record"
 
 export { HostedWorkerCompositionError } from "./composition-error"
 
@@ -329,17 +330,7 @@ export function composeProviderNeutralHostedControlPlane(
     runtimeAccessTokenSigner: runtimeAccessSigner,
     hostTunnelTokenSigner: hostTunnelSigner,
     targetLookup: relayTargetLookup,
-    recordRuntimeAccessToken: (input) =>
-      bindings.authority.recordRuntimeAccessTokenForService({
-        jti: input.jti,
-        workspaceId: input.workspaceId,
-        hostId: input.hostId,
-        actorId: input.actorId,
-        actorKind: input.actorKind,
-        principalKind: input.principalKind,
-        role: input.role,
-        expiresAt: input.expiresAt,
-      }),
+    recordRuntimeAccessToken: (input) => recordRelayRuntimeToken(bindings.authority, input),
     telemetry,
   })
   const services: ControlPlaneServices = {

@@ -23,8 +23,7 @@ import {
   sessionListStorePageFilter,
   sessionInventoryResponse,
   requiredWorkspaceId,
-  signedSessionList,
-} from "../list"
+  signedSessionList, sessionListErrorResponse } from "../list"
 import { messagePageCursor, parseMessagePageInput } from "../message-page"
 import type { SessionShareChangedSink } from "../session-people-contract"
 import { SessionPeopleControlRoutes } from "./session-people-routes"
@@ -272,15 +271,8 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const auth = await signedAuth(c.req.raw, options)
         return c.json(await signedSessionList(services, auth, query))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        if (err instanceof Error && err.message === "invalid_session_list_cursor") {
-          return c.json({
-            error: {
-              code: "invalid_session_list_cursor",
-              message: "Session list cursor does not match this query",
-            },
-          }, 400)
-        }
+        const mapped = sessionListErrorResponse(err)
+        if (mapped) return mapped
         throw err
       }
     })

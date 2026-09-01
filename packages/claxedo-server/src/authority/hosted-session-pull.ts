@@ -11,7 +11,7 @@ function workspaceRoleAllowsWrite(role: unknown) {
   return role === "editor" || role === "admin" || role === "owner"
 }
 
-class HostedSessionPullError extends Error {
+export class HostedSessionPullError extends Error {
   constructor(
     readonly status: number,
     readonly code: string,
@@ -137,10 +137,12 @@ async function hostedWorkspaceForPull(
   services: ControlPlaneServices,
   auth: ControlPlaneAuthContext | undefined,
   workspaceId: string,
+  /** An already-opened workspace, so a caller that had to look first does not open it twice. */
+  preopened?: unknown,
 ) {
   const signed = requireSignedAuth(auth)
   const authority = requireAuthority(services)
-  const opened = await authority.openWorkspace(signed, { workspaceId })
+  const opened = preopened ?? await authority.openWorkspace(signed, { workspaceId })
   const role = relayRole(rec(opened)?.role)
   if (!role) throw new HostedSessionPullError(403, "workspace_authorization_denied", "Workspace access is denied")
   const workspace = rec(rec(opened)?.workspace)
@@ -189,11 +191,13 @@ async function runtimeFetch(
       "Workspace is missing org identity for runtime token minting",
     )
   }
+  const signed = requireSignedAuth(auth)
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: input.hostId,
     principalKind: "user",
-    ...await resolveRuntimeActor(requireAuthority(services), requireSignedAuth(auth)),
+    auth: signed,
+    ...await resolveRuntimeActor(requireAuthority(services), signed),
     orgId,
     role: input.role,
     ttlMs: 10 * 60_000,
@@ -282,6 +286,62 @@ export async function pullHostedControlSession(
     ok: true,
     sessionId: input.sessionId,
   }
+}
+
+/**
+ * Every session a user-hosted workspace's HOST currently holds, shaped as
+ * authority session rows.
+ *
+ * The control plane keeps no session store for user-hosted workspaces — the
+ * app's placement table says so and routes every read to the relay. Its
+ * registry only ever receives sessions created THROUGH it (reserve → create
+ * with a preassigned id → the runtime registers). A session the user creates
+ * on the machine itself is therefore never in the registry, and the web app's
+ * sidebar, which lists from the registry, showed nothing for a workspace whose
+ * host held sixty-three of them. This is the missing read: ask the host, the
+ * same way `pullHostedControlSession` asks it for one.
+ *
+ * Returns undefined when the workspace is not user-hosted, so a caller can
+ * fall through to the registry without opening the workspace twice.
+ */
+export async function pullHostedControlSessionList(
+  services: ControlPlaneServices,
+  auth: ControlPlaneAuthContext | undefined,
+  input: { workspaceId: string },
+): Promise<Record<string, unknown>[] | undefined> {
+  const signed = requireSignedAuth(auth)
+  // Kind first, role second: a cloud workspace answers undefined here and is
+  // listed from the registry, whatever relay role the caller holds.
+  const opened = await requireAuthority(services).openWorkspace(signed, { workspaceId: input.workspaceId })
+  const record = rec(rec(opened)?.workspace)
+  if (record?.access !== "user-hosted" || record?.backing !== "local-worktree") return
+  const workspace = await hostedWorkspaceForPull(services, signed, input.workspaceId, opened)
+  const target = {
+    ...workspace,
+    ...await resolveWorkspaceRuntimeTarget(services, signed, workspace),
+  }
+  const sessions = await verifiedRuntimeJson<unknown>(services, signed, {
+    ...target,
+    path: runtimePath("/session"),
+  })
+  const projectId = txt(workspace.workspace?.project_id) ?? txt(workspace.workspace?.projectId)
+  return (Array.isArray(sessions) ? sessions : []).flatMap((row) => {
+    const item = rec(row)
+    if (!item || !sessionPayloadId(item)) return []
+    // Runtime rows carry `time.{created,updated,archived}`; the navigation
+    // list reads `created_at`/`updated_at`/`archived_at`. The workspace and
+    // project ids are stamped for the same reason the canonical route stamps
+    // them on authority rows: without them every row fails the scope filter.
+    const time = rec(item.time)
+    return [{
+      ...item,
+      workspace_id: input.workspaceId,
+      ...(projectId ? { project_id: projectId } : {}),
+      ...(num(time?.created) !== undefined ? { created_at: num(time?.created) } : {}),
+      ...(num(time?.updated) !== undefined ? { updated_at: num(time?.updated) } : {}),
+      ...(num(time?.archived) !== undefined ? { archived_at: num(time?.archived) } : {}),
+    }]
+  })
 }
 
 export async function pullHostedControlSessionMessages(

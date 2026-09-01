@@ -94,7 +94,7 @@ import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-teleme
 import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
 import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex/store"
-import { parseSessionListQuery, sessionInventoryResponse, signedSessionList } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 
@@ -712,13 +712,8 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       try {
         return c.json(await signedSessionList(services, authResult.auth, parseSessionListQuery(new URL(c.req.url))))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        if (err instanceof Error && err.message === "invalid_session_list_cursor") {
-          return c.json(
-            { error: { code: "invalid_session_list_cursor", message: "Session list cursor does not match this query" } },
-            400,
-          )
-        }
+        const mapped = sessionListErrorResponse(err)
+        if (mapped) return mapped
         throw err
       }
     })

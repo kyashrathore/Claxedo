@@ -110,7 +110,7 @@ async function runtimeFetch(
     workspaceId: input.workspaceId,
     hostId: target.hostId,
     ...(input.auth?.mode === "signed"
-      ? { principalKind: "user" as const, ...await resolveRuntimeActor(requireAuthority(services), input.auth) }
+      ? { principalKind: "user" as const, auth: input.auth, ...await resolveRuntimeActor(requireAuthority(services), input.auth) }
       : CONTROL_PLANE_RUNTIME_ACTOR),
     orgId,
     role: input.auth?.mode === "signed" ? requiredRole(input.authorityRole) : "owner",

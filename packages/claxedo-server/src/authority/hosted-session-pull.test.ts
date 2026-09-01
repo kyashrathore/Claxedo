@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ControlPlaneServices } from "./services"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { pullHostedControlSessionMessages } from "./hosted-session-pull"
+import { pullHostedControlSessionList, pullHostedControlSessionMessages } from "./hosted-session-pull"
 
 const originalFetch = globalThis.fetch
 
@@ -207,6 +207,10 @@ describe("hosted session pull", () => {
       hostId: "host_user_1",
       orgId: "org_1",
       role: "owner",
+      // The signed caller rides the user mint so the composition can record
+      // it under the caller rather than the service-only path that refused it.
+      principalKind: "user",
+      auth: signed,
     }))
     expect(getRelayEndpoint).toHaveBeenCalledWith("ws_1", "eu-west")
     expect(fetch).toHaveBeenCalledTimes(3)
@@ -218,6 +222,58 @@ describe("hosted session pull", () => {
       fencingToken: 3,
       intakeReady: true,
     })
+  })
+
+  /**
+   * The read the web app's sidebar was missing. The registry holds nothing for
+   * a user-hosted workspace whose sessions were created on the machine, so the
+   * list must come from the host — shaped as authority rows, ids stamped, so
+   * the navigation list's scope filter keeps them.
+   */
+  test("lists a user-hosted workspace's sessions from its host, shaped as authority rows", async () => {
+    const svc = services()
+    const mintRuntimeAccessToken = vi.fn(async () => ({ token: "relay-runtime-token" }))
+    svc.relay.provider = { mintRuntimeAccessToken, getRelayEndpoint: vi.fn(async () => "https://relay.eu.test") } as never
+    svc.authority = {
+      usersMe: canonicalUsersMe(),
+      openWorkspace: vi.fn(async () => ({
+        role: "owner",
+        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1", project_id: "prj_1", home_region: "eu-west" },
+      })),
+      activeWorkspaceHost: vi.fn(async () => ({
+        active: true as const, host_id: "host_user_1", workspace_id: "ws_1",
+        expires_at: Date.now() + 60_000, last_seen_at: Date.now(),
+      })),
+    } as never
+    globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url === "https://relay.eu.test/workspaces/ws_1/global/health") return Response.json({ workspaceId: "ws_1" })
+      if (url === "https://relay.eu.test/workspaces/ws_1/session") {
+        return Response.json([
+          { id: "ses_local", title: "created on the laptop", directory: "/repo", time: { created: 10, updated: 20 } },
+          { id: "ses_archived", title: "old", directory: "/repo", time: { created: 1, updated: 2, archived: 3 } },
+          { nope: true },
+        ])
+      }
+      return new Response("not found", { status: 404 })
+    }) as unknown as typeof globalThis.fetch
+
+    const rows = await pullHostedControlSessionList(svc, signed, { workspaceId: "ws_1" })
+
+    expect(rows).toEqual([
+      expect.objectContaining({ id: "ses_local", workspace_id: "ws_1", project_id: "prj_1", created_at: 10, updated_at: 20 }),
+      expect.objectContaining({ id: "ses_archived", archived_at: 3 }),
+    ])
+    expect(mintRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ principalKind: "user", auth: signed }))
+  })
+
+  test("answers undefined for a workspace that is not user-hosted, so the registry is used", async () => {
+    const svc = services()
+    svc.authority = {
+      usersMe: canonicalUsersMe(),
+      openWorkspace: vi.fn(async () => ({ role: "owner", workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" } })),
+    } as never
+    await expect(pullHostedControlSessionList(svc, signed, { workspaceId: "ws_cloud" })).resolves.toBeUndefined()
   })
 
   test("fails closed when a user-hosted workspace has no active host link", async () => {
