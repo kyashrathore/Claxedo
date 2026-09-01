@@ -120,7 +120,6 @@ import { createMessageNavRoom } from "./message-nav-layout"
 import { messageNavCurrentID, messageNavPreview, messageNavVisible } from "./message-nav-preview"
 import { createMessageNavDeferredMount } from "./message-nav-deferred-mount"
 import { scheduleTimelineFirstFoldReveal } from "./timeline-first-fold-reveal"
-import { scheduleTimelineProgressiveRelease } from "./timeline-progressive-release"
 import { BP_MD } from "@/ui/controls/breakpoints"
 import { retargetSessionRef } from "@/platform/identity/session-ref"
 import type { MessageTimelineProps } from "./message-timeline-props"
@@ -139,7 +138,6 @@ type TimelineRowByTag<T extends TimelineRow.TimelineRow["_tag"]> = Extract<Timel
 
 const timelineFallbackItemSize = 60
 const timelineInitialEstimatedItemSize = 180
-const timelineColdFirstFoldOverscanLimit = 2
 type TimelineCache = { measurements: VirtualItem[]; toolOpen: Record<string, boolean | undefined>; groupOpen: Record<string, boolean | undefined> }
 const timelineCache = new Map<string, TimelineCache>()
 
@@ -635,28 +633,14 @@ export function MessageTimeline(props: MessageTimelineProps) {
   const [groupOpen, setGroupOpen] = createStore<Record<string, boolean | undefined>>(cached?.groupOpen ?? {})
   const initialRowCount = timelineRows().length
   const [renderOverscan, setRenderOverscan] = createSignal(initialMeasurements?.length ? 6 : 1)
-  const [renderRangeLimit, setRenderRangeLimit] = createSignal(
-    warmMeasurements
-      ? Number.MAX_SAFE_INTEGER
-      : initialRowCount > 0
-        ? Math.min(timelineColdFirstFoldOverscanLimit, initialRowCount)
-        : 1,
-  )
   const [initialRevealReady, setInitialRevealReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const [progressiveReady, setProgressiveReady] = createSignal(warmMeasurements || initialRowCount === 0)
   const messageNavMountReady = createMessageNavDeferredMount(initialRevealReady, messageNavGutterVisible)
   let initialRowsScheduled = initialRowCount > 0
   let cancelFirstFoldReveal: (() => void) | undefined
-  let cancelProgressiveRelease: (() => void) | undefined
-  const cancelBackgroundRangeRelease = () => {
-    cancelProgressiveRelease?.()
-    cancelProgressiveRelease = undefined
-  }
   const prepareScrollOverscan = () => {
-    cancelBackgroundRangeRelease()
     if (!initialTurnExpanded()) setInitialTurnExpanded(true)
     if (renderOverscan() < 6) setRenderOverscan(6)
-    if (renderRangeLimit() !== Number.MAX_SAFE_INTEGER) setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
   }
   const prepareInteractionScroll = () => {
     const plan = timelineInteractionPlan({
@@ -722,33 +706,22 @@ export function MessageTimeline(props: MessageTimelineProps) {
     // output keyed on the extractor's IDENTITY plus the computed range/count
     // (virtual-core getVirtualIndexes deps). Solid signals read while the
     // extractor RUNS are invisible to that memo, so a stable closure serves
-    // stale indexes whenever only those signals change (the renderRangeLimit
-    // ramp after a reload left the timeline mounting one row forever).
+    // stale indexes whenever only those signals change (a stale extractor
+    // once left the timeline mounting one row forever after a reload).
     // Reading them here — at option-read time inside the adapter's tracked
     // setOptions pass — subscribes the virtualizer and mints a new identity.
     get rangeExtractor() {
       const rows = timelineRows()
       const activeID = activeMessageID()
       const overscan = renderOverscan()
-      const rangeLimit = renderRangeLimit()
       const pinned = resizeAnchor.pinnedIndexes()
-      const anchorBottom = props.shouldAnchorBottom()
       return (range: { startIndex: number; endIndex: number; overscan: number; count: number }) => {
         const active = activeID
           ? rows.findLastIndex((row) => "userMessageID" in row && row.userMessageID === activeID)
           : -1
-        const indexes = defaultRangeExtractor({ ...range, overscan })
-        // A cold cap may trim OVERSCAN, never viewport-visible rows. The old
-        // `slice(-rangeLimit)` could keep four estimated rows even after their
-        // canonical Markdown shrank and the virtualizer expanded the visible
-        // range to six or eight, leaving a blank fold until background release.
-        const visibleCount = Math.max(0, range.endIndex - range.startIndex + 1)
-        const retainedCount = Math.max(rangeLimit, visibleCount)
-        const visibleIndexes = anchorBottom && retainedCount < indexes.length
-          ? indexes.slice(-retainedCount)
-          : indexes
         return filterVirtualIndexes(
-          [...new Set([...pinned, ...visibleIndexes, ...(active < 0 ? [] : [active])])].sort((a, b) => a - b),
+          [...new Set([...pinned, ...defaultRangeExtractor({ ...range, overscan }), ...(active < 0 ? [] : [active])])]
+            .sort((a, b) => a - b),
           range.count,
         )
       }
@@ -826,27 +799,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
   })
 
   let firstFoldRevealKey: string | undefined
-  const scheduleBackgroundRangeRelease = () => {
-    cancelBackgroundRangeRelease()
-    if (!props.active()) return
-    const activationKey = sessionKey()
-    cancelProgressiveRelease = scheduleTimelineProgressiveRelease({
-      sessionID: sessionID(),
-      activationKey,
-      // A retained SessionPage keeps the same session key while hidden. Pane
-      // ownership is therefore part of activation identity: otherwise every
-      // cold surface releases its full virtual range after the quiet timer and
-      // parses Markdown in the background while the user is in another task.
-      currentActivationKey: () => props.active() ? sessionKey() : "",
-      release: () => {
-        cancelProgressiveRelease = undefined
-        batch(() => {
-          setInitialTurnExpanded(true)
-          setRenderRangeLimit(Number.MAX_SAFE_INTEGER)
-        })
-      },
-    })
-  }
 
   const scheduleFirstFoldReveal = () => {
     if (warmMeasurements || initialRevealReady() || timelineRows().length === 0) return
@@ -883,28 +835,12 @@ export function MessageTimeline(props: MessageTimelineProps) {
     })
   }
 
-  // Full-history rendering belongs to the visible surface. If the user leaves
-  // during the quiet window, cancel it; a later warm return starts a fresh
-  // quiet window before expanding the range. The capped first fold and its
-  // cached measurements remain mounted throughout.
-  createEffect(() => {
-    const active = props.active()
-    const revealed = initialRevealReady()
-    const capped = renderRangeLimit() !== Number.MAX_SAFE_INTEGER
-    if (!active) {
-      cancelBackgroundRangeRelease()
-      return
-    }
-    if (revealed && capped && !cancelProgressiveRelease) scheduleBackgroundRangeRelease()
-  })
-
   createEffect(() => {
     const length = timelineRows().length
     if (length === 0 || initialRowsScheduled) return
     initialRowsScheduled = true
     if (warmMeasurements) return
     batch(() => {
-      setRenderRangeLimit(Math.min(timelineColdFirstFoldOverscanLimit, length))
       setInitialRevealReady(false)
       setProgressiveReady(false)
     })
@@ -954,7 +890,6 @@ export function MessageTimeline(props: MessageTimelineProps) {
     while (timelineCache.size > 64) timelineCache.delete(timelineCache.keys().next().value!) // remounting without a snapshot re-estimates heights and visibly shifts; 16 thrashed
     if (bottomAnchorFrame !== undefined) cancelAnimationFrame(bottomAnchorFrame)
     cancelFirstFoldReveal?.()
-    cancelBackgroundRangeRelease()
     resizeAnchor.dispose()
     props.setScrollToEnd?.(() => {})
     props.setScrollToMessage?.(undefined)
