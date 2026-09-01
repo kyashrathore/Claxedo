@@ -246,4 +246,23 @@ describe("the gate stays inside the compat router", () => {
       expect(routeOwnership(route).handler).not.toBe(RouteHandler.SandboxRuntime)
     }
   })
+
+  /**
+   * The one route that DOES take the runtime path on purpose. `/provider`
+   * (exact) is runtime-owned so a workspace-scoped request — including one a
+   * phone sends through the relay — reaches the workspace runtime instead of
+   * being refused by the host tunnel's ownership guard. The runtime answers
+   * non-opencode harnesses through the host-injected catalog, so this is not
+   * an escape from a gate, it is the same catalog by another door.
+   *
+   * Its children are NOT: the OAuth flows under `/provider/<id>/...` and
+   * `/provider/auth` are central and gated here, and the runtime implements
+   * none of them. A prefix rule would have taken them along.
+   */
+  test("/provider alone is runtime-owned; its auth and oauth children stay behind this gate", () => {
+    expect(routeOwnership("/provider").handler).toBe(RouteHandler.SandboxRuntime)
+    for (const route of ["/provider/auth", "/provider/anthropic/oauth/authorize", "/provider/claude-acp/oauth/start"]) {
+      expect(routeOwnership(route).handler).not.toBe(RouteHandler.SandboxRuntime)
+    }
+  })
 })

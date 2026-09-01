@@ -58,6 +58,7 @@ import { createUsageOutboxSync } from "../usage/outbox-sync"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
 import { createLocalWorkspaceRelayProxy } from "../workspace/runtime-dispatch/shared-workspace-endpoint"
+import { providerBody } from "../opencode/compat-routes/provider-config"
 
 const log = Log.create({ service: "local-server" })
 
@@ -135,6 +136,12 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   configureEmbeddedWorkspaceRuntime({
     opencodeRequest,
     opencodeCompat,
+    // The same `providerBody` the compat router serves unscoped, so a
+    // workspace-scoped `/provider` (embedded dispatch, or a relayed request
+    // from a phone) answers the same catalog. One implementation, two mount
+    // points by scope — the `/command` precedent in route-ownership.ts.
+    providerCatalog: ({ harnessId, providerId }) =>
+      providerBody(harnessId, { env: process.env, services }, providerId),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: WorkGraph is a hosted capability, and its absence
     // from an unsigned desktop is this line rather than a runtime flag.

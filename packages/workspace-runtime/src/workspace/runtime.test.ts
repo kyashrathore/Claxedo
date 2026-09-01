@@ -2010,6 +2010,51 @@ describe("workspace runtime auth helpers", () => {
     expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
   })
 
+  /**
+   * Non-opencode harnesses get their catalog from the HOST, through the seam,
+   * or not at all. The kit must never invent one (it has no credentials to
+   * derive it from) and must not answer "unavailable" when the host can.
+   */
+  test("serves a non-opencode provider catalog through the host-injected seam", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-seam-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const asked: Array<{ harnessId: string; providerId?: string }> = []
+
+    const app = new Hono()
+    mountTestHost(app, {
+      opencodeCompat: true,
+      providerCatalog: async (input) => {
+        asked.push(input)
+        if (input.harnessId === "broken") return { ok: false, error: { code: "provider_models_unavailable" } }
+        return { all: [{ id: "anthropic", name: "Anthropic", models: { "claude-x": { id: "claude-x" } } }], default: {}, connected: ["anthropic"] }
+      },
+    })
+
+    const pi = await app.request("http://localhost/provider?harness=pi&provider=anthropic")
+    expect(pi.status).toBe(200)
+    expect(await pi.json()).toMatchObject({ connected: ["anthropic"] })
+    expect(asked).toEqual([{ harnessId: "pi", providerId: "anthropic" }])
+
+    // A host that says "unavailable" is answered as the compat router would.
+    const broken = await app.request("http://localhost/provider?harness=broken")
+    expect(broken.status).toBe(502)
+  })
+
+  test("still refuses a non-opencode catalog when no host seam is supplied", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-noseam-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const app = new Hono()
+    mountTestHost(app, { opencodeCompat: true })
+
+    const res = await app.request("http://localhost/provider?harness=pi")
+    expect(res.status).toBe(502)
+    expect(await res.json()).toMatchObject({ ok: false, error: { code: "provider_models_unavailable", harness: "pi" } })
+  })
+
   test("managed event streams use the canonical filtered hub instead of an untrusted upstream", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-managed-events-"))
     tempDirs.push(dir)

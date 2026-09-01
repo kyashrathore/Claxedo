@@ -197,6 +197,24 @@ export type WorkspaceHostOptions = {
    * env flags into `true`/`false`.
    */
   opencodeCompat?: boolean
+  /**
+   * Host-owned provider catalog for harnesses OTHER than opencode.
+   *
+   * `/provider` is served here for every workspace-scoped caller — the cloud
+   * control plane proxies it, and a relayed user-hosted request lands here
+   * too. The kit can answer it only for opencode (by proxying the engine);
+   * for `pi`, `claude-sdk`, `codex-app-server` and the rest the catalog is
+   * derived from credentials and env the HOST owns and the kit must not read.
+   * Without this seam those harnesses answered 502 on this route while the
+   * host's own compat router answered them fine — and once `/provider` is
+   * runtime-owned, the host's router is no longer in the path for a
+   * workspace-scoped request. This is how the kit stays a superset of what
+   * the host served before, without importing the host.
+   *
+   * Return the catalog body; `ok: false` in it is answered as 502, matching
+   * the host router. Absent, non-opencode harnesses keep the kit's 502.
+   */
+  providerCatalog?: (input: { harnessId: string; providerId?: string }) => Promise<unknown>
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** Private-session authority selected by the host composition. */
@@ -2136,7 +2154,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // sidebar can list model metadata for both OpenCode and ACP runners.
       app.get("/provider", async (c) => {
         const requestedHarness = c.req.query("harness") || c.req.query("runner")
-        if (runner.id !== "opencode" && requestedHarness !== "opencode") return c.json(providerUnavailable(runner), 502)
+        const harnessId = requestedHarness || runner.id
+        if (harnessId !== "opencode") {
+          // Not the kit's to answer: see `WorkspaceHostOptions.providerCatalog`.
+          if (!hostOptions.providerCatalog) return c.json(providerUnavailable(harnessId), 502)
+          const detail = c.req.query("provider")
+          const body = await hostOptions.providerCatalog({ harnessId, ...(detail ? { providerId: detail } : {}) })
+          const failed = !!body && typeof body === "object" && (body as { ok?: unknown }).ok === false
+          return c.json(body, failed ? 502 : 200)
+        }
         if (hostOptions.opencodeCompat !== true) {
           return c.json(
             providerUnavailable(

@@ -656,3 +656,33 @@ describe("compat hub -> globalBus bridge", () => {
     ])
   })
 })
+
+
+/**
+ * The seam is only worth anything if the composition root's hook actually
+ * reaches the runtime that answers `/provider`. This drives a real embedded
+ * runtime and asks it for a non-opencode catalog.
+ */
+describe("embedded runtime provider catalog", () => {
+  test("a workspace-scoped /provider for a non-opencode harness answers the host's catalog", async () => {
+    const { root, project } = await makeWorkspaceRoot("embedded-provider-")
+    const asked: string[] = []
+    configureEmbeddedWorkspaceRuntime({
+      opencodeRequest: async () => new Response(null, { status: 404 }),
+      providerCatalog: async ({ harnessId }) => {
+        asked.push(harnessId)
+        return { all: [{ id: "anthropic", name: "Anthropic", models: {} }], default: {}, connected: [] }
+      },
+    })
+    try {
+      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_provider", project), { config: "skip" })
+      const res = await runtime.app.request("http://runtime.test/provider?harness=claude-sdk")
+      expect(res.status).toBe(200)
+      expect(await res.json()).toMatchObject({ all: [{ id: "anthropic" }] })
+      expect(asked).toEqual(["claude-sdk"])
+    } finally {
+      await shutdownEmbeddedWorkspaceRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+})

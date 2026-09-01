@@ -51,6 +51,7 @@ const hosts = new Map<string, EmbeddedRuntime>()
 // external-URL mode it rewrites onto the configured URL.
 let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
 let configuredOpencodeCompat = true
+let configuredProviderCatalog: WorkspaceRuntimeServerOptions["providerCatalog"] | undefined
 let configuredPiModelBackend: PiModelBackendResolver | undefined
 /**
  * Host-supplied route groups for every embedded runtime this process creates.
@@ -106,6 +107,12 @@ let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: 
 export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRequest: OpenCodeRequestFn
   opencodeCompat?: boolean
+  /**
+   * The host's provider catalog for non-opencode harnesses, so a
+   * workspace-scoped `/provider` answers the same catalog the compat router
+   * serves unscoped. See `WorkspaceHostOptions.providerCatalog`.
+   */
+  providerCatalog?: WorkspaceRuntimeServerOptions["providerCatalog"]
   piModelBackend?: PiModelBackendResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
@@ -122,6 +129,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   }
   configuredOpencodeRequest = input.opencodeRequest
   configuredOpencodeCompat = input.opencodeCompat ?? true
+  configuredProviderCatalog = input.providerCatalog
   configuredPiModelBackend = input.piModelBackend
   configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
@@ -265,6 +273,7 @@ function options(
     // Claxedo host decision, injected via configureEmbeddedWorkspaceRuntime
     // from the composition root (this module stays ambient-env-free).
     opencodeCompat: configuredOpencodeCompat,
+    ...(configuredProviderCatalog ? { providerCatalog: configuredProviderCatalog } : {}),
     // `createSessionRoutes` awaits this before publishing `session.lifecycle`
     // "created", so the control-plane list can never be invalidated before
     // its canonical projection row exists.

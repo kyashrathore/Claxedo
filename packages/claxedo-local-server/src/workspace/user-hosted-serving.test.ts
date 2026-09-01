@@ -96,6 +96,23 @@ describe("relay connection grain", () => {
     expect(first.resolveLocalUrl({ workspaceId: WS_B, path: "/api/wr/health" })).toBeUndefined()
   })
 
+  /**
+   * THE 403 the hosted app hit: `/provider?harness=opencode` through the
+   * relay, refused by this guard because the ownership table called
+   * `/provider` central while the workspace runtime actually serves it. A
+   * connected workspace with no model catalog cannot run a single turn.
+   * `/provider/auth` is a genuinely central OAuth flow and stays refused.
+   */
+  test("lets the relay reach the workspace's provider catalog but not its auth flows", async () => {
+    await serve([WS_A])
+    const first = live()[0]!
+    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider?harness=opencode" })?.pathname).toBe(
+      `/workspaces/${WS_A}/provider`,
+    )
+    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/auth" })).toBeUndefined()
+    expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider/anthropic/oauth/authorize" })).toBeUndefined()
+  })
+
   test("a renewing ack keeps live sockets instead of redialling every workspace", async () => {
     await serve([WS_A, WS_B])
     const before = live()

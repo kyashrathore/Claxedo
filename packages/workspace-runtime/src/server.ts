@@ -90,6 +90,8 @@ export type WorkspaceRuntimeServerOptions = {
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
   opencodeCompat?: boolean
+  /** Host-owned catalog for non-opencode harnesses. See {@link WorkspaceHostOptions.providerCatalog}. */
+  providerCatalog?: WorkspaceHostOptions["providerCatalog"]
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** Explicit private-session authority. Relay-hosted runtimes default to the remote oracle. */
@@ -438,6 +440,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.piModelBackend ? { piModelBackend: options.piModelBackend } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
+    ...(options.providerCatalog ? { providerCatalog: options.providerCatalog } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
     ...(sessionAccessPolicy ? { sessionAccessPolicy } : {}),
     ...(options.target ? { target: options.target } : {}),
