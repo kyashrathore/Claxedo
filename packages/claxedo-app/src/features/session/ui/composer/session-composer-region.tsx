@@ -1,6 +1,5 @@
 import { Show, createEffect, createMemo, onCleanup, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useSpring } from "@opencode-ai/ui/motion-spring"
 import { useLayout } from "@/features/session/app-ports"
 import { PromptInput } from "@/features/session/composer/composer"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -14,7 +13,6 @@ import { SessionRevertDock } from "./session-revert-dock"
 import type { SessionComposerState } from "./session-composer-state"
 import { SessionTodoDock } from "./session-todo-dock"
 import type { FollowupDraft } from "@/features/session/composer/ui/submit"
-import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { directorySessions } from "@/features/session/data/sync/directory-session-cache"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode } from "@/features/session/composer/mode"
@@ -128,8 +126,6 @@ export function SessionComposerRegion(props: {
 
   const [store, setStore] = createStore({
     ready: false,
-    height: 320,
-    body: undefined as HTMLDivElement | undefined,
   })
   let timer: number | undefined
   let frame: number | undefined
@@ -166,30 +162,21 @@ export function SessionComposerRegion(props: {
   onCleanup(clear)
 
   const open = createMemo(() => store.ready && props.state.dock() && !props.state.closing())
-  const progress = useSpring(() => (open() ? 1 : 0), { visualDuration: 0.3, bounce: 0 })
-  const value = createMemo(() => {
-    const next = Math.max(0, Math.min(1, progress()))
-    if (next > 0.995) return 1
-    if (next < 0.005) return 0
-    return next
-  })
+  // The dock renders at its final geometry the moment it is ready —
+  // deliberately no spring here. The composer is the core interaction
+  // surface: animating its reveal costs a motion-value loop plus per-frame
+  // style writes on every session open, and any height it passes through
+  // that differs from its resting height shifts the bottom-anchored
+  // transcript above it.
+  const value = createMemo(() => (open() ? 1 : 0))
   const dock = createMemo(() => (store.ready && props.state.dock()) || value() > 0.001)
   const rolled = createMemo(() => (props.revert?.items.length ? props.revert : undefined))
   const lift = createMemo(() => (rolled() ? 18 : 36 * value()))
-  const full = createMemo(() => Math.max(78, store.height))
 
   const openParent = () => {
     if (!parentID()) return
     props.onNavigateParent()
   }
-
-  createEffect(() => {
-    const el = store.body
-    if (!el) return
-    const update = () => setStore("height", el.getBoundingClientRect().height)
-    createResizeObserver(store.body, update)
-    update()
-  })
 
   return (
     <div
@@ -268,23 +255,28 @@ export function SessionComposerRegion(props: {
                     </div>
                   )}
                 </Show>
-                <div class="w-full min-h-32 md:min-h-40 rounded-md border border-border-weak-base bg-background-base/50 px-4 py-3 text-text-weak whitespace-pre-wrap pointer-events-none">
-                  {handoffPrompt() || language.t("prompt.loading")}
+                {/*
+                  Not a distinct loader: this box reserves the EXACT space the
+                  resting composer occupies — same min-h-[96px] frame, same
+                  editor text position, same lift as the ready branch — so the
+                  composer replaces it in place with zero layout shift. A
+                  taller or unlifted placeholder moved the whole
+                  bottom-anchored transcript when the real composer mounted.
+                */}
+                <div
+                  class="w-full pointer-events-none"
+                  style={{ "margin-top": `${rolled() ? -18 : -36}px` }}
+                >
+                  <div class="min-h-[96px] w-full rounded-xl bg-v2-background-bg-base px-4 pt-4 pb-2 leading-5 text-compact text-text-weak whitespace-pre-wrap">
+                    {handoffPrompt() || language.t("prompt.loading")}
+                  </div>
                 </div>
               </>
             }
           >
             <Show when={dock()}>
-              <div
-                classList={{
-                  "overflow-hidden": true,
-                  "pointer-events-none": value() < 0.98,
-                }}
-                style={{
-                  "max-height": `${full() * value()}px`,
-                }}
-              >
-                <div ref={(el) => setStore("body", el)}>
+              <div>
+                <div>
                   <SessionTodoDock
                     sessionID={route.params.id}
                     todos={props.state.todos()}
