@@ -302,8 +302,9 @@ describe("bound desktop account lifecycle", () => {
 
     reachable = false
     await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
-    expect(h.service.state(), "fail closed while the deployment is unreachable").toMatchObject({
+    expect(h.service.state(), "fail closed while the deployment is unreachable, and say it is transient").toMatchObject({
       status: "unavailable",
+      transient: true,
     })
 
     reachable = true

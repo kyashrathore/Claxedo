@@ -46,7 +46,14 @@ export type AccountState =
   | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string }
   | { status: "pending" }
   | { status: "signed"; identity: AccountIdentity; identityLookup?: "failed" }
-  | { status: "unavailable"; reason: "no-secure-storage" | "callback-failed" | "revoked"; detail: string }
+  /**
+   * `transient` marks a deployment that could not be REACHED: the credential
+   * was neither confirmed nor refuted, the held session survives, and the
+   * next operation re-validates. Absent, the deployment answered and the
+   * session is over. Consumers that fail closed on a verdict (the Host
+   * Connector) keep serving through a transient one.
+   */
+  | { status: "unavailable"; reason: "no-secure-storage" | "callback-failed" | "revoked"; detail: string; transient?: true }
 
 type Credential = { ok: true; token: string } | { ok: false; detail: string }
 
@@ -170,6 +177,7 @@ export function createAccountService(options: AccountServiceOptions) {
         detail: transient
           ? `the selected deployment is unreachable: ${String(error)}`
           : `the selected deployment could not validate this credential: ${String(error)}`,
+        ...(transient ? { transient: true as const } : {}),
       })
       // Fail closed either way — a credential this deployment has not
       // validated must not keep being used, and the Host Connector suspends

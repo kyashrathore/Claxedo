@@ -64,7 +64,9 @@ export const desktopMainComposition: Policy = {
   // 2026-09-01: +1 `host-connector/child-protocol.ts` growth is internal; the
   // new module is the serving push path in `main/index.ts` reaching the
   // supervisor's onServing seam (machine-wide enrollment). 83/24.
-  ceilings: { modules: 83, packages: 24 },
+  // `host-connector/account-follow.ts` is the one owner of what remote access
+  // does when the account changes (verdicts, not reachability): one module.
+  ceilings: { modules: 84, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

@@ -87,6 +87,7 @@ import { setupLazyAccount } from "./account/lazy-account"
 import { ACCOUNT_STATE_CHANGED_CHANNEL } from "./account/account-ipc"
 import { accountConfigEnvironment } from "./account/public-config"
 import { machineDisplayName, setupElectronHostConnector } from "./host-connector/electron-child"
+import { remoteAccessFollow } from "./host-connector/account-follow"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging } from "./logging"
@@ -728,7 +729,8 @@ const account = setupLazyAccount({
     // that the stop was not a decision so the return trip can undo it, and only
     // it: a user pause or revoke clears that flag inside the supervisor, so
     // "the user turned it off" is never auto-undone by a later sign-in.
-    if (previous.status === "signed" && next.status !== "signed") {
+    const follow = remoteAccessFollow(previous, next)
+    if (follow === "suspend") {
       if (hostConnector?.suspendForAuthLapse()) {
         logger.warn(
           `[host-connector] auth-lapse-suspend: account left "signed" (now "${next.status}") — remote access stopped; it will resume if the account returns`,
@@ -736,7 +738,7 @@ const account = setupLazyAccount({
       }
       return
     }
-    if (previous.status !== "signed" && next.status === "signed") {
+    if (follow === "resume") {
       void hostConnector
         ?.resumeAfterAuthLapse()
         .then((resumed) => {
