@@ -102,6 +102,7 @@ export type HostedOperationName =
   | "workspace.checkpoints.restore"
   | "workspace.connection.mint"
   | "workspace.connection.refresh"
+  | "hostLink.register"
   | "host.enrollCurrentMachine"
   | "host.enrollmentNonce"
   | "host.enrollmentHeartbeat"

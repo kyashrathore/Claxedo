@@ -190,10 +190,6 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "agentPlugins.activation": { safe: false, decode: statusResult },
   "agentPlugins.organizationDefault": { safe: false, decode: statusResult },
   "agentPlugins.update": { safe: false, decode: statusResult },
-  "connections.list": { safe: true, decode: statusResult },
-  "connections.connect": { safe: false, decode: statusResult },
-  "connections.attempt": { safe: true, decode: statusResult },
-  "connections.disconnect": { safe: true, decode: statusResult },
   // An ENVELOPE, not a bare array: `GET /api/workspace` answers
   // `{ workspaces: [...] }`, the same shape the local server's list handler
   // uses. Validated and passed through rather than unwrapped, because every
@@ -229,6 +225,9 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // asserting the absence of one that must not.
   "workspace.connection.mint": { safe: true, decode: connection },
   "workspace.connection.refresh": { safe: true, decode: connection },
+  // Signed desktop Share cannot hit the sidecar: that process does not mount
+  // the register route. The AccountPort carries the same displayName-only body
+  // share-workspace.ts already posts. Declared once, with billing below.
   // Wrapped: the route returns `{ enrollment }`. Reading `host_id` off the
   // envelope finds nothing, which is exactly what this decoder existed to
   // prevent and exactly what it did.

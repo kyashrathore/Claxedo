@@ -8,8 +8,8 @@ import { hostedControlCall } from "@/platform/account/hosted-control-call"
 import { createIntegrationsRequest } from "@/platform/account/integrations-request"
 import type { ClaxedoEvent } from "../../../../app/integrations/claxedo-events"
 import { DialogConnectIntegration, useClaxedoEvents } from "@/features/workspaces/app-ports"
-import { createCloudWorkspace } from "@/features/workspaces/data/workspace-create-api"
 import { workspaceSandboxDriversUrl, workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { createHostedWorkspace } from "@/platform/runtime/agent/workspace-create-authority"
 import { classifyProvisionFailure, readyProvisionDirectory } from "./provision-failure"
 import { sandboxProviderFacts } from "./provider-facts"
 import { loadRepositoryPickerState, type IntegrationChoice, type RepositoryChoice } from "./repository-picker"
@@ -20,26 +20,6 @@ type DialogCreateCloudProjectProps = {
 
 function controlPlaneBaseUrl(baseUrl: string) {
   return normalizeUrl(baseUrl) ?? getDefaultBaseUrl()
-}
-
-async function createCloudProject(
-  baseUrl: string,
-  provider: string,
-  name: string,
-  source: { repoUrl: string } | { connectionId: string; repo: { fullName: string } },
-) {
-  return createCloudWorkspace({
-    baseUrl,
-    // Omitted rather than sent empty when this control plane exposes no
-    // driver choice: the hosted create route accepts `driver` and ignores it
-    // (it composes ONE driver from env), so an absent field is the honest
-    // shape for "the server picks". Desktop AccountPort strips undeclared
-    // fields; browser local create still forwards `driver`.
-    ...(provider ? { driver: provider } : {}),
-    projectName: name,
-    workspaceName: "main",
-    ...source,
-  })
 }
 
 // Wire shape of `GET /api/workspace/drivers` (see `listSandboxDrivers` in
@@ -264,7 +244,14 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
         ? { connectionId: selected.connectionId, repo: { fullName: selected.fullName } }
         : { repoUrl: repoUrl() }
       const name = (selected?.name ?? repoUrl().split("/").pop()?.replace(".git", "")) || "Untitled"
-      const created = await createCloudProject(baseUrl, provider(), name, source)
+      const created = await createHostedWorkspace({
+        // Omitted rather than sent empty when this control plane exposes no
+        // driver choice: the hosted create route composes one driver from env.
+        ...(provider() ? { driver: provider() } : {}),
+        projectName: name,
+        workspaceName: "main",
+        ...source,
+      })
 
       if (!created.directory) throw new Error("Workspace create did not return a directory")
       workspaceId = created.workspaceId

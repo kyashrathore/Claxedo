@@ -132,13 +132,15 @@ export const HOSTED_OPERATIONS = {
   // would 400 every create rather than dedupe a retry. That is the same failure
   // `displayName` caused above. Until the route accepts one, this operation is
   // genuinely `unsafe`: an uncertain response must be surfaced, never retried,
-  // because a retry provisions a second billable sandbox. `account-service.run`
-  // performs exactly one fetch. `isSafeOperation` in the app registry already
-  // answers false for it, and that is the property a retry loop must consult.
+  // because a retry provisions a second billable sandbox. Nothing retries it
+  // today — `account-service.run` performs exactly one fetch, and the composer
+  // surfaces an uncertain response rather than provisioning again.
+  // `isSafeOperation` in the app registry already answers false for it, and
+  // that is the property a retry loop must consult.
   "workspace.create": {
     method: "POST",
     path: "/api/workspace/create",
-    body: ["projectId", "projectName", "workspaceName", "repoUrl", "connectionId", "repoFullName"],
+    body: ["projectId", "projectName", "workspaceName", "repoUrl", "gitBranch", "driver", "connectionId", "repoFullName"],
   },
   // `approved` is not decoration. Every lifecycle operation except `stop`
   // refuses with 409 unless the caller states the approval explicitly, and an

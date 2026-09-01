@@ -69,6 +69,7 @@ export const promptValue: Prompt = [{ type: "text", content: "hello", start: 0, 
 export const calls = { prompt: 0, async: 0, create: 0, transportAsync: 0, transportAbort: 0, shell: 0 }
 export const boots: Array<{ harness: string; sessionID?: string } | undefined> = []
 export const apiCalls: Array<{ url: string; method?: string; body?: string | null }> = []
+export const hostedOperationCalls: Array<{ operation: string; input?: Record<string, unknown> }> = []
 export const fetchCalls: Array<{ url: string; method?: string; body?: string | null }> = []
 export const unsignedCalls: Array<{ url: string; method?: string; authorization?: string | null; body?: string | null }> = []
 export const runtimeCalls: Array<{ input: string; method?: string; body?: string | null }> = []
@@ -343,6 +344,10 @@ export function createPromptSubmit(
     composerMode: defaultComposerMode,
     harnessController: testHarnessController(),
     selectedModelForSubmit: () => state.localCurrentModel,
+    createCloudWorkspace: async (operationInput) => {
+      hostedOperationCalls.push({ operation: "workspace.create", input: operationInput })
+      return { workspaceId: "ws_1", directory: "ws_1" }
+    },
     ...input,
   })
 }
@@ -1050,6 +1055,7 @@ export function resetSubmitHarness() {
   worktreeCreateCalls.length = 0
   enabledAutoAccept.length = 0
   apiCalls.length = 0
+  hostedOperationCalls.length = 0
   fetchCalls.length = 0
   unsignedCalls.length = 0
   runtimeCalls.length = 0

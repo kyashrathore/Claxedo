@@ -221,6 +221,37 @@ describe("resolveHostedOperation", () => {
     )
   })
 
+  test("carries the selected source branch through cloud workspace creation", () => {
+    expect(resolveHostedOperation("workspace.create", {
+      projectId: "project-1",
+      gitBranch: "release/next",
+    })).toEqual({
+      method: "POST",
+      path: "/api/workspace/create",
+      body: {
+        projectId: "project-1",
+        gitBranch: "release/next",
+      },
+    })
+  })
+
+  test("carries only the declared connected-repository source", () => {
+    expect(resolveHostedOperation("workspace.create", {
+      projectName: "plugins",
+      connectionId: "connection-1",
+      repoFullName: "kyashrathore/plugins",
+      unreviewed: "must-not-cross-main",
+    })).toEqual({
+      method: "POST",
+      path: "/api/workspace/create",
+      body: {
+        projectName: "plugins",
+        connectionId: "connection-1",
+        repo: { fullName: "kyashrathore/plugins" },
+      },
+    })
+  })
+
   test("fills path parameters from named input", () => {
     // `replace`, not `start`: the server's lifecycle operations are stop,
     // replace, cleanup and destroy, and every one but `stop` refuses without
@@ -291,6 +322,10 @@ describe("resolveHostedOperation", () => {
         projectName: "demo",
         workspaceName: "main",
         connectionId: "conn_1",
+        // `driver` is declared, so the signed desktop path forwards the create
+        // dialog's provider choice instead of silently dropping it. The hosted
+        // control plane composes one driver from env and ignores the field.
+        driver: "daytona",
         repo: { fullName: "acme/demo" },
       },
     })

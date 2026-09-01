@@ -7,6 +7,10 @@ import type { SubmitMode } from "../../submit/index"
 import type { PromptDispatchPayload } from "../../submit/types"
 import type { ComposerMode } from "../mode"
 import type { CloudStartupState } from "./submit-create-session"
+import type {
+  HostedWorkspaceCreateInput,
+  HostedWorkspaceCreateResult,
+} from "@/platform/runtime/agent/workspace-create-authority"
 
 export type FollowupDraft = {
   sessionID: string
@@ -77,6 +81,8 @@ type PromptSubmitStatusInput = {
 
 export type PromptSubmitInput = PromptSubmitTargetInput & PromptSubmitContentInput & PromptSubmitEditorBridge &
   PromptSubmitProvisioningInput & PromptSubmitStatusInput & {
+    /** Hosted creation override for orchestration tests; the app uses its bound account authority. */
+    createCloudWorkspace?: (input: HostedWorkspaceCreateInput) => Promise<HostedWorkspaceCreateResult>
     onSubmit?: () => void
     canAbort?: Accessor<boolean>
     harnessController?: HarnessSubmitController
@@ -86,8 +92,6 @@ export type PromptSubmitInput = PromptSubmitTargetInput & PromptSubmitContentInp
     hasActiveGoal?: Accessor<boolean>
     stopGoal?: () => void | Promise<unknown>
   }
-
-export type CreateWorkspaceResult = { workspaceId: string; directory?: string }
 
 export type CommentItem = {
   path: string

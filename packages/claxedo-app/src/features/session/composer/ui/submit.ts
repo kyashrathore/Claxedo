@@ -3,7 +3,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { submitErrorMessage } from "./submit-error-message"
 import { useNavigate } from "@solidjs/router"
 import {
-  createCloudWorkspace, isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional,
+  isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional,
   useGlobalBootstrapActions, useGlobalSDK, useLayout, useSDK, useShellQueryOptions as useQueryOptions,
 } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -13,7 +13,7 @@ import { usePermission } from "@/features/session/providers/permission"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { formatServerError } from "@/lib/server-errors"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
-import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, isDemoMode } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl, isDemoMode } from "@/platform/api/api"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { queryClient } from "@/platform/query/query-client"
@@ -34,7 +34,7 @@ import {
   type ResolvedSubmitMode,
   type SubmitMode,
 } from "../../submit/index"
-import { knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
+import { knownWorkspaceKind, projectId as catalogProjectId, projectRepoUrl, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-machine"
 import { dispatchCommandPromptSubmit } from "./submit-command-prompt"
 import { createSubmitAbort } from "./submit-abort"
@@ -55,7 +55,8 @@ import { createSubmitTransportAdapter, signedSubmitWorkspaceId, submitWorkspaceB
 import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-workspace"
 import { createSubmitCommentActions } from "./comment-routing"
 import { createSubmitOptimisticTimeline } from "./submit-ui-state"
-import type { CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
+import type { CommentItem, PromptSubmitInput } from "./submit-input"
+import { createHostedWorkspace } from "@/platform/runtime/agent/workspace-create-authority"
 
 export type { FollowupDraft } from "./submit-input"
 
@@ -270,11 +271,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       onCloudStartup: input.onCloudStartup,
       rememberCloudStartup,
       publishCloudHandoff,
-      createCloudWorkspace: async (projectId) => createCloudWorkspace({
-        baseUrl: getDefaultBaseUrl(),
-        projectId,
-        ...(sourceBranch ? { gitBranch: sourceBranch } : {}),
-      }),
+      createCloudWorkspace: async (projectId) => {
+        const project = projectCatalog().find((item) => catalogProjectId(item) === projectId)
+        return (input.createCloudWorkspace ?? createHostedWorkspace)({
+          projectId,
+          ...(projectRepoUrl(project) ? { repoUrl: projectRepoUrl(project) } : {}),
+          ...(sourceBranch ? { gitBranch: sourceBranch } : {}),
+        })
+      },
       createLocalWorktree: (directory) => sdk.client.worktree.create({
         directory,
         ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),

@@ -25,12 +25,12 @@ import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { DirectorySessionCacheValue } from "../../session/data/sync/queries"
 import { ensureLocalProject } from "../data/query/project-ensure"
-import { createCloudWorkspace } from "../data/workspace-create-api"
 import {
   controlWorkspaceUrl,
   experimentalSandboxPath,
   workspaceResolveUrl,
 } from "@/platform/runtime/agent/workspace-control-routes"
+import { createCloudWorkspace } from "../data/workspace-create-api"
 
 type ProvisionEvent = Extract<ClaxedoEvent, { type: "provision" }>
 type WorkspaceDirectoryRef = string
@@ -285,6 +285,9 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         })
       }
 
+      // Not the create authority: this action also runs unsigned, and
+      // `createHostedWorkspace` refuses without a signed account. This helper
+      // already prefers AccountPort when signed and falls back to HTTP.
       const result = await createCloudWorkspace({
         baseUrl,
         projectId: project.id,

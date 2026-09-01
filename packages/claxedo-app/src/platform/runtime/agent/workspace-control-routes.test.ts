@@ -6,7 +6,6 @@ import {
   controlSessionUrl,
   controlWorkspaceUrl,
   experimentalSandboxPath,
-  workspaceCreateUrl,
   workspaceCheckpointRestoreUrl,
   workspaceCheckpointsUrl,
   workspaceDefaultSandboxDriverUrl,
@@ -17,7 +16,7 @@ import {
 } from "./workspace-control-routes"
 
 describe("workspace control routes", () => {
-  test("builds workspace sandbox driver, create, resolve, and delete URLs", () => {
+  test("builds workspace sandbox driver, resolve, and delete URLs", () => {
     expect(workspaceSandboxDriversUrl({ baseUrl: "https://control.example.test/" }))
       .toBe("https://control.example.test/api/workspace/drivers")
     expect(workspaceSandboxDriverAuthUrl({
@@ -26,8 +25,6 @@ describe("workspace control routes", () => {
     })).toBe("https://control.example.test/api/workspace/drivers/daytona%2Fcustom/auth")
     expect(workspaceDefaultSandboxDriverUrl({ baseUrl: "https://control.example.test/" }))
       .toBe("https://control.example.test/api/workspace/drivers/default")
-    expect(workspaceCreateUrl({ baseUrl: "https://control.example.test/" }))
-      .toBe("https://control.example.test/api/workspace/create")
     expect(workspaceResolveUrl({
       baseUrl: "https://control.example.test/",
       workspaceId: "ws_123",

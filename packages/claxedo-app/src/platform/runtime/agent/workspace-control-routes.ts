@@ -39,6 +39,13 @@ export function workspaceListUrl(input: { baseUrl?: string; access: "cloud" | "u
   return url
 }
 
+/**
+ * Browser / unsigned create URL.
+ *
+ * Signed callers do not use this: they name `workspace.create` through the
+ * create authority, which is why no dialog builds this URL any more. It stays
+ * for `workspace-create-api.ts`, whose unsigned path still posts directly.
+ */
 export function workspaceCreateUrl(input?: { baseUrl?: string }) {
   return new URL("/api/workspace/create", controlPlaneBaseUrl(input?.baseUrl)).toString()
 }
