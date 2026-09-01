@@ -158,6 +158,11 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
   const config = {
     ...baseConfig,
     authEnabled: false,
+    // Signed-capable desktop builds own cloud sandbox creation and Connections.
+    // `getDefaultConfig()` follows Vite product-UI env, which the inner desktop
+    // bundle does not load, so composition derives them from the hosted loader.
+    sandboxEnabled: Boolean(options.loadHostedContributions),
+    settingsConnectionsEnabled: Boolean(options.loadHostedContributions),
     // On desktop the optional hosted loader is the build-time proof that main
     // owns a configured account client. Requiring a second renderer flag hid
     // the only sign-in entry point in exactly the build that could sign in,

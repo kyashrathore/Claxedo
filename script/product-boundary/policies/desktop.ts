@@ -339,10 +339,19 @@ export const desktopHostedContribution: Policy = {
   },
   // Optional service renderers now have independent catalog-driven roots. This
   // activation entry owns only desktop machine remote access and its shared
-  // contract, so the reviewed closure deliberately shrinks from 322/40 to 4/0:
-  // the Goal-mode session owners the monolithic loader used to drag in are
-  // reached from their own service roots, not from this activation entry.
-  ceilings: { modules: 4, packages: 0 },
+  // contract, so the reviewed closure deliberately shrinks from 322/40: the
+  // Goal-mode session owners the monolithic loader used to drag in are reached
+  // from their own service roots, not from this activation entry.
+  //
+  // It also binds the cloud workspace-startup port, because this is the only
+  // desktop binding of it and shared composer code (`submit-directory.ts`,
+  // `session-actions.tsx`) calls `workspaceStartup()` on desktop too. That
+  // reaches the canonical cloud-startup owners — `workspace-runtime-store`,
+  // `workspace-relay-connection`, and the AccountPort call/decode pair — and
+  // through the store's query cache the one package edge, `@tanstack/solid-query`.
+  // Measured at 42/1; `renderer-entry-closure.guard.test.ts` pins the exact
+  // hosted module set so a sixth is a new edge to review, not a number to bump.
+  ceilings: { modules: 42, packages: 1 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 4,

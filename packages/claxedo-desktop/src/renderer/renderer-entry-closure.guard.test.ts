@@ -236,12 +236,24 @@ describe("the optional signed activation", () => {
     const activation = stripComments(read("src/renderer/hosted-contributions.ts"))
     expect(activation).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
     expect(activation).toContain("contentSurfaces: []")
+    // The only desktop binding of the cloud startup port; shared composer
+    // code calls `workspaceStartup()` on desktop too.
+    expect(activation).toMatch(/^\s*configureWorkspaceStartup\(cloudWorkspaceStartup\)$/m)
     expect(activation).not.toContain("hosted-content-surfaces")
     expect(activation).not.toContain("documents-content-surfaces")
     expect(activation).not.toContain("configureHttpMachineRemoteAccess")
     expect(activation).not.toContain("configureApiRuntime")
     expect(activation).not.toContain("configureAuthSession")
-    expect(hostedModules(HOSTED_ACTIVATION.modules)).toEqual([])
+    // Exactly the cloud-startup path the binding above needs, and nothing
+    // else: no content surfaces, no WorkGraph, no Documents. Measured, so a
+    // sixth module here means a new edge to review rather than a number to bump.
+    expect(hostedModules(HOSTED_ACTIVATION.modules)).toEqual([
+      "platform/account/control-plane-account-fetch.ts",
+      "platform/account/hosted-control-call.ts",
+      "platform/account/hosted-operations.ts",
+      "platform/runtime/agent/workspace-relay-connection.ts",
+      "platform/runtime/cloud/workspace-runtime-store.ts",
+    ])
   })
 
   test("keeps Documents in its own catalog-driven module", () => {
