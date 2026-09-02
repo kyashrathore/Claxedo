@@ -7,7 +7,8 @@
  * pickable rows, and choosing which row a freshly opened dialog starts on.
  */
 
-import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
+
 
 /** A workspace row as the catalog carries it inside a project. */
 export type CatalogWorkspaceRow = {

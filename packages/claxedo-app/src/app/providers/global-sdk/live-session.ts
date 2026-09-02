@@ -1,5 +1,5 @@
 import { createSdkForServer } from "@/app/connection/server-client"
-import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { LiveSession } from "../global-sdk-event-fetch"

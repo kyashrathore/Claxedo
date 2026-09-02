@@ -9,6 +9,7 @@
  * one, account bridge for the central control-plane stream).
  */
 
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import {
@@ -17,7 +18,6 @@ import {
 } from "@/platform/account/account-stream-fetch"
 import type { AccountState } from "@/platform/account/account-port"
 import { parseShellRoute, shellRouteDirectoryFromPathname } from "@/platform/identity/route"
-import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"

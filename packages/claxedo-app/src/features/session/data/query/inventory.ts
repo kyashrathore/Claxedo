@@ -1,5 +1,5 @@
 import type { GlobalSessionItem } from "./types"
-import { sessionRowDirectory } from "../sync/session-source"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { normalizeSessionTurnOutcome, type ClaxedoSession } from "../session-types"
 import { cmp } from "@/platform/query/sort"
 import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"

@@ -1,5 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
-import { sessionRowDirectory } from "./session-source"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import type { SessionInventoryRow, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import { insertSortedSessionItem } from "@/platform/sync/global-session-identity"
 import { normalizeSessionTurnOutcome } from "../session-types"

@@ -1,4 +1,5 @@
 import { getFilename } from "@/lib/path"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 
 export { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
 

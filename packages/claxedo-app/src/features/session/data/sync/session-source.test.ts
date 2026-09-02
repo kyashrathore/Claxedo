@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import {
@@ -10,7 +11,6 @@ import {
 import {
   centralSessionSource,
   projectSessionSource,
-  sessionRowDirectory,
   sessionSourceForWorkspace,
   sessionSourceQueryOptions,
 } from "./session-source"

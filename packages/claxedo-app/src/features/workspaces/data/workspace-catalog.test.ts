@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import {
   controlPlaneCatalogProjects,
   mergeWorkspaceCatalog,

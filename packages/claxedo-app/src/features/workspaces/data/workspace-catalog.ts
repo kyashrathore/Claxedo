@@ -1,4 +1,5 @@
 import type { Project } from "@opencode-ai/sdk/v2/client"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { normalizeProjectList, readProjectCatalog } from "@/platform/query/control-plane"

@@ -1,4 +1,5 @@
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import {
   invalidateSessionShareQueries,
   reconcileUpdatedSessionListQueryData,
@@ -6,7 +7,6 @@ import {
   upsertCreatedSessionListRow,
 } from "@/features/session/data/query/session-list"
 import { removeSessionInventoryQueryData } from "@/features/session/data/sync/session-inventory"
-import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"

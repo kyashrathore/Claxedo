@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -25,7 +26,6 @@ import {
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { conversationSnapshotKey } from "@/features/session/conversation/conversation-chat-client"
 import { eventDirectoryForLiveSession } from "@/app/providers/global-sdk/live-session"
-import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 import {
   flushQueryPersistence,
   installQueryPersister,
