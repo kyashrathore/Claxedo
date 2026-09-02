@@ -54,8 +54,28 @@ describe("hosted shell marketplace routes", () => {
     expect(machineItemsFromJson(body)).toEqual([])
   })
 
-  test("acp-connections returns the valid empty shape on a hosted central (no local machine)", async () => {
+  test("acp-connections refuses an anonymous caller", async () => {
     const res = await app.fetch(new Request("http://cp.test/api/claxedo/agent-config/harness/acp-connections"))
+    expect(res.status).toBe(401)
+    await expect(res.json()).resolves.toEqual({
+      error: { code: "missing_bearer_token", message: "Authorization: Bearer token is required" },
+    })
+  })
+
+  test("acp-connections returns the valid empty shape once signed (no local machine)", async () => {
+    const signed = HostedShellRoutes({
+      authConfig: { enabled: true, issuer: "https://auth.test", jwksUrl: "custom:test" },
+      verifier: async (token) => ({
+        mode: "signed",
+        token,
+        user: { subject: "user_1", tokenIdentifier: "token_1", issuer: "https://auth.test" },
+      }),
+    })
+    const res = await signed.fetch(
+      new Request("http://cp.test/api/claxedo/agent-config/harness/acp-connections", {
+        headers: { authorization: "Bearer hosted-token" },
+      }),
+    )
     expect(res.status).toBe(200)
     const body = await res.json()
     // The app's `decodeAcpConnectionRows` accepts only `{ connections: [...] }`

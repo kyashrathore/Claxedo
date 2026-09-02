@@ -355,6 +355,12 @@ describe("frontend API contract", () => {
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/agent?directory=%2Fworkspace",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/command?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/file/status?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
+        // The app's real cloud-workspace boot: `fetchProvider()` in
+        // `claxedo-app/src/app/boot/data/bootstrap.ts` proxies the provider
+        // list through the workspace runtime connection whenever a `runtime`
+        // and `baseUrl` are both present — which they are for a `cloud`-kind
+        // workspace — rather than through the control plane's own `/provider`.
+        "http://runtime.frontend.test/workspaces/ws_frontend_contract/provider?directory=%2Fworkspace&workspaceId=ws_frontend_contract&runner=opencode",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/session?directory=%2Fworkspace&workspaceId=ws_frontend_contract&roots=true&limit=55",
       ].sort(),
     )

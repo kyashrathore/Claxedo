@@ -16,19 +16,19 @@ import {
   BETTER_AUTH_SESSION_COOKIE,
   betterAuthIssuer,
   betterAuthD1FoundationOptions,
-} from "./better-auth-d1-foundation"
-import { resolveBetterAuthConfiguration } from "./better-auth-configuration"
+} from "../../platform/auth/better-auth-d1-foundation"
+import { resolveBetterAuthConfiguration } from "../../platform/auth/better-auth-configuration"
 import {
   BETTER_AUTH_DESKTOP_REDIRECT_URI,
   betterAuthNativeResource,
   provisionBetterAuthNativeClients,
-} from "./better-auth-native-clients"
-import { compileBetterAuthD1Migration } from "./better-auth-d1-migration"
+} from "../../platform/auth/better-auth-native-clients"
+import { compileBetterAuthD1Migration } from "../../platform/auth/better-auth-d1-migration"
 import {
   BETTER_AUTH_ACCESS_TOKEN_PREFIX,
   BETTER_AUTH_REFRESH_TOKEN_PREFIX,
   betterAuthOAuthTokenHash,
-} from "./better-auth-token-hash"
+} from "../../platform/auth/better-auth-token-hash"
 
 const API_ORIGIN = "https://api.claxedo.test"
 const APP_ORIGIN = "https://app.claxedo.test"

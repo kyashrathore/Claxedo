@@ -852,8 +852,18 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // own). A hosted central has no such machine, so it answers the valid
     // empty shape rather than Hono's bare 404 — the app treats any non-ok as
     // "no ACP group", so this only quiets a recurring console 404 that read
-    // as a broken deployment.
-    .get("/api/claxedo/agent-config/harness/acp-connections", (c) => c.json({ connections: [] }))
+    // as a broken deployment. Still per-caller data in shape (a future
+    // per-user store), so it requires the same signed bearer every other
+    // agent-config data route does.
+    .get("/api/claxedo/agent-config/harness/acp-connections", async (c) => {
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        return c.json({ connections: [] })
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
     // Harness health/status probe — see `HostedShellRouteOptions.harnessStatus`
     // above for what this asks and why. Every session's harness store polls
     // this unconditionally; before this route existed it 404'd and was

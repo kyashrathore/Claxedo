@@ -347,7 +347,10 @@ function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAut
       openWorkspace: async (_auth: SignedControlPlaneAuth, input: { workspaceId: string }) => input.workspaceId === "local_ws"
         ? { allowed: true, role: "editor", workspace: { workspace_id: "local_ws", org_id: "org_1", project_id: "project_1", access: "user-hosted", backing: "local-worktree" } }
         : { allowed: true, role: "editor", workspace: { workspace_id: "cloud_ws", org_id: "org_1", project_id: "project_1", access: "cloud", backing: "cloud-vm" } },
-      activeLocalHostLink: async () => ({ active: true, host_id: "local_host", workspace_id: "local_ws", expires_at: Date.now() + 60_000, last_seen_at: Date.now() }),
+      // Renamed from `activeLocalHostLink` when host assignment went
+      // machine-wide (`feat(authority): machine-wide host assignments`);
+      // `local-relay.ts` reads the routable host through this name now.
+      activeWorkspaceHost: async () => ({ active: true, host_id: "local_host", workspace_id: "local_ws", expires_at: Date.now() + 60_000, last_seen_at: Date.now() }),
       listWorkspaces: async () => [{ workspace_id: "local_ws", project_id: "project_1", access: "user-hosted", backing: "local-worktree" }],
     },
     sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "cloud_host", homeRegion: "us-east" }) } },

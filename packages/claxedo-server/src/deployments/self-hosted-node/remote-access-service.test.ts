@@ -187,8 +187,17 @@ describe("remote access service", () => {
 
     await expect(service.unassignWorkspace(auth, "ws_1")).resolves.toEqual({ unassigned: true })
 
-    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_1" })).resolves.toEqual({ active: false })
+    // A user-hosted workspace lives exactly as long as its host assignment
+    // (commit 9b88098572): unassigning ws_1 retires the workspace row itself,
+    // not just its routing, so it 404s rather than reporting `active: false`.
+    await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_1" })).rejects.toThrow("Workspace not found")
+    await expect(authority.listWorkspaces(auth)).resolves.not.toContainEqual(
+      expect.objectContaining({ workspace_id: "ws_1" }),
+    )
     await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_2" })).resolves.toMatchObject({ active: true })
+    await expect(authority.listWorkspaces(auth)).resolves.toContainEqual(
+      expect.objectContaining({ workspace_id: "ws_2" }),
+    )
     expect(startMachineTunnel.mock.calls.at(-1)![0]).toMatchObject({ workspaceIds: ["ws_2"] })
 
     await expect(service.unassignWorkspace(auth, "ws_2")).resolves.toEqual({ unassigned: true })

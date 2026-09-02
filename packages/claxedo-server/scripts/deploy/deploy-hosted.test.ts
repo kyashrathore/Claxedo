@@ -22,6 +22,8 @@ const betterAuthD1Env = {
   CLAXEDO_STAGING_API_ORIGIN: "https://api-staging.claxedo.test",
   CLAXEDO_PRODUCTION_APP_ORIGIN: "https://app.claxedo.test",
   CLAXEDO_STAGING_APP_ORIGIN: "https://app-staging.claxedo.test",
+  CLAXEDO_PRODUCTION_WORKSPACE_RELAY_URL: "https://relay.claxedo.test",
+  CLAXEDO_STAGING_WORKSPACE_RELAY_URL: "https://relay-staging.claxedo.test",
   CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_ID: "11111111-1111-1111-1111-111111111111",
   CLAXEDO_STAGING_AUTH_D1_DATABASE_ID: "22222222-2222-2222-2222-222222222222",
   CLAXEDO_PRODUCTION_AUTH_D1_DATABASE_NAME: "claxedo-auth-production",

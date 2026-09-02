@@ -67,7 +67,22 @@ const ENTRIES = [
   // The reviewed multiplayer graph adds the canonical private-session
   // reservation route and retained-provider/runtime-authority composition;
   // all remain hosted owners and the exact source closure is now 146 modules.
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 146, packages: 28 },
+  // +4 modules (146 -> 150) for the machine-share owner surface the hosted
+  // control plane now serves directly: `routes/remote-access.ts` (the shared
+  // owner/machine route factory — item 2 of the governance sweep gated its
+  // GET "/" the same as its neighbours), `hosted-shared/hosted-remote-access-
+  // service.ts` (the hosted `RemoteAccessOwnerService` composed over the D1/
+  // Convex authority), `authority/relay-token-record.ts` (the one owner of
+  // "which authority path records a minted relay runtime token", extracted
+  // so a user-principal mint and the control plane's own no longer duplicate
+  // the choice), and `hosted-shared/hosted-usage-ledger.ts` (the unified
+  // usage dashboard, mounted only when the plane has a Convex workspace-
+  // authority binding). All four are real hosted-product capabilities landed
+  // on this branch (`feat(hosted): the owner's view of their machines, and
+  // the project route`; `feat(hosted): harness health for a user-hosted
+  // workspace, and the usage surface`; `fix(session-list): list a user-
+  // hosted workspace's sessions from its host`). No new package.
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 150, packages: 28 },
   // The usage authority and dev's host-enrollment extraction add one runtime
   // module each relative to their common base; neither adds a Worker package.
   // +1 module (109 -> 110): `hosts/workgraph/settlement-rearm.ts`, the single
@@ -93,7 +108,14 @@ const ENTRIES = [
   // do not leak into user-deployed artifacts.
   // The same reviewed multiplayer owners are Worker-safe and bring no optional
   // provider SDK into this root. The exact source closure is now 122 modules.
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 122, packages: 14 },
+  // +4 modules (122 -> 126): the same machine-share owner surface as
+  // hosted-node above — `routes/remote-access.ts`, `hosted-shared/hosted-
+  // remote-access-service.ts`, `authority/relay-token-record.ts`, and
+  // `hosted-shared/hosted-usage-ledger.ts` — reached through the identical
+  // `hosted-core-app.ts` composition this Worker shares with the Node hosted
+  // entry. All four are dependency-neutral in the emitted Worker graph, so no
+  // package moves.
+  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 126, packages: 14 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.
@@ -105,7 +127,20 @@ const ENTRIES = [
   // `@claxedo/workspace-relay-protocol` lease TTL contract. The private-session
   // reservation route is the reviewed source owner. These exact 150/35 values
   // are measurements, not headroom.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 150, packages: 35 },
+  // +1 module (measured 149 -> 151, ceiling raised by 1 to 151):
+  // `session/list.ts`'s new `hostedSessions()` path (`fix(session-list): list
+  // a user-hosted workspace's sessions from its host`) reaches `authority/
+  // hosted-session-pull.ts` — self-hosted-node also answers `/api/control/
+  // sessions` for workspaces this single-binary control plane routes to a
+  // remote host, not only ones it runs locally — and the same `authority/
+  // relay-token-record.ts` dedup as the two hosted entries above (self-hosted
+  // mints relay runtime tokens through the identical owner now). Neither
+  // hosted-shared's `hosted-remote-access-service.ts` nor its
+  // `hosted-usage-ledger.ts` are reached here: self-hosted-node keeps its own
+  // full `RemoteAccessService` (`self-hosted-node/remote-access-service.ts`,
+  // which also enrolls this machine) and its own Convex-free usage ledger.
+  // No new package.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 151, packages: 35 },
 ] as const
 
 /** The two cloud compositions. Neither runs a workspace on its own box. */

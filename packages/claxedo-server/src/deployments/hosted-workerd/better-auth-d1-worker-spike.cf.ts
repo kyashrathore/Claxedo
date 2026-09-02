@@ -6,14 +6,14 @@ import { Hono } from "hono"
 import { AuthenticationError, type AuthAdapterDescriptor } from "@claxedo/server-core/platform/auth/authentication"
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 
-import { createBetterAuthD1AuthenticationEvidenceResolver } from "./better-auth-d1-authentication-evidence"
-import { BETTER_AUTH_NATIVE_SCOPES, betterAuthNativeRevocation, createBetterAuthD1Foundation } from "./better-auth-d1-foundation"
-import { createBetterAuthD1RequestAuthenticationAdapter } from "./better-auth-d1-request-authentication"
+import { createBetterAuthD1AuthenticationEvidenceResolver } from "../../platform/auth/better-auth-d1-authentication-evidence"
+import { BETTER_AUTH_NATIVE_SCOPES, betterAuthNativeRevocation, createBetterAuthD1Foundation } from "../../platform/auth/better-auth-d1-foundation"
+import { createBetterAuthD1RequestAuthenticationAdapter } from "../../platform/auth/better-auth-d1-request-authentication"
 import {
   resolveBetterAuthConfiguration,
   type AuthEmailMessage,
-} from "./better-auth-configuration"
-import { betterAuthNativeResource } from "./better-auth-native-clients"
+} from "../../platform/auth/better-auth-configuration"
+import { betterAuthNativeResource } from "../../platform/auth/better-auth-native-clients"
 import { createD1CoreAuthority } from "../../authority/adapters/d1/core-authority"
 import { createD1UserHostedTargetResolver } from "../../authority/adapters/d1/user-hosted-relay-target"
 import type { ControlPlaneServices } from "../../authority/services"

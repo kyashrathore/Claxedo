@@ -67,13 +67,18 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
   }
 
   app.get("/", async (c) => {
-    const auth = c.req.header("authorization") ? await signed(c.req.raw) : undefined
+    // Per-caller enrollment/enabled state — refuse the anonymous remote
+    // caller the same way `/devices`, `/devices/:hostId`, and the
+    // second-device route below do. `RemoteAccessService.status` still
+    // accepts an absent auth for its own direct callers/tests; this route
+    // simply never reaches it without one.
+    const auth = await signed(c.req.raw)
     if (auth instanceof Response) return auth
     const result = await options.service.status(auth)
     return c.json({
       device_login_configured: options.deviceLoginConfigured,
       relay_configured: options.relayConfigured,
-      hosted_signed_in: !!auth,
+      hosted_signed_in: true,
       enabled: available && result.enabled,
       enrolled: available && result.enrolled,
       second_device_open: available && result.secondDeviceOpen,

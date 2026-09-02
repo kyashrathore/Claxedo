@@ -147,6 +147,17 @@ function hostedCorePaths() {
  *
  * What the list is still good for: if a path drops off it, self-hosted quietly
  * lost a capability that cloud-hosted kept.
+ *
+ * Eight paths moved here from `SELF_HOSTED_NODE_ADAPTERS` on the Cloudflare
+ * multiplayer migration branch, once `HostedShellRoutes`
+ * (`routes/hosted/shell.ts`) and `hosted-core-app.ts` grew the same address
+ * self-hosted already answered: the harness status/ACP-connections probe
+ * every session's harness store polls, the owner's remote-access
+ * status/devices/revoke/second-device surface (`RemoteAccessOwnerRoutes` in
+ * `routes/remote-access.ts`, composed with `hostedRemoteAccessService`), the
+ * unified `/api/control/session-list` read, and the single-project lookup at
+ * `/project/:id`. Same DIFFERENT-implementation rule as the rest of this
+ * list applies to all eight.
  */
 const SHARED_WITH_HOSTED_CORE = [
   "/.well-known/jwks.json",
@@ -156,15 +167,22 @@ const SHARED_WITH_HOSTED_CORE = [
   "/api/claxedo/agent-config/extensions/:id/enable",
   "/api/claxedo/agent-config/extensions/catalog",
   "/api/claxedo/agent-config/extensions/machine-scan",
+  "/api/claxedo/agent-config/harness",
+  "/api/claxedo/agent-config/harness/acp-connections",
   "/api/claxedo/bootstrap",
   "/api/claxedo/events",
   "/api/claxedo/health",
   "/api/claxedo/integrations",
+  "/api/claxedo/remote-access",
+  "/api/claxedo/remote-access/devices",
+  "/api/claxedo/remote-access/devices/:hostId",
+  "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
   "/api/control/orgs",
   "/api/control/orgs/:orgId/ensure-default-team",
   "/api/control/orgs/:orgId/teams",
   "/api/control/runtime/heartbeat",
   "/api/control/runtime/register",
+  "/api/control/session-list",
   "/api/control/session-registrations/reserve",
   "/api/control/sessions",
   "/api/control/sessions/:sessionId/gateway",
@@ -220,6 +238,7 @@ const SHARED_WITH_HOSTED_CORE = [
   "/internal/relay/target",
   "/path",
   "/project",
+  "/project/:id",
   "/project/current",
   "/provider",
   "/provider/auth",
@@ -260,8 +279,6 @@ const SELF_HOSTED_NODE_ADAPTERS = [
   "/api/claxedo/agent-config/extensions/detach",
   "/api/claxedo/agent-config/extensions/ignore",
   "/api/claxedo/agent-config/extensions/scan",
-  "/api/claxedo/agent-config/harness",
-  "/api/claxedo/agent-config/harness/acp-connections",
   "/api/claxedo/agent-config/harness/acp-connections/:id",
   "/api/claxedo/agent-config/harness/model",
   "/api/claxedo/agent-config/harness/options",
@@ -294,11 +311,7 @@ const SELF_HOSTED_NODE_ADAPTERS = [
   "/api/claxedo/network-policy/effective/:workspaceId",
   "/api/claxedo/network-policy/groups",
   "/api/claxedo/project/remote",
-  "/api/claxedo/remote-access",
-  "/api/claxedo/remote-access/devices",
-  "/api/claxedo/remote-access/devices/:hostId",
   "/api/claxedo/remote-access/enable",
-  "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
   "/api/claxedo/session",
   "/api/claxedo/session-list",
   "/api/claxedo/session/:id/meta",
@@ -307,7 +320,6 @@ const SELF_HOSTED_NODE_ADAPTERS = [
   "/api/claxedo/workspace/resolve",
   "/api/control",
   "/api/control/*",
-  "/api/control/session-list",
   "/api/control/session/:id/runtime-events",
   "/api/control/sessions/:sessionId/capabilities",
   "/api/workspace/:id",
@@ -339,7 +351,6 @@ const SELF_HOSTED_NODE_ADAPTERS = [
   "/mcp",
   "/mcp/:name/connect",
   "/mcp/:name/disconnect",
-  "/project/:id",
   "/provider/*",
   "/provider/:providerID/oauth/:step",
   "/provider/:providerId/oauth/*",

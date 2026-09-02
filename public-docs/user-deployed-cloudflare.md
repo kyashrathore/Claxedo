@@ -270,17 +270,17 @@ export CLAXEDO_DEPLOYED_APP_URL='https://app.example.com'
 export CLAXEDO_DEPLOYED_ACCEPTANCE_ID="$CLAXEDO_RELEASE_ID"
 
 # locked: authenticate the future owner and capture the provider subject/hash
-bun --cwd ../claxedo-app run test:e2e:deployed-cloudflare -- --capture-canary-identity
+bun run --cwd ../claxedo-app test:e2e:deployed-cloudflare -- --capture-canary-identity
 
 # canary: after provisioning the claim and running --begin-canary
-bun --cwd ../claxedo-app run test:e2e:deployed-cloudflare -- --bootstrap-canary
+bun run --cwd ../claxedo-app test:e2e:deployed-cloudflare -- --bootstrap-canary
 
 # multiplayer_validation: capture both hashes before registering the two
 # multiplayer_identity receipts. Use a different GitHub account in each window.
-bun --cwd ../claxedo-app run test:e2e:deployed-cloudflare -- --capture-multiplayer-identities
+bun run --cwd ../claxedo-app test:e2e:deployed-cloudflare -- --capture-multiplayer-identities
 
 # After registering both identity receipts, execute the real two-user matrix.
-bun --cwd ../claxedo-app run test:e2e:deployed-cloudflare -- --run-multiplayer
+bun run --cwd ../claxedo-app test:e2e:deployed-cloudflare -- --run-multiplayer
 ```
 
 `capture-canary-identity` writes `canary-identity.json`; use its `identity.subject` and `identityHash` for owner-claim
