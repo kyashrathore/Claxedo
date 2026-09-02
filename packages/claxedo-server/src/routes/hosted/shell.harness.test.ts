@@ -110,6 +110,18 @@ describe("GET /api/claxedo/agent-config/harness — auth and workspace resolutio
     expect(harnessStatus).not.toHaveBeenCalled()
   })
 
+  test("a workspaceId identifies the workspace even when the directory is the machine's path", async () => {
+    const harnessStatus = vi.fn(async () => ({ ok: true, agentType: "claude", acpBinary: null }) satisfies HostedHarnessProbe)
+    const app = HostedShellRoutes({ authConfig: signedConfig, verifier, harnessStatus })
+    const res = await get(
+      app,
+      "/api/claxedo/agent-config/harness?directory=%2FUsers%2Fme%2Frepo&workspaceId=ws_1",
+      "token-a",
+    )
+    expect(res.status).toBe(200)
+    expect(harnessStatus).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_1" })
+  })
+
   test("sessionId is forwarded and echoed back on a ready probe", async () => {
     const harnessStatus = vi.fn(async () => ({
       ok: true,

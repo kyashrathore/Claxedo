@@ -136,7 +136,13 @@ export function createHarnessConfigRuntime(input: {
     return {
       kind: workspace.kind,
       status: workspace.status,
+      ...(workspace.workspaceId ? { workspaceId: workspace.workspaceId } : {}),
     }
+  }
+
+  /** The relay-backed workspace the inventory describes for a scope, if any. */
+  function workspaceRef(params?: HarnessScopeInput) {
+    return harnessWorkspaceRuntimeRef(params, input.projects())
   }
 
   async function configOptionsFetch(type: HarnessType, params?: HarnessScopeInput) {
@@ -179,6 +185,7 @@ export function createHarnessConfigRuntime(input: {
     useLocalHarnessConfig,
     workspace,
     workspaceKind,
+    workspaceRef,
     workspaceHarnessTransport,
     workspaceRuntimeConfigFetch,
   }

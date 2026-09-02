@@ -278,7 +278,14 @@ export function createHarnessConfigStore() {
     if (current.harness === "opencode") return
     const res = await harnessRuntime
       .localHarnessConfigFetch(input)(
-        harnessConfigUrl({ serverUrl: base, directory: input.directory, sessionId: input.sessionId }),
+        harnessConfigUrl({
+          serverUrl: base,
+          directory: input.directory,
+          ...(harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? [])?.workspaceId
+            ? { workspaceId: harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? [])!.workspaceId }
+            : {}),
+          sessionId: input.sessionId,
+        }),
       )
       .catch(() => undefined)
     if (!res?.ok) return

@@ -316,8 +316,13 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
   }))
 }
 
+/**
+ * The scope a hosted request names. A workspace id is the identity; `directory`
+ * is what a client shows for it (a `workspace:` ref, or the machine's path for
+ * a user-hosted workspace) and only stands in when no id was sent.
+ */
 function directoryInput(c: Context) {
-  return c.req.query("directory") ?? c.req.query("workspaceId") ?? c.req.header("x-opencode-directory") ?? ""
+  return c.req.query("workspaceId") ?? c.req.query("directory") ?? c.req.header("x-opencode-directory") ?? ""
 }
 
 async function signedAuth(c: Context, options: HostedShellRouteOptions) {
