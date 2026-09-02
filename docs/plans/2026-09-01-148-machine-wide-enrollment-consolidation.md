@@ -578,3 +578,31 @@ Operational note: dev-open's wrangler config had lived only in a release
 temp directory; it is now rendered from the release module's own exported
 renderer into a durable file, so the dev-open script no longer depends on a
 leftover of an earlier run.
+
+### Closed 2026-09-02 (the two gaps the stop hook named)
+
+- **Web Settings → Devices** verified in a fresh browser tab where the rail
+  mounts: account menu → Settings → Devices lists the enrolled machine
+  "macOS", last seen seconds ago, serving 4 shared workspaces, with Revoke.
+- **Live stream attach from the web** (`42bac669b6`, release 54). Two
+  defects sat under it. The app's stall watchdog (15 s) was shorter than the
+  runtime's stream heartbeat (30 s; 2 min on the session stream), so over the
+  relay every quiet stream was aborted and counted as a failure; the desktop
+  never saw it because the daemon's own compat stream heartbeats every 5 s.
+  One contract now owns both numbers (`EVENT_STREAM_HEARTBEAT_MS` 10 s,
+  `EVENT_STREAM_STALL_MS` 30 s in `@claxedo/agent-event-runtime/contracts`),
+  used by every runtime producer and by the app's watchdog. Separately the
+  web posted control-plane projection pulls (`…/sessions/<id>/checkpoint`)
+  every turn for sessions the machine owns, refused with 403 each time;
+  projection is only for sessions the control plane holds (cloud).
+  Measured on release 54 from the browser: relay per-session event stream
+  open 260 s, runtime events 257 s, then reconnected; a turn sent from the
+  web reached the host in 0.7 s (`prompt_async`) and the web's message list
+  grew within 3.0 s as the turn's events arrived; a curl attach to the same
+  stream shows `server.heartbeat` every 10 s. Note for future measurement:
+  a `PerformanceResourceTiming` entry appears only when a stream closes, so
+  an "absent" stream entry means an open stream, not a missing one.
+- Still true: no harness on this machine holds a working credential, so the
+  turn's live events end in the provider's error (Codex usage limit) rather
+  than a completion; the live path is verified up to and including that
+  error event. Logging a harness in is the owner's step.
