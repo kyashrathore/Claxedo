@@ -1505,7 +1505,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("OpenAI disconnected")).toBeVisible()
     })
 
-    test("config custom provider Disconnect disables it in the scoped provider config, not through auth or a central global — Cline regression", async ({ page }) => {
+    test("config custom provider Disconnect disables it in the scoped provider config, not through auth or a central global — behavior 14b", async ({ page }) => {
       const runtime = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockProviderCatalog(page, {
