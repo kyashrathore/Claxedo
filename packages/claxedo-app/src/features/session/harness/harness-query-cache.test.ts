@@ -22,6 +22,7 @@ import {
   createSessionModelSyncQueryCache,
 } from "./harness-query-cache"
 
+const server = "https://server-one.test"
 const scope = "draft:/repo:route"
 
 afterEach(() => {
@@ -46,7 +47,7 @@ describe("harness query cache", () => {
   })
 
   test("stores prepared runtime-session lifecycle metadata under query keys", () => {
-    const cache = createPreparedRuntimeSessionQueryCache()
+    const cache = createPreparedRuntimeSessionQueryCache(server)
     const prepared = {
       id: "ses_prepared",
       directory: "/repo",
@@ -59,28 +60,28 @@ describe("harness query cache", () => {
     cache.setPrepared(scope, prepared)
     cache.setPreparing(scope, pending)
 
-    expect(queryClient.getQueryData(harnessPreparedSessionSeqKey(scope))).toBe(1)
-    expect(queryClient.getQueryData(harnessPreparedSessionKey(scope))).toEqual(prepared)
-    expect(queryClient.getQueryData(harnessPreparingSessionKey(scope))).toBe(pending)
+    expect(queryClient.getQueryData(harnessPreparedSessionSeqKey(server, scope))).toBe(1)
+    expect(queryClient.getQueryData(harnessPreparedSessionKey(server, scope))).toEqual(prepared)
+    expect(queryClient.getQueryData(harnessPreparingSessionKey(server, scope))).toBe(pending)
 
     cache.removePrepared(scope)
     cache.removePreparing(scope)
-    expect(queryClient.getQueryData(harnessPreparedSessionKey(scope))).toBeUndefined()
-    expect(queryClient.getQueryData(harnessPreparingSessionKey(scope))).toBeUndefined()
+    expect(queryClient.getQueryData(harnessPreparedSessionKey(server, scope))).toBeUndefined()
+    expect(queryClient.getQueryData(harnessPreparingSessionKey(server, scope))).toBeUndefined()
   })
 
   test("increments option sequence and clears retry tries through the shared helper", () => {
-    const cache = createHarnessOptionsQueryCache()
+    const cache = createHarnessOptionsQueryCache(server)
 
     expect(cache.nextSeq(scope)).toBe(1)
     expect(cache.nextSeq(scope)).toBe(2)
     cache.setTries(scope, 3)
 
-    expect(queryClient.getQueryData(harnessOptionsSeqKey(scope))).toBe(2)
-    expect(queryClient.getQueryData(harnessOptionsTriesKey(scope))).toBe(3)
+    expect(queryClient.getQueryData(harnessOptionsSeqKey(server, scope))).toBe(2)
+    expect(queryClient.getQueryData(harnessOptionsTriesKey(server, scope))).toBe(3)
 
-    clearHarnessOptionsTries(scope)
-    expect(queryClient.getQueryData(harnessOptionsTriesKey(scope))).toBeUndefined()
+    clearHarnessOptionsTries(server, scope)
+    expect(queryClient.getQueryData(harnessOptionsTriesKey(server, scope))).toBeUndefined()
   })
 
   test("dedupes hydrate pending removal by identity and fetches session config by session id", async () => {
@@ -93,11 +94,11 @@ describe("harness query cache", () => {
     cache.setPending(scope, first)
     cache.removePending(scope, second)
 
-    expect(queryClient.getQueryData(harnessHydrateSeenKey(scope))).toBe("session:ses_1")
-    expect(queryClient.getQueryData(harnessHydrateRequestKey(scope))).toBe(first)
+    expect(queryClient.getQueryData(harnessHydrateSeenKey(server, scope))).toBe("session:ses_1")
+    expect(queryClient.getQueryData(harnessHydrateRequestKey(server, scope))).toBe(first)
 
     cache.removePending(scope, first)
-    expect(queryClient.getQueryData(harnessHydrateRequestKey(scope))).toBeUndefined()
+    expect(queryClient.getQueryData(harnessHydrateRequestKey(server, scope))).toBeUndefined()
 
     await expect(cache.fetchSessionConfig({ directory: "/one", sessionId: "ses_1" }, async () => {
       fetches++
@@ -128,14 +129,14 @@ describe("harness query cache", () => {
   })
 
   test("stores harness switch pending requests and shares option retry cleanup", () => {
-    const cache = createHarnessSwitcherQueryCache()
+    const cache = createHarnessSwitcherQueryCache(server)
     const pending = Promise.resolve()
-    createHarnessOptionsQueryCache().setTries(scope, 2)
+    createHarnessOptionsQueryCache(server).setTries(scope, 2)
 
     cache.setPending("change-key", pending)
     expect(queryClient.getQueryData(harnessChangeRequestKey("change-key"))).toBe(pending)
     cache.clearOptionsTries(scope)
-    expect(queryClient.getQueryData(harnessOptionsTriesKey(scope))).toBeUndefined()
+    expect(queryClient.getQueryData(harnessOptionsTriesKey(server, scope))).toBeUndefined()
 
     cache.removePending("change-key", Promise.resolve())
     expect(queryClient.getQueryData(harnessChangeRequestKey("change-key"))).toBe(pending)

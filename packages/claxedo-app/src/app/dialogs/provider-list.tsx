@@ -13,18 +13,20 @@ import { useLanguage } from "@/platform/i18n/provider"
 export const CUSTOM_PROVIDER_ID = "_custom"
 
 export const ProviderList: Component<{
-  harness?: string
+  /** The harness whose catalog this list shows. There is no catalog without one. */
+  harness: string
   /** Omits the "Custom provider" entry. Onboarding keeps the flow to one decision. */
   hideCustom?: boolean
   onSelect: (providerId: string) => void
 }> = (props) => {
-  const providers = useProviders(props.harness)
+  const providers = useProviders(() => props.harness)
   const language = useLanguage()
 
   const popularGroup = () => language.t("dialog.provider.group.popular")
   const otherGroup = () => language.t("dialog.provider.group.other")
   const customLabel = () => language.t("settings.providers.tag.custom")
-  const showCustom = () => !props.harness && !props.hideCustom
+  // A custom provider is an OpenCode provider-registry entry; no other harness reads one.
+  const showCustom = () => props.harness === "opencode" && !props.hideCustom
   const note = (id: string) => {
     if (id === "anthropic") return language.t("dialog.provider.anthropic.note")
     if (id === "openai") return language.t("dialog.provider.openai.note")

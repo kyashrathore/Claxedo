@@ -85,7 +85,7 @@ export function createHarnessConfigStore() {
       harnessStore.setConfigError(scope, err instanceof Error ? err.message : "Failed to initialize harness")
       harnessStore.setReadiness(scope, "error")
     },
-    cache: createPreparedRuntimeSessionQueryCache(),
+    cache: createPreparedRuntimeSessionQueryCache(base),
   })
 
   const optionsLoader = createHarnessOptionsLoader<ScopeInput>({
@@ -105,7 +105,7 @@ export function createHarnessConfigStore() {
       return state ? { readiness: state.readiness, configError: state.configError } : undefined
     },
     errorMessage,
-    cache: createHarnessOptionsQueryCache(),
+    cache: createHarnessOptionsQueryCache(base),
   })
 
   async function fetchConfigOptions(
@@ -120,7 +120,7 @@ export function createHarnessConfigStore() {
     dropPrepared: (scope) => {
       void preparedRuntimeSessions.drop(scope)
     },
-    clearOptionsTries: clearHarnessOptionsTries,
+    clearOptionsTries: (scope: string) => clearHarnessOptionsTries(base, scope),
     applyPatch: harnessStore.applyPatch,
     state: harnessStore.state,
     save: harnessStore.save,
@@ -216,7 +216,7 @@ export function createHarnessConfigStore() {
     publishSessionConfig,
     errorMessage,
     runtime: harnessRuntime,
-    cache: createHarnessSwitcherQueryCache(),
+    cache: createHarnessSwitcherQueryCache(base),
   })
 
   const setHarness: typeof switcher.setHarness = (scope, type, input, binary) => {

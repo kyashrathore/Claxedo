@@ -26,6 +26,19 @@ export function workspaceDefaultSandboxDriverUrl(input?: { baseUrl?: string }) {
   return new URL(WORKSPACE_DEFAULT_SANDBOX_DRIVER_PATH, controlPlaneBaseUrl(input?.baseUrl)).toString()
 }
 
+/**
+ * The control plane's workspace list for one access kind.
+ *
+ * `?access` is required: without it the route answers the CENTRAL's own local
+ * inventory, which is a different question from "what can this principal
+ * reach". Callers that want the whole picture ask for both kinds and merge.
+ */
+export function workspaceListUrl(input: { baseUrl?: string; access: "cloud" | "user-hosted" }) {
+  const url = new URL("/api/workspace", controlPlaneBaseUrl(input.baseUrl))
+  url.searchParams.set("access", input.access)
+  return url
+}
+
 export function workspaceCreateUrl(input?: { baseUrl?: string }) {
   return new URL("/api/workspace/create", controlPlaneBaseUrl(input?.baseUrl)).toString()
 }

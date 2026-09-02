@@ -21,23 +21,41 @@ describe("shell query helpers", () => {
       command("", "skip"),
     ]).map((item) => item.name)).toEqual(["aaa", "zzz"])
 
+    const client = {
+      command: {
+        list: async () => ({
+          data: [
+            command("b", "second"),
+            command("a", "first"),
+          ],
+        }),
+      },
+    }
     const query = commandListQuery({
       baseUrl: "http://example.test",
       directory: "/tmp/ws",
-      client: {
-        command: {
-          list: async () => ({
-            data: [
-              command("b", "second"),
-              command("a", "first"),
-            ],
-          }),
-        },
-      },
+      harnessType: "opencode",
+      client,
     })
 
-    expect(query.queryKey).toEqual(["shell", "http://example.test", "commands", "/tmp/ws"])
+    expect(query.queryKey).toEqual(["shell", "http://example.test", "commands", "/tmp/ws", "opencode", ""])
     expect((await query.queryFn()).map((item) => item.name)).toEqual(["a", "b"])
+  })
+
+  // A command set belongs to (the machine serving the workspace, the worktree,
+  // the harness) — the same family `directory.agents` is in.
+  test("commandListQuery keys on the harness and the resolved workspace", () => {
+    const client = { command: { list: async () => ({ data: [] }) } }
+    const base = { baseUrl: "http://example.test", directory: "/tmp/ws", client }
+    const opencode = commandListQuery({ ...base, harnessType: "opencode" }).queryKey
+
+    expect(opencode).not.toEqual(commandListQuery({ ...base, harnessType: "acp:codex" }).queryKey)
+    expect(opencode).not.toEqual(commandListQuery({ ...base }).queryKey)
+    expect(commandListQuery({
+      ...base,
+      harnessType: "opencode",
+      workspace: { kind: "cloud", workspaceId: "ws_1" } as Parameters<typeof commandListQuery>[0]["workspace"],
+    }).queryKey).toEqual(["shell", "http://example.test", "commands", "/tmp/ws", "opencode", "cloud:ws_1"])
   })
 
   test("commandListQuery resolves the workspace through the canonical routing record — no clock of its own", async () => {

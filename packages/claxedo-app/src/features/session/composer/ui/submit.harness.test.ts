@@ -308,7 +308,13 @@ export const defaultComposerMode = () => ({
 
 export async function seedCommandList(directory: string) {
   const testQueryClient = (await import("@/platform/query/query-client")).queryClient
-  testQueryClient.setQueryData(["shell", "http://localhost:4096", "commands", directory], state.commandListResponse)
+  const { queryKeys } = await import("@/platform/query/keys")
+  // Built through the canonical key so the seed cannot drift from what submit
+  // reads: the OpenCode slash-command channel, no resolved workspace.
+  testQueryClient.setQueryData(
+    queryKeys.shell.commands("http://localhost:4096", directory, "opencode", ""),
+    state.commandListResponse,
+  )
 }
 
 let rawCreatePromptSubmit: typeof import("./submit").createPromptSubmit
@@ -817,6 +823,9 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     useSDK: () => ({
       directory: "/repo/main",
       url: "http://localhost:4096",
+      // The real scope resolves a workspace per call directory; these tests run
+      // local directories, which resolve to none.
+      workspace: () => undefined,
       client: {
         worktree: {
           create: async (input: { directory?: string; worktreeCreateInput?: { baseRef?: string } }) => {

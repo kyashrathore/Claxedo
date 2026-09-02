@@ -172,7 +172,7 @@ describe("harness model writer", () => {
       body: { model: { providerID: "anthropic", modelID: "opus" } },
     }])
     expect(remembered).toEqual([])
-    expect(state["http://server\nses_1"]).toEqual({ desired: "anthropic/opus", synced: "anthropic/opus" })
+    expect(Object.values(state)).toEqual([{ desired: "anthropic/opus", synced: "anthropic/opus" }])
     expect(publishedConfigs).toEqual([{
       harness: { id: "claude", access: "native" },
       model: { providerID: "anthropic", modelID: "opus" },

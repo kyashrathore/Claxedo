@@ -72,7 +72,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const comments = useComments()
   const sessionParams = useSessionParams()
   const dialog = useDialog()
-  const providers = useProviders()
+  const providers = useProviders("opencode")
   const command = useCommand()
   const permission = usePermission()
   const language = useLanguage()
@@ -172,7 +172,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const commandDirectory = createMemo(() => resolvedSessionDirectory() ?? sdk.directory)
   const newSession = isNewSessionVariant
   const hydrateDirectoryCommands = createDeferredDirectoryResourceGate({
-    scope: () => `${sdk.url ?? ""}:${commandDirectory()}:commands`,
+    scope: () => `${sdk.url ?? ""}:${commandDirectory()}:${currentHarnessType(scope())}:commands`,
     active: () => sessionParams.active?.() ?? true,
   })
   const customCommandsQuery = useWorkspaceQuery(() => {
@@ -181,6 +181,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       ...commandListQuery({
         baseUrl: sdk.url,
         directory,
+        // The command set is the HARNESS's, for this worktree: OpenCode's slash
+        // commands are not the ones a Codex or Claude pane can run.
+        harnessType: currentHarnessType(scope()),
         request: platform.fetch ?? fetch,
         workspace: sdk.workspace(directory),
         client: sdk.createClient({ directory }),

@@ -13,7 +13,7 @@ import { openSettingsProviders } from "@/features/settings/open-settings-provide
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()
-  const providers = useProviders()
+  const providers = useProviders("opencode")
   const language = useLanguage()
   const dialog = useDialog()
 

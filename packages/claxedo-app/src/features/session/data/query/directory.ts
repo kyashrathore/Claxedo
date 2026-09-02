@@ -1,6 +1,6 @@
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
 export type { Agent } from "@opencode-ai/sdk/v2/client"
-import { queryKeys } from "@/platform/query/keys"
+import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
 import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeUrl } from "@/platform/api/api"
@@ -36,8 +36,15 @@ function agentListFromUnknown(data: unknown) {
     : []
 }
 
+/**
+ * Whether `harnessType` is the harness whose sessions carry agent profiles.
+ *
+ * An UNKNOWN harness is unknown, not OpenCode: a directory read that fires
+ * before the pane resolves its harness must not be answered with OpenCode's
+ * agent list, which is what put OpenCode's profiles under every other harness.
+ */
 export function harnessUsesAgentProfiles(harnessType?: string) {
-  return !harnessType || harnessType === "opencode"
+  return harnessType === "opencode"
 }
 
 export function projectCurrentQuery(input: {
@@ -59,7 +66,11 @@ export function configQuery(input: {
   client: ConfigClient
 }) {
   return {
-    queryKey: queryKeys.directory.config(input.baseUrl, input.directory),
+    queryKey: queryKeys.directory.config(
+      input.baseUrl,
+      input.directory,
+      workspaceQueryKey(input.workspace),
+    ),
     staleTime: 60 * 1000,
     queryFn: async () => {
       // Relay/workspace-backed scopes (cloud / user-hosted) do not serve the
@@ -95,7 +106,7 @@ export function agentListQuery(input: {
       input.baseUrl,
       input.directory,
       input.harnessType,
-      input.workspace ? `${input.workspace.kind ?? ""}:${input.workspace.workspaceId ?? ""}` : "",
+      workspaceQueryKey(input.workspace),
     ),
     staleTime: 30 * 1000,
     queryFn: async () => {

@@ -25,10 +25,8 @@ import {
 } from "./store-policy"
 
 describe("harness store policy", () => {
-  test("keeps draft defaults isolated from legacy harness settings", () => {
-    expect(initialHarness("draft:/tmp/proj:route", undefined, "claude-sdk")).toBe("opencode")
-    expect(initialHarness("draft:/tmp/proj:route", "acp:codex", "claude-sdk")).toBe("acp:codex")
-    expect(initialHarness("session:ses_1", undefined, "claude-sdk")).toBe("claude-sdk")
+  test("a scope's transient seed is OpenCode and carries no remembered choice", () => {
+    expect(initialHarness()).toBe("opencode")
   })
 
   test("classifies model-option fetch and retry policy", () => {
@@ -49,54 +47,93 @@ describe("harness store policy", () => {
   })
 
   test("keeps query ownership keys stable", () => {
-    expect(harnessChangeKey("draft:/tmp/project:route", "acp:codex")).toBe("draft:/tmp/project:route\nacp:codex\n")
+    const server = "http://127.0.0.1:3001"
     expect(harnessChangeRequestKey("key")).toEqual(["shell", "harness-config", "harness-change", "key"])
-    expect(harnessHydrateRequestKey("session:ses_1")).toEqual(["shell", "harness-config", "hydrate", "session:ses_1"])
-    expect(harnessHydrateSeenKey("session:ses_1")).toEqual([
+    expect(harnessHydrateRequestKey(server, "session:ses_1")).toEqual([
       "shell",
       "harness-config",
       "hydrate",
+      server,
+      "session:ses_1",
+    ])
+    expect(harnessHydrateSeenKey(server, "session:ses_1")).toEqual([
+      "shell",
+      "harness-config",
+      "hydrate",
+      server,
       "session:ses_1",
       "seen",
     ])
-    expect(harnessPreparedSessionKey("draft:/repo:route")).toEqual([
+    expect(harnessPreparedSessionKey(server, "draft:/repo:route")).toEqual([
       "shell",
       "harness-config",
       "prepared-session",
+      server,
       "draft:/repo:route",
     ])
-    expect(harnessPreparedSessionSeqKey("draft:/repo:route")).toEqual([
+    expect(harnessPreparedSessionSeqKey(server, "draft:/repo:route")).toEqual([
       "shell",
       "harness-config",
       "prepared-session",
+      server,
       "draft:/repo:route",
       "seq",
     ])
-    expect(harnessPreparingSessionKey("draft:/repo:route")).toEqual([
+    expect(harnessPreparingSessionKey(server, "draft:/repo:route")).toEqual([
       "shell",
       "harness-config",
       "prepared-session",
+      server,
       "draft:/repo:route",
       "prepare",
     ])
-    expect(harnessOptionsSeqKey("draft:/repo:route")).toEqual([
+    expect(harnessOptionsSeqKey(server, "draft:/repo:route")).toEqual([
       "shell",
       "harness-config",
       "options",
+      server,
       "draft:/repo:route",
       "seq",
     ])
-    expect(harnessOptionsTriesKey("draft:/repo:route")).toEqual([
+    expect(harnessOptionsTriesKey(server, "draft:/repo:route")).toEqual([
       "shell",
       "harness-config",
       "options",
+      server,
       "draft:/repo:route",
       "tries",
     ])
-    expect(sessionModelSyncKey("http://127.0.0.1:3001", {
-      directory: "/tmp/project",
-      sessionId: "ses_1",
-    })).toBe("http://127.0.0.1:3001\nses_1")
+  })
+
+  // The defect the shape fixes: a pane scope is a directory string, so two
+  // servers exposing the same worktree named ONE entry for two runtimes.
+  test("two servers exposing the same worktree never share a harness-config entry", () => {
+    const scope = "draft:/repo:route"
+    expect(harnessHydrateRequestKey("http://127.0.0.1:3001", scope))
+      .not.toEqual(harnessHydrateRequestKey("https://app.claxedo.test", scope))
+    expect(harnessPreparedSessionKey("http://127.0.0.1:3001", scope))
+      .not.toEqual(harnessPreparedSessionKey("https://app.claxedo.test", scope))
+    expect(harnessOptionsTriesKey("http://127.0.0.1:3001", scope))
+      .not.toEqual(harnessOptionsTriesKey("https://app.claxedo.test", scope))
+  })
+
+  // The change key and the session-model key carry the full authority — the
+  // same tuple `session-capabilities-query.ts` keys on, from the same builder.
+  test("the harness-change and session-model keys carry server, workspace and harness", () => {
+    const local = { serverUrl: "http://127.0.0.1:3001", directory: "/tmp/project", sessionId: "ses_1" }
+    const cloud = { ...local, workspaceId: "ws_1", workspaceKind: "cloud" as const }
+
+    expect(harnessChangeKey(local, "acp:codex")).not.toEqual(harnessChangeKey(cloud, "acp:codex"))
+    expect(harnessChangeKey(local, "acp:codex")).not.toEqual(harnessChangeKey(local, "acp:claude"))
+    expect(harnessChangeKey(local, "acp:codex")).not.toEqual(harnessChangeKey(local, "acp:codex", "/usr/bin/codex"))
+    expect(harnessChangeKey(local, "acp:codex")).toBe(harnessChangeKey(local, "acp:codex"))
+
+    expect(sessionModelSyncKey(local)).toBe(sessionModelSyncKey(local))
+    expect(sessionModelSyncKey(local)).not.toBe(sessionModelSyncKey(cloud))
+    expect(sessionModelSyncKey({ ...local, serverUrl: "https://app.claxedo.test" })).not.toBe(sessionModelSyncKey(local))
+    expect(sessionModelSyncKey({ ...local, sessionId: "new" })).toBeUndefined()
+    expect(sessionModelSyncKey({ serverUrl: local.serverUrl, sessionId: "ses_1" })).toBeUndefined()
+    expect(sessionModelSyncKey({ serverUrl: local.serverUrl, directory: "/tmp/project" })).toBeUndefined()
   })
 
   test("keeps workspace runtime scope policy stable", () => {

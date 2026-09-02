@@ -50,7 +50,7 @@ export function resolveModelVisibility(input: {
 const modelsContextInput = {
   name: "Models", gate: true,
   init: () => {
-    const providers = useProviders()
+    const providers = useProviders("opencode")
 
     const [store, setStore, _, ready] = persisted(
       Persist.global("model", ["model.v1"]),

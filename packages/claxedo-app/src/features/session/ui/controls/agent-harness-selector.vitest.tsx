@@ -77,11 +77,9 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
 
 vi.mock("@/features/session/preferences/pane", () => ({
   panePreferenceScope: () => "test-scope",
-  // store-state → store-policy re-exports these at module load; the live
-  // harnessStatusPatch assertion below doesn't exercise them, so stubs suffice.
+  // store-state → store-policy re-exports this at module load; the live
+  // harnessStatusPatch assertion below doesn't exercise it, so a stub suffices.
   isDraftPaneScope: (scope: string) => scope.startsWith("draft:"),
-  initialPaneHarness: (_scope: string, saved?: string, legacy?: string | null) => saved ?? legacy ?? undefined,
-  initialPaneValue: (_scope: string, saved?: string, legacy?: string | null) => saved ?? legacy ?? "",
 }))
 
 // Stub the merged harness→model picker, preserving the DOM contract these

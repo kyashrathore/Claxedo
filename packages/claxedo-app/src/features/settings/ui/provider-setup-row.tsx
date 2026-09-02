@@ -20,7 +20,8 @@ export const ProviderSetupRow: Component<{
   status: ProviderSetupStatus
   detail?: string
   providerId: string
-  harness?: string
+  /** The harness whose credentials this row connects. */
+  harness: string
   note?: string
   onConnected?: () => void | Promise<void>
 }> = (props) => {

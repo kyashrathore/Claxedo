@@ -316,6 +316,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
 
       <Show when={props.view.kind === "providers"}>
         <ProviderList
+          harness="opencode"
           hideCustom
           onSelect={(providerId: string) => props.onViewChange({ kind: "connect", providerId })}
         />
@@ -376,6 +377,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                 */}
                 <ProviderConnectForm
                   provider="anthropic"
+                  harness="opencode"
                   scope="shared"
                   hideHeading
                   onConnected={async () => {
@@ -394,6 +396,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
         {(view) => (
           <ProviderConnectForm
             provider={view().providerId}
+            harness="opencode"
             scope={scope()}
             hideHeading
             onConnected={async () => {

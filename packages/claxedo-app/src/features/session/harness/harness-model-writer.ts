@@ -71,7 +71,7 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   cache: HarnessSessionModelSyncCache
 }) {
   const syncSessionModel = async (params: ScopeInput | undefined, model: ModelKey) => {
-    const key = sessionModelSyncKey(input.base, params)
+    const key = sessionModelSyncKey({ serverUrl: input.base, ...params })
     if (!key) return
     const syncValue = `${model.providerID}/${model.modelID}`
     return syncHarnessSessionModel({

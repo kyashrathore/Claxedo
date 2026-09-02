@@ -11,7 +11,7 @@ beforeEach(() => {
 })
 
 describe("harness store facade", () => {
-  test("reads session state from scoped preferences and legacy fallback without seeding", () => {
+  test("reads an empty projection without seeding, ignoring the retired pane maps", () => {
     storage.setItem("claxedo:runner", "acp:claude")
     storage.setItem("claxedo:acp-model", "legacy-model")
     storage.setItem("claxedo:harness-map", JSON.stringify({ "session:ses_1": "acp:codex" }))
@@ -20,14 +20,12 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
 
     expect(store.state("session:ses_1")).toBeUndefined()
-    expect(store.read("session:ses_1")).toMatchObject({
-      harness: "acp:codex",
-      selectedModel: "gpt-5.5",
-    })
-    expect(store.read("session:ses_2")).toMatchObject({
-      harness: "acp:claude",
-      selectedModel: "legacy-model",
-    })
+    for (const scope of ["session:ses_1", "session:ses_2"]) {
+      expect(store.read(scope)).toMatchObject({
+        harness: "opencode",
+        selectedModel: "",
+      })
+    }
     expect(store.state("session:ses_1")).toBeUndefined()
     expect(store.state("session:ses_2")).toBeUndefined()
   })
@@ -47,12 +45,10 @@ describe("harness store facade", () => {
   })
 
   test("touch seeds live state and seed does not overwrite patches", () => {
-    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:one": "acp:codex" }))
-
     const store = createHarnessStore(storage)
     const state = store.touch("draft:one")
 
-    expect(state.harness).toBe("acp:codex")
+    expect(state.harness).toBe("opencode")
     expect(store.state("draft:one")).toBe(state)
 
     store.applyPatch("draft:one", {
@@ -67,13 +63,10 @@ describe("harness store facade", () => {
     })
   })
 
-  test("seed preserves live state even when preferences change", () => {
-    storage.setItem("claxedo:acp-model-map", JSON.stringify({ "draft:one": "sonnet" }))
-
+  test("seed never overwrites live state on a second call", () => {
     const store = createHarnessStore(storage)
     store.seed("draft:one")
     store.applyPatch("draft:one", { selectedModel: "opus" })
-    storage.setItem("claxedo:acp-model-map", JSON.stringify({ "draft:one": "haiku" }))
     store.seed("draft:one")
 
     expect(store.read("draft:one").selectedModel).toBe("opus")
@@ -350,7 +343,6 @@ describe("harness store facade", () => {
 
     expect(store.rememberDraftHarness("draft:one", identity, "acp:codex")).toBe(true)
     expect(createDraftDefaultPreferences(storage).read(identity)).toEqual({
-      version: 1,
       harness: "acp:codex",
     })
     expect(store.completeRememberedHarness(
@@ -362,6 +354,69 @@ describe("harness store facade", () => {
       providerID: "acp:codex",
       modelID: "gpt-5.5",
     })
+  })
+
+  // D1: each harness owns its own slot in one workspace, so switching away and
+  // back returns to the model that harness was on.
+  test("restores the model the chosen harness was last on, leaving the other's alone", () => {
+    const store = createHarnessStore(storage)
+    const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
+    const preferences = createDraftDefaultPreferences(storage)
+    preferences.save(identity, { harness: "acp:codex", model: { providerID: "acp:codex", modelID: "gpt-5.5" } })
+    preferences.save(identity, { harness: "acp:claude", model: { providerID: "acp:claude", modelID: "opus" } })
+
+    store.beginDraftHarnessChoice("draft:one", identity, "acp:codex")
+
+    expect(store.read("draft:one")).toMatchObject({
+      draftDefaultAuthority: "explicit",
+      draftDefaultState: "ready",
+      draftDefaultWritePending: false,
+      selectedModel: "gpt-5.5",
+      selectedModelProvider: "acp:codex",
+    })
+    expect(store.draftDefaultModel("draft:one")).toEqual({ providerID: "acp:codex", modelID: "gpt-5.5" })
+    // The harness left behind keeps its own model.
+    expect(preferences.readHarness(identity, "acp:claude")?.model?.modelID).toBe("opus")
+  })
+
+  test("a harness with nothing remembered opens unresolved rather than on another harness's model", () => {
+    const store = createHarnessStore(storage)
+    const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
+    createDraftDefaultPreferences(storage).save(identity, {
+      harness: "acp:claude",
+      model: { providerID: "acp:claude", modelID: "opus" },
+    })
+
+    store.beginDraftHarnessChoice("draft:one", identity, "acp:codex")
+
+    expect(store.read("draft:one")).toMatchObject({
+      selectedModel: "",
+      draftDefaultWritePending: true,
+    })
+    expect(store.read("draft:one").draftDefaultState).toBeUndefined()
+  })
+
+  // Remembering a harness must not blank the slot it cannot fill: the live
+  // selection belongs to the harness being left.
+  test("remembering a harness keeps its own saved model when the live selection is another harness's", () => {
+    const store = createHarnessStore(storage)
+    const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
+    const preferences = createDraftDefaultPreferences(storage)
+    preferences.save(identity, { harness: "acp:codex", model: { providerID: "acp:codex", modelID: "gpt-5.5" } })
+    store.applyPatch("draft:one", {
+      harness: "acp:claude",
+      selectedModel: "opus",
+      selectedModelProvider: "acp:claude",
+      dynamicModels: [{ id: "opus", name: "Opus" }],
+    })
+
+    expect(store.rememberDraftHarness("draft:one", identity, "acp:codex")).toBe(true)
+
+    expect(preferences.readHarness(identity, "acp:codex")?.model).toEqual({
+      providerID: "acp:codex",
+      modelID: "gpt-5.5",
+    })
+    expect(store.read("draft:one").draftDefaultState).toBe("ready")
   })
 
   test("persists friendly recovery labels with an explicit model pair", () => {

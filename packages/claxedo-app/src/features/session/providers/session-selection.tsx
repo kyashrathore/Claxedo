@@ -138,7 +138,7 @@ const localContextInput = {
     agents?: Accessor<Agent[]>
   } = {}) => {
     const sdk = useSDK()
-    const providers = useProviders()
+    const providers = useProviders("opencode")
     const models = useModels()
     const platform = usePlatform()
 
@@ -201,10 +201,10 @@ const localContextInput = {
     ))
 
     const currentSessionHarnessId = createMemo(() => decodeSessionConfig(settledQueryData(sessionConfigRawQuery)).harness?.type)
-    const harnessType = () => {
-      const type = currentSessionHarnessId()
-      return type === "opencode" ? undefined : type
-    }
+    // The session's own harness, including "opencode": the agent-profile and
+    // catalog reads key on it, and an UNRESOLVED harness is unknown — never
+    // OpenCode by omission.
+    const harnessType = currentSessionHarnessId
 
     // agentListQuery routes to the workspace runtime for relay-backed scopes —
     // gate on the authority so it cannot fire while that workspace is offline.

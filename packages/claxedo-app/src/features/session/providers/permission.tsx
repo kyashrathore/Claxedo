@@ -4,8 +4,9 @@ import { useQuery } from "@tanstack/solid-query"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { PermissionRequest } from "@opencode-ai/sdk/v2/client"
 import { Persist, persisted } from "@/platform/persistence/persist"
-import { useGlobalSDK } from "@/features/session/app-ports"
+import { useGlobalSDK, useShellQueryOptions } from "@/features/session/app-ports"
 import { useParams } from "@solidjs/router"
+import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { decode64 } from "@/lib/base64"
 import { directoryConfig, directoryConfigQuery } from "@/platform/query/directory-config-cache"
 import { directorySessions } from "@/features/session/data/sync/directory-session-cache"
@@ -64,8 +65,18 @@ const permissionContextInput = {
   init: () => {
     const params = useParams()
     const globalSDK = useGlobalSDK()
+    const queryOptions = useShellQueryOptions()
+    const projectsQuery = useQuery(() => queryOptions.projects())
     const directory = createMemo(() => decode64(params.dir))
-    const configQuery = useQuery(() => directoryConfigQuery(globalSDK.url, directory() ?? ""))
+    // Config belongs to the machine serving the route's workspace, so this read
+    // resolves the workspace the same way the pane SDK scope does — through the
+    // signed inventory — rather than reading a directory-only entry the writer
+    // no longer produces.
+    const workspaceFor = (dir: string) => signedWorkspaceFromProjects(projectsQuery.data ?? [], dir)
+    const configQuery = useQuery(() => {
+      const dir = directory() ?? ""
+      return directoryConfigQuery(globalSDK.url, dir, workspaceFor(dir))
+    })
     const permissionConfig = createMemo(() => configQuery.data?.permission)
 
     const permissionsEnabled = createMemo(() => {
@@ -322,7 +333,7 @@ const permissionContextInput = {
       },
       permissionsEnabled,
       isPermissionAllowAll(directory: string) {
-        const perm = directoryConfig(globalSDK.url, directory)?.permission
+        const perm = directoryConfig(globalSDK.url, directory, workspaceFor(directory))?.permission
         return typeof perm === "string" && perm === "allow"
       },
     }

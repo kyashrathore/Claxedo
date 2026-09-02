@@ -15,18 +15,17 @@ import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createMemo, Match, Show, Switch } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useQuery } from "@tanstack/solid-query"
 import { Link } from "@/app/controls/link"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
-import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useLanguage } from "@/platform/i18n/provider"
-import { mergeProviderQuery, useProviders } from "@/app/providers/use-providers"
+import { useProviderAuth, useProviders } from "@/app/providers/use-providers"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { queryClient } from "@/platform/query/query-client"
 
 export type ProviderConnectFormProps = {
   provider: string
-  harness?: string
+  /** The harness whose credential store this writes to. */
+  harness: string
   /** Written with the credential so onboarding's scope choice is honoured. */
   scope?: "local" | "shared"
   /** Runs after the credential is stored and the provider list is refreshed. */
@@ -39,10 +38,12 @@ export type ProviderConnectFormProps = {
 
 export function useProviderConnectForm(props: ProviderConnectFormProps) {
   const globalSDK = useGlobalSDK()
-  const queryOptions = useQueryOptions()
   const language = useLanguage()
-  const providers = useProviders(props.harness)
-  const providerAuthQuery = useQuery(() => queryOptions.providerAuth(props.harness))
+  const providers = useProviders(() => props.harness)
+  // Auth belongs to the machine serving this scope, not to the harness name:
+  // `useProviderAuth` reads it under the same (server, scope, harness) key the
+  // catalog above uses, so a cloud workspace never shows the daemon's methods.
+  const providerAuthQuery = useProviderAuth(() => props.harness)
   // The catalog holds MODEL providers; callers may pass an id it does not carry
   // (an auth-only harness id, or a provider the list hasn't loaded
   // yet). Every consumer below reads `.name`, so a miss used to throw and take
@@ -73,24 +74,12 @@ export function useProviderConnectForm(props: ProviderConnectFormProps) {
   const methodLabel = (value?: { type?: string; label?: string }) =>
     value?.type === "api" ? language.t("provider.connect.method.apiKey") : value?.label ?? ""
 
+  // Every catalog entry for this harness, on whichever machine cached it: the
+  // credential is stored centrally, so a machine that already answered for this
+  // harness must re-ask.
   const markConnected = async () => {
-    if (props.harness) {
-      await queryClient.invalidateQueries({
-        predicate: (query) => query.queryKey[2] === "providers" && query.queryKey[4] === props.harness,
-      })
-      await providers.load(props.provider).catch(() => undefined)
-      return
-    }
-    const current = provider()
-    mergeProviderQuery({
-      queryKey: queryOptions.providers(null).queryKey,
-      current: providers.state(),
-      providerId: props.provider,
-      provider: { ...current, source: "api" },
-      ensureConnected: true,
-    })
     await queryClient.invalidateQueries({
-      predicate: (query) => query.queryKey[2] === "providers" && query.queryKey[4] !== "pi",
+      predicate: (query) => query.queryKey[2] === "providers" && query.queryKey[4] === props.harness,
     })
     await providers.load(props.provider).catch(() => undefined)
   }

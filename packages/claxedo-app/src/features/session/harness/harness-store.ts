@@ -191,17 +191,26 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     const selected = harnessModelKeyForSubmit(current)
     const liveConfigModel = !harnessHasConfigOptions(type) ||
       !!current.dynamicModels?.some((item) => item.id === selected?.modelID)
+    // The live selection belongs to the harness being LEFT unless it is a model
+    // `type` itself can serve; otherwise `type` keeps whatever it remembered on
+    // its own slot rather than being blanked by the other harness's choice.
+    const remembered = preferences.draftDefaults.readHarness(identity, type)
     const model = selected && liveConfigModel &&
       (type === "pi" || type === "opencode" || selected.providerID === type)
       ? selected
-      : undefined
-    const persisted = preferences.draftDefaults.save(identity, { harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) })
+      : remembered?.model
+    const choiceLabels = labels ?? (model === remembered?.model ? remembered?.labels : undefined)
+    const persisted = preferences.draftDefaults.save(identity, {
+      harness: type,
+      ...(model ? { model } : {}),
+      ...(choiceLabels ? { labels: choiceLabels } : {}),
+    })
     setStore(scope, {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: revision,
       draftDefaultServerUrl: identity.serverUrl,
       draftDefaultWorkspaceKey: identity.workspaceKey,
-      draftDefault: { version: 1, harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) },
+      draftDefault: { harness: type, ...(model ? { model } : {}), ...(choiceLabels ? { labels: choiceLabels } : {}) },
       draftDefaultState: model || !harnessHasConfigOptions(type) ? "ready" : undefined,
       draftDefaultWritePending: harnessHasConfigOptions(type) && !model,
       configError: undefined,
@@ -209,6 +218,11 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     return persisted
   }
 
+  /**
+   * The user picked `type` for this draft: restore what THAT harness last used
+   * here. Each harness owns its own slot, so switching away and back returns to
+   * the model it was on instead of "Choose a model".
+   */
   const beginDraftHarnessChoice = (
     scope: string,
     identity: Omit<DraftDefaultScope, "fallbackWorkspaceKey">,
@@ -216,14 +230,18 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
   ) => {
     seed(scope)
     const current = read(scope)
+    const remembered = preferences.draftDefaults.readHarness(identity, type)
+    const model = remembered?.model
     setStore(scope, {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
       draftDefaultServerUrl: identity.serverUrl,
       draftDefaultWorkspaceKey: identity.workspaceKey,
-      draftDefault: { version: 1, harness: type },
-      draftDefaultState: undefined,
-      draftDefaultWritePending: harnessHasConfigOptions(type),
+      draftDefault: { harness: type, ...(remembered ?? {}) },
+      draftDefaultState: model || !harnessHasConfigOptions(type) ? "ready" : undefined,
+      draftDefaultWritePending: harnessHasConfigOptions(type) && !model,
+      selectedModel: model?.modelID ?? "",
+      selectedModelProvider: model?.providerID,
       configError: undefined,
     })
   }
@@ -243,7 +261,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
       draftDefaultServerUrl: identity.serverUrl,
       draftDefaultWorkspaceKey: identity.workspaceKey,
-      draftDefault: { version: 1, harness: current.harness, model, ...(labels ? { labels } : {}) },
+      draftDefault: { harness: current.harness, model, ...(labels ? { labels } : {}) },
       draftDefaultState: "ready",
       draftDefaultWritePending: false,
       configError: undefined,

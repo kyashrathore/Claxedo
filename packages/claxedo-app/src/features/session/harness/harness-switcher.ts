@@ -51,7 +51,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   let nextRevision = 0
 
   const setHarness = (scope: string, type: HarnessType, params?: ScopeInput, binary?: string) => {
-    const key = harnessChangeKey(scope, type, binary)
+    const key = harnessChangeKey({ serverUrl: input.base, ...params }, type, binary)
     const pending = input.cache.getPending(key)
     if (pending) return pending
 

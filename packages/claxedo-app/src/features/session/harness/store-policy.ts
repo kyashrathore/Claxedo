@@ -1,6 +1,4 @@
 import {
-  initialPaneHarness,
-  initialPaneValue,
   isDraftPaneScope,
   panePreferenceScope,
 } from "@/features/session/preferences/pane"
@@ -8,6 +6,11 @@ import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef, type SessionWorkspaceRuntimeInput } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { normalizedAgentRuntimeServerUrl } from "@/platform/runtime/agent/agent-runtime-urls"
+import {
+  sessionResourceAuthorityKey,
+  sessionResourceAuthorityScope,
+} from "../store/session-resource-authority"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {
   harnessHasConfigOptions,
@@ -26,12 +29,14 @@ export type HarnessScopeInput = {
 
 export const harnessScope = panePreferenceScope
 export const isDraftScope = isDraftPaneScope
-export const initialValue = initialPaneValue
 
-export function initialHarness(scope: string, saved?: string, legacy?: string | null): HarnessType {
-  // Draft scopes ignore the legacy harness default and fall through to OpenCode.
-  // Session scopes still honor the legacy default when they have one.
-  return pickHarness(initialPaneHarness(scope, saved, legacy), null) ?? "opencode"
+/**
+ * The harness a scope's transient state starts on: OpenCode, the product's
+ * default, stated once here. Every real answer — the workspace's draft default
+ * or the session's own config — replaces it during hydration.
+ */
+export function initialHarness(): HarnessType {
+  return "opencode"
 }
 
 export function shouldShowModelOptionsStaleWarning(input: {
@@ -107,40 +112,75 @@ export function refreshHarnessTypeForScope(input: {
   return harnessWorkspaceRuntimeRef(input) ? "opencode" : undefined
 }
 
-export function harnessChangeKey(scope: string, type: HarnessType, binary?: string) {
-  return `${scope}\n${type}\n${binary ?? ""}`
+/**
+ * WHICH MACHINE answers a harness-config request, and for what.
+ *
+ * A pane scope is a directory string and a surface id; two servers exposing the
+ * same worktree produce the same scope, so on its own it named one cache entry
+ * for two runtimes. This carries the machine and the workspace it serves as
+ * well, and it is the SAME tuple `session-capabilities-query.ts` keys on —
+ * built by the same `sessionResourceAuthorityKey`, not a second builder that
+ * can drift from it.
+ */
+export type HarnessConfigAuthority = HarnessScopeInput & {
+  serverUrl?: string
+  workspaceId?: string
+  workspaceKind?: WorkspaceKind | null
+}
+
+export function harnessConfigAuthorityKey(authority: HarnessConfigAuthority) {
+  const kind = authority.workspaceKind
+  const relayBacked = isRelayBackedWorkspaceKind(kind)
+  return sessionResourceAuthorityKey(sessionResourceAuthorityScope({
+    sessionID: authority.sessionId ?? "",
+    directory: authority.directory ?? "",
+    serverUrl: authority.serverUrl,
+    signedControlPlane: relayBacked,
+    ...(authority.workspaceId ? { workspaceId: authority.workspaceId } : {}),
+    ...(relayBacked ? { workspaceKind: kind } : {}),
+    ...(authority.sessionRef ? { sessionRef: authority.sessionRef } : {}),
+  }))
+}
+
+export function harnessChangeKey(authority: HarnessConfigAuthority, type: HarnessType, binary?: string) {
+  return JSON.stringify([harnessConfigAuthorityKey(authority), type, binary ?? ""])
 }
 
 export function harnessChangeRequestKey(key: string) {
   return ["shell", "harness-config", "harness-change", key] as const
 }
 
-export function harnessHydrateRequestKey(scope: string) {
-  return ["shell", "harness-config", "hydrate", scope] as const
+/** The machine component every scope-keyed harness-config entry carries. */
+function server(serverUrl: string) {
+  return normalizedAgentRuntimeServerUrl(serverUrl)
 }
 
-export function harnessHydrateSeenKey(scope: string) {
-  return ["shell", "harness-config", "hydrate", scope, "seen"] as const
+export function harnessHydrateRequestKey(serverUrl: string, scope: string) {
+  return ["shell", "harness-config", "hydrate", server(serverUrl), scope] as const
 }
 
-export function harnessPreparedSessionKey(scope: string) {
-  return ["shell", "harness-config", "prepared-session", scope] as const
+export function harnessHydrateSeenKey(serverUrl: string, scope: string) {
+  return ["shell", "harness-config", "hydrate", server(serverUrl), scope, "seen"] as const
 }
 
-export function harnessOptionsSeqKey(scope: string) {
-  return ["shell", "harness-config", "options", scope, "seq"] as const
+export function harnessPreparedSessionKey(serverUrl: string, scope: string) {
+  return ["shell", "harness-config", "prepared-session", server(serverUrl), scope] as const
 }
 
-export function harnessOptionsTriesKey(scope: string) {
-  return ["shell", "harness-config", "options", scope, "tries"] as const
+export function harnessOptionsSeqKey(serverUrl: string, scope: string) {
+  return ["shell", "harness-config", "options", server(serverUrl), scope, "seq"] as const
 }
 
-export function harnessPreparedSessionSeqKey(scope: string) {
-  return ["shell", "harness-config", "prepared-session", scope, "seq"] as const
+export function harnessOptionsTriesKey(serverUrl: string, scope: string) {
+  return ["shell", "harness-config", "options", server(serverUrl), scope, "tries"] as const
 }
 
-export function harnessPreparingSessionKey(scope: string) {
-  return ["shell", "harness-config", "prepared-session", scope, "prepare"] as const
+export function harnessPreparedSessionSeqKey(serverUrl: string, scope: string) {
+  return ["shell", "harness-config", "prepared-session", server(serverUrl), scope, "seq"] as const
+}
+
+export function harnessPreparingSessionKey(serverUrl: string, scope: string) {
+  return ["shell", "harness-config", "prepared-session", server(serverUrl), scope, "prepare"] as const
 }
 
 export function harnessStateFromSessionConfig(input: {
@@ -162,9 +202,9 @@ export function harnessStateFromSessionConfig(input: {
   }
 }
 
-export function sessionModelSyncKey(base: string, input?: HarnessScopeInput) {
-  if (!input?.directory || !input.sessionId || input.sessionId === "new") return undefined
-  return `${base}\n${input.sessionId}`
+export function sessionModelSyncKey(authority: HarnessConfigAuthority) {
+  if (!authority.directory || !authority.sessionId || authority.sessionId === "new") return undefined
+  return JSON.stringify(harnessConfigAuthorityKey(authority))
 }
 
 export function sessionModelSyncStateKey(key: string) {

@@ -356,7 +356,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           commandListQuery({
             baseUrl: sdk.url,
             directory: sessionDirectory,
+            // Reached only on the OpenCode slash-command channel (`!harnessMode`
+            // above), so the entry it shares with the composer is OpenCode's.
+            harnessType: "opencode",
             request: platform.fetch,
+            workspace: sdk.workspace(sessionDirectory),
             client: sdk.createClient({ directory: sessionDirectory }),
           }),
         )

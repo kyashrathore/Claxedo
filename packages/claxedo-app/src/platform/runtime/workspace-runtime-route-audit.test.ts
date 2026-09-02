@@ -1001,12 +1001,14 @@ describe("workspace runtime route audit", () => {
       expect(text).not.toMatch(/@\/hooks\/use-providers|@claxedo\/hooks\/use-providers/)
       expect(text).not.toMatch(/["']\/hooks\/use-providers["']/)
     }
-    expect(settings).toMatch(/queryOptions\.globalConfig\(\)/)
     expect(settings).toMatch(/useProviders\("opencode"\)/)
     expect(settings).toMatch(/openCodeProviders\.queryKey\(\)/)
     expect(settings).toMatch(/removeProviderAuthEntry/)
-    expect(settings).toMatch(/patchGlobalDisabledProviders/)
     expect(settings).toMatch(/disconnectOpenCodeProvider/)
+    // Provider config is the workspace runtime's file, not a server global:
+    // Settings reads no `/global/config` and PATCHes no disabled-provider list.
+    expect(settings).not.toMatch(/globalConfig/)
+    expect(settings).not.toMatch(/disabled_providers/)
     expect(settings).toMatch(/provider-settings-logic/)
     expect(settings).toMatch(/claxedoCredentialRequest\(\{ providerId: id \}/)
     expect(settings).not.toMatch(/useGlobalSync/)
@@ -1029,13 +1031,16 @@ describe("workspace runtime route audit", () => {
     expect(general).toMatch(/@\/features\/settings\/ui\/account-section/)
     expect(general).not.toMatch(/@\/components\/settings\/account-section/)
     expect(general).not.toMatch(/@claxedo\/context\/config/)
-    expect(connect).toMatch(/queryOptions\.providerAuth\(props\.harness\)/)
-    expect(connect).toMatch(/queryOptions\.providers\(null\)/)
+    // Auth is read for the SAME (scope, harness) the catalog is: one hook next
+    // to `useProviders`, not the boot path's central-scope query option.
+    expect(connect).toMatch(/useProviderAuth\(\(\) => props\.harness\)/)
+    expect(connect).toMatch(/useProviders\(\(\) => props\.harness\)/)
+    expect(connect).not.toMatch(/queryOptions\.providerAuth/)
     expect(connect).toMatch(/claxedoCredentialRequest/)
     expect(connect).not.toMatch(/globalSync\.data\.(?:provider|provider_auth)/)
     expect(connect).not.toMatch(/globalSync\.set\("provider"/)
-    expect(custom).toMatch(/queryOptions\.globalConfig\(\)/)
-    expect(custom).toMatch(/queryOptions\.providers\(null\)/)
+    expect(custom).not.toMatch(/globalConfig/)
+    expect(custom).toMatch(/queryOptions\.providers\(null, "opencode"\)/)
     expect(custom).toMatch(/claxedoCredentialRequest/)
     expect(custom).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
     expect(custom).not.toMatch(/@\/app\/dialogs\/select-provider/)
@@ -1658,7 +1663,10 @@ describe("workspace runtime route audit", () => {
     expect(context).not.toMatch(/\bcreateStore\b/)
     expect(context).not.toMatch(/\bGlobalStore\b/)
     expect(context).not.toMatch(/\b(?:Persist\.global|persisted)\b/)
-    expect(context).toMatch(/queryKeys\.controlPlane\.projects\(globalSDK\.url\)/)
+    // The workspace catalog has one owner; global-sync reads and refreshes it
+    // through that owner instead of holding the query key itself.
+    expect(context).toMatch(/from "@\/features\/workspaces\/data\/workspace-catalog"/)
+    expect(context).not.toMatch(/queryKeys\.controlPlane\.projects/)
     expect(context).toMatch(/setGlobalState/)
   })
 
@@ -2001,9 +2009,13 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/return `session:\$\{input\.sessionId\}`/)
     expect(text).not.toMatch(/session:\$\{input\.directory/)
     expect(harnessPolicy).toMatch(/export const harnessScope = panePreferenceScope/)
-    expect(harnessPolicy).toMatch(/return `\$\{base\}\\n\$\{input\.sessionId\}`/)
+    // The harness-config request keys carry the machine and the workspace, and
+    // build that tuple with `session-capabilities-query.ts`'s own builder
+    // rather than a second one that can drift from it.
+    expect(harnessPolicy).toMatch(/sessionResourceAuthorityKey\(sessionResourceAuthorityScope\(\{/)
+    expect(harnessPolicy).toMatch(/return JSON\.stringify\(harnessConfigAuthorityKey\(authority\)\)/)
+    expect(harnessPolicy).not.toMatch(/\$\{base\}\\n\$\{input\.sessionId\}/)
     expect(harnessPolicy).not.toMatch(/\$\{input\?\.directory \?\? ""\}\\n\$\{input\?\.sessionId/)
-    expect(harnessPolicy).not.toMatch(/\$\{base\}\\n\$\{input\.directory\}\\n\$\{input\.sessionId\}/)
   })
 
   test("generic auth fetch does not own workspace session transport routing", async () => {
@@ -3669,17 +3681,17 @@ describe("workspace runtime route audit", () => {
     ).text()
     const configHelper = await Bun.file(path.join(root, "platform/query/directory-config-cache.ts")).text()
 
-    expect(configHelper).toMatch(/queryKeys\.directory\.config\(baseUrl, directory\)/)
+    expect(configHelper).toMatch(/queryKeys\.directory\.config\(baseUrl, directory, workspaceQueryKey\(workspace\)\)/)
     // as-any: regex asserts upstream text still contains this compatibility cast.
     expect(configHelper).toMatch(/queryFn: async \(\) => undefined as unknown as Config/)
     expect(autoResponseCache).toMatch(/"permission-auto-respond"/)
     expect(autoResponseCache).toMatch(/permissionAutoRespondedQueryKey/)
     expect(autoResponseCache).toMatch(/permissionAutoAcceptVersionQueryKey/)
-    expect(text).toMatch(/useQuery\(\(\) => directoryConfigQuery\(globalSDK\.url, directory\(\) \?\? ""\)\)/)
+    expect(text).toMatch(/directoryConfigQuery\(globalSDK\.url, dir, workspaceFor\(dir\)\)/)
     expect(text).toMatch(/const permissionConfig = createMemo\(\(\) => configQuery\.data\?\.permission\)/)
     expect(text).toMatch(/hasPermissionPromptRules\(permissionConfig\(\)\)/)
     expect(text).toMatch(/const perm = permissionConfig\(\)/)
-    expect(text).toMatch(/directoryConfig\(globalSDK\.url, directory\)\?\.permission/)
+    expect(text).toMatch(/directoryConfig\(globalSDK\.url, directory, workspaceFor\(directory\)\)\?\.permission/)
     expect(text).toMatch(/const session = directory \? directorySessions\(directory\) : \[\]/)
     expect(text).toMatch(/autoRespondsPermission\(store\.autoAccept, session, \{ sessionID \}, directory\)/)
     expect(text).toMatch(/autoRespondsPermission\(store\.autoAccept, session, permission, directory\)/)

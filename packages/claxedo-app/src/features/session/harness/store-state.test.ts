@@ -10,30 +10,20 @@ import {
 } from "./store-state"
 
 describe("harness store state projectors", () => {
-  test("builds initial state from scoped preferences and legacy fallbacks", () => {
-    expect(initialHarnessStoreState({
-      scope: "session:ses_1",
-      legacyHarness: "claude-sdk",
-      legacyModel: "sonnet",
-      legacyAgent: "build",
-    })).toMatchObject({
-      harnessMode: "harness",
-      harness: "claude-sdk",
-      selectedModel: "sonnet",
-      selectedAgent: "build",
-      readiness: "ready",
-      optionsSource: "empty",
-    })
-
-    expect(initialHarnessStoreState({
-      scope: "draft:/repo:route",
-      legacyHarness: "claude-sdk",
-      legacyModel: "sonnet",
-    })).toMatchObject({
-      harnessMode: "opencode",
-      harness: "opencode",
-      selectedModel: "",
-    })
+  // The seed carries no remembered choice for ANY scope kind: a draft's comes
+  // from the per-(server, workspace, harness) defaults, a session's from its
+  // own config. Nothing is pane-scoped any more.
+  test("builds the same empty initial state for a draft and a session scope", () => {
+    for (const scope of ["session:ses_1", "draft:/repo:route"]) {
+      expect(initialHarnessStoreState({ scope })).toMatchObject({
+        harnessMode: "opencode",
+        harness: "opencode",
+        selectedModel: "",
+        selectedAgent: "",
+        readiness: "ready",
+        optionsSource: "empty",
+      })
+    }
   })
 
   test("seeds a fresh scope with the un-confirmed opencode placeholder", () => {
@@ -66,25 +56,9 @@ describe("harness store state projectors", () => {
     })
   })
 
-  test("restores the complete persisted Pi model key", () => {
-    expect(initialHarnessStoreState({
-      scope: "draft:/repo:route",
-      savedHarness: "pi",
-      savedModel: '{"providerID":"anthropic","modelID":"claude-sonnet-4-5"}',
-    })).toMatchObject({
-      harness: "pi",
-      selectedModelProvider: "anthropic",
-      selectedModel: "claude-sonnet-4-5",
-    })
-  })
-
   test("projects harness status onto current state", () => {
     expect(harnessStatusPatch({
-      current: initialHarnessStoreState({
-        scope: "draft:/repo:route",
-        savedHarness: "acp:codex",
-        savedModel: "gpt-5.5",
-      }),
+      current: initialHarnessStoreState({ scope: "draft:/repo:route" }),
       data: {
         type: "acp:claude",
         activeType: "acp:claude",

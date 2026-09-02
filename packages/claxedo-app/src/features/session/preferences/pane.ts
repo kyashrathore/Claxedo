@@ -46,14 +46,6 @@ export function isDraftPaneScope(scope: string) {
   return scope.startsWith("draft:")
 }
 
-export function initialPaneHarness(scope: string, saved?: string, legacy?: string | null) {
-  return saved ?? (isDraftPaneScope(scope) ? undefined : legacy ?? undefined)
-}
-
-export function initialPaneValue(scope: string, saved?: string, legacy?: string | null) {
-  return saved ?? (isDraftPaneScope(scope) ? "" : legacy ?? "")
-}
-
 export function defaultReviewMode(_sessionId?: string): ReviewMode {
   return "uncommitted"
 }

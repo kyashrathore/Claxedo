@@ -10,7 +10,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { DialogCustomProvider } from "@/app/dialogs/custom-provider"
 import { CUSTOM_PROVIDER_ID, ProviderList } from "./provider-list"
 
-export const DialogSelectProvider: Component<{ harness?: string }> = (props) => {
+export const DialogSelectProvider: Component<{ harness: string }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
 

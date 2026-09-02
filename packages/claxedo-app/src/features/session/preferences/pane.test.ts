@@ -2,8 +2,6 @@ import { describe, expect, test } from "bun:test"
 import {
   createPanePreferences,
   defaultReviewMode,
-  initialPaneHarness,
-  initialPaneValue,
   isDraftPaneScope,
   panePreferenceScope,
   PANE_PREFERENCE_KEYS,
@@ -110,21 +108,6 @@ describe("pane preferences", () => {
     expect(prefs.reviewMode({ directory: "/tmp/proj", sessionId: "ses_1", fallback: "staged" })).toBe("staged")
   })
 
-  test("ignores harness maps because harness migration is read-only elsewhere", () => {
-    const { storage } = memoryStorage({
-      "claxedo:runner-map": JSON.stringify({
-        "session:ses_1": "claude-acp",
-        "session:ses_2": "cursor-acp",
-      }),
-      "claxedo:harness-map": JSON.stringify({
-        "session:ses_1": "codex-acp",
-      }),
-    })
-    const prefs = createPanePreferences(storage)
-
-    expect(prefs.get("variant", "session:ses_1")).toBeUndefined()
-  })
-
   test("promote deletes stale destination values when the source has no value", () => {
     const { data, storage } = memoryStorage({
       [PANE_PREFERENCE_KEYS.variant]: JSON.stringify({ "session:ses_1": "stale" }),
@@ -136,14 +119,5 @@ describe("pane preferences", () => {
 
     expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.variant)!)).toEqual({})
     expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({})
-  })
-
-  test("resolves initial pane values with draft-aware legacy fallbacks", () => {
-    expect(initialPaneHarness("draft:/tmp/proj:route", undefined, "claude-acp")).toBeUndefined()
-    expect(initialPaneHarness("session:ses_1", undefined, "claude-acp")).toBe("claude-acp")
-    expect(initialPaneHarness("draft:/tmp/proj:route", "codex-acp", "claude-acp")).toBe("codex-acp")
-    expect(initialPaneValue("draft:/tmp/proj:route", undefined, "opus")).toBe("")
-    expect(initialPaneValue("session:ses_1", undefined, "opus")).toBe("opus")
-    expect(initialPaneValue("draft:/tmp/proj:route", "sonnet", "opus")).toBe("sonnet")
   })
 })

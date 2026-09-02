@@ -9,57 +9,48 @@ beforeEach(() => {
 })
 
 describe("harness preferences", () => {
-  test("builds draft state from scoped preferences and ignores legacy fallbacks", () => {
+  // The flat keys and the pane-scope maps are gone. They were the only path by
+  // which one pane's harness choice could seed another workspace's draft, and
+  // nothing writes or reads them any more.
+  test("the retired flat keys and pane maps no longer seed a scope", () => {
     storage.setItem("claxedo:runner", "claude-sdk")
     storage.setItem("claxedo:acp-model", "legacy-model")
     storage.setItem("claxedo:agent-mode", "legacy-agent")
+    storage.setItem("claxedo:runner-map", JSON.stringify({ "draft:/repo:route": "acp:claude" }))
     storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:/repo:route": "acp:codex" }))
     storage.setItem("claxedo:acp-model-map", JSON.stringify({ "draft:/repo:route": "opus" }))
     storage.setItem("claxedo:agent-mode-map", JSON.stringify({ "draft:/repo:route": "build" }))
 
-    expect(createHarnessPreferences(storage).initialState("draft:/repo:route")).toMatchObject({
-      harness: "acp:codex",
-      selectedModel: "opus",
-      selectedAgent: "build",
-    })
-    expect(createHarnessPreferences(storage).initialState("draft:/new:route")).toMatchObject({
-      harness: "opencode",
-      selectedModel: "",
-      selectedAgent: "",
-    })
+    for (const scope of ["draft:/repo:route", "session:ses_1"]) {
+      expect(createHarnessPreferences(storage).initialState(scope)).toMatchObject({
+        harness: "opencode",
+        selectedModel: "",
+        selectedAgent: "",
+      })
+    }
   })
 
-  test("builds session state from legacy fallbacks when no scoped preferences exist", () => {
-    storage.setItem("claxedo:runner", "claude-sdk")
-    storage.setItem("claxedo:acp-model", "legacy-model")
-    storage.setItem("claxedo:agent-mode", "legacy-agent")
-
-    expect(createHarnessPreferences(storage).initialState("session:ses_1")).toMatchObject({
-      harness: "claude-sdk",
-      selectedModel: "legacy-model",
-      selectedAgent: "legacy-agent",
-    })
-  })
-
-  test("reads old pane maps but does not write or promote harness model and agent preferences", () => {
+  test("neither save nor promote writes a pane-scoped preference", () => {
     const prefs = createHarnessPreferences(storage)
     prefs.save("draft:one", "harness", "codex-app-server")
     prefs.save("draft:one", "model", "opus")
     prefs.save("draft:one", "agent", "build")
-    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:one": "legacy-codex" }))
-    storage.setItem("claxedo:acp-model-map", JSON.stringify({ "draft:one": "legacy-opus" }))
-    storage.setItem("claxedo:agent-mode-map", JSON.stringify({ "draft:one": "legacy-build" }))
-
     prefs.promote("draft:one", "session:ses_1")
 
-    expect(JSON.parse(storage.getItem("claxedo:harness-map")!)).toEqual({ "draft:one": "legacy-codex" })
-    expect(JSON.parse(storage.getItem("claxedo:acp-model-map")!)).toEqual({ "draft:one": "legacy-opus" })
-    expect(JSON.parse(storage.getItem("claxedo:agent-mode-map")!)).toEqual({ "draft:one": "legacy-build" })
-    expect(storage.getItem("claxedo:model-variant-map")).toBeNull()
-    expect(storage.getItem("claxedo:review-mode-map")).toBeNull()
+    for (const key of [
+      "claxedo:runner",
+      "claxedo:acp-model",
+      "claxedo:agent-mode",
+      "claxedo:runner-map",
+      "claxedo:harness-map",
+      "claxedo:acp-model-map",
+      "claxedo:agent-mode-map",
+    ]) {
+      expect(storage.getItem(key)).toBeNull()
+    }
   })
 
-  test("exposes atomic workspace defaults without writing legacy pane maps", () => {
+  test("exposes per-harness workspace defaults without writing legacy pane maps", () => {
     const preferences = createHarnessPreferences(storage)
     expect(preferences.draftDefaults.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
@@ -70,14 +61,12 @@ describe("harness preferences", () => {
       serverUrl: "http://localhost:4096",
       workspaceKey: "ws_1",
     })).toEqual({
-      version: 1,
       harness: "opencode",
       model: { providerID: "anthropic", modelID: "opus" },
     })
     expect(storage.getItem("claxedo:harness-map")).toBeNull()
     expect(storage.getItem("claxedo:acp-model-map")).toBeNull()
   })
-
 })
 
 class MemoryStorage implements PanePreferenceStorage {

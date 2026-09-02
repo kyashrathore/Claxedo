@@ -12,10 +12,10 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useProviders } from "@/app/providers/use-providers"
 import { ProviderConnectForm } from "./provider-connect-form"
 
-export function DialogConnectProvider(props: { provider: string; harness?: string; onConnected?: () => void | Promise<void> }) {
+export function DialogConnectProvider(props: { provider: string; harness: string; onConnected?: () => void | Promise<void> }) {
   const dialog = useDialog()
   const language = useLanguage()
-  const providers = useProviders(props.harness)
+  const providers = useProviders(() => props.harness)
   const provider = createMemo(() => providers.all().get(props.provider)!)
 
   return (
