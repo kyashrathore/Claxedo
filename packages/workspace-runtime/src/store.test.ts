@@ -309,6 +309,68 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
+  it("gives an admitted delegation's child session the parent it belongs to", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
+    // The upstream engine owns this child, so the runtime's only row for it is
+    // the placeholder a session-scoped read binds. Admission is where the
+    // parent link enters this store, and `GET /session/:id` answers from here.
+    store.bindSession({ sessionId: "child", directory: "/work", agentSessionId: "child", createdAt: 2 })
+
+    store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "opencode:task:tool-1",
+        harnessExecutionId: "run",
+        toolCallId: "tool-1",
+        toolCallRole: "spawn",
+        status: "running",
+        providerKind: "opencode-task",
+        childSessionId: "child",
+        transcript: { kind: "messages" },
+      },
+      allocateKey: () => "key-1",
+    })
+
+    assert.equal((store.getSession("child") as { parentID?: string } | null)?.parentID, "parent")
+    assert.equal((store.getSession("child") as { directory?: string } | null)?.directory, "/work")
+    store.close()
+
+    // Journaled like every other session write, so a rehydrate keeps it.
+    const reopened = new RuntimeStore(root)
+    assert.equal((reopened.getSession("child") as { parentID?: string } | null)?.parentID, "parent")
+    reopened.close()
+  })
+
+  it("binds a child session admission names before this store has any row for it", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({ sessionId: "parent", directory: "/work", agentSessionId: "parent", createdAt: 1 })
+
+    store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "opencode:task:tool-2",
+        harnessExecutionId: "run",
+        toolCallId: "tool-2",
+        toolCallRole: "spawn",
+        status: "running",
+        providerKind: "opencode-task",
+        childSessionId: "unseen-child",
+        transcript: { kind: "messages" },
+      },
+      allocateKey: () => "key-2",
+    })
+
+    assert.partialDeepStrictEqual(store.getSession("unseen-child"), {
+      id: "unseen-child",
+      parentID: "parent",
+      directory: "/work",
+    })
+    store.close()
+  })
+
   it("serializes key and revision admission across concurrently open stores", () => {
     const root = tmp()
     const first = new RuntimeStore(root)

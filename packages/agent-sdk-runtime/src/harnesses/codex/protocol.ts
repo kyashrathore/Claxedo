@@ -140,26 +140,3 @@ export function codexTurnModel(input: PromptInput, configuredModel: string) {
   return codexAppServerModel(text(input.model.modelID) ?? text(configuredModel))
 }
 
-export function questionIds(params: JsonRecord) {
-  const list = Array.isArray(params.questions) ? params.questions : []
-  return list.flatMap((question) => text(record(question)?.id) ?? [])
-}
-
-export function permissionResponse(
-  method: string,
-  decision: "allow_once" | "allow_always" | "deny" | "reject_always",
-  params: JsonRecord,
-) {
-  const allow = decision === "allow_once" || decision === "allow_always"
-  const session = decision === "allow_always"
-  if (method === "execCommandApproval" || method === "applyPatchApproval") {
-    return { decision: allow ? session ? "approved_for_session" : "approved" : decision === "deny" ? "denied" : "abort" }
-  }
-  if (method === "item/permissions/requestApproval") {
-    return {
-      permissions: allow ? (record(params.permissions) ?? {}) : {},
-      scope: session ? "session" : "turn",
-    }
-  }
-  return { decision: allow ? session ? "acceptForSession" : "accept" : decision === "deny" ? "decline" : "cancel" }
-}

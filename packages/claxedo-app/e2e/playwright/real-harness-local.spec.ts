@@ -836,6 +836,16 @@ async function startGoalFromComposer(page: Page, input: Locator, entry: GoalEntr
   return dock
 }
 
+/**
+ * The dock's status badge, not "the text `Paused` somewhere in the dock" — the
+ * dock also renders the evaluator's `lastReason`, and a lifecycle transition
+ * writes that reason as the status word ("Paused", "Resumed"), so a text match
+ * across the whole dock is ambiguous by construction.
+ */
+function goalStatus(dock: Locator, status: string) {
+  return dock.locator('[data-slot="session-goal-status"]').filter({ hasText: new RegExp(`^${status}$`) })
+}
+
 async function deleteGoalFromDock(page: Page, dock: Locator) {
   await dock.getByRole("button", { name: "Delete", exact: true }).click()
   const dialog = page.getByRole("dialog", { name: "Delete Goal?" })
@@ -1720,7 +1730,7 @@ test.describe("real harness journeys @core @tier-real", () => {
       const dock = await startGoalFromComposer(page, input, entry, objective)
 
       if (entry === "add-menu") {
-        await expect(dock.getByText("Active", { exact: true })).toBeVisible()
+        await expect(goalStatus(dock, "Active")).toBeVisible()
         const evidence = path.join(
           APP_DIR,
           "test-results/evidence/real-harness-local/opencode-goal-add-menu-active.png",
@@ -1729,12 +1739,12 @@ test.describe("real harness journeys @core @tier-real", () => {
         await page.screenshot({ path: evidence })
         await testInfo.attach("opencode-goal-add-menu-active", { path: evidence, contentType: "image/png" })
         await dock.getByRole("button", { name: "Pause", exact: true }).click()
-        await expect(dock.getByText("Paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(goalStatus(dock, "Paused")).toBeVisible({ timeout: 30_000 })
         scripted?.setReplyDelayMs(0)
         await dock.getByRole("button", { name: "Resume", exact: true }).click()
       }
 
-      await expect(dock.getByText("Complete", { exact: true })).toBeVisible({ timeout: 90_000 })
+      await expect(goalStatus(dock, "Complete")).toBeVisible({ timeout: 90_000 })
       await expect(dock).toContainText("Iteration 2")
       const evaluations = scripted?.requests.filter((request) =>
         request.prompt.includes("You are an independent completion evaluator.")) ?? []
@@ -1939,7 +1949,7 @@ test.describe("real harness journeys @core @tier-real", () => {
         await waitForHarnessReady(page)
         const dock = await startGoalFromComposer(page, input, entry, `Prove Claude ${entry} Goal Stop`)
 
-        await expect(dock.getByText("Active", { exact: true })).toBeVisible()
+        await expect(goalStatus(dock, "Active")).toBeVisible()
         // A native Claude Goal runs inside the provider session, so Claxedo
         // cannot pause or resume it — but it CAN drop its own record of one,
         // which `createNativeGoalResource` advertises per session for an
@@ -1961,7 +1971,7 @@ test.describe("real harness journeys @core @tier-real", () => {
         const stop = page.locator('[data-action="prompt-submit"]').last()
         await expect(stop).toHaveAccessibleName("Stop")
         await stop.click()
-        await expect(dock.getByText("Paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(goalStatus(dock, "Paused")).toBeVisible({ timeout: 30_000 })
         expectScriptedTraffic("messages", 1)
       }
     } finally {
@@ -2048,12 +2058,12 @@ test.describe("real harness journeys @core @tier-real", () => {
         const dock = await startGoalFromComposer(page, input, entry, objective)
         if (entry === "add-menu") {
           await dock.getByRole("button", { name: "Pause", exact: true }).click()
-          await expect(dock.getByText("Paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+          await expect(goalStatus(dock, "Paused")).toBeVisible({ timeout: 30_000 })
           scripted?.setReplyDelayMs(0)
           await dock.getByRole("button", { name: "Resume", exact: true }).click()
         }
 
-        await expect(dock.getByText("Complete", { exact: true })).toBeVisible({ timeout: 90_000 })
+        await expect(goalStatus(dock, "Complete")).toBeVisible({ timeout: 90_000 })
         await expect(dock).toContainText("Iteration 2")
         expect(scripted?.requests.filter((request) =>
           request.reply.kind === "text" && request.reply.text.includes('"met":'))).toHaveLength(2)
@@ -2094,17 +2104,17 @@ test.describe("real harness journeys @core @tier-real", () => {
         await waitForHarnessReady(page)
         const dock = await startGoalFromComposer(page, input, entry, `Prove Codex ${entry} Goal controls`)
 
-        await expect(dock.getByText("Active", { exact: true })).toBeVisible()
+        await expect(goalStatus(dock, "Active")).toBeVisible()
         await expect.poll(() => scripted?.counts().responses ?? 0, {
           timeout: 30_000,
           message: "native Codex Goal never reached the configured responses provider",
         }).toBeGreaterThanOrEqual(1)
         const requestsBeforePause = scripted?.counts().responses ?? 0
         await dock.getByRole("button", { name: "Pause", exact: true }).click()
-        await expect(dock.getByText("Paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(goalStatus(dock, "Paused")).toBeVisible({ timeout: 30_000 })
         scripted?.setReplyDelayMs(0)
         await dock.getByRole("button", { name: "Resume", exact: true }).click()
-        await expect(dock.getByText("Active", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(goalStatus(dock, "Active")).toBeVisible({ timeout: 30_000 })
         await expect.poll(() => scripted?.counts().responses ?? 0, {
           timeout: 30_000,
           message: "resuming native Codex Goal did not continue provider work",

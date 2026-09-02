@@ -104,7 +104,12 @@ export function SessionGoalDock(props: {
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
           <span class="text-12-medium text-text-strong">{language.t("session.goal.title")}</span>
-          <span aria-live="polite" class="rounded-full bg-surface-raised-base px-2 py-0.5 text-11-medium text-text-base">
+          <span
+            data-slot="session-goal-status"
+            data-status={props.goal.status}
+            aria-live="polite"
+            class="rounded-full bg-surface-raised-base px-2 py-0.5 text-11-medium text-text-base"
+          >
             {language.t(STATUS_KEYS[props.goal.status])}
           </span>
           <For each={metrics()}>{(metric) => <span class="text-11-regular text-text-weak">{metric}</span>}</For>

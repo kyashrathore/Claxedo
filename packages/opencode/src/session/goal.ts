@@ -3,7 +3,16 @@ import { Context, Effect, Layer, Schema } from "effect"
 import { SessionID } from "./schema"
 import { Session } from "./session"
 
-const metadataKey = "claxedo.goal"
+/**
+ * Where a session's durable Goal snapshot lives in session metadata.
+ *
+ * Exported because it is a wire contract, not an implementation detail: writing
+ * it publishes `session.updated` carrying the whole session info, which is how
+ * `@claxedo/agent-sdk-runtime`'s OpenCode adapter learns of every Goal
+ * transition. That package mirrors this literal (it cannot import this one) and
+ * `test/session/goal-protocol.test.ts` pins the two copies together.
+ */
+export const GOAL_METADATA_KEY = "claxedo.goal"
 
 export const Status = Schema.Literals(["active", "paused", "blocked", "limited", "complete"])
 
@@ -73,7 +82,7 @@ const layer = Layer.effect(
 
     const readStored = Effect.fn("SessionGoal.readStored")(function* (sessionID: SessionID) {
       const current = yield* sessions.get(sessionID)
-      const candidate = current.metadata?.[metadataKey]
+      const candidate = current.metadata?.[GOAL_METADATA_KEY]
       if (!candidate) return null
       return yield* decode(candidate)
     })
@@ -81,8 +90,8 @@ const layer = Layer.effect(
     const write = Effect.fn("SessionGoal.write")(function* (sessionID: SessionID, goal: Snapshot | null) {
       const current = yield* sessions.get(sessionID)
       const metadata = { ...(current.metadata ?? {}) }
-      if (goal) metadata[metadataKey] = goal
-      else delete metadata[metadataKey]
+      if (goal) metadata[GOAL_METADATA_KEY] = goal
+      else delete metadata[GOAL_METADATA_KEY]
       yield* sessions.setMetadata({ sessionID, metadata })
     })
 
@@ -91,10 +100,10 @@ const layer = Layer.effect(
     })
 
     const pending = Effect.fn("SessionGoal.pending")(function* () {
-      const rows = yield* sessions.listByMetadataKey(metadataKey)
+      const rows = yield* sessions.listByMetadataKey(GOAL_METADATA_KEY)
       const ids: SessionID[] = []
       for (const row of rows) {
-        const candidate = row.metadata?.[metadataKey]
+        const candidate = row.metadata?.[GOAL_METADATA_KEY]
         if (!candidate) continue
         const goal = yield* decode(candidate)
         if (goal?.status === "active") ids.push(row.id)

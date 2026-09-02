@@ -977,6 +977,44 @@ export class RuntimeStore {
     allocateKey: () => string
     allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation {
+    const admitted = this.admitObservation(input)
+    this.linkChildSession(input.parentSessionId, admitted.event.childSessionId)
+    return admitted
+  }
+
+  /**
+   * Record the parent a delegation's child session belongs to.
+   *
+   * Admission is where this store learns the association, and the session row
+   * is the only place a later `GET /session/:id` can read it back from — an
+   * adapter that owns its sessions upstream is never consulted for a session
+   * this store already has a row for. Without this the child of an OpenCode
+   * `task` call answered as a root session, so the app rendered its transcript
+   * without the child heading or the parent it belongs to.
+   *
+   * Written through `bindSession` like every other session write, so it is
+   * journaled and survives a rehydrate. The bind upserts and the projection
+   * COALESCEs the parent, so re-admitting the same observation changes nothing.
+   */
+  private linkChildSession(parentSessionId: string, childSessionId?: string) {
+    if (!childSessionId || childSessionId === parentSessionId) return
+    const child = this.getSession(childSessionId) as { directory?: string; parentID?: string } | null
+    if (child?.parentID === parentSessionId) return
+    const parent = this.getSession(parentSessionId) as { directory?: string } | null
+    this.bindSession({
+      sessionId: childSessionId,
+      directory: child?.directory ?? parent?.directory ?? "",
+      agentSessionId: this.getAgentSessionId(childSessionId) ?? childSessionId,
+      parentSessionId,
+    })
+  }
+
+  private admitObservation(input: {
+    parentSessionId: string
+    observation: SubagentObservation
+    allocateKey: () => string
+    allocateChildSessionId?: () => string
+  }): AdmittedSubagentObservation {
     this.db.exec("BEGIN IMMEDIATE")
     try {
       // Another host instance may have admitted an observation since this

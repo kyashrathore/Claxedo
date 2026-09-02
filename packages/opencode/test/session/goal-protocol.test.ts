@@ -9,6 +9,7 @@ import {
   goalInitialPrompt,
   parseGoalEvaluation,
 } from "@/session/goal-protocol"
+import { GOAL_METADATA_KEY } from "@/session/goal"
 
 /**
  * The Pi Goal controller in `@claxedo/agent-sdk-runtime` runs the same executor
@@ -20,6 +21,16 @@ import {
 const MIRROR = path.resolve(
   import.meta.dirname,
   "../../../agent-sdk-runtime/src/harnesses/shared/goal-protocol.ts",
+)
+
+/**
+ * The OpenCode adapter learns of a Goal transition by reading this engine's
+ * metadata key off the `session.updated` it publishes, so the key is a wire
+ * contract with the same mirroring problem as the prompt text above.
+ */
+const METADATA_MIRROR = path.resolve(
+  import.meta.dirname,
+  "../../../agent-sdk-runtime/src/harnesses/opencode/goal-metadata.ts",
 )
 
 describe("Goal protocol", () => {
@@ -64,6 +75,11 @@ describe("Goal protocol", () => {
       .toEqual({ status: "complete", updatedAt: 1_000, iteration: 3, lastReason: "Green" })
     expect(goalEvaluationProgress({ evaluation: { met: false, reason: "No run" }, iteration: 1, now: 1_000 }))
       .toEqual({ status: "active", updatedAt: 1_000, iteration: 1, lastReason: "No run" })
+  })
+
+  test("the Goal metadata key matches the agent-sdk-runtime mirror that reads it", () => {
+    expect(fs.existsSync(METADATA_MIRROR)).toBe(true)
+    expect(fs.readFileSync(METADATA_MIRROR, "utf8")).toContain(`"${GOAL_METADATA_KEY}"`)
   })
 
   test("every literal of the protocol matches the agent-sdk-runtime mirror", () => {
