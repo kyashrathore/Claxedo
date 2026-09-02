@@ -642,3 +642,34 @@ Failures inherited from dev (each reproduced byte-identically on a detached
 - `claxedo-server/src/authority/two-user-runtime-transport.acceptance.test.ts:508`: dev's internal merge `34cca15f58` dropped `author` from the `PromptInput` built in `turns.start`.
 - `claxedo-desktop/src/main/diagnostics/spawn-inventory.test.ts` ×2: dev `e4105227e3` renamed the codex driver to `app-server-process.ts`; the inventory still lists `driver.ts`.
 - `claxedo-app/src/app/workbench/rail/workspace-panel-disposal.vitest.tsx` ×2: 10 s timeouts on dev as well.
+
+## Re-verified live after the dev merge 2026-09-02 (release 55)
+
+Release 55 (`release-acc-devmerge-260902-123000-3851`, cutover + deploy, then
+dev-open; ledger stateRevision 146 `open`) carries the merged tree. The desktop
+was rebuilt (`bun run predev`) and relaunched from the worktree. dev's
+per-worktree dev identity gave this worktree a fresh Electron profile, so the
+desktop signed in again (GitHub OAuth completed on the existing authorization
+in 5 s) and enrolled as a NEW machine, `host_YVi6…`; the four workspaces were
+re-shared from it and the daemon reports `connected` sockets for all four.
+
+| requirement | evidence | measured |
+| --- | --- | --- |
+| 1 enroll | `hostConnector.start()` → `enrolled`; D1 `host_enrollments` row for `host_YVi6…` | lease renewed every beat |
+| 2 device + workspaces | web Settings → Devices: "macOS · Last seen 02/09/2026 12:55:39 · 4 shared workspaces · Revoke"; rail lists Claxedo, agent-app-benchmark, formlink, project-three | |
+| 3 session list | `/api/control/session-list` served from the host pull | 2.57 s cold |
+| 4 transcript | session 044d2435 (52 messages) over the relay | cold reload: screen 731 ms after navigation, first fold +64 ms; warm switch to "Greeting": screen 55 ms, messages 832 ms; cached switch back 38 ms |
+| 5 create | draft `/session/new` → reserve 1.23 s → relay `POST /session` 1.32 s → `prompt_async` 0.62 s (dispatched at +4.1 s); session `20840090` present in the daemon's own list with the prompt as title | |
+| 6 live stream | the turn's provider outcome ("Usage limit reached" / `authentication_failed`) rendered from the stream without reload; sidebar picked the new session up live | error at ~+6 s |
+| 7 parity | Devices management, sharing, session config, shell/summarize routes over the relay; `GET /agent` answers 409 `unsupported_operation` when the harness has no agent listing (honest, not a gap) | |
+
+Still unmet: a completed model reply (every harness on the machine lacks a
+credential; entering one is the owner's).
+
+Two defects surfaced and were fixed in `e7e942fd2e` and `e93ed55de6`: the web
+posted control-plane projection calls (`…/checkpoint` per message event and
+`…/register` after create) for user-hosted sessions, which the hosted Worker
+control plane cannot serve ("Session projection store is not available in the
+hosted Worker control plane", 500; 403 for checkpoints). Both callers now ask
+the projection owner (`sessionProjectionBacking`), which projects cloud
+sessions only. Release 56 carries the fix.
