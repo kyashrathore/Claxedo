@@ -673,3 +673,12 @@ control plane cannot serve ("Session projection store is not available in the
 hosted Worker control plane", 500; 403 for checkpoints). Both callers now ask
 the projection owner (`sessionProjectionBacking`), which projects cloud
 sessions only. Release 56 carries the fix.
+
+Release 56 (`release-acc-ingress-260902-131500-3851`, ledger stateRevision 148
+`open`) confirmed the fix from the web client: draft → reserve 1.05 s → relay
+`POST /session` 2.34 s → `prompt_async` 1.22 s, session `3a1e12ce` on screen
+with its message 1.5 s after the route change, zero `…/checkpoint` or
+`…/register` calls, no 4xx/5xx on the send path, and the live stream carried
+the provider outcome ("Usage limit reached") without a reload. The desktop
+connector stayed `enrolled` with all four relay sockets open through the
+release's lock window.
