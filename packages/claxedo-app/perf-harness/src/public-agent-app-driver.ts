@@ -157,7 +157,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
     prepare: async (params) => {
       if (prepared) throw new Error("Claxedo driver is already prepared")
       let panelLoadPresets: PublicPanelLoadPresets | undefined
-      if (["session-navigation-v1", "session-navigation-v2", "workspace-panel-v2", "workspace-panel-v3"].includes(params.scenarioId)) {
+      if (["session-navigation-v1", "workspace-panel-v1"].includes(params.scenarioId)) {
         if (!params.workspaceFixtureManifest) {
           throw new Error(`Claxedo ${params.scenarioId} requires a workspace fixture manifest`)
         }
@@ -190,7 +190,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       return { ready: true, processes: launch.processes, readiness: launch.readiness }
     },
     execute: async (params) => {
-      if (["session-navigation-v1", "session-navigation-v2"].includes(params.scenarioId)) {
+      if (params.scenarioId === "session-navigation-v1") {
         if (!active || !("navigationType" in params.case)) {
           throw new Error("Claxedo session-navigation request is incomplete")
         }
@@ -220,37 +220,18 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         }
         return navigationExecution(params.case.caseId, measured)
       }
-      if (["workspace-panel-v2", "workspace-panel-v3"].includes(params.scenarioId)) {
+      if (params.scenarioId === "workspace-panel-v1") {
         if (!active || !("loadProfile" in params.case) || !("action" in params.case)) {
-          throw new Error("Claxedo workspace-panel-v2 request is incomplete")
+          throw new Error("Claxedo workspace-panel request is incomplete")
         }
-        if (!dependencies.executePanelActionV2) throw new Error("Claxedo workspace-panel-v2 dependency is missing")
+        if (!dependencies.executePanelActionV2) throw new Error("Claxedo workspace-panel dependency is missing")
         const preset = requirePrepared().panelLoadPresets?.[params.case.loadProfile]
-        if (!preset) throw new Error(`Claxedo has no workspace-panel-v2 preset ${params.case.loadProfile}`)
+        if (!preset) throw new Error(`Claxedo has no workspace-panel preset ${params.case.loadProfile}`)
         const target = resolveTarget("control")
         const measured = await dependencies.executePanelActionV2(params.case, target, preset)
         return panelExecution(params.case.caseId, measured, true)
       }
-      if (params.scenarioId === "workspace-panel-v1") {
-        if (!active || !("action" in params.case) || params.case.workload !== "workspace-panel-action") {
-          throw new Error("Claxedo workspace-panel request is incomplete")
-        }
-        if (!dependencies.executePanelAction) throw new Error("Claxedo workspace-panel dependency is missing")
-        const target = resolveTarget("control")
-        const measured = await dependencies.executePanelAction(params.case, target)
-        return panelExecution(params.case.caseId, measured)
-      }
-      if (params.scenarioId === "session-switch-workspace-panel-v1") {
-        if (!active || !("panelProfile" in params.case))
-          throw new Error("Claxedo session-switch-workspace-panel request is incomplete")
-        if (!dependencies.executePanelSwitch)
-          throw new Error("Claxedo session-switch-workspace-panel dependency is missing")
-        const source = resolveTarget(params.case.sourceSessionId)
-        const destination = resolveTarget(params.case.destinationSessionId)
-        const measured = await dependencies.executePanelSwitch(params.case, source, destination)
-        return panelExecution(params.case.caseId, measured)
-      }
-      if (["app-start-v1", "app-start-v3", "app-start-v4"].includes(params.scenarioId)) {
+      if (params.scenarioId === "app-start-v1") {
         if (active) throw new Error("Claxedo app-start requires no running application")
         if (!("startMode" in params.case) || !params.stateHandle)
           throw new Error("Claxedo app-start request is incomplete")
@@ -260,11 +241,11 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         return execution(
           params.case.caseId,
           launch.clock,
-          ["app-start-v3", "app-start-v4"].includes(params.scenarioId) ? withTimingEvidence(launch.readiness, launch.clock.end) : launch.readiness,
+          withTimingEvidence(launch.readiness, launch.clock.end),
         )
       }
       if (
-        !["session-switch-v1", "session-switch-v3", "session-switch-v4"].includes(params.scenarioId) ||
+        params.scenarioId !== "session-switch-v1" ||
         "startMode" in params.case ||
         "action" in params.case ||
         "panelProfile" in params.case ||
@@ -284,7 +265,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       return execution(
         benchmarkCase.caseId,
         clock,
-        readinessReceipt(["session-switch-v3", "session-switch-v4"].includes(params.scenarioId) ? clock.end : undefined),
+        readinessReceipt(clock.end),
       )
     },
     shutdown: async () => {
@@ -413,16 +394,8 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
       scenarios: [
         "app-start-v1",
         "session-switch-v1",
-        "app-start-v3",
-        "session-switch-v3",
-        "workspace-panel-v1",
-        "session-switch-workspace-panel-v1",
         "session-navigation-v1",
-        "workspace-panel-v2",
-        "app-start-v4",
-        "session-switch-v4",
-        "session-navigation-v2",
-        "workspace-panel-v3",
+        "workspace-panel-v1",
       ],
       sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
       materializationModes: ["native-opencode"],
@@ -507,7 +480,7 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
     executePanelActionV2: async (benchmarkCase, target, preset) => {
       if (!current || !workspaceFixture) throw new Error("Claxedo public panel fixture is not prepared")
       if (!(await sessionRootVisible(current.page, target.sessionId))) {
-        throw new Error("Claxedo workspace-panel-v2 action is not on the control session")
+        throw new Error("Claxedo workspace-panel action is not on the control session")
       }
       return executeWorkspacePanelActionV2({
         page: current.page as never,
