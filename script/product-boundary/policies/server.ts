@@ -84,8 +84,11 @@ export const serverCloudNode: Policy = {
   // The already-reachable workspace SessionEnv facade now delegates to four
   // reviewed owners (factory, protocol, runtime env, and admission); four
   // modules, no package edge.
-  // Full `verify:closure` measures the exact hosted Node graph at 154/28.
-  ceilings: { modules: 154, packages: 28 },
+  // Workspace share grants (`workspace/routes/share-routes.ts`, the one
+  // `workspaceShareRoutes` owner) are served by every hosted composition through
+  // `routes/hosted/workspace.ts`; one module, no package edge.
+  // Full `verify:closure` measures the exact hosted Node graph at 155/28.
+  ceilings: { modules: 155, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -179,8 +182,11 @@ export const serverWorkerd: Policy = {
   // `verifiedRuntimeJson`, which pulls in `authority/http/protocol.ts` ->
   // `workspace/supervisor` -> `@claxedo/workspace-runtime` — exactly the
   // forbidden edge this policy exists to catch.
-  // Full `verify:closure` measures the exact workerd graph at 126/14.
-  ceilings: { modules: 126, packages: 14 },
+  // Workspace share grants (`workspace/routes/share-routes.ts`) reach this
+  // Worker through `routes/hosted/workspace.ts` as well; one module, no package
+  // edge.
+  // Full `verify:closure` measures the exact workerd graph at 127/14.
+  ceilings: { modules: 127, packages: 14 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
