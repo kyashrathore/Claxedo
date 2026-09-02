@@ -20,7 +20,6 @@ export type HarnessStoreState = {
   harness: HarnessType
   selectedModel: string
   selectedModelProvider?: string
-  selectedAgent: string
   dynamicModels: HarnessModelOption[] | null
   /** Reasoning/thinking levels the harness offers; `[]` = none, `null` = unknown. */
   thoughtLevels: HarnessModelOption[] | null
@@ -60,7 +59,6 @@ export function initialHarnessStoreState(input: {
     harness: type,
     selectedModel: effectiveHarnessModel(type, ""),
     selectedModelProvider: type === "pi" ? undefined : type,
-    selectedAgent: "",
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
@@ -77,23 +75,6 @@ export function initialHarnessStoreState(input: {
 
 function scopeAuthority(scope: string): DraftDefaultAuthority {
   return scope.startsWith("session:") ? "server" : "unresolved"
-}
-
-export function workspaceDraftHarnessResetPatch(): HarnessStorePatch {
-  return {
-    harness: "opencode",
-    harnessMode: "opencode",
-    selectedModel: "",
-    selectedModelProvider: undefined,
-    dynamicModels: null,
-    thoughtLevels: null,
-    selectedThoughtLevel: undefined,
-    readiness: "ready",
-    optionsSource: "empty",
-    optionsStale: false,
-    optionsLoading: false,
-    configError: undefined,
-  }
 }
 
 export function harnessStatusPatch(input: {

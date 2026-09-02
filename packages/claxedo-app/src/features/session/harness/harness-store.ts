@@ -309,7 +309,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     setConfigError: (scope: string, message: string) => setStore(scope, "configError", message),
     setOptionsLoading: (scope: string, value: boolean) => setStore(scope, "optionsLoading", value),
     setReadiness: (scope: string, readiness: HarnessStoreState["readiness"]) => setStore(scope, "readiness", readiness),
-    setSelectedAgent: (scope: string, name: string) => setStore(scope, "selectedAgent", name),
     setSelectedModel: (scope: string, model: ModelKey) => {
       setStore(scope, "selectedModel", model.modelID)
       setStore(scope, "selectedModelProvider", model.providerID)
@@ -331,7 +330,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       applyPatch(scope, { selectedThoughtLevel: value })
     },
     selectedThoughtLevel: (scope: string) => read(scope).selectedThoughtLevel,
-    selectedAgent: (scope: string) => read(scope).selectedAgent,
     selectedModel: (scope: string) => read(scope).selectedModel ?? "",
     selectedModelKey: (scope: string) => harnessModelKeyForSubmit(read(scope)),
     optionsSource: (scope: string) => read(scope).optionsSource,

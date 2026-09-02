@@ -220,6 +220,66 @@ describe("harness profile", () => {
     })
   })
 
+  // `/api/wr/harness-config-options` answers the adapter contract's
+  // `AgentConfigOptions` verbatim: the options the harness published plus the
+  // model it resolved for itself, and NO freshness bookkeeping of its own.
+  test("reads the workspace runtime's bare config-options answer as a live harness answer", () => {
+    expect(optionsResponse({
+      options: [{
+        id: "thought_level",
+        name: "Thought level",
+        category: "thought_level",
+        type: "select",
+        currentValue: "adaptive",
+        options: [{ value: "adaptive", name: "Adaptive" }],
+      }],
+      resolvedModel: { id: "claude-opus-4-6", name: "Opus 4.6" },
+    })).toEqual({
+      source: "harness",
+      stale: false,
+      resolvedModel: { id: "claude-opus-4-6", name: "Opus 4.6" },
+      options: [{
+        id: "thought_level",
+        name: "Thought level",
+        category: "thought_level",
+        type: "select",
+        currentValue: "adaptive",
+        options: [{ value: "adaptive", name: "Adaptive" }],
+      }],
+    })
+  })
+
+  // A harness that named no current model yields no field — the client is told
+  // nothing was reported rather than handed a guess.
+  test("carries no resolved model when the runtime reported none", () => {
+    expect(optionsResponse({ options: [] })).toEqual({
+      source: "harness",
+      stale: false,
+      options: [],
+    })
+  })
+
+  // The daemon route wraps the same payload in its own freshness bookkeeping;
+  // its `resolvedModel` rides through unchanged.
+  test("keeps the daemon's own source and staleness while carrying its resolved model", () => {
+    expect(optionsResponse({
+      source: "catalog",
+      stale: true,
+      options: [],
+      resolvedModel: { id: "gpt-5.5-codex", name: "GPT-5.5 Codex" },
+    })).toEqual({
+      source: "catalog",
+      stale: true,
+      resolvedModel: { id: "gpt-5.5-codex", name: "GPT-5.5 Codex" },
+      options: [],
+    })
+  })
+
+  test("drops a resolved model the producer did not label", () => {
+    expect(optionsResponse({ source: "harness", stale: false, options: [], resolvedModel: { id: "opus" } }))
+      .toEqual({ source: "harness", stale: false, options: [] })
+  })
+
   test("profiles Pi as a catalog-backed harness", () => {
     expect(harnessProfile("pi")).toEqual({
       displayName: "Pi",

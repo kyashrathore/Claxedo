@@ -6,7 +6,6 @@ import {
   initialHarnessStoreState,
   pollingHarnessHydrationPatch,
   readyHarnessHydrationPatch,
-  workspaceDraftHarnessResetPatch,
 } from "./store-state"
 
 describe("harness store state projectors", () => {
@@ -19,7 +18,6 @@ describe("harness store state projectors", () => {
         harnessMode: "opencode",
         harness: "opencode",
         selectedModel: "",
-        selectedAgent: "",
         readiness: "ready",
         optionsSource: "empty",
       })
@@ -38,22 +36,6 @@ describe("harness store state projectors", () => {
     expect(seeded.harness).toBe("opencode")
     expect(seeded.harnessMode).toBe("opencode")
     expect(seeded.selectedModel).toBe("")
-  })
-
-  test("projects workspace draft reset state without touching persistence", () => {
-    expect(workspaceDraftHarnessResetPatch()).toEqual({
-      harness: "opencode",
-      harnessMode: "opencode",
-      selectedModel: "",
-      dynamicModels: null,
-      thoughtLevels: null,
-      selectedThoughtLevel: undefined,
-      readiness: "ready",
-      optionsSource: "empty",
-      optionsStale: false,
-      optionsLoading: false,
-      configError: undefined,
-    })
   })
 
   test("projects harness status onto current state", () => {

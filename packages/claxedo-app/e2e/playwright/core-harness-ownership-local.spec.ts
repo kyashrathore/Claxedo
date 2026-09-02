@@ -9,14 +9,24 @@
  * silently routed through plain OpenCode, and switching harnesses must never leave two
  * conflicting model pickers on screen at once.
  *
- * STATE MODEL — harness selection lives in a client-local `harnessStore`
- * (`src/claxedo-ui/context/harness-store.ts`), keyed by a pane-preference `scope`
- * string (`panePreferenceScope({directory, sessionId, surfaceId, draftId})`) and
- * persisted to `localStorage` per scope (harness id, model id, agent name — see
- * `src/claxedo-ui/context/harness-preferences.ts`). It is NOT part of the server
- * session row while still a draft. `AgentHarnessSelector`
- * (`src/claxedo-ui/components/agent-harness-selector.tsx`) reads/writes it through a
- * `HarnessSelectionController` (`src/session-client/harness/controller.ts`).
+ * STATE MODEL — the live harness selection is TRANSIENT, held in a client-local
+ * `harnessStore` (`src/features/session/harness/harness-store.ts`) keyed by a
+ * pane-preference `scope` string
+ * (`panePreferenceScope({directory, sessionId, surfaceId, draftId})`,
+ * `src/features/session/preferences/pane.ts`). Nothing is persisted per SCOPE. What
+ * a NEW draft remembers is owned solely by the per-harness draft default
+ * (`createDraftDefaultPreferences`, `src/features/session/harness/draft-defaults.ts`):
+ * ONE record per (server, workspaceKey), stored under
+ * `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`
+ * (`src/platform/persistence/persist.ts:382-384`), holding `lastHarness` plus a
+ * per-harness `{model, labels}` slot — so picking Codex and then Claude no longer
+ * overwrites the Codex model. `harnessStore.rememberDraftHarness`/`rememberDraftModel`
+ * write it; `beginDraftDefault` re-reads it and re-seeds the scope whenever the
+ * scope's `workspaceKey` changes, which is also what isolates two workspaces' drafts
+ * from each other. It is NOT part of the server session row while still a draft.
+ * `AgentHarnessSelector` (`src/features/session/ui/controls/agent-harness-selector.tsx`)
+ * reads/writes the store through a `HarnessSelectionController`
+ * (`src/features/session/harness/controller.ts`).
  *   - Draft (no session yet), two ways to land on a harness: (a) the user picks one
  *     from the `<Select>`, which POSTs `/api/claxedo/agent-config/harness` `{type}`
  *     (`switchDraftHarness` in `src/claxedo-ui/context/harness-switcher.ts`); (b) on
@@ -183,23 +193,20 @@
  *      immediately (the model control shows the resolved model, not "Select model" or
  *      "Loading"); the scheduled retry's eventual non-stale response does not change or
  *      clear that already-resolved selection.
- *   9. [Out of scope locally — see OUT OF SCOPE] a draft harness resets to `opencode`
- *      when the scope leaves a workspace-runtime-backed directory. NOTE (corrected
- *      2026-07-25): the predicate this entry used to name,
- *      `shouldResetWorkspaceDraftHarness`, NO LONGER EXISTS — `grep -rn
- *      shouldResetWorkspaceDraftHarness packages/claxedo-app/src` returns zero hits, and
- *      it is not "the ONLY guard against carryover" anywhere. The reset is now an ACTION,
- *      not a predicate: `resetWorkspaceDraftHarness`
- *      (`src/features/session/harness/harness-status-actions.ts:36-42`) applies
- *      `workspaceDraftHarnessResetPatch()` (`store-state.ts:88-101` — harness/harnessMode
- *      back to `opencode`, model cleared, readiness `"ready"`) plus a preference save,
- *      and is handed to the hydrator as a capability
- *      (`harness-hydrator.ts:50`, wired at `harness-config-store.ts:141`). The
- *      workspace-runtime ref itself is read through `harnessWorkspaceRuntimeRef` /
- *      `refreshHarnessTypeForScope` (`store-policy.ts:76-86`) over
- *      `sessionWorkspaceRuntimeRef` (`src/platform/runtime/session-workspace.ts`), which
- *      only resolves for cloud/user-hosted workspaces — which this local-only spec's mock
- *      cannot produce, so the whole path stays untested HERE either way.
+ *   9. There is NO draft-harness reset when the scope leaves a workspace-runtime-backed
+ *      directory, and nothing in `src/` performs one (owner decision 27; see
+ *      `core-harness-ownership-cloud.spec.ts`). Neither the old predicate
+ *      `shouldResetWorkspaceDraftHarness` nor the reset action that briefly replaced it
+ *      exists — do not re-cite either. Cross-workspace isolation is PER-WORKSPACE
+ *      PERSISTENCE, not a reset hook: the draft default is keyed by
+ *      (server, workspaceKey) under `session.draft-default.v1` (see STATE MODEL), so a
+ *      different workspace reads a different record and falls back to `opencode` on its
+ *      own while the first workspace's choice survives untouched. The workspace-runtime
+ *      ref itself is read through `harnessWorkspaceRuntimeRef` /
+ *      `refreshHarnessTypeForScope` (`store-policy.ts`) over `sessionWorkspaceRuntimeRef`
+ *      (`src/platform/runtime/session-workspace.ts`), which only resolves for
+ *      cloud/user-hosted workspaces — which this local-only spec's mock cannot produce,
+ *      so that ref path stays exercised only by the cloud spec.
  *
  * INVARIANTS — harness ownership (#1 in e2e/INVARIANTS.md): the selected harness owns
  *   model/effort/payload at every stage, exactly one model control exists at a time, a
@@ -228,8 +235,8 @@
  *   retry/error-card rendering (`core-busy-abort-errors`); the same matrix replayed
  *   over the cloud relay (`core-harness-ownership-cloud`); per-harness event/tool
  *   rendering fidelity (`core-harness-rendering-matrix`); the workspace-runtime-ref
- *   draft-reset behavior (behavior #9 above — needs a cloud/user-hosted workspace,
- *   `core-harness-ownership-cloud`).
+ *   cross-workspace draft isolation (behavior #9 above — needs a cloud/user-hosted
+ *   workspace, `core-harness-ownership-cloud`).
  */
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page } from "@playwright/test"

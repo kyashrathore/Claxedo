@@ -13,7 +13,6 @@ let state: Record<string, SessionModelSyncState | undefined>
 let pending: Record<string, Promise<void> | undefined>
 let seeds: string[]
 let selectedModels: Array<{ providerID: string; modelID: string }>
-let selectedAgents: string[]
 let dropped: string[]
 let posts: { url: string; body: unknown }[]
 let remembered: Array<{ scope: string; model: { providerID: string; modelID: string }; directory?: string }>
@@ -25,7 +24,6 @@ beforeEach(() => {
   pending = {}
   seeds = []
   selectedModels = []
-  selectedAgents = []
   dropped = []
   posts = []
   remembered = []
@@ -186,15 +184,6 @@ describe("harness model writer", () => {
     }])
   })
 
-  test("updates agent locally without dropping prepared sessions or syncing model", () => {
-    writerFor().setAgent(scope, "build")
-
-    expect(seeds).toEqual([scope])
-    expect(selectedAgents).toEqual(["build"])
-    expect(dropped).toEqual([])
-    expect(posts).toEqual([])
-  })
-
 })
 
 function writerFor() {
@@ -203,7 +192,6 @@ function writerFor() {
     seed: (scope) => seeds.push(scope),
     acceptsDraftModel: () => true,
     setSelectedModel: (_scope, model) => selectedModels.push(model),
-    setSelectedAgent: (_scope, name) => selectedAgents.push(name),
     dropPrepared: (scope) => dropped.push(scope),
     rememberDraftModel: (scope, model, input) => remembered.push({
       scope,

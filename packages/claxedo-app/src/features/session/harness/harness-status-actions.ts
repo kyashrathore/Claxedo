@@ -10,7 +10,6 @@ import {
   harnessStatusPatch,
   pollingHarnessHydrationPatch,
   readyHarnessHydrationPatch,
-  workspaceDraftHarnessResetPatch,
   type HarnessStorePatch,
   type HarnessStoreState,
 } from "./store-state"
@@ -23,8 +22,6 @@ import {
 type HarnessDirectory = NonNullable<HarnessScopeInput["directory"]>
 
 export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>(input: {
-  dropPrepared(scope: string): void
-  clearOptionsTries(scope: string): void
   applyPatch(scope: string, patch: HarnessStorePatch): void
   state(scope: string): HarnessStoreState | undefined
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
@@ -32,12 +29,6 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
   ensureDirectory(params: { directory: HarnessDirectory; harnessType?: string; quiet: boolean }): Promise<void>
   refreshDirectory(params: { directory: HarnessDirectory; harnessType?: string }): Promise<void>
 }) {
-  const resetWorkspaceDraftHarness = (scope: string) => {
-    input.dropPrepared(scope)
-    input.applyPatch(scope, workspaceDraftHarnessResetPatch())
-    input.clearOptionsTries(scope)
-  }
-
   const refresh = async (directory?: HarnessScopeInput["directory"], harnessType?: string, opts?: { draft?: boolean }) => {
     if (!directory) {
       await input.bootstrap({ harnessType })
@@ -95,7 +86,6 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
   return {
     applyStatus,
     refresh,
-    resetWorkspaceDraftHarness,
     setPollingHydration: (scope: string, type?: HarnessType) => input.applyPatch(scope, pollingHarnessHydrationPatch(type)),
     setReadyHydration: (scope: string, type: HarnessType) => input.applyPatch(scope, readyHarnessHydrationPatch(type)),
   }

@@ -46,7 +46,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     saved?: DraftDefault
   } | undefined
   markServer?(scope: string): void
-  resetWorkspaceDraftHarness(scope: string): void
   applyStatus(scope: string, data: HarnessState, params?: ScopeInput): Promise<void>
   setPollingHydration(scope: string, type?: HarnessType): void
   setReadyHydration(scope: string, type: HarnessType): void

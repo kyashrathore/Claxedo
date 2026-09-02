@@ -231,6 +231,46 @@ describe("harness options state", () => {
     })
   })
 
+  test("shows the model an operator ACP resolved for itself when it names one", () => {
+    expect(applyHarnessOptionsResponse({
+      type: "acp:openclaw",
+      selectedModel: "",
+      tries: 0,
+      payload: {
+        source: "harness",
+        stale: false,
+        resolvedModel: { id: "claude-opus-4-6", name: "Opus 4.6" },
+        options: [{
+          id: "thought_level",
+          name: "Thought level",
+          category: "thought_level",
+          type: "select",
+          currentValue: "adaptive",
+          options: [
+            { value: "low", name: "Low" },
+            { value: "adaptive", name: "Adaptive" },
+          ],
+        }],
+      },
+    })).toEqual({
+      patch: {
+        optionsSource: "harness",
+        optionsStale: false,
+        optionsLoading: false,
+        thoughtLevels: [
+          { id: "low", name: "Low" },
+          { id: "adaptive", name: "Adaptive" },
+        ],
+        selectedThoughtLevel: "adaptive",
+        dynamicModels: [{ id: "claude-opus-4-6", name: "Opus 4.6" }],
+        selectedModel: "claude-opus-4-6",
+        configError: undefined,
+      },
+      retry: false,
+      clearTries: true,
+    })
+  })
+
   test("rejects native SDK static catalog backstops as a model load failure", () => {
     expect(applyHarnessOptionsResponse({
       type: "cursor-sdk",

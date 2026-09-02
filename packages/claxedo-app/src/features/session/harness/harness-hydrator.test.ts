@@ -33,7 +33,6 @@ function harnessState(overrides?: Partial<HarnessStoreState>): HarnessStoreState
     harness: "acp:claude",
     harnessBinary: "",
     selectedModel: "sonnet",
-    selectedAgent: "",
     dynamicModels: null,
     readiness: "ready",
     optionsSource: "empty",
@@ -63,7 +62,6 @@ function createSubject(input?: {
     base: "http://127.0.0.1:3001",
     seed: (scope) => calls.push(`seed:${scope}`),
     state: (scope) => state.get(scope),
-    resetWorkspaceDraftHarness: (scope) => calls.push(`reset:${scope}`),
     applyStatus: async (_scope, data) => calls.push(`apply:${data.type ?? ""}:${data.model ?? ""}`),
     setPollingHydration: (_scope, type) => calls.push(`polling:${type ?? ""}`),
     setReadyHydration: (_scope, type) => calls.push(`ready:${type}`),
@@ -319,7 +317,6 @@ describe("harness hydrator", () => {
       base: "http://127.0.0.1:3001",
       seed: (scope) => subject.calls.push(`seed:${scope}`),
       state: (scope) => subject.state.get(scope),
-      resetWorkspaceDraftHarness: (scope) => subject.calls.push(`reset:${scope}`),
       applyStatus: async () => {
         await new Promise<void>((resolve) => {
           release = resolve
@@ -366,7 +363,6 @@ describe("harness hydrator", () => {
           saved: { version: 1, harness: params?.directory === "/one" ? "acp:claude" : "acp:codex" },
         }
       },
-      resetWorkspaceDraftHarness: () => {},
       applyStatus: async () => {},
       setPollingHydration: () => {},
       setReadyHydration: () => {},
@@ -403,7 +399,6 @@ describe("harness hydrator", () => {
       base: "http://127.0.0.1:3001",
       seed: () => {},
       state: (scope) => subject.state.get(scope),
-      resetWorkspaceDraftHarness: () => {},
       applyStatus: async () => subject.calls.push("stale-status-applied"),
       setPollingHydration: () => {},
       setReadyHydration: () => {},
@@ -443,7 +438,6 @@ describe("harness hydrator", () => {
         application: { scope: "scope", workspaceKey: "ws_1", revision: 1 },
         saved: { version: 1, harness: "acp:codex", model: { providerID: "acp:codex", modelID: "gpt-5.5" } },
       }),
-      resetWorkspaceDraftHarness: () => {},
       applyStatus: async () => subject.calls.push("status-selection"),
       setPollingHydration: () => {},
       setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
@@ -474,7 +468,6 @@ describe("harness hydrator", () => {
         application: { scope: "scope", workspaceKey: "ws_1", revision: 1 },
         saved: undefined,
       }),
-      resetWorkspaceDraftHarness: () => {},
       applyStatus: async (_scope, data) => subject.calls.push(`apply:${data.type ?? ""}:${data.model ?? ""}`),
       setPollingHydration: () => {},
       setReadyHydration: (_scope, type) => subject.calls.push(`ready:${type}`),
@@ -506,7 +499,6 @@ describe("harness hydrator", () => {
       seed: () => {},
       state: (scope) => subject.state.get(scope),
       markServer: (scope) => marks.push(scope),
-      resetWorkspaceDraftHarness: () => {},
       applyStatus: async () => {},
       setPollingHydration: () => {},
       setReadyHydration: () => {},

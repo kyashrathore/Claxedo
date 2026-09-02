@@ -89,6 +89,24 @@ export function applyHarnessOptionsResponse(input: {
     // not a selectable row synthesized into the picker.
     if (input.type.startsWith("acp:") && input.payload.source === "harness" &&
       !input.payload.stale && input.payload.options.length > 0) {
+      // Such an agent can still NAME the model it resolved for itself. That
+      // named model IS the picker's single row, so the control reads the real
+      // model and the prompt carries the real model id. Only an agent that
+      // named nothing falls back to the client-side sentinel.
+      const resolved = input.payload.resolvedModel
+      if (resolved) {
+        return {
+          patch: {
+            ...base,
+            dynamicModels: [resolved],
+            selectedModel: resolved.id,
+            configError: undefined,
+            optionsLoading: false,
+          },
+          retry: false,
+          clearTries: true,
+        }
+      }
       return {
         patch: {
           ...base,

@@ -9,8 +9,6 @@ import { createHarnessStatusActions } from "./harness-status-actions"
 const scope = "draft:/repo:route"
 
 let state: HarnessStoreState
-let dropped: string[]
-let clearedTries: string[]
 let patches: HarnessStorePatch[]
 let optionFetches: { scope: string; type: HarnessType; directory?: string; sessionId?: string }[]
 let bootstraps: { harnessType?: string }[]
@@ -23,7 +21,6 @@ beforeEach(() => {
     harness: "acp:claude",
     harnessBinary: "",
     selectedModel: "sonnet",
-    selectedAgent: "",
     dynamicModels: null,
     readiness: "ready",
     optionsSource: "empty",
@@ -31,8 +28,6 @@ beforeEach(() => {
     optionsLoading: false,
     configError: undefined,
   }
-  dropped = []
-  clearedTries = []
   patches = []
   optionFetches = []
   bootstraps = []
@@ -41,27 +36,6 @@ beforeEach(() => {
 })
 
 describe("harness status actions", () => {
-  test("resets workspace drafts through store patch, prepared drop, and retry cleanup", () => {
-    actions().resetWorkspaceDraftHarness(scope)
-
-    expect(dropped).toEqual([scope])
-    expect(clearedTries).toEqual([scope])
-    expect(patches).toEqual([{
-      harness: "opencode",
-      harnessMode: "opencode",
-      selectedModel: "",
-      thoughtLevels: null,
-      selectedThoughtLevel: undefined,
-      dynamicModels: null,
-      readiness: "ready",
-      optionsSource: "empty",
-      optionsStale: false,
-      optionsLoading: false,
-      configError: undefined,
-    }])
-    expect("harnessBinary" in patches[0]).toBe(false)
-  })
-
   test("routes refreshes to bootstrap, draft ensure, or ordinary directory refresh", async () => {
     const subject = actions()
 
@@ -226,8 +200,6 @@ function actions(overrides?: {
   ensureDirectory?: Parameters<typeof createHarnessStatusActions<{ directory?: string; sessionId?: string }>>[0]["ensureDirectory"]
 }) {
   return createHarnessStatusActions<{ directory?: string; sessionId?: string }>({
-    dropPrepared: (scope) => dropped.push(scope),
-    clearOptionsTries: (scope) => clearedTries.push(scope),
     applyPatch: (_scope, patch) => patches.push(patch),
     state: () => state,
     fetchConfigOptions: overrides?.fetchConfigOptions ?? ((scope, type, params) => {
