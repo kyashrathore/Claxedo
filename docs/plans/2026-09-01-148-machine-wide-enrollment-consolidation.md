@@ -708,3 +708,19 @@ composition is reused only after both databases answered through it
 (`better-auth-d1-compose.ts`, test "is reusable only after both databases
 answered through it"). The earlier note blaming the edge for this symptom
 was wrong and is corrected in the memory notes.
+
+## Requirement 6 met 2026-09-02 (release 57)
+
+Release 57 (`release-acc-ready-260902-143000-3851`, ledger stateRevision 150
+`open`) carries the readiness fix. From the owner's real Chrome on the hosted
+app: boot completed (`get-session` 1.28 s, bootstrap 1.35 s, catalog 0.67 s),
+the composer's harness picker showed Claude selected with "Claude SDK ·
+Configured" after the owner ran `claude login` on the machine, and a one-line
+prompt sent from the draft produced a completed, streamed Claude reply ("Yes,
+I can hear you.") in the web client without a reload. Daemon transcript for
+session `a5a1ad4d`: user message created 1788339361844, assistant completed
+1788339367612 — a 5.8 s turn; on screen the created session mounted 4.0 s
+after send and the reply rendered as it streamed. The desktop connector
+stayed `enrolled` with all four relay sockets open through the release
+window. The server suite on the readiness change reports the same four
+dev-inherited failures and nothing else.
