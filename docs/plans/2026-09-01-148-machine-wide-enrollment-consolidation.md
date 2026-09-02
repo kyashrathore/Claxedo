@@ -682,3 +682,29 @@ with its message 1.5 s after the route change, zero `…/checkpoint` or
 the provider outcome ("Usage limit reached") without a reload. The desktop
 connector stayed `enrolled` with all four relay sockets open through the
 release's lock window.
+
+## "Signing in did not respond within 20s" — diagnosed and fixed 2026-09-02 (release 57)
+
+Both the pane browser and the owner's Chrome failed to boot the hosted app
+with the 20 s sign-in timeout while curl from the same Mac answered in
+0.2–0.7 s. The worker tail decided it: `wrangler tail` reports an invocation
+only when it ends, so a request the worker holds forever is invisible until
+the client gives up, when it appears as `outcome: canceled` with a few ms of
+CPU. The browsers' `/api/auth/get-session` calls showed up exactly that way
+(707 s / 15.9 s wall, 6–7 ms CPU), and 1 of 20 fresh-connection probes to an
+adapter-touching auth route hung the same way on a HKG isolate. Anonymous and
+bad-signature cookie requests never reach the auth database and answered
+instantly on the same connections; only requests that read the auth database
+hung. A browser stays pinned to one isolate over keep-alive, so one wedged
+isolate took both browsers down together.
+
+Cause: `authReady` (the settled-composition rule's readiness) awaited only
+Better Auth's `$context`. The first auth-database read still happened on the
+first signed-cookie request, and the first control-plane read on the first
+hosted route; a cancellation during that read left a reusable composition
+whose adapter path never settles. Fix `3e2b97dd15`: readiness now includes a
+session lookup through the adapter and a control-plane `select 1`, so a
+composition is reused only after both databases answered through it
+(`better-auth-d1-compose.ts`, test "is reusable only after both databases
+answered through it"). The earlier note blaming the edge for this symptom
+was wrong and is corrected in the memory notes.
