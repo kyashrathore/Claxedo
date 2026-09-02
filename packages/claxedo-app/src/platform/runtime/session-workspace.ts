@@ -1,23 +1,33 @@
+import { getClaxedoServerUrl } from "@/platform/api/api"
+import { readProjectCatalog } from "@/platform/query/control-plane"
 import { resolveWorkspaceRef } from "@/platform/identity/resolve-workspace-ref"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 
 // The signed project inventory (carries the real cloud-vs-user-hosted `kind` for
-// every relay-backed workspace). Threaded in so the resolver can read the kind
-// off the inventory instead of guessing it from the directory-ref shape. Shape
-// matches `signedWorkspaceFromProjects`'s first arg.
+// every relay-backed workspace). Shape matches `signedWorkspaceFromProjects`'s
+// first arg.
 type WorkspaceInventory = Parameters<typeof signedWorkspaceFromProjects>[0]
 
 export type SessionWorkspaceRuntimeInput = {
   directory: string
   sessionRef?: SessionRef
-  // Optional signed inventory — when present, the directory-derived path resolves
-  // the REAL kind (cloud vs user-hosted) instead of defaulting.
+  /**
+   * The inventory to classify against. OMITTED means "the catalog this app has
+   * already resolved" — not "no inventory".
+   *
+   * The answer depends on what the workspace IS, not on whether a caller
+   * threaded the catalog down: a local `ws_*` route classifies as local from
+   * any call site. Pass a value only to
+   * classify against a DIFFERENT inventory (a test's, or a caller holding a
+   * fresher list); an explicit `[]` still means "nothing known".
+   */
   projects?: WorkspaceInventory
 }
 
 export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) {
+  const projects = input.projects ?? readProjectCatalog(getClaxedoServerUrl())
   if (input.sessionRef) {
     const backing = resolveWorkspaceRef(input.sessionRef)
     if (backing.kind === "cloud" || backing.kind === "user-hosted") {
@@ -26,8 +36,8 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
       // id or its directory as local is the canonical owner and must win before
       // any connection lease is acquired.
       if (
-        localWorkspaceInProjects(input.projects ?? [], backing.workspaceId) ||
-        localWorkspaceInProjects(input.projects ?? [], input.directory)
+        localWorkspaceInProjects(projects, backing.workspaceId) ||
+        localWorkspaceInProjects(projects, input.directory)
       ) return undefined
       return {
         workspaceId: backing.workspaceId,
@@ -52,7 +62,7 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
     // acquires the connection, `isWorkspaceReady` stays false forever, and
     // every workspace-gated query (composer agents, providers) parks even
     // though the workspace is connected.
-    const byDirectory = signedWorkspaceFromProjects(input.projects ?? [], input.directory)
+    const byDirectory = signedWorkspaceFromProjects(projects, input.directory)
     if (!byDirectory) return undefined
     return { workspaceId: byDirectory.workspaceId, kind: byDirectory.kind }
   }
@@ -61,15 +71,15 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
   // once it identifies this id as local, a workspace-shaped route must not
   // turn it into a relay target and mint a workspace connection lease.
   if (
-    localWorkspaceInProjects(input.projects ?? [], input.directory) ||
-    localWorkspaceInProjects(input.projects ?? [], workspaceId)
+    localWorkspaceInProjects(projects, input.directory) ||
+    localWorkspaceInProjects(projects, workspaceId)
   ) return undefined
   // Read the REAL kind from the signed inventory. Match by directory AND by the
   // workspace id (`signedWorkspaceFromProjects` matches both forms), so a
   // `workspace:<id>` directory-ref or a raw filesystem path both resolve.
   const signedKind =
-    signedWorkspaceFromProjects(input.projects ?? [], input.directory)?.kind ??
-    signedWorkspaceFromProjects(input.projects ?? [], workspaceId)?.kind
+    signedWorkspaceFromProjects(projects, input.directory)?.kind ??
+    signedWorkspaceFromProjects(projects, workspaceId)?.kind
   // `workspace:<uuid>` is also the canonical shape emitted by the local
   // sidecar. A prefix does not turn that local association id into a relay
   // workspace. Only typed SessionRef backing (handled above) or the signed

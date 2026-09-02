@@ -35,6 +35,7 @@ import {
 } from "../connection/stream-sync-lifecycle"
 import { clearStreamSyncLifecycle, reportStreamSyncLifecycle, type StreamSyncStreamId } from "@/platform/runtime/stream-sync-status"
 import { queryClient } from "@/platform/query/query-client"
+import { readProjectCatalog } from "@/platform/query/control-plane"
 import { queryKeys } from "@/platform/query/keys"
 import { createTransport } from "@/platform/runtime/transport"
 import { centralTransportForServer } from "@/platform/runtime/transport"
@@ -328,11 +329,11 @@ export function claxedoEventStreamTargets(input: {
   const base = input.includeCentral === false ? [] : [central]
   if (!workspace) return base
   const sessionID = input.sessionID?.trim()
-  // Relay-backed runtimes expose managed-private event streams. A workspace
-  // route alone is not authority to observe every session in that workspace;
-  // wait until the canonical route carries a real session instead of opening
-  // an unscoped stream that the runtime must reject. Local runtimes preserve
-  // their existing broad workspace stream.
+  // A managed-private runtime serves SESSION-scoped streams only:
+  // `authorizeSessionEventScope` (workspace-runtime routes/session-event-privacy.ts:50-60)
+  // answers an unscoped request with a permanent 400 `session_event_scope_required`.
+  // Local keeps the broad workspace stream (`pty.created`, `agent.lifecycle`,
+  // `worktree.ready`) — so the CATALOG, not a caller's inventory, must say "local".
   if (workspace.kind !== "local" && (!sessionID || sessionID === "new")) return base
   return [
     ...base,
@@ -740,7 +741,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       serverUrl: props.serverUrl(),
       directory: routeDirectory(props.pathname()),
       sessionID: claxedoEventRouteSessionID(props.pathname()),
-      projects: queryClient.getQueryData<ProjectCache>(queryKeys.controlPlane.projects(props.serverUrl())) ?? [],
+      projects: readProjectCatalog(props.serverUrl()),
       // Desktop preload exposes hosted stream methods before sign-in, while the
       // unsigned local product intentionally has no unscoped
       // `/api/claxedo/events` control-plane route. Opening it anyway produced a

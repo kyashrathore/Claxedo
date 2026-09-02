@@ -43,12 +43,6 @@ export type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runt
  * whatever the user was doing when the freshness window happened to elapse.
  */
 
-function cachedProjectCatalog() {
-  return queryClient.getQueryData<Array<{ id?: string; worktree?: string; workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string }> }>>(
-    queryKeys.controlPlane.projects(getClaxedoServerUrl()),
-  ) ?? []
-}
-
 /**
  * Collapse a `{ directory, workspaceId }` pair to whichever one identifies the
  * runtime, so a directory that is really a workspace ref resolves by id.
@@ -56,7 +50,7 @@ function cachedProjectCatalog() {
 export function runtimeScope(input: { directory?: string; workspaceId?: string }) {
   const workspaceId = input.workspaceId ??
     (input.directory
-      ? sessionWorkspaceRuntimeRef({ directory: input.directory, projects: cachedProjectCatalog() })?.workspaceId
+      ? sessionWorkspaceRuntimeRef({ directory: input.directory })?.workspaceId
       : undefined)
   return {
     workspaceId,

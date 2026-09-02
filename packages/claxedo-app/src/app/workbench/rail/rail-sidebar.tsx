@@ -121,7 +121,6 @@ import {
 import { createRailSectionSessionList } from "./rail-section-session-list"
 import {
   deriveTerminalSurfaceRows,
-  reconcileSessionRowsAfterArchive,
   terminalMetaMatchesPlacement,
   type SessionNavigationRow,
   type TerminalSurfaceRow,

@@ -1,4 +1,5 @@
 import type { Command, Project, ProviderAuthResponse, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { cmp } from "@/platform/query/sort"
 import { mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
@@ -46,6 +47,31 @@ type ProviderAuthClient = {
   provider: {
     auth: () => Promise<{ data?: ProviderAuthResponse }>
   }
+}
+
+/**
+ * A stable empty catalog. Consumers memoise per catalog ARRAY IDENTITY
+ * (`signedWorkspaceFromProjects`'s WeakMap), so handing out a fresh `[]` on
+ * every miss would defeat that memo and leak one map entry per call.
+ */
+const EMPTY_CATALOG: Project[] = []
+
+/**
+ * The project/workspace catalog this app has already resolved, read from its
+ * cache.
+ *
+ * The single reader of `queryKeys.controlPlane.projects`. It is what makes
+ * "which workspace is this, and what kind" answerable WITHOUT every caller
+ * threading an inventory down to whoever asks: a guess about a local
+ * workspace's kind is not a smaller answer than the catalog's, it is a
+ * different one.
+ *
+ * `baseUrl` is part of the identity, not a convenience: the key is per-server,
+ * so reading it with the wrong one answers an empty catalog rather than a
+ * wrong row.
+ */
+export function readProjectCatalog(baseUrl: string | undefined): Project[] {
+  return queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(baseUrl)) ?? EMPTY_CATALOG
 }
 
 export function normalizeProjectList(data: Project[] | undefined) {

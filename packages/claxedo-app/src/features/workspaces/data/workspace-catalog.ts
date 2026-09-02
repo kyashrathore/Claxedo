@@ -1,7 +1,7 @@
 import type { Project } from "@opencode-ai/sdk/v2/client"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
-import { normalizeProjectList } from "@/platform/query/control-plane"
+import { normalizeProjectList, readProjectCatalog } from "@/platform/query/control-plane"
 import { authFetch as defaultAuthFetch } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { isDemoMode } from "@/lib/runtime-mode"
@@ -350,7 +350,7 @@ export function applyWorkspaceCatalog(input: {
 }
 
 export function readWorkspaceCatalog(baseUrl?: string) {
-  return queryClient.getQueryData<Project[]>(workspaceCatalogQueryKey(baseUrl)) ?? []
+  return readProjectCatalog(baseUrl)
 }
 
 /** Re-read the catalog from its sources (workspace created, re-homed, or a global `project.*`/`workspace.*` event). */
