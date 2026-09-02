@@ -642,16 +642,29 @@ upsertUser(authorityDb(), {
   kind: "human",
 })
 const browserActor = await authority.usersMe(browserAuth)
-const withRuntimeActor = (input) => ({
-  ...input,
-  actorId: input.actorId ?? browserActor.actor_id,
-  actorKind: input.actorKind ?? browserActor.actor_kind,
-  actorPublicId: input.actorPublicId ?? browserActor.actor_public_id,
-  actorName: input.actorName ?? browserActor.actor_name,
-  ...((input.actorAvatarUrl ?? browserActor.actor_avatar_url)
-    ? { actorAvatarUrl: input.actorAvatarUrl ?? browserActor.actor_avatar_url }
-    : {}),
-})
+const withRuntimeActor = (input) => {
+  const actorKind = input.actorKind ?? browserActor.actor_kind
+  return {
+    ...input,
+    // `principal_kind` is a required Runtime Access Token claim: the relay
+    // drops any token without it (`workspace-relay/src/auth.ts`'s
+    // `runtimeClaims` -> 401 `relay_token_claims_invalid`) and additionally
+    // requires it to agree with `actor_kind` — a human actor is a "user"
+    // principal, an agent actor is a "service" principal. The production
+    // signer input carries it as a required field
+    // (`platform/auth/runtime-access-token.ts`'s
+    // `RuntimeAccessTokenSignerInput`), so every mint in this fixture goes
+    // through this one place to get it.
+    principalKind: input.principalKind ?? (actorKind === "agent" ? "service" : "user"),
+    actorId: input.actorId ?? browserActor.actor_id,
+    actorKind,
+    actorPublicId: input.actorPublicId ?? browserActor.actor_public_id,
+    actorName: input.actorName ?? browserActor.actor_name,
+    ...((input.actorAvatarUrl ?? browserActor.actor_avatar_url)
+      ? { actorAvatarUrl: input.actorAvatarUrl ?? browserActor.actor_avatar_url }
+      : {}),
+  }
+}
 function fixtureJti(prefix = "jti") {
   return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
 }
@@ -665,6 +678,7 @@ const runtimeAccessTokenSigner = async (input) => {
     runtimeAccessToken: await mintRuntimeAccessToken(
       withRuntimeActor({
         subject: input.subject,
+        principalKind: input.principalKind,
         actorId: input.actorId,
         actorKind: input.actorKind,
         actorPublicId: input.actorPublicId,
@@ -733,6 +747,7 @@ const services = createControlPlaneServices(
             token: await mintRuntimeAccessToken(
               withRuntimeActor({
                 subject: input.subject,
+                ...(input.principalKind ? { principalKind: input.principalKind } : {}),
                 orgId: input.orgId,
                 workspaceId: input.workspaceId,
                 hostId: input.hostId,
@@ -775,9 +790,10 @@ const services = createControlPlaneServices(
     },
   },
 )
+const sessionTitle = access === "cloud" ? "Signed cloud relay session" : "Signed browser relay session"
 await services.projectionStore.sync_session_meta(effectiveWorkspace, {
   id: "signed-browser-relay-session",
-  title: access === "cloud" ? "Signed cloud relay session" : "Signed browser relay session",
+  title: sessionTitle,
   directory: workspaceDir,
   time: { created: 1, updated: 2 },
 })
@@ -823,31 +839,66 @@ const sessionMessages = [
     ],
   },
 ]
-// Register the canned session in the REAL authority too, under the SAME
-// identity that registered the workspace above — `syncSessionMessages`
-// requires "write" role on the workspace (`workspace-authority.ts:859`
-// `requireWorkspace(db, who, args.workspaceId, "write")`), which `browserAuth`
-// has because it is the workspace's `owner_token_identifier`
-// (`workspaceRoleForUser` returns "owner" for the row owner unconditionally,
-// same file, line 398).
+// Seed the canned session into the REAL private-session authority through the
+// SAME protocol a real host runs, under the SAME identity that registered the
+// workspace above.
 //
-// This is belt-and-suspenders with the `durableSessionLog`/`projectionStore`
-// writes above, not a replacement for them — both are already REAL SQLite-
-// backed stores (`createSqliteCentralStore`) and were never part of the
-// hand-rolled control plane this phase removes. Why both are seeded:
-// `GET /sessions` on a signed-hosted-browser request answers ONLY from
+// Both stores are seeded because they answer different routes: `GET /sessions`
+// on a signed-hosted-browser request answers ONLY from
 // `requireAuthority(services).listSessions` (`session/routes/control-plane-
-// session.ts:373-400`) — the projection store is never consulted on that
-// route — so the session would not appear in the sidebar without this call.
-// `GET /sessions/:id/messages`, by contrast, prefers `projectionStore`'s
-// replay log when non-empty and only falls back to the authority
-// (`control-plane-session.ts:439-457`), so the durable-log writes above are
-// what actually serves message content; this call exists so the authority's
-// OWN answer is correct too, for whichever future caller reads it.
-await authority.syncSessionMessages(browserAuth, {
+// session.ts`), so the session appears in the sidebar only via the authority;
+// `GET /sessions/:id/messages` prefers `projectionStore`'s replay log when
+// non-empty and falls back to the authority, so the durable-log writes above
+// are what serve message content.
+//
+// The authority half is a four-step protocol, not a single write, and every
+// step is the production one:
+//   1. `reserveSession` — the authenticated reservation boundary the runtime
+//      crosses before creating a session (`routes/private-session-registration
+//      .ts`'s `POST /reserve`).
+//   2. `registerRuntimeSession` — the RHT-authenticated runtime half that
+//      creates the `session_history` row and its creator participant.
+//   3. `acquireSessionTurn` — turn admission. It mints the fencing token AND
+//      records the admitted producer for `turnId`; `syncSessionMessages`
+//      rejects a snapshot whose user message has no admitted producer, and
+//      stamps that producer as the message's canonical author, so `turnId`
+//      must be the user message's own id.
+//   4. `syncSessionMessages` carrying that fencing token, then
+//      `releaseSessionTurn` — exactly what a host does when it checkpoints a
+//      completed turn (`authority/hosted-session-pull.ts` forwards the
+//      runtime snapshot's `fencingToken` the same way).
+const sessionRegistration = {
+  operationId: "op_signed_browser_relay",
   sessionId: "signed-browser-relay-session",
   workspaceId,
+  title: sessionTitle,
+}
+const seedRuntimePrincipal = {
+  principalKind: "user",
+  actorId: browserActor.actor_id,
+  actorKind: browserActor.actor_kind,
+}
+await authority.reserveSession(browserAuth, { ...sessionRegistration, kind: "create" })
+await authority.registerRuntimeSession({ ...seedRuntimePrincipal, ...sessionRegistration })
+const seedTurn = await authority.acquireSessionTurn({
+  ...seedRuntimePrincipal,
+  sessionId: sessionRegistration.sessionId,
+  workspaceId,
+  turnId: "msg_signed_browser_relay",
+})
+await authority.syncSessionMessages(browserAuth, {
+  sessionId: sessionRegistration.sessionId,
+  workspaceId,
   messages: sessionMessages,
+  fencingToken: seedTurn.fencingToken,
+})
+await authority.releaseSessionTurn({
+  ...seedRuntimePrincipal,
+  sessionId: seedTurn.sessionId,
+  workspaceId,
+  turnId: seedTurn.turnId,
+  leaseId: seedTurn.leaseId,
+  fencingToken: seedTurn.fencingToken,
 })
 
 // The full production entry point configures embedded execution immediately
@@ -1119,6 +1170,12 @@ console.log(
     workspaceId,
     hostId,
     orgId: fixtureOrgId,
+    // The session this fixture registered and seeded through the private-session
+    // protocol above. Managed workspace-runtime routes are session-scoped — PTY
+    // creation refuses a request without a `sessionId`
+    // (`workspace-runtime/src/routes/pty.ts`'s `pty_session_id_required`) — so a
+    // consumer needs the real id rather than a literal of its own.
+    sessionId: sessionRegistration.sessionId,
     ...(fixtureDefaultTeamId ? { defaultTeamId: fixtureDefaultTeamId } : {}),
     runtimeAccessToken: await mintRuntimeAccessToken(
       withRuntimeActor({
