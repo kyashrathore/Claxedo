@@ -91,7 +91,6 @@ export function projectToProjectItem(project: LocalProject): ProjectItem {
   }
 }
 
-// Pure resolution + session-probe helpers now live in ./route-bridge-resolution.
 // Re-exported below to keep this module's public surface unchanged.
 export { probeRouteSessionDirectory, routeKnownSessionDirectory, routeSessionDirectory, routeSessionWorkspaceBacking }
 

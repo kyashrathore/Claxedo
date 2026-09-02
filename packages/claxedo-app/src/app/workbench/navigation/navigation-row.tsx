@@ -1,4 +1,5 @@
-import { Show, onCleanup, type JSX } from "solid-js"
+import { Show, createEffect, on, onCleanup, type JSX } from "solid-js"
+import { createHoverEngagement } from "../rail/rail-hover-engagement"
 import { useDragSource } from "../workbench/index"
 import type { SwitcherStatus } from "../compact-switcher/switcher-items"
 import {
@@ -54,6 +55,11 @@ export type NavigationRowProps = {
    * keyboard-reachable: focusing the row's own activate button raises this,
    * which mounts the trailing controls, so the next Tab lands on them exactly
    * as it did when they were always mounted.
+   *
+   * The two are tracked independently and the row is engaged while EITHER
+   * holds, so losing focus never withdraws an affordance the pointer is still
+   * resting on, and leaving with the pointer never withdraws one the keyboard
+   * is still inside.
    */
   onEngagedChange?: (engaged: boolean) => void
   /** Begin the row's read-only activation preparation at pointerdown. */
@@ -99,14 +105,11 @@ export function NavigationRow(props: NavigationRowProps) {
     onCleanup(dispose)
   }
 
-  // `focusout`/`focusin` bubble (unlike blur/focus), so the row itself can own
-  // the "is anything in me focused" question without a listener per control.
-  const engage = (engaged: boolean) => props.onEngagedChange?.(engaged)
-  const leaveFocus = (event: FocusEvent) => {
-    const next = event.relatedTarget
-    if (next instanceof Node && event.currentTarget instanceof Node && event.currentTarget.contains(next)) return
-    engage(false)
-  }
+
+  // Hover and focus are independent reasons for a row to be engaged; the rail's
+  // engagement owner tracks them separately (`createHoverEngagement`).
+  const engagement = createHoverEngagement()
+  createEffect(on(engagement.engaged, (engaged) => props.onEngagedChange?.(engaged), { defer: true }))
 
   return (
     <div
@@ -115,10 +118,10 @@ export function NavigationRow(props: NavigationRowProps) {
       data-active={props.active ? "true" : "false"}
       class={props.class ? `${ROW_SHELL_CLASS} ${props.class}` : ROW_SHELL_CLASS}
       classList={props.classList}
-      onPointerEnter={() => engage(true)}
-      onPointerLeave={() => engage(false)}
-      onFocusIn={() => engage(true)}
-      onFocusOut={leaveFocus}
+      onPointerEnter={engagement.handlers.onPointerEnter}
+      onPointerLeave={engagement.handlers.onPointerLeave}
+      onFocusIn={engagement.handlers.onFocusIn}
+      onFocusOut={engagement.handlers.onFocusOut}
     >
       {/* Native activate control. Absolute overlay (ROW_SHELL_CLASS is
           `relative`) so the row's own trailing buttons remain siblings, not

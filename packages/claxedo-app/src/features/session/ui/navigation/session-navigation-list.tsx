@@ -38,13 +38,23 @@ export type SessionNavigationProps = {
 }
 
 export function SessionNavigation(props: SessionNavigationProps) {
-  const rowsByRef = createMemo(() => new Map(props.rows.map((row) => [row.source.sessionRef, row])))
+  // A rendered row's identity is its SESSION, keyed by session id.
+  //
+  // `sessionRef` is not that identity: it names the source a row was read
+  // under, and one session is legitimately spelled more than one way there —
+  // `local:<dir>:session:<id>` from a lifecycle event, `workspace:<id>:session:
+  // <id>` from a workspace runtime, whatever a control plane sent. The list
+  // cache already treats the session id as the identity for exactly that reason
+  // (`mergeSessionListItems` / `prependCreatedSessionListRow` dedupe on it), so
+  // keying the DOM row by the ref would let a cache writer's choice of spelling
+  // dispose and re-create the row the user is pointing at.
+  const rowsBySessionId = createMemo(() => new Map(props.rows.map((row) => [row.source.sessionId, row])))
 
   return (
-    <For each={props.rows.map((row) => row.source.sessionRef)}>
-      {(sessionRef) => (
+    <For each={props.rows.map((row) => row.source.sessionId)}>
+      {(sessionId) => (
         <SessionNavigationItem
-          row={rowsByRef().get(sessionRef)!}
+          row={rowsBySessionId().get(sessionId)!}
           onPrepareActivate={props.onPrepareActivate}
           onActivate={props.onActivate}
           onArchive={props.onArchive}
