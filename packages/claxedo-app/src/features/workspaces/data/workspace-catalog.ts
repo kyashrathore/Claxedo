@@ -47,7 +47,18 @@ export type WorkspaceCatalogEntry = {
    */
   hostOnline?: boolean
   workspace_name?: string
+  /**
+   * The address every read of this workspace is scoped by — see
+   * `workspaceRowDirectory`. Never a path on the serving host.
+   */
   directory: string
+  /**
+   * Where the serving host keeps this workspace on ITS OWN filesystem, as the
+   * control plane reports it. Display and metadata only: it names a directory
+   * on another machine, so it is what the UI shows as the workspace's
+   * location, never what a request is scoped by.
+   */
+  remote_directory?: string
   repo_url?: string
   repo_name?: string
 }
@@ -84,8 +95,27 @@ function centralOwnsProjects(serverUrl: string | undefined) {
   return centralTransportForServer(serverUrl) === "loopback" || isDemoMode()
 }
 
-function workspaceRowDirectory(row: Record<string, unknown>, workspaceId: string) {
-  return txt(row.remote_directory) ?? txt(row.remoteDirectory) ?? txt(row.directory) ?? `workspace:${workspaceId}`
+/**
+ * The address a control-plane workspace is read, routed and keyed by.
+ *
+ * Every row this grouping sees is relay-backed — the control plane answers
+ * `access=cloud` and `access=user-hosted`, and both are served by ANOTHER
+ * machine. The path such a row reports (`remote_directory`) names a directory
+ * on that machine's filesystem, so scoping a request by it asks a server about
+ * a path it cannot resolve. The signed workspace id is the one identity both
+ * sides agree on, in the same `workspace:<id>` form `sessionRowDirectory`
+ * stamps on every session row of such a workspace — so a row and its sessions
+ * name the workspace identically.
+ *
+ * The host's path is kept on the row as `remote_directory`: the workspace's
+ * LOCATION, which the UI shows and nothing addresses by.
+ */
+function workspaceRowDirectory(workspaceId: string) {
+  return `workspace:${workspaceId}`
+}
+
+function workspaceRowHostDirectory(row: Record<string, unknown>) {
+  return txt(row.remote_directory) ?? txt(row.remoteDirectory) ?? txt(row.directory)
 }
 
 function workspaceRepoUrl(row: Record<string, unknown>) {
@@ -105,8 +135,8 @@ function ownerRepo(remote: string | undefined) {
  * The PROJECT's name. `display_name` is the WORKSPACE name and the hosted
  * create dialog posts `workspaceName: "main"`, so preferring it labels every
  * hosted cloud project "main"; the repo identity is what names the project.
- * Falls through to the project id, never to the directory — a hosted cloud
- * workspace's directory is the literal string "/workspace".
+ * Falls through to the project id, never to the host's path — a hosted cloud
+ * workspace's `remote_directory` is the literal string "/workspace".
  */
 function projectDisplayName(row: Record<string, unknown>, projectID: string) {
   return txt(row.project_name) ??
@@ -141,7 +171,8 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
     if (!row) continue
     const workspaceId = txt(row.workspace_id) ?? txt(row.workspaceId)
     if (!workspaceId) continue
-    const directory = workspaceRowDirectory(row, workspaceId)
+    const directory = workspaceRowDirectory(workspaceId)
+    const hostDirectory = workspaceRowHostDirectory(row)
     const projectID = txt(row.project_id) ?? txt(row.projectID) ?? workspaceId
     const workspaceName = txt(row.workspace_name) ??
       txt(row.workspaceName) ??
@@ -174,6 +205,7 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
       ...(typeof row.host_online === "boolean" ? { hostOnline: row.host_online } : {}),
       workspace_name: workspaceName,
       directory,
+      ...(hostDirectory ? { remote_directory: hostDirectory } : {}),
       repo_url: workspaceRepoUrl(row),
       repo_name: txt(row.repo_name) ?? txt(row.repoName),
     }

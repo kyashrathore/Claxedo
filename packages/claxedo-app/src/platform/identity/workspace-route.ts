@@ -4,6 +4,14 @@ export type WorkspaceRouteProject = {
   workspaces?: Record<string, {
     id?: string | null
     workspaceId?: string | null
+    /**
+     * The workspace's ADDRESSING directory, as its catalog row states it: a
+     * filesystem path for a local workspace, `workspace:<id>` for a
+     * relay-backed one. The serving host's own path lives on the row as
+     * `remote_directory` and is deliberately absent here — it names a
+     * directory on another machine, so it can never be what a route resolves
+     * to.
+     */
     directory?: string | null
   }>
 }
@@ -13,7 +21,14 @@ export function opaqueWorkspaceRouteId(value: string | null | undefined) {
   return value
 }
 
-/** Resolve a directory or existing route key to its authoritative workspace id. */
+/**
+ * Resolve a directory or existing route key to its authoritative workspace id
+ * and the directory every request under that route is scoped by.
+ *
+ * The catalog row is the authority for both: `/w/<workspace id>` answers with
+ * the row's own addressing directory, which for a cloud or user-hosted
+ * workspace is `workspace:<id>` and never the serving host's path.
+ */
 export function workspaceRouteIdentity(projects: readonly WorkspaceRouteProject[], routeKey: string | undefined) {
   if (!routeKey) return
 

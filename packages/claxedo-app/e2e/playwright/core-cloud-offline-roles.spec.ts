@@ -286,8 +286,9 @@ async function seed(page: Page) {
  * now reads the central's own `/project` AND `/api/workspace?access=cloud` /
  * `?access=user-hosted`, then folds the two. These rows are the same
  * workspaces `bootstrapBody().project` declares, seen from the other side —
- * `remote_directory` is what makes `mergeWorkspaceCatalog` recognise them as
- * one workspace instead of listing each twice. The row type is bound to the
+ * the shared `workspace_id` is what makes `mergeWorkspaceCatalog` recognise
+ * them as one workspace instead of listing each twice; `remote_directory` is
+ * the host's own path and addresses nothing. The row type is bound to the
  * authority's own projection (see helpers/contracts/workspace-list.ts).
  */
 function controlPlaneWorkspaceRows(): ControlPlaneWorkspaceRow[] {
@@ -384,6 +385,10 @@ function mintBody(workspaceId: string, kind: "cloud" | "user-hosted", mint: Mint
   return {
     access: kind,
     backing: kind === "cloud" ? "cloud-vm" : "local-worktree",
+    // The composition each kind's runtime actually has: a cloud sandbox
+    // delegates to the control plane's session authority (session-scoped
+    // streams only), the owner's own daemon does not.
+    sessionAuthority: kind === "cloud" ? "managed-private" : "local",
     workspaceId,
     role: mint.role ?? "owner",
     relayUrl: RELAY_ORIGIN,

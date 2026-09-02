@@ -43,6 +43,55 @@ describe("controlPlaneCatalogProjects", () => {
     expect(project?.workspaces?.["workspace:ws_cloud"]).not.toHaveProperty("hostOnline")
   })
 
+  /**
+   * A cloud or user-hosted workspace is served by ANOTHER machine, so the path
+   * its row reports names a directory on that machine's filesystem. Addressing
+   * the workspace by it makes every later read (`?directory=`,
+   * `x-opencode-directory`, the route's own key) ask a server about a path it
+   * cannot resolve. The workspace id — as `workspace:<id>`, the same form
+   * `sessionRowDirectory` stamps on this workspace's session rows — is the one
+   * address both sides agree on; the host's path survives as metadata only.
+   */
+  test("addresses a relay-backed workspace by its id and keeps the host's path as metadata", () => {
+    const HOST_PATH = "/Users/host/opencode"
+    const [project] = controlPlaneCatalogProjects({
+      workspaces: [
+        {
+          workspace_id: "ws_hosted",
+          project_id: "proj_hosted",
+          access: "user-hosted",
+          remote_directory: HOST_PATH,
+        },
+        { workspace_id: "ws_sandbox", project_id: "proj_hosted", access: "cloud", remote_directory: "/workspace" },
+      ],
+    })
+
+    expect(Object.keys(project?.workspaces ?? {})).toEqual(["workspace:ws_hosted", "workspace:ws_sandbox"])
+    expect(project?.workspaces?.["workspace:ws_hosted"]).toMatchObject({
+      directory: "workspace:ws_hosted",
+      remote_directory: HOST_PATH,
+    })
+    expect(project?.workspaces?.["workspace:ws_sandbox"]).toMatchObject({
+      directory: "workspace:ws_sandbox",
+      remote_directory: "/workspace",
+    })
+    // The project's own route surfaces (`worktree`, the sandbox list the rail
+    // renders rows from) carry the same address, so nothing downstream has a
+    // host path to fall back to.
+    expect(project?.worktree).toBe("workspace:ws_hosted")
+    expect(project?.sandboxes).toEqual(["workspace:ws_hosted", "workspace:ws_sandbox"])
+  })
+
+  // A row that names no host path is still addressed the same way — the id is
+  // the address, not a stand-in for a missing one.
+  test("addresses a row with no host path by its id all the same", () => {
+    const [project] = controlPlaneCatalogProjects({
+      workspaces: [{ workspace_id: "ws_bare", project_id: "proj_bare", access: "cloud" }],
+    })
+    expect(project?.workspaces?.["workspace:ws_bare"]).toMatchObject({ directory: "workspace:ws_bare" })
+    expect(project?.workspaces?.["workspace:ws_bare"]).not.toHaveProperty("remote_directory")
+  })
+
   test("builds synthetic project refs from signed user-hosted workspaces", () => {
     expect(controlPlaneCatalogProjects({
       workspaces: [{
@@ -150,6 +199,37 @@ describe("controlPlaneCatalogProjects", () => {
     expect((merged[0] as { workspaces: Record<string, { kind?: string }> }).workspaces["/Users/me/opencode"]?.kind)
       .toBe("local")
   })
+
+  // The echo is recognised by the SIGNED ID the two sides share, never by a
+  // path: the control plane stores whatever path the host registered, which
+  // may be an alias of — or nothing like — the one the daemon reports for the
+  // same workspace.
+  test("a signed echo is deduped by workspace id even when it names a different path", () => {
+    const workspaceId = "15e0fa38-1992-4636-bb60-665a57cd43df"
+    const local = [{
+      id: "proj_local",
+      name: "opencode",
+      worktree: "/Users/me/opencode",
+      sandboxes: ["/Users/me/opencode"],
+      time: { created: 5, updated: 5 },
+      workspaces: {
+        "/Users/me/opencode": { id: workspaceId, kind: "local", directory: "/Users/me/opencode" },
+      },
+    }]
+    const merged = mergeWorkspaceCatalog(local as never, controlPlaneCatalogProjects({
+      workspaces: [{
+        workspace_id: workspaceId,
+        project_id: "proj_local",
+        access: "user-hosted",
+        remote_directory: "/private/var/hosts/opencode",
+      }],
+    }))
+
+    expect(merged).toHaveLength(1)
+    expect(Object.keys((merged[0] as { workspaces?: Record<string, unknown> }).workspaces ?? {}))
+      .toEqual(["/Users/me/opencode"])
+    expect((merged[0] as { sandboxes?: string[] }).sandboxes).toEqual(["/Users/me/opencode"])
+  })
 })
 
 describe("controlPlaneCatalogProjects project naming", () => {
@@ -197,7 +277,7 @@ describe("controlPlaneCatalogProjects project naming", () => {
         repo_name: "opencode",
       }],
     })
-    expect((project as { workspaces?: Record<string, unknown> }).workspaces?.["/workspace"]).toMatchObject({
+    expect((project as { workspaces?: Record<string, unknown> }).workspaces?.["workspace:ws_1"]).toMatchObject({
       repo_url: "https://github.com/claxedo/opencode.git",
       repo_name: "opencode",
     })
@@ -225,7 +305,7 @@ describe("controlPlaneCatalogProjects project naming", () => {
       ],
     })
     expect(Object.keys((project as { workspaces?: Record<string, unknown> }).workspaces ?? {}))
-      .toEqual(["/workspace", "/workspace-2"])
+      .toEqual(["workspace:ws_1", "workspace:ws_2"])
   })
 
   // `project.name ?? signed.name` preserved a PLACEHOLDER: both groupings fall

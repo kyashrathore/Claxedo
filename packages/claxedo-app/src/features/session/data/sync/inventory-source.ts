@@ -1,4 +1,5 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import { sessionRowDirectory } from "./session-source"
 import type { SessionInventoryRow, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import { insertSortedSessionItem } from "@/platform/sync/global-session-identity"
 import { normalizeSessionTurnOutcome } from "../session-types"
@@ -358,10 +359,7 @@ export function createSignedInventorySource(input: {
       const row = rec(workspace)
       const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
       if (!workspaceId) return []
-      const directory = txt(row?.remote_directory) ??
-        txt(row?.remoteDirectory) ??
-        txt(row?.directory) ??
-        `workspace:${workspaceId}`
+      const directory = sessionRowDirectory({ workspaceId, hostDirectory: txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? "" })
       return [fetchSignedWorkspaceSessions({
         workspaceId,
         directory,

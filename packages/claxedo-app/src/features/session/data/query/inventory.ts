@@ -1,4 +1,5 @@
 import type { GlobalSessionItem } from "./types"
+import { sessionRowDirectory } from "../sync/session-source"
 import { normalizeSessionTurnOutcome, type ClaxedoSession } from "../session-types"
 import { cmp } from "@/platform/query/sort"
 import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
@@ -17,10 +18,7 @@ function num(input: unknown) {
 
 function workspaceDirectory(row: Record<string, unknown>) {
   const workspaceId = txt(row.workspace_id) ?? txt(row.workspaceId)
-  return txt(row.remote_directory) ??
-    txt(row.remoteDirectory) ??
-    txt(row.directory) ??
-    (workspaceId ? `workspace:${workspaceId}` : "/workspace")
+  return sessionRowDirectory({ workspaceId, hostDirectory: txt(row.remote_directory) ?? txt(row.remoteDirectory) ?? txt(row.directory) ?? "/workspace" })
 }
 
 export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByWorkspace: Record<string, unknown[]> }) {

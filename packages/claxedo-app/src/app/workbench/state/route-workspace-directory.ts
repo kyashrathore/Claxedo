@@ -2,12 +2,13 @@ import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver
 import { workspaceRouteIdentity, type WorkspaceRouteProject } from "@/platform/identity/workspace-route"
 
 /**
- * Resolve the session cwd for a `/w/:key` route.
+ * Resolve the directory a `/w/:key` route's requests are scoped by.
  *
- * Catalog hits always win. Historical behavior is `identity?.directory ??
- * routeKey`. The only carve-out: bare local association UUIDs must wait for the
- * project catalog — using them as `?directory=` makes OpenCode 404 with
- * `workspace_not_found`.
+ * The catalog is the authority and always wins: it answers a local workspace's
+ * filesystem path and a relay-backed one's `workspace:<id>` address, never the
+ * serving host's own path. A key the catalog cannot place stands in for itself,
+ * with one carve-out: a bare local association UUID must wait for the catalog —
+ * using it as `?directory=` makes OpenCode 404 with `workspace_not_found`.
  */
 export function resolveWorkspaceRouteDirectory(input: {
   routeKey: string | undefined
