@@ -1,6 +1,7 @@
 // Compatibility facade for hosted callers. The navigation contract is shared
 // with the desktop-local product and therefore owned by server-core.
 export * from "@claxedo/server-core/session/navigation-list"
+import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import {
   buildSessionListResponse,
   type SessionListQuery,
@@ -16,9 +17,14 @@ import type { ControlPlaneServices } from "../authority/services"
  * an authorization outcome — the caller may hold every right on the workspace —
  * it names a different server as the place to read.
  */
-export class SessionListAuthorityError extends Error {
-  readonly status = 409
-  readonly code = "workspace_runtime_session_authority"
+export class SessionListAuthorityError extends ClaxedoError {
+  constructor(workspaceId: string) {
+    super({
+      code: "workspace_runtime_session_authority",
+      message: `Sessions of user-hosted workspace ${workspaceId} are listed by its runtime`,
+      status: 409,
+    })
+  }
 }
 
 /** Canonical flat inventory response for `GET /api/control/sessions`. */
