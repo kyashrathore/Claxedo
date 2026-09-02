@@ -1,0 +1,23 @@
+
+### Release 59 — workspace sharing on staging (2026-09-02)
+
+- `release-acc-shares-260902-201500-3851` cut over and dev-opened (ledger rev 154, phase `open`). Desktop host `host_YVi6…` stayed enrolled across the lock window.
+- Hosted control plane now mounts `workspaceShareRoutes` (`POST/DELETE /api/workspace/:id/shares`, commit `1d09e8dd88`).
+- Owner-side grant, live: from the owner's signed-in browser, `POST /api/workspace/5f39af3e-…/shares` with `{ role: "viewer", target: { kind: "user", userId: "usr_5ca0f278…" } }` → `200 {"grantId":"grant_aq-2TXhmX0afJdehgFH7mw","created":true}` in 913 ms. Control D1 `workspace_share_grants` holds the row (org `org-acc-260830-232009-3851`, `target_user_id` = the test agent's control user, role `viewer`, created by the owner's actor, `revoked_at` null).
+- Contract note: the share target takes the CONTROL user id (`usr_…`, from `auth_identities.user_id`), not the auth subject. Posting the auth subject answers `403 workspace_authorization_denied "Workspace share target belongs to another tenant"`, which is the tenant check doing its job, not a defect.
+- Grantee-side (catalog row with the `viewer` role label, session list over the relay as viewer): NOT verified. Blocker: it needs a browser signed in as the test agent; signing in as another user is out of bounds for this session. The grant is left active so the owner can verify it from a second browser profile. Owner: user.
+
+### Core e2e matrix, first run after consolidation (2026-09-02)
+
+Command (CI shape, prebuilt preview): `CLAXEDO_E2E_SERVE_MODE=build-preview VITE_AUTH_ENABLED=true VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:3001 VITE_CLAXEDO_E2E=1 bun run test:e2e` in `packages/claxedo-app`.
+
+- `test-user` leg: 67 failed / 265 passed / 10 did not run. Onboarding grep: 3 passed. `local-unsigned` leg: stopped after 40 tests (30 failed, all at boot, one cause), see B.
+- Cause groups (owner → disposition):
+  - A. Mock harness vocabulary (`e2e/helpers/mock-runtime.ts` still names `claude-acp`/`codex-acp`/`cursor-acp`; the normalizer accepts `acp:<slug>` or the native ids) — 22 tests — DEV-INHERITED (mock and normalizer byte-identical to dev; retired by dev commit `2d0c988fc4`) — fix: migrate the mock and fixtures to the canonical vocabulary.
+  - B. Boot awaits browser-auth initialization before `render()`; a non-HTTPS origin makes the descriptor load reject, so the shell never mounts and `/login` cannot render — every `local-unsigned` test plus 5 `core-settings-auth` tests — REAL REGRESSION vs dev (`0025eb0f46`, `455d564387`) — fix: the shell renders unconditionally; auth is a signal; loopback central is anonymous by contract; descriptor failure is anonymous, not a startup failure.
+  - C/D. `GET /api/workspace` list and `GET /api/claxedo/services` unmocked (the retired hosted boot aggregate carried the inventory) — 2 direct, ~11 downstream (offline roles, composer `@` agents, Settings providers, workspace lifecycle, documents index) — BRANCH MOCK DRIFT — fix: contract-bound mock handlers mirroring the server routes.
+  - E/E2. Cloud/relay send never reaches the mock's cloud lane (`cloudPromptCount` stays 0) and first-turn replies never appear; suspect the stream gate that refuses a workspace stream without a `sessionID` on a relay-backed workspace (`903b2d4dec`) — 9 tests — undecided mock vs app; instrumented single-spec run decides.
+  - J/K/L. Rail rewrite (`4db2c6015e`) and ingress narrowing (`e7e942fd2e`): archive action missing on rail rows, `session.lifecycle created` no longer materialises a row, terminal status/title dead — 9 tests + 3 singles — REAL REGRESSION candidates — app fixes in rail/session-source/event-ingress owners.
+  - G1. Draft-default v2 shape (`byHarness`/`lastHarness`) not followed through in two `core-harness-ownership-local` assertions — spec repin. G2/H/I/F/M — re-classify after C/D land.
+- Fix order executed: B, A, C/D, J/K/L, E/E2 in parallel by owner; then a full re-run of both legs.
+- A landed: mock and fixtures speak `acp:<slug>` for ACP harnesses; structured patches send `{ id, access: "acp" }` as the client does. 123 passed / 6 failed across the 8 affected specs (the 6 belong to G2, J and the relay ref-count single). Dev-inherited follow-up, unowned: the committed ACP traces under `e2e/fixtures/harness-traces/` are stale against their own generator (the ACP translator now emits `permission.asked` as a `permission` tool part), and the generator passes `client: "claude-acp"` where production passes the bare slug; regenerating changes what `core-harness-rendering-matrix` behaviour 12 proves, so it needs a deliberate owner.
