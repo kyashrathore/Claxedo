@@ -39,6 +39,19 @@ const input = {
   sessionId: "ses_private",
 }
 
+const turnLease = {
+  sessionId: "ses_private",
+  workspaceId: "ws_1",
+  turnId: "msg_1",
+  leaseId: "lease_1",
+  fencingToken: 7,
+  acquiredAt: 1,
+  expiresAt: Date.now() + 60_000,
+}
+
+// The turn half is not optional decoration: declaring `managed-private` is what
+// switches the runtime's durable prompt admission on, so a stub without these
+// composes a policy that can authorize a turn and then refuse to admit it.
 function authorityStub(overrides: Partial<Record<string, unknown>> = {}) {
   return {
     registerRuntimeSession: async () => ({}),
@@ -47,6 +60,9 @@ function authorityStub(overrides: Partial<Record<string, unknown>> = {}) {
     completeSessionCompensation: async () => ({}),
     authorizeRuntimeSession: async () => {},
     runtimeAccessTokenActive: async () => ({ active: true }),
+    acquireSessionTurn: async () => turnLease,
+    renewSessionTurn: async () => turnLease,
+    releaseSessionTurn: async () => ({ released: true, sessionId: turnLease.sessionId, turnId: turnLease.turnId, fencingToken: turnLease.fencingToken }),
     ...overrides,
   } as unknown as WorkspaceAuthority
 }
@@ -103,6 +119,50 @@ describe("embeddedManagedPrivateSessionPolicy", () => {
       status: 403,
       code: "workspace_authorization_denied",
     })
+  })
+
+  // The gap this pins: a managed-private policy that declares itself managed
+  // turns on the runtime's durable prompt admission (`acquireManagedPromptLease`,
+  // workspace-runtime routes/session-core.ts), and a policy with no turn
+  // callbacks answers every prompt 503 `session_turn_authority_unavailable` —
+  // a user-hosted host that can authorize a turn and never run one.
+  test("admits a turn through the same owner the HTTP oracle serves", async () => {
+    const acquireSessionTurn = vi.fn(async () => turnLease)
+    const releaseSessionTurn = vi.fn(async () => ({
+      released: true,
+      sessionId: turnLease.sessionId,
+      turnId: turnLease.turnId,
+      fencingToken: turnLease.fencingToken,
+    }))
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub({ acquireSessionTurn, releaseSessionTurn }))
+
+    const turnInput = { ...input, operation: "prompt" as const, turnId: "msg_1" }
+    await expect(policy.acquireTurn!(turnInput)).resolves.toMatchObject({
+      allowed: true,
+      turnId: "msg_1",
+      leaseId: "lease_1",
+      fencingToken: 7,
+    })
+    expect(acquireSessionTurn).toHaveBeenCalledWith({
+      principalKind: "user",
+      actorId: "actor_alice",
+      actorKind: "human",
+      sessionId: "ses_private",
+      workspaceId: "ws_1",
+      turnId: "msg_1",
+    })
+
+    await expect(policy.releaseTurn!({ ...turnInput, leaseId: "lease_1", fencingToken: 7 }))
+      .resolves.toMatchObject({ released: true })
+    expect(releaseSessionTurn).toHaveBeenCalledTimes(1)
+  })
+
+  test("refuses turn admission without verified actor claims", async () => {
+    const policy = embeddedManagedPrivateSessionPolicy(authorityStub())
+    const { actor: _actor, ...actorless } = input
+
+    await expect(policy.acquireTurn!({ ...actorless, operation: "prompt", turnId: "msg_1" }))
+      .resolves.toMatchObject({ allowed: false, status: 403, code: "session_actor_required" })
   })
 
   test("requires verified actor claims before issuing a lease", async () => {

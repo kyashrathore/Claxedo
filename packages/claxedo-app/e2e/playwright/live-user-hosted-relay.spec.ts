@@ -313,13 +313,24 @@
  *   spec's other independent scenarios deliberately avoid; claxedo-mcp / agent-extensions
  *   over a user-hosted workspace (out of this spec's fixture's capability).
  */
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test, type Page, type Request } from "@playwright/test"
 import { spawn } from "node:child_process"
 import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { e2eAppViteEnvironment } from "../auth-mode"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
+import {
+  opencodeScriptedProviderConfig,
+  startScriptedModelServer,
+  type ScriptedModelServer,
+} from "../helpers/scripted-model-server"
+// The one owner of the app's message-id scheme. A host-side turn has to mint
+// its user-message id with it: OpenCode's own turn loop exits on
+// `lastUser.id < lastAssistant.id` (`packages/opencode/src/session/prompt.ts`),
+// so an id that does not sort before the engine's generated reply id never
+// satisfies that comparison and the engine re-prompts the model forever.
+import { Identifier } from "../../src/lib/id"
 
 const LIVE = process.env.CLAXEDO_E2E_LIVE === "1"
 const APP_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
@@ -357,6 +368,15 @@ type FixtureInfo = {
 type RunningFixture = {
   info: FixtureInfo
   log: () => string
+  /**
+   * The ONE fake thing in this spec: an HTTP endpoint standing where
+   * api.openai.com would, wired into the fixture's embedded engine through
+   * `OPENCODE_CONFIG_CONTENT` exactly as Tier R does (`real-cloud-relay`,
+   * `real-harness-local`). Everything the assertions ride — relay, host tunnel,
+   * workspace runtime, engine, browser — stays real, and the scripted endpoint
+   * is what makes a turn's timing scriptable instead of provider-dependent.
+   */
+  scripted: ScriptedModelServer
   close: () => Promise<void>
   mintRole: (role: "viewer" | "editor" | "owner" | "admin") => Promise<{ runtimeAccessToken: string; relayUrl: string }>
   opencodeRequests: () => Promise<string[]>
@@ -394,6 +414,7 @@ async function freePort(): Promise<number> {
  */
 async function startFixture(extraEnv: Record<string, string> = {}): Promise<RunningFixture> {
   const backendPort = await freePort()
+  const scripted = await startScriptedModelServer()
   let log = ""
   const child = spawn(
     "node",
@@ -403,6 +424,12 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
       env: {
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
+        // The model injection seam, identical to `real-cloud-relay`'s: the
+        // fixture's embedded engine reads `OPENCODE_CONFIG_CONTENT` at import
+        // and the provider block points its baseURL at the scripted endpoint.
+        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
+        TIER_REAL_API_KEY: "test-key",
+        OPENCODE_DISABLE_MODELS_FETCH: "true",
         ...extraEnv,
       },
       // The fixture owns its lifetime through this stdin pipe
@@ -494,6 +521,7 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
   }
 
   const close = async () => {
+    await scripted.close().catch(() => undefined)
     if (child.exitCode !== null || child.signalCode) return
     await new Promise<void>((resolve) => {
       const timeout = setTimeout(() => {
@@ -530,7 +558,71 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
     if (!res.ok) throw new Error(`GATING: /__fixture/tunnel/resume failed: ${res.status} ${await res.text()}`)
   }
 
-  return { info, log: () => log, close, mintRole, opencodeRequests, pauseTunnel, resumeTunnel }
+  return { info, log: () => log, scripted, close, mintRole, opencodeRequests, pauseTunnel, resumeTunnel }
+}
+
+const SCRIPTED_MODEL = { providerID: "tier-real", modelID: "scripted-model" } as const
+
+/**
+ * Creates a session ON THE HOST, through the real two-halves private-session
+ * protocol a host runs: the authenticated reservation on the control plane
+ * (`POST /api/control/session-registrations/reserve`) and the RHT-authenticated
+ * creation on the workspace runtime, carrying the reservation in
+ * `x-claxedo-session-registration-operation`. A managed-private runtime refuses
+ * either half alone (`session_reservation_required`), so this is the only way a
+ * session exists on such a runtime — and it is what makes the browser's later
+ * navigation a genuine ATTACH to a session it did not create.
+ */
+async function createHostSession(fixture: RunningFixture, title: string) {
+  const sessionId = Identifier.ascending("session")
+  const operationId = `op_live_${Date.now().toString(36)}`
+  const reserved = await fetch(`${fixture.info.backendUrl}/api/control/session-registrations/reserve`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${fixture.info.controlPlaneToken}`, "content-type": "application/json" },
+    body: JSON.stringify({ operationId, sessionId, workspaceId: fixture.info.workspaceId, kind: "create", title }),
+  })
+  if (!reserved.ok) throw new Error(`GATING: session reservation failed: ${reserved.status} ${await reserved.text()}`)
+  const created = await fetch(
+    `${fixture.info.relayUrl}/workspaces/${encodeURIComponent(fixture.info.workspaceId)}/session`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${fixture.info.runtimeAccessToken}`,
+        "content-type": "application/json",
+        "x-claxedo-session-registration-operation": operationId,
+      },
+      body: JSON.stringify({ id: sessionId, title }),
+    },
+  )
+  if (!created.ok) throw new Error(`GATING: host session create failed: ${created.status} ${await created.text()}`)
+  return sessionId
+}
+
+/**
+ * Starts a turn on the HOST — the fixture's own runtime, reached over the real
+ * relay with the fixture's own Runtime Access Token — never through the
+ * browser's composer. This is what "attach to a session that is ALREADY
+ * running" means: the page is a viewer of a turn nobody in that page started.
+ */
+async function startHostTurn(fixture: RunningFixture, input: { sessionId: string; marker: string }) {
+  const messageID = Identifier.ascending("message")
+  const res = await fetch(
+    `${fixture.info.relayUrl}/workspaces/${encodeURIComponent(fixture.info.workspaceId)}/session/${encodeURIComponent(input.sessionId)}/prompt_async`,
+    {
+      method: "POST",
+      headers: { authorization: `Bearer ${fixture.info.runtimeAccessToken}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        messageID,
+        model: SCRIPTED_MODEL,
+        parts: [{
+          type: "text",
+          text: `Reply with exactly this one token and nothing else, no punctuation, no formatting: ${input.marker}`,
+        }],
+      }),
+    },
+  )
+  if (!res.ok) throw new Error(`GATING: host prompt_async failed: ${res.status} ${await res.text()}`)
+  return { messageID, at: Date.now() }
 }
 
 /**
@@ -541,6 +633,7 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
  */
 async function startFrontend(input: { backendUrl: string }): Promise<RunningFrontend> {
   const port = await freePort()
+  const url = `http://127.0.0.1:${port}`
   let log = ""
   const child = spawn(
     "node",
@@ -553,7 +646,20 @@ async function startFrontend(input: { backendUrl: string }): Promise<RunningFron
         // e2e dev server, so this dedicated instance serves the SAME app the rest
         // of the suite drives — only its backend target differs.
         ...e2eAppViteEnvironment(),
-        VITE_CLAXEDO_SERVER_URL: input.backendUrl,
+        // The app addresses its control plane SAME-ORIGIN, and this server proxies
+        // that to the fixture backend behind a real forwarded-client stamp. That
+        // stamp is the whole point: `/api/claxedo/bootstrap` answers a loopback
+        // socket peer with the unsigned LOCAL body, whose project scan only ever
+        // reports `kind: "local"|"cloud"`, so an app talking to the backend
+        // directly classifies this relay-backed workspace as LOCAL — its panes
+        // then register the HOST's filesystem path as their scope while both
+        // event lanes publish under `workspace:<id>`, and every live frame of an
+        // attached turn is dropped for a scope mismatch (observed directly, see
+        // BEHAVIORS 3). Coming through the front door is what a real deployment
+        // does and what makes the SIGNED bootstrap — the only body carrying
+        // `kind: "user-hosted"` — reachable at all.
+        VITE_CLAXEDO_SERVER_URL: url,
+        CLAXEDO_E2E_RELAY_PROXY_TARGET: input.backendUrl,
         PORT: String(port),
       },
       stdio: ["ignore", "pipe", "pipe"],
@@ -562,7 +668,6 @@ async function startFrontend(input: { backendUrl: string }): Promise<RunningFron
   child.stdout?.on("data", (chunk) => (log += chunk.toString()))
   child.stderr?.on("data", (chunk) => (log += chunk.toString()))
 
-  const url = `http://127.0.0.1:${port}`
   const start = Date.now()
   while (Date.now() - start < 45_000) {
     const ok = await fetch(url).then((res) => res.ok).catch(() => false)
@@ -618,11 +723,21 @@ async function seedWorkspace(page: Page, info: FixtureInfo) {
     // entirely) even when the directory is also a registered workspace sandbox —
     // confirmed empirically while authoring this spec (an earlier directory-route
     // version silently sent through the wrong lane and the submit never even fired).
+    // `worktree` is the WORKSPACE REF (`workspace:<id>`), not the host's
+    // filesystem path — the same form the real workspace catalog gives every
+    // relay-backed row (`workspaceRowDirectory`) and the form every consumer is
+    // keyed by. Seeding the raw path instead is not a smaller version of the
+    // truth, it is a shape the product never produces: the pane then registers
+    // the HOST's path as its scope while both event lanes publish under
+    // `workspace:<id>`, and every live delta of an attached turn is dropped for
+    // a scope mismatch this seed invented (observed directly — the pane's
+    // `data-session-directory` read `/private/var/folders/…/workspace`).
+    const ref = `workspace:${input.workspaceId}`
     localStorage.setItem(
       "opencode.global.dat:server",
       JSON.stringify({
         list: [],
-        projects: { local: [{ worktree: input.directory, expanded: true, sandboxes: [input.workspaceId] }] },
+        projects: { local: [{ worktree: ref, expanded: true, sandboxes: [input.workspaceId] }] },
         lastProject: {},
         workspaceServer: {},
         closedProjects: {},
@@ -635,9 +750,18 @@ async function seedWorkspace(page: Page, info: FixtureInfo) {
           {
             id: "proj_live_user_hosted_relay",
             name: "Live User-Hosted Relay",
-            worktree: input.directory,
+            worktree: ref,
             sandboxes: [input.workspaceId],
+            // Keyed by BOTH forms, as the catalog is: `sessionWorkspaceRuntimeRef`
+            // matches a `workspace:<id>` route ref and a session row's stored
+            // filesystem path against the same inventory.
             workspaces: {
+              [ref]: {
+                id: input.workspaceId,
+                kind: "user-hosted",
+                workspace_name: "Live User-Hosted Relay",
+                directory: input.directory,
+              },
               [input.directory]: {
                 id: input.workspaceId,
                 kind: "user-hosted",
@@ -652,8 +776,9 @@ async function seedWorkspace(page: Page, info: FixtureInfo) {
   }, info)
 }
 
-function sessionRoute(info: FixtureInfo) {
-  return `/w/${encodeURIComponent(info.workspaceId)}/session`
+function sessionRoute(info: FixtureInfo, sessionId?: string) {
+  const workspace = `/w/${encodeURIComponent(info.workspaceId)}/session`
+  return sessionId ? `${workspace}/${encodeURIComponent(sessionId)}` : workspace
 }
 
 async function gateReachesReady(page: Page, timeoutMs = 40_000) {
@@ -875,59 +1000,185 @@ test.describe("live user-hosted relay @live", () => {
     expect((listedAfterDelete.json as Array<{ id: string }>).map((p) => p.id)).not.toContain(directPtyId)
   })
 
-  test.fixme(
-    "a prompt sent through the relay lane completes a real turn proven by the oracle — behavior 3",
-    async () => {
-      // ROUTING ROOT CAUSE FIXED (2026-07-20): `resolveDraftWorkspaceKind`
-      // (`src/features/session/ui/view-state.ts`) + its wiring in `routeWorkspaceKind`
-      // (`src/features/session/ui/session-screen.tsx`) — the directory-ref fallback used
-      // to collapse ANY resolved `ws_`-shaped ref into "cloud" regardless of its OWN
-      // resolved kind, discarding `sessionWorkspaceRuntimeRef`'s already-correct
-      // `kind: "user-hosted"` default. Proof: `core-user-hosted-workspace.spec.ts` (the
-      // synchronous mock of this exact draft-nav pattern) passes all 6 behaviors; unit
-      // coverage in `view-state.test.ts`. This test STILL stays fixme — not because the
-      // routing bug persists, but because a real assistant reply needs a real model
-      // provider, and no provider credentials (e.g. `ANTHROPIC_API_KEY`) are configured
-      // for `packages/claxedo-server` in this environment — the fixture's embedded
-      // workspace-runtime has no model/auth config wired in, only a deliberately-stubbed
-      // `forbiddenOpencodeServer()` that 599s (used to prove the OLD direct-path is never
-      // hit, not to serve real completions). Re-check once provider credentials are
-      // available; the ROUTING half of this test (draft nav reaching the real send path,
-      // never the Local/Cloud picker or cloud pipeline) is now provably fixed — see
-      // behaviors 5/6 below, whose setup is the identical `seedWorkspace` -> draft-nav ->
-      // `gateReachesReady` sequence and passes in isolation.
-      //
-      // ORIGINAL WRITEUP (still accurate for what was observed pre-fix):
-      // REAL PRODUCT GAP, not a test-authoring gap — see this file's HARNESS NOTES
-      // ("draft composer workspace-target ambiguity") for the full writeup. Summary:
-      // landing on `/w/:workspaceId/session` as a brand-new DRAFT (no session yet) does
-      // NOT resolve straight into `WorkspaceGate`'s user-hosted 3-step pipeline the way
-      // `core-user-hosted-workspace.spec.ts`'s mock (synchronous, pre-loaded inventory)
-      // does. Instead the real, network-latency-having app briefly renders the "new
-      // session" composer's own `Local`/`Cloud` workspace-target toggle (`src/components/
-      // session/session-new-workspace-options.ts`), pre-selecting "Cloud" for this
-      // `ws_`-shaped id (there is no third "user-hosted" option in that control), and
-      // clicking submit routes the send through the CLOUD 4-step provisioning pipeline
-      // (`CloudStartupView`'s `Acquiring sandbox / Cloning repository / Starting runtime /
-      // Waiting for health check` labels — confirmed via screenshot, both as a hard
-      // "Startup failed" and, once this spec's fixture warm-up fix landed, as a fast
-      // "Ready" with the WRONG step labels) rather than the intended real submit path this
-      // spec exercises for behaviors 1/2/7 (`gateReachesReady`'s own composer, driven
-      // AFTER the gate is already known-ready). This spec's own `expectAssistantReplyVisible`
-      // oracle timeout is the correct, unweakened symptom of that mis-routing — no reply
-      // ever renders because the turn never gets composed into the workspace this spec's
-      // fixture backs. Behaviors 2/7 (this file) prove the underlying relay `/session` +
-      // `/session/:id/prompt_async` + SSE plumbing works correctly when addressed directly
-      // (see behavior 2's direct-fetch PTY create/list/delete, and this spec's own manual
-      // `curl`/browser verification during authoring, which completed a real turn end-to-end
-      // through the identical relay lane) — the gap is specifically in which client-side
-      // code path a fresh DRAFT navigation takes for a `ws_`-shaped workspace id before any
-      // session exists, not in the relay/runtime. Fix belongs in `session-new-workspace-
-      // options.ts` / `WorkspaceGate` mount-order (resolve the real inventory kind before
-      // ever rendering the Local/Cloud draft picker for an ALREADY-KNOWN relay-backed
-      // workspace id), not in this spec.
-    },
-  )
+  // PRODUCT REQUIREMENT 6, on the REAL path: attach from the web client to a
+  // session running on a user-hosted workspace and receive its live stream as it
+  // happens. Everything here is real except the model endpoint — real relay,
+  // real host tunnel, real workspace runtime, real embedded engine, real browser
+  // — and the browser is a pure VIEWER: the session is created host-side before
+  // it navigates, and the turn is started host-side after it has attached.
+  //
+  // The oracle for "live" is growth, not arrival: the scripted endpoint streams
+  // the reply as paced deltas, so a client that renders the turn as it happens
+  // shows at least two strictly-increasing partial lengths before the final
+  // text. A client that only learns the reply from the settle-triggered
+  // `GET /session/:id/message` refetch jumps from nothing to the whole message,
+  // which is exactly the symptom this spec exists to fail on — so the request
+  // tap below also proves no such refetch could have delivered the growth.
+  // RED against a REAL CLIENT GAP — run for real, evidence captured, deliberately
+  // not `test.fixme`d (same standing as behaviors 5/6 below). Everything on the
+  // PRODUCER side is now proven real and correct by this run:
+  //   - the fixture's engine really answers from the scripted endpoint (its call
+  //     counter moves) and the runtime really streams the turn as paced
+  //     `text-delta` frames on `/api/wr/runtime-events` (contract version 7,
+  //     `directory` = the HOST's own filesystem path, `sessionId` = the attached
+  //     session, `assistantMessageId` = the engine's reply id);
+  //   - the app really opens that session-scoped stream, before the turn starts
+  //     — the tap records `GET /workspaces/<id>/api/wr/runtime-events?parentSessionId=<id>`
+  //     ~2s BEFORE the host prompt.
+  // What still fails is the CONSUMER's address. The pane registers the HOST's
+  // filesystem path as its scope — captured directly by this test:
+  //   Panes: ["ses_…@/private/var/folders/…/claxedo-signed-browser-relay-…/workspace"]
+  // while both event lanes publish under `workspace:<id>` (the form
+  // `sessionRowDirectory` gives every relay-backed row and every consumer keys
+  // on). `conversationScopeKey` is an exact `directory\0sessionID` match, so
+  // every delta is dropped and the reply appears only when the settle refetch
+  // lands — measured as `["+4ms:0","+1386ms:32","+6882ms:74"]`, i.e. nothing,
+  // then the whole message at turn completion.
+  // Two owners on that path were fixed by this investigation and are NOT the
+  // remaining gap: the signed bootstrap now states a relay-backed workspace's
+  // ADDRESSING directory (`workspace:<id>`, with the host path as
+  // `remote_directory`) instead of the host's path, matching what the hosted
+  // control plane already served (`signedShellProjects`); and the runtime-events
+  // lane now projects a `ses_`-prefixed session's frames when it is the only
+  // compat lane that session has (`runtimeProjectionOwnsCompat`'s
+  // `soleCompatLane`) instead of deferring to a `/global/event` loop that
+  // carries nothing from another machine. With the bootstrap serving
+  // `directory: "workspace:ws_…"` the pane's own scope is STILL the host path,
+  // so the remaining owner is whatever assigns a route-attached session pane's
+  // `meta().directory` (`app/workbench/state/route-bridge.tsx` ->
+  // `SessionContent`'s `meta().directory`), not the bootstrap and not the lanes.
+  test("an attached pane renders a host-started turn as it streams — behavior 3", async ({ page }) => {
+    test.setTimeout(180_000)
+    fixture.scripted.resetCounts()
+    // Six deltas 700ms apart: long enough that a viewer rendering live has
+    // several observable intermediate states, short enough that the whole turn
+    // finishes well inside the oracle's own budget.
+    fixture.scripted.setTextStreamPacing({ chunks: 6, delayMs: 700 })
+
+    const marker = `LIVEHOST-${`${Date.now()}`.slice(-6)}-AAAA-BBBB-CCCC-DDDD-EEEE-FFFF`
+    const sessionId = await createHostSession(fixture, "attached host session")
+
+    // Every request the PAGE makes on the relay lane, with the time it was made
+    // and the time it finished. Two questions are answered from it: did the
+    // session-scoped runtime-events stream open BEFORE the turn started, and did
+    // any whole-transcript refetch land while the text was growing.
+    type Tap = { url: string; startedAt: number; finishedAt?: number }
+    const relayCalls: Tap[] = []
+    const taps = new WeakMap<Request, Tap>()
+    const relayOrigin = new URL(fixture.info.relayUrl).origin
+    page.on("request", (request) => {
+      const url = new URL(request.url())
+      if (url.origin !== relayOrigin) return
+      const tap: Tap = { url: `${request.method()} ${url.pathname}${url.search}`, startedAt: Date.now() }
+      relayCalls.push(tap)
+      taps.set(request, tap)
+    })
+    const settle = (request: Request) => {
+      const tap = taps.get(request)
+      if (tap) tap.finishedAt = Date.now()
+    }
+    page.on("requestfinished", settle)
+    page.on("requestfailed", settle)
+
+    await seedWorkspace(page, fixture.info)
+    await page.goto(`${frontend.url}${sessionRoute(fixture.info, sessionId)}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 45_000,
+    })
+    await expect(page.locator(`[data-testid="session-content"][data-session-id="${sessionId}"]`))
+      .toBeVisible({ timeout: 60_000 })
+
+    // The lane has to be listening before the turn's frames exist — a stream
+    // that opens afterwards turns a live turn into a late burst.
+    const runtimeEventsCalls = () =>
+      relayCalls.filter((call) => call.url.includes("/api/wr/runtime-events"))
+    await expect
+      .poll(() => runtimeEventsCalls().filter((call) => call.url.includes(`parentSessionId=${encodeURIComponent(sessionId)}`)).length, {
+        timeout: 60_000,
+        message:
+          "the app never opened the session-scoped runtime-events stream for the attached session — " +
+          `relay calls seen: ${JSON.stringify(relayCalls.map((call) => call.url))}`,
+      })
+      .toBeGreaterThan(0)
+
+    const turn = await startHostTurn(fixture, { sessionId, marker })
+
+    // Sample what is ON SCREEN while the host streams. Lengths, not equality:
+    // the assertion is that the rendered reply GREW, which is the one thing a
+    // whole-message settle can never produce.
+    // Read the DOM directly rather than through a Locator: every Locator
+    // accessor AUTO-WAITS for its element, so the first read would block until
+    // an assistant row exists — by which time the turn can already be over and
+    // every intermediate state is gone. A sampler that cannot observe "not yet"
+    // cannot observe growth either.
+    const samples: Array<{ at: number; text: string }> = []
+    const deadline = Date.now() + 45_000
+    while (Date.now() < deadline) {
+      const text = await page.evaluate(
+        (selector) => [...document.querySelectorAll(selector)].map((node) => (node as HTMLElement).innerText ?? "").join(""),
+        SELECTORS.assistantContentVisible,
+      ).catch(() => "")
+      samples.push({ at: Date.now(), text })
+      if (text.includes(marker)) break
+      await page.waitForTimeout(100)
+    }
+
+    // "+ms since the turn started -> characters rendered", deduped: the whole
+    // diagnostic a failure needs, in one line.
+    const growth = samples
+      .map((sample) => ({ at: sample.at - turn.at, length: sample.text.length }))
+      .filter((sample, index, all) => index === 0 || sample.length !== all[index - 1]!.length)
+      .map((sample) => `+${sample.at}ms:${sample.length}`)
+    const final = samples.at(-1)
+    expect(
+      final?.text ?? "",
+      `the attached pane never rendered the host's reply. Rendered lengths over time: ${JSON.stringify(growth)}. ` +
+        `Relay calls the page made: ${JSON.stringify(relayCalls.map((call) => call.url))}`,
+    ).toContain(marker)
+
+    // The address the pane registered, and the addresses the lanes published
+    // under: a mismatch here is the whole failure, so name both in the message.
+    const paneScopes = await page.evaluate(() =>
+      [...document.querySelectorAll('[data-testid="session-content"]')]
+        .map((node) => `${node.getAttribute("data-session-id")}@${node.getAttribute("data-session-directory")}`))
+    const partials = samples
+      .filter((sample) => sample.text.length > 0 && !sample.text.includes(marker))
+      .map((sample) => sample.text.length)
+    const distinctPartials = [...new Set(partials)]
+    expect(
+      distinctPartials.length,
+      "the reply appeared as one finished block instead of growing — the pane is being fed by a whole-turn " +
+        `refetch, not by the host's live stream. Rendered lengths over time: ${JSON.stringify(growth)}. ` +
+        `Panes: ${JSON.stringify(paneScopes)}. Relay calls: ${JSON.stringify(relayCalls.map((call) => `+${call.startedAt - turn.at}ms ${call.url}`))}`,
+    ).toBeGreaterThanOrEqual(2)
+    expect(
+      Math.max(...distinctPartials),
+      `an intermediate render was not shorter than the final text (${JSON.stringify(growth)})`,
+    ).toBeLessThan(final!.text.length)
+
+    // …and no whole-transcript refetch could have delivered any of it: none
+    // finished between the turn starting and the last partial render.
+    const lastPartialAt = samples.filter((sample) => sample.text.length > 0 && !sample.text.includes(marker)).at(-1)!.at
+    const refetches = relayCalls.filter((call) =>
+      call.url.startsWith("GET ") && call.url.includes(`/session/${encodeURIComponent(sessionId)}/message`))
+    expect(
+      refetches.filter((call) => (call.finishedAt ?? call.startedAt) >= turn.at && (call.finishedAt ?? call.startedAt) <= lastPartialAt),
+      `a whole-turn message refetch landed while the text was growing, so the growth is not proof of the live ` +
+        `lane: ${JSON.stringify(refetches)}`,
+    ).toEqual([])
+
+    // The full three-layer oracle on the settled turn, and the model endpoint's
+    // own receipt that the turn really crossed the relay into the engine.
+    await expectAssistantReplyVisible(page, new RegExp(marker), {
+      spec: "live-user-hosted-relay",
+      scenario: "attached-host-turn",
+      timeout: 60_000,
+    })
+    expect(
+      fixture.scripted.counts().chat,
+      `the scripted model endpoint was never reached, so no real turn ran: ${JSON.stringify(fixture.scripted.counts())}`,
+    ).toBeGreaterThan(0)
+  })
 
   test("viewer-role tokens are real-denied writes and PTY, but allowed reads — behavior 7", async ({ page }) => {
     test.setTimeout(60_000)

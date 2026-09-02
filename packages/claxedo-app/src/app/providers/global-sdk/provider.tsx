@@ -124,8 +124,28 @@ export function rememberRuntimeEventEnvelope(input: RuntimeEventEnvelope, covere
   covered.add(runtimeSessionKey(input.sessionId))
 }
 
-export function runtimeProjectionOwnsCompat(input: RuntimeEventEnvelope) {
-  return runtimeOwnsOpencodeCompatProjection(input)
+/**
+ * Whether THIS lane must project the frame into OpenCode-compatible events.
+ *
+ * `runtimeOwnsOpencodeCompatProjection` answers that for a runtime sharing a
+ * process with the surface: a `ses_`-prefixed session is an OpenCode-legacy one
+ * whose compat frames ALSO arrive on this app's `/global/event` loop, so
+ * projecting them here as well would apply every delta twice.
+ *
+ * A relay-backed workspace has no such second lane. Its engine publishes onto
+ * the HOST's own global bus, which this app never reads — its `/global/event` is
+ * its own control plane's — so `soleCompatLane` says the runtime-events stream
+ * is the only carrier this session has. Deferring to a lane that does not exist
+ * is what made an attached pane render a host-started turn as one finished block
+ * at the settle refetch instead of text that grows: the ids the app mints for a
+ * managed private session are `ses_`-prefixed (`reservePrivateSession`), so the
+ * prefix rule dropped every frame of every user-hosted turn.
+ */
+export function runtimeProjectionOwnsCompat(
+  input: RuntimeEventEnvelope,
+  options?: { soleCompatLane?: boolean },
+) {
+  return options?.soleCompatLane === true || runtimeOwnsOpencodeCompatProjection(input)
 }
 
 export function runtimeReplayGap(input: RuntimeEventEnvelope) {
@@ -356,6 +376,15 @@ const globalSDKContextInput = {
         runtimeAttempt?.abort()
       },
     })
+    // A retarget is a change of SESSION, so only the session-scoped lane has a
+    // cursor that no longer means anything: `/api/wr/runtime-events` is opened
+    // per `parentSessionId` and its ids belong to that session's log. The
+    // workspace-wide compat lane carries every session on the server, so its
+    // cursor stays valid across a switch — dropping it makes the next connection
+    // cursor-less, which the two producers answer in opposite, equally wrong
+    // ways: a server that replays its whole retained log re-delivers frames the
+    // app already applied, and a workspace runtime that serves a cursor-less
+    // connection nothing at all silently loses everything published in the gap.
     const restartLiveSessionStreams = () => {
       if (fastSessionSwitchAnyQuietDelay() > 0) {
         scheduleLiveSessionRestart()
@@ -363,9 +392,7 @@ const globalSDKContextInput = {
       }
       if (liveSessionRestartTimer) clearTimeout(liveSessionRestartTimer)
       liveSessionRestartTimer = undefined
-      lastGlobalEventId = undefined
       lastRuntimeEventId = undefined
-      attempt?.abort()
       runtimeAttempt?.abort()
     }
     const scheduleLiveSessionRestart = () => {
@@ -437,6 +464,11 @@ const globalSDKContextInput = {
             if (session.directory) runtimePath.searchParams.set("directory", session.directory)
             runtimePath.searchParams.set("parentSessionId", session.sessionID)
             const sessionWorkspaceKind = runtimeWorkspaceKind(session.workspaceKind)
+            // A workspace whose runtime lives on another machine, reached over
+            // the relay: this stream is the only place its turns reach here.
+            const relayBackedStream = session.host !== "central"
+              && !!session.workspaceId
+              && (sessionWorkspaceKind === "cloud" || sessionWorkspaceKind === "user-hosted")
             const response = session.host === "central"
               ? await openCentralRuntimeEventResponse({
                   request,
@@ -488,9 +520,18 @@ const globalSDKContextInput = {
                 })
                 continue
               }
+              // Address the frame by the workspace THIS stream was opened for,
+              // not by whatever session a history fetch last marked live. A
+              // relay-backed runtime stamps every frame with its OWN filesystem
+              // path — the only path it knows — and this connection is scoped to
+              // exactly one `parentSessionId` on one workspace, so `session` is
+              // the authority on the address its consumers registered. Reading
+              // the live session instead dropped every delta of an ATTACHED
+              // turn: the pane registers `workspace:<id>`, the live session was
+              // still unmarked, and `conversationScopeKey` is an exact match.
               envelope.directory = eventDirectoryForLiveSession({
                 directory: envelope.directory,
-                liveSession: eventLiveSession(),
+                liveSession: session,
               })
               heartbeat.reset()
               becameReady = true
@@ -535,7 +576,7 @@ const globalSDKContextInput = {
                 })
               }
               applySubagentRuntimeEventEnvelope(envelope, subagents)
-              if (!runtimeProjectionOwnsCompat(envelope)) continue
+              if (!runtimeProjectionOwnsCompat(envelope, { soleCompatLane: relayBackedStream })) continue
               rememberRuntimeEventEnvelope(envelope, runtimeCoveredSessions)
               for (const event of projectRuntimeEventEnvelope(envelope, projections)) {
                 enqueue(event.directory, event.payload)

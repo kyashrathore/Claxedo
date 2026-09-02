@@ -25,11 +25,17 @@
 // every proxied request, the same signal a real nginx/Cloudflare edge adds. No
 // claxedo-server or claxedo-app product source is modified by this.
 //
-// Scope of that stamp: it covers the SAME-ORIGIN requests a page makes through this dev
-// server (`/api/...`), which is the lane the spec's own in-page product calls take. The
-// app's own control-plane calls resolve `VITE_CLAXEDO_SERVER_URL` into an ABSOLUTE base
-// (`src/platform/api/api.ts`'s `getClaxedoServerUrl`) and therefore reach the backend
-// directly, without passing through this proxy.
+// Scope of that stamp: it covers every SAME-ORIGIN request a page makes through this dev
+// server. `VITE_CLAXEDO_SERVER_URL` is what the app resolves its control-plane base from
+// (`src/platform/api/api.ts`'s `getClaxedoServerUrl`) AND what `vite.cloud.config.ts`
+// uses as its proxy target, so pointing it at the backend puts the app's own
+// control-plane calls on an absolute base that bypasses this front door entirely — and
+// they then take the unsigned-local path, where a relay-backed workspace comes back
+// `kind: "local"`. A caller that wants the app itself to come through the front door
+// sets `CLAXEDO_E2E_RELAY_PROXY_TARGET` to the backend and `VITE_CLAXEDO_SERVER_URL` to
+// this server's OWN origin: the bundle then addresses the control plane same-origin, the
+// proxy below carries it to the backend, and the stamp applies to it like everything
+// else. Without that variable this launcher behaves exactly as before.
 import { createServer } from "vite"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
@@ -54,10 +60,12 @@ const FORWARDED_CLIENT_IP = "203.0.113.10" // TEST-NET-3 (RFC 5737), never a rea
 // `createServer` resolves the config, before it builds the proxy middleware from
 // `config.server.proxy`, so every route in the config's own proxy list is covered
 // without this file restating that list.
+const proxyTarget = process.env.CLAXEDO_E2E_RELAY_PROXY_TARGET
 const forwardedClientPlugin = {
   name: "live-user-hosted-relay:forwarded-client",
   configResolved(config) {
     for (const entry of Object.values(config.server.proxy ?? {})) {
+      if (proxyTarget) entry.target = proxyTarget
       entry.configure = (proxy) => {
         proxy.on("proxyReq", (proxyReq) => {
           proxyReq.setHeader("x-forwarded-for", FORWARDED_CLIENT_IP)

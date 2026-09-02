@@ -21,6 +21,7 @@ import {
   claxedoEventRouteSessionID,
   claxedoEventStreamTargets,
   eventStreamFetch,
+  eventStreamFrameAddress,
   eventStreamTargetKey,
   routeDirectory,
   type ClaxedoEventStreamTarget,
@@ -190,18 +191,41 @@ function isClaxedoEvent(input: unknown): input is ClaxedoEvent | { type: "heartb
   return !!input && typeof input === "object" && "type" in input && typeof input.type === "string"
 }
 
-export function normalizeClaxedoStreamEvent(input: unknown): ClaxedoEvent | { type: "heartbeat" } | undefined {
-  if (isClaxedoEvent(input)) return input
+/**
+ * One stream frame, addressed the way this app addresses that workspace.
+ *
+ * `address` is the stream's own translation (`eventStreamFrameAddress`): a
+ * producer stamps frames with the only path it knows — its own — and for a
+ * relay-backed workspace that path names nothing this app can resolve, while
+ * every consumer keys on the `workspace:<id>` form the pane, the rail section
+ * and the session rows were registered under. It applies to the ENVELOPE's
+ * directory and to a payload that carries its own, because both come from the
+ * same producer.
+ */
+export function normalizeClaxedoStreamEvent(
+  input: unknown,
+  address: (directory: string) => string = (directory) => directory,
+): ClaxedoEvent | { type: "heartbeat" } | undefined {
+  if (isClaxedoEvent(input)) {
+    if (input.type === "heartbeat") return input
+    return addressClaxedoEvent(input, address)
+  }
   const envelope = input && typeof input === "object" && !Array.isArray(input)
     ? input as { directory?: unknown; payload?: unknown }
     : undefined
   const payload = envelope?.payload
   if (!isClaxedoEvent(payload)) return
   if (payload.type === "heartbeat") return payload
+  const addressed = addressClaxedoEvent(payload, address)
+  if ("directory" in addressed && typeof addressed.directory === "string" && addressed.directory) return addressed
   const directory = typeof envelope?.directory === "string" && envelope.directory ? envelope.directory : undefined
-  if (!directory) return payload
-  if ("directory" in payload && typeof payload.directory === "string" && payload.directory) return payload
-  return { ...payload, directory } as ClaxedoEvent
+  if (!directory) return addressed
+  return { ...addressed, directory: address(directory) } as ClaxedoEvent
+}
+
+function addressClaxedoEvent(event: ClaxedoEvent, address: (directory: string) => string) {
+  if (!("directory" in event) || typeof event.directory !== "string" || !event.directory) return event
+  return { ...event, directory: address(event.directory) } as ClaxedoEvent
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────
@@ -303,9 +327,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   const connections = new Map<string, () => void>()
   let stopped = false
 
-  const emitEvent = (input: string) => {
+  const emitEvent = (input: string, address: (directory: string) => string) => {
     try {
-      const event = normalizeClaxedoStreamEvent(JSON.parse(input) as unknown)
+      const event = normalizeClaxedoStreamEvent(JSON.parse(input) as unknown, address)
       if (!event || event.type === "heartbeat") return
       emitter.emit(event)
     } catch {
@@ -328,6 +352,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   }
 
   const connectTarget = (target: ClaxedoEventStreamTarget, accountState: AccountState) => {
+    const frameAddress = eventStreamFrameAddress(target)
     const state = {
       abort: null as AbortController | null,
       heartbeatTimer: null as ReturnType<typeof setTimeout> | null,
@@ -495,7 +520,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
             if (!data) continue
             stepLifecycle("heartbeat")
             resetHeartbeat()
-            emitEvent(data)
+            emitEvent(data, frameAddress)
           }
         }
         throw new Error("events stream closed")

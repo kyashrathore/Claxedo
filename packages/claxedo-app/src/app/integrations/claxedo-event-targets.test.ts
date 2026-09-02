@@ -3,6 +3,7 @@ import {
   claxedoEventRouteSessionID,
   claxedoEventStreamTargets,
   eventStreamFetch,
+  eventStreamFrameAddress,
   eventStreamTargetKey,
   CLAXEDO_EVENTS_RELAY_PATH,
 } from "./claxedo-event-targets"
@@ -521,5 +522,43 @@ describe("eventStreamFetch", () => {
 
   test("the relay events path is the runtime claxedo events resource", () => {
     expect(CLAXEDO_EVENTS_RELAY_PATH).toBe("/api/wr/events")
+  })
+})
+
+describe("eventStreamFrameAddress", () => {
+  // The producer only ever knows its own path. On a relay-backed workspace that
+  // machine is not this one, so the frame has to be re-addressed to the form
+  // every pane, rail section and session row of that workspace is keyed by.
+  test("addresses a relay-backed workspace's frames by workspace", () => {
+    for (const workspaceKind of ["user-hosted", "cloud"] as const) {
+      const address = eventStreamFrameAddress({
+        kind: "workspace",
+        serverUrl: "https://control.example",
+        workspaceId: "ws_1",
+        workspaceKind,
+        directory: "/Users/owner/repo",
+      })
+      expect(address("/Users/owner/repo")).toBe("workspace:ws_1")
+      expect(address("/some/other/path/the/host/reported")).toBe("workspace:ws_1")
+    }
+  })
+
+  // A local workspace is served by this surface's own runtime over loopback, so
+  // its path IS this machine's and every consumer is keyed by it.
+  test("leaves a local workspace's own paths alone", () => {
+    const address = eventStreamFrameAddress({
+      kind: "workspace",
+      serverUrl: "http://127.0.0.1:3001",
+      workspaceId: "ws_local",
+      workspaceKind: "local",
+      directory: "/repo/local",
+    })
+    expect(address("/repo/local")).toBe("/repo/local")
+  })
+
+  test("leaves the central stream alone", () => {
+    const address = eventStreamFrameAddress({ kind: "central", url: new URL("https://control.example/api/claxedo/events") })
+    expect(address("/repo/local")).toBe("/repo/local")
+    expect(address("global")).toBe("global")
   })
 })

@@ -134,7 +134,14 @@ function localBootstrap(url: string, harnessOverride: string | undefined, option
   return localBootstrapBody(harnessOverride, options)
 }
 
-function signedBootstrapProjects(workspaces: unknown[]) {
+/**
+ * The project inventory a SIGNED bootstrap answers with — the self-hosted twin
+ * of the hosted control plane's `signedShellProjects` (claxedo-server
+ * routes/hosted/shell.ts). Exported for the same reason that one is: this
+ * grouping decides which directories the app shell treats as relay-backed, and
+ * that decision is worth pinning directly rather than through a whole route.
+ */
+export function signedBootstrapProjects(workspaces: unknown[]) {
   const groups = new Map<string, {
     id: string
     name: string
@@ -145,7 +152,17 @@ function signedBootstrapProjects(workspaces: unknown[]) {
     const row = rec(workspace)
     const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
     if (!workspaceId) continue
-    const directory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? "/workspace"
+    // A workspace served elsewhere is ADDRESSED by its id; the host's own path
+    // is location metadata. Every row here comes from the signed control plane,
+    // so every one of them is relay-backed — a local workspace never reaches
+    // this body. Stating the host's path as `directory` made the client resolve
+    // a `/w/<id>` route to a path on ANOTHER machine
+    // (`workspaceRouteIdentity`), so its panes registered that path as their
+    // scope while both event lanes publish under `workspace:<id>` and every
+    // live frame of an attached turn was dropped for the mismatch. Same shape
+    // the hosted control plane already serves (`signedShellProjects`).
+    const directory = `workspace:${workspaceId}`
+    const remoteDirectory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory)
     const projectId = txt(row?.project_id) ?? txt(row?.projectID) ?? workspaceId
     const workspaceName = txt(row?.workspace_name) ?? txt(row?.workspaceName) ?? txt(row?.display_name) ?? txt(row?.displayName) ?? workspaceId
     const group = groups.get(projectId) ?? {
@@ -160,6 +177,7 @@ function signedBootstrapProjects(workspaces: unknown[]) {
       kind: txt(row?.access) ?? txt(row?.backing) ?? "cloud",
       workspace_name: workspaceName,
       directory,
+      ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
     }
     groups.set(projectId, group)
   }

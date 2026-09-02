@@ -23,6 +23,7 @@ import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
   type ProcessObserver,
+  type SessionAccessPolicyInput,
   type SessionAccessStreamDecision,
   type SessionAuthorityInput,
 } from "@claxedo/workspace-runtime"
@@ -121,7 +122,11 @@ import {
   type SessionStreamLeaseClaims,
 } from "../../routes/runtime-session-authority"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
-import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
+import {
+  SessionTurnConflictError,
+  SessionTurnLeaseLostError,
+  type SessionTurnAuthority,
+} from "@claxedo/server-core/platform/auth/session-turn-authority"
 import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { relayRole } from "../../workspace/route-support"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
@@ -284,9 +289,22 @@ function selfHostedPrivateSessionAuthority(
  * to the `embedded` transport: an in-process runtime holds no Relay Host
  * Token chain, so a renewal re-checks private-session membership rather than
  * a parent Runtime Access Token.
+ *
+ * Turn admission is the same story one layer down. Declaring
+ * `sessionAuthority: "managed-private"` is what turns on the runtime's durable
+ * prompt admission (`acquireManagedPromptLease`, workspace-runtime
+ * routes/session-core.ts), so a managed policy that carries no turn callbacks
+ * answers every prompt 503 `session_turn_authority_unavailable` — the whole
+ * composition can authorize a turn and then refuse to admit it. The callbacks
+ * below reach `selfHostedTurnAuthority`, the same owner
+ * `RuntimeSessionAuthorityRoutes` serves remotely; the authority's own
+ * `leaseId` travels back unwrapped because an in-process caller needs no
+ * cross-process proof to bind it to (the remote oracle mints a signed lease
+ * for exactly that reason).
  */
 export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
   const runtimeAuthority = selfHostedRuntimeAuthority(authority)
+  const turnAuthority = selfHostedTurnAuthority(authority)
   const principalOf = (input: SessionAuthorityInput) => input.actor.actorKind === "human"
     ? { principalKind: "user" as const, actorId: input.actor.actorId, actorKind: "human" as const }
     : { principalKind: "service" as const, actorId: input.actor.actorId, actorKind: "agent" as const }
@@ -362,7 +380,34 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
       return denied(error)
     }
   }
-  return managedWorkspaceSessionAccessPolicy({
+  const turnDenied = (error: unknown) => {
+    if (error instanceof SessionTurnConflictError) {
+      return { allowed: false as const, status: 409 as const, code: error.code, message: error.message }
+    }
+    if (error instanceof SessionTurnLeaseLostError) {
+      return { allowed: false as const, status: 409 as const, code: error.code, message: error.message }
+    }
+    return denied(error)
+  }
+  // A turn is admitted for a verified identity on a named workspace, exactly
+  // like a stream. Absent claims are a denial rather than a crash, and the
+  // shape is the one `authorizeStream` already answers with.
+  const turnInput = (input: SessionAccessPolicyInput & { sessionId: string; turnId: string }) => {
+    if (!input.actor || !input.authority) return undefined
+    return {
+      ...principalOf({ ...input, actor: input.actor, authority: input.authority }),
+      sessionId: input.sessionId,
+      workspaceId: input.authority.workspaceId,
+      turnId: input.turnId,
+    }
+  }
+  const turnActorRequired = {
+    allowed: false as const,
+    status: 403 as const,
+    code: "session_actor_required",
+    message: "Managed session turns require verified actor claims",
+  }
+  const policy = managedWorkspaceSessionAccessPolicy({
     authority: {
       authorizeSessionRead: (input) => decide(input, "read"),
       authorizeSessionWrite: (input) => decide(input, "write"),
@@ -370,6 +415,45 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
       registerSession: (input) => decide(input, "register"),
     },
   })
+  policy.acquireTurn = async (input) => {
+    const turn = turnInput(input)
+    if (!turn) return turnActorRequired
+    try {
+      return { allowed: true as const, ...await turnAuthority.acquireSessionTurn(turn) }
+    } catch (error) {
+      return turnDenied(error)
+    }
+  }
+  policy.renewTurn = async (input) => {
+    const turn = turnInput(input)
+    if (!turn) return turnActorRequired
+    try {
+      return {
+        allowed: true as const,
+        ...await turnAuthority.renewSessionTurn({
+          ...turn,
+          leaseId: input.leaseId,
+          fencingToken: input.fencingToken,
+        }),
+      }
+    } catch (error) {
+      return turnDenied(error)
+    }
+  }
+  policy.releaseTurn = async (input) => {
+    const turn = turnInput(input)
+    if (!turn) return turnActorRequired
+    try {
+      return await turnAuthority.releaseSessionTurn({
+        ...turn,
+        leaseId: input.leaseId,
+        fencingToken: input.fencingToken,
+      })
+    } catch (error) {
+      return turnDenied(error)
+    }
+  }
+  return policy
 }
 
 export function localDocumentsBackend() {

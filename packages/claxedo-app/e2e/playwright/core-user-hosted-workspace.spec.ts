@@ -817,7 +817,7 @@ async function installUserHostedRuntimeMock(
         // runtime never produces.
         const hostProjection = createOpencodeCompatProjection({
           sessionId: SESSION_ID,
-          directory: WORKSPACE_ID,
+          directory: HOST_DIR,
           assistantMessageId: assistantID,
         })
         const persistedParts = new Map<string, { id: string; sessionID: string; messageID: string; type: string; text: string }>()
@@ -843,7 +843,12 @@ async function installUserHostedRuntimeMock(
         const emitFrame = (payload: Record<string, unknown>) => {
           const frame = {
             contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
-            directory: WORKSPACE_ID,
+            // A runtime stamps every frame with its OWN filesystem path — see
+            // `HOST_DIR`. Addressing the frame as the workspace is the CLIENT's
+            // job (`eventStreamFrameAddress` / `eventDirectoryForLiveSession`),
+            // so emitting the workspace id here would hide that translation and
+            // let a change in it pass unnoticed.
+            directory: HOST_DIR,
             sessionId: SESSION_ID,
             assistantMessageId: assistantID,
             payload,
@@ -928,7 +933,8 @@ async function installUserHostedRuntimeMock(
     emitRuntimeFrame(payload: Record<string, unknown>, input: { assistantMessageId: string }) {
       const frame = {
         contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
-        directory: WORKSPACE_ID,
+        // The host's own path, exactly as `emitFrame` above — see its note.
+        directory: HOST_DIR,
         sessionId: SESSION_ID,
         assistantMessageId: input.assistantMessageId,
         payload,

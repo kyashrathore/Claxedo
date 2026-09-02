@@ -17,6 +17,7 @@ import {
 } from "@/platform/account/account-stream-fetch"
 import type { AccountState } from "@/platform/account/account-port"
 import { parseShellRoute, shellRouteDirectoryFromPathname } from "@/platform/identity/route"
+import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
 import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
@@ -230,6 +231,30 @@ export async function eventStreamFetch(
     request,
     ...(options?.relayRequest ? { relayRequest: options.relayRequest } : {}),
   }).fetch(runtimePath, init)
+}
+
+/**
+ * The address a frame received on `target`'s stream is published under.
+ *
+ * A workspace runtime stamps every frame it publishes with its OWN filesystem
+ * path, because that is the only path it has. On a relay-backed workspace that
+ * machine is not this one, so the path addresses nothing here — while the pane,
+ * the rail section and every session row of that workspace are registered under
+ * `workspace:<id>` (`sessionRowDirectory`, the one owner of that form). The
+ * translation belongs here, at the stream boundary, because a workspace stream
+ * is opened for exactly one workspace and this target names it; deriving it
+ * from the frame's path instead would have to guess which machine wrote it.
+ *
+ * A LOCAL workspace's stream is served by this surface's own runtime over
+ * loopback, so its path IS this machine's and is returned unchanged — the same
+ * rule `sessionRowDirectory` applies to a row.
+ */
+export function eventStreamFrameAddress(target: ClaxedoEventStreamTarget) {
+  const relayBacked = target.kind === "workspace"
+    && (target.workspaceKind === "cloud" || target.workspaceKind === "user-hosted")
+  if (!relayBacked) return (directory: string) => directory
+  return (directory: string) =>
+    sessionRowDirectory({ workspaceId: target.workspaceId, hostDirectory: directory })
 }
 
 export function routeDirectory(pathname: string) {
