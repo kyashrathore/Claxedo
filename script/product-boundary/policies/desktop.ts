@@ -268,7 +268,14 @@ export const desktopRendererUnsigned: Policy = {
   // already-lazy marketplace panel: one module, no package edge.
   // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
   // catalog owner) in the same slice: one more module, no package edge.
-  ceilings: { modules: 1045, packages: 59 },
+  // Plan 150 section C: the same three Settings scope modules app-local
+  // reviews (`features/settings/scope/settings-scope.tsx`, its pure
+  // `settings-scope-options.ts`, and `features/settings/ui/scope-selector.tsx`)
+  // — the explicit (workspace, harness) selection Providers and Models read
+  // under. Reviewed owner: the settings feature; reachable only through the
+  // already-lazy Settings dialog. Three modules, no package edge; the measured
+  // closure is 1048.
+  ceilings: { modules: 1048, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

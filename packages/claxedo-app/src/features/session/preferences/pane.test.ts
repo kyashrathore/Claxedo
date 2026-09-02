@@ -33,48 +33,41 @@ describe("pane preferences", () => {
     expect(isDraftPaneScope("session:ses_1")).toBe(false)
   })
 
-  test("reads and persists variant and review scope values", () => {
+  test("reads and persists review scope values", () => {
     const { data, storage } = memoryStorage()
     const prefs = createPanePreferences(storage)
 
-    prefs.set("variant", "draft:one", "high")
     prefs.set("reviewMode", "draft:one", "to-from")
 
-    expect(prefs.get("variant", "draft:one")).toBe("high")
-    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.variant)!)).toEqual({ "draft:one": "high" })
+    expect(prefs.get("reviewMode", "draft:one")).toBe("to-from")
     expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({ "draft:one": "to-from" })
 
-    prefs.set("variant", "draft:one", "")
-    expect(prefs.get("variant", "draft:one")).toBeUndefined()
-    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.variant)!)).toEqual({})
+    prefs.set("reviewMode", "draft:one", "")
+    expect(prefs.get("reviewMode", "draft:one")).toBeUndefined()
+    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({})
   })
 
   test("ignores malformed and non-string stored values", () => {
     const { storage } = memoryStorage({
-      [PANE_PREFERENCE_KEYS.variant]: JSON.stringify({
-        "draft:one": "sonnet",
+      [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({
+        "draft:one": "staged",
         "draft:two": 42,
       }),
     })
     const prefs = createPanePreferences(storage)
 
-    expect(prefs.get("variant", "draft:one")).toBe("sonnet")
-    expect(prefs.get("variant", "draft:two")).toBeUndefined()
+    expect(prefs.get("reviewMode", "draft:one")).toBe("staged")
+    expect(prefs.get("reviewMode", "draft:two")).toBeUndefined()
   })
 
-  test("promotes draft variant and review preferences into a session scope", () => {
+  test("promotes draft review preferences into a session scope", () => {
     const { data, storage } = memoryStorage({
-      [PANE_PREFERENCE_KEYS.variant]: JSON.stringify({ "draft:one": "fast" }),
       [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({ "draft:one": "unstaged" }),
     })
     const prefs = createPanePreferences(storage)
 
     prefs.promote("draft:one", "session:ses_1")
 
-    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.variant)!)).toEqual({
-      "draft:one": "fast",
-      "session:ses_1": "fast",
-    })
     expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({
       "draft:one": "unstaged",
       "session:ses_1": "unstaged",
@@ -110,14 +103,12 @@ describe("pane preferences", () => {
 
   test("promote deletes stale destination values when the source has no value", () => {
     const { data, storage } = memoryStorage({
-      [PANE_PREFERENCE_KEYS.variant]: JSON.stringify({ "session:ses_1": "stale" }),
       [PANE_PREFERENCE_KEYS.reviewMode]: JSON.stringify({ "session:ses_1": "staged" }),
     })
     const prefs = createPanePreferences(storage)
 
     prefs.promote("draft:missing", "session:ses_1")
 
-    expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.variant)!)).toEqual({})
     expect(JSON.parse(data.get(PANE_PREFERENCE_KEYS.reviewMode)!)).toEqual({})
   })
 })

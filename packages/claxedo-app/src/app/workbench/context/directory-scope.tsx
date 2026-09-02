@@ -16,6 +16,8 @@ import { useWorkspaceQuery } from "../../../features/workspaces/data/use-workspa
 import { useSDK } from "@/app/providers/sdk/sdk"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { LocalProvider } from "@/features/session/providers/session-selection"
+import { ModelsProvider } from "@/features/session/providers/models"
+import { getClaxedoServerUrl } from "@/platform/api/api"
 import { TerminalProvider } from "@/features/terminal/providers/provider"
 import { FileProvider } from "@/app/providers/file"
 import { WorkspaceVcsCacheHonesty } from "./workspace-vcs-cache-honesty"
@@ -150,6 +152,12 @@ function DirectoryDataProvider(props: ParentProps<{
     workspaceId: sdk.workspace(props.directory)?.workspaceId,
     enabled: hydrateDirectoryAgents(),
   }))
+  // The persisted model store belongs to this pane's (server, workspace) and
+  // keys its maps by harness. `session-pane-scope.tsx` puts OpenCode on the
+  // wire as an absent harness for the passive query family; the store needs the
+  // id itself, so it is read back here.
+  const modelsWorkspaceKey = createMemo(() => sdk.workspace(props.directory)?.workspaceId || props.directory)
+  const modelsHarness = createMemo(() => props.harnessType?.() ?? "opencode")
   const navigateToSession = (sessionID: string) => {
     props.onNavigateToSession?.(sessionID)
   }
@@ -179,16 +187,22 @@ function DirectoryDataProvider(props: ParentProps<{
       onSessionHref={sessionHref}
       resolveSubagents={resolveSubagents}
     >
-      <LocalProvider
-        sessionId={props.sessionId}
-        sessionRef={props.sessionRef}
-        active={props.active}
-        agents={() => agentQuery.data ?? []}
+      <ModelsProvider
+        workspaceKey={modelsWorkspaceKey}
+        harness={modelsHarness}
+        serverUrl={() => sdk.url ?? getClaxedoServerUrl()}
       >
-        <SessionSyncProvider syncSession={syncSession}>
-          {props.children}
-        </SessionSyncProvider>
-      </LocalProvider>
+        <LocalProvider
+          sessionId={props.sessionId}
+          sessionRef={props.sessionRef}
+          active={props.active}
+          agents={() => agentQuery.data ?? []}
+        >
+          <SessionSyncProvider syncSession={syncSession}>
+            {props.children}
+          </SessionSyncProvider>
+        </LocalProvider>
+      </ModelsProvider>
     </DataProvider>
   )
 }

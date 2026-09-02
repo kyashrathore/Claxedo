@@ -221,6 +221,38 @@ async function verifyHostSignature(input: {
  * row, and sharing it again revives the same record. Cloud rows are never
  * touched here — their lifetime is the sandbox's.
  */
+/**
+ * The one definition of "a host is serving this workspace right now": an
+ * enrollment that is neither revoked nor paused, whose lease has not expired,
+ * and whose last signed heartbeat acked this workspace. Written against an
+ * `assignment`/`enrollment` join, and binding exactly one value — `now`.
+ *
+ * `activeWorkspaceHost` answers it for one workspace; `listWorkspaces` stamps
+ * it on every user-hosted row so the rail can say "host offline" before any
+ * pane opens the workspace, and both must mean the same thing. Mirrors the D1
+ * adapter's `HOST_SERVING_WORKSPACE_SQL`.
+ */
+const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at IS NULL AND enrollment.paused_at IS NULL
+          AND enrollment.expires_at > ?
+          AND EXISTS (
+            SELECT 1 FROM json_each(COALESCE(enrollment.acked_workspace_ids, '[]'))
+            WHERE json_each.value = assignment.workspace_id
+          )`
+
+/** Of these workspaces, the ones a live enrollment currently serves. */
+function workspacesWithServingHost(db: SqliteAuthorityDb, workspaceIds: string[]) {
+  if (workspaceIds.length === 0) return new Set<string>()
+  const rows = db.prepare(`
+    SELECT DISTINCT assignment.workspace_id
+    FROM host_workspace_assignments assignment
+    JOIN host_enrollments enrollment ON enrollment.host_id = assignment.host_id
+      AND enrollment.owner_token_identifier = assignment.owner_token_identifier
+    WHERE assignment.workspace_id IN (${workspaceIds.map(() => "?").join(", ")})
+      AND ${HOST_SERVING_WORKSPACE_SQL}
+  `).all(...workspaceIds, Date.now()) as Array<{ workspace_id: string }>
+  return new Set(rows.map((row) => row.workspace_id))
+}
+
 function retireUserHostedWorkspaceSql(where: string) {
   return `
     UPDATE workspaces SET deleted_at = ?, updated_at = ?
@@ -1153,7 +1185,7 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const rows = db.prepare(`SELECT * FROM workspaces WHERE deleted_at IS NULL`).all() as WorkspaceRow[]
-      return rows
+      const visible = rows
         .map((workspace) => ({
           workspace_id: workspace.workspace_id,
           project_id: workspace.project_id ?? undefined,
@@ -1164,6 +1196,17 @@ export function createSqliteWorkspaceAuthority(
           role: workspaceRoleForUser(db, workspace, who),
         }))
         .filter((item) => !!item.role)
+      const online = workspacesWithServingHost(
+        db,
+        visible.filter((item) => item.access === "user-hosted").map((item) => item.workspace_id),
+      )
+      return visible.map((item) => ({
+        ...item,
+        // Reachability, not authorization: a shared workspace whose machine is
+        // asleep is still listed, and the rail says "host offline" for it
+        // rather than dropping the row or waiting for a pane to discover it.
+        ...(item.access === "user-hosted" ? { host_online: online.has(item.workspace_id) } : {}),
+      }))
     },
     async registerLocalForSharing(auth: SignedControlPlaneAuth, args) {
       const db = database()
@@ -1727,13 +1770,7 @@ export function createSqliteWorkspaceAuthority(
         FROM host_workspace_assignments assignment
         JOIN host_enrollments enrollment ON enrollment.host_id = assignment.host_id
           AND enrollment.owner_token_identifier = assignment.owner_token_identifier
-        WHERE assignment.workspace_id = ?
-          AND enrollment.revoked_at IS NULL AND enrollment.paused_at IS NULL
-          AND enrollment.expires_at > ?
-          AND EXISTS (
-            SELECT 1 FROM json_each(COALESCE(enrollment.acked_workspace_ids, '[]'))
-            WHERE json_each.value = assignment.workspace_id
-          )
+        WHERE assignment.workspace_id = ? AND ${HOST_SERVING_WORKSPACE_SQL}
         LIMIT 1
       `).get(args.workspaceId, Date.now()) as {
         workspace_id: string

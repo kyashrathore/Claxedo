@@ -22,6 +22,30 @@ import { useServer } from "@/app/connection/server"
 import { useNavigate } from "@solidjs/router"
 import { useConfigOptional } from "@/app/providers/config"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
+import { SettingsScopeProvider, useSettingsScope } from "@/features/settings/scope/settings-scope"
+import { ModelsProvider } from "@/features/session/providers/models"
+import type { ParentProps } from "solid-js"
+
+/**
+ * The model store these settings edit.
+ *
+ * Visibility and variants belong to (server, workspace, harness), so Settings
+ * mounts its own store under the pair the scope selector names rather than
+ * editing whatever store a pane happens to have open.
+ */
+function SettingsModelsScope(props: ParentProps) {
+  const scope = useSettingsScope()
+  return (
+    <ModelsProvider
+      workspaceKey={scope.workspaceKey}
+      harness={scope.harness}
+      serverUrl={scope.serverUrl}
+      scope={scope.scopeRef}
+    >
+      {props.children}
+    </ModelsProvider>
+  )
+}
 
 export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const language = useLanguage()
@@ -51,165 +75,177 @@ export const DialogSettings: Component<{ initialTab?: string }> = (props) => {
   const [mobile, setMobile] = createSignal(false)
 
   return (
-    <Dialog size="x-large" transition flush class="flex-1 workspace-page-dialog workspace-page-dialog-shell settings-dialog-shell" aria-label={language.t("sidebar.settings")}>
-      <div class="flex flex-col h-full min-h-0">
-        <div class="hidden h-10 shrink-0 items-center justify-between border-b border-border-weak-base/60 px-3 max-sm:flex">
-          <span class="text-compact font-medium text-text-base">Settings</span>
-          <button
-            type="button"
-            aria-label="Close settings"
-            class="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
-            onClick={() => dialog.close()}
-          >
-            <Icon name="close" size="small" />
-          </button>
-        </div>
-
-        <Tabs
-          orientation="vertical"
-          variant="settings"
-          value={active()}
-          onChange={(value: string) => {
-            setActive(value)
-            setMobile(true)
-          }}
-          class="h-full min-h-0"
-          classList={{
-            "settings-dialog": true,
-            "settings-mobile-menu": !mobile(),
-            "settings-mobile-content": mobile(),
-          }}
-        >
-          <Tabs.List>
-            <div
-              class="flex flex-col justify-between h-full w-full"
-              onClick={(event) => {
-                if ((event.target as HTMLElement).closest("[data-slot='tabs-trigger']")) {
-                  setMobile(true)
-                }
-              }}
+    <SettingsScopeProvider>
+      <Dialog size="x-large" transition flush class="flex-1 workspace-page-dialog workspace-page-dialog-shell settings-dialog-shell" aria-label={language.t("sidebar.settings")}>
+        <div class="flex flex-col h-full min-h-0">
+          <div class="hidden h-10 shrink-0 items-center justify-between border-b border-border-weak-base/60 px-3 max-sm:flex">
+            <span class="text-compact font-medium text-text-base">Settings</span>
+            <button
+              type="button"
+              aria-label="Close settings"
+              class="flex size-7 items-center justify-center rounded-md border-none bg-transparent text-icon-weak-base transition-colors hover:bg-surface-base-hover hover:text-icon-base"
+              onClick={() => dialog.close()}
             >
-              <div class="flex flex-col gap-3 w-full pt-3">
-                <div class="flex flex-col gap-3">
-                  <div class="flex flex-col gap-1.5">
-                    <Tabs.SectionTitle>{language.t("settings.section.desktop")}</Tabs.SectionTitle>
-                    <div class="flex flex-col gap-1.5 w-full">
-                      <Tabs.Trigger value="general">
-                        <Icon name="sliders" />
-                        {language.t("settings.tab.general")}
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="shortcuts">
-                        <Icon name="keyboard" />
-                        {language.t("settings.tab.shortcuts")}
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="terminals">
-                        <Icon name="console" />
-                        Terminals
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="devices">
-                        <Icon name="link" />
-                        Devices
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="orgs">
-                        <Icon name="folders" />
-                        Orgs & Teams
-                      </Tabs.Trigger>
-                    </div>
-                  </div>
-
-                  <div class="flex flex-col gap-1.5">
-                    <Tabs.SectionTitle>{language.t("settings.section.server")}</Tabs.SectionTitle>
-                    <div class="flex flex-col gap-1.5 w-full">
-                      <Tabs.Trigger value="providers">
-                        <Icon name="providers" />
-                        {language.t("settings.providers.title")}
-                      </Tabs.Trigger>
-                      <Tabs.Trigger value="models">
-                        <Icon name="models" />
-                        {language.t("settings.models.title")}
-                      </Tabs.Trigger>
-                      <Show when={productUi().settingsConnections}>
-                        <Tabs.Trigger value="connections">
-                          <Icon name="link" />
-                          Connections
-                        </Tabs.Trigger>
-                      </Show>
-                      <Show when={productUi().settingsSandboxProviders}>
-                        <Tabs.Trigger value="compute">
-                          <Icon name="cloud-upload" />
-                          Sandbox
-                        </Tabs.Trigger>
-                      </Show>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div class="flex flex-col gap-1 pl-1 py-1 text-12-medium text-text-weak">
-                <span>Claxedo</span>
-                <span class="text-11-regular">v{claxedoPkg.version}</span>
-              </div>
-            </div>
-          </Tabs.List>
-
-          <div class="settings-mobile-back" onClick={() => setMobile(false)}>
-            <Icon name="arrow-left" size="small" />
-            <span>Settings</span>
+              <Icon name="close" size="small" />
+            </button>
           </div>
 
-          <Tabs.Content value="general" class="no-scrollbar">
-            <SettingsGeneral />
-          </Tabs.Content>
-          <Tabs.Content value="shortcuts" class="no-scrollbar">
-            <SettingsKeybinds />
-          </Tabs.Content>
-          <Tabs.Content value="terminals" class="no-scrollbar">
-            <SettingsTerminals />
-          </Tabs.Content>
-          <Tabs.Content value="devices" class="no-scrollbar">
-            <div class="p-6">
-              <RemoteAccessSurface
-                availability={remoteAccess.availability()}
-                identity={remoteAccess.identity()}
-                devices={remoteAccess.devices.data ?? []}
-                serving={autoShare().serving}
-                servingPending={autoShare().pending}
-                shareFailure={autoShare().failure}
-                deviceLink={remoteAccess.deviceLink()}
-                startAtLogin={remoteAccess.startAtLogin()}
-                onStartAtLoginChange={(enabled) => void remoteAccess.setStartAtLogin(enabled)}
-                onEnable={() => void remoteAccess.enable()}
-                onSignIn={() => {
-                  dialog.close()
-                  navigate("/login")
+          <Tabs
+            orientation="vertical"
+            variant="settings"
+            value={active()}
+            onChange={(value: string) => {
+              setActive(value)
+              setMobile(true)
+            }}
+            class="h-full min-h-0"
+            classList={{
+              "settings-dialog": true,
+              "settings-mobile-menu": !mobile(),
+              "settings-mobile-content": mobile(),
+            }}
+          >
+            <Tabs.List>
+              <div
+                class="flex flex-col justify-between h-full w-full"
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest("[data-slot='tabs-trigger']")) {
+                    setMobile(true)
+                  }
                 }}
-                onPause={remoteAccess.canPause() ? () => void remoteAccess.pause() : undefined}
-                onRevoke={(hostId) => void remoteAccess.revoke(hostId)}
-              />
+              >
+                <div class="flex flex-col gap-3 w-full pt-3">
+                  <div class="flex flex-col gap-3">
+                    <div class="flex flex-col gap-1.5">
+                      <Tabs.SectionTitle>{language.t("settings.section.desktop")}</Tabs.SectionTitle>
+                      <div class="flex flex-col gap-1.5 w-full">
+                        <Tabs.Trigger value="general">
+                          <Icon name="sliders" />
+                          {language.t("settings.tab.general")}
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="shortcuts">
+                          <Icon name="keyboard" />
+                          {language.t("settings.tab.shortcuts")}
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="terminals">
+                          <Icon name="console" />
+                          Terminals
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="devices">
+                          <Icon name="link" />
+                          Devices
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="orgs">
+                          <Icon name="folders" />
+                          Orgs & Teams
+                        </Tabs.Trigger>
+                      </div>
+                    </div>
+
+                    <div class="flex flex-col gap-1.5">
+                      <Tabs.SectionTitle>{language.t("settings.section.workspace")}</Tabs.SectionTitle>
+                      <div class="flex flex-col gap-1.5 w-full">
+                        <Tabs.Trigger value="providers">
+                          <Icon name="providers" />
+                          {language.t("settings.providers.title")}
+                        </Tabs.Trigger>
+                        <Tabs.Trigger value="models">
+                          <Icon name="models" />
+                          {language.t("settings.models.title")}
+                        </Tabs.Trigger>
+                      </div>
+                    </div>
+
+                    <Show when={productUi().settingsConnections || productUi().settingsSandboxProviders}>
+                      <div class="flex flex-col gap-1.5">
+                        <Tabs.SectionTitle>{language.t("settings.section.account")}</Tabs.SectionTitle>
+                        <div class="flex flex-col gap-1.5 w-full">
+                          <Show when={productUi().settingsConnections}>
+                            <Tabs.Trigger value="connections">
+                              <Icon name="link" />
+                              Connections
+                            </Tabs.Trigger>
+                          </Show>
+                          <Show when={productUi().settingsSandboxProviders}>
+                            <Tabs.Trigger value="compute">
+                              <Icon name="cloud-upload" />
+                              Sandbox
+                            </Tabs.Trigger>
+                          </Show>
+                        </div>
+                      </div>
+                    </Show>
+                  </div>
+                </div>
+                <div class="flex flex-col gap-1 pl-1 py-1 text-12-medium text-text-weak">
+                  <span>Claxedo</span>
+                  <span class="text-11-regular">v{claxedoPkg.version}</span>
+                </div>
+              </div>
+            </Tabs.List>
+
+            <div class="settings-mobile-back" onClick={() => setMobile(false)}>
+              <Icon name="arrow-left" size="small" />
+              <span>Settings</span>
             </div>
-          </Tabs.Content>
-          <Tabs.Content value="orgs" class="no-scrollbar">
-            <div class="p-6">
-              <OrgTeamSettingsSection />
-            </div>
-          </Tabs.Content>
-          <Tabs.Content value="providers" class="no-scrollbar">
-            <SettingsProviders />
-          </Tabs.Content>
-          <Tabs.Content value="models" class="no-scrollbar">
-            <SettingsModels />
-          </Tabs.Content>
-          <Show when={productUi().settingsConnections}>
-            <Tabs.Content value="connections" class="no-scrollbar">
-              <SettingsConnections />
+
+            <Tabs.Content value="general" class="no-scrollbar">
+              <SettingsGeneral />
             </Tabs.Content>
-          </Show>
-          <Show when={productUi().settingsSandboxProviders}>
-            <Tabs.Content value="compute" class="no-scrollbar">
-              <SandboxSettingsSection />
+            <Tabs.Content value="shortcuts" class="no-scrollbar">
+              <SettingsKeybinds />
             </Tabs.Content>
-          </Show>
-        </Tabs>
-      </div>
-    </Dialog>
+            <Tabs.Content value="terminals" class="no-scrollbar">
+              <SettingsTerminals />
+            </Tabs.Content>
+            <Tabs.Content value="devices" class="no-scrollbar">
+              <div class="p-6">
+                <RemoteAccessSurface
+                  availability={remoteAccess.availability()}
+                  identity={remoteAccess.identity()}
+                  devices={remoteAccess.devices.data ?? []}
+                  serving={autoShare().serving}
+                  servingPending={autoShare().pending}
+                  shareFailure={autoShare().failure}
+                  deviceLink={remoteAccess.deviceLink()}
+                  startAtLogin={remoteAccess.startAtLogin()}
+                  onStartAtLoginChange={(enabled) => void remoteAccess.setStartAtLogin(enabled)}
+                  onEnable={() => void remoteAccess.enable()}
+                  onSignIn={() => {
+                    dialog.close()
+                    navigate("/login")
+                  }}
+                  onPause={remoteAccess.canPause() ? () => void remoteAccess.pause() : undefined}
+                  onRevoke={(hostId) => void remoteAccess.revoke(hostId)}
+                />
+              </div>
+            </Tabs.Content>
+            <Tabs.Content value="orgs" class="no-scrollbar">
+              <div class="p-6">
+                <OrgTeamSettingsSection />
+              </div>
+            </Tabs.Content>
+            <Tabs.Content value="providers" class="no-scrollbar">
+              <SettingsProviders />
+            </Tabs.Content>
+            <Tabs.Content value="models" class="no-scrollbar">
+              <SettingsModelsScope>
+                <SettingsModels />
+              </SettingsModelsScope>
+            </Tabs.Content>
+            <Show when={productUi().settingsConnections}>
+              <Tabs.Content value="connections" class="no-scrollbar">
+                <SettingsConnections />
+              </Tabs.Content>
+            </Show>
+            <Show when={productUi().settingsSandboxProviders}>
+              <Tabs.Content value="compute" class="no-scrollbar">
+                <SandboxSettingsSection />
+              </Tabs.Content>
+            </Show>
+          </Tabs>
+        </div>
+      </Dialog>
+    </SettingsScopeProvider>
   )
 }

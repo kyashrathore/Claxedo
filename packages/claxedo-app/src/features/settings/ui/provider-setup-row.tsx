@@ -22,6 +22,8 @@ export const ProviderSetupRow: Component<{
   providerId: string
   /** The harness whose credentials this row connects. */
   harness: string
+  /** The workspace-or-directory scope those credentials belong to. */
+  scope?: string
   note?: string
   onConnected?: () => void | Promise<void>
 }> = (props) => {
@@ -73,6 +75,7 @@ export const ProviderSetupRow: Component<{
           <ProviderConnectForm
             provider={props.providerId}
             harness={props.harness}
+            workspaceScope={props.scope}
             hideHeading
             onConnected={props.onConnected}
             onDone={() => setExpanded(false)}

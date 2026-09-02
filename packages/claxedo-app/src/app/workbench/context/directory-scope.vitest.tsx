@@ -160,6 +160,10 @@ vi.mock("@/features/session/providers/session-selection", () => ({
   LocalProvider: (props: any) => <>{props.children}</>,
 }))
 
+vi.mock("@/features/session/providers/models", () => ({
+  ModelsProvider: (props: any) => <>{props.children}</>,
+}))
+
 vi.mock("@/features/terminal/providers/provider", () => ({
   TerminalProvider: (props: any) => <>{props.children}</>,
 }))

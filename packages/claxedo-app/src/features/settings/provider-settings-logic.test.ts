@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test"
 import {
   canDisconnectProvider,
-  disconnectOpenCodeProvider,
+  disconnectProvider,
   providerSourceTagKey,
   removeProviderAuthEntry,
 } from "./provider-settings-logic"
@@ -28,8 +28,9 @@ describe("removeProviderAuthEntry", () => {
     const url = await removeProviderAuthEntry({
       serverUrl: "http://127.0.0.1:2593",
       providerId: "openai",
+      harness: "opencode",
       request: async (target, init) => {
-        expect(String(target)).toBe("http://127.0.0.1:2593/auth/openai")
+        expect(String(target)).toBe("http://127.0.0.1:2593/auth/openai?harness=opencode")
         expect(init?.method).toBe("DELETE")
         return new Response("true", { status: 200 })
       },
@@ -37,19 +38,35 @@ describe("removeProviderAuthEntry", () => {
     expect(url).toBeUndefined()
   })
 
+  test("names the workspace scope the entry belongs to", async () => {
+    await removeProviderAuthEntry({
+      serverUrl: "http://127.0.0.1:2593",
+      providerId: "anthropic",
+      harness: "claude-sdk",
+      directory: "workspace:ws_1",
+      request: async (target) => {
+        expect(String(target)).toBe(
+          "http://127.0.0.1:2593/auth/anthropic?harness=claude-sdk&directory=workspace%3Aws_1",
+        )
+        return new Response("true", { status: 200 })
+      },
+    })
+  })
+
   test("surfaces non-ok responses", async () => {
     await expect(removeProviderAuthEntry({
       serverUrl: "http://127.0.0.1:2593",
       providerId: "openai",
+      harness: "opencode",
       request: async () => new Response("bad gateway", { status: 502 }),
     })).rejects.toThrow("bad gateway")
   })
 })
 
-describe("disconnectOpenCodeProvider", () => {
+describe("disconnectProvider", () => {
   test("drops the stored credential, then the harness auth entry", async () => {
     const calls = { credential: 0, auth: 0, marked: 0, refreshed: false }
-    await disconnectOpenCodeProvider({
+    await disconnectProvider({
       providerId: "openai",
       name: "OpenAI",
       deleteCredential: async () => { calls.credential += 1 },
@@ -64,7 +81,7 @@ describe("disconnectOpenCodeProvider", () => {
 
   test("a missing credential never blocks the auth removal", async () => {
     let auth = 0
-    await disconnectOpenCodeProvider({
+    await disconnectProvider({
       providerId: "openai",
       name: "OpenAI",
       deleteCredential: async () => {
@@ -82,7 +99,7 @@ describe("disconnectOpenCodeProvider", () => {
   test("reports auth failures without claiming success", async () => {
     const errors: string[] = []
     const success = mock(() => undefined)
-    await disconnectOpenCodeProvider({
+    await disconnectProvider({
       providerId: "openai",
       name: "OpenAI",
       deleteCredential: async () => undefined,

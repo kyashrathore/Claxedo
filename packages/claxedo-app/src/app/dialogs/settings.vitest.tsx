@@ -22,6 +22,25 @@ vi.mock("@opencode-ai/ui/tabs", () => {
 })
 
 vi.mock("@/ui/controls/claxedo-icon", () => ({ ClaxedoIcon: () => null }))
+// The scope selector's own sources. The provider itself stays REAL so the tab
+// list is rendered under the same (workspace, harness) selection the Providers
+// and Models surfaces read.
+vi.mock("@/features/settings/app-ports", () => ({
+  useShellQueryOptions: () => ({
+    projects: () => ({
+      queryKey: ["settings-vitest", "projects"],
+      queryFn: async () => [{
+        id: "proj_1",
+        name: "acme/app",
+        worktree: "/repo",
+        workspaces: { "workspace:ws_1": { workspaceId: "ws_1", kind: "local", workspace_name: "main", directory: "/repo" } },
+      }],
+    }),
+  }),
+  useSDK: () => { throw new Error("no workspace SDK scope") },
+  useEnabledAcpHarnesses: () => () => [],
+  readWorkspaceHarnessDefault: () => undefined,
+}))
 vi.mock("@opencode-ai/ui/context/dialog", () => ({ useDialog: () => ({ close: vi.fn() }) }))
 vi.mock("@/platform/i18n/provider", () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
 vi.mock("@/features/settings/ui/general", () => ({ SettingsGeneral: () => <div>General content</div> }))
@@ -32,6 +51,9 @@ vi.mock("@/features/settings/ui/terminals", () => ({ SettingsTerminals: () => <d
 vi.mock("@/features/settings/ui/connections", () => ({ SettingsConnections: () => <div>Connections content</div> }))
 vi.mock("@/features/settings/ui/sandbox-section", () => ({ SandboxSettingsSection: () => <div>Sandbox content</div> }))
 vi.mock("@/features/settings/ui/org-team-section", () => ({ OrgTeamSettingsSection: () => <div>Orgs content</div> }))
+vi.mock("@/features/session/providers/models", () => ({
+  ModelsProvider: (props: { children: JSX.Element }) => <div>{props.children}</div>,
+}))
 vi.mock("@/features/onboarding", () => ({
   RemoteAccessSurface: () => <div>Devices content</div>,
   useRemoteAccessController: () => ({
@@ -108,5 +130,24 @@ describe("DialogSettings product flags", () => {
     expect(screen.getByText("Sandbox content")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Connections" })).toBeNull()
     expect(screen.queryByText("Connections content")).toBeNull()
+  })
+})
+
+describe("DialogSettings section naming", () => {
+  test("Providers and Models sit under the workspace section, not a server one", () => {
+    mount()
+
+    expect(screen.getByRole("heading", { name: "settings.section.workspace" })).toBeInTheDocument()
+    expect(screen.queryByRole("heading", { name: "settings.section.server" })).toBeNull()
+  })
+
+  test("the account section appears only with an account-scoped tab in it", () => {
+    mount()
+    expect(screen.queryByRole("heading", { name: "settings.section.account" })).toBeNull()
+    cleanup()
+
+    state.settingsConnectionsEnabled = true
+    mount()
+    expect(screen.getByRole("heading", { name: "settings.section.account" })).toBeInTheDocument()
   })
 })

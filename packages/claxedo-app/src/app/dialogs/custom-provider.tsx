@@ -19,6 +19,8 @@ import { queryClient } from "@/platform/query/query-client"
 
 type Props = {
   back?: "providers" | "close"
+  /** The workspace-or-directory scope whose OpenCode catalog this writes into. */
+  scope?: string
 }
 
 export function DialogCustomProvider(props: Props) {
@@ -27,7 +29,7 @@ export function DialogCustomProvider(props: Props) {
   const queryOptions = useQueryOptions()
   // Custom providers are OpenCode config entries, so the id-collision check
   // reads the OpenCode catalog.
-  const providers = useProviders("opencode")
+  const providers = useProviders("opencode", () => props.scope)
   const language = useLanguage()
 
   const [form, setForm] = createStore<FormState>({
@@ -137,7 +139,7 @@ export function DialogCustomProvider(props: Props) {
       return result
     },
     onSuccess: (result) => {
-      void queryClient.invalidateQueries({ queryKey: queryOptions.providers(null, "opencode").queryKey })
+      void queryClient.invalidateQueries({ queryKey: queryOptions.providers(props.scope ?? null, "opencode").queryKey })
       dialog.close()
       showToast({
         variant: "success",

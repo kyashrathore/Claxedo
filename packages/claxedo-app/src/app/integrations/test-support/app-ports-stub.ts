@@ -148,10 +148,9 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   Link: lazy("@/app/controls/link", "Link"),
   useSettingsSourceViews: lazy("@/app/integrations/settings-source-views", "useSettingsSourceViews"),
   useSandboxOnboardingFunnel: () => () => ({ emit: () => {} }),
-  discoverAIConnections: lazy("@/features/onboarding/ai-connect-api", "discoverAIConnections"),
-  groupDiscoveryItems: lazy("@/features/onboarding/ai-connect-state", "groupDiscoveryItems"),
-  localHarnessStatuses: lazy("@/features/onboarding/ai-connect-state", "localHarnessStatuses"),
-  localHarnessChecks: lazy("@/features/onboarding/ai-connect-state", "localHarnessChecks"),
+  useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
+  useEnabledAcpHarnesses: () => () => () => [],
+  readWorkspaceHarnessDefault: () => () => undefined,
 }
 
 const documentsThunks: Thunks<DocumentsAppPorts> = {

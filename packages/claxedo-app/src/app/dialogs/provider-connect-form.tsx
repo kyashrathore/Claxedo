@@ -26,6 +26,11 @@ export type ProviderConnectFormProps = {
   provider: string
   /** The harness whose credential store this writes to. */
   harness: string
+  /**
+   * The (workspace-or-directory) scope that harness is being configured for.
+   * Omitted inside a workspace SDK scope, which resolves its own.
+   */
+  workspaceScope?: string
   /** Written with the credential so onboarding's scope choice is honoured. */
   scope?: "local" | "shared"
   /** Runs after the credential is stored and the provider list is refreshed. */
@@ -39,11 +44,11 @@ export type ProviderConnectFormProps = {
 export function useProviderConnectForm(props: ProviderConnectFormProps) {
   const globalSDK = useGlobalSDK()
   const language = useLanguage()
-  const providers = useProviders(() => props.harness)
+  const providers = useProviders(() => props.harness, () => props.workspaceScope)
   // Auth belongs to the machine serving this scope, not to the harness name:
   // `useProviderAuth` reads it under the same (server, scope, harness) key the
   // catalog above uses, so a cloud workspace never shows the daemon's methods.
-  const providerAuthQuery = useProviderAuth(() => props.harness)
+  const providerAuthQuery = useProviderAuth(() => props.harness, () => props.workspaceScope)
   // The catalog holds MODEL providers; callers may pass an id it does not carry
   // (an auth-only harness id, or a provider the list hasn't loaded
   // yet). Every consumer below reads `.name`, so a miss used to throw and take

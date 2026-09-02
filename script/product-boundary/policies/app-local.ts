@@ -153,7 +153,16 @@ export const appLocal: Policy = {
   // already-lazy marketplace panel: one module, no package edge.
   // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
   // catalog owner) in the same slice: one more module, no package edge.
-  ceilings: { modules: 959, packages: 38 },
+  // Plan 150 section C makes Settings a (workspace, harness) surface: the
+  // Settings feature gains its scope owner (`features/settings/scope/
+  // settings-scope.tsx` and its pure `settings-scope-options.ts`) and the
+  // picker that drives it (`features/settings/ui/scope-selector.tsx`). All
+  // three are owned by the settings feature and reachable only through the
+  // already-lazy Settings dialog; they read the catalog and the harness
+  // inventory through existing owners, so this is three modules and no package
+  // edge. The retired machine-scan module `features/settings/provider-detect.ts`
+  // is deleted in the same slice, and the measured closure is 962.
+  ceilings: { modules: 962, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

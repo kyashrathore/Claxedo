@@ -15,11 +15,13 @@ export const CUSTOM_PROVIDER_ID = "_custom"
 export const ProviderList: Component<{
   /** The harness whose catalog this list shows. There is no catalog without one. */
   harness: string
+  /** The workspace-or-directory scope that catalog belongs to. */
+  scope?: string
   /** Omits the "Custom provider" entry. Onboarding keeps the flow to one decision. */
   hideCustom?: boolean
   onSelect: (providerId: string) => void
 }> = (props) => {
-  const providers = useProviders(() => props.harness)
+  const providers = useProviders(() => props.harness, () => props.scope)
   const language = useLanguage()
 
   const popularGroup = () => language.t("dialog.provider.group.popular")

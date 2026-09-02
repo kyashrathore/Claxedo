@@ -1227,10 +1227,13 @@ describe("workspace runtime route audit", () => {
     const layout = await Bun.file(path.join(root, layoutContext)).text()
     const controller = await Bun.file(path.join(root, sessionController)).text()
 
+    // The inventory snapshot has ONE reader left: it seeds which rail sections
+    // open. Rendered rows, pagination and freshness belong to each section's
+    // own source, so the reload and the two paginators are gone.
     expect(inventory).toMatch(/loadSessionInventory/)
-    expect(inventory).toMatch(/reloadSessionInventory/)
-    expect(inventory).toMatch(/loadMoreSessionInventoryWorkspace/)
     expect(inventory).toMatch(/useSessionInventoryActions/)
+    expect(inventory).not.toMatch(/reloadSessionInventory/)
+    expect(inventory).not.toMatch(/loadMoreSessionInventoryWorkspace/)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/global-session-identity.ts")).exists()).toBe(
       false,
     )
@@ -1249,8 +1252,10 @@ describe("workspace runtime route audit", () => {
     expect(rail).not.toMatch(/globalSync/)
     expect(layout).toMatch(/useSessionInventoryActions/)
     expect(layout).toMatch(/sessionInventoryActions\.load\(\)/)
-    expect(controller).toMatch(/useSessionInventoryActions/)
-    expect(controller).toMatch(/sessionInventoryActions\.reloadWorkspace\(\)/)
+    // A settled turn used to reload the whole inventory through the control
+    // plane. The workspace's own event stream now carries the row change.
+    expect(controller).not.toMatch(/useSessionInventoryActions/)
+    expect(controller).not.toMatch(/sessionInventoryActions\.reloadWorkspace/)
     expect(offenders).toEqual([])
   })
 
@@ -2853,7 +2858,6 @@ describe("workspace runtime route audit", () => {
     expect(capabilitiesQuery).toMatch(/queryKey: sessionCapabilitiesKey\(\{/)
     expect(capabilitiesQuery).not.toMatch(/createStore/)
     expect(text).toMatch(/useDirectorySessionCacheActions/)
-    expect(text).toMatch(/useSessionInventoryActions/)
     expect(text).not.toMatch(/useGlobalSync/)
     expect(text).not.toMatch(/createStore\(/)
     expect(text).not.toMatch(/const \[compat, setCompat\]/)
@@ -3467,7 +3471,18 @@ describe("workspace runtime route audit", () => {
     ).text()
     const sidebarDataPlane = `${text}\n${headerSurfaces}\n${projectSessionInfo}`
 
-    expect(text).toMatch(/sessionListQueryOptions/)
+    // Each section reads its own SOURCE, chosen from the catalog row's kind:
+    // the central server for a local/cloud workspace and for Global Chat, the
+    // workspace's own runtime over the relay for a user-hosted one. The rail
+    // never names a list route itself.
+    const sectionList = await Bun.file(
+      path.join(root, "app/workbench/rail/rail-section-session-list.ts"),
+    ).text()
+    expect(text).toMatch(/createRailSectionSessionList/)
+    expect(text).toMatch(/sessionSourceForWorkspace/)
+    expect(text).toMatch(/centralSessionSource/)
+    expect(text).not.toMatch(/sessionListQueryOptions/)
+    expect(sectionList).toMatch(/sessionSourceQueryOptions/)
     expect(text).not.toMatch(/claxedoState\.rail/)
     expect(text).toMatch(/<SessionNavigation/)
     expect(text).toMatch(/<TerminalSurfaceNavigation/)

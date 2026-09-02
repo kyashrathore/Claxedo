@@ -35,7 +35,6 @@ import { promptPlaceholder } from "@/features/session/composer/ui/placeholder"
 import { harnessModesUnavailable, promptDesignPlaceholder } from "@/features/session/composer/role-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
-import { createPanePreferences } from "@/features/session/preferences/pane"
 import { queryClient } from "@/platform/query/query-client"
 import { commandListQuery } from "../data/query/shell"
 import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
@@ -165,7 +164,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const next = isHarnessMode(nextScope) && harnessReadiness(nextScope) === "polling"
     return next
   })
-  const panePreferences = createMemo(() => createPanePreferences(localStorage))
   const sessionKey = () => modeSnapshot().sessionKey
   const tabs = createMemo(() => layout.tabs(sessionKey))
   const view = createMemo(() => layout.view(sessionKey))
@@ -422,11 +420,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setPlaceholder: (next) => setPlaceholderIndex(next),
   })
 
-  const selectedVariant = createMemo<string | null | undefined>(() => {
-    const value = panePreferences().get("variant", scope())
-    if (value) return value
-    return local.model.variant.selected()
-  })
+  const selectedVariant = createMemo<string | null | undefined>(() => local.model.variant.selected())
   const toolbarState = createPromptToolbarState({
     agentList: local.agent.list,
     currentAgent: local.agent.current,
@@ -475,7 +469,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
     newSession: isNewSessionVariant(), variant: value, model: selectedModelKey(),
     labels: openCodeDraftLabels(selectedModelKey(), local.model.list()),
-    write: () => { panePreferences().set("variant", scope(), value); local.model.variant.set(value) },
+    write: () => local.model.variant.set(value),
   })
   const composerBootScope = createMemo(() => [
     props.variant ?? "dock",

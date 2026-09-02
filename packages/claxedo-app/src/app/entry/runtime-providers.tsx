@@ -10,7 +10,6 @@ import { LayoutProvider } from "@/app/providers/layout"
 import { GlobalSDKProvider } from "@/app/providers/global-sdk/provider"
 import { SettingsProvider } from "@/platform/settings/provider"
 import { NotificationProvider } from "@/app/providers/notification"
-import { ModelsProvider } from "@/features/session/providers/models"
 import { CommandProvider } from "@/app/providers/command"
 import { HighlightsProvider } from "@/features/review/providers/highlights"
 import { SessionTitleProjectionProvider } from "@/features/session/providers/session-title-projection-provider"
@@ -87,11 +86,9 @@ export function RuntimeProviders(props: ParentProps) {
               <PermissionProvider>
                 <LayoutProvider>
                   <NotificationProvider>
-                    <ModelsProvider>
-                      <CommandProvider>
-                        <HighlightsProvider>{AppShell ? <AppShell>{props.children}</AppShell> : null}</HighlightsProvider>
-                      </CommandProvider>
-                    </ModelsProvider>
+                    <CommandProvider>
+                      <HighlightsProvider>{AppShell ? <AppShell>{props.children}</AppShell> : null}</HighlightsProvider>
+                    </CommandProvider>
                   </NotificationProvider>
                 </LayoutProvider>
               </PermissionProvider>

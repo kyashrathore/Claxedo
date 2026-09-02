@@ -1,6 +1,6 @@
 type ReviewMode = "uncommitted" | "unstaged" | "staged" | "to-from"
 
-export type PanePreferenceKind = "variant" | "reviewMode"
+export type PanePreferenceKind = "reviewMode"
 
 export type PanePreferenceScopeInput = {
   directory?: string
@@ -15,11 +15,10 @@ export type PanePreferenceStorage = {
 }
 
 export const PANE_PREFERENCE_KEYS = {
-  variant: "claxedo:model-variant-map",
   reviewMode: "claxedo:review-mode-map",
 } as const satisfies Record<PanePreferenceKind, string>
 
-const PANE_PREFERENCE_KINDS = ["variant", "reviewMode"] as const satisfies readonly PanePreferenceKind[]
+const PANE_PREFERENCE_KINDS = ["reviewMode"] as const satisfies readonly PanePreferenceKind[]
 
 type PanePreferenceMaps = Record<PanePreferenceKind, Record<string, string>>
 
@@ -63,7 +62,6 @@ export function reviewModePreferenceScope(input: { directory?: string; sessionId
 
 export function createPanePreferences(storage: PanePreferenceStorage) {
   const maps = {
-    variant: parse(storage.getItem(PANE_PREFERENCE_KEYS.variant)),
     reviewMode: parse(storage.getItem(PANE_PREFERENCE_KEYS.reviewMode)),
   } satisfies PanePreferenceMaps
 

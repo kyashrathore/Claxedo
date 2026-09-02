@@ -12,15 +12,24 @@ export function canDisconnectProvider(source?: ProviderSource): boolean {
   return source !== "env"
 }
 
+/**
+ * Drop one harness auth entry, on the machine serving one scope.
+ *
+ * The entry belongs to (that machine, that harness), the same triple the
+ * catalog and the auth read carry, so both ride the request: a DELETE without
+ * them names no entry in particular.
+ */
 export async function removeProviderAuthEntry(input: {
   serverUrl: string
   providerId: string
+  harness: string
+  directory?: string
   request: (url: URL, init?: RequestInit) => Promise<Response>
 }) {
-  const res = await input.request(
-    new URL(`/auth/${encodeURIComponent(input.providerId)}`, input.serverUrl),
-    { method: "DELETE", headers: { Accept: "application/json" } },
-  )
+  const url = new URL(`/auth/${encodeURIComponent(input.providerId)}`, input.serverUrl)
+  url.searchParams.set("harness", input.harness)
+  if (input.directory) url.searchParams.set("directory", input.directory)
+  const res = await input.request(url, { method: "DELETE", headers: { Accept: "application/json" } })
   if (!res.ok) {
     const text = await res.text().catch(() => "")
     throw new Error(text || `Request failed: ${res.status}`)
@@ -40,10 +49,10 @@ export type DisconnectProviderDeps = {
 }
 
 /**
- * Orchestrates Settings → Providers disconnect for one OpenCode row: drop the
- * stored credential, then remove the harness auth entry.
+ * Orchestrates a Settings → Providers disconnect for one row: drop the stored
+ * credential, then remove the harness auth entry.
  */
-export async function disconnectOpenCodeProvider(deps: DisconnectProviderDeps) {
+export async function disconnectProvider(deps: DisconnectProviderDeps) {
   try {
     await deps.deleteCredential(deps.providerId).catch(() => undefined)
     await deps.removeAuth(deps.providerId)
