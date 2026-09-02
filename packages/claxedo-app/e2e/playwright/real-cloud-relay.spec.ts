@@ -157,6 +157,7 @@
  *   which is phase 5 of the plan and runs pre-deploy, not on a PR.
  */
 import { expect, test, type Page } from "@playwright/test"
+import { e2eAppViteEnvironment } from "../auth-mode"
 import { spawn, type ChildProcess } from "node:child_process"
 import net from "node:net"
 import path from "node:path"
@@ -303,7 +304,7 @@ async function startFrontend(backendUrl: string): Promise<string> {
   const port = await freePort()
   frontend = spawn("node", [path.join(APP_DIR, "e2e", "helpers", "live-user-hosted-relay-frontend-server.mjs")], {
     cwd: APP_DIR,
-    env: { ...process.env, VITE_CLAXEDO_SERVER_URL: backendUrl, PORT: String(port) },
+    env: { ...process.env, ...e2eAppViteEnvironment(), VITE_CLAXEDO_SERVER_URL: backendUrl, PORT: String(port) },
     stdio: ["ignore", "pipe", "pipe"],
   })
   frontend.stdout?.on("data", (chunk) => (frontendLog += chunk.toString()))

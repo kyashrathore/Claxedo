@@ -318,7 +318,7 @@ import { spawn } from "node:child_process"
 import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { e2eAuthViteEnvironment, resolveE2EAuthMode } from "../auth-mode"
+import { e2eAppViteEnvironment } from "../auth-mode"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const LIVE = process.env.CLAXEDO_E2E_LIVE === "1"
@@ -551,13 +551,8 @@ async function startFrontend(input: { backendUrl: string }): Promise<RunningFron
         ...process.env,
         // The same build environment `scripts/serve-e2e-app.ts` gives the shared
         // e2e dev server, so this dedicated instance serves the SAME app the rest
-        // of the suite drives — only its backend target differs. `vite.cloud
-        // .config.ts`'s `resolveBrowserAuthBuildSelection` refuses to pick a
-        // browser auth adapter implicitly, so this selection is required, not
-        // decorative.
-        ...e2eAuthViteEnvironment(resolveE2EAuthMode()),
-        VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
-        VITE_CLAXEDO_E2E: "1",
+        // of the suite drives — only its backend target differs.
+        ...e2eAppViteEnvironment(),
         VITE_CLAXEDO_SERVER_URL: input.backendUrl,
         PORT: String(port),
       },

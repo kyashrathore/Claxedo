@@ -34,6 +34,10 @@ import { createServer } from "vite"
 import { fileURLToPath } from "node:url"
 import path from "node:path"
 
+// Build environment is the spawner's to supply, from the one owner every e2e
+// vite launcher reads (`e2e/auth-mode.ts`'s `e2eAppViteEnvironment`): this file
+// is JavaScript precisely so `node` can run it without a TypeScript loader, so
+// it inherits that environment rather than importing it.
 const backendUrl = process.env.VITE_CLAXEDO_SERVER_URL
 if (!backendUrl) throw new Error("VITE_CLAXEDO_SERVER_URL is required")
 const port = Number(process.env.PORT)

@@ -234,13 +234,34 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     expect(url).toMatch(/^https?:\/\//)
   })
 
-  test("idle daemon follows packaged app background and focus lifecycle", async () => {
+  /**
+   * The local daemon's lifetime is the packaged PROCESS's, not the window's
+   * focus. `holdClaxedoDaemonLease` (claxedo-desktop's
+   * `src/main/server-daemon-lease.ts`) takes one lease during `initialize()`
+   * and renews it until the app exits, and the exit paths — quit, restart,
+   * update — are what release or hand it off (`daemon-exit-lifecycle.ts`).
+   * Backgrounding is none of those, so it must leave the daemon alone.
+   *
+   * NON-VACUITY — "the daemon is still reachable" is exactly the shape of
+   * assertion that passes while the mechanism is dead, so this reads the
+   * daemon's OWN lifecycle snapshot (`GET /api/claxedo/daemon/state`, keyed by
+   * the discovery token the daemon publishes) alongside it:
+   *
+   *   - the shortened grace really reached the daemon (1200ms here, 180s in
+   *     production), so a background that outlives it several times over is a
+   *     real test of the grace rather than of an unarmed timer;
+   *   - a lease is still held while backgrounded, i.e. the daemon is up
+   *     BECAUSE the main process pins it, not because nothing is watching;
+   *   - the pid and generation never change, so a reachable health endpoint
+   *     cannot be a replacement daemon that quietly took over.
+   */
+  test("the local daemon's lifetime follows the packaged process, not window focus", async () => {
     test.setTimeout(90_000)
     packaged = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
       env: {
-        // Production remains 120 seconds. This real-process lane shortens only
-        // the daemon-owned grace so it can exercise every boundary promptly.
+        // Production remains 180 seconds. This real-process lane shortens only
+        // the daemon-owned grace so a background can outlive it in seconds.
         CLAXEDO_DAEMON_IDLE_GRACE_MS: "1200",
         CLAXEDO_DAEMON_POLL_INTERVAL_MS: "50",
       },
@@ -251,27 +272,66 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
       .then((response) => response.ok)
       .catch(() => false)
 
+    // `electron-app.ts` roots `CLAXEDO_DATA_DIR` at `<userDataDir>/server-data`,
+    // and the daemon publishes its port, token, pid and generation there
+    // (`claxedo-desktop`'s `server-daemon-discovery.ts`).
+    const discoveryFile = path.join(packaged.userDataDir, "server-data", "local-daemon.json")
+    type DaemonDiscovery = { token: string; port: number; pid: number; generation: string }
+    // The daemon child publishes this file itself, after its listener is up —
+    // reachable and published are two different instants in two processes.
+    const readDiscovery = async (): Promise<DaemonDiscovery> => {
+      const deadline = Date.now() + 15_000
+      for (;;) {
+        const record = await fs
+          .readFile(discoveryFile, "utf8")
+          .then((text) => JSON.parse(text) as DaemonDiscovery)
+          .catch(() => undefined)
+        if (record) return record
+        if (Date.now() >= deadline) throw new Error(`the daemon never published ${discoveryFile}`)
+        await new Promise((resolve) => setTimeout(resolve, 200))
+      }
+    }
+    const booted = await readDiscovery()
+    const daemonState = async () => {
+      const response = await fetch(`http://127.0.0.1:${String(booted.port)}/api/claxedo/daemon/state`, {
+        headers: { authorization: `Bearer ${booted.token}` },
+      })
+      expect(response.ok, "the daemon's own state endpoint refused its published discovery token").toBe(true)
+      return await response.json() as { state: string; leases: number; idleGraceMs: number; residencyPins: number }
+    }
+
     await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
     await expect.poll(() => mainBrowserWindow.evaluate((browserWindow) => browserWindow.isFocused())).toBe(true)
+    expect(
+      (await daemonState()).idleGraceMs,
+      "the shortened idle grace never reached the daemon, so a surviving daemon would prove nothing",
+    ).toBe(1_200)
 
-    // Backgrounding for less than the grace keeps the daemon alive, and focus
-    // cancels the pending shutdown even after the original grace would pass.
+    // Background the window for several times the grace.
     await mainBrowserWindow.evaluate((browserWindow) => browserWindow.blur())
-    await packaged.page.waitForTimeout(400)
-    expect(await health()).toBe(true)
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
-    await packaged.page.waitForTimeout(1_300)
-    expect(await health()).toBe(true)
+    await packaged.page.waitForTimeout(5_000)
+    expect(await health(), "backgrounding the packaged app took its local daemon down").toBe(true)
+    const backgrounded = await daemonState()
+    expect(
+      backgrounded.leases,
+      "the Electron main process released its daemon lease while the window was backgrounded",
+    ).toBeGreaterThan(0)
+    expect(backgrounded.state).toBe("running")
 
-    // A full background grace shuts down the idle daemon. Returning focus then
-    // starts/adopts a generation and makes the same public health entrypoint
-    // available again without relaunching Electron.
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.blur())
-    await expect.poll(health, {
-      timeout: 10_000,
-      message: "the idle local daemon stayed reachable after the background grace",
-    }).toBe(false)
+    // Returning focus changes nothing either: the same daemon keeps serving,
+    // with no restart and no adoption of a new generation.
     await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
+    await packaged.page.waitForTimeout(2_000)
+    expect(await health()).toBe(true)
+    expect((await daemonState()).leases).toBeGreaterThan(0)
+    const settled = await readDiscovery()
+    expect(
+      { pid: settled.pid, generation: settled.generation },
+      "the daemon was replaced across the background/focus cycle instead of surviving it",
+    ).toEqual({ pid: booted.pid, generation: booted.generation })
+
+    // The renderer is still bound to that same daemon, through the same public
+    // entrypoint its boot resolved.
     await expect.poll(() => packaged!.page.evaluate(async () => {
       const desktopApi = (window as typeof window & {
         api: { awaitInitialization: (onStep: () => void) => Promise<{ url: string }> }
@@ -282,7 +342,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
         .catch(() => false)
     }), {
       timeout: 45_000,
-      message: "focus did not restart the daemon and reconnect the packaged renderer",
+      message: "the packaged renderer lost its connection to the daemon across the background/focus cycle",
     }).toBe(true)
   })
 
@@ -331,7 +391,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
 
     await trigger.click()
     await packaged.page.getByRole("menuitem", { name: "Diagnostics", exact: true }).click()
-    const diagnostics = packaged.page.getByRole("dialog", { name: "Local performance diagnostics" })
+    const diagnostics = packaged.page.getByRole("dialog", { name: "This device diagnostics" })
     await expect(diagnostics).toBeVisible({ timeout: 30_000 })
     await expect(diagnostics).toHaveClass(/workspace-page-dialog-shell/)
     await expect(diagnostics.getByRole("button", { name: "Activity" })).toHaveAttribute("aria-pressed", "true")
@@ -476,7 +536,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   /**
    * A scratch git worktree, isolated per scenario. `-b main` is not
    * decoration: the project header's "New session in <branch>" affordance
-   * (`rail-sidebar.tsx:1568`, `aria-label={New session in ${input.label}}`)
+   * (`rail-sidebar.tsx`'s `HeaderActions`, `aria-label={New session in ${input.label}}`)
    * embeds the CURRENT branch name, which without an explicit `-b` is
    * whatever `init.defaultBranch` resolves to on the machine running the
    * suite. Pinning it keeps that aria-label — and therefore every selector
@@ -636,12 +696,25 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     return page.locator('[role="textbox"][aria-label*="Ask anything"]:visible').last()
   }
 
-  /** Clicks the project header's "New session in main" affordance and returns the draft composer. */
+  /**
+   * Clicks the project header's "New session in main" affordance and returns
+   * the draft composer.
+   *
+   * The hover is required, not defensive: the header's action cluster
+   * (`rail-sidebar.tsx`'s `HeaderActions`) mounts on engagement — hover, focus
+   * or an explicit hold, see `rail-hover-engagement.ts` — so the button is
+   * absent from the DOM until the pointer reaches the header. Engaging it is
+   * the move a real user makes, and the one the web lane's rail specs make
+   * (`core-sidebar-tree.spec.ts`, `core-claude-native-sdk-rail.spec.ts`).
+   */
   async function openNewDraft(app: PackagedApp, projectGroup: Locator): Promise<Locator> {
+    const header = projectGroup.locator('[data-testid="project-header"]')
+    await expect(header, "the project header never rendered in the rail").toBeVisible({ timeout: 15_000 })
+    await header.hover()
     const newSessionBtn = projectGroup.locator('[aria-label="New session in main"]')
     await expect(
       newSessionBtn,
-      'the project header\'s "New session in main" affordance (rail-sidebar.tsx:1568) never became visible',
+      'the project header\'s "New session in main" affordance never mounted on hover (rail-sidebar.tsx HeaderActions)',
     ).toBeVisible({ timeout: 15_000 })
     await newSessionBtn.click()
     const input = composerInput(app.page)

@@ -16,7 +16,33 @@ const e2ePreviewSettingsFlags = {
   VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true",
 } as const
 
-export function e2eAuthViteEnvironment(mode: E2EAuthMode): Record<string, string> {
+/**
+ * The complete build environment every e2e launcher of this app's vite config
+ * hands the child process — `scripts/build-e2e-app.ts` and
+ * `scripts/serve-e2e-app.ts` for the shared instance, and each spec that boots
+ * a dedicated instance against its own backend
+ * (`live-user-hosted-relay.spec.ts`, `real-cloud-relay.spec.ts`,
+ * `e2e/helpers/desktop-signed-server.ts`) through
+ * `e2e/helpers/live-user-hosted-relay-frontend-server.mjs`.
+ *
+ * One owner rather than one list per launcher: `vite.cloud.config.ts` calls
+ * `resolveBrowserAuthBuildSelection`, which refuses to pick a browser auth
+ * adapter implicitly and throws before the server can listen, so a launcher
+ * that omits `VITE_CLAXEDO_AUTH_ADAPTER` does not serve a subtly different app
+ * — it fails to start at all. Every launcher therefore reads the selection
+ * from here instead of restating it.
+ */
+export function e2eAppViteEnvironment(mode: E2EAuthMode = resolveE2EAuthMode()): Record<string, string> {
+  return {
+    ...e2eAuthEnvironment(mode),
+    // The e2e suite drives the Clerk build on every surface; `better-auth` is
+    // its own build lane (`bun run build:better-auth`) with its own coverage.
+    VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
+    VITE_CLAXEDO_E2E: "1",
+  }
+}
+
+function e2eAuthEnvironment(mode: E2EAuthMode): Record<string, string> {
   if (mode === "local-unsigned") {
     return {
       VITE_AUTH_ENABLED: "true",
