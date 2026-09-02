@@ -7,6 +7,8 @@ export const routes = {
   download: "/download",
   agentRuntimeStudy: "/how-often-do-coding-agents-need-a-full-machine",
   compare: "/compare",
+  about: "/about",
+  contact: "/contact",
   privacy: "/privacy",
   terms: "/terms",
   start: "/start.md",

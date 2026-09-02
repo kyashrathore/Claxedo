@@ -1,0 +1,30 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import { github, contact } from "../config"
+import { routes } from "../content/routes"
+---
+
+<Layout title="Contact Claxedo" description="Reach the Claxedo team on GitHub or Discord for support, bug reports, security disclosures, and partnership questions." canonicalPath={routes.contact}>
+  <div class="shell">
+    <Nav />
+    <main id="main-content" class="prose">
+      <h1>Contact</h1>
+      <p>Claxedo is developed in the open. The fastest way to reach the team is through the channels below; each one is read by the people who build the product.</p>
+      <h2>Support and bug reports</h2>
+      <p>Open an issue on GitHub with the app version, your operating system, and the steps that reproduce the problem: <a href={`${github}/issues`}>{github}/issues</a>. Feature requests and questions about self-hosting belong there too.</p>
+      <h2>Community</h2>
+      <p>Join the Discord to ask quick questions, share setups, and follow release notes: <a href={contact}>{contact}</a>.</p>
+      <h2>Security</h2>
+      <p>Report vulnerabilities privately through GitHub's security advisories on the repository rather than in a public issue. Private vulnerability reporting is enabled: <a href={`${github}/security/advisories/new`}>{github}/security/advisories/new</a>.</p>
+      <h2>Downloads and source</h2>
+      <ul>
+        <li>Desktop downloads: <a href={routes.download}>claxedo.com/download</a></li>
+        <li>Source code and releases: <a href={github}>{github}</a></li>
+        <li>About the project: <a href={routes.about}>claxedo.com/about</a></li>
+      </ul>
+    </main>
+    <Footer />
+  </div>
+</Layout>

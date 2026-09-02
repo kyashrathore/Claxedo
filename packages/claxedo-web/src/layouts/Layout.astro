@@ -20,11 +20,11 @@ const {
 const site = Astro.site ?? new URL("https://claxedo.com")
 const canonical = new URL(canonicalPath.replace(/\/$/, "") || "/", site)
 const ogImage = new URL(image, site)
+const markdownTwin = markdownTwins[canonicalPath.replace(/\/$/, "") || "/"]
 
-import "@fontsource-variable/bricolage-grotesque"
-import "@fontsource-variable/geist"
 import "../styles/site.css"
 import StructuredData from "../components/StructuredData.astro"
+import { markdownTwins } from "../content/markdown"
 ---
 
 <!doctype html>
@@ -33,10 +33,14 @@ import StructuredData from "../components/StructuredData.astro"
     <meta charset="UTF-8" />
     <meta name="description" content={description} />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#101010" />
-    <meta name="color-scheme" content="dark light" />
+    <meta name="theme-color" content="#08090a" />
+    <meta name="color-scheme" content="dark" />
     {noindex && <meta name="robots" content="noindex, nofollow" />}
     <link rel="canonical" href={canonical} />
+    {markdownTwin && <link rel="alternate" type="text/markdown" href={new URL(markdownTwin, site)} />}
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400..700&display=swap" />
 
     <meta property="og:type" content="website" />
     <meta property="og:site_name" content="Claxedo" />

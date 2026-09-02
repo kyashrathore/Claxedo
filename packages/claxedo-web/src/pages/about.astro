@@ -1,0 +1,29 @@
+---
+import Layout from "../layouts/Layout.astro"
+import Nav from "../components/Nav.astro"
+import Footer from "../components/Footer.astro"
+import { github, contact } from "../config"
+import { routes } from "../content/routes"
+---
+
+<Layout title="About Claxedo" description="Claxedo is an open-source workspace for coding agents: Claude Code, Codex, Cursor, and OpenCode in one place, set up once, run locally, in a cloud sandbox, or with your team." canonicalPath={routes.about}>
+  <div class="shell">
+    <Nav />
+    <main id="main-content" class="prose">
+      <h1>About Claxedo</h1>
+      <p>Claxedo is an open-source workspace for the coding agents developers already use. Claude Code, Codex, Cursor, and OpenCode run side by side in one application, and the plugins, skills, MCP servers, and credentials you configure once are written into each agent's own configuration before a session starts.</p>
+      <h2>What we build</h2>
+      <p>A desktop app for macOS, Windows, and Linux that works locally without an account, a control plane you can deploy to your own Cloudflare account in one command, and a workspace runtime that can run a session on your laptop or on a cloud VM from a sandbox provider you already pay for. Sessions can be shared with teammates through the control plane you host.</p>
+      <h2>How it is licensed</h2>
+      <p>The client, control plane, and workspace runtime are MIT licensed. Claxedo is built on the OpenCode engine; the fork point and full history are published in the repository. Claxedo bundles no model tokens or credits. You bring your own provider subscriptions or API credentials and your own compute.</p>
+      <h2>Where to find us</h2>
+      <ul>
+        <li>Source code, issues, and releases: <a href={github}>{github}</a></li>
+        <li>Community: <a href={contact}>Discord</a></li>
+        <li>Downloads: <a href={routes.download}>claxedo.com/download</a></li>
+        <li>Current terms: <a href={routes.pricing}>Pricing</a>, <a href={routes.privacy}>Privacy</a>, <a href={routes.terms}>Terms</a></li>
+      </ul>
+    </main>
+    <Footer />
+  </div>
+</Layout>

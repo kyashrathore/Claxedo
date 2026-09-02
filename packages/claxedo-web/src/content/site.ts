@@ -3,54 +3,15 @@ import { marketingActions, routes } from "./routes"
 export const site = {
   name: "Claxedo",
   category: "The coding agent workspace",
-  headline: "Your coding agents, finally in one place.",
+  headline: "Set up your coding agents once. Run them anywhere, with anyone.",
   description:
-    "Run every coding agent in one fast workspace. Bring any sandbox, sync every tool, and move between chat and terminal without changing how you work.",
+    "Claude Code, Codex, Cursor, and OpenCode in one fast workspace. Your plugins, skills, MCP servers, and credentials follow every agent, on your laptop, in any sandbox.",
   hero: {
-    eyebrow: "One workspace for every coding agent",
-    headline: "Your coding agents, finally in one place.",
+    eyebrow: "Open source · MIT · built on the OpenCode engine",
+    headline: "Set up your coding agents once. Run them anywhere, with anyone.",
     lead:
-      "Open Claude Code, Codex, OpenCode, or any agent CLI in the same fast workspace. Bring any sandbox. Your skills, MCP servers, plugins, and credentials follow automatically.",
-    proof: ["Performance-first", "Any sandbox provider", "Chat + terminal"],
-    costNote: "Cloudflare Workers Paid starts at $5/month; usage and connected services are separate.",
+      "Your plugins, skills, MCP servers, and credentials follow every agent, on your laptop, in any sandbox.",
   },
-  focusSections: [
-    {
-      id: "performance",
-      index: "01",
-      eyebrow: "Fast",
-      headline: "Faster than T3 Code, measured.",
-      copy: "Same machine. Packaged builds. Identical frozen sessions. Claxedo won 36 of 40 published measurements.",
-    },
-    {
-      id: "sandboxes",
-      index: "02",
-      eyebrow: "Bring your own sandbox",
-      headline: "Your provider. Your keys. One setup.",
-      copy: "Choose the provider you already run. Claxedo syncs skills, MCP servers, plugins, and scoped credentials before the workspace starts.",
-    },
-    {
-      id: "chat",
-      index: "03",
-      eyebrow: "Chat GUI",
-      headline: "Every harness gets a first-class chat.",
-      copy: "Switch Claude, Codex, Cursor, Pi, or OpenCode—and choose the model and effort—without moving your work to another app.",
-    },
-    {
-      id: "terminal",
-      index: "04",
-      eyebrow: "Terminal GUI",
-      headline: "Or run the CLIs side by side.",
-      copy: "Claude and Codex stay real terminal processes inside the same split workbench. Use the sidebar or horizontal tabs without losing either session.",
-    },
-    {
-      id: "control-plane",
-      index: "05",
-      eyebrow: "$5 Cloudflare control plane",
-      headline: "Deploy once. Reach every workspace.",
-      copy: "Host the control plane on a Cloudflare Worker, sign in, enroll this machine, and connect from another device. Remote control is built for the whole team. Multiplayer is next.",
-    },
-  ],
   freeBeta: "Free during beta",
   localMode: "Local mode works without an account",
   product: {

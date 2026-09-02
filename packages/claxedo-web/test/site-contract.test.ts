@@ -17,19 +17,12 @@ describe("public site contract", () => {
     expect(new URL(publicOrigin).origin).toBe(publicOrigin)
   })
 
-  test("leads with the differentiated workspace story", () => {
-    expect(site.headline).toBe("Your coding agents, finally in one place.")
-    expect(site.hero.lead).toContain("Bring any sandbox")
-    expect(site.hero.lead).toContain("skills, MCP servers, plugins, and credentials")
-    expect(site.hero.proof).toEqual(["Performance-first", "Any sandbox provider", "Chat + terminal"])
-    expect(site.hero.costNote).toContain("usage and connected services are separate")
-    expect(site.focusSections.map((section) => section.id)).toEqual([
-      "performance",
-      "sandboxes",
-      "chat",
-      "terminal",
-      "control-plane",
-    ])
+  test("leads with the set-up-once story", () => {
+    expect(site.headline).toBe("Set up your coding agents once. Run them anywhere, with anyone.")
+    expect(site.hero.headline).toBe(site.headline)
+    expect(site.hero.lead).toContain("plugins, skills, MCP servers, and credentials")
+    expect(site.hero.lead).toContain("in any sandbox")
+    expect(site.description).toContain("Claude Code, Codex, Cursor, and OpenCode")
   })
 
   test("withholds claims without evidence", () => {

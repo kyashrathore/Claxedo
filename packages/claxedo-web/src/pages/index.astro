@@ -1,19 +1,9 @@
 ---
 import Layout from "../layouts/Layout.astro"
-import ClaxedoAppReplica from "../components/ClaxedoAppReplica.astro"
-import ClaxedoScrollStory from "../components/ClaxedoScrollStory.astro"
+import ClaxedoStorm from "../components/ClaxedoStorm.astro"
 import { site } from "../content/site"
 ---
 
-<Layout title="Claxedo — Every coding agent in one workspace" description={site.description}>
-  <div class="landing">
-    <main id="main-content">
-      <ClaxedoAppReplica />
-      <ClaxedoScrollStory />
-    </main>
-  </div>
+<Layout title={`Claxedo — ${site.headline}`} description={site.description}>
+  <ClaxedoStorm />
 </Layout>
-
-<style>
-  .landing{--app-bg:#101010;--app-bg-strong:#121212;--app-text:rgba(255,255,255,.618);--app-weak:rgba(255,255,255,.422);--app-weaker:rgba(255,255,255,.284);--app-strong:rgba(255,255,255,.936);--app-peach:#fab283;--app-blue:#9dbefe;--app-border:#282828;--font-mono:var(--font-sans);--bg:var(--app-bg);--surface:#161616;--surface-raised:#1c1c1c;--surface-hover:#232323;--ink:#ededed;--ink-soft:#a0a0a0;--ink-faint:#8f8f8f;--line:var(--app-border);--line-strong:#3a3a3a;--accent:#ededed;--accent-hover:#fff;background:var(--app-bg);color:var(--app-strong);color-scheme:dark}
-</style>

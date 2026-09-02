@@ -1,5 +1,5 @@
 ---
-import { github, version } from "../config"
+import { github, contact, version } from "../config"
 import { canonicalUrl, routes } from "../content/routes"
 import { site } from "../content/site"
 
@@ -10,20 +10,46 @@ const graph: Record<string, unknown>[] = [
     "@type": "Organization",
     "@id": canonicalUrl("/#organization"),
     name: site.name,
+    description: site.description,
     url: canonicalUrl("/"),
     logo: canonicalUrl("/brand/claxedo-icon-dark.svg"),
-    sameAs: [github, "https://www.npmjs.com/org/claxedo"],
+    sameAs: [github, "https://www.npmjs.com/org/claxedo", contact],
+    contactPoint: [
+      { "@type": "ContactPoint", contactType: "customer support", url: canonicalUrl(routes.contact) },
+      { "@type": "ContactPoint", contactType: "technical support", url: `${github}/issues` },
+    ],
   },
   {
     "@type": "WebSite",
     "@id": canonicalUrl("/#website"),
     name: site.name,
+    description: site.description,
     url: canonicalUrl("/"),
     publisher: { "@id": canonicalUrl("/#organization") },
   },
 ]
 
 const normalizedPath = pathname.replace(/\/$/, "") || "/"
+
+const pageNames: Record<string, string> = {
+  [routes.pricing]: "Pricing",
+  [routes.download]: "Download",
+  [routes.compare]: "Compare",
+  [routes.about]: "About",
+  [routes.contact]: "Contact",
+  [routes.privacy]: "Privacy",
+  [routes.terms]: "Terms",
+  [routes.agentRuntimeStudy]: "How often do coding agents need a full machine?",
+}
+if (normalizedPath !== "/") {
+  const segments = normalizedPath.split("/").filter(Boolean)
+  const items = [{ "@type": "ListItem", position: 1, name: "Home", item: canonicalUrl("/") }]
+  segments.forEach((segment, index) => {
+    const path = `/${segments.slice(0, index + 1).join("/")}`
+    items.push({ "@type": "ListItem", position: index + 2, name: pageNames[path] ?? segment.replace(/-/g, " "), item: canonicalUrl(path) })
+  })
+  graph.push({ "@type": "BreadcrumbList", "@id": canonicalUrl(`${normalizedPath}#breadcrumbs`), itemListElement: items })
+}
 
 if (["/", "/pricing"].includes(normalizedPath)) {
   graph.push({

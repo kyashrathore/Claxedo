@@ -1,0 +1,419 @@
+---
+import ClaxedoAppReplica from "./ClaxedoAppReplica.astro"
+import Nav from "./Nav.astro"
+import Footer from "./Footer.astro"
+import { routes, marketingActions } from "../content/routes"
+import { github } from "../config"
+import { site } from "../content/site"
+
+const prompt = "Set up my coding agents once. Run them anywhere, with anyone."
+const sessions = [
+  {
+    id: "ship-connections",
+    title: "Ship connections API",
+    user: prompt,
+    responses: [
+      "On it. First I'll sync your setup so every agent in this workspace reads the same skills, MCP servers, and credentials.",
+      "Claude Code, Codex, Cursor, and OpenCode now read the same config. Nothing to re-enter when you switch.",
+      "Moved this session to a cloud VM on exe.dev. Your setup arrived before the agent did, so nothing changed for you.",
+    ],
+    tools: [
+      "Worked for 14s",
+      "Synced setup to 4 agents",
+      "Running contract tests on box-1",
+      "Wrote 4 agent config files",
+    ],
+    context: "packages/claxedo-app",
+    branch: "feat/connections-api",
+  },
+  {
+    id: "migrate-relay-tokens",
+    title: "Migrate relay tokens",
+    user: "Rotate the relay host tokens to EdDSA and keep the old verifier for one release.",
+    responses: ["I'll add the new signer, keep the legacy verifier behind a flag, and run the relay contract tests.", "Both verifiers pass. The flag defaults to the new signer.", "Ready for review."],
+    tools: ["Worked for 1m 12s", "Changed 6 files", "Running relay tests", "Read token contract"],
+    context: "packages/workspace-relay",
+    branch: "chore/eddsa-tokens",
+  },
+  {
+    id: "fix-usage-meter",
+    title: "Fix usage meter",
+    user: "The usage meter undercounts Codex turns. Find where the cumulative value is dropped.",
+    responses: ["Tracing the usage event from the harness adapter to the meter.", "The adapter reports last-turn usage; the meter treats it as cumulative. Fixing the fold.", "Meter matches the provider dashboard on the replay fixture."],
+    tools: ["Worked for 48s", "Read 9 files", "Replaying usage fixture", "Read meter fold"],
+    context: "packages/claxedo-app",
+    branch: "fix/usage-meter",
+  },
+] as const
+---
+
+<Nav />
+<div class="progress" aria-hidden="true"><i class="on"></i><i></i><i></i><i></i><i></i></div>
+
+<main id="main-content" class="storm">
+  <section class="hero-block">
+    <h1 class="disp">Set up your coding agents once.<br /><span class="dim">Run them anywhere, with anyone.</span></h1>
+    <p class="hero-sub">{site.hero.lead}</p>
+  </section>
+  <div class="track" id="track" data-prompt={prompt}>
+    <div class="stage" id="stage" data-scene="0">
+
+      <div class="cap" data-cap="1"><h2 class="disp">Once.</h2><p>Add a plugin, skill, MCP server, or credential one time. Claxedo writes it into every agent's own config before the session starts.</p><small>.mcp.json · .codex/config.toml · .opencode/opencode.jsonc · .cursor/mcp.json</small></div>
+      <div class="cap" data-cap="2"><h2 class="disp">Any&shy;where.</h2><p>Move a session from your laptop to a cloud VM on any provider you already pay for.</p><small>exe.dev · daytona · modal · vercel · cloudflare · box</small></div>
+      <div class="cap" data-cap="3"><h2 class="disp">Any&shy;one.</h2><p>Multiplayer on a Cloudflare Worker you deploy in one command, free tier included. Invite your team, approve from your phone.</p><small>your-team.workers.dev · no hosted connect service</small></div>
+      <div class="cap" data-cap="4"><h2 class="disp">Your way.</h2><p>Sidebar or tabs. The chat view and the real CLI live in the same workbench and get the same treatment.</p><small>Claude Code · Codex · Cursor · OpenCode</small></div>
+      <div class="win-wrap" id="win">
+        <ClaxedoAppReplica canvasOnly sessions={sessions}>
+          <span slot="title-prefix" class="storm-shared" title="Owner: Yash" aria-label="Owner: Yash"><i>Y</i></span>
+          <article slot="timeline-extra" class="message user-message storm-other"><div class="storm-author"><i class="m">M</i>Maya</div><div>Approve the relay edit and run the contract tests before we merge.</div></article>
+          <article slot="timeline-extra" class="message assistant-message"><p>Approved by Maya. Contract tests pass on box-1. Ready to merge.</p></article>
+        </ClaxedoAppReplica>
+      </div>
+    </div>
+  </div>
+
+  <section class="finale-section" id="benchmark">
+    <div class="finale-copy">
+      <h2 class="disp"><span class="dim">Set up</span> once.</h2>
+      <p>Free and open source, MIT. Local mode works without an account.</p>
+      <div class="finale-actions"><a class="btn btn-p" href={marketingActions.download.href}>Download app</a><a class="btn btn-g" href={github}>View source</a></div>
+      <small>benchmark published and repeatable</small>
+    </div>
+    <div class="bench" aria-label="Benchmark against T3 Code">
+      <div class="bench-top"><span class="bench-big disp">3.5×</span><span class="bench-lbl">faster session switching<br />than T3 Code</span></div>
+      <div class="bench-lanes">
+        <h3>Session switch · p95</h3>
+        <div class="lane cx"><b>Claxedo</b><div class="bar-t"><i></i></div><span class="t" data-t="0.31">0.00s</span></div>
+        <div class="lane t3"><b>T3 Code</b><div class="bar-t"><i></i></div><span class="t" data-t="1.08">0.00s</span></div>
+      </div>
+      <div class="bench-tiles">
+        <div><b>90%</b><span>of measurements won</span></div>
+        <div><b>6.6×</b><span>less retained memory</span></div>
+        <div><b>1.4×</b><span>faster cold start</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tail" id="compare">
+    <div class="wrap">
+      <h2 class="disp">Everything others do. <span>Then more.</span></h2>
+      <p class="lead">Open source, bring your own subscription. The rows that differ are the reason Claxedo exists.</p>
+      <div style="overflow-x:auto">
+        <table>
+          <thead><tr><th>Capability</th><th>Claxedo</th><th>T3 Code</th></tr></thead>
+          <tbody>
+            <tr><td>Bring your own subscription</td><td class="y">Yes</td><td class="y">Yes</td></tr>
+            <tr><td>Open source, MIT</td><td class="y">Yes</td><td class="y">Yes</td></tr>
+            <tr><td>Any sandbox provider, per session</td><td class="y">Yes</td><td class="n">—</td></tr>
+            <tr><td>Self-hosted control plane</td><td class="y">Cloudflare Worker, free tier</td><td class="n">Hosted connect service</td></tr>
+            <tr><td>Multiplayer sessions</td><td class="y">Yes</td><td class="n">—</td></tr>
+            <tr><td>Plugins and skills synced into each agent's config</td><td class="y">Yes</td><td class="n">—</td></tr>
+            <tr><td>Multi-pane, horizontal and vertical navigation</td><td class="y">Yes</td><td class="n">Single layout</td></tr>
+            <tr><td>Published benchmark</td><td class="y">Wins 90% of measurements</td><td class="n">—</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="lead" style="margin-bottom:56px"><a href={routes.compare}>Full comparison →</a></p>
+      <div class="soon">
+        <div><small>Next</small><b>Connections</b><p>Plug in GitHub, Linear, Slack, and the other platforms your agents already need.</p></div>
+        <div><small>After</small><b>Channels</b><p>Drive a session from anywhere: a message, a webhook, your phone.</p></div>
+        <div><small>Then</small><b>Bot profiles</b><p>Long-lived agents with preconfigured plugins and permissions, always ready.</p></div>
+      </div>
+    </div>
+  </section>
+</main>
+<Footer />
+
+<style is:global>
+:root{
+  --ink-2:var(--ink-soft); --ink-3:var(--ink-faint);
+  --mono:var(--font-mono); --body:var(--font-sans); --display:var(--font-display);
+  --ease:cubic-bezier(.2,.75,.2,1); --dur:.7s;
+  --dw:var(--display-weight); --dls:var(--display-tracking); --dff:var(--display-features);
+  --h1:clamp(36px,4.8vw,68px); --h1-lh:1.06; --cap:clamp(48px,5.8vw,84px);
+  --nav:64px;
+}
+html{scroll-behavior:auto}
+body{overflow-x:hidden;font-size:15.5px}
+.storm a{text-decoration:none}
+.disp{font-family:var(--display);font-weight:var(--dw);letter-spacing:var(--dls);font-feature-settings:var(--dff);text-wrap:balance}
+/* the shared nav floats over the pinned story */
+.nav{position:fixed;left:0;right:0;top:0}
+.nav[data-open="true"]{background:var(--bg)}
+
+.progress{position:fixed;left:calc(var(--gutter) - 32px);top:50%;z-index:50;transform:translateY(-50%);display:grid;gap:10px;transition:opacity .3s}
+.progress i{width:6px;height:6px;border-radius:50%;background:#3a3631;transition:background .3s,transform .3s}
+.progress i.on{background:var(--ink);transform:scale(1.5)}
+.progress{opacity:0}
+body.story .progress{opacity:1}
+
+/* ---------- scroll track + sticky stage ---------- */
+.hero-block{padding:clamp(150px,24vh,280px) var(--gutter) clamp(40px,6vh,72px)}
+.hero-block h1{margin:0;font-size:var(--h1);line-height:var(--h1-lh);color:var(--ink);text-wrap:pretty}
+.hero-block h1 .dim{color:var(--ink-2)}
+.hero-sub{margin:22px 0 0;max-width:56ch;font-size:clamp(16px,1.35vw,18px);line-height:1.5;color:var(--ink-2);text-wrap:pretty}
+
+.track{position:relative;height:calc(100vh * 6)}
+.stage{position:sticky;top:0;height:100vh;overflow:hidden}
+.win-wrap{position:absolute;inset:var(--nav) var(--gutter) 22px var(--gutter);transition:inset var(--dur) var(--ease),opacity var(--dur) var(--ease);clip-path:inset(0 0 calc(var(--roll,0) * 100%) 0 round 12px)}
+.stage .cap.on{opacity:calc(1 - var(--roll,0))}
+.stage[data-scene="1"] .win-wrap,.stage[data-scene="2"] .win-wrap,.stage[data-scene="3"] .win-wrap,.stage[data-scene="4"] .win-wrap{inset:var(--nav) var(--gutter) 22px max(37vw,calc(var(--gutter) + 30vw))}
+
+
+/* the site's app replica, made to fill the wrap */
+.win-wrap .hero.canvas-only{height:100%}
+.win-wrap .hero.canvas-only .app-window{height:100%!important;min-height:0!important;aspect-ratio:auto!important}
+
+/* timeline reveal: rows appear as the story advances (order = replica DOM order) */
+.storm .timeline-column>*{transition:opacity .4s var(--ease),transform .4s var(--ease)}
+.storm .timeline-column>:nth-child(n+2){opacity:0;transform:translateY(6px)}
+.storm .win-wrap.sent .timeline-column>:nth-child(2){opacity:1;transform:none}
+.stage:not([data-scene="0"]) .timeline-column>:nth-child(-n+7){opacity:1;transform:none}
+.stage[data-scene="2"] .timeline-column>:nth-child(-n+9),.stage[data-scene="3"] .timeline-column>:nth-child(-n+9),.stage[data-scene="4"] .timeline-column>:nth-child(-n+9){opacity:1;transform:none}
+.stage[data-scene="3"] .timeline-column>*,.stage[data-scene="4"] .timeline-column>*{opacity:1;transform:none}
+.storm .timeline-column>:nth-child(3){transition-delay:.05s}.storm .timeline-column>:nth-child(4){transition-delay:.15s}.storm .timeline-column>:nth-child(5){transition-delay:.25s}.storm .timeline-column>:nth-child(6){transition-delay:.35s}.storm .timeline-column>:nth-child(7){transition-delay:.45s}
+
+/* multiplayer: author marks on people's messages + owner mark on the session title.
+   Slotted content carries this component's scope, not the replica's, so the
+   replica's .message rules are mirrored here for the slotted articles. */
+.storm .timeline-column>article.user-message{display:flex;flex-direction:column;align-items:flex-end;gap:5px;width:100%;margin-bottom:24px;color:var(--text-base);font-size:13px;line-height:1.55}
+.storm .timeline-column>article.user-message>div:last-child{width:fit-content;max-width:min(82%,64ch);padding:8px 12px;border-radius:16px 16px 4px 16px;background:rgba(255,255,255,.05);white-space:pre-line}
+.storm .timeline-column>article.assistant-message:last-child{width:100%;margin-top:24px;color:var(--text-base);font-size:13px;line-height:1.55}
+.storm .timeline-column>article.assistant-message:last-child p{margin:0}
+.storm .session-name-row{justify-content:flex-start;gap:8px}
+.storm .session-name-row h2{flex:1}
+.storm .user-message>.storm-author{display:none;align-items:center;gap:6px;width:auto;max-width:none;margin:0 2px 0 0;padding:0;border-radius:0;background:none;font-size:11px;line-height:1;color:var(--text-weak)}
+.storm-author i,.storm-shared i{width:16px;height:16px;display:grid;place-items:center;border-radius:50%;background:#c8834f;color:#fff;font:700 8px/1 var(--mono);font-style:normal}
+.storm-author i.m{background:#4f6b8f}
+.storm-shared{display:none;margin-right:2px}
+.storm-shared i{width:18px;height:18px;font-size:9px}
+.stage[data-scene="3"] .storm-shared,.stage[data-scene="4"] .storm-shared{display:inline-grid}
+.stage[data-scene="3"] .user-message>.storm-author,.stage[data-scene="4"] .user-message>.storm-author{display:flex}
+
+/* captions */
+.cap{position:absolute;left:var(--gutter);top:0;bottom:0;width:calc(max(37vw,calc(var(--gutter) + 30vw)) - var(--gutter) - 32px);display:flex;flex-direction:column;justify-content:center;padding:0;opacity:0;transform:translateY(24px);transition:opacity .5s var(--ease),transform .5s var(--ease);pointer-events:none}
+.cap.on{opacity:1;transform:none;pointer-events:auto;transition-delay:.15s}
+.cap h2{margin:0 0 14px;font-size:var(--cap);line-height:1;color:var(--ink)}
+.cap p{margin:0;max-width:30ch;font-size:clamp(16px,1.3vw,18px);line-height:1.5;color:var(--ink-2)}
+.cap small{display:block;margin-top:14px;font:500 12px/1.4 var(--mono);color:var(--ink-3);letter-spacing:.04em}
+/* finale: CTA + benchmark, normal flow after the pinned story */
+.finale-section{position:relative;z-index:2;display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:clamp(32px,6vw,96px);align-items:center;padding:clamp(40px,6vh,64px) var(--gutter) clamp(72px,10vh,120px)}
+.finale-copy h2{margin:0 0 14px;font-size:var(--cap);line-height:1;color:var(--ink)}
+.finale-copy h2 .dim{color:var(--ink-2)}
+.finale-copy p{margin:0;max-width:30ch;font-size:clamp(16px,1.3vw,18px);line-height:1.5;color:var(--ink-2)}
+.finale-copy small{display:block;margin-top:18px;font:500 12px/1.4 var(--mono);color:var(--ink-3);letter-spacing:.04em}
+.finale-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}
+.btn{display:inline-flex;align-items:center;height:46px;padding:0 20px;border-radius:8px;border:1px solid transparent;font:500 14px var(--body);text-decoration:none;cursor:pointer;white-space:nowrap}
+.btn-p{background:#f7f8f8;color:#08090a}.btn-p:hover{background:#fff}
+.btn-g{border-color:#2e3035;color:var(--ink)}.btn-g:hover{background:#141517}
+
+/* benchmark panel: takes the window's slot in the Fast beat */
+.bench{display:flex;flex-direction:column;gap:clamp(24px,3.5vh,40px)}
+.bench-top{display:flex;align-items:flex-end;gap:22px;flex-wrap:wrap}
+.bench-big{font-size:clamp(96px,11vw,176px);line-height:.85;letter-spacing:-.045em;color:var(--ink);font-variant-numeric:tabular-nums}
+.bench-lbl{padding-bottom:.18em;font-size:clamp(15px,1.25vw,18px);line-height:1.35;color:var(--ink-2)}
+.bench-lanes{padding-top:22px;border-top:1px solid var(--line)}
+.bench-lanes h3{margin:0 0 14px;font:500 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.lane{display:grid;grid-template-columns:84px 1fr 64px;gap:14px;align-items:center;margin-bottom:12px;font-size:14px}
+.lane b{font-weight:500;color:var(--ink)}
+.lane .bar-t{height:8px;border-radius:4px;background:#1c1e22;overflow:hidden}
+.lane .bar-t i{display:block;height:100%;width:0;background:#4a4d54;border-radius:4px}
+.lane.cx .bar-t i{background:#f7f8f8}
+.lane .t{text-align:right;font:500 14px var(--mono);font-variant-numeric:tabular-nums;color:var(--ink-2)}
+.lane.cx .t{color:var(--ink)}
+.bench.on .lane.cx .bar-t i{width:29%;transition:width .31s linear .2s}
+.bench.on .lane.t3 .bar-t i{width:100%;transition:width 1.08s linear .2s}
+.bench-tiles{display:grid;grid-template-columns:repeat(3,1fr);border-top:1px solid var(--line)}
+.bench-tiles>div{padding:18px 16px 0}
+.bench-tiles>div+div{border-left:1px solid var(--line)}
+.bench-tiles b{display:block;font:510 clamp(26px,2.6vw,36px)/1 var(--display);letter-spacing:-.03em;color:var(--ink);font-variant-numeric:tabular-nums}
+.bench-tiles span{display:block;margin-top:8px;font-size:13px;color:var(--ink-2)}
+
+/* ---------- tail ---------- */
+.tail{position:relative;z-index:2;background:var(--bg);border-top:1px solid var(--line)}
+.tail .wrap{width:min(100% - 48px,1040px);margin:0 auto;padding:72px 0 40px}
+.tail h2{margin:0 0 10px;font-size:clamp(36px,4.6vw,60px);line-height:.92;color:var(--ink-2)}
+.tail h2 span{color:var(--ink)}
+.tail p.lead{margin:0 0 32px;color:var(--ink-2);max-width:60ch}
+.tail table{width:100%;border-collapse:collapse;font-size:14px;margin-bottom:24px}
+.tail th,.tail td{padding:11px 10px;border-bottom:1px solid var(--line);text-align:left}
+.tail th{font:600 11px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.tail td:first-child{font-weight:500}
+.tail td{color:var(--ink-2)}
+.tail td.y{color:var(--ink);font-weight:600}.tail td.n{color:var(--ink-3)}
+.soon{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-bottom:56px}
+.soon div{padding:18px;border:1px solid var(--line);border-radius:10px}
+.soon small{display:inline-block;margin-bottom:10px;padding:2px 8px;border-radius:999px;border:1px solid var(--line-strong);font:500 10px/1.5 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.soon b{display:block;font-size:17px;margin-bottom:6px;letter-spacing:-.01em}
+.soon p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.tail a{color:var(--ink);text-decoration:none}.tail a:hover{text-decoration:underline}
+
+@media (prefers-reduced-motion:reduce){.storm *{transition:none!important;animation:none!important}}
+@media (max-width:980px){
+  .track{height:auto}
+  .hero-block{padding:110px 14px 24px}
+  /* two tabs must fit beside the actions: share the width, clip titles */
+  .storm .compact-tabs{flex:1;min-width:0}
+  .storm .compact-tab{width:auto;min-width:0;max-width:none;flex:1 1 0}
+  .storm .header-drag,.storm .drag-gap,.storm .workspace-toggle,.storm .scope-actions .icon-button[aria-label="More actions"]{display:none}
+  .stage{position:relative;height:auto;overflow:visible;display:grid;gap:18px;padding:0 14px 30px}
+  .win-wrap,.stage[data-scene] .win-wrap{position:relative;inset:auto;opacity:1;height:560px}
+  .cap,.cap.finale{position:relative;left:auto;width:auto;padding:0;opacity:1;transform:none;pointer-events:auto;display:none}
+  .cap.mobile-on{display:block}
+  .finale-section{grid-template-columns:1fr;padding:64px 14px 40px}
+  .cap h2{font-size:56px}
+  .progress{display:none}
+  .soon{grid-template-columns:1fr}
+}
+</style>
+
+<script>
+  const stage = document.getElementById("stage")!
+  const track = document.getElementById("track")!
+  const wrap = document.getElementById("win")!
+  const app = wrap.querySelector<HTMLElement>("[data-app-replica]")!
+  const composer = app.querySelector<HTMLTextAreaElement>("[data-composer-input]")!
+  const caps = Array.from(stage.querySelectorAll<HTMLElement>(".cap"))
+  const dots = Array.from(document.querySelectorAll<HTMLElement>(".progress i"))
+  const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  const mobile = window.matchMedia("(max-width: 980px)")
+  const PROMPT = track.dataset.prompt ?? ""
+  let typed = false
+  let scene = 0
+  let raceRun = false
+  let typingTimer = 0
+  document.body.classList.add("s0")
+
+  // Owner mark on the first (your) message, matching the participant mark on Maya's.
+  const mine = app.querySelector<HTMLElement>(".timeline-column > article.user-message")
+  if (mine && !mine.querySelector(".storm-author")) {
+    const author = document.createElement("div")
+    author.className = "storm-author"
+    author.innerHTML = "<i>Y</i>Yash"
+    mine.prepend(author)
+  }
+  const envTitle = app.querySelector<HTMLElement>(".environment-expanded header b")
+
+
+  const finishTyping = () => {
+    if (typed) return
+    typed = true
+    clearTimeout(typingTimer)
+    composer.value = ""
+    wrap.classList.add("sent")
+  }
+  const type = () => {
+    if (reduce) { finishTyping(); return }
+    let i = 0
+    const step = () => {
+      if (typed) return
+      if (i <= PROMPT.length) { composer.value = PROMPT.slice(0, i); i++; typingTimer = window.setTimeout(step, i < 4 ? 260 : 28 + Math.random() * 40) }
+      else typingTimer = window.setTimeout(finishTyping, 420)
+    }
+    step()
+  }
+  window.setTimeout(type, 700)
+
+  const runRace = () => {
+    if (raceRun) return
+    raceRun = true
+    document.querySelectorAll<HTMLElement>(".bench .t").forEach((el) => {
+      const target = parseFloat(el.dataset.t ?? "0")
+      let start = 0
+      const tick = (ts: number) => {
+        if (!start) start = ts
+        const p = Math.min(1, Math.max(0, (ts - start - 600) / (target * 1000)))
+        el.textContent = `${(p * target).toFixed(2)}s`
+        if (p < 1) requestAnimationFrame(tick)
+      }
+      requestAnimationFrame(tick)
+    })
+  }
+
+  // Real app states only: sidebar, environment card, workspace panel, chat/terminal tab.
+  let terminalCreated = false
+  const clickTab = (id: string) => app.querySelector<HTMLButtonElement>(`.compact-tab [data-session-tab-id="${id}"][role=tab]`)?.click()
+  const applyAppState = (n: number) => {
+    app.dataset.sidebar = n === 0 ? "open" : "closed"
+    app.dataset.panel = "closed"
+    app.dataset.environment = n === 0 || n >= 2 ? "expanded" : "collapsed"
+    if (envTitle) envTitle.textContent = n >= 2 ? "Cloud VM · box-1" : "Environment"
+    if (n === 4) {
+      if (!terminalCreated) { terminalCreated = true; app.querySelector<HTMLButtonElement>('[data-surface-button="terminal"]')?.click() }
+      else clickTab("created-terminal-1")
+    } else if (terminalCreated) clickTab("ship-connections")
+  }
+
+  const setScene = (n: number) => {
+    if (n === scene) return
+    scene = n
+    if (n >= 1) finishTyping()
+    stage.dataset.scene = String(n)
+    document.body.classList.toggle("s0", n === 0)
+    caps.forEach((c) => c.classList.toggle("on", parseInt(c.dataset.cap ?? "-1", 10) === n))
+    dots.forEach((d, i) => d.classList.toggle("on", i === n))
+    applyAppState(n)
+    // The app keeps the newest turn in view; do the same as rows reveal.
+    const timeline = app.querySelector<HTMLElement>(".timeline-scroll")
+    if (timeline) window.setTimeout(() => timeline.scrollTo({ top: n >= 3 ? timeline.scrollHeight : 0, behavior: reduce ? "auto" : "smooth" }), 450)
+  }
+  const finale = document.querySelector<HTMLElement>(".finale-section")
+  const lastCap = stage.querySelector<HTMLElement>('[data-cap="4"] small')!
+  let storyPx = 0, rollPx = 0, winH = 0
+  const layout = () => {
+    if (mobile.matches) { track.style.removeProperty("height"); finale?.style.removeProperty("margin-top"); return }
+    const vh = window.innerHeight
+    const stageTop = stage.getBoundingClientRect().top
+    const capOn = lastCap.closest(".cap")?.classList.contains("on")
+    const capBottom = lastCap.getBoundingClientRect().bottom - stageTop - (capOn ? 0 : 24)
+    const winBottom = vh - 22
+    winH = winBottom - 64
+    rollPx = Math.max(0, Math.round(winBottom - capBottom))
+    storyPx = 4 * vh
+    track.style.height = `${vh + storyPx + rollPx}px`
+    if (finale) finale.style.marginTop = `${-Math.max(0, Math.round(vh - capBottom - 40))}px`
+  }
+  layout()
+  if (document.fonts?.ready) document.fonts.ready.then(layout)
+  window.addEventListener("resize", layout)
+  const onScroll = () => {
+    if (mobile.matches) return
+    // The hero scrolls away naturally; scenes start once the stage is pinned.
+    // After the story, the window rolls up 1:1 with the scroll until its bottom
+    // edge meets the caption's bottom edge; the stage releases at that point.
+    const y = window.scrollY - track.offsetTop
+    const ps = storyPx > 0 ? Math.min(1, Math.max(0, y / storyPx)) : 0
+    const intro = 0.05
+    const n = ps < intro ? 0 : Math.min(4, 1 + Math.floor((ps - intro) / ((1 - intro) / 4)))
+    setScene(n)
+    const rolled = rollPx > 0 ? Math.min(rollPx, Math.max(0, y - storyPx)) : 0
+    stage.style.setProperty("--roll", winH > 0 ? (rolled / winH).toFixed(4) : "0")
+    const past = y > storyPx + rollPx + 40
+    document.body.classList.toggle("past", past)
+    document.body.classList.toggle("story", n >= 1 && !past)
+  }
+  let ticking = false
+  window.addEventListener("scroll", () => { if (!ticking) { ticking = true; requestAnimationFrame(() => { onScroll(); ticking = false }) } }, { passive: true })
+  window.addEventListener("resize", onScroll)
+  requestAnimationFrame(() => { if (!mobile.matches) { applyAppState(0); layout(); onScroll() } })
+
+  const mobileMode = () => {
+    if (!mobile.matches) return
+    finishTyping()
+    stage.dataset.scene = "3"
+    app.dataset.sidebar = "closed"
+    document.body.classList.remove("s0", "story")
+    caps.forEach((c) => c.classList.add("mobile-on"))
+  }
+  mobileMode()
+  mobile.addEventListener("change", mobileMode)
+
+  // Benchmark bars and timers start when the finale scrolls into view.
+  const bench = document.querySelector<HTMLElement>(".bench")
+  if (bench) {
+    const io = new IntersectionObserver((entries) => {
+      if (entries.some((e) => e.isIntersecting)) { bench.classList.add("on"); runRace(); io.disconnect() }
+    }, { threshold: 0.35 })
+    io.observe(bench)
+  }
+</script>

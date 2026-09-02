@@ -1,6 +1,7 @@
 ---
 import DownloadMenu from "./DownloadMenu.astro"
 import { commercialNavigation } from "../content/site"
+import { github } from "../config"
 
 interface Props {
   active?: "home" | "pricing" | "download" | "compare"
@@ -23,6 +24,7 @@ const { active } = Astro.props
         {commercialNavigation.map((item) => (
           <a href={item.href} aria-current={active === item.key ? "page" : undefined}>{item.label}</a>
         ))}
+        <a href={github}>GitHub</a>
       </div>
 
       <div class="nav-actions">
