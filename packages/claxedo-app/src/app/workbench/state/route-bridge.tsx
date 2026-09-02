@@ -66,6 +66,7 @@ import {
   routeCentralSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
+  routeSessionPaneTitle,
 } from "./route-bridge-resolution"
 export { recoverWorkspaceRuntimeRoute } from "./route-runtime-recovery"
 import {
@@ -723,7 +724,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
             surface.content?.type === "session" &&
             sameSessionRef(surface.content.sessionRef, centralRef)
           ) return
-          state.layout.openCentralSession(sessionId, surface?.content?.title || "Session", {
+          state.layout.openCentralSession(sessionId, routeSessionPaneTitle(surface), {
             authoritative: true,
             sessionRef: centralRef,
           })
@@ -782,7 +783,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         if (!sessionInventory().loaded) return
         const fallbackDirectory = unresolvedRouteWorkspaceTarget(directories)
         if (fallbackDirectory) {
-          state.layout.openSession(fallbackDirectory, sessionId, "Session", {
+          state.layout.openSession(fallbackDirectory, sessionId, routeSessionPaneTitle(surface), {
             sessionRef: sessionRefForWorkspaceSession({
               sessionId,
               directory: fallbackDirectory,

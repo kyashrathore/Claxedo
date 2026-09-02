@@ -294,3 +294,12 @@ export async function probeRouteSessionDirectory(sessionId: string, directories:
   }
   return undefined
 }
+
+/**
+ * The title a route-opened session pane shows while its session is still being
+ * resolved. A surface that already carries a resolved title keeps it; only a
+ * surface with none reads the generic label.
+ */
+export function routeSessionPaneTitle(surface: { content?: { title?: string } } | undefined): string {
+  return surface?.content?.title || "Session"
+}

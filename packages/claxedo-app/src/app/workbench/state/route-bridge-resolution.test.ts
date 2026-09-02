@@ -14,6 +14,7 @@ import {
   routeCentralSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
+  routeSessionPaneTitle,
 } from "./route-bridge-resolution"
 
 const SERVER = "http://localhost:3001"
@@ -330,5 +331,16 @@ describe("routeCentralSessionRef", () => {
       workspaceId: "ws_api",
     })
     expect(routeCentralSessionRef("ses_meta", { workspaceID: "ws_api" })?.harness).toBeUndefined()
+  })
+})
+
+describe("routeSessionPaneTitle", () => {
+  test("keeps the title a surface already resolved", () => {
+    expect(routeSessionPaneTitle({ content: { title: "Resolve #101" } })).toBe("Resolve #101")
+  })
+
+  test("labels a surface with no resolved title generically", () => {
+    expect(routeSessionPaneTitle({ content: { title: "" } })).toBe("Session")
+    expect(routeSessionPaneTitle(undefined)).toBe("Session")
   })
 })
