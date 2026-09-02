@@ -99,7 +99,9 @@ describe("current control-plane session-list integration", () => {
       totalKnown: number
     }
     expect(body.items.map((item) => item.sessionId)).toEqual(["session_alpha_new", "session_alpha_old"])
-    expect(body.items[0]?.sessionRef).toBe("workspace:ws_alpha:session:session_alpha_new")
+    // `alpha` is a `kind: "local"` workspace, and `storedSessionRef` keys a local
+    // workspace's sessions by its directory rather than its generated id.
+    expect(body.items[0]?.sessionRef).toBe("local:/work/alpha:session:session_alpha_new")
     expect(body.totalKnown).toBe(2)
   })
 

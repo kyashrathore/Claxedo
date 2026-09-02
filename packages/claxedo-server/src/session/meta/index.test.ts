@@ -305,6 +305,174 @@ describe("session meta", () => {
     })
   })
 
+  test("syncSessionMetas sweeps stale engine sessions but never central ones", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const ws = {
+      id: "ws_1",
+      project_id: "proj_1",
+      directory: "/tmp/repo",
+      kind: "local" as const,
+      created_at: 1,
+      updated_at: 1,
+    }
+
+    // Two engine sessions, as the embedded runtime's `GET /session?directory=…`
+    // reports them.
+    await syncSessionMetas(ws, [
+      { id: "engine_keep", title: "Keep", time: { created: 10, updated: 12 } },
+      { id: "engine_gone", title: "Gone", time: { created: 10, updated: 12 } },
+    ])
+    // A central/hybrid Pi session in the same workspace, written exactly as
+    // `session/runtime.ts` writes one: host "central", null directory.
+    await putSessionMeta("pi", {
+      host: "central",
+      workspaceID: "ws_1",
+      directory: null,
+      title: "Pi",
+      tags: ["global", "global:default", "source-channel:telegram"],
+      attachments: [{ kind: "planner", targetID: "wg_1" }],
+    })
+
+    await syncSessionMetas(ws, [
+      { id: "engine_keep", title: "Keep", time: { created: 10, updated: 20 } },
+    ])
+
+    // The snapshot is authoritative for the engine's own sessions only.
+    expect(await sessionMeta("engine_keep")).toBeTruthy()
+    expect(await sessionMeta("engine_gone")).toBeUndefined()
+    expect(await sessionMeta("pi")).toMatchObject({
+      sessionRef: "central:pi",
+      host: "central",
+      title: "Pi",
+      tags: ["global", "global:default", "source-channel:telegram"],
+      attachments: [{ kind: "planner", targetID: "wg_1" }],
+    })
+  })
+
+  test("syncSessionMetas refuses to sweep on an empty snapshot", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const ws = {
+      id: "ws_1",
+      project_id: "proj_1",
+      directory: "/tmp/repo",
+      kind: "local" as const,
+      created_at: 1,
+      updated_at: 1,
+    }
+
+    await syncSessionMetas(ws, [
+      { id: "engine_a", title: "A", time: { created: 10, updated: 12 } },
+      { id: "engine_b", title: "B", time: { created: 10, updated: 12 } },
+    ])
+    await putSessionMeta("engine_a", { tags: ["global", "global:default"] })
+
+    // A restart, a race with the runtime's first apply, or a body that merely
+    // parsed as `[]` is absence of evidence, not evidence of absence.
+    await syncSessionMetas(ws, [])
+
+    expect(await sessionMeta("engine_a")).toMatchObject({
+      sessionID: "engine_a",
+      tags: ["global", "global:default"],
+    })
+    expect(await sessionMeta("engine_b")).toBeTruthy()
+    expect(ClaxedoDB.raw().prepare(`
+      SELECT COUNT(*) AS count FROM claxedo_session_tag
+    `).get()).toEqual({ count: 2 })
+  })
+
+  test("a session ref change carries its tags and attachments to the new ref", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const workspace = {
+      id: "ws_local",
+      project_id: "proj_local",
+      directory: "/tmp/local-repo",
+      created_at: 1,
+      updated_at: 1,
+    }
+
+    // The pre-`Workspace.kind` shape: a local workspace's sessions stored under
+    // a `workspace:` ref, with pins and attachments joined to it.
+    await syncSessionMetas({ ...workspace, kind: "cloud" }, [
+      { id: "sess", title: "Sess", time: { created: 10, updated: 12 } },
+    ])
+    await putSessionMeta("sess", {
+      tags: ["global", "global:default", "source-channel:telegram"],
+      attachments: [{ kind: "planner", targetID: "wg_1" }],
+    })
+    expect((await sessionMeta("sess"))?.sessionRef).toBe("workspace:ws_local:session:sess")
+
+    // The upgraded build re-derives the ref from the authoritative kind.
+    await putSessionMeta("sess", { ws: { ...workspace, kind: "local" as const }, title: "Renamed" })
+
+    expect(await sessionMeta("sess")).toMatchObject({
+      sessionRef: "local:/tmp/local-repo:session:sess",
+      title: "Renamed",
+      createdAt: 10,
+      tags: ["global", "global:default", "source-channel:telegram"],
+      attachments: [{ kind: "planner", targetID: "wg_1" }],
+    })
+    expect(ClaxedoDB.raw().prepare(`
+      SELECT session_ref FROM claxedo_session_meta WHERE session_id = ?
+    `).all("sess")).toEqual([
+      { session_ref: "local:/tmp/local-repo:session:sess" },
+    ])
+    expect(ClaxedoDB.raw().prepare(`
+      SELECT DISTINCT session_ref FROM claxedo_session_tag
+      UNION SELECT DISTINCT session_ref FROM claxedo_session_attachment
+    `).all()).toEqual([
+      { session_ref: "local:/tmp/local-repo:session:sess" },
+    ])
+
+    // The old ref never becomes "stale", so the next reconcile deletes nothing.
+    await syncSessionMetas({ ...workspace, kind: "local" as const }, [
+      { id: "sess", title: "Renamed", time: { created: 10, updated: 30 } },
+    ])
+
+    expect(await sessionMeta("sess")).toMatchObject({
+      sessionRef: "local:/tmp/local-repo:session:sess",
+      tags: ["global", "global:default", "source-channel:telegram"],
+      attachments: [{ kind: "planner", targetID: "wg_1" }],
+    })
+  })
+
+  test("a ref change merges a database the previous build already half-migrated", async () => {
+    await fs.mkdir(root, { recursive: true })
+    const workspace = {
+      id: "ws_local",
+      project_id: "proj_local",
+      directory: "/tmp/local-repo",
+      created_at: 1,
+      updated_at: 1,
+    }
+
+    await syncSessionMetas({ ...workspace, kind: "cloud" }, [
+      { id: "sess", title: "Sess", time: { created: 10, updated: 12 } },
+    ])
+    await putSessionMeta("sess", { tags: ["global", "global:default"] })
+    // What the shipped build left behind: a bare row already inserted under the
+    // new ref, carrying one of the tags, while the old row still holds them all.
+    ClaxedoDB.raw().prepare(`
+      INSERT INTO claxedo_session_meta (session_ref, session_id, workspace_id, project_id, host, directory, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run("local:/tmp/local-repo:session:sess", "sess", "ws_local", "proj_local", "workspace", "/tmp/local-repo", 10, 12)
+    ClaxedoDB.raw().prepare(`
+      INSERT INTO claxedo_session_tag (session_ref, session_id, tag, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?)
+    `).run("local:/tmp/local-repo:session:sess", "sess", "global", 1, 1)
+
+    await putSessionMeta("sess", { ws: { ...workspace, kind: "local" as const } })
+
+    expect(ClaxedoDB.raw().prepare(`
+      SELECT session_ref FROM claxedo_session_meta WHERE session_id = ?
+    `).all("sess")).toEqual([
+      { session_ref: "local:/tmp/local-repo:session:sess" },
+    ])
+    expect(await sessionMeta("sess")).toMatchObject({
+      sessionRef: "local:/tmp/local-repo:session:sess",
+      tags: ["global", "global:default"],
+    })
+  })
+
   test("syncSessionMetas migrates a local workspace away from a hosted session ref", async () => {
     await fs.mkdir(root, { recursive: true })
     const workspace = {

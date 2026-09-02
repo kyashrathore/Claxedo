@@ -1,4 +1,4 @@
-import { ClaxedoDB, eq, inArray } from "../../platform/db"
+import { ClaxedoDB, and, eq, inArray } from "../../platform/db"
 import {
   ClaxedoSessionAttachmentTable,
   ClaxedoSessionMetaTable,
@@ -38,19 +38,50 @@ export type {
 } from "./types"
 export { parseSessionMeta } from "./shape"
 
+/**
+ * Reconcile one workspace's session metadata against a snapshot of that
+ * workspace's own engine sessions.
+ *
+ * The only production callers are the embedded runtime's `onSessionMetaSnapshot`
+ * hooks, whose snapshot is the reply to `GET /session?directory=<workspace dir>`
+ * on that workspace's embedded engine. That makes the snapshot authoritative for
+ * exactly one population — the engine's own sessions — so the stale sweep is
+ * scoped to it and refuses to act on a snapshot that carries no evidence.
+ */
 export async function syncSessionMetas(ws: Workspace | undefined, input: unknown[]) {
   const rows = input.map((item) => sessionMetaSyncRow(item, ws))
   await upsertRows(rows)
   if (!ws?.id) return
   const incoming = ids(rows.flatMap((item) => item?.session_ref ? [item.session_ref] : []))
-  const stale = ClaxedoDB.use((db) => db
-    .select({ session_ref: ClaxedoSessionMetaTable.session_ref })
+  // `host` is the authoritative discriminator, not the ref prefix or the null
+  // directory: `session/runtime.ts` writes central/hybrid Pi and WorkGraph
+  // sessions with `host: "central"`, and `storedSessionRef` *derives* the
+  // `central:<id>` ref from that column while `directory: null` is a consequence
+  // of the same placement. Those sessions are not engine sessions, never appear
+  // in an engine snapshot, and were therefore swept — with their tags and
+  // attachments — by a sweep scoped to the workspace alone.
+  const owned = ClaxedoDB.use((db) => db
+    .select({
+      session_ref: ClaxedoSessionMetaTable.session_ref,
+      host: ClaxedoSessionMetaTable.host,
+    })
     .from(ClaxedoSessionMetaTable)
     .where(eq(ClaxedoSessionMetaTable.workspace_id, ws.id))
     .all()
-    .map((item) => item.session_ref)
-    .filter((session_ref) => !incoming.includes(session_ref)))
-  deleteSessionMetaRefs(stale)
+    .filter((item) => host(item.host) !== "central")
+    .map((item) => item.session_ref))
+  // An empty snapshot is indistinguishable from "this engine has not listed its
+  // sessions yet" — a restart, a race with the runtime's first apply, or a body
+  // that merely parsed as `[]`. It is absence of evidence, not evidence of
+  // absence, so it upserts nothing and must delete nothing.
+  if (!incoming.length && owned.length) {
+    console.warn("[session-meta] empty session snapshot ignored", {
+      workspaceID: ws.id,
+      retained: owned.length,
+    })
+    return
+  }
+  deleteSessionMetaRefs(owned.filter((session_ref) => !incoming.includes(session_ref)))
 }
 
 export async function syncSessionMeta(ws: Workspace | undefined, input: unknown) {
@@ -113,6 +144,14 @@ export async function putSessionMeta(
       : input.workspaceID
     const hostValue = input.host ?? host(prevByID?.host) ?? "workspace"
     const directory = input.directory ?? input.ws?.directory ?? prevByID?.directory ?? null
+    // `Workspace.kind` is the authority, but most writers legitimately have no
+    // workspace to hand: `session/runtime.ts` puts central sessions by
+    // id/host/directory, and every tag- or title-only put (tab-workgraph, the
+    // HTTP tap, channel ingress) passes neither `ws` nor `workspaceID`. With no
+    // authority in the call, the stored ref *is* the record of the kind that
+    // produced it, so read the shape back rather than silently re-deriving a
+    // `workspace:` ref for a local workspace and re-keying the row on every
+    // other write.
     const workspaceKind = input.ws?.kind ?? (prevByID?.session_ref.startsWith("local:") ? "local" : undefined)
     const sessionRef = storedSessionRef({
       session_id: sessionID,
@@ -121,6 +160,7 @@ export async function putSessionMeta(
       directory,
       host: hostValue,
     })
+    rekeySessionRef(db, { session_id: sessionID, workspace_id: workspaceID, session_ref: sessionRef })
     const prev = db.select().from(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_ref, sessionRef)).get() ?? prevByID
     const toolSandbox = input.toolSandbox === undefined
       ? prev?.tool_sandbox ?? null
@@ -396,6 +436,9 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
   if (!all.length) return
   const hit = ids(all.map((item) => item.session_ref))
   ClaxedoDB.transaction((db) => {
+    // Before anything is written, so the row read as `prev` below is the
+    // re-keyed row and keeps its `created_at`.
+    for (const item of all) rekeySessionRef(db, item)
     const old = new Map(
       (hit.length
         ? db.select().from(ClaxedoSessionMetaTable).where(inArray(ClaxedoSessionMetaTable.session_ref, hit)).all()
@@ -438,6 +481,120 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
       }).run()
     }
   })
+}
+
+/**
+ * Move a session's stored row — and everything joined to it — onto the ref the
+ * caller is about to write.
+ *
+ * `session_ref` is the primary key of `claxedo_session_meta` and the join key of
+ * `claxedo_session_tag` and `claxedo_session_attachment`, but it is a *derived*
+ * identity: `storedSessionRef` composes it from host, workspace kind, workspace
+ * id and directory. When one of those changes shape — a local workspace moving
+ * from `workspace:<ws>:session:<id>` to `local:<dir>:session:<id>` once
+ * `Workspace.kind` reached the ref — a plain insert leaves the previous row
+ * behind, orphaning its pins (`global`/`global:default`), `source-channel:*`
+ * tags and attachments, and offering the old ref to `syncSessionMetas` as
+ * "stale" to delete. Re-key in place instead, inside the caller's transaction
+ * and before the write, so no child row is ever orphaned and no ref is ever
+ * both live and stale.
+ *
+ * Scoped to the owning workspace: session ids are unique only within one, so two
+ * workspaces genuinely hold distinct sessions under the same id and must never
+ * be collapsed into each other.
+ */
+function rekeySessionRef(
+  db: ClaxedoDB.Client,
+  input: { session_id: string; workspace_id: string | null; session_ref: string },
+) {
+  const stale = db
+    .select()
+    .from(ClaxedoSessionMetaTable)
+    .where(eq(ClaxedoSessionMetaTable.session_id, input.session_id))
+    .all()
+    .filter((row) => row.session_ref !== input.session_ref)
+    .filter((row) => (row.workspace_id ?? null) === (input.workspace_id ?? null))
+  if (!stale.length) return
+  // Normally empty: the re-key runs before the new ref is written. Occupied when
+  // a build that inserted the new ref without moving the old row already ran, in
+  // which case the surviving row wins and the stale one only contributes the
+  // children it still owns.
+  let occupied = !!db
+    .select({ session_ref: ClaxedoSessionMetaTable.session_ref })
+    .from(ClaxedoSessionMetaTable)
+    .where(eq(ClaxedoSessionMetaTable.session_ref, input.session_ref))
+    .get()
+  for (const row of stale) {
+    if (occupied) {
+      db.delete(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_ref, row.session_ref)).run()
+    } else {
+      db.update(ClaxedoSessionMetaTable)
+        .set({ session_ref: input.session_ref })
+        .where(eq(ClaxedoSessionMetaTable.session_ref, row.session_ref))
+        .run()
+      occupied = true
+    }
+    moveSessionMetaChildren(db, row.session_ref, input.session_ref)
+  }
+}
+
+/**
+ * Carry tag and attachment rows across a ref change by updating them in place.
+ * A child whose composite key already exists under the destination ref cannot be
+ * updated onto it, so drop that exact duplicate first — it carries no
+ * information the destination does not already hold.
+ */
+function moveSessionMetaChildren(db: ClaxedoDB.Client, from: string, to: string) {
+  const heldTags = new Set(
+    db.select({ tag: ClaxedoSessionTagTable.tag })
+      .from(ClaxedoSessionTagTable)
+      .where(eq(ClaxedoSessionTagTable.session_ref, to))
+      .all()
+      .map((item) => item.tag),
+  )
+  const duplicateTags = db
+    .select({ tag: ClaxedoSessionTagTable.tag })
+    .from(ClaxedoSessionTagTable)
+    .where(eq(ClaxedoSessionTagTable.session_ref, from))
+    .all()
+    .map((item) => item.tag)
+    .filter((tag) => heldTags.has(tag))
+  if (duplicateTags.length) {
+    db.delete(ClaxedoSessionTagTable)
+      .where(and(eq(ClaxedoSessionTagTable.session_ref, from), inArray(ClaxedoSessionTagTable.tag, duplicateTags)))
+      .run()
+  }
+  db.update(ClaxedoSessionTagTable)
+    .set({ session_ref: to })
+    .where(eq(ClaxedoSessionTagTable.session_ref, from))
+    .run()
+
+  const attachmentKey = (item: { kind: string; target_id: string }) => `${item.kind}:${item.target_id}`
+  const heldAttachments = new Set(
+    db.select().from(ClaxedoSessionAttachmentTable)
+      .where(eq(ClaxedoSessionAttachmentTable.session_ref, to))
+      .all()
+      .map(attachmentKey),
+  )
+  const duplicateAttachments = db
+    .select()
+    .from(ClaxedoSessionAttachmentTable)
+    .where(eq(ClaxedoSessionAttachmentTable.session_ref, from))
+    .all()
+    .filter((item) => heldAttachments.has(attachmentKey(item)))
+  for (const item of duplicateAttachments) {
+    db.delete(ClaxedoSessionAttachmentTable)
+      .where(and(
+        eq(ClaxedoSessionAttachmentTable.session_ref, from),
+        eq(ClaxedoSessionAttachmentTable.kind, item.kind),
+        eq(ClaxedoSessionAttachmentTable.target_id, item.target_id),
+      ))
+      .run()
+  }
+  db.update(ClaxedoSessionAttachmentTable)
+    .set({ session_ref: to })
+    .where(eq(ClaxedoSessionAttachmentTable.session_ref, from))
+    .run()
 }
 
 function deleteSessionMetaRefs(sessionRefs: string[]) {
