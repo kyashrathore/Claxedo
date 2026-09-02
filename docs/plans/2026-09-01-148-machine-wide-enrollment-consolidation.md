@@ -510,3 +510,71 @@ Pre-existing on the branch, untouched: 78 failing bun tests in `claxedo-app`
 credential resolution, new-session handoff); the desktop's hosted-transport
 stall-recovery retry (`a6259627f8`) remains and is corrective code now that
 the HTTP/3 cause is known.
+
+### Consolidated 2026-09-02 (Phase 2) — audited, rewritten, re-verified
+
+Grouping (`git log dev..HEAD`, 104 commits at the time) into five reviewable
+sets, in dependency order: (1) hosted control plane and authority
+(`claxedo-server`, `claxedo-server-core`, services, D1/Convex, deploy
+scripts); (2) workspace runtime and agent-sdk-runtime capabilities; (3)
+desktop machine-wide remote access (`claxedo-desktop`,
+`claxedo-host-connector`, `claxedo-local-server`); (4) web app routing,
+harness resolution, boot, sharing UI (`claxedo-app`); (5) docs, plans,
+handoffs, lockfile chores. Two checkpoint commits (`0025eb0f46`,
+`903b2d4dec`) and five smaller ones touch three or more groups and must be
+split by directory when the PRs are cut; the file-level map is in the
+grouping analysis.
+
+Audit findings and what changed, by group:
+
+- **Hosted control plane** (`ededee7f45`): the Better Auth D1 spike worker
+  lived under `platform/auth` and imported domain modules — moved next to the
+  workers it proves; `GET /api/claxedo/agent-config/harness/acp-connections`
+  and `GET /api/claxedo/remote-access` answered anonymous callers — now
+  signed-only; the recorded frontend, self-hosted route-set, and
+  deployment-closure contracts name the owners that moved them; the
+  documents integration mock, deploy fixture, and remote-access test follow
+  the current contracts; the public guide is regenerated.
+- **Relay** (`62e23bc88c`): `bun.ts`, `cloudflare.ts`, and `server.ts` each
+  spelled the user-hosted routing predicate themselves, one as the inverse of
+  a two-member union; `user-hosted-forwarding.ts` owns the predicate, the
+  socket-kind tag, and the cookie-stripping rule.
+- **Desktop** (`96ba837abc`): the edge-stall retry layers were corrective
+  code over causes fixed at their owners (unsettled composition memoization,
+  HTTP/3 on the browser path, keep-alive reuse in Electron). A hosted request
+  is one attempt with one deadline; the refresh-failure window stays as its
+  own invariant; incident narration in comments became design statements.
+  The connector's status carries the heartbeat-renewed lease, and a session
+  deleted through the workspace surface publishes `session.deleted` to the
+  desktop.
+- **Web app** (`988b5f4bbf`): "user-hosted workspace" is one abstraction —
+  `isRelayBackedWorkspaceKind`/`isUserHostedWorkspaceKind` in
+  `platform/runtime/agent/workspace-kind.ts` replace ~24 inline checks, three
+  redeclared unions, and two duplicate hosting derivations; an unresolved
+  relay-backed ref is never guessed as cloud; a signed submit takes its
+  workspace from the runtime-ref owner; session-config saves carry the
+  access-qualified harness identity (an operator ACP session no longer fails
+  every save). The debt baseline fell from 61 to 39 user-hosted comparisons.
+- **Tests**: 78 bun + 7 vitest failures in `claxedo-app`, 13 in
+  `claxedo-server`, 4 in `claxedo-local-server`, 1 in `claxedo-desktop` were
+  pre-existing on the branch (retired `*-acp` harness ids, stale
+  source-text assertions, contracts changed by checkpoint commits). All now
+  assert the current contracts; two real bugs surfaced and were fixed (the
+  signed submit workspace id; the session-config identity shape).
+
+Re-verification after consolidation: every package's own test script and
+typecheck green (`claxedo-app` bun 6000/0, vitest 1152/0; `claxedo-server`
+full suite; `claxedo-server-core` 529; `claxedo-local-server` 305;
+`claxedo-desktop` 749; `claxedo-host-connector` 38; relay, runtime,
+agent-sdk-runtime green); `bun run test:architecture-ratchets` holds.
+Staging release 53 (the consolidated branch) verified in the browser:
+transcript renders (messages ready 1.1 s after route on a reload), the
+picker shows the session's saved model, shares and devices answer, anonymous
+status is refused, no Retry control. The desktop was relaunched on the
+rebuilt daemon bundle: signed, enrolled, all four workspaces shared, lease
+live.
+
+Operational note: dev-open's wrangler config had lived only in a release
+temp directory; it is now rendered from the release module's own exported
+renderer into a durable file, so the dev-open script no longer depends on a
+leftover of an earlier run.
