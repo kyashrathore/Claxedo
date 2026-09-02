@@ -2610,6 +2610,54 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  // The workspace fast path answers the browser's preflight itself, before any
+  // token is read. A deployment that configures its own app origin has to be
+  // answered from THAT list: stamping the product default here let the
+  // configured origin pass the WebSocket upgrade check and still fail every
+  // preflight, so the browser never sent a single fast-path request.
+  test("honors configured allowedOrigins for workspace fast-path preflight", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      allowedOrigins: ["https://selfhost.example.com"],
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://127.0.0.1:9",
+        access: "user-hosted",
+        backing: "local-worktree",
+      }),
+    })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    try {
+      const configured = await fetch(new URL("/workspaces/ws_1/api/wr/health", relay.url), {
+        method: "OPTIONS",
+        headers: {
+          origin: "https://selfhost.example.com",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization",
+        },
+      })
+      expect(configured.status).toBe(204)
+      expect(configured.headers.get("access-control-allow-origin")).toBe("https://selfhost.example.com")
+
+      const product = await fetch(new URL("/workspaces/ws_1/api/wr/health", relay.url), {
+        method: "OPTIONS",
+        headers: {
+          origin: "https://app.claxedo.com",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization",
+        },
+      })
+      expect(product.headers.get("access-control-allow-origin")).toBeNull()
+    } finally {
+      relay.stop(true)
+    }
+  })
+
   test("closes an idle Bun WebSocket after its Runtime Access Token is revoked", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })

@@ -20,6 +20,7 @@ import { parseShellRoute, shellRouteDirectoryFromPathname } from "@/platform/ide
 import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
+import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
 import { controlPlaneEventsUrl } from "@/platform/runtime/agent/workspace-control-routes"
 
@@ -234,6 +235,14 @@ export async function eventStreamFetch(
 }
 
 /**
+ * Translates the path a producer stamped on a frame — its OWN machine's — into
+ * the address this app registered that workspace under. Named as the two
+ * different things it maps between, because "directory" alone is exactly the
+ * ambiguity that let a host path stand where a workspace address belongs.
+ */
+export type StreamFrameAddress = (hostDirectory: string) => string
+
+/**
  * The address a frame received on `target`'s stream is published under.
  *
  * A workspace runtime stamps every frame it publishes with its OWN filesystem
@@ -249,12 +258,10 @@ export async function eventStreamFetch(
  * loopback, so its path IS this machine's and is returned unchanged — the same
  * rule `sessionRowDirectory` applies to a row.
  */
-export function eventStreamFrameAddress(target: ClaxedoEventStreamTarget) {
-  const relayBacked = target.kind === "workspace"
-    && (target.workspaceKind === "cloud" || target.workspaceKind === "user-hosted")
-  if (!relayBacked) return (directory: string) => directory
-  return (directory: string) =>
-    sessionRowDirectory({ workspaceId: target.workspaceId, hostDirectory: directory })
+export function eventStreamFrameAddress(target: ClaxedoEventStreamTarget): StreamFrameAddress {
+  const relayBacked = target.kind === "workspace" && isRelayBackedWorkspaceKind(workspaceKind(target.workspaceKind))
+  if (!relayBacked) return (hostDirectory) => hostDirectory
+  return (hostDirectory) => sessionRowDirectory({ workspaceId: target.workspaceId, hostDirectory })
 }
 
 export function routeDirectory(pathname: string) {

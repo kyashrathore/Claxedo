@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import { isLoopbackLocalRequest, loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
-import { loopbackReplayHeaders, setUserHostedServing, stopUserHostedServing, userHostedServingState } from "./user-hosted-serving"
+import { setUserHostedServing, stopUserHostedServing, userHostedServingState } from "./user-hosted-serving"
 
 type StartedTunnel = {
   workspaceIds: readonly string[]

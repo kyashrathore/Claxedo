@@ -22,6 +22,7 @@ import {
   claxedoEventStreamTargets,
   eventStreamFetch,
   eventStreamFrameAddress,
+  type StreamFrameAddress,
   eventStreamTargetKey,
   routeDirectory,
   type ClaxedoEventStreamTarget,
@@ -204,7 +205,7 @@ function isClaxedoEvent(input: unknown): input is ClaxedoEvent | { type: "heartb
  */
 export function normalizeClaxedoStreamEvent(
   input: unknown,
-  address: (directory: string) => string = (directory) => directory,
+  address: StreamFrameAddress = (hostDirectory) => hostDirectory,
 ): ClaxedoEvent | { type: "heartbeat" } | undefined {
   if (isClaxedoEvent(input)) {
     if (input.type === "heartbeat") return input
@@ -223,7 +224,7 @@ export function normalizeClaxedoStreamEvent(
   return { ...addressed, directory: address(directory) } as ClaxedoEvent
 }
 
-function addressClaxedoEvent(event: ClaxedoEvent, address: (directory: string) => string) {
+function addressClaxedoEvent(event: ClaxedoEvent, address: StreamFrameAddress) {
   if (!("directory" in event) || typeof event.directory !== "string" || !event.directory) return event
   return { ...event, directory: address(event.directory) } as ClaxedoEvent
 }
@@ -327,7 +328,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   const connections = new Map<string, () => void>()
   let stopped = false
 
-  const emitEvent = (input: string, address: (directory: string) => string) => {
+  const emitEvent = (input: string, address: StreamFrameAddress) => {
     try {
       const event = normalizeClaxedoStreamEvent(JSON.parse(input) as unknown, address)
       if (!event || event.type === "heartbeat") return

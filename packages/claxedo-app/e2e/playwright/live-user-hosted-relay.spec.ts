@@ -32,12 +32,15 @@
  * ONLY supported way to point the real app at a non-3001 backend is
  * `VITE_CLAXEDO_SERVER_URL`, a vite dev-server env var baked in at process start
  * (`vite.cloud.config.ts:18`) — so this spec spawns its own `vite --config
- * vite.cloud.config.ts --port <free>` with that env var set to its fixture's backend
- * URL, on a port distinct from the shared dev server (4455) and from the shared
- * persistent backend already occupying 3001 in this environment (verified via `lsof`
- * before writing this spec — killing or rebinding either was out of bounds). Every
- * `page.goto` in this file therefore targets an ABSOLUTE URL on that dedicated frontend
- * origin, not Playwright's configured `baseURL`.
+ * vite.cloud.config.ts --port <free>`, on a port distinct from the shared dev server
+ * (4455) and from the shared persistent backend already occupying 3001 in this
+ * environment (verified via `lsof` before writing this spec — killing or rebinding
+ * either was out of bounds). That server is BOTH the app's origin and, through its own
+ * proxy, the app's control plane, and it is addressed by a front-door hostname
+ * (`http://app.localhost:<port>`) rather than a loopback literal — see HARNESS NOTES
+ * "HOW THE APP IS ADDRESSED" for the two product gates that read it. Every `page.goto`
+ * in this file therefore targets an ABSOLUTE URL on that dedicated frontend origin, not
+ * Playwright's configured `baseURL`.
  *   Connect sequence — identical AUTHORITATIVE contract to `core-user-hosted-workspace`'s
  *   STATE MODEL (`acquireWorkspaceConnection` -> `driveConnection` -> `prepareUserHostedRuntime`,
  *   `src/cloud/runtime/workspace-runtime-store.ts`), but every step here is a REAL network
@@ -88,13 +91,15 @@
  *   `[data-action="prompt-submit"]`, `[data-slot="session-turn-assistant-content"]`,
  *     `[data-slot="session-turn-message-content"]` — the oracle's targets
  *     (`e2e/helpers/turn-oracle.ts`).
- *   PTY create/list/delete in this spec is proven via direct in-page `fetch` calls against
- *   the real relay lane (see BEHAVIORS 2), not the Terminal panel UI — `[data-component=
- *   "workspace-more-menu"]` (the toolbar dropdown that hosts "New Terminal", pinned by
- *   `core-terminal.spec.ts`) only renders once a real session/workbench view is mounted,
- *   not on the bare draft composer this spec's other scenarios stay on; driving it live
- *   was judged not worth the added session-bootstrap coupling for what direct relay
- *   fetches already prove at the transport layer (see OUT OF SCOPE).
+ *   `[data-testid="workspace-scope-new-terminal"]` -> `[data-component=
+ *     "terminal-new-launchers"]` -> `[data-slot="terminal-launcher"][data-launcher-id]`
+ *     — the one New Terminal control and the creator's launcher tiles, the same two-step
+ *     surface `core-terminal.spec.ts` pins.
+ *   `[data-testid="terminal-pane"][data-terminal-id]` and
+ *     `[data-testid="rail-sidebar-terminal-row"][data-terminal-id]` — the mounted xterm
+ *     and its rail row, both keyed by the PTY's real id.
+ *   Behavior 2 proves PTY create/list/delete at the transport layer with direct in-page
+ *   `fetch` calls; behavior 9 drives the product surface above it.
  *
  * BEHAVIORS —
  *   1. The fixture's boot sequence performs a REAL register-and-tunnel-up sequence (real
@@ -110,33 +115,27 @@
  *      out-of-band), not a shortcut token. The created PTY is visible in a subsequent list
  *      call and gone from a list call after delete — a genuine create/list/delete round
  *      trip against the real PTY subsystem, not merely a 200 on each call in isolation.
- *   3. [REAL APP GAP — `test.fixme`, see HARNESS NOTES "draft composer workspace-target
- *      ambiguity"] A prompt sent through the now-ready user-hosted workspace should
- *      complete a REAL turn (real embedded engine, real model call) proven by the full
- *      three-layer oracle. The relay/runtime plumbing this needs is independently proven
- *      real and working (behaviors 2/7, plus this spec's own manual `curl`/browser
- *      verification during authoring completed a real turn end-to-end); what is NOT yet
- *      reliable is the CLIENT resolving a fresh `/w/:workspaceId/session` draft into the
- *      correct connect pipeline before submit.
+ *   3. [RED against a REAL CLIENT GAP — run for real, see the note above the test] A
+ *      pane attached BY ROUTE to a session on the user-hosted workspace should render a
+ *      host-started turn as it streams. Everything from the engine to the pane's own
+ *      conversation store is proven correct (the deltas really reach and grow inside
+ *      the registry entry the pane holds); what fails is the timeline's row model,
+ *      which anchors every row on a user message the runtime-events lane never
+ *      announces.
  *   4. [REAL APP GAP, UNCONFIRMED — `test.fixme`, see HARNESS NOTES] Connecting to a
  *      workspace whose minted token is already inside the refresh window should trigger a
  *      REAL `POST /api/workspace/:id/connection/refresh` shortly after navigation. Not yet
  *      observed within a 20s window despite the gate genuinely reaching ready — needs
  *      further isolation before re-enabling (see HARNESS NOTES for what is and is not yet
  *      distinguished).
- *   5. [RED against a REAL CLIENT GAP — run for real, see the note above the test] Pausing
- *      the real host tunnel (`/__fixture/tunnel/pause`) and then reloading should render
- *      the terminal offline view (matching `core-user-hosted-workspace` behavior 6's
- *      warm-reload-while-paused contract). The real host-tunnel pause mechanism itself is
- *      independently proven (manual `curl` through the real relay: 200 before pause, 503
- *      `user_hosted_app_offline` after); what fails is the client, which classifies this
- *      workspace as LOCAL after the reload and so never mounts the gate that owns the
- *      offline view.
- *   6. [RED, same cause as behavior 5] Resuming the real host tunnel
- *      (`/__fixture/tunnel/resume`) and clicking the offline view's visible Retry control
- *      should reconnect the SAME page back to `ready` WITHOUT another `page.reload()`. Real
- *      tunnel resume itself is independently proven (manual `curl`: 200 again after
- *      resume); the assertion is unreachable while behavior 5's offline view never renders.
+ *   5. Pausing the real host tunnel (`/__fixture/tunnel/pause`, the real
+ *      `stopUserHostedWorkspaceTunnel`) and then reloading renders the terminal offline
+ *      view (matching `core-user-hosted-workspace` behavior 6's warm-reload-while-paused
+ *      contract) — the gate the product mounts for a relay-backed workspace, driven by a
+ *      genuine tunnel teardown rather than a simulated response.
+ *   6. Resuming the real host tunnel (`/__fixture/tunnel/resume`) and clicking the offline
+ *      view's visible Retry control reconnects the SAME page back to `ready` WITHOUT
+ *      another `page.reload()`.
  *   7. [FINDING — corrects a stale premise, see HARNESS NOTES] A viewer-role runtime access
  *      token, minted for the SAME real workspace/relay, is allowed a REAL GET (health, file
  *      read) but REAL-denied (403 `relay_role_denied`) any write method AND any
@@ -148,7 +147,14 @@
  *      transport layer" as an open product question — see HARNESS NOTES for the correction
  *      and for the DIFFERENT, still-open gap this investigation found in its place (the
  *      client UI has zero role-awareness anywhere in its source).
- *   8. Across the ENTIRE journey (behaviors 1-7 combined, checked once at the end of the
+ *   9. A terminal opened FROM THE BROWSER on the user-hosted workspace runs on the host
+ *      and streams its output back: the toolbar's own New Terminal control and the
+ *      creator's plain-shell tile produce a real `pty_`-prefixed id, the rail row and the
+ *      xterm surface mount under it, the host's own PTY list contains it, and a command
+ *      typed through the real xterm comes back echoed by the host's shell. Behavior 2
+ *      proves the same subsystem at the transport layer with direct `fetch` calls; this
+ *      proves the product surface on top of it.
+ *   8. Across the ENTIRE journey (behaviors 1-7 and 9 combined, checked once at the end of the
  *      main describe block), the fixture's watchdog "forbidden legacy opencode engine" stub
  *      server (`forbiddenOpencodeServer()` in the fixture, a real second HTTP server whose
  *      URL the client is never told) receives ZERO requests, AND no request anywhere in the
@@ -168,62 +174,49 @@
  *   authorization code path.
  *
  * HARNESS NOTES —
- *   - [REAL APP GAP found while authoring this spec — behaviors 3/5/6 `test.fixme`d over
- *     this] "Draft composer workspace-target ambiguity": landing on `/w/:workspaceId/
- *     session` for a `ws_`-shaped id BEFORE any session exists does not reliably resolve
- *     straight into `WorkspaceGate`'s connect pipeline the way `core-user-hosted-
- *     workspace.spec.ts`'s mock does (that mock's bootstrap response is synchronous/
- *     instant, so the inventory is already available at first paint — this spec's REAL
- *     network round-trip is not). Observed directly (screenshots taken during authoring):
- *     the composer instead renders `src/components/session/session-new-workspace-
- *     options.ts`'s own `Local`/`Cloud` draft-workspace-target toggle, pre-selecting
- *     "Cloud" for this id (there is no third "user-hosted" choice in that control), and
- *     submitting routes through `CloudStartupView`'s CLOUD 4-step pipeline (`Acquiring
- *     sandbox / Cloning repository / Starting runtime / Waiting for health check`) instead
- *     of the intended path. This is DISTINCT from (and downstream of fixing) the
- *     loopback-bootstrap finding below — even with the signed bootstrap correctly
- *     reporting `kind: "user-hosted"` (confirmed via direct `curl` against this spec's own
- *     dedicated frontend), the draft-composer's OWN target resolution still does not adopt
- *     it reliably before a first submit. The underlying relay/runtime plumbing is proven
- *     real and correct independent of this gap (behaviors 1/2/7, all passing, none of
- *     which submit a fresh draft) — this is specifically a client draft/session-creation
- *     routing issue, not a relay or auth bug. Fix candidate: resolve the real inventory
- *     kind for an already-known relay-backed workspace id BEFORE ever rendering the
- *     Local/Cloud draft picker, so a `ws_`-shaped id with a real signed-inventory match
- *     skips that picker entirely and mounts `WorkspaceGate` directly.
- *   - [PRODUCT BEHAVIOR discovered while authoring this spec, not a bug] The dedicated
+ *   - HOW THE APP IS ADDRESSED, and why it decides everything else. The dedicated
  *     frontend is served through `e2e/helpers/live-user-hosted-relay-frontend-server.mjs`
  *     (a `vite` dev server started via vite's JS API, reusing the real
  *     `vite.cloud.config.ts` verbatim — same plugins/aliases/proxy route list) rather than
- *     plain `bun run dev`, for exactly one reason: `packages/claxedo-local-server/src/
- *     deployments/shared-routes/bootstrap.ts`'s `/api/claxedo/bootstrap` handler — the one
- *     the self-hosted app mounts (`deployments/self-hosted-node/app.ts`'s `BootstrapRoutes`)
- *     — takes the LOCAL, unsigned bootstrap path (`localBootstrap`) for ANY request whose
- *     real socket peer is loopback (`isLoopbackLocalRequest`,
- *     `claxedo-server-core/src/platform/http/peer-address.ts`) REGARDLESS of a valid bearer
- *     token — and the LOCAL body's project scan reports the raw stored `Workspace.kind`
- *     (`"local"|"cloud"` only, `workspace-store.ts:23`), never `"user-hosted"`. The real
- *     `kind: "user-hosted"` value only appears in the SIGNED bootstrap body
- *     (`signedBootstrapBody` -> `services.authority.listWorkspaces(auth)` ->
- *     `signedBootstrapProjects`, reading `row.access`), which `sessionWorkspaceRuntimeRef`
- *     (`src/shell/workspace/session-workspace-key.ts`) needs to route through the
- *     user-hosted connect gate instead of the (broken, for a relay-only workspace) cloud
- *     provisioning pipeline. Since this whole spec necessarily runs over loopback (its own
- *     dedicated backend and frontend are both 127.0.0.1 by construction), the signed path
- *     is otherwise unreachable — UNLESS the request carries a forwarded-client header, on
- *     which `isLoopbackLocalRequest` fails closed: forwarding destroys the direct
- *     socket-to-client relationship unsigned-local trust rests on. The dedicated-frontend
- *     launcher is exactly that front door: it stamps a real `X-Forwarded-For:
+ *     plain `bun run dev`, and the app addresses that server by a FRONT-DOOR HOSTNAME
+ *     (`http://app.localhost:<port>`; every `*.localhost` label resolves to loopback with
+ *     no DNS or hosts entry, so the whole spec still runs locally). Two product gates read
+ *     that address and both are load-bearing here.
+ *     (1) `centralTransportForServer` (`src/platform/runtime/server-transport.ts`) answers
+ *     `loopback` for a `localhost`/`127.0.0.1`/`::1` base — the DESKTOP transport. On that
+ *     path the app reads the daemon's own `/project` catalog, and `mergeWorkspaceCatalog`
+ *     (`src/features/workspaces/data/workspace-catalog.ts`) deliberately lets that direct
+ *     row win over the control plane's echo of the SAME workspace — a machine that both
+ *     serves a workspace and publishes it user-hosted is ONE local row, pinned by
+ *     `workspace-catalog.test.ts`'s "a signed echo is deduped by workspace id". This
+ *     fixture is both sides in one loopback process, so a loopback-addressed app saw
+ *     `kind: "local"` at the host's own path, resolved `/w/<id>` to that path, and every
+ *     pane, session row and event scope followed it there — while both event lanes publish
+ *     under `workspace:<id>`. A front-door name puts the app on the signed-web transport
+ *     the WEB client really uses, where the control-plane catalog is the authority.
+ *     (2) `/api/claxedo/bootstrap` (`claxedo-local-server/src/deployments/shared-routes/
+ *     bootstrap.ts`) takes the LOCAL, unsigned path for any request whose real socket peer
+ *     is loopback (`isLoopbackLocalRequest`), regardless of a valid bearer token, and that
+ *     body's project scan reports the raw stored `Workspace.kind` (`"local"|"cloud"`),
+ *     never `"user-hosted"` — which only the SIGNED body carries (`signedBootstrapBody` ->
+ *     `listWorkspaces(auth)` -> `signedBootstrapProjects`, reading `row.access`). The
+ *     launcher is the front door for that too: it stamps a real `X-Forwarded-For:
  *     203.0.113.10` (RFC 5737 TEST-NET-3, never a routable client) on every proxied
- *     request, the same signal a production nginx/Cloudflare front door would add. That
- *     stamp covers the SAME-ORIGIN `/api/...` calls a page makes through this dev server
- *     (the lane this spec's own in-page product calls take); the app's own control-plane
- *     calls resolve `VITE_CLAXEDO_SERVER_URL` into an absolute base
- *     (`src/platform/api/api.ts`'s `getClaxedoServerUrl`) and reach the backend directly,
- *     so they still take the local bootstrap path and the app resolves this workspace's
- *     `kind: "user-hosted"` from the seeded project inventory instead. No claxedo-server
- *     or claxedo-app product source is modified — this is test-harness composition of a
- *     real, documented product code path.
+ *     request, the same signal a production nginx/Cloudflare edge adds, and
+ *     `isLoopbackLocalRequest` fails closed on any forwarded-client header. Both halves are
+ *     harness COMPOSITION of real, documented product paths — no product source is bent to
+ *     make them work.
+ *   - The relay's browser-origin allowlist is a deployment input, and this spec supplies
+ *     it the way a self-hosted deployment does: `CLAXEDO_RELAY_ALLOWED_ORIGINS`
+ *     (`workspace-relay/src/cors-origins.ts`'s pattern grammar) naming the front-door
+ *     origin, threaded into `createWorkspaceRelayBun`'s `allowedOrigins` by
+ *     `user-hosted-relay-fixture.mjs`. Running the app from a non-default origin is what
+ *     surfaced two real relay defects this slice fixed: the Bun adapter's workspace fast
+ *     path stamped CORS from the BUILT-IN default list instead of the configured one (so a
+ *     configured origin passed the WebSocket upgrade check and still failed every
+ *     preflight), and a user-hosted TUNNEL response passed the host runtime's own CORS
+ *     headers through instead of the relay's — the browser talks to the relay, so the
+ *     relay owns those headers on every path.
  *   - Behavior 2's PTY assertions are what caught the managed runtime having no stream
  *     authority: `packages/workspace-runtime/src/routes/pty.ts`'s `POST /` mints the
  *     agent-hook capability through `policy.authorizeStream`, and the embedded
@@ -305,13 +298,12 @@
  *   terminal panel) — judged not worth ~15s extra boot cost per scenario given the relay
  *   layer is what actually enforces the security boundary (see HARNESS NOTES); the UI-gap
  *   finding is recorded instead of re-derived through a second full boot. Harness/model
- *   selection matrix over the relay (`core-harness-ownership-cloud`); the Terminal panel UI
- *   itself (`core-terminal` already pins its full DOM contract against a mock) — this spec
- *   proves PTY create/list/delete at the real relay-transport layer only (see ANATOMY),
- *   not through the "New Terminal" UI action, since that control only mounts once inside a
- *   real session/workbench view and driving it live added session-bootstrap coupling this
- *   spec's other independent scenarios deliberately avoid; claxedo-mcp / agent-extensions
- *   over a user-hosted workspace (out of this spec's fixture's capability).
+ *   selection matrix over the relay (`core-harness-ownership-cloud`); the Terminal panel's
+ *   full DOM/lifecycle matrix (`core-terminal` already pins it against a mock —
+ *   restore-on-reload, rename, split/refit, the whole launcher roster), of which behavior 9
+ *   drives only the single open-run-read path that a real host and a real tunnel are the
+ *   point of; claxedo-mcp / agent-extensions over a user-hosted workspace (out of this
+ *   spec's fixture's capability).
  */
 import { expect, test, type Page, type Request } from "@playwright/test"
 import { spawn } from "node:child_process"
@@ -430,6 +422,14 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
         OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
         TIER_REAL_API_KEY: "test-key",
         OPENCODE_DISABLE_MODELS_FETCH: "true",
+        // The relay's browser-origin allowlist, in its real deployment form.
+        // This spec serves the app from a front-door hostname (see
+        // `startFrontend`), which the relay's built-in default list — loopback
+        // literals plus claxedo.com — does not cover; naming it here is what a
+        // self-hosted deployment does for its own app origin. The port is not
+        // known until the frontend allocates one, and the pattern grammar's
+        // `:*` covers exactly that.
+        CLAXEDO_RELAY_ALLOWED_ORIGINS: "http://app.localhost:*,http://localhost:*,http://127.0.0.1:*",
         ...extraEnv,
       },
       // The fixture owns its lifetime through this stdin pipe
@@ -633,7 +633,17 @@ async function startHostTurn(fixture: RunningFixture, input: { sessionId: string
  */
 async function startFrontend(input: { backendUrl: string }): Promise<RunningFrontend> {
   const port = await freePort()
-  const url = `http://127.0.0.1:${port}`
+  // A FRONT-DOOR hostname, not a loopback literal. `centralTransportForServer`
+  // (`src/platform/runtime/server-transport.ts`) reads the control-plane base
+  // and answers `loopback` for `localhost`/`127.0.0.1`/`::1` — the desktop
+  // daemon's own transport, which reads the daemon's `/project` catalog and
+  // lets that direct row win over the control plane's relay-backed echo
+  // (`mergeWorkspaceCatalog`). This spec drives the WEB client, whose control
+  // plane is a real front door, so the app must address it by a name: every
+  // `*.localhost` label resolves to loopback without any DNS or hosts entry,
+  // so the process stays entirely local while the app takes the signed-web
+  // path it is here to prove.
+  const url = `http://app.localhost:${port}`
   let log = ""
   const child = spawn(
     "node",
@@ -1000,6 +1010,93 @@ test.describe("live user-hosted relay @live", () => {
     expect((listedAfterDelete.json as Array<{ id: string }>).map((p) => p.id)).not.toContain(directPtyId)
   })
 
+  // PRODUCT REQUIREMENT: a terminal on a user-hosted workspace, opened from the
+  // browser and driven through the real relay. Behavior 2 proves PTY
+  // create/list/delete at the transport layer with direct `fetch` calls; this
+  // proves the product surface on top of it — the toolbar's own New Terminal
+  // control, the rail row the created PTY gets, the mounted xterm, and the
+  // shell's own bytes arriving back over the tunnel.
+  //
+  // Reading the output is DOM-only: xterm paints to a canvas, so the assertion
+  // rides the accessibility layer xterm mounts when `screenReaderMode` is on —
+  // a real, persisted product preference
+  // (`platform/settings/terminal-preferences.ts`'s
+  // `claxedo.terminal.screen-reader-mode`, seeded here exactly as a screen-reader
+  // user's own setting would seed it, and read by `core/backend/renderer.ts` when
+  // it creates each terminal), never a debug hook.
+  test("a terminal opened from the browser runs on the host and streams its output back — behavior 9", async ({ page }) => {
+    test.setTimeout(120_000)
+    await seedWorkspace(page, fixture.info)
+    // The same preference a screen-reader user persists from Settings. It has to
+    // be in place BEFORE the terminal is created: `createTerminalInstance` seeds
+    // each new xterm from it at construction.
+    await page.addInitScript(() => {
+      localStorage.setItem("claxedo.terminal.screen-reader-mode", "1")
+    })
+    // A SESSION route, not the bare draft: a managed workspace runtime scopes
+    // every terminal to a session it can authorize the caller against
+    // (`workspace-runtime/src/routes/pty.ts` -> `pty_session_id_required`), the
+    // same rule behavior 2's direct create obeys.
+    await page.goto(`${frontend.url}${sessionRoute(fixture.info, fixture.info.sessionId)}`, {
+      waitUntil: "domcontentloaded",
+      timeout: 45_000,
+    })
+    await expect(page.locator(`[data-testid="session-content"][data-session-id="${fixture.info.sessionId}"]`))
+      .toBeVisible({ timeout: 60_000 })
+
+    // The one New Terminal control (`workspace-toolbar.tsx`), then the creator's
+    // plain-shell tile — the same two-step surface `core-terminal` pins.
+    await page.locator('[data-testid="workspace-scope-new-terminal"]').click()
+    const launchers = page.locator('[data-component="terminal-new-launchers"]')
+    await expect(launchers).toBeVisible({ timeout: 20_000 })
+    await launchers.locator('[data-slot="terminal-launcher"][data-launcher-id="shell"]').first().click()
+
+    // The pane the app mounted, and the id it mounted under: a real
+    // `pty_`-prefixed id minted by the HOST's PTY subsystem over the relay, not
+    // a client-side placeholder.
+    const pane = page.locator('[data-testid="terminal-pane"][data-terminal-id^="pty_"]')
+    await expect(pane).toBeVisible({ timeout: 45_000 })
+    const ptyId = await pane.first().getAttribute("data-terminal-id")
+    expect(ptyId, "the mounted terminal pane carries no PTY id").toBeTruthy()
+    await expect(page.locator(`[data-testid="rail-sidebar-terminal-row"][data-terminal-id="${ptyId}"]`))
+      .toBeVisible({ timeout: 30_000 })
+
+    // The host really has this PTY: the same real relay lane behavior 2 uses,
+    // asked through the app's OWN connection mint.
+    const connection = await mintConnectionFromPage(page, fixture.info)
+    const listed = await relayFetchFromPage(page, {
+      relayUrl: connection.relayUrl,
+      workspaceId: fixture.info.workspaceId,
+      token: connection.runtimeAccessToken,
+      path: "/api/wr/pty",
+    })
+    expect(listed.ok, JSON.stringify(listed)).toBe(true)
+    expect(
+      (listed.json as Array<{ id: string }>).map((pty) => pty.id),
+      "the PTY the browser opened is not on the host's own list",
+    ).toContain(ptyId)
+
+    // …and its OUTPUT reaches the browser. Type a command through the real xterm
+    // input and wait for the shell's echo of a marker only this run knows, so a
+    // stale buffer or a prompt painted before the tunnel opened cannot pass.
+    const marker = `TTY-${`${Date.now()}`.slice(-6)}`
+    const readout = () =>
+      page.evaluate((id) => {
+        const host = document.querySelector(`[data-testid="terminal-pane"][data-terminal-id="${id}"]`)
+        return (host?.textContent ?? "")
+      }, ptyId!)
+    await pane.first().click()
+    await page.keyboard.type(`echo ${marker}`)
+    await page.keyboard.press("Enter")
+    await expect
+      .poll(readout, {
+        timeout: 45_000,
+        message: "the shell's echo never reached the browser through the relay",
+      })
+      .toContain(marker)
+  })
+
+
   // PRODUCT REQUIREMENT 6, on the REAL path: attach from the web client to a
   // session running on a user-hosted workspace and receive its live stream as it
   // happens. Everything here is real except the model endpoint — real relay,
@@ -1015,38 +1112,51 @@ test.describe("live user-hosted relay @live", () => {
   // which is exactly the symptom this spec exists to fail on — so the request
   // tap below also proves no such refetch could have delivered the growth.
   // RED against a REAL CLIENT GAP — run for real, evidence captured, deliberately
-  // not `test.fixme`d (same standing as behaviors 5/6 below). Everything on the
-  // PRODUCER side is now proven real and correct by this run:
+  // not `test.fixme`d. Everything from the engine to the pane's own conversation
+  // store is proven correct by this run; the gap is the last hop, the timeline.
   //   - the fixture's engine really answers from the scripted endpoint (its call
   //     counter moves) and the runtime really streams the turn as paced
   //     `text-delta` frames on `/api/wr/runtime-events` (contract version 7,
   //     `directory` = the HOST's own filesystem path, `sessionId` = the attached
   //     session, `assistantMessageId` = the engine's reply id);
-  //   - the app really opens that session-scoped stream, before the turn starts
-  //     — the tap records `GET /workspaces/<id>/api/wr/runtime-events?parentSessionId=<id>`
-  //     ~2s BEFORE the host prompt.
-  // What still fails is the CONSUMER's address. The pane registers the HOST's
-  // filesystem path as its scope — captured directly by this test:
-  //   Panes: ["ses_…@/private/var/folders/…/claxedo-signed-browser-relay-…/workspace"]
-  // while both event lanes publish under `workspace:<id>` (the form
-  // `sessionRowDirectory` gives every relay-backed row and every consumer keys
-  // on). `conversationScopeKey` is an exact `directory\0sessionID` match, so
-  // every delta is dropped and the reply appears only when the settle refetch
-  // lands — measured as `["+4ms:0","+1386ms:32","+6882ms:74"]`, i.e. nothing,
-  // then the whole message at turn completion.
-  // Two owners on that path were fixed by this investigation and are NOT the
-  // remaining gap: the signed bootstrap now states a relay-backed workspace's
-  // ADDRESSING directory (`workspace:<id>`, with the host path as
-  // `remote_directory`) instead of the host's path, matching what the hosted
-  // control plane already served (`signedShellProjects`); and the runtime-events
-  // lane now projects a `ses_`-prefixed session's frames when it is the only
-  // compat lane that session has (`runtimeProjectionOwnsCompat`'s
-  // `soleCompatLane`) instead of deferring to a `/global/event` loop that
-  // carries nothing from another machine. With the bootstrap serving
-  // `directory: "workspace:ws_…"` the pane's own scope is STILL the host path,
-  // so the remaining owner is whatever assigns a route-attached session pane's
-  // `meta().directory` (`app/workbench/state/route-bridge.tsx` ->
-  // `SessionContent`'s `meta().directory`), not the bootstrap and not the lanes.
+  //   - the app opens that session-scoped stream BEFORE the turn starts — the
+  //     tap records `GET /workspaces/<id>/api/wr/runtime-events?parentSessionId=<id>`
+  //     ~0.3s ahead of the host prompt;
+  //   - the pane now registers the workspace ADDRESS as its scope
+  //     (`Panes: ["ses_…@workspace:ws_signed_browser_relay"]`), the same form
+  //     `sessionRowDirectory` gives every relay-backed row, so the lane's
+  //     `eventStreamFrameAddress` translation lands on the pane's own
+  //     `conversationScopeKey`;
+  //   - `applyRegisteredConversationEvent` applies every `message.part.delta` to
+  //     THAT pane's own entry (`refs: 1`) and its assistant text really grows —
+  //     captured live as `"LIVEHOST"` -> `"LIVEHOST-988225-"` ->
+  //     `"LIVEHOST-988225-AAAA-BBB"` -> … inside the registry's own client.
+  // What still fails is the TIMELINE's row model. `message-timeline.tsx` builds
+  // every row from a USER message (`messageRowMemos` maps over
+  // `props.userMessages` and attaches replies through
+  // `assistantMessagesByParent.get(userMessage.id)`), while the runtime-events
+  // lane announces only the ASSISTANT row: an `AgentRuntimeEvent` carries the
+  // assistant message id and nothing about the message it answers, so
+  // `announcedTurnParent` (`agent-event-runtime/src/projections/opencode-compat/
+  // projection.ts`) parents the announced reply on the SESSION id. No user row
+  // has that id, so the growing reply hangs off nothing and paints only when the
+  // settle refetch delivers the turn's real user row — measured as
+  // `["+11ms:0","+9110ms:74"]`, i.e. nothing, then the whole message.
+  // Owners fixed by this investigation and NOT the remaining gap: the signed
+  // bootstrap states a relay-backed workspace's ADDRESSING directory
+  // (`workspace:<id>`, host path as `remote_directory`); the runtime-events lane
+  // projects a `ses_`-prefixed session's frames when it is that session's only
+  // compat lane (`runtimeProjectionOwnsCompat`'s `soleCompatLane`); the relay
+  // owns its own CORS on every path including the host-tunnel one; and this
+  // machine's host tunnel strips the remote caller's `Origin`/`Host` and
+  // forwarded-client headers before replaying onto its own loopback server
+  // (`loopbackReplayHeaders`), without which every relay call 401s
+  // `workspace_relay_local_loopback_required`.
+  // Closing it needs the turn's PARENT on this lane: the runtime-events envelope
+  // (`runtime-envelope.ts`) carries `sessionId`/`assistantMessageId` and no
+  // parent, so either the producer starts naming the user message it answers (a
+  // contract-version change) or the timeline grows a row model for a
+  // session-parented reply. Both are product decisions this spec does not make.
   test("an attached pane renders a host-started turn as it streams — behavior 3", async ({ page }) => {
     test.setTimeout(180_000)
     fixture.scripted.resetCounts()
@@ -1231,26 +1341,19 @@ test.describe("live user-hosted relay @live", () => {
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeEnabled()
   })
 
-  // RED against a REAL CLIENT GAP — run for real, evidence captured, deliberately not
-  // `test.fixme`d. After `POST /__fixture/tunnel/pause` (the real
-  // `stopUserHostedWorkspaceTunnel`) and a reload, `[data-testid="workspace-offline"]`
-  // (`src/features/workspaces/data/workspace-gate.tsx`) never renders: the page comes
-  // back as the ordinary composer with the workspace-environment control reading
-  // "Local" (captured accessibility snapshot in this run's
-  // `test-results/.../error-context.md`). A workspace the client classifies as local
-  // never mounts WorkspaceGate's connect/offline branch at all, so a paused tunnel is
-  // invisible to it — the offline view is unreachable rather than late. The
-  // classification owner is `src/platform/runtime/session-workspace.ts` reading the
-  // project inventory through `signedWorkspaceFromProjects` /
-  // `localWorkspaceInProjects` (`src/platform/runtime/agent/signed-workspace.ts`); this
-  // spec seeds `kind: "user-hosted"` into `opencode.global.dat:globalSync.project`
-  // (see `seedWorkspace`) and that seed is re-applied on every navigation, so the
-  // resolution that lands on "Local" happens after the seed, not instead of it.
-  // Behaviors 1/2/7 stay green because none of them require the gate: behavior 1
-  // asserts only that no `cloud-startup-view` is stuck, which also holds for a
-  // locally-classified workspace, and 2/7 address the relay lane directly. Fixing this
-  // belongs in the client's workspace classification, not in this spec or in the relay
-  // and runtime it drives.
+  // The real host-tunnel lifecycle, proven through the gate the product mounts for
+  // a relay-backed workspace. What makes the gate reachable at all is the app
+  // classifying this workspace as user-hosted, and that classification reads the
+  // project inventory (`src/platform/runtime/session-workspace.ts` through
+  // `signedWorkspaceFromProjects` / `localWorkspaceInProjects`). The inventory the
+  // app resolves depends on the transport it picks for its control plane: a
+  // loopback-literal base makes `centralTransportForServer` answer `loopback`, the
+  // app reads the DAEMON's own `/project` catalog, and `mergeWorkspaceCatalog`
+  // deliberately lets that direct row (kind `local`, the host's path) win over the
+  // control plane's user-hosted echo of the same workspace — correct for the
+  // desktop, wrong for the web client this spec drives. Addressing the fixture's
+  // control plane by a front-door hostname (see `startFrontend`) is what puts the
+  // app on the signed-web path it is here to prove, and the gate then mounts.
   test(
     "pausing the real host tunnel surfaces the offline view on reload, and resuming lets Retry reconnect without another reload — behaviors 5,6",
     async ({ page }) => {

@@ -111,15 +111,26 @@ describe("embedded workspace runtime", () => {
     const authorityCalls: string[] = []
     const sessionAccessPolicy = managedWorkspaceSessionAccessPolicy({
       requireActor: true,
-      authorizeSessionRead: (input) => {
-        authorityCalls.push(`${input.actor.actorId}:read:${input.sessionId}:${input.credential}`)
-        return input.actor.actorId === "actor_alice"
+      // The authority is ONE bundle, so a composition cannot answer reads and
+      // writes while leaving the stream capability unanswered — which is what
+      // made every managed terminal 503 `terminal_capability_authority_unavailable`.
+      authority: {
+        authorizeSessionRead: (input) => {
+          authorityCalls.push(`${input.actor.actorId}:read:${input.sessionId}:${input.credential}`)
+          return input.actor.actorId === "actor_alice"
+        },
+        authorizeSessionWrite: (input) => {
+          authorityCalls.push(`${input.actor.actorId}:write:${input.sessionId}:${input.credential}`)
+          return input.actor.actorId === "actor_alice"
+        },
+        authorizeSessionStream: (input) => {
+          authorityCalls.push(`${input.actor.actorId}:stream:${input.sessionId}:${input.credential}`)
+          return input.actor.actorId === "actor_alice"
+            ? { allowed: true as const, lease: `lease_${input.sessionId}`, expiresAt: Date.now() + 60_000 }
+            : { allowed: false as const, status: 403 as const, code: "session_private", message: "Not a participant" }
+        },
+        registerSession: () => true,
       },
-      authorizeSessionWrite: (input) => {
-        authorityCalls.push(`${input.actor.actorId}:write:${input.sessionId}:${input.credential}`)
-        return input.actor.actorId === "actor_alice"
-      },
-      registerSession: () => true,
     })
     configureEmbeddedWorkspaceRuntime({
       opencodeRequest: async () => Response.json({ id: "ses_private", directory: project, title: "Private" }),

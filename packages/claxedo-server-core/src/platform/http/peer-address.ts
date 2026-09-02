@@ -44,6 +44,38 @@ export const FORWARDED_CLIENT_HEADERS = [
   "true-client-ip",
 ] as const
 
+/**
+ * What a machine must NOT carry onto its own loopback replay of a
+ * relay-delivered request.
+ *
+ * A request that arrives over a host tunnel is replayed as a fetch the machine
+ * makes to its own `127.0.0.1` server, and that server's relay-shaped surface
+ * requires exactly that (`isLoopbackLocalRequest` below). Replaying the remote
+ * caller's headers verbatim makes a genuinely-local request look proxied and
+ * the gate refuses it: an edge stamps `cf-connecting-ip`/`x-forwarded-*` on
+ * everything reaching the relay, the browser sends a foreign `Origin`, and
+ * `host` names the relay — each one alone fails the gate.
+ *
+ * Stripping is scoped to the tunnel's own replay, so ordinary browser traffic
+ * to loopback keeps its Origin and its CSRF protection. The headers describe a
+ * client that is not the one making the local request; authorization for relay
+ * traffic is the relay's verified Runtime Access Token plus each serving
+ * module's own registration and route-ownership guards, not the socket the
+ * request arrived on.
+ *
+ * It lives beside the gate it has to satisfy because every host that replays
+ * has the same obligation: `claxedo-local-server`'s `user-hosted-serving` (the
+ * daemon serving `claxedo up`) and `claxedo-server`'s `user-hosted-tunnel`
+ * (the server serving its own local workspaces) both hand it to
+ * `startWorkspaceRelayHostTunnel`'s `localReplayHeaders`.
+ */
+const REPLAY_STRIPPED_HEADERS = [...FORWARDED_CLIENT_HEADERS, "origin", "host"] as const
+
+export function loopbackReplayHeaders(input: Record<string, string>): Record<string, string> {
+  const stripped = new Set<string>(REPLAY_STRIPPED_HEADERS)
+  return Object.fromEntries(Object.entries(input).filter(([name]) => !stripped.has(name.toLowerCase())))
+}
+
 // @hono/node-ws rebuilds upgrade Requests without the node-server internals,
 // so the app stamps the peer address explicitly from `c.env.incoming` (set by
 // both @hono/node-server and @hono/node-ws). Absent env (Workers, in-process

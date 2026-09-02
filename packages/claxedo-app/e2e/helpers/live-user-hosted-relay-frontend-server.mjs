@@ -80,7 +80,10 @@ const server = await createServer({
   configFile: path.join(appDir, "vite.cloud.config.ts"),
   plugins: [forwardedClientPlugin],
   server: {
-    host: "127.0.0.1",
+    // Dual-stack bind. The app is addressed through a front-door HOSTNAME
+    // (see the launcher's caller), and a browser and node may each resolve
+    // that name to either loopback family; binding `::` accepts both.
+    host: "::",
     port,
     strictPort: true,
   },

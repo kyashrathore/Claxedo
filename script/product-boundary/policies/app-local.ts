@@ -172,7 +172,13 @@ export const appLocal: Policy = {
   // `app/providers/global-sdk/route-event-scope.ts` is the runtime-events
   // lane's route-derived scope input, split out of the global-sdk provider;
   // one module, no package edge; the measured closure is 965.
-  ceilings: { modules: 965, packages: 38 },
+  // `app/providers/global-sdk/runtime-event-projection.ts` is what a frame off
+  // the runtime-events stream MEANS — the compat envelope, the OpenCode-shaped
+  // events it projects into, which lane may project them, and what a replay gap
+  // invalidates — split out of the global-sdk provider, which keeps the
+  // connections. Reviewed owner: the global-sdk provider itself, whose module
+  // this already was; one module, no package edge; the measured closure is 966.
+  ceilings: { modules: 966, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

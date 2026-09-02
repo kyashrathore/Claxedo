@@ -283,7 +283,11 @@ export const desktopRendererUnsigned: Policy = {
   // `app/providers/global-sdk/route-event-scope.ts` reaches this renderer
   // through the same global-sdk provider; one module, no package edge; the
   // measured closure is 1051.
-  ceilings: { modules: 1051, packages: 59 },
+  // `app/providers/global-sdk/runtime-event-projection.ts` reaches it the same
+  // way — the meaning half of the global-sdk provider, split from the half that
+  // owns the connections. Reviewed owner: the global-sdk provider; one module,
+  // no package edge; the measured closure is 1052.
+  ceilings: { modules: 1052, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

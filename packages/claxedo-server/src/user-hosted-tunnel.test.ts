@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
 const mocks = {
   sandboxManagerEnsure: vi.fn(async () => ({
@@ -154,6 +155,12 @@ describe("user-hosted Workspace Relay tunnel manager", () => {
       // workspace has no sandbox lease, so this is the configured default.
       region: "us-east",
       tokenProvider: expect.any(Function),
+      // The relay replays a remote caller's request onto this machine's own
+      // loopback server, whose relay-shaped surface is gated by
+      // `isLoopbackLocalRequest`. The caller's `Origin`/`Host` and the edge's
+      // forwarded-client headers describe someone else, so the one owner of
+      // that policy strips them before the replay.
+      localReplayHeaders: loopbackReplayHeaders,
       onEvent: expect.any(Function),
       pingIntervalMs: 15_000,
       reconnectIntervalMs: 1_000,
