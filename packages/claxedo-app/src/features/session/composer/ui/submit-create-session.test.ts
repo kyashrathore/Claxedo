@@ -339,6 +339,27 @@ describe("finalizeSubmitSessionTarget", () => {
     expect(navigations).toEqual([])
   })
 
+  test("never projects a session created in a user-hosted workspace: the machine serving it is its authority", () => {
+    const scheduled: Parameters<SubmitProjectionScheduler>[0][] = []
+
+    const result = finalizeSessionTarget({
+      target: { created: true },
+      draftId: "draft-1",
+      runtimeWorkspaceRef: { workspaceId: "ws_machine", kind: "user-hosted" },
+      harness: { id: "opencode" },
+      promoteSession: () => {},
+      scheduleProjectionPull: (input) => {
+        scheduled.push(input)
+        return undefined
+      },
+      setLayoutTabs: () => {},
+      navigate: () => {},
+    })
+
+    expect(scheduled).toEqual([])
+    expect(typeof result.handoffCreatedSession).toBe("function")
+  })
+
   test("does not upsert into the rail list during finalize (handoff owns the optimistic row)", () => {
     const workspaceKey = queryKeys.shell.sessionList("http://test.local", {
       scope: "workspace",

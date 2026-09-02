@@ -1,7 +1,7 @@
 import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import type { useClaxedoState } from "@/features/session/app-ports"
-import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
+import { scheduleSessionProjectionPull, sessionProjectionBacking } from "@/platform/runtime/agent/session-projection"
 import { invalidateSessionListQueries } from "@/features/session/data/query/session-list"
 import type {
   HarnessConfigPromoter,
@@ -273,16 +273,16 @@ export function finalizeSubmitSessionTarget(input: {
       model: input.model,
       variant: input.variant ?? null,
     })
-    const runtimeRef = sessionWorkspaceRuntimeRef({
+    const backing = sessionProjectionBacking(sessionWorkspaceRuntimeRef({
       directory: input.sessionDirectory,
       ...(sessionRef === undefined ? {} : { sessionRef }),
-    })
-    const projection = (input.scheduleProjectionPull ?? scheduleSessionProjectionPull)({
+    }))
+    const projection = backing && (input.scheduleProjectionPull ?? scheduleSessionProjectionPull)({
       action: "register",
       reason: "session-created",
-      workspaceId: runtimeRef?.workspaceId,
+      workspaceId: backing.workspaceId,
       sessionId: input.session.id,
-      idempotencyKey: `session-created:${runtimeRef?.workspaceId ?? ""}:${input.session.id}:${input.draftId ?? ""}`,
+      idempotencyKey: `session-created:${backing.workspaceId}:${input.session.id}:${input.draftId ?? ""}`,
     })
     if (projection) {
       void projection.then((registered) => {
