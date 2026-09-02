@@ -129,6 +129,7 @@ describe("embedded workspace runtime", () => {
     try {
       const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_private", project), { config: "skip" })
       const embeddedClaims = (actorId: string, actorName: string) => JSON.stringify({
+        principal_kind: "user",
         actor_id: actorId,
         actor_kind: "human",
         actor_public_id: actorId.replace("actor_", "usr_"),
