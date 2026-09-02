@@ -49,6 +49,7 @@ function createSubject(input?: {
   local?: boolean
   workspaceRuntime?: boolean
   workspaceKind?: "local" | "cloud" | "user-hosted" | null
+  resolvedKind?: "local" | "cloud" | "user-hosted"
   sessionConfig?: unknown
   sessionConfigs?: unknown[]
   statusBody?: unknown
@@ -71,6 +72,10 @@ function createSubject(input?: {
     runtime: {
       useLocalHarnessConfig: () => input?.local ?? true,
       workspaceKind: () => input?.workspaceKind,
+      workspace: async () => {
+        calls.push("resolve-workspace")
+        return input?.resolvedKind ? { kind: input.resolvedKind } : undefined
+      },
       harnessSessionFetch: () => async () => response(
         input?.sessionConfigs?.length
           ? input.sessionConfigs.shift()
@@ -142,6 +147,33 @@ describe("harness hydrator", () => {
       "seed:scope",
       "apply:claude-acp:sonnet",
     ])
+  })
+
+  test("a user-hosted draft the inventory has not described yet resolves its workspace and hydrates from the machine's status", async () => {
+    const subject = createSubject({
+      local: false,
+      workspaceRuntime: false,
+      workspaceKind: undefined,
+      resolvedKind: "user-hosted",
+      statusBody: { harness: { id: "claude", access: "native" }, activeHarness: { id: "claude", access: "native" }, activeType: "claude", status: "ready", ready: true },
+    })
+
+    await subject.hydrator.hydrate("scope", { directory: "workspace:5f39af3e-75c4-4392-baaf-574acbbf9db9", sessionId: "new" })
+
+    expect(subject.calls).toEqual([
+      "seed:scope",
+      "resolve-workspace",
+      "apply:claude-sdk:",
+    ])
+    expect(subject.cache.getSeen("scope")).toBeDefined()
+  })
+
+  test("a draft in a filesystem directory never resolves a workspace record", async () => {
+    const subject = createSubject({ local: false, workspaceRuntime: false, workspaceKind: undefined, resolvedKind: "user-hosted" })
+
+    await subject.hydrator.hydrate("scope", { directory: "/repo", sessionId: "new" })
+
+    expect(subject.calls).not.toContain("resolve-workspace")
   })
 
   test("does not hydrate remote workspace-runtime drafts through local harness status", async () => {

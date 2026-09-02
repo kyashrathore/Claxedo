@@ -156,7 +156,7 @@ export function createHarnessConfigStore() {
       void fetchConfigOptions(scope, type, input)
     },
     refresh: statusActions.refresh,
-    workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input),
+    workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? []),
     runtime: harnessRuntime,
     cache: createHarnessHydratorQueryCache(base),
   })
