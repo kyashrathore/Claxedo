@@ -56,6 +56,15 @@ import { SessionTable } from "@opencode-ai/core/session/sql"
 import { SessionReminders } from "./reminders"
 import { SessionTools } from "./tools"
 import { LLMEvent } from "@opencode-ai/llm"
+import { SessionGoal } from "./goal"
+import {
+  GOAL_PROMPT_TEXT,
+  goalContinuationPrompt,
+  goalEvaluationProgress,
+  goalEvaluatorRequest,
+  goalInitialPrompt,
+  parseGoalEvaluation,
+} from "./goal-protocol"
 
 // @ts-ignore
 globalThis.AI_SDK_LOG_WARNINGS = false
@@ -105,6 +114,22 @@ export interface Interface {
   readonly loop: (input: LoopInput) => Effect.Effect<SessionV1.WithParts>
   readonly shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
   readonly command: (input: CommandInput) => Effect.Effect<SessionV1.WithParts, Image.Error>
+  readonly startGoal: (input: { sessionID: SessionID; objective: string }) => Effect.Effect<
+    SessionGoal.Snapshot,
+    SessionGoal.Conflict | Session.NotFound
+  >
+  readonly resumeGoal: (sessionID: SessionID) => Effect.Effect<
+    SessionGoal.Snapshot,
+    SessionGoal.Conflict | SessionGoal.Missing | Session.NotFound
+  >
+  readonly getGoal: (sessionID: SessionID) => Effect.Effect<SessionGoal.Snapshot | null, Session.NotFound>
+  /**
+   * Relaunch execution for every Goal this instance left active when it stopped.
+   * `InstanceBootstrap` calls it once per instance so recovery does not depend on
+   * a client reading a session; `SessionGoal.restore` is the double-launch guard,
+   * so calling it again is a no-op for Goals already running.
+   */
+  readonly reconcileGoals: () => Effect.Effect<void>
   readonly resolvePromptParts: (template: string) => Effect.Effect<PromptInput["parts"]>
 }
 
@@ -140,6 +165,7 @@ const layer = Layer.effect(
     const events = yield* EventV2Bridge.Service
     const flags = yield* RuntimeFlags.Service
     const database = yield* Database.Service
+    const goals = yield* SessionGoal.Service
     const { db } = database
     const ops = Effect.fn("SessionPrompt.ops")(function* () {
       return {
@@ -1345,6 +1371,129 @@ const layer = Layer.effect(
       return yield* state.ensureRunning(input.sessionID, lastAssistant(input.sessionID), runLoop(input.sessionID))
     })
 
+    const goalWorkText = (message: SessionV1.WithParts) => message.parts
+      .flatMap((part) => part.type === "text" ? [part.text] : [])
+      .join("\n")
+      .trim()
+
+    const evaluateGoal = Effect.fn("SessionPrompt.evaluateGoal")(function* (input: {
+      sessionID: SessionID
+      objective: string
+      work: SessionV1.WithParts
+    }) {
+      if (input.work.info.role !== "assistant") throw new Error("Goal work produced no assistant result")
+      const worker = yield* agents.get(input.work.info.agent)
+      if (!worker) throw new Error(`Goal worker agent not found: ${input.work.info.agent}`)
+      const model = yield* getModel(input.work.info.providerID, input.work.info.modelID, input.sessionID)
+      const latestUser = yield* sessions.findMessage(input.sessionID, (message) => message.info.role === "user").pipe(Effect.orDie)
+      if (Option.isNone(latestUser) || latestUser.value.info.role !== "user") {
+        throw new Error("Goal evaluator found no user context")
+      }
+      const user = latestUser.value.info
+      const response = yield* llm
+        .stream({
+          agent: worker,
+          user,
+          system: [...GOAL_PROMPT_TEXT.evaluatorSystem],
+          tools: {},
+          toolChoice: "none",
+          retries: 0,
+          model,
+          sessionID: input.sessionID,
+          messages: [{
+            role: "user",
+            content: goalEvaluatorRequest({ objective: input.objective, work: goalWorkText(input.work) }),
+          }],
+        })
+        .pipe(
+          Stream.filter(LLMEvent.is.textDelta),
+          Stream.map((event) => event.text),
+          Stream.mkString,
+        )
+      return parseGoalEvaluation(response, "OpenCode")
+    })
+
+    const runGoal = Effect.fn("SessionPrompt.runGoal")(function* (run: SessionGoal.Run) {
+      while (yield* goals.canContinue(SessionID.make(run.goal.sessionId), run.generation)) {
+        const current = yield* goals.get(SessionID.make(run.goal.sessionId))
+        if (!current || current.status !== "active") return
+        const iteration = (current.iteration ?? 0) + 1
+        const work = yield* prompt({
+          sessionID: SessionID.make(current.sessionId),
+          parts: [{
+            type: "text",
+            text: iteration === 1
+              ? goalInitialPrompt(current.objective)
+              : goalContinuationPrompt({ objective: current.objective, reason: current.lastReason }),
+          }],
+        })
+        if (!(yield* goals.canContinue(SessionID.make(current.sessionId), run.generation))) return
+        const evaluation = yield* evaluateGoal({
+          sessionID: SessionID.make(current.sessionId),
+          objective: current.objective,
+          work,
+        })
+        const next = yield* goals.update({
+          sessionID: SessionID.make(current.sessionId),
+          generation: run.generation,
+          update: (goal) => ({ ...goal, ...goalEvaluationProgress({ evaluation, iteration }) }),
+        })
+        if (!next || next.status !== "active") return
+      }
+    })
+
+    const launchGoal = (run: SessionGoal.Run) => runGoal(run).pipe(
+      Effect.catchCause((cause) =>
+        goals.update({
+          sessionID: SessionID.make(run.goal.sessionId),
+          generation: run.generation,
+          update: (goal) => ({
+            ...goal,
+            status: "blocked",
+            updatedAt: Date.now(),
+            lastReason: Cause.pretty(cause),
+          }),
+        }).pipe(Effect.ignore),
+      ),
+      Effect.forkIn(scope, { startImmediately: true }),
+    )
+
+    const startGoal = Effect.fn("SessionPrompt.startGoal")(function* (input: {
+      sessionID: SessionID
+      objective: string
+    }) {
+      const run = yield* goals.start(input)
+      yield* launchGoal(run)
+      return run.goal
+    })
+
+    // Reading a Goal never starts one. Recovery is owned by reconcileGoals below,
+    // which runs at instance bootstrap, so an active Goal resumes whether or not
+    // anybody looks at the session.
+    const getGoal = Effect.fn("SessionPrompt.getGoal")(function* (sessionID: SessionID) {
+      return yield* goals.get(sessionID)
+    })
+
+    const reconcileGoals = Effect.fn("SessionPrompt.reconcileGoals")(function* () {
+      const sessionIDs = yield* goals.pending()
+      if (sessionIDs.length === 0) return
+      yield* Effect.logInfo("reconciling goals", { count: sessionIDs.length })
+      yield* Effect.forEach(
+        sessionIDs,
+        Effect.fnUntraced(function* (sessionID) {
+          const run = yield* goals.restore(sessionID).pipe(Effect.orElseSucceed(() => null))
+          if (run) yield* launchGoal(run)
+        }),
+        { discard: true },
+      )
+    })
+
+    const resumeGoal = Effect.fn("SessionPrompt.resumeGoal")(function* (sessionID: SessionID) {
+      const run = yield* goals.resume(sessionID)
+      yield* launchGoal(run)
+      return run.goal
+    })
+
     const shell: (input: ShellInput) => Effect.Effect<SessionV1.WithParts, Session.BusyError> = Effect.fn(
       "SessionPrompt.shell",
     )(function* (input: ShellInput) {
@@ -1358,6 +1507,40 @@ const layer = Layer.effect(
         command: input.command,
         agent: input.agent,
       })
+      if (input.command === Command.Default.GOAL) {
+        const objective = input.arguments.trim()
+        if (!objective) throw new NamedError.Unknown({ message: "Goal objective is required" })
+        const selectedAgent = input.agent ?? (yield* agents.defaultInfo()).name
+        const selectedModel = input.model ? Provider.parseModel(input.model) : yield* currentModel(input.sessionID)
+        const invocation = yield* prompt({
+          sessionID: input.sessionID,
+          messageID: input.messageID,
+          model: selectedModel,
+          agent: selectedAgent,
+          variant: input.variant,
+          noReply: true,
+          parts: [{ type: "text", text: `/goal ${objective}` }],
+        })
+        // A session that already owns a Goal is a recoverable user mistake, not a
+        // defect: surface it the way an unknown command is surfaced — a session
+        // error the client renders — and still return the invocation message.
+        yield* startGoal({ sessionID: input.sessionID, objective }).pipe(
+          Effect.catchTag("SessionGoal.Conflict", (conflict) =>
+            events.publish(Session.Event.Error, {
+              sessionID: input.sessionID,
+              error: new NamedError.Unknown({ message: conflict.message }).toObject(),
+            }),
+          ),
+          Effect.orDie,
+        )
+        yield* events.publish(Command.Event.Executed, {
+          name: input.command,
+          sessionID: input.sessionID,
+          arguments: input.arguments,
+          messageID: invocation.info.id,
+        })
+        return invocation
+      }
       const cmd = yield* commands.get(input.command)
       if (!cmd) {
         const available = (yield* commands.list()).map((c) => c.name)
@@ -1485,6 +1668,10 @@ const layer = Layer.effect(
       loop,
       shell,
       command,
+      startGoal,
+      resumeGoal,
+      getGoal,
+      reconcileGoals,
       resolvePromptParts,
     })
   }),
@@ -1619,6 +1806,7 @@ export const node = LayerNode.make({
     SessionRunState.node,
     SessionRevert.node,
     SessionSummary.node,
+    SessionGoal.node,
     SystemPrompt.node,
     LLM.node,
     EventV2Bridge.node,

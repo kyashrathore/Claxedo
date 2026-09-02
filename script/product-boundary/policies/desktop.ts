@@ -68,7 +68,12 @@ export const desktopMainComposition: Policy = {
   // does when the account changes (verdicts, not reachability): one module.
   // `host-connector/local-workspace-description.ts` — the machine's own description
   // of a shared workspace, read from the daemon at share time: one module.
-  ceilings: { modules: 85, packages: 24 },
+  // +2 `main/dev-identity.ts` and its electron-free policy half
+  // `main/dev-identity-policy.ts` — the one owner of a linked worktree's
+  // per-instance app name, icon tint and userData suffix, reached from
+  // `main/index.ts` and `main/windows.ts`. Electron and node:fs/path only, so
+  // no package edge: 87/24.
+  ceilings: { modules: 87, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -185,7 +190,6 @@ export const desktopRendererUnsigned: Policy = {
     `${DESKTOP}/renderer/index.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
-  permittedOpaqueImports: [`${APP}/platform/extensions/user-extensions.ts -> import(url)`],
 
   control: {
     minModules: 700,
@@ -237,20 +241,27 @@ export const desktopRendererUnsigned: Policy = {
   // and WorkGraph contribution roots, bootstrap-owner route, and canonical
   // private-session reservation client while retiring the monolithic hosted
   // contribution loader: net +5 modules. `@claxedo/service-contract` is the
-  // one dependency-neutral package addition. Exact closure: 1028/59.
+  // one dependency-neutral package addition.
   // 2026-09-01: +2 `app/shell-revealed.ts` (the one window-once splash flag
   // both shell boundaries consult) and the unshare path through
-  // `platform/remote-access` (machine-wide enrollment share toggle). 1030/59.
+  // `platform/remote-access` (machine-wide enrollment share toggle).
   // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`,
   // the same reconciler app-local took. Enabling remote access on the desktop
   // now publishes every local workspace the machine holds rather than the ones
   // a user ticked, and this is the module that keeps the two sets equal.
-  // Reviewed owner: the workspaces data domain (see app-local.ts). 1031/59.
+  // Reviewed owner: the workspaces data domain (see app-local.ts).
   // Session open/switch instrumentation (`platform/performance/session-perf.ts`
   // and its screen-side owner `features/session/ui/session-open-perf.ts`)
-  // adds two modules and no package edge: 1033/59.
-  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the signed inventory from the shared Query cache: one module, no package edge — 1034/59.
-  ceilings: { modules: 1034, packages: 59 },
+  // adds two modules and no package edge.
+  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the
+  // signed inventory from the shared Query cache: one module, no package edge.
+  // Removing the retired local UI extension view, registry, and loader
+  // subtracts three modules.
+  // The Goal-mode merge adds the same session Goal owners app-local reviews
+  // (composer intent/submission/draft, authority cache/query/controller,
+  // runtime client/ingress, dock, Stop fallback + shared JSON reader):
+  // thirteen modules.
+  ceilings: { modules: 1043, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -287,7 +298,6 @@ export const desktopHostedContribution: Policy = {
     `${DESKTOP}/main`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
-  permittedOpaqueImports: [`${APP}/platform/extensions/user-extensions.ts -> import(url)`],
   control: {
     minModules: 4,
     requiredModules: [
@@ -300,7 +310,9 @@ export const desktopHostedContribution: Policy = {
   },
   // Optional service renderers now have independent catalog-driven roots. This
   // activation entry owns only desktop machine remote access and its shared
-  // contract, so the reviewed closure deliberately shrinks from 322/40 to 4/0.
+  // contract, so the reviewed closure deliberately shrinks from 322/40 to 4/0:
+  // the Goal-mode session owners the monolithic loader used to drag in are
+  // reached from their own service roots, not from this activation entry.
   ceilings: { modules: 4, packages: 0 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",

@@ -4,11 +4,12 @@ import {
   AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
   AGENT_RUNTIME_EVENT_TYPES,
   agentRuntimeEvent,
+  isRuntimeGoalStatus,
 } from "./agent-runtime-event"
 
 describe("AgentRuntimeEvent contract", () => {
   test("exposes an explicit contract version and event kind registry", () => {
-    expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(6)
+    expect(AGENT_RUNTIME_EVENT_CONTRACT_VERSION).toBe(7)
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("text-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("user-message-delta")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("tool-status")
@@ -25,9 +26,20 @@ describe("AgentRuntimeEvent contract", () => {
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("rate-limit")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("mcp-server-status")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("subagent-updated")
+    expect(AGENT_RUNTIME_EVENT_TYPES).toContain("goal-updated")
+    expect(AGENT_RUNTIME_EVENT_TYPES).toContain("goal-cleared")
     expect(AGENT_RUNTIME_EVENT_TYPES).toContain("diagnostic")
     expect(new Set(AGENT_RUNTIME_EVENT_TYPES).size).toBe(AGENT_RUNTIME_EVENT_TYPES.length)
     expect(Object.values(AGENT_RUNTIME_EVENT_FACTORY_TYPES).sort()).toEqual([...AGENT_RUNTIME_EVENT_TYPES].sort())
+  })
+
+  test("recognizes only normalized Goal statuses", () => {
+    for (const status of ["active", "paused", "blocked", "limited", "complete"] as const) {
+      expect(isRuntimeGoalStatus(status)).toBe(true)
+    }
+    expect(isRuntimeGoalStatus("usageLimited")).toBe(false)
+    expect(isRuntimeGoalStatus("budgetLimited")).toBe(false)
+    expect(isRuntimeGoalStatus("done")).toBe(false)
   })
 
   test("constructs representative events through typed factories", () => {
@@ -78,6 +90,32 @@ describe("AgentRuntimeEvent contract", () => {
       toolCallRole: "spawn",
       childSessionId: "session-child-1",
       transcript: { kind: "live", ref: "transcript-1" },
+    })
+    expect(agentRuntimeEvent.goalUpdated({
+      sessionId: "session-1",
+      goal: {
+        sessionId: "session-1",
+        objective: "Ship when verification passes",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 2,
+        tokenBudget: 10_000,
+      },
+    })).toEqual({
+      type: "goal-updated",
+      sessionId: "session-1",
+      goal: {
+        sessionId: "session-1",
+        objective: "Ship when verification passes",
+        status: "active",
+        createdAt: 1,
+        updatedAt: 2,
+        tokenBudget: 10_000,
+      },
+    })
+    expect(agentRuntimeEvent.goalCleared({ sessionId: "session-1" })).toEqual({
+      type: "goal-cleared",
+      sessionId: "session-1",
     })
   })
 

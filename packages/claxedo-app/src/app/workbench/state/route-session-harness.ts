@@ -58,13 +58,10 @@ function string(input: unknown) {
 function runtimeHarnessType(input: Record<string, unknown> | undefined) {
   const id = string(input?.id)
   if (!id) return
-  // An operator-configured ACP connection: its access-qualified key is the
-  // app-side identity (`pickHarness` recognizes it before binary sniffing).
-  // The fixed `claude-acp`/`codex-acp`/`cursor-acp` scheme this used to
-  // special-case here was retired in favor of the open `acp:<slug>` form —
-  // every ACP-bound id, including the three former built-ins, now takes this
-  // path.
-  if (input?.access === "acp") return `acp:${id}`
-  if (input?.access === "sdk" && (id === "claude" || id === "cursor")) return `${id}-sdk`
-  return id
+  // Canonical runtime identity records are `{ id, access }` (`access` is
+  // "acp" | "native"). `pickHarness` owns that translation — ACP records map
+  // to their access-qualified `acp:<slug>` key, native records to the
+  // built-in harness ids. Anything unrecognized yields undefined so the
+  // caller's fallback chain can try the next config shape.
+  return pickHarness(id, null, string(input?.access))
 }

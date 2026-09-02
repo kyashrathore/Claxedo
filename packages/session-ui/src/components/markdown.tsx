@@ -607,6 +607,59 @@ function markInlineCode(root: HTMLDivElement) {
   }
 }
 
+/**
+ * Per-URL image fetch outcomes, shared across every markdown render in the
+ * session. Streaming replaces markdown blocks repeatedly, and a bare <img>
+ * re-fetches on every replacement: the browser paints alt text, then the
+ * broken-image glyph, then repeats on the next block swap — a flickering
+ * layout shift for any URL that never loads. Rendering a stable chip until a
+ * URL proves loadable makes the failure state a single fixed box, and the
+ * outcome map makes the proof one probe per URL instead of one per render.
+ */
+const imageOutcomes = new Map<string, "ok" | "error">()
+const imageProbes = new Map<string, Set<(ok: boolean) => void>>()
+
+function probeImage(src: string, onSettle: (ok: boolean) => void) {
+  const waiters = imageProbes.get(src)
+  if (waiters) {
+    waiters.add(onSettle)
+    return
+  }
+  const settled = new Set([onSettle])
+  imageProbes.set(src, settled)
+  const probe = new Image()
+  const settle = (ok: boolean) => {
+    imageOutcomes.set(src, ok ? "ok" : "error")
+    imageProbes.delete(src)
+    for (const waiter of settled) waiter(ok)
+  }
+  probe.onload = () => settle(true)
+  probe.onerror = () => settle(false)
+  probe.src = src
+}
+
+function imageFallbackChip(img: HTMLImageElement): HTMLElement {
+  const chip = document.createElement("span")
+  chip.dataset.component = "markdown-image-fallback"
+  chip.textContent = img.getAttribute("alt") || img.getAttribute("src") || "image"
+  return chip
+}
+
+export function stabilizeImages(root: HTMLDivElement) {
+  for (const img of Array.from(root.querySelectorAll("img"))) {
+    if (!(img instanceof HTMLImageElement)) continue
+    const src = img.getAttribute("src") ?? ""
+    if (!src || src.startsWith("data:")) continue
+    if (imageOutcomes.get(src) === "ok") continue
+    const chip = imageFallbackChip(img)
+    img.replaceWith(chip)
+    if (imageOutcomes.get(src) === "error") continue
+    probeImage(src, (ok) => {
+      if (ok && chip.isConnected) chip.replaceWith(img)
+    })
+  }
+}
+
 function decorate(root: HTMLDivElement, labels: CopyLabels) {
   const blocks = Array.from(root.querySelectorAll("pre"))
   for (const block of blocks) {
@@ -618,6 +671,7 @@ function decorate(root: HTMLDivElement, labels: CopyLabels) {
   markInlineCode(root)
   markCodeLinks(root)
   decorateTables(root, labels)
+  stabilizeImages(root)
   renderMermaidBlocks(root)
 }
 

@@ -239,7 +239,7 @@ export const useSessionCommands = (args: SessionCommandContext) => {
         // The draft composer mounts asynchronously after the route change, so
         // retry across frames until it appears (falling back to the current
         // page's composer if the destination never mounts).
-        focusComposerWhenReady({ fallback: () => args.focusInput() })
+        focusComposerWhenReady({ sessionId: "new", fallback: () => args.focusInput() })
       },
     }),
   ])

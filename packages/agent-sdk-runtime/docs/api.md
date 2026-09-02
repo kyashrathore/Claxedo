@@ -27,6 +27,25 @@ Creates the public resource-namespace runtime:
 - `runtime.config`
 - `runtime.health`
 
+Session-scoped mutations are serialized per session. `sessions.update`, both
+config update namespaces, harness handoff, and `sessions.delete` revalidate the
+session inside that boundary. Missing sessions and configs reject explicitly;
+the runtime does not recreate them. Optional surfaces such as todos, commands,
+permissions, and questions reject with a not-found or unsupported error instead
+of returning a fabricated empty result.
+
+The runtime store is authoritative for session inventory and `SessionConfig`.
+Adapters apply provider or process effects and return the accepted value; the
+runtime persists it once. `runtime.sessions.updateConfig()` and
+`runtime.config.update()` share the same implementation. Changing `harness`
+uses the conversation-handoff transaction rather than an ordinary config write.
+
+Each event subscription has a fixed buffer. Overflow yields one
+`runtime.subscription_overflow` notice and closes the subscription. Reconnect
+and reload the authoritative session/message/config projections. When
+`eventDelivery` is configured, every subscription must provide `identity`; the
+runtime fails closed when identity is absent or the policy terminates or rejects.
+
 ### Store Subpaths
 
 Status: Stable / Integration
@@ -49,6 +68,7 @@ Kind: Functions
 - `cursor`
 - `opencode`
 - `pi`
+- `acp(id, options)` for an explicit operator-configured ACP connection
 
 Use factories with `createAgentRuntime()` instead of constructing adapter
 classes directly.
@@ -67,6 +87,8 @@ integration.
 Exports include:
 
 - `AgentHarnessAdapter`
+- `AgentHandoffSessionOptions`
+- `AgentPreparedHandoffSession`
 - `AcpHarnessAdapter`
 - `ClaudeHarnessAdapter`
 - `CodexHarnessAdapter`
@@ -77,6 +99,12 @@ Exports include:
 - `AgentRuntimeStoreWithRecovery`
 
 This is a real public API surface, but it is not the recommended starting point.
+
+Custom adapters that support harness switching implement `createHandoffSession`
+as a prepare step. It returns an idempotent `rollback()` that releases only the
+new target resources. After a successful commit, `releaseHandoffSource` may
+release the old provider-native session. A target that already owns the same
+logical session id must reject preparation rather than delete that session.
 
 ## Prompt And Config Types
 

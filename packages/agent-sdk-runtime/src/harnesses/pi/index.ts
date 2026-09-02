@@ -1,4 +1,7 @@
 import { randomUUID } from "node:crypto"
+import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"
+import { goalContinuationPrompt, goalEvaluationProgress, goalInitialPrompt } from "../shared/goal-protocol"
+import { errorMessage } from "../shared/sdk-runtime-values"
 import {
   buildAssistantMessage,
   buildUserMessage,
@@ -9,18 +12,19 @@ import {
 } from "../../compat-events"
 import {
   harnessCapabilities,
+  goalCapabilities,
+  GOAL_ACTIONS,
   type HarnessCapabilities,
   type HarnessCapabilityContext,
 } from "../../capabilities"
 import {
-  type AgentAgentRow,
-  type AgentCommandRow,
-  type AgentConfigOptionRow,
-  type AgentMessageRow,
-  type AgentPermissionRow,
-  type AgentQuestionRow,
+  type AgentAgent,
+  type AgentCommand,
+  type AgentConfigOption,
+  type AgentMessage,
+  type AgentPermission,
+  type AgentQuestion,
   type AgentRuntimeStreamEvent,
-  type AgentSessionRow,
   type PromptInput,
   type RuntimeDirectory,
   type SessionConfig,
@@ -28,6 +32,8 @@ import {
 } from "../../index"
 import type {
   AbortResult,
+  AgentGoalMutationResult,
+  AgentGoalResource,
   AgentHarnessAdapter,
   AgentHarnessAdapterProcessOptions,
 } from "../../adapter-contract"
@@ -36,41 +42,26 @@ import type { RunStore, SessionEnv, SessionEnvFactory, SessionEnvFactoryInput } 
 import { createMemoryRunStore } from "../../session-env"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { firstTurnErrorData } from "../../first-turn-error"
-import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
-import type { Agent, AgentTool } from "@mariozechner/pi-agent-core"
+import type { AgentRuntimeEvent, RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { Agent } from "@mariozechner/pi-agent-core"
+import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import type { Usage as PiUsage } from "@mariozechner/pi-ai"
 import {
   createPiAgent,
+  evaluatePiGoal,
   PiModelResolutionError,
   refreshPiAgent,
   runPiModelTurn,
+  type PiModelBackend,
   sessionEnvBashTool,
   type PiModelBackendResolver,
+  type PiGoalEvaluator,
 } from "./model-backend"
 import {
   observeAgentProcess,
   type AgentProcessObserver,
-  type AgentProcessObserverHandle,
 } from "../../process-observer"
-
-type PiSession = {
-  id: string
-  directory?: RuntimeDirectory
-  parentID?: string
-  title: string | null
-  created: number
-  updated: number
-  env: SessionEnv
-  config: SessionConfig
-  messages: AgentMessageRow[]
-  active?: AbortController
-  /** Live pi Agent for model-backed turns; lazily created at first model turn. */
-  agent?: Agent
-  /** Backend extra tools captured at Agent creation; preserved across placement swaps. */
-  agentExtraTools?: AgentTool[]
-  processOwnerId: string
-  processObservation: AgentProcessObserverHandle
-}
+import { defaultPiSessionConfig, piSessionRow as row, type PiSession } from "./session-state"
 
 export type PiAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createEnv?: SessionEnvFactory
@@ -81,12 +72,17 @@ export type PiAdapterOptions = AgentHarnessAdapterProcessOptions & {
   runStore?: RunStore<AgentRuntimeStreamEvent>
   eventHub?: RuntimeEventHub
   /**
-   * Optional model backend (real pi turns). Resolved lazily per turn so
-   * credential rotation is picked up. When absent or resolving to undefined,
-   * non-exec prompts keep the historical echo behavior.
+   * Optional model backend for Pi turns. Resolution happens per turn so
+   * credential rotation is visible immediately.
    */
   modelBackend?: PiModelBackendResolver
   toolExtensionProvider?: PiToolExtensionProvider
+  /** Durable owner used when Pi is composed inside the shared runtime. */
+  goalStore?: AgentRuntimeStoreWithRecovery
+  createStore?: (storeRoot?: string) => AgentRuntimeStoreWithRecovery
+  storeRoot?: string
+  /** Test/host seam; production defaults to a fresh no-tools Pi evaluator. */
+  evaluateGoal?: PiGoalEvaluator
 }
 
 export type PiToolExtensionProvider = {
@@ -118,26 +114,6 @@ function notImplemented(feature: string) {
   return new Error(`${feature} is not implemented for Pi central sessions yet`)
 }
 
-function row(session: PiSession): AgentSessionRow {
-  return {
-    id: session.id,
-    ...(session.parentID ? { parentID: session.parentID } : {}),
-    title: session.title,
-    slug: session.id,
-    version: "central",
-    time: { created: session.created, updated: session.updated },
-  }
-}
-
-function defaultConfig(): SessionConfig {
-  return {
-    harness: { id: "pi", access: "native" },
-    model: { providerID: "pi", modelID: "virtual" },
-    variant: null,
-    agent: null,
-  }
-}
-
 function textPart(input: { sessionId: string; messageId: string; text: string; suffix: string }): CompatPart {
   return {
     id: `${input.messageId}-${input.suffix}`,
@@ -148,11 +124,71 @@ function textPart(input: { sessionId: string; messageId: string; text: string; s
   }
 }
 
-function putMessage(session: PiSession, message: AgentMessageRow) {
+function putMessage(session: PiSession, message: AgentMessage) {
   session.messages = [
     ...session.messages.filter((item) => item.info.id !== message.info.id),
     message,
   ]
+}
+
+function piUserMessage(sessionId: string, input: PromptInput): {
+  info: ReturnType<typeof buildUserMessage>
+  parts: CompatPart[]
+} | undefined {
+  if (!input.userMessageId) return
+  const prompt = promptText(input.parts)
+  return {
+    info: buildUserMessage({
+      id: input.userMessageId,
+      sessionID: sessionId,
+      agent: input.agent,
+      model: input.model,
+      ...(input.author ? { author: input.author } : {}),
+      ...(input.tools ? { tools: input.tools } : {}),
+      ...(input.format ? { format: input.format } : {}),
+      ...(input.system ? { system: input.system } : {}),
+      ...(input.variant ? { variant: input.variant } : {}),
+    }),
+    parts: prompt ? [textPart({ sessionId, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
+  }
+}
+
+function completedPiMessage(input: {
+  sessionId: string
+  assistant: Parameters<typeof buildAssistantMessage>[0]
+  assistantText: string
+  assistantError?: string
+  assistantUsage?: PiUsage
+}): {
+  info: ReturnType<typeof buildAssistantMessage>
+  parts: CompatPart[]
+} {
+  const completed = Date.now()
+  const info = {
+    ...buildAssistantMessage({
+      ...input.assistant,
+      completed,
+      ...(input.assistantError
+        ? { error: { name: "UnknownError", data: firstTurnErrorData(input.assistantError) } }
+        : { finish: "stop" }),
+    }),
+    ...(input.assistantUsage
+      ? {
+          tokens: {
+            input: input.assistantUsage.input,
+            output: input.assistantUsage.output,
+            reasoning: 0,
+            cache: { read: input.assistantUsage.cacheRead, write: input.assistantUsage.cacheWrite },
+          },
+        }
+      : {}),
+  }
+  return {
+    info,
+    parts: input.assistantText
+      ? [textPart({ sessionId: input.sessionId, messageId: input.assistant.id, text: input.assistantText, suffix: "text" })]
+      : [],
+  }
 }
 
 function runtimeEvent(input: AgentRuntimeStreamEvent): input is AgentRuntimeEvent {
@@ -168,6 +204,13 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   private modelBackend: PiModelBackendResolver | undefined
   private toolExtensionProvider: PiToolExtensionProvider | undefined
   private processObserver: AgentProcessObserver | undefined
+  private goalStore: AgentRuntimeStoreWithRecovery | undefined
+  private ownsGoalStore = false
+  private evaluateGoal: PiGoalEvaluator
+  private goalGeneration = new Map<string, number>()
+
+  readonly goals: AgentGoalResource
+  private readonly goalPublisher: GoalPublisher
 
   constructor(options: PiAdapterOptions = {}) {
     this.createEnv = options.createEnv ?? (() => createVirtualSessionEnv())
@@ -177,6 +220,217 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     this.modelBackend = options.modelBackend
     this.toolExtensionProvider = options.toolExtensionProvider
     this.processObserver = options.processObserver
+    this.goalStore = options.goalStore ?? options.createStore?.(options.storeRoot)
+    this.ownsGoalStore = !options.goalStore && !!this.goalStore
+    this.evaluateGoal = options.evaluateGoal ?? evaluatePiGoal
+    this.goalPublisher = createGoalPublisher(this.eventHub)
+    this.goals = this.goalResource()
+  }
+
+  private goalResource(): AgentGoalResource {
+    const unavailable = (message: string) => ({
+      ok: false as const,
+      status: "unavailable" as const,
+      message,
+    })
+    return {
+      readCapabilities: (sessionId) => {
+        const session = this.sessions.get(sessionId)
+        const selected = session?.config.model
+        const available = !!session && !!this.modelBackend && !!selected
+          && !(selected.providerID === "pi" && selected.modelID === "virtual")
+        return goalCapabilities({
+          implemented: true,
+          available,
+          ...(!available ? {
+            unavailableReason: !session
+              ? `Session ${sessionId} not found`
+              : !this.modelBackend
+                ? "Pi Goal requires a model backend"
+                : "Pi Goal requires a selected model",
+          } : {}),
+          actions: GOAL_ACTIONS,
+          recovery: "blocked",
+          optionalFields: ["iteration", "lastReason"],
+        })
+      },
+      read: async (sessionId) => this.readGoal(sessionId),
+      start: async (sessionId, input) => {
+        const session = this.sessions.get(sessionId)
+        if (!session) return { ok: false, status: "not_found", message: `Session ${sessionId} not found` }
+        const current = this.readGoal(sessionId)
+        if (current && current.status !== "complete") {
+          return { ok: false, status: "conflict", message: "A Goal already exists for this session" }
+        }
+        let backend
+        try {
+          backend = await this.resolveModelBackend(session)
+        } catch (cause) {
+          return unavailable(errorMessage(cause))
+        }
+        if (!backend) return unavailable("Pi Goal requires a selected model and available credentials")
+        const now = Date.now()
+        const goal: RuntimeGoalSnapshot = {
+          sessionId,
+          objective: input.objective,
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+          iteration: 0,
+        }
+        this.publishGoal(session, goal)
+        this.launchGoal(session, backend)
+        return { ok: true, goal }
+      },
+      pause: async (sessionId) => this.pauseGoal(sessionId),
+      stop: async (sessionId) => this.pauseGoal(sessionId),
+      resume: async (sessionId) => {
+        const session = this.sessions.get(sessionId)
+        const current = this.readGoal(sessionId)
+        if (!session || !current) return { ok: false, status: "not_found", message: "No Goal exists" }
+        if (current.status !== "paused" && current.status !== "blocked") {
+          return { ok: false, status: "conflict", message: `Goal is ${current.status}, not paused` }
+        }
+        let backend
+        try {
+          backend = await this.resolveModelBackend(session)
+        } catch (cause) {
+          return unavailable(errorMessage(cause))
+        }
+        if (!backend) return unavailable("Pi Goal requires a selected model and available credentials")
+        const goal = { ...current, status: "active" as const, updatedAt: Date.now(), lastReason: "Resumed" }
+        this.publishGoal(session, goal)
+        this.launchGoal(session, backend)
+        return { ok: true, goal }
+      },
+      delete: async (sessionId) => {
+        const session = this.sessions.get(sessionId)
+        if (!session || !this.readGoal(sessionId)) {
+          return { ok: false, status: "not_found", message: "No Goal exists" }
+        }
+        await this.disableGoalContinuation(session)
+        this.publishGoal(session, null)
+        return { ok: true, goal: null }
+      },
+    }
+  }
+
+  private async resolveModelBackend(session: PiSession) {
+    const model = session.config.model
+    if (!this.modelBackend || !model || (model.providerID === "pi" && model.modelID === "virtual")) return undefined
+    const backend = await this.modelBackend({ sessionId: session.id, model })
+    if (!backend) return undefined
+    if (backend.model.provider !== model.providerID || backend.model.id !== model.modelID) {
+      throw new PiModelResolutionError(
+        "unsupported_model",
+        `Pi selected ${model.providerID}/${model.modelID}, but the backend resolved ${backend.model.provider}/${backend.model.id}`,
+        model,
+      )
+    }
+    return backend
+  }
+
+  private readGoal(sessionId: string): RuntimeGoalSnapshot | null {
+    const session = this.sessions.get(sessionId)
+    const current = session?.goal ?? this.goalStore?.getGoal?.(sessionId) ?? null
+    if (!session || !current) return current
+    if (!session.goalRun && current.status === "active") {
+      const blocked = {
+        ...current,
+        status: "blocked" as const,
+        updatedAt: Date.now(),
+        lastReason: "Pi conversation state is not recoverable after process restart",
+      }
+      this.publishGoal(session, blocked)
+      return blocked
+    }
+    return current
+  }
+
+  private publishGoal(session: PiSession, goal: RuntimeGoalSnapshot | null) {
+    this.goalPublisher.publish({
+      // '' is the canonical central scope (see bindSession): a Session id is
+      // never a directory and would make central Pi sessions' goal events
+      // invisible to central-scope subscribers.
+      directory: session.directory ?? "",
+      sessionId: session.id,
+      agentSessionId: session.id,
+      goal,
+      applyState: (next) => {
+        session.goal = next
+        this.goalStore?.setGoal?.(session.id, next)
+      },
+    })
+  }
+
+  private disableGoalContinuation(session: PiSession) {
+    const run = session.goalRun
+    this.goalGeneration.set(session.id, (this.goalGeneration.get(session.id) ?? 0) + 1)
+    session.agent?.clearFollowUpQueue()
+    session.active?.abort()
+    session.agent?.abort()
+    return run?.done ?? Promise.resolve()
+  }
+
+  private async pauseGoal(sessionId: string): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>> {
+    const session = this.sessions.get(sessionId)
+    const current = this.readGoal(sessionId)
+    if (!session || !current) return { ok: false, status: "not_found", message: "No Goal exists" }
+    if (current.status === "complete") {
+      return { ok: false, status: "conflict", message: "A completed Goal cannot be paused" }
+    }
+    const paused = { ...current, status: "paused" as const, updatedAt: Date.now(), lastReason: "Paused" }
+    // Publish the disabled state before interrupting provider work. The awaited
+    // turn_end evaluator observes paused and cannot enqueue another follow-up.
+    this.publishGoal(session, paused)
+    // Do not admit Resume until the aborted turn has released the shared Pi
+    // Agent and session.active slot. Otherwise the old turn's finally block can
+    // clear the new turn's controller, leaving a resumed Goal active at
+    // Iteration 0 forever.
+    await this.disableGoalContinuation(session)
+    return { ok: true, goal: paused }
+  }
+
+  private launchGoal(session: PiSession, backend: PiModelBackend) {
+    const generation = (this.goalGeneration.get(session.id) ?? 0) + 1
+    this.goalGeneration.set(session.id, generation)
+    const goalRun = { generation, backend, done: Promise.resolve() }
+    session.goalRun = goalRun
+    const config = session.config
+    const input: PromptInput = {
+      parts: [{ type: "text", text: goalInitialPrompt(session.goal?.objective ?? "") }],
+      userMessageId: randomUUID(),
+      assistantMessageId: randomUUID(),
+      agent: config.agent ?? "pi",
+      model: config.model ?? { providerID: "pi", modelID: "virtual" },
+      ...(config.variant ? { variant: config.variant } : {}),
+    }
+    goalRun.done = (async () => {
+      let runError: string | undefined
+      for await (const event of this.sendMessage(session.id, input, session.directory)) {
+        if (event.type === "error") runError = event.error
+      }
+      const current = this.readGoal(session.id)
+      if (this.goalGeneration.get(session.id) === generation && current?.status === "active") {
+        this.publishGoal(session, {
+          ...current,
+          status: "blocked",
+          updatedAt: Date.now(),
+          lastReason: runError ?? "Pi Goal ended without a completion evaluation",
+        })
+      }
+    })().catch((cause) => {
+      const current = this.readGoal(session.id)
+      if (this.goalGeneration.get(session.id) !== generation || current?.status !== "active") return
+      this.publishGoal(session, {
+        ...current,
+        status: "blocked",
+        updatedAt: Date.now(),
+        lastReason: errorMessage(cause),
+      })
+    }).finally(() => {
+      if (session.goalRun === goalRun) session.goalRun = undefined
+    })
   }
 
   /** Resolve the exact selected model and (re)build the session's live Agent. */
@@ -193,7 +447,9 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       }
       return undefined
     }
-    const backend = await this.modelBackend({ sessionId: session.id, ...(model ? { model } : {}) })
+    const backend = model
+      ? await this.resolveModelBackend(session)
+      : await this.modelBackend({ sessionId: session.id })
     if (!backend) {
       if (model) {
         throw new PiModelResolutionError(
@@ -203,13 +459,6 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         )
       }
       return undefined
-    }
-    if (model && (backend.model.provider !== model.providerID || backend.model.id !== model.modelID)) {
-      throw new PiModelResolutionError(
-        "unsupported_model",
-        `Pi selected ${model.providerID}/${model.modelID}, but the backend resolved ${backend.model.provider}/${backend.model.id}`,
-        model,
-      )
     }
     if (session.agent) {
       refreshPiAgent(session.agent, backend)
@@ -236,8 +485,24 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async createHandoffSession(directory: RuntimeDirectory, title: string | undefined, id: string) {
-    if (this.sessions.has(id)) await this.deleteSession(id, directory)
-    return { ...await this.bindSession({ id, title, directory }), ownerKey: null }
+    if (this.sessions.has(id)) {
+      throw new Error(`Cannot prepare Pi handoff: target session ${id} already exists`)
+    }
+    const created = await this.bindSession({ id, title, directory })
+    let rolledBack = false
+    return {
+      ...created,
+      ownerKey: null,
+      rollback: async () => {
+        if (rolledBack) return
+        await this.deleteSession(created.id, directory)
+        rolledBack = true
+      },
+    }
+  }
+
+  async releaseHandoffSource(id: string, _agentSessionId: string, _ownerKey: string | null, directory: RuntimeDirectory) {
+    await this.deleteSession(id, directory)
   }
 
   async bindSession(input: { id: string; parentID?: string; title?: string | null; directory?: RuntimeDirectory; placement?: PiSessionPlacement }) {
@@ -271,6 +536,17 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       sessionId: input.id,
     })
     processObservation.update({ lifecycle: "ready" })
+    this.goalStore?.bindSession({
+      sessionId: input.id,
+      ...(input.parentID ? { parentSessionId: input.parentID } : {}),
+      // The runtime store uses the empty directory as the canonical central
+      // scope. A Session id is never a directory and would make central Pi
+      // sessions disappear from list(undefined).
+      directory: placement.directory ?? input.directory ?? "",
+      title: input.title ?? undefined,
+      agentSessionId: input.id,
+    })
+    const persistedGoal = this.goalStore?.getGoal?.(input.id) ?? null
     this.sessions.set(input.id, {
       id: input.id,
       ...(placement.directory ? { directory: placement.directory } : input.directory ? { directory: input.directory } : {}),
@@ -288,10 +564,11 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         },
         this.processObserver,
       ),
-      config: defaultConfig(),
+      config: defaultPiSessionConfig(),
       messages: [],
       processOwnerId,
       processObservation,
+      goal: persistedGoal,
     })
     return { id: input.id }
   }
@@ -320,17 +597,21 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     const session = this.sessions.get(id)
     if (!session) return null
     session.title = updates.title ?? session.title
+    if (updates.time?.archived !== undefined) {
+      session.archived = updates.time.archived
+      session.active?.abort()
+    }
     session.updated = Date.now()
     return row(session)
   }
 
   async getSessionConfig(id: string, _directory: RuntimeDirectory) {
-    return this.sessions.get(id)?.config ?? defaultConfig()
+    return this.sessions.get(id)?.config ?? defaultPiSessionConfig()
   }
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, _directory: RuntimeDirectory) {
     const session = this.sessions.get(id)
-    if (!session) return defaultConfig()
+    if (!session) return defaultPiSessionConfig()
     if (update.model !== undefined && session.active) {
       throw new Error("Start a new Pi session to use another model")
     }
@@ -347,16 +628,17 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
 
   async deleteSession(id: string, _directory: RuntimeDirectory) {
     const session = this.sessions.get(id)
+    if (session) await this.disableGoalContinuation(session)
     await session?.env.dispose?.()
     session?.processObservation.exit({ reason: "disposed" })
     this.sessions.delete(id)
+    this.goalStore?.deleteSession(id)
   }
 
   /**
-   * Swap the session's tool placement MID-CONVERSATION (Demo B): dispose the
-   * old SessionEnv, create one for the new placement, and re-point the live
-   * Agent's tools at it. Conversation history is untouched. Refused while a
-   * turn is active — a running tool call must never have its env ripped out.
+   * Replace a session's tool environment and point the live agent at the new
+   * placement without changing conversation history. Active turns prevent the
+   * replacement so running tools retain their environment.
    */
   async updateSessionPlacement(id: string, placement: PiSessionPlacement): Promise<{ ok: true }> {
     const session = this.sessions.get(id)
@@ -413,6 +695,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       unrevert: false,
       configOptions: false,
       subagents,
+      goals: true,
     })
   }
 
@@ -450,22 +733,8 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       ...(input.variant ? { variant: input.variant } : {}),
     }
     try {
-      if (input.userMessageId) {
-        const prompt = promptText(input.parts)
-        const user = {
-          info: buildUserMessage({
-          id: input.userMessageId,
-          sessionID: id,
-          agent: input.agent,
-          model: input.model,
-          ...(input.author ? { author: input.author } : {}),
-          ...(input.tools ? { tools: input.tools } : {}),
-          ...(input.format ? { format: input.format } : {}),
-          ...(input.system ? { system: input.system } : {}),
-          ...(input.variant ? { variant: input.variant } : {}),
-          }),
-          parts: prompt ? [textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
-        }
+      const user = piUserMessage(id, input)
+      if (user) {
         putMessage(session, user)
         yield emit(messageUpdated(user.info))
         if (user.parts[0]) yield emit(messagePartUpdated(user.parts[0]))
@@ -488,7 +757,56 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         if (agent) {
           // Real pi model turn: LLM via the resolved backend (e.g. the
           // openai-codex subscription provider), tools via the SessionEnv.
-          const turn = runPiModelTurn({ agent, prompt: executable, signal: abort.signal })
+          const goalRun = session.goalRun
+          const turn = runPiModelTurn({
+            agent,
+            prompt: executable,
+            signal: abort.signal,
+            ...(goalRun ? {
+              onTurnEnd: async ({ work, hasToolResults, signal }) => {
+                if (hasToolResults) return
+                const current = this.readGoal(session.id)
+                if (
+                  !current
+                  || current.status !== "active"
+                  || session.goalRun?.generation !== goalRun.generation
+                  || this.goalGeneration.get(session.id) !== goalRun.generation
+                ) return
+                let evaluation
+                try {
+                  evaluation = await this.evaluateGoal({
+                    backend: goalRun.backend,
+                    objective: current.objective,
+                    work,
+                    signal,
+                  })
+                } catch (cause) {
+                  const latest = this.readGoal(session.id)
+                  if (latest?.status !== "active" || session.goalRun?.generation !== goalRun.generation) return
+                  this.publishGoal(session, {
+                    ...latest,
+                    status: "blocked",
+                    updatedAt: Date.now(),
+                    lastReason: errorMessage(cause),
+                  })
+                  return
+                }
+                const latest = this.readGoal(session.id)
+                if (latest?.status !== "active" || session.goalRun?.generation !== goalRun.generation) return
+                const next: RuntimeGoalSnapshot = {
+                  ...latest,
+                  ...goalEvaluationProgress({ evaluation, iteration: (latest.iteration ?? 0) + 1 }),
+                }
+                this.publishGoal(session, next)
+                if (evaluation.met) return
+                agent.followUp({
+                  role: "user",
+                  content: goalContinuationPrompt({ objective: latest.objective, reason: evaluation.reason }),
+                  timestamp: Date.now(),
+                })
+              },
+            } : {}),
+          })
           while (true) {
             const next = await turn.next()
             if (next.done) {
@@ -504,28 +822,10 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         }
       }
     } catch (cause) {
-      assistantError = cause instanceof Error ? cause.message : String(cause)
+      assistantError = errorMessage(cause)
     } finally {
       session.active = undefined
       session.updated = Date.now()
-    }
-    const completed = Date.now()
-    if (input.userMessageId) {
-      const prompt = promptText(input.parts)
-      putMessage(session, {
-        info: buildUserMessage({
-          id: input.userMessageId,
-          sessionID: id,
-          agent: input.agent,
-          model: input.model,
-          ...(input.author ? { author: input.author } : {}),
-          ...(input.tools ? { tools: input.tools } : {}),
-          ...(input.format ? { format: input.format } : {}),
-          ...(input.system ? { system: input.system } : {}),
-          ...(input.variant ? { variant: input.variant } : {}),
-        }),
-        parts: prompt ? [textPart({ sessionId: id, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
-      })
     }
     if (assistantUsage) {
       yield emit({
@@ -544,32 +844,15 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
         },
       })
     }
-    const info = {
-      ...buildAssistantMessage({
-        ...assistant,
-        completed,
-        ...(assistantError
-          ? { error: { name: "UnknownError", data: firstTurnErrorData(assistantError) } }
-          : { finish: "stop" }),
-      }),
-      ...(assistantUsage
-        ? {
-            tokens: {
-              input: assistantUsage.input,
-              output: assistantUsage.output,
-              reasoning: 0,
-              cache: { read: assistantUsage.cacheRead, write: assistantUsage.cacheWrite },
-            },
-          }
-        : {}),
-    }
-    putMessage(session, {
-      info,
-      parts: assistantText
-        ? [textPart({ sessionId: id, messageId: input.assistantMessageId, text: assistantText, suffix: "text" })]
-        : [],
+    const completedMessage = completedPiMessage({
+      sessionId: id,
+      assistant,
+      assistantText,
+      ...(assistantError ? { assistantError } : {}),
+      ...(assistantUsage ? { assistantUsage } : {}),
     })
-    yield emit(messageUpdated(info))
+    putMessage(session, completedMessage)
+    yield emit(messageUpdated(completedMessage.info))
     if (assistantError) {
       yield emit({ type: "session-status", status: "error" })
       yield emit({ type: "error", error: assistantError })
@@ -607,11 +890,11 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     throw notImplemented("Commands")
   }
 
-  async listCommands(): Promise<AgentCommandRow[]> {
+  async listCommands(): Promise<AgentCommand[]> {
     return []
   }
 
-  async listAgents(): Promise<AgentAgentRow[]> {
+  async listAgents(): Promise<AgentAgent[]> {
     return []
   }
 
@@ -624,7 +907,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
    * `createVirtualSessionEnv` — so there is nothing to gate and no request to
    * raise. Both members stay because the port requires them.
    */
-  async listPermissions(_directory?: RuntimeDirectory): Promise<AgentPermissionRow[]> {
+  async listPermissions(_directory?: RuntimeDirectory): Promise<AgentPermission[]> {
     return []
   }
 
@@ -634,7 +917,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     _directory?: RuntimeDirectory,
   ) {}
 
-  async listQuestions(): Promise<AgentQuestionRow[]> {
+  async listQuestions(): Promise<AgentQuestion[]> {
     return []
   }
 
@@ -644,16 +927,18 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
 
   async applyConfig() {}
 
-  async probeConfigOptions(): Promise<AgentConfigOptionRow[]> {
+  async probeConfigOptions(): Promise<AgentConfigOption[]> {
     throw new Error("pi does not expose harness config options")
   }
 
   dispose() {
     for (const session of this.sessions.values()) {
+      this.disableGoalContinuation(session)
       session.processObservation.exit({ reason: "disposed" })
       void session.env.dispose?.()
     }
     this.sessions.clear()
+    if (this.ownsGoalStore) this.goalStore?.close?.()
   }
 }
 

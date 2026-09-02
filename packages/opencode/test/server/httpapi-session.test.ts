@@ -24,6 +24,7 @@ import * as HttpSessionError from "../../src/server/routes/instance/httpapi/hand
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
 import { Session } from "@/session/session"
+import { SessionGoal } from "@/session/goal"
 import { MessageID, PartID, SessionID, type SessionID as SessionIDType } from "../../src/session/schema"
 import { Database } from "@opencode-ai/core/database/database"
 import { SessionInputTable, SessionMessageTable, SessionTable } from "@opencode-ai/core/session/sql"
@@ -235,6 +236,32 @@ afterEach(async () => {
 })
 
 describe("session HttpApi", () => {
+  it.instance("serves the first-party Goal capability and durable read resources", () =>
+    Effect.gen(function* () {
+      const test = yield* TestInstance
+      const headers = { "x-opencode-directory": test.directory }
+      const session = yield* createSession({ title: "Goal API" })
+
+      const capabilities = yield* requestJson<{
+        implemented: boolean
+        available: boolean
+        actions: string[]
+        recovery: string
+        optionalFields: string[]
+      }>(pathFor(SessionPaths.goalCapabilities, { sessionID: session.id }), { headers })
+      expect(capabilities).toEqual({
+        implemented: true,
+        available: true,
+        actions: ["pause", "resume", "delete"],
+        recovery: "reconcile",
+        optionalFields: ["iteration", "lastReason"],
+      })
+
+      const goal = yield* requestJson<unknown>(pathFor(SessionPaths.goal, { sessionID: session.id }), { headers })
+      expect(goal).toBeNull()
+    }),
+  )
+
   it.effect("maps busy sessions to public session busy errors", () =>
     Effect.gen(function* () {
       const sessionID = SessionID.descending()
@@ -424,6 +451,47 @@ describe("session HttpApi", () => {
         cwd: sessionDirectory,
         root: sessionDirectory,
       })
+    }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node))),
+  )
+
+  it.live("continues an OpenCode Goal until a fresh no-tools evaluator verifies completion", () =>
+    Effect.gen(function* () {
+      const llm = yield* TestLLMServer
+      yield* llm.text("first work")
+      yield* llm.text('{"met":false,"reason":"missing verification"}')
+      yield* llm.text("second work with verification")
+      yield* llm.text('{"met":true,"reason":"verification present"}')
+
+      const config = testProviderConfig(llm.url)
+      const directory = yield* tmpdirScoped({ git: true, config })
+      const session = yield* createSession({ title: "Goal execution" }).pipe(provideInstanceEffect(directory))
+      const endpoint = `${pathFor(SessionPaths.goal, { sessionID: session.id })}?directory=${encodeURIComponent(directory)}`
+      const started = yield* requestJson<SessionGoal.Snapshot>(endpoint, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objective: "Ship verified work" }),
+      })
+      expect(started).toMatchObject({ status: "active", iteration: 0 })
+
+      const completed = yield* pollWithTimeout(
+        requestJson<SessionGoal.Snapshot>(endpoint).pipe(
+          Effect.map((goal) => goal.status === "complete" ? goal : undefined),
+        ),
+        "OpenCode Goal did not complete",
+        "10 seconds",
+      )
+      expect(completed).toMatchObject({
+        status: "complete",
+        iteration: 2,
+        lastReason: "verification present",
+      })
+
+      const hits = yield* llm.hits
+      const evaluatorHits = hits.filter((hit) => JSON.stringify(hit.body).includes("independent completion evaluator"))
+      expect(evaluatorHits).toHaveLength(2)
+      for (const hit of evaluatorHits) {
+        expect(hit.body.tools).toBeUndefined()
+      }
     }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(AppNodeBuilder.build(CrossSpawnSpawner.node))),
   )
 

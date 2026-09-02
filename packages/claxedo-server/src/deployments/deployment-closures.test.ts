@@ -82,7 +82,10 @@ const ENTRIES = [
   // the project route`; `feat(hosted): harness health for a user-hosted
   // workspace, and the usage surface`; `fix(session-list): list a user-
   // hosted workspace's sessions from its host`). No new package.
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 150, packages: 28 },
+  // +4 modules (150 -> 154): the already-reachable workspace SessionEnv facade
+  // now delegates to focused factory, protocol, runtime-env, and admission
+  // owners. No package edge was added.
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 154, packages: 28 },
   // The usage authority and dev's host-enrollment extraction add one runtime
   // module each relative to their common base; neither adds a Worker package.
   // +1 module (109 -> 110): `hosts/workgraph/settlement-rearm.ts`, the single
@@ -140,7 +143,9 @@ const ENTRIES = [
   // full `RemoteAccessService` (`self-hosted-node/remote-access-service.ts`,
   // which also enrolls this machine) and its own Convex-free usage ledger.
   // No new package.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 151, packages: 35 },
+  // +4 modules (151 -> 155): the same workspace SessionEnv split into focused
+  // factory, protocol, runtime-env, and admission owners. No new package.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 155, packages: 35 },
 ] as const
 
 /** The two cloud compositions. Neither runs a workspace on its own box. */

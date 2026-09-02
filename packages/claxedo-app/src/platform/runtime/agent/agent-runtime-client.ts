@@ -1,13 +1,4 @@
-import type {
-  Message,
-  OutputFormat,
-  Part,
-  SessionPromptResponse,
-  TextPartInput,
-  FilePartInput,
-  AgentPartInput,
-  Todo,
-} from "@opencode-ai/sdk/v2/client"
+import type { SessionPromptResponse, Todo } from "@opencode-ai/sdk/v2/client"
 import { apiBearerToken, authFetch } from "@/platform/api/api"
 import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
 import { runtimeRequestError } from "./agent-runtime-request-error"
@@ -16,7 +7,15 @@ import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/s
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
-import type { RuntimeSession, SessionMessagePageRequest } from "@/platform/runtime/session"
+import type {
+  AgentRuntimeMessageRow,
+  AgentRuntimeMessagesPage,
+  AgentRuntimePermissionMode,
+  AgentRuntimePermissionModeState,
+  AgentRuntimePromptPayload,
+  RuntimeSession,
+  SessionMessagePageRequest,
+} from "@/platform/runtime/session"
 import {
   controlSessionListUrl,
   workspaceResolveUrl,
@@ -29,6 +28,8 @@ import {
   shouldUseRuntimeSessionTransport as decideRuntimeSessionTransport,
 } from "@/platform/runtime/agent/placement-table"
 import { centralRuntimePath } from "./central-runtime-path"
+import { createAgentRuntimeGoalClient } from "./agent-runtime-goal-client"
+import { readRuntimeJson as readJson } from "./agent-runtime-json"
 import {
   agentRuntimeBaseUrl,
   agentRuntimeEventsUrl as claxedoEventsUrl,
@@ -42,71 +43,19 @@ import {
 import { requestName, sessionPerf } from "@/platform/performance/session-perf"
 export { centralRuntimePath } from "./central-runtime-path"
 export type { AgentRuntimeDirectory } from "./agent-runtime-urls"
-/**
- * One permission mode as the harness describes it.
- *
- * Declared here rather than imported from `@claxedo/agent-sdk-runtime` because
- * this is a WIRE shape — what the route actually serialises — and the app must
- * keep parsing it even when the runtime package moves ahead of the client.
- * `packages/claxedo-app/src/features/session/permission/modes.test.ts` pins it
- * against the runtime's own declaration so the two cannot drift unnoticed.
- */
-export type AgentRuntimePermissionMode = {
-  id: string
-  name: string
-  description?: string
-  level?: "ask" | "auto" | "full"
-}
-export type AgentRuntimePermissionModeState = {
-  modes: AgentRuntimePermissionMode[]
-  currentModeId?: string
-  unsupported?: string
-  appliesFrom: "next-turn" | "next-session"
-}
-
-export type AgentRuntimeMessageRow = {
-  info: Message
-  parts?: Part[]
-}
-
-export type AgentRuntimeMessagesPage = {
-  data?: AgentRuntimeMessageRow[]
-  maxEventOrdinal: number
-  response: Response
-}
-
-/**
- * A workspace directory as the runtime transport addresses it.
- * Exported so callers can name the concept instead of writing a bare string
- * parameter. Directory-string-shape routing is this codebase's largest single
- * piece of debt, and the architecture ratchet counts every new raw string
- * directory parameter; naming the type is the direction out of that debt, not a
- * way around the count.
- * (Written without the raw declaration spelled out, because the ratchet matches
- * on text and would count this comment as another offender.)
- */
-export type AgentRuntimePromptPayload = {
-  sessionID: string
-  directory: AgentRuntimeDirectory
-  agent: string
-  model: { providerID: string; modelID: string }
-  messageID: string
-  parts: Array<(TextPartInput | FilePartInput | AgentPartInput) & { id: string }>
-  variant?: string
-  system?: string
-  format?: OutputFormat
-  /**
-   * The permission mode this turn should run under, applied by the runtime
-   * BEFORE the prompt reaches the harness.
-   *
-   * On the prompt rather than a separate call because of the FIRST turn: the
-   * session is created by this very message, so a mode chosen in the composer
-   * beforehand has no session to be written to yet. Sending it here is the only
-   * way a user's choice can govern the opening turn instead of arriving after
-   * the agent has already acted.
-   */
-  permissionMode?: string
-}
+export type {
+  AgentRuntimeGoalAction,
+  AgentRuntimeGoalCapabilities,
+  AgentRuntimeGoalMutationResult,
+  AgentRuntimeGoalOptionalField,
+} from "./agent-runtime-goal-client"
+export type {
+  AgentRuntimeMessageRow,
+  AgentRuntimeMessagesPage,
+  AgentRuntimePermissionMode,
+  AgentRuntimePermissionModeState,
+  AgentRuntimePromptPayload,
+} from "@/platform/runtime/session"
 
 type ControlSessionRow = RuntimeSession & {
   session_id?: string
@@ -143,15 +92,11 @@ export const DEFAULT_AGENT_RUNTIME_CAPABILITIES: SessionTransportCapabilities = 
   revert: true,
   unrevert: true,
   configOptions: false,
+  goals: true,
 }
 
 export function agentRuntimeWorkspaceTargetQueryKey(input: { serverUrl?: string; directory: AgentRuntimeDirectory }) {
   return ["shell", "agent-runtime-workspace-target", normalizedAgentRuntimeServerUrl(input.serverUrl), input.directory] as const
-}
-
-async function readJson<T>(res: Response): Promise<T> {
-  if (res.ok) return await res.json()
-  throw await runtimeRequestError(res)
 }
 
 function ordinal(data: unknown, response: Response) {
@@ -559,17 +504,24 @@ export function createAgentRuntimeClient(options: {
       })
       return await readJson<unknown>(res)
     },
-    async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string; signal?: AbortSignal }) {
-      if (!shouldUseRuntimeSessionTransport(input)) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
-      if (!input.sessionID) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
-      const res = await fetchRuntimeSession({
-        sessionID: input.sessionID,
-        directory: input.directory,
-        suffix: "/capabilities",
-        init: { headers: { Accept: "application/json" }, signal: input.signal },
-      })
+    async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string; harness?: string; signal?: AbortSignal }) {
+      if (!input.sessionID && !input.harness) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
+      if (input.sessionID && !shouldUseRuntimeSessionTransport(input)) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
+      const res = input.sessionID
+        ? await fetchRuntimeSession({
+          sessionID: input.sessionID,
+          directory: input.directory,
+          suffix: "/capabilities",
+          init: { headers: { Accept: "application/json" }, signal: input.signal },
+        })
+        : await fetchRuntimePath({
+          directory: input.directory,
+          path: `/session/capabilities?directory=${encodeURIComponent(input.directory)}&harness=${encodeURIComponent(input.harness!)}`,
+          init: { headers: { Accept: "application/json" }, signal: input.signal },
+        })
       return await readJson<SessionTransportCapabilities>(res)
     },
+    ...createAgentRuntimeGoalClient(fetchRuntimeSession),
     async getMessages(input: {
       directory: AgentRuntimeDirectory
       sessionID: string

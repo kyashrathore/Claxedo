@@ -1,4 +1,7 @@
 import type { Accessor } from "solid-js"
+import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
+import type { createHarnessSubmitController } from "@/features/session/harness/controller"
+import { composerHarnessId, isComposerHarnessMode, type ComposerMode } from "../mode"
 
 export type PromptComposerEditMode = "normal" | "shell"
 
@@ -7,6 +10,7 @@ export type PromptModeCommand = {
   title: string
   category: string
   keybind: string
+  slash?: string
   disabled: boolean
   onSelect: VoidFunction
 }
@@ -19,12 +23,16 @@ export function registerPromptModeCommands(input: {
   mode: Accessor<PromptComposerEditMode>
   pick: VoidFunction
   setMode: (mode: PromptComposerEditMode) => void
+  /** Goal entry-point gate: unknown capabilities count as selectable — `armGoal` resolves the truth. */
+  goalSelectable: Accessor<boolean>
+  armGoal: VoidFunction
   labels: {
     attachFile: string
     fileCategory: string
     shellMode: string
     normalMode: string
     sessionCategory: string
+    goal: string
   }
 }) {
   input.register("prompt-input", () => [
@@ -35,6 +43,15 @@ export function registerPromptModeCommands(input: {
       keybind: "mod+u",
       disabled: input.mode() !== "normal",
       onSelect: input.pick,
+    },
+    {
+      id: "prompt.goal",
+      title: input.labels.goal,
+      category: input.labels.sessionCategory,
+      keybind: "",
+      slash: "goal",
+      disabled: input.mode() !== "normal" || !input.goalSelectable(),
+      onSelect: input.armGoal,
     },
     {
       id: "prompt.mode.shell",
@@ -53,4 +70,29 @@ export function registerPromptModeCommands(input: {
       onSelect: () => input.setMode("normal"),
     },
   ])
+}
+
+/** The composer's harness-selection reads: one derivation for mode, type, ref, and display name. */
+export function createSubmitHarnessSelection(input: {
+  composerMode: () => ComposerMode
+  harnessController: Pick<ReturnType<typeof createHarnessSubmitController>, "isHarnessMode" | "harness">
+}) {
+  const selectedHarnessMode = (scope: string) => {
+    const mode = input.composerMode()
+    if (mode.kind === "session") return isComposerHarnessMode(mode)
+    return input.harnessController.isHarnessMode(scope) || isComposerHarnessMode(mode)
+  }
+  const selectedHarnessType = (scope: string) => {
+    const mode = input.composerMode()
+    if (mode.kind === "session") return composerHarnessId(mode)
+    const harness = input.harnessController.harness(scope)
+    return harness === "opencode" ? composerHarnessId(mode) : harness
+  }
+  const selectedHarnessRef = (scope: string) => {
+    const id = pickHarness(selectedHarnessType(scope))
+    return id && id !== "opencode" ? { id } : undefined
+  }
+  const selectedHarnessDisplayName = (scope: string) =>
+    harnessProfile(pickHarness(selectedHarnessType(scope)) ?? "opencode").displayName
+  return { selectedHarnessMode, selectedHarnessType, selectedHarnessRef, selectedHarnessDisplayName }
 }

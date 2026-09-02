@@ -134,6 +134,7 @@ function acpFixture(): AgentHarnessAdapter {
         unrevert: false,
         configOptions: false,
         subagents: false,
+        goals: false,
       }
     },
     async *sendMessage(sessionId, input): AsyncIterable<AgentRuntimeStreamEvent> {

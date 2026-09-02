@@ -17,7 +17,7 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     const cases = [
       { harness: "pi" as const, model: { providerID: "openai-codex", modelID: "gpt-5.5", variant: "high" } },
-      { harness: "codex-app-server" as const, model: { providerID: "codex-app-server", modelID: "gpt-5.5" } },
+      { harness: "acp:codex" as const, model: { providerID: "acp:codex", modelID: "gpt-5.5" } },
       { harness: "opencode" as const, model: { providerID: "anthropic", modelID: "claude-opus-4" } },
     ]
 

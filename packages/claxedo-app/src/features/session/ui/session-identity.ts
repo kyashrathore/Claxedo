@@ -45,10 +45,13 @@ export function resolveSessionIdentity(input: {
  * still receive old directory-shaped inbound links, but no current producer
  * writes those links; they must never authorize signed workspace transport.
  */
-export function signedRouteSessionWorkspaceId(pathname: string) {
+export function signedRouteSessionWorkspaceId(
+  pathname: string,
+  projects?: Parameters<typeof sessionWorkspaceRuntimeRef>[0]["projects"],
+) {
   const route = parseShellRoute(pathname)
   if (route.kind !== "workspace-session") return undefined
-  return sessionWorkspaceRuntimeRef({ directory: route.workspaceId })?.workspaceId
+  return sessionWorkspaceRuntimeRef({ directory: route.workspaceId, projects })?.workspaceId
 }
 
 /**

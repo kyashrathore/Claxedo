@@ -77,12 +77,13 @@ export const localServer: Policy = {
   // in-process embedded prompts (`claxedo.author` without managed authority).
   // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + `-routes.ts` — the
   // serving half of remote access (one relay connection for the assigned∩acked
-  // set, pushed from Electron main). Reviewed owner: workspace domain. 60/21.
+  // set, pushed from Electron main). Reviewed owner: workspace domain.
   // 2026-09-02: +1 `workspace/user-hosted-surface.ts` — what a relayed request
   // may reach on this machine for its workspace (deny/root/workspace verdict),
   // imported only by `user-hosted-serving.ts`; no new package. Reviewed owner:
-  // workspace domain. 61/21.
-  ceilings: { modules: 61, packages: 21 },
+  // workspace domain.
+  // Removing the retired local user-extension route subtracts one module.
+  ceilings: { modules: 60, packages: 21 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",

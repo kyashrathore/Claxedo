@@ -52,10 +52,9 @@ const namesForbiddenPackage = (ids: readonly unknown[]) =>
  *      artifact is checked directly by `scripts/check-local-bundle-identity.ts`,
  *      because the source-graph guard cannot see either case.
  *
- * The default `dev`/`build` scripts deliberately still point at the hosted
- * config. The Pages workflow and the self-hosted Docker static build both
- * invoke them, so switching the default before cloud-app owns those callers
- * would deploy the local UI to a hosted surface.
+ * The default `dev`/`build` scripts still point at the hosted config. Pages
+ * and the self-hosted Docker static build invoke them, so switching the
+ * default would deploy the local UI to a hosted surface.
  */
 export default defineConfig((env) => {
   const base = (typeof cloud === "function" ? cloud(env as never) : cloud) as UserConfig

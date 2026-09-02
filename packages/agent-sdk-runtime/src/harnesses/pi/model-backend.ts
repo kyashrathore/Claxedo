@@ -11,11 +11,12 @@
  * The backend is resolved lazily per turn so credential refresh/rotation is
  * picked up without rebinding sessions.
  */
-import { Agent, type AgentEvent, type AgentTool, type StreamFn } from "@mariozechner/pi-agent-core"
+import { Agent, type AgentEvent, type AgentMessage, type AgentTool, type StreamFn } from "@mariozechner/pi-agent-core"
 import { getModel, type Api, type Model, type Usage } from "@mariozechner/pi-ai"
 import { Type } from "@sinclair/typebox"
 import type { SessionEnv } from "../../session-env"
 import type { AgentRuntimeStreamEvent, PromptModel } from "../../index"
+import { GOAL_PROMPT_TEXT, goalEvaluatorRequest, parseGoalEvaluation } from "../shared/goal-protocol"
 
 export type PiModelBackend = {
   /** Resolved pi-ai model, e.g. `getModel("openai-codex", "gpt-5.1-codex-mini")`. */
@@ -221,6 +222,63 @@ export type PiModelTurnResult = {
   usage?: Usage
 }
 
+export type PiGoalEvaluation = {
+  met: boolean
+  reason: string
+}
+
+export type PiGoalEvaluatorInput = {
+  backend: PiModelBackend
+  objective: string
+  work: string
+  signal: AbortSignal
+}
+
+export type PiGoalEvaluator = (input: PiGoalEvaluatorInput) => Promise<PiGoalEvaluation>
+
+function agentMessageText(message: AgentMessage): string {
+  if (!message || typeof message !== "object" || !("content" in message)) return ""
+  const content = message.content
+  if (typeof content === "string") return content
+  if (!Array.isArray(content)) return ""
+  return content.flatMap((part) => {
+    if (!part || typeof part !== "object") return []
+    return "text" in part && typeof part.text === "string" ? [part.text] : []
+  }).join("\n").trim()
+}
+
+/**
+ * Independent Goal completion boundary. A fresh Agent using the selected
+ * provider/model receives no tools and sees only the objective plus the latest
+ * work result. The worker's own claim is therefore evidence, never authority.
+ */
+export async function evaluatePiGoal(input: PiGoalEvaluatorInput): Promise<PiGoalEvaluation> {
+  const evaluator = new Agent({
+    initialState: {
+      systemPrompt: GOAL_PROMPT_TEXT.evaluatorSystem.join(" "),
+      model: input.backend.model,
+      tools: [],
+    },
+    getApiKey: input.backend.getApiKey,
+    ...(input.backend.streamFn ? { streamFn: input.backend.streamFn } : {}),
+  })
+  let response = ""
+  const unsubscribe = evaluator.subscribe((event) => {
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+      response += event.assistantMessageEvent.delta
+    }
+  })
+  const onAbort = () => evaluator.abort()
+  input.signal.addEventListener("abort", onAbort, { once: true })
+  try {
+    await evaluator.prompt(goalEvaluatorRequest({ objective: input.objective, work: input.work }))
+  } finally {
+    unsubscribe()
+    input.signal.removeEventListener("abort", onAbort)
+  }
+  return parseGoalEvaluation(response, "Pi")
+}
+
 /**
  * Run one model turn on the session's Agent, yielding runtime stream events as
  * they arrive. The generator's RETURN value carries the final text/error for
@@ -230,6 +288,11 @@ export async function* runPiModelTurn(input: {
   agent: Agent
   prompt: string
   signal: AbortSignal
+  onTurnEnd?: (input: {
+    work: string
+    hasToolResults: boolean
+    signal: AbortSignal
+  }) => Promise<void> | void
 }): AsyncGenerator<AgentRuntimeStreamEvent, PiModelTurnResult> {
   const { agent, prompt, signal } = input
   const queue: AgentRuntimeStreamEvent[] = []
@@ -242,12 +305,19 @@ export async function* runPiModelTurn(input: {
     queue.push(...events)
     notify?.()
   }
-  const unsubscribe = agent.subscribe((event) => {
+  const unsubscribe = agent.subscribe(async (event) => {
     const mapped = mapAgentEvent(event)
     for (const item of mapped) {
       if (item.type === "text-delta") text += item.delta
     }
     push(mapped)
+    if (event.type === "turn_end" && event.message.role === "assistant" && input.onTurnEnd) {
+      await input.onTurnEnd({
+        work: agentMessageText(event.message),
+        hasToolResults: event.toolResults.length > 0,
+        signal: input.signal,
+      })
+    }
   })
   const onAbort = () => agent.abort()
   signal.addEventListener("abort", onAbort, { once: true })

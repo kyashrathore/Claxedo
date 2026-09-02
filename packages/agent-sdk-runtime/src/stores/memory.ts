@@ -9,6 +9,7 @@ import {
   type CompatEvent,
 } from "../compat-events"
 import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
 import type { AgentTurnOutcome, PromptInput, SessionConfig, SessionConfigUpdate } from "../index"
@@ -45,6 +46,7 @@ type SessionRow = {
     fencingToken?: number
   }
   lastTurn?: AgentTurnOutcome
+  goal?: RuntimeGoalSnapshot | null
 }
 
 type MessageRow = {
@@ -71,18 +73,29 @@ export type MemoryRuntimeStoreSnapshot = {
   }>
 }
 
+/** Targeted state used by durable stores without serializing unrelated sessions. */
+export type MemoryRuntimeSessionPersistenceState = {
+  session: SessionRow | null
+  config: SessionConfig | null
+  messages: MessageRow[]
+  todos: Array<{ content: string; status: string; priority: string }>
+  recoveryError: string | null
+  seq: number | null
+  subagents: MemoryRuntimeStoreSnapshot["subagents"]
+}
+
 /** @internal */
 export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
-  private sessions = new Map<string, SessionRow>()
-  private configs = new Map<string, SessionConfig>()
-  private messages = new Map<string, MessageRow[]>()
-  private permissions = new Map<string, Map<string, PermissionRow>>()
-  private questions = new Map<string, Map<string, QuestionRow>>()
-  private todos = new Map<string, Array<{ content: string; status: string; priority: string }>>()
-  private recoveryErrors = new Map<string, string>()
-  private seq = new Map<string, number>()
+  protected sessions = new Map<string, SessionRow>()
+  protected configs = new Map<string, SessionConfig>()
+  protected messages = new Map<string, MessageRow[]>()
+  protected permissions = new Map<string, Map<string, PermissionRow>>()
+  protected questions = new Map<string, Map<string, QuestionRow>>()
+  protected todos = new Map<string, Array<{ content: string; status: string; priority: string }>>()
+  protected recoveryErrors = new Map<string, string>()
+  protected seq = new Map<string, number>()
   private subagentAdmission = createMemorySubagentAdmissionStore()
-  private subagents: MemoryRuntimeStoreSnapshot["subagents"] = []
+  protected subagents: MemoryRuntimeStoreSnapshot["subagents"] = []
   private turnLeases = new Map<string, string>()
   private nextTurnLease = 0
 
@@ -117,6 +130,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       recoveryError: prev?.recoveryError ?? null,
       activeTurn: prev?.activeTurn,
       lastTurn: prev?.lastTurn,
+      goal: prev?.goal ?? null,
     })
     this.afterChange()
   }
@@ -183,6 +197,17 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   getAgentSessionId(id: string) {
     return this.sessions.get(id)?.agentSessionId ?? null
+  }
+
+  getGoal(id: string) {
+    return this.sessions.get(id)?.goal ?? null
+  }
+
+  setGoal(id: string, goal: RuntimeGoalSnapshot | null) {
+    const session = this.sessions.get(id)
+    if (!session) return
+    this.sessions.set(id, { ...session, goal })
+    this.afterChange()
   }
 
   acquireTurnLease(sessionId: string) {
@@ -290,11 +315,11 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   finishTurn(input: AgentRuntimeTurnFinishInput) {
     const prev = this.sessions.get(input.sessionId)
-    if (!prev?.activeTurn) return
+    if (!prev?.activeTurn) return { events: [] }
     if (input.fencingToken !== undefined && input.fencingToken !== prev.activeTurn.fencingToken) {
       throw new AgentRuntimeStaleTurnError(input.sessionId)
     }
-    if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return
+    if (input.assistantMessageId && prev.activeTurn.assistantMessageId !== input.assistantMessageId) return { events: [] }
     const assistantMessageId = input.assistantMessageId ?? prev.activeTurn.assistantMessageId
     const status = input.outcome.status === "failed" ? "error" : null
     const events: CompatEvent[] = []
@@ -371,6 +396,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     parentSessionId: string
     observation: SubagentObservation
     allocateKey: () => string
+    allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation {
     const existing = this.subagents.find((row) =>
       row.parentSessionId === input.parentSessionId &&
@@ -380,7 +406,14 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     if (!existing) {
       this.subagents.push({
         parentSessionId: input.parentSessionId,
-        observation: { ...input.observation, subagentKey: admitted.event.subagentKey },
+        // Record the EFFECTIVE observation — subagent key and any child
+        // session the admission layer resolved or allocated — so
+        // hydrateSubagents replays the same bindings this admit produced.
+        observation: {
+          ...input.observation,
+          subagentKey: admitted.event.subagentKey,
+          ...(admitted.event.childSessionId ? { childSessionId: admitted.event.childSessionId } : {}),
+        },
         published: false,
       })
       this.afterChange()
@@ -490,6 +523,34 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   close() {}
 
+  /** @internal */
+  readPersistenceState(sessionId: string): MemoryRuntimeSessionPersistenceState {
+    return {
+      session: this.sessions.get(sessionId) ?? null,
+      config: this.configs.get(sessionId) ?? null,
+      messages: this.messages.get(sessionId) ?? [],
+      todos: this.todos.get(sessionId) ?? [],
+      recoveryError: this.recoveryErrors.get(sessionId) ?? null,
+      seq: this.seq.get(sessionId) ?? null,
+      subagents: this.subagents.filter((row) => row.parentSessionId === sessionId),
+    }
+  }
+
+  /** @internal */
+  readDirectoryInteractions(directory: string) {
+    return {
+      permissions: [...(this.permissions.get(directory)?.values() ?? [])],
+      questions: [...(this.questions.get(directory)?.values() ?? [])],
+    }
+  }
+
+  /** @internal */
+  listChildSessionIds(parentSessionId: string): string[] {
+    return [...this.sessions.values()]
+      .filter((session) => session.parentID === parentSessionId)
+      .map((session) => session.id)
+  }
+
   exportSnapshot(): MemoryRuntimeStoreSnapshot {
     return {
       sessions: [...this.sessions.values()],
@@ -597,104 +658,98 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   private applyEvent(sessionId: string, event: CompatEvent) {
-    if (event.type === "session.updated") {
-      const info = event.properties.info as unknown as {
-        id?: string
-        directory?: string
-        title?: string | null
-        time?: { created?: number; updated?: number; archived?: number }
-      }
-      const prev = this.sessions.get(info.id ?? sessionId)
-      if (!prev) return
-      this.sessions.set(prev.id, {
-        ...prev,
-        ...(typeof info.directory === "string" ? { directory: info.directory } : {}),
-        ...(info.title !== undefined ? { title: info.title } : {}),
-        time: {
-          created: info.time?.created ?? prev.time.created,
-          updated: info.time?.updated ?? Date.now(),
-          ...(info.time?.archived !== undefined ? { archived: info.time.archived } : prev.time.archived !== undefined ? { archived: prev.time.archived } : {}),
-        },
-      })
-      return
+    switch (event.type) {
+      case "session.updated": return this.applySessionUpdated(sessionId, event)
+      case "message.updated": return this.applyMessageUpdated(sessionId, event)
+      case "message.part.updated": return this.applyPartUpdated(sessionId, event)
+      case "message.part.delta": return this.applyPartDelta(sessionId, event)
+      case "permission.asked": return this.applyPermissionAsked(sessionId, event)
+      case "permission.replied": return this.removePermission(event.properties.requestID)
+      case "question.asked": return this.applyQuestionAsked(sessionId, event)
+      case "question.replied":
+      case "question.rejected": return this.removeQuestion(event.properties.requestID)
+      case "todo.updated": return void this.todos.set(sessionId, event.properties.todos as Array<{ content: string; status: string; priority: string }>)
+      case "session.status": return this.applySessionStatus(sessionId, event)
+      case "session.idle": return this.touch(sessionId, null, null)
+      case "session.error": return this.touch(sessionId, "error", errorMessage(event.properties.error))
     }
-    if (event.type === "message.updated") {
-      const info = event.properties.info as unknown as Record<string, unknown>
-      const messageId = typeof info.id === "string" ? info.id : undefined
-      const previous = messageId ? this.ensureMessage(sessionId, messageId) : undefined
-      const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info as Record<string, unknown> | undefined, info)
-      this.upsertMessage(sessionId, {
-        info: preservedInfo,
-        parts: previous?.parts ?? [],
-      })
-      return
+  }
+
+  private applySessionUpdated(sessionId: string, event: Extract<CompatEvent, { type: "session.updated" }>) {
+    const info = event.properties.info as unknown as {
+      id?: string
+      directory?: string
+      title?: string | null
+      time?: { created?: number; updated?: number; archived?: number }
     }
-    if (event.type === "message.part.updated") {
-      const part = event.properties.part as { id?: string; messageID?: string; text?: string; sessionID?: string }
-      const messageId = part.messageID
-      if (!messageId) return
-      const message = this.ensureMessage(sessionId, messageId)
-      const parts = message.parts.filter((item) => (item as { id?: string }).id !== part.id)
-      message.parts = [...parts, part]
-      this.upsertMessage(sessionId, message)
-      return
-    }
-    if (event.type === "message.part.delta") {
-      const messageId = event.properties.messageID
-      const partId = event.properties.partID
-      const message = this.ensureMessage(sessionId, messageId)
-      const parts = message.parts.filter((item) => (item as { id?: string }).id !== partId)
-      const prev = message.parts.find((item) => (item as { id?: string }).id === partId) as { text?: string } | undefined
-      message.parts = [...parts, {
-        id: partId,
-        sessionID: sessionId,
-        messageID: messageId,
-        type: "text",
-        text: `${prev?.text ?? ""}${event.properties.delta}`,
-      }]
-      this.upsertMessage(sessionId, message)
-      return
-    }
-    if (event.type === "permission.asked") {
-      const directory = this.sessions.get(sessionId)?.directory ?? ""
-      const rows = this.permissions.get(directory) ?? new Map()
-      rows.set(event.properties.id, event.properties as unknown as PermissionRow)
-      this.permissions.set(directory, rows)
-      return
-    }
-    if (event.type === "permission.replied") {
-      for (const rows of this.permissions.values()) rows.delete(event.properties.requestID)
-      return
-    }
-    if (event.type === "question.asked") {
-      const directory = this.sessions.get(sessionId)?.directory ?? ""
-      const rows = this.questions.get(directory) ?? new Map()
-      rows.set(event.properties.id, event.properties as unknown as QuestionRow)
-      this.questions.set(directory, rows)
-      return
-    }
-    if (event.type === "question.replied" || event.type === "question.rejected") {
-      for (const rows of this.questions.values()) rows.delete(event.properties.requestID)
-      return
-    }
-    if (event.type === "todo.updated") {
-      this.todos.set(sessionId, event.properties.todos as Array<{ content: string; status: string; priority: string }>)
-      return
-    }
-    if (event.type === "session.status") {
-      const status = chunk(event.properties.status)
-      this.touch(sessionId, status === "idle" ? null : status, status === "error" ? "session error" : undefined)
-      return
-    }
-    if (event.type === "session.idle") {
-      this.touch(sessionId, null, null)
-      return
-    }
-    if (event.type === "session.error") {
-      const message = errorMessage(event.properties.error)
-      this.touch(sessionId, "error", message)
-      return
-    }
+    const previous = this.sessions.get(info.id ?? sessionId)
+    if (!previous) return
+    this.sessions.set(previous.id, {
+      ...previous,
+      ...(typeof info.directory === "string" ? { directory: info.directory } : {}),
+      ...(info.title !== undefined ? { title: info.title } : {}),
+      time: {
+        created: info.time?.created ?? previous.time.created,
+        updated: info.time?.updated ?? Date.now(),
+        ...(info.time?.archived !== undefined
+          ? { archived: info.time.archived }
+          : previous.time.archived !== undefined ? { archived: previous.time.archived } : {}),
+      },
+    })
+  }
+
+  private applyMessageUpdated(sessionId: string, event: Extract<CompatEvent, { type: "message.updated" }>) {
+    const info = event.properties.info as unknown as Record<string, unknown>
+    const messageId = typeof info.id === "string" ? info.id : undefined
+    const previous = messageId ? this.ensureMessage(sessionId, messageId) : undefined
+    const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info as Record<string, unknown> | undefined, info)
+    this.upsertMessage(sessionId, { info: preservedInfo, parts: previous?.parts ?? [] })
+  }
+
+  private applyPartUpdated(sessionId: string, event: Extract<CompatEvent, { type: "message.part.updated" }>) {
+    const part = event.properties.part as { id?: string; messageID?: string; text?: string; sessionID?: string }
+    if (!part.messageID) return
+    const message = this.ensureMessage(sessionId, part.messageID)
+    message.parts = [...message.parts.filter((item) => (item as { id?: string }).id !== part.id), part]
+    this.upsertMessage(sessionId, message)
+  }
+
+  private applyPartDelta(sessionId: string, event: Extract<CompatEvent, { type: "message.part.delta" }>) {
+    const { messageID: messageId, partID: partId, delta } = event.properties
+    const message = this.ensureMessage(sessionId, messageId)
+    const previous = message.parts.find((item) => (item as { id?: string }).id === partId) as { text?: string } | undefined
+    message.parts = [
+      ...message.parts.filter((item) => (item as { id?: string }).id !== partId),
+      { id: partId, sessionID: sessionId, messageID: messageId, type: "text", text: `${previous?.text ?? ""}${delta}` },
+    ]
+    this.upsertMessage(sessionId, message)
+  }
+
+  private applyPermissionAsked(sessionId: string, event: Extract<CompatEvent, { type: "permission.asked" }>) {
+    const directory = this.sessions.get(sessionId)?.directory ?? ""
+    const rows = this.permissions.get(directory) ?? new Map()
+    rows.set(event.properties.id, event.properties as unknown as PermissionRow)
+    this.permissions.set(directory, rows)
+  }
+
+  private removePermission(requestId: string) {
+    for (const rows of this.permissions.values()) rows.delete(requestId)
+  }
+
+  private applyQuestionAsked(sessionId: string, event: Extract<CompatEvent, { type: "question.asked" }>) {
+    const directory = this.sessions.get(sessionId)?.directory ?? ""
+    const rows = this.questions.get(directory) ?? new Map()
+    rows.set(event.properties.id, event.properties as unknown as QuestionRow)
+    this.questions.set(directory, rows)
+  }
+
+  private removeQuestion(requestId: string) {
+    for (const rows of this.questions.values()) rows.delete(requestId)
+  }
+
+  private applySessionStatus(sessionId: string, event: Extract<CompatEvent, { type: "session.status" }>) {
+    const status = chunk(event.properties.status)
+    this.touch(sessionId, status === "idle" ? null : status, status === "error" ? "session error" : undefined)
   }
 
   private ensureMessage(sessionId: string, messageId: string): MessageRow {
@@ -706,10 +761,14 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   private upsertMessage(sessionId: string, message: MessageRow) {
     const rows = this.messages.get(sessionId) ?? []
-    this.messages.set(sessionId, [
-      ...rows.filter((row) => row.info.id !== message.info.id),
-      message,
-    ])
+    const ordinal = rows.findIndex((row) => row.info.id === message.info.id)
+    if (ordinal < 0) {
+      this.messages.set(sessionId, [...rows, message])
+      return
+    }
+    const next = [...rows]
+    next[ordinal] = message
+    this.messages.set(sessionId, next)
   }
 
   private deleteSessionInteractions(sessionId: string) {

@@ -13,11 +13,7 @@ import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import type { WithInternals } from "../../test-utils/class-internals"
 
-// The Codex driver used to hold its app-server for the life of the driver, so a
-// desktop that ran one turn at breakfast still had `codex app-server` resident
-// at midnight. These cases drive the REAL adapter against a stub binary and
-// watch the actual child process, because the only thing worth asserting here
-// is whether a real process died.
+// Drive the adapter against a stub binary and observe the real child lifecycle.
 
 const tempDirs: string[] = []
 let previousCodexHome: string | undefined
@@ -55,7 +51,7 @@ function store(): AgentRuntimeStoreWithRecovery {
     getAgentSessionId: (id) => agentSessionIds.get(id),
     getSession: (id) => sessions.get(id) ?? null,
     updateSessionConfig(id, update) {
-      const next = { ...(configs.get(id) ?? {}), ...update } as SessionConfig
+      const next = { ...configs.get(id), ...update } as SessionConfig
       configs.set(id, next)
       return next
     },

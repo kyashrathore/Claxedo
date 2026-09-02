@@ -658,7 +658,9 @@ export async function measureSessionActivation(
             });
             if (current && current.signature === previousSignature) {
               resolve({
-                paintedAtMs,
+                // Observation time, not the frame's scheduled timestamp: a late frame's
+                // rAF argument precedes the moment the stable sample is actually seen.
+                paintedAtMs: performance.now(),
                 paintedMessage: current.paintedMessage,
                 contentText: current.contentText,
                 frames,

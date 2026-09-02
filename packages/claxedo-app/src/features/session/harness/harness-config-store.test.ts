@@ -74,19 +74,32 @@ describe("harness config helpers", () => {
     test("infers an open acp:<slug> id from acp access + type", () => {
       expect(pickHarness("claude", null, "acp")).toBe("acp:claude")
       expect(pickHarness("codex", null, "acp")).toBe("acp:codex")
+      expect(pickHarness("my-agent", null, "acp")).toBe("acp:my-agent")
     })
 
     test("passes through an already-qualified acp:<slug> id regardless of access", () => {
       expect(pickHarness("acp:claude")).toBe("acp:claude")
+      expect(pickHarness("acp:cursor")).toBe("acp:cursor")
     })
 
-    test("ignores the binary argument entirely — selection flows through type + access only", () => {
+    // ACP operator connections are fully generic: a binary name never selects
+    // a harness identity — only the explicit type/access pair does.
+    test("never infers a harness from binary names", () => {
       expect(pickHarness(undefined, "/tmp/codex-acp")).toBeUndefined()
-      expect(pickHarness("opencode", "/tmp/unknown-binary")).toBe("opencode")
+      expect(pickHarness(undefined, "/usr/local/bin/claude-agent-acp")).toBeUndefined()
+      expect(pickHarness(undefined, "C:\\agents\\codex-acp.exe")).toBeUndefined()
+    })
+
+    test("ignores the binary argument entirely when an explicit type is present", () => {
+      expect(pickHarness("acp:claude", "/tmp/unknown-binary")).toBe("acp:claude")
       expect(pickHarness("claude-sdk", "/tmp/codex-acp")).toBe("claude-sdk")
+      expect(pickHarness("opencode", "/tmp/unknown-binary")).toBe("opencode")
     })
 
     test("returns valid HarnessType from a bare builtin type string", () => {
+      expect(pickHarness("acp:claude")).toBe("acp:claude")
+      expect(pickHarness("acp:codex")).toBe("acp:codex")
+      expect(pickHarness("acp:cursor")).toBe("acp:cursor")
       expect(pickHarness("claude-sdk")).toBe("claude-sdk")
       expect(pickHarness("codex-app-server")).toBe("codex-app-server")
       expect(pickHarness("cursor-sdk")).toBe("cursor-sdk")
@@ -106,44 +119,49 @@ describe("harness config helpers", () => {
   describe("desiredHarness vs activeHarness during switch", () => {
     test("separates desired from active while a switch is in flight", () => {
       const data = {
-        type: "codex-app-server",
-        activeType: "claude-sdk",
+        type: "acp:codex",
+        binary: "/tmp/codex-acp",
+        activeType: "acp:claude",
+        activeBinary: "/tmp/claude-agent-acp",
       } as const
 
-      expect(desiredHarness(data)).toBe("codex-app-server")
-      expect(activeHarness(data)).toBe("claude-sdk")
+      expect(desiredHarness(data)).toBe("acp:codex")
+      expect(activeHarness(data)).toBe("acp:claude")
     })
 
     test("desired and active match when no switch is happening", () => {
       const data = {
-        type: "claude-sdk",
-        activeType: "claude-sdk",
+        type: "acp:claude",
+        binary: "/tmp/claude-agent-acp",
+        activeType: "acp:claude",
+        activeBinary: "/tmp/claude-agent-acp",
       } as const
 
-      expect(desiredHarness(data)).toBe("claude-sdk")
-      expect(activeHarness(data)).toBe("claude-sdk")
+      expect(desiredHarness(data)).toBe("acp:claude")
+      expect(activeHarness(data)).toBe("acp:claude")
     })
 
     test("activeHarness falls back to type when activeType is missing", () => {
       const data = {
-        type: "codex-app-server",
+        type: "acp:codex",
+        binary: "/tmp/codex-acp",
       } as const
 
-      expect(activeHarness(data)).toBe("codex-app-server")
+      expect(activeHarness(data)).toBe("acp:codex")
     })
   })
 
   describe("session config runner state", () => {
     test("uses persisted session runner instead of falling back to workspace default", () => {
       expect(harnessStateFromSessionConfig({
-        harness: { type: "codex-app-server" },
+        harness: { type: "acp:codex" },
         model: { modelID: "gpt-5.5" },
       })).toEqual({
-        type: "codex-app-server",
+        type: "acp:codex",
         model: "gpt-5.5",
         status: "ready",
         ready: true,
-        activeType: "codex-app-server",
+        activeType: "acp:codex",
         activeBinary: null,
       })
     })
@@ -234,18 +252,18 @@ describe("harness config helpers", () => {
 
   describe("harnessChangeKey", () => {
     test("uses scope, runner type, and binary for in-flight dedupe", () => {
-      expect(harnessChangeKey("draft:/tmp/project:route", "codex-app-server")).toBe("draft:/tmp/project:route\ncodex-app-server\n")
-      expect(harnessChangeKey("draft:/tmp/project:route", "codex-app-server", "/usr/local/bin/codex")).toBe("draft:/tmp/project:route\ncodex-app-server\n/usr/local/bin/codex")
-      expect(harnessChangeKey("draft:/tmp/project:route", "codex-app-server")).not.toBe(harnessChangeKey("draft:/tmp/project:route", "claude-sdk"))
+      expect(harnessChangeKey("draft:/tmp/project:route", "acp:codex")).toBe("draft:/tmp/project:route\nacp:codex\n")
+      expect(harnessChangeKey("draft:/tmp/project:route", "acp:codex", "/usr/local/bin/codex")).toBe("draft:/tmp/project:route\nacp:codex\n/usr/local/bin/codex")
+      expect(harnessChangeKey("draft:/tmp/project:route", "acp:codex")).not.toBe(harnessChangeKey("draft:/tmp/project:route", "acp:claude"))
     })
 
     test("stores runner switch in-flight state under a Query request key", () => {
-      const key = harnessChangeKey("draft:/tmp/project:route", "codex-app-server")
+      const key = harnessChangeKey("draft:/tmp/project:route", "acp:codex")
       expect(harnessChangeRequestKey(key)).toEqual([
         "shell",
         "harness-config",
         "harness-change",
-        "draft:/tmp/project:route\ncodex-app-server\n",
+        "draft:/tmp/project:route\nacp:codex\n",
       ])
     })
   })
@@ -316,15 +334,15 @@ describe("harness config helpers", () => {
 
   describe("failedHarness", () => {
     test("treats error status as terminal", () => {
-      expect(failedHarness({ type: "codex-app-server", status: "error" })).toBe(true)
+      expect(failedHarness({ type: "acp:codex", status: "error" })).toBe(true)
     })
 
     test("treats error message as terminal", () => {
-      expect(failedHarness({ type: "claude-sdk", error: "binary not found" })).toBe(true)
+      expect(failedHarness({ type: "acp:claude", error: "binary not found" })).toBe(true)
     })
 
     test("ready state is not failed", () => {
-      expect(failedHarness({ type: "claude-sdk", status: "ready" })).toBe(false)
+      expect(failedHarness({ type: "acp:claude", status: "ready" })).toBe(false)
     })
 
     test("no status and no error is not failed", () => {
@@ -381,7 +399,7 @@ describe("harness config helpers", () => {
   describe("draft defaults", () => {
     test("draft scopes ignore legacy runner defaults", () => {
       expect(initialHarness("draft:/tmp/proj:route", undefined, "claude-sdk")).toBe("opencode")
-      expect(initialHarness("draft:/tmp/proj:route", "codex-app-server", "claude-sdk")).toBe("codex-app-server")
+      expect(initialHarness("draft:/tmp/proj:route", "acp:codex", "claude-sdk")).toBe("acp:codex")
     })
 
     test("session scopes still honor legacy runner defaults", () => {
@@ -401,12 +419,12 @@ describe("harness config helpers", () => {
 
   describe("runner model fallback", () => {
     test("uses default model for non-opencode harnesses with no selected model", () => {
-      expect(effectiveHarnessModel("codex-app-server", "")).toBe(DEFAULT_HARNESS_MODEL.id)
-      expect(effectiveHarnessModel("claude-sdk", undefined)).toBe(DEFAULT_HARNESS_MODEL.id)
+      expect(effectiveHarnessModel("acp:codex", "")).toBe(DEFAULT_HARNESS_MODEL.id)
+      expect(effectiveHarnessModel("acp:claude", undefined)).toBe(DEFAULT_HARNESS_MODEL.id)
     })
 
     test("preserves explicit runner model selections", () => {
-      expect(effectiveHarnessModel("codex-app-server", "gpt-5.1")).toBe("gpt-5.1")
+      expect(effectiveHarnessModel("acp:codex", "gpt-5.1")).toBe("gpt-5.1")
     })
 
     test("does not invent a model for opencode provider mode", () => {
@@ -431,14 +449,14 @@ describe("harness config helpers", () => {
     })
 
     test("loads selectable models when an active existing session hydrates", () => {
-      expect(shouldFetchConfigOptionsForScope("claude-sdk", false, {
+      expect(shouldFetchConfigOptionsForScope("acp:claude", false, {
         directory: "/tmp/project",
         sessionId: "ses_1",
       })).toBe(true)
     })
 
     test("allows draft sessions to load selectable models", () => {
-      expect(shouldFetchConfigOptionsForScope("claude-sdk", false, {
+      expect(shouldFetchConfigOptionsForScope("acp:claude", false, {
         directory: "/tmp/project",
         sessionId: "new",
       })).toBe(true)
@@ -446,7 +464,7 @@ describe("harness config helpers", () => {
 
     test("does not fetch options for opencode or failed runners", () => {
       expect(shouldFetchConfigOptionsForScope("opencode", false, { directory: "/tmp/project" })).toBe(false)
-      expect(shouldFetchConfigOptionsForScope("claude-sdk", true, { directory: "/tmp/project" })).toBe(false)
+      expect(shouldFetchConfigOptionsForScope("acp:claude", true, { directory: "/tmp/project" })).toBe(false)
     })
 
     test("retries stale model options only within the bounded retry budget", () => {
@@ -501,8 +519,8 @@ describe("harness config helpers", () => {
     test("keeps non-OpenCode runner hints unchanged", () => {
       expect(refreshHarnessTypeForScope({
         directory: "ws_123",
-        harness: "cursor-sdk",
-      })).toBe("cursor-sdk")
+        harness: "acp:cursor",
+      })).toBe("acp:cursor")
     })
   })
 
@@ -580,7 +598,7 @@ describe("harness config helpers", () => {
   // ── HARNESS_DISPLAY_NAMES ───────────────────────────────────────────────
 
   describe("HARNESS_DISPLAY_NAMES", () => {
-    test("maps all builtin harness ids and legacy binary names to display names", () => {
+    test("maps all known keys to display names", () => {
       expect(HARNESS_DISPLAY_NAMES["claude-sdk"]).toBe("Claude SDK")
       expect(HARNESS_DISPLAY_NAMES["codex-app-server"]).toBe("Codex App Server")
       expect(HARNESS_DISPLAY_NAMES["cursor-sdk"]).toBe("Cursor SDK")
@@ -590,7 +608,7 @@ describe("harness config helpers", () => {
       expect(HARNESS_DISPLAY_NAMES["pi"]).toBe("Pi")
     })
 
-    test("all builtin harness types have a display name", () => {
+    test("all built-in runner types have a display name", () => {
       const types: HarnessType[] = ["claude-sdk", "codex-app-server", "cursor-sdk", "opencode", "pi"]
       for (const t of types) {
         expect(HARNESS_DISPLAY_NAMES[t]).toBeTruthy()

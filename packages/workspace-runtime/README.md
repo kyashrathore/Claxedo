@@ -95,6 +95,7 @@ lower-level helpers:
 | --- | --- |
 | `@claxedo/workspace-runtime` | Standalone bootstrap, host creation, exposure/management contracts, route manifest, and stable config types. |
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, PTY, and process routes. |
+| `@claxedo/workspace-runtime/session-env-contract` | Schemas, types, limits, errors, and frame decoding for the session-env wire protocol. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
 | `@claxedo/workspace-runtime/exposure` | Explicit loopback, relay, private-network, and embedded exposure declarations. |
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |

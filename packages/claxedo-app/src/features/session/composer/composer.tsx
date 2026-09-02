@@ -58,10 +58,9 @@ import { createModelSelectionPicker } from "@/features/session/commands/model-se
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
 import { createComposerEngine } from "./v2/engine"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
-import { createComposerAutoAccept } from "./auto-accept"
-import { createComposerPermissionModeWiring } from "./permission-mode-wiring"
-import { createComposerPermissionMode } from "./permission-mode"
+import { createComposerPermissionSurface } from "./permission-mode-wiring"
 import { createPromptToolbarMotion } from "./ui/toolbar-motion"
+import { createComposerGoalController } from "./goal-controller"
 const idleSessionStatus = { type: "idle" as const }
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
@@ -248,6 +247,26 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       routeWorkspaceAuthorityId: props.workspaceId?.(), serverUrl: getClaxedoServerUrl(),
     })
   })
+  const goalController = createComposerGoalController({
+    isNewSession: newSession, harness: () => currentHarnessType(scope()), harnessPending,
+    client: sdk.client.session, directory: submitSessionDirectory,
+    serverUrl: () => getClaxedoServerUrl(), signedControlPlane,
+    workspaceId: () => props.workspaceId?.(), workspaceKind: () => props.workspaceKind?.(),
+    sessionRef: () => props.sessionRef?.(),
+    sessionCapabilities: () => props.goalCapabilities?.(), refreshGoal: props.refreshGoal,
+    armed: prompt.goal.armed,
+    setArmed: prompt.goal.setArmed,
+    unavailable: (reason) => {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: reason ?? "Goals are unavailable for this harness.",
+      })
+    },
+    normalizeMode: () => { engine?.setMode("normal"); engine?.closePopover() },
+    focus: () => editorRef?.focus(),
+  })
+  const { selectable: goalSelectable, armed: goalArmed, arm: armGoal, toggle: toggleGoal } = goalController
   const signedWorkspaceRuntimeFallback = createSignedWorkspaceRuntimeFallback({
     serverUrl: getClaxedoServerUrl,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
@@ -265,11 +284,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (activeTurn !== undefined) return activeTurn
     return status()?.type === "busy" || status()?.type === "retry"
   })
-  // status-meta is written directly into the query cache by the status
-  // dispatcher (session/store/session-status-dispatcher.ts) with no query
-  // observer, so promptSessionStatusStage alone is a non-reactive snapshot —
-  // without this cache subscription the escalation stages ("pending"/"long"/
-  // "failed") would never re-render after their timers fire.
+  // status-meta has no query observer, so subscribe explicitly; otherwise the
+  // escalation stages never re-render after their timers fire.
   const [statusMetaVersion, setStatusMetaVersion] = createSignal(0)
   createEffect(() => {
     const sid = resolvedSessionId()
@@ -381,18 +397,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     engine.bindEditor(el)
     props.ref?.(el)
   }
-
   registerPromptModeCommands({
     register: (scope, commands) => command.register(scope, commands),
     mode: engine.mode,
     pick,
     setMode: engine.enterMode,
+    goalSelectable,
+    armGoal,
     labels: {
       attachFile: language.t("prompt.action.attachFile"),
       fileCategory: language.t("command.category.file"),
       shellMode: language.t("command.prompt.mode.shell"),
       normalMode: language.t("command.prompt.mode.normal"),
       sessionCategory: language.t("command.category.session"),
+      goal: language.t("prompt.action.goal"),
     },
   })
 
@@ -501,14 +519,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     return id === "opencode" ? "opencode" : id
   }
 
-  const permissionModeWiring = createComposerPermissionModeWiring({
+  const { autoAccept, permissionMode } = createComposerPermissionSurface({
     sessionId: permissionSessionId,
+    resolvedSessionId,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
     harness: permissionHarness,
     harnessUnavailable: () =>
       harnessModesUnavailable({ isHarness: isHarnessMode(scope()), readiness: harnessReadiness(scope()),
         configError: !!harnessSelectionController?.read(scope())?.configError, harness: permissionHarness() }),
-    client: sdk.client.session,
+    client: sdk.client,
     claxedoServerUrl: getClaxedoServerUrl,
     signedControlPlane,
     workspace: () => {
@@ -518,73 +537,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     },
     sessionRef: () => props.sessionRef?.(),
     requestFailedTitle: () => language.t("common.requestFailed"),
-  })
-
-  const autoAccept = createComposerAutoAccept({
     permission,
-    sessionId: permissionSessionId,
-    directory: () => resolvedSessionDirectory() ?? sdk.directory,
-    harness: permissionHarness,
-    // Turning the switch on writes the grants into opencode's OWN persisted
-    // ruleset, so the engine stops asking rather than Claxedo answering the same
-    // prompts forever — and the grant survives Claxedo being closed. Turning it off
-    // withdraws them. Deliberately NOT `config.update`: that handler disposes the
-    // engine instance on every call, which would abort the running turn.
-    deliver: ({ delivery, sessionID }) => applyPermissionMode({ delivery, sessionID, client: sdk.client }),
-    // The local switch has already flipped, so a failed write must be visible.
-    // Silence here would mean the user believes the engine was told something it
-    // never received — and on the disabling side, that grants are withdrawn when
-    // they are still live.
-    onDeliveryError: ({ error, enabling }) => {
-      const detail = error instanceof Error ? error.message : String(error)
-      showToast({
-        variant: "error",
-        title: language.t("common.requestFailed"),
-        description: enabling
-          ? `Claxedo will answer these prompts, but opencode was not told to allow them: ${detail}`
-          : `opencode may still allow these until the next successful change: ${detail}`,
-      })
-    },
-  })
-  // The permission-mode picker. Replaces the binary "Approve for me" switch: it is a
-  // superset, because Claxedo's Manual mode IS the switch's off state, expressed as a
-  // mode. Selection lives in the same per-scope store the switch used, so a session's
-  // existing preference carries over rather than resetting.
-  const permissionMode = createComposerPermissionMode({
-    harness: permissionHarness,
-    // The selection IS the auto-accept boolean, not a parallel store. Claxedo offers
-    // exactly two selectable modes today — Auto and Manual — and they are precisely
-    // this switch's on and off, so deriving avoids a second source of truth that
-    // could disagree with the one the permission provider already persists per scope.
-    // A session's existing preference therefore carries straight over.
-    //
-    // WHEN HARNESS MODES BECOME DELIVERABLE this stops being sufficient: a boolean
-    // cannot hold "Claude: plan". At that point the selection needs real per-scope
-    // storage, and `permissionModeDeliverable` returning true for a harness delivery
-    // is the signal that the day has come.
-    report: permissionModeWiring.report,
-    unavailable: permissionModeWiring.harnessUnavailable,
-    // Selection routing lives in the wiring: which store owns a choice depends on
-    // whether the harness has modes of its own.
-    selection: () => permissionModeWiring.selection(autoAccept.active()),
-    onSelectionChange: (next) =>
-      permissionModeWiring.onSelectionChange(next, {
-        currentlyActive: autoAccept.currentlyActive,
-        toggle: autoAccept.toggle,
-      }),
-    // HARNESS deliveries only: `autoAccept.toggle` below already writes Claxedo's
-    // own options, so delivering them here too issues two PATCHes per selection.
-    deliver: async ({ option, sessionID }) =>
-      option.origin === "harness"
-        ? applyPermissionMode({ delivery: option.delivery, sessionID, client: permissionModeWiring.writer() })
-        : { kind: "answered-locally" },
-    // Drops the optimistic value as well as toasting — see `reportError`.
-    onDeliveryError: ({ error }) => permissionModeWiring.reportError(error),
-    sessionId: resolvedSessionId,
-    // No `deliver` here ON PURPOSE. `autoAccept.toggle` already performs exactly the
-    // right write for both modes — the Auto ruleset when enabling, the withdrawal
-    // ruleset when disabling — and routing the picker through it keeps ONE writer.
-    // Passing a deliverer here as well would issue two PATCHes per selection.
   })
 
   // Submit-block wiring (T5): the one priority-ordered "why is Send blocked?"
@@ -650,6 +603,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     workspaceKind: props.workspaceKind,
     selectedModelForSubmit: toolbarState.currentModel,
     harnessController,
+    ...goalController.submitInput(props.goal, props.stopGoal),
   })
 
   const submitRetry = createPromptInputSubmitRetry({
@@ -674,8 +628,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const handleSubmit = submitRetry.handleSubmit
   const onRetry = submitRetry.onRetry
-
-  const designPlaceholder = () => promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
+  const designPlaceholder = () => goalArmed()
+    ? language.t("prompt.goal.placeholder")
+    : promptDesignPlaceholder({ roleBlocked: roleSubmitBlocked(), mode: engine.mode(), shellPlaceholder: placeholder() })
   return (
     <PromptInputFrame
       rootRef={(el) => (rootEl = el)}
@@ -732,6 +687,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       openCommands={() => engine.openPopover("slash")}
       openContext={() => engine.openPopover("at")}
       enterShellMode={() => engine.enterMode("shell")}
+      goalSelectable={goalSelectable} goalArmed={goalArmed}
+      armGoal={armGoal} toggleGoal={toggleGoal}
       approveEnabled={() => props.canPrompt?.() ?? true}
       permissionGroups={permissionMode.groups}
       permissionCurrent={permissionMode.current}

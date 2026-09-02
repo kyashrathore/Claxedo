@@ -167,6 +167,12 @@ export function createHttpSessionBackend(input: {
   return {
     usesScopedTransport: runtime.usesScopedTransport,
     getCapabilities: (params) => runtimeFor(params.sessionRef).getCapabilities(params),
+    getGoalState: (params) => runtimeFor(params.sessionRef).getGoalState(params),
+    startGoal: (params) => runtimeFor(params.sessionRef).startGoal(params),
+    pauseGoal: (params) => runtimeFor(params.sessionRef).pauseGoal(params),
+    resumeGoal: (params) => runtimeFor(params.sessionRef).resumeGoal(params),
+    stopGoal: (params) => runtimeFor(params.sessionRef).stopGoal(params),
+    deleteGoal: (params) => runtimeFor(params.sessionRef).deleteGoal(params),
     getSession: (params) => runtimeFor(params.sessionRef).getSession(params),
     listMessages: (params) => runtimeFor(params.sessionRef).getMessages(params),
     listTodos: (params) => runtimeFor(params.sessionRef).getTodos(params),

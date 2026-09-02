@@ -105,9 +105,11 @@ describe("AIConnectSurface", () => {
 
   test("each cloud harness opens the connect form for the auth id that carries its methods", () => {
     // These are AUTH ids, not model-catalog ids: `codex-app-server` is the one
-    // that offers the ChatGPT OAuth flow, `cursor-sdk` the dashboard key.
-    // Pinned because a plausible-looking wrong id (`cursor`, `openai`) silently
-    // downgrades the user to the wrong set of sign-in methods.
+    // that offers the ChatGPT OAuth flow, `cursor-sdk` the dashboard key (they
+    // match the server's credential provider ids — see server-core
+    // credentials/operations/sync.ts). Pinned because a plausible-looking
+    // wrong id (`cursor`, `openai`) silently downgrades the user to the wrong
+    // set of sign-in methods.
     stubPorts()
     const opened: string[] = []
     for (const [label, expected] of [["Codex", "codex-app-server"], ["Cursor", "cursor-sdk"]] as const) {

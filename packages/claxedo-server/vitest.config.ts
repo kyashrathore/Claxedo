@@ -9,6 +9,10 @@ export default defineConfig({
       "@claxedo/workspace-runtime/host": path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts"),
       "@claxedo/workspace-runtime/relay": path.resolve(import.meta.dirname, "../workspace-runtime/src/relay.ts"),
       "@claxedo/workspace-runtime/routes": path.resolve(import.meta.dirname, "../workspace-runtime/src/routes.ts"),
+      "@claxedo/workspace-runtime/session-env-contract": path.resolve(
+        import.meta.dirname,
+        "../workspace-runtime/src/session-env-contract.ts",
+      ),
       // Aliased alongside the rest so a test exercises the runtime SOURCE, not
       // a dist that may lag it. Both are reached from `@claxedo/workgraph`'s
       // runtime adapter, which resolves through its own dist and would

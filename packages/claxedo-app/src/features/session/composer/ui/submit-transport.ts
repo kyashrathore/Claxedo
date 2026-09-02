@@ -2,6 +2,8 @@ import { queryKeys } from "@/platform/query/keys"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import type { ProjectCatalogItem } from "../workspace-resolver"
 import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
+import { sessionHarnessIdentity, type HarnessType } from "@/features/session/harness/profile"
+import { parseExistingSessionConfig } from "./submit-session-config"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -20,8 +22,6 @@ import {
 } from "@/platform/runtime/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitModel, SubmitSessionGetClient } from "../../submit/index"
 import { selectRuntimeModel } from "../model-strategy"
-import { sessionHarnessIdentity, type HarnessType } from "@/features/session/harness/profile"
-import { parseExistingSessionConfig } from "./submit-session-config"
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string
@@ -47,10 +47,14 @@ export type SubmitTransportPlacementInput<Client extends PromptDispatchInput["cl
   }
 }
 
-export type SaveSessionConfigInput = {
+export type SaveSessionConfigInput = SessionConfigPayload & {
   readonly sessionID: string
   readonly directory: SubmitDirectory
-  readonly harnessType: string
+}
+
+/** The persistable half of a session config: everything the PATCH body carries. */
+type SessionConfigPayload = {
+  readonly harnessType: HarnessType
   readonly agent?: string
   readonly model?: { providerID: string; modelID: string }
   readonly variant?: string
@@ -221,7 +225,11 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
           runtimeClient.sendMessage({ ...payload, mode: "async" }),
       },
     }
-    return runtimePromptClient
+    return {
+      ...runtimePromptClient,
+      getGoalCapabilities: runtimeClient.getGoalCapabilities,
+      startGoal: runtimeClient.startGoal,
+    }
   }
 
   const persistSessionConfig = async (configInput: SaveSessionConfigInput) => {
@@ -302,16 +310,16 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   }
 }
 
-function sessionConfigBody(input: Pick<SaveSessionConfigInput, "harnessType" | "agent" | "model" | "variant">) {
+function sessionConfigBody(input: SessionConfigPayload) {
   return {
-    // The server's canonical session-config contract wants an access-qualified
-    // identity (`{id, access}`), the same shape `harness-switcher.ts` sends for
-    // an explicit harness switch. A bare `{type}` only round-trips for the five
-    // builtin ids the server's legacy string mapping recognizes — an open
-    // `acp:<slug>` connection id has no legacy mapping, so it was silently
-    // rejected as "not a canonical harness identity" on every ordinary
-    // follow-up config save (not just an explicit switch).
-    harness: sessionHarnessIdentity(input.harnessType as HarnessType),
+    // Canonical `{ id, access }` wire identity — the same shape
+    // `harness-switcher.ts` already PATCHes to this very route. The old
+    // `{ type: <app harness key> }` form only worked because the runtime's
+    // `normalizeHarnessIdentity` carries a legacy string map for the built-in
+    // keys ("claude-sdk" → claude/native). An operator ACP key (`acp:<slug>`)
+    // has no such entry and no `access`, so the runtime dropped the harness
+    // from the update entirely — including the harness-switch guard.
+    harness: sessionHarnessIdentity(input.harnessType),
     ...(input.agent ? { agent: input.agent } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.variant ? { variant: input.variant } : {}),
@@ -332,12 +340,16 @@ function opencodeProviderPath(input: { directory?: string; harnessType?: string 
   return `${url.pathname}${url.search}`
 }
 
-// Reuses `parseExistingSessionConfig`'s decode (the same one `submit.ts` uses
-// to read a persisted config) so a cached raw payload and an about-to-be-sent
-// body always compare through the identical canonical encoding — decoding a
-// stored `{id, access}` or legacy `{type}` shape and re-encoding both sides
-// via `sessionConfigBody` is what keeps this dedup check from permanently
-// mismatching after `sessionConfigBody` moved to the access-qualified shape.
+/**
+ * The cached raw config, rendered as the PATCH body it would produce, so the
+ * dedupe compares like with like.
+ *
+ * It reads through `parseExistingSessionConfig` — the one canonical reader of a
+ * persisted session config — instead of re-deriving the shape here. The
+ * hand-rolled version compared a persisted identity id ("claude") against the
+ * app's harness key ("claude-sdk"), so the dedupe only ever matched for
+ * OpenCode and every other harness re-PATCHed an unchanged config each submit.
+ */
 function sessionConfigSignature(input: unknown) {
   const parsed = parseExistingSessionConfig(input)
   if (!parsed) return

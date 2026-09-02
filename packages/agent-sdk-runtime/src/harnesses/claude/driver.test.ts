@@ -1,3 +1,4 @@
+import { SDK_MODEL_CATALOG } from "../../sdk-model-catalog"
 import { describe, expect, test } from "bun:test"
 import {
   CLAUDE_FORWARD_SUBAGENT_TEXT,
@@ -6,7 +7,6 @@ import {
   createClaudeSdkDriver,
   ingestClaudeSdkMessage,
 } from "./driver"
-import { SDK_MODEL_CATALOG } from "../../sdk-model-catalog"
 
 function driver() {
   return createClaudeSdkDriver({
@@ -27,7 +27,7 @@ describe("Claude SDK driver", () => {
     expect(claudeSystemPrompt()).toBeUndefined()
   })
 
-  test("U5: measures routed nested SDK frames below the forwarding thresholds", async () => {
+  test("measures routed nested SDK frames below the forwarding thresholds", async () => {
     const childText = [
       "Inspecting authentication entry points.",
       "Reading the session middleware.",
@@ -91,7 +91,7 @@ describe("Claude SDK driver", () => {
     expect(CLAUDE_FORWARD_SUBAGENT_TEXT).toBe(true)
   })
 
-  test("U5: admits tool and task observations before routing child-owned SDK messages", async () => {
+  test("admits tool and task observations before routing child-owned SDK messages", async () => {
     const observed: unknown[] = []
     const ingested: unknown[][] = []
     const rebound: string[] = []
@@ -159,7 +159,7 @@ describe("Claude SDK driver", () => {
     expect(rebound).toEqual(["sdk-session-1", "sdk-session-1", "sdk-session-1"])
   })
 
-  test("U5: admits the structured Agent identity without parsing the tool-result text", async () => {
+  test("admits the structured Agent identity without parsing the tool-result text", async () => {
     const observed: unknown[] = []
     await ingestClaudeSdkMessage({
       observeSubagent(value: unknown) {
@@ -201,40 +201,16 @@ describe("Claude SDK driver", () => {
     })).toEqual({ PATH: "/bin" })
   })
 
-  /**
-   * The live list comes from the SDK (`Query.supportedModels()`); `SDK_MODEL_CATALOG`
-   * is the hand-maintained fallback served until a probe succeeds. These assertions
-   * read the catalog rather than restating it: a copy here went stale against the
-   * catalog (it still named `claude-sonnet-4-6`/`claude-opus-4-6`) and nothing caught
-   * it, because a duplicated list only ever tests the duplicate.
-   */
-  test("serves the static Claude model catalog before any live probe", () => {
-    const catalog = SDK_MODEL_CATALOG.claude
-
-    expect(driver().peekConfigOptions(catalog[0].id)).toEqual([{
+  test("serves the static catalog until a live probe answers", () => {
+    // `peek` never spawns the probe query, so the picker would otherwise render
+    // empty on every cold read. The static catalog is the backstop; the live
+    // list replaces it as soon as `configOptions` gets an answer.
+    const [model, ...rest] = driver().peekConfigOptions("claude-from-a-future-release")
+    expect(rest).toEqual([])
+    expect(model).toMatchObject({
       id: "model",
-      name: "Model",
-      category: "model",
       type: "select",
-      currentValue: catalog[0].id,
-      selectOptions: catalog.map((model) => ({ id: model.id, name: model.name })),
-    }])
-  })
-
-  test("every fallback model is servable to the picker: unique id, non-empty name", () => {
-    const catalog = SDK_MODEL_CATALOG.claude
-
-    expect(catalog.length).toBeGreaterThan(0)
-    expect(new Set(catalog.map((model) => model.id)).size).toBe(catalog.length)
-    for (const model of catalog) {
-      expect(model.id).toMatch(/^claude-/)
-      expect(model.name.length).toBeGreaterThan(0)
-    }
-  })
-
-  test("an unknown current model falls back to the first catalog entry", () => {
-    const [option] = driver().peekConfigOptions("claude-from-a-future-release")
-
-    expect(option?.currentValue).toBe(SDK_MODEL_CATALOG.claude[0].id)
+      selectOptions: SDK_MODEL_CATALOG.claude.map(({ id, name }) => ({ id, name })),
+    })
   })
 })

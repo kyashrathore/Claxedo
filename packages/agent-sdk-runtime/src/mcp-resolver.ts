@@ -4,10 +4,7 @@ import type { McpServer } from "@agentclientprotocol/sdk"
 import { dataDir } from "./paths"
 import { normalizeHarnessIdentity } from "./harness-types"
 
-// Paths are recomputed on every call so callers that set `CLAXEDO_DATA_DIR`
-// after this module is imported still use their intended data dir. Capturing
-// these paths at module load time can leak the default home-dir state into
-// tests and isolated runtime environments.
+// Resolve storage paths at operation time because the data directory is a runtime setting.
 const claxedoDir = () => dataDir()
 const overridesFile = () => path.join(claxedoDir(), "managed-mcp-overrides.json")
 
@@ -25,8 +22,7 @@ export type UserMcpServer = {
   disabled?: boolean
 }
 
-// Reserved for app-managed MCP defaults. It is intentionally empty today:
-// user MCP config still resolves, while managed loops are explicit no-ops.
+// The host can populate this registry when it owns managed MCP servers.
 export const MANAGED_MCP_SERVERS: readonly ManagedMcpServer[] = []
 
 export type ManagedMcpControl = "managed" | "generated-config" | "external-unmanaged"
@@ -101,25 +97,6 @@ const normalizeOverrides = (value?: unknown) => {
   return out
 }
 
-const diff = (
-  base: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>,
-  next: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>,
-) => {
-  const out: ManagedMcpOverrides = {}
-  for (const server of MANAGED_MCP_SERVERS) {
-    const baseAgents: Partial<Record<McpCapableAgent, boolean>> = base[server] ?? {}
-    const nextAgents: Partial<Record<McpCapableAgent, boolean>> = next[server] ?? {}
-    for (const agent of MCP_CAPABLE_AGENTS) {
-      const nextValue = nextAgents[agent]
-      if (nextValue === baseAgents[agent]) continue
-      if (typeof nextValue !== "boolean") continue
-      out[server] ??= {}
-      out[server]![agent] = nextValue
-    }
-  }
-  return out
-}
-
 const apply = (
   base: Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>,
   overrides: ManagedMcpOverrides,
@@ -188,18 +165,20 @@ const resolveUser = (input: Record<string, UserMcpServer>) => {
 
 export const resolveUserMcp = resolveUser
 
-const readState = async (fallback = 7860) => {
+const readState = async (defaultPort = 7860) => {
   try {
     const raw = await fs.promises.readFile(overridesFile(), "utf-8")
     const json = JSON.parse(raw) as { port?: number; overrides?: unknown }
     return {
-      port: json.port ?? fallback,
+      port: json.port ?? defaultPort,
       overrides: normalizeOverrides(json.overrides),
     }
-  } catch {}
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error
+  }
 
   return {
-    port: fallback,
+    port: defaultPort,
     overrides: {} as ManagedMcpOverrides,
   }
 }

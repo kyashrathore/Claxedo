@@ -56,6 +56,14 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
     if (!byDirectory) return undefined
     return { workspaceId: byDirectory.workspaceId, kind: byDirectory.kind }
   }
+  // UUID-shaped workspace route ids are shared by local and relay-backed
+  // workspaces. The project inventory is the authority for that distinction:
+  // once it identifies this id as local, a workspace-shaped route must not
+  // turn it into a relay target and mint a workspace connection lease.
+  if (
+    localWorkspaceInProjects(input.projects ?? [], input.directory) ||
+    localWorkspaceInProjects(input.projects ?? [], workspaceId)
+  ) return undefined
   // Read the REAL kind from the signed inventory. Match by directory AND by the
   // workspace id (`signedWorkspaceFromProjects` matches both forms), so a
   // `workspace:<id>` directory-ref or a raw filesystem path both resolve.

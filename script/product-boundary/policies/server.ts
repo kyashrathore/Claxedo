@@ -81,8 +81,11 @@ export const serverCloudNode: Policy = {
   // `hosted-app.ts` the same way it already reaches every other hosted-shared
   // route; one module, no package edge (the `convex` package is already
   // reached via the authority adapters this composition already requires).
-  // Full `verify:closure` measures the exact hosted Node graph at 150/28.
-  ceilings: { modules: 150, packages: 28 },
+  // The already-reachable workspace SessionEnv facade now delegates to four
+  // reviewed owners (factory, protocol, runtime env, and admission); four
+  // modules, no package edge.
+  // Full `verify:closure` measures the exact hosted Node graph at 154/28.
+  ceilings: { modules: 154, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -150,7 +153,7 @@ export const serverWorkerd: Policy = {
   ],
 
   control: cloudControl(`${SRC}/deployments/hosted-workerd/worker.ts`),
-  // Usage, user-extension gating, runtime-target resolution, and authoritative
+  // Usage, runtime-target resolution, and authoritative
   // message paging remain Worker-safe shared owners with no package growth.
   // Tenant-aware runtime session authority is Worker-safe shared owner:
   // 112 + 1 = 113 modules, still no package edge.
@@ -249,9 +252,12 @@ export const serverSelfHosted: Policy = {
   // source module. Runtime authority now consumes the relay-protocol package's
   // shared stream/turn lease TTL contract. `relay-token-record.ts`, the one
   // owner of user-vs-service runtime token recording shared with the hosted
-  // compositions, adds one source module, so the exact measured graph is
-  // 151 modules and 35 packages (including `posthog-node` telemetry).
-  ceilings: { modules: 151, packages: 35 },
+  // compositions, adds one source module. Package reach includes `posthog-node`
+  // via platform telemetry (`platform/telemetry/errors/posthog.ts`). The
+  // workspace SessionEnv split keeps transport/protocol/admission policy in
+  // focused, already-reachable owners and adds four source modules, so the
+  // exact measured graph is 155 modules and 35 packages.
+  ceilings: { modules: 155, packages: 35 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

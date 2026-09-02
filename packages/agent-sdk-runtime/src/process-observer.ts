@@ -166,7 +166,14 @@ function safeBasename(value: string) {
 }
 
 function safeText(value: string, max: number) {
-  return value.replaceAll(/[\u0000-\u001f\u007f]/g, " ").trim().slice(0, max)
+  return [...value]
+    .map((character) => {
+      const code = character.codePointAt(0) ?? 0
+      return code < 32 || code === 127 ? " " : character
+    })
+    .join("")
+    .trim()
+    .slice(0, max)
 }
 
 function requirePid(value: number) {

@@ -1607,7 +1607,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       })
     },
     onSessionMetaSnapshot: async (workspace, sessions) => {
-      await Promise.all(sessions.map((session) => services.projectionStore.sync_session_meta(workspace, session)))
+      await services.projectionStore.sync_session_metas(workspace, sessions)
     },
   })
   async function refreshLocalSessionProjection() {

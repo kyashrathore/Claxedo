@@ -10,12 +10,9 @@ const matrixPath = path.resolve(appRoot, "../../docs/tech-docs/desktop-hosted-op
  * Hosted-operation inventory gate.
  *
  * `docs/tech-docs/desktop-hosted-operation-matrix.md` is the closed set of
- * authenticated calls a signed desktop may make. Unit 9 turns it into typed
- * schemas, Unit 10 generates the requirement manifest from it, and Unit 11
- * implements it as an exhaustive Electron handler map. All three inherit
- * whatever the matrix says, which makes a stale matrix worse than none: it
- * would silently narrow the desktop's capabilities, or silently widen its IPC
- * surface, with a green build either way.
+ * authenticated calls a signed desktop may make. A stale matrix would silently
+ * narrow the desktop's capabilities, or silently widen its IPC surface, with
+ * a green build either way.
  *
  * A prose document cannot notice a new `authFetch` call. This test can. It
  * scans the hosted-contribution candidate modules for authenticated transport
@@ -28,10 +25,10 @@ const matrixPath = path.resolve(appRoot, "../../docs/tech-docs/desktop-hosted-op
  * regex that claimed to extract them would report a confident subset and miss
  * the rest — worse than not checking, because it would look like coverage.
  * Method/path fidelity is checked against the real hosted route table in
- * `hosted-product-contract.test.ts`, and again by Unit 10's parity test.
+ * `hosted-product-contract.test.ts`.
  */
 
-/** Source roots whose modules are candidates to move into `@claxedo/cloud-app`. */
+/** Hosted feature roots scanned for authenticated transport. */
 const HOSTED_CANDIDATE_ROOTS = [
   "features/workgraph",
   "features/documents",

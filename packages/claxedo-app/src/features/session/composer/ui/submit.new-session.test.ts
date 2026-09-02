@@ -261,7 +261,13 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
 
-  test("cloud create requires an explicit model when no model is selected", async () => {
+  // `fix(composer): require explicit model selection and fail loud` removed the
+  // provider-catalog substitution this used to assert: submit now takes ONLY
+  // the composer's explicit selection (`selectedModelForSubmit`), and
+  // `model-strategy` pins "Explicit selection only — never substitute provider
+  // defaults or placeholders". The cloud-create path is the last one that could
+  // still reach a runtime `/provider` catalog, so it keeps its own gate.
+  test("cloud create fails loud instead of resolving a model from workspace runtime providers", async () => {
     state.demoMode = false
     state.claxedoServerUrl = "https://claxedo.example"
     state.localCurrentModel = undefined
@@ -303,7 +309,12 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
 
     expect(runtimeCalls.some((call) => call.input.startsWith("/provider?"))).toBe(false)
     expect(sessionCreateCalls).toEqual([])
+    expect(calls.create).toBe(0)
     expect(transportPromptAsyncCalls).toEqual([])
+    // The model gate must reject BEFORE directory provisioning: a cloud
+    // workspace created for a submit that then fails the gate is orphaned —
+    // nothing ever adopts or deletes it.
+    expect(apiCalls.some((call) => new URL(call.url).pathname === "/api/workspace/create")).toBe(false)
     expect(toasts).toContainEqual({
       title: "prompt.toast.modelAgentRequired.title",
       description: "prompt.toast.modelAgentRequired.description",

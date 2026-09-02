@@ -522,7 +522,7 @@ No implementation slice may claim performance acceptance until Slice 0 completes
 - `packages/claxedo-app/src/app/providers/global-sdk-event-fetch.ts` — older local global assumptions.
 - `packages/claxedo-app/src/app/integrations/claxedo-events.tsx` — current local workspace stream support.
 - `script/product-boundary/policies/local-server.ts` and `desktop.ts` — dependency prohibitions/ceilings.
-- `docs/perf/u11-qualification-status.md` and `docs/perf/HANDOFF.md` — CPU, terminal, split, peak-RSS evidence.
+- `docs/perf/AGENTS.md` — CPU, terminal, split, peak-RSS couplings.
 
 ---
 

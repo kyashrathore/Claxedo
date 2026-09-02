@@ -87,6 +87,8 @@ describe("global sync bootstrap integration", () => {
       },
     })
 
+    // The harness provider fetch is directory-scoped: the catalog can differ
+    // per workspace, so `providerListQuery` forwards the bootstrap directory.
     expect(calls).toEqual(["inventory", "http://claxedo.test/provider?harness=opencode&directory=%2Ftmp%2Fws"])
 
     await frames(60)

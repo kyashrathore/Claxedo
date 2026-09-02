@@ -135,6 +135,8 @@ function withContext<A, E>(
             }).pipe(Effect.asVoid),
           session: (input) =>
             run(modules.Session.Service.use((svc) => svc.create({ title: input?.title, parentID: input?.parentID }))),
+          sessionMetadata: (sessionID, metadata) =>
+            run(modules.Session.Service.use((svc) => svc.setMetadata({ sessionID, metadata }))),
           sessionGet: (sessionID) =>
             run(modules.Session.Service.use((svc) => svc.get(sessionID))).pipe(
               Effect.catchCause(() => Effect.succeed(undefined)),

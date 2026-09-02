@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@opencode-ai/ui/context"
-import { batch, createMemo, createRoot, getOwner, onCleanup } from "solid-js"
+import { batch, createMemo, createRoot, createSignal, getOwner, onCleanup } from "solid-js"
 import type { Accessor } from "solid-js"
 import type { SetStoreFunction } from "solid-js/store"
 import type {
@@ -288,6 +288,7 @@ export function promptDraftControllerInput(capture: Accessor<PromptDraftCapture>
 
 function createPromptSession(serverUrl: string, dir: string, id: string | undefined) {
   const legacy = `${dir}/prompt${id ? "/" + id : ""}.v2`
+  const [goalArmed, setGoalArmed] = createSignal(false)
 
   const [store, setStore, _, ready] = persisted(
     SERVER_SCOPED_PERSIST
@@ -329,6 +330,10 @@ function createPromptSession(serverUrl: string, dir: string, id: string | undefi
     current: createMemo(() => store.prompt),
     cursor: createMemo(() => store.cursor),
     dirty: createMemo(() => !isPromptEqual(store.prompt, DEFAULT_PROMPT)),
+    goal: {
+      armed: goalArmed,
+      setArmed: setGoalArmed,
+    },
     context: {
       items: createMemo(() => store.context.items),
       add(item: ContextItem) {
@@ -457,6 +462,10 @@ const promptContextInput = {
       current: () => session().current(),
       cursor: () => session().cursor(),
       dirty: () => session().dirty(),
+      goal: {
+        armed: () => session().goal.armed(),
+        setArmed: (armed: boolean) => session().goal.setArmed(armed),
+      },
       context: {
         items: () => session().context.items(),
         add: (item: ContextItem) => session().context.add(item),

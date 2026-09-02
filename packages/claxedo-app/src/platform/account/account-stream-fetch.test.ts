@@ -64,16 +64,27 @@ function bridge(input: {
   return { closes, chunks, ends, errors, starts: () => starts }
 }
 
-describe("openAccountStreamResponse", () => {
-  test("requires a signed account, not merely an installed Electron bridge", () => {
+describe("accountStreamAvailable", () => {
+  test("true only for a SIGNED account: bridge presence alone must not route streams", () => {
     bridge({ onStart: () => {} })
 
-    expect(accountStreamAvailable({ status: "pending" })).toBe(false)
-    expect(accountStreamAvailable({ status: "unsigned" })).toBe(false)
-    expect(accountStreamAvailable({ status: "unavailable", reason: "revoked" })).toBe(false)
     expect(accountStreamAvailable({ status: "signed", identity: { userId: "user_1" } })).toBe(true)
-  })
 
+    // The same bridge with any non-signed state: an unsigned build, a sign-in
+    // still in flight, a revoked account, and an unconfigured build (no
+    // `CLAXEDO_ACCOUNT_*` baked) whose every account operation refuses. All of
+    // them must stay on the local authFetch path.
+    expect(accountStreamAvailable({ status: "unsigned" })).toBe(false)
+    expect(accountStreamAvailable({ status: "pending" })).toBe(false)
+    expect(accountStreamAvailable({ status: "unavailable", reason: "revoked" })).toBe(false)
+    expect(accountStreamAvailable({ status: "unavailable", reason: "callback-failed" })).toBe(false)
+
+    delete (globalThis as { api?: unknown }).api
+    expect(accountStreamAvailable({ status: "signed", identity: { userId: "user_1" } })).toBe(false)
+  })
+})
+
+describe("openAccountStreamResponse", () => {
   test("arms every listener before start so synchronous first chunk and end are preserved", async () => {
     const h = bridge({
       onStart: ({ chunk, end }) => {

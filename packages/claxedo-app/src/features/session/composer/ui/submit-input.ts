@@ -80,6 +80,11 @@ export type PromptSubmitInput = PromptSubmitTargetInput & PromptSubmitContentInp
     onSubmit?: () => void
     canAbort?: Accessor<boolean>
     harnessController?: HarnessSubmitController
+    goalArmed?: Accessor<boolean>
+    onGoalArm?: VoidFunction
+    onGoalAccepted?: VoidFunction
+    hasActiveGoal?: Accessor<boolean>
+    stopGoal?: () => void | Promise<unknown>
   }
 
 export type CreateWorkspaceResult = { workspaceId: string; directory?: string }

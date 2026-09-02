@@ -455,6 +455,15 @@
         "typescript": "catalog:",
       },
     },
+    "packages/claxedo-telemetry": {
+      "name": "@claxedo/telemetry",
+      "version": "0.1.0",
+      "devDependencies": {
+        "@tsconfig/node-lts": "22.0.4",
+        "typescript": "catalog:",
+        "vitest": "2.1.9",
+      },
+    },
     "packages/claxedo-web": {
       "name": "@claxedo/web",
       "version": "0.0.1",
@@ -1249,7 +1258,7 @@
     "@solidjs/router": "0.15.4",
     "@solidjs/start": "https://pkg.pr.new/@solidjs/start@dfb2020",
     "@tailwindcss/vite": "4.3.3",
-    "@tanstack/solid-virtual": "3.13.32",
+    "@tanstack/solid-virtual": "3.13.37",
     "@tsconfig/bun": "1.0.10",
     "@tsconfig/node22": "22.0.5",
     "@types/bun": "1.3.14",
@@ -1699,6 +1708,8 @@
     "@claxedo/server-core": ["@claxedo/server-core@workspace:packages/claxedo-server-core"],
 
     "@claxedo/service-contract": ["@claxedo/service-contract@workspace:packages/claxedo-service-contract"],
+
+    "@claxedo/telemetry": ["@claxedo/telemetry@workspace:packages/claxedo-telemetry"],
 
     "@claxedo/usage-contract": ["@claxedo/usage-contract@workspace:packages/usage-contract"],
 
@@ -3092,9 +3103,9 @@
 
     "@tanstack/solid-query": ["@tanstack/solid-query@5.99.2", "", { "dependencies": { "@tanstack/query-core": "5.99.2" }, "peerDependencies": { "solid-js": "^1.6.0" } }, "sha512-0jvYCCedwLI/r3Gd2T/uIFrosvw9UoO0M7d81IVqNBtn8dTMu3obSqcJuOH436za3MDxodPSs45jC2qKXrbsqQ=="],
 
-    "@tanstack/solid-virtual": ["@tanstack/solid-virtual@3.13.32", "", { "dependencies": { "@tanstack/virtual-core": "3.17.3" }, "peerDependencies": { "solid-js": "^1.3.0" } }, "sha512-yhX4A4Kgn+wyTg6Mmu8+zwoMTwjz4K1ucvLfRJ8f0rPGDDAIqSaf0v6oU0yT9+SvrjmUaZQ0VX7g4byexbhNng=="],
+    "@tanstack/solid-virtual": ["@tanstack/solid-virtual@3.13.37", "", { "dependencies": { "@tanstack/virtual-core": "3.17.8" }, "peerDependencies": { "solid-js": "^1.3.0" } }, "sha512-RxJC8n/6nnFHcPvDGMg7ZkqSzCVUco4JNw3ctIChj1HjoKs5I9wt5nsU+DUVtMVEiMfizUxOAx4TPIN8SHjxUQ=="],
 
-    "@tanstack/virtual-core": ["@tanstack/virtual-core@3.17.3", "", {}, "sha512-8Np/TFELpI0ySuJoVmjvOrQYXH/8sTX0Biv9szhFhY39xOdAAY+smrMxjxOum/ux3eM8MUJQsEJ0/R0UpvC8dw=="],
+    "@tanstack/virtual-core": ["@tanstack/virtual-core@3.17.8", "", {}, "sha512-BfEvehNpOT75r5Ksc5xW6NZuXujTfb7nlSEyVu4XHG3gdxNg1KqXruWbDewXOUaUYIo4oRbSfkjIajz4MAT8tA=="],
 
     "@testing-library/dom": ["@testing-library/dom@10.4.1", "", { "dependencies": { "@babel/code-frame": "^7.10.4", "@babel/runtime": "^7.12.5", "@types/aria-query": "^5.0.1", "aria-query": "5.3.0", "dom-accessibility-api": "^0.5.9", "lz-string": "^1.5.0", "picocolors": "1.1.1", "pretty-format": "^27.0.2" } }, "sha512-o4PXJQidqJl82ckFaXUeoAW+XysPLauYI43Abki5hABd853iMhitooc6znOnczgbTYmEP6U6/y1ZyKAIsvMKGg=="],
 

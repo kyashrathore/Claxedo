@@ -34,6 +34,7 @@ import { SessionCompaction } from "../../src/session/compaction"
 import { SessionSummary } from "../../src/session/summary"
 import { Instruction } from "../../src/session/instruction"
 import { SessionProcessor } from "../../src/session/processor"
+import { SessionGoal } from "../../src/session/goal"
 import { SessionPrompt } from "../../src/session/prompt"
 import { SessionRevert } from "../../src/session/revert"
 import { SessionRunState } from "../../src/session/run-state"
@@ -170,6 +171,7 @@ const testLLMServerNode = LayerNode.make({ service: TestLLMServer, layer: TestLL
 
 const promptRoot = LayerNode.group([
   SessionPrompt.node,
+  SessionGoal.node,
   Session.node,
   SessionProjector.node,
   MessageV2.node,
@@ -2397,6 +2399,91 @@ noLLMServer.instance(
           expect(err.data.message).toContain("init")
         }
       }
+    }),
+  30_000,
+)
+
+noLLMServer.instance(
+  "reading a Goal never launches its execution",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const goals = yield* SessionGoal.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "Restarted Goal" })
+      yield* sessions.setMetadata({
+        sessionID: session.id,
+        metadata: {
+          "claxedo.goal": {
+            sessionId: session.id,
+            objective: "Finish the work",
+            status: "active",
+            createdAt: 1,
+            updatedAt: 1,
+            iteration: 1,
+          },
+        },
+      })
+
+      expect(yield* prompt.getGoal(session.id)).toMatchObject({ objective: "Finish the work", status: "active" })
+      // The read left the Goal unclaimed: recovery is reconcileGoals' job, so a
+      // restore is still available to whoever owns it.
+      expect(yield* goals.restore(session.id)).not.toBeNull()
+    }),
+  30_000,
+)
+
+noLLMServer.instance(
+  "reconciling Goals claims every session whose Goal is still active",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const goals = yield* SessionGoal.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "Reconciled Goal" })
+      yield* sessions.setMetadata({
+        sessionID: session.id,
+        metadata: {
+          "claxedo.goal": {
+            sessionId: session.id,
+            objective: "Finish the work",
+            status: "active",
+            createdAt: 1,
+            updatedAt: 1,
+            iteration: 1,
+          },
+        },
+      })
+
+      yield* prompt.reconcileGoals()
+      // reconcileGoals installed the execution controller, so nothing is left to
+      // restore — that is what makes recovery independent of any client read.
+      expect(yield* goals.restore(session.id)).toBeNull()
+    }),
+  30_000,
+)
+
+noLLMServer.instance(
+  "a second /goal reports the conflict instead of dying",
+  () =>
+    Effect.gen(function* () {
+      const prompt = yield* SessionPrompt.Service
+      const goals = yield* SessionGoal.Service
+      const sessions = yield* Session.Service
+      const session = yield* sessions.create({ title: "Duplicate Goal" })
+      yield* goals.start({ sessionID: session.id, objective: "First objective" })
+
+      const invocation = yield* prompt.command({
+        sessionID: session.id,
+        command: "goal",
+        arguments: "Second objective",
+        model: "test/test-model",
+      })
+
+      expect(
+        invocation.parts.some((part) => part.type === "text" && part.text.includes("/goal Second objective")),
+      ).toBe(true)
+      expect(yield* goals.get(session.id)).toMatchObject({ objective: "First objective", status: "active" })
     }),
   30_000,
 )

@@ -50,7 +50,7 @@ import { createLatestTurnCompletion, firstFoldSessionPrefetch, joinFirstFoldSess
 import { hydrateFirstFoldSessionPrefetch } from "./first-fold-hydration"
 import { conversationHasAssistantMessage } from "./assistant-turn-evidence"
 import { createActivePaneProjection } from "./active-pane-projection"
-import { createSessionPaneQueries, sessionCapabilitiesKey } from "./session-pane-queries"
+import { createSessionPaneQueries, sessionCapabilitiesKey, sessionTodoTransportRequestKey, sessionTransportRequestKey } from "./session-pane-queries"
 import { sessionHydrationAuthorityKey } from "./session-resource-authority"
 import {
   ACTIVE_SESSION_STATUS_POLL_DELAY_MS,
@@ -61,6 +61,7 @@ import {
   waitForFirstActiveSessionStatusPoll,
 } from "./active-session-status-poll"
 import { syncSessionCapabilitiesData } from "./session-capabilities-query"
+import { createSessionGoalController } from "./session-goal-controller"
 import { applyDirectorySessionMeta } from "./directory-session-meta"
 import { leasedQueryRequest } from "./leased-query-request"
 import { setDirectorySessionMetaQueryData } from "../data/sync/writers"
@@ -89,8 +90,8 @@ export function sessionHistoryKey(input: { sessionID: string; directory: string 
 
 type DirectoryRef = Parameters<typeof sessionHistoryKey>[0]["directory"]
 
-function markLiveSession(event: Pick<ReturnType<typeof useGlobalSDK>["event"], "setLiveSession">, sessionID: string, directory: DirectoryRef, workspaceId?: string, host?: SessionRef["host"]) {
-  event.setLiveSession(sessionID, { directory, workspaceId, host })
+function markLiveSession(event: Pick<ReturnType<typeof useGlobalSDK>["event"], "setLiveSession">, sessionID: string, directory: DirectoryRef, workspaceId?: string, sessionRef?: SessionRef) {
+  event.setLiveSession(sessionID, { directory, workspaceId, host: sessionRef?.host, sessionRef })
 }
 
 function scheduleDelayedTask(task: () => void, delay: number) {
@@ -130,47 +131,6 @@ export function isSessionNotFoundError(error: unknown) {
   return value.includes("session_not_found") || value.includes("Session not found") || value.includes("Request failed: 404")
 }
 
-function sessionTodoTransportRequestKey(input: {
-  sessionID: string
-  directory: string
-  signedControlPlane?: boolean
-  workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
-}) {
-  return shellDataKeys.sessionId(
-    input.sessionID,
-    "todo-request",
-    input.directory,
-    input.signedControlPlane === true ? "signed" : "local",
-    input.workspaceId ?? "",
-    input.workspaceKind ?? "",
-  )
-}
-
-function sessionTransportRequestKey(input: {
-  sessionID: string
-  directory: string
-  before?: string
-  view?: "latest-turn" | "latest-surface"
-  limit?: number
-  shouldFetchSession: boolean
-  signedControlPlane?: boolean
-  workspaceId?: string
-  workspaceKind?: "cloud" | "user-hosted"
-}) {
-  return shellDataKeys.sessionId(
-    input.sessionID,
-    "transport-session-request",
-    input.directory,
-    input.before ?? "latest",
-    input.view ?? "default",
-    input.limit ?? "semantic",
-    input.shouldFetchSession ? "with-session" : "messages-only",
-    input.signedControlPlane === true ? "signed" : "local",
-    input.workspaceId ?? "",
-    input.workspaceKind ?? "",
-  )
-}
 
 export function shouldHydrateSession(input: {
   sessionID?: string
@@ -361,7 +321,7 @@ export function createSessionController(input: {
   const { meta: historyMeta, setValue: setHistoryMetaValue } = createHistoryMetaState()
   const [missingSessions, setMissingSessions] = createSignal<Record<string, boolean | undefined>>({})
   let sessionActivationEpoch = 0
-  const { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, directorySessionCacheQuery, sessionRowQuery } =
+  const { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, goalQuery, directorySessionCacheQuery, sessionRowQuery } =
     createSessionPaneQueries({
       active: paneActive,
       sessionID: input.sessionID,
@@ -480,6 +440,19 @@ export function createSessionController(input: {
     active: paneActive,
     read: sourceCapabilities,
     initial: DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
+  })
+  const goals = createSessionGoalController({
+    active: paneActive,
+    sessionID: input.sessionID,
+    directory: input.directory,
+    client: sdk.client.session,
+    serverUrl: () => globalSDK.url,
+    signedControlPlane: input.signedControlPlane,
+    workspaceId: input.workspaceId,
+    workspaceKind: input.workspaceKind,
+    sessionRef: input.sessionRef,
+    source: () => settledData(goalQuery),
+    suppressed: suppressedByFastSessionSwitch,
   })
   const sourceActiveTurn = createMemo(() => {
     const sessionID = input.sessionID()
@@ -649,7 +622,7 @@ export function createSessionController(input: {
         // filesystem path (which the hosted inventory can't map back to a
         // workspace). Without it the stream falls through to the central control
         // plane and 404s for relay-backed (user-hosted) workspaces.
-        if (!opts?.silent) globalSDK.event.setLiveSession(sessionID, { directory, workspaceId, host: input.sessionRef?.()?.host })
+        if (!opts?.silent) globalSDK.event.setLiveSession(sessionID, { directory, workspaceId, host: input.sessionRef?.()?.host, sessionRef: input.sessionRef?.() })
         const cursor = result.messages.response.headers.get("x-next-cursor") ?? undefined
         if (!opts?.silent) {
           setHistoryMetaValue("cursor", key, cursor)
@@ -922,7 +895,7 @@ export function createSessionController(input: {
         const quiet = fastSessionSwitchNetworkQuiet({ sessionId: id })
         const initialSeed = seedFirstFoldFromPrefetch(id)
         const prefetched = !!initialSeed
-        markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.()?.host)
+        markLiveSession(globalSDK.event, id, directory, signedControlPlane ? input.workspaceId?.() : undefined, input.sessionRef?.())
         const syncFirstFoldHistory = async () => {
           const synced = await syncSessionHistory(id, { bypassQuiet: true, activationEpoch, signal: readEpoch.signal })
           sessionHydrationDebug("sync-session-complete", { directory, sessionID: id, synced })
@@ -1004,6 +977,7 @@ export function createSessionController(input: {
           active: () => readEpoch.active() && input.directory() === directory && input.sessionID() === id && input.active?.() !== false,
           run: () => {
             void syncSessionCapabilities(id, { signal: readEpoch.signal })
+            void goals.sync(id, { signal: readEpoch.signal })
             void syncSessionTodo(id)
           },
         })
@@ -1083,6 +1057,7 @@ export function createSessionController(input: {
     questionRequest,
     blocked,
     capabilities,
+    ...goals.actions,
     activeTurn,
     missing,
     historyMore,

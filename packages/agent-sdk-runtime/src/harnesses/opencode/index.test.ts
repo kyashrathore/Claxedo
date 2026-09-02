@@ -362,6 +362,35 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     })
   })
 
+  test("surfaces upstream read failures without returning empty collections", async () => {
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async () => new Response("unavailable", { status: 503 }),
+    })
+
+    await expect(adapter.listSessions("/work"))
+      .rejects.toThrow("List OpenCode sessions failed with HTTP 503")
+    await expect(adapter.getMessages("s1", "/work"))
+      .rejects.toThrow("List OpenCode messages failed with HTTP 503")
+    await expect(adapter.listPermissions("/work"))
+      .rejects.toThrow("List OpenCode permissions failed with HTTP 503")
+    await expect(adapter.listQuestions("/work"))
+      .rejects.toThrow("List OpenCode questions failed with HTTP 503")
+    await expect(adapter.getTodos("s1", "/work"))
+      .rejects.toThrow("List OpenCode todos failed with HTTP 503")
+  })
+
+  test("treats only HTTP 404 as an absent OpenCode session", async () => {
+    let status = 404
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async () => new Response(null, { status }),
+    })
+
+    await expect(adapter.getSession("s1", "/work")).resolves.toBeNull()
+    status = 503
+    await expect(adapter.getSession("s1", "/work"))
+      .rejects.toThrow("Read OpenCode session failed with HTTP 503")
+  })
+
   test("routes session list/create/status through the injected handler — no spawn, no network", async () => {
     const seen: Array<{ method: string; path: string; directory: string | null; body: string }> = []
     const handler: OpenCodeRequestFn = async (req) => {
@@ -435,6 +464,33 @@ describe("OpenCodeHarnessAdapter injected-request transport", () => {
     await expect(adapter.createSession(path.resolve("/work"), "Stable", "ses_wgrun_run_1"))
       .resolves.toEqual({ id: "ses_wgrun_run_1" })
     expect(received).toBe(JSON.stringify({ id: "ses_wgrun_run_1", title: "Stable" }))
+  })
+
+  test("rejects a failed upstream session deletion", async () => {
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async () => new Response("conflict", { status: 409 }),
+    })
+
+    await expect(adapter.deleteSession("ses_busy", path.resolve("/work")))
+      .rejects.toThrow("Delete OpenCode session failed with HTTP 409")
+  })
+
+  test("does not delete an existing target session while preparing a handoff", async () => {
+    const methods: string[] = []
+    const adapter = new OpenCodeHarnessAdapter(undefined, {
+      request: async (request) => {
+        methods.push(request.method)
+        const url = new URL(request.url)
+        if (url.pathname === "/session/ses_existing" && request.method === "GET") {
+          return Response.json({ id: "ses_existing", title: "Prior target" })
+        }
+        return new Response("unexpected", { status: 500 })
+      },
+    })
+
+    await expect(adapter.createHandoffSession(path.resolve("/work"), "Replacement", "ses_existing"))
+      .rejects.toThrow("target session ses_existing already exists")
+    expect(methods).toEqual(["GET"])
   })
 
   test("sends messages through the injected handler", async () => {

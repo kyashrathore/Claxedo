@@ -11,13 +11,9 @@ import { isDemoMode } from "@/lib/runtime-mode"
  * who issues one.
  *
  * This module used to call `getAuthToken` from `@/platform/auth/auth-client`
- * directly, and that single import was the cycle across the cloud-app package
- * boundary: `auth-client.ts` is on Unit 10's move list, this file is NOT (54
- * `@claxedo/app` modules import it), so `@claxedo/app` would have published a
- * transport whose credential source lived in `@claxedo/cloud-app`.
- * `cloud-app-export-surface.test.ts` classifies `api.ts` as group (c) — never
- * exported — for exactly that reason, and the refusal is only honest once the
- * edge is gone.
+ * directly. `auth-client.ts` is hosted; this file is shared. The transport
+ * cannot import a credential source only the hosted build has.
+ * `configureApiRuntime` installs the bearer from the composition root instead.
  *
  * Deliberately NOT a `*-port.ts` contract module in the shape of
  * `platform/runtime/workspace-startup-port.ts`. That seam names three hosted

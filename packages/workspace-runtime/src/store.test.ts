@@ -233,6 +233,82 @@ describe("RuntimeStore", () => {
     reopened.close()
   })
 
+  it("routes an observation carrying an already-owned child session to the owning row (claude dual-channel split)", () => {
+    // Repro of the live crash "UNIQUE constraint failed:
+    // session_subagent.child_session_id": the claude harness reports one Task
+    // through two channels — an `agent-tool` observation keyed by toolCallId
+    // and a `background-task` observation keyed by stableCorrelationId — so
+    // admission opens TWO rows for one subagent. The linking `task_started`
+    // observation then arrived carrying the FIRST row's child session while
+    // resolving (by stable key) to the SECOND row, and the child-column write
+    // collided with the unique child index, killing the whole turn.
+    const root = tmp()
+    const store = new RuntimeStore(root)
+
+    // Channel 1: Task tool block — toolCallId only, child session allocated.
+    const spawn = store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "claude:agent-tool:w:tool-1",
+        harnessExecutionId: "run",
+        toolCallId: "tool-1",
+        toolCallRole: "spawn",
+        status: "pending",
+        providerKind: "claude-agent",
+        childSessionId: "child-a",
+        transcript: { kind: "messages" },
+      },
+      allocateKey: () => "unused-a",
+    })
+
+    // Channel 2: background_tasks_changed — stable task id only, no child yet.
+    const background = store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "claude:background-task:w:task-1",
+        harnessExecutionId: "run",
+        stableCorrelationId: "task-1",
+        status: "running",
+        providerKind: "claude-agent",
+        transcript: { kind: "messages" },
+      },
+      allocateKey: () => "unused-b",
+    })
+    assert.notEqual(background.event.subagentKey, spawn.event.subagentKey)
+
+    // The link: carries the stable key of row B and the child of row A. Child
+    // identity is the strongest correlator — this must land on row A, never
+    // write child-a into row B (which is what crashed with the UNIQUE error).
+    const linked = store.admit({
+      parentSessionId: "parent",
+      observation: {
+        observationId: "claude:task_started:w",
+        harnessExecutionId: "run",
+        stableCorrelationId: "task-1",
+        toolCallId: "tool-1",
+        toolCallRole: "spawn",
+        status: "running",
+        providerKind: "claude-agent",
+        childSessionId: "child-a",
+        transcript: { kind: "messages" },
+      },
+      allocateKey: () => "unused-c",
+    })
+    assert.equal(linked.event.subagentKey, spawn.event.subagentKey)
+
+    const rows = store.listSubagents("parent")
+    const owners = rows.filter((row) => row.childSessionId === "child-a")
+    assert.equal(owners.length, 1)
+    assert.equal(owners[0]?.subagentKey, spawn.event.subagentKey)
+    store.close()
+
+    // The poisoned durable state must also rehydrate (the live failure mode
+    // was every later admission crashing after restart).
+    const reopened = new RuntimeStore(root)
+    assert.equal(reopened.listSubagents("parent").length, rows.length)
+    reopened.close()
+  })
+
   it("serializes key and revision admission across concurrently open stores", () => {
     const root = tmp()
     const first = new RuntimeStore(root)

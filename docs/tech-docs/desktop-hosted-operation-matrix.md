@@ -1,6 +1,6 @@
 # Desktop hosted-operation matrix
 
-Status: **reviewed baseline** (U8 Unit 1). Enforced by
+Status: **reviewed baseline**. Enforced by
 `packages/claxedo-app/src/architecture/hosted-operation-inventory.test.ts`.
 
 ## Why this document exists
@@ -17,10 +17,8 @@ including ones no product surface uses. The IPC surface must therefore be a
 closed set of **named operations** with fixed method and path owned in main —
 and a closed set can only be reviewed if it is written down first.
 
-This is that list. Unit 9 turns it into `hosted-operations.ts` (app-owned
-request/result schemas), Unit 10 generates `required-hosted-operations.ts` from
-it, and Unit 11 implements it as an exhaustive Electron handler map. A hosted
-contribution that calls something absent here fails the inventory gate.
+This is that list. A hosted contribution that calls something absent here
+fails the inventory gate.
 
 ## What is deliberately NOT an account operation
 
@@ -183,9 +181,9 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 
 WorkGraph's client takes its transport by injection
 (`createWorkGraphClient({ request })`). Today `app/integrations/doc-workgraph.ts`
-injects `authFetch` directly. Unit 11 replaces that injection with the Electron
-operation port; the injection seam is what makes that a one-line change rather
-than a rewrite of every WorkGraph call site.
+injects `authFetch` directly. The injection seam is what lets a signed desktop
+rebind that client onto the Electron operation port without rewriting every
+WorkGraph call site.
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|

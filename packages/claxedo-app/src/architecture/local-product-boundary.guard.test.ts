@@ -7,12 +7,12 @@ import { shortestForbiddenImportChain, type ProductImportRef } from "./import-gr
 const appRoot = path.resolve(import.meta.dir, "../..")
 
 /**
- * Local product boundary — the app half of the U8 package split.
+ * Local product boundary.
  *
- * `@claxedo/app` is the LOCAL/shared renderer. Its production entry must close
- * over the local shell, workbench, sessions, terminals, providers, and settings
- * and nothing else; hosted identity, WorkGraph, Documents, cloud runtime, and
- * hosted API clients belong to `@claxedo/cloud-app`.
+ * `@claxedo/app`'s production entry must not close over hosted identity,
+ * WorkGraph, Documents, cloud runtime, or hosted API clients. Type-only
+ * imports are excluded: the bundler erases them. The emitted-artifact gate
+ * covers what source scanning cannot see.
  *
  * The published local entry is now separate from the hosted bootstrap. This
  * file has two jobs:

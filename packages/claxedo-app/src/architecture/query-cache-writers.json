@@ -36,6 +36,11 @@
       "status": "live"
     },
     {
+      "family": "session Goal state",
+      "writer": "features/session/store/session-goal-cache.ts",
+      "status": "live"
+    },
+    {
       "family": "saved views cache",
       "writer": "features/session/data/sync/views-writers.ts",
       "status": "planned"

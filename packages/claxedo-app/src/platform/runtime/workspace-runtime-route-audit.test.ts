@@ -2042,14 +2042,17 @@ describe("workspace runtime route audit", () => {
     // gained an authority discriminator suffix, but the ROOT session id is
     // still the primary shellDataKeys.sessionId segment; the controller
     // imports the shared key instead of re-declaring it.
-    expect(text).toMatch(/import \{ createSessionPaneQueries, sessionCapabilitiesKey \} from "\.\/session-pane-queries"/)
+    expect(text).toMatch(/import \{ createSessionPaneQueries, sessionCapabilitiesKey, sessionTodoTransportRequestKey, sessionTransportRequestKey \} from "\.\/session-pane-queries"/)
     expect(paneQueries).toMatch(/export function sessionCapabilitiesKey\(scope: SessionCapabilitiesScope\)/)
     expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*scope\.sessionID,\s*"transport-capabilities"/)
     expect(paneQueries).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
-    expect(text).toMatch(/function sessionTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
-    expect(text).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"transport-session-request"/)
-    expect(text).toMatch(/function sessionTodoTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
-    expect(text).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"todo-request"/)
+    // The request-key builders live with the other query keys in
+    // session-pane-queries (same move sessionCapabilitiesKey made); the
+    // controller imports them rather than re-declaring.
+    expect(paneQueries).toMatch(/export function sessionTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
+    expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"transport-session-request"/)
+    expect(paneQueries).toMatch(/export function sessionTodoTransportRequestKey\(input: \{[\s\S]{0,80}sessionID: string/)
+    expect(paneQueries).toMatch(/return shellDataKeys\.sessionId\(\s*input\.sessionID,\s*"todo-request"/)
     expect(text).not.toMatch(/function keyFor\(directory: string, sessionID: string\)/)
     expect(text).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
     expect(text).not.toMatch(/keyFor\(input\.directory\(\), sessionID\)/)

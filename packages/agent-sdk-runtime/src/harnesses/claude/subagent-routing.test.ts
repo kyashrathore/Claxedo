@@ -14,6 +14,7 @@ function claudeDriver(): SdkRuntimeDriver {
     setAuth() {},
     applyConfig() {},
     createAgentSession: async () => "claude-parent-thread",
+    deleteAgentSession() {},
     createRuntime: (threadId) => createAgentEventRuntime({
       harness: "claude",
       threadId,

@@ -3,9 +3,9 @@ import {
   createAgentRuntime,
   createSubagentAdmissionBoundary,
   type AgentHarnessFactory,
-  type AgentMessageRow,
+  type AgentMessage,
   type AgentRuntimeStore,
-  type AgentSessionRow,
+  type AgentSession,
   type SandboxRef,
   type SessionConfigUpdate,
   type SessionEnvFactory,
@@ -107,7 +107,7 @@ function toolSandboxFromMeta(meta: SessionMeta): SandboxRef {
   return { kind: "virtual", id: "central-pi" }
 }
 
-function metaRow(meta: SessionMeta): AgentSessionRow {
+function metaRow(meta: SessionMeta): AgentSession {
   return {
     id: meta.sessionID,
     title: meta.title ?? null,
@@ -129,7 +129,7 @@ function metaRow(meta: SessionMeta): AgentSessionRow {
   }
 }
 
-function messageRow(input: unknown): input is AgentMessageRow {
+function messageRow(input: unknown): input is AgentMessage {
   if (!input || typeof input !== "object") return false
   const item = input as { info?: unknown; parts?: unknown }
   if (!item.info || typeof item.info !== "object") return false
@@ -329,8 +329,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     }
     return { ...backend, extraTools }
   }
+  const runtimeStore = createMemoryRuntimeStore() as unknown as AgentRuntimeStoreWithRecovery
   const adapter = new PiHarnessAdapter({
     eventHub,
+    goalStore: runtimeStore,
     defaultPlacement: {
       mode: "hybrid",
       host: "central",
@@ -346,11 +348,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     ...(options.createEnv ? { createEnv: options.createEnv } : {}),
   })
   let onTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
-  const runtimeStore = createMemoryRuntimeStore() as unknown as AgentRuntimeStoreWithRecovery
   const finishTurn = runtimeStore.finishTurn?.bind(runtimeStore)
   if (finishTurn) {
     runtimeStore.finishTurn = (input) => {
-      finishTurn(input)
+      const result = finishTurn(input)
       const session = runtimeStore.getSession(input.sessionId) as { lastTurn?: AgentTurnOutcome } | null
       onTurnOutcome?.({
         ...input,
@@ -358,6 +359,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
           ? { assistantMessageId: input.assistantMessageId ?? session?.lastTurn?.assistantMessageId }
           : {}),
       })
+      return result
     }
   }
   const subagentStore = runtimeStore as AgentRuntimeStoreWithRecovery & SubagentAdmissionStore & {

@@ -43,64 +43,60 @@ function json(input: string | undefined) {
 
 function authEntry(input: string | undefined) {
   const value = json(input)
-  if (!value) {
-    const key = input?.trim()
-    if (!key) return
-    return { type: "api" as const, key }
-  }
-  if (value.type === "api" && typeof value.key === "string") {
-    return { type: "api" as const, key: value.key }
-  }
-  if (
-    value.type === "oauth"
-    && typeof value.refresh === "string"
-    && typeof value.access === "string"
-    && typeof value.expires === "number"
-  ) {
-    return {
-      type: "oauth" as const,
-      refresh: value.refresh,
-      access: value.access,
-      expires: value.expires,
-      ...(typeof value.accountId === "string" ? { accountId: value.accountId } : {}),
-      ...(typeof value.enterpriseUrl === "string" ? { enterpriseUrl: value.enterpriseUrl } : {}),
-    }
-  }
+  if (!value) return apiEntry(input?.trim())
+  if (value.type === "api") return apiEntry(stringValue(value.key))
+  if (value.type === "oauth") return oauthEntry(value)
   if (value.type !== "codex_auth") return
-  const refresh =
-    typeof value.refresh === "string"
-      ? value.refresh
-      : value.oauth && typeof value.oauth === "object" && typeof (value.oauth as Record<string, unknown>).refresh === "string"
-        ? (value.oauth as Record<string, unknown>).refresh as string
-        : undefined
-  const access =
-    typeof value.access === "string"
-      ? value.access
-      : value.oauth && typeof value.oauth === "object" && typeof (value.oauth as Record<string, unknown>).access === "string"
-        ? (value.oauth as Record<string, unknown>).access as string
-        : undefined
-  const expires =
-    typeof value.expires === "number"
-      ? value.expires
-      : value.oauth && typeof value.oauth === "object" && typeof (value.oauth as Record<string, unknown>).expires === "number"
-        ? (value.oauth as Record<string, unknown>).expires as number
-        : undefined
-  if (typeof value.OPENAI_API_KEY === "string" && value.OPENAI_API_KEY) {
-    return { type: "api" as const, key: value.OPENAI_API_KEY }
-  }
-  if (!refresh || !access || !expires) return
+  return codexAuthEntry(value)
+}
+
+function apiEntry(key: string | undefined) {
+  return key ? { type: "api" as const, key } : undefined
+}
+
+function oauthEntry(value: Record<string, unknown>) {
+  const refresh = stringValue(value.refresh)
+  const access = stringValue(value.access)
+  const expires = numberValue(value.expires)
+  if (!refresh || !access || expires === undefined) return
   return {
     type: "oauth" as const,
     refresh,
     access,
     expires,
-    ...(typeof value.account_id === "string" ? { accountId: value.account_id } : {}),
-    ...(value.oauth && typeof value.oauth === "object" && typeof (value.oauth as Record<string, unknown>).account_id === "string"
-      ? { accountId: (value.oauth as Record<string, unknown>).account_id as string }
-      : {}),
-    ...(typeof value.enterprise_url === "string" ? { enterpriseUrl: value.enterprise_url } : {}),
-    ...(value.oauth && typeof value.oauth === "object" && typeof (value.oauth as Record<string, unknown>).enterprise_url === "string"
-      ? { enterpriseUrl: (value.oauth as Record<string, unknown>).enterprise_url as string }
-      : {}),
+    ...(stringValue(value.accountId) ? { accountId: stringValue(value.accountId) } : {}),
+    ...(stringValue(value.enterpriseUrl) ? { enterpriseUrl: stringValue(value.enterpriseUrl) } : {}),
   }
+}
+
+function codexAuthEntry(value: Record<string, unknown>) {
+  const oauth = objectValue(value.oauth)
+  const apiKey = stringValue(value.OPENAI_API_KEY)
+  if (apiKey) return apiEntry(apiKey)
+  const refresh = stringValue(value.refresh) ?? stringValue(oauth?.refresh)
+  const access = stringValue(value.access) ?? stringValue(oauth?.access)
+  const expires = numberValue(value.expires) ?? numberValue(oauth?.expires)
+  if (!refresh || !access || expires === undefined) return
+  const accountId = stringValue(value.account_id) ?? stringValue(oauth?.account_id)
+  const enterpriseUrl = stringValue(value.enterprise_url) ?? stringValue(oauth?.enterprise_url)
+  return {
+    type: "oauth" as const,
+    refresh,
+    access,
+    expires,
+    ...(accountId ? { accountId } : {}),
+    ...(enterpriseUrl ? { enterpriseUrl } : {}),
+  }
+}
+
+function objectValue(value: unknown) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+}
+
+function stringValue(value: unknown) {
+  return typeof value === "string" && value.length > 0 ? value : undefined
+}
+
+function numberValue(value: unknown) {
+  return typeof value === "number" ? value : undefined
 }

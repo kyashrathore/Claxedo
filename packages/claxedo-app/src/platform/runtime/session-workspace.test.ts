@@ -128,6 +128,23 @@ describe("session workspace key", () => {
     })
   })
 
+  test("keeps a workspace-shaped local project id off the relay", () => {
+    const workspaceId = "608c72e3-405a-4d2a-bf7f-883b8c76ea8e"
+    const projects = [{
+      workspaces: {
+        [workspaceId]: {
+          id: workspaceId,
+          workspaceId,
+          kind: "local",
+          directory: "/repo/local",
+        },
+      },
+    }]
+
+    expect(sessionWorkspaceRuntimeRef({ directory: `workspace:${workspaceId}`, projects })).toBeUndefined()
+    expect(sessionWorkspaceRuntimeRef({ directory: workspaceId, projects })).toBeUndefined()
+  })
+
   test("resolves a relay workspace from its filesystem worktree directory via the inventory", () => {
     const projects = [
       {

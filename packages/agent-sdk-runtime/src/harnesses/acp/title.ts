@@ -31,7 +31,7 @@ export type ACPTitleDeps = {
   boot(proc: ACPProcess, directory: string, title?: string): Promise<string>
 }
 
-export const fallbackSessionTitle = (text: string) => {
+export const deriveSessionTitle = (text: string) => {
   const cleaned = text.replace(/\s+/g, " ").trim()
   if (/^(hi|hello|hey|yo|greetings)[!. ]*$/i.test(cleaned)) return "Greeting"
   const withoutPolitePrefix = cleaned.replace(/^(please|can you|could you|would you)\s+/i, "").trim()
@@ -75,14 +75,14 @@ export function maybeAutoTitle(
     const text = extractTextFromParts(parts)
     if (!text) return null
 
-    const fallback = fallbackSessionTitle(text)
+    const derivedTitle = deriveSessionTitle(text)
     const now = Date.now()
     const event = sessionUpdated({
       id,
       slug: id,
       projectID: "",
       directory,
-      title: fallback,
+      title: derivedTitle,
       version: "local",
       time: { created: now, updated: now },
     })
@@ -90,7 +90,7 @@ export function maybeAutoTitle(
       sessionId: id,
       agentSessionId,
       payload: event,
-      source: { dir: "in", method: "auto-title", frame: { title: fallback } },
+      source: { dir: "in", method: "auto-title", frame: { title: derivedTitle } },
     })
 
     return event
@@ -155,9 +155,9 @@ export async function generateAITitle(
   const title = cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
 
   // Check current title hasn't been manually set in the meantime
-  const fallback = fallbackSessionTitle(userText)
+  const derivedTitle = deriveSessionTitle(userText)
   const current = deps.store.getSession(sessionId) as { title?: string | null } | null
-  if (hasConcreteSessionTitle(current?.title) && current?.title !== fallback) {
+  if (hasConcreteSessionTitle(current?.title) && current?.title !== derivedTitle) {
     return // title was manually updated, don't overwrite
   }
 

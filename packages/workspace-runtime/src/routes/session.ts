@@ -3,11 +3,11 @@ import { createSessionRoutes } from "./session-core"
 import {
   normalizeHarnessIdentity,
   type AgentRuntime,
-  type AgentMessageRow,
-  type AgentPermissionRow,
-  type AgentQuestionRow,
+  type AgentMessage,
+  type AgentPermission,
+  type AgentQuestion,
   type SessionHarness,
-  type AgentSessionRow,
+  type AgentSession,
   type PromptInput,
   type SessionConfig,
   type SessionConfigRequestUpdate,
@@ -98,7 +98,7 @@ function requiredDirectory(directory: string | undefined): string {
 }
 
 type MessageSnapshot = {
-  messages: AgentMessageRow[]
+  messages: AgentMessage[]
   maxEventOrdinal?: number
 }
 
@@ -109,9 +109,9 @@ export function SessionRoutes(
     sessionAccessPolicy?: SessionAccessPolicy
     beforeSessionOperation?: (input: { sessionId: string; operation: string }) => Response | undefined
     resolveRuntime?: (input?: { sessionId?: string; directory?: string; harness?: SessionHarness }) => AgentRuntime | Promise<AgentRuntime | undefined> | undefined
-    listPermissions?: (c: unknown, directory: string) => Promise<AgentPermissionRow[]>
-    listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestionRow[]>
-    listSessions?: (c: unknown, directory: string) => Promise<AgentSessionRow[]>
+    listPermissions?: (c: unknown, directory: string) => Promise<AgentPermission[]>
+    listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestion[]>
+    listSessions?: (c: unknown, directory: string) => Promise<AgentSession[]>
     /** Host-owned status transport. The session-core route remains the only
      * public handler so its private-session filter cannot be shadowed. */
     getStatus?: (
@@ -138,7 +138,7 @@ export function SessionRoutes(
     getMessages?: (input: {
       directory: string
       sessionId: string
-    }) => Promise<AgentMessageRow[] | undefined> | AgentMessageRow[] | undefined
+    }) => Promise<AgentMessage[] | undefined> | AgentMessage[] | undefined
     getMessagePage?: (input: {
       adapter: AgentHarnessAdapter
       directory: string
@@ -153,7 +153,7 @@ export function SessionRoutes(
       adapter: AgentHarnessAdapter
       directory: string
       sessionId: string
-    }) => Promise<AgentSessionRow | null> | AgentSessionRow | null
+    }) => Promise<AgentSession | null> | AgentSession | null
     getTodos?: (input: {
       directory: string
       sessionId: string

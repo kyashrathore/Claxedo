@@ -121,9 +121,27 @@ async function patchDevBundleMetadata() {
     }
     return true
   }
+  // The menu-bar app name comes from the bundle, not app.setName(): label it
+  // per worktree so simultaneous dev builds are tellable apart. Each worktree
+  // has its own node_modules/electron bundle, so the patches never collide.
+  // Mirrors resolveDevIdentity in src/main/dev-identity.ts: a linked worktree
+  // (.git is a file) is labeled with its directory name.
+  // Mirrors probeDevLabel in src/main/dev-identity-policy.ts: a linked
+  // worktree (.git is a file) is labeled with its directory name; the main
+  // checkout is labeled with its current branch.
+  const repoRoot = path.resolve(PACKAGE_DIR, "../..")
+  const label = process.env.CLAXEDO_DEV_LABEL?.trim() || (() => {
+    try {
+      if (fs.statSync(path.join(repoRoot, ".git")).isFile()) return path.basename(repoRoot)
+      const head = fs.readFileSync(path.join(repoRoot, ".git", "HEAD"), "utf8").trim()
+      if (head.startsWith("ref: ")) return head.slice("ref: ".length).replace(/^refs\/heads\//, "")
+      return /^[0-9a-f]{40}$/.test(head) ? head.slice(0, 8) : null
+    } catch { return null }
+  })()
+  const displayName = label ? `Claxedo Dev (${label})` : "Claxedo Dev"
   changes.push(
-    await setKey("CFBundleName", "Claxedo Dev"),
-    await setKey("CFBundleDisplayName", "Claxedo Dev"),
+    await setKey("CFBundleName", displayName),
+    await setKey("CFBundleDisplayName", displayName),
     await setKey("CFBundleIdentifier", "ai.claxedo.desktop.dev"),
     await setKey("CFBundleIconFile", icon),
     await setKey("CFBundleExecutable", executable),
@@ -140,7 +158,7 @@ async function patchDevBundleMetadata() {
   }
   // Bump mtime so LaunchServices re-reads the bundle metadata.
   await $`touch ${appPath}`.quiet().catch(() => {})
-  console.log(`[predev] Patched dev Electron bundle metadata → Claxedo Dev`)
+  console.log(`[predev] Patched dev Electron bundle metadata → ${displayName}`)
 }
 
 // workspace-runtime consumes agent-sdk-runtime through its `dist` exports, so

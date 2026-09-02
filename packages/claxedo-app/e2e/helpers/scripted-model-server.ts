@@ -114,6 +114,21 @@ export const SCRIPTED_TITLE = "Scripted Tier R Session"
 // is simply the wrong turn's text) — which is how it was found.
 const MARKER_PROMPT = /reply with exactly this one token[^:]*:\s*\\?"?([A-Za-z0-9._-]+)/gi
 const TITLE_PROMPT = "Generate a title for this conversation"
+const GOAL_EVALUATOR_PROMPT = "You are an independent completion evaluator."
+const CLAUDE_GOAL_EVALUATOR_PROMPT = "Based on the conversation transcript above, has the following stopping condition been satisfied?"
+
+function isClaudeGoalEvaluatorPrompt(prompt: string) {
+  return prompt.includes(CLAUDE_GOAL_EVALUATOR_PROMPT)
+}
+
+function isGoalEvaluatorPrompt(prompt: string) {
+  // Anthropic Messages carries the evaluator instruction in top-level
+  // `system`, while promptText intentionally flattens only `messages`. The
+  // evaluator's two user headings are stable across the OpenCode and Pi owned
+  // executors and distinguish it from the worker continuation prompt.
+  return prompt.includes(GOAL_EVALUATOR_PROMPT)
+    || (prompt.includes("OBJECTIVE:") && prompt.includes("LATEST WORK RESULT:"))
+}
 
 type ScriptedModelBody =
   | { dialect: "chat"; body: ChatCompletionCreateParams }
@@ -125,6 +140,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   const requests: ScriptedModelRequest[] = []
   let counts: Record<ScriptedDialect, number> = { chat: 0, messages: 0, responses: 0 }
   let pendingTool: ScriptedToolCall | undefined
+  let goalEvaluationCount = 0
   let sequence = 0
   let replyDelayMs = 0
 
@@ -150,6 +166,16 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     let reply: ScriptedModelRequest["reply"]
     if (prompt.includes(TITLE_PROMPT)) {
       reply = { kind: "text", text: SCRIPTED_TITLE }
+    } else if (isClaudeGoalEvaluatorPrompt(prompt)) {
+      goalEvaluationCount += 1
+      reply = goalEvaluationCount === 1
+        ? { kind: "text", text: JSON.stringify({ ok: false, reason: "One more autonomous iteration is required" }) }
+        : { kind: "text", text: JSON.stringify({ ok: true }) }
+    } else if (isGoalEvaluatorPrompt(prompt)) {
+      goalEvaluationCount += 1
+      reply = goalEvaluationCount === 1
+        ? { kind: "text", text: JSON.stringify({ met: false, reason: "One more autonomous iteration is required" }) }
+        : { kind: "text", text: JSON.stringify({ met: true, reason: "The scripted continuation supplied the required evidence" }) }
     } else if (pendingTool && (pendingTool.whenPromptIncludes
       ? prompt.includes(pendingTool.whenPromptIncludes)
       : !toolResultSeen)) {
@@ -193,6 +219,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     counts: () => ({ ...counts }),
     resetCounts: () => {
       counts = { chat: 0, messages: 0, responses: 0 }
+      goalEvaluationCount = 0
       requests.splice(0)
     },
     scriptTool: (call) => {

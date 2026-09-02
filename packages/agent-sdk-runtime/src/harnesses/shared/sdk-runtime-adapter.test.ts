@@ -1,9 +1,10 @@
 import path from "node:path"
 import { describe, expect, test } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
-import { SdkRuntimeAdapter, type SdkRuntimeDriver } from "./sdk-runtime-adapter"
+import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } from "./sdk-runtime-adapter"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { createCodexAppServerDriver } from "../codex/driver"
+import type { CodexGoalController } from "../codex/goal"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { runtimeSnapshot } from "@claxedo/agent-event-runtime"
 import { storeRows } from "../../test-utils/store-internals"
@@ -16,6 +17,7 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
     setAuth() {},
     applyConfig() {},
     createAgentSession: async () => "thread-1",
+    deleteAgentSession() {},
     createRuntime() {
       const snapshot = () => runtimeSnapshot({ harness: "codex", threadId: "thread-1", adapterState: {} })
       return {
@@ -30,7 +32,230 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
   }
 }
 
+/** A native Goal driver that holds nothing — the state a process restart leaves. */
+function nativeGoalStub(): NonNullable<SdkRuntimeDriver["nativeGoal"]> {
+  return {
+    capabilities: () => ({
+      implemented: true,
+      available: true,
+      actions: [],
+      recovery: "blocked",
+      optionalFields: [],
+    }),
+    read: async () => null,
+    run: async () => {},
+    stop: async () => null,
+  }
+}
+
+function projectedGoal() {
+  return {
+    sessionId: "session-1",
+    objective: "Ship safely",
+    status: "active" as const,
+    createdAt: 1,
+    updatedAt: 1,
+  }
+}
+
 describe("SdkRuntimeAdapter", () => {
+  test("disables native Goal continuation before aborting its active turn", async () => {
+    const order: string[] = []
+    let publishActive: ((goal: ReturnType<typeof activeGoal>) => void) | undefined
+    const activeGoal = () => ({
+      sessionId: "session-1",
+      objective: "Ship safely",
+      status: "active" as const,
+      createdAt: 1,
+      updatedAt: 1,
+    })
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        nativeGoal: {
+          capabilities: () => ({
+            implemented: true,
+            available: true,
+            actions: [],
+            recovery: "blocked",
+            optionalFields: [],
+          }),
+          read: async () => activeGoal(),
+          run: async (input, _objective, onGoal) => {
+            publishActive = onGoal
+            onGoal(activeGoal())
+            await new Promise<void>((resolve) => {
+              input.abort.signal.addEventListener("abort", () => {
+                order.push("abort")
+                resolve()
+              }, { once: true })
+            })
+          },
+          stop: async () => {
+            order.push("stop")
+            return { ...activeGoal(), status: "paused", updatedAt: 2 }
+          },
+          delete: async () => true,
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"), undefined, "session-1")
+    const started = await adapter.goals?.start(session.id, { objective: "Ship safely" }, path.resolve("/repo"))
+    expect(started).toMatchObject({ ok: true, goal: { status: "active" } })
+    expect(publishActive).toBeDefined()
+
+    await expect(adapter.goals?.stop(session.id, path.resolve("/repo"))).resolves.toMatchObject({
+      ok: true,
+      goal: { status: "paused" },
+    })
+    expect(order).toEqual(["stop", "abort"])
+    adapter.dispose()
+  })
+
+  test("refuses to delete a live native Goal the provider would re-emit", async () => {
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        nativeGoal: {
+          ...nativeGoalStub(),
+          read: async () => projectedGoal(),
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"), undefined, "session-1")
+
+    await expect(adapter.goals?.delete(session.id, path.resolve("/repo"))).resolves.toMatchObject({
+      ok: false,
+      status: "unsupported",
+    })
+    adapter.dispose()
+  })
+
+  // A native Goal lives in a provider process: after a restart the driver has
+  // nothing to stop while the store still projects the Goal as `blocked`.
+  // Clearing that projection is the only way it can leave the session.
+  test.each(["stop", "delete"] as const)("%s clears a native Goal the driver lost across a restart", async (action) => {
+    const store = storeRows(createMemoryRuntimeStore())
+    const eventHub = createRuntimeEventHub()
+    const runtime: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtime.push(event))
+    const adapter = new SdkRuntimeAdapter({
+      store,
+      eventHub,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        nativeGoal: nativeGoalStub(),
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"), undefined, "session-1")
+    store.setGoal!(session.id, projectedGoal())
+
+    await expect(adapter.goals?.read(session.id, path.resolve("/repo"))).resolves.toMatchObject({
+      objective: "Ship safely",
+      status: "blocked",
+    })
+    await expect(adapter.goals?.[action](session.id, path.resolve("/repo"))).resolves.toEqual({
+      ok: true,
+      goal: null,
+    })
+    expect(store.getGoal!(session.id)).toBeNull()
+    expect(runtime.map((event) => event.payload.type)).toContain("goal-cleared")
+    await expect(adapter.goals?.read(session.id, path.resolve("/repo"))).resolves.toBeNull()
+    // Nothing left to clear reports the absence rather than a second success.
+    await expect(adapter.goals?.[action](session.id, path.resolve("/repo"))).resolves.toMatchObject({
+      ok: false,
+      status: "not_found",
+    })
+    adapter.dispose()
+  })
+
+  test("deletes a live native Goal through a driver that can clear it at the provider", async () => {
+    const order: string[] = []
+    let live: ReturnType<typeof projectedGoal> | null = projectedGoal()
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        nativeGoal: {
+          ...nativeGoalStub(),
+          capabilities: () => ({
+            implemented: true,
+            available: true,
+            actions: ["delete"],
+            recovery: "blocked",
+            optionalFields: [],
+          }),
+          read: async () => live,
+          stop: async () => {
+            order.push("stop")
+            return live && { ...live, status: "paused" as const }
+          },
+          delete: async () => {
+            order.push("delete")
+            live = null
+            return true
+          },
+        },
+      }),
+    })
+    const session = await adapter.createSession(path.resolve("/repo"), undefined, "session-1")
+
+    await expect(adapter.goals?.delete(session.id, path.resolve("/repo"))).resolves.toEqual({
+      ok: true,
+      goal: null,
+    })
+    // Continuation is disabled before the provider clears the Goal: deleting
+    // first would let the next iteration re-report a Goal that is already gone.
+    expect(order).toEqual(["stop", "delete"])
+    await expect(adapter.goals?.read(session.id, path.resolve("/repo"))).resolves.toBeNull()
+    adapter.dispose()
+  })
+
+  test("exposes one Goal resource per adapter rather than rebuilding it per access", async () => {
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => ({ ...minimalSdkRuntimeDriver(), nativeGoal: nativeGoalStub() }),
+    })
+
+    expect(adapter.goals).toBeDefined()
+    expect(adapter.goals).toBe(adapter.goals)
+    adapter.dispose()
+  })
+
+  test("forgets a deleted session's Goal publication so a reused id is not deduped away", async () => {
+    const eventHub = createRuntimeEventHub()
+    const runtime: RuntimeEventEnvelope[] = []
+    eventHub.subscribeRuntime((event) => runtime.push(event))
+    let host: SdkRuntimeDriverHost | undefined
+    const adapter = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      eventHub,
+      driver: (driverHost) => {
+        host = driverHost
+        return { ...minimalSdkRuntimeDriver(), nativeGoal: nativeGoalStub() }
+      },
+    })
+    const directory = path.resolve("/repo")
+    const goalUpdates = () => runtime.filter((event) => event.payload.type === "goal-updated")
+    await adapter.createSession(directory, undefined, "session-1")
+
+    host!.publishGoal({ sessionId: "session-1", directory, goal: projectedGoal() })
+    host!.publishGoal({ sessionId: "session-1", directory, goal: projectedGoal() })
+    // One accepted state publishes once, however often the driver reports it.
+    expect(goalUpdates()).toHaveLength(1)
+
+    await adapter.deleteSession("session-1", directory)
+    await adapter.createSession(directory, undefined, "session-1")
+    host!.publishGoal({ sessionId: "session-1", directory, goal: projectedGoal() })
+
+    // The dedupe entry is per session, so a session recreated under the same id
+    // must publish its Goal again instead of having it swallowed forever.
+    expect(goalUpdates()).toHaveLength(2)
+    adapter.dispose()
+  })
+
   test("applies the requested permission mode before the provider turn", async () => {
     const order: string[] = []
     const adapter = new SdkRuntimeAdapter({
@@ -259,18 +484,13 @@ describe("SdkRuntimeAdapter", () => {
   })
 
   test("requires a workspace directory at cwd-dependent boundaries", async () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
-      pendingPermissions: Map<string, unknown>
-      store: {
-        listPermissions: () => []
-      }
-    }>
-    item.pendingPermissions = new Map()
-    item.store = {
-      listPermissions: () => [],
-    }
+    const item = new SdkRuntimeAdapter({
+      store: storeRows(createMemoryRuntimeStore()),
+      driver: () => minimalSdkRuntimeDriver(),
+    })
 
     await expect(item.listPermissions(undefined as never)).rejects.toThrow("workspace directory is required")
+    item.dispose()
   })
 
   test("process death clears pending permissions, questions, active turns, and threads", () => {
@@ -307,6 +527,38 @@ describe("SdkRuntimeAdapter", () => {
       reason: "harness_process_lost",
       message: "process exited",
     })
+  })
+
+  test("Codex drops a provisional autonomous Goal queue when provider-turn admission is busy", async () => {
+    const host = {
+      lifecycle: () => createSessionTurnLifecycle(),
+      pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
+      bindSession() {},
+      getAgentSessionId: () => "thread-1",
+      getSessionConfig: () => null,
+      publishGoal() {},
+      runProviderTurn: async () => false,
+    }
+    const driver = createCodexAppServerDriver(host as never) as WithInternals<SdkRuntimeDriver, {
+      goalController: WithInternals<CodexGoalController, {
+        bindings: Map<string, { sessionId: string; directory: string }>
+        statusByThread: Map<string, string>
+        turnQueues: Map<string, unknown>
+      }>
+    }>
+    const goalController = driver.goalController
+    goalController.bindings.set("thread-1", { sessionId: "session-1", directory: path.resolve("/repo") })
+    goalController.statusByThread.set("thread-1", "active")
+
+    goalController.handleProcessMessage({
+      method: "turn/started",
+      params: { threadId: "thread-1", turn: { id: "goal-turn-1" } },
+    })
+    await new Promise((resolve) => setTimeout(resolve, 0))
+
+    expect(goalController.turnQueues.size).toBe(0)
+    driver.dispose?.()
   })
 
   test("explicit abort persists an interruption sentinel without emitting a session error", async () => {
@@ -413,85 +665,69 @@ describe("SdkRuntimeAdapter", () => {
   })
 
   test("dispose aborts and closes active turns", () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
-      turnLifecycle: ReturnType<typeof createSessionTurnLifecycle>
-      pendingPermissions: Map<string, unknown>
-      pendingQuestions: Map<string, { reject: () => void }>
-      driver: SdkRuntimeDriver
-      dispose: () => void
-    }>
+    const store = storeRows(createMemoryRuntimeStore())
+    store.bindSession({ sessionId: "s1", directory: "/work", agentSessionId: "native-1" })
+    let host!: SdkRuntimeDriverHost
+    const item = new SdkRuntimeAdapter({
+      store,
+      driver: (input) => {
+        host = input
+        return minimalSdkRuntimeDriver()
+      },
+    })
     const abort = new AbortController()
     let closed = false
     let rejected = false
-    item.turnLifecycle = createSessionTurnLifecycle()
-    item.turnLifecycle.set("s1", { abort, close: () => { closed = true } })
-    item.pendingPermissions = new Map([["perm-1", {}]])
-    item.pendingQuestions = new Map([["question-1", { reject: () => { rejected = true } }]])
-    item.driver = {
-      ...minimalSdkRuntimeDriver(),
-      dispose: () => {},
-    }
+    let denied = false
+    host.lifecycle().set("s1", { abort, close: () => { closed = true } })
+    host.pendingPermissions.set("perm-1", {
+      sessionId: "s1",
+      agentSessionId: "native-1",
+      method: "permission",
+      params: {},
+      resolve: () => { denied = true },
+    })
+    host.pendingQuestions.set("question-1", {
+      sessionId: "s1",
+      agentSessionId: "native-1",
+      questions: [],
+      resolve() {},
+      reject: () => { rejected = true },
+    })
 
     item.dispose()
 
     expect(abort.signal.aborted).toBe(true)
     expect(closed).toBe(true)
+    expect(denied).toBe(true)
     expect(rejected).toBe(true)
-    expect(item.turnLifecycle.activeTurns.size).toBe(0)
-    expect(item.pendingPermissions.size).toBe(0)
-    expect(item.pendingQuestions.size).toBe(0)
+    expect(host.lifecycle().activeTurns.size).toBe(0)
+    expect(host.pendingPermissions.size).toBe(0)
+    expect(host.pendingQuestions.size).toBe(0)
   })
 
   test("per-session config updates do not mutate the adapter-wide model", async () => {
-    const item = Object.create(SdkRuntimeAdapter.prototype) as WithInternals<SdkRuntimeAdapter, {
-      currentModel: string
-      options: {}
-      driver: SdkRuntimeDriver
-      store: {
-        updateSessionConfig: () => unknown
-        getSessionConfig: () => unknown
-      }
-    }>
-    item.currentModel = ""
-    item.options = {}
-    item.driver = minimalSdkRuntimeDriver()
-    item.store = {
-      updateSessionConfig() {
-        return {
-          harness: { id: "codex", access: "native" },
-          model: { providerID: "codex", modelID: "session-model" },
-          variant: null,
-          agent: null,
-        }
-      },
-      getSessionConfig() {
-        return undefined
-      },
-    }
+    const store = storeRows(createMemoryRuntimeStore())
+    const item = new SdkRuntimeAdapter({ store, driver: () => minimalSdkRuntimeDriver() })
+    const session = await item.createSession(path.resolve("/work"))
 
-    await item.updateSessionConfig("s1", {
+    const accepted = await item.updateSessionConfig(session.id, {
       harness: { id: "codex", access: "native" },
       model: { providerID: "codex", modelID: "session-model" },
     }, path.resolve("/work"))
 
-    expect(item.currentModel).toBe("")
-    expect(await item.getSessionConfig("s2", path.resolve("/work"))).toEqual({
+    expect(accepted.model).toEqual({ providerID: "codex", modelID: "session-model" })
+    expect(store.getSessionConfig(session.id)).toEqual({
       harness: { id: "codex", access: "native" },
       variant: null,
       agent: null,
     })
+    item.dispose()
   })
 })
 
 describe("SdkRuntimeAdapter busy lock", () => {
-  /**
-   * The lock must be released when the TURN settles, not when the generator
-   * finishes. Between those two moments the consumer still commits events and
-   * awaits an auto-title round-trip — ~515ms measured on a real failing run —
-   * and a prompt arriving in that window used to be refused with "Session is
-   * already processing a message" for a turn that had been over for half a
-   * second. One Tier R run missed the release by a single millisecond.
-   */
+  /** The busy lock follows turn lifetime rather than consumer iteration lifetime. */
   function lockProbeAdapter(events: unknown[]) {
     const adapter = new SdkRuntimeAdapter({
       store: storeRows(createMemoryRuntimeStore()),
@@ -532,7 +768,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     const lifecycle = (adapter as unknown as { lifecycle: () => ReturnType<typeof createSessionTurnLifecycle> }).lifecycle()
 
     for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) {
-      // The window that used to refuse: mid-drain, after the terminal event.
+      // Terminal emission releases admission during stream consumption.
       const leaveReplacement = lifecycle.enter("s1")
       expect(leaveReplacement).not.toBeNull()
       leaveReplacement?.()

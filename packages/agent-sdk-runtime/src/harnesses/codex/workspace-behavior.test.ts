@@ -13,9 +13,7 @@ import { storeRows } from "../../test-utils/store-internals"
 
 const tempDirs: string[] = []
 
-// Global safety net: force every codex test onto a throwaway CODEX_HOME so a
-// refresh can never rewrite the developer's real ~/.codex/auth.json. A missing
-// guard here previously clobbered live credentials with mock tokens.
+// Isolate test credentials from the developer's Codex home.
 let previousCodexHome: string | undefined
 let codexHomeGuard: string | undefined
 beforeAll(() => {
@@ -33,12 +31,7 @@ afterEach(async () => {
   for (const dir of tempDirs.splice(0)) removeTestTempDir(dir)
 })
 
-/**
- * Session/config state the codex adapter actually round-trips, layered on the
- * shared inert base so the double stays a complete runtime store. (As a
- * hand-rolled class it implemented 7 of the port's members and the gap went
- * unnoticed while tests were outside the typecheck.)
- */
+/** Session/config state the Codex adapter round-trips through the complete test store. */
 function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
   const sessions = new Map<string, { id: string; directory: string; title?: string }>()
   const configs = new Map<string, SessionConfig>()
@@ -52,7 +45,7 @@ function fakeCodexStore(): AgentRuntimeStoreWithRecovery {
     getAgentSessionId: (id) => agentSessionIds.get(id),
     getSession: (id) => sessions.get(id) ?? null,
     updateSessionConfig(id, update) {
-      const next = { ...(configs.get(id) ?? {}), ...update } as SessionConfig
+      const next = { ...configs.get(id), ...update } as SessionConfig
       configs.set(id, next)
       return next
     },
@@ -149,6 +142,12 @@ process.stdin.on("data", (chunk) => {
     if (message.method === "thread/start") {
       write({ id: message.id, result: { thread: { id: "thread-1" } } })
       write({ method: "thread/started", params: { thread: { id: "thread-1" } } })
+    }
+    if (message.method === "thread/archive") {
+      write({ id: message.id, result: {} })
+    }
+    if (message.method === "thread/goal/clear") {
+      write({ id: message.id, result: { cleared: false } })
     }
     if (message.method === "turn/start") {
       if (auth401) {
@@ -290,6 +289,7 @@ describe("CodexHarnessAdapter", () => {
     adapter.dispose()
 
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      id?: number
       method?: string
       params?: Record<string, unknown>
     })
@@ -392,6 +392,31 @@ describe("CodexHarnessAdapter", () => {
     expect(requests.find((request) => request.method === "thread/start")?.params?.developerInstructions).toBe(transcript)
   })
 
+  test("archives a prepared Codex thread when handoff rollback runs", async () => {
+    const fake = await makeFakeCodex()
+    const adapter = new CodexHarnessAdapter({
+      binary: fake.binary,
+      createStore: () => fakeCodexStore(),
+      storeRoot: path.join(fake.dir, "store"),
+    })
+
+    const prepared = await adapter.createHandoffSession(fake.dir, undefined, "ses_handoff", { system: "handoff" })
+    await prepared.rollback()
+    await prepared.rollback()
+    adapter.dispose()
+
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line) as {
+      id?: number
+      method?: string
+      params?: Record<string, unknown>
+    })
+    expect(requests.filter((request) => request.method === "thread/archive")).toEqual([{
+      id: expect.any(Number),
+      method: "thread/archive",
+      params: { threadId: "thread-1" },
+    }])
+  })
+
   test("uses prompt session model before workspace-global model for Codex app-server turns", async () => {
     const requests = await runWithModels({
       globalModel: "gpt-5.5",
@@ -457,8 +482,7 @@ describe("CodexHarnessAdapter", () => {
     const codexHome = path.join(fake.dir, "codex-home")
     const adapter = new CodexHarnessAdapter({
       binary: fake.binary,
-      // Isolate the codex home so the refresh never rewrites the developer's real
-      // ~/.codex/auth.json (which previously clobbered live credentials on test runs).
+      // Isolate refresh writes from the developer's Codex home.
       codexHome,
       fetch: async (_url, init) => {
         refreshBodies.push(String(init?.body))
@@ -535,7 +559,7 @@ describe("CodexHarnessAdapter", () => {
     expect(events.some((event) => JSON.stringify(event).includes("Codex authentication failed with 401 Unauthorized"))).toBe(true)
   })
 
-  test("U6: routes Codex child threads through revisioned lifecycle admission into isolated stores", async () => {
+  test("routes Codex child threads through revisioned lifecycle admission into isolated stores", async () => {
     const fake = await makeFakeCodex({ subagent: true })
     const eventHub = createRuntimeEventHub()
     const runtimeEvents: RuntimeEventEnvelope[] = []

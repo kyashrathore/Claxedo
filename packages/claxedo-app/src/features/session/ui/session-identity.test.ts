@@ -77,6 +77,14 @@ describe("signedRouteSessionWorkspaceId", () => {
       .toBeUndefined()
   })
 
+  test("rejects an explicitly branded UUID when current inventory owns it locally", () => {
+    const workspaceId = "550e8400-e29b-41d4-a716-446655440000"
+    expect(signedRouteSessionWorkspaceId(
+      `/w/workspace%3A${workspaceId}/session/ses_1`,
+      [{ workspaces: { [workspaceId]: { id: workspaceId, kind: "local", directory: "/repo/local" } } }],
+    )).toBeUndefined()
+  })
+
   test("rejects local raw UUID, POSIX, and Windows directory routes", () => {
     expect(signedRouteSessionWorkspaceId("/w/550e8400-e29b-41d4-a716-446655440000/session/ses_1")).toBeUndefined()
     expect(signedRouteSessionWorkspaceId("/w/%2Ftmp%2Fclaxedo-e2e/session/ses_1")).toBeUndefined()

@@ -190,11 +190,7 @@ function makeGetApiKey(options: LocalPiAuthOptions): PiModelBackend["getApiKey"]
   }
 }
 
-/**
- * Build a PiModelBackendResolver over local auth stores + env. Returns
- * undefined per turn when no provider is usable — the adapter falls back to
- * its tool/echo behavior, so a credential-less box degrades instead of failing.
- */
+/** Build a Pi backend resolver over local auth stores and environment keys. */
 export function localPiModelBackendResolver(options: LocalPiAuthOptions = {}): PiModelBackendResolver {
   let warnedNoBackend = false
   let warnedBadModel: string | undefined
@@ -206,7 +202,7 @@ export function localPiModelBackendResolver(options: LocalPiAuthOptions = {}): P
       if (!warnedNoBackend) {
         warnedNoBackend = true
         console.error(
-          "[pi-local-auth] no model credentials found (pi auth store, codex CLI auth, or env keys) — central sessions run tools-only",
+          "[pi-local-auth] no model credentials found in the Pi auth store, Codex CLI auth, or environment",
         )
       }
       return undefined

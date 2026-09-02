@@ -1,6 +1,7 @@
 import {
   createAgentEventRuntime,
   type AgentEventRuntime,
+  type RuntimeGoalSnapshot,
 } from "@claxedo/agent-event-runtime"
 import {
   claudeChildCorrelationKey,
@@ -17,16 +18,21 @@ import {
   type PermissionResult,
   type PermissionUpdate,
   type Query,
+  type SDKActiveGoalMessage,
   type SDKMessage,
+  type SessionStore,
+  type SessionStoreEntry,
   type SpawnOptions,
   type SpawnedProcess,
 } from "@anthropic-ai/claude-agent-sdk"
-import type { AgentConfigOptionRow } from "../../index"
+import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
+import { goalCapabilities } from "../../capabilities"
 import type { ResolvedMcpServer } from "../../mcp-resolver"
 import { createLiveModelSource } from "../../live-model-source"
 import { modelConfigOption, resolveTurnEffort, thoughtLevelConfigOption, type SdkModelEntry } from "../../sdk-model-catalog"
 import {
+  errorMessage,
   extractTextFromParts,
   record,
   text,
@@ -35,6 +41,7 @@ import {
   type SdkRuntimeDriverHost,
   type SdkRuntimeTurnInput,
 } from "../shared/sdk-runtime-adapter"
+import { createNativeGoalStore, nativeGoalCommand } from "../shared/native-goal-store"
 import { claudeAuthEnv, claudeAuthValue } from "./auth"
 import { requireClaudeExecutable } from "./executable"
 import { harnessSpawnEnv } from "../shared/spawn-env"
@@ -52,8 +59,17 @@ import {
 const CLAUDE_PENDING_PREFIX = "claude-sdk:"
 const MODEL_LIST_TIMEOUT_MS = 30_000
 
-// The routed nested-turn fixture measures forwarded child frames and bytes
-// against the contract thresholds before this option is enabled.
+function idlePrompt(): AsyncIterable<never> {
+  return {
+    [Symbol.asyncIterator]() {
+      return {
+        next: () => new Promise<IteratorResult<never>>(() => {}),
+      }
+    },
+  }
+}
+
+// Child text is forwarded because the routed nested-turn contract admits it.
 export const CLAUDE_FORWARD_SUBAGENT_TEXT = true
 
 export function claudeSystemPrompt(system?: string) {
@@ -62,12 +78,101 @@ export function claudeSystemPrompt(system?: string) {
     : undefined
 }
 
-export function createClaudeSdkDriver(host: SdkRuntimeDriverHost): SdkRuntimeDriver {
-  return new ClaudeSdkDriver(host)
+export function claudeGoalSnapshot(
+  sessionId: string,
+  message: SDKActiveGoalMessage,
+): RuntimeGoalSnapshot | null {
+  if (!message.value) return null
+  const setAt = message.value.set_at < 1_000_000_000_000
+    ? message.value.set_at * 1_000
+    : message.value.set_at
+  return {
+    sessionId,
+    objective: message.value.condition,
+    status: "active",
+    createdAt: setAt,
+    updatedAt: Date.now(),
+    iteration: message.value.iterations,
+    ...(message.value.last_reason ? { lastReason: message.value.last_reason } : {}),
+  }
+}
+
+/**
+ * The single reader of Claude's Goal progress, and the only place coupled to
+ * its format.
+ *
+ * FORMAT COUPLING: the SDK has no typed Goal-progress message. The CLI reports
+ * every iteration by writing an UNTYPED `goal_status` attachment entry to the
+ * session store — `{ type, met, condition, reason?, iterations? }` — so this
+ * helper sniffs it out of `SessionStoreEntry.attachment`. Every field is read
+ * defensively: it runs inside the SDK's `sessionStore.append`, where a throw
+ * would fail the very turn that carries the Goal, so an entry shape that no
+ * longer matches must degrade to "no Goal update" (`undefined`) instead.
+ *
+ * Returns the new snapshot, `null` when the Goal is met (clear it), or
+ * `undefined` when the entry says nothing about a Goal.
+ */
+export function claudeTranscriptGoalSnapshot(
+  sessionId: string,
+  entry: SessionStoreEntry,
+  previous?: RuntimeGoalSnapshot,
+): RuntimeGoalSnapshot | null | undefined {
+  const row = record(entry)
+  if (!row || row.type !== "attachment") return undefined
+  const attachment = record(row.attachment)
+  if (text(attachment?.type) !== "goal_status") return undefined
+  if (attachment?.met === true) return null
+  if (attachment?.met !== false) return undefined
+  const objective = text(attachment.condition)
+  if (!objective) return undefined
+  const timestamp = typeof row.timestamp === "string" ? Date.parse(row.timestamp) : Number.NaN
+  const updatedAt = Number.isFinite(timestamp) ? timestamp : Date.now()
+  return {
+    sessionId,
+    objective,
+    status: "active",
+    createdAt: previous?.objective === objective ? previous.createdAt : updatedAt,
+    updatedAt,
+    ...(typeof attachment.iterations === "number" ? { iteration: attachment.iterations } : {}),
+    ...(text(attachment.reason) ? { lastReason: text(attachment.reason) } : {}),
+  }
+}
+
+export type ClaudeSdkDriverOptions = {
+  query?: typeof query
+  executable?: () => string
+}
+
+export function createClaudeSdkDriver(
+  host: SdkRuntimeDriverHost,
+  options: ClaudeSdkDriverOptions = {},
+): SdkRuntimeDriver {
+  return new ClaudeSdkDriver(host, options)
 }
 
 class ClaudeSdkDriver implements SdkRuntimeDriver {
   readonly type = "claude" as const
+  private readonly goalStore = createNativeGoalStore()
+  readonly nativeGoal: NonNullable<SdkRuntimeDriver["nativeGoal"]> = {
+    capabilities: () => goalCapabilities({
+      implemented: true,
+      available: true,
+      actions: [],
+      recovery: "blocked",
+      optionalFields: ["iteration", "lastReason"],
+    }),
+    read: (sessionId) => this.goalStore.read(sessionId),
+    run: (input, objective, onGoal) => this.runQuery(input, nativeGoalCommand(objective), onGoal),
+    stop: (sessionId) => this.goalStore.stop(sessionId),
+    // Deleting drops Claxedo's record of the Goal. The Claude CLI session keeps
+    // its transcript, but Goal state is only ever re-read during a Goal turn's
+    // own mirror, so nothing re-emits a forgotten Goal on interactive turns.
+    delete: async (sessionId) => {
+      const had = !!this.goalStore.peek(sessionId)
+      this.goalStore.forget(sessionId)
+      return had
+    },
+  }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
   private readonly modelSource = createLiveModelSource({
@@ -84,7 +189,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    */
   private readonly permissionSelection = new PermissionModeSelection(CLAUDE_PERMISSION_MODES, "next-turn")
 
-  constructor(private readonly host: SdkRuntimeDriverHost) {}
+  constructor(
+    private readonly host: SdkRuntimeDriverHost,
+    private readonly driverOptions: ClaudeSdkDriverOptions,
+  ) {}
 
   permissionModes(sessionId: string) {
     return this.permissionSelection.state(sessionId)
@@ -95,18 +203,22 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   setAuth(keys: SdkRuntimeAuth) {
+    const previous = this.auth.anthropic
     this.auth = {
       ...this.auth,
       ...(keys.anthropic !== undefined ? { anthropic: keys.anthropic || undefined } : {}),
     }
+    if (this.auth.anthropic !== previous) this.modelSource.invalidate()
   }
 
   applyConfig(config: Record<string, unknown>) {
+    const previous = this.auth.anthropic
     const auth = record(config.auth) as Record<string, string> | undefined
     this.auth = {
       anthropic: claudeAuthValue(auth),
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    if (this.auth.anthropic !== previous) this.modelSource.invalidate()
     // Held, not applied here: the SDK takes `effort` as a per-query option, so
     // it is read when the next session is created rather than pushed at the
     // running one. `undefined` means "let the model decide", which is not the
@@ -123,6 +235,10 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     return `${CLAUDE_PENDING_PREFIX}${randomUUID()}`
   }
 
+  deleteAgentSession(sessionId: string) {
+    this.goalStore.forget(sessionId)
+  }
+
   createRuntime(threadId: string): AgentEventRuntime {
     return createAgentEventRuntime({
       harness: this.type,
@@ -132,6 +248,52 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
 
   async runTurn(input: SdkRuntimeTurnInput) {
+    await this.runQuery(input, extractTextFromParts(input.input.parts))
+  }
+
+  private async runQuery(
+    input: SdkRuntimeTurnInput,
+    prompt: string,
+    onGoal?: (goal: RuntimeGoalSnapshot | null) => void,
+  ) {
+    const applyGoal = (goal: RuntimeGoalSnapshot | null) => {
+      this.goalStore.apply(input.sessionId, goal)
+      onGoal?.(goal)
+      this.host.publishGoal({ sessionId: input.sessionId, directory: input.directory, goal })
+    }
+    let goalSessionStore: SessionStore | undefined
+    if (onGoal) {
+      /**
+       * A WRITE-ONLY observer, not a storage adapter: this store exists solely
+       * because `append` is the only channel on which the CLI reports Goal
+       * progress. It deliberately keeps nothing.
+       *
+       * Storing (or importing) a transcript here would be worse than useless.
+       * The subprocess keeps writing its own complete local JSONL — this is a
+       * secondary copy — and the SDK redirects resume at the store only when
+       * `load()` answers with entries, which it materializes into a temporary
+       * CLAUDE_CONFIG_DIR and resumes the CLI from INSTEAD of that local
+       * transcript. Answering with nothing keeps the CLI on its own history;
+       * answering with a mirror would cost an O(transcript) import per Goal
+       * turn and, since ordinary turns run without a `sessionStore` and never
+       * reach here, would eventually resume from a copy missing them.
+       */
+      goalSessionStore = {
+        append: async (_key, entries) => {
+          for (const entry of entries) {
+            const goal = claudeTranscriptGoalSnapshot(
+              input.sessionId,
+              entry,
+              this.goalStore.peek(input.sessionId),
+            )
+            if (goal !== undefined) applyGoal(goal)
+          }
+        },
+        load: async () => null,
+        listSessions: async () => [],
+        listSubkeys: async () => [],
+      }
+    }
     const requestPermission: CanUseTool = async (toolName, toolInput, options) => {
       const requestId = randomUUID()
       input.ingest({
@@ -171,20 +333,21 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     }
 
     const turnEffort = resolveTurnEffort(
-      this.modelSource.peek(),
+      this.modelSource.peek(input.directory),
       input.input.model.modelID,
       input.input.variant,
     )
     const systemPrompt = claudeSystemPrompt(input.input.system)
-    const q: Query = query({
-      prompt: extractTextFromParts(input.input.parts),
+    const q: Query = (this.driverOptions.query ?? query)({
+      prompt,
       options: {
         cwd: input.directory,
         ...(systemPrompt ? { systemPrompt } : {}),
         // Spawn the user's / sandbox image's installed Claude Code, never a
         // bundled binary. Throws an actionable install error when absent.
-        pathToClaudeCodeExecutable: requireClaudeExecutable(),
+        pathToClaudeCodeExecutable: (this.driverOptions.executable ?? requireClaudeExecutable)(),
         includePartialMessages: true,
+        ...(goalSessionStore ? { sessionStore: goalSessionStore, sessionStoreFlush: "eager" as const } : {}),
         forwardSubagentText: CLAUDE_FORWARD_SUBAGENT_TEXT,
         abortController: input.abort,
         // Both are passed together on purpose. `permissionMode` decides how much
@@ -229,8 +392,27 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       abort: input.abort,
       close: () => q.close(),
     })
-    for await (const message of q) {
-      await ingestClaudeSdkMessage(input, message)
+    try {
+      for await (const message of q as AsyncIterable<SDKMessage | SDKActiveGoalMessage>) {
+        if (message.type === "active_goal") {
+          applyGoal(claudeGoalSnapshot(input.sessionId, message))
+          continue
+        }
+        await ingestClaudeSdkMessage(input, message)
+      }
+    } catch (cause) {
+      // This query carried the Goal: if it died, no iteration is left to report
+      // progress, so the Goal must not stay `active` — that state is what makes
+      // the composer offer a Stop for work that is already gone.
+      if (!onGoal) throw cause
+      const settled = this.goalStore.settleUnfinished(
+        input.sessionId,
+        input.abort.signal.aborted
+          ? { status: "paused" }
+          : { status: "blocked", reason: errorMessage(cause) },
+      )
+      if (settled) applyGoal(settled)
+      throw cause
     }
   }
 
@@ -238,12 +420,12 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
     return { status: "ok" }
   }
 
-  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]> {
+  async configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]> {
     return this.buildConfigOptions(await this.modelSource.models(directory), currentModel)
   }
 
-  peekConfigOptions(currentModel: string): AgentConfigOptionRow[] {
-    return this.buildConfigOptions(this.modelSource.peek(), currentModel)
+  peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[] {
+    return this.buildConfigOptions(this.modelSource.peek(directory), currentModel)
   }
 
   /**
@@ -251,7 +433,8 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
    * effort row is omitted rather than disabled for models without it — an inert
    * control that appears and disappears with the model reads as a glitch.
    */
-  private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOptionRow[] {
+  private buildConfigOptions(models: readonly SdkModelEntry[], currentModel: string): AgentConfigOption[] {
+    if (models.length === 0) return []
     const effort = thoughtLevelConfigOption(models, currentModel, this.currentEffort)
     return effort
       ? [modelConfigOption(models, currentModel), effort]
@@ -266,9 +449,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   private async fetchModels(directory?: string): Promise<SdkModelEntry[]> {
     const abort = new AbortController()
     const q: Query = query({
-      prompt: (async function* () {
-        await new Promise<never>(() => {})
-      })() as AsyncIterable<never>,
+        prompt: idlePrompt(),
       options: {
         cwd: directory ?? process.cwd(),
         pathToClaudeCodeExecutable: requireClaudeExecutable(),
@@ -297,9 +478,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
         id: model.value,
         name: model.displayName,
         ...(model.description ? { description: model.description } : {}),
-        // Effort capability is per model and already on the wire here — it was
-        // being dropped one line after being fetched, which is why the composer
-        // could never offer a thinking level for this harness.
+        // Model-specific effort metadata drives the harness config options.
         ...(model.supportsEffort ? { supportsEffort: true } : {}),
         ...(model.supportedEffortLevels?.length
           ? { supportedEffortLevels: [...model.supportedEffortLevels] }
@@ -439,8 +618,8 @@ function claudeMcpServers(input: Record<string, ResolvedMcpServer>): Record<stri
   }))
 }
 
-function turnModel(input: string | undefined, fallback: string) {
-  const value = text(input) ?? text(fallback)
+function turnModel(input: string | undefined, configuredModel: string) {
+  const value = text(input) ?? text(configuredModel)
   if (!value || value === "default") return
   return value
 }

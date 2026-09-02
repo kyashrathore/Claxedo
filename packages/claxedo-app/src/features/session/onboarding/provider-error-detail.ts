@@ -8,6 +8,8 @@
 // This module splits that error in two, matching the §5 rule in
 // dev-docs/CLAXEDO_ERROR_PROPOSAL.md: `summary` is a sentence a human reads,
 // `detail` is the provider's own bytes, verbatim, for the collapsed disclosure.
+import { harnessDisplayLabel } from "@/ui/harness-display"
+
 export type ProviderErrorDetail = {
   /**
    * One human sentence naming what failed, why, and what to do. Always
@@ -94,7 +96,10 @@ function repair(status: number) {
  */
 export function providerLabel(input: { providerID?: string; modelID?: string; relayLabel?: string }) {
   const id = input.providerID?.trim()
-  if (id) return PROVIDER_NAMES[id] ?? id
+  // Operator ACP connections dispatch with their `acp:<slug>` key as the
+  // provider id; derive their product label the same way the harness selector
+  // does instead of echoing the raw key.
+  if (id) return PROVIDER_NAMES[id] ?? (id.startsWith("acp:") ? harnessDisplayLabel(id) : id)
   const relay = input.relayLabel?.trim()
   if (relay) return relay
   return undefined

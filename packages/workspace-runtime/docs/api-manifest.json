@@ -10,6 +10,7 @@
     "./relay",
     "./route-contribution",
     "./routes",
+    "./session-env-contract",
     "./testing"
   ],
   "rootRuntimeExports": [

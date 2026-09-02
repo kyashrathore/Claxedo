@@ -104,50 +104,20 @@ const encode = (reason: unknown) => {
   return { message: String(reason) }
 }
 
-const showFatal = (label: string, payload: unknown) => {
+/**
+ * Deliberately NOT a UI overlay: uncaught errors are recorded on
+ * `window.__OPENCODE__.lastError` (readable over CDP / from the console) and
+ * logged with `console.error`, which the main process relays into main.log.
+ * A fixed on-screen panel over the running app added no information beyond
+ * those two sinks and constantly covered the sidebar during development.
+ */
+const recordFatal = (label: string, payload: unknown) => {
   window.__OPENCODE__ ??= {}
   ;(window.__OPENCODE__ as unknown as { lastError?: { label: string; payload: unknown } }).lastError = {
     label,
     payload,
   }
-
-  const id = "opencode-fatal"
-  const host =
-    document.getElementById(id) ??
-    (() => {
-      const elt = document.createElement("div")
-      elt.id = id
-      elt.style.position = "fixed"
-      elt.style.left = "8px"
-      elt.style.right = "8px"
-      elt.style.bottom = "8px"
-      elt.style.zIndex = "2147483647"
-      elt.style.maxHeight = "40vh"
-      elt.style.overflow = "auto"
-      elt.style.padding = "10px 12px"
-      elt.style.borderRadius = "10px"
-      elt.style.background = "rgba(0,0,0,0.80)"
-      elt.style.color = "white"
-      elt.style.fontFamily =
-        "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace"
-      elt.style.fontSize = "12px"
-      elt.style.whiteSpace = "pre-wrap"
-      elt.style.userSelect = "text"
-      elt.style.cursor = "pointer"
-      elt.title = "Click to dismiss"
-      elt.addEventListener("click", () => elt.remove())
-      document.body.appendChild(elt)
-      return elt
-    })()
-
-  const text = (() => {
-    try {
-      return `${label}\n${JSON.stringify(payload, null, 2)}`
-    } catch {
-      return `${label}\n${String(payload)}`
-    }
-  })()
-  host.textContent = text
+  console.error(`[fatal] ${label}`, payload)
 }
 
 function installErrorReporting() {
@@ -158,14 +128,13 @@ function installErrorReporting() {
         event.preventDefault()
         return
       }
-      const payload = {
+      recordFatal("window.error", {
         message: event.message,
         filename: event.filename,
         lineno: event.lineno,
         colno: event.colno,
         error: encode(event.error),
-      }
-      if (import.meta.env.DEV) showFatal("window.error", payload)
+      })
     },
     true,
   )
@@ -173,8 +142,7 @@ function installErrorReporting() {
   window.addEventListener(
     "unhandledrejection",
     (event) => {
-      const payload = encode(event.reason)
-      if (import.meta.env.DEV) showFatal("unhandledrejection", payload)
+      recordFatal("unhandledrejection", encode(event.reason))
       event.preventDefault()
     },
     true,

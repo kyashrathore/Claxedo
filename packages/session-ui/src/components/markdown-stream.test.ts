@@ -84,32 +84,95 @@ describe("markdown stream", () => {
     ])
   })
 
-  test("keeps reference-style markdown as one block", () => {
+  test("resolves reference links per block by appending the collected definitions", () => {
     expect(stream("[docs][1]\n\n[1]: https://example.com", true)).toEqual([
       {
-        raw: "[docs][1]\n\n[1]: https://example.com",
-        src: "[docs][1]\n\n[1]: https://example.com",
+        raw: "[docs][1]\n\n",
+        src: "[docs][1]\n\n\n\n[1]: https://example.com",
+        mode: "full",
+      },
+      {
+        raw: "[1]: https://example.com",
+        src: "[1]: https://example.com\n\n[1]: https://example.com",
         mode: "live",
       },
     ])
   })
 
-  test("keeps compact and indented reference definitions with their uses", () => {
+  test("resolves compact and indented reference definitions per block", () => {
     expect(stream("[docs]\n\n   [docs]:/guide", true)).toEqual([
       {
-        raw: "[docs]\n\n   [docs]:/guide",
-        src: "[docs]\n\n   [docs]:/guide",
+        raw: "[docs]\n\n",
+        src: "[docs]\n\n\n\n[docs]: /guide",
+        mode: "full",
+      },
+      {
+        raw: "   [docs]:/guide",
+        src: "   [docs]:/guide\n\n[docs]: /guide",
         mode: "live",
       },
     ])
   })
 
-  test("keeps multiline reference definitions with their uses", () => {
+  test("resolves multiline reference definitions per block", () => {
     expect(stream("[docs][id]\n\n[id]:\n  /guide", true)).toEqual([
       {
-        raw: "[docs][id]\n\n[id]:\n  /guide",
-        src: "[docs][id]\n\n[id]:\n  /guide",
+        raw: "[docs][id]\n\n",
+        src: "[docs][id]\n\n\n\n[id]: /guide",
+        mode: "full",
+      },
+      {
+        raw: "[id]:\n  /guide",
+        src: "[id]:\n  /guide\n\n[id]: /guide",
         mode: "live",
+      },
+    ])
+  })
+
+  test("a later reference definition never collapses the frozen prefix into one live blob", () => {
+    // The live-transcript regression: once a `[ref]: url` definition arrived
+    // mid-stream, the WHOLE accumulated document re-projected as a single
+    // healed live block — every frozen heading, paragraph, and code block
+    // re-rendered as one giant raw paragraph on every delta, then reflowed at
+    // completion ("first a big para, then a small").
+    const text = "# Title\n\nSee [docs][1].\n\n```ts\nconst x = 1\n```\n\n[1]: https://example.com\n\nmore prose"
+    const blocks = stream(text, true)
+    expect(blocks.map((block) => block.mode)).toEqual(["full", "full", "code", "full", "live"])
+    // The frozen prose blocks resolve the reference through the appended defs…
+    expect(blocks[1]).toEqual({
+      raw: "See [docs][1].\n\n",
+      src: "See [docs][1].\n\n\n\n[1]: https://example.com",
+      mode: "full",
+    })
+    // …and the code block's parse source stays untouched code text.
+    expect(blocks[2]).toEqual({
+      raw: "```ts\nconst x = 1\n```\n\n",
+      src: "const x = 1",
+      mode: "code",
+      language: "ts",
+      complete: true,
+    })
+  })
+
+  test("completed documents with reference definitions keep per-block projection", () => {
+    const text = "Intro with [docs][1].\n\n```ts\nconst x = 1\n```\n\n[1]: https://example.com"
+    expect(stream(text, false)).toEqual([
+      {
+        raw: "Intro with [docs][1].\n\n",
+        src: "Intro with [docs][1].\n\n\n\n[1]: https://example.com",
+        mode: "full",
+      },
+      {
+        raw: "```ts\nconst x = 1\n```\n\n",
+        src: "const x = 1",
+        mode: "code",
+        language: "ts",
+        complete: true,
+      },
+      {
+        raw: "[1]: https://example.com",
+        src: "[1]: https://example.com\n\n[1]: https://example.com",
+        mode: "full",
       },
     ])
   })

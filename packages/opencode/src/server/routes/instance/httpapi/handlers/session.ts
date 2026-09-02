@@ -14,6 +14,7 @@ import { SessionRunState } from "@/session/run-state"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
+import { SessionGoal } from "@/session/goal"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@opencode-ai/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
@@ -26,6 +27,7 @@ import {
   CommandPayload,
   DiffQuery,
   ForkPayload,
+  GoalStartPayload,
   InitPayload,
   ListQuery,
   MessagesQuery,
@@ -58,6 +60,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const statusSvc = yield* SessionStatus.Service
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
+    const goalSvc = yield* SessionGoal.Service
     const events = yield* EventV2Bridge.Service
     const scope = yield* Scope.Scope
 
@@ -84,6 +87,58 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const get = Effect.fn("SessionHttpApi.get")(function* (ctx: { params: { sessionID: SessionID } }) {
       return yield* requireSession(ctx.params.sessionID)
+    })
+
+    const goalCapabilities = Effect.fn("SessionHttpApi.goalCapabilities")(function* (ctx: {
+      params: { sessionID: SessionID }
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      return {
+        implemented: true as const,
+        available: true,
+        actions: ["pause", "resume", "delete"] as const,
+        recovery: "reconcile" as const,
+        optionalFields: ["iteration", "lastReason"] as const,
+      }
+    })
+
+    const goalGet = Effect.fn("SessionHttpApi.goalGet")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* promptSvc.getGoal(ctx.params.sessionID).pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+    })
+
+    const goalStart = Effect.fn("SessionHttpApi.goalStart")(function* (ctx: {
+      params: { sessionID: SessionID }
+      payload: typeof GoalStartPayload.Type
+    }) {
+      yield* requireSession(ctx.params.sessionID)
+      if (!ctx.payload.objective.trim()) return yield* new HttpApiError.BadRequest({})
+      return yield* promptSvc
+        .startGoal({ sessionID: ctx.params.sessionID, objective: ctx.payload.objective.trim() })
+        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+    })
+
+    const goalPause = Effect.fn("SessionHttpApi.goalPause")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      const goal = yield* goalSvc.pause(ctx.params.sessionID).pipe(
+        Effect.mapError(() => new HttpApiError.BadRequest({})),
+      )
+      yield* promptSvc.cancel(ctx.params.sessionID)
+      return goal
+    })
+
+    const goalResume = Effect.fn("SessionHttpApi.goalResume")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      return yield* promptSvc.resumeGoal(ctx.params.sessionID).pipe(
+        Effect.mapError(() => new HttpApiError.BadRequest({})),
+      )
+    })
+
+    const goalDelete = Effect.fn("SessionHttpApi.goalDelete")(function* (ctx: { params: { sessionID: SessionID } }) {
+      yield* requireSession(ctx.params.sessionID)
+      yield* goalSvc.delete(ctx.params.sessionID).pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      yield* promptSvc.cancel(ctx.params.sessionID)
+      return null
     })
 
     const children = Effect.fn("SessionHttpApi.children")(function* (ctx: { params: { sessionID: SessionID } }) {
@@ -441,6 +496,12 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("list", list)
       .handle("status", status)
       .handle("get", get)
+      .handle("goalCapabilities", goalCapabilities)
+      .handle("goalGet", goalGet)
+      .handle("goalStart", goalStart)
+      .handle("goalPause", goalPause)
+      .handle("goalResume", goalResume)
+      .handle("goalDelete", goalDelete)
       .handle("children", children)
       .handle("todo", todo)
       .handle("diff", diff)

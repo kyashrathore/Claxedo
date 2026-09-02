@@ -66,6 +66,9 @@ export function PromptAddMenu(props: {
   onContext: VoidFunction
   shellLabel: string
   onEnterShell: VoidFunction
+  goalLabel: string
+  goalDisabled: Accessor<boolean>
+  onGoal: VoidFunction
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
   onAgentSelect: (value: string) => void
@@ -113,6 +116,9 @@ export function PromptAddMenu(props: {
               </MenuV2.Item>
               <MenuV2.Item data-action="prompt-context" shortcut="@" onSelect={props.onContext}>
                 <span class="truncate">{props.contextLabel}</span>
+              </MenuV2.Item>
+              <MenuV2.Item data-action="prompt-goal" disabled={props.goalDisabled()} onSelect={props.onGoal}>
+                <span class="truncate">{props.goalLabel}</span>
               </MenuV2.Item>
               {/* An Item, not a CheckboxItem: entering shell mode fades the whole
                   toolbar to `pointer-events: none` (see createPromptToolbarMotion),

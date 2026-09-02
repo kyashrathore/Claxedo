@@ -51,7 +51,7 @@ describe("errorMessage", () => {
     expect(errorMessage({ code: -32603, message: "disk full", data: { details: "disk full" } })).toBe("disk full")
   })
 
-  test("a bare JSON-RPC object with no data falls back to its message", () => {
+  test("a bare JSON-RPC object with no data uses its message", () => {
     expect(errorMessage({ code: -32601, message: "Method not found" })).toBe("Method not found")
   })
 

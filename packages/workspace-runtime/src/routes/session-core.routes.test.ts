@@ -3,6 +3,7 @@ import { SESSION_CORE_ROUTE_ACCESS, SESSION_V2_PROXY_ROUTE_ACCESS } from "../ses
 
 const EXPECTED_SESSION_CORE_ROUTES = [
   "DELETE /session/:id",
+  "DELETE /session/:id/goal",
   "GET /agent",
   "GET /command",
   "GET /event",
@@ -14,6 +15,9 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "GET /session/:id",
   "GET /session/:id/capabilities",
   "GET /session/:id/config",
+  "GET /session/:id/goal",
+  "GET /session/:id/goal/capabilities",
+  "GET /session/:id/goal/state",
   "GET /session/:id/message",
   "GET /session/:id/permission-mode",
   "GET /session/:id/subagents",
@@ -28,6 +32,10 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "POST /session/:id/abort",
   "POST /session/:id/command",
   "POST /session/:id/fork",
+  "POST /session/:id/goal",
+  "POST /session/:id/goal/pause",
+  "POST /session/:id/goal/resume",
+  "POST /session/:id/goal/stop",
   "POST /session/:id/message",
   "POST /session/:id/prompt_async",
   "POST /session/:id/revert",

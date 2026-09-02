@@ -10,6 +10,7 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
 } from "@claxedo/agent-sdk-runtime"
+import { AgentRuntimeGoalError } from "@claxedo/agent-sdk-runtime"
 import type {
   AgentHarnessAdapter,
   AgentMessagePage,
@@ -78,6 +79,7 @@ function adapter(input: {
       unrevert: true,
       configOptions: false,
       subagents: true,
+      goals: false,
     }),
     sendMessage(id, prompt, directory) {
       input.onPrompt?.(prompt, directory)
@@ -139,6 +141,288 @@ describe("SessionRoutes message paging bridge", () => {
       page: { limit: 25, before: "opaque:cursor" },
     }])
     expect(authorityAdapter).toBe(fixture)
+  })
+})
+
+describe("session Goal routes", () => {
+  const directory = process.cwd()
+  const goal = {
+    sessionId: "s1",
+    objective: "Ship universal Goal support",
+    status: "active" as const,
+    createdAt: 1,
+    updatedAt: 2,
+  }
+  const capabilities = {
+    implemented: true,
+    available: true,
+    actions: ["pause", "resume", "delete"],
+    recovery: "reconcile",
+    optionalFields: [],
+  }
+
+  function goalRuntime(
+    calls: string[],
+    overrides: Partial<AgentRuntime["goals"]> = {},
+  ): AgentRuntime {
+    return {
+      goals: {
+        capabilities: async () => {
+          calls.push("capabilities")
+          return capabilities
+        },
+        read: async () => {
+          calls.push("read")
+          return goal
+        },
+        start: async (input: { objective: string }) => {
+          calls.push(`start:${input.objective}`)
+          return { ok: true, goal }
+        },
+        pause: async () => {
+          calls.push("pause")
+          return { ok: true, goal: { ...goal, status: "paused" as const } }
+        },
+        resume: async () => {
+          calls.push("resume")
+          return { ok: true, goal }
+        },
+        stop: async () => {
+          calls.push("stop")
+          return { ok: true, goal: { ...goal, status: "paused" as const } }
+        },
+        delete: async () => {
+          calls.push("delete")
+          return { ok: true, goal: null }
+        },
+        ...overrides,
+      },
+    } as unknown as AgentRuntime
+  }
+
+  it("routes every Goal operation through the dedicated runtime resource", async () => {
+    const calls: string[] = []
+    const guarded: string[] = []
+    const runtime = goalRuntime(calls)
+    const app = SessionRoutes(() => adapter({}), {
+      beforeSessionOperation({ operation }) {
+        guarded.push(operation)
+      },
+      resolveRuntime: () => runtime,
+    })
+    const base = "http://localhost/session/s1/goal"
+    const url = (suffix = "") => `${base}${suffix}?directory=${encodeURIComponent(directory)}`
+
+    const responses = [
+      await app.request(url("/state")),
+      await app.request(url("/capabilities")),
+      await app.request(url()),
+      await app.request(url(), {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ objective: goal.objective }),
+      }),
+      await app.request(url("/pause"), { method: "POST" }),
+      await app.request(url("/resume"), { method: "POST" }),
+      await app.request(url("/stop"), { method: "POST" }),
+      await app.request(url(), { method: "DELETE" }),
+    ]
+
+    expect(responses.map((response) => response.status)).toEqual([200, 200, 200, 201, 200, 200, 200, 200])
+    expect(calls).toEqual([
+      "capabilities",
+      "read",
+      "capabilities",
+      "read",
+      `start:${goal.objective}`,
+      "pause",
+      "resume",
+      "stop",
+      "delete",
+    ])
+    expect(guarded).toEqual([
+      "goal_state",
+      "goal_capabilities",
+      "goal_read",
+      "goal_start",
+      "goal_pause",
+      "goal_resume",
+      "goal_stop",
+      "goal_delete",
+    ])
+    expect(await responses[0]!.json()).toEqual({ capabilities, goal })
+    expect(await responses[2]!.json()).toEqual(goal)
+    expect(await responses[7]!.json()).toEqual({ ok: true, goal: null })
+  })
+
+  it("admits Goal work before resolving its runtime", async () => {
+    let runtimeResolutions = 0
+    const app = SessionRoutes(() => adapter({}), {
+      beforeSessionOperation({ operation }) {
+        if (operation === "goal_start") return new Response("blocked", { status: 403 })
+      },
+      resolveRuntime: () => {
+        runtimeResolutions++
+        return goalRuntime([])
+      },
+    })
+
+    const response = await app.request(
+      `http://localhost/session/s1/goal?directory=${encodeURIComponent(directory)}`,
+      { method: "POST", body: JSON.stringify({ objective: "Blocked" }) },
+    )
+
+    expect(response.status).toBe(403)
+    expect(runtimeResolutions).toBe(0)
+  })
+
+  it("returns explicit typed failures for missing runtimes and Goal lifecycle errors", async () => {
+    const missing = SessionRoutes(() => adapter({}))
+    const missingResponse = await missing.request(
+      `http://localhost/session/s1/goal?directory=${encodeURIComponent(directory)}`,
+    )
+    expect(missingResponse.status).toBe(503)
+    expect(await missingResponse.json()).toEqual({
+      error: { code: "goal_runtime_unavailable", message: "Goal runtime is unavailable" },
+    })
+
+    const runtime = goalRuntime([], {
+      start: async () => {
+        throw new AgentRuntimeGoalError("goal_invalid_objective", "Goal objective must contain between 1 and 4,000 characters")
+      },
+      pause: async () => ({ ok: false, status: "unsupported", message: "Pause is unavailable" }),
+    })
+    const app = SessionRoutes(() => adapter({}), { resolveRuntime: () => runtime })
+    const base = "http://localhost/session/s1/goal"
+    const url = (suffix = "") => `${base}${suffix}?directory=${encodeURIComponent(directory)}`
+
+    const invalid = await app.request(url(), { method: "POST", body: JSON.stringify({ objective: "" }) })
+    expect(invalid.status).toBe(400)
+    expect(await invalid.json()).toEqual({
+      error: {
+        code: "goal_invalid_objective",
+        message: "Goal objective must contain between 1 and 4,000 characters",
+      },
+    })
+
+    const unsupported = await app.request(url("/pause"), { method: "POST" })
+    expect(unsupported.status).toBe(409)
+    expect(await unsupported.json()).toEqual({
+      ok: false,
+      status: "unsupported",
+      message: "Pause is unavailable",
+    })
+  })
+
+  it("answers the combined Goal read with capabilities and Goal from one request", async () => {
+    const calls: string[] = []
+    const guarded: string[] = []
+    const app = SessionRoutes(() => adapter({}), {
+      beforeSessionOperation({ operation }) {
+        guarded.push(operation)
+      },
+      resolveRuntime: () => goalRuntime(calls),
+    })
+
+    const response = await app.request(
+      `http://localhost/session/s1/goal/state?directory=${encodeURIComponent(directory)}`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      capabilities: {
+        implemented: true,
+        available: true,
+        actions: ["pause", "resume", "delete"],
+        recovery: "reconcile",
+        optionalFields: [],
+      },
+      goal: goal,
+    })
+    // Capabilities are derived ONCE and the Goal read reuses that answer, so
+    // the combined route costs the runtime exactly what the two separate reads
+    // used to cost it — minus the second round-trip.
+    expect(calls).toEqual(["capabilities", "read"])
+    expect(guarded).toEqual(["goal_state"])
+  })
+
+  it("skips the Goal read when the harness does not implement Goals", async () => {
+    const calls: string[] = []
+    const app = SessionRoutes(() => adapter({}), {
+      resolveRuntime: () => goalRuntime(calls, {
+        capabilities: async () => {
+          calls.push("capabilities")
+          return {
+            implemented: false,
+            available: false,
+            unavailableReason: "Harness has no Goal support",
+            actions: [],
+            recovery: "blocked",
+            optionalFields: [],
+          }
+        },
+      }),
+    })
+
+    const response = await app.request(
+      `http://localhost/session/s1/goal/state?directory=${encodeURIComponent(directory)}`,
+    )
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({
+      capabilities: {
+        implemented: false,
+        available: false,
+        unavailableReason: "Harness has no Goal support",
+        actions: [],
+        recovery: "blocked",
+        optionalFields: [],
+      },
+      goal: null,
+    })
+    expect(calls).toEqual(["capabilities"])
+  })
+
+  it("runs the combined Goal read through the same guard and error scaffold", async () => {
+    const missing = SessionRoutes(() => adapter({}))
+    const missingResponse = await missing.request(
+      `http://localhost/session/s1/goal/state?directory=${encodeURIComponent(directory)}`,
+    )
+    expect(missingResponse.status).toBe(503)
+    expect(await missingResponse.json()).toEqual({
+      error: { code: "goal_runtime_unavailable", message: "Goal runtime is unavailable" },
+    })
+
+    let runtimeResolutions = 0
+    const blocked = SessionRoutes(() => adapter({}), {
+      beforeSessionOperation({ operation }) {
+        if (operation === "goal_state") return new Response("blocked", { status: 403 })
+      },
+      resolveRuntime: () => {
+        runtimeResolutions++
+        return goalRuntime([])
+      },
+    })
+    const blockedResponse = await blocked.request(
+      `http://localhost/session/s1/goal/state?directory=${encodeURIComponent(directory)}`,
+    )
+    expect(blockedResponse.status).toBe(403)
+    expect(runtimeResolutions).toBe(0)
+
+    const failing = SessionRoutes(() => adapter({}), {
+      resolveRuntime: () => goalRuntime([], {
+        capabilities: async () => {
+          throw new AgentRuntimeGoalError("goal_session_not_found", "Session not found")
+        },
+      }),
+    })
+    const failingResponse = await failing.request(
+      `http://localhost/session/s1/goal/state?directory=${encodeURIComponent(directory)}`,
+    )
+    expect(failingResponse.status).toBe(404)
+    expect(await failingResponse.json()).toEqual({
+      error: { code: "goal_session_not_found", message: "Session not found" },
+    })
   })
 })
 
@@ -553,6 +837,7 @@ describe("session prompt route", () => {
           unrevert: false,
           configOptions: true,
           subagents: true,
+          goals: false,
         }),
         getServerUrl: async () => "http://proxy-capable.test",
         // `http-proxy` is a two-method capability; the double has to satisfy
@@ -954,6 +1239,7 @@ describe("session prompt route", () => {
           unrevert: !input?.sessionId,
           configOptions: !!input?.sessionId,
           subagents: true,
+          goals: false,
         }),
       }),
       resolveDirectory: async (_c, input) => input?.sessionId ? `${directory}/session` : directory,
@@ -1114,6 +1400,7 @@ describe("session prompt route", () => {
         unrevert: true,
         configOptions: false,
         subagents: true,
+        goals: false,
       }),
     }))
 
@@ -1497,6 +1784,7 @@ describe("session prompt route", () => {
         unrevert: false,
         configOptions: true,
         subagents: true,
+        goals: false,
       }),
       abort: async () => {
         calls.push("abort")

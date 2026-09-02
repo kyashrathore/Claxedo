@@ -46,8 +46,13 @@ function streamBridge(): StreamBridge | undefined {
 /**
  * Present only when the authoritative account state is signed and Electron
  * exposes the complete stream IPC bridge. Bridge presence is a capability,
- * not evidence of a usable account: preload installs it before sign-in and
- * keeps it installed after sign-out.
+ * not evidence of a usable account: preload installs it before sign-in, keeps
+ * it installed after sign-out, and installs it in unconfigured builds (no
+ * `CLAXEDO_ACCOUNT_*` baked) whose every account operation refuses. Routing a
+ * stream through the bridge in any of those states would loop on connect →
+ * refuse → retry and no central event would ever arrive; those builds keep
+ * the plain `authFetch` path against the local server, which serves
+ * `/api/claxedo/events` itself.
  */
 export function accountStreamAvailable(accountState: AccountState) {
   return accountState.status === "signed" && Boolean(accountRunBridge() && streamBridge())

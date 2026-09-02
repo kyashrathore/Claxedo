@@ -141,6 +141,22 @@ function getChildStoreEntry(directory: string): ChildStoreEntry {
   return entry
 }
 
+/**
+ * Fake the goal-mutation transport the way the real runtime answers it.
+ *
+ * `workspace-runtime` `routes/session-core.ts:goalMutationResponse` serializes a
+ * typed `{ ok: false, status, message }` body under 404 (`not_found`), 502
+ * (`failed`), and 409 (everything else) — never 200. Serving those failures with
+ * `Response.json(body)` (HTTP 200) is what let the client's `ok: false` branch
+ * pass here while being unreachable through the real transport.
+ */
+export function goalMutationResponse(body: unknown) {
+  const row = body && typeof body === "object" ? body as Record<string, unknown> : undefined
+  if (!row || row.ok !== false) return Response.json(body)
+  const status = row.status === "not_found" ? 404 : row.status === "failed" ? 502 : 409
+  return Response.json(body, { status })
+}
+
 // --- Mutable scalar state written by individual tests via `state.x = ...`. ---
 export const state: {
   localCurrentModel: { id: string; provider: { id: string } } | undefined
@@ -158,6 +174,8 @@ export const state: {
   runtimeProviderResponse: unknown
   runtimeSessionConfig: unknown
   localSessionConfig: unknown
+  goalCapabilities: unknown
+  goalMutation: unknown
   sessionConfigSaveError: string | undefined
   claxedoServerUrl: string
   syncProject: SyncProject | undefined
@@ -188,6 +206,24 @@ export const state: {
   runtimeProviderResponse: undefined,
   runtimeSessionConfig: undefined,
   localSessionConfig: undefined,
+  goalCapabilities: {
+    implemented: true,
+    available: true,
+    actions: ["pause", "resume", "delete"],
+    recovery: "reconcile",
+    optionalFields: [],
+  },
+  goalMutation: {
+    ok: true,
+    status: "started",
+    goal: {
+      sessionId: "session-1",
+      objective: "Ship Goal support",
+      status: "active",
+      createdAt: 10,
+      updatedAt: 10,
+    },
+  },
   sessionConfigSaveError: undefined,
   claxedoServerUrl: "http://localhost:3001",
   syncProject: undefined,
@@ -235,6 +271,12 @@ export function localSessionRef(sessionID: string) {
 
 export function testHarnessController(): HarnessSubmitController {
   return {
+    // `claude-acp` was a bundled vendor ACP identity and that whole class is
+    // gone: a harness key is now either a built-in id or an operator
+    // connection key (`acp:<slug>`, `isAcpConnectionHarnessId`). This suite's
+    // harness mode drives the native `claude-sdk` path; the ACP connection
+    // key is exercised through the session-config fixtures in
+    // `submit.upstream-contract.test.ts`.
     harness: () => (state.harnessMode ? "claude-sdk" : "opencode"),
     isHarnessMode: () => state.harnessMode,
     readiness: () => "ready",
@@ -273,7 +315,21 @@ let rawCreatePromptSubmit: typeof import("./submit").createPromptSubmit
 let clearRuntimeQueries: (() => void) | undefined
 let resetRuntimeEnsureCache: (() => void) | undefined
 
-/** Wrapped `createPromptSubmit` that injects the composerMode + harnessController defaults. */
+/**
+ * Wrapped `createPromptSubmit` that injects the composerMode + harnessController
+ * + model-selection defaults.
+ *
+ * `selectedModelForSubmit` is the composer's authoritative model choice
+ * (`composer.tsx` passes `toolbarState.currentModel`, which is
+ * `local.model.current()` minus the "fallback" source). Submit reads ONLY that
+ * accessor — there is no `?? local.model.current()` fallback, and
+ * `workspace-runtime-route-audit.test.ts` pins that. So the harness has to feed
+ * the same `state.localCurrentModel` it already feeds `useLocal().model.current`,
+ * and it has to do it here rather than in `createSubmit`: the carved suites call
+ * this wrapper directly too, and a default that lived only in `createSubmit`
+ * would silently turn every one of those submits into a
+ * `modelAgentRequired` no-op.
+ */
 export function createPromptSubmit(
   input: Parameters<typeof import("./submit").createPromptSubmit>[0],
 ): ReturnType<typeof import("./submit").createPromptSubmit> {
@@ -415,6 +471,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         status: 200,
         headers: { "Content-Type": "application/json" },
       })
+    }
+    if (/\/session\/[^/]+\/goal\/capabilities$/.test(url.pathname)) {
+      return Response.json(state.goalCapabilities)
+    }
+    if (/\/session\/[^/]+\/goal$/.test(url.pathname) && request.method === "POST") {
+      return goalMutationResponse(state.goalMutation)
     }
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
@@ -596,6 +658,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
         }
         return Response.json(state.localSessionConfig ?? { harness: { id: "opencode", access: "native" } })
       }
+      if (/\/session\/[^/]+\/goal\/capabilities$/.test(new URL(request.url).pathname)) {
+        return Response.json(state.goalCapabilities)
+      }
+      if (/\/session\/[^/]+\/goal$/.test(new URL(request.url).pathname) && request.method === "POST") {
+        return goalMutationResponse(state.goalMutation)
+      }
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
         headers: { "Content-Type": "application/json" },
@@ -622,6 +690,12 @@ export async function installSubmitMocks(mock: ModuleMocker) {
             if (state.sessionConfigSaveError) return new Response(state.sessionConfigSaveError, { status: 500 })
             return Response.json(canonicalSessionConfig(init.body))
           }
+        }
+        if (/^\/session\/[^/]+\/goal\/capabilities(?:\?|$)/.test(path)) {
+          return Response.json(state.goalCapabilities)
+        }
+        if (/^\/session\/[^/]+\/goal(?:\?|$)/.test(path) && init?.method === "POST") {
+          return goalMutationResponse(state.goalMutation)
         }
         if (path.includes("/prompt_async") || (path.includes("/message") && init?.method === "POST")) {
           if (state.transportPromptAsyncError) {
@@ -996,6 +1070,24 @@ export function resetSubmitHarness() {
   state.runtimeProviderResponse = undefined
   state.runtimeSessionConfig = undefined
   state.localSessionConfig = undefined
+  state.goalCapabilities = {
+    implemented: true,
+    available: true,
+    actions: ["pause", "resume", "delete"],
+    recovery: "reconcile",
+    optionalFields: [],
+  }
+  state.goalMutation = {
+    ok: true,
+    status: "started",
+    goal: {
+      sessionId: "session-1",
+      objective: "Ship Goal support",
+      status: "active",
+      createdAt: 10,
+      updatedAt: 10,
+    },
+  }
   state.sessionConfigSaveError = undefined
   state.claxedoServerUrl = "http://localhost:3001"
   state.syncProject = { id: "project-1", worktree: "/repo/main", sandboxes: [], workspaces: { "/repo/main": { kind: "local" } } }

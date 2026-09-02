@@ -14,10 +14,12 @@ import type { SessionTransportCapabilities } from "./session-transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { paneQueryOptions, parkedPaneQueryOptions } from "./pane-query-observer"
+import { sessionGoalKey, type SessionGoalData } from "./session-goal-query"
 import { queryKeys } from "@/platform/query/keys"
 import type { ClaxedoSession } from "../data/session-types"
 import {
   sessionResourceAuthorityKey,
+  sessionResourceAuthorityScope,
   type SessionResourceAuthorityScope,
 } from "./session-resource-authority"
 
@@ -72,22 +74,27 @@ export function createSessionPaneQueries(input: {
       queryFn: skipToken,
       enabled: false,
     })))
-  const capabilitiesQuery = useQuery<SessionTransportCapabilities>(() => session("session-capabilities", (sessionID) => {
-    const signedControlPlane = input.signedControlPlane?.() ?? false
-    return paneQueryOptions<SessionTransportCapabilities>({
-      queryKey: sessionCapabilitiesKey({
-        sessionID,
-        directory: input.directory(),
-        serverUrl: input.serverUrl?.(),
-        signedControlPlane,
-        workspaceId: signedControlPlane ? input.workspaceId?.() : undefined,
-        workspaceKind: signedControlPlane ? input.workspaceKind?.() : undefined,
-        sessionRef: input.sessionRef?.(),
-      }),
+  const authorityScope = (sessionID: string) => sessionResourceAuthorityScope({
+    sessionID,
+    directory: input.directory(),
+    serverUrl: input.serverUrl?.(),
+    signedControlPlane: input.signedControlPlane?.() ?? false,
+    workspaceId: input.workspaceId?.(),
+    workspaceKind: input.workspaceKind?.(),
+    sessionRef: input.sessionRef?.(),
+  })
+  const capabilitiesQuery = useQuery<SessionTransportCapabilities>(() => session("session-capabilities", (sessionID) =>
+    paneQueryOptions<SessionTransportCapabilities>({
+      queryKey: sessionCapabilitiesKey(authorityScope(sessionID)),
       queryFn: skipToken,
       enabled: false,
-    })
-  }))
+    })))
+  const goalQuery = useQuery<SessionGoalData>(() => session("session-goal", (sessionID) =>
+    paneQueryOptions<SessionGoalData>({
+      queryKey: sessionGoalKey(authorityScope(sessionID)),
+      queryFn: skipToken,
+      enabled: false,
+    })))
   const directorySessionCacheQuery = useWorkspaceQuery(() => {
     if (!input.active()) return {
       ...parkedPaneQueryOptions<DirectorySessionCacheValue>("directory-session", "inactive"),
@@ -111,5 +118,47 @@ export function createSessionPaneQueries(input: {
     })
   })
 
-  return { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, directorySessionCacheQuery, sessionRowQuery }
+  return { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, goalQuery, directorySessionCacheQuery, sessionRowQuery }
+}
+
+export function sessionTodoTransportRequestKey(input: {
+  sessionID: string
+  directory: string
+  signedControlPlane?: boolean
+  workspaceId?: string
+  workspaceKind?: "cloud" | "user-hosted"
+}) {
+  return shellDataKeys.sessionId(
+    input.sessionID,
+    "todo-request",
+    input.directory,
+    input.signedControlPlane === true ? "signed" : "local",
+    input.workspaceId ?? "",
+    input.workspaceKind ?? "",
+  )
+}
+
+export function sessionTransportRequestKey(input: {
+  sessionID: string
+  directory: string
+  before?: string
+  view?: "latest-turn" | "latest-surface"
+  limit?: number
+  shouldFetchSession: boolean
+  signedControlPlane?: boolean
+  workspaceId?: string
+  workspaceKind?: "cloud" | "user-hosted"
+}) {
+  return shellDataKeys.sessionId(
+    input.sessionID,
+    "transport-session-request",
+    input.directory,
+    input.before ?? "latest",
+    input.view ?? "default",
+    input.limit ?? "semantic",
+    input.shouldFetchSession ? "with-session" : "messages-only",
+    input.signedControlPlane === true ? "signed" : "local",
+    input.workspaceId ?? "",
+    input.workspaceKind ?? "",
+  )
 }

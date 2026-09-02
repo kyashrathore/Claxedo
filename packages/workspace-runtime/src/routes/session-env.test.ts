@@ -3,7 +3,14 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import { Hono } from "hono"
-import { SessionEnvRoutes, SESSION_ENV_GREP_MAX_FILE_BYTES } from "./session-env"
+import { SessionEnvRoutes, SESSION_ENV_GREP_MAX_FILE_BYTES, sessionEnvExecTimeout } from "./session-env"
+import {
+  decodeSessionEnvExecFrame,
+  decodeSessionEnvReadFileResponse,
+  SESSION_ENV_EXEC_DEFAULT_TIMEOUT_MS,
+  SESSION_ENV_EXEC_MAX_TIMEOUT_MS,
+  type SessionEnvExecFrame,
+} from "../session-env-contract"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import {
@@ -54,7 +61,23 @@ function url(route: string, directory: string) {
 }
 
 async function ndjson(res: Response) {
-  return (await res.text()).trim().split("\n").filter(Boolean).map((line) => JSON.parse(line) as Record<string, unknown>)
+  return (await res.text())
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => {
+      const parsed: unknown = JSON.parse(line)
+      return decodeSessionEnvExecFrame(parsed)
+    })
+}
+
+async function responseJson(response: Response): Promise<unknown> {
+  return await response.json()
+}
+
+function stdoutText(event: SessionEnvExecFrame) {
+  if (event.type !== "stdout") throw new Error(`expected stdout frame, received ${event.type}`)
+  return Buffer.from(event.data, "base64").toString()
 }
 
 /**
@@ -66,16 +89,26 @@ async function ndjson(res: Response) {
  */
 const EXEC_TIMEOUT_MS = 1_500
 
+test("session-env exec duration policy defaults and clamps", () => {
+  expect(sessionEnvExecTimeout(undefined)).toBe(SESSION_ENV_EXEC_DEFAULT_TIMEOUT_MS)
+  expect(sessionEnvExecTimeout(0)).toBe(SESSION_ENV_EXEC_DEFAULT_TIMEOUT_MS)
+  expect(sessionEnvExecTimeout(Number.POSITIVE_INFINITY)).toBe(SESSION_ENV_EXEC_DEFAULT_TIMEOUT_MS)
+  expect(sessionEnvExecTimeout(1_000)).toBe(1_000)
+  expect(sessionEnvExecTimeout(SESSION_ENV_EXEC_MAX_TIMEOUT_MS + 1)).toBe(SESSION_ENV_EXEC_MAX_TIMEOUT_MS)
+})
+
 function signalIgnoringCommand() {
-  return `${JSON.stringify(process.execPath)} -e ${JSON.stringify([
-    "process.stdout.write(String(process.pid) + '\\n')",
-    "process.on('SIGTERM', () => {})",
-    "setInterval(() => {}, 1000)",
-  ].join(";"))}`
+  return `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+    [
+      "process.stdout.write(String(process.pid) + '\\n')",
+      "process.on('SIGTERM', () => {})",
+      "setInterval(() => {}, 1000)",
+    ].join(";"),
+  )}`
 }
 
-function pidFromEvent(event: Record<string, unknown>) {
-  return Number(Buffer.from(event.data as string, "base64").toString().trim())
+function pidFromEvent(event: SessionEnvExecFrame) {
+  return Number(stdoutText(event).trim())
 }
 
 async function waitForGone(pid: number) {
@@ -102,7 +135,8 @@ async function readStdoutEvent(reader: ReadableStreamDefaultReader<Uint8Array>) 
     buffer = lines.pop() ?? ""
     for (const line of lines) {
       if (!line) continue
-      const event = JSON.parse(line) as Record<string, unknown>
+      const parsed: unknown = JSON.parse(line)
+      const event = decodeSessionEnvExecFrame(parsed)
       if (event.type === "stdout") return event
     }
   }
@@ -170,7 +204,8 @@ describe("SessionEnvRoutes", () => {
     expect(write.status).toBe(200)
 
     const read = await server.request(url("/file/read?path=src/app.ts", directory))
-    expect(Buffer.from((await read.json() as { content: string }).content, "base64").toString()).toBe("export const value = 1\n")
+    const readBody = decodeSessionEnvReadFileResponse(await responseJson(read))
+    expect(Buffer.from(readBody.content, "base64").toString()).toBe("export const value = 1\n")
 
     const stat = await server.request(url("/file/stat?path=src", directory))
     expect(await stat.json()).toMatchObject({ isDirectory: true })
@@ -198,9 +233,11 @@ describe("SessionEnvRoutes", () => {
 
   test("rejects path escapes", async () => {
     const directory = await temp()
-    const res = await app().request(url(`/file/read?path=${encodeURIComponent(path.join(directory, "..", "nope"))}`, directory))
+    const res = await app().request(
+      url(`/file/read?path=${encodeURIComponent(path.join(directory, "..", "nope"))}`, directory),
+    )
     expect(res.status).toBe(403)
-    await expect(res.json()).resolves.toEqual({
+    expect(await responseJson(res)).toEqual({
       error: {
         code: "session_env_path_forbidden",
         message: "workspace path must be relative",
@@ -214,7 +251,7 @@ describe("SessionEnvRoutes", () => {
     try {
       const wrongDirectory = await app().request(url("/file/read?path=src/app.ts", outside))
       expect(wrongDirectory.status).toBe(400)
-      await expect(wrongDirectory.json()).resolves.toEqual({
+      expect(await responseJson(wrongDirectory)).toEqual({
         error: {
           code: "session_env_invalid_directory",
           message: "Session env directory must match configured workspace",
@@ -225,7 +262,7 @@ describe("SessionEnvRoutes", () => {
         url(`/file/read?path=${encodeURIComponent(path.join(directory, "src", "app.ts"))}`, directory),
       )
       expect(absoluteInside.status).toBe(403)
-      await expect(absoluteInside.json()).resolves.toEqual({
+      expect(await responseJson(absoluteInside)).toEqual({
         error: {
           code: "session_env_path_forbidden",
           message: "workspace path must be relative",
@@ -246,7 +283,7 @@ describe("SessionEnvRoutes", () => {
       headers: { "Content-Type": "application/json" },
     })
     expect(exec.status).toBe(400)
-    await expect(exec.json()).resolves.toEqual({
+    expect(await responseJson(exec)).toEqual({
       error: {
         code: "session_env_command_required",
         message: "Missing command",
@@ -260,7 +297,7 @@ describe("SessionEnvRoutes", () => {
         headers: { "Content-Type": "application/json" },
       })
       expect(res.status).toBe(400)
-      await expect(res.json()).resolves.toEqual({
+      expect(await responseJson(res)).toEqual({
         error: {
           code: "session_env_pattern_required",
           message: "Missing pattern",
@@ -278,10 +315,9 @@ describe("SessionEnvRoutes", () => {
     })
 
     expect(response.status).toBe(403)
-    await expect(response.json()).resolves.toEqual(errorBody(
-      "relay_role_denied",
-      "Workspace role does not allow shell execution",
-    ))
+    expect(await responseJson(response)).toEqual(
+      errorBody("relay_role_denied", "Workspace role does not allow shell execution"),
+    )
   })
 
   test("rejects exec cwd and command paths outside the workspace", async () => {
@@ -344,8 +380,10 @@ describe("SessionEnvRoutes", () => {
     })
 
     expect(response.status).toBe(413)
-    await expect(response.json()).resolves.toEqual(errorBody("request_body_too_large", "Request body is too large"))
-    await expect(fs.promises.stat(path.join(directory, "src", "app.ts"))).rejects.toThrow()
+    expect(await responseJson(response)).toEqual(errorBody("request_body_too_large", "Request body is too large"))
+    expect(
+      await fs.promises.stat(path.join(directory, "src", "app.ts")).catch((error: unknown) => error),
+    ).toBeInstanceOf(Error)
   })
 
   test("rejects unsafe grep regex patterns", async () => {
@@ -358,12 +396,15 @@ describe("SessionEnvRoutes", () => {
     })
 
     expect(response.status).toBe(400)
-    await expect(response.json()).resolves.toEqual(errorBody("session_env_unsafe_regex", "Unsafe grep pattern"))
+    expect(await responseJson(response)).toEqual(errorBody("session_env_unsafe_regex", "Unsafe grep pattern"))
   })
 
   test("skips oversized grep files", async () => {
     const directory = await temp()
-    await fs.promises.writeFile(path.join(directory, "huge.txt"), `needle${"x".repeat(SESSION_ENV_GREP_MAX_FILE_BYTES)}`)
+    await fs.promises.writeFile(
+      path.join(directory, "huge.txt"),
+      `needle${"x".repeat(SESSION_ENV_GREP_MAX_FILE_BYTES)}`,
+    )
     const response = await app().request(url("/grep", directory), {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -371,7 +412,7 @@ describe("SessionEnvRoutes", () => {
     })
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({
+    expect(await responseJson(response)).toEqual({
       matches: [],
       limitReached: false,
       skippedFiles: 1,
@@ -387,7 +428,7 @@ describe("SessionEnvRoutes", () => {
     })
     expect(res.status).toBe(200)
     const events = await ndjson(res)
-    expect(Buffer.from(events[0]!.data as string, "base64").toString()).toBe("hello")
+    expect(stdoutText(events[0])).toBe("hello")
     expect(events.at(-1)).toMatchObject({ type: "exit", exitCode: 0 })
   })
 
@@ -440,10 +481,12 @@ describe("SessionEnvRoutes", () => {
         // Emit its pid, then keep streaming continuous output so a late chunk
         // can race the cancel() and hit the (now guarded) enqueue path.
         body: JSON.stringify({
-          command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify([
-            "process.stdout.write(String(process.pid) + '\\n')",
-            "setInterval(() => process.stdout.write('x'.repeat(1024) + '\\n'), 5)",
-          ].join(";"))}`,
+          command: `${JSON.stringify(process.execPath)} -e ${JSON.stringify(
+            [
+              "process.stdout.write(String(process.pid) + '\\n')",
+              "setInterval(() => process.stdout.write('x'.repeat(1024) + '\\n'), 5)",
+            ].join(";"),
+          )}`,
         }),
         headers: { "Content-Type": "application/json" },
       })
@@ -487,7 +530,7 @@ describe("SessionEnvRoutes", () => {
     })
     expect(res.status).toBe(200)
     const events = await ndjson(res)
-    expect(JSON.parse(Buffer.from(events[0]!.data as string, "base64").toString())).toEqual({
+    expect(JSON.parse(stdoutText(events[0]))).toEqual({
       nodeOptions: null,
       opencode: "yes",
       secret: null,

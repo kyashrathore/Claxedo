@@ -556,6 +556,11 @@ async function startServer() {
       CODEX_CI: undefined,
       CODEX_SANDBOX: undefined,
       CODEX_SANDBOX_NETWORK_DISABLED: undefined,
+      // Cursor's proprietary SDK has no redirectable base URL. Keep this lane
+      // hermetic even when a contributor has a real SDK key in their shell:
+      // the Cursor Goal scenario below proves the exact unavailable contract
+      // and must never spend provider quota or become machine-dependent.
+      CURSOR_API_KEY: undefined,
       // claude-agent-acp gates `allowDangerouslySkipPermissions` on
       // `!IS_ROOT || IS_SANDBOX`, but the claude CLI refuses
       // --dangerously-skip-permissions under root even when IS_SANDBOX is set.
@@ -731,7 +736,10 @@ async function openDraftPrompt(page: Page, dir: string): Promise<Locator> {
 }
 
 async function composePrompt(page: Page, input: Locator, text: string) {
-  await input.click()
+  // `fill()` focuses the contenteditable itself. A separate click creates a
+  // second actionability window in which Solid can legitimately replace the
+  // editor (for example while Goal mode remounts its labelled input), leaving
+  // Playwright retrying a detached pre-remount node indefinitely.
   await input.fill(text)
   if (!((await input.textContent()) ?? "").includes(text)) {
     await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A")
@@ -817,6 +825,44 @@ async function waitForHarnessReady(page: Page) {
     { timeout: 45_000 },
   )
   await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
+}
+
+type GoalEntry = "slash" | "add-menu"
+
+async function startGoalFromComposer(page: Page, input: Locator, entry: GoalEntry, objective: string) {
+  if (entry === "slash") {
+    await composePrompt(page, input, `/goal ${objective}`)
+  } else {
+    await page.locator('[data-action="prompt-add"]').last().click()
+    const goal = page.locator('[data-action="prompt-goal"]')
+    await expect(goal).toBeVisible({ timeout: 10_000 })
+    await expect(goal).toBeEnabled()
+    // The dropdown is already visibly open and enabled. Session inventory can
+    // still shift its anchor while the real harness publishes terminal state,
+    // so bypass Playwright's additional geometry-stability wait and dispatch
+    // the same trusted click to the current menu item.
+    await goal.click({ force: true })
+    // Arming Goal mode intentionally changes the composer's accessible name,
+    // so the draft locator returned by openDraftPrompt no longer matches.
+    const goalInput = page.getByRole("textbox", { name: /Describe the outcome this Goal should reach/i }).last()
+    await expect(goalInput).toBeVisible()
+    await composePrompt(page, goalInput, objective)
+  }
+
+  await page.locator('[data-action="prompt-submit"]').last().click()
+  await expect(page).toHaveURL(sessionUrlPattern(), { timeout: 45_000 })
+  const dock = page.locator('[data-component="session-goal-dock"]')
+  await expect(dock).toBeVisible({ timeout: 30_000 })
+  await expect(dock).toContainText(objective)
+  return dock
+}
+
+async function deleteGoalFromDock(page: Page, dock: Locator) {
+  await dock.getByRole("button", { name: "Delete", exact: true }).click()
+  const dialog = page.getByRole("dialog", { name: "Delete Goal?" })
+  await expect(dialog).toBeVisible()
+  await dialog.getByRole("button", { name: "Delete", exact: true }).click()
+  await expect(dock).toHaveCount(0, { timeout: 30_000 })
 }
 
 /**
@@ -1325,7 +1371,7 @@ async function runCursorHarnessBoundary(page: Page) {
   const input = await openDraftPrompt(page, dir)
   await switchDraftHarness(page, "cursor-acp")
 
-  const notice = page.locator("[data-component='composer-notice'][data-notice='runtime-unavailable']")
+  const notice = page.getByRole("alert").filter({ hasText: "Couldn't load Cursor models" })
   const modelControl = page.locator('[data-action="prompt-harness-model"]')
   await expect
     .poll(
@@ -1355,6 +1401,82 @@ async function runCursorHarnessBoundary(page: Page) {
     scripted?.counts() ?? { chat: 0, messages: 0, responses: 0 },
     "expected the scripted model server to receive zero requests during the cursor scenario — any count here means " +
       "selecting Cursor routed through a provider it does not own",
+  ).toEqual({ chat: 0, messages: 0, responses: 0 })
+}
+
+const CURSOR_SDK_GOAL_UNAVAILABLE =
+  "Cursor SDK requires an explicit cursor-sdk API key. Cursor ACP can use the local Cursor login."
+
+async function runCursorGoalUnavailableJourney(page: Page, entry: GoalEntry) {
+  scripted?.resetCounts()
+  const dir = await makeWorkspace(`cursor-goal-unavailable-${entry}`, "cursor-sdk")
+  await seedOneProject(page, dir)
+  const input = await openDraftPrompt(page, dir)
+  await switchDraftHarness(page, "cursor-sdk")
+
+  const browserGoalRequests: Array<{ method: string; pathname: string }> = []
+  const browserSessionCreates: string[] = []
+  page.on("request", (request) => {
+    const pathname = new URL(request.url()).pathname
+    if (request.method() === "POST" && pathname === "/session") browserSessionCreates.push(pathname)
+    if (/\/session\/[^/]+\/goal(?:\/capabilities|\/state)?$/.test(pathname)) {
+      browserGoalRequests.push({ method: request.method(), pathname })
+    }
+  })
+
+  const objective = `Prove Cursor ${entry} Goal unavailability`
+  if (entry === "slash") {
+    await composePrompt(page, input, `/goal ${objective}`)
+  } else {
+    await page.locator('[data-action="prompt-add"]').last().click()
+    const goal = page.locator('[data-action="prompt-goal"]')
+    await expect(goal).toBeVisible({ timeout: 10_000 })
+    await expect(goal).toBeEnabled()
+    await goal.click()
+    const goalInput = page.getByRole("textbox", { name: /Describe the outcome this Goal should reach/i }).last()
+    await composePrompt(page, goalInput, objective)
+  }
+
+  const notice = page.getByRole("alert").filter({ hasText: "Couldn't load Cursor models" })
+  await expect(notice).toContainText("Couldn't load Cursor models", { timeout: 30_000 })
+  await expect(notice).toContainText(CURSOR_SDK_GOAL_UNAVAILABLE)
+  const submit = page.locator('[data-action="prompt-submit"]').last()
+  await expect(submit).toHaveAccessibleName("The agent isn't running")
+  const draftUrl = page.url()
+  await submit.click()
+  expect(page.url()).toBe(draftUrl)
+  expect(browserSessionCreates).toHaveLength(0)
+  await expect(page.locator('[data-component="session-goal-dock"]')).toHaveCount(0)
+  await expect(entry === "slash" ? input : page.getByRole("textbox", {
+    name: /Describe the outcome this Goal should reach/i,
+  }).last()).toContainText(objective)
+
+  // Model readiness blocks a draft before it can own a session. Exercise the
+  // real per-session Goal boundary separately so the unavailable assertion is
+  // about Goal support itself, not inferred from the model-catalog notice.
+  const session = await createHarnessSession(dir, {
+    title: `Cursor ${entry} Goal capability probe`,
+    harness: "cursor-sdk",
+    providerID: "cursor-sdk",
+    modelID: "default",
+  })
+  const response = await fetch(
+    `${BACKEND_URL}/session/${encodeURIComponent(session.id)}/goal/capabilities?directory=${encodeURIComponent(dir)}`,
+  )
+  const capabilities = await response.json().catch(() => undefined)
+  expect(response.status, JSON.stringify(capabilities)).toBe(200)
+  expect(capabilities).toEqual({
+    implemented: true,
+    available: false,
+    unavailableReason: CURSOR_SDK_GOAL_UNAVAILABLE,
+    actions: [],
+    recovery: "blocked",
+    optionalFields: [],
+  })
+  expect(browserGoalRequests).toHaveLength(0)
+  expect(
+    scripted?.counts() ?? { chat: 0, messages: 0, responses: 0 },
+    "an unavailable Cursor Goal must not dispatch a prompt to any redirectable provider",
   ).toEqual({ chat: 0, messages: 0, responses: 0 })
 }
 
@@ -1585,12 +1707,63 @@ test.describe("real harness journeys @core @tier-real", () => {
     if (testInfo.status !== testInfo.expectedStatus && serverLog) {
       await testInfo.attach("claxedo-server.log", { body: serverLog, contentType: "text/plain" })
     }
+    if (testInfo.status !== testInfo.expectedStatus && scripted?.requests.length) {
+      await testInfo.attach("scripted-model-requests.json", {
+        body: JSON.stringify(scripted.requests.map((request) => ({
+          dialect: request.dialect,
+          model: request.model,
+          prompt: request.prompt,
+          reply: request.reply,
+        })), null, 2),
+        contentType: "application/json",
+      })
+    }
   })
 
   test("opencode harness completes exact turns, reload, and visible usage — behaviors 1,6,9,11", async ({ page }) => {
     const dir = await makeWorkspace("opencode")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, { id: "opencode", dialect: "chat" })
+  })
+
+  test("opencode Goal runs through slash and + entry paths with continuation and lifecycle controls", async ({ page }, testInfo) => {
+    for (const entry of ["slash", "add-menu"] as const) {
+      scripted?.resetCounts()
+      const dir = await makeWorkspace(`opencode-goal-${entry}`)
+      await seedOneProject(page, dir)
+      const input = await openDraftPrompt(page, dir)
+      await selectScriptedModel(page)
+      const objective = `Prove the ${entry} Goal journey`
+
+      if (entry === "add-menu") scripted?.setReplyDelayMs(5_000)
+      const dock = await startGoalFromComposer(page, input, entry, objective)
+
+      if (entry === "add-menu") {
+        await expect(dock.getByText("active", { exact: true })).toBeVisible()
+        const evidence = path.join(
+          APP_DIR,
+          "test-results/evidence/real-harness-local/opencode-goal-add-menu-active.png",
+        )
+        await fs.mkdir(path.dirname(evidence), { recursive: true })
+        await page.screenshot({ path: evidence })
+        await testInfo.attach("opencode-goal-add-menu-active", { path: evidence, contentType: "image/png" })
+        await dock.getByRole("button", { name: "Pause", exact: true }).click()
+        await expect(dock.getByText("paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        scripted?.setReplyDelayMs(0)
+        await dock.getByRole("button", { name: "Resume", exact: true }).click()
+      }
+
+      await expect(dock.getByText("complete", { exact: true })).toBeVisible({ timeout: 90_000 })
+      await expect(dock).toContainText("Iteration 2")
+      const evaluations = scripted?.requests.filter((request) =>
+        request.prompt.includes("You are an independent completion evaluator.")) ?? []
+      expect(evaluations).toHaveLength(2)
+      expect(evaluations.map((request) => request.reply)).toEqual([
+        { kind: "text", text: JSON.stringify({ met: false, reason: "One more autonomous iteration is required" }) },
+        { kind: "text", text: JSON.stringify({ met: true, reason: "The scripted continuation supplied the required evidence" }) },
+      ])
+      await deleteGoalFromDock(page, dock)
+    }
   })
 
   test("local new-worktree session receives its first reply — behaviors 1,6,9,12", async ({ page }) => {
@@ -1785,6 +1958,46 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
   })
 
+  test("claude native Goal supports slash and + entry paths, autonomous continuation, and Goal-aware Stop", async ({ page }) => {
+    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
+    requireBinary(binary, "claude", "the native Claude Goal contract is owned by the installed Claude CLI.")
+
+    try {
+      for (const entry of ["slash", "add-menu"] as const) {
+        scripted?.resetCounts()
+        scripted?.setReplyDelayMs(entry === "add-menu" ? 5_000 : 1_000)
+        const dir = await makeWorkspace(`claude-goal-${entry}`, "claude-sdk")
+        await seedOneProject(page, dir)
+        const input = await openDraftPrompt(page, dir)
+        await switchDraftHarness(page, "claude-sdk")
+        await waitForHarnessReady(page)
+        const dock = await startGoalFromComposer(page, input, entry, `Prove Claude ${entry} Goal Stop`)
+
+        await expect(dock.getByText("active", { exact: true })).toBeVisible()
+        await expect(dock.getByRole("button", { name: /Pause|Resume|Delete/ })).toHaveCount(0)
+        if (entry === "slash") {
+          scripted?.setReplyDelayMs(0)
+          await expect.poll(() => scripted?.requests.filter((request) =>
+            request.prompt.includes("Based on the conversation transcript above, has the following stopping condition been satisfied?"),
+          ).length ?? 0, {
+            timeout: 90_000,
+            message: "native Claude Goal did not run its two-pass completion evaluation",
+          }).toBe(2)
+          await expect(dock).toHaveCount(0, { timeout: 30_000 })
+          expectScriptedTraffic("messages", 4)
+          continue
+        }
+        const stop = page.locator('[data-action="prompt-submit"]').last()
+        await expect(stop).toHaveAccessibleName("Stop")
+        await stop.click()
+        await expect(dock.getByText("paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        expectScriptedTraffic("messages", 1)
+      }
+    } finally {
+      scripted?.setReplyDelayMs(0)
+    }
+  })
+
   test("claude native SDK runs a provider-issued Agent call as an openable subagent", async ({ page }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
     requireBinary(binary, "claude", "install the Claude CLI to exercise its native Agent tool.")
@@ -1874,6 +2087,36 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
   })
 
+  test("Pi Goal runs through slash and + entry paths with continuation and lifecycle controls", async ({ page }) => {
+    try {
+      for (const entry of ["slash", "add-menu"] as const) {
+        scripted?.resetCounts()
+        const dir = await makeWorkspace(`pi-goal-${entry}`, "pi")
+        await seedOneProject(page, dir)
+        const session = await createPiSession(dir)
+        const input = await openExistingPrompt(page, dir, session.session.id, session.workspaceId, true)
+        const objective = `Prove Pi ${entry} Goal controls`
+
+        scripted?.setReplyDelayMs(5_000)
+        const dock = await startGoalFromComposer(page, input, entry, objective)
+        if (entry === "add-menu") {
+          await dock.getByRole("button", { name: "Pause", exact: true }).click()
+          await expect(dock.getByText("paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+          scripted?.setReplyDelayMs(0)
+          await dock.getByRole("button", { name: "Resume", exact: true }).click()
+        }
+
+        await expect(dock.getByText("complete", { exact: true })).toBeVisible({ timeout: 90_000 })
+        await expect(dock).toContainText("Iteration 2")
+        expect(scripted?.requests.filter((request) =>
+          request.reply.kind === "text" && request.reply.text.includes('"met":'))).toHaveLength(2)
+        await deleteGoalFromDock(page, dock)
+      }
+    } finally {
+      scripted?.setReplyDelayMs(0)
+    }
+  })
+
   test("codex ACP harness completes exact turns, reload, and visible usage — behaviors 4,6,8,9,11", async ({
     page,
   }) => {
@@ -1902,6 +2145,46 @@ test.describe("real harness journeys @core @tier-real", () => {
       option: /^Codex$/,
       harnessKey: "codex-app-server",
     })
+  })
+
+  test("codex native Goal supports slash and + entry paths with continuation, pause, resume, and delete", async ({ page }) => {
+    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
+    requireBinary(binary, "codex", "the native Codex Goal contract is owned by the installed app-server binary.")
+
+    try {
+      for (const entry of ["slash", "add-menu"] as const) {
+        scripted?.resetCounts()
+        if (entry === "add-menu") scripted?.setReplyDelayMs(5_000)
+        const dir = await makeWorkspace(`codex-goal-${entry}`, "codex-app-server")
+        await seedOneProject(page, dir)
+        const input = await openDraftPrompt(page, dir)
+        await switchDraftHarness(page, "codex-app-server")
+        await waitForHarnessReady(page)
+        const dock = await startGoalFromComposer(page, input, entry, `Prove Codex ${entry} Goal controls`)
+
+        await expect(dock.getByText("active", { exact: true })).toBeVisible()
+        await expect.poll(() => scripted?.counts().responses ?? 0, {
+          timeout: 30_000,
+          message: "native Codex Goal never reached the configured responses provider",
+        }).toBeGreaterThanOrEqual(1)
+        const requestsBeforePause = scripted?.counts().responses ?? 0
+        await dock.getByRole("button", { name: "Pause", exact: true }).click()
+        await expect(dock.getByText("paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        scripted?.setReplyDelayMs(0)
+        await dock.getByRole("button", { name: "Resume", exact: true }).click()
+        await expect(dock.getByText("active", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect.poll(() => scripted?.counts().responses ?? 0, {
+          timeout: 30_000,
+          message: "resuming native Codex Goal did not continue provider work",
+        }).toBeGreaterThan(requestsBeforePause)
+        const counts = scripted?.counts() ?? { chat: 0, messages: 0, responses: 0 }
+        expect(counts.messages, `native Codex Goal fell back to messages traffic: ${JSON.stringify(counts)}`).toBe(0)
+        expect(counts.chat, `native Codex Goal emitted unexpected chat traffic: ${JSON.stringify(counts)}`).toBeLessThanOrEqual(1)
+        await deleteGoalFromDock(page, dock)
+      }
+    } finally {
+      scripted?.setReplyDelayMs(0)
+    }
   })
 
   test("codex pending approval survives session switches without duplicate prompt, rail, or hydration regressions — behavior 13", async ({
@@ -2082,6 +2365,12 @@ test.describe("real harness journeys @core @tier-real", () => {
     // unavailable, and in NEITHER case does anything leak onto a provider this
     // spec pointed elsewhere.
     await runCursorHarnessBoundary(page)
+  })
+
+  test("cursor native Goal reports exact SDK unavailability for slash and + without dispatching", async ({ page }) => {
+    for (const entry of ["slash", "add-menu"] as const) {
+      await runCursorGoalUnavailableJourney(page, entry)
+    }
   })
 
   test("cross-harness subagents demo records every supported agent in one journey", async ({ page }, testInfo) => {

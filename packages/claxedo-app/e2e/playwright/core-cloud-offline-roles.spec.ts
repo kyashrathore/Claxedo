@@ -408,12 +408,11 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     // ---- Same-origin: bootstrap + composer-harness (central claxedo-server) ----
     if (url.pathname === "/api/claxedo/bootstrap") return json(route, bootstrapBody())
     // Boot-time central-server surface fired against the loopback central URL
-    // (`.env.local`'s VITE_CLAXEDO_SERVER_URL). All three are tolerated by the
+    // (`.env.local`'s VITE_CLAXEDO_SERVER_URL). All are tolerated by the
     // app when they fail, but answering them keeps the unhandled ledger clean.
     // Real routes: claxedo-local-server/src/app/local-app.ts mounts
-    // UserExtensionRoutes at /api/claxedo/extensions and LocalUsageRoutes at
-    // /api/claxedo/usage; meta-routes.ts serves GET /api/claxedo/session.
-    if (url.pathname === "/api/claxedo/extensions") return json(route, { extensions: [], skipped: [] })
+    // LocalUsageRoutes at /api/claxedo/usage; meta-routes.ts serves GET
+    // /api/claxedo/session.
     if (url.pathname === "/api/claxedo/session") return json(route, { sessions: [] })
     if (url.pathname === "/api/claxedo/usage/sync")
       return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })

@@ -34,8 +34,10 @@ export function accountRunBridge():
 /**
  * Returns the desktop operation bridge only while Electron main says the
  * account is signed. An installed preload is not account authority: it exists
- * before sign-in and after sign-out. Callers use their local/browser producer
- * when this returns undefined.
+ * before sign-in and after sign-out, and an unconfigured build (no
+ * `CLAXEDO_ACCOUNT_*` baked) exposes it while reporting `unavailable` for
+ * every operation. Callers use their local/browser producer when this returns
+ * undefined.
  */
 export async function signedAccountRun() {
   const account = accountOperationBridge()
@@ -70,7 +72,8 @@ export function parseHostedHttpError(error: unknown): {
 }
 
 /**
- * Desktop: named AccountPort op. Browser / unsigned: `fallback`.
+ * Desktop with a SIGNED account: named AccountPort op. Browser / unsigned /
+ * unconfigured: `fallback`.
  */
 export async function hostedControlCall<T>(
   operation: HostedOperationName,

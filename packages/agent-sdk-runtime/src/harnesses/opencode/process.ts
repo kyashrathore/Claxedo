@@ -23,7 +23,7 @@ const log = Log.create({ service: "opencode-adapter" })
  * Was five minutes and measured from the last request START, so a long
  * response stream could be killed mid-flight. It is now a lease-based idle
  * grace: the countdown begins only after the last request, stream, or
- * subscription releases. U8-F4 puts the desktop default at 30 seconds.
+ * subscription releases. The desktop default is 30 seconds.
  */
 const IDLE_TIMEOUT_MS = (() => {
   const v = Number(process.env.CLAXEDO_OC_IDLE_TIMEOUT_MS)
@@ -48,7 +48,7 @@ export function openCodeSpawnConfigContent(
     ...base,
     ...generated,
     ...(configuredMcp || generatedMcp
-      ? { mcp: { ...(configuredMcp ?? {}), ...(generatedMcp ?? {}) } }
+      ? { mcp: { ...configuredMcp, ...generatedMcp } }
       : {}),
   })
 }
@@ -63,11 +63,8 @@ export type OpenCodeServerConnection = {
 /**
  * A fresh per-launch server credential.
  *
- * A spawned `opencode serve` binds loopback, and until now carried no
- * credential at all — the engine itself prints "server is unsecured" when
- * `OPENCODE_SERVER_PASSWORD` is unset. Loopback is not a boundary on a
- * multi-user machine or against any local process, and this server can read
- * files, run commands, and spend provider credentials.
+ * A spawned `opencode serve` binds loopback and requires a credential because
+ * loopback does not isolate local users or processes.
  *
  * Passed through the environment, never argv: process arguments are readable
  * by any local user through `ps`, which would put the credential on the very
@@ -112,9 +109,8 @@ export class OpenCodeServerProcess {
           log.info("opencode process idle timeout, disposing", { idleMs: IDLE_TIMEOUT_MS })
         }
         if (event.type === "start-failed") {
-          // Recorded, not cached. The previous implementation kept the rejected
-          // startup promise forever, so one spawn timeout bricked the adapter
-          // for the life of the process.
+          // The lifecycle clears failed startup state, while this record keeps
+          // the failed generation observable.
           log.error("opencode spawn failed", { generation: event.generation })
         }
       },
@@ -187,12 +183,8 @@ export class OpenCodeServerProcess {
       ...(auth ? { OPENCODE_AUTH_CONTENT: auth } : {}),
     })
     await prepareSpawnEnv(env)
-    // Named rather than called inline as `(this.input.spawn ?? spawn)(...)`.
-    // The desktop's spawn inventory counts `\bspawn\s*\(` per declared source
-    // file to prove every child process this app can start is enumerated, and
-    // the inline form hides the call from it — the injectable seam landed and
-    // silently took the OpenCode CLI's row to zero. A local keeps the seam and
-    // keeps the process countable.
+    // The named call preserves dependency injection and remains visible to the
+    // desktop process inventory scanner.
     const spawnChild = this.input.spawn ?? spawn
     const proc = spawnChild("opencode", ["serve", `--hostname=127.0.0.1`, `--port=${port}`], {
       cwd: directory,
@@ -265,10 +257,7 @@ export class OpenCodeServerProcess {
     proc.on("exit", (code, signal_) => {
       observation.exit({ reason: "exited", ...(code !== null ? { exitCode: code } : {}) })
       log.info("opencode process exited", { code, signal: signal_ })
-      // A child that dies on its own must not leave the lifecycle believing it
-      // is ready. Scoped to THIS generation: a restart replaces the child
-      // before the old one has finished exiting, and an unscoped stop here
-      // would reap the replacement.
+      // Scope the exit to its generation so it cannot stop a replacement.
       void this.lifecycle.stop("explicit", { generation })
     })
     return server

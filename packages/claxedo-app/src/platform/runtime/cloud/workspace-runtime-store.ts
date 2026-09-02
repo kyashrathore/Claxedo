@@ -21,8 +21,7 @@ import type {
  * central sandbox, connecting to a user-hosted machine, admitting a worktree on
  * a remote host. Local code never imports this module — it names the operation
  * through `platform/runtime/workspace-startup.ts`, and `app/entry/main.tsx`
- * binds this implementation for the hosted build. That indirection is what lets
- * the whole `platform/runtime/cloud` root move to `@claxedo/cloud-app`.
+ * binds this implementation for the hosted build.
  *
  * Reading the runtime RECORD used to live here too and does not any more; see
  * `platform/runtime/workspace-runtime-record.ts` for why.

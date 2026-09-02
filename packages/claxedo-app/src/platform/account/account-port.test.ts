@@ -33,17 +33,14 @@ function matrixOperations() {
 const UNIT_10_DEFERRED_OPERATIONS: string[] = []
 
 describe("HostedOperationName", () => {
-  test("names only operations the matrix declares and pins the exact Unit 10 deferral", () => {
-    // The matrix is the reviewed set. Until Unit 10 lands, the difference is a
-    // deliberate, executable deferral rather than an unbounded subset that can
-    // silently grow while Unit 11 is described as complete.
+  test("names only operations the matrix declares and pins operations not yet on the port", () => {
     const inMatrix = new Set(matrixOperations())
     expect(declaredOperations().filter((operation) => !inMatrix.has(operation))).toEqual([])
     const declared = new Set(declaredOperations())
     expect(matrixOperations().filter((operation) => !declared.has(operation))).toEqual(UNIT_10_DEFERRED_OPERATIONS)
   })
 
-  test("includes the machine-wide enrollment this unit introduces", () => {
+  test("includes machine-wide enrollment", () => {
     expect(declaredOperations()).toContain("host.enrollCurrentMachine")
   })
 

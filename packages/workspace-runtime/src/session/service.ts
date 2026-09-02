@@ -2,7 +2,7 @@ import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/pro
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
 import type { Message } from "@opencode-ai/sdk/v2"
 import type {
-  AgentMessageRow,
+  AgentMessage,
   AgentRuntime,
   AgentRuntimeStreamEvent,
   AgentRuntimeTurnStartInput,
@@ -65,7 +65,7 @@ export type SessionPromptTurnResult = {
   assistantId: string
   assistantMessagePublished: boolean
   error?: string
-  messages: AgentMessageRow[]
+  messages: AgentMessage[]
 }
 
 export type SessionPromptTurnInput = {
@@ -254,7 +254,13 @@ function reply(messages: unknown[], assistantId: string) {
 }
 
 export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promise<SessionPromptTurnResult> {
-  const stream = input.runtime.events.subscribe({ sessionId: input.sessionId })
+  // The host's own turn driver: it reads the session's events to project and
+  // publish them, so it is exempt from the eventDelivery identity requirement
+  // (see AgentRuntimeSubscribeInput.hostInternal). An identityless subscribe
+  // here against a policy-composed runtime throws before `turn.start`, and
+  // the failure surfaces only as a transient bus `session.error` — every
+  // local prompt dies with "Subscription identity is required".
+  const stream = input.runtime.events.subscribe({ sessionId: input.sessionId, hostInternal: true })
   const iterator = stream[Symbol.asyncIterator]()
   const scope = compatScope(input.directory, input.sessionId)
   let turn: Awaited<ReturnType<RuntimePromptTurnInput["runtime"]["turns"]["start"]>> | undefined

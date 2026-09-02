@@ -3,21 +3,21 @@ import type { Virtualizer } from "@tanstack/solid-virtual"
 export function estimateLongMarkdownHeight(text: string) {
   let lineCount = 1
   for (let newline = text.indexOf("\n"); newline !== -1; newline = text.indexOf("\n", newline + 1)) lineCount += 1
-  // Neither supported estimate can match fewer than 20 structural rows. Avoid
-  // allocating a line array and running a regex for the overwhelmingly common
-  // one-line response while the virtualizer estimates the complete history.
+  // Short responses stay on the virtualizer default. Avoid any further work
+  // for the overwhelmingly common small response while the virtualizer
+  // estimates the complete history.
   if (lineCount < 20) return
 
-  const lines = text.split("\n")
-  if (/^\s*(?:```|~~~)/.test(lines[0] ?? "") && lines.length > 80) {
-    return Math.min(6_000, (lines.length - 2) * 24 + 36)
-  }
-  let structuralRows = 0
-  for (const line of lines) {
-    if (!/^\s*(?:[-*+]\s+|\|)/.test(line)) continue
-    structuralRows += 1
-    if (structuralRows >= 20) return Math.min(6_000, lines.length * 24)
-  }
+  // Calibrated against rendered transcripts (live measurement, 2026-09-01):
+  // long markdown renders at ~28px per SOURCE line at p50 (headings/lists run
+  // ~35, dense code ~20). The estimate must track that scale: a giant single
+  // part (1,849 lines) renders at 52,961px, and a low cap makes the anchored
+  // viewport chase a 9x size correction when the row first measures — the
+  // visible symptom is a blank viewport while the bottom anchor converges
+  // after a session switch. Overestimating is the cheaper error: the anchor
+  // lands immediately and the scroll thumb is briefly generous, so the cap
+  // exists only to bound truly adversarial payloads.
+  return Math.min(60_000, lineCount * 26)
 }
 
 export function filterVirtualIndexes(indexes: number[], count: number) {
@@ -70,6 +70,16 @@ export function createTimelineResizeAnchor() {
       }
 
       input.virtualizer.resizeItem = (index: number, size: number) => {
+        // A rendered row is never 0px. A zero measurement means the element was
+        // measured while its surface was display-locked (the workbench keeps
+        // sessions mounted under `content-visibility: hidden`) or detached, and
+        // caching it collapses the virtualizer's total size to `paddingEnd`.
+        // The scroller then has nothing to scroll, so the bottom anchor cannot
+        // land and the last turn paints at the TOP of the viewport with a gap
+        // above the composer — until real measurements arrive and shove
+        // everything down. Dropping the zero keeps this row on its estimate,
+        // which is close enough for the anchor to be right on the first frame.
+        if (size === 0) return
         const item = input.virtualizer.measurementsCache[index]
         const previous = item ? (input.virtualizer.itemSizeCache.get(item.key) ?? item.size) : undefined
         const root = input.root()
@@ -105,20 +115,21 @@ export function createTimelineResizeAnchor() {
 }
 
 /**
- * Per-row frame styles for a virtualized timeline row. Offscreen rows carry
- * `content-visibility: auto` so the browser skips their style/layout/paint
- * entirely while the box keeps the virtualizer's size — scroll math is
- * unchanged, and `auto` intrinsic sizing retains each row's last RENDERED
- * height so re-measures after a scroll approach stay exact. On-screen rows are
- * unaffected.
+ * Per-row frame styles for a virtualized timeline row. Rows render fully at
+ * mount — no `content-visibility: auto`. Skippable rendering poisons the
+ * virtualizer: a cold row mounted in the overscan band is in skip state when
+ * `measureElement` runs, so it measures at the `contain-intrinsic-size`
+ * estimate instead of its content (a 24px turn gap measured — and painted —
+ * as the 180px placeholder), and a fast flick scrolls skipped rows into the
+ * viewport before the browser renders them, showing estimate-sized blank
+ * boxes. The overscan band is small (≤6 rows), so eager rendering costs a
+ * handful of rows and buys exact measurements plus pre-painted rows ahead of
+ * the scroll direction.
  */
 export function timelineRowFrameStyle(input: {
-  size: number
   minHeight: number | undefined
 }): Record<string, string | undefined> {
   return {
     "min-height": input.minHeight === undefined ? undefined : `${input.minHeight}px`,
-    "content-visibility": "auto",
-    "contain-intrinsic-size": `auto ${input.size}px`,
   }
 }

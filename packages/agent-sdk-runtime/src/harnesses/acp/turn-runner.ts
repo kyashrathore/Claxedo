@@ -1,0 +1,771 @@
+import type { StopReason } from "@agentclientprotocol/sdk"
+import { randomUUID } from "crypto"
+import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
+import { createAcpEventTranslator, translateStopReason } from "@claxedo/agent-event-runtime/harnesses/acp"
+import {
+  buildAssistantMessage,
+  buildUserMessage,
+  isTerminalCompatEvent,
+  messageUpdated,
+  permissionAsked,
+  sessionError,
+  sessionStatus,
+  type CompatEvent,
+} from "../../compat-events"
+import type { AgentRuntimeStreamEvent, PromptInput } from "../../index"
+import { turnWriteFence, type AgentTurnWriteContext } from "../../adapter-contract"
+import { firstTurnErrorData } from "../../first-turn-error"
+import { Log } from "../../log"
+import { recovering } from "../../status"
+import { createTurnEventProjector } from "../shared/turn-projection"
+import { createChildEventRouter } from "../shared/child-event-routing"
+import { acpPermissionRequest } from "./permission-options"
+import { ACPProcess, type SessionUpdate } from "./process"
+import {
+  errorMessage,
+  messageUsage,
+  missing,
+  newSessionTimeoutMs,
+  promptTimeoutMs,
+  runtimeUsage,
+} from "./helpers"
+import { maybeAutoTitle } from "./title"
+import { AcpProcessManager } from "./process-manager"
+
+const log = Log.create({ service: "acp-turn-runner" })
+const activePromptCounts = new Map<string, number>()
+const activePromptWaiters = new Map<string, Set<() => void>>()
+
+type GoalRuntime = {
+  agentSessionId: string
+  runtime: ReturnType<typeof createAgentEventRuntime>
+}
+
+type GoalProjection = {
+  agentSessionId: string
+  directory: string
+  assistantMessageId: string
+  runtime: ReturnType<typeof createAgentEventRuntime>
+  projector: ReturnType<typeof createTurnEventProjector>
+  proc: ACPProcess
+  turn: { drain(message: string): void }
+  leaveBusy: () => void
+}
+
+export function activeAcpPromptCount(harness: string) {
+  return activePromptCounts.get(harness) ?? 0
+}
+
+function enterActivePrompt(harness: string) {
+  activePromptCounts.set(harness, activeAcpPromptCount(harness) + 1)
+  return () => {
+    const next = activeAcpPromptCount(harness) - 1
+    if (next > 0) {
+      activePromptCounts.set(harness, next)
+      return
+    }
+    activePromptCounts.delete(harness)
+    for (const resolve of activePromptWaiters.get(harness) ?? []) resolve()
+    activePromptWaiters.delete(harness)
+  }
+}
+
+export function waitForNoActiveAcpPrompts(harness: string) {
+  if (activeAcpPromptCount(harness) === 0) return Promise.resolve()
+  return new Promise<void>((resolve) => {
+    const waiters = activePromptWaiters.get(harness) ?? new Set<() => void>()
+    waiters.add(resolve)
+    activePromptWaiters.set(harness, waiters)
+  })
+}
+
+function unrestorable(error: unknown) {
+  return missing(error)
+}
+
+export abstract class AcpTurnRunner extends AcpProcessManager {
+  private goalProjections = new Map<string, GoalProjection>()
+  private goalRuntimes = new Map<string, GoalRuntime>()
+
+  private goalProjectionMap() {
+    this.goalProjections ??= new Map<string, GoalProjection>()
+    return this.goalProjections
+  }
+
+  private goalRuntimeMap() {
+    this.goalRuntimes ??= new Map<string, GoalRuntime>()
+    return this.goalRuntimes
+  }
+
+  /**
+   * The event runtime that translates one Goal turn's ACP updates.
+   *
+   * Cached per local session, NOT per projection: the projection only exists
+   * once a translated event has been produced, so a runtime owned by the
+   * projection would be rebuilt — and its accumulated translator state thrown
+   * away — on every update until then. Dropped by `finishGoalProjection` so the
+   * next Goal turn starts from a clean translator.
+   */
+  private goalRuntime(sessionId: string, agentSessionId: string) {
+    const cached = this.goalRuntimeMap().get(sessionId)
+    if (cached?.agentSessionId === agentSessionId) return cached.runtime
+    const runtime = createAgentEventRuntime({
+      harness: this.harnessId(),
+      threadId: agentSessionId,
+      adapter: createAcpEventTranslator({ client: this.harnessId() }),
+    })
+    this.goalRuntimeMap().set(sessionId, { agentSessionId, runtime })
+    return runtime
+  }
+
+  protected observeGoalSessionUpdate(
+    sessionId: string,
+    agentSessionId: string,
+    directory: string,
+    proc: ACPProcess,
+    update: SessionUpdate,
+  ) {
+    if (this.store.getGoal?.(sessionId)?.status !== "active") return
+    // Retire a projection bound to a replaced ACP session BEFORE the runtime is
+    // resolved, so the cached runtime it drops is the stale one.
+    const stale = this.goalProjectionMap().get(sessionId)
+    if (stale && stale.agentSessionId !== agentSessionId) {
+      this.finishGoalProjection(sessionId, "ACP Goal session binding changed")
+    }
+    const runtime = this.goalRuntime(sessionId, agentSessionId)
+    const result = runtime.ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: update,
+    })
+    if (result.events.length === 0) return
+    let projection = this.goalProjectionMap().get(sessionId)
+    if (!projection) {
+      const started = this.startGoalProjection(sessionId, agentSessionId, directory, proc, runtime)
+      if (!started) return
+      projection = started
+    }
+    for (const event of result.events) {
+      projection.projector.project(event, {
+        dir: "in",
+        method: "sessionUpdate",
+        frame: update,
+      })
+    }
+  }
+
+  protected finishGoalProjection(sessionId: string, error?: string) {
+    // Unconditional: updates can accumulate translator state before any
+    // projection starts, and that runtime must not outlive the Goal turn.
+    this.goalRuntimeMap().delete(sessionId)
+    const projection = this.goalProjectionMap().get(sessionId)
+    if (!projection) return
+    this.goalProjectionMap().delete(sessionId)
+    projection.proc.permissionPushers.delete(projection.agentSessionId)
+    if (error) {
+      projection.projector.terminalizeOpenTools(error, {
+        dir: "in",
+        method: "goal.turn.error.open-tools",
+        frame: { message: error },
+      })
+      projection.projector.project({ type: "error", error }, {
+        dir: "in",
+        method: "goal.turn.error",
+        frame: { message: error },
+      })
+    } else {
+      projection.projector.project({ type: "finish", sessionId }, {
+        dir: "in",
+        method: "goal.turn.finish",
+        frame: { sessionId },
+      })
+    }
+    const finished = this.store.finishTurn({
+      sessionId,
+      assistantMessageId: projection.assistantMessageId,
+      outcome: error
+        ? { status: "failed", completedAt: Date.now(), error }
+        : { status: "completed", completedAt: Date.now() },
+    })
+    for (const event of finished.events) this.options.eventHub?.publishGlobal({ directory: projection.directory, payload: event })
+    this.lifecycle().delete(sessionId, projection.turn)
+    projection.leaveBusy()
+  }
+
+  private startGoalProjection(
+    sessionId: string,
+    agentSessionId: string,
+    directory: string,
+    proc: ACPProcess,
+    runtime: ReturnType<typeof createAgentEventRuntime>,
+  ) {
+    const leaveBusy = this.lifecycle().enter(sessionId)
+    if (!leaveBusy) return null
+    const config = this.store.getSessionConfig(sessionId)
+    const assistantMessageId = randomUUID()
+    const created = Date.now()
+    const input: PromptInput = {
+      parts: [],
+      assistantMessageId,
+      agent: config?.agent ?? "build",
+      model: config?.model ?? { providerID: this.harnessId(), modelID: this.currentModel || "default" },
+      ...(config?.variant ? { variant: config.variant } : {}),
+    }
+    const started = this.store.startTurn({
+      sessionId,
+      agentSessionId,
+      assistantMessageId,
+      agent: input.agent,
+      model: input.model,
+      parts: [],
+      ...(input.variant ? { variant: input.variant } : {}),
+    })
+    for (const event of started.events) this.options.eventHub?.publishGlobal({ directory, payload: event })
+    const projector = createTurnEventProjector({
+      store: this.store,
+      owner: { sessionId, getAgentSessionId: () => agentSessionId },
+      directory,
+      input,
+      assistantMessageId,
+      created,
+      onEvent: (event) => this.options.eventHub?.publishGlobal({ directory, payload: event }),
+      onRuntimeEvent: this.options.eventHub?.publishRuntime,
+    })
+    proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
+      this.permissionOwnerMap().set(permId, proc)
+      const event = permissionAsked(acpPermissionRequest({ permId, sessionId, tool, kind, paths }))
+      this.store.appendEvent({
+        sessionId,
+        agentSessionId,
+        payload: event,
+        source: { dir: "in", method: "requestPermission", frame: { tool, paths } },
+      })
+      this.options.eventHub?.publishGlobal({ directory, payload: event })
+    })
+    const turn = {
+      drain: (message: string) => {
+        void proc.cancel(agentSessionId).catch(() => {})
+        this.finishGoalProjection(sessionId, message)
+      },
+    }
+    const projection = { agentSessionId, directory, assistantMessageId, runtime, projector, proc, turn, leaveBusy }
+    this.goalProjectionMap().set(sessionId, projection)
+    this.lifecycle().set(sessionId, turn)
+    return projection
+  }
+
+  async *sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
+    const t0 = Date.now()
+    log.info("sendMessage: start", { id, directory, partCount: input.parts.length })
+
+    const leaveBusy = this.lifecycle().enter(id)
+    if (!leaveBusy) {
+      log.info("sendMessage: session already busy, rejecting duplicate", { id })
+      yield sessionError("Session is already processing a message", id)
+      return
+    }
+    const leaveActivePrompt = enterActivePrompt(this.harnessId())
+
+    try {
+      yield* this._sendMessage(id, input, directory, t0, writeContext)
+    } finally {
+      leaveActivePrompt()
+      leaveBusy()
+    }
+  }
+
+  async *_sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    t0: number,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
+    const fenced = turnWriteFence(writeContext)
+    const current = this.store.getAgentSessionId(id)
+    if (!current) {
+      log.error("sendMessage: session not found in DB", { id })
+      yield sessionError(`Session ${id} not found`, id)
+      return
+    }
+    let agentSessionId = current
+    const session = this.store.getSession(id) as { title?: string | null } | null
+    let created = Date.now()
+    log.info("sendMessage: found session in store", { id, agentSessionId })
+    if (input.model?.modelID) {
+      const nextModel = input.model.modelID === "default" ? "" : input.model.modelID
+      if ((this.currentModel || "") !== nextModel) this.setModel(nextModel)
+    }
+
+    let proc: ACPProcess
+    let fresh = false
+    try {
+      const result = await this.getOrSpawnProcess(id, directory)
+      proc = result.proc
+      fresh = result.isNew
+    } catch (err) {
+      log.error("sendMessage: failed to get/spawn ACP process", { err, directory })
+      yield sessionError(`Failed to start ACP process: ${err}`, id)
+      return
+    }
+    const processKey = this.sessionProcessMap().get(id) ?? this.keyForSession(id, directory)
+    if (this.store.getSessionOwnerKey && this.store.getSessionOwnerKey(id) !== processKey) {
+      this.store.bindSession({
+        sessionId: id,
+        directory,
+        title: session?.title ?? undefined,
+        agentSessionId,
+        ownerKey: processKey,
+      })
+    }
+
+    log.info("sendMessage: got ACP process, starting prompt", {
+      directory,
+      binary: this.options.binary,
+      agentSessionId,
+      msToHere: Date.now() - t0,
+    })
+
+    const recover = this.store.consumeRecoveryError(id)
+    const queue = this.startTurnEvents(id, agentSessionId, directory, created, input, recover, fenced)
+    let promptDone = false
+    let promptError: string | null = null
+    let promptPromise: Promise<void> = Promise.resolve()
+    const resolvers: Array<() => void> = []
+    let chunkCount = 0
+    let assistantMsgId = input.assistantMessageId
+    let drainTurn!: (err: Error) => void
+    let drained = false
+    const drainPromise = new Promise<never>((_, reject) => {
+      drainTurn = reject
+    })
+    drainPromise.catch(() => {})
+    const drain = (message: string) => {
+      if (drained) return
+      drained = true
+      promptError = message
+      promptDone = true
+      proc.cancel(agentSessionId).catch(() => {})
+      this.invalidateProcess(processKey, message, proc)
+      for (const r of resolvers.splice(0)) r()
+      drainTurn(new Error(message))
+    }
+    const turn = { drain }
+    this.lifecycle().set(id, turn)
+    const eventRuntime = createAgentEventRuntime({
+      harness: this.harnessId(),
+      threadId: agentSessionId,
+      adapter: createAcpEventTranslator({ client: this.harnessId() }),
+    })
+
+    const push = (event: CompatEvent) => {
+      chunkCount++
+      log.info("sendMessage: pushing chunk to stream", {
+        chunkType: event.type,
+        chunkN: chunkCount,
+        msFromStart: Date.now() - t0,
+      })
+      queue.push(event)
+      for (const r of resolvers.splice(0)) r()
+    }
+    const parentProjector = createTurnEventProjector({
+      ...fenced,
+      store: this.store,
+      owner: {
+        sessionId: id,
+        getAgentSessionId: () => agentSessionId,
+      },
+      directory,
+      input,
+      assistantMessageId: assistantMsgId,
+      created,
+      onEvent: push,
+      onRuntimeEvent: this.options.eventHub?.publishRuntime,
+    })
+    const router = createChildEventRouter({
+      parent: parentProjector,
+      createChildProjector: (target) => createTurnEventProjector({
+        ...fenced,
+        store: this.store,
+        owner: {
+          sessionId: target.sessionId,
+          getAgentSessionId: target.getAgentSessionId,
+        },
+        directory,
+        input: target.input,
+        assistantMessageId: target.assistantMessageId,
+        created: target.created,
+        onEvent: () => {},
+        onRuntimeEvent: this.options.eventHub?.publishRuntime,
+      }),
+      onDiagnostic: (payload) => this.options.eventHub?.publishRuntime({
+        directory,
+        sessionId: id,
+        agentSessionId,
+        assistantMessageId: input.assistantMessageId,
+        payload,
+      }),
+    })
+    const wait = () =>
+      new Promise<void>((resolve) => {
+        if (queue.length > 0 || promptDone) resolve()
+        else resolvers.push(resolve)
+      })
+
+    const bound = async <T>(label: string, run: Promise<T>, timeoutMs?: number) => {
+      let id: ReturnType<typeof setTimeout> | undefined
+      const ms = timeoutMs ?? newSessionTimeoutMs()
+      try {
+        return await Promise.race([
+          run,
+          drainPromise,
+          new Promise<T>((_, reject) => {
+            id = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+          }),
+        ])
+      } finally {
+        if (id) clearTimeout(id)
+      }
+    }
+    const replace = async () => {
+      log.info("sendMessage: ACP session missing, creating replacement session", {
+        id,
+        oldAgentSessionId: agentSessionId,
+      })
+      agentSessionId = await this.boot(proc, directory, session?.title ?? undefined)
+      this.store.bindSession({
+        sessionId: id,
+        directory,
+        title: session?.title ?? undefined,
+        agentSessionId,
+        ownerKey: this.keyForSession(id, directory),
+      })
+    }
+
+    try {
+      if (fresh) {
+        log.info("sendMessage: process is freshly spawned, restoring ACP session", {
+          id,
+          agentSessionId,
+        })
+        try {
+          await bound("ACP resume", proc.resumeSession(agentSessionId, directory))
+        } catch (err) {
+          if (!unrestorable(err)) throw err
+          await replace()
+        }
+      }
+      if (input.permissionMode) {
+        const applied = await bound("ACP permission mode", proc.setPermissionMode(agentSessionId, input.permissionMode))
+        if (applied.currentModeId !== input.permissionMode) {
+          throw new Error(`ACP kept permission mode ${applied.currentModeId ?? "unknown"} instead of ${input.permissionMode}`)
+        }
+      }
+      try {
+        await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
+      } catch (err) {
+        if (!unrestorable(err)) throw err
+        await replace()
+        await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
+      }
+    } catch (err) {
+      promptError = errorMessage(err)
+      proc.cancel(agentSessionId).catch(() => {})
+      this.invalidateProcess(processKey, promptError, proc)
+      promptDone = true
+      for (const r of resolvers.splice(0)) r()
+    }
+
+    if (!promptError) {
+      const forward = (update: SessionUpdate) => {
+        const result = eventRuntime.ingest({
+          source: "acp.jsonrpc",
+          method: "session/update",
+          payload: update,
+        })
+        for (const runtimeEvent of result.events) {
+          router.project(runtimeEvent, {
+            dir: "in",
+            method: "sessionUpdate",
+            frame: update,
+          }, { kind: "parent" })
+          if (runtimeEvent.type !== "step-start") continue
+          assistantMsgId = router.assistantMessageId()
+          created = router.created()
+        }
+      }
+      const install = () => {
+        proc.permissionPushers.set(agentSessionId, ({ permId, tool, kind, paths }) => {
+          log.info("sendMessage: forwarding permission-request to stream", { permId, tool, kind })
+          this.permissionOwnerMap().set(permId, proc)
+          const event = permissionAsked(
+            acpPermissionRequest({ permId, sessionId: id, tool, kind, paths }),
+          )
+          this.store.appendEvent({
+            ...fenced,
+            sessionId: id,
+            agentSessionId,
+            payload: event,
+            source: {
+              dir: "in",
+              method: "requestPermission",
+              frame: { tool, paths },
+            },
+          })
+          push(event)
+        })
+      }
+      const stop = (stopReason: StopReason) => {
+        log.info("sendMessage: prompt resolved", { stopReason, ms: Date.now() - t0 })
+        for (const runtimeEvent of translateStopReason(stopReason as Parameters<typeof translateStopReason>[0], id)) {
+          router.project(runtimeEvent, {
+            dir: "in",
+            method: "prompt.stop",
+            frame: { stopReason },
+          })
+        }
+      }
+      let retried = false
+      const run = async (): Promise<void> => {
+        install()
+        try {
+          // Model turns use the prompt timeout; session creation and restoration
+          // use the shorter handshake timeout.
+          const result = await bound("ACP prompt", proc.prompt(agentSessionId, input, forward), promptTimeoutMs())
+          // Prompt-result usage is the ONLY meterable usage on this rail:
+          // mid-turn `usage_update` notifications carry a context meter, not
+          // token categories. The ACP agent is authoritative for the final
+          // per-turn usage payload.
+          const usableUsage = hasMeteredUsage(result.usage)
+          if (!usableUsage && isCompletedStopReason(result.stopReason)) {
+            router.project({
+              type: "diagnostic",
+              diagnostic: {
+                code: "acp_prompt_usage_missing",
+                message: `ACP agent returned no token usage for a completed turn (stopReason: ${result.stopReason}); the turn meters as unavailable`,
+                severity: "warn",
+                source: "acp-adapter",
+              },
+            }, {
+              dir: "in",
+              method: "prompt.result.usage",
+              frame: { stopReason: result.stopReason },
+            })
+          }
+          if (result.usage && usableUsage) {
+            router.project(runtimeUsage(result.usage, agentSessionId), {
+              dir: "in",
+              method: "prompt.result.usage",
+              frame: { usage: result.usage },
+            })
+            const event = messageUpdated({
+              ...buildAssistantMessage({
+                id: assistantMsgId,
+                sessionID: id,
+                parentID: input.userMessageId ?? id,
+                agent: input.agent,
+                model: input.model,
+                directory,
+                created,
+                completed: Date.now(),
+                variant: input.variant,
+              }),
+              tokens: messageUsage(result.usage),
+            })
+            this.store.appendEvent({
+              ...fenced,
+              sessionId: id,
+              agentSessionId,
+              payload: event,
+              source: {
+                dir: "in",
+                method: "prompt.result",
+                frame: { usage: result.usage },
+              },
+            })
+            push(event)
+          }
+          stop(result.stopReason)
+        } catch (err) {
+          proc.permissionPushers.delete(agentSessionId)
+          if (retried || !missing(err)) throw err
+          retried = true
+          await replace()
+          await bound("ACP sync", proc.syncSession(agentSessionId, input, { syncMode: false }))
+          return run()
+        }
+      }
+      promptPromise = Promise.race([run(), drainPromise])
+      .catch((err: unknown) => {
+        log.error("sendMessage: prompt rejected", { err, ms: Date.now() - t0 })
+        promptError = errorMessage(err)
+        proc.cancel(agentSessionId).catch(() => {})
+        this.invalidateProcess(processKey, promptError, proc)
+      })
+      .finally(() => {
+        proc.permissionPushers.delete(agentSessionId)
+        promptDone = true
+        for (const r of resolvers.splice(0)) r()
+      })
+    }
+
+    let titleEmitted = false
+    try {
+      while (true) {
+        await wait()
+        let event: CompatEvent | undefined
+        while ((event = queue.shift())) {
+          // Before yielding session.idle, emit auto-title if needed
+          if (event.type === "session.idle" && !titleEmitted) {
+            titleEmitted = true
+            const titleEvent = maybeAutoTitle({
+              store: this.store,
+              eventHub: this.options.eventHub,
+              getOrSpawnProcess: (sessionId, workdir) => this.getOrSpawnProcess(sessionId, workdir),
+              boot: (proc, workdir, title) => this.boot(proc, workdir, title),
+            }, id, agentSessionId, directory, input.parts)
+            if (titleEvent) yield titleEvent
+          }
+          yield event
+          if (isTerminalCompatEvent(event)) {
+            log.info("sendMessage: terminal chunk yielded, returning", {
+              chunkType: event.type,
+              totalChunks: chunkCount,
+              ms: Date.now() - t0,
+            })
+          }
+        }
+        if (promptDone) break
+      }
+    } finally {
+      await promptPromise
+      router.dispose()
+      this.lifecycle().delete(id, turn)
+    }
+
+    if (promptError) {
+      log.error("sendMessage: ending with error", { promptError, ms: Date.now() - t0 })
+      for (const event of router.terminalizeParent(promptError, {
+        dir: "in",
+        method: "prompt.error.open-tools",
+        frame: { message: promptError },
+      })) yield event
+      const updated = messageUpdated(buildAssistantMessage({
+        id: assistantMsgId,
+        sessionID: id,
+        parentID: input.userMessageId ?? id,
+        agent: input.agent,
+        model: input.model,
+        directory,
+        created,
+        completed: Date.now(),
+        error: {
+          name: "UnknownError",
+          data: firstTurnErrorData(promptError),
+        },
+        variant: input.variant,
+      }))
+      this.store.appendEvent({
+        ...fenced,
+        sessionId: id,
+        agentSessionId,
+        payload: updated,
+        source: {
+          dir: "in",
+          method: "prompt.error",
+          frame: { message: promptError },
+        },
+      })
+      yield updated
+      const event = sessionError(promptError, id)
+      this.store.appendEvent({
+        ...fenced,
+        sessionId: id,
+        agentSessionId,
+        payload: event,
+        source: {
+          dir: "in",
+          method: "prompt.error",
+          frame: { message: promptError },
+        },
+      })
+      yield event
+      return
+    }
+
+    log.info("sendMessage: finished successfully", { totalChunks: chunkCount, ms: Date.now() - t0 })
+  }
+
+  private startTurnEvents(
+    sessionId: string,
+    agentSessionId: string,
+    directory: string,
+    created: number,
+    input: PromptInput,
+    recoveryMessage: string | null | undefined,
+    fenced: { fencingToken?: number },
+  ): CompatEvent[] {
+    const start: CompatEvent[] = [
+      sessionStatus(sessionId, recoveryMessage ? recovering(recoveryMessage) : { type: "busy" }),
+      ...(input.userMessageId ? [messageUpdated(buildUserMessage({
+        id: input.userMessageId,
+        sessionID: sessionId,
+        agent: input.agent,
+        model: input.model,
+        ...(input.tools ? { tools: input.tools } : {}),
+        ...(input.format ? { format: input.format } : {}),
+        ...(input.system ? { system: input.system } : {}),
+        ...(input.variant ? { variant: input.variant } : {}),
+      }))] : []),
+      messageUpdated(buildAssistantMessage({
+        id: input.assistantMessageId,
+        sessionID: sessionId,
+        parentID: input.userMessageId ?? sessionId,
+        agent: input.agent,
+        model: input.model,
+        directory,
+        created,
+      })),
+    ]
+    const committed = this.store.startTurn({
+      ...fenced,
+      sessionId,
+      agentSessionId,
+      userMessageId: input.userMessageId,
+      assistantMessageId: input.assistantMessageId,
+      agent: input.agent,
+      model: input.model,
+      parts: input.parts,
+      ...(input.tools ? { tools: input.tools } : {}),
+      ...(input.format ? { format: input.format } : {}),
+      ...(input.system ? { system: input.system } : {}),
+      ...(input.variant ? { variant: input.variant } : {}),
+    })
+    return [
+      ...(recoveryMessage ? [start[0]!] : []),
+      ...committed.events.filter((event) => !recoveryMessage || event.type !== "session.status"),
+    ]
+  }
+}
+
+function hasMeteredUsage(usage: {
+  totalTokens: number
+  inputTokens: number
+  outputTokens: number
+  thoughtTokens?: number | null
+  cachedReadTokens?: number | null
+  cachedWriteTokens?: number | null
+} | null | undefined) {
+  if (!usage) return false
+  return usage.totalTokens > 0 || usage.inputTokens > 0 || usage.outputTokens > 0 ||
+    (usage.thoughtTokens ?? 0) > 0 || (usage.cachedReadTokens ?? 0) > 0 || (usage.cachedWriteTokens ?? 0) > 0
+}
+
+function isCompletedStopReason(reason: StopReason) {
+  return reason === "end_turn" || reason === "max_tokens" || reason === "max_turn_requests"
+}

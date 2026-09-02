@@ -24,10 +24,10 @@ const SRC = "packages/claxedo-app/src"
  *    WorkGraph/Documents renderer chunk. A small shared contract/data seam is
  *    still reachable today: two modules under `features/workgraph/`, seven
  *    under `features/documents/`, the unbound cloud workspace port module,
- *    anonymous auth-session abstraction, and login route. Unit 10 was to move
- *    those remaining hosted contracts into `@claxedo/cloud-app` and is
- *    DEFERRED, so forbidding their whole roots here would fail on real code
- *    rather than gate anything. The exact ceiling keeps that seam shrinking.
+ *    anonymous auth-session abstraction, and login route. Those files stay
+ *    co-located in this package; forbidding their whole roots here would fail
+ *    on real code rather than gate anything. The exact ceiling keeps that
+ *    seam shrinking.
  *
  * What IS enforced is the part that was actually finished: no identity
  * provider, no Convex, and no module route to `auth-client.ts` — the four
@@ -53,10 +53,6 @@ export const appLocal: Policy = {
     `${SRC}/app/integrations/hosted-content-surfaces.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
-  // User extensions are served from a validated loopback URL at runtime; the
-  // source walker cannot resolve that URL to repository code. Keep the one
-  // intentional opaque edge exact so any second opaque import still fails.
-  permittedOpaqueImports: [`${SRC}/platform/extensions/user-extensions.ts -> import(url)`],
 
   control: {
     // The local entry is the whole shared app shell; a walk that read only the
@@ -86,10 +82,8 @@ export const appLocal: Policy = {
   // Usage adds the chart, breakdown, quota view, and shared provider-brand
   // module to the local UI; all other dependencies were already in the
   // renderer closure.
-  // The idle user-extension view host is local-only and adds no Clerk/Convex
-  // edge; record its reviewed source closure with no additional headroom.
-  // Five reviewed local owners entered after the user-extension baseline:
-  // live-session/project ownership, rail status, first-fold prefetch, and the
+  // Five reviewed local owners entered after the 2026-08 local-entry
+  // baseline: live-session/project ownership, rail status, first-fold prefetch, and the
   // deferred message navigator. The session-switch performance campaign adds
   // another twenty-five narrow owners for reactive route snapshots, title and
   // pane projection, memory accounting, bounded prefetch, first-fold/history
@@ -130,22 +124,29 @@ export const appLocal: Policy = {
   // Cloudflare-deployable flow adds the service-contribution catalog,
   // bootstrap-owner route, and canonical private-session reservation client.
   // `@claxedo/service-contract` is their dependency-neutral vocabulary owner.
-  // The exact source closure is 942 modules and 38 packages.
   // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + its loopback control
   // routes — the machine's ONE relay serving connection under machine-wide
-  // enrollment (reviewed owner: local-server workspace domain). 944/38.
+  // enrollment (reviewed owner: local-server workspace domain).
   // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`.
   // Remote access is machine level, so the published set is reconciled against
   // this machine's local workspace inventory instead of a per-workspace tick
   // list; reviewed owner is the workspaces data domain, which already owns both
   // halves (`share-workspace` decides what is local, `shared-workspaces` reads
   // what is published) and is the only layer allowed to import them —
-  // `features/onboarding` may not. 945/38.
+  // `features/onboarding` may not.
   // Session open/switch instrumentation (`platform/performance/session-perf.ts`
   // and its screen-side owner `features/session/ui/session-open-perf.ts`)
-  // adds two modules and no package edge: 947/38.
-  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the signed inventory from the shared Query cache: one module, no package edge — 948/38.
-  ceilings: { modules: 948, packages: 38 },
+  // adds two modules and no package edge.
+  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the
+  // signed inventory from the shared Query cache: one module, no package edge.
+  // Removing the retired local UI extension view, registry, and loader
+  // subtracts three modules.
+  // The Goal-mode merge re-lands the universal-Goal session owners on top of
+  // the local/cloud split: composer Goal intent/submission/draft lifecycle,
+  // Goal authority cache/query/controller, runtime Goal client/event ingress,
+  // the active-Goal dock, and the review-pass Stop fallback + shared JSON
+  // reader: thirteen modules.
+  ceilings: { modules: 957, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

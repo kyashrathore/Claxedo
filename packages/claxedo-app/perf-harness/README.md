@@ -405,5 +405,5 @@ a metric the stack could not supply indistinguishable from one that was never
 in the vocabulary, which is exactly the confusion a Solid 2 or native-port
 comparison has to avoid.
 
-The log starts from the commit that introduced it. Runs made before that live
-in `docs/perf/2026-08-13-web-and-app-optimization-session.md`, Addendum 13.
+The log starts from the commit that introduced it. Earlier campaign narrative
+is in `docs/perf/README.md`; what not to retry is in `docs/perf/AGENTS.md`.

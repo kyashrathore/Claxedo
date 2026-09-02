@@ -1,5 +1,6 @@
 import type { CompatEvent } from "../../compat-events"
-import type { AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../../index"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { AgentSession, AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../../index"
 import type { RuntimeAppendSource } from "./turn-projection"
 import type { AdmittedSubagentObservation, SubagentObservation } from "../../subagent-admission"
 
@@ -55,14 +56,16 @@ export type AgentRuntimeStoreCore = {
   getSession(id: string): unknown | null
   bindSession(input: AgentRuntimeSessionBinding): void
   updateSessionConfig(id: string, update: SessionConfigUpdate): SessionConfig | null | undefined
-  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }): unknown | null
+  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }): AgentSession | null
   getSessionConfig(id: string): SessionConfig | null | undefined
   deleteSession(id: string): void
   getAgentSessionId(id: string): string | null | undefined
+  getGoal?(id: string): RuntimeGoalSnapshot | null | undefined
+  setGoal?(id: string, goal: RuntimeGoalSnapshot | null): void
   acquireTurnLease(sessionId: string): string | undefined
   releaseTurnLease(sessionId: string, leaseId: string): void
-  startTurn(input: unknown): AgentRuntimeTurnStartOutput | void
-  finishTurn?(input: AgentRuntimeTurnFinishInput): AgentRuntimeTurnFinishOutput | void
+  startTurn(input: unknown): AgentRuntimeTurnStartOutput
+  finishTurn(input: AgentRuntimeTurnFinishInput): AgentRuntimeTurnFinishOutput
   appendEvent(input: {
     sessionId: string
     agentSessionId?: string
@@ -80,6 +83,7 @@ export type AgentRuntimeStoreCore = {
     parentSessionId: string
     observation: SubagentObservation
     allocateKey: () => string
+    allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation
   markPublished?(parentSessionId: string, observationId: string): void
   close?: () => void

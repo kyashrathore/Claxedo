@@ -1,11 +1,8 @@
 /**
  * Every product-boundary policy, and which package's `verify:closure` owns it.
  *
- * `@claxedo/cloud-app` has no policy here. Unit 10 of
- * `docs/plans/2026-08-07-004-refactor-local-cloud-package-split-plan.md` is
- * DEFERRED — the package does not exist — so a `cloud-app` policy would be a
- * file that can never run, which is the same "reads as coverage" failure this
- * directory exists to prevent. The plan's cloud-app bullets are unmet, not met.
+ * There is no `@claxedo/cloud-app` package, so there is no policy for one. A
+ * policy that can never run would read as coverage.
  */
 
 import type { Policy } from "../policy.ts"

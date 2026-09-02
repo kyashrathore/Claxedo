@@ -72,6 +72,26 @@ describe("prompt popover controller", () => {
     ])
   })
 
+  test("provider commands cannot shadow a reserved built-in Goal", () => {
+    const commands = promptSlashCommands({
+      customCommands: [{ name: "goal", description: "Provider shadow" }],
+      commandOptions: [{ id: "prompt.goal", title: "Goal", slash: "goal" }],
+    })
+
+    expect(commands.filter((command) => command.trigger === "goal")).toEqual([
+      { id: "prompt.goal", trigger: "goal", title: "Goal", description: undefined, keybind: undefined, type: "builtin" },
+    ])
+  })
+
+  test("leaves non-Goal provider command precedence unchanged", () => {
+    const commands = promptSlashCommands({
+      customCommands: [{ name: "help", description: "Provider help" }],
+      commandOptions: [{ id: "session.help", title: "Help", slash: "help" }],
+    })
+
+    expect(commands.filter((command) => command.trigger === "help")).toHaveLength(2)
+  })
+
   test("builds document picker options from content-free index metadata", () => {
     expect(
       promptDocumentOptions([

@@ -22,7 +22,7 @@ function adapter<Extra extends object = Record<never, never>>() {
     Omit<BaseInternals, keyof Extra> & Extra
   >
   const defaults: BaseInternals = { options: { binary: "fake-acp", harness: "openclaw" }, sessions: new Map(), probe: null }
-  Object.assign(out, defaults)
+  Object.assign(out, defaults, { processes: new Map() })
   return out
 }
 

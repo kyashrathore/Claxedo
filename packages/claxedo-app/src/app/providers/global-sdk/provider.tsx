@@ -1,7 +1,7 @@
 import { isAbortError } from "@/lib/abort-error"
 import type { Event as OpenCodeEvent, Project } from "@opencode-ai/sdk/v2/client"
 import { createOpencodeCompatProjection, runtimeOwnsOpencodeCompatProjection, type CompatEvent, type OpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
-import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime/contracts"
+import { record, reportRuntimeContractMismatch, runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { batch, onCleanup, onMount } from "solid-js"
@@ -28,6 +28,8 @@ import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-wa
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
 import { createSubagentRegistry, type SubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
+import type { SessionRef } from "@/platform/identity/session-ref"
+import { applyLiveSessionGoalEvent, invalidateSessionGoalData, liveSessionGoalScope } from "./goal-events"
 import {
   eventDirectoryForLiveSession,
   globalSdkClientPlacement,
@@ -42,6 +44,7 @@ import { EVENT_STREAM_STALL_MS } from "@claxedo/agent-event-runtime"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
 export { createControlPlaneEventFetch, createGlobalSdkFetch, workspaceEventTransport }
+export { runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
 export type GlobalSdkEvent = OpenCodeEvent | CompatEvent
 type Event = GlobalSdkEvent
 type EventDirectory = string
@@ -49,7 +52,6 @@ const claxedoExtensionEventTypes = new Set<string>(["message.completed", "sessio
 export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEvent {
   return !claxedoExtensionEventTypes.has(event.type)
 }
-
 function runtimeWorkspaceKind(input: unknown) {
   if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
 }
@@ -98,21 +100,8 @@ function shouldUseSignedEventAccess(input: {
     isUserHostedWorkspaceDirectory(directory)
 }
 
-export type RuntimeEventEnvelope = {
-  contractVersion: typeof AGENT_RUNTIME_EVENT_CONTRACT_VERSION
-  directory: EventDirectory
-  sessionId: string
-  agentSessionId?: string
-  assistantMessageId?: string
-  payload: AgentRuntimeEvent
-}
-
 type RuntimeProjectionCache = Map<string, OpencodeCompatProjection>
 type RuntimeCoveredSessions = Set<string>
-
-function record(input: unknown): Record<string, unknown> | undefined {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
 
 export function compatEventEnvelope(input: unknown): { directory?: string; payload: Event } | undefined {
   const row = record(input)
@@ -122,23 +111,6 @@ export function compatEventEnvelope(input: unknown): { directory?: string; paylo
   return {
     ...(typeof row.directory === "string" ? { directory: row.directory } : {}),
     payload: payload as Event,
-  }
-}
-
-export function runtimeEnvelope(input: unknown): RuntimeEventEnvelope | undefined {
-  const row = record(input)
-  const payload = record(row?.payload)
-  if (row?.contractVersion !== AGENT_RUNTIME_EVENT_CONTRACT_VERSION) return
-  if (typeof row?.directory !== "string") return
-  if (typeof row.sessionId !== "string") return
-  if (typeof payload?.type !== "string") return
-  return {
-    contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-    directory: row.directory,
-    sessionId: row.sessionId,
-    ...(typeof row.agentSessionId === "string" ? { agentSessionId: row.agentSessionId } : {}),
-    ...(typeof row.assistantMessageId === "string" ? { assistantMessageId: row.assistantMessageId } : {}),
-    payload: payload as AgentRuntimeEvent,
   }
 }
 
@@ -196,6 +168,7 @@ export function resetRuntimeReplayGapState(input: {
   baseUrl?: string
   liveSession?: LiveSession
   subagents?: SubagentRegistry
+  goalScope?: Parameters<typeof invalidateSessionGoalData>[0]
 }) {
   input.projections?.clear()
   input.covered?.clear()
@@ -210,6 +183,7 @@ export function resetRuntimeReplayGapState(input: {
     queryClient.invalidateQueries({ queryKey: queryKeys.session.todo(input.baseUrl, directory, input.envelope.sessionId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.session.diff(input.baseUrl, directory, input.envelope.sessionId) }),
     queryClient.invalidateQueries({ queryKey: queryKeys.shell.sessionInventory(input.baseUrl) }),
+    ...(input.goalScope ? [invalidateSessionGoalData(input.goalScope)] : []),
   ]).then(() => {})
 }
 
@@ -385,6 +359,7 @@ const globalSDKContextInput = {
     const flush = coalescer.flush
 
     let streamErrorLogged = false
+    let reportedContractVersion: unknown
     const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
     const aborted = isAbortError
     const transientStreamError = (error: unknown) =>
@@ -516,7 +491,14 @@ const globalSDKContextInput = {
               lastRuntimeEventId = id
             })) {
               const envelope = runtimeEnvelope(item)
-              if (!envelope) continue
+              if (!envelope) {
+                reportedContractVersion = reportRuntimeContractMismatch({
+                  frame: item, reported: reportedContractVersion, serverUrl: currentServer.http.url,
+                  live: eventLiveSession(),
+                  publish: (directory, event) => { enqueue(directory, event as Event); flush() },
+                })
+                continue
+              }
               envelope.directory = eventDirectoryForLiveSession({
                 directory: envelope.directory,
                 liveSession: eventLiveSession(),
@@ -545,10 +527,24 @@ const globalSDKContextInput = {
                   baseUrl: currentServer.http.url,
                   liveSession: eventLiveSession(),
                   subagents,
+                  goalScope: liveSessionGoalScope({
+                    live: eventLiveSession(),
+                    serverUrl: currentServer.http.url,
+                    signedControlPlane: signedEventAccess(),
+                  }),
                 })
                 lastRuntimeEventId = undefined
                 runtimeAttempt.abort()
                 break
+              }
+              if (envelope.payload.type === "goal-updated" || envelope.payload.type === "goal-cleared") {
+                applyLiveSessionGoalEvent({
+                  live: eventLiveSession(),
+                  serverUrl: currentServer.http.url,
+                  signedControlPlane: signedEventAccess(),
+                  sessionId: envelope.sessionId,
+                  payload: envelope.payload,
+                })
               }
               applySubagentRuntimeEventEnvelope(envelope, subagents)
               if (!runtimeProjectionOwnsCompat(envelope)) continue
@@ -744,7 +740,7 @@ const globalSDKContextInput = {
       throwOnError: true,
     })
 
-    const setLiveSession = (sessionID: string, opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string }) => {
+    const setLiveSession = (sessionID: string, opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }) => {
       const transition = liveSessionTransition(liveSession, sessionID, opts)
       liveSession = transition.next
       if (transition.workspaceScopeChanged) subagents.workspaceChanged()

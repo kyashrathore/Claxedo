@@ -1,47 +1,42 @@
 import { randomUUID } from "crypto"
-import type {
-  AgentEventRuntime,
-  RawHarnessEvent,
-  SubagentUpdatedEvent,
-} from "@claxedo/agent-event-runtime"
+import { type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { createAgentSessionIndex } from "./agent-session-index"
+import { createGoalPublisher, type GoalPublisher } from "./goal-publisher"
+import { createNativeGoalResource } from "./native-goal-resource"
 import {
   buildAssistantMessage,
   buildUserMessage,
   isTerminalCompatEvent,
   messageUpdated,
-  permissionReplied,
-  questionRejected,
-  questionReplied,
   sessionError,
   sessionStatus,
   sessionUpdated,
   type CompatEvent,
 } from "../../compat-events"
 import { listCommands } from "../../command-discovery"
-import { Log } from "../../log"
-import type { RuntimeEventHub } from "../../runtime-event-hub"
-import type { NativeSdkHarnessId } from "../../sdk-model-catalog"
 import type {
-  AgentCommandRow,
-  AgentConfigOptionRow,
-  AgentMessageRow,
-  AgentPermissionRow,
-  AgentQuestionRow,
+  AgentCommand,
+  AgentConfigOption,
+  AgentMessage,
+  AgentPermission,
+  AgentQuestion,
   AgentRuntimeStreamEvent,
-  AgentSessionRow,
+  AgentSession,
   PromptInput,
   SessionConfig,
   SessionConfigUpdate,
 } from "../../index"
 import type {
   AbortResult,
+  AgentGoalResource,
+  AgentGoalMutationResult,
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
-  AgentHarnessAdapterProcessOptions,
   AgentPermissionModeState,
   AgentTurnWriteContext,
 } from "../../adapter-contract"
+import { turnWriteFence } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
 import {
@@ -54,172 +49,65 @@ import {
   EXPLICIT_TURN_ABORT_REASON,
   type SessionTurnLifecycle,
 } from "../shared/turn-lifecycle"
-import type { AgentRuntimeStore } from "../shared/runtime-store"
 import { hasConcreteSessionTitle } from "../../session-title"
+import { deriveSessionTitle } from "../../session-title"
 import { requireWorkspaceDirectory } from "../../target"
 import { firstTurnErrorData } from "../../first-turn-error"
-import type { AgentProcessObserver } from "../../process-observer"
 import {
   createMemorySubagentAdmissionStore,
   createSubagentAdmissionBoundary,
-  type SubagentObservation,
 } from "../../subagent-admission"
+import type { AgentRuntimeSessionBinding } from "./runtime-store"
+import type {
+  ActiveTurn,
+  JsonRecord,
+  PendingPermission,
+  PendingQuestion,
+  SdkRuntimeAdapterOptions,
+  SdkRuntimeAuth,
+  SdkRuntimeDriver,
+  SdkRuntimeDriverFactory,
+  SdkRuntimeDriverHost,
+  SdkRuntimeRunnerType,
+  SdkRuntimeStore,
+  SdkRuntimeTranscriptRegistrar,
+  SdkRuntimeTurnInput,
+} from "./sdk-runtime-driver"
+import { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
+import { Log } from "../../log"
+import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
+import {
+  admissibleSubagentObservation,
+  openSubagentTranscript,
+  scopedSubagentKey,
+  subagentCorrelationKeys,
+  subagentOutcome,
+  transcriptText,
+} from "./subagent-transcript"
+import { acceptedSessionConfig, acceptedSessionUpdate } from "./accepted-session-mutation"
+import { SdkRuntimeInteractions } from "./sdk-runtime-interactions"
 
-export type SdkRuntimeRunnerType = NativeSdkHarnessId
-export type SdkRuntimeStore = AgentRuntimeStore
-export type SdkRuntimeTranscriptRegistrar = {
-  register(input: {
-    parentSessionId: string
-    providerKind: string
-    filePath: string
-  }): Promise<
-    | { state: "ready"; handle: string }
-    | { state: "unavailable"; reason: string }
-  >
-  open?(input: {
-    parentSessionId: string
-    handle: string
-  }): Promise<
-    | { state: "ready"; messages: unknown[] }
-    | { state: "empty"; messages: [] }
-    | { state: "unavailable"; reason: string }
-  >
-}
-
-export type SdkRuntimeAdapterOptions = AgentHarnessAdapterProcessOptions & {
-  driver: SdkRuntimeDriverFactory
-  binary?: string
-  storeRoot?: string
-  store?: SdkRuntimeStore
-  createStore?: (storeRoot?: string) => SdkRuntimeStore
-  eventHub?: RuntimeEventHub
-  transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
-}
-
-export type JsonRecord = Record<string, unknown>
-export type PendingPermission = {
-  sessionId: string
-  agentSessionId: string
-  method: string
-  params: JsonRecord
-  resolve: (decision: "allow_once" | "allow_always" | "deny" | "reject_always") => void
-}
-export type PendingQuestion = {
-  sessionId: string
-  agentSessionId: string
-  questions: unknown[]
-  resolve: (answer: string) => void
-  reject: () => void
-}
-export type ActiveTurn = {
-  abort: AbortController
-  close?: () => void
-  turnId?: string
-}
-
-export type SdkRuntimeAuth = { anthropic?: string; openai?: string; cursor?: string }
-export type SdkRuntimeDriverHost = {
-  lifecycle: () => SessionTurnLifecycle<ActiveTurn>
-  pendingPermissions: Map<string, PendingPermission>
-  pendingQuestions: Map<string, PendingQuestion>
-  processObserver?: AgentProcessObserver
-  transcriptRegistrar?: SdkRuntimeTranscriptRegistrar
-  bindSession(input: { sessionId: string; directory: string; title?: string; agentSessionId: string }): void
-}
-export type SdkRuntimeTurnInput = {
-  sessionId: string
-  getAgentSessionId: () => string
-  input: PromptInput
-  directory: string
-  abort: AbortController
-  ingest: (raw: RawHarnessEvent, source: RuntimeAppendSource, route?: RuntimeEventRoute) => void
-  associateChild: (correlationKey: string, target: ChildProjectionTarget) => void
-  observeSubagent: (input: {
-    observation: SubagentObservation
-    correlationKeys?: string[]
-    source?: RuntimeAppendSource
-  }) => Promise<{
-    event: SubagentUpdatedEvent
-    childSessionId?: string
-  }>
-  rebindAgentSession: (agentSessionId: string) => void
-  model: string
-}
-export type SdkRuntimeDriver = {
-  readonly type: SdkRuntimeRunnerType
-  setAuth(keys: SdkRuntimeAuth): void
-  applyConfig(config: Record<string, unknown>): void | Promise<void>
-  createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<string>
-  createRuntime(threadId: string): AgentEventRuntime
-  runTurn(input: SdkRuntimeTurnInput): Promise<void>
-  deleteAgentSession?(sessionId: string, agentSessionId: string): void
-  dispose?(): void
-  readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
-  configOptions(currentModel: string, directory?: string): Promise<AgentConfigOptionRow[]>
-  peekConfigOptions(currentModel: string): AgentConfigOptionRow[]
-  /**
-   * Optional because a driver without them is a driver whose harness has no
-   * permission surface — the adapter then omits the methods entirely, so the
-   * route answers "unsupported" instead of an empty list that reads like the
-   * harness merely had nothing to say.
-   */
-  permissionModes?(sessionId: string, directory: string): AgentPermissionModeState
-  setPermissionMode?(sessionId: string, modeId: string, directory: string): Promise<AgentPermissionModeState>
-}
-export type SdkRuntimeDriverFactory = (host: SdkRuntimeDriverHost) => SdkRuntimeDriver
+export type {
+  ActiveTurn,
+  JsonRecord,
+  PendingPermission,
+  PendingQuestion,
+  SdkRuntimeAdapterOptions,
+  SdkRuntimeAuth,
+  SdkRuntimeDriver,
+  SdkRuntimeDriverFactory,
+  SdkRuntimeDriverHost,
+  SdkRuntimeRunnerType,
+  SdkRuntimeStore,
+  SdkRuntimeTranscriptRegistrar,
+  SdkRuntimeTurnInput,
+} from "./sdk-runtime-driver"
+export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 
 const log = Log.create({ service: "sdk-runtime-adapter" })
 
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")
-}
-
-export function record(input: unknown): JsonRecord | undefined {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  return input as JsonRecord
-}
-
-export function text(input: unknown) {
-  return typeof input === "string" && input.length > 0 ? input : undefined
-}
-
-/**
- * Does this event mean the turn is over?
- *
- * Deliberately the same rule `runtime.ts`'s drain loop uses to decide a turn
- * reached a terminal state — compat events settle on `session.idle` /
- * `session.error`, native runtime events on `finish` / `error` / a
- * `session-status` of `error`. Duplicated rather than shared because the two
- * live on opposite sides of the adapter boundary and importing across it to
- * save four lines would be a worse trade than the drift risk; if a third caller
- * appears, promote it.
- */
-function isTurnTerminalEvent(event: AgentRuntimeStreamEvent) {
-  if ("properties" in event) return event.type === "session.idle" || event.type === "session.error"
-  return event.type === "finish" || event.type === "error" || (event.type === "session-status" && event.status === "error")
-}
-
-export function errorMessage(err: unknown): string {
-  if (err instanceof Error) return err.message
-  const row = record(err)
-  const data = record(row?.data)
-  return text(data?.message) ?? text(row?.message) ?? String(err)
-}
-
-export function extractTextFromParts(parts: unknown[]) {
-  return parts.flatMap((part) => {
-    if (typeof part === "string") return [part]
-    const row = record(part)
-    if (!row) return []
-    return text(row.text) ?? text(row.content) ?? []
-  }).join("\n").trim()
-}
-
-function fallbackSessionTitle(input: string) {
-  const cleaned = input.replace(/\s+/g, " ").trim()
-  if (/^(hi|hello|hey|yo|greetings)[!. ]*$/i.test(cleaned)) return "Greeting"
-  const source = cleaned.replace(/^(please|can you|could you|would you)\s+/i, "").trim() || cleaned
-  return source.length > 72 ? source.slice(0, 72).trimEnd() + "..." : source
 }
 
 export class SdkRuntimeAdapter implements AgentHarnessAdapter {
@@ -231,8 +119,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   private currentModel = ""
   private driver: SdkRuntimeDriver
   private turnLifecycle = createSessionTurnLifecycle<ActiveTurn>()
-  private pendingPermissions = new Map<string, PendingPermission>()
-  private pendingQuestions = new Map<string, PendingQuestion>()
+  private interactions: SdkRuntimeInteractions
   private subagentAdmissionStore = createMemorySubagentAdmissionStore()
   private subagentChildren = new Map<string, {
     sessionId: string
@@ -240,19 +127,42 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     target: ChildProjectionTarget
   }>()
   private hydratedFileTranscripts = new Set<string>()
-  private subagentChildByCorrelation = new Map<string, string>()
+  private goalPublisher?: GoalPublisher
+
+  /**
+   * Lazy so instances built without the constructor (Object.create in tests)
+   * still publish and forget safely — same pattern as the ACP adapter.
+   */
+  private publisher(): GoalPublisher {
+    return (this.goalPublisher ??= createGoalPublisher(this.options.eventHub))
+  }
+  private agentSessionIndex = createAgentSessionIndex()
+  readonly goals: AgentGoalResource | undefined
 
   constructor(private readonly options: SdkRuntimeAdapterOptions) {
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
     this.ownsStore = !options.store
+    this.interactions = new SdkRuntimeInteractions(this.store)
     this.driver = options.driver({
       lifecycle: () => this.lifecycle(),
-      pendingPermissions: this.pendingPermissions,
-      pendingQuestions: this.pendingQuestions,
+      pendingPermissions: this.interactions.permissions,
+      pendingQuestions: this.interactions.questions,
       processObserver: options.processObserver,
       transcriptRegistrar: options.transcriptRegistrar,
-      bindSession: (input) => this.store.bindSession(input),
+      bindSession: (input) => this.bindStoreSession(input),
+      getAgentSessionId: (sessionId) => this.store.getAgentSessionId(sessionId),
+      getSessionForAgentSession: (agentSessionId) => this.agentSessionIndex.get(agentSessionId),
+      getSessionConfig: (sessionId) => this.store.getSessionConfig(sessionId),
+      publishGoal: (input) => this.publishGoal(input.sessionId, input.directory, input.goal),
+      runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute),
     })
+    this.goals = this.createGoalResource()
+  }
+
+  /** Every session binding also feeds the provider-id reverse index. */
+  private bindStoreSession(input: AgentRuntimeSessionBinding) {
+    this.store.bindSession(input)
+    this.agentSessionIndex.remember(input)
   }
 
   private lifecycle(): SessionTurnLifecycle<ActiveTurn> {
@@ -283,16 +193,107 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       unrevert: false,
       configOptions: true,
       subagents: true,
+      goals: !!this.driver.goals || !!this.driver.nativeGoal,
     })
   }
 
-  async listSessions(directory: string): Promise<AgentSessionRow[]> {
-    directory = requireWorkspaceDirectory(directory)
-    return this.store.listSessions(directory) as AgentSessionRow[]
+  /** One resource per adapter: the driver it wraps never changes. */
+  private createGoalResource(): AgentGoalResource | undefined {
+    const goals = this.driver.goals
+    if (!goals) return this.nativeGoalResource()
+    const publish = async <T extends RuntimeGoalSnapshot | null>(
+      sessionId: string,
+      directory: string,
+      operation: () => Promise<AgentGoalMutationResult<T>>,
+    ) => {
+      const result = await operation()
+      if (result.ok) this.publishGoal(sessionId, directory, result.goal)
+      return result
+    }
+    return {
+      readCapabilities: (sessionId, directory) => goals.readCapabilities(sessionId, directory),
+      read: (sessionId, directory) => goals.read(sessionId, directory),
+      start: (sessionId, input, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.start(sessionId, input, required))
+      },
+      pause: (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.pause(sessionId, required))
+      },
+      resume: (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.resume(sessionId, required))
+      },
+      stop: (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.stop(sessionId, required))
+      },
+      delete: (sessionId, directory) => {
+        const required = requireWorkspaceDirectory(directory)
+        return publish(sessionId, required, () => goals.delete(sessionId, required))
+      },
+    }
   }
 
-  async getSession(id: string, _directory: string): Promise<AgentSessionRow | null> {
-    return this.store.getSession(id) as AgentSessionRow | null
+  private nativeGoalResource(): AgentGoalResource | undefined {
+    const native = this.driver.nativeGoal
+    if (!native) return
+    return createNativeGoalResource({
+      native,
+      driverType: this.driver.type,
+      lifecycle: () => this.lifecycle(),
+      projectedGoal: (sessionId) => this.store.getGoal?.(sessionId),
+      publishGoal: (sessionId, directory, goal) => this.publishGoal(sessionId, directory, goal),
+      sessionConfig: (sessionId, directory) => this.getSessionConfig(sessionId, directory),
+      defaultModelId: () => this.currentModel,
+      streamTurn: (sessionId, input, directory, execute) => this.streamMessage(sessionId, input, directory, execute),
+    })
+  }
+
+  private publishGoal(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
+    this.publisher().publish({
+      sessionId,
+      directory,
+      agentSessionId: this.store.getAgentSessionId(sessionId) ?? undefined,
+      goal,
+      applyState: (next) => this.store.setGoal?.(sessionId, next),
+    })
+  }
+
+  private runProviderTurn(
+    sessionId: string,
+    directory: string,
+    execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+  ): Promise<boolean> {
+    const config = this.store.getSessionConfig(sessionId)
+    const input: PromptInput = {
+      parts: [],
+      assistantMessageId: randomUUID(),
+      agent: config?.agent ?? "build",
+      model: config?.model ?? { providerID: this.driver.type, modelID: this.currentModel || "default" },
+      ...(config?.variant ? { variant: config.variant } : {}),
+    }
+    return (async () => {
+      let admitted = false
+      for await (const _event of this.streamMessage(sessionId, input, directory, async (turn) => {
+        admitted = true
+        await execute(turn)
+      })) {}
+      return admitted
+    })().catch((error) => {
+      console.error(`${this.driver.type} provider Goal turn projection failed`, error)
+      return false
+    })
+  }
+
+  async listSessions(directory: string): Promise<AgentSession[]> {
+    directory = requireWorkspaceDirectory(directory)
+    return this.store.listSessions(directory) as AgentSession[]
+  }
+
+  async getSession(id: string, _directory: string): Promise<AgentSession | null> {
+    return this.store.getSession(id) as AgentSession | null
   }
 
   async createSession(directory: string, title?: string, sessionId: string = randomUUID()): Promise<{ id: string }> {
@@ -303,7 +304,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       title,
       model: this.currentModel,
     })
-    this.store.bindSession({
+    this.bindStoreSession({
       sessionId,
       directory,
       title,
@@ -325,13 +326,28 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   async createHandoffSession(directory: string, title: string | undefined, sessionId: string, options: { system: string }) {
     directory = requireWorkspaceDirectory(directory)
     const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
-    this.store.bindSession({ sessionId, directory, title, agentSessionId })
-    return { id: sessionId, agentSessionId, ownerKey: null }
+    this.bindStoreSession({ sessionId, directory, title, agentSessionId })
+    let rolledBack = false
+    return {
+      id: sessionId,
+      agentSessionId,
+      ownerKey: null,
+      rollback: async () => {
+        if (rolledBack) return
+        await this.driver.deleteAgentSession?.(sessionId, agentSessionId, directory)
+        rolledBack = true
+      },
+    }
   }
 
-  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSessionRow | null> {
+  async releaseHandoffSource(sessionId: string, agentSessionId: string, _ownerKey: string | null, directory: string) {
+    this.lifecycle().abort(sessionId)
+    await this.driver.deleteAgentSession?.(sessionId, agentSessionId, directory)
+  }
+
+  async updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, _directory: string): Promise<AgentSession | null> {
     if (updates.time?.archived !== undefined) this.lifecycle().abort(id)
-    return this.store.updateSession(id, updates) as AgentSessionRow | null
+    return acceptedSessionUpdate(this.store, id, updates)
   }
 
   async getSessionConfig(id: string, _directory: string): Promise<SessionConfig> {
@@ -349,49 +365,40 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
     directory = requireWorkspaceDirectory(directory)
-    return this.store.updateSessionConfig(id, update) ?? await this.getSessionConfig(id, directory)
+    const current = this.store.getSessionConfig(id)
+    if (!current) throw new Error(`Session ${id} has no runtime config`)
+    return acceptedSessionConfig(current, update)
   }
 
-  async deleteSession(id: string, _directory: string): Promise<void> {
+  async deleteSession(id: string, directory: string): Promise<void> {
+    directory = requireWorkspaceDirectory(directory)
     this.lifecycle().abort(id)
     for (const child of this.store.listSubagents?.(id) ?? []) {
       const childSessionId = (child as { childSessionId?: string }).childSessionId
       if (!childSessionId) continue
       const agentSessionId = this.store.getAgentSessionId(childSessionId)
-      if (agentSessionId) this.driver.deleteAgentSession?.(childSessionId, agentSessionId)
+      if (agentSessionId) await this.driver.deleteAgentSession?.(childSessionId, agentSessionId, directory)
+      this.agentSessionIndex.forget(childSessionId)
     }
     const agentSessionId = this.store.getAgentSessionId(id)
-    if (agentSessionId) this.driver.deleteAgentSession?.(id, agentSessionId)
+    if (agentSessionId) await this.driver.deleteAgentSession?.(id, agentSessionId, directory)
     this.store.deleteSession(id)
+    this.agentSessionIndex.forget(id)
+    this.publisher().forget(id)
   }
 
   /**
-   * Runs one turn, holding the session's busy lock for the turn's LIFETIME —
-   * which ends when the turn settles, not when this generator finishes.
-   *
-   * The lock exists to answer "is a turn in flight on this session"; a second
-   * prompt arriving while one is has nowhere to go, so it is refused. But the
-   * generator does more than the turn: after the terminal event the consumer
-   * (`runtime.ts`'s drain loop) still commits events, fans out to subscribers,
-   * and awaits an auto-title round-trip before this `finally` runs. Measured on
-   * a failing Tier R run, that tail is ~515ms:
-   *
-   *   747ms  T1 terminal (session.idle)      2168ms  T2 terminal
-   *  1261ms  T1 lock released (+514ms)       2683ms  T3 REFUSED
-   *                                          2684ms  T2 lock released (+516ms)
-   *
-   * T3 missed the release by ONE millisecond and was told "Session is already
-   * processing a message" — for a turn that had been over for half a second.
-   * That is the bug: a user who sends a second message promptly after a reply
-   * lands gets it silently swallowed, with the composer showing ready
-   * throughout. It reproduced on every Tier R claude-sdk run and vanished if
-   * the next send was delayed ~2.5s, which is what made it look like five
-   * different bugs across the layers it was chased through.
-   *
-   * So the lock is released at TERMINAL EMISSION, the moment the turn is
-   * semantically over. The `finally` still releases — `enter`'s closure deletes
-   * from a Set, so a second call is a no-op — because a turn that throws or is
-   * abandoned before emitting a terminal event must not strand the session.
+   * Runs one turn, holding the session's busy lock until TERMINAL EMISSION —
+   * the moment the turn is semantically over, not the moment this generator
+   * finishes. The lock answers "is a turn in flight on this session", and a
+   * second prompt arriving while one is has nowhere to go, so it is refused.
+   * The generator outlives the turn by hundreds of milliseconds: after the
+   * terminal event the consumer (`runtime.ts`'s drain loop) still commits
+   * events, fans out to subscribers, and awaits an auto-title round-trip, and
+   * a prompt landing in that tail would be refused for a turn already over.
+   * The `finally` releases too — `enter`'s closure deletes from a Set, so a
+   * second call is a no-op — so a turn that throws or is abandoned before any
+   * terminal event cannot strand the session.
    */
   async *sendMessage(
     id: string,
@@ -400,17 +407,27 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
     directory = requireWorkspaceDirectory(directory)
+    yield* this.streamMessage(id, input, directory, (turn) => this.driver.runTurn(turn), writeContext)
+  }
+
+  private async *streamMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
     const leaveBusy = this.lifecycle().enter(id)
     if (!leaveBusy) {
       yield sessionError("Session is already processing a message", id)
       return
     }
     try {
-      for await (const event of this._sendMessage(id, input, directory, writeContext)) {
+      for await (const event of this._sendMessage(id, input, directory, execute, writeContext)) {
         // Release BEFORE yielding: the consumer may take arbitrarily long to
         // process this event (the auto-title round-trip is downstream of it),
         // and every millisecond of that is a window a next prompt can lose in.
-        if (isTurnTerminalEvent(event)) leaveBusy()
+        if (isTerminalRuntimePayload(event)) leaveBusy()
         yield event
       }
     } finally {
@@ -422,16 +439,18 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     id: string,
     input: PromptInput,
     directory: string,
+    execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
     writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
-    const fenced = writeContext?.fencingToken !== undefined
-      ? { fencingToken: writeContext.fencingToken }
-      : {}
+    const fenced = turnWriteFence(writeContext)
     const current = this.store.getAgentSessionId(id)
     if (!current) {
       yield sessionError(`Session ${id} not found`, id)
       return
     }
+    // A session hydrated from a durable store was never bound in this process;
+    // prompting it is where the reverse index learns its provider id.
+    this.agentSessionIndex.remember({ sessionId: id, directory, agentSessionId: current })
     let agentSessionId = current
     const created = Date.now()
     if (input.permissionMode) {
@@ -536,34 +555,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       for (const runtimeEvent of result.events) router.project(runtimeEvent, source, route)
     }
     const observeSubagent: SdkRuntimeTurnInput["observeSubagent"] = async (observed) => {
-      const fileTranscript = observed.observation.transcript?.kind === "file" && observed.observation.transcript.ref
-        ? await this.options.transcriptRegistrar?.open?.({
-            parentSessionId: id,
-            handle: observed.observation.transcript.ref,
-          })
-        : undefined
-      const admittedObservation = observed.observation.transcript?.kind === "file" &&
-          (!fileTranscript || fileTranscript.state === "unavailable")
-        ? { ...observed.observation, transcript: { kind: "none" as const } }
-        : observed.observation
-      const correlationKeys = [...new Set([
-        ...(observed.correlationKeys ?? []),
-        admittedObservation.stableCorrelationId,
-        admittedObservation.providerId,
-      ].filter((key): key is string => !!key))]
-      const existingChildKey = correlationKeys
-        .map((key) => this.subagentChildByCorrelation.get(scopedSubagentKey(id, key)))
-        .find((key): key is string => !!key)
-      const existingChild = existingChildKey ? this.subagentChildren.get(existingChildKey) : undefined
-      const openable = admittedObservation.childSessionId !== undefined ||
-        admittedObservation.transcript?.kind === "live" ||
-        admittedObservation.transcript?.kind === "messages" ||
-        admittedObservation.transcript?.kind === "file" && fileTranscript !== undefined && fileTranscript.state !== "unavailable"
-      const childSessionId = admittedObservation.childSessionId ?? existingChild?.sessionId ?? (openable ? randomUUID() : undefined)
-      const observation = {
-        ...admittedObservation,
-        ...(childSessionId ? { childSessionId } : {}),
-      }
+      const fileTranscript = await openSubagentTranscript(this.options.transcriptRegistrar, id, observed.observation)
+      const observation = admissibleSubagentObservation(observed.observation, fileTranscript)
+      const correlationKeys = subagentCorrelationKeys(observed.correlationKeys, observation)
       const source = observed.source ?? { dir: "in" as const, method: "subagent/updated" }
       const admissionStore = this.store.admit && this.store.markPublished
         ? {
@@ -571,14 +565,26 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
             markPublished: (parentSessionId: string, observationId: string) => this.store.markPublished!(parentSessionId, observationId),
           }
         : this.subagentAdmissionStore
+      // Admission owns child-session identity: it reuses the resolved row's
+      // bound child, honors a harness-named child, or allocates one when the
+      // transcript is openable. The adapter must NOT pick a child from its
+      // own in-memory maps before admitting — a second resolver can disagree
+      // with admission's row resolution (claude's dual-channel Task
+      // observations; adapter memory empty after a process restart), and one
+      // row's child stamped toward another crashes the unique child index.
+      const transcriptKind = observation.transcript?.kind
+      const openable = transcriptKind === "live" || transcriptKind === "messages" || transcriptKind === "file"
       const event = await createSubagentAdmissionBoundary({
         store: admissionStore,
         publish: (_parentSessionId, payload) => router.project(payload, source),
-      }).admit(id, observation)
+      }).admit(id, observation, openable ? { allocateChildSessionId: () => randomUUID() } : undefined)
 
+      const childSessionId = event.childSessionId
       if (!childSessionId) return { event }
       const childKey = scopedSubagentKey(id, event.subagentKey)
-      const child = this.subagentChildren.get(childKey) ?? existingChild ?? (() => {
+      const child = this.subagentChildren.get(childKey)
+        ?? [...this.subagentChildren.values()].find((candidate) => candidate.sessionId === childSessionId)
+        ?? (() => {
         const agentSessionId = observation.providerId ?? `unbound:${childSessionId}`
         const created = Date.now()
         const target = {
@@ -593,7 +599,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
             ...(input.variant ? { variant: input.variant } : {}),
           },
         } satisfies ChildProjectionTarget
-        this.store.bindSession({
+        this.bindStoreSession({
           sessionId: childSessionId,
           parentSessionId: id,
           directory,
@@ -617,7 +623,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       })()
       if (observation.providerId && child.agentSessionId.startsWith("unbound:")) {
         child.agentSessionId = observation.providerId
-        this.store.bindSession({
+        this.bindStoreSession({
           sessionId: child.sessionId,
           parentSessionId: id,
           directory,
@@ -627,7 +633,6 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       }
       this.subagentChildren.set(childKey, child)
       for (const correlationKey of correlationKeys) {
-        this.subagentChildByCorrelation.set(scopedSubagentKey(id, correlationKey), childKey)
         router.associate(correlationKey, child.target)
       }
       const fileCorrelation = correlationKeys[0] ?? event.subagentKey
@@ -637,16 +642,13 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         const text = transcriptText(fileTranscript.messages)
         if (text) router.project({ type: "text-delta", delta: text }, source, { kind: "child", correlationKey: fileCorrelation })
       }
-      if (observation.status === "completed" || observation.status === "failed" || observation.status === "killed" || observation.status === "interrupted") {
-        this.store.finishTurn?.({
+      const outcome = subagentOutcome(observation)
+      if (outcome) {
+        this.store.finishTurn({
           ...fenced,
           sessionId: child.sessionId,
           assistantMessageId: child.target.assistantMessageId,
-          outcome: observation.status === "failed"
-            ? { status: "failed", completedAt: Date.now(), error: observation.label ?? "Subagent failed" }
-            : observation.status === "completed"
-              ? { status: "completed", completedAt: Date.now() }
-              : { status: "cancelled", completedAt: Date.now(), reason: observation.status },
+          outcome,
         })
       }
       return { event, childSessionId: child.sessionId }
@@ -654,7 +656,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const rebindAgentSession = (sdkSessionId: string) => {
       if (!sdkSessionId || sdkSessionId === agentSessionId) return
       agentSessionId = sdkSessionId
-      this.store.bindSession({
+      this.bindStoreSession({
         sessionId: id,
         directory,
         agentSessionId,
@@ -662,7 +664,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
 
     this.lifecycle().set(id, { abort })
-    const run = this.driver.runTurn({
+    const run = execute({
       sessionId: id,
       getAgentSessionId: () => agentSessionId,
       input,
@@ -761,14 +763,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     yield error
   }
 
-  async getMessages(id: string, _directory: string): Promise<AgentMessageRow[]> {
-    return this.store.getMessages(id) as AgentMessageRow[]
+  async getMessages(id: string, _directory: string): Promise<AgentMessage[]> {
+    return this.store.getMessages(id) as AgentMessage[]
   }
 
   async abort(id: string, _directory: string): Promise<AbortResult> {
     const lifecycle = this.lifecycle()
     if (!lifecycle.abort(id)) return { ok: true, status: "already_idle" }
-    this.resolvePendingPermissions(id, "deny")
+    this.interactions.resolvePermissions(id, "deny")
     // `cancelled` is an admission acknowledgement: callers may start the next
     // turn as soon as it resolves. Wait until this adapter's own generation has
     // left its busy section so the replacement cannot be rejected by a stale
@@ -777,7 +779,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return { ok: true, status: "cancelled" }
   }
 
-  async listCommands(_directory: string): Promise<AgentCommandRow[]> {
+  async listCommands(_directory: string): Promise<AgentCommand[]> {
     return listCommands()
   }
 
@@ -796,87 +798,40 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return this.driver.setPermissionMode(sessionId, modeId, directory)
   }
 
-  async listPermissions(directory: string): Promise<AgentPermissionRow[]> {
-    directory = requireWorkspaceDirectory(directory)
-    const live = new Set(this.pendingPermissions.keys())
-    return this.store.listPermissions(directory).filter((row) => {
-      if (live.has(row.id)) return true
-      return false
-    }) as AgentPermissionRow[]
+  async listPermissions(directory: string): Promise<AgentPermission[]> {
+    return this.interactions.listPermissions(directory)
   }
 
   async respondPermission(
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
     directory: string,
-  ): Promise<AgentInteractionResult | void> {
-    directory = requireWorkspaceDirectory(directory)
-    const row = (this.store.listPermissions(directory) as Array<{ id: string; sessionID: string }>).find((item) => item.id === permId)
-    const pending = this.pendingPermissions.get(permId)
-    const events: CompatEvent[] = []
-    if (row) {
-      const committed = this.store.appendEvent({
-        sessionId: row.sessionID,
-        agentSessionId: pending?.agentSessionId,
-        payload: permissionReplied(
-          row.sessionID,
-          permId,
-          decision === "allow_always" ? "always" : decision === "allow_once" ? "once" : "reject",
-        ),
-        source: { dir: "out", method: "permission.reply", frame: { decision } },
-      })
-      if (committed?.payload) events.push(committed.payload)
-    }
-    if (!pending) return
-    this.pendingPermissions.delete(permId)
-    pending.resolve(decision)
-    return events.length > 0 ? { events } : undefined
+  ) {
+    return this.interactions.respondPermission(permId, decision, directory)
   }
 
-  async listQuestions(directory: string): Promise<AgentQuestionRow[]> {
-    directory = requireWorkspaceDirectory(directory)
-    const live = new Set(this.pendingQuestions.keys())
-    return this.store.listQuestions(directory).filter((row) => live.has(row.id)) as AgentQuestionRow[]
+  async listQuestions(directory: string): Promise<AgentQuestion[]> {
+    return this.interactions.listQuestions(directory)
   }
 
-  async replyQuestion(qId: string, answer: string, _directory: string): Promise<AgentInteractionResult | void> {
-    const pending = this.pendingQuestions.get(qId)
-    if (!pending) return
-    this.pendingQuestions.delete(qId)
-    const committed = this.store.appendEvent({
-      sessionId: pending.sessionId,
-      agentSessionId: pending.agentSessionId,
-      payload: questionReplied(pending.sessionId, qId, [[answer]]),
-      source: { dir: "out", method: "question.reply", frame: { answer } },
-    })
-    pending.resolve(answer)
-    return committed?.payload ? { events: [committed.payload] } : undefined
+  async replyQuestion(qId: string, answer: string, _directory: string) {
+    return this.interactions.replyQuestion(qId, answer)
   }
 
-  async rejectQuestion(qId: string, _directory: string): Promise<AgentInteractionResult | void> {
-    const pending = this.pendingQuestions.get(qId)
-    if (!pending) return
-    this.pendingQuestions.delete(qId)
-    const committed = this.store.appendEvent({
-      sessionId: pending.sessionId,
-      agentSessionId: pending.agentSessionId,
-      payload: questionRejected(pending.sessionId, qId),
-      source: { dir: "out", method: "question.reject", frame: {} },
-    })
-    pending.reject()
-    return committed?.payload ? { events: [committed.payload] } : undefined
+  async rejectQuestion(qId: string, _directory: string) {
+    return this.interactions.rejectQuestion(qId)
   }
 
   async applyConfig(config: Record<string, unknown>): Promise<void> {
     await this.driver.applyConfig(config)
   }
 
-  async probeConfigOptions(directory: string): Promise<AgentConfigOptionRow[]> {
+  async probeConfigOptions(directory: string): Promise<AgentConfigOption[]> {
     return this.driver.configOptions(this.currentModel, directory)
   }
 
-  peekConfigOptions(_directory: string): AgentConfigOptionRow[] {
-    return this.driver.peekConfigOptions(this.currentModel)
+  peekConfigOptions(directory: string): AgentConfigOption[] {
+    return this.driver.peekConfigOptions(this.currentModel, directory)
   }
 
   readRuntimeHealth(_directory: string): AgentHarnessAdapterHealth {
@@ -891,27 +846,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
 
   dispose(): void {
     this.lifecycle().abortAll()
-    this.resolvePendingPermissions()
-    for (const item of this.pendingQuestions.values()) item.reject()
-    this.pendingQuestions.clear()
+    this.interactions.resolvePermissions()
+    this.interactions.rejectAllQuestions()
     this.driver?.dispose?.()
     this.closeStore()
   }
 
   private resolvePendingPermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny") {
-    for (const [id, item] of [...this.pendingPermissions.entries()]) {
-      if (sessionId && item.sessionId !== sessionId) continue
-      this.pendingPermissions.delete(id)
-      if (item.sessionId && this.store?.appendEvent) {
-        this.store.appendEvent({
-          sessionId: item.sessionId,
-          agentSessionId: item.agentSessionId,
-          payload: permissionReplied(item.sessionId, id, "reject"),
-          source: { dir: "out", method: "permission.abort", frame: { decision } },
-        })
-      }
-      item.resolve?.(decision)
-    }
+    this.interactions.resolvePermissions(sessionId, decision)
   }
 
   private maybeAutoTitle(id: string, agentSessionId: string, directory: string, parts: unknown[]) {
@@ -925,7 +867,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       slug: id,
       projectID: "",
       directory,
-      title: fallbackSessionTitle(text),
+      title: deriveSessionTitle(text),
       version: "local",
       time: { created: now, updated: now },
     })
@@ -938,24 +880,4 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return event
   }
 
-}
-
-function transcriptText(messages: unknown[]) {
-  return messages.flatMap((message) => readableTranscriptText(message)).filter(Boolean).join("\n\n")
-}
-
-function readableTranscriptText(value: unknown): string[] {
-  if (typeof value === "string") return value.trim() ? [value.trim()] : []
-  if (!value || typeof value !== "object" || Array.isArray(value)) {
-    return Array.isArray(value) ? value.flatMap(readableTranscriptText) : []
-  }
-  const record = value as Record<string, unknown>
-  if (typeof record.text === "string") return readableTranscriptText(record.text)
-  if (typeof record.content === "string" || Array.isArray(record.content)) return readableTranscriptText(record.content)
-  if (record.message) return readableTranscriptText(record.message)
-  return []
-}
-
-function scopedSubagentKey(parentSessionId: string, key: string) {
-  return `${parentSessionId}\0${key}`
 }

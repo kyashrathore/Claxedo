@@ -171,18 +171,18 @@ describe("upstream contract", () => {
     state.localCurrentModel = { id: "big-pickle", provider: { id: "opencode" } }
     state.localCurrentAgent = { name: "stale-agent" }
     state.runtimeSessionConfig = {
-      harness: { type: "codex-app-server" },
+      harness: { id: "codex", access: "acp" },
       agent: "build",
-      model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
+      model: { providerID: "acp:codex", modelID: "gpt-5.5" },
     }
     queryClient.setQueryData(sessionConfigRawQueryKey({
       sessionID: "session-1",
       directory: "ws_1",
       serverUrl: "http://localhost:3001",
     }), {
-      harness: { type: "codex-app-server" },
+      harness: { id: "codex", access: "acp" },
       agent: "build",
-      model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
+      model: { providerID: "acp:codex", modelID: "gpt-5.5" },
     })
 
     const submit = createSubmit({
@@ -199,7 +199,7 @@ describe("upstream contract", () => {
       sessionID: "session-1",
       directory: "ws_1",
       agent: "build",
-      model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
+      model: { providerID: "acp:codex", modelID: "gpt-5.5" },
     })
     expect(runtimeCalls.filter((call) => call.input.includes("/config") && call.method === "PATCH")).toEqual([])
     expect(harnessSetCalls).toEqual([])

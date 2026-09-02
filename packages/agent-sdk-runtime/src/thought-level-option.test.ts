@@ -5,8 +5,7 @@ import { resolveTurnEffort, thoughtLevelConfigOption } from "./sdk-model-catalog
  * Shapes transcribed from the Claude Agent SDK's `ModelInfo` (sdk.d.ts):
  *   supportsEffort?: boolean
  *   supportedEffortLevels?: ('low'|'medium'|'high'|'xhigh'|'max')[]
- * Both already arrive from `query().supportedModels()`; the driver used to drop
- * them one statement after fetching. Effort is a PER-MODEL capability, so the
+ * Both arrive from `query().supportedModels()`. Effort is a per-model capability, so the
  * option is built from the currently selected model, not from the harness.
  */
 describe("thoughtLevelConfigOption", () => {
@@ -39,11 +38,8 @@ describe("thoughtLevelConfigOption", () => {
     expect(thoughtLevelConfigOption(models, "sonnet", undefined)).toBeUndefined()
   })
 
-  // A silent downgrade is the SDK's job, not ours; if the persisted level is not
-  // offered by this model we fall back to the first rather than sending a value
-  // the model will reject.
-  test("falls back to the first level when the current one is not offered", () => {
-    expect(thoughtLevelConfigOption(models, "opus", "xhigh")?.currentValue).toBe("low")
+  test("leaves the current level unset when it is not offered", () => {
+    expect(thoughtLevelConfigOption(models, "opus", "xhigh")?.currentValue).toBeUndefined()
   })
 })
 
@@ -81,27 +77,20 @@ describe("resolveTurnEffort", () => {
   })
 })
 
-/**
- * `runtime.ts` maps the "Default (recommended)" selection to `setModel("")`, so
- * `configOptions` is called with an EMPTY current model far more often than not
- * — it is the default state. `modelConfigOption` already resolves that through
- * an `isDefault` fallback; this must resolve it the same way or the effort row
- * is missing in exactly the case most users are in.
- */
 describe("thoughtLevelConfigOption — default model resolution", () => {
   const models = [
     { id: "default", name: "Default", isDefault: true, supportsEffort: true, supportedEffortLevels: ["low", "high"] },
     { id: "haiku", name: "Haiku", supportsEffort: false },
   ]
 
-  test("falls back to the default model when the current one is empty", () => {
+  test("uses the advertised default model when the current one is empty", () => {
     expect(thoughtLevelConfigOption(models, "", undefined)?.selectOptions).toEqual([
       { id: "low", name: "Low" },
       { id: "high", name: "High" },
     ])
   })
 
-  test("falls back to the default model when the current one is undefined", () => {
+  test("uses the advertised default model when the current one is undefined", () => {
     expect(thoughtLevelConfigOption(models, undefined, undefined)).toBeDefined()
   })
 

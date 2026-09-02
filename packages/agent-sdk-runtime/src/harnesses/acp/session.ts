@@ -12,6 +12,23 @@ import type {
 import { methods } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
 import type { AgentPermissionMode, AgentPermissionModeState } from "../../adapter-contract"
+import { GOAL_OPTIONAL_FIELDS, type GoalAction, type GoalCapabilities, type GoalOptionalField } from "../../capabilities"
+
+export const ACP_GOAL_METHODS = {
+  read: "session/goal/get",
+  start: "session/goal/start",
+  stop: "session/goal/stop",
+  pause: "session/goal/pause",
+  resume: "session/goal/resume",
+  delete: "session/goal/delete",
+} as const
+
+export type ACPGoalExtension = {
+  version: 1
+  methods: ReadonlySet<string>
+  actions: readonly GoalAction[]
+  optionalFields: readonly GoalOptionalField[]
+}
 
 type Caps = InitializeResponse["agentCapabilities"] | null | undefined
 type Meta = {
@@ -27,6 +44,50 @@ function rec(input: unknown): Record<string, unknown> | null {
 
 function str(input: unknown): string | undefined {
   return typeof input === "string" ? input : undefined
+}
+
+export function goalExtension(meta: unknown): ACPGoalExtension | null {
+  const root = rec(meta)
+  const goal = rec(root?.goal)
+  if (goal?.version !== 1 || !Array.isArray(goal.methods) || !Array.isArray(goal.actions)) return null
+  const methods = new Set(goal.methods.filter((item): item is string => typeof item === "string"))
+  if (
+    !methods.has(ACP_GOAL_METHODS.read)
+    || !methods.has(ACP_GOAL_METHODS.start)
+    || !methods.has(ACP_GOAL_METHODS.stop)
+  ) return null
+  const advertised = new Set(goal.actions.filter((item): item is string => typeof item === "string"))
+  const actions: GoalAction[] = []
+  const reversible = advertised.has("pause")
+    && advertised.has("resume")
+    && methods.has(ACP_GOAL_METHODS.pause)
+    && methods.has(ACP_GOAL_METHODS.resume)
+  if (reversible) actions.push("pause", "resume")
+  if (advertised.has("delete") && methods.has(ACP_GOAL_METHODS.delete)) actions.push("delete")
+  const knownOptional = new Set<GoalOptionalField>(GOAL_OPTIONAL_FIELDS)
+  const optionalFields = Array.isArray(goal.optionalFields)
+    ? goal.optionalFields.filter((item): item is GoalOptionalField => typeof item === "string" && knownOptional.has(item as GoalOptionalField))
+    : []
+  return { version: 1, methods, actions, optionalFields }
+}
+
+export function goalExtensionCapabilities(extension: ACPGoalExtension | null): GoalCapabilities {
+  return extension
+    ? {
+        implemented: true,
+        available: true,
+        actions: extension.actions,
+        recovery: "reconcile",
+        optionalFields: extension.optionalFields,
+      }
+    : {
+        implemented: false,
+        available: false,
+        unavailableReason: "ACP agent did not negotiate the Goal extension",
+        actions: [],
+        recovery: "blocked",
+        optionalFields: [],
+      }
 }
 
 function flat(options: SessionConfigSelectOption[] | SessionConfigSelectGroup[]) {
@@ -63,10 +124,7 @@ export type ACPState = {
    *
    * The full object is kept, not just the id, because `SessionModeId` is
    * deliberately an open `string` in the spec — there is no enumeration to match
-   * against, so a client that wants to TELL the user what a mode means has only
-   * the agent's own `name`/`description` to show. Dropping those (this used to be
-   * `modeIds: string[]`) forced callers to invent their own labels for ids they
-   * could only guess at.
+   * against, so clients use the agent's own `name` and `description`.
    *
    * This channel is GENERIC and serves two unrelated purposes in this repo:
    * `sync` below matches AGENT names against these ids, while Claxedo's
@@ -155,16 +213,13 @@ const withLevel = (mode: { id: string; name: string; description?: string }): Ag
  * The agent's live answer is the only authority; no connection-specific mode
  * table is consulted for an operator ACP.
  *
- * Deliberately process-local rather than persisted. Writing it to the store
- * would need a new port member across every store implementation, and the value
- * is small: the seed is already close, and the first session of a run corrects
- * it. A wrong entry surviving a restart would also be worse than no entry —
- * this way the memory can never outlive the process that observed it.
+ * The observation is process-local because its lifetime matches the process
+ * that reported it.
  */
 const liveModesSeen = new Map<string, readonly AgentPermissionMode[]>()
 
 /**
- * Record what a live session reported, so later drafts stop guessing.
+ * Record live session modes for later session drafts.
  *
  * Empty lists are ignored: an agent that has a mode channel but has not
  * populated it yet reports `[]`, and treating that as "this agent has no modes"
@@ -181,9 +236,7 @@ export function forgetLiveModes() {
 }
 
 /**
- * What to show before a session exists: this user's own list if their agent has
- * ever answered, the recorded seed otherwise, and nothing at all for a harness
- * we have neither observed nor recorded.
+ * Returns the modes observed from live sessions for use in session drafts.
  *
  * `currentModeId` is deliberately never carried over from the remembered state.
  * It named the mode of some OTHER session, and a draft claiming it as current
@@ -198,9 +251,8 @@ export function draftPermissionModes(harness: string): AgentPermissionModeState 
 /**
  * The session's permission modes, from whichever channel this agent speaks.
  *
- * `configOptions` is preferred over `session/set_mode` because it is the newer
- * and more expressive channel, but the fallback is not vestigial — it is what
- * most agents actually implement today, so both paths are live.
+ * `configOptions` is the richer channel; `session/set_mode` is an independent
+ * protocol channel implemented by agents that do not publish config options.
  *
  * Matching is on `category === "mode"` rather than `id === "mode"` (`pick` does
  * both): category is the protocol's semantic field.
@@ -265,18 +317,17 @@ export async function setPermissionMode(
   }
   if (state.modes.some((mode) => mode.id === modeId)) {
     await conn.request(methods.agent.session.setMode, { sessionId, modeId })
-    // `set_mode` returns no state. Record the request optimistically so the UI is
-    // not blank, and let the next `session/update` correct it if the agent
-    // clamped to something else.
+    // `set_mode` returns no state. Record the requested mode so the UI remains
+    // populated until the agent's next `session/update` synchronizes it.
     const next: ACPState = { ...state, currentModeId: modeId }
     return { state: next, result: permissionModes(next) }
   }
   throw new Error(`ACP agent does not offer permission mode "${modeId}"`)
 }
 
-/** Derive available agents from ACP session state (config options or legacy modeIds). */
+/** Derive available agents from ACP session state (config options or modeIds). */
 export function extractAgents(state: ACPState): Array<{ name: string; description?: string; mode: string }> {
-  // Prefer config-based mode options (newer protocol path)
+  // Config-option modes take precedence over mode ids.
   const modeCfg = pick(state.cfg, "mode")
   if (modeCfg && modeCfg.type === "select") {
     const options = flat(modeCfg.options ?? [])
@@ -395,90 +446,73 @@ export function blocks(
   caps: PromptCapabilities | null | undefined,
 ): ContentBlock[] {
   const out: ContentBlock[] = system ? [{ type: "text", text: system, annotations: { audience: ["assistant"] } }] : []
-
-  for (let i = 0; i < parts.length; i++) {
-    const row = rec(parts[i])
-    const type = str(row?.type)
-
-    if (type === "text") {
-      out.push({ type, text: str(row?.text) ?? "" })
-      continue
-    }
-
-    if (type === "resource_link") {
-      const uri = str(row?.uri)
-      if (!uri) throw new Error("ACP resource_link prompt part requires uri")
-      out.push({
-        type,
-        uri,
-        name: str(row?.name) ?? str(row?.title) ?? "resource",
-        ...(str(row?.mimeType) ? { mimeType: str(row?.mimeType)! } : {}),
-        ...(str(row?.title) ? { title: str(row?.title)! } : {}),
-        ...(str(row?.description) ? { description: str(row?.description)! } : {}),
-      })
-      continue
-    }
-
-    if (type === "image") {
-      if (!caps?.image) throw new Error("ACP agent does not support image prompt content")
-      const mimeType = str(row?.mimeType)
-      const data = str(row?.data)
-      if (!mimeType || !data) throw new Error("ACP image prompt part requires mimeType and data")
-      out.push({
-        type,
-        mimeType,
-        data,
-        ...(str(row?.uri) ? { uri: str(row?.uri)! } : {}),
-      })
-      continue
-    }
-
-    if (type === "audio") {
-      if (!caps?.audio) throw new Error("ACP agent does not support audio prompt content")
-      const mimeType = str(row?.mimeType)
-      const data = str(row?.data)
-      if (!mimeType || !data) throw new Error("ACP audio prompt part requires mimeType and data")
-      out.push({ type, mimeType, data })
-      continue
-    }
-
-    if (type === "resource") {
-      const item = rec(row?.resource)
-      if (caps?.embeddedContext) {
-        const uri = str(item?.uri) ?? `wr://resource/${i}`
-        if (str(item?.text)) {
-          out.push({
-            type,
-            resource: {
-              uri,
-              text: str(item?.text)!,
-              ...(str(item?.mimeType) ? { mimeType: str(item?.mimeType)! } : {}),
-            },
-          })
-          continue
-        }
-        if (str(item?.blob)) {
-          out.push({
-            type,
-            resource: {
-              uri,
-              blob: str(item?.blob)!,
-              ...(str(item?.mimeType) ? { mimeType: str(item?.mimeType)! } : {}),
-            },
-          })
-          continue
-        }
-        throw new Error("ACP embedded resource prompt part is invalid")
-      }
-      if (str(item?.text)) {
-        out.push({ type: "text", text: str(item?.text)! })
-        continue
-      }
-      throw new Error("ACP agent does not support embedded resource prompt content")
-    }
-
-    out.push({ type: "text", text: JSON.stringify(parts[i]) })
-  }
+  parts.forEach((part, index) => out.push(contentBlock(part, index, caps)))
 
   return out
+}
+
+function contentBlock(part: unknown, index: number, caps: PromptCapabilities | null | undefined): ContentBlock {
+  const row = rec(part)
+  switch (str(row?.type)) {
+    case "text":
+      return { type: "text", text: str(row?.text) ?? "" }
+    case "resource_link":
+      return resourceLink(row)
+    case "image":
+      return imageBlock(row, caps)
+    case "audio":
+      return audioBlock(row, caps)
+    case "resource":
+      return resourceBlock(row, index, caps)
+    default:
+      return { type: "text", text: JSON.stringify(part) }
+  }
+}
+
+function resourceLink(row: Record<string, unknown> | null | undefined): ContentBlock {
+  const uri = str(row?.uri)
+  if (!uri) throw new Error("ACP resource_link prompt part requires uri")
+  const mimeType = str(row?.mimeType)
+  const title = str(row?.title)
+  const description = str(row?.description)
+  return {
+    type: "resource_link",
+    uri,
+    name: str(row?.name) ?? title ?? "resource",
+    ...(mimeType ? { mimeType } : {}),
+    ...(title ? { title } : {}),
+    ...(description ? { description } : {}),
+  }
+}
+
+function imageBlock(row: Record<string, unknown> | null | undefined, caps: PromptCapabilities | null | undefined): ContentBlock {
+  if (!caps?.image) throw new Error("ACP agent does not support image prompt content")
+  const mimeType = str(row?.mimeType)
+  const data = str(row?.data)
+  if (!mimeType || !data) throw new Error("ACP image prompt part requires mimeType and data")
+  const uri = str(row?.uri)
+  return { type: "image", mimeType, data, ...(uri ? { uri } : {}) }
+}
+
+function audioBlock(row: Record<string, unknown> | null | undefined, caps: PromptCapabilities | null | undefined): ContentBlock {
+  if (!caps?.audio) throw new Error("ACP agent does not support audio prompt content")
+  const mimeType = str(row?.mimeType)
+  const data = str(row?.data)
+  if (!mimeType || !data) throw new Error("ACP audio prompt part requires mimeType and data")
+  return { type: "audio", mimeType, data }
+}
+
+function resourceBlock(row: Record<string, unknown> | null | undefined, index: number, caps: PromptCapabilities | null | undefined): ContentBlock {
+  const item = rec(row?.resource)
+  const text = str(item?.text)
+  if (!caps?.embeddedContext) {
+    if (text) return { type: "text", text }
+    throw new Error("ACP agent does not support embedded resource prompt content")
+  }
+  const uri = str(item?.uri) ?? `wr://resource/${index}`
+  const mimeType = str(item?.mimeType)
+  if (text) return { type: "resource", resource: { uri, text, ...(mimeType ? { mimeType } : {}) } }
+  const blob = str(item?.blob)
+  if (blob) return { type: "resource", resource: { uri, blob, ...(mimeType ? { mimeType } : {}) } }
+  throw new Error("ACP embedded resource prompt part is invalid")
 }

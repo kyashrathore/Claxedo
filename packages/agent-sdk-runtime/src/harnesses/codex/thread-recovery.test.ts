@@ -79,7 +79,7 @@ describe("startTurnWithThreadRecovery", () => {
     })
 
     await expect(attempt).rejects.toThrow("401 Unauthorized")
-    // Masking a real failure behind a resume would be worse than the original bug.
+    // Resume is reserved for the explicit missing-thread protocol error.
     expect(starts).toBe(1)
     expect(resumes).toBe(0)
   })

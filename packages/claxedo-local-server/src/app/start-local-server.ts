@@ -44,7 +44,7 @@ import { configureOpenCodeAuth, opencodeHeaders } from "@claxedo/server-core/ope
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
-import { configureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
+import { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
 import { configureOpencodeMcpSync } from "../opencode/mcp-sync"
 import { createOpencodeEvents, type OpencodeEvent } from "../opencode/events"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
@@ -155,7 +155,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       await services.projectionStore.sync_session_meta(workspace, session)
     },
     onSessionMetaSnapshot: async (workspace, sessions) => {
-      await Promise.all(sessions.map((session) => services.projectionStore.sync_session_meta(workspace, session)))
+      await services.projectionStore.sync_session_metas(workspace, sessions)
     },
   })
   configureAgentConfig({
@@ -278,7 +278,22 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     telemetry: services.telemetry,
   }
   const workspaceRelayProxy = options.workspaceRelayProxy ?? createLocalWorkspaceRelayProxy()
-  const { app, injectWebSocket } = createLocalApp({ ...options, services, usage, workspaceRelayProxy })
+  const sessionProjectionReady = new Map<string, Promise<void>>()
+  const refreshSessionProjection: NonNullable<LocalAppOptions["refreshSessionProjection"]> = (workspace) => {
+    const ready = sessionProjectionReady.get(workspace.id)
+    if (ready) return ready
+    const pending = ensureEmbeddedWorkspaceRuntime(workspace, { config: "skip" }).then(() => {})
+    sessionProjectionReady.set(workspace.id, pending)
+    void pending.catch(() => sessionProjectionReady.delete(workspace.id))
+    return pending
+  }
+  const { app, injectWebSocket } = createLocalApp({
+    ...options,
+    services,
+    usage,
+    workspaceRelayProxy,
+    refreshSessionProjection,
+  })
   const upstreamEvents = opencodeCompat ? createOpencodeEvents(opencodeRequest, { autoStart: false }) : undefined
 
   const hostname = options.hostname ?? (process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1")

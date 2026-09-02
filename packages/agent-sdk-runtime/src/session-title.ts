@@ -9,7 +9,7 @@ export function hasConcreteSessionTitle(title: unknown) {
   return true
 }
 
-export function fallbackSessionTitle(text: string) {
+export function deriveSessionTitle(text: string) {
   const cleaned = text.replace(/\s+/g, " ").trim()
   if (/^(hi|hello|hey|yo|greetings)[!. ]*$/i.test(cleaned)) return "Greeting"
   const source = cleaned.replace(/^(please|can you|could you|would you)\s+/i, "").trim() || cleaned

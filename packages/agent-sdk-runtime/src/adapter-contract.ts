@@ -1,6 +1,8 @@
 import type { CompatEvent } from "./compat-events"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { StatusChunk } from "./status"
-import type { AdapterCapability, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
+import { GoalCapabilityError } from "./capabilities"
+import type { AdapterCapability, GoalCapabilities, HarnessCapabilityContext, HarnessCapabilities } from "./capabilities"
 import type { AgentProcessObserver } from "./process-observer"
 import type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 import type {
@@ -51,6 +53,16 @@ export type AgentTurnWriteContext = {
 }
 
 /**
+ * The fencing fields an adapter spreads onto every store write it makes for a
+ * turn. A turn started without a write context produces no fields at all, so an
+ * unfenced store never sees a token it cannot check.
+ */
+export function turnWriteFence(writeContext: AgentTurnWriteContext | undefined): { fencingToken?: number } {
+  if (writeContext?.fencingToken === undefined) return {}
+  return { fencingToken: writeContext.fencingToken }
+}
+
+/**
  * An injectable HTTP seam. Only the call signature is ever used, so this is
  * deliberately narrower than `typeof fetch` — the platform type also carries
  * `preconnect`, which no caller here touches and which would force every
@@ -67,6 +79,14 @@ export type AgentHandoffSessionOptions = {
   system: string
 }
 
+export type AgentPreparedHandoffSession = {
+  id: string
+  agentSessionId?: string
+  ownerKey?: string | null
+  /** Idempotently release only the newly-created target-native resources. */
+  rollback(): Promise<void>
+}
+
 export { AgentMessagePageError } from "./message-page"
 export type { AgentMessagePage, AgentMessagePageInput } from "./message-page"
 
@@ -78,10 +98,15 @@ export interface AgentHarnessAdapterCore {
   getSession(id: string, directory: RuntimeDirectory): Promise<AgentSession | null>
   createSession(directory: RuntimeDirectory, title?: string, id?: string): Promise<{ id: string }>
   /** Create a fresh provider-native thread behind an existing Claxedo session. */
-  createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<{ id: string; agentSessionId?: string; ownerKey?: string | null }>
+  createHandoffSession?(directory: RuntimeDirectory, title: string | undefined, id: string, options: AgentHandoffSessionOptions): Promise<AgentPreparedHandoffSession>
+  /** Release the no-longer-authoritative source resources after a handoff commits. */
+  releaseHandoffSource?(id: string, agentSessionId: string, ownerKey: string | null, directory: RuntimeDirectory): Promise<void>
+  /** Apply provider/process effects and return the accepted session without writing the RuntimeStore. */
   updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: RuntimeDirectory): Promise<AgentSession | null>
   getSessionConfig(id: string, directory: RuntimeDirectory): Promise<SessionConfig>
+  /** Apply the runtime-supplied complete config and return the accepted config without writing the RuntimeStore. */
   updateSessionConfig(id: string, update: SessionConfigUpdate, directory: RuntimeDirectory): Promise<SessionConfig>
+  /** Release provider/process resources without deleting the RuntimeStore session. */
   deleteSession(id: string, directory: RuntimeDirectory): Promise<void>
 
   readHarnessCapabilities(directory: RuntimeDirectory, context?: HarnessCapabilityContext): Promise<HarnessCapabilities> | HarnessCapabilities
@@ -161,6 +186,53 @@ export interface SupportsAgents {
 
 export interface SupportsTodos {
   getTodos(sessionId: string, directory: RuntimeDirectory): Promise<Array<{ content: string; status: string; priority: string }>>
+}
+
+export type AgentGoalStartInput = {
+  objective: string
+}
+
+export type AgentGoalMutationFailure = {
+  ok: false
+  status: "unsupported" | "unavailable" | "not_found" | "conflict" | "failed"
+  message: string
+}
+
+export type AgentGoalMutationResult<Goal extends RuntimeGoalSnapshot | null = RuntimeGoalSnapshot | null> =
+  | { ok: true; goal: Goal }
+  | AgentGoalMutationFailure
+
+/**
+ * One session-scoped Goal resource. Action methods remain present so adapters
+ * have one complete contract; callers must gate them with readCapabilities.
+ */
+export interface AgentGoalResource {
+  readCapabilities(sessionId: string, directory: RuntimeDirectory): Promise<GoalCapabilities> | GoalCapabilities
+  read(sessionId: string, directory: RuntimeDirectory): Promise<RuntimeGoalSnapshot | null>
+  start(sessionId: string, input: AgentGoalStartInput, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
+  pause(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
+  resume(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
+  /** Disable future continuation before interrupting active work. */
+  stop(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot | null>>
+  delete(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<null>>
+}
+
+export interface SupportsGoals {
+  readonly goals: AgentGoalResource
+}
+
+function isGoalResource(value: unknown): value is AgentGoalResource {
+  if (!value || typeof value !== "object") return false
+  const resource = value as Partial<Record<keyof AgentGoalResource, unknown>>
+  return ["readCapabilities", "read", "start", "pause", "resume", "stop", "delete"]
+    .every((method) => typeof resource[method as keyof AgentGoalResource] === "function")
+}
+
+export function requireGoalResource(adapter: AgentHarnessAdapter): AgentGoalResource {
+  if (!isGoalResource(adapter.goals)) {
+    throw new GoalCapabilityError("This harness does not expose the Goal resource")
+  }
+  return adapter.goals
 }
 
 export interface SupportsPermissions {
@@ -262,5 +334,6 @@ export type AgentHarnessAdapter =
   & Partial<SupportsQuestions>
   & Partial<SupportsRuntimeConfig>
   & Partial<SupportsConfigOptions>
+  & Partial<SupportsGoals>
 
 export type AgentRuntimeStatusChunk = StatusChunk

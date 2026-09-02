@@ -46,14 +46,9 @@ const HostedOAuthConsentRoute = () => (
 /**
  * Bind the hosted workspace-startup implementation.
  *
- * This is the only place `platform/runtime/cloud` is imported by anything
- * outside itself. The composer and the session actions menu wake cloud and
- * user-hosted runtimes through `workspaceStartup()`, which is why they can
- * stay in `@claxedo/app` while this file — and the implementation it binds —
- * move to `@claxedo/cloud-app`.
- *
- * `local.tsx` deliberately has no counterpart: a local build has no sandbox to
- * wake, so the port stays unbound and reaching it throws instead of pretending.
+ * Local callers (composer, session actions) wake cloud and user-hosted
+ * runtimes through `workspaceStartup()`. `local.tsx` binds nothing: a local
+ * build has no sandbox to wake, so reaching the port throws.
  */
 configureWorkspaceStartup(cloudWorkspaceStartup)
 

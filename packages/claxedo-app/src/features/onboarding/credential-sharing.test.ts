@@ -14,7 +14,7 @@ function credential(overrides: Partial<OnboardingCredential> = {}): OnboardingCr
 }
 
 describe("cloud shareability", () => {
-  test("a discovered Claude Code login is never shareable, under either harness binding", () => {
+  test("a discovered Claude Code login is never shareable, under either provider binding", () => {
     // `claudeOAuthItem` is the only producer of these rows and always writes
     // `kind: "oauth_token"` — this is the machine's Keychain login. The two
     // bindings it can land under are `claude-sdk` (the harness id) and the

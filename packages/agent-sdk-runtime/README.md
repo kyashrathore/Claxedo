@@ -12,7 +12,8 @@ npm install @claxedo/agent-sdk-runtime
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { claude, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { claude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
+import { pi } from "@claxedo/agent-sdk-runtime/harnesses/pi"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 
 const runtime = createAgentRuntime({
@@ -47,7 +48,8 @@ inventory, HTTP route shape, and UI state.
 
 Coding agents and host integrators should start with
 [docs/agent.md](./docs/agent.md), then read
-[docs/concepts.md](./docs/concepts.md). Together they define the package job,
+[docs/concepts.md](./docs/concepts.md) and
+[docs/architecture.md](./docs/architecture.md). Together they define the package job,
 mental model, blessed imports, stability labels, boundaries, recipes, and
 public API surface.
 
@@ -88,11 +90,50 @@ outcome is recorded by the runtime after the harness stream settles. When a UI
 needs to reconcile an in-flight prompt, compare `lastTurn.assistantMessageId`
 with the assistant message id for that prompt; `lastTurn.status` alone only
 describes the most recent settled turn. If the host has a higher-level lifecycle
-such as a Codex goal or long-running task, use that lifecycle for session-level
+such as a Goal or long-running task, use that lifecycle for session-level
 "working" and "done" badges. Claude SDK, Codex app-server, ACP, OpenCode, and Pi
 terminal signals all normalize through this runtime/store path. Shell hook
 integrations remain useful for terminal presence, but they are not the canonical
 SDK turn outcome source.
+
+## Goals
+
+A Goal is a session-level completion condition that may span multiple harness
+turns. It is a dedicated runtime resource, not a prompt mode: callers use
+`runtime.goals`, and adapters must never repair missing support by sending the
+objective through `runtime.turns.start()`.
+
+```ts
+const capabilities = await runtime.goals.capabilities(session.id, directory)
+if (!capabilities.available) throw new Error(capabilities.unavailableReason)
+
+const started = await runtime.goals.start({
+  sessionId: session.id,
+  objective: "Ship when verification passes",
+}, directory)
+
+const current = await runtime.goals.read(session.id, directory)
+```
+
+`HarnessCapabilities.goals` is only coarse runtime availability. Always read
+the detailed Goal capabilities for the materialized session before rendering
+actions. Pause and Resume form one reversible pair; do not expose either unless
+both are advertised. Delete is independent. Stop is part of the common Goal
+lifecycle and disables continuation before interrupting active work.
+
+| Harness | Start authority | Actions | Recovery |
+| --- | --- | --- | --- |
+| Codex native | structured app-server Goal RPC | Pause, Resume, Delete | reconcile durable thread state |
+| Claude native | SDK `/goal` plus `active_goal` messages | none | blocked if provider state is lost |
+| Cursor native | `Agent.send("/goal …")` plus durable Run state | none | blocked if provider state is lost |
+| OpenCode native | first-party Session Goal aggregate | Pause, Resume, Delete | reconcile; orphaned execution becomes blocked |
+| Pi native | owned evaluator and follow-up controller | Pause, Resume, Delete | blocked after non-durable process loss |
+| ACP | negotiated `_meta.goal` extension | negotiated subset | negotiated reconciliation |
+
+Goal snapshots report only provider- or controller-owned fields. Optional
+budgets, usage, iteration, and diagnostic reason fields are not synthesized.
+After reconnect, refetch `runtime.goals.read()`; `recovery: "blocked"` means an
+active persisted snapshot must become visibly blocked rather than complete.
 
 ## Layers
 
@@ -101,7 +142,7 @@ SDK turn outcome source.
 `src/index.ts` defines the public runtime surface.
 
 - `createAgentRuntime()` is the main public entrypoint.
-- `runtime.sessions`, `runtime.turns`, `runtime.events`, `runtime.permissions`,
+- `runtime.sessions`, `runtime.turns`, `runtime.goals`, `runtime.events`, `runtime.permissions`,
   `runtime.questions`, `runtime.todos`, `runtime.commands`, `runtime.config`,
   and `runtime.health` are the user-facing resource namespaces.
 - `PromptInput` is the normalized message submission shape used across
@@ -124,10 +165,19 @@ The root import does not load SQLite or Convex.
 
 ### Harness Factories
 
-Harness factories live on `@claxedo/agent-sdk-runtime/harnesses`:
+Harness factories have individual entries and a convenience aggregate:
+
+- `@claxedo/agent-sdk-runtime/harnesses/acp`
+- `@claxedo/agent-sdk-runtime/harnesses/claude`
+- `@claxedo/agent-sdk-runtime/harnesses/codex`
+- `@claxedo/agent-sdk-runtime/harnesses/cursor`
+- `@claxedo/agent-sdk-runtime/harnesses/opencode`
+- `@claxedo/agent-sdk-runtime/harnesses/pi`
 
 ```ts
-import { claude, codex, cursor, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { acp, claude, codex, cursor, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+// Smaller single-harness graph:
+import { claude as nativeClaude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
 ```
 
 Factories hide adapter class construction and let the runtime inject store and
@@ -138,7 +188,7 @@ event plumbing.
 `src/harness-types.ts` is the source of truth for supported harness ids and
 access modes.
 
-- ACP harnesses: `claude`, `codex`, and `cursor` with `access: "acp"`.
+- ACP connections: `acp(id, { binary, ... })` with `access: "acp"`.
 - Native harnesses: `claude`, `codex`, `cursor`, `opencode`, and `pi` with
   `access: "native"`.
 
@@ -146,9 +196,10 @@ access modes.
 `isAgentHarnessAccess()` centralize harness classification so callers do not
 infer behavior from strings.
 
-`src/sdk-model-catalog.ts` owns typed model catalogs for SDK transports that do
-not expose live model options. ACP transports should prefer live
-`configOptions` from the agent when available.
+Runtime model options come from live, directory-scoped harness queries. Query
+errors are returned to the caller and an empty result remains empty. The
+exported SDK model catalog is an explicit reference/validation API; it is not
+substituted for a failed live query.
 
 ### Subagent support matrix
 
@@ -192,8 +243,8 @@ are attached, so one parent cannot observe another parent's child lifecycle.
 - `hasAdapterCapability()` is the safe narrowing helper for optional adapter
   extensions.
 
-Capability data should be explicit. Avoid fallback behavior that pretends a
-harness supports a feature it cannot actually perform.
+Capability data is explicit. Unsupported operations fail rather than returning
+synthetic data or events.
 
 ### Events And SSE
 
@@ -201,6 +252,8 @@ harness supports a feature it cannot actually perform.
 helpers.
 
 - `RuntimeEventHub` is a lightweight pub/sub boundary for runtime events.
+- `createAgentRuntime({ subscriberBufferSize, eventDelivery })` bounds each
+  subscriber while allowing the host to authorize every delivered event.
 - `createSseReplayBuffer()` keeps bounded replay for reconnecting clients.
 - `attachSseFanout()` bridges a subscribe function into a streaming response
   with lifecycle cleanup.
@@ -284,8 +337,8 @@ session semantics in this layer.
 `src/harnesses/cursor` adapt native SDK or app-server streams into the
 shared runtime contract through the shared SDK adapter.
 
-These transports use the typed SDK model catalog because they do not expose the
-same live model configuration surface as ACP harnesses.
+These transports query their native SDK or app-server for model options and
+cache successful results per workspace directory.
 
 ### OpenCode
 
@@ -334,9 +387,8 @@ This package should stay focused on runtime contracts and transport execution.
 1. Add the harness to `AGENT_HARNESS_DEFINITIONS` in `src/harness-types.ts`.
 2. Decide whether it supports `access: "acp"`, `access: "native"`, or both.
 3. Implement an adapter under `src/harnesses/<harness>`.
-4. Expose explicit `HarnessCapabilities`; do not rely on fallback behavior.
-5. If the harness is SDK-backed and has no live model list, add a typed catalog
-   entry in `src/sdk-model-catalog.ts`.
+4. Expose explicit `HarnessCapabilities`; unsupported operations must be errors.
+5. Implement live model discovery when the harness exposes configurable models.
 6. Add focused adapter tests around session lifecycle, submit, abort, config,
    and event projection.
 7. Add or update the public factory in `src/harnesses/index.ts` when the
@@ -355,7 +407,9 @@ Entry point status:
 - Stable: `@claxedo/agent-sdk-runtime/harnesses`,
   `@claxedo/agent-sdk-runtime/stores/memory`,
   `@claxedo/agent-sdk-runtime/stores/sqlite`
-- Advanced: `@claxedo/agent-sdk-runtime/adapters`
+- Advanced: `@claxedo/agent-sdk-runtime/adapters`,
+  `@claxedo/agent-sdk-runtime/subagent-admission`,
+  `@claxedo/agent-sdk-runtime/message-page`
 - Integration: `@claxedo/agent-sdk-runtime/stores/convex`,
   `@claxedo/agent-sdk-runtime/session-env`,
   `@claxedo/agent-sdk-runtime/virtual-session-env`,
@@ -370,7 +424,14 @@ use `createAgentRuntime()` plus harness factories. Use the adapter subpath only
 when building a workspace host, custom HTTP compatibility layer, or harness
 integration that needs direct driver lifecycle control.
 
-The package publishes built ESM and declaration files from `dist`.
+Handoff-capable custom adapters return an `AgentPreparedHandoffSession` with an
+idempotent `rollback()` and may implement `releaseHandoffSource` to clean up the
+old native session only after the target binding commits.
+
+The package publishes built ESM and declaration files from `dist`. Publish
+verification hashes the complete reachable declaration closure for every
+export-map entrypoint, so reviewed type-contract changes must update the API
+manifest explicitly.
 
 ## Verification
 

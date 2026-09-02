@@ -23,21 +23,13 @@ async function collect<T>(input: AsyncIterable<T>) {
   return out
 }
 
-async function nextEvent<T extends { type: string }>(iterator: AsyncIterator<T>, type: string) {
-  while (true) {
-    const next = await iterator.next()
-    if (next.done) throw new Error(`expected ${type}`)
-    if (next.value.type === type) return next.value
-  }
-}
-
 describe("PiHarnessAdapter", () => {
-  test("U4/U9: a bare Pi adapter does not advertise a subagent tool", async () => {
+  test("a bare Pi adapter does not advertise a subagent tool", async () => {
     const capabilities = await new PiHarnessAdapter().readHarnessCapabilities("/work")
     expect(capabilities.subagents).toBe(false)
   })
 
-  test("U9: subagents require a model-backed native tool extension", async () => {
+  test("subagents require a model-backed native tool extension", async () => {
     const model = getModel("anthropic", "claude-sonnet-4-5")
     const backend = {
       model,
@@ -68,6 +60,15 @@ describe("PiHarnessAdapter", () => {
     expect(await adapter.listSessions(undefined)).toMatchObject([
       { id: "ses_wgrun_run_1", title: "Stable retry" },
     ])
+  })
+
+  test("does not replace an existing target session while preparing a handoff", async () => {
+    const adapter = new PiHarnessAdapter()
+    await adapter.createSession(undefined, "Prior target", "ses_existing")
+
+    await expect(adapter.createHandoffSession(undefined, "Replacement", "ses_existing"))
+      .rejects.toThrow("target session ses_existing already exists")
+    expect(await adapter.getSession("ses_existing", undefined)).toMatchObject({ title: "Prior target" })
   })
 
   test("persists a child session's parent identity in canonical session reads", async () => {
@@ -197,7 +198,7 @@ describe("PiHarnessAdapter", () => {
     }])
   })
 
-  test("falls back to central virtual placement when no placement is configured", async () => {
+  test("uses central virtual placement when no placement is configured", async () => {
     const placements: SessionEnvFactoryInput[] = []
     const adapter = new PiHarnessAdapter({
       createEnv: async (input) => {
@@ -299,14 +300,7 @@ describe("PiHarnessAdapter", () => {
     expect((await adapter.readHarnessCapabilities(session.id)).permissions).toBe(false)
   })
 
-  /*
-   * `permission:` is ordinary prompt text now.
-   *
-   * It used to be a magic prefix that raised a request and blocked the turn on an
-   * answer — a gate that only existed when the prompt happened to opt into it,
-   * while every other prompt ran unchecked. Pinned so the prefix cannot quietly
-   * regain meaning.
-   */
+  /** `permission:` is ordinary prompt text. */
   test("a prompt beginning with permission: is not a checkpoint", async () => {
     const adapter = new PiHarnessAdapter()
     const session = await adapter.createSession(undefined, "Hybrid")

@@ -36,7 +36,7 @@ beforeEach(() => {
   workspace = { kind: "local" }
   useLocal = true
   postResponse = new Response(null, { status: 204 })
-  statusResponse = Response.json({ type: "claude-sdk", status: "ready", ready: true })
+  statusResponse = Response.json({ type: "acp:claude", status: "ready", ready: true })
   postRelease = undefined
   workspaceCalls = 0
   remembered = []
@@ -55,8 +55,8 @@ describe("harness switcher", () => {
       },
     })
 
-    const first = switcher.setHarness(scope, "claude-sdk", { directory: "/repo", sessionId: "new" })
-    const second = switcher.setHarness(scope, "claude-sdk", { directory: "/repo", sessionId: "new" })
+    const first = switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
+    const second = switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
 
     expect(second).toBe(Object.values(pending)[0])
     expect(workspaceCalls).toBe(1)
@@ -80,40 +80,40 @@ describe("harness switcher", () => {
       },
     })
 
-    const first = switcher.setHarness(scope, "claude-sdk", { directory: "/repo", sessionId: "new" })
-    await switcher.setHarness(scope, "codex-app-server", { directory: "/repo", sessionId: "new" })
+    const first = switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
+    await switcher.setHarness(scope, "acp:codex", { directory: "/repo", sessionId: "new" })
     releaseFirst({ kind: "cloud" })
     await first
 
-    expect(remembered).toEqual([{ scope, type: "codex-app-server", directory: "/repo" }])
-    expect(optionFetches).toEqual([{ scope, type: "codex-app-server", directory: "/repo", sessionId: "new" }])
+    expect(remembered).toEqual([{ scope, type: "acp:codex", directory: "/repo" }])
+    expect(optionFetches).toEqual([{ scope, type: "acp:codex", directory: "/repo", sessionId: "new" }])
   })
 
   test("switches a local draft by posting config, fetching options, and refreshing quietly", async () => {
     const switcher = switcherFor()
 
-    await switcher.setHarness(scope, "claude-sdk", { directory: "/repo", sessionId: "new" }, "/bin/claude")
+    await switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" }, "/bin/claude")
 
     expect(dropped).toEqual([scope])
     expect(clearedTries).toEqual([scope])
     expect(saved).toEqual([
-      { key: "harness", value: "claude-sdk" },
+      { key: "harness", value: "acp:claude" },
     ])
     expect(patches[0]).toMatchObject({
-      harness: "claude-sdk",
+      harness: "acp:claude",
       optionsLoading: true,
       readiness: "ready",
     })
     expect(posts).toEqual([{
       url: harnessConfigUrl({ serverUrl: "http://server" }),
-      body: { type: "claude-sdk", binary: "/bin/claude", directory: "/repo" },
+      body: { type: "acp:claude", binary: "/bin/claude", directory: "/repo" },
     }])
-    expect(optionFetches).toEqual([{ scope, type: "claude-sdk", directory: "/repo", sessionId: "new" }])
-    expect(refreshes).toEqual([{ directory: "/repo", type: "claude-sdk", draft: true }])
-    expect(remembered).toEqual([{ scope, type: "claude-sdk", directory: "/repo" }])
+    expect(optionFetches).toEqual([{ scope, type: "acp:claude", directory: "/repo", sessionId: "new" }])
+    expect(refreshes).toEqual([{ directory: "/repo", type: "acp:claude", draft: true }])
+    expect(remembered).toEqual([{ scope, type: "acp:claude", directory: "/repo" }])
   })
 
-  // The codex-app-server Tier R repro. `setHarnessOnce` opens with
+  // The acp:codex Tier R repro. `setHarnessOnce` opens with
   // `harnessSwitchStartPatch`, which sets `optionsLoading: true` for any
   // harness that has config options — BEFORE the first `await`. Every
   // abandon path after that (`!active()` once the workspace boot, the config
@@ -139,13 +139,13 @@ describe("harness switcher", () => {
     // The first switch parks on its workspace boot; a second switch for a
     // different harness bumps the scope revision, so the first is abandoned the
     // moment it resumes.
-    const abandoned = switcher.setHarness(scope, "codex-app-server", { directory: "/repo", sessionId: "new" })
-    void switcher.setHarness(scope, "claude-sdk", { directory: "/repo", sessionId: "new" })
+    const abandoned = switcher.setHarness(scope, "acp:codex", { directory: "/repo", sessionId: "new" })
+    void switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
     releaseWorkspace({ kind: "local" })
     await abandoned
 
-    expect(patches[0]).toMatchObject({ harness: "codex-app-server", optionsLoading: true })
-    expect(optionFetches.some((item) => item.type === "codex-app-server")).toBe(false)
+    expect(patches[0]).toMatchObject({ harness: "acp:codex", optionsLoading: true })
+    expect(optionFetches.some((item) => item.type === "acp:codex")).toBe(false)
     // The abandoned switch must release the flag it raised: the last word on
     // `optionsLoading` from any patch it emitted is `false`, never a dangling
     // `true` that nothing else will ever lower.
@@ -157,11 +157,11 @@ describe("harness switcher", () => {
     workspace = { kind: "cloud" }
     const switcher = switcherFor()
 
-    await switcher.setHarness(scope, "codex-app-server", { directory: "/repo", sessionId: "new" })
+    await switcher.setHarness(scope, "acp:codex", { directory: "/repo", sessionId: "new" })
 
     expect(posts).toEqual([])
-    expect(optionFetches).toEqual([{ scope, type: "codex-app-server", directory: "/repo", sessionId: "new" }])
-    expect(refreshes).toEqual([{ directory: "/repo", type: "codex-app-server", draft: true }])
+    expect(optionFetches).toEqual([{ scope, type: "acp:codex", directory: "/repo", sessionId: "new" }])
+    expect(refreshes).toEqual([{ directory: "/repo", type: "acp:codex", draft: true }])
   })
 
   test("switches non-local existing sessions through canonical session config", async () => {
@@ -246,7 +246,7 @@ describe("harness switcher", () => {
     postResponse = Response.json({ error: { message: "binary missing" } }, { status: 500 })
     const switcher = switcherFor()
 
-    await switcher.setHarness(scope, "claude-sdk", { directory: "/repo", sessionId: "new" })
+    await switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
 
     expect(patches.at(-1)).toEqual({
       configError: "binary missing",

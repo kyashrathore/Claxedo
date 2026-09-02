@@ -205,6 +205,41 @@ describe("session service", () => {
     expect(starts[1]).not.toHaveProperty("actorKind")
   })
 
+  it("subscribes as the host's own reader so a composed eventDelivery policy admits the turn driver", async () => {
+    // Against a runtime composed with an eventDelivery policy (multiplayer
+    // session access), an identityless subscribe throws at subscribe time and
+    // the turn dies before `turn.start` — surfacing only as a transient bus
+    // session.error. The driver must mark itself host-internal.
+    const subscribes: unknown[] = []
+    await runRuntimePromptTurn({
+      runtime: {
+        turns: {
+          start: async () => ({
+            sessionId: "s1",
+            userMessageId: "msg-user",
+            assistantMessageId: "msg-user_r",
+            directory: "/work",
+            prompt: { parts: [], userMessageId: "msg-user", agent: "build", model: { providerID: "test", modelID: "test" } },
+          }),
+        },
+        events: {
+          subscribe: (input: unknown) => {
+            subscribes.push(input)
+            return { async *[Symbol.asyncIterator]() {} }
+          },
+          list: async () => [],
+        },
+      } as never,
+      sessionId: "s1",
+      directory: "/work",
+      body: { parts: [{ type: "text", text: "hello" }] },
+      publishGlobal: () => {},
+      publishStatus: () => {},
+    })
+
+    expect(subscribes).toEqual([{ sessionId: "s1", hostInternal: true }])
+  })
+
   it("does not synthesize prompt events when the adapter yields none", async () => {
     const events: CompatEnvelope[] = []
 

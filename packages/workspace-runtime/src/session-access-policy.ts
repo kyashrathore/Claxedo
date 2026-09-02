@@ -61,6 +61,14 @@ export type SessionAccessOperation =
   | "agent_setup_write"
   | "worktree_read"
   | "worktree_write"
+  | "goal_state"
+  | "goal_capabilities"
+  | "goal_read"
+  | "goal_start"
+  | "goal_pause"
+  | "goal_resume"
+  | "goal_stop"
+  | "goal_delete"
 
 export type SessionAccessPolicyInput = {
   actor?: SessionAccessActor
@@ -190,6 +198,14 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "GET /session/:id/capabilities": { kind: "authorize", operation: "session_capabilities_read" },
   "GET /session/:id/subagents": { kind: "authorize", operation: "list_subagents" },
   "GET /session/:id/config": { kind: "authorize", operation: "session_config_read" },
+  "GET /session/:id/goal": { kind: "authorize", operation: "goal_read" },
+  "GET /session/:id/goal/capabilities": { kind: "authorize", operation: "goal_capabilities" },
+  "GET /session/:id/goal/state": { kind: "authorize", operation: "goal_state" },
+  "POST /session/:id/goal": { kind: "authorize", operation: "goal_start" },
+  "POST /session/:id/goal/pause": { kind: "authorize", operation: "goal_pause" },
+  "POST /session/:id/goal/resume": { kind: "authorize", operation: "goal_resume" },
+  "POST /session/:id/goal/stop": { kind: "authorize", operation: "goal_stop" },
+  "DELETE /session/:id/goal": { kind: "authorize", operation: "goal_delete" },
   "GET /session/:id/message": { kind: "authorize", operation: "message_read" },
   "GET /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_read" },
   "GET /session/:id/todo": { kind: "authorize", operation: "todo_read" },

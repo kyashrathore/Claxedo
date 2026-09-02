@@ -73,7 +73,7 @@ The merge must preserve the rewritten tree as the authoritative candidate, valid
 - The root is a Bun 1.3.14 / TypeScript 7 monorepo with workspace packages and Turbo typechecking. `CONTRIBUTING.md` requires workspace typecheck before review and extra care for vendored OpenCode packages.
 - The locally known `origin/dev` is an ancestor of the candidate. The candidate's 42-commit stack begins with grouped dependency/runtime/app/desktop/E2E/performance/CI/product commits and ends with focused session, daemon, workspace-identity, and discovery fixes.
 - `PERFORMANCE_HANDOFF.md` is the merge authority: it requires a clean integration worktree, a fresh `origin/dev`, benchmark-first validation, full Crabbox/AWS validation, and a feature-branch PR rather than a direct `dev` push.
-- `docs/perf/HANDOFF.md` and `docs/perf/u11-qualification-status.md` distinguish historical measurements from current proof and require same-session controls when attribution is material.
+- `docs/perf/AGENTS.md` records what was already tried and requires same-session controls when attribution is material.
 - No `docs/solutions/` corpus or `docs/solutions/patterns/critical-patterns.md` exists in this checkout, so there are no additional institutional learnings to carry forward.
 
 ### Current runtime flow to preserve
@@ -185,8 +185,7 @@ flowchart TD
 **Files:**
 
 - Review: `PERFORMANCE_HANDOFF.md`
-- Review: `docs/perf/HANDOFF.md`
-- Review: `docs/perf/u11-qualification-status.md`
+- Review: `docs/perf/AGENTS.md`
 - Review: `docs/plans/README.md`
 - Record merge evidence in: the integration PR description and the committed plan/evidence update made before final exact-tree qualification
 
@@ -333,7 +332,7 @@ flowchart TD
 **Files:**
 
 - Performance protocol: `packages/claxedo-app/perf-harness/src/`, `packages/claxedo-app/perf-harness/test/`, `packages/claxedo-app/perf-harness/targets/`
-- Performance evidence: `PERFORMANCE_HANDOFF.md`, `docs/perf/HANDOFF.md`, `docs/perf/gate-arithmetic-verdicts.md`, `docs/perf/u11-qualification-status.md`
+- Performance evidence: `PERFORMANCE_HANDOFF.md`, `docs/perf/README.md`, `docs/perf/AGENTS.md`
 - Desktop packaging: `packages/claxedo-desktop/scripts/package-structure.test.ts`, `packages/claxedo-desktop/scripts/verify-package-contents.test.ts`, `packages/claxedo-desktop/scripts/claxedo-server-boot.test.ts`, `packages/claxedo-desktop/src/main/server-readiness.test.ts`
 - Cross-surface E2E: `packages/claxedo-app/e2e/playwright/desktop-u8-package-boundary.spec.ts`, `packages/claxedo-app/e2e/playwright/web-signed-cloud.spec.ts`, `packages/claxedo-app/e2e/playwright/web-signed-userhosted.spec.ts`, `packages/claxedo-app/e2e/playwright/core-workspace-lifecycle.spec.ts`, `packages/claxedo-app/e2e/playwright/core-timeline-rendering-scroll.spec.ts`
 
@@ -351,8 +350,7 @@ flowchart TD
 **Patterns to follow:**
 
 - `PERFORMANCE_HANDOFF.md` benchmark and merge sections
-- `docs/perf/HANDOFF.md` measurement rules
-- `docs/perf/u11-qualification-status.md` same-window control discipline
+- `docs/perf/AGENTS.md` measurement rules and same-window control discipline
 
 **Test scenarios:**
 
@@ -491,8 +489,7 @@ flowchart TD
 ## Sources & References
 
 - Merge authority: `PERFORMANCE_HANDOFF.md`
-- Performance protocol: `docs/perf/HANDOFF.md`
-- Qualification history: `docs/perf/u11-qualification-status.md`
+- Performance protocol: `docs/perf/AGENTS.md`
 - CI matrix: `.crabbox.yaml`
 - Contribution contract: `CONTRIBUTING.md`
 - Shared-core boundary: `packages/claxedo-server-core/README.md`

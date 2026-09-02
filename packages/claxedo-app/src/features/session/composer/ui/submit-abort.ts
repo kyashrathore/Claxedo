@@ -20,6 +20,36 @@ type AbortClient = {
   }
 }
 
+/**
+ * Goal Stop is a provider mutation, not a local abort: a transport failure
+ * means the Goal is STILL RUNNING, so the rejection must reach the user
+ * instead of vanishing into the voided promise composer call sites use.
+ *
+ * A failed Stop must ALSO fall back to the local prompt abort. `hasActiveGoal()`
+ * reads a cached Goal snapshot that can be stale (the Goal already finished, so
+ * Stop answers `not_found`) and the mutation can simply fail — either way the
+ * turn the user pressed Stop on is still running, and routing solely to Goal
+ * Stop would leave the button dead. The rejection is still reported, so the user
+ * learns the Goal itself was not stopped.
+ */
+export function createGoalAwareAbort(input: {
+  hasActiveGoal?: () => boolean
+  stopGoal?: () => void | Promise<unknown>
+  promptAbort: () => Promise<unknown>
+  onStopGoalError: (err: unknown) => void
+}) {
+  return async () => {
+    const stopGoal = input.stopGoal
+    if (!input.hasActiveGoal?.() || !stopGoal) return await input.promptAbort()
+    try {
+      await stopGoal()
+    } catch (error) {
+      input.onStopGoalError(error)
+      await input.promptAbort()
+    }
+  }
+}
+
 export function createPromptAbort(input: {
   canAbort?: Accessor<boolean>
   sessionID?: Accessor<string | undefined>
@@ -80,4 +110,27 @@ export function createPromptAbort(input: {
         ])
       })
   }
+}
+
+/** The composer's full abort wiring: transport-aware prompt abort behind the Goal-aware gate. */
+export function createSubmitAbort(input: Parameters<typeof createPromptAbort>[0] & {
+  hasActiveGoal?: () => boolean
+  stopGoal?: () => void | Promise<unknown>
+  stopGoalFailedTitle: () => string
+  errorMessage: (err: unknown) => string
+  showToast: (toast: { title: string; description: string; variant: "error" }) => void
+}) {
+  const promptAbort = createPromptAbort(input)
+  return createGoalAwareAbort({
+    hasActiveGoal: input.hasActiveGoal,
+    stopGoal: input.stopGoal,
+    promptAbort,
+    onStopGoalError: (err) => {
+      input.showToast({
+        title: input.stopGoalFailedTitle(),
+        description: input.errorMessage(err),
+        variant: "error",
+      })
+    },
+  })
 }

@@ -113,6 +113,75 @@ describe("submit transport adapter", () => {
     }))).toEqual(JSON.parse(calls[0]?.body ?? "{}"))
   })
 
+  test("session config PATCH sends the canonical harness identity for every harness key", async () => {
+    const adapter = createAdapter()
+
+    // An operator ACP connection: the app key is `acp:<slug>`, which the
+    // runtime's `normalizeHarnessIdentity` only accepts as `{ id, access }`.
+    // Sending `{ type: "acp:claude" }` made it drop the harness silently.
+    await adapter.saveSessionConfig({
+      sessionID: "session-acp",
+      directory: "/repo/main",
+      harnessType: "acp:claude",
+      agent: "build",
+      model: { providerID: "acp:claude", modelID: "opus" },
+    })
+    // A built-in native harness: the app key and the identity id differ
+    // ("claude-sdk" vs "claude"), which is what broke the dedupe below.
+    await adapter.saveSessionConfig({
+      sessionID: "session-sdk",
+      directory: "/repo/main",
+      harnessType: "claude-sdk",
+      agent: "build",
+    })
+
+    expect(calls.map((call) => JSON.parse(call.body ?? "{}").harness)).toEqual([
+      { id: "claude", access: "acp" },
+      { id: "claude", access: "native" },
+    ])
+  })
+
+  test("session config dedupe matches a persisted identity for non-OpenCode harnesses", async () => {
+    const adapter = createAdapter()
+
+    // Exactly what the runtime persists and `readSessionConfig` caches.
+    queryClient.setQueryData(sessionConfigRawQueryKey({
+      sessionID: "session-sdk",
+      directory: "/repo/main",
+      serverUrl: "https://control.example",
+    }), {
+      harness: { id: "claude", access: "native" },
+      agent: "build",
+      model: { providerID: "claude-sdk", modelID: "opus" },
+    })
+
+    await adapter.saveSessionConfig({
+      sessionID: "session-sdk",
+      directory: "/repo/main",
+      harnessType: "claude-sdk",
+      agent: "build",
+      model: { providerID: "claude-sdk", modelID: "opus" },
+    })
+
+    expect(calls).toEqual([])
+
+    // A real change still writes.
+    await adapter.saveSessionConfig({
+      sessionID: "session-sdk",
+      directory: "/repo/main",
+      harnessType: "claude-sdk",
+      agent: "plan",
+      model: { providerID: "claude-sdk", modelID: "opus" },
+    })
+
+    expect(calls).toHaveLength(1)
+    expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
+      harness: { id: "claude", access: "native" },
+      agent: "plan",
+      model: { providerID: "claude-sdk", modelID: "opus" },
+    })
+  })
+
   test("failed session config PATCH shows a toast and does not cache the payload", async () => {
     const adapter = createAdapter(() => {
       throw new Error("offline")
@@ -121,7 +190,7 @@ describe("submit transport adapter", () => {
     await adapter.saveSessionConfig({
       sessionID: "session-failed",
       directory: "/repo/main",
-      harnessType: "codex",
+      harnessType: "codex-app-server",
       agent: "build",
     })
 
@@ -146,7 +215,7 @@ describe("submit transport adapter", () => {
     await adapter.saveSessionConfig({
       sessionID: "session-http-failed",
       directory: "/repo/main",
-      harnessType: "codex",
+      harnessType: "codex-app-server",
       agent: "build",
     })
 

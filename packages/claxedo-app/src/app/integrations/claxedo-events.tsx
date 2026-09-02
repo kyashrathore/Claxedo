@@ -33,7 +33,7 @@ import {
   type StreamSyncLifecycleEvent,
   type StreamSyncLifecycleState,
 } from "../connection/stream-sync-lifecycle"
-import { reportStreamSyncLifecycle, type StreamSyncStreamId } from "@/platform/runtime/stream-sync-status"
+import { clearStreamSyncLifecycle, reportStreamSyncLifecycle, type StreamSyncStreamId } from "@/platform/runtime/stream-sync-status"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createTransport } from "@/platform/runtime/transport"
@@ -416,12 +416,17 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
   return { cause, ...(hint ? { hint } : {}), errorName: name, errorMessage: message.slice(0, 200), ...ctx }
 }
 
-export function eventStreamFetch(
+export async function eventStreamFetch(
   target: ClaxedoEventStreamTarget,
   init: RequestInit,
   options?: { request?: typeof fetch; relayRequest?: typeof fetch; accountState?: AccountState },
 ) {
   if (target.kind === "central") {
+    // Signed accounts stream the hosted central bus through the account
+    // bridge; every other account state (unsigned, unconfigured build,
+    // pending, revoked) keeps `authFetch` against the local server's own
+    // `/api/claxedo/events` — see `accountStreamAvailable` for why bridge
+    // presence alone must not route here.
     if (
       !options?.request &&
       accountStreamAvailable(options?.accountState ?? { status: "unsigned" })
@@ -714,6 +719,15 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       state.abort = null
       setStreamConnected(false)
       stepLifecycle("stop")
+      // Deliberate teardown (target removed / provider cleanup) must not leave
+      // a frozen `{stopped, everLive: true}` snapshot behind: nothing will
+      // reconnect a stopped stream, and any session mapping to this streamId
+      // later would read the stale snapshot as a permanent reconnect. Clearing
+      // also resets `everLive`, so re-adding the same target (switching back
+      // to an old session) counts as ordinary startup again — the quiet-window
+      // `error → reconnect-scheduled` hop during a fast session switch no
+      // longer flashes "Reconnecting…" over a healthy stream.
+      clearStreamSyncLifecycle(streamId)
       if (state.heartbeatTimer) clearTimeout(state.heartbeatTimer)
       if (state.reconnectTimer) clearTimeout(state.reconnectTimer)
     }

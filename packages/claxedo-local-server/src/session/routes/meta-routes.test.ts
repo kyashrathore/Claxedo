@@ -148,6 +148,38 @@ describe("session metadata routes", () => {
     })
   })
 
+  test("refreshes a resolved workspace snapshot before serving its first session list", async () => {
+    const directory = path.join(root, `local-refresh-${randomUUID()}`)
+    await fs.mkdir(directory, { recursive: true })
+    const workspaceId = `ws_local_refresh_${randomUUID()}`
+    const resolvedWorkspace = await ensureWorkspace({
+      workspaceId,
+      directory,
+      kind: "cloud",
+    })
+    if (!resolvedWorkspace) throw new Error("test workspace was not created")
+    const refreshSessionProjection = vi.fn(async () => {
+      await putSessionMeta("local_refresh_1", {
+        ws: resolvedWorkspace,
+        title: "Refreshed before list",
+      })
+    })
+
+    const res = await SessionMetaRoutes({ refreshSessionProjection }).request(
+      `http://localhost/api/claxedo/session-list?scope=workspace&workspaceId=${encodeURIComponent(workspaceId)}&limit=10`,
+    )
+
+    expect(res.status).toBe(200)
+    await expect(res.json()).resolves.toMatchObject({
+      items: [expect.objectContaining({ sessionId: "local_refresh_1", sessionRef: `workspace:${workspaceId}:session:local_refresh_1` })],
+    })
+    expect(refreshSessionProjection).toHaveBeenCalledWith(expect.objectContaining({
+      id: workspaceId,
+      directory,
+      kind: "cloud",
+    }))
+  })
+
   test("local unsigned mode serves bounded rail pages on the local product route", async () => {
     const directory = `/tmp/local-navigation-${randomUUID()}`
     await putSessionMeta("local_navigation_1", {

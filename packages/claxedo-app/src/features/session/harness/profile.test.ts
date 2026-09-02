@@ -8,6 +8,7 @@ import {
   extractThoughtLevelFromConfigOptions,
   failedHarness,
   hardFailedHarness,
+  harnessDisplayLabel,
   harnessProfile,
   optionsResponse,
   pickHarness,
@@ -35,6 +36,9 @@ describe("harness profile", () => {
     expect(pickHarness(undefined, "/tmp/codex-acp")).toBeUndefined()
     expect(pickHarness("opencode", "/tmp/some/unrelated/binary-path.exe", "native")).toBe("opencode")
     expect(pickHarness(undefined, "C:\\agents\\codex-acp.exe")).toBeUndefined()
+    // An explicit identity is honored regardless of what the binary looks like.
+    expect(pickHarness("claude-sdk", "/tmp/codex-acp")).toBe("claude-sdk")
+    expect(pickHarness("acp:codex", "/tmp/claude-agent-acp")).toBe("acp:codex")
   })
 
   test("covers display names for every builtin harness id", () => {
@@ -51,12 +55,15 @@ describe("harness profile", () => {
     }
     expect(HARNESS_DISPLAY_NAMES["agent"]).toBe("Cursor")
     expect(HARNESS_DISPLAY_NAMES["cursor-agent"]).toBe("Cursor")
+    // Operator ACP connections have no table row; their label is derived.
+    expect(harnessDisplayLabel("acp:claude")).toBe("Claude")
+    expect(harnessDisplayLabel("acp:my-agent")).toBe("My Agent")
   })
 
   test("resolves effective harness model", () => {
-    expect(effectiveHarnessModel("codex-app-server", "")).toBe("default")
-    expect(effectiveHarnessModel("claude-sdk", undefined)).toBe("default")
-    expect(effectiveHarnessModel("codex-app-server", "gpt-5.5")).toBe("gpt-5.5")
+    expect(effectiveHarnessModel("acp:codex", "")).toBe("default")
+    expect(effectiveHarnessModel("acp:claude", undefined)).toBe("default")
+    expect(effectiveHarnessModel("acp:codex", "gpt-5.5")).toBe("gpt-5.5")
     expect(effectiveHarnessModel("opencode", "gpt-5.5")).toBe("")
     expect(effectiveHarnessModel("pi", undefined)).toBe("")
   })
@@ -103,16 +110,16 @@ describe("harness profile", () => {
   test("decodes legacy runner session config", () => {
     expect(decodeSessionConfig({
       runner: {
-        type: "opencode",
-        binary: "/tmp/opencode",
+        type: "codex-app-server",
+        binary: "/tmp/codex",
       },
       model: {
         modelID: "gpt-5.5",
       },
     })).toEqual({
       harness: {
-        type: "opencode",
-        binary: "/tmp/opencode",
+        type: "codex-app-server",
+        binary: "/tmp/codex",
       },
       model: {
         modelID: "gpt-5.5",

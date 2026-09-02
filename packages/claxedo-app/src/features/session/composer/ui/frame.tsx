@@ -83,6 +83,10 @@ export const PromptInputFrame: Component<{
   openCommands: VoidFunction
   openContext: VoidFunction
   enterShellMode: VoidFunction
+  goalSelectable: Accessor<boolean>
+  goalArmed: Accessor<boolean>
+  armGoal: VoidFunction
+  toggleGoal: VoidFunction
   approveEnabled: Accessor<boolean>
   permissionGroups: Accessor<PermissionModeGroups | undefined>
   permissionCurrent: Accessor<PermissionModeOption | undefined>
@@ -345,6 +349,12 @@ export const PromptInputFrame: Component<{
           onContext={props.openContext}
           shellTitle={props.t("prompt.action.shellCommand")}
           onEnterShell={props.enterShellMode}
+          goalTitle={props.t("prompt.action.goal")}
+          clearGoalTitle={props.t("prompt.action.clearGoal")}
+          goalSelectable={props.goalSelectable}
+          goalArmed={props.goalArmed}
+          onGoal={props.armGoal}
+          onGoalToggle={props.toggleGoal}
           planModeTitle={props.t("prompt.action.planMode")}
           agentGroupTitle={props.t("prompt.action.agentGroup")}
           approveEnabled={props.approveEnabled}

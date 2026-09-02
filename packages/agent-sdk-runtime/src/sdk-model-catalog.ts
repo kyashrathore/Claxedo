@@ -1,4 +1,4 @@
-import type { AgentConfigOptionRow } from "./index"
+import type { AgentConfigOption } from "./index"
 import type { AgentHarnessId } from "./harness-types"
 
 export type NativeSdkHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor">
@@ -27,7 +27,7 @@ export const SDK_MODEL_CATALOG = {
 export type SdkModelCatalog = typeof SDK_MODEL_CATALOG
 export type SdkModelId<T extends NativeSdkHarnessId> = SdkModelCatalog[T][number]["id"]
 
-/** A model entry servable to the picker — live-listed from the harness or from the static fallback catalog. */
+/** A model entry servable to the picker or the explicit static catalog API. */
 export type SdkModelEntry = {
   id: string
   name: string
@@ -115,37 +115,26 @@ export function thoughtLevelConfigOption(
   models: readonly SdkModelEntry[],
   currentModel: string | undefined,
   currentEffort: string | undefined,
-): AgentConfigOptionRow | undefined {
-  // Same resolution `modelConfigOption` uses. `runtime.ts` maps the
-  // "Default (recommended)" selection to `setModel("")`, so an empty current
-  // model is the COMMON case, not an edge one — matching on id alone left the
-  // effort row missing for exactly the default state.
-  // Resolve the default the way `modelConfigOption` does, but ONLY for an
-  // empty/absent selection — `runtime.ts` maps "Default (recommended)" to
-  // `setModel("")`, so that is the common case, not an edge one. A non-empty id
-  // we do not recognise must NOT silently adopt some other model's levels;
-  // that would advertise an effort the turn cannot run at.
+): AgentConfigOption | undefined {
+  // An empty model selection means the model catalog's advertised default.
+  // A named model is resolved only by its own id.
   const model = selectedEffortModel(models, currentModel)
   const levels = model?.supportsEffort ? model.supportedEffortLevels ?? [] : []
   if (levels.length < 2) return undefined
-  // Never hand back a level this model does not offer. The SDK silently
-  // downgrades an unsupported effort, which would leave the UI reporting a
-  // setting the turn never actually ran with.
+  // The current value describes an explicit supported selection or the model's
+  // declared default. An absent value leaves selection with the model.
   const current = currentEffort && levels.includes(currentEffort)
     ? currentEffort
     : model?.defaultEffort && levels.includes(model.defaultEffort)
     ? model.defaultEffort
-    : levels[0]
+    : undefined
   return {
     id: EFFORT_CONFIG_ID,
     name: "Effort",
     description: "How much reasoning effort the model should use",
     category: "thought_level",
     type: "select",
-    currentValue: current,
-    // `selectOptions`, matching `modelConfigOption` above — that is this
-    // runtime's shape. ACP agents put the same data in `options`; the app-side
-    // extractor reads either, so both paths land on one Effort section.
+    ...(current ? { currentValue: current } : {}),
     selectOptions: levels.map((level) => ({ id: level, name: titleCase(level) })),
   }
 }
@@ -155,18 +144,18 @@ function selectedEffortModel(models: readonly SdkModelEntry[], modelId: string |
   return models.find((item) => item.isDefault) ?? models[0]
 }
 
-export function modelConfigOption(models: readonly SdkModelEntry[], currentModel?: string): AgentConfigOptionRow {
-  const fallback = models.find((item) => item.isDefault)?.id ?? models[0]?.id
+export function modelConfigOption(models: readonly SdkModelEntry[], currentModel?: string): AgentConfigOption {
+  const defaultModel = models.find((item) => item.isDefault)?.id ?? models[0]?.id
   return {
     id: "model",
     name: "Model",
     category: "model",
     type: "select",
-    currentValue: currentModel && models.some((item) => item.id === currentModel) ? currentModel : fallback,
+    currentValue: currentModel && models.some((item) => item.id === currentModel) ? currentModel : defaultModel,
     selectOptions: models.map(({ isDefault: _isDefault, ...item }) => ({ ...item })),
   }
 }
 
-export function sdkModelConfigOption(harness: NativeSdkHarnessId, currentModel?: string): AgentConfigOptionRow {
+export function sdkModelConfigOption(harness: NativeSdkHarnessId, currentModel?: string): AgentConfigOption {
   return modelConfigOption(sdkModelOptions(harness), currentModel)
 }

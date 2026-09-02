@@ -13,12 +13,12 @@ describe("harness preferences", () => {
     storage.setItem("claxedo:runner", "claude-sdk")
     storage.setItem("claxedo:acp-model", "legacy-model")
     storage.setItem("claxedo:agent-mode", "legacy-agent")
-    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:/repo:route": "codex-app-server" }))
+    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:/repo:route": "acp:codex" }))
     storage.setItem("claxedo:acp-model-map", JSON.stringify({ "draft:/repo:route": "opus" }))
     storage.setItem("claxedo:agent-mode-map", JSON.stringify({ "draft:/repo:route": "build" }))
 
     expect(createHarnessPreferences(storage).initialState("draft:/repo:route")).toMatchObject({
-      harness: "codex-app-server",
+      harness: "acp:codex",
       selectedModel: "opus",
       selectedAgent: "build",
     })

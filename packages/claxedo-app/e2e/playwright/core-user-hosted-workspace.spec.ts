@@ -177,6 +177,8 @@ import {
   parseSessionConfigPatch,
   SESSION_CONFIG_PATCH_SUCCESS_STATUS,
 } from "../helpers/contracts/session-config"
+import { draftDefaultStorageKey } from "../../src/features/session/harness/draft-defaults"
+import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "../../src/platform/api/local-server"
 
 const PROJECT_ID = "proj_core_user_hosted_workspace"
 const WORKSPACE_ID = "ws_core_user_hosted_workspace"
@@ -275,9 +277,16 @@ function eventStream<T>(events: Array<{ id: number; payload: T }>) {
 
 type HealthOutcome = 200 | 409 | 503
 
-async function seedProject(page: Page, opts: { registerWorkspace: boolean }) {
+async function seedProject(page: Page, opts: { registerWorkspace: boolean; model?: typeof BIG_PICKLE }) {
+  const serverUrl = process.env.VITE_CLAXEDO_SERVER_URL ?? DEFAULT_LOCAL_CLAXEDO_SERVER_URL
   await page.addInitScript(
-    (input: { dir: string; workspaceId: string; registerWorkspace: boolean }) => {
+    (input: {
+      dir: string
+      workspaceId: string
+      registerWorkspace: boolean
+      draftDefaultKey: string
+      model?: typeof BIG_PICKLE
+    }) => {
       localStorage.clear()
       ;(window as typeof window & { __OPENCODE__?: { serverUrl?: string; activeDirectory?: string } }).__OPENCODE__ = {
         serverUrl: window.location.origin,
@@ -299,8 +308,22 @@ async function seedProject(page: Page, opts: { registerWorkspace: boolean }) {
           closedProjects: {},
         }),
       )
+      if (input.model) {
+        localStorage.setItem(input.draftDefaultKey, JSON.stringify({
+          version: 1,
+          harness: "opencode",
+          model: { providerID: "opencode", modelID: input.model.id },
+          labels: { provider: "opencode", model: input.model.name },
+        }))
+      }
     },
-    { dir: DIR, workspaceId: WORKSPACE_ID, registerWorkspace: opts.registerWorkspace },
+    {
+      dir: DIR,
+      workspaceId: WORKSPACE_ID,
+      registerWorkspace: opts.registerWorkspace,
+      draftDefaultKey: draftDefaultStorageKey({ serverUrl, workspaceKey: WORKSPACE_ID }),
+      model: opts.model,
+    },
   )
 }
 
@@ -389,8 +412,9 @@ async function installUserHostedRuntimeMock(
 
     // Intent-time sprite warming uses fetch(), so Playwright reports these
     // static bundle reads as the same resource type as an API request. They
-    // are not a workspace-runtime lane at all; let Vite serve its owned asset
-    // namespace and keep the bare-hit oracle scoped to runtime/control APIs.
+    // are not a workspace-runtime lane at all; let Vite serve both its built
+    // `/assets` namespace and dev-only `/@fs` source assets, keeping the
+    // bare-hit oracle scoped to runtime/control APIs.
     if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/@fs/")) return route.continue()
 
     // ---- Bootstrap / project inventory (bare origin) ----
@@ -759,7 +783,7 @@ test.describe("core user-hosted workspace @core", () => {
   test("ready unlocks the composer and a send is proven by the oracle through the relay lane — behaviors 2,3", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
-    await seedProject(page, { registerWorkspace: true })
+    await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
 
     await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
     await page.waitForLoadState("domcontentloaded")

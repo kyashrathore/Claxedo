@@ -167,6 +167,14 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     )
     .get("/global/event", (c) => streamGlobalEvents(c))
     .get("/api/wr/events", (c) => streamGlobalEvents(c))
+    // The central control-plane bus at its canonical path. The app's events
+    // provider opens `controlPlaneEventsUrl` → `/api/claxedo/events` for its
+    // central target (matching the hosted deployments, which serve the same
+    // path), so the local product must answer here too — without this mount
+    // every unsigned desktop build's central stream 404s and retries forever,
+    // and the doorbell consumers (workgraph/document/session lifecycle) never
+    // hear anything. Same handler and auth gate as the two aliases above.
+    .get("/api/claxedo/events", (c) => streamGlobalEvents(c))
     .get("/path", async (c) => {
       const input = workspaceInput(c)
       const ws = await resolveWorkspace({
