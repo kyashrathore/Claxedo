@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, test } from "vitest"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
+import type { D1Database } from "@cloudflare/workers-types"
 import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 import { composeBetterAuthD1UserDeployedControlPlane } from "./better-auth-d1-compose"
@@ -21,6 +22,8 @@ const CONTROL_MIGRATIONS = [
   "0012_cold_local_host_challenges.sql",
   "0013_org_team_session_sharing.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
+const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
+  .map((name) => fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)))
 
 const privateKey = [
   "-----BEGIN PRIVATE KEY-----",
@@ -49,15 +52,8 @@ async function databases() {
   active.push(instance)
   const authDatabase = await instance.getD1Database("AUTH_DB")
   const controlPlaneDatabase = await instance.getD1Database("CONTROL_PLANE_DB")
-  for (const migrationPath of CONTROL_MIGRATIONS) {
-    const migration = (await readFile(migrationPath, "utf8")).replace(/^\s*--.*$/gm, "")
-    for (const statement of migration
-      .split(/;\s*\n\s*\n/)
-      .map((part) => part.trim())
-      .filter(Boolean)) {
-      await controlPlaneDatabase.prepare(statement).run()
-    }
-  }
+  await applyMigrations(authDatabase, AUTH_MIGRATIONS)
+  await applyMigrations(controlPlaneDatabase, CONTROL_MIGRATIONS)
   return { authDatabase, controlPlaneDatabase }
 }
 
@@ -84,7 +80,62 @@ function env(overrides: Record<string, string> = {}) {
   }
 }
 
+
+async function applyMigrations(database: D1Database, paths: string[]) {
+  for (const migrationPath of paths) {
+    const migration = (await readFile(migrationPath, "utf8")).replace(/^\s*--.*$/gm, "")
+    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
+      await database.prepare(statement).run()
+    }
+  }
+}
+
+/** The same database, with every prepared statement's SQL recorded. */
+function recording(database: D1Database, seen: string[]): D1Database {
+  return new Proxy(database, {
+    get(target, key) {
+      if (key === "prepare") {
+        return (sql: string) => {
+          seen.push(sql)
+          return target.prepare(sql)
+        }
+      }
+      const value = Reflect.get(target, key)
+      return typeof value === "function" ? value.bind(target) : value
+    },
+  })
+}
+
 describe("Better Auth + D1 user-deployed composition", () => {
+
+  test("is reusable only after both databases answered through it", async () => {
+    const { authDatabase, controlPlaneDatabase } = await databases()
+    const authSql: string[] = []
+    const controlSql: string[] = []
+    const composed = composeBetterAuthD1UserDeployedControlPlane({
+      env: env(),
+      authDatabase: recording(authDatabase, authSql),
+      controlPlaneDatabase: recording(controlPlaneDatabase, controlSql),
+      environmentId: "production",
+      descriptorExpiresAt: 1_900_000_000_000,
+      now: () => 1_800_000_000_000,
+      product: {
+        kind: "user-deployed",
+        organization: { id: "org_deployment", name: "My deployment" },
+        ownerIdentity: {
+          adapter: "better-auth",
+          issuer: "https://api.example.test/api/auth",
+          subject: "owner-subject",
+        },
+      },
+    })
+    await composed.authReady
+    // The session read goes through Better Auth's adapter, so a wedge anywhere
+    // on that path keeps the composition unsettled instead of being reused.
+    expect(authSql.some((sql) => /from "session"/.test(sql) && /"token"/.test(sql))).toBe(true)
+    expect(controlSql.some((sql) => sql.trim() === "select 1")).toBe(true)
+  })
+
   test("composes the real auth, authority, empty service catalog, and no-billing posture", async () => {
     const { authDatabase, controlPlaneDatabase } = await databases()
     const composed = composeBetterAuthD1UserDeployedControlPlane({
@@ -105,6 +156,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
       },
     })
 
+    await composed.authReady
     expect(composed.plane.services.authority).toBeDefined()
     expect(composed.plane.privateSessionAuthority).toBeDefined()
     expect(composed.plane.runtimeSessionAuthority).toBeDefined()

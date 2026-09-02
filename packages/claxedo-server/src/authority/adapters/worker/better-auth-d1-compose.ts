@@ -114,6 +114,9 @@ export type BetterAuthD1UserDeployedComposition = {
  * exists. Full-hosted remains unavailable until D1 has a durable sandbox lease
  * store; the supported control-plane-only path contains no sandbox provider.
  */
+/** A session token no sign-in can mint: the readiness read must never match a row. */
+const COMPOSITION_READINESS_TOKEN = "claxedo.composition-readiness"
+
 export function composeBetterAuthD1UserDeployedControlPlane(
   input: BetterAuthD1UserDeployedCompositionInput,
 ): BetterAuthD1UserDeployedComposition {
@@ -232,7 +235,15 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     },
     verifyIdentity: (request) => authentication.verifyIdentity(request),
     authHandler: async (request) => await authProtocol.fetch(request),
-    authReady: foundation.$context.then(() => undefined),
+    authReady: foundation.$context.then(async (context) => {
+      // Settled means both databases have answered THROUGH this composition.
+      // The first auth-database read happens on whichever request first
+      // carries a signed cookie, and the first control-plane read on the
+      // first hosted route; a cancellation there would otherwise leave a
+      // reusable composition whose adapter path never settles.
+      await context.adapter.findOne({ model: "session", where: [{ field: "token", value: COMPOSITION_READINESS_TOKEN }] })
+      await input.controlPlaneDatabase.prepare("select 1").first()
+    }),
     serviceInstallations,
     product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
     billing: "absent",
