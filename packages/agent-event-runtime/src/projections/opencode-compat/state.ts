@@ -10,6 +10,12 @@ export type OpencodeCompatProjectionState = {
    * an envelope the consumer never received.
    */
   announcedAssistantMsgId?: string
+  /**
+   * The user message id this projection has already announced a row for. The
+   * lane carries the turn's prompt as `user-message-delta` chunks and never a
+   * row for it, so the first chunk opens the row its parts hang from.
+   */
+  announcedUserMsgId?: string
   /** The agent the lane last named (`session-agent`), for the announced row. */
   agentId: string
   accumulatedText: string
@@ -35,6 +41,7 @@ export function createOpencodeCompatProjectionState(
   return {
     assistantMsgId: initial?.assistantMsgId,
     announcedAssistantMsgId: initial?.announcedAssistantMsgId,
+    announcedUserMsgId: initial?.announcedUserMsgId,
     agentId: initial?.agentId ?? "",
     accumulatedText: initial?.accumulatedText ?? "",
     accumulatedThinkingText: initial?.accumulatedThinkingText ?? "",

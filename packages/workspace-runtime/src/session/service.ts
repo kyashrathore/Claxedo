@@ -1,3 +1,4 @@
+import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
 import type { Message } from "@opencode-ai/sdk/v2"
@@ -109,7 +110,7 @@ export type RuntimePromptTurnInput = {
 }
 
 function mkAssistantId(userMessageId?: string) {
-  if (userMessageId) return userMessageId + "_r"
+  if (userMessageId) return assistantMessageIdForTurn(userMessageId)
   const ts = Date.now().toString(16)
   const rand = Math.random().toString(36).slice(2, 10)
   return `msg_${ts}${rand}`

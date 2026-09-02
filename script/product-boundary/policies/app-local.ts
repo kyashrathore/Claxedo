@@ -178,7 +178,14 @@ export const appLocal: Policy = {
   // invalidates — split out of the global-sdk provider, which keeps the
   // connections. Reviewed owner: the global-sdk provider itself, whose module
   // this already was; one module, no package edge; the measured closure is 966.
-  ceilings: { modules: 966, packages: 38 },
+  // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` is the one
+  // owner of the runtime's turn message-id convention — the app reads a reply's
+  // parent from it in `features/session/data/session-types` and
+  // `features/session/conversation/opencode-conversation`, and the compat
+  // projection the app already depends on mints and resolves ids through it.
+  // Reviewed owner: the agent event contracts package, which this closure
+  // already carries; one module, no package edge; the measured closure is 967.
+  ceilings: { modules: 967, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

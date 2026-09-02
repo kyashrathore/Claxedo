@@ -611,7 +611,6 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       yield event
     }
     await this.subagentAdmissions
-
     if (!sawError && !sawVisibleAssistantContent) {
       const error = sessionError("OpenCode completed without visible assistant content", id)
       publishRuntime(error)
@@ -619,7 +618,9 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       return
     }
 
-    if (!sawError) yield messageCompleted(id, input.assistantMessageId)
+    if (sawError) return
+    publishRuntime.close()
+    yield messageCompleted(id, input.assistantMessageId)
   }
 
   /**

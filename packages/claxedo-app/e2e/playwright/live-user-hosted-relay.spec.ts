@@ -115,13 +115,12 @@
  *      out-of-band), not a shortcut token. The created PTY is visible in a subsequent list
  *      call and gone from a list call after delete — a genuine create/list/delete round
  *      trip against the real PTY subsystem, not merely a 200 on each call in isolation.
- *   3. [RED against a REAL CLIENT GAP — run for real, see the note above the test] A
- *      pane attached BY ROUTE to a session on the user-hosted workspace should render a
- *      host-started turn as it streams. Everything from the engine to the pane's own
- *      conversation store is proven correct (the deltas really reach and grow inside
- *      the registry entry the pane holds); what fails is the timeline's row model,
- *      which anchors every row on a user message the runtime-events lane never
- *      announces.
+ *   3. A pane attached BY ROUTE to a session on the user-hosted workspace renders a
+ *      host-started turn AS IT STREAMS: the runtime-events lane carries both halves
+ *      of the turn (the prompt as `user-message-delta`, the reply under the turn's
+ *      stable reply id), the compat projection opens both rows from them, and the
+ *      rendered reply grows through several strictly-increasing intermediate states
+ *      with no whole-transcript refetch landing while it grows.
  *   4. [REAL APP GAP, UNCONFIRMED — `test.fixme`, see HARNESS NOTES] Connecting to a
  *      workspace whose minted token is already inside the refresh window should trigger a
  *      REAL `POST /api/workspace/:id/connection/refresh` shortly after navigation. Not yet
@@ -1111,52 +1110,33 @@ test.describe("live user-hosted relay @live", () => {
   // `GET /session/:id/message` refetch jumps from nothing to the whole message,
   // which is exactly the symptom this spec exists to fail on — so the request
   // tap below also proves no such refetch could have delivered the growth.
-  // RED against a REAL CLIENT GAP — run for real, evidence captured, deliberately
-  // not `test.fixme`d. Everything from the engine to the pane's own conversation
-  // store is proven correct by this run; the gap is the last hop, the timeline.
-  //   - the fixture's engine really answers from the scripted endpoint (its call
-  //     counter moves) and the runtime really streams the turn as paced
-  //     `text-delta` frames on `/api/wr/runtime-events` (contract version 7,
-  //     `directory` = the HOST's own filesystem path, `sessionId` = the attached
-  //     session, `assistantMessageId` = the engine's reply id);
-  //   - the app opens that session-scoped stream BEFORE the turn starts — the
-  //     tap records `GET /workspaces/<id>/api/wr/runtime-events?parentSessionId=<id>`
-  //     ~0.3s ahead of the host prompt;
-  //   - the pane now registers the workspace ADDRESS as its scope
-  //     (`Panes: ["ses_…@workspace:ws_signed_browser_relay"]`), the same form
-  //     `sessionRowDirectory` gives every relay-backed row, so the lane's
-  //     `eventStreamFrameAddress` translation lands on the pane's own
-  //     `conversationScopeKey`;
-  //   - `applyRegisteredConversationEvent` applies every `message.part.delta` to
-  //     THAT pane's own entry (`refs: 1`) and its assistant text really grows —
-  //     captured live as `"LIVEHOST"` -> `"LIVEHOST-988225-"` ->
-  //     `"LIVEHOST-988225-AAAA-BBB"` -> … inside the registry's own client.
-  // What still fails is the TIMELINE's row model. `message-timeline.tsx` builds
-  // every row from a USER message (`messageRowMemos` maps over
-  // `props.userMessages` and attaches replies through
-  // `assistantMessagesByParent.get(userMessage.id)`), while the runtime-events
-  // lane announces only the ASSISTANT row: an `AgentRuntimeEvent` carries the
-  // assistant message id and nothing about the message it answers, so
-  // `announcedTurnParent` (`agent-event-runtime/src/projections/opencode-compat/
-  // projection.ts`) parents the announced reply on the SESSION id. No user row
-  // has that id, so the growing reply hangs off nothing and paints only when the
-  // settle refetch delivers the turn's real user row — measured as
-  // `["+11ms:0","+9110ms:74"]`, i.e. nothing, then the whole message.
-  // Owners fixed by this investigation and NOT the remaining gap: the signed
-  // bootstrap states a relay-backed workspace's ADDRESSING directory
-  // (`workspace:<id>`, host path as `remote_directory`); the runtime-events lane
-  // projects a `ses_`-prefixed session's frames when it is that session's only
-  // compat lane (`runtimeProjectionOwnsCompat`'s `soleCompatLane`); the relay
-  // owns its own CORS on every path including the host-tunnel one; and this
-  // machine's host tunnel strips the remote caller's `Origin`/`Host` and
-  // forwarded-client headers before replaying onto its own loopback server
+  // Everything the turn needs travels on that lane. The runtime-events envelope
+  // names the turn's REPLY and nothing else, and the runtime names a reply after
+  // the message it answers (`assistantMessageIdForTurn` /
+  // `userMessageIdForAssistantReply`, `@claxedo/agent-event-runtime/contracts`),
+  // so the lane carries both halves of the turn:
+  //   - the opencode harness's runtime publisher
+  //     (`agent-sdk-runtime/src/harnesses/opencode/events.ts`) stamps every frame
+  //     of the turn with the turn's STABLE reply id — the id this runtime
+  //     persists — instead of the id the engine picked for a step, and carries
+  //     the prompt as the prompt (`user-message-delta`) rather than as reply
+  //     text;
+  //   - the compat projection (`agent-event-runtime`'s
+  //     `opencode-compat/projection.ts`) opens the prompt row from those chunks
+  //     and announces the reply row parented on the user message the convention
+  //     names, so the timeline — which builds every row from a USER message and
+  //     attaches replies through `assistantMessagesByParent` — has both rows
+  //     before the first delta lands.
+  // Owners this scenario also pins: the signed bootstrap states a relay-backed
+  // workspace's ADDRESSING directory (`workspace:<id>`, host path as
+  // `remote_directory`); the runtime-events lane projects a `ses_`-prefixed
+  // session's frames when it is that session's only compat lane
+  // (`runtimeProjectionOwnsCompat`'s `soleCompatLane`); the relay owns its own
+  // CORS on every path including the host-tunnel one; and this machine's host
+  // tunnel strips the remote caller's `Origin`/`Host` and forwarded-client
+  // headers before replaying onto its own loopback server
   // (`loopbackReplayHeaders`), without which every relay call 401s
   // `workspace_relay_local_loopback_required`.
-  // Closing it needs the turn's PARENT on this lane: the runtime-events envelope
-  // (`runtime-envelope.ts`) carries `sessionId`/`assistantMessageId` and no
-  // parent, so either the producer starts naming the user message it answers (a
-  // contract-version change) or the timeline grows a row model for a
-  // session-parented reply. Both are product decisions this spec does not make.
   test("an attached pane renders a host-started turn as it streams — behavior 3", async ({ page }) => {
     test.setTimeout(180_000)
     fixture.scripted.resetCounts()
@@ -1221,12 +1201,19 @@ test.describe("live user-hosted relay @live", () => {
     // an assistant row exists — by which time the turn can already be over and
     // every intermediate state is gone. A sampler that cannot observe "not yet"
     // cannot observe growth either.
+    // `assistantContent`, not the `:not([aria-hidden="true"])` variant: the
+    // timeline marks the ACTIVE turn's assistant content `aria-hidden` for as
+    // long as that turn is working (`workingTurn`, `message-timeline.tsx`) —
+    // that is an assistive-technology concern on EVERY turn, local ones
+    // included, and `aria-hidden` content is fully on screen. The settled
+    // oracle below still runs against the visible selector, so a client that
+    // only ever paints at the settle refetch still fails this test on growth.
     const samples: Array<{ at: number; text: string }> = []
     const deadline = Date.now() + 45_000
     while (Date.now() < deadline) {
       const text = await page.evaluate(
         (selector) => [...document.querySelectorAll(selector)].map((node) => (node as HTMLElement).innerText ?? "").join(""),
-        SELECTORS.assistantContentVisible,
+        SELECTORS.assistantContent,
       ).catch(() => "")
       samples.push({ at: Date.now(), text })
       if (text.includes(marker)) break
@@ -1267,12 +1254,19 @@ test.describe("live user-hosted relay @live", () => {
     ).toBeLessThan(final!.text.length)
 
     // …and no whole-transcript refetch could have delivered any of it: none
-    // finished between the turn starting and the last partial render.
-    const lastPartialAt = samples.filter((sample) => sample.text.length > 0 && !sample.text.includes(marker)).at(-1)!.at
+    // finished while the text was growing. The window is bounded by the growth
+    // ITSELF — the first partial render to the last — because that is the only
+    // span in which a refetch could have produced a partial. The app hydrates
+    // the session on navigation (`view=latest-surface` + `view=latest-turn`),
+    // and one of those pairs races the host's prompt; a fetch that settled
+    // before a single character was on screen delivered none of them.
+    const partialSamples = samples.filter((sample) => sample.text.length > 0 && !sample.text.includes(marker))
+    const firstPartialAt = partialSamples[0]!.at
+    const lastPartialAt = partialSamples.at(-1)!.at
     const refetches = relayCalls.filter((call) =>
       call.url.startsWith("GET ") && call.url.includes(`/session/${encodeURIComponent(sessionId)}/message`))
     expect(
-      refetches.filter((call) => (call.finishedAt ?? call.startedAt) >= turn.at && (call.finishedAt ?? call.startedAt) <= lastPartialAt),
+      refetches.filter((call) => (call.finishedAt ?? call.startedAt) >= firstPartialAt && (call.finishedAt ?? call.startedAt) <= lastPartialAt),
       `a whole-turn message refetch landed while the text was growing, so the growth is not proof of the live ` +
         `lane: ${JSON.stringify(refetches)}`,
     ).toEqual([])

@@ -50,19 +50,24 @@ export function projectRuntimeEventEnvelope(
   input: RuntimeEventEnvelope,
   projections: RuntimeProjectionCache = new Map(),
 ): Array<{ directory: EventDirectory; payload: Event }> {
-  const assistantMessageId = input.assistantMessageId ?? `${input.sessionId}_r`
-  const key = `${input.sessionId}:${assistantMessageId}`
+  const assistantMessageId = input.assistantMessageId
+  const key = `${input.sessionId}:${assistantMessageId ?? ""}`
   const projection = projections.get(key) ?? createOpencodeCompatProjection({
     sessionId: input.sessionId,
+    // A frame that names no reply belongs to the session, not to a turn
+    // (a goal update, a diagnostic, a status). It has no reply row to hang
+    // anything from, so the session's own id stands in for the message id and
+    // nothing is announced — naming a reply the runtime never minted would
+    // invent a turn.
+    assistantMessageId: assistantMessageId ?? input.sessionId,
     directory: input.directory,
-    assistantMessageId,
     // Nothing else produces OpenCode-shaped events for this turn here. The
     // runtime-events lane carries the turn's parts and names the message they
     // belong to, but never a row for that message, and the transcript store
     // files a part against an existing row. A turn this client did not start —
     // anyone attached to a session another client is driving — has no row until
     // this projection announces one.
-    announcesAssistantMessage: true,
+    announcesAssistantMessage: assistantMessageId !== undefined,
   })
   projections.set(key, projection)
   return projection.ingest(input.payload).map((event) => ({

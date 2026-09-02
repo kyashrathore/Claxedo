@@ -485,7 +485,7 @@ describe("global sdk event fetch", () => {
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
       sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       payload: { type: "text-delta", delta: "hello" },
     })
 
@@ -497,16 +497,16 @@ describe("global sdk event fetch", () => {
       {
         directory: "/repo/main",
         payload: {
-          id: "message.updated:assistant-1",
+          id: "message.updated:msg_turn_1_r",
           type: "message.updated",
           properties: {
             sessionID: "runtime-session-1",
             info: {
-              id: "assistant-1",
+              id: "msg_turn_1_r",
               sessionID: "runtime-session-1",
               role: "assistant",
               time: { created: expect.any(Number) },
-              parentID: "runtime-session-1",
+              parentID: "msg_turn_1",
               modelID: "",
               providerID: "",
               mode: "auto",
@@ -521,15 +521,15 @@ describe("global sdk event fetch", () => {
       {
         directory: "/repo/main",
         payload: {
-          id: "message.part.updated:assistant-1:000000_assistant-1-text",
+          id: "message.part.updated:msg_turn_1_r:000000_msg_turn_1_r-text",
           type: "message.part.updated",
           properties: {
             sessionID: "runtime-session-1",
             time: expect.any(Number),
             part: {
-              id: "000000_assistant-1-text",
+              id: "000000_msg_turn_1_r-text",
               sessionID: "runtime-session-1",
-              messageID: "assistant-1",
+              messageID: "msg_turn_1_r",
               type: "text",
               text: "",
             },
@@ -539,12 +539,12 @@ describe("global sdk event fetch", () => {
       {
         directory: "/repo/main",
         payload: {
-          id: "message.part.delta:assistant-1:000000_assistant-1-text",
+          id: "message.part.delta:msg_turn_1_r:000000_msg_turn_1_r-text",
           type: "message.part.delta",
           properties: {
             sessionID: "runtime-session-1",
-            messageID: "assistant-1",
-            partID: "000000_assistant-1-text",
+            messageID: "msg_turn_1_r",
+            partID: "000000_msg_turn_1_r-text",
             field: "text",
             delta: "hello",
           },
@@ -634,7 +634,7 @@ describe("global sdk event fetch", () => {
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
       sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       payload: { type: "step-start", newMessageId: "assistant-2" },
     }, projections)
 
@@ -642,12 +642,19 @@ describe("global sdk event fetch", () => {
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
       sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       payload: { type: "text-delta", delta: "after step" },
     }, projections)
 
     expect(projections.size).toBe(1)
+    // A step moves the turn onto a message the engine named, and that message
+    // answers the same prompt — the row the lane announces for it is parented
+    // on the turn's user message, not on the step it followed.
     expect(events[0]?.payload).toMatchObject({
+      type: "message.updated",
+      properties: { info: { id: "assistant-2", parentID: "msg_turn_1" } },
+    })
+    expect(events[1]?.payload).toMatchObject({
       type: "message.part.updated",
       properties: {
         part: {

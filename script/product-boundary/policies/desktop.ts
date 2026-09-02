@@ -287,7 +287,13 @@ export const desktopRendererUnsigned: Policy = {
   // way — the meaning half of the global-sdk provider, split from the half that
   // owns the connections. Reviewed owner: the global-sdk provider; one module,
   // no package edge; the measured closure is 1052.
-  ceilings: { modules: 1052, packages: 59 },
+  // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` reaches this
+  // renderer through the same session feature modules as the app entry: it is
+  // the one owner of the runtime's turn message-id convention, which the
+  // session transcript reads to place a reply under the message it answers.
+  // Reviewed owner: the agent event contracts package, already in this
+  // closure; one module, no package edge; the measured closure is 1053.
+  ceilings: { modules: 1053, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

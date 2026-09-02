@@ -7,7 +7,9 @@ function makeProjection() {
   return createOpencodeCompatProjection({
     sessionId: "session-1",
     directory: "/repo",
-    assistantMessageId: "assistant-1",
+    // The reply id a runtime mints for the turn answering `msg_turn_1`: this
+    // composition announces the row, and the id is what names its parent.
+    assistantMessageId: "msg_turn_1_r",
     announcesAssistantMessage: true,
     clock: () => 100,
   })
@@ -59,7 +61,7 @@ describe("createOpencodeCompatProjection", () => {
       type: "session.usage",
       properties: {
         sessionID: "session-1",
-        messageID: "assistant-1",
+        messageID: "msg_turn_1_r",
         contextSize: 200_000,
         contextUsed: 24_542,
         observation: {
@@ -155,7 +157,7 @@ describe("createOpencodeCompatProjection", () => {
     const projection = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       clock: () => 100,
     })
 
@@ -165,15 +167,105 @@ describe("createOpencodeCompatProjection", () => {
     ])
   })
 
-  test("announces the row for a turn whose reply the runtime named itself", () => {
-    // No `_r` suffix means no user message id to recover, which is the same
-    // case the runtime's own producer parents on the session.
-    const projection = makeProjection()
-
-    expect(projection.ingest({ type: "text-delta", delta: "hi" })[0]?.payload).toMatchObject({
-      type: "message.updated",
-      properties: { info: { id: "assistant-1", parentID: "session-1" } },
+  test("reports a reply id outside the turn convention instead of announcing a row", () => {
+    // The lane names the reply and nothing else, so a reply id the runtime's
+    // convention cannot resolve names no user message. Parenting it on the
+    // session would invent a turn, so the projection says the producer broke
+    // the contract and announces nothing.
+    const projection = createOpencodeCompatProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "msg_engine_named_this",
+      announcesAssistantMessage: true,
+      clock: () => 100,
     })
+
+    const events = projection.ingest({ type: "text-delta", delta: "hi" })
+
+    expect(events.map((event) => event.payload.type)).toEqual([
+      "runtime.diagnostic",
+      "message.part.updated",
+      "message.part.delta",
+    ])
+    expect(events[0]?.payload).toMatchObject({
+      type: "runtime.diagnostic",
+      properties: {
+        sessionID: "session-1",
+        projection: "opencode-compat",
+        code: "projection.opencode_compat.reply_id_outside_turn_convention",
+        severity: "error",
+        raw: "msg_engine_named_this",
+      },
+    })
+    // Reported once per turn, not once per part.
+    expect(projection.ingest({ type: "text-delta", delta: "there" }).map((event) => event.payload.type))
+      .toEqual(["message.part.delta"])
+  })
+
+  test("opens the turn's prompt row from the chunks the lane names it with", () => {
+    // The other half of an attached viewer's turn: the reply hangs off the
+    // prompt, so a lane that announced only the reply left its consumer with a
+    // row parented on a message it never received.
+    const projection = createOpencodeCompatProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "msg_host_turn_r",
+      announcesAssistantMessage: true,
+      clock: () => 100,
+    })
+
+    const first = projection.ingest({
+      type: "user-message-delta",
+      messageId: "msg_host_turn",
+      content: { type: "text", text: "explain " },
+    })
+    const second = projection.ingest({
+      type: "user-message-delta",
+      messageId: "msg_host_turn",
+      content: { type: "text", text: "this file" },
+    })
+
+    expect(first.map((event) => event.payload.type)).toEqual([
+      "message.updated",
+      "message.part.updated",
+      "message.part.delta",
+    ])
+    expect(first[0]?.payload).toMatchObject({
+      type: "message.updated",
+      properties: { info: { id: "msg_host_turn", sessionID: "session-1", role: "user" } },
+    })
+    // The row is opened once; every later chunk only extends its text.
+    expect(second.map((event) => event.payload.type)).toEqual(["message.part.delta"])
+    expect([first.at(-1)?.payload, second[0]?.payload].map((payload) => (payload as {
+      properties: { messageID: string; delta: string }
+    }).properties)).toEqual([
+      { sessionID: "session-1", messageID: "msg_host_turn", partID: "000000_msg_host_turn-text", field: "text", delta: "explain " },
+      { sessionID: "session-1", messageID: "msg_host_turn", partID: "000000_msg_host_turn-text", field: "text", delta: "this file" },
+    ])
+  })
+
+  test("attaches a viewer turn's parts to the row it announced under the user message", () => {
+    // The whole contract an attached viewer rides: the announced row names the
+    // user message the reply answers, and every part of the turn is filed
+    // against THAT row — the two halves a timeline needs to place the reply.
+    const projection = createOpencodeCompatProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "msg_host_turn_r",
+      announcesAssistantMessage: true,
+      clock: () => 100,
+    })
+
+    const first = projection.ingest({ type: "text-delta", delta: "hel" })
+    const second = projection.ingest({ type: "text-delta", delta: "lo" })
+
+    const announced = first[0]?.payload as { properties: { info: { id: string; parentID: string } } }
+    expect(announced.properties.info).toMatchObject({ id: "msg_host_turn_r", parentID: "msg_host_turn" })
+    const partMessageIds = [...first.slice(1), ...second].map((event) => {
+      const properties = event.payload.properties as { messageID?: string; part?: { messageID?: string } }
+      return properties.part?.messageID ?? properties.messageID
+    })
+    expect(partMessageIds).toEqual(["msg_host_turn_r", "msg_host_turn_r", "msg_host_turn_r"])
   })
 
   test("names the agent the lane reported on the announced row", () => {
@@ -199,7 +291,7 @@ describe("createOpencodeCompatProjection", () => {
     const first = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       announcesAssistantMessage: true,
     })
     first.ingest({ type: "text-delta", delta: "hello" })
@@ -207,7 +299,7 @@ describe("createOpencodeCompatProjection", () => {
     const next = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       announcesAssistantMessage: true,
       initialSnapshot: first.snapshot(),
     })
@@ -221,7 +313,7 @@ describe("createOpencodeCompatProjection", () => {
     const projection = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
     })
 
     expect(projection.ingest({ type: "text-delta", delta: "hel" }).map((event) => event.payload.type)).toEqual([
@@ -238,26 +330,26 @@ describe("createOpencodeCompatProjection", () => {
     const first = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
     })
     first.ingest({ type: "text-delta", delta: "hello" })
 
     const next = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       initialSnapshot: first.snapshot(),
     })
 
     expect(next.ingest({ type: "text-delta", delta: "!" })).toEqual([{
       directory: "/repo",
       payload: {
-        id: "message.part.delta:assistant-1:000000_assistant-1-text",
+        id: "message.part.delta:msg_turn_1_r:000000_msg_turn_1_r-text",
         type: "message.part.delta",
         properties: {
           sessionID: "session-1",
-          messageID: "assistant-1",
-          partID: "000000_assistant-1-text",
+          messageID: "msg_turn_1_r",
+          partID: "000000_msg_turn_1_r-text",
           field: "text",
           delta: "!",
         },
@@ -272,7 +364,7 @@ describe("createOpencodeCompatProjection", () => {
     const next = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       initialSnapshot: first.snapshot(),
       clock: () => 100,
     })
@@ -388,12 +480,12 @@ describe("createOpencodeCompatProjection", () => {
     expect(projection.ingest({ type: "proposed-plan-complete", planMarkdown: "## Plan\n- inspect" })).toEqual([{
       directory: "/repo",
       payload: {
-        id: "message.part.delta:assistant-1:000000_assistant-1-text",
+        id: "message.part.delta:msg_turn_1_r:000000_msg_turn_1_r-text",
         type: "message.part.delta",
         properties: {
           sessionID: "session-1",
-          messageID: "assistant-1",
-          partID: "000000_assistant-1-text",
+          messageID: "msg_turn_1_r",
+          partID: "000000_msg_turn_1_r-text",
           field: "text",
           delta: "- inspect",
         },
@@ -619,14 +711,14 @@ describe("createOpencodeCompatProjection", () => {
     const first = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       initialSnapshot: snapshot,
       clock: () => 100,
     })
     const second = createOpencodeCompatProjection({
       sessionId: "session-1",
       directory: "/repo",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       initialSnapshot: snapshot,
       clock: () => 100,
     })
@@ -725,7 +817,7 @@ describe("createOpencodeCompatProjection", () => {
       type: "message.part.updated",
       properties: {
         part: {
-          id: "000002_assistant-1-text-1",
+          id: "000002_msg_turn_1_r-text-1",
           type: "text",
           text: "",
         },
@@ -744,7 +836,7 @@ describe("createOpencodeCompatProjection", () => {
     expect(terminal).toEqual([{
       directory: "/repo",
       payload: {
-        id: "message.part.updated:assistant-1:000000_tool-1",
+        id: "message.part.updated:msg_turn_1_r:000000_tool-1",
         type: "message.part.updated",
         properties: {
           sessionID: "session-1",
@@ -752,7 +844,7 @@ describe("createOpencodeCompatProjection", () => {
           part: {
             id: "000000_tool-1",
             sessionID: "session-1",
-            messageID: "assistant-1",
+            messageID: "msg_turn_1_r",
             type: "tool",
             callID: "tool-1",
             tool: "bash",

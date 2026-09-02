@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import { agentRuntimeEvent, type AgentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { agentRuntimeEvent, assistantMessageIdForTurn, type AgentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type {
   AgentMessage,
   AgentPermission,
@@ -258,7 +258,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     let openingUserAlreadyPublished = openingUserPublished
     let outcome: AgentTurnOutcome | undefined
     let titleEmitted = false
-    const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
+    const stableAssistantMessageId = prompt.assistantMessageId
     const assistantAliases = new Map<string, string>()
     const normalizeCompatEvent = (event: CompatEvent): CompatEvent => {
       if (event.type === "message.updated" && event.properties.info.role === "assistant") {
@@ -752,7 +752,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         const { adapter, config } = await runtimeForSession(turn.sessionId)
         const directory = session.directory ?? undefined
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
-        const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
+        const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
         const prompt: PromptInput = {
           parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),

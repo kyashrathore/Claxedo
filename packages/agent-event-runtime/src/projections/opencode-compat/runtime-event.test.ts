@@ -131,4 +131,38 @@ describe("legacyRuntimeEventFromOpencodeCompat", () => {
       delta: "thinking",
     })
   })
+
+  test("a settled part value after its deltas adds nothing to the stream", () => {
+    // The engine streams a part as deltas and then publishes the part's
+    // settled value. Both describe the SAME text, so a consumer that applied
+    // the deltas must be told nothing further — otherwise the reply it just
+    // rendered arrives a second time and the turn reads twice.
+    const content = new Map<string, string>()
+
+    expect(legacyRuntimeEventFromOpencodeCompat({
+      type: "message.part.updated",
+      properties: {
+        sessionID: "session-1",
+        part: { id: "part-1", sessionID: "session-1", messageID: "message-1", type: "text", text: "" },
+      },
+    }, content)).toBeUndefined()
+
+    const deltas = ["Hel", "lo ", "there"].map((delta) => legacyRuntimeEventFromOpencodeCompat({
+      type: "message.part.delta",
+      properties: { sessionID: "session-1", messageID: "message-1", partID: "part-1", field: "text", delta },
+    }, content)?.payload)
+    expect(deltas).toEqual([
+      { type: "text-delta", delta: "Hel" },
+      { type: "text-delta", delta: "lo " },
+      { type: "text-delta", delta: "there" },
+    ])
+
+    expect(legacyRuntimeEventFromOpencodeCompat({
+      type: "message.part.updated",
+      properties: {
+        sessionID: "session-1",
+        part: { id: "part-1", sessionID: "session-1", messageID: "message-1", type: "text", text: "Hello there" },
+      },
+    }, content)).toBeUndefined()
+  })
 })

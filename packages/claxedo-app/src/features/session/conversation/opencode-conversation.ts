@@ -1,3 +1,4 @@
+import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import type { Event, Message, Part, ToolState } from "@opencode-ai/sdk/v2/client"
 export type { Message } from "@opencode-ai/sdk/v2/client"
 import type { MessagePart, UIMessage } from "@tanstack/ai"
@@ -161,7 +162,7 @@ function distinctAssistantSnapshotReplies(snapshot: UIMessage[]) {
   }
   const distinct = new Set<string>()
   for (const [parentID, ids] of byParent) {
-    if (ids.length < 2 || !ids.includes(`${parentID}_r`)) continue
+    if (ids.length < 2 || !ids.includes(assistantMessageIdForTurn(parentID))) continue
     ids.forEach((id) => distinct.add(id))
   }
   return distinct
@@ -382,7 +383,7 @@ function assistantTurnIndex(
   if (message.role !== "assistant") return -1
   const parentID = (message as { parentID?: unknown }).parentID
   if (typeof parentID !== "string" || !parentID) return -1
-  const announced = `${parentID}_r`
+  const announced = assistantMessageIdForTurn(parentID)
   const aliasIndex = (index: number) =>
     index !== -1 && assistantTaskStep(current[index]) ? -1 : index
   // Either the incoming message IS the announced envelope and the engine's

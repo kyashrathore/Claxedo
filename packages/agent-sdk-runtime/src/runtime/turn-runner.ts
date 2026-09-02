@@ -31,7 +31,7 @@ export async function runRuntimeTurn(input: RunRuntimeTurnInput): Promise<void> 
   const { sessionId, prompt, directory, adapter, store, publish, commit } = input
   let openingUserAlreadyPublished = input.openingUserAlreadyPublished ?? false
   let outcome: AgentTurnOutcome | undefined
-  const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
+  const stableAssistantMessageId = prompt.assistantMessageId
   const assistantAliases = new Map<string, string>()
   const normalizeCompatEvent = (event: CompatEvent): CompatEvent => {
     if (event.type === "message.updated" && event.properties.info.role === "assistant") {
