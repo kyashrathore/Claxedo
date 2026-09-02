@@ -16,6 +16,7 @@ import {
   eventDeliveryPrincipal,
   type EventDeliveryOptions,
 } from "../event-delivery"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 
 /**
  * Synthetic frame written in place of a replay when the requested cursor has
@@ -173,7 +174,7 @@ export function runtimeBusEventsHandler(
           })
         },
         heartbeat,
-        heartbeatMs: 30_000,
+        heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
         lastEventId: cursor,
         replay: replayForScope,
         replayLive: false,

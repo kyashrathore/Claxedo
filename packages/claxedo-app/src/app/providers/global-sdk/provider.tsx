@@ -38,6 +38,7 @@ import {
   USER_HOSTED_WORKSPACE_KIND,
   type GlobalSdkClientOptions,
 } from "./live-session"
+import { EVENT_STREAM_STALL_MS } from "@claxedo/agent-event-runtime"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
 export { createControlPlaneEventFetch, createGlobalSdkFetch, workspaceEventTransport }
@@ -408,7 +409,9 @@ const globalSDKContextInput = {
     let lastGlobalEventId: string | undefined
     let lastRuntimeEventId: string | undefined
     let liveSessionRestartTimer: ReturnType<typeof setTimeout> | undefined
-    const HEARTBEAT_TIMEOUT_MS = 15_000
+    // The stall budget is the producers' heartbeat contract, not a local guess:
+    // a quiet-but-healthy stream must outlive the watchdog on every transport.
+    const HEARTBEAT_TIMEOUT_MS = EVENT_STREAM_STALL_MS
     const heartbeat = createHeartbeatWatchdog({
       timeoutMs: HEARTBEAT_TIMEOUT_MS,
       onTimeout: () => {

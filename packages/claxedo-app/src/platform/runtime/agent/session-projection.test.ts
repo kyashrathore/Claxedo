@@ -45,8 +45,16 @@ describe("session projection sync-back", () => {
     expect(sessionProjectionWorkspaceBacking({
       signedControlPlane: true,
       workspaceId: "ws_signed",
+      workspaceKind: "cloud",
+    })).toEqual({ workspaceId: "ws_signed", kind: "cloud" })
+  })
+
+  test("never projects a user-hosted workspace's sessions: the machine serving it is their authority", () => {
+    expect(sessionProjectionWorkspaceBacking({
+      signedControlPlane: true,
+      workspaceId: "ws_machine",
       workspaceKind: "user-hosted",
-    })).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
+    })).toBeUndefined()
   })
 
   test("does not infer workspace authority for local or incomplete projection refreshes", () => {

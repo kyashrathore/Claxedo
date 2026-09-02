@@ -7,7 +7,11 @@ export function sessionProjectionWorkspaceBacking(input: {
   workspaceId?: string
   workspaceKind?: WorkspaceSessionBacking["kind"]
 }): WorkspaceSessionBacking | undefined {
-  if (!input.signedControlPlane || !input.workspaceId || !input.workspaceKind) return
+  // The control plane projects (registers, checkpoints, repairs) only the
+  // sessions it holds: those of its own cloud workspaces. A user-hosted
+  // workspace's sessions live on the machine serving it, which is their
+  // authority; the control plane has nothing of theirs to project.
+  if (!input.signedControlPlane || !input.workspaceId || input.workspaceKind !== "cloud") return
   return { workspaceId: input.workspaceId, kind: input.workspaceKind }
 }
 

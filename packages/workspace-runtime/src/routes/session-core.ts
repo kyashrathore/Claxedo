@@ -71,6 +71,7 @@ import {
   acquireSessionTurnLease,
   type ActiveSessionTurnLease,
 } from "./session-turn-lease"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
@@ -1794,7 +1795,7 @@ export function createSessionRoutes(opts: Opts) {
             })
           },
           heartbeat: { type: "heartbeat" },
-          heartbeatMs: 2 * 60_000,
+          heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
           lastEventId: c.req.header("last-event-id"),
           replay: scope.managed ? scopedReplay(opened.replay, allows) : opened.replay,
           replayLive: false,

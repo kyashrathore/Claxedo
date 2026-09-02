@@ -16,6 +16,7 @@ import {
   eventDeliveryPrincipal,
   type EventDeliveryOptions,
 } from "../event-delivery"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 
 export function isTerminalRuntimeEvent(event: RuntimeEventEnvelope) {
   return event.payload.type === "finish" ||
@@ -85,7 +86,7 @@ export function runtimeEventsHandler(
           })
         },
         heartbeat,
-        heartbeatMs: 30_000,
+        heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
         lastEventId: c.req.header("last-event-id"),
         replay: replayForScope,
         replayLive: false,
