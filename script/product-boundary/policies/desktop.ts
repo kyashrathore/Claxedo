@@ -280,7 +280,10 @@ export const desktopRendererUnsigned: Policy = {
   // `app/integrations/claxedo-event-targets.ts`) are reachable from the
   // renderer's own events provider. Two modules, no package edge; the measured
   // closure is 1050.
-  ceilings: { modules: 1050, packages: 59 },
+  // `app/providers/global-sdk/route-event-scope.ts` reaches this renderer
+  // through the same global-sdk provider; one module, no package edge; the
+  // measured closure is 1051.
+  ceilings: { modules: 1051, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

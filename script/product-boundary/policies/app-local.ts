@@ -169,7 +169,10 @@ export const appLocal: Policy = {
   // Reviewed owners: the platform runtime layer, which both the events provider
   // and the global-sdk provider already depend on, and the events integration
   // itself. Two modules, no package edge, and the measured closure is 964.
-  ceilings: { modules: 964, packages: 38 },
+  // `app/providers/global-sdk/route-event-scope.ts` is the runtime-events
+  // lane's route-derived scope input, split out of the global-sdk provider;
+  // one module, no package edge; the measured closure is 965.
+  ceilings: { modules: 965, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
