@@ -1,9 +1,11 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
+import { hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type {
   HostEnrollment,
   HostEnrollmentState,
+  HostSessionAuthority,
   WorkspaceAuthority,
   WorkspaceShareTarget,
 } from "@claxedo/server-core/platform/auth/authority"
@@ -77,6 +79,7 @@ type EnrollmentRow = {
   paused_at: number | null
   revoked_at: number | null
   last_signature_hash: string | null
+  session_authority: string | null
   created_at: number
   updated_at: number
 }
@@ -293,7 +296,8 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     await this.requireWorkspaceAccess(who, workspaceId, "read")
     const row = await this.database.prepare(`
       select assignment.workspace_id, assignment.host_id, assignment.second_device_open_at,
-        enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at
+        enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at,
+        enrollment.session_authority
       from host_workspace_assignments assignment
       inner join host_enrollments enrollment on enrollment.host_id = assignment.host_id
         and enrollment.owner_actor_id = assignment.owner_actor_id
@@ -306,8 +310,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       display_name: string | null
       expires_at: number
       last_seen_at: number
+      session_authority: string | null
     }>()
     if (!row) return { active: false as const }
+    const sessionAuthority = hostSessionAuthority(row.session_authority)
     return {
       active: true as const,
       host_id: row.host_id,
@@ -316,6 +322,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       ...(row.second_device_open_at ? { second_device_open_at: row.second_device_open_at } : {}),
       expires_at: row.expires_at,
       last_seen_at: row.last_seen_at,
+      ...(sessionAuthority ? { session_authority: sessionAuthority } : {}),
     }
   }
 
@@ -475,7 +482,13 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
 
   async heartbeatHostEnrollment(
     auth: SignedControlPlaneAuth,
-    args: { hostId: string; signature: string; ttlMs?: number; workspaceIds: readonly string[] },
+    args: {
+      hostId: string
+      signature: string
+      ttlMs?: number
+      workspaceIds: readonly string[]
+      sessionAuthority?: HostSessionAuthority
+    },
   ) {
     const who = await this.requirePrincipal(auth)
     const hostId = requireText(args.hostId, "hostId")
@@ -503,9 +516,22 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       this.database.prepare(`
         update host_enrollments set
           last_seen_at = ?, expires_at = ?, last_signature_hash = ?, updated_at = ?,
-          acked_workspace_ids = ?, acked_at = ?
+          acked_workspace_ids = ?, acked_at = ?, session_authority = ?
         where owner_actor_id = ? and host_id = ? and revoked_at is null
-      `).bind(now, expiresAt, signatureHash, now, JSON.stringify(workspaceIds), now, who.actorId, hostId),
+      `).bind(
+        now,
+        expiresAt,
+        signatureHash,
+        now,
+        JSON.stringify(workspaceIds),
+        now,
+        // The latest beat is the whole truth about the machine's composition:
+        // a host that stops declaring is undeclared again, so this assigns
+        // rather than coalesces.
+        hostSessionAuthority(args.sessionAuthority) ?? null,
+        who.actorId,
+        hostId,
+      ),
       this.database.prepare(`
         insert into authority_batch_assertions (assertion_id, passed)
         values (?, case when exists (

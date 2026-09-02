@@ -851,7 +851,17 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
     displayName: "Yash laptop",
   },
   "host.enrollmentNonce": { hostId: "host_1" },
-  "host.enrollmentHeartbeat": { hostId: "host_1", signature: "sig", ttlMs: 60_000, workspaceIds: ["ws_local_1"] },
+  "host.enrollmentHeartbeat": {
+    hostId: "host_1",
+    signature: "sig",
+    ttlMs: 60_000,
+    workspaceIds: ["ws_local_1"],
+    // The machine's declaration of how the runtime it serves composed its
+    // session access. Exercised here because the heartbeat route's schema is
+    // strict: a declared field that never reaches the route is a field the
+    // route could silently reject in production.
+    sessionAuthority: "managed-private",
+  },
   "session.list": { workspaceId: WORKSPACE_ID },
   "session.navigationList": { scope: "workspace", limit: 50, workspaceId: WORKSPACE_ID },
   "session.projection.register": {

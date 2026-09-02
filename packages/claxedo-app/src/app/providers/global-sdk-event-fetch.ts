@@ -6,8 +6,7 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { accountStreamAvailable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"
 import type { AccountState } from "@/platform/account/account-port"
-
-const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
+import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type LiveSession = {
   sessionID: string
@@ -54,17 +53,13 @@ export async function openCentralRuntimeEventResponse(input: {
   })
 }
 
-function runtimeWorkspaceKind(input: unknown) {
-  if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
-}
-
 export function workspaceEventTransport(input: {
   serverUrl: string
   signedControlPlane: boolean
   workspaceId?: string
   workspaceKind?: string
 }) {
-  const kind = runtimeWorkspaceKind(input.workspaceKind)
+  const kind = workspaceKind(input.workspaceKind)
   return input.workspaceId && kind !== "local" && (
     input.signedControlPlane || centralTransportForServer(input.serverUrl) !== "loopback"
   ) ? "workspace-relay" as const : "loopback" as const
@@ -131,8 +126,8 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
           ...(resolvedWorkspace.kind ? { workspaceKind: resolvedWorkspace.kind } : {}),
         })
       }
-      const resolvedWorkspaceKind = runtimeWorkspaceKind(resolvedWorkspace?.kind)
-      const sessionWorkspaceKind = runtimeWorkspaceKind(session?.workspaceKind)
+      const resolvedWorkspaceKind = workspaceKind(resolvedWorkspace?.kind)
+      const sessionWorkspaceKind = workspaceKind(session?.workspaceKind)
       const workspaceId = resolvedWorkspace?.kind === "local"
         ? undefined
         : resolvedWorkspace?.workspaceId ?? (sessionWorkspaceKind === "local" ? undefined : session?.workspaceId)

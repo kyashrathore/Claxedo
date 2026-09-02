@@ -1,5 +1,6 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { HostEnrollment, HostEnrollmentState } from "@claxedo/server-core/platform/auth/authority"
+import { hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HostEnrollment, HostEnrollmentState, HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isCliAccessAuth } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { convexApi } from "./api"
 import { requireExecutor } from "./executor"
@@ -83,7 +84,9 @@ export function hostEnrollmentAuthority(input: ConvexAuthorityInput, serviceArgs
       signature: string
       ttlMs?: number
       workspaceIds: readonly string[]
+      sessionAuthority?: HostSessionAuthority
     }): Promise<{ expires_at: number; last_seen_at: number; assigned_workspace_ids: string[] }> {
+      const declared = hostSessionAuthority(args.sessionAuthority)
       const body = {
         host_id: args.hostId,
         signature: args.signature,
@@ -91,6 +94,10 @@ export function hostEnrollmentAuthority(input: ConvexAuthorityInput, serviceArgs
         // The v2 signature covers this served set; Convex verifies and stores
         // it as the machine's acked consent.
         workspace_ids: [...args.workspaceIds],
+        // The machine's own account of the runtime it serves. Outside the
+        // signature by design (see `HostSessionAuthority`), and omitted rather
+        // than nulled when the machine declared nothing.
+        ...(declared ? { session_authority: declared } : {}),
       }
       const result = isCliAccessAuth(auth)
         ? await asService().mutation(convexApi.hostEnrollments.heartbeatForService, { ...serviceArgs(auth), ...body })
@@ -166,7 +173,16 @@ export function hostEnrollmentAuthority(input: ConvexAuthorityInput, serviceArgs
       return await requireExecutor(input, auth).query(convexApi.hostEnrollments.activeWorkspaceHost, {
         workspace_id: args.workspaceId,
       }) as
-        | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
+        | {
+          active: true
+          host_id: string
+          workspace_id: string
+          display_name?: string
+          second_device_open_at?: number
+          expires_at: number
+          last_seen_at: number
+          session_authority?: HostSessionAuthority
+        }
         | { active: false }
     },
 

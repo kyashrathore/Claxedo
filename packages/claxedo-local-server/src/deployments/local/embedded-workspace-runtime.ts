@@ -5,6 +5,7 @@ import {
   createPersistentTranscriptHandleStore,
   createTranscriptResolver,
   createWorkspaceRuntimeApp,
+  managedWorkspaceSessionAccessPolicy,
   Pty,
   type ProcessObserver,
   type ProcessOwnerHandle,
@@ -103,6 +104,23 @@ let engineSessionEvents: OpencodeEventsHandle | undefined
 let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) => Promise<void> | void) | undefined
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
+
+/**
+ * How THIS process's embedded workspace runtimes composed their session
+ * access — the `sessionAuthority` marker of the very policy
+ * `createWorkspaceRuntimeApp` mounts them with.
+ *
+ * The one place that can answer it, and the one place that should: a host
+ * serving these runtimes to remote clients (the desktop's relay tunnel, a
+ * self-hosted `claxedo up`) has to DECLARE the composition to the control
+ * plane, and the control plane refuses to infer it. Derived from the same
+ * expression the app itself uses — the configured policy, or the unbound
+ * `managedWorkspaceSessionAccessPolicy()` an embedded exposure falls back to —
+ * so the declaration cannot drift from what is actually mounted.
+ */
+export function embeddedWorkspaceRuntimeSessionAuthority() {
+  return (configuredSessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()).sessionAuthority
+}
 
 export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRequest: OpenCodeRequestFn

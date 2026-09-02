@@ -172,7 +172,7 @@ import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
-import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
+import { DEFAULT_CLAXEDO_SERVER_PORT, embeddedWorkspaceRuntimeSessionAuthority } from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
@@ -1039,6 +1039,12 @@ export function createSelfHostedApp(
     subscribeLocalWorkspaces: (listener) => subscribeLocalWorkspaceChanges(listener),
     localHostIdentity,
     signHostPayload,
+    // This host serves the workspaces it shares out of the embedded runtimes
+    // configured above, so the composition it declares to the control plane is
+    // read from those runtimes rather than restated here — signed deployments
+    // inject `embeddedManagedPrivateSessionPolicy` and are `managed-private`,
+    // unsigned ones stay on the unbound local policy.
+    sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
     startMachineTunnel: startUserHostedMachineTunnel,
     stopMachineTunnel: stopUserHostedMachineTunnel,
     machineTunnelActive: hasUserHostedMachineTunnel,

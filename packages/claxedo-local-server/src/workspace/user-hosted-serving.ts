@@ -44,6 +44,7 @@ import {
 } from "@claxedo/workspace-runtime/relay"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { userHostedSurface } from "./user-hosted-surface"
+import { embeddedWorkspaceRuntimeSessionAuthority } from "../deployments/local/embedded-workspace-runtime"
 import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 
 const log = Log.create({ service: "user-hosted-serving" })
@@ -157,13 +158,24 @@ function logTunnelEvent(
   }
 }
 
-/** What the daemon currently serves, for status surfaces and tests. */
+/**
+ * What the daemon currently serves, for status surfaces and tests.
+ *
+ * `sessionAuthority` is reported whether or not anything is being served, and
+ * it is the reason Electron main reads this route at all: the machine has to
+ * DECLARE its runtime composition on every enrollment heartbeat, the control
+ * plane mints the client's event-stream scope from that declaration and
+ * refuses to infer one, and this daemon is the only process that knows how its
+ * own embedded runtimes were composed.
+ */
 export function userHostedServingState() {
-  if (!active) return { serving: false as const }
+  const sessionAuthority = embeddedWorkspaceRuntimeSessionAuthority()
+  if (!active) return { serving: false as const, sessionAuthority }
   const workspaceIds = [...active.tunnels.keys()].sort()
   const connectedWorkspaceIds = workspaceIds.filter((workspaceId) => active?.tunnels.get(workspaceId)?.status.connected)
   return {
     serving: true as const,
+    sessionAuthority,
     hostId: active.hostId,
     relayUrl: active.relayUrl,
     workspaceIds,

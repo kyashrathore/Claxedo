@@ -1,5 +1,5 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HostSessionAuthority, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import type { RemoteAccessService } from "../../routes/remote-access"
@@ -53,6 +53,12 @@ export function createRemoteAccessService(input: {
   subscribeLocalWorkspaces?(listener: () => Promise<void>): () => void
   localHostIdentity(): Promise<LocalHostIdentity>
   signHostPayload(identity: LocalHostIdentity, payload: string): string
+  /**
+   * How the runtime this machine serves composed its session access, asked at
+   * every beat rather than captured once: the composition belongs to the
+   * runtime, and this service only reports it.
+   */
+  sessionAuthority(): HostSessionAuthority
   startMachineTunnel(input: {
     workspaceIds: string[]
     hostId: string
@@ -163,6 +169,11 @@ export function createRemoteAccessService(input: {
       result = await heartbeat(current.auth, {
         hostId: current.identity.hostId,
         workspaceIds,
+        // The machine's own account of the runtime behind every workspace it
+        // serves. The control plane mints the client's stream scope from
+        // exactly this and refuses to infer one, so a beat that stopped
+        // carrying it would leave every client with no workspace stream.
+        sessionAuthority: input.sessionAuthority(),
         ttlMs: heartbeatTtlMs,
         signature: input.signHostPayload(current.identity, hostEnrollmentHeartbeatPayloadV2({
           hostId: current.identity.hostId,

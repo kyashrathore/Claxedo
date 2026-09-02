@@ -4,8 +4,7 @@ import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platfor
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { LiveSession } from "../global-sdk-event-fetch"
 import type { SessionRef } from "@/platform/identity/session-ref"
-
-export const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
+import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 
 export type GlobalSdkClientOptions = Omit<Parameters<typeof createSdkForServer>[0], "server" | "fetch"> & {
   workspaceId?: string

@@ -529,6 +529,23 @@ const browserControlPlaneToken = await jwksIssuer.mint({
 })
 
 const authority = createSqliteWorkspaceAuthority()
+/**
+ * The session-access composition this fixture's embedded workspace runtimes
+ * are built with, composed ONCE here so the two places that need it cannot
+ * disagree: `configureEmbeddedWorkspaceRuntime` below mounts this very object
+ * on every runtime, and the host heartbeat declares its `sessionAuthority`
+ * marker to the control plane.
+ *
+ * Declaring it is not decoration. The control plane mints a client's
+ * event-stream scope from what the HOST says and infers nothing, so a fixture
+ * that beat without this would publish an undeclared machine — the app would
+ * open no workspace stream at all, exactly as a real host that never declared.
+ * And this composition is `managed-private`, which serves session-scoped
+ * streams ONLY: a fixture that declared "local" instead would send the app to
+ * the workspace-wide stream this runtime answers with a permanent 400
+ * `session_event_scope_required`.
+ */
+const embeddedSessionPolicy = embeddedManagedPrivateSessionPolicy(authority)
 // Org→Team multiplayer e2e: personal orgs reject team CRUD. When
 // `CLAXEDO_E2E_COLLABORATIVE_ORG_NAME` is set, create an application org with a
 // default team and attach the fixture workspace to that org (D17).
@@ -600,6 +617,10 @@ if (access === "cloud") {
     hostId,
     ttlMs: 60_000,
     workspaceIds: [workspaceId],
+    // Read off the policy this machine's runtimes actually mount, never a
+    // literal — the whole point of the declaration is that it comes from the
+    // composition.
+    sessionAuthority: embeddedSessionPolicy.sessionAuthority,
     signature: signHostPayload(
       fixtureLocalHostIdentity,
       hostEnrollmentHeartbeatPayloadV2({ hostId, ttlMs: 60_000, workspaceIds: [workspaceId] }),
@@ -908,7 +929,7 @@ await authority.releaseSessionTurn({
 configureEmbeddedWorkspaceRuntime({
   opencodeRequest,
   opencodeCompat: true,
-  sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(authority),
+  sessionAccessPolicy: embeddedSessionPolicy,
 })
 
 const built = createSelfHostedApp(services, {

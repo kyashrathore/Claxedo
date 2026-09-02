@@ -19,11 +19,7 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import type { LiveSession } from "../global-sdk-event-fetch"
-import { USER_HOSTED_WORKSPACE_KIND } from "./live-session"
-
-export function runtimeWorkspaceKind(input: unknown) {
-  if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
-}
+import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 
 export function initialRouteDirectory() {
   if (typeof window === "undefined") return

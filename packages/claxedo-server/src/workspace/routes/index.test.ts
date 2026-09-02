@@ -2323,9 +2323,10 @@ describe("workspace routes signed control plane authority", () => {
       access: "user-hosted",
       backing: "local-worktree",
       runtimeKind: "user-hosted",
-      // The owner's own daemon composes the unbound local policy, so it serves
-      // the WORKSPACE-WIDE event streams as well as session-scoped ones.
-      sessionAuthority: "local",
+      // No `sessionAuthority`: this host declared no composition on its
+      // heartbeat, and the control plane does not invent one. The client then
+      // opens no workspace stream instead of picking a flavour that is wrong
+      // for one of the two runtimes it might be talking to.
       workspaceId: "ws_shared",
       homeRegion: "us-east",
       relayUrl: "https://relay.example.test",
@@ -2371,6 +2372,58 @@ describe("workspace routes signed control plane authority", () => {
       relayRoom: "ws_shared",
       relayUrl: "https://relay.example.test",
     })
+  })
+
+  test("signed user-hosted connection mints the stream scope its HOST declared, for either composition", async () => {
+    // A constant `sessionAuthority: "local"` here would be wrong for half the
+    // hosts: a user-hosted workspace whose runtime injected a session
+    // authority composes `managed-private` and answers an unscoped
+    // `/api/wr/events` with a permanent 400 `session_event_scope_required`.
+    // The machine declares its composition on its heartbeat and the mint
+    // reports exactly what it declared. Both values, because a passthrough
+    // hard-coding either one would still pass a single-value test.
+    for (const declared of ["local", "managed-private"] as const) {
+      mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
+      const svc = services()
+      svc.authority!.openWorkspace = vi.fn(async () => ({
+        allowed: true,
+        role: "editor",
+        workspace: {
+          workspace_id: "ws_shared",
+          backing: "local-worktree" as const,
+          access: "user-hosted" as const,
+        },
+      }))
+      svc.authority!.activeWorkspaceHost = vi.fn(async () => ({
+        active: true as const,
+        host_id: "host_1",
+        workspace_id: "ws_shared",
+        expires_at: 60_000,
+        last_seen_at: 1,
+        session_authority: declared,
+      }))
+      const app = WorkspaceRoutes(svc, {
+        authConfig,
+        verifier,
+        relayUrl: "https://relay.example.test",
+        runtimeAccessTokenSigner: vi.fn(async () => ({
+          runtimeAccessToken: "rat_user_hosted",
+          tokenExpiresAt: 789_000,
+          jti: "jti_user_hosted",
+        })),
+      })
+
+      const res = await app.request("http://localhost/ws_shared/connection", {
+        headers: { Authorization: "Bearer user_2" },
+      })
+
+      expect(res.status).toBe(200)
+      await expect(res.json()).resolves.toMatchObject({
+        access: "user-hosted",
+        runtimeKind: "user-hosted",
+        sessionAuthority: declared,
+      })
+    }
   })
 
   test("signed user-hosted connection rejects denied shared workspace authorization before host lookup", async () => {

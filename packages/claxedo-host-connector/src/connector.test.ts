@@ -70,6 +70,7 @@ async function connector(
   onError?: (stage: "enroll" | "heartbeat" | "share", error: unknown) => void,
   onServing?: (tunnel: Record<string, unknown> | undefined) => void,
   onLeaseRenewed?: (state: { status: "enrolled"; enrollment: { expires_at: number } }) => void,
+  sessionAuthority?: "local" | "managed-private",
 ) {
   const t = transport(overrides)
   let tick: (() => void) | undefined
@@ -84,6 +85,7 @@ async function connector(
     ...(onError ? { onError } : {}),
     ...(onServing ? { onServing } : {}),
     ...(onLeaseRenewed ? { onLeaseRenewed } : {}),
+    ...(sessionAuthority ? { sessionAuthority } : {}),
     setInterval: (fn) => {
       tick = fn
       ticks.push(fn)
@@ -561,6 +563,41 @@ describe("a control-plane failure before enrollment", () => {
     tick()
 
     expect(calls.beats).toEqual([])
+  })
+})
+
+describe("declared session composition", () => {
+  test("carries the injected composition on every beat, for either flavour", async () => {
+    // The connector does not know how the daemon composed its runtimes and
+    // must not guess: the control plane mints each client's event-stream scope
+    // from this declaration. Both flavours, because a beat that hard-coded one
+    // would still satisfy a single-value test.
+    for (const declared of ["local", "managed-private"] as const) {
+      const { instance, calls } = await connector({}, undefined, undefined, undefined, declared)
+      await instance.start()
+      await instance.beat()
+      await instance.beat()
+
+      expect(calls.beats).toHaveLength(2)
+      for (const beat of calls.beats as Array<{ sessionAuthority?: string }>) {
+        expect(beat.sessionAuthority).toBe(declared)
+      }
+    }
+  })
+
+  test("says nothing when nothing was injected, rather than picking a flavour", async () => {
+    // A connector whose parent could not read the daemon's composition
+    // publishes an UNDECLARED machine. The control plane records the absence
+    // and mints no scope, which is the honest outcome — a default here would
+    // put every client of this machine on the wrong stream.
+    const { instance, calls } = await connector()
+    await instance.start()
+    await instance.beat()
+
+    expect(calls.beats).toHaveLength(1)
+    for (const beat of calls.beats as Array<Record<string, unknown>>) {
+      expect(beat).not.toHaveProperty("sessionAuthority")
+    }
   })
 })
 

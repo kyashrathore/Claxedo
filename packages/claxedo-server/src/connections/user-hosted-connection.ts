@@ -141,16 +141,28 @@ export async function userHostedConnectionInfo(
       access: "user-hosted" as const,
       backing: "local-worktree" as const,
       runtimeKind: "user-hosted" as const,
-      // Which stream scopes the runtime behind this connection serves. A
-      // user-hosted workspace is served by the owner's own daemon, whose
-      // embedded workspace runtime composes `managedWorkspaceSessionAccessPolicy()`
-      // with no injected authority — `sessionAuthority: "local"` — so it answers
-      // WORKSPACE-WIDE `/api/wr/events` and `/api/wr/runtime-events` as well as
-      // session-scoped ones. Only a managed-private runtime rejects an unscoped
-      // stream with 400 `session_event_scope_required`, and a client cannot
-      // discover which composition it is talking to; the control plane knows
-      // because it is the one that decided where the workspace runs.
-      sessionAuthority: "local" as const,
+      // Which stream scopes the runtime behind this connection serves, in the
+      // HOST's own words: the machine that serves this workspace declares its
+      // runtime's `SessionAccessPolicy.sessionAuthority` on every heartbeat,
+      // and `activeWorkspaceHost` hands back what it declared.
+      //
+      // The control plane does not decide this and cannot derive it. A
+      // user-hosted workspace runs on the owner's machine, and that machine
+      // composes either flavour: an unsigned desktop daemon leaves its
+      // embedded runtime on `managedWorkspaceSessionAccessPolicy()` with no
+      // injected authority (`"local"`, serving the workspace-wide streams),
+      // while a signed self-hosted host injects one
+      // (`embeddedManagedPrivateSessionPolicy`, `"managed-private"`, which
+      // answers an unscoped `/api/wr/events` with a permanent 400
+      // `session_event_scope_required`).
+      //
+      // A host that declared nothing yields no scope at all. The client then
+      // opens no workspace stream and says why, which is the honest outcome:
+      // either guess is wrong for one of the two compositions, and guessing
+      // "local" at a managed-private host costs more than silence — the
+      // refused stream drives `[claxedo-events]` through its whole retry
+      // ladder, the workspace goes unhealthy, and the pane is torn down.
+      ...(activeLink.session_authority ? { sessionAuthority: activeLink.session_authority } : {}),
       workspaceId,
       homeRegion,
       relayUrl,

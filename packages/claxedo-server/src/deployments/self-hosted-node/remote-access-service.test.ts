@@ -35,7 +35,10 @@ function machineIdentity(hostId = "host_machine"): LocalHostIdentity {
   }
 }
 
-function setup(input: { localWorkspaces?: Array<{ id: string; kind: "local" | "cloud"; displayName: string }> } = {}) {
+function setup(input: {
+  localWorkspaces?: Array<{ id: string; kind: "local" | "cloud"; displayName: string }>
+  sessionAuthority?: "local" | "managed-private"
+} = {}) {
   const authority = createSqliteWorkspaceAuthority({ path: ":memory:" })
   const identity = machineIdentity()
   const localWorkspaces = input.localWorkspaces ?? [
@@ -64,6 +67,10 @@ function setup(input: { localWorkspaces?: Array<{ id: string; kind: "local" | "c
     },
     localHostIdentity: async () => identity,
     signHostPayload: signSpy,
+    // The composition this host serves. In production it is read from the
+    // embedded runtimes the same process configured; here the test names it so
+    // both flavours can be driven.
+    sessionAuthority: () => input.sessionAuthority ?? "local",
     startMachineTunnel,
     stopMachineTunnel,
     machineTunnelActive,
@@ -130,6 +137,24 @@ describe("remote access service", () => {
       hostTunnelTokenProvider: expect.any(Function),
     })
     await expect(startMachineTunnel.mock.calls[0]![0].hostTunnelTokenProvider()).resolves.toBe("htt_1")
+  })
+
+  test("every beat declares the composition of the runtimes this host serves", async () => {
+    // The control plane mints each client's event-stream scope from what the
+    // HOST declared and infers nothing, so this service has to carry the
+    // composition of the embedded runtimes it shares out. Read back through
+    // the real authority's routing answer — the same value the connection mint
+    // reads — for both compositions, because a beat that hard-coded one of
+    // them would still satisfy a single-value test.
+    for (const declared of ["local", "managed-private"] as const) {
+      const { authority, service } = setup({ sessionAuthority: declared })
+      await service.enable(auth, { displayName: "Mac", startAtLogin: false })
+
+      await expect(authority.activeWorkspaceHost!(auth, { workspaceId: "ws_1" })).resolves.toMatchObject({
+        active: true,
+        session_authority: declared,
+      })
+    }
   })
 
   test("a newly opened project is assigned and becomes routable through the workspace-change path", async () => {
@@ -242,6 +267,7 @@ describe("remote access service", () => {
       hostTunnelTokenSigner: vi.fn(async () => ({ hostTunnelToken: "htt_1", tokenExpiresAt: 1, jti: "jti_1" })),
       listLocalWorkspaces: async () => [{ id: "ws_1", kind: "local", displayName: "one" }],
       localHostIdentity: async () => identity,
+      sessionAuthority: () => "local",
       // A tampering signer: heartbeat signatures cover an EMPTY set no matter
       // what the service claims to serve. The real verifier must refuse it.
       signHostPayload: (who, payload) =>

@@ -225,7 +225,7 @@ export const HOSTED_OPERATIONS = {
   "host.enrollmentHeartbeat": {
     method: "POST",
     path: "/api/claxedo/host/enrollments/heartbeat",
-    body: ["hostId", "signature", "ttlMs", "workspaceIds"],
+    body: ["hostId", "signature", "ttlMs", "workspaceIds", "sessionAuthority"],
   },
   // Session people (private share grants + participants). Hosted control plane
   // only — the desktop local sidecar deliberately does not mount these routes.

@@ -82,6 +82,8 @@ function harness(options?: {
   describeWorkspace?: Parameters<typeof setupHostConnectorChild>[0]["describeWorkspace"]
   /** Fail every spawn from this attempt onwards (1 = the first). */
   spawnFailsFrom?: number
+  /** What the daemon answers when asked how its runtimes were composed. */
+  sessionAuthority?: () => Promise<"local" | "managed-private" | undefined>
 }) {
   const children: FakeChild[] = []
   const operations: Array<{ name: string; input?: Record<string, unknown> }> = []
@@ -139,6 +141,7 @@ function harness(options?: {
     onError: (stage, error) => errors.push({ stage, error }),
     onStatusChange: (status) => statuses.push(status),
     displayName: "Work laptop",
+    ...(options?.sessionAuthority ? { sessionAuthority: options.sessionAuthority } : {}),
   })
   return {
     connector,
@@ -156,6 +159,39 @@ function harness(options?: {
         | undefined,
   }
 }
+
+describe("declared session composition", () => {
+  test("hands the daemon's composition to the child before its first beat", async () => {
+    // The connector signs and sends every heartbeat but did not compose the
+    // runtimes it beats for — the daemon did. Resolving it BEFORE the
+    // bootstrap matters: the first beat already carries the declaration, and
+    // the control plane mints every client's event-stream scope from it, so a
+    // value that arrived afterwards would leave the first connections with no
+    // workspace stream. Both flavours, because a bootstrap that hard-coded one
+    // would still satisfy a single-value test.
+    for (const declared of ["local", "managed-private"] as const) {
+      const host = harness({ sessionAuthority: async () => declared })
+      await host.connector.start()
+      expect(host.bootstrapOf(0)?.sessionAuthority).toBe(declared)
+    }
+  })
+
+  test("publishes an undeclared machine when the daemon cannot answer, and says why", async () => {
+    // A daemon that is unreachable must not stall the launch and must not be
+    // guessed for. The machine enrolls undeclared — the control plane records
+    // the absence and mints no scope — and the failure is reported rather than
+    // swallowed.
+    const host = harness({
+      sessionAuthority: async () => {
+        throw new Error("HOSTED_HTTP 503 daemon not ready")
+      },
+    })
+
+    await expect(host.connector.start()).resolves.toMatchObject({ status: "enrolled" })
+    expect(host.bootstrapOf(0)).not.toHaveProperty("sessionAuthority")
+    expect(host.errors.map((entry) => entry.stage)).toContain("session-authority")
+  })
+})
 
 describe("Electron-main child lifecycle", () => {
   test("construction performs no identity read and spawns no optional child", () => {

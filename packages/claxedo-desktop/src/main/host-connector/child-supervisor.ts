@@ -123,6 +123,19 @@ export function setupHostConnectorChild(input: {
   describeWorkspace?: (workspaceId: string) => Promise<LocalWorkspaceDescription | undefined>
   /** The serving credential from the latest heartbeat ack, for the tunnel owner. */
   onServing?: (tunnel: Record<string, unknown> | null) => void
+  /**
+   * How the DAEMON's workspace runtimes composed their session access, read
+   * from the daemon itself once per launch and handed to the child with the
+   * rest of the bootstrap.
+   *
+   * Injected rather than known here because Electron main did not compose
+   * those runtimes either; the daemon reports it on its own serving surface.
+   * Answering `undefined` (the daemon was unreachable) publishes an UNDECLARED
+   * machine: the control plane records the absence and mints no event-stream
+   * scope, which is the honest outcome — a guess here would put every client
+   * of this machine on the wrong stream.
+   */
+  sessionAuthority?: () => Promise<"local" | "managed-private" | undefined>
   displayName?: string
   heartbeatIntervalMs?: number
   /**
@@ -300,6 +313,19 @@ export function setupHostConnectorChild(input: {
     enrolled.promise.catch(() => {})
     enrolling = { target, waiting: enrolled }
 
+    // Resolved before the bootstrap because the FIRST beat already carries it,
+    // and a declaration that arrives afterwards would leave that beat — and
+    // every client that connected on it — undeclared. A daemon that cannot
+    // answer leaves it absent rather than delaying the launch.
+    const sessionAuthority = await Promise.race([
+      input.sessionAuthority?.().catch((error) => {
+        input.onError?.("session-authority", error)
+        return undefined
+      }) ?? Promise.resolve(undefined),
+      cancelled,
+    ])
+    if (startedIn !== era || child !== target) return status
+
     try {
       const requestId = crypto.randomUUID()
       const booted = await bounded(
@@ -310,6 +336,7 @@ export function setupHostConnectorChild(input: {
             heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
             ...(restored.identity ? { identity: restored.identity } : {}),
             ...(input.displayName ? { displayName: input.displayName } : {}),
+            ...(sessionAuthority ? { sessionAuthority } : {}),
             ...(sharedWorkspaces.length ? { sharedWorkspaces } : {}),
           }),
           cancelled,

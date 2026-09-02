@@ -319,12 +319,14 @@ async function ackHeartbeat(
     keys: ReturnType<typeof hostKeyPair>
     workspaceIds: readonly string[]
     ttlMs?: number
+    sessionAuthority?: "local" | "managed-private"
   },
 ) {
   return api.heartbeatHostEnrollment!(input.auth ?? owner, {
     hostId: input.hostId,
     ...(input.ttlMs === undefined ? {} : { ttlMs: input.ttlMs }),
     workspaceIds: [...input.workspaceIds],
+    ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
     signature: signPayload(
       input.keys.privateKey,
       heartbeatPayload({ hostId: input.hostId, ttlMs: input.ttlMs, workspaceIds: input.workspaceIds }),
@@ -439,6 +441,59 @@ describe("workspace assignments", () => {
     expect(await api.listHostAssignments!(owner)).toMatchObject([
       { host_id: hostId, display_name: "Laptop B", workspace_ids: ["ws_alpha"], acked_workspace_ids: ["ws_alpha"] },
     ])
+  })
+
+  test("reports the session composition the machine declared, for either flavour", async () => {
+    // The control plane cannot derive this. The same product composes either
+    // flavour depending on whether a session authority was injected, so the
+    // routing answer carries back exactly what the machine said and nothing
+    // else. Both values are exercised because a passthrough that hard-coded
+    // one of them would still satisfy a single-value test.
+    for (const declared of ["local", "managed-private"] as const) {
+      const api = authority()
+      const { keys, hostId } = await enroll(api)
+      await api.assignWorkspaceHost!(owner, { workspaceId: "ws_alpha", hostId })
+      await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"], sessionAuthority: declared })
+
+      expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" }))
+        .toMatchObject({ active: true, session_authority: declared })
+    }
+  })
+
+  test("a machine that declared no composition routes with none, rather than a default", async () => {
+    // The failure this replaces was a control plane that answered "local" for
+    // every user-hosted workspace. Silence must stay silence all the way to
+    // the mint: a caller that reads a value here would be reading a guess.
+    const api = authority()
+    const { keys, hostId } = await enroll(api)
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_alpha", hostId })
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+
+    const routed = await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })
+    expect(routed).toMatchObject({ active: true })
+    expect(routed).not.toHaveProperty("session_authority")
+  })
+
+  test("a later beat replaces the declared composition instead of accumulating one", async () => {
+    // A host that restarts into a different composition — an unsigned daemon
+    // that gains an injected session authority — must answer with the
+    // composition of its LATEST beat, and one that stops declaring must go
+    // back to undeclared.
+    const api = authority()
+    const { keys, hostId } = await enroll(api)
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_alpha", hostId })
+
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"], sessionAuthority: "managed-private" })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" }))
+      .toMatchObject({ session_authority: "managed-private" })
+
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"], sessionAuthority: "local" })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" }))
+      .toMatchObject({ session_authority: "local" })
+
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_alpha"] })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" }))
+      .not.toHaveProperty("session_authority")
   })
 
   test("assigning requires a live enrollment for that machine", async () => {

@@ -42,6 +42,17 @@ export type HostConnectorParentMessage =
       identity?: HostConnectorBootstrapIdentity
       displayName?: string
       heartbeatIntervalMs: number
+      /**
+       * How the DAEMON's workspace runtimes composed their session access.
+       *
+       * The child signs and sends every heartbeat, but it is not the process
+       * that composed the runtimes it beats for — the daemon is — so the
+       * answer travels here with the rest of the bootstrap. The control plane
+       * mints a client's event-stream scope from this declaration and refuses
+       * to infer one, so a bootstrap that omits it publishes a machine whose
+       * clients open no workspace stream.
+       */
+      sessionAuthority?: "local" | "managed-private"
       /** Shares to re-establish after enrollment (registration is an upsert). */
       sharedWorkspaces?: readonly HostConnectorSharedWorkspace[]
     }
@@ -162,12 +173,17 @@ export function parseHostConnectorParentMessage(value: unknown): HostConnectorPa
           })
         : undefined
     if (input.sharedWorkspaces !== undefined && shares === undefined) return
+    const sessionAuthority = input.sessionAuthority === "local" || input.sessionAuthority === "managed-private"
+      ? input.sessionAuthority
+      : undefined
+    if (input.sessionAuthority !== undefined && sessionAuthority === undefined) return
     return {
       type: "bootstrap",
       requestId: id,
       heartbeatIntervalMs: input.heartbeatIntervalMs,
       ...(restored ? { identity: restored } : {}),
       ...(typeof input.displayName === "string" ? { displayName: input.displayName } : {}),
+      ...(sessionAuthority ? { sessionAuthority } : {}),
       ...(shares ? { sharedWorkspaces: shares } : {}),
     }
   }

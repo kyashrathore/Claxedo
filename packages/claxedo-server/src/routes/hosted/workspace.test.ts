@@ -53,6 +53,12 @@ function fakeConvexAuthority(overrides: Record<string, unknown> = {}) {
       workspace_id: "ws_1",
       expires_at: 9_999,
       last_seen_at: 1,
+      // What this machine declared on its last heartbeat. A `claxedo up` host
+      // against a hosted control plane injects a session authority into its
+      // embedded runtime and is therefore managed-private — which is why no
+      // assumption about "every user-hosted workspace runs an unbound local
+      // policy" can stand in for the declaration.
+      session_authority: "managed-private" as const,
     })),
     recordRuntimeAccessToken: vi.fn(async () => ({})),
     revokeRuntimeAccessToken: vi.fn(async () => ({})),
@@ -313,10 +319,11 @@ describe("hosted connection", () => {
     expect(await res.json()).toMatchObject({
       access: "user-hosted",
       backing: "local-worktree",
-      // The owner's own daemon composes the unbound local session policy, so it
-      // serves WORKSPACE-WIDE event streams (a terminal's `pty.stream` belongs
-      // to no session). Only the mint can tell the client that.
-      sessionAuthority: "local",
+      // Straight from what the HOST declared on its heartbeat, never derived
+      // from the workspace's access or backing. Only the mint can tell the
+      // client which stream scopes the runtime behind it serves, and a
+      // managed-private one serves session-scoped streams only.
+      sessionAuthority: "managed-private",
       relayUrl: "https://relay.test",
       runtimeAccessToken: "rat-token",
     })

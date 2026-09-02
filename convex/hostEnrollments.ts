@@ -295,7 +295,13 @@ async function enrollForUser(
 async function heartbeatForUser(
   ctx: any,
   user: { _id: unknown },
-  args: { host_id: string; signature: string; ttl_ms?: number; workspace_ids: string[] },
+  args: {
+    host_id: string
+    signature: string
+    ttl_ms?: number
+    workspace_ids: string[]
+    session_authority?: "local" | "managed-private"
+  },
 ) {
   const row = await enrollmentByOwnerHost(ctx, user, args.host_id)
   if (!row || row.revoked_at) throw new Error("Host enrollment not found")
@@ -323,6 +329,10 @@ async function heartbeatForUser(
     updated_at: now,
     acked_workspace_ids: workspaceIds,
     acked_at: now,
+    // The latest beat is the whole truth about the machine's composition: a
+    // host that stops declaring is undeclared again, so this assigns rather
+    // than coalesces.
+    session_authority: args.session_authority,
   })
   // The owner's assignment view rides back on every ack so the machine can
   // reconcile its persisted set — without this, machine consent and owner
@@ -464,6 +474,7 @@ async function activeWorkspaceHostRow(ctx: any, workspace_id: string) {
     ...(assignment.second_device_open_at ? { second_device_open_at: assignment.second_device_open_at } : {}),
     expires_at: enrollment.expires_at,
     last_seen_at: enrollment.last_seen_at,
+    ...(enrollment.session_authority ? { session_authority: enrollment.session_authority } : {}),
   }
 }
 
@@ -526,7 +537,13 @@ export const enroll = authedMutation({
 })
 
 export const heartbeat = authedMutation({
-  args: { ...hostId, signature: v.string(), ttl_ms: v.optional(v.number()), workspace_ids: v.array(v.string()) },
+  args: {
+    ...hostId,
+    signature: v.string(),
+    ttl_ms: v.optional(v.number()),
+    workspace_ids: v.array(v.string()),
+    session_authority: v.optional(v.union(v.literal("local"), v.literal("managed-private"))),
+  },
   handler: async (ctx, args) => heartbeatForUser(ctx, await upsertUser(ctx), args),
 })
 
@@ -560,7 +577,14 @@ export const enrollForService = serviceMutation({
 })
 
 export const heartbeatForService = serviceMutation({
-  args: { user: serviceUser, ...hostId, signature: v.string(), ttl_ms: v.optional(v.number()), workspace_ids: v.array(v.string()) },
+  args: {
+    user: serviceUser,
+    ...hostId,
+    signature: v.string(),
+    ttl_ms: v.optional(v.number()),
+    workspace_ids: v.array(v.string()),
+    session_authority: v.optional(v.union(v.literal("local"), v.literal("managed-private"))),
+  },
   handler: async (ctx, args) => heartbeatForUser(ctx, await upsertServiceUser(ctx, args.user), args),
 })
 

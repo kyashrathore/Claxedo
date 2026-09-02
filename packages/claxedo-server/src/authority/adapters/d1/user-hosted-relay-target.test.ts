@@ -11,6 +11,7 @@ const MIGRATIONS = [
   "0004_host_access_and_sharing.sql",
   "0014_host_workspace_assignments.sql",
   "0015_drop_local_host_links.sql",
+  "0016_host_session_authority.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 const active: Miniflare[] = []
 

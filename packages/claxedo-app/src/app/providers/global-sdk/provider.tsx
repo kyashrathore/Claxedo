@@ -40,18 +40,16 @@ import {
   liveSessionTransition,
   liveSessionWithRelayBacking,
   runtimeEventLiveSession,
-  USER_HOSTED_WORKSPACE_KIND,
   type GlobalSdkClientOptions,
 } from "./live-session"
 import {
   cachedProjectInventory,
   initialRouteDirectory,
   initialRouteWorkspace,
-  runtimeWorkspaceKind,
   shouldUseSignedEventAccess,
 } from "./route-event-scope"
 import { EVENT_STREAM_STALL_MS } from "@claxedo/agent-event-runtime"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
 export { createControlPlaneEventFetch, createGlobalSdkFetch, workspaceEventTransport }
@@ -327,7 +325,7 @@ const globalSDKContextInput = {
             const runtimePath = new URL("/api/wr/runtime-events", "http://workspace-runtime.local")
             if (session.directory) runtimePath.searchParams.set("directory", session.directory)
             runtimePath.searchParams.set("parentSessionId", session.sessionID)
-            const sessionWorkspaceKind = runtimeWorkspaceKind(session.workspaceKind)
+            const sessionWorkspaceKind = workspaceKind(session.workspaceKind)
             // A workspace whose runtime lives on another machine, reached over
             // the relay: this stream is the only place its turns reach here.
             const relayBackedStream = session.host !== "central"

@@ -81,6 +81,7 @@ export function setupElectronHostConnector(input: {
   onError?: (stage: string, error: unknown) => void
   onStatusChange?: Parameters<typeof setupHostConnectorChild>[0]["onStatusChange"]
   onServing?: Parameters<typeof setupHostConnectorChild>[0]["onServing"]
+  sessionAuthority?: Parameters<typeof setupHostConnectorChild>[0]["sessionAuthority"]
 }) {
   const file = machineIdentityFile(input.userDataDir)
   const platform = input.platform ?? process.platform
@@ -123,5 +124,6 @@ export function setupElectronHostConnector(input: {
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStatusChange ? { onStatusChange: input.onStatusChange } : {}),
     ...(input.onServing ? { onServing: input.onServing } : {}),
+    ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
   })
 }

@@ -65,6 +65,10 @@ const heartbeatBody = z
     // The served set the signature covers (heartbeat payload v2): one
     // signature per interval carries the machine's whole consent set.
     workspaceIds: z.array(z.string().min(1).max(200)).max(200),
+    // How the runtime this machine serves composed its session access. The
+    // machine is the only party that knows, so it says here; a beat that omits
+    // it leaves the enrollment undeclared and mints no stream scope.
+    sessionAuthority: z.enum(["local", "managed-private"]).optional(),
   })
   .strict()
 
@@ -240,6 +244,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
           signature: body.signature,
           workspaceIds: body.workspaceIds,
           ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
+          ...(body.sessionAuthority ? { sessionAuthority: body.sessionAuthority } : {}),
         })
         // The serving credential rides the ack: ONE Host Tunnel Token whose
         // workspace_ids claim is exactly the set that is BOTH owner-assigned

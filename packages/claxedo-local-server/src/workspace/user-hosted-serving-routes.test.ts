@@ -57,11 +57,25 @@ describe("user-hosted serving routes", () => {
     expect(userHostedServingState()).toMatchObject({ serving: true })
   })
 
+  test("reports this daemon's runtime composition whether or not it is serving", async () => {
+    // Electron main reads this to learn what its Host Connector must DECLARE
+    // on every enrollment heartbeat: the control plane mints each client's
+    // event-stream scope from that declaration and infers nothing. It has to
+    // be answerable BEFORE anything is served, because the connector's first
+    // beat happens before the serving credential comes back from it.
+    const idle = await UserHostedServingRoutes().request("/")
+    expect(await idle.json()).toEqual({ serving: false, sessionAuthority: "local" })
+
+    await put(ackCredential())
+    const serving = await UserHostedServingRoutes().request("/")
+    expect(await serving.json()).toMatchObject({ serving: true, sessionAuthority: "local" })
+  })
+
   test("a null credential stops serving", async () => {
     await put(ackCredential())
     const response = await put(null)
     expect(response.status).toBe(200)
-    expect(await response.json()).toEqual({ serving: false })
+    expect(await response.json()).toEqual({ serving: false, sessionAuthority: "local" })
   })
 
   test("rejects the previous locally-invented field names", async () => {
@@ -72,7 +86,7 @@ describe("user-hosted serving routes", () => {
       workspaceIds: ["11111111-1111-4111-8111-111111111111"],
     })
     expect(response.status).toBe(400)
-    expect(userHostedServingState()).toEqual({ serving: false })
+    expect(userHostedServingState()).toEqual({ serving: false, sessionAuthority: "local" })
   })
 
   /**
@@ -89,7 +103,7 @@ describe("user-hosted serving routes", () => {
       vi.advanceTimersByTime(59_000)
       expect(userHostedServingState(), "still leased").toMatchObject({ serving: true })
       vi.advanceTimersByTime(2_000)
-      expect(userHostedServingState()).toEqual({ serving: false })
+      expect(userHostedServingState()).toEqual({ serving: false, sessionAuthority: "local" })
     } finally {
       vi.useRealTimers()
     }
@@ -124,6 +138,6 @@ describe("user-hosted serving routes", () => {
     const { relayUrl: _omitted, ...withoutRelay } = ackCredential()
     const response = await put(withoutRelay)
     expect(response.status).toBe(400)
-    expect(userHostedServingState()).toEqual({ serving: false })
+    expect(userHostedServingState()).toEqual({ serving: false, sessionAuthority: "local" })
   })
 })

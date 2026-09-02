@@ -21,6 +21,7 @@ const MIGRATIONS = [
   "0013_org_team_session_sharing.sql",
   "0014_host_workspace_assignments.sql",
   "0015_drop_local_host_links.sql",
+  "0016_host_session_authority.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -464,6 +465,56 @@ describe("D1 host access and workspace sharing authority", () => {
    * any pane opens it, so reachability rides the workspace LIST rather than a
    * per-workspace probe. It is the same lease `activeWorkspaceHost` routes on.
    */
+  test("routes with the session composition the machine declared, and with none when it declared none", async () => {
+    // The control plane does not know how a host composed its runtime and must
+    // not derive it: the same product builds either flavour depending on
+    // whether a session authority was injected. So the machine declares on the
+    // beat and the routing answer carries that back verbatim — both values,
+    // because a passthrough hard-coding one would still pass a single-value
+    // test — while a beat that declared nothing leaves the answer with no
+    // composition at all rather than a default.
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-d" })
+    await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-d",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(hostEnrollmentPayload({
+        hostId: "machine-d",
+        requestId: request.request_id,
+        nonce: request.nonce,
+      })),
+      ttlMs: 8_000,
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-d" })
+
+    const beat = async (sessionAuthority?: "local" | "managed-private") => {
+      input.advance(1)
+      await input.hostAccess.heartbeatHostEnrollment(alice, {
+        hostId: "machine-d",
+        signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({
+          hostId: "machine-d",
+          ttlMs: 8_000,
+          workspaceIds: ["ws_local"],
+        })),
+        ttlMs: 8_000,
+        workspaceIds: ["ws_local"],
+        ...(sessionAuthority ? { sessionAuthority } : {}),
+      })
+      return await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })
+    }
+
+    expect(await beat("managed-private")).toMatchObject({ active: true, session_authority: "managed-private" })
+    // A restart into a different composition replaces the declaration; it does
+    // not accumulate one.
+    expect(await beat("local")).toMatchObject({ active: true, session_authority: "local" })
+    const undeclared = await beat()
+    expect(undeclared).toMatchObject({ active: true })
+    expect(undeclared).not.toHaveProperty("session_authority")
+  })
+
   test("stamps host reachability on every user-hosted row of the workspace list", async () => {
     const input = await setup()
     const { alice } = await fixture(input)

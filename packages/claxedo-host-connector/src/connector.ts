@@ -22,6 +22,15 @@
 
 import { enrollmentPayload, heartbeatPayloadV2, type HostKeyPair } from "./host-identity"
 
+/**
+ * How a runtime composed its session access, mirroring
+ * `SessionAccessPolicy.sessionAuthority` in `@claxedo/workspace-runtime` and
+ * `HostSessionAuthority` at the control plane. Restated here rather than
+ * imported because this package depends on neither: it is a laptop-side
+ * client that holds a machine key and speaks one protocol.
+ */
+export type HostSessionAuthority = "local" | "managed-private"
+
 export type EnrollmentRequest = { request_id: string; nonce: string; expires_at: number }
 export type Enrollment = { enrollment_id: string; host_id: string; expires_at: number }
 
@@ -46,6 +55,7 @@ export type ConnectorTransport = {
     signature: string
     ttlMs?: number
     workspaceIds: readonly string[]
+    sessionAuthority?: HostSessionAuthority
   }) => Promise<{
     expires_at: number
     assigned_workspace_ids?: readonly string[]
@@ -61,6 +71,18 @@ export type ConnectorOptions = {
   transport: ConnectorTransport
   /** How often to prove the machine is still here. */
   heartbeatIntervalMs: number
+  /**
+   * How the runtime this machine serves composed its session access, as that
+   * runtime reports it — `"local"` serves the workspace-wide event streams,
+   * `"managed-private"` serves session-scoped ones only.
+   *
+   * Declared rather than derived: the control plane mints a client's event
+   * stream scope from this and will not infer one, so a connector that leaves
+   * it undefined leaves every client of this machine with no workspace stream.
+   * The connector does not know the answer itself — the process that composed
+   * the runtime does — so it is injected and carried on every beat.
+   */
+  sessionAuthority?: HostSessionAuthority
   /** Injected so a test does not wait, and so Electron can use its own timer. */
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
   onError?: (stage: "enroll" | "heartbeat" | "share", error: unknown) => void
@@ -266,6 +288,12 @@ export function createHostConnector(options: ConnectorOptions) {
           hostId: options.hostId,
           signature: await options.keys.sign(heartbeatPayloadV2({ hostId: options.hostId, workspaceIds })),
           workspaceIds,
+          // Outside the signature on purpose: the signature proves machine
+          // CONSENT to serve this set, while this describes the composition
+          // that set is served by — a description that can neither grant nor
+          // widen access, because the runtime itself admits or refuses every
+          // stream.
+          ...(options.sessionAuthority ? { sessionAuthority: options.sessionAuthority } : {}),
         })
         // The enrollment this beat was proving ended while it was in flight.
         // Its answer describes a machine the control plane has already stopped

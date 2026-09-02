@@ -480,6 +480,11 @@ export default defineSchema({
     // requires a workspace to be BOTH owner-assigned and inside this set.
     acked_workspace_ids: v.optional(v.array(v.string())),
     acked_at: v.optional(v.number()),
+    // How the runtime this machine serves composed its session access, as the
+    // machine declared it on its last heartbeat. Absent means it declared
+    // nothing, and a connection minted from this host then carries no stream
+    // scope — the control plane never infers a runtime's composition.
+    session_authority: v.optional(v.union(v.literal("local"), v.literal("managed-private"))),
     created_at: v.number(),
     updated_at: v.number(),
   })

@@ -212,7 +212,7 @@ describe("relay connection grain", () => {
     await serve([WS_A, WS_B])
     await setUserHostedServing(null, { localBaseUrl: "http://127.0.0.1:2593" })
     expect(started.every((entry) => entry.closed)).toBe(true)
-    expect(userHostedServingState()).toEqual({ serving: false })
+    expect(userHostedServingState()).toEqual({ serving: false, sessionAuthority: "local" })
   })
 })
 

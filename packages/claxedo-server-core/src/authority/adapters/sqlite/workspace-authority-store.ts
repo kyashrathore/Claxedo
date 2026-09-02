@@ -239,6 +239,11 @@ CREATE TABLE IF NOT EXISTS host_enrollments (
   -- written only by a verified heartbeat v2 signature, plus when it was acked.
   acked_workspace_ids TEXT,
   acked_at INTEGER,
+  -- How the runtime this machine serves composed its session access
+  -- ('local' | 'managed-private'), as the machine declared it on its last
+  -- heartbeat. NULL means it declared nothing, and a connection minted from
+  -- this row then carries no stream scope at all.
+  session_authority TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE (owner_token_identifier, host_id)
@@ -999,6 +1004,9 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
         // EXISTS, so the acked-set columns must be added in place.
         addColumn(db, "host_enrollments", "acked_workspace_ids", "TEXT")
         addColumn(db, "host_enrollments", "acked_at", "INTEGER")
+        // Databases created before hosts declared their runtime's session
+        // composition: same reason, same in-place add.
+        addColumn(db, "host_enrollments", "session_authority", "TEXT")
         migrateAuthorityTenancySchema(db)
         const messageColumns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{ name: string }>
         if (!messageColumns.some((column) => column.name === "author_actor_id")) {

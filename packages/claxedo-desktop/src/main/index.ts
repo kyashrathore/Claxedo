@@ -833,6 +833,20 @@ hostConnector = setupElectronHostConnector({
   onStatusChange: (state) =>
     publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
   onServing: (tunnel) => void pushServing(tunnel),
+  // The daemon composed this machine's workspace runtimes, so the daemon is
+  // the only process that knows how they answer session streams. Read it from
+  // the same loopback surface the serving credential is pushed to, and let the
+  // connector declare it on every heartbeat: the control plane mints each
+  // client's event-stream scope from that declaration and never infers one.
+  sessionAuthority: async () => {
+    const server = await serverReady.promise
+    const response = await fetch(new URL("/api/claxedo/host-serving", server.url))
+    if (!response.ok) throw new Error(`HOSTED_HTTP ${String(response.status)} ${(await response.text()).slice(0, 200)}`)
+    const body = await response.json() as { sessionAuthority?: unknown }
+    return body.sessionAuthority === "local" || body.sessionAuthority === "managed-private"
+      ? body.sessionAuthority
+      : undefined
+  },
 })
 
 /** The two facts the connector's own state cannot carry. See `status-channel.ts`. */

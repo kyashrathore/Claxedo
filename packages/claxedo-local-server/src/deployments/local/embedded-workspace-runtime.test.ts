@@ -5,6 +5,7 @@ import path from "path"
 import {
   configureEmbeddedWorkspaceRuntime,
   cursorTranscriptRoot,
+  embeddedWorkspaceRuntimeSessionAuthority,
   ensureEmbeddedWorkspaceRuntime,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
@@ -105,6 +106,51 @@ afterEach(async () => {
 })
 
 describe("embedded workspace runtime", () => {
+  test("reports the composition its runtimes are actually mounted with", async () => {
+    // A host that shares these runtimes must DECLARE this to the control
+    // plane, which mints every client's event-stream scope from the
+    // declaration and infers nothing. Read from the configured policy rather
+    // than restated, so the declaration cannot drift from what is mounted:
+    // an unsigned desktop leaves the unbound local policy in place, a signed
+    // host injects an authority and becomes managed-private.
+    expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
+
+    configureEmbeddedWorkspaceRuntime({
+      opencodeRequest: async () => new Response(null, { status: 404 }),
+      sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
+        authority: {
+          authorizeSessionRead: () => true,
+          authorizeSessionWrite: () => true,
+          authorizeSessionStream: () => ({ allowed: true as const, lease: "lease", expiresAt: Date.now() + 60_000 }),
+          registerSession: () => true,
+          acquireTurn: (input) => ({
+            allowed: true,
+            turnId: input.turnId,
+            leaseId: "turn_lease_1",
+            fencingToken: 1,
+            acquiredAt: Date.now(),
+            expiresAt: Date.now() + 15_000,
+          }),
+          renewTurn: (input) => ({
+            allowed: true,
+            turnId: input.turnId,
+            leaseId: input.leaseId,
+            fencingToken: input.fencingToken + 1,
+            acquiredAt: Date.now(),
+            expiresAt: Date.now() + 15_000,
+          }),
+          releaseTurn: () => ({ released: true }),
+        },
+      }),
+    })
+    try {
+      expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
+    } finally {
+      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+    }
+    expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
+  })
+
   test("uses the signed composition's managed-private session authority", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-private-session-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")

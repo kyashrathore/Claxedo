@@ -209,6 +209,10 @@ export function runHostConnectorChild(port: ChildPort) {
         return { cancel: () => clearInterval(handle) }
       },
       ...(message.displayName ? { displayName: message.displayName } : {}),
+      // The daemon's composition, carried verbatim onto every beat. Absent
+      // when the parent could not read it; the control plane then records an
+      // undeclared machine rather than a guessed one.
+      ...(message.sessionAuthority ? { sessionAuthority: message.sessionAuthority } : {}),
       onError: () => {
         // `createHostConnector` settles its stopped state immediately after
         // invoking this callback. Announce after that synchronous transition.

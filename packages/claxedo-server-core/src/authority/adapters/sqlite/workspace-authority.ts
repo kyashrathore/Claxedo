@@ -1,4 +1,5 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type {
   HostEnrollment,
   OrgId,
@@ -167,6 +168,7 @@ type HostEnrollmentRow = {
   revoked_at: number | null
   acked_workspace_ids: string | null
   acked_at: number | null
+  session_authority: string | null
   created_at: number
 }
 
@@ -1571,9 +1573,22 @@ export function createSqliteWorkspaceAuthority(
       const expiresAt = now + ttl(args.ttlMs)
       db.prepare(`
         UPDATE host_enrollments SET
-          last_seen_at = ?, expires_at = ?, updated_at = ?, acked_workspace_ids = ?, acked_at = ?
+          last_seen_at = ?, expires_at = ?, updated_at = ?, acked_workspace_ids = ?, acked_at = ?,
+          session_authority = ?
         WHERE owner_token_identifier = ? AND host_id = ?
-      `).run(now, expiresAt, now, JSON.stringify(workspaceIds), now, who.token_identifier, args.hostId)
+      `).run(
+        now,
+        expiresAt,
+        now,
+        JSON.stringify(workspaceIds),
+        now,
+        // The latest beat is the whole truth about the machine's composition:
+        // a host that stops declaring is undeclared again, so this assigns
+        // rather than coalesces.
+        hostSessionAuthority(args.sessionAuthority) ?? null,
+        who.token_identifier,
+        args.hostId,
+      )
       // The owner's assignment view rides back on every ack so the machine can
       // reconcile its persisted set — without this, machine consent and owner
       // intent drift apart silently forever.
@@ -1766,7 +1781,8 @@ export function createSqliteWorkspaceAuthority(
       requireWorkspace(db, who, args.workspaceId, "read")
       const row = db.prepare(`
         SELECT assignment.workspace_id, assignment.host_id, assignment.second_device_open_at,
-          enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at
+          enrollment.display_name, enrollment.expires_at, enrollment.last_seen_at,
+          enrollment.session_authority
         FROM host_workspace_assignments assignment
         JOIN host_enrollments enrollment ON enrollment.host_id = assignment.host_id
           AND enrollment.owner_token_identifier = assignment.owner_token_identifier
@@ -1779,8 +1795,10 @@ export function createSqliteWorkspaceAuthority(
         display_name: string | null
         expires_at: number
         last_seen_at: number
+        session_authority: string | null
       } | undefined
       if (!row) return { active: false as const }
+      const sessionAuthority = hostSessionAuthority(row.session_authority)
       return {
         active: true as const,
         host_id: row.host_id,
@@ -1789,6 +1807,7 @@ export function createSqliteWorkspaceAuthority(
         ...(row.second_device_open_at ? { second_device_open_at: row.second_device_open_at } : {}),
         expires_at: row.expires_at,
         last_seen_at: row.last_seen_at,
+        ...(sessionAuthority ? { session_authority: sessionAuthority } : {}),
       }
     },
     /** Every live assignment on the account, grouped for the devices surface. */

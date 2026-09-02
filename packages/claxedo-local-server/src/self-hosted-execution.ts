@@ -19,6 +19,7 @@
 // ── Embedded Workspace Runtime lifecycle ────────────────────────────────────
 export {
   configureEmbeddedWorkspaceRuntime,
+  embeddedWorkspaceRuntimeSessionAuthority,
   ensureEmbeddedWorkspaceRuntime,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,

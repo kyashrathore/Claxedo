@@ -217,6 +217,23 @@ export type WorkspaceAuthority = {
        * BOTH owner-assigned and inside the machine's last-acked set.
        */
       workspaceIds: readonly string[]
+      /**
+       * How the runtime this machine serves composed its session access —
+       * `SessionAccessPolicy.sessionAuthority` on that very runtime, read from
+       * the composition rather than assumed from the product.
+       *
+       * Deliberately outside the heartbeat signature, which exists to prove
+       * MACHINE CONSENT to serve a workspace set. This is a description of a
+       * composition, not an authorization claim: it can neither grant nor
+       * widen access, because the runtime itself is what admits or refuses
+       * every stream (`authorizeSessionEventScope`). A wrong value only makes
+       * a client open a stream its own runtime then rejects.
+       *
+       * Absent means the machine did not say. The control plane records the
+       * absence and mints no stream scope from it — it never guesses a
+       * runtime's composition on the host's behalf.
+       */
+      sessionAuthority?: HostSessionAuthority
     },
   ) => Promise<{
     expires_at: number
@@ -272,7 +289,21 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
   ) => Promise<
-    | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
+    | {
+      active: true
+      host_id: string
+      workspace_id: string
+      display_name?: string
+      second_device_open_at?: number
+      expires_at: number
+      last_seen_at: number
+      /**
+       * The composition the routable machine declared on its last heartbeat.
+       * Absent when it declared none — the caller reports the absence rather
+       * than substituting a guess.
+       */
+      session_authority?: HostSessionAuthority
+    }
     | { active: false }
   >
   /** Every live assignment on the account, grouped for the devices surface. */
@@ -563,6 +594,30 @@ export type WorkspaceAuthority = {
 export function requireAuthority(services: { authority?: WorkspaceAuthority } | undefined): WorkspaceAuthority {
   if (services?.authority) return services.authority
   throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")
+}
+
+/**
+ * How the runtime behind a host composed its session access, in the host's own
+ * words: the `SessionAccessPolicy.sessionAuthority` marker of the very runtime
+ * the machine serves (`@claxedo/workspace-runtime` session-access-policy.ts).
+ *
+ * `"local"` serves the broad workspace event streams as well as session-scoped
+ * ones; `"managed-private"` serves session-scoped streams ONLY and answers an
+ * unscoped one with a permanent 400 `session_event_scope_required`. Which of
+ * the two a machine runs is a fact only that machine holds — the same product
+ * (a desktop daemon, a `claxedo up` host) composes either one depending on
+ * whether a session authority was injected — so the control plane records what
+ * the host declares and never infers it from access, backing or kind.
+ */
+export type HostSessionAuthority = "local" | "managed-private"
+
+/**
+ * Narrow a declared or stored value to a `HostSessionAuthority`. Anything else
+ * — including the NULL a row carries before any host declared one — is "not
+ * declared", which every caller must treat as an answer rather than a default.
+ */
+export function hostSessionAuthority(input: unknown): HostSessionAuthority | undefined {
+  return input === "local" || input === "managed-private" ? input : undefined
 }
 
 /** One machine's enrollment, as the owner sees it. Carries no key material. */

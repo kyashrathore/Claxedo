@@ -282,6 +282,23 @@ function applyWorkspaceConnectionInfo(info: WorkspaceConnectionInfo) {
       if (!state) return
       state.relayPlacement = placementFromWorkspaceConnection(info)
       state.sessionAuthority = info.sessionAuthority
+      // A mint that LANDED without a stream scope is the one place the two
+      // meanings of `undefined` come apart. Everywhere downstream it means
+      // "the connection has not said yet" and the right answer is to wait; a
+      // settled mint saying nothing means the HOST never declared how its
+      // runtime composed its session access, and waiting there waits forever —
+      // no workspace stream ever opens, so nothing published on the workspace
+      // bus (a terminal's bytes, session lifecycle) ever arrives. Say so once
+      // here, where the difference is still visible, rather than leaving a
+      // silent workspace nobody can explain.
+      if (!info.sessionAuthority) {
+        console.warn(
+          "[workspace-connection] this workspace's connection reported no session composition, so no workspace " +
+            "event stream will open for it. A user-hosted workspace reports one only when its HOST declared it " +
+            "on the enrollment heartbeat; the control plane substitutes nothing.",
+          JSON.stringify({ workspaceId: info.workspaceId, access: info.access, runtimeKind: info.runtimeKind }),
+        )
+      }
       const next = transitionConnectionPlacement(state.rolePlacement, { type: "role", role: info.role })
       if (next) state.rolePlacement = next
     }),
