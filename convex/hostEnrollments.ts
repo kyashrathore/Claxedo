@@ -5,6 +5,7 @@ import {
   authorizeWorkspace,
   authorizeWorkspaceForUser,
   cronMutation,
+  hostEnrollmentServesWorkspace,
   serviceMutation,
   serviceQuery,
   upsertServiceUser,
@@ -452,14 +453,7 @@ async function activeWorkspaceHostRow(ctx: any, workspace_id: string) {
     .query("host_enrollments")
     .withIndex("by_owner_host", (q: any) => q.eq("owner_user_id", assignment.owner_user_id).eq("host_id", assignment.host_id))
     .unique()
-  const now = Date.now()
-  if (
-    !enrollment
-    || enrollment.revoked_at
-    || enrollment.paused_at
-    || enrollment.expires_at <= now
-    || !(enrollment.acked_workspace_ids ?? []).includes(assignment.workspace_id)
-  ) {
+  if (!hostEnrollmentServesWorkspace(enrollment, assignment.workspace_id, Date.now())) {
     return { active: false as const }
   }
   return {

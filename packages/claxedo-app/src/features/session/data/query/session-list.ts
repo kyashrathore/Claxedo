@@ -31,6 +31,11 @@ export type SessionListResponse = {
   totalKnown?: number
 }
 
+/** The cache entry one rail section's list lives in. */
+export function sessionListQueryKey(baseUrl: string | undefined, query: SessionListQuery) {
+  return queryKeys.shell.sessionList(baseUrl, query)
+}
+
 function sessionListBaseQuery(query: SessionListQuery): SessionListQuery {
   if (!query.cursor) return query
   const { cursor: _cursor, ...base } = query
@@ -167,15 +172,32 @@ export function sessionListQueryOptions(input: {
       }
       const page = await res.json() as SessionListResponse
       span.end({ status: res.status, ok: true, rows: page.items?.length ?? page.groups?.reduce((n, g) => n + g.items.length, 0) ?? 0 })
-      if (input.query.cursor) return page
-      return mergeSessionListResponses({
-        current: queryClient.getQueryData<SessionListResponse>(
-          queryKeys.shell.sessionList(input.baseUrl, sessionListBaseQuery(input.query)),
-        ),
-        page,
-        append: false,
-      })
+      return applyFetchedSessionListPage({ baseUrl: input.baseUrl, query: input.query, page })
     },
+  })
+}
+
+/**
+ * Fold a freshly fetched page into the list cached for its query.
+ *
+ * The shaping is the list's, not any one source's: whichever server answered —
+ * the daemon, the control-plane registry, or a user-hosted workspace's own
+ * runtime over the relay — the cached entry keeps the same merge, ordering and
+ * pagination contract, so every reader and every event applier below sees one
+ * shape.
+ */
+export function applyFetchedSessionListPage(input: {
+  baseUrl?: string
+  query: SessionListQuery
+  page: SessionListResponse
+}): SessionListResponse {
+  if (input.query.cursor) return input.page
+  return mergeSessionListResponses({
+    current: queryClient.getQueryData<SessionListResponse>(
+      sessionListQueryKey(input.baseUrl, sessionListBaseQuery(input.query)),
+    ),
+    page: input.page,
+    append: false,
   })
 }
 

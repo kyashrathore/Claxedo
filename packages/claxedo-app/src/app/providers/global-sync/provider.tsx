@@ -16,7 +16,6 @@ import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
 import { clearSessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import type { ProjectMeta, SessionInventoryRow, SessionCacheValue, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import type { Session } from "@opencode-ai/sdk/v2/client"
-import type { SessionFilter } from "@/platform/sync/global-sync/session-filter"
 import { GLOBAL_SESSION_PAGE_SIZE } from "@/platform/sync/global-sync/session-pagination"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -26,7 +25,6 @@ import {
   createSessionInventorySnapshotValue,
   mergeSessionInventoryProjectPage,
   mergeSessionInventoryWorkspaceGroups,
-  mergeSessionInventoryWorkspacePage,
   readSessionInventoryQueryData,
   removeSessionInventoryRow,
   replaceSessionInventoryWorkspaceGroups,
@@ -167,16 +165,6 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       directory
   }
 
-  function workspaceInventoryKey(directory: string) {
-    const scopeKey = workspaceScopeKey(directory)
-    if (sessionInventory().byWorkspace[scopeKey] || sessionInventory().workspaceState[scopeKey]) return scopeKey
-    if (sessionInventory().byWorkspace[directory] || sessionInventory().workspaceState[directory]) return directory
-    return Object.entries(sessionInventory().byWorkspace).find(([, group]) =>
-      group.directory === directory ||
-      group.workspaceId === directory ||
-      group.key === directory
-    )?.[0] ?? scopeKey
-  }
 
   const signedInventorySource = createSignedInventorySource({
     queryClient,
@@ -194,7 +182,6 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
   const {
     fetchGlobalList,
     fetchWorkspaceGrouped,
-    fetchWorkspacePage,
   } = createInventoryPageSource({
     baseUrl: () => globalSDK.url,
     pageSize: PAGE,
@@ -318,160 +305,6 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       if (principalScope() !== scope) return
       updateSessionInventory((draft) => {
         draft.loading = false
-      })
-    }
-  }
-
-  async function reloadWorkspaceGroups(filter?: SessionFilter) {
-    const scope = principalScope()
-    const isCurrent = sessionAuthorityRevision.capture(() => principalScope() === scope)
-    try {
-      const wsResult = await fetchWorkspaceGrouped({ perGroup: PAGE, filter })
-      if (!isCurrent()) return
-      reconcileAuthorizedSessionPersistence(wsResult.flatMap((group) => group.sessions), scope)
-      const byWorkspace: Record<string, WorkspaceGroup> = {}
-      const workspaceState: Record<string, { hasMore: boolean; loading: boolean; cursor?: number }> = {}
-      const workspaceOrder: string[] = []
-      for (const g of wsResult) {
-        const wsSessions = (g.sessions ?? [])
-          .filter((s) => !!s?.id)
-          .sort((a: SessionInventoryRow, b: SessionInventoryRow) => (b.time.updated ?? 0) - (a.time.updated ?? 0))
-        const key = workspaceGroupKey(g)
-        byWorkspace[key] = {
-          key,
-          directory: g.directory,
-          workspaceId: g.workspaceId,
-          workspaceName: g.workspaceName,
-          projectID: g.projectID,
-          sessions: wsSessions,
-          hasMore: g.hasMore,
-          total: g.total,
-          nextCursor: typeof g.nextCursor === "number" ? g.nextCursor : undefined,
-        }
-        workspaceState[key] = {
-          hasMore: g.hasMore,
-          loading: false,
-          cursor:
-            typeof g.nextCursor === "number"
-              ? g.nextCursor
-              : g.hasMore
-                ? wsSessions.at(-1)?.time.updated
-                : undefined,
-        }
-        workspaceOrder.push(key)
-      }
-      updateSessionInventory((draft) => {
-        if (filter) {
-          mergeSessionInventoryWorkspaceGroups(draft, {
-            groups: byWorkspace,
-            workspaceState,
-          })
-          return
-        }
-        replaceSessionInventoryWorkspaceGroups(draft, {
-          groups: byWorkspace,
-          workspaceState,
-          workspaceOrder,
-        })
-      })
-    } catch {
-    }
-  }
-
-  async function loadMoreForProject(projectID: string, projectWorktree: string, sandboxes: string[]) {
-    const scope = principalScope()
-    const isCurrent = sessionAuthorityRevision.capture(() => principalScope() === scope)
-    const pState = sessionInventory().projectState[projectID]
-    if (pState?.loading) return
-
-    updateSessionInventory((draft) => {
-      draft.projectState[projectID] = {
-        hasMore: pState?.hasMore ?? true,
-        loading: true,
-        cursor: pState?.cursor,
-      }
-    })
-
-    try {
-      const directories = [projectWorktree, ...sandboxes.filter((s) => s !== projectWorktree)]
-      let projectHasMore = false
-
-      for (const dir of directories) {
-        const key = workspaceInventoryKey(dir)
-        const workspaceState = sessionInventory().workspaceState[key]
-        const workspaceGroup = sessionInventory().byWorkspace[key]
-        const result = await fetchWorkspacePage(dir, {
-          limit: PAGE,
-          cursor: workspaceState?.cursor ?? workspaceGroup?.nextCursor,
-        })
-        if (!isCurrent()) return
-        const sessions = result.data.filter((s) => !!s?.id && !s.parentID)
-        reconcileAuthorizedSessionPersistence(sessions, scope)
-        const cursor = result.cursor
-        projectHasMore ||= !!cursor
-
-        updateSessionInventory((draft) => {
-          mergeSessionInventoryProjectPage(draft, {
-            projectID,
-            workspaceKey: key,
-            directory: dir,
-            rows: sessions.map((s) => inventoryRow(s)),
-            cursor,
-          })
-        })
-      }
-      updateSessionInventory((draft) => {
-        if (!draft.projectState[projectID]) {
-          draft.projectState[projectID] = { hasMore: false, loading: false, cursor: undefined }
-        }
-        draft.projectState[projectID].hasMore = projectHasMore
-      })
-    } catch {
-    } finally {
-      if (principalScope() !== scope) return
-      updateSessionInventory((draft) => {
-        if (!draft.projectState[projectID]) return
-        draft.projectState[projectID].loading = false
-      })
-    }
-  }
-
-  async function loadMoreForWorkspace(directory: string, filter?: SessionFilter) {
-    const scope = principalScope()
-    const isCurrent = sessionAuthorityRevision.capture(() => principalScope() === scope)
-    const key = workspaceInventoryKey(directory)
-    const wState = sessionInventory().workspaceState[key]
-    if (wState?.loading) return
-
-    updateSessionInventory((draft) => {
-      draft.workspaceState[key] = {
-        hasMore: wState?.hasMore ?? true,
-        loading: true,
-        cursor: wState?.cursor,
-      }
-    })
-
-    try {
-      const result = await fetchWorkspacePage(directory, { limit: PAGE, filter, cursor: wState?.cursor })
-      if (!isCurrent()) return
-      const sessions = result.data.filter((s) => !!s?.id && !s.parentID)
-      reconcileAuthorizedSessionPersistence(sessions, scope)
-      const cursor = result.cursor
-
-      updateSessionInventory((draft) => {
-        mergeSessionInventoryWorkspacePage(draft, {
-          workspaceKey: key,
-          directory,
-          rows: sessions.map((s) => inventoryRow(s)),
-          cursor,
-        })
-      })
-    } catch {
-    } finally {
-      if (principalScope() !== scope) return
-      updateSessionInventory((draft) => {
-        if (!draft.workspaceState[key]) return
-        draft.workspaceState[key].loading = false
       })
     }
   }
@@ -675,11 +508,15 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
     children.projectIcon(directory, value)
   }
 
+  /**
+   * What is left of the session inventory: the one snapshot that seeds which
+   * rail sections open, and the row drop that follows a deletion. The rendered
+   * rows themselves come from each section's own source
+   * (`features/session/data/sync/session-source.ts`), so the inventory no
+   * longer paginates, reloads, or refetches anything.
+   */
   const sessionInventoryActions = {
     load: loadSessionInventorySnapshot,
-    reloadWorkspace: reloadWorkspaceGroups,
-    loadMore: loadMoreForProject,
-    loadMoreWorkspace: loadMoreForWorkspace,
     drop: dropGlobalSession,
   }
 

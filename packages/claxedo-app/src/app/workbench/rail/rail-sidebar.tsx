@@ -72,6 +72,7 @@ import {
   railWorkspaceSessionBacking,
   railProjectCaptionFromName,
   railProjectLabel,
+  railWorkspaceMetaLabels,
   sessionProjectSort,
   sessionRowTitle,
   shouldAutoOpenWorkspaceSection,
@@ -112,12 +113,12 @@ import { fastSessionSwitchAnyQuietDelay, markFastSessionSwitch } from "@/platfor
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { sessionRoute, workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
+import { type SessionListQuery } from "../../../features/session/data/query/session-list"
 import {
-  appendSessionListPageQueryData,
-  sessionListQueryOptions,
-  type SessionListQuery,
-  type SessionListResponse,
-} from "../../../features/session/data/query/session-list"
+  centralSessionSource,
+  sessionSourceForWorkspace,
+} from "../../../features/session/data/sync/session-source"
+import { createRailSectionSessionList } from "./rail-section-session-list"
 import {
   deriveTerminalSurfaceRows,
   reconcileSessionRowsAfterArchive,
@@ -314,6 +315,16 @@ function sessionRuntimeDisplayKind(session: Pick<Row, "environment" | "project">
   const workspaceKind = toWorkspaceKind(projectWorkspaceInfo(session.project, directory)?.kind)
   if (workspaceKind) return workspaceKind
   return "local"
+}
+
+/**
+ * The identity a relay-backed workspace is addressed by. Falls back to the
+ * directory ref, which for a control-plane row IS `workspace:<id>` — the same
+ * identity, in the form the catalog keyed it under.
+ */
+function workspaceRowId(project: ProjectItem, directory: string) {
+  const workspace = projectWorkspaceInfo(project, directory)
+  return workspace?.workspaceId ?? workspace?.id ?? directory
 }
 
 function workspaceRuntimeKind(project: ProjectItem, directory: string, mainIsCloud?: boolean): RuntimeKind {
@@ -1682,106 +1693,41 @@ export function RailSidebar(props: RailSidebarProps) {
       sort: SESSION_LIST_SORT_DEFAULT,
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
-    const globalSessionListSignature = createMemo(() => JSON.stringify(globalSessionListQuery()))
-    const globalSessionList = useQuery(() =>
-      sessionListQueryOptions({
-        baseUrl: globalSDK.url,
-        query: globalSessionListQuery(),
-      })
-    )
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
-    const [sessionListPageError, setSessionListPageError] = createSignal(false)
-    let sessionListLoadingCursor: string | undefined
-
-    createEffect(() => {
-      const data = globalSessionList.data
-      if (!data) return
-      setSessionListRows(data.items ?? [])
-      setSessionListNextCursor(data.nextCursor)
-      setSessionListTotal(data.totalKnown)
-      setSessionListLoadedSignature(globalSessionListSignature())
-      setSessionListPageError(false)
+    // Global Chat's sessions belong to no workspace, so the app's own central
+    // server owns them — the same server a local or cloud workspace's list
+    // comes from.
+    const list = createRailSectionSessionList({
+      baseUrl: () => globalSDK.url,
+      source: () => centralSessionSource({ local: server.isLocal() }),
+      query: globalSessionListQuery,
+      archiveView: () => view().archived,
     })
-
-    const sessionListLoaded = createMemo(() => sessionListLoadedSignature() === globalSessionListSignature())
+    const sessionListLoadingMore = list.loadingMore
+    const sessionListPageError = list.pageError
     const globalProject = createMemo<ProjectItem>(() => section.rows[0]?.project ?? {
       id: "global",
       worktree: "global",
       name: "Global Chat",
     })
-    const sectionRows = createMemo(() => {
-      if (sessionListLoaded()) {
-        return sessionListRows().map((item) => navigationSessionRow(item, globalProject(), "global"))
-      }
-      return []
-    })
+    const sectionRows = createMemo(() =>
+      list.loaded() ? list.rows().map((item) => navigationSessionRow(item, globalProject(), "global")) : [])
     let visibleRows = sectionRows()
     createEffect(() => {
       visibleRows = open() ? sectionRows() : []
       registerVisibleSessionRows("global", visibleRows)
     })
     onCleanup(() => clearVisibleSessionRows("global", visibleRows))
-    const more = createMemo(() => sessionListLoaded()
-      ? !!sessionListNextCursor()
-      : false)
-    const count = createMemo(() => sessionListLoaded()
-      ? sessionListTotal() ?? sectionRows().length
-      : 0)
-    const loadingInitial = createMemo(() => !sessionListLoaded() && globalSessionList.isFetching && sectionRows().length === 0)
-    const errorInitial = createMemo(() => globalSessionList.isError && !globalSessionList.isFetching)
-    const emptyLoaded = createMemo(() => sessionListLoaded() && sectionRows().length === 0)
+    const more = list.more
+    const count = list.count
+    const loadingInitial = createMemo(() => !list.loaded() && list.isFetching() && sectionRows().length === 0)
+    const errorInitial = createMemo(() => list.isError() && !list.isFetching())
+    const emptyLoaded = createMemo(() => list.loaded() && sectionRows().length === 0)
     const doneLoaded = createMemo(() =>
-      sessionListLoaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
+      list.loaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
     )
-    const loadMoreGlobalSessionList = async () => {
-      const cursor = sessionListNextCursor()
-      if (!cursor || sessionListLoadingCursor === cursor) return
-      const signature = globalSessionListSignature()
-      sessionListLoadingCursor = cursor
-      setSessionListLoadingMore(true)
-      setSessionListPageError(false)
-      try {
-        const page = await queryClient.fetchQuery(sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: {
-            ...globalSessionListQuery(),
-            cursor,
-          },
-        })) as SessionListResponse
-        if (signature !== globalSessionListSignature()) return
-        const next = appendSessionListPageQueryData({
-          baseUrl: globalSDK.url,
-          query: globalSessionListQuery(),
-          page,
-        })
-        setSessionListRows(next.items ?? [])
-        setSessionListNextCursor(next.nextCursor)
-        setSessionListTotal(next.totalKnown)
-        setSessionListLoadedSignature(signature)
-      } catch {
-        if (signature === globalSessionListSignature()) setSessionListPageError(true)
-      } finally {
-        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
-        setSessionListLoadingMore(false)
-      }
-    }
-    const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
-      const current = sessionListRows()
-      const next = reconcileSessionRowsAfterArchive({
-        rows: current,
-        sessionRef: item.source.sessionRef,
-        archivedAt: Date.now(),
-        archiveView: view().archived,
-      })
-      setSessionListRows(next)
-      if (view().archived === "active" && next.length < current.length) {
-        setSessionListTotal((total) => total === undefined ? total : Math.max(0, total - (current.length - next.length)))
-      }
-    }
+    const loadMoreGlobalSessionList = () => list.loadMore(SESSION_GROUP_PAGE_SIZE)
+    const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) =>
+      list.reconcileArchived(item.source.sessionRef)
 
     return (
       <div class="flex flex-col gap-0.5">
@@ -1823,7 +1769,7 @@ export function RailSidebar(props: RailSidebarProps) {
               <SessionListNotice
                 variant="error"
                 actionLabel="Retry"
-                onAction={() => globalSessionList.refetch()}
+                onAction={() => list.retry()}
               >
                 Could not load sessions.
               </SessionListNotice>
@@ -1884,16 +1830,31 @@ export function RailSidebar(props: RailSidebarProps) {
     const sharedWorkspacesForMeta = useSharedWorkspaceIds()
     const workspaceMeta = createMemo(() => {
       const workspace = projectWorkspaceInfo(section.project, section.workspaceDir)
-      return [
-        workspaceStatusLabel(workspace),
+      return railWorkspaceMetaLabels({
+        kind: runtime(),
+        ...(workspaceStatusLabel(workspace) ? { status: workspaceStatusLabel(workspace) } : {}),
+        ...(workspace?.role ? { role: workspace.role } : {}),
+        ...(workspace?.hostOnline === undefined ? {} : { hostOnline: workspace.hostOnline }),
         // The row itself is the durable record of which workspaces a phone
         // can reach — not a transient toast.
-        sharedWorkspacesForMeta.shared(workspaceItem().workspaceId) ? "Shared" : undefined,
-      ].filter((item): item is string => !!item)
+        publishedByThisMachine: sharedWorkspacesForMeta.shared(
+          workspaceRowId(section.project, section.workspaceDir),
+        ),
+        label: (key, role) => key === "role"
+          ? language.t(`sidebar.workspace.role.${role}` as "sidebar.workspace.role.viewer")
+          : language.t(`sidebar.workspace.${key}`),
+      })
     })
+    // Every relay-backed workspace names its id here, not just a cloud one: it
+    // is what a `session.created` frame off that workspace's stream is matched
+    // against, and a user-hosted row carries the HOST's filesystem directory
+    // rather than this section's `workspace:<id>` ref.
+    const sessionListWorkspaceId = createMemo(() => isRelayBackedWorkspaceKind(runtime())
+      ? workspaceRowId(section.project, section.workspaceDir)
+      : undefined)
     const sessionListQuery = createMemo<SessionListQuery>(() => ({
       scope: "workspace",
-      ...(workspaceItem().workspaceId ? { workspaceId: workspaceItem().workspaceId } : {}),
+      ...(sessionListWorkspaceId() ? { workspaceId: sessionListWorkspaceId() } : {}),
       directory: workspaceItem().directory,
       groupBy: "none",
       archived: view().archived,
@@ -1903,46 +1864,28 @@ export function RailSidebar(props: RailSidebarProps) {
       sort: SESSION_LIST_SORT_DEFAULT,
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
-    const sessionListSignature = createMemo(() => JSON.stringify(sessionListQuery()))
     const [_open, setOpen] = createSignal(section.rows.length > 0)
     const [autoOpened, setAutoOpened] = createSignal(section.rows.length > 0)
     const [manuallyToggled, setManuallyToggled] = createSignal(false)
     const [runtimeRequested, setRuntimeRequested] = createSignal(false)
     const open = createMemo(() => _open())
-    const workspaceSessionListQuery = useQuery(() =>
-      ({
-        ...sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: sessionListQuery(),
-        }),
-        enabled: open(),
-      })
-    )
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
-    const [sessionListPageError, setSessionListPageError] = createSignal(false)
-    let sessionListLoadingCursor: string | undefined
-
-    createEffect(() => {
-      const data = workspaceSessionListQuery.data
-      if (!data) return
-      setSessionListRows(data.items ?? [])
-      setSessionListNextCursor(data.nextCursor)
-      setSessionListTotal(data.totalKnown)
-      setSessionListLoadedSignature(sessionListSignature())
-      setSessionListPageError(false)
+    const list = createRailSectionSessionList({
+      baseUrl: () => globalSDK.url,
+      // The catalog row's kind, and nothing else, decides which server answers
+      // for this workspace's sessions.
+      source: () => sessionSourceForWorkspace({
+        kind: runtime(),
+        workspaceId: workspaceRowId(section.project, section.workspaceDir),
+        projectId: section.project.id,
+      }),
+      query: sessionListQuery,
+      archiveView: () => view().archived,
+      enabled: open,
     })
-
-    const sessionListLoaded = createMemo(() => sessionListLoadedSignature() === sessionListSignature())
-    const sectionRows = createMemo(() => {
-      if (sessionListLoaded()) {
-        return sessionListRows().map((item) => navigationSessionRow(item, section.project, section.workspaceDir))
-      }
-      return []
-    })
+    const sessionListLoadingMore = list.loadingMore
+    const sessionListPageError = list.pageError
+    const sectionRows = createMemo(() =>
+      list.loaded() ? list.rows().map((item) => navigationSessionRow(item, section.project, section.workspaceDir)) : [])
     const visibleRowsKey = `workspace:${section.workspaceDir}`
     let visibleRows = sectionRows()
     createEffect(() => {
@@ -1960,65 +1903,17 @@ export function RailSidebar(props: RailSidebarProps) {
       if (active()) setOpen(true)
     })
 
-    const more = createMemo(() => sessionListLoaded()
-      ? !!sessionListNextCursor()
-      : false)
-    const count = createMemo(() =>
-      sessionListLoaded()
-        ? sessionListTotal() ?? sectionRows().length
-        : 0,
-    )
-    const loadingInitial = createMemo(() => !sessionListLoaded() && workspaceSessionListQuery.isFetching && sectionRows().length === 0)
-    const errorInitial = createMemo(() => workspaceSessionListQuery.isError && !workspaceSessionListQuery.isFetching)
-    const emptyLoaded = createMemo(() => sessionListLoaded() && sectionRows().length === 0)
+    const more = list.more
+    const count = list.count
+    const loadingInitial = createMemo(() => !list.loaded() && list.isFetching() && sectionRows().length === 0)
+    const errorInitial = createMemo(() => list.isError() && !list.isFetching())
+    const emptyLoaded = createMemo(() => list.loaded() && sectionRows().length === 0)
     const doneLoaded = createMemo(() =>
-      sessionListLoaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
+      list.loaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
     )
-    const loadMoreWorkspaceSessionList = async () => {
-      const cursor = sessionListNextCursor()
-      if (!cursor || sessionListLoadingCursor === cursor) return
-      const signature = sessionListSignature()
-      sessionListLoadingCursor = cursor
-      setSessionListLoadingMore(true)
-      setSessionListPageError(false)
-      try {
-        const page = await queryClient.fetchQuery(sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: {
-            ...sessionListQuery(),
-            cursor,
-          },
-        })) as SessionListResponse
-        if (signature !== sessionListSignature()) return
-        const next = appendSessionListPageQueryData({
-          baseUrl: globalSDK.url,
-          query: sessionListQuery(),
-          page,
-        })
-        setSessionListRows(next.items ?? [])
-        setSessionListNextCursor(next.nextCursor)
-        setSessionListTotal(next.totalKnown)
-        setSessionListLoadedSignature(signature)
-      } catch {
-        if (signature === sessionListSignature()) setSessionListPageError(true)
-      } finally {
-        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
-        setSessionListLoadingMore(false)
-      }
-    }
-    const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
-      const current = sessionListRows()
-      const next = reconcileSessionRowsAfterArchive({
-        rows: current,
-        sessionRef: item.source.sessionRef,
-        archivedAt: Date.now(),
-        archiveView: view().archived,
-      })
-      setSessionListRows(next)
-      if (view().archived === "active" && next.length < current.length) {
-        setSessionListTotal((total) => total === undefined ? total : Math.max(0, total - (current.length - next.length)))
-      }
-    }
+    const loadMoreWorkspaceSessionList = () => list.loadMore(SESSION_GROUP_PAGE_SIZE)
+    const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) =>
+      list.reconcileArchived(item.source.sessionRef)
     const terminalItems = createMemo(() => terminalSurfaceRows({ directory: section.workspaceDir }))
 
     createEffect(() => {
@@ -2131,7 +2026,7 @@ export function RailSidebar(props: RailSidebarProps) {
               <SessionListNotice
                 variant="error"
                 actionLabel="Retry"
-                onAction={() => workspaceSessionListQuery.refetch()}
+                onAction={() => list.retry()}
               >
                 Could not load sessions.
               </SessionListNotice>
@@ -2196,41 +2091,21 @@ export function RailSidebar(props: RailSidebarProps) {
       sort: SESSION_LIST_SORT_DEFAULT,
       limit: SESSION_GROUP_PAGE_SIZE,
     }))
-    const projectSessionListSignature = createMemo(() => JSON.stringify(projectSessionListQuery()))
-    const projectSessionList = useQuery(() =>
-      ({
-        ...sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: projectSessionListQuery(),
-        }),
-        enabled: open(),
-      })
-    )
-    const [sessionListRows, setSessionListRows] = createSignal<SessionNavigationRow[]>([])
-    const [sessionListNextCursor, setSessionListNextCursor] = createSignal<string | undefined>()
-    const [sessionListTotal, setSessionListTotal] = createSignal<number | undefined>()
-    const [sessionListLoadedSignature, setSessionListLoadedSignature] = createSignal<string | undefined>()
-    const [sessionListLoadingMore, setSessionListLoadingMore] = createSignal(false)
-    const [sessionListPageError, setSessionListPageError] = createSignal(false)
-    let sessionListLoadingCursor: string | undefined
-
-    createEffect(() => {
-      const data = projectSessionList.data
-      if (!data) return
-      setSessionListRows(data.items ?? [])
-      setSessionListNextCursor(data.nextCursor)
-      setSessionListTotal(data.totalKnown)
-      setSessionListLoadedSignature(projectSessionListSignature())
-      setSessionListPageError(false)
+    const list = createRailSectionSessionList({
+      baseUrl: () => globalSDK.url,
+      // A project groups workspaces of one kind or several. Its own list comes
+      // from the central server, which answers for the project's local and
+      // cloud workspaces; each user-hosted workspace in it is read from its own
+      // runtime by its `WorkspaceBlock`, so the central list omits them.
+      source: () => centralSessionSource({ local: server.isLocal() }),
+      query: projectSessionListQuery,
+      archiveView: () => view().archived,
+      enabled: open,
     })
-
-    const sessionListLoaded = createMemo(() => sessionListLoadedSignature() === projectSessionListSignature())
-    const sectionRows = createMemo(() => {
-      if (sessionListLoaded()) {
-        return sessionListRows().map((item) => navigationSessionRow(item, section.project, section.project.worktree))
-      }
-      return []
-    })
+    const sessionListLoadingMore = list.loadingMore
+    const sessionListPageError = list.pageError
+    const sectionRows = createMemo(() =>
+      list.loaded() ? list.rows().map((item) => navigationSessionRow(item, section.project, section.project.worktree)) : [])
     const visibleRowsKey = `project:${section.project.id}`
     let visibleRows = sectionRows()
     createEffect(() => {
@@ -2260,63 +2135,17 @@ export function RailSidebar(props: RailSidebarProps) {
       const workspaceId = projectWorkspaceInfo(section.project, directory)?.workspaceId ?? directory
       return !isWorkspaceReady(workspaceId)
     })
-    const more = createMemo(() => sessionListLoaded()
-      ? !!sessionListNextCursor()
-      : false)
-    const count = createMemo(() => sessionListLoaded()
-      ? sessionListTotal() ?? sectionRows().length
-      : 0)
-    const loadingInitial = createMemo(() => !sessionListLoaded() && projectSessionList.isFetching && sectionRows().length === 0)
-    const errorInitial = createMemo(() => projectSessionList.isError && !projectSessionList.isFetching)
-    const emptyLoaded = createMemo(() => sessionListLoaded() && sectionRows().length === 0)
+    const more = list.more
+    const count = list.count
+    const loadingInitial = createMemo(() => !list.loaded() && list.isFetching() && sectionRows().length === 0)
+    const errorInitial = createMemo(() => list.isError() && !list.isFetching())
+    const emptyLoaded = createMemo(() => list.loaded() && sectionRows().length === 0)
     const doneLoaded = createMemo(() =>
-      sessionListLoaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
+      list.loaded() && sectionRows().length > 0 && !more() && count() <= sectionRows().length && count() > SESSION_GROUP_PAGE_SIZE
     )
-    const loadMoreProjectSessionList = async () => {
-      const cursor = sessionListNextCursor()
-      if (!cursor || sessionListLoadingCursor === cursor) return
-      const signature = projectSessionListSignature()
-      sessionListLoadingCursor = cursor
-      setSessionListLoadingMore(true)
-      setSessionListPageError(false)
-      try {
-        const page = await queryClient.fetchQuery(sessionListQueryOptions({
-          baseUrl: globalSDK.url,
-          query: {
-            ...projectSessionListQuery(),
-            cursor,
-          },
-        })) as SessionListResponse
-        if (signature !== projectSessionListSignature()) return
-        const next = appendSessionListPageQueryData({
-          baseUrl: globalSDK.url,
-          query: projectSessionListQuery(),
-          page,
-        })
-        setSessionListRows(next.items ?? [])
-        setSessionListNextCursor(next.nextCursor)
-        setSessionListTotal(next.totalKnown)
-        setSessionListLoadedSignature(signature)
-      } catch {
-        if (signature === projectSessionListSignature()) setSessionListPageError(true)
-      } finally {
-        if (sessionListLoadingCursor === cursor) sessionListLoadingCursor = undefined
-        setSessionListLoadingMore(false)
-      }
-    }
-    const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) => {
-      const current = sessionListRows()
-      const next = reconcileSessionRowsAfterArchive({
-        rows: current,
-        sessionRef: item.source.sessionRef,
-        archivedAt: Date.now(),
-        archiveView: view().archived,
-      })
-      setSessionListRows(next)
-      if (view().archived === "active" && next.length < current.length) {
-        setSessionListTotal((total) => total === undefined ? total : Math.max(0, total - (current.length - next.length)))
-      }
-    }
+    const loadMoreProjectSessionList = () => list.loadMore(SESSION_GROUP_PAGE_SIZE)
+    const reconcileArchivedSessionListRow = (item: SessionNavigationDisplayRow) =>
+      list.reconcileArchived(item.source.sessionRef)
 
     createEffect(() => {
       if (projectMatches(section.project)) setOpen(true)
@@ -2407,7 +2236,7 @@ export function RailSidebar(props: RailSidebarProps) {
               <SessionListNotice
                 variant="error"
                 actionLabel="Retry"
-                onAction={() => projectSessionList.refetch()}
+                onAction={() => list.retry()}
               >
                 Could not load sessions.
               </SessionListNotice>

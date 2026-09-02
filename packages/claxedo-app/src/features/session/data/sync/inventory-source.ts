@@ -6,6 +6,7 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import { workspaceHostingKind, type SignedWorkspaceKind } from "@/platform/runtime/agent/signed-workspace"
+import { isUserHostedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
@@ -234,6 +235,12 @@ export function createSignedInventorySource(input: {
     directory: ProjectDirectory
     kind?: SignedWorkspaceKind
   }) {
+    // The registry is not the authority for a user-hosted workspace's sessions
+    // — its host is, and the rail reads that workspace's list straight off the
+    // runtime over the relay (`session-source.ts`). Asking here answered a
+    // subset (only the sessions created THROUGH the control plane) and cost a
+    // round trip per shared machine on every boot.
+    if (isUserHostedWorkspaceKind(sessionInput.kind)) return []
     // This is a display read (snapshot rows, directory session lists), so it
     // shares the deduping cache: the same workspace is asked for by both the
     // signed-workspace snapshot and each directory's own bootstrap within the
@@ -549,51 +556,11 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       .finally(() => queryClient.removeQueries({ queryKey: requestKey }))
   }
 
-  async function fetchWorkspacePage(directory: string, opts: { limit: number; filter?: SessionFilter; cursor?: number }) {
-    if (shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: input.hasSignedAccess(),
-      baseUrl: input.baseUrl(),
-      directory,
-    })) {
-      return {
-        data: mapInventoryToSessions(await input.signedInventorySource.fetchSignedDirectorySessions(directory)),
-        cursor: null,
-      }
-    }
-    if (usesLocalControlTransport(input.baseUrl())) {
-      const page = paginateSessions(
-        sessionWorkspaceRuntimeRef({ directory })
-          ? await fetchLocalWorkspaceRuntimeSessions(directory)
-          : await fetchLocalControlSessions(directory),
-        { limit: opts.limit, cursor: opts.cursor },
-      )
-      return { data: page.sessions, cursor: page.nextCursor ?? null }
-    }
-    const url = experimentalSessionUrl({
-      serverUrl: getClaxedoServerUrl(),
-      roots: true,
-      directory,
-      limit: opts.limit,
-      cursor: opts.cursor,
-    })
-    applySessionFilter(url, opts.filter)
-    const res = await authFetch(url, {
-      headers: { Accept: "application/json" },
-    })
-    if (!res.ok) return { data: [] as InventoryGlobalSession[], cursor: null }
-    const body = await res.json().catch(() => [])
-    return {
-      data: Array.isArray(body) ? body as InventoryGlobalSession[] : [],
-      cursor: res.headers.get("x-next-cursor"),
-    }
-  }
-
   return {
     fetchGlobalList,
     fetchLocalControlSessions,
     fetchLocalWorkspaceRuntimeSessions,
     fetchWorkspaceGrouped,
-    fetchWorkspacePage,
   }
 }
 

@@ -38,6 +38,14 @@ export type WorkspaceCatalogEntry = {
   role?: string
   /** The serving host's state, as the control plane reports it. */
   status?: string
+  /**
+   * Whether a live host is currently serving this user-hosted workspace, as the
+   * control plane reports it (an active enrollment with an unexpired lease that
+   * acked this workspace). Absent for every other kind — reachability is only a
+   * question about a machine someone owns. The rail says "host offline" from
+   * this, before any pane opens the workspace.
+   */
+  hostOnline?: boolean
   workspace_name?: string
   directory: string
   repo_url?: string
@@ -163,6 +171,7 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
       kind: txt(row.access) ?? txt(row.backing) ?? "cloud",
       ...(txt(row.role) ? { role: txt(row.role) } : {}),
       ...(txt(row.status) ? { status: txt(row.status) } : {}),
+      ...(typeof row.host_online === "boolean" ? { hostOnline: row.host_online } : {}),
       workspace_name: workspaceName,
       directory,
       repo_url: workspaceRepoUrl(row),

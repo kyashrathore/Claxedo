@@ -486,18 +486,19 @@ describe("hosted-core session-list", () => {
   })
 
   /**
-   * The acceptance the user actually asked for: a session created ON the
-   * machine, in a shared workspace, listed by the hosted app. The registry has
-   * no row for it; the list must come from the host through the relay.
+   * A user-hosted workspace's sessions live on its HOST. The registry only ever
+   * receives the ones created THROUGH the control plane, so this route names
+   * the runtime as their authority instead of answering a subset the client
+   * cannot tell apart from an empty machine — the client reads that list
+   * straight off the runtime over the relay, in one hop.
+   *
+   * This also replaces the old "host offline" answer: the route no longer
+   * probes the host at all, so the refusal is the same whether or not a live
+   * enrollment is serving the workspace.
    */
-  test("lists a user-hosted workspace's sessions from the host, not the empty registry", async () => {
-    const base = plane()
-    const services = base.services as unknown as {
-      authority: Record<string, unknown>
-      relay: Record<string, unknown>
-    }
-    services.authority = {
-      ...services.authority,
+  test("names the workspace runtime as the authority for a user-hosted workspace", async () => {
+    const listSessions = vi.fn(async () => [])
+    const response = await core({
       openWorkspace: vi.fn(async () => ({
         role: "owner",
         workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1", project_id: "prj_1" },
@@ -506,40 +507,15 @@ describe("hosted-core session-list", () => {
         active: true, host_id: "host_laptop", workspace_id: "ws_1",
         expires_at: Date.now() + 60_000, last_seen_at: Date.now(),
       })),
-      listSessions: vi.fn(async () => []),
+      listSessions,
       usersMe: vi.fn(async () => ({ actor_id: "actor_user_1", actor_kind: "human" })),
-    }
-    services.relay = {
-      ...services.relay,
-      provider: {
-        mintRuntimeAccessToken: vi.fn(async () => ({ token: "rat", expiresAt: 0, jti: "j" })),
-        getRelayEndpoint: vi.fn(async () => "https://relay.test"),
-      },
-    }
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
-      const url = String(input)
-      if (url.endsWith("/workspaces/ws_1/global/health")) return Response.json({ workspaceId: "ws_1" })
-      if (url.endsWith("/workspaces/ws_1/session")) {
-        return Response.json([{ id: "ses_laptop", title: "created locally", directory: "/repo", time: { created: 5, updated: 6 } }])
-      }
-      return new Response("not found", { status: 404 })
-    }) as unknown as typeof globalThis.fetch
-    try {
-      const app = createHostedCoreApp(base, options) as unknown as Hono
-      const response = await app.request(
-        "/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1",
-        { headers: { authorization: "Bearer user-1" } },
-      )
-      expect(response.status).toBe(200)
-      const body = await response.json() as { items: Array<{ sessionId: string; title: string }> }
-      expect(body.items.map((item) => [item.sessionId, item.title])).toEqual([["ses_laptop", "created locally"]])
-      // Routed like a registry row: the directory is the workspace, not the host's path.
-      expect(body.items[0]).toMatchObject({ directory: "ws_1", sessionRef: "workspace:ws_1:session:ses_laptop" })
-      expect(services.authority.listSessions, "the registry is not the source for a user-hosted workspace").not.toHaveBeenCalled()
-    } finally {
-      globalThis.fetch = originalFetch
-    }
+    }).request("/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1", { headers: signed })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toEqual({
+      error: { code: "workspace_runtime_session_authority", message: expect.any(String) },
+    })
+    expect(listSessions, "the registry is not the source for a user-hosted workspace").not.toHaveBeenCalled()
   })
 
   /**
@@ -601,21 +577,6 @@ describe("hosted-core session-list", () => {
     } finally {
       globalThis.fetch = originalFetch
     }
-  })
-
-  /** Direct workspace scope: an offline host is the answer, not an empty list. */
-  test("answers the host being offline with its own status, not an empty list", async () => {
-    const response = await core({
-      openWorkspace: vi.fn(async () => ({
-        role: "owner",
-        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1" },
-      })),
-      activeWorkspaceHost: vi.fn(async () => ({ active: false })),
-      listSessions: vi.fn(async () => []),
-      usersMe: vi.fn(async () => ({ actor_id: "actor_user_1", actor_kind: "human" })),
-    }).request("/api/control/session-list?scope=workspace&limit=5&workspaceId=ws_1", { headers: signed })
-    expect(response.status).toBe(409)
-    expect(await response.json()).toEqual({ error: { code: "user_hosted_workspace_unavailable", message: expect.any(String) } })
   })
 
   test("refuses an unsigned caller with JSON, not a rendered 404", async () => {

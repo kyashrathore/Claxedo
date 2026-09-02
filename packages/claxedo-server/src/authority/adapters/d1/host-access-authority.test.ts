@@ -459,6 +459,55 @@ describe("D1 host access and workspace sharing authority", () => {
       .toEqual(["ws_cloud"])
   })
 
+  /**
+   * The rail must be able to say "host offline" for a shared workspace before
+   * any pane opens it, so reachability rides the workspace LIST rather than a
+   * per-workspace probe. It is the same lease `activeWorkspaceHost` routes on.
+   */
+  test("stamps host reachability on every user-hosted row of the workspace list", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-c" })
+    await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-c",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(hostEnrollmentPayload({
+        hostId: "machine-c",
+        requestId: request.request_id,
+        nonce: request.nonce,
+      })),
+      ttlMs: 8_000,
+    })
+    const listed = async () =>
+      Object.fromEntries(
+        (await input.workspace.listWorkspaces(alice) as Array<{ workspace_id: string; host_online?: boolean }>)
+          .map((row) => [row.workspace_id, row.host_online]),
+      )
+
+    // Assigned but never acked: listed, and honestly offline.
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-c" })
+    expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: false })
+
+    await input.hostAccess.heartbeatHostEnrollment(alice, {
+      hostId: "machine-c",
+      signature: await key.sign(hostEnrollmentHeartbeatPayloadV2({
+        hostId: "machine-c",
+        ttlMs: 8_000,
+        workspaceIds: ["ws_local"],
+      })),
+      ttlMs: 8_000,
+      workspaceIds: ["ws_local"],
+    })
+    expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: true })
+
+    // The lease expiring is what makes it unreachable — no revoke, no unassign.
+    input.advance(8_001)
+    expect(await listed()).toEqual({ ws_cloud: undefined, ws_local: false })
+    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" })).toEqual({ active: false })
+  })
+
   test("enrolls a machine once per canonical owner with expiry, pause, revoke, and replay resistance", async () => {
     const input = await setup()
     const { alice, outsider } = await fixture(input)

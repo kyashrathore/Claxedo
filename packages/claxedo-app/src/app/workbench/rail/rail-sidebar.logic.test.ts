@@ -3,6 +3,7 @@ import {
   railProjectCaptionFromName,
   railProjectLabel,
   projectActionDirectory,
+  railWorkspaceMetaLabels,
   railWorkspaceSessionBacking,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
@@ -231,5 +232,66 @@ describe("workspaceInventoryGroupFor", () => {
       workspace: { workspaceId: "ws_1" },
     })
     expect(hit).toBe(groups["ws_1"])
+  })
+})
+
+describe("railWorkspaceMetaLabels", () => {
+  const label = (key: string, role?: string) => key === "role" ? `role:${role}` : key
+
+  /**
+   * The whole point of moving role and host state onto the catalog row: a
+   * workspace someone else's machine serves says what this account may do with
+   * it and whether that machine is up, before any pane opens it.
+   */
+  test("a teammate's user-hosted workspace reads viewer and host offline with no pane open", () => {
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted",
+      role: "viewer",
+      hostOnline: false,
+      publishedByThisMachine: false,
+      label,
+    })).toEqual(["hostOffline", "role:viewer", "sharedWithYou"])
+  })
+
+  test("the owner's own machine says it publishes the workspace, not that it was shared with them", () => {
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted",
+      role: "owner",
+      hostOnline: true,
+      publishedByThisMachine: true,
+      label,
+    })).toEqual(["publishedByThisMachine"])
+  })
+
+  test("an editor on a reachable shared workspace reads its role and nothing about the host", () => {
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted",
+      role: "editor",
+      hostOnline: true,
+      publishedByThisMachine: false,
+      label,
+    })).toEqual(["role:editor", "sharedWithYou"])
+  })
+
+  test("reachability is only asked about a machine someone owns", () => {
+    // A cloud workspace's runtime is provisioned on demand; an unknown host
+    // state is not an offline one.
+    expect(railWorkspaceMetaLabels({
+      kind: "cloud", role: "editor", publishedByThisMachine: false, label,
+    })).toEqual([])
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted", role: "owner", publishedByThisMachine: false, label,
+    })).toEqual([])
+  })
+
+  test("keeps the workspace status the catalog already reported, first", () => {
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted",
+      status: "offline",
+      role: "viewer",
+      hostOnline: false,
+      publishedByThisMachine: false,
+      label,
+    })).toEqual(["offline", "hostOffline", "role:viewer", "sharedWithYou"])
   })
 })

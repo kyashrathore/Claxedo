@@ -32,7 +32,7 @@ import {
   directorySessionCacheQueryOptions,
   type DirectorySessionCacheValue,
 } from "../data/sync/queries"
-import { removeSessionInventoryQueryData, useSessionInventoryActions } from "../data/sync/session-inventory"
+import { removeSessionInventoryQueryData } from "../data/sync/session-inventory"
 import { removeSessionListQueryData } from "../data/query/session-list"
 import { getSessionPrefetch, getSessionPrefetchPromise, sessionHistoryPageRequest, type SessionPrefetchMeta, type SessionPrefetchPage } from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -316,7 +316,6 @@ export function createSessionController(input: {
   const sdk = useSDK()
   const globalSDK = useGlobalSDK()
   const paneActive = input.active ?? (() => true)
-  const sessionInventoryActions = useSessionInventoryActions()
   const directorySessionCacheActions = useDirectorySessionCacheActions()
   const { meta: historyMeta, setValue: setHistoryMetaValue } = createHistoryMetaState()
   const [missingSessions, setMissingSessions] = createSignal<Record<string, boolean | undefined>>({})
@@ -1032,7 +1031,6 @@ export function createSessionController(input: {
           void syncSessionHistory(sessionID, { force: true })
           void syncSessionTodo(sessionID, { force: true })
           void directorySessionCacheActions.refresh({ directory, ...(workspace ? { workspace } : {}) })
-          if (input.signedControlPlane?.()) void sessionInventoryActions.reloadWorkspace()
         }
         const quietDelay = fastSessionSwitchQuietDelay({ sessionId: sessionID })
         const cancelSettlementCatchUp = scheduleActivationWork({

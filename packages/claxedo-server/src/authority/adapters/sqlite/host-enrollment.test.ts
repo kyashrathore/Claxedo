@@ -387,6 +387,32 @@ describe("workspace assignments", () => {
     expect(await listed()).toEqual([])
   })
 
+  /**
+   * The rail must be able to say "host offline" for a shared workspace before
+   * any pane opens it, so reachability rides the workspace LIST rather than a
+   * per-workspace probe. Same lease `activeWorkspaceHost` routes on.
+   */
+  test("stamps host reachability on every user-hosted row of the workspace list", async () => {
+    const api = authority()
+    const { keys, hostId } = await enroll(api, { displayName: "Laptop B" })
+    const listed = async () => Object.fromEntries(
+      (await api.listWorkspaces(owner) as Array<{ workspace_id: string; host_online?: boolean }>)
+        .map((row) => [row.workspace_id, row.host_online]),
+    )
+
+    // Assigned but never acked: listed, and honestly offline.
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_reach", hostId })
+    expect(await listed()).toEqual({ ws_reach: false })
+
+    await ackHeartbeat(api, { hostId, keys, workspaceIds: ["ws_reach"] })
+    expect(await listed()).toEqual({ ws_reach: true })
+
+    // Pausing the machine is what makes it unreachable — no revoke, no unassign.
+    await api.pauseHostEnrollment!(owner, { hostId, paused: true })
+    expect(await listed()).toEqual({ ws_reach: false })
+    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_reach" })).toEqual({ active: false })
+  })
+
   test("routes a workspace through owner assignment AND the machine's acked set", async () => {
     const api = authority()
     const { keys, hostId } = await enroll(api, { displayName: "Laptop B" })

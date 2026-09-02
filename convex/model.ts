@@ -475,6 +475,47 @@ export async function userByTokenIdentifier(db: Db, tokenIdentifier: string) {
  * the Convex runtime) because the convex bundle cannot import from
  * packages/claxedo-server.
  */
+/**
+ * The one definition of "a host is serving this workspace right now": an
+ * enrollment that is neither revoked nor paused, whose lease has not expired,
+ * and whose last signed heartbeat acked this workspace.
+ *
+ * `hostEnrollments.activeWorkspaceHostRow` routes on it, and the workspace list
+ * stamps it on every user-hosted row so the rail can say "host offline" before
+ * any pane opens the workspace. Mirrors `HOST_SERVING_WORKSPACE_SQL` in the D1
+ * and SQLite adapters.
+ */
+export function hostEnrollmentServesWorkspace(
+  enrollment: {
+    revoked_at?: unknown
+    paused_at?: unknown
+    expires_at?: unknown
+    acked_workspace_ids?: unknown
+  } | null | undefined,
+  workspaceId: string,
+  now: number,
+) {
+  if (!enrollment || enrollment.revoked_at || enrollment.paused_at) return false
+  if (typeof enrollment.expires_at !== "number" || enrollment.expires_at <= now) return false
+  const acked = enrollment.acked_workspace_ids
+  return Array.isArray(acked) && acked.includes(workspaceId)
+}
+
+/** Whether a live enrollment is serving this workspace right now. */
+export async function workspaceHostIsServing(ctx: { db: Db }, workspaceId: string) {
+  const assignment = await ctx.db
+    .query("host_workspace_assignments")
+    .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspaceId))
+    .unique()
+  if (!assignment) return false
+  const enrollment = await ctx.db
+    .query("host_enrollments")
+    .withIndex("by_owner_host", (q: any) =>
+      q.eq("owner_user_id", assignment.owner_user_id).eq("host_id", assignment.host_id))
+    .unique()
+  return hostEnrollmentServesWorkspace(enrollment, assignment.workspace_id, Date.now())
+}
+
 export async function sha256Hex(value: string) {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value))
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")

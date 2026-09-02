@@ -14,6 +14,7 @@ import {
   upsertServiceUser,
   upsertUser,
   workspaceByPublicId,
+  workspaceHostIsServing,
   workspaceRoleForUser,
 } from "./model"
 import { ensureDefaultTeamProjectGrant } from "./teams"
@@ -337,6 +338,12 @@ async function listWorkspacesForUser(ctx: any, user: { _id: unknown }) {
           git_branch: workspace.git_branch,
           remote_directory: workspace.remote_directory,
           role: await workspaceRoleForUser(ctx, workspace, user),
+          // Reachability, not authorization: a shared workspace whose machine
+          // is asleep is still listed, and the rail says "host offline" for it
+          // rather than dropping the row or waiting for a pane to discover it.
+          ...(workspace.access === "user-hosted"
+            ? { host_online: await workspaceHostIsServing(ctx, workspace.workspace_id) }
+            : {}),
         })),
     )
   ).filter((item) => item.role && roleAllows(item.role, "read"))

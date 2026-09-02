@@ -56,6 +56,10 @@ export type WorkspaceInfo = {
   workspace_name?: string
   directory: string
   kind: RuntimeKind
+  /** What this principal may do here, as the control plane reports it. */
+  role?: string
+  /** Whether a live host is serving this user-hosted workspace right now. */
+  hostOnline?: boolean
   available?: boolean
   provider?: string
   status?: string

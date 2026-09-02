@@ -99,6 +99,14 @@ export const queryKeys = {
     sessionCache: (directory: string) => ["directory", "local", "sessionCache", directory] as const,
   },
   runtime: {
+    /**
+     * A user-hosted workspace's own session list, as its RUNTIME answers it
+     * over the relay. Keyed by workspace rather than by list query: one relay
+     * hop answers every rail section and every page of that workspace, and the
+     * per-query `shell.sessionList` entries are shaped from this one read.
+     */
+    workspaceSessions: (baseUrl: string | undefined, workspaceId: string) =>
+      ["runtime", runtimeServer(baseUrl), "workspaceSessions", workspaceId] as const,
     workspace: (input: { baseUrl?: string; directory?: string; workspaceId?: string; create?: boolean }) =>
       [
         "runtime",

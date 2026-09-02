@@ -1768,6 +1768,10 @@ describe("workspace routes signed control plane authority", () => {
         backing: "local-worktree",
         access: "user-hosted",
         role: "viewer",
+        // Reachability travels with the row: the rail says "viewer · host
+        // offline" before any pane opens the workspace, so the route must not
+        // project the authority's host state away.
+        host_online: false,
       },
     ])
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
@@ -1786,6 +1790,7 @@ describe("workspace routes signed control plane authority", () => {
           backing: "local-worktree",
           access: "user-hosted",
           role: "viewer",
+          host_online: false,
         },
       ],
     })

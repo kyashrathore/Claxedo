@@ -8,6 +8,41 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 
 describe("controlPlaneCatalogProjects", () => {
+  /**
+   * Role and reachability are what let the rail say "viewer · host offline"
+   * for a workspace nobody has opened yet, so both must survive the grouping
+   * exactly as the control plane reported them.
+   */
+  test("carries role and the host lease onto the workspace row", () => {
+    const [project] = controlPlaneCatalogProjects({
+      workspaces: [
+        {
+          workspace_id: "ws_shared",
+          project_id: "proj_shared",
+          access: "user-hosted",
+          role: "viewer",
+          host_online: false,
+        },
+        {
+          workspace_id: "ws_cloud",
+          project_id: "proj_shared",
+          access: "cloud",
+          role: "owner",
+        },
+      ],
+    })
+
+    expect(project?.workspaces?.["workspace:ws_shared"]).toMatchObject({
+      kind: "user-hosted",
+      role: "viewer",
+      hostOnline: false,
+    })
+    // Reachability is only a question about a machine someone owns; a cloud
+    // workspace's row carries no host state at all rather than a false one.
+    expect(project?.workspaces?.["workspace:ws_cloud"]).toMatchObject({ kind: "cloud", role: "owner" })
+    expect(project?.workspaces?.["workspace:ws_cloud"]).not.toHaveProperty("hostOnline")
+  })
+
   test("builds synthetic project refs from signed user-hosted workspaces", () => {
     expect(controlPlaneCatalogProjects({
       workspaces: [{

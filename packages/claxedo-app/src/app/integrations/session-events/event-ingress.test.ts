@@ -446,11 +446,31 @@ describe("global sync event ingress", () => {
     dispose()
   })
 
-  test("invalidates the paginated session list for a plain session.created event", () => {
+  /**
+   * The workspace's own stream is the authority for its list, so a created
+   * frame is APPLIED, not used as a doorbell: the row appears with no list
+   * request at all, and the cached entry is never invalidated.
+   */
+  test("adds a session.created row to the paginated list without invalidating it", () => {
     queryClient.clear()
     const globalEvents = eventSource()
-    const key = ["shell", "default", "sessionList", { directory: "/repo" }] as const
-    queryClient.setQueryData(key, { session: [], total: 0 })
+    const query = {
+      scope: "workspace",
+      directory: "/repo",
+      groupBy: "none",
+      archived: "active",
+      status: [],
+      environment: [],
+      git: [],
+      sort: "updated_desc",
+      limit: 20,
+    }
+    const key = ["shell", "default", "sessionList", query] as const
+    queryClient.setQueryData(key, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 20 },
+      items: [],
+      totalKnown: 0,
+    })
     const dispose = createGlobalSyncEventIngress({
       ...revocationDefaults,
       globalEvents: globalEvents.source,
@@ -476,10 +496,23 @@ describe("global sync event ingress", () => {
 
     globalEvents.emit({
       name: "/repo",
-      details: { type: "session.created", properties: { info: { id: "ses_created" } } },
+      details: {
+        type: "session.created",
+        properties: {
+          info: {
+            id: "ses_created",
+            title: "created on the host",
+            directory: "/repo",
+            time: { created: 10, updated: 20 },
+          },
+        },
+      },
     })
 
-    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(true)
+    expect(
+      queryClient.getQueryData<{ items: Array<{ sessionId: string; title: string }> }>(key)?.items,
+    ).toEqual([expect.objectContaining({ sessionId: "ses_created", title: "created on the host" })])
+    expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false)
     dispose()
   })
 

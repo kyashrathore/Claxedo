@@ -9,6 +9,7 @@ import type {
   WorkspaceAuthority,
 } from "@claxedo/server-core/platform/auth/authority"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
+import { HOST_SERVING_WORKSPACE_SQL } from "./host-access-authority"
 
 const KNOWN_HOME_REGIONS = new Set(["apac-south", "apac-east", "eu-west", "us-east", "us-west"])
 
@@ -1059,9 +1060,35 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       .prepare(workspaceAccessSql("w.deleted_at is null"))
       .bind(who.userId, who.userId, who.userId, who.userId, who.userId, who.userId, who.userId)
       .all<WorkspaceAccessRow>()
-    return result.results
-      .filter((row) => row.role_rank >= 1)
-      .map((row) => ({ ...workspaceJson(row), role: rankRole(row.role_rank) }))
+    const rows = result.results.filter((row) => row.role_rank >= 1)
+    const online = await this.workspacesWithServingHost(
+      rows.filter((row) => row.access === "user-hosted").map((row) => row.workspace_id),
+    )
+    return rows.map((row) => ({
+      ...workspaceJson(row),
+      role: rankRole(row.role_rank),
+      // Reachability, not authorization: a shared workspace whose machine is
+      // asleep is still listed, and the rail says "host offline" for it rather
+      // than dropping the row or waiting for a pane to discover it.
+      ...(row.access === "user-hosted" ? { host_online: online.has(row.workspace_id) } : {}),
+    }))
+  }
+
+  /** Of these workspaces, the ones a live enrollment currently serves. */
+  private async workspacesWithServingHost(workspaceIds: string[]) {
+    if (workspaceIds.length === 0) return new Set<string>()
+    const result = await this.database
+      .prepare(`
+      select distinct assignment.workspace_id
+      from host_workspace_assignments assignment
+      inner join host_enrollments enrollment on enrollment.host_id = assignment.host_id
+        and enrollment.owner_actor_id = assignment.owner_actor_id
+      where assignment.workspace_id in (${workspaceIds.map(() => "?").join(", ")})
+        and ${HOST_SERVING_WORKSPACE_SQL}
+    `)
+      .bind(...workspaceIds, this.now())
+      .all<{ workspace_id: string }>()
+    return new Set(result.results.map((row) => row.workspace_id))
   }
 
   /** Explicit-org creation seam used by new hosted organization routes. */

@@ -9,8 +9,17 @@ import {
 import { controlPlaneAuthErrorBody, ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority, type WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../authority/services"
-import { HostedSessionPullError, pullHostedControlSessionList } from "../authority/hosted-session-pull"
-import { WorkspaceRuntimeTargetError } from "../authority/runtime-target"
+
+/**
+ * The refusal a session-list route gives when it is not the authority for the
+ * workspace asked about. `ControlPlaneAuthError` cannot carry it: this is not
+ * an authorization outcome — the caller may hold every right on the workspace —
+ * it names a different server as the place to read.
+ */
+export class SessionListAuthorityError extends Error {
+  readonly status = 409
+  readonly code = "workspace_runtime_session_authority"
+}
 
 /** Canonical flat inventory response for `GET /api/control/sessions`. */
 export function sessionInventoryResponse(sessions: unknown) {
@@ -36,6 +45,11 @@ export function sessionInventoryResponse(sessions: unknown) {
  *
  * Only the SIGNED branch. The loopback/projection-store branch belongs to the
  * local product and stays with the canonical route.
+ *
+ * The registry is the authority for CLOUD sessions and for nothing else. A
+ * user-hosted workspace's sessions live on its host and are read by the client
+ * over the relay in one hop, so this route names the runtime as their authority
+ * rather than pulling them through here.
  */
 export async function signedSessionList(
   services: ControlPlaneServices,
@@ -48,18 +62,13 @@ export async function signedSessionList(
   // stay project-scoped (they may span several workspaces), so the view keeps
   // `scope: "project"` and carries no single workspaceId.
   if (!directWorkspaceId && query.scope === "project" && query.projectId) {
-    const workspaceIds = await projectWorkspaceIds(services, auth, query.projectId)
+    const workspaceIds = await registryWorkspaceIdsForProject(services, auth, query.projectId)
     if (workspaceIds.length === 0) return buildSessionListResponse({ query, sessions: [] })
     const authority = requireAuthority(services)
     const projectId = query.projectId
     const sessions = (await Promise.all(
       workspaceIds.map(async (workspaceId) => {
-        // A user-hosted workspace's sessions live on its host, not here. One
-        // host being offline must not blank the whole project's list — the
-        // workspace page reports that on its own — so an offline host
-        // contributes nothing rather than an error.
-        const hosted = await hostedSessions(services, auth, workspaceId).catch(() => undefined)
-        const rows = hosted ?? await authority.listSessions(auth, { workspaceId })
+        const rows = await authority.listSessions(auth, { workspaceId })
         // The authority's per-workspace list carries neither the workspace id
         // it was asked for nor (always) a project id — see convex/sessions.ts
         // `list`. Both are known here, and without them every row would fail
@@ -75,9 +84,8 @@ export async function signedSessionList(
     return buildSessionListResponse({ query, sessions })
   }
   const workspaceId = requiredWorkspaceId(directWorkspaceId)
-  // Direct workspace scope: an offline host is the answer, not an empty list.
-  const sessions = await hostedSessions(services, auth, workspaceId)
-    ?? await requireAuthority(services).listSessions(auth, { workspaceId })
+  await assertRegistryIsSessionAuthority(services, auth, workspaceId)
+  const sessions = await requireAuthority(services).listSessions(auth, { workspaceId })
   return buildSessionListResponse({
     query: {
       ...query,
@@ -91,34 +99,43 @@ export async function signedSessionList(
 }
 
 /**
- * The host's sessions for a user-hosted workspace, or undefined for any other
- * kind. Pull failures (host offline, relay unreachable, denied) propagate as
- * the pull layer's own errors; `sessionListErrorResponse` answers them.
+ * The runtime, not this registry, answers for a user-hosted workspace.
+ *
+ * Refused rather than answered empty: an empty list is indistinguishable from
+ * "this workspace holds no sessions", and a client reading it that way renders
+ * an empty rail for a machine holding sixty of them.
  */
-function hostedSessions(services: ControlPlaneServices, auth: SignedControlPlaneAuth, workspaceId: string) {
-  return pullHostedControlSessionList(services, auth, { workspaceId })
+async function assertRegistryIsSessionAuthority(
+  services: ControlPlaneServices,
+  auth: SignedControlPlaneAuth,
+  workspaceId: string,
+) {
+  const opened = await requireAuthority(services).openWorkspace(auth, { workspaceId })
+  if (workspaceRow(workspaceRow(opened)?.workspace)?.access !== "user-hosted") return
+  throw new SessionListAuthorityError(
+    "The workspace runtime is the authority for a user-hosted workspace's sessions; read them over the workspace relay",
+  )
 }
 
 /**
  * The one answer every session-list route gives for a failed read.
  *
  * Three routes serve this list (canonical, hosted, hosted-core). Each used to
- * carry its own copy of the auth and cursor mapping; now that the read can
- * also fail at the host — 409 host offline, 503 relay unavailable — the
- * mapping lives once, and a route that cannot map the error re-throws it.
+ * carry its own copy of the auth and cursor mapping; it lives once here, and a
+ * route that cannot map the error re-throws it.
  */
 export function sessionListErrorResponse(error: unknown): Response | undefined {
   if (error instanceof ControlPlaneAuthError) {
     return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
+  }
+  if (error instanceof SessionListAuthorityError) {
+    return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
   }
   if (error instanceof Error && error.message === "invalid_session_list_cursor") {
     return Response.json(
       { error: { code: "invalid_session_list_cursor", message: "Session list cursor does not match this query" } },
       { status: 400 },
     )
-  }
-  if (error instanceof HostedSessionPullError || error instanceof WorkspaceRuntimeTargetError) {
-    return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })
   }
   return undefined
 }
@@ -142,7 +159,7 @@ function rowText(input: unknown) {
 }
 
 /**
- * Every workspace id belonging to a project.
+ * Every CLOUD workspace id belonging to a project.
  *
  * A project-scoped session list arrives with a PROJECT id, which only doubles
  * as a workspace id for the legacy `ws_`-prefixed shape. Anything else used to
@@ -152,7 +169,7 @@ function rowText(input: unknown) {
  * `workspaceId`. Resolving it here means every client benefits and the list no
  * longer depends on inventory shape drift in the browser.
  */
-async function projectWorkspaceIds(
+async function registryWorkspaceIdsForProject(
   services: { authority?: WorkspaceAuthority },
   auth: SignedControlPlaneAuth,
   projectId: string,
@@ -164,6 +181,10 @@ async function projectWorkspaceIds(
     if (!row) return []
     const workspaceId = rowText(row.workspace_id) ?? rowText(row.workspaceId)
     if (!workspaceId) return []
+    // A user-hosted workspace's sessions are the runtime's, not the registry's:
+    // its rows here would be only those created THROUGH the control plane, a
+    // subset of what its host holds. The client reads each one over the relay.
+    if (rowText(row.access) === "user-hosted") return []
     const rowProjectId = rowText(row.project_id) ?? rowText(row.projectID) ?? rowText(row.projectId)
     return rowProjectId === projectId ? [workspaceId] : []
   })

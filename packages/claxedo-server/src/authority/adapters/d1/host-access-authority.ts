@@ -139,6 +139,24 @@ export class D1HostAccessAuthorityError extends ClaxedoError {
  * is a canonical user/actor and every workspace row carries immutable tenant
  * scope copied from the authoritative workspace.
  */
+/**
+ * The one definition of "a host is serving this workspace right now": an
+ * enrollment that is neither revoked nor paused, whose lease has not expired,
+ * and whose last signed heartbeat acked this workspace. Written against an
+ * `assignment`/`enrollment` join, and binding exactly one value — `now`.
+ *
+ * `activeWorkspaceHost` answers it for one workspace. The workspace list stamps
+ * it on every user-hosted row (`D1WorkspaceAuthority.listWorkspaces`) so the
+ * rail can say "host offline" before any pane opens the workspace, and both
+ * must mean the same thing.
+ */
+export const HOST_SERVING_WORKSPACE_SQL = `enrollment.revoked_at is null and enrollment.paused_at is null
+        and enrollment.expires_at > ?
+        and exists (
+          select 1 from json_each(coalesce(enrollment.acked_workspace_ids, '[]'))
+          where json_each.value = assignment.workspace_id
+        )`
+
 export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
   private readonly now: () => number
   private readonly randomId: NonNullable<D1HostAccessAuthorityOptions["randomId"]>
@@ -279,13 +297,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       from host_workspace_assignments assignment
       inner join host_enrollments enrollment on enrollment.host_id = assignment.host_id
         and enrollment.owner_actor_id = assignment.owner_actor_id
-      where assignment.workspace_id = ?
-        and enrollment.revoked_at is null and enrollment.paused_at is null
-        and enrollment.expires_at > ?
-        and exists (
-          select 1 from json_each(coalesce(enrollment.acked_workspace_ids, '[]'))
-          where json_each.value = assignment.workspace_id
-        )
+      where assignment.workspace_id = ? and ${HOST_SERVING_WORKSPACE_SQL}
       limit 1
     `).bind(workspaceId, this.now()).first<{
       workspace_id: string

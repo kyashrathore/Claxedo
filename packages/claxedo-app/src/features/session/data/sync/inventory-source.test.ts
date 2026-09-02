@@ -249,12 +249,14 @@ describe("global sync inventory source helpers", () => {
   })
 
   test("signed inventory source keeps user-hosted visibility authority-filtered", async () => {
+    const requested: string[] = []
     const source = createSignedInventorySource({
       queryClient: immediateQueryClient(),
       baseUrl: () => "https://app.test",
       owner: () => "user_1",
       authFetch: async (resource) => {
         const url = new URL(String(resource))
+        requested.push(`${url.pathname}?${url.searchParams.toString()}`)
         if (url.pathname === "/api/workspace" && url.searchParams.get("access") === "cloud") {
           return jsonResponse({
             workspaces: [{
@@ -299,6 +301,12 @@ describe("global sync inventory source helpers", () => {
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id))
       .toEqual(["ses_new", "ses_old"])
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_user")).toBeUndefined()
+    // The registry only ever holds the user-hosted sessions that were created
+    // THROUGH it, so this boot read asked a question it could not answer and
+    // paid a round trip per shared machine for the empty answer. Its list is
+    // the runtime's, over the relay (`session-source.ts`).
+    expect(requested).not.toContain("/api/control/sessions?workspaceId=ws_user")
+    expect(requested).toContain("/api/control/sessions?workspaceId=ws_cloud")
   })
 
   // Falsifier for the boot request graph's serial cloud→user-hosted pair: the

@@ -4,7 +4,7 @@ import type { ProjectItem } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
-import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayBackedWorkspaceKind, isUserHostedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({
@@ -228,4 +228,37 @@ export function mergedSessionStatusType(
   if (liveType === "busy" || liveType === "retry") return liveType
   if (batchType === "busy" || batchType === "retry") return batchType
   return liveType ?? batchType
+}
+
+/**
+ * The badges under a workspace row's name, in the order they are read.
+ *
+ * All of it comes from the CATALOG, so a workspace a teammate shares says what
+ * this account may do with it and whether the machine serving it is up before
+ * any pane opens it. The two sharing badges are different facts and were one
+ * word ("Shared") that meant only the first:
+ *
+ * - "published by this machine" — this desktop is the host serving it out;
+ * - "shared with you" — someone else's machine serves it and this account
+ *   holds a granted role on it.
+ */
+export function railWorkspaceMetaLabels(input: {
+  kind: string | undefined
+  status?: string
+  role?: string
+  hostOnline?: boolean
+  publishedByThisMachine: boolean
+  label: (key: "role" | "hostOffline" | "sharedWithYou" | "publishedByThisMachine", role?: string) => string
+}) {
+  const userHosted = isUserHostedWorkspaceKind(workspaceKind(input.kind))
+  const granted = userHosted && !!input.role && input.role !== "owner"
+  return [
+    input.status,
+    // Reachability is only a question about a machine someone owns; a cloud
+    // workspace's runtime is provisioned on demand and reports its own state.
+    userHosted && input.hostOnline === false ? input.label("hostOffline") : undefined,
+    granted ? input.label("role", input.role) : undefined,
+    input.publishedByThisMachine ? input.label("publishedByThisMachine") : undefined,
+    granted && !input.publishedByThisMachine ? input.label("sharedWithYou") : undefined,
+  ].filter((item): item is string => !!item)
 }
