@@ -45,7 +45,7 @@ import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { signedOrError } from "../../workspace/route-support"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
-import { HostedShellRoutes } from "../../routes/hosted/shell"
+import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
 import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
@@ -576,6 +576,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       // publisher stamps (documents/provision events, runtime-token claims).
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       activateOwner: ownerActivationWithTelemetry(services.telemetry, workGraphOwnerActivation),
+      harnessStatus: hostedHarnessRuntimeStatus(services),
     }),
   )
 

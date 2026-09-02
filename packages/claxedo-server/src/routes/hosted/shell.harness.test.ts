@@ -132,6 +132,8 @@ describe("GET /api/claxedo/agent-config/harness — auth and workspace resolutio
       sessionId: "ses_42",
       status: "ready",
       ready: true,
+      harness: { id: "claude", access: "native" },
+      activeHarness: { id: "claude", access: "native" },
       agentType: "claude",
       activeType: "claude",
       activeBinary: null,

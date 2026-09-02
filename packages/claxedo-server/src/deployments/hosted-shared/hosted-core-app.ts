@@ -20,7 +20,7 @@ import {
 import type { FirstPartyServiceCatalog } from "@claxedo/service-contract"
 
 import { JwksRoutes } from "../../authority/routes/jwks"
-import { HostedShellRoutes } from "../../routes/hosted/shell"
+import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
@@ -258,6 +258,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       liveSyncRoom: options.liveSyncRoom,
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       serviceCatalog: options.serviceCatalog,
+      harnessStatus: hostedHarnessRuntimeStatus(services),
     }),
   )
   app.route(

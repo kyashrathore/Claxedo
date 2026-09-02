@@ -543,6 +543,67 @@ describe("hosted-core session-list", () => {
     }
   })
 
+  /**
+   * The composer's harness status for a user-hosted workspace comes from the
+   * host's runtime through the relay, in the shape the daemon's own status
+   * route reports. The route and its probe both existed on this root while the
+   * probe was never composed, so the app saw 404 and defaulted to opencode.
+   */
+  test("answers a user-hosted workspace's harness status from the host through the relay", async () => {
+    const base = plane()
+    const services = base.services as unknown as {
+      authority: Record<string, unknown>
+      relay: Record<string, unknown>
+    }
+    services.authority = {
+      ...services.authority,
+      openWorkspace: vi.fn(async () => ({
+        role: "owner",
+        workspace: { access: "user-hosted", backing: "local-worktree", org_id: "org_1", project_id: "prj_1" },
+      })),
+      activeWorkspaceHost: vi.fn(async () => ({
+        active: true, host_id: "host_laptop", workspace_id: "ws_1",
+        expires_at: Date.now() + 60_000, last_seen_at: Date.now(),
+      })),
+      usersMe: vi.fn(async () => ({ actor_id: "actor_user_1", actor_kind: "human" })),
+    }
+    services.relay = {
+      ...services.relay,
+      provider: {
+        mintRuntimeAccessToken: vi.fn(async () => ({ token: "rat", expiresAt: 0, jti: "j" })),
+        getRelayEndpoint: vi.fn(async () => "https://relay.test"),
+      },
+    }
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input)
+      if (url.endsWith("/workspaces/ws_1/global/health")) return Response.json({ workspaceId: "ws_1" })
+      if (url.endsWith("/workspaces/ws_1/api/wr/health?sessionId=ses_1")) {
+        return Response.json({ ok: true, status: "ready", agentType: "claude", acpBinary: null, harnessHealth: { status: "ok" } })
+      }
+      return new Response("not found", { status: 404 })
+    }) as unknown as typeof globalThis.fetch
+    try {
+      const app = createHostedCoreApp(base, options) as unknown as Hono
+      const response = await app.request(
+        "/api/claxedo/agent-config/harness?workspaceId=ws_1&sessionId=ses_1",
+        { headers: { authorization: "Bearer user-1" } },
+      )
+      expect(response.status).toBe(200)
+      expect(await response.json()).toMatchObject({
+        workspaceId: "ws_1",
+        sessionId: "ses_1",
+        status: "ready",
+        ready: true,
+        harness: { id: "claude", access: "native" },
+        activeHarness: { id: "claude", access: "native" },
+        activeType: "claude",
+      })
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   /** Direct workspace scope: an offline host is the answer, not an empty list. */
   test("answers the host being offline with its own status, not an empty list", async () => {
     const response = await core({

@@ -520,6 +520,15 @@ export function hostedHarnessRuntimeStatus(
   }
 }
 
+/**
+ * The identity the daemon's own status route reports as `harness` /
+ * `activeHarness`: the runtime health's `agentType` is the base harness id,
+ * served natively unless the runtime is driving an ACP binary.
+ */
+function hostedHarnessIdentity(probe: HostedHarnessProbe) {
+  return { id: probe.agentType, access: probe.acpBinary ? "acp" : "native" }
+}
+
 function hostedHarnessStatusBody(probe: HostedHarnessProbe, workspaceId: string, sessionId?: string) {
   return {
     workspaceId,
@@ -527,7 +536,14 @@ function hostedHarnessStatusBody(probe: HostedHarnessProbe, workspaceId: string,
     ...(sessionId ? { sessionId } : {}),
     status: probe.ok ? "ready" : probe.status ?? "error",
     ready: probe.ok ?? false,
-    ...(probe.agentType ? { agentType: probe.agentType, activeType: probe.agentType } : {}),
+    ...(probe.agentType
+      ? {
+          harness: hostedHarnessIdentity(probe),
+          activeHarness: hostedHarnessIdentity(probe),
+          agentType: probe.agentType,
+          activeType: probe.agentType,
+        }
+      : {}),
     activeBinary: probe.acpBinary ?? null,
     ...(probe.model !== undefined ? { model: probe.model } : {}),
     ...(probe.error ? { error: probe.error } : {}),
