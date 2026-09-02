@@ -591,6 +591,34 @@ describe("reconcileUpdatedSessionListQueryData", () => {
     expect(items?.[1]?.title).toBe("Two renamed")
   })
 
+  test("the section's own view decides the order, not the view the server echoed", () => {
+    // A page can come back with a `view` the section never asked for — a
+    // server default, a bootstrapped entry, a source that shapes its own page.
+    // The key the entry is cached under is what the reader renders in, so an
+    // applier that placed the row by the echoed view would leave a bumped row
+    // stranded exactly where the rail showed it before.
+    const key = queryKeys.shell.sessionList(undefined, {
+      scope: "project",
+      projectId: "prj_1",
+      limit: 2,
+      sort: "updated_desc",
+    })
+    queryClient.setQueryData(key, {
+      ...response(),
+      view: { ...response().view, sort: "created_desc" },
+      items: [row("ses_1", 3), row("ses_2", 2)],
+    })
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_2",
+      directory: "/repo",
+      updatedAt: 10,
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId))
+      .toEqual(["ses_2", "ses_1"])
+  })
+
   test("created_desc keeps visit/update from reshuffling list order", () => {
     const key = queryKeys.shell.sessionList(undefined, {
       scope: "workspace",

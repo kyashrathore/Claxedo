@@ -1,4 +1,4 @@
-import { createEffect, createMemo, createSignal } from "solid-js"
+import { createEffect, createMemo, createSignal, on } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { queryClient } from "@/platform/query/query-client"
 import {
@@ -39,6 +39,7 @@ export function createRailSectionSessionList(input: {
   enabled?: () => boolean
 }) {
   const signature = createMemo(() => JSON.stringify(input.query()))
+  const sourceSignature = createMemo(() => JSON.stringify(input.source()))
   const query = useQuery(() => ({
     ...sessionSourceQueryOptions({
       baseUrl: input.baseUrl(),
@@ -47,6 +48,15 @@ export function createRailSectionSessionList(input: {
     }),
     ...(input.enabled ? { enabled: input.enabled() } : {}),
   }))
+  // The source is not part of the cache key — every source writes the section's
+  // one `shell.sessionList` entry — so a source that gains a member (the
+  // catalog answering after the rail mounted, a workspace shared with this
+  // account) answers the SAME query with more rows. Nothing else would ask it
+  // again: the key is unchanged, so the cached page would stand.
+  createEffect(on(sourceSignature, () => {
+    if (input.enabled && !input.enabled()) return
+    void query.refetch()
+  }, { defer: true }))
   const [rows, setRows] = createSignal<SessionNavigationRow[]>([])
   const [nextCursor, setNextCursor] = createSignal<string | undefined>()
   const [total, setTotal] = createSignal<number | undefined>()

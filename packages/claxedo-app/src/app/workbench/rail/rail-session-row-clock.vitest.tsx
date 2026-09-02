@@ -103,41 +103,34 @@ vi.mock("../../../features/session/data/sync/session-inventory", () => ({
 // label that cannot have changed.
 const SESSION_UPDATED_AT = Date.now() - 2 * 24 * 60 * 60 * 1000
 
-vi.mock("../../../features/session/data/query/session-list", () => ({
-  sessionListQueryOptions: (input: { query?: { scope?: string } }) => ({
+const LAZY_SESSION_ROW = {
+  type: "session",
+  sessionRef: "ses_lazy",
+  sessionId: "ses_lazy",
+  title: "Lazy label session",
+  directory: "/repo/main",
+  createdAt: SESSION_UPDATED_AT,
+  updatedAt: SESSION_UPDATED_AT,
+  tags: [],
+  attachments: [],
+}
+
+const LAZY_SESSION_PAGE = {
+  view: { scope: "project", groupBy: "none", sort: "updated_desc", limit: 25 },
+  items: [LAZY_SESSION_ROW],
+  totalKnown: 1,
+}
+
+// The section's SOURCE is stubbed, not the servers under it: this file is about
+// how a rendered row reacts to the rail's clock, and the seeded page has to be
+// there on the first render for that to be observable under fake timers.
+vi.mock("../../../features/session/data/sync/session-source", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../features/session/data/sync/session-source")>()),
+  sessionSourceQueryOptions: (input: { query?: { scope?: string } }) => ({
     queryKey: ["test-session-list", input.query?.scope ?? "unknown"],
-    queryFn: async () => ({
-      view: { scope: input.query?.scope ?? "workspace", groupBy: "none", sort: "updated_desc", limit: 25 },
-      items: [{
-        type: "session",
-        sessionRef: "ses_lazy",
-        sessionId: "ses_lazy",
-        title: "Lazy label session",
-        directory: "/repo/main",
-        createdAt: SESSION_UPDATED_AT,
-        updatedAt: SESSION_UPDATED_AT,
-        tags: [],
-        attachments: [],
-      }],
-      totalKnown: 1,
-    }),
-    initialData: {
-      view: { scope: input.query?.scope ?? "workspace", groupBy: "none", sort: "updated_desc", limit: 25 },
-      items: [{
-        type: "session",
-        sessionRef: "ses_lazy",
-        sessionId: "ses_lazy",
-        title: "Lazy label session",
-        directory: "/repo/main",
-        createdAt: SESSION_UPDATED_AT,
-        updatedAt: SESSION_UPDATED_AT,
-        tags: [],
-        attachments: [],
-      }],
-      totalKnown: 1,
-    },
+    queryFn: async () => LAZY_SESSION_PAGE,
+    initialData: LAZY_SESSION_PAGE,
   }),
-  appendSessionListPageQueryData: () => undefined,
 }))
 
 // Capture the display rows the rail hands to the navigation list. Mocking the

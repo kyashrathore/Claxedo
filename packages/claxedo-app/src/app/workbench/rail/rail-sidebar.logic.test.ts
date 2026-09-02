@@ -125,6 +125,30 @@ describe("railWorkspaceSessionBacking", () => {
     })).toEqual({ workspaceId: "ws_signed", kind: "cloud" })
   })
 
+  test("resolves a user-hosted row addressed as `workspace:<id>` against its host-directory catalog key", () => {
+    // What the control plane answers with for a user-hosted workspace: the
+    // catalog keys it by the HOST's own path, while the session row carries
+    // `sessionRowDirectory`'s `workspace:<id>`. The row's identity, not the
+    // section's directory, is what the backing comes from — and the signed id
+    // here is a UUID, which the `ws_*`-shape guess below would have refused.
+    expect(railWorkspaceSessionBacking({
+      directory: "workspace:5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11",
+      workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11",
+      sessionRef: "workspace:5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11:session:41c9c554",
+      project: project({
+        worktree: "/Users/host/opencode",
+        workspaces: {
+          "/Users/host/opencode": {
+            id: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11",
+            workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11",
+            directory: "/Users/host/opencode",
+            kind: "user-hosted",
+          },
+        },
+      }),
+    })).toEqual({ workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11", kind: "user-hosted" })
+  })
+
   test("does not infer signed authority from a local workspace", () => {
     expect(railWorkspaceSessionBacking({
       directory: "/repo/main",

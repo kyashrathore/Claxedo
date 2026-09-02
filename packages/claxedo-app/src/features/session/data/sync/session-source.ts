@@ -7,13 +7,15 @@ import { createTransport } from "@/platform/runtime/transport"
 import {
   isUserHostedWorkspaceKind,
   USER_HOSTED_WORKSPACE_KIND,
+  workspaceKind,
   type WorkspaceKind,
 } from "@/platform/runtime/agent/workspace-kind"
 import type { SessionNavigationRow } from "../../ui/navigation/session-navigation"
 import {
   applyFetchedSessionListPage,
+  fetchSessionListPage,
+  mergeSessionListItems,
   sessionListQueryKey,
-  sessionListQueryOptions,
   type SessionListQuery,
   type SessionListResponse,
 } from "../query/session-list"
@@ -34,10 +36,22 @@ import {
  * tell apart from an empty machine. `claxedo-server`'s session-list route now
  * refuses that read (409 `workspace_runtime_session_authority`) rather than
  * answering it.
+ *
+ * `composed` is not a workspace kind: it is a SECTION whose workspaces do not
+ * all answer from one server — a project holding a user-hosted workspace
+ * beside a local or cloud one. Its members are the per-workspace sources
+ * above, and its page is their pages merged.
  */
 export type SessionSource =
   | { kind: "local" | "cloud" }
   | { kind: "user-hosted"; workspaceId: string; projectId?: string }
+  | { kind: "composed"; central: CentralSessionSource; userHosted: UserHostedSessionSource[] }
+
+type CentralSessionSource = Extract<SessionSource, { kind: "local" | "cloud" }>
+type UserHostedSessionSource = Extract<SessionSource, { kind: "user-hosted" }>
+
+/** The composed page's key for the central member's own cursor. */
+const COMPOSED_CENTRAL_MEMBER = "central"
 
 /** Rows the runtime answers with are re-shaped once and paged from memory. */
 const USER_HOSTED_SESSION_LIST_STALE_MS = 30_000
@@ -74,7 +88,7 @@ export function sessionRowDirectory(input: {
  * no workspace and live there, by the same rule that puts a local workspace's
  * sessions on the daemon and a cloud workspace's in the registry.
  */
-export function centralSessionSource(input: { local: boolean }): SessionSource {
+export function centralSessionSource(input: { local: boolean }): CentralSessionSource {
   return { kind: input.local ? "local" : "cloud" }
 }
 
@@ -92,11 +106,47 @@ export function sessionSourceForWorkspace(input: {
 }
 
 /**
- * One rail section's list, from its workspace's source.
+ * A PROJECT's source: every source its own workspaces are read from.
+ *
+ * A project section lists the sessions of all its workspaces, and those do not
+ * share one server — the central one answers for the local and cloud
+ * workspaces, and each user-hosted workspace answers from its own runtime over
+ * the relay, by the same `sessionSourceForWorkspace` rule its own section
+ * uses. A project with no user-hosted workspace IS the central source: a
+ * composition of one member is that member.
+ */
+export function projectSessionSource(input: {
+  local: boolean
+  projectId: string
+  /** The project's catalog rows, under the refs the catalog keys them by. */
+  workspaces: Record<string, { kind?: string; id?: string; workspaceId?: string }> | undefined
+}): SessionSource {
+  const central = centralSessionSource({ local: input.local })
+  const byWorkspaceId = new Map<string, UserHostedSessionSource>()
+  for (const [ref, workspace] of Object.entries(input.workspaces ?? {})) {
+    const source = sessionSourceForWorkspace({
+      kind: workspaceKind(workspace.kind),
+      // The signed id a relay-backed workspace is addressed by; the catalog's
+      // own key is a directory on the HOST, which this app cannot reach.
+      workspaceId: workspace.workspaceId ?? workspace.id ?? ref,
+      projectId: input.projectId,
+    })
+    // One workspace is one source however many refs name it; a second read of
+    // the same runtime would only duplicate its rows.
+    if (source.kind === USER_HOSTED_WORKSPACE_KIND) byWorkspaceId.set(source.workspaceId, source)
+  }
+  if (byWorkspaceId.size === 0) return central
+  return { kind: "composed", central, userHosted: [...byWorkspaceId.values()] }
+}
+
+/**
+ * One rail section's list, from its own source.
  *
  * Every source writes the SAME cache entry (`shell.sessionList` for the
  * section's query), so the readers, the pagination and the event appliers in
- * `session-list.ts` stay one implementation whichever server answered.
+ * `session-list.ts` stay one implementation whichever server answered — and a
+ * composed source folds its members into that one entry rather than opening a
+ * second list for the same section.
  */
 export function sessionSourceQueryOptions(input: {
   baseUrl?: string
@@ -104,29 +154,115 @@ export function sessionSourceQueryOptions(input: {
   query: SessionListQuery
   request?: typeof fetch
 }) {
-  if (input.source.kind !== USER_HOSTED_WORKSPACE_KIND) {
-    return sessionListQueryOptions({
-      baseUrl: input.baseUrl,
-      query: input.query,
-      ...(input.request ? { request: input.request } : {}),
-    })
-  }
-  const source = input.source
   return queryOptions({
     queryKey: sessionListQueryKey(input.baseUrl, input.query),
     queryFn: async () => applyFetchedSessionListPage({
       baseUrl: input.baseUrl,
       query: input.query,
-      page: sessionListPage(
+      page: await sessionSourcePage(input),
+    }),
+  })
+}
+
+/** The page one source answers the section's query with. */
+async function sessionSourcePage(input: {
+  baseUrl?: string
+  source: SessionSource
+  query: SessionListQuery
+  request?: typeof fetch
+}): Promise<SessionListResponse> {
+  const source = input.source
+  if (source.kind === "composed") return composedSessionListPage({ ...input, source })
+  if (source.kind === USER_HOSTED_WORKSPACE_KIND) {
+    return sessionListPage(
+      await userHostedSessionRows({
+        baseUrl: input.baseUrl,
+        source,
+        ...(input.request ? { request: input.request } : {}),
+      }),
+      input.query,
+    )
+  }
+  return await fetchSessionListPage({
+    baseUrl: input.baseUrl,
+    query: input.query,
+    ...(input.request ? { request: input.request } : {}),
+  })
+}
+
+/**
+ * A composed section's page: every member's page for the same view, merged.
+ *
+ * Each member pages independently — the central server hands out its own
+ * opaque cursor and a runtime's rows are paged from memory — so the composed
+ * cursor is the map of the members that still have one, and a later page asks
+ * only those. A member that fails fails the section: a project list that
+ * silently dropped an unreachable workspace's rows would read as an empty
+ * workspace rather than an unreachable one.
+ */
+async function composedSessionListPage(input: {
+  baseUrl?: string
+  source: Extract<SessionSource, { kind: "composed" }>
+  query: SessionListQuery
+  request?: typeof fetch
+}): Promise<SessionListResponse> {
+  const cursors = composedCursors(input.query.cursor)
+  const { cursor: _paged, ...memberQuery } = input.query
+  const pageQuery = (cursor: string | undefined) => cursor === undefined ? memberQuery : { ...memberQuery, cursor }
+  const members = [
+    // The runtime owns its workspace's sessions, so its row wins over a
+    // central row for the same session.
+    ...input.source.userHosted.map((source) => ({
+      key: source.workspaceId,
+      page: async (cursor: string | undefined) => sessionListPage(
         await userHostedSessionRows({
           baseUrl: input.baseUrl,
           source,
           ...(input.request ? { request: input.request } : {}),
         }),
-        input.query,
+        pageQuery(cursor),
       ),
-    }),
-  })
+    })),
+    {
+      key: COMPOSED_CENTRAL_MEMBER,
+      page: (cursor: string | undefined) => fetchSessionListPage({
+        baseUrl: input.baseUrl,
+        query: pageQuery(cursor),
+        ...(input.request ? { request: input.request } : {}),
+      }),
+    },
+  ]
+  const pages = await Promise.all(members
+    .filter((member) => !cursors || member.key in cursors)
+    .map(async (member) => ({ key: member.key, page: await member.page(cursors?.[member.key]) })))
+  const sort = input.query.sort ?? "updated_desc"
+  const nextCursors = Object.fromEntries(pages.flatMap(({ key, page }) => page.nextCursor ? [[key, page.nextCursor]] : []))
+  return {
+    view: { scope: input.query.scope, groupBy: input.query.groupBy ?? "none", sort, limit: input.query.limit },
+    items: sortSessionRows(
+      pages.reduce<SessionNavigationRow[]>((merged, { page }) => mergeSessionListItems(merged, page.items ?? []), []),
+      sort,
+    ),
+    totalKnown: pages.reduce((total, { page }) => total + (page.totalKnown ?? page.items?.length ?? 0), 0),
+    ...(Object.keys(nextCursors).length ? { nextCursor: JSON.stringify(nextCursors) } : {}),
+  }
+}
+
+/** The per-member cursors a composed page handed out, or nothing on page one. */
+function composedCursors(cursor: string | undefined): Record<string, string> | undefined {
+  if (cursor === undefined) return undefined
+  const parsed = parseJson(cursor)
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {}
+  return Object.fromEntries(Object.entries(parsed as Record<string, unknown>)
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string"))
+}
+
+function parseJson(value: string): unknown {
+  try {
+    return JSON.parse(value)
+  } catch {
+    return undefined
+  }
 }
 
 /**
@@ -211,11 +347,7 @@ function userHostedNavigationRow(
  */
 function sessionListPage(rows: SessionNavigationRow[], query: SessionListQuery): SessionListResponse {
   const sort = query.sort ?? "updated_desc"
-  const matched = rows
-    .filter((row) => rowMatchesView(row, query))
-    .sort((a, b) => sort === "created_desc"
-      ? b.createdAt - a.createdAt || b.sessionRef.localeCompare(a.sessionRef)
-      : b.updatedAt - a.updatedAt || b.sessionRef.localeCompare(a.sessionRef))
+  const matched = sortSessionRows(rows.filter((row) => rowMatchesView(row, query)), sort)
   const offset = pageOffset(query.cursor)
   const items = matched.slice(offset, offset + query.limit)
   const next = offset + items.length
@@ -225,6 +357,19 @@ function sessionListPage(rows: SessionNavigationRow[], query: SessionListQuery):
     totalKnown: matched.length,
     ...(next < matched.length ? { nextCursor: String(next) } : {}),
   }
+}
+
+/**
+ * The view's own ordering, applied to rows this app assembled — a runtime's
+ * whole list, or several sources' pages merged into one section's page.
+ */
+function sortSessionRows(
+  rows: readonly SessionNavigationRow[],
+  sort: NonNullable<SessionListQuery["sort"]>,
+): SessionNavigationRow[] {
+  return [...rows].sort((a, b) => sort === "created_desc"
+    ? b.createdAt - a.createdAt || b.sessionRef.localeCompare(a.sessionRef)
+    : b.updatedAt - a.updatedAt || b.sessionRef.localeCompare(a.sessionRef))
 }
 
 function pageOffset(cursor: string | undefined) {

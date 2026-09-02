@@ -1,10 +1,11 @@
 import { getFilename } from "@/lib/path"
 import { parseOwnerRepo } from "./rail-git-remote"
-import type { ProjectItem } from "./domain-types"
+import type { ProjectItem, RuntimeKind } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
 import { isRelayBackedWorkspaceKind, isUserHostedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { projectWorkspaceForRef } from "@/features/workspaces/lib/workspace-display"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({
@@ -76,6 +77,28 @@ export function projectActionDirectory<TDirectory extends string>(input: {
   return active ?? input.directories[0] ?? input.projectWorktree
 }
 
+/**
+ * The identity a relay-backed workspace is addressed by. Falls back to the
+ * ref itself, which for a control-plane row IS `workspace:<id>` — the same
+ * identity, in the form the catalog keyed it under.
+ */
+export function workspaceRowId(project: Pick<ProjectItem, "workspaces">, directory: string) {
+  const workspace = projectWorkspaceForRef(project.workspaces, directory)
+  return workspace?.workspaceId ?? workspace?.id ?? directory
+}
+
+/** The runtime that serves a workspace, as its catalog row reports it. */
+export function workspaceRuntimeKind(
+  project: Pick<ProjectItem, "workspaces" | "worktree">,
+  directory: string,
+  mainIsCloud?: boolean,
+): RuntimeKind {
+  const kind = workspaceKind(projectWorkspaceForRef(project.workspaces, directory)?.kind)
+  if (kind) return kind
+  if (directory === project.worktree && mainIsCloud) return "cloud"
+  return "local"
+}
+
 export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
   workspaceId?: string
   environmentKind?: string
@@ -87,12 +110,11 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
     input.sessionRef?.startsWith("central:") ||
     input.sessionRef?.startsWith("local:")
   ) return
-  const workspace = input.project.workspaces?.[input.directory] ??
-    Object.values(input.project.workspaces ?? {}).find((item) =>
-      item.directory === input.directory ||
-      item.id === input.directory ||
-      item.workspaceId === input.directory
-    )
+  // A relay-backed session row is addressed as `workspace:<id>`, which is the
+  // catalog's row under another of its identities — `projectWorkspaceForRef`
+  // is what makes the two meet, so the row's own kind and id decide the
+  // backing instead of the `ws_*`-shape guess below.
+  const workspace = projectWorkspaceForRef(input.project.workspaces, input.directory)
   const kind = input.environmentKind ?? workspace?.kind
   const workspaceId = input.workspaceId ?? workspace?.workspaceId ?? workspace?.id
   // The project inventory is authoritative for a workspace it already knows. A

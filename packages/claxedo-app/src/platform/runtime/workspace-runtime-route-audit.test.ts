@@ -3494,6 +3494,9 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/createRailSectionSessionList/)
     expect(text).toMatch(/sessionSourceForWorkspace/)
     expect(text).toMatch(/centralSessionSource/)
+    // A project section lists every workspace in it, so its source is the
+    // composition of theirs — never the central server alone.
+    expect(text).toMatch(/projectSessionSource/)
     expect(text).not.toMatch(/sessionListQueryOptions/)
     expect(sectionList).toMatch(/sessionSourceQueryOptions/)
     expect(text).not.toMatch(/claxedoState\.rail/)

@@ -77,6 +77,8 @@ import {
   sessionRowTitle,
   shouldAutoOpenWorkspaceSection,
   shouldHydrateSidebarRuntime,
+  workspaceRowId,
+  workspaceRuntimeKind,
   mergedSessionStatusType,
   workspaceInventoryGroupFor,
 } from "./rail-sidebar.logic"
@@ -116,6 +118,7 @@ import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import { type SessionListQuery } from "../../../features/session/data/query/session-list"
 import {
   centralSessionSource,
+  projectSessionSource,
   sessionSourceForWorkspace,
 } from "../../../features/session/data/sync/session-source"
 import { createRailSectionSessionList } from "./rail-section-session-list"
@@ -143,9 +146,18 @@ const VIEW_KEY = "claxedo.session-view.v1"
 const GLOBAL_TAG = "global"
 const GLOBAL_SHOW_TAG = "global:default"
 const SESSION_GROUP_PAGE_SIZE = 5
-/** Stable rail order: visit/activate must not reshuffle rows. Content edits still
- *  surface when a view opts into `updated_desc`. */
-const SESSION_LIST_SORT_DEFAULT = "created_desc" as const
+/**
+ * The rail's order: most recently ACTIVE first.
+ *
+ * `updatedAt` advances on real activity — a prompt submitted, a turn settled,
+ * a title resolved — and not on visiting a row, so the list stays stable while
+ * the user moves through it and still surfaces the session they just worked
+ * in. It is also the order every applier in `session-list.ts` maintains
+ * (`reconcileUpdatedSessionListQueryData` re-sorts a row whose `updatedAt`
+ * moved), so asking for any other order leaves those appliers unable to place
+ * what they just rewrote.
+ */
+const SESSION_LIST_SORT_DEFAULT = "updated_desc" as const
 type SessionListNoticeVariant = "loading" | "error" | "empty" | "done"
 
 export function SessionListNotice(props: {
@@ -313,23 +325,6 @@ function sessionRuntimeDisplayKind(session: Pick<Row, "environment" | "project">
   if (environmentKind) return environmentKind
   const workspaceKind = toWorkspaceKind(projectWorkspaceInfo(session.project, directory)?.kind)
   if (workspaceKind) return workspaceKind
-  return "local"
-}
-
-/**
- * The identity a relay-backed workspace is addressed by. Falls back to the
- * directory ref, which for a control-plane row IS `workspace:<id>` — the same
- * identity, in the form the catalog keyed it under.
- */
-function workspaceRowId(project: ProjectItem, directory: string) {
-  const workspace = projectWorkspaceInfo(project, directory)
-  return workspace?.workspaceId ?? workspace?.id ?? directory
-}
-
-function workspaceRuntimeKind(project: ProjectItem, directory: string, mainIsCloud?: boolean): RuntimeKind {
-  const workspaceKind = toWorkspaceKind(projectWorkspaceInfo(project, directory)?.kind)
-  if (workspaceKind) return workspaceKind
-  if (directory === project.worktree && mainIsCloud) return "cloud"
   return "local"
 }
 
@@ -2092,11 +2087,15 @@ export function RailSidebar(props: RailSidebarProps) {
     }))
     const list = createRailSectionSessionList({
       baseUrl: () => globalSDK.url,
-      // A project groups workspaces of one kind or several. Its own list comes
-      // from the central server, which answers for the project's local and
-      // cloud workspaces; each user-hosted workspace in it is read from its own
-      // runtime by its `WorkspaceBlock`, so the central list omits them.
-      source: () => centralSessionSource({ local: server.isLocal() }),
+      // A project section lists the sessions of ALL its workspaces, and those
+      // do not share one server: the central one answers for the local and
+      // cloud workspaces, each user-hosted workspace from its own runtime over
+      // the relay.
+      source: () => projectSessionSource({
+        local: server.isLocal(),
+        projectId: section.project.id,
+        workspaces: section.project.workspaces,
+      }),
       query: projectSessionListQuery,
       archiveView: () => view().archived,
       enabled: open,
