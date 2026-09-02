@@ -17,6 +17,7 @@ import {
 } from "./store-policy"
 import { harnessConfigUrl, sessionResourceUrl } from "./harness-config-routes"
 import type { WorkspaceBoot } from "./harness-config-runtime"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type HarnessSwitcherCache = {
   getPending(key: string): Promise<void> | undefined
@@ -111,7 +112,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   ) => {
     const workspace = await input.runtime.workspace(params).catch(() => undefined)
     if (!active()) return false
-    const status = useLocalHarnessConfig && workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted"
+    const status = useLocalHarnessConfig && !isRelayBackedWorkspaceKind(workspace?.kind)
       ? await postHarnessConfig(scope, type, params, binary, undefined, active)
       : true
     if (!status || !active()) return false

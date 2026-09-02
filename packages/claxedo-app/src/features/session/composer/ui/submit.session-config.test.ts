@@ -46,7 +46,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
     expect(JSON.parse(unsignedCalls.find((call) =>
       call.url === "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&harness=opencode" && call.method === "PATCH"
     )?.body ?? "{}")).toEqual({
-      harness: { type: "opencode" },
+      harness: { id: "opencode", access: "native" },
       agent: "review",
       model: { providerID: "new-provider", modelID: "new-model" },
     })

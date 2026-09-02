@@ -104,13 +104,13 @@ describe("AIConnectSurface", () => {
   })
 
   test("each cloud harness opens the connect form for the auth id that carries its methods", () => {
-    // These are AUTH ids, not model-catalog ids: `codex-acp` is the one that
-    // offers the ChatGPT OAuth flow, `cursor-acp` the dashboard key. Pinned
-    // because a plausible-looking wrong id (`cursor`, `openai`) silently
+    // These are AUTH ids, not model-catalog ids: `codex-app-server` is the one
+    // that offers the ChatGPT OAuth flow, `cursor-sdk` the dashboard key.
+    // Pinned because a plausible-looking wrong id (`cursor`, `openai`) silently
     // downgrades the user to the wrong set of sign-in methods.
     stubPorts()
     const opened: string[] = []
-    for (const [label, expected] of [["Codex", "codex-acp"], ["Cursor", "cursor-acp"]] as const) {
+    for (const [label, expected] of [["Codex", "codex-app-server"], ["Cursor", "cursor-sdk"]] as const) {
       const view = render(() => <Harness destination="cloud" />)
       fireEvent.click(screen.getByText(label))
       opened.push(screen.getByTestId("connect-form").getAttribute("data-provider") ?? "")

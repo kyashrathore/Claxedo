@@ -64,10 +64,9 @@ export function RuntimeProviders(props: ParentProps) {
     scope: () => principalDataScope(principal()),
   })
   installPrincipalDataIsolation({ principal })
-  // No UI reads its result, so this no longer waits for the app shell chunk
-  // (previously mounted from inside `ClaxedoAppShellContent`, gated behind
-  // the lazy app-shell-bootstrap import above): it starts as soon as the
-  // provider tree itself mounts, alongside the rest of wave 1.
+  // No UI reads its result, so it starts as soon as the provider tree itself
+  // mounts, alongside the rest of wave 1 — it does not wait on the lazy
+  // app-shell-bootstrap import above.
   onMount(() => onCleanup(installUsageOutboxWakeups()))
   let didSignalPaint = false
 

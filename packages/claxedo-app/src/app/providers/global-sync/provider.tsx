@@ -11,6 +11,7 @@ import { sanitizeProject } from "./project-sanitize"
 import { projectForDirectory } from "./project-owner"
 import { initialRouteDirectory, workspaceDirectoryRef } from "./bootstrap-scope"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
@@ -521,7 +522,7 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string; directory?: Project["worktree"] }>
     }>) {
       const aliases = Object.entries(project.workspaces ?? {})
-        .filter(([, workspace]) => workspace.kind === "cloud" || workspace.kind === "user-hosted")
+        .filter(([, workspace]) => isRelayBackedWorkspaceKind(workspaceKind(workspace.kind)))
       if (aliases.length === 0) continue
       const existing = merged.find((item) => item.id === project.id)
       if (existing) {

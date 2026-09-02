@@ -102,7 +102,7 @@ describe("submit transport adapter", () => {
       method: "PATCH",
     })
     expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
-      harness: { type: "opencode" },
+      harness: { id: "opencode", access: "native" },
       agent: "review",
       model: { providerID: "provider", modelID: "model" },
     })

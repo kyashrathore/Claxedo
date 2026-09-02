@@ -28,6 +28,7 @@ import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute } from "@/platform/identity/route"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import {
   refreshDirectorySessionCache,
   sessionLoadMetaKey,
@@ -196,7 +197,7 @@ export function DirectoryScope(props: ParentProps<{
   directory: string
   sessionRef?: Accessor<SessionRef | undefined>
   workspaceId?: Accessor<string | undefined>
-  workspaceKind?: Accessor<"cloud" | "user-hosted" | "local">
+  workspaceKind?: Accessor<WorkspaceKind>
   harnessType?: Accessor<string | undefined>
   active?: Accessor<boolean>
   sessionId?: Accessor<string | undefined>
@@ -219,7 +220,7 @@ export function DirectoryScope(props: ParentProps<{
   const runtimeRef = createMemo(() => {
     const workspaceId = props.workspaceId?.()
     const kind = props.workspaceKind?.()
-    if (workspaceId && (kind === "cloud" || kind === "user-hosted")) return { workspaceId, kind }
+    if (workspaceId && isRelayBackedWorkspaceKind(kind)) return { workspaceId, kind }
     return sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
   })
   const dataProviderHarnessType = createMemo(() => passiveHarnessType() ?? (runtimeRef() ? "opencode" : undefined))

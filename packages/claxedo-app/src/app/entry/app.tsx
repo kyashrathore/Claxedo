@@ -246,7 +246,7 @@ function ConnectionGate(props: ParentProps) {
       // LATER whether to fall back to background mode — the same question
       // the recovery effect two functions down answers from `server.healthy()`.
       // That accessor is `server.tsx`'s own continuous /global/health poll;
-      // running server-health.ts's /api/claxedo/health loop here too was a
+      // running server-health.ts's own health loop here too was a
       // second boot-time prober asking the same "is the connection up"
       // question this route never blocks paint on.
       void waitForHealthy(server.healthy, 10_000).then((healthy) => {

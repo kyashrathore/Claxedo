@@ -521,6 +521,22 @@ function mergeInput(
   }
 }
 
+/**
+ * Merge two `kind` readings for the SAME `workspaceId` — never a downgrade.
+ *
+ * `local` never survives a second, more-specific reading: it is what a caller
+ * reports before it has resolved anything relay-backed, so any non-local
+ * `next` wins over it.
+ *
+ * Once a workspace has been read as `cloud`, a later `user-hosted` reading is
+ * NOT more specific — it is `sessionWorkspaceRuntimeRef`'s deliberate "never
+ * guess cloud" default (see `platform/runtime/session-workspace.ts`) landing
+ * on a caller whose own inventory read has not resolved yet. `cloud` is the
+ * confirmed value in that pair, so it is the one direction this merge treats
+ * asymmetrically: `cloud` sticks, `user-hosted` does not get to overwrite it.
+ * Every other pairing (equal kinds, or `user-hosted` refined to a
+ * subsequently-confirmed `cloud`) takes `next`.
+ */
 function refinedKind(prev: WorkspaceConnectionKind, next: WorkspaceConnectionKind): WorkspaceConnectionKind {
   if (prev === "cloud" && next === "user-hosted") return prev
   if (prev === "local" && next !== "local") return next

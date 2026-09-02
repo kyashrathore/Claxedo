@@ -7,6 +7,7 @@ import {
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef, type SessionWorkspaceRuntimeInput } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import type { SessionRef } from "@/platform/identity/session-ref"
 import {
   harnessHasConfigOptions,
@@ -22,8 +23,6 @@ export type HarnessScopeInput = {
   sessionId?: string
   sessionRef?: SessionRef
 }
-
-export type HarnessWorkspaceKind = "local" | "cloud" | "user-hosted"
 
 export const harnessScope = panePreferenceScope
 export const isDraftScope = isDraftPaneScope
@@ -74,7 +73,7 @@ export function shouldRefreshDirectoryAfterHarnessStatus(input?: HarnessScopeInp
 export function shouldHydrateDraftFromHarnessStatus(input: {
   useLocalHarnessConfig: boolean
   workspaceRuntime?: boolean
-  workspaceKind?: HarnessWorkspaceKind | null
+  workspaceKind?: WorkspaceKind | null
 }) {
   if (input.workspaceKind === "user-hosted") return true
   if (!input.useLocalHarnessConfig) return false
@@ -177,12 +176,8 @@ export function sessionModelSyncRequestKey(key: string, model: string) {
 export function shouldUseLocalHarnessConfigApi(input: {
   baseUrl?: string
   directory?: string
-  workspaceKind?: HarnessWorkspaceKind | null
+  workspaceKind?: WorkspaceKind | null
 }) {
-  if (isRemoteHarnessWorkspaceKind(input.workspaceKind)) return false
+  if (isRelayBackedWorkspaceKind(input.workspaceKind)) return false
   return centralTransportForServer(input.baseUrl) === "loopback" && isFilesystemDirectory(input.directory)
-}
-
-function isRemoteHarnessWorkspaceKind(input?: HarnessWorkspaceKind | null) {
-  return input === "cloud" || input === "user-hosted"
 }

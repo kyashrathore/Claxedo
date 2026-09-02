@@ -2,6 +2,7 @@ import type { Project } from "@opencode-ai/sdk/v2/client"
 import type { GlobalSessionItem } from "./types"
 import { normalizeSessionTurnOutcome, type ClaxedoSession } from "../session-types"
 import { cmp } from "@/platform/query/sort"
+import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
 
 function rec(input: unknown) {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
@@ -54,14 +55,6 @@ function projectDisplayName(row: Record<string, unknown>, projectID: string) {
     txt(row.display_name) ??
     txt(row.displayName) ??
     projectID
-}
-
-function workspaceHosting(row: Record<string, unknown>) {
-  const access = txt(row.access)
-  if (access === "cloud" || access === "user-hosted") return access
-  const backing = txt(row.backing)
-  if (backing === "cloud" || backing === "user-hosted") return backing
-  return undefined
 }
 
 export function signedInventoryProjects(input: { workspaces: unknown[] }) {
@@ -230,7 +223,7 @@ export function signedInventoryItems(input: { workspaces: unknown[]; sessionsByW
         tags: [],
         attachments: [],
         environment: {
-          kind: workspaceHosting(row),
+          kind: workspaceHostingKind(row),
           driver: txt(row?.backing) ?? txt(row?.access),
         },
         ...(lastTurn ? { lastTurn } : {}),

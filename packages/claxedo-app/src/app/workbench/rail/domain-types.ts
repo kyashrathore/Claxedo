@@ -12,7 +12,9 @@
  * directly from this module.
  */
 
-export type RuntimeKind = "local" | "cloud" | "user-hosted"
+import type { WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+
+export type RuntimeKind = WorkspaceKind
 
 export type SessionItem = {
   id: string

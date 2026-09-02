@@ -514,6 +514,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("surfaces runner config errors in the notice row, in words, with no hover needed", () => {
+    harnessType = "claude-sdk"
     configError = "Authentication required. Please run 'agent login' first."
     models = []
     selectedModel = ""
@@ -532,6 +533,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("surfaces fresh option-discovery failures without waiting for stale", () => {
+    harnessType = "claude-sdk"
     configError = "No model options available"
     optionsStale = false
     models = []
@@ -622,6 +624,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("a dead runtime outranks the option-discovery failure it caused", () => {
+    harnessType = "claude-sdk"
     readiness = "error"
     configError = "Failed to load model options"
 
@@ -640,6 +643,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("keeps the selected model label when runner config fails after model resolution", () => {
+    harnessType = "claude-sdk"
     readiness = "error"
     configError = "Failed to initialize runner"
     models = [{ id: "default", name: "Default (recommended)" }]

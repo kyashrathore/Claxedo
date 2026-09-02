@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { QueryClient } from "@tanstack/solid-query"
 import type { WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
+import { workspaceHostingKind } from "@/platform/runtime/agent/signed-workspace"
 import {
   controlPlaneSessionToItem,
   controlMetaToGlobalSession,
@@ -8,7 +9,6 @@ import {
   createSignedInventorySource,
   mergeWorkspaceGroups,
   shouldUseSignedControlPlaneInventory,
-  signedWorkspaceHosting,
   toSessionInventoryRow,
   workspaceGroupKey,
 } from "./inventory-source"
@@ -52,11 +52,11 @@ describe("global sync inventory source helpers", () => {
     expect(local.sessions.map((item) => item.id)).toEqual(["ses_local"])
   })
 
-  test("signedWorkspaceHosting accepts control-plane access and backing vocabulary", () => {
-    expect(signedWorkspaceHosting({ access: "cloud" })).toBe("cloud")
-    expect(signedWorkspaceHosting({ backing: "user-hosted" })).toBe("user-hosted")
-    expect(signedWorkspaceHosting({ access: "local" })).toBeUndefined()
-    expect(signedWorkspaceHosting(undefined)).toBeUndefined()
+  test("workspaceHostingKind accepts control-plane access and backing vocabulary", () => {
+    expect(workspaceHostingKind({ access: "cloud" })).toBe("cloud")
+    expect(workspaceHostingKind({ backing: "user-hosted" })).toBe("user-hosted")
+    expect(workspaceHostingKind({ access: "local" })).toBeUndefined()
+    expect(workspaceHostingKind(undefined)).toBeUndefined()
   })
 
   test("signed control-plane inventory predicate uses local route identity", () => {

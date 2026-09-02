@@ -5,6 +5,7 @@ import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-wo
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { normalizeUrl } from "@/platform/api/api"
 import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 type ProjectClient = {
   project: {
@@ -66,7 +67,7 @@ export function configQuery(input: {
       // config at `POST /api/wr/config` — so issuing the GET produces a
       // guaranteed 404 (BUG-7). Config is optional and every consumer reads it
       // with `?.`, so skip the doomed fetch and treat it as empty config.
-      if (input.workspace?.kind === "cloud" || input.workspace?.kind === "user-hosted") {
+      if (isRelayBackedWorkspaceKind(input.workspace?.kind)) {
         return {} as Config
       }
       try {

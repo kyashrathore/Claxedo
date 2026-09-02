@@ -125,7 +125,7 @@ describe("relay provider label", () => {
 
   test("uses product names for internal harness provider ids", () => {
     expect(providerLabel({ providerID: "codex-app-server" })).toBe("Codex")
-    expect(providerLabel({ providerID: "claude-acp" })).toBe("Claude")
+    expect(providerLabel({ providerID: "claude-sdk" })).toBe("Claude")
     expect(providerLabel({ providerID: "cursor-sdk" })).toBe("Cursor")
   })
 })

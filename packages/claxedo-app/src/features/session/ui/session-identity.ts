@@ -1,7 +1,7 @@
 import type { SessionRef } from "@/platform/identity/session-ref"
 import { parseShellRoute } from "@/platform/identity/route"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayBackedWorkspaceKind, USER_HOSTED_WORKSPACE_KIND, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 
 export type SessionIdentity = {
@@ -94,7 +94,7 @@ export function signedProjectWorkspaceId(input: {
   workspace?: { id?: string; workspaceId?: string; kind?: string }
 }) {
   if (input.signedWorkspace?.workspaceId) return input.signedWorkspace.workspaceId
-  if (input.workspace?.kind === "cloud" || input.workspace?.kind === "user-hosted") {
+  if (input.workspace && isRelayBackedWorkspaceKind(workspaceKind(input.workspace.kind))) {
     return input.workspace.workspaceId ?? input.workspace.id
   }
   return undefined

@@ -22,3 +22,18 @@ export function workspaceKind(input: unknown): WorkspaceKind | undefined {
   if (input === "local" || input === "cloud" || input === "user-hosted") return input
   return undefined
 }
+
+/**
+ * Whether a workspace of this kind is reached over the relay rather than the
+ * loopback server — the single "is this remote?" predicate every caller that
+ * gates on `kind === "cloud" || kind === "user-hosted"` should import instead
+ * of re-deriving the union inline.
+ */
+export function isRelayBackedWorkspaceKind(kind: WorkspaceKind | null | undefined): kind is SignedWorkspaceKind {
+  return kind === "cloud" || kind === "user-hosted"
+}
+
+/** The narrower "is this the self-hosted relay machine?" predicate. */
+export function isUserHostedWorkspaceKind(kind: WorkspaceKind | null | undefined): kind is "user-hosted" {
+  return kind === "user-hosted"
+}

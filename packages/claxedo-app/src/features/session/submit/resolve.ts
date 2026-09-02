@@ -13,6 +13,7 @@ import type {
   SubmitSessionTargetResult,
   SubmittedConfig,
 } from "./types"
+import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export async function resolveSubmitSessionTarget(
   input: ResolveSubmitSessionTargetContext,
@@ -69,7 +70,7 @@ export async function resolveSubmitDirectory(
   // sandbox (see submit.ts existingCloudWorkspace / prepareUserHostedRuntime).
   // The cloud-startup overlay helpers self-gate to kind === "cloud", so they
   // no-op for user-hosted — its connection UI is owned by the WorkspaceGate.
-  if (input.workspaceKind === "cloud" || input.workspaceKind === "user-hosted") {
+  if (isRelayBackedWorkspaceKind(workspaceKind(input.workspaceKind))) {
     const cloudDirectory = await input.resolveCloudSessionDirectory(
       input.worktreeSelection,
       input.projectDirectory,

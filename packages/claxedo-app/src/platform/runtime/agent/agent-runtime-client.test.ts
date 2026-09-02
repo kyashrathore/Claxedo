@@ -658,11 +658,12 @@ describe("AgentRuntimeClient", () => {
     ])
   })
 
-  // Regression: a signed USER-HOSTED workspace whose `directory` is the runtime
-  // filesystem path (the registration-stored remote_directory) must divert
-  // session reads to the relay runtime. Before the `workspaceKind` threading,
-  // this shape (workspaceId set, kind unresolved, non-ws_ directory) fell into
-  // the signed-cloud contract and 404'd on `/api/control/sessions/:id/messages`.
+  // A signed USER-HOSTED workspace whose `directory` is the runtime filesystem
+  // path (the registration-stored remote_directory) must divert session reads
+  // to the relay runtime: this shape (workspaceId set, kind unresolved, non-ws_
+  // directory) is exactly the case `workspaceKind` threading exists to steer
+  // away from the signed-cloud contract, which 404s on
+  // `/api/control/sessions/:id/messages` for it.
   it("diverts signed user-hosted message reads with a filesystem directory to the relay runtime", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
@@ -813,7 +814,7 @@ describe("AgentRuntimeClient", () => {
     expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session?roots=true&limit=20")
   })
 
-  // Regression: when the client is not told the workspace id up front, `listSessions`
+  // When the client is not told the workspace id up front, `listSessions`
   // resolves it live via `/api/workspace/resolve` — but that read confirms only a
   // `workspaceId` for a user-hosted workspace addressed by its filesystem-path
   // directory, never a `kind` (the hosted control plane does not track kind for a

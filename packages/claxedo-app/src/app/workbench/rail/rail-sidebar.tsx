@@ -98,7 +98,7 @@ import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
-import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
+import { isRelayBackedWorkspaceKind, USER_HOSTED_WORKSPACE_KIND, workspaceKind as toWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
@@ -308,16 +308,16 @@ function workspaceSessionBacking(
 }
 
 function sessionRuntimeDisplayKind(session: Pick<Row, "environment" | "project">, directory: string): RuntimeKind {
-  const environmentKind = session.environment?.kind
-  if (environmentKind === "cloud" || environmentKind === "user-hosted" || environmentKind === "local") return environmentKind
-  const workspaceKind = projectWorkspaceInfo(session.project, directory)?.kind
-  if (workspaceKind === "cloud" || workspaceKind === "user-hosted" || workspaceKind === "local") return workspaceKind
+  const environmentKind = toWorkspaceKind(session.environment?.kind)
+  if (environmentKind) return environmentKind
+  const workspaceKind = toWorkspaceKind(projectWorkspaceInfo(session.project, directory)?.kind)
+  if (workspaceKind) return workspaceKind
   return "local"
 }
 
 function workspaceRuntimeKind(project: ProjectItem, directory: string, mainIsCloud?: boolean): RuntimeKind {
-  const workspaceKind = projectWorkspaceInfo(project, directory)?.kind
-  if (workspaceKind === "cloud" || workspaceKind === "user-hosted" || workspaceKind === "local") return workspaceKind
+  const workspaceKind = toWorkspaceKind(projectWorkspaceInfo(project, directory)?.kind)
+  if (workspaceKind) return workspaceKind
   if (directory === project.worktree && mainIsCloud) return "cloud"
   return "local"
 }
@@ -1162,7 +1162,7 @@ export function RailSidebar(props: RailSidebarProps) {
       kind === "local" ? undefined : runtimeLabel(kind),
       showWorkspace ? workspaceLabel : undefined,
     ].filter((item): item is string => !!item).join(" · ")
-    if (kind === "cloud" || kind === "user-hosted") {
+    if (isRelayBackedWorkspaceKind(kind)) {
       return {
         icon: runtimeIcon(kind),
         label: label || runtimeLabel(kind),
@@ -1883,8 +1883,8 @@ export function RailSidebar(props: RailSidebarProps) {
       const workspace = projectWorkspaceInfo(section.project, section.workspaceDir)
       return [
         workspaceStatusLabel(workspace),
-        // The only durable trace of a share used to be a transient toast; the
-        // row itself now says which workspaces a phone can reach.
+        // The row itself is the durable record of which workspaces a phone
+        // can reach — not a transient toast.
         sharedWorkspacesForMeta.shared(workspaceItem().workspaceId) ? "Shared" : undefined,
       ].filter((item): item is string => !!item)
     })

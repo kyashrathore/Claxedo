@@ -11,10 +11,9 @@ import { SHARED_WORKSPACES_QUERY_KEY, useSharedWorkspaceIds } from "./shared-wor
  * There is no per-workspace choice to hold, so there is no per-workspace state
  * to reconcile against — the target set is simply "every local workspace this
  * machine has", and this module's whole job is to make the published set equal
- * it. The backend contract is unchanged: publication is still one
- * `registerUserHostedWorkspace` call per workspace (an assignment POST plus a
- * beat). What changed is who decides the list — the user used to tick it, and
- * now the machine's own inventory is the list.
+ * it. The backend contract stays one `registerUserHostedWorkspace` call per
+ * workspace (an assignment POST plus a beat); the machine's own inventory is
+ * the list, not a user-ticked selection.
  *
  * It never UNPUBLISHES. "Pure machine level" has no exclusions, so withdrawing
  * a workspace is not a decision this loop can arrive at; `unshareWorkspace`

@@ -154,12 +154,11 @@ export function sessionListQueryOptions(input: {
       }), {
         // Scope travels in the QUERY STRING only — `sessionNavigationListUrl`
         // already carries directory / workspaceId / projectId, and every
-        // server parses those, never a header. The `x-opencode-directory`
-        // header this used to add was redundant, and against the hosted
-        // control plane it was fatal: a header the cross-origin preflight
+        // server parses those, never a header. Adding an `x-opencode-directory`
+        // header here would be redundant against the loopback server and fatal
+        // against the hosted control plane: a header the cross-origin preflight
         // does not name is not "ignored", the browser refuses to send the
-        // request at all. Every scoped rail fetch died before leaving the
-        // page, with nothing logged server-side.
+        // request at all.
         headers: { Accept: "application/json" },
       })
       if (!res.ok) {

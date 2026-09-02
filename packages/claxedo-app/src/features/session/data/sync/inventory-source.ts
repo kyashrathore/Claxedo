@@ -5,6 +5,7 @@ import { normalizeSessionTurnOutcome } from "../session-types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
+import { workspaceHostingKind, type SignedWorkspaceKind } from "@/platform/runtime/agent/signed-workspace"
 import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
@@ -26,7 +27,6 @@ import {
 export { inventorySessionAttachments, inventorySessionEnvironment, inventorySessionGit } from "./session-inventory"
 
 type ProjectDirectory = string
-type SignedWorkspaceKind = "cloud" | "user-hosted"
 type SignedWorkspaceInfo = {
   workspaceId: string
   directory?: ProjectDirectory
@@ -137,15 +137,6 @@ export function mergeWorkspaceGroups(localGroups: WorkspaceGroup[], signedGroups
   return [...byDirectory.values()]
 }
 
-export function signedWorkspaceHosting(input: unknown) {
-  const row = rec(input)
-  const access = txt(row?.access)
-  if (access === "cloud" || access === "user-hosted") return access
-  const backing = txt(row?.backing)
-  if (backing === "cloud" || backing === "user-hosted") return backing
-  return undefined
-}
-
 export function controlPlaneSessionToItem(input: {
   session: unknown
   workspace: unknown
@@ -177,7 +168,7 @@ export function controlPlaneSessionToItem(input: {
     tags: [],
     attachments: [],
     environment: {
-      kind: signedWorkspaceHosting(workspace),
+      kind: workspaceHostingKind(workspace),
       driver: txt(workspace?.backing) ?? txt(workspace?.access),
     },
     ...(lastTurn ? { lastTurn } : {}),
@@ -373,7 +364,7 @@ export function createSignedInventorySource(input: {
       return [fetchSignedWorkspaceSessions({
         workspaceId,
         directory,
-        kind: signedWorkspaceHosting(workspace),
+        kind: workspaceHostingKind(workspace),
       }).then((sessions) => [workspaceId, sessions] as const)]
     })))
     const items = signedInventoryItems({ workspaces, sessionsByWorkspace })

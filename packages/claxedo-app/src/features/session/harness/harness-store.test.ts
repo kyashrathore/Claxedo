@@ -12,20 +12,20 @@ beforeEach(() => {
 
 describe("harness store facade", () => {
   test("reads session state from scoped preferences and legacy fallback without seeding", () => {
-    storage.setItem("claxedo:runner", "claude-acp")
+    storage.setItem("claxedo:runner", "claude-sdk")
     storage.setItem("claxedo:acp-model", "legacy-model")
-    storage.setItem("claxedo:harness-map", JSON.stringify({ "session:ses_1": "codex-acp" }))
+    storage.setItem("claxedo:harness-map", JSON.stringify({ "session:ses_1": "codex-app-server" }))
     storage.setItem("claxedo:acp-model-map", JSON.stringify({ "session:ses_1": "gpt-5.5" }))
 
     const store = createHarnessStore(storage)
 
     expect(store.state("session:ses_1")).toBeUndefined()
     expect(store.read("session:ses_1")).toMatchObject({
-      harness: "codex-acp",
+      harness: "codex-app-server",
       selectedModel: "gpt-5.5",
     })
     expect(store.read("session:ses_2")).toMatchObject({
-      harness: "claude-acp",
+      harness: "claude-sdk",
       selectedModel: "legacy-model",
     })
     expect(store.state("session:ses_1")).toBeUndefined()
@@ -33,7 +33,7 @@ describe("harness store facade", () => {
   })
 
   test("reuses one immutable initial projection for repeated unseeded reads", () => {
-    storage.setItem("claxedo:runner", "claude-acp")
+    storage.setItem("claxedo:runner", "claude-sdk")
     const store = createHarnessStore(storage)
     const first = store.read("session:ses_1")
     const readsAfterFirst = storage.getCount
@@ -47,22 +47,22 @@ describe("harness store facade", () => {
   })
 
   test("touch seeds live state and seed does not overwrite patches", () => {
-    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:one": "codex-acp" }))
+    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:one": "codex-app-server" }))
 
     const store = createHarnessStore(storage)
     const state = store.touch("draft:one")
 
-    expect(state.harness).toBe("codex-acp")
+    expect(state.harness).toBe("codex-app-server")
     expect(store.state("draft:one")).toBe(state)
 
     store.applyPatch("draft:one", {
-      harness: "claude-acp",
+      harness: "claude-sdk",
       selectedModel: "opus",
     })
     store.seed("draft:one")
 
     expect(store.read("draft:one")).toMatchObject({
-      harness: "claude-acp",
+      harness: "claude-sdk",
       selectedModel: "opus",
     })
   })
@@ -84,7 +84,7 @@ describe("harness store facade", () => {
 
     store.seed("draft:/repo:route")
     store.applyPatch("draft:/repo:route", {
-      harness: "claude-acp",
+      harness: "claude-sdk",
       harnessMode: "harness",
       selectedModel: "opus",
       dynamicModels: [{ id: "opus", name: "Opus" }],
@@ -92,11 +92,11 @@ describe("harness store facade", () => {
       readiness: "ready",
     })
 
-    expect(store.harness("draft:/repo:route")).toBe("claude-acp")
+    expect(store.harness("draft:/repo:route")).toBe("claude-sdk")
     expect(store.selectedModel("draft:/repo:route")).toBe("opus")
     expect(store.models("draft:/repo:route")).toEqual([{ id: "opus", name: "Opus" }])
     expect(store.harnessModelKeyForSubmit("draft:/repo:route")).toEqual({
-      providerID: "claude-acp",
+      providerID: "claude-sdk",
       modelID: "opus",
     })
     expect(store.harnessModelNameForSubmit("draft:/repo:route")).toBe("Opus")
@@ -107,7 +107,7 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
 
     store.applyPatch("draft:/repo:route", {
-      harness: "claude-acp",
+      harness: "claude-sdk",
       harnessMode: "harness",
       selectedModel: "opus",
       dynamicModels: [{ id: "opus", name: "Opus" }],
@@ -124,7 +124,7 @@ describe("harness store facade", () => {
     })
 
     expect(store.read("draft:/repo:route")).toMatchObject({
-      harness: "claude-acp",
+      harness: "claude-sdk",
       selectedModel: "",
       dynamicModels: null,
       optionsLoading: false,
@@ -138,7 +138,7 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
 
     store.applyPatch("draft:/repo:route", {
-      harness: "codex-acp",
+      harness: "codex-app-server",
       harnessMode: "harness",
       selectedModel: "",
       optionsLoading: false,
@@ -147,7 +147,7 @@ describe("harness store facade", () => {
     })
 
     expect(store.state("draft:/repo:route")).toMatchObject({
-      harness: "codex-acp",
+      harness: "codex-app-server",
       selectedModel: "",
       optionsLoading: false,
       optionsStale: false,
@@ -161,9 +161,9 @@ describe("harness store facade", () => {
 
     store.seed("draft:one")
     store.applyPatch("draft:one", {
-      harness: "codex-acp",
+      harness: "codex-app-server",
       harnessMode: "harness",
-      harnessBinary: "/bin/codex-acp",
+      harnessBinary: "/bin/codex-app-server",
       selectedModel: "gpt-5.5",
       selectedAgent: "build",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
@@ -174,7 +174,7 @@ describe("harness store facade", () => {
       configError: "missing binary",
       workspaceId: "ws_1",
     })
-    store.save("draft:one", "harness", "codex-acp")
+    store.save("draft:one", "harness", "codex-app-server")
     store.save("draft:one", "model", "gpt-5.5")
     store.save("draft:one", "agent", "build")
     storage.setItem("claxedo:model-variant-map", JSON.stringify({ "draft:one": "fast" }))
@@ -186,8 +186,8 @@ describe("harness store facade", () => {
     // recurse the nested dynamicModels array (a nested solid proxy otherwise
     // trips the matcher — the promoted content itself is correct).
     expect(unwrap(store.read("session:ses_1"))).toMatchObject({
-      harness: "codex-acp",
-      harnessBinary: "/bin/codex-acp",
+      harness: "codex-app-server",
+      harnessBinary: "/bin/codex-app-server",
       selectedModel: "gpt-5.5",
       selectedAgent: "build",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
@@ -207,7 +207,7 @@ describe("harness store facade", () => {
   test("restores a saved pair only through its captured exact-eligibility revision", () => {
     createDraftDefaultPreferences(storage).save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { harness: "codex-acp", model: { providerID: "codex-acp", modelID: "gpt-5.5" } },
+      { harness: "codex-app-server", model: { providerID: "codex-app-server", modelID: "gpt-5.5" } },
     )
     const store = createHarnessStore(storage)
     const begun = store.beginDraftDefault("draft:one", {
@@ -216,18 +216,18 @@ describe("harness store facade", () => {
     })!
 
     expect(store.read("draft:one")).toMatchObject({
-      harness: "codex-acp",
+      harness: "codex-app-server",
       selectedModel: "gpt-5.5",
       draftDefaultAuthority: "unresolved",
       optionsLoading: true,
     })
     expect(store.draftDefaultModel("draft:one")).toEqual({
-      providerID: "codex-acp",
+      providerID: "codex-app-server",
       modelID: "gpt-5.5",
     })
     expect(store.applyDraftDefault(begun.application, {
-      supportedHarnesses: ["opencode", "codex-acp"],
-      eligibleModels: [{ providerID: "codex-acp", modelID: "gpt-5.5" }],
+      supportedHarnesses: ["opencode", "codex-app-server"],
+      eligibleModels: [{ providerID: "codex-app-server", modelID: "gpt-5.5" }],
     })).toBe(true)
     expect(store.read("draft:one")).toMatchObject({
       draftDefaultAuthority: "defaulted",
@@ -259,8 +259,8 @@ describe("harness store facade", () => {
     createDraftDefaultPreferences(storage).save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
       {
-        harness: "claude-acp",
-        model: { providerID: "claude-acp", modelID: "removed" },
+        harness: "claude-sdk",
+        model: { providerID: "claude-sdk", modelID: "removed" },
         labels: { model: "Claude Opus" },
       },
     )
@@ -271,11 +271,11 @@ describe("harness store facade", () => {
     })!
 
     store.applyDraftDefault(begun.application, {
-      supportedHarnesses: ["opencode", "claude-acp"],
-      eligibleModels: [{ providerID: "claude-acp", modelID: "sonnet" }],
+      supportedHarnesses: ["opencode", "claude-sdk"],
+      eligibleModels: [{ providerID: "claude-sdk", modelID: "sonnet" }],
     })
     expect(store.read("draft:one")).toMatchObject({
-      harness: "claude-acp",
+      harness: "claude-sdk",
       selectedModel: "removed",
       draftDefaultState: "saved-model-unavailable",
       configError: "Saved model unavailable",
@@ -287,7 +287,7 @@ describe("harness store facade", () => {
     expect(store.rememberDraftModel(
       "draft:one",
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { providerID: "claude-acp", modelID: "sonnet" },
+      { providerID: "claude-sdk", modelID: "sonnet" },
     )).toBe(true)
     expect(store.read("draft:one")).toMatchObject({
       draftDefaultState: "ready",
@@ -345,21 +345,21 @@ describe("harness store facade", () => {
 
   test("persists config-option harness-only intent until live options complete it", () => {
     const store = createHarnessStore(storage)
-    store.applyPatch("draft:one", { harness: "codex-acp", selectedModel: "default" })
+    store.applyPatch("draft:one", { harness: "codex-app-server", selectedModel: "default" })
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
 
-    expect(store.rememberDraftHarness("draft:one", identity, "codex-acp")).toBe(true)
+    expect(store.rememberDraftHarness("draft:one", identity, "codex-app-server")).toBe(true)
     expect(createDraftDefaultPreferences(storage).read(identity)).toEqual({
       version: 1,
-      harness: "codex-acp",
+      harness: "codex-app-server",
     })
     expect(store.completeRememberedHarness(
       "draft:one",
-      "codex-acp",
-      { providerID: "codex-acp", modelID: "gpt-5.5" },
+      "codex-app-server",
+      { providerID: "codex-app-server", modelID: "gpt-5.5" },
     )).toBe(true)
     expect(createDraftDefaultPreferences(storage).read(identity)?.model).toEqual({
-      providerID: "codex-acp",
+      providerID: "codex-app-server",
       modelID: "gpt-5.5",
     })
   })
@@ -385,7 +385,7 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     store.applyPatch("draft:one", {
-      harness: "codex-acp",
+      harness: "codex-app-server",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       draftDefaultState: "choose-model",
     })

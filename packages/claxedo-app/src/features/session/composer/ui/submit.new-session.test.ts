@@ -984,7 +984,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
             sessionRef: {
               sessionId: "session-1",
               host: "workspace",
-              harness: { id: "claude-acp" },
+              harness: { id: "claude-sdk" },
               cwd: "/repo/main",
               toolSandbox: { kind: "local", cwd: "/repo/main" },
             },

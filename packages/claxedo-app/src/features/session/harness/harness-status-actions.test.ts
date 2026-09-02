@@ -21,7 +21,7 @@ let refreshes: { directory: string; harnessType?: string }[]
 beforeEach(() => {
   state = {
     harnessMode: "harness",
-    harness: "claude-acp",
+    harness: "claude-sdk",
     harnessBinary: "",
     selectedModel: "sonnet",
     selectedAgent: "",
@@ -71,14 +71,14 @@ describe("harness status actions", () => {
   test("routes refreshes to bootstrap, draft ensure, or ordinary directory refresh", async () => {
     const subject = actions()
 
-    await subject.refresh(undefined, "codex-acp")
-    await subject.refresh(undefined, "cursor-acp", { draft: true })
-    await subject.refresh("/repo", "claude-acp", { draft: true })
-    await subject.refresh("/repo", "cursor-acp")
+    await subject.refresh(undefined, "codex-app-server")
+    await subject.refresh(undefined, "cursor-sdk", { draft: true })
+    await subject.refresh("/repo", "claude-sdk", { draft: true })
+    await subject.refresh("/repo", "cursor-sdk")
 
-    expect(bootstraps).toEqual([{ harnessType: "codex-acp" }, { harnessType: "cursor-acp" }])
-    expect(ensures).toEqual([{ directory: "/repo", harnessType: "claude-acp", quiet: true }])
-    expect(refreshes).toEqual([{ directory: "/repo", harnessType: "cursor-acp" }])
+    expect(bootstraps).toEqual([{ harnessType: "codex-app-server" }, { harnessType: "cursor-sdk" }])
+    expect(ensures).toEqual([{ directory: "/repo", harnessType: "claude-sdk", quiet: true }])
+    expect(refreshes).toEqual([{ directory: "/repo", harnessType: "cursor-sdk" }])
   })
 
   test("applies status, persists harness and model, fetches options, and refreshes draft directories", async () => {
@@ -95,36 +95,36 @@ describe("harness status actions", () => {
     })
 
     await subject.applyStatus(scope, {
-      type: "codex-acp",
-      activeType: "codex-acp",
+      type: "codex-app-server",
+      activeType: "codex-app-server",
       model: "gpt-5.5",
     }, { directory: "/repo", sessionId: "new" })
 
     expect(patches[0]).toMatchObject({
-      harness: "codex-acp",
+      harness: "codex-app-server",
       harnessMode: "harness",
       selectedModel: "gpt-5.5",
       readiness: "ready",
     })
     expect(saved).toEqual([
-      { scope, key: "harness", value: "codex-acp" },
+      { scope, key: "harness", value: "codex-app-server" },
       { scope, key: "model", value: "gpt-5.5" },
     ])
-    expect(optionFetches).toEqual([{ scope, type: "codex-acp", directory: "/repo", sessionId: "new" }])
-    expect(ensures).toEqual([{ directory: "/repo", harnessType: "codex-acp", quiet: true }])
+    expect(optionFetches).toEqual([{ scope, type: "codex-app-server", directory: "/repo", sessionId: "new" }])
+    expect(ensures).toEqual([{ directory: "/repo", harnessType: "codex-app-server", quiet: true }])
     expect(order).toEqual(["options", "ensure"])
     expect(refreshes).toEqual([])
   })
 
   test("does not fetch options or refresh directory for failed existing-session status", async () => {
     await actions().applyStatus("session:ses_1", {
-      type: "claude-acp",
-      activeType: "claude-acp",
+      type: "claude-sdk",
+      activeType: "claude-sdk",
       error: "binary missing",
     }, { directory: "/repo", sessionId: "ses_1" })
 
     expect(patches[0]).toMatchObject({
-      harness: "claude-acp",
+      harness: "claude-sdk",
       readiness: "error",
       configError: "binary missing",
     })
@@ -151,7 +151,7 @@ describe("harness status actions", () => {
   })
 
   test("ignores failed status for a different harness in the same scope", async () => {
-    state.harness = "cursor-acp"
+    state.harness = "claude-sdk"
 
     await actions().applyStatus(scope, {
       type: "cursor-sdk",
@@ -167,33 +167,33 @@ describe("harness status actions", () => {
   test("applies a failed harness status over the seeded opencode placeholder so the error surfaces", async () => {
     // The store seeds `harness: "opencode"` before any user confirmation. A
     // failed status for the harness this scope is actually configured with
-    // (e.g. claude-acp with a missing binary) must be applied — treating the
+    // (e.g. claude-sdk with a missing binary) must be applied — treating the
     // seed as a confirmed different selection would silently swallow the error,
     // leaving submit unblocked with no red dot (core-harness-ownership-local).
     state.harness = "opencode"
 
     await actions().applyStatus(scope, {
-      type: "claude-acp",
-      activeType: "claude-acp",
+      type: "claude-sdk",
+      activeType: "claude-sdk",
       error: "claude binary not found",
     }, { directory: "/repo", sessionId: "new" })
 
     expect(patches[0]).toMatchObject({
-      harness: "claude-acp",
+      harness: "claude-sdk",
       readiness: "error",
       configError: "claude binary not found",
     })
-    expect(saved).toEqual([{ scope, key: "harness", value: "claude-acp" }])
+    expect(saved).toEqual([{ scope, key: "harness", value: "claude-sdk" }])
   })
 
   test("does not clear saved model when status has no truthy model", async () => {
     await actions().applyStatus(scope, {
-      type: "claude-acp",
-      activeType: "claude-acp",
+      type: "claude-sdk",
+      activeType: "claude-sdk",
       model: "",
     }, { directory: "/repo", sessionId: "new" })
 
-    expect(saved).toEqual([{ scope, key: "harness", value: "claude-acp" }])
+    expect(saved).toEqual([{ scope, key: "harness", value: "claude-sdk" }])
   })
 
   // Third stranding path behind the Tier R "Loading models" hang. When a
@@ -207,7 +207,7 @@ describe("harness status actions", () => {
     const subject = actions()
 
     await subject.applyStatus(scope, {
-      type: "claude-acp",
+      type: "claude-sdk",
       status: "error",
       ready: false,
       error: "claude binary not found",
@@ -220,7 +220,7 @@ describe("harness status actions", () => {
   test("applies ready and polling hydration patches", () => {
     const subject = actions()
 
-    subject.setReadyHydration(scope, "claude-acp")
+    subject.setReadyHydration(scope, "claude-sdk")
     subject.setPollingHydration(scope, "codex-app-server")
 
     expect(patches[0]).toMatchObject({

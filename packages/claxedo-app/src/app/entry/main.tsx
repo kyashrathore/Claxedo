@@ -79,10 +79,11 @@ configureHttpMachineRemoteAccess((path, init) => authFetch(new URL(path, getClax
 /**
  * Bind the identity provider to the authenticated transport.
  *
- * `platform/api/api.ts` used to import `getAuthToken` itself. It stays in
- * `@claxedo/app` while provider implementations belong to hosted composition.
- * The transport now binds either a bearer source or cookie credentials from
- * the statically selected adapter; `local.tsx` supplies neither.
+ * `platform/api/api.ts` stays free of any concrete auth provider import — it
+ * lives in `@claxedo/app` while provider implementations belong to hosted
+ * composition. The transport binds either a bearer source or cookie
+ * credentials from the statically selected adapter; `local.tsx` supplies
+ * neither.
  *
  * At module scope, not inside a component: `authFetch` is called from plain
  * modules during bootstrap, and a binding installed during render would leave

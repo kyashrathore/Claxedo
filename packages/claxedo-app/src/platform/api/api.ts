@@ -278,8 +278,8 @@ function credentialsFor(url: string, requested: RequestCredentials | undefined):
     // deployment the app and the control plane are DIFFERENT hosts
     // (`app-…` and `cf-…`), and `configureApiRuntime` is not called with a
     // `baseUrl` there — so treating the page origin as the control plane
-    // withholds the cookie from the very service that needs it and every
-    // request 401s. Verified live, as a regression this function caused.
+    // would withhold the cookie from the very service that needs it and every
+    // request would 401.
     for (const origin of [getClaxedoServerUrl(), cfg.base, cfg.releaseValidation?.coreOrigin]) {
       if (!origin) continue
       if (target.origin === new URL(origin, target.origin).origin) return cfg.browserCredentials

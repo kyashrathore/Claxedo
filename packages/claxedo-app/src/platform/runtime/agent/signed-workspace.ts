@@ -1,4 +1,4 @@
-import type { SignedWorkspaceKind } from "./workspace-kind"
+import { isRelayBackedWorkspaceKind, workspaceKind, type SignedWorkspaceKind } from "./workspace-kind"
 export type { SignedWorkspaceKind }
 
 export type SignedWorkspaceInfo = {
@@ -82,11 +82,28 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
   return false
 }
 
+/**
+ * The signed hosting kind recorded on a raw inventory/session row — checking
+ * `access` (the live, control-plane-confirmed field) before `backing` (how the
+ * workspace was originally provisioned), since a workspace's access can be
+ * re-hosted after creation while `backing` keeps naming its origin. The one
+ * owner for this derivation, shared by the global sync inventory reducer and
+ * the session inventory query.
+ */
+export function workspaceHostingKind(input: unknown): SignedWorkspaceKind | undefined {
+  const row = input && typeof input === "object" && !Array.isArray(input) ? (input as Record<string, unknown>) : undefined
+  const access = workspaceKind(row?.access)
+  if (access && isRelayBackedWorkspaceKind(access)) return access
+  const backing = workspaceKind(row?.backing)
+  if (backing && isRelayBackedWorkspaceKind(backing)) return backing
+  return undefined
+}
+
 function findSignedWorkspaceFromProjects(projects: readonly WorkspaceInventoryProject[], directory: string) {
   for (const project of projects) {
     for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-      const kind = workspace.kind
-      if (kind !== "cloud" && kind !== "user-hosted") continue
+      const kind = workspaceKind(workspace.kind)
+      if (!isRelayBackedWorkspaceKind(kind)) continue
       const workspaceId = workspace.workspaceId ?? workspace.id ?? key
       if (!workspaceId) continue
       if (

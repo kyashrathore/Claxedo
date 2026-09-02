@@ -10,15 +10,15 @@ beforeEach(() => {
 
 describe("harness preferences", () => {
   test("builds draft state from scoped preferences and ignores legacy fallbacks", () => {
-    storage.setItem("claxedo:runner", "claude-acp")
+    storage.setItem("claxedo:runner", "claude-sdk")
     storage.setItem("claxedo:acp-model", "legacy-model")
     storage.setItem("claxedo:agent-mode", "legacy-agent")
-    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:/repo:route": "codex-acp" }))
+    storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:/repo:route": "codex-app-server" }))
     storage.setItem("claxedo:acp-model-map", JSON.stringify({ "draft:/repo:route": "opus" }))
     storage.setItem("claxedo:agent-mode-map", JSON.stringify({ "draft:/repo:route": "build" }))
 
     expect(createHarnessPreferences(storage).initialState("draft:/repo:route")).toMatchObject({
-      harness: "codex-acp",
+      harness: "codex-app-server",
       selectedModel: "opus",
       selectedAgent: "build",
     })
@@ -30,12 +30,12 @@ describe("harness preferences", () => {
   })
 
   test("builds session state from legacy fallbacks when no scoped preferences exist", () => {
-    storage.setItem("claxedo:runner", "claude-acp")
+    storage.setItem("claxedo:runner", "claude-sdk")
     storage.setItem("claxedo:acp-model", "legacy-model")
     storage.setItem("claxedo:agent-mode", "legacy-agent")
 
     expect(createHarnessPreferences(storage).initialState("session:ses_1")).toMatchObject({
-      harness: "claude-acp",
+      harness: "claude-sdk",
       selectedModel: "legacy-model",
       selectedAgent: "legacy-agent",
     })
@@ -43,7 +43,7 @@ describe("harness preferences", () => {
 
   test("reads old pane maps but does not write or promote harness model and agent preferences", () => {
     const prefs = createHarnessPreferences(storage)
-    prefs.save("draft:one", "harness", "codex-acp")
+    prefs.save("draft:one", "harness", "codex-app-server")
     prefs.save("draft:one", "model", "opus")
     prefs.save("draft:one", "agent", "build")
     storage.setItem("claxedo:harness-map", JSON.stringify({ "draft:one": "legacy-codex" }))

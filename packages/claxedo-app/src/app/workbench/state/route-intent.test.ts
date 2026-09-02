@@ -1089,7 +1089,7 @@ describe("state route intent", () => {
               id: "ses-cloud",
               title: "Cloud session",
               environment: { kind: "cloud" },
-              harness: { type: "codex-acp" },
+              harness: { type: "codex-app-server" },
             }],
           },
         },
@@ -1102,7 +1102,7 @@ describe("state route intent", () => {
       sessionTitle: "Fallback",
     })
 
-    expect(harness.opened[0]?.sessionRef?.harness).toEqual({ id: "codex-acp" })
+    expect(harness.opened[0]?.sessionRef?.harness).toEqual({ id: "codex-app-server" })
   })
 
   test("session route without workspace uses workspace id instead of placeholder /workspace keys", () => {

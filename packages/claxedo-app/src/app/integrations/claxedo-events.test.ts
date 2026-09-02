@@ -168,7 +168,7 @@ describe("claxedoEventStreamTargets", () => {
       serverUrl: "https://control.example.test",
       directory: "ws_cloud",
     })).toEqual([
-      { kind: "central", url: new URL("https://control.example.test/api/wr/events") },
+      { kind: "central", url: new URL("https://control.example.test/api/claxedo/events") },
     ])
   })
 

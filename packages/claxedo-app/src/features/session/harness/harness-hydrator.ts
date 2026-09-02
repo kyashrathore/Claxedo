@@ -19,6 +19,7 @@ import {
   sessionResourceUrl,
 } from "./harness-config-routes"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { isRelayBackedWorkspaceKind, type SignedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
   getSeen(scope: string): string | undefined
@@ -54,15 +55,15 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   workspaceRuntime(params?: ScopeInput): boolean
   runtime: {
     useLocalHarnessConfig(params?: ScopeInput): boolean
-    workspaceKind?(params?: ScopeInput): "local" | "cloud" | "user-hosted" | null | undefined
+    workspaceKind?(params?: ScopeInput): WorkspaceKind | null | undefined
     /**
      * The workspace record itself, for a `workspace:` ref the inventory has not
      * described yet. A draft's harness comes from the machine serving the
      * workspace, so the draft cannot decide until the workspace is known.
      */
-    workspace?(params?: ScopeInput): Promise<{ kind?: "local" | "cloud" | "user-hosted" | null; workspaceId?: string } | undefined>
+    workspace?(params?: ScopeInput): Promise<{ kind?: WorkspaceKind | null; workspaceId?: string } | undefined>
     /** The relay-backed workspace the inventory already describes for a scope. */
-    workspaceRef?(params?: ScopeInput): { workspaceId: string; kind: "cloud" | "user-hosted" } | undefined
+    workspaceRef?(params?: ScopeInput): { workspaceId: string; kind: SignedWorkspaceKind } | undefined
     harnessSessionFetch(params?: ScopeInput): typeof fetch
     localHarnessConfigFetch(params?: ScopeInput): typeof fetch
   }
@@ -219,7 +220,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     const resolved = await input.runtime.workspace?.(params).catch(() => undefined)
     const kind = resolved?.kind
     return {
-      workspaceRuntime: input.workspaceRuntime(params) || kind === "cloud" || kind === "user-hosted",
+      workspaceRuntime: input.workspaceRuntime(params) || isRelayBackedWorkspaceKind(kind),
       workspaceKind: kind,
       ...(resolved?.workspaceId ? { workspaceId: resolved.workspaceId } : {}),
     }

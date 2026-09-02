@@ -179,7 +179,7 @@ export const state: {
   demoMode: true,
   harnessMode: false,
   harnessClaimSession: { id: "session-1" },
-  harnessSubmitModel: { key: { providerID: "claude-acp", modelID: "opus" }, name: "Opus" },
+  harnessSubmitModel: { key: { providerID: "claude-sdk", modelID: "opus" }, name: "Opus" },
   transportGetSession: true,
   transportPromptAsyncError: undefined,
   shellError: undefined,
@@ -235,7 +235,7 @@ export function localSessionRef(sessionID: string) {
 
 export function testHarnessController(): HarnessSubmitController {
   return {
-    harness: () => (state.harnessMode ? "claude-acp" : "opencode"),
+    harness: () => (state.harnessMode ? "claude-sdk" : "opencode"),
     isHarnessMode: () => state.harnessMode,
     readiness: () => "ready",
     readyForSubmit: () => !state.harnessMode || !!state.harnessSubmitModel,
@@ -503,6 +503,17 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       method: request.method,
       body: init?.body ? String(init.body) : null,
     })
+    // The control plane's reservation answers with the exact immutable intent
+    // it was asked to reserve, which the caller verifies before creating.
+    if (new URL(request.url).pathname === "/api/control/session-registrations/reserve") {
+      const intent = JSON.parse(init?.body ? String(init.body) : "{}") as Record<string, unknown>
+      return new Response(JSON.stringify({
+        operationId: intent.operationId,
+        sessionId: intent.sessionId,
+        workspaceId: intent.workspaceId,
+        state: "reserved",
+      }), { status: 201, headers: { "Content-Type": "application/json" } })
+    }
     if (new URL(request.url).pathname === "/api/workspace/create") {
       return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/workspace" }), {
         status: 200,
@@ -974,7 +985,7 @@ export function resetSubmitHarness() {
   state.harnessMode = false
   state.harnessClaimSession = { id: "session-1" }
   state.harnessSubmitModel = {
-    key: { providerID: "claude-acp", modelID: "opus" },
+    key: { providerID: "claude-sdk", modelID: "opus" },
     name: "Opus",
   }
   state.transportGetSession = true

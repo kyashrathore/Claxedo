@@ -20,6 +20,8 @@ import {
 } from "@/platform/runtime/transport"
 import type { PromptDispatchInput, SubmitDirectory, SubmitModel, SubmitSessionGetClient } from "../../submit/index"
 import { selectRuntimeModel } from "../model-strategy"
+import { sessionHarnessIdentity, type HarnessType } from "@/features/session/harness/profile"
+import { parseExistingSessionConfig } from "./submit-session-config"
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string
@@ -60,6 +62,16 @@ export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
     queryKeys.controlPlane.projects(getClaxedoServerUrl()),
   ) ?? []
   return sessionWorkspaceRuntimeRef({ directory, projects })
+}
+
+/**
+ * The workspace a signed submit reserves against. The composer's accessor names
+ * it when the route did; a session created in a workspace the route has not
+ * named yet (a fresh cloud workspace, a `ws_…` directory) takes it from the
+ * directory's runtime ref — the same owner finalize and the transport read.
+ */
+export function signedSubmitWorkspaceId(explicit: string | undefined, directory: SubmitDirectory | undefined) {
+  return explicit ?? workspaceRuntimeRef(directory)?.workspaceId
 }
 
 export function submitWorkspaceBacking(input: {
@@ -290,9 +302,16 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   }
 }
 
-function sessionConfigBody(input: SaveSessionConfigInput) {
+function sessionConfigBody(input: Pick<SaveSessionConfigInput, "harnessType" | "agent" | "model" | "variant">) {
   return {
-    harness: { type: input.harnessType },
+    // The server's canonical session-config contract wants an access-qualified
+    // identity (`{id, access}`), the same shape `harness-switcher.ts` sends for
+    // an explicit harness switch. A bare `{type}` only round-trips for the five
+    // builtin ids the server's legacy string mapping recognizes — an open
+    // `acp:<slug>` connection id has no legacy mapping, so it was silently
+    // rejected as "not a canonical harness identity" on every ordinary
+    // follow-up config save (not just an explicit switch).
+    harness: sessionHarnessIdentity(input.harnessType as HarnessType),
     ...(input.agent ? { agent: input.agent } : {}),
     ...(input.model ? { model: input.model } : {}),
     ...(input.variant ? { variant: input.variant } : {}),
@@ -313,26 +332,14 @@ function opencodeProviderPath(input: { directory?: string; harnessType?: string 
   return `${url.pathname}${url.search}`
 }
 
+// Reuses `parseExistingSessionConfig`'s decode (the same one `submit.ts` uses
+// to read a persisted config) so a cached raw payload and an about-to-be-sent
+// body always compare through the identical canonical encoding — decoding a
+// stored `{id, access}` or legacy `{type}` shape and re-encoding both sides
+// via `sessionConfigBody` is what keeps this dedup check from permanently
+// mismatching after `sessionConfigBody` moved to the access-qualified shape.
 function sessionConfigSignature(input: unknown) {
-  const config = object(input)
-  const harness = object(config?.harness)
-  const harnessType = string(harness?.type) ?? string(harness?.id)
-  if (!harnessType) return
-  const model = object(config?.model)
-  const providerID = string(model?.providerID)
-  const modelID = string(model?.modelID)
-  return JSON.stringify({
-    harness: { type: harnessType },
-    ...(string(config?.agent) ? { agent: string(config?.agent) } : {}),
-    ...(providerID && modelID ? { model: { providerID, modelID } } : {}),
-    ...(string(config?.variant) ? { variant: string(config?.variant) } : {}),
-  })
-}
-
-function object(input: unknown) {
-  return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : undefined
-}
-
-function string(input: unknown) {
-  return typeof input === "string" && input.length > 0 ? input : undefined
+  const parsed = parseExistingSessionConfig(input)
+  if (!parsed) return
+  return JSON.stringify(sessionConfigBody(parsed))
 }

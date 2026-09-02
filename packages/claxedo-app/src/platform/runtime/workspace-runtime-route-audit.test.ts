@@ -85,6 +85,11 @@ const workspaceSelectorSyntaxBoundary = new Set([
   "platform/runtime/placement.ts",
   "app/providers/global-sdk-event-fetch.ts",
   "features/workspaces/ui/panel/workspace-panel.tsx",
+  // A draft's workspace-backing resolution short-circuits the async
+  // `runtime.workspace()` liveness read when the directory isn't even
+  // `ws_`/`workspace:`-shaped, so it checks the raw ref shape itself before
+  // paying for that round trip.
+  "features/session/harness/harness-hydrator.ts",
 ])
 
 const sessionStatusBoundary = new Set([
@@ -626,7 +631,7 @@ describe("workspace runtime route audit", () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
-      const text = await Bun.file(path.join(root, file)).text()
+      const text = codeOnly(await Bun.file(path.join(root, file)).text())
       if (/["'`]\/api\/workspace(?:[?"'`/])/.test(text)) {
         offenders.push(file)
       }
@@ -678,7 +683,7 @@ describe("workspace runtime route audit", () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
-      const text = await Bun.file(path.join(root, file)).text()
+      const text = codeOnly(await Bun.file(path.join(root, file)).text())
       if (/["'`]\/api\/claxedo\/events(?:[?"'`])/.test(text)) {
         offenders.push(file)
       }

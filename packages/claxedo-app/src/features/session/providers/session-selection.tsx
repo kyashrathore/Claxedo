@@ -41,6 +41,7 @@ import {
   type ModelKey,
 } from "@/features/session/composer/model-strategy"
 import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 type State = LocalSelectionState
 type ModelSource = "selected" | "agent"
@@ -172,7 +173,7 @@ const localContextInput = {
       if (!workspace) return {}
       return {
         workspaceId: workspace.workspaceId,
-        ...(workspace.kind === "cloud" || workspace.kind === "user-hosted" ? { workspaceKind: workspace.kind } : {}),
+        ...(isRelayBackedWorkspaceKind(workspace.kind) ? { workspaceKind: workspace.kind } : {}),
       }
     }
 

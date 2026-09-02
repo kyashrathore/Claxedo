@@ -67,9 +67,14 @@ describe("signedRouteSessionWorkspaceId", () => {
     expect(signedRouteSessionWorkspaceId("/w/ws_signed/session/ses_1")).toBe("ws_signed")
   })
 
-  test("accepts an explicitly branded UUID workspace route identity", () => {
+  test("does not trust a `workspace:`-branded UUID as a signed workspace route identity", () => {
+    // `workspace:<uuid>` is also the canonical shape the local sidecar mints
+    // for its own association id (see `session-workspace.ts`'s
+    // `sessionWorkspaceRuntimeRef`). Without a signed inventory to confirm it,
+    // that prefix alone is not proof of a relay-backed workspace — treating it
+    // as one minted a connection for a local workspace on every session mount.
     expect(signedRouteSessionWorkspaceId("/w/workspace%3A550e8400-e29b-41d4-a716-446655440000/session/ses_1"))
-      .toBe("550e8400-e29b-41d4-a716-446655440000")
+      .toBeUndefined()
   })
 
   test("rejects local raw UUID, POSIX, and Windows directory routes", () => {

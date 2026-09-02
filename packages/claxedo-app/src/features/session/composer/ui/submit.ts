@@ -50,7 +50,7 @@ import {
   preferAuthoritativeExistingSessionConfig,
   sameExistingSessionConfig,
 } from "./submit-session-config"
-import { createSubmitTransportAdapter, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
+import { createSubmitTransportAdapter, signedSubmitWorkspaceId, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
 import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-workspace"
 import { createSubmitCommentActions } from "./comment-routing"
 import { createSubmitOptimisticTimeline } from "./submit-ui-state"
@@ -332,7 +332,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const harnessMode = existingSessionConfig ? existingSessionConfig.harnessType !== "opencode" : selectedHarnessMode(scope)
     const sessionHarnessType = existingSessionConfig?.harnessType ?? (harnessMode ? selectedHarnessType(scope) : "opencode")
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
-    const signedWorkspaceId = signedControlPlane ? input.workspaceId?.() : undefined
+    const signedWorkspaceId = signedControlPlane ? signedSubmitWorkspaceId(input.workspaceId?.(), sessionDirectory) : undefined
     const signedWorkspaceKind = knownWorkspaceKind(workspaceKind)
     if (!harnessMode && !signedControlPlane && usesLoopbackWorkspaceBridge(sessionDirectory)) {
       client = sessionClient(sessionDirectory, sessionHarnessType)
@@ -445,7 +445,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       replaceSession,
       harnessMode,
       signedControlPlane,
-      workspaceId: input.workspaceId?.(),
+      workspaceId: signedWorkspaceId,
       serverUrl: getClaxedoServerUrl(),
       request: authFetch,
       sessionDirectory,

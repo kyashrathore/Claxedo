@@ -627,10 +627,14 @@ describe("resolveRuntimeTarget", () => {
       resolveWorkspaceRuntime: async () => ({ kind: "user-hosted", workspaceId: "ws_resolved" }),
     })).resolves.toEqual({ kind: "user-hosted", workspaceId: "ws_resolved" })
 
+    // `resolveWorkspaceRuntime` answering nothing (no record) is exactly the
+    // 404-for-user-hosted case the resolve endpoint produces — this ref is
+    // never guessed as cloud; it falls through to `sessionWorkspaceRuntimeRef`'s
+    // "unresolved relay-backed ref defaults to user-hosted" rule.
     await expect(resolveRuntimeTarget({
       serverUrl: "https://control.example.test",
       directory: "workspace:ws_alias",
-    })).resolves.toEqual({ kind: "cloud", workspaceId: "ws_alias" })
+    })).resolves.toEqual({ kind: "user-hosted", workspaceId: "ws_alias" })
   })
 
   test("keeps local session refs on the loopback runtime without inventing a workspace id", async () => {

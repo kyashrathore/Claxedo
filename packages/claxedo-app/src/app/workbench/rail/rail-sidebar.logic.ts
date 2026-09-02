@@ -4,6 +4,7 @@ import type { ProjectItem } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
+import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({
@@ -19,10 +20,9 @@ export function sessionRowTitle(title?: string, projectedTitle?: string, updated
 /**
  * The owner/repo label shown for a project in the rail, derived from (in order)
  * an explicit project name, the parsed owner/repo of the first workspace with a
- * git remote (`repo_url`), or the worktree's folder name. This is the real
- * implementation used by rail-sidebar.tsx — previously an inline closure that a
- * 1186-line test file hand-mirrored (and had already drifted from: the mirror
- * read `sessions[].git.remote`, not `workspaces[].repo_url`).
+ * git remote (`repo_url`), or the worktree's folder name. This is the one real
+ * implementation `rail-sidebar.tsx` calls — tests exercise it directly instead
+ * of hand-mirroring the derivation, so the two can never drift apart.
  */
 export function railProjectLabel(project: Pick<ProjectItem, "name" | "worktree" | "workspaces">): string {
   return (
@@ -95,15 +95,15 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
     )
   const kind = input.environmentKind ?? workspace?.kind
   const workspaceId = input.workspaceId ?? workspace?.workspaceId ?? workspace?.id
-  // The project inventory is authoritative for a workspace it already knows.
-  // A `workspace:<uuid>` navigation ref is also how the local sidecar associates
-  // sessions with a project; it is not evidence of relay hosting. Previously the
-  // optimistic branch below overruled this `local` record during every sidebar
-  // click, briefly fabricating a user-hosted SessionRef before route hydration
-  // restored the real local ref.
+  // The project inventory is authoritative for a workspace it already knows. A
+  // `workspace:<uuid>` navigation ref is also how the local sidecar associates
+  // sessions with a project; it is not evidence of relay hosting, so a
+  // confirmed-local inventory record must win over the optimistic user-hosted
+  // guess below.
   if (workspace?.kind === "local") return
-  if (kind === "cloud" || kind === "user-hosted") {
-    return workspaceId ? { workspaceId, kind } : undefined
+  const relayKind = workspaceKind(kind)
+  if (isRelayBackedWorkspaceKind(relayKind)) {
+    return workspaceId ? { workspaceId, kind: relayKind } : undefined
   }
   if (!input.workspaceId) return
   if (localWorkspaceAssociationId(input.workspaceId)) return

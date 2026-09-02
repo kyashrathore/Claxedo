@@ -81,9 +81,9 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.async).toBe(0)
     expect(calls.transportAsync).toBe(1)
     expect(boots).toEqual([
-      { phase: "booting", harness: "Claude", sessionID: undefined },
-      { phase: "booting", harness: "Claude", sessionID: "session-1" },
-      { phase: "sending", harness: "Claude", sessionID: "session-1" },
+      { phase: "booting", harness: "Claude SDK", sessionID: undefined },
+      { phase: "booting", harness: "Claude SDK", sessionID: "session-1" },
+      { phase: "sending", harness: "Claude SDK", sessionID: "session-1" },
       undefined,
     ])
     expect(apiCalls).toHaveLength(0)
@@ -93,7 +93,7 @@ describe("Harness + demo dispatch and abort", () => {
       sessionId: undefined,
       sessionConfig: {
         agent: "agent",
-        model: { providerID: "claude-acp", modelID: "opus" },
+        model: { providerID: "claude-sdk", modelID: "opus" },
         variant: undefined,
       },
     })
@@ -104,7 +104,7 @@ describe("Harness + demo dispatch and abort", () => {
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       sessionID: "session-1",
       directory: "/repo/main",
-      model: { providerID: "claude-acp", modelID: "opus" },
+      model: { providerID: "claude-sdk", modelID: "opus" },
     })
   })
 
@@ -113,7 +113,7 @@ describe("Harness + demo dispatch and abort", () => {
     state.demoMode = false
     state.harnessMode = true
     state.localCurrentModel = { id: "stale-provider-model", provider: { id: "anthropic" } }
-    state.harnessSubmitModel = { key: { providerID: "codex-acp", modelID: "gpt-5.5" }, name: "GPT-5.5" }
+    state.harnessSubmitModel = { key: { providerID: "codex-app-server", modelID: "gpt-5.5" }, name: "GPT-5.5" }
 
     const submit = createSubmit({
       sessionID: () => "new",
@@ -127,7 +127,7 @@ describe("Harness + demo dispatch and abort", () => {
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       sessionID: "session-1",
       directory: "/repo/main",
-      model: { providerID: "codex-acp", modelID: "gpt-5.5" },
+      model: { providerID: "codex-app-server", modelID: "gpt-5.5" },
     })
   })
 
@@ -149,7 +149,7 @@ describe("Harness + demo dispatch and abort", () => {
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       sessionID: "session-1",
       directory: "/repo/main",
-      model: { providerID: "claude-acp", modelID: "opus" },
+      model: { providerID: "claude-sdk", modelID: "opus" },
     })
     expect(transportPromptAsyncCalls.at(-1)).not.toHaveProperty("variant")
     expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).not.toHaveProperty("variant")
@@ -161,7 +161,7 @@ describe("Harness + demo dispatch and abort", () => {
     state.localSessionConfig = {
       harness: { id: "claude", access: "acp" },
       agent: "build",
-      model: { providerID: "claude-acp", modelID: "opus" },
+      model: { providerID: "claude-sdk", modelID: "opus" },
       variant: "high",
     }
 
@@ -171,7 +171,7 @@ describe("Harness + demo dispatch and abort", () => {
         config: {
           harness: { id: "claude", access: "acp" },
           agent: "build",
-          model: { providerID: "claude-acp", modelID: "opus" },
+          model: { providerID: "claude-sdk", modelID: "opus" },
           variant: "high",
         },
       }),
@@ -186,7 +186,7 @@ describe("Harness + demo dispatch and abort", () => {
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       sessionID: "session-1",
       directory: "/repo/main",
-      model: { providerID: "claude-acp", modelID: "opus" },
+      model: { providerID: "claude-sdk", modelID: "opus" },
       variant: "high",
     })
     expect(unsignedCalls.filter((call) => call.url.includes("/config") && call.method === "PATCH")).toHaveLength(0)
@@ -235,7 +235,7 @@ describe("Harness + demo dispatch and abort", () => {
     await pending
     await settleSubmitEffects()
 
-    expect(boots).toEqual([{ phase: "booting", harness: "Claude", sessionID: undefined }])
+    expect(boots).toEqual([{ phase: "booting", harness: "Claude SDK", sessionID: undefined }])
     expect(calls.transportAsync).toBe(1)
   })
 
@@ -254,7 +254,7 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.create).toBe(0)
     expect(calls.transportAsync).toBe(0)
     expect(optimisticAdds).toEqual([])
-    expect(boots).toEqual([{ phase: "booting", harness: "Claude", sessionID: undefined }, undefined])
+    expect(boots).toEqual([{ phase: "booting", harness: "Claude SDK", sessionID: undefined }, undefined])
     expect(toasts).toEqual([])
   })
 
@@ -267,6 +267,8 @@ describe("Harness + demo dispatch and abort", () => {
       info: () => undefined,
       sessionID: () => "new",
       sessionDirectory: () => "/repo/main",
+      // A signed submit names the workspace the control plane reserves against.
+      workspaceId: () => "ws_main",
       surfaceId: () => "tab-new",
       imageAttachments: () => [],
       commentCount: () => 0,
@@ -297,7 +299,7 @@ describe("Harness + demo dispatch and abort", () => {
     expect(harnessClaimCalls).toContainEqual(expect.objectContaining({
       sessionConfig: {
         agent: "agent",
-        model: { providerID: "claude-acp", modelID: "opus" },
+        model: { providerID: "claude-sdk", modelID: "opus" },
         variant: undefined,
       },
     }))
@@ -314,6 +316,8 @@ describe("Harness + demo dispatch and abort", () => {
       info: () => undefined,
       sessionID: () => "new",
       sessionDirectory: () => "/repo/main",
+      // A signed submit names the workspace the control plane reserves against.
+      workspaceId: () => "ws_main",
       surfaceId: () => "tab-new",
       imageAttachments: () => [],
       commentCount: () => 0,
@@ -345,7 +349,7 @@ describe("Harness + demo dispatch and abort", () => {
     expect(harnessClaimCalls).toContainEqual(expect.objectContaining({
       sessionConfig: {
         agent: "agent",
-        model: { providerID: "claude-acp", modelID: "opus" },
+        model: { providerID: "claude-sdk", modelID: "opus" },
         variant: undefined,
       },
     }))
@@ -358,7 +362,7 @@ describe("Harness + demo dispatch and abort", () => {
     state.transportGetSession = false
     state.runtimeSessionConfig = {
       harness: { id: "claude", access: "acp" },
-      model: { providerID: "claude-acp", modelID: "opus" },
+      model: { providerID: "claude-sdk", modelID: "opus" },
     }
 
     const submit = createPromptSubmit({

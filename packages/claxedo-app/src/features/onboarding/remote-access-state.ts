@@ -63,8 +63,8 @@ export function remoteAccessAvailability(input: RemoteAccessCapability): RemoteA
  * trusted for the browser product actually served FROM the hosted app, and
  * the production origin is the final default rather than a hidden fallback.
  *
- * Two surfaces used to carry private copies of this heuristic and both
- * silently linked a staging deployment's QR to production, which renders a
+ * One owner for this heuristic: a private copy on another surface risks
+ * silently linking a staging deployment's QR to production, which renders a
  * blank page there — the workspace does not exist on that control plane.
  */
 export function remoteAccessAppOrigin(): string {
@@ -111,9 +111,10 @@ export type RemoteAccessResumeDecision = {
  * Whether to resume a machine the user left published — and what that costs.
  *
  * ONE attempt per sign-in transition, and the transition is the retry: no
- * timer, no poll. Boot order is the whole problem this solves, because a
- * desktop that launches signed-out-then-restoring used to spend its single
- * attempt during the gap and never take another.
+ * timer, no poll. This is boot-order-safe: a desktop that launches
+ * signed-out-then-restoring gets its attempt on the restore transition, not on
+ * the signed-out gap that precedes it — the budget attaches to the sign-in
+ * edge, not to boot.
  *
  * The budget is cleared only by going UNSIGNED, which is what keeps it finite:
  * a start() that keeps failing while signed does not get a second go, because

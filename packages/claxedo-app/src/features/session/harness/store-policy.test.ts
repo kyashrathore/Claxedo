@@ -26,9 +26,9 @@ import {
 
 describe("harness store policy", () => {
   test("keeps draft defaults isolated from legacy harness settings", () => {
-    expect(initialHarness("draft:/tmp/proj:route", undefined, "claude-acp")).toBe("opencode")
-    expect(initialHarness("draft:/tmp/proj:route", "codex-acp", "claude-acp")).toBe("codex-acp")
-    expect(initialHarness("session:ses_1", undefined, "claude-acp")).toBe("claude-acp")
+    expect(initialHarness("draft:/tmp/proj:route", undefined, "claude-sdk")).toBe("opencode")
+    expect(initialHarness("draft:/tmp/proj:route", "codex-app-server", "claude-sdk")).toBe("codex-app-server")
+    expect(initialHarness("session:ses_1", undefined, "claude-sdk")).toBe("claude-sdk")
   })
 
   test("classifies model-option fetch and retry policy", () => {
@@ -37,10 +37,10 @@ describe("harness store policy", () => {
       models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
     })).toBe(false)
     expect(shouldShowModelOptionsStaleWarning({ stale: true, models: [] })).toBe(true)
-    expect(shouldFetchConfigOptionsForScope("claude-acp", false, { sessionId: "ses_1" })).toBe(true)
-    expect(shouldFetchConfigOptionsForScope("claude-acp", false, { sessionId: "new" })).toBe(true)
+    expect(shouldFetchConfigOptionsForScope("claude-sdk", false, { sessionId: "ses_1" })).toBe(true)
+    expect(shouldFetchConfigOptionsForScope("claude-sdk", false, { sessionId: "new" })).toBe(true)
     expect(shouldFetchConfigOptionsForScope("opencode", false)).toBe(false)
-    expect(shouldFetchConfigOptionsForScope("claude-acp", true)).toBe(false)
+    expect(shouldFetchConfigOptionsForScope("claude-sdk", true)).toBe(false)
     expect(shouldRetryModelOptions({ stale: true, tries: 0, limit: 2 })).toBe(true)
     expect(shouldRetryModelOptions({ stale: true, tries: 2, limit: 2 })).toBe(false)
     expect(shouldRetryModelOptions({ stale: false, tries: 0, limit: 2 })).toBe(false)
@@ -49,7 +49,7 @@ describe("harness store policy", () => {
   })
 
   test("keeps query ownership keys stable", () => {
-    expect(harnessChangeKey("draft:/tmp/project:route", "codex-acp")).toBe("draft:/tmp/project:route\ncodex-acp\n")
+    expect(harnessChangeKey("draft:/tmp/project:route", "codex-app-server")).toBe("draft:/tmp/project:route\ncodex-app-server\n")
     expect(harnessChangeRequestKey("key")).toEqual(["shell", "harness-config", "harness-change", "key"])
     expect(harnessHydrateRequestKey("session:ses_1")).toEqual(["shell", "harness-config", "hydrate", "session:ses_1"])
     expect(harnessHydrateSeenKey("session:ses_1")).toEqual([
@@ -132,21 +132,21 @@ describe("harness store policy", () => {
     })).toBe(true)
     expect(refreshHarnessTypeForScope({ directory: "workspace:ws_1", harness: "opencode" })).toBe("opencode")
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "opencode" })).toBeUndefined()
-    expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "claude-acp" })).toBe("claude-acp")
+    expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "claude-sdk" })).toBe("claude-sdk")
   })
 
   test("hydrates harness state from session config", () => {
     expect(harnessStateFromSessionConfig({
-      harness: { type: "codex-acp", binary: "/tmp/codex-acp" },
+      harness: { type: "codex-app-server", binary: "/tmp/codex-app-server" },
       model: { modelID: "gpt-5.5" },
     })).toEqual({
-      type: "codex-acp",
-      binary: "/tmp/codex-acp",
+      type: "codex-app-server",
+      binary: "/tmp/codex-app-server",
       model: "gpt-5.5",
       status: "ready",
       ready: true,
-      activeType: "codex-acp",
-      activeBinary: "/tmp/codex-acp",
+      activeType: "codex-app-server",
+      activeBinary: "/tmp/codex-app-server",
     })
   })
 
