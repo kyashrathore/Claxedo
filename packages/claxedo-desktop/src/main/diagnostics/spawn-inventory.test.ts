@@ -48,7 +48,7 @@ describe("local production spawn inventory", () => {
         if (calls > 0) discovered.set(`${file}:${name}`, calls)
       })
     }
-    specialSeams().forEach(([key, calls]) => discovered.set(key, calls))
+    specialSeams(classified).forEach(([key, calls]) => discovered.set(key, calls))
     expect([...discovered.entries()].sort()).toEqual([...classified.entries()].sort())
   }, 30_000)
 
@@ -127,19 +127,35 @@ function childProcessNames(text: string) {
   return names
 }
 
-function specialSeams(): Array<readonly [string, number]> {
+/**
+ * Seams this scanner structurally cannot find: a child spawned inside an SDK
+ * (`query()`, `Agent.create()`), a PTY, or a sandbox `exec`. There is no
+ * `child_process` import to key on, so the KEYS are declared here.
+ *
+ * The counts are not. They come from the inventory row and are measured against
+ * the real file by "classifies every checked process seam exactly once", so
+ * this list can never become a second ceiling that drifts away from the first —
+ * which is how the Claude turn's move behind an injectable default stayed
+ * invisible: both numbers said 2 while the counter could only see 1.
+ */
+function specialSeams(classified: Map<string, number>): Array<readonly [string, number]> {
   return [
-    ["packages/workspace-runtime/src/pty/index.ts:ptySpawn", 1],
-    ["packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:sdkQuery", 2],
-    ["packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:agentCreate", 2],
-    ["packages/agent-sdk-runtime/src/harnesses/pi/index.ts:sessionExec", 1],
-    ["packages/agent-sdk-runtime/src/harnesses/pi/model-backend.ts:environmentExec", 1],
-  ]
+    "packages/workspace-runtime/src/pty/index.ts:ptySpawn",
+    "packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:sdkQuery",
+    "packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:agentCreate",
+    "packages/agent-sdk-runtime/src/harnesses/pi/index.ts:sessionExec",
+    "packages/agent-sdk-runtime/src/harnesses/pi/model-backend.ts:environmentExec",
+  ].map((key) => [key, classified.get(key) ?? 0] as const)
 }
 
 function expression(callee: string) {
   if (callee === "ptySpawn") return /\bconst\s+ptyProcess\s*=\s*spawn\s*\(/g
-  if (callee === "sdkQuery") return /\bquery\s*\(/g
+  // The Claude turn spawns through an INLINE injectable default —
+  // `(this.driverOptions.query ?? query)(...)` — which no bare `query(` match
+  // can see. Counting only the direct form leaves the seam that runs on every
+  // turn reading as absent while the model probe alone is classified, so the
+  // inline default is counted as the callsite it is.
+  if (callee === "sdkQuery") return /\bquery\s*\(|\?\?\s*query\s*\)\s*\(/g
   if (callee === "agentCreate") return /\bAgent\.create\s*\(/g
   if (callee === "sessionExec") return /\bsession\.env\.exec\s*\(/g
   if (callee === "environmentExec") return /\benv\.exec\s*\(/g

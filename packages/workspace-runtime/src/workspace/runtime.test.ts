@@ -3405,7 +3405,15 @@ describe("workspace host adapter + store caching (characterization)", () => {
     // created lazily on first store() call.
     expect(dbExists()).toBe(false)
 
-    // Bind a session through a store()-backed path to materialize the store.
+    // Creating a session is the store()-backed path that materializes the
+    // store: it binds the session row and the adapter writes the session's
+    // first config alongside it. A config PATCH only ACCEPTS an update onto a
+    // bound session, so the create has to come first.
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}&runner=claude`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s-lazy", title: "Lazy store" }),
+    })
     const update = await app.request(
       `http://localhost/session/s-lazy/config?directory=${encodeURIComponent(dir)}&runner=claude`,
       {
@@ -3419,6 +3427,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
         }),
       },
     )
+    expect(created.status).toBe(201)
     expect(update.status).toBe(200)
     expect(dbExists()).toBe(true)
 
@@ -3688,8 +3697,11 @@ describe("workspace host store factory seam (Unit 2)", () => {
       storeFactory: injected.factory,
     })
 
-    // Store-backed route: PATCH then GET the session config. This exercises the
-    // lazy session-config store() path (getSessionConfig/updateSessionConfig).
+    // Store-backed routes: create the session, then PATCH and GET its config.
+    // This exercises the lazy session-config store() path (bindSession /
+    // getSessionConfig / updateSessionConfig). The create is what binds the
+    // session and its first config row; a PATCH only accepts an update onto a
+    // session the store already holds.
     const config = {
       harness: { id: "claude", access: "native" },
       model: { providerID: "anthropic", modelID: "sonnet" },
@@ -3697,6 +3709,11 @@ describe("workspace host store factory seam (Unit 2)", () => {
       agent: "build",
     } satisfies SessionConfig
 
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}&runner=claude`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s-mem" }),
+    })
     const update = await app.request(
       `http://localhost/session/s-mem/config?directory=${encodeURIComponent(dir)}&runner=claude`,
       {
@@ -3709,6 +3726,7 @@ describe("workspace host store factory seam (Unit 2)", () => {
       `http://localhost/session/s-mem/config?directory=${encodeURIComponent(dir)}&runner=claude`,
     )
 
+    expect(created.status).toBe(201)
     expect(update.status).toBe(200)
     expect(read.status).toBe(200)
     expect(await read.json()).toEqual(config)
@@ -3809,6 +3827,11 @@ describe("workspace host store factory seam (Unit 2)", () => {
       storeRoot,
     })
 
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}&runner=claude`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s-disk" }),
+    })
     const update = await app.request(
       `http://localhost/session/s-disk/config?directory=${encodeURIComponent(dir)}&runner=claude`,
       {
@@ -3822,6 +3845,7 @@ describe("workspace host store factory seam (Unit 2)", () => {
         }),
       },
     )
+    expect(created.status).toBe(201)
     expect(update.status).toBe(200)
     expect(fs.existsSync(storeRoot)).toBe(true)
 
