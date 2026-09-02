@@ -1019,17 +1019,18 @@ export function createSessionController(input: {
         if (!transition.settled || !sessionID || sessionID === "new") return
         const refresh = () => {
           if (input.directory() !== directory || input.sessionID() !== sessionID || input.active?.() === false) return
-          const workspaceId = input.signedControlPlane?.() ? input.workspaceId?.() : undefined
-          void scheduleSessionProjectionPull({
-            action: "checkpoint",
-            reason: "message-checkpoint",
-            workspaceId,
-            sessionId: sessionID,
-            idempotencyKey: `active-turn-settled:${workspaceId ?? ""}:${sessionID}:${Date.now()}`,
-          })
+          const workspace = sessionProjectionWorkspaceBacking({ signedControlPlane: input.signedControlPlane?.() ?? false, workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.() })
+          if (workspace) {
+            void scheduleSessionProjectionPull({
+              action: "checkpoint",
+              reason: "message-checkpoint",
+              workspaceId: workspace.workspaceId,
+              sessionId: sessionID,
+              idempotencyKey: `active-turn-settled:${workspace.workspaceId}:${sessionID}:${Date.now()}`,
+            })
+          }
           void syncSessionHistory(sessionID, { force: true })
           void syncSessionTodo(sessionID, { force: true })
-          const workspace = sessionProjectionWorkspaceBacking({ signedControlPlane: input.signedControlPlane?.() ?? false, workspaceId: input.workspaceId?.(), workspaceKind: input.workspaceKind?.() })
           void directorySessionCacheActions.refresh({ directory, ...(workspace ? { workspace } : {}) })
           if (input.signedControlPlane?.()) void sessionInventoryActions.reloadWorkspace()
         }
