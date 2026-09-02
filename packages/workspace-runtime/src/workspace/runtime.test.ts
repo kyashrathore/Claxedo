@@ -36,6 +36,7 @@ import {
   CodexHarnessAdapter,
   OpenCodeHarnessAdapter,
   PiHarnessAdapter,
+  type AgentConfigOptions,
   type AgentHarnessAdapter,
   type OpenCodeRequestFn,
 } from "@claxedo/agent-sdk-runtime/adapters"
@@ -589,7 +590,7 @@ describe("workspace runtime auth helpers", () => {
       },
       async applyConfig() {},
       async probeConfigOptions() {
-        return options
+        return { options }
       },
       dispose() {},
     } as unknown as AgentHarnessAdapter
@@ -632,14 +633,16 @@ describe("workspace runtime auth helpers", () => {
       async applyConfig() {},
       async probeConfigOptions() {
         probes += 1
-        return [{
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "gpt-5.3-codex",
-          selectOptions: [{ id: "gpt-5.3-codex", value: "gpt-5.3-codex", name: "gpt-5.3-codex" }],
-        }]
+        return {
+          options: [{
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-5.3-codex",
+            selectOptions: [{ id: "gpt-5.3-codex", value: "gpt-5.3-codex", name: "gpt-5.3-codex" }],
+          }],
+        }
       },
       dispose() {},
     } as unknown as AgentHarnessAdapter
@@ -656,12 +659,52 @@ describe("workspace runtime auth helpers", () => {
     const res = await app.request(
       `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=acp:openclaw`,
     )
-    const body = await res.json() as AgentConfigOption[]
+    const body = await res.json() as AgentConfigOptions
 
     expect(res.status).toBe(200)
     expect(probes).toBe(1)
-    expect(body[0]?.currentValue).toBe("gpt-5.3-codex")
-    expect(body[0]?.selectOptions?.some((item) => item.value === "gpt-5.3-codex")).toBe(true)
+    expect(body.options[0]?.currentValue).toBe("gpt-5.3-codex")
+    expect(body.options[0]?.selectOptions?.some((item) => item.value === "gpt-5.3-codex")).toBe(true)
+    expect("resolvedModel" in body).toBe(false)
+  })
+
+  test("harness config options reports the model an ACP agent resolved for itself", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-resolved-model-"))
+    tempDirs.push(dir)
+    process.env.HOME = dir
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const adapter = {
+      adapterCapabilities: ["runtime-config"] as const,
+      setModel() {},
+      setAuth() {},
+      async applyConfig() {},
+      async probeConfigOptions(): Promise<AgentConfigOptions> {
+        return {
+          options: [{ id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "code" }],
+          resolvedModel: { id: "openclaw-pro", name: "Openclaw Pro" },
+        }
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const registry: WorkspaceHarnessRegistry = [{
+      match: (runner) => runner.id === "openclaw" && runner.access === "acp",
+      create: () => adapter,
+    }]
+    const app = new Hono()
+    mountTestHost(app, {
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
+      harnesses: registry,
+    })
+
+    const res = await app.request(
+      `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=acp:openclaw`,
+    )
+    const body = await res.json() as AgentConfigOptions
+
+    expect(res.status).toBe(200)
+    expect(body.resolvedModel).toEqual({ id: "openclaw-pro", name: "Openclaw Pro" })
+    expect(body.options.some((item) => item.category === "model")).toBe(false)
   })
 
   test("runtime config apply serializes concurrent pushes", async () => {

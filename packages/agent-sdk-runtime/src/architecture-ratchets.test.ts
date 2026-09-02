@@ -18,10 +18,16 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // shell and summarize adapter methods. runtime.ts threads the same fence
       // but stays below its previous ceiling because the durable turn record
       // moved out to runtime/turn-record.ts.
+      //
+      // Re-measured again for the resolved-model contract: the ACP adapter and
+      // the native-SDK adapter each state their own config-options payload, so
+      // both gained the one small producer that names the model their harness
+      // reported. Moving either producer to a shared owner is not possible —
+      // ACP options keep the agent's protocol shape and the SDK's do not.
       "runtime.ts": 987,
-      "harnesses/acp/index.ts": 835,
+      "harnesses/acp/index.ts": 844,
       "harnesses/codex/driver.ts": 755,
-      "harnesses/shared/sdk-runtime-adapter.ts": 883,
+      "harnesses/shared/sdk-runtime-adapter.ts": 890,
       "harnesses/opencode/index.ts": 906,
       "harnesses/pi/index.ts": 988,
     }

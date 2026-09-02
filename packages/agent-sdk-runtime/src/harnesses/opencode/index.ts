@@ -864,7 +864,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     return Promise.resolve()
   }
 
-  async probeConfigOptions(_directory: string): Promise<AgentConfigOption[]> {
+  async probeConfigOptions(_directory: string): Promise<never> {
     throw new Error("opencode does not expose harness config options")
   }
 

@@ -28,6 +28,7 @@ import type {
 } from "../../index"
 import type {
   AbortResult,
+  AgentConfigOptions,
   AgentGoalResource,
   AgentGoalMutationResult,
   AgentHarnessAdapter,
@@ -36,7 +37,7 @@ import type {
   AgentPermissionModeState,
   AgentTurnWriteContext,
 } from "../../adapter-contract"
-import { turnWriteFence } from "../../adapter-contract"
+import { resolvedModelFromConfigOptions, turnWriteFence } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
 import {
@@ -105,6 +106,12 @@ export type {
 export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 
 const log = Log.create({ service: "sdk-runtime-adapter" })
+
+/** A native-SDK driver's options, plus the model its own `model` select names as current. */
+function sdkConfigOptions(options: AgentConfigOption[]): AgentConfigOptions {
+  const resolvedModel = resolvedModelFromConfigOptions(options)
+  return { options, ...(resolvedModel ? { resolvedModel } : {}) }
+}
 
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")
@@ -826,12 +833,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     await this.driver.applyConfig(config)
   }
 
-  async probeConfigOptions(directory: string): Promise<AgentConfigOption[]> {
-    return this.driver.configOptions(this.currentModel, directory)
+  async probeConfigOptions(directory: string): Promise<AgentConfigOptions> {
+    return sdkConfigOptions(await this.driver.configOptions(this.currentModel, directory))
   }
 
-  peekConfigOptions(directory: string): AgentConfigOption[] {
-    return this.driver.peekConfigOptions(this.currentModel, directory)
+  peekConfigOptions(directory: string): AgentConfigOptions {
+    return sdkConfigOptions(this.driver.peekConfigOptions(this.currentModel, directory))
   }
 
   readRuntimeHealth(_directory: string): AgentHarnessAdapterHealth {

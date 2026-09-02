@@ -13,9 +13,11 @@ export type {
   AgentMessagePageInput,
   AgentHarnessAdapterProcessOptions,
   AgentTurnWriteContext,
+  AgentConfigOptions,
   AgentHandoffSessionOptions,
   AgentPreparedHandoffSession,
   PermissionDecision,
+  ResolvedHarnessModel,
   SupportsAbort,
   SupportsAgents,
   SupportsCommands,
@@ -34,7 +36,7 @@ export type {
   ShellCommandInput,
   SummarizeSessionInput,
 } from "./adapter-contract"
-export { requireGoalResource } from "./adapter-contract"
+export { requireGoalResource, resolvedModelFromConfigOptions } from "./adapter-contract"
 export { AgentMessagePageError } from "./message-page"
 export {
   GOAL_ACTIONS,

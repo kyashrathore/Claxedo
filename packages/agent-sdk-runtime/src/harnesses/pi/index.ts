@@ -927,7 +927,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
 
   async applyConfig() {}
 
-  async probeConfigOptions(): Promise<AgentConfigOption[]> {
+  async probeConfigOptions(): Promise<never> {
     throw new Error("pi does not expose harness config options")
   }
 

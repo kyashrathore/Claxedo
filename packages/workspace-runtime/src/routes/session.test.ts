@@ -101,7 +101,7 @@ function adapter(input: {
     replyQuestion: async () => {},
     rejectQuestion: async () => {},
     applyConfig: async () => {},
-    probeConfigOptions: async () => [],
+    probeConfigOptions: async () => ({ options: [] }),
     dispose: () => {},
   }
 }

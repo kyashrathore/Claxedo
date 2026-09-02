@@ -945,7 +945,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return await updateSessionConfig(sessionId, update, directory)
       },
       async options(directory: RuntimeDirectory) {
-        return merge(adapters, (adapter) => adapter.probeConfigOptions?.(directory))
+        return merge(adapters, async (adapter) => (await adapter.probeConfigOptions?.(directory))?.options)
       },
     },
     health: {
@@ -977,7 +977,7 @@ function key(input: Pick<SessionHarness, "id" | "access">) {
   return `${input.id}:${input.access}`
 }
 
-async function merge<T>(adapters: Map<string, AgentHarnessAdapter>, read: (adapter: AgentHarnessAdapter) => Promise<T[]> | undefined) {
+async function merge<T>(adapters: Map<string, AgentHarnessAdapter>, read: (adapter: AgentHarnessAdapter) => Promise<T[] | undefined> | T[] | undefined) {
   const out: T[] = []
   for (const adapter of adapters.values()) {
     const rows = await read(adapter)
