@@ -1303,7 +1303,7 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(row).toContainText(SEEDED_SESSION_TITLE)
     await expect(projectGroup.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${IDLE_SESSION_ID}"]`))
       .toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    // Never the "nothing here" state the central-only list used to render.
+    // Never the "nothing here" state of a list read from the central server alone.
     await expect(projectGroup.getByTestId("rail-sidebar-session-list-empty")).toHaveCount(0)
     expect(mock.requests.relayHits).toContain("GET /session")
 
@@ -1425,10 +1425,8 @@ test.describe("core user-hosted workspace @core", () => {
 
   // The workspace bus is a WORKSPACE-scoped stream on this runtime, and it has to
   // be: `pty.*`, `process.*` and `worktree.*` belong to no session, and the route
-  // that needs them most — a terminal — names no session at all. The app used to
-  // refuse this stream for every non-local workspace, so a terminal opened from
-  // the web created a real PTY on the host and then rendered nothing, because the
-  // `pty.created` frame that registers it had no lane to arrive on.
+  // that needs them most — a terminal — names no session at all: the `pty.created`
+  // frame that registers a terminal arrives on this stream and no other.
   test("the workspace event bus opens workspace-wide on a session-less route — behavior 10", async ({ page }) => {
     test.setTimeout(120_000)
     const mock = await installUserHostedRuntimeMock(page, { health: [200] })
