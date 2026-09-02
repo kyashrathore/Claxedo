@@ -351,9 +351,6 @@ export async function createHandlers() {
         }),
       )
     }),
-    http.get(`${DEMO_BASE}/global/config`, () => {
-      return HttpResponse.json(state.globalConfig)
-    }),
     http.get(`${DEMO_BASE}/provider`, () => {
       return HttpResponse.json(state.provider)
     }),
@@ -836,22 +833,6 @@ export async function createHandlers() {
         ptyId: `pty_proc_${id}`,
         restartCount: 1,
         startedAt: Date.now(),
-      })
-    }),
-    http.get(`${DEMO_BASE}/api/claxedo/bootstrap`, ({ request }) => {
-      const dir = new URL(request.url).searchParams.get("directory") ?? request.headers.get("x-opencode-directory") ?? root
-      return HttpResponse.json({
-        healthy: true,
-        version: "0.1.0-demo",
-        path: {
-          ...state.path,
-          worktree: dir,
-          directory: dir,
-        },
-        project: state.projects,
-        provider: state.provider,
-        provider_auth: state.providerAuth,
-        config: state.config,
       })
     }),
     http.get(`${DEMO_BASE}/api/claxedo/health`, () => HttpResponse.json({ ok: true, healthy: true, version: "0.1.0-demo" })),

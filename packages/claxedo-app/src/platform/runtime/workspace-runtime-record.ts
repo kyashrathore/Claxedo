@@ -153,7 +153,7 @@ function scopedWorkspaceResolveQuery(input: WorkspaceRecordScope) {
  *
  * Not expiring on a clock is the point. A directory's backing workspace does
  * not change while the app runs — creating or re-homing one goes through
- * `ensureProject`, which INVALIDATES this key, and an invalidated entry is
+ * `ensureLocalProject`, which INVALIDATES this key, and an invalidated entry is
  * stale whatever its staleTime says, so this read still refetches then. What
  * it no longer does is refetch merely because time passed, which cost real
  * user time: the session environment card resolves the record on every 5s

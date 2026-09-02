@@ -337,25 +337,6 @@ describe("workspaceCatalogQuery", () => {
     await expect(options.queryFn()).rejects.toThrow(/workspace list failed with 500/)
   })
 
-  test("an empty refetch never replaces a populated catalog", () => {
-    const populated = [{ id: "proj_1", worktree: "/Users/me/repo", time: { created: 1, updated: 1 } }]
-    expect(workspaceCatalogQuery({
-      baseUrl: LOOPBACK,
-      client: daemonClient([]),
-      signedAccess: false,
-    }).structuralSharing(populated, [])).toEqual(populated)
-  })
-
-  test("a real replacement still lands", () => {
-    const populated = [{ id: "proj_1", worktree: "/Users/me/repo", time: { created: 1, updated: 1 } }]
-    const next = [{ id: "proj_2", worktree: "/Users/me/other", time: { created: 1, updated: 1 } }]
-    expect(workspaceCatalogQuery({
-      baseUrl: LOOPBACK,
-      client: daemonClient([]),
-      signedAccess: false,
-    }).structuralSharing(populated, next)).toEqual(next)
-  })
-
   test("the catalog owns the rail's query key", () => {
     expect(workspaceCatalogQuery({ baseUrl: LOOPBACK, client: daemonClient([]), signedAccess: false }).queryKey)
       .toEqual(queryKeys.controlPlane.projects(LOOPBACK))

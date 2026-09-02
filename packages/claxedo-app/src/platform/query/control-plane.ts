@@ -69,7 +69,7 @@ export function normalizeProjectList(data: Project[] | undefined) {
  * basename and, because the engine's hashed `id` never matches the workspace
  * uuid the session inventory groups by, shows no sessions. `staleTime` freezes
  * that payload for five minutes, so it only heals when something invalidates
- * the query (previously: opening a surface, via `ensureProject`).
+ * the query.
  */
 export function projectCatalogMissingWorkspace(
   projects: Array<Project & { workspaces?: Record<string, unknown> }> | undefined,

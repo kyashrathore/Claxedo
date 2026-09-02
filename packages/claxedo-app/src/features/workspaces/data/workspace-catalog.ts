@@ -309,18 +309,6 @@ export function workspaceCatalogQuery(input: WorkspaceCatalogQueryInput) {
   return {
     queryKey: workspaceCatalogQueryKey(input.baseUrl),
     staleTime: 5 * 60 * 1000,
-    /**
-     * A catalog that came back empty is not evidence that the principal lost
-     * every workspace — an unauthenticated refetch, a control plane mid-deploy
-     * and a genuinely emptied account all answer `[]`. The rail IS this query,
-     * so replacing a populated catalog with an empty one empties the sidebar.
-     * Keep what is already known; a real removal arrives as a rewritten list.
-     */
-    structuralSharing: (previous: unknown, next: unknown) => {
-      const before = (previous ?? []) as Project[]
-      const after = (next ?? []) as Project[]
-      return after.length === 0 && before.length > 0 ? before : after
-    },
     queryFn: async (): Promise<Project[]> => {
       const request = input.request ?? defaultAuthFetch
       const own = direct ? normalizeProjectList((await input.client.project.list()).data) : []
