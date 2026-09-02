@@ -558,8 +558,7 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
  * answers with the workspace's real kind, and `undefined` both for one the
  * catalog knows as local and for one it has never heard of. Failing closed
  * there is what keeps a local session's row from gaining a `workspace:<uuid>`
- * twin beside its `local:<dir>` row (open issue #14 / tier-real local harness
- * strict-mode duplicates).
+ * twin beside its `local:<dir>` row.
  */
 function addressedWorkspaceId(value: string | undefined, projects: GlobalProject[]) {
   if (!value) return undefined

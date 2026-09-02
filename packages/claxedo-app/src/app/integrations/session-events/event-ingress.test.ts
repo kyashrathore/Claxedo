@@ -705,7 +705,7 @@ describe("global sync event ingress", () => {
   /**
    * The same uuid shape, but the catalog knows it only as this machine's LOCAL
    * association. Addressing it by workspace would mint a `workspace:<uuid>` row
-   * beside the `local:<dir>` row for one session (issue #14), so the row stays
+   * beside the `local:<dir>` row for one session, so the row stays
    * local: the host path IS an address this app can read.
    */
   test("a uuid the catalog knows only as a local association keeps the local row", () => {

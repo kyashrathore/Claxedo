@@ -199,7 +199,7 @@ export function controlPlaneCatalogProjects(input: { workspaces: unknown[] }): W
     group.workspaces[directory] = {
       id: workspaceId,
       workspaceId,
-      kind: txt(row.access) ?? txt(row.backing) ?? "cloud",
+      kind: controlPlaneRowKind(row),
       ...(txt(row.role) ? { role: txt(row.role) } : {}),
       ...(txt(row.status) ? { status: txt(row.status) } : {}),
       ...(typeof row.host_online === "boolean" ? { hostOnline: row.host_online } : {}),
@@ -390,4 +390,11 @@ export async function refreshWorkspaceCatalog(input: WorkspaceCatalogQueryInput)
   const options = workspaceCatalogQuery(input)
   await queryClient.invalidateQueries({ queryKey: options.queryKey })
   return await queryClient.fetchQuery(options)
+}
+
+/** The kind a control-plane row states for itself; a row that states none is not a catalog row. */
+function controlPlaneRowKind(row: Record<string, unknown>): string {
+  const kind = txt(row.access)
+  if (!kind) throw new Error("Control-plane workspace row states no access kind")
+  return kind
 }

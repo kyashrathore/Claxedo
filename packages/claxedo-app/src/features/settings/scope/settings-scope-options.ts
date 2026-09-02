@@ -1,3 +1,4 @@
+import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 /**
  * The (workspace, harness) a Settings catalog surface is about.
  *
@@ -73,7 +74,7 @@ export function settingsWorkspaceOptions(projects: readonly CatalogProject[]): S
       const directory = workspace.directory ?? ref
       return {
         key: workspaceId ?? directory,
-        scope: workspaceId ? `workspace:${workspaceId}` : directory,
+        scope: sessionRowDirectory({ workspaceId, hostDirectory: directory }),
         ...(workspaceId ? { workspaceId } : {}),
         kind: workspace.kind ?? "local",
         label: workspace.workspace_name ?? directory,

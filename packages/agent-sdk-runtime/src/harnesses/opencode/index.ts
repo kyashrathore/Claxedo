@@ -23,7 +23,6 @@ import {
 import type {
   AgentAgent,
   AgentCommand,
-  AgentConfigOption,
   AgentMessage,
   AgentPermission,
   AgentQuestion,

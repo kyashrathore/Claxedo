@@ -20,7 +20,6 @@ import {
 import {
   type AgentAgent,
   type AgentCommand,
-  type AgentConfigOption,
   type AgentMessage,
   type AgentPermission,
   type AgentQuestion,

@@ -52,6 +52,7 @@ export type {
 export { requireGoalResource } from "./adapter-contract"
 export type {
   AgentConfigOptions,
+  ResolvedHarnessModel,
   AgentGoalMutationFailure,
   AgentGoalMutationResult,
   AgentGoalResource,

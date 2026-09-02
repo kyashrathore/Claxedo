@@ -19,7 +19,8 @@ export type HarnessConfigOption = {
   selectOptions?: Array<{ id: string; name: string }>
 }
 
-export type ResolvedHarnessModel = { id: string; name: string }
+import type { ResolvedHarnessModel } from "@claxedo/agent-sdk-runtime"
+export type { ResolvedHarnessModel }
 
 export type OptionsResponse = {
   options: HarnessConfigOption[]
