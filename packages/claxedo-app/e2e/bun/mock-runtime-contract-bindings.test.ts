@@ -47,7 +47,7 @@ describe("mock-runtime canonical route bindings", () => {
       stale: false,
       options: [option],
     })
-    expect(runtimeHarnessOptionsResponse([option])).toEqual([option])
+    expect(runtimeHarnessOptionsResponse([option])).toEqual({ options: [option] })
   })
 
   test("derives session-list view fields from the real query parser", () => {

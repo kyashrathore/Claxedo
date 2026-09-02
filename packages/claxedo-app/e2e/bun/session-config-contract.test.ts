@@ -8,11 +8,11 @@ describe("session config contract", () => {
   test("normalizes the accepted request identity into the canonical harness shape", () => {
     expect(
       parseSessionConfigPatch(
-        { harness: { type: "claude-acp" }, agent: "build" },
+        { harness: { type: "claude-sdk" }, agent: "build" },
         "http://localhost/session/session-1/config",
       ),
     ).toEqual({
-      harness: { id: "claude", access: "acp" },
+      harness: { id: "claude", access: "native" },
       agent: "build",
     })
   })
