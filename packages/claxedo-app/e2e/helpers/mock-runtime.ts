@@ -2024,9 +2024,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await contractRoute(page, "**/api/wr/events**", wrEventsHandler)
   // `/api/claxedo/events` is the SAME stream, not a third one. Both real
   // servers mount one handler on all three central spellings —
-  // claxedo-local-server/src/opencode/compat-routes/index.ts:168-177
+  // claxedo-local-server/src/opencode/compat-routes/index.ts (`streamGlobalEvents` mounts)
   // (`/global/event`, `/api/wr/events`, `/api/claxedo/events` -> the single
-  // `streamGlobalEvents`) and claxedo-server/src/routes/hosted/shell.ts:745-747
+  // `streamGlobalEvents`) and claxedo-server/src/routes/hosted/shell.ts (the `events` mounts)
   // (the same three -> the single `events`) — so serving it anything other than
   // this handler's body would be inventing a contract.
   //
