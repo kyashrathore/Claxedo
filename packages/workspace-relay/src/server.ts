@@ -18,6 +18,7 @@ import {
 import type { WorkspaceRelayDirectory } from "./directory"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken, errorBody } from "./http"
+import { isUserHostedTarget } from "./user-hosted-forwarding"
 
 export type RelayHostPublicKey = {
   publicKey: CryptoKey | Uint8Array
@@ -1074,7 +1075,7 @@ export async function authorizeWorkspaceRelayRequest(
       }
     }
     if (
-      target.access === "user-hosted"
+      isUserHostedTarget(target)
       && !options.directory?.activeHost({ hostId: target.hostId, workspaceId: target.workspaceId })
     ) {
       return {

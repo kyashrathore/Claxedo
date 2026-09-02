@@ -27,6 +27,7 @@ import {
 import { WorkspaceRelayAuthError, verifyHostTunnelToken, type RuntimeAccessTokenClaims } from "./auth"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken } from "./http"
+import { isUserHostedTarget } from "./user-hosted-forwarding"
 
 /**
  * Bun expresses HTTP idle timeout in seconds. Runtime SSE heartbeats arrive
@@ -1305,7 +1306,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         const response = await trace.span("relay-total", async () => {
           const relay = await authorizeWorkspaceRelayRequest(options, request, workspaceId, trace)
           if (!relay.ok) return relay.response
-          if (relay.request.target.access === "user-hosted") {
+          if (isUserHostedTarget(relay.request.target)) {
             const tunnel = hostTunnel(hostTunnels, relay.request.target.hostId)
             return tunnel
               ? await trace.span("tunnel-http", async () => await tunnelHttpRequest({
@@ -1343,7 +1344,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       if (!relay.ok) return relay.response
       const originDenied = requireAllowedOrigin(request, relayOriginMatcher)
       if (originDenied) return originDenied
-      if (relay.request.target.access === "user-hosted") {
+      if (isUserHostedTarget(relay.request.target)) {
         const tunnel = hostTunnel(hostTunnels, relay.request.target.hostId)
         if (!tunnel) {
           return new Response("User-hosted workspace is offline", { status: 503 })

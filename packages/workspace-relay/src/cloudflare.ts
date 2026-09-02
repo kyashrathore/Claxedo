@@ -26,6 +26,7 @@ import {
 } from "./server"
 import { createWorkspaceRelayDirectory } from "./directory"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS, parseAllowedOrigins } from "./cors-origins"
+import { isUserHostedTarget } from "./user-hosted-forwarding"
 
 export type WorkspaceRelayDurableObjectId = unknown
 
@@ -1916,7 +1917,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     if (!websocketRequest(request)) return json("websocket_upgrade_required", "Workspace Relay requires a WebSocket upgrade", 426)
     const authorized = await authorizeWorkspaceRelayRequest(relayOptions, request, workspaceId)
     if (!authorized.ok) return authorized.response
-    if (authorized.request.target.access !== "cloud") return admitUserHostedClient(request, authorized.request)
+    if (isUserHostedTarget(authorized.request.target)) return admitUserHostedClient(request, authorized.request)
     return await admitCloudClient(request, authorized.request)
   }
 
@@ -2120,7 +2121,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       })
     )
     if (!authorized.ok) return authorized.response
-    if (authorized.request.target.access !== "cloud") {
+    if (isUserHostedTarget(authorized.request.target)) {
       trace && (trace.routeKind = "user-hosted-http")
       return forwardUserHostedHttp(request, authorized.request, trace)
     }
