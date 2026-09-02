@@ -156,7 +156,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
     prepare: async (params) => {
       if (prepared) throw new Error("Claxedo driver is already prepared")
       let panelLoadPresets: PublicPanelLoadPresets | undefined
-      if (["session-navigation-v1", "workspace-panel-v2"].includes(params.scenarioId)) {
+      if (["session-navigation-v1", "session-navigation-v2", "workspace-panel-v2", "workspace-panel-v3"].includes(params.scenarioId)) {
         if (!params.workspaceFixtureManifest) {
           throw new Error(`Claxedo ${params.scenarioId} requires a workspace fixture manifest`)
         }
@@ -189,7 +189,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       return { ready: true, processes: launch.processes, readiness: launch.readiness }
     },
     execute: async (params) => {
-      if (params.scenarioId === "session-navigation-v1") {
+      if (["session-navigation-v1", "session-navigation-v2"].includes(params.scenarioId)) {
         if (!active || !("navigationType" in params.case)) {
           throw new Error("Claxedo session-navigation request is incomplete")
         }
@@ -219,7 +219,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         }
         return navigationExecution(params.case.caseId, measured)
       }
-      if (params.scenarioId === "workspace-panel-v2") {
+      if (["workspace-panel-v2", "workspace-panel-v3"].includes(params.scenarioId)) {
         if (!active || !("loadProfile" in params.case) || !("action" in params.case)) {
           throw new Error("Claxedo workspace-panel-v2 request is incomplete")
         }
@@ -249,7 +249,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         const measured = await dependencies.executePanelSwitch(params.case, source, destination)
         return panelExecution(params.case.caseId, measured)
       }
-      if (["app-start-v1", "app-start-v3"].includes(params.scenarioId)) {
+      if (["app-start-v1", "app-start-v3", "app-start-v4"].includes(params.scenarioId)) {
         if (active) throw new Error("Claxedo app-start requires no running application")
         if (!("startMode" in params.case) || !params.stateHandle)
           throw new Error("Claxedo app-start request is incomplete")
@@ -259,11 +259,11 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
         return execution(
           params.case.caseId,
           launch.clock,
-          params.scenarioId === "app-start-v3" ? withTimingEvidence(launch.readiness, launch.clock.end) : launch.readiness,
+          ["app-start-v3", "app-start-v4"].includes(params.scenarioId) ? withTimingEvidence(launch.readiness, launch.clock.end) : launch.readiness,
         )
       }
       if (
-        !["session-switch-v1", "session-switch-v3"].includes(params.scenarioId) ||
+        !["session-switch-v1", "session-switch-v3", "session-switch-v4"].includes(params.scenarioId) ||
         "startMode" in params.case ||
         "action" in params.case ||
         "panelProfile" in params.case ||
@@ -283,7 +283,7 @@ export function createClaxedoPublicDriver(dependencies: DriverDependencies): Cla
       return execution(
         benchmarkCase.caseId,
         clock,
-        readinessReceipt(params.scenarioId === "session-switch-v3" ? clock.end : undefined),
+        readinessReceipt(["session-switch-v3", "session-switch-v4"].includes(params.scenarioId) ? clock.end : undefined),
       )
     },
     shutdown: async () => {
@@ -418,6 +418,10 @@ async function makeDefaultDependencies(): Promise<DriverDependencies> {
         "session-switch-workspace-panel-v1",
         "session-navigation-v1",
         "workspace-panel-v2",
+        "app-start-v4",
+        "session-switch-v4",
+        "session-navigation-v2",
+        "workspace-panel-v3",
       ],
       sourceEventFormats: ["opencode-event-v1", "opencode-event-v2"],
       materializationModes: ["native-opencode"],
