@@ -51,7 +51,7 @@
  * why local needs no branch of its own here or in the composer.
  */
 
-import { createEffect, createRoot } from "solid-js"
+import { createEffect, createMemo, createRoot } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 
 export type SessionEventStreamLane = "workspace-bus" | "runtime-events"
@@ -77,6 +77,23 @@ type SessionEventScopeState = {
 
 const [scopeState, setScopeState] = createStore<SessionEventScopeState>({ lanes: {} })
 
+/**
+ * The settled answer, so a reader is woken by a change of SESSION and never by
+ * a change of writer.
+ *
+ * Both writers publish the same session in the ordinary create flow: the
+ * composer holds the id it just created, and the route publishes that same id
+ * once the navigation lands. Reading `route ?? held` directly tracks both store
+ * fields, so the second write re-notifies with an answer that never changed —
+ * and a reader that treats the notification as a retarget tears its stream down
+ * and reopens it with no cursor. The workspace bus and the compat stream are
+ * served their whole retained log for a cursor-less connection, so every frame
+ * already applied arrived a second time (a finished turn's `session.idle`
+ * replayed, playing the completion sound twice). Settling by value means an
+ * unchanged answer wakes nobody.
+ */
+const scopeId = createRoot(() => createMemo(() => scopeState.route ?? scopeState.held))
+
 /** A workspace-wide stream carries every session, so it satisfies any scope. */
 const WORKSPACE_WIDE = ""
 
@@ -98,7 +115,8 @@ export function setSessionEventRouteScope(routeSessionId?: string): void {
 }
 
 /**
- * The session the scoped streams must carry, read reactively.
+ * The session the scoped streams must carry, read reactively — and woken only
+ * when that session changes, whichever writer supplied it.
  *
  * The route is authoritative whenever it names a session: opening a different
  * session is the user moving on from the one the composer published. Both lanes
@@ -109,7 +127,7 @@ export function setSessionEventRouteScope(routeSessionId?: string): void {
  * completed turn on the next refetch.
  */
 export function sessionEventScopeId(): string | undefined {
-  return scopeState.route ?? scopeState.held
+  return scopeId()
 }
 
 /** Declares that a provider drives this lane, so readiness waits for it. */

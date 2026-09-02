@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { createEffect, createRoot, on } from "solid-js"
 import {
   holdSessionEventScope,
   registerSessionEventStreamLane,
@@ -44,6 +45,61 @@ describe("sessionEventScopeId", () => {
     // this client never created must scope the same streams a created one does.
     setSessionEventRouteScope("ses_attached")
     expect(sessionEventScopeId()).toBe("ses_attached")
+  })
+})
+
+describe("sessionEventScopeId retargets", () => {
+  // Both lanes read the scope through `createEffect(on(sessionEventScopeId, …))`
+  // and treat every wake as a RETARGET: the stream is aborted and reopened with
+  // no cursor. A cursor-less connection is served the whole retained log
+  // (`e2e/helpers/mock-runtime.ts`'s `EventBus.drain`, and the compat stream on
+  // both real servers), so a wake that names the session the lane already
+  // carries redelivers every frame it has already applied — a finished turn's
+  // `session.idle` replayed, playing the completion sound a second time. These
+  // count the wakes, because one wake per SESSION is the property; one wake per
+  // WRITE is the bug.
+  const countRetargets = () => {
+    const seen: Array<string | undefined> = []
+    const dispose = createRoot((dispose) => {
+      createEffect(on(sessionEventScopeId, (scope) => {
+        seen.push(scope)
+      }, { defer: true }))
+      return dispose
+    })
+    return { seen, dispose }
+  }
+
+  test("a local workspace's open pane retargets once for the session it just created", () => {
+    // The measured flow behind the duplicated completion sound. `openSession
+    // EventStreams` (composer submit-create-session.ts) holds the created id on
+    // every workspace kind — local included, because the hold is not what a
+    // local branch would change — and the shell route then publishes the same
+    // id when the navigation off the draft lands. One session, two writes.
+    const lane = countRetargets()
+    holdSessionEventScope("ses_local")
+    setSessionEventRouteScope("ses_local")
+    expect(lane.seen).toEqual(["ses_local"])
+    lane.dispose()
+  })
+
+  test("a user-hosted session route retargets once, and again only when the session changes", () => {
+    // Same two writes on a relay-backed workspace, where the lanes really are
+    // session-scoped and a needless reopen costs a whole replayed log.
+    const lane = countRetargets()
+    holdSessionEventScope("ses_hosted")
+    setSessionEventRouteScope("ses_hosted")
+    expect(lane.seen).toEqual(["ses_hosted"])
+
+    // A navigation to a different session IS the user moving on, and must
+    // retarget both lanes.
+    setSessionEventRouteScope("ses_next")
+    expect(lane.seen).toEqual(["ses_hosted", "ses_next"])
+
+    // Dropping the route back to a draft falls through to the held id, which is
+    // a different session again — so this one is a retarget too.
+    setSessionEventRouteScope(undefined)
+    expect(lane.seen).toEqual(["ses_hosted", "ses_next", "ses_hosted"])
+    lane.dispose()
   })
 })
 
