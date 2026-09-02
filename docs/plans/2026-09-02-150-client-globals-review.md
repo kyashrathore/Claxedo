@@ -94,3 +94,19 @@ control plane that owns it).
   local to the backend that indexes them by construction (`backends/local/
   backend.ts:130-137`, `hosted/managed.ts:234-238`), so no client routing
   change; agent-open and conflict routes are already relay-proxied.
+- 2026-09-02 B and C (boot globals, catalog), `867a20854f` `b4cb2589ae`:
+  one catalog owner; hosted `/api/claxedo/bootstrap` and `/global/config`
+  deleted; `/api/claxedo/services` carries the service catalog.
+- 2026-09-02 C and D (keys, persistence), `cb0a4b7b3c` `a332e5ad03`
+  `91835fabb0` `fee0734535` `d50db1b10c`: provider/auth/config/command keys
+  carry workspace and harness; per-harness draft defaults; legacy keys and
+  the dead save chain removed; the runtime reports the model a harness
+  resolved and the picker shows it. Residual: the six scope-keyed harness-
+  config families carry the server but not yet workspace/harness (needs the
+  cache methods to take the scope input).
+- 2026-09-02 C (Settings) and D3 (model store), `c3bed4757b`. Deferred with
+  owners: the provider catalog read still goes to the central `/provider`
+  for a user-hosted workspace (owner: `bootstrap-orchestrator.ts`'s query
+  builder plus a relay allow-list check for `/provider` on the workspace
+  surface); the desktop's legacy global model store is not migrated (owner:
+  `persist.ts` desktop legacy branch).
