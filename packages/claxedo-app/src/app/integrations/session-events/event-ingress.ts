@@ -14,6 +14,7 @@ import {
   installSessionProjectionSelfHeal,
   retryUnsettledSessionProjectionPulls,
   scheduleSessionProjectionPull,
+  sessionProjectionBacking,
 } from "@/platform/runtime/agent/session-projection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { applyDirectoryEventToShellQueries } from "../../../features/session/data/sync/directory-event-projector"
@@ -238,15 +239,17 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       sinks: {
         schedule: (event) => {
           const projection = sessionProjectionEvent(event)
-          const runtimeRef = projection ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }) : undefined
-          if (projection && runtimeRef) {
+          const backing = projection
+            ? sessionProjectionBacking(sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }))
+            : undefined
+          if (projection && backing) {
             void scheduleSessionProjectionPull({
               action: projection.action,
               reason: projection.reason,
-              workspaceId: runtimeRef.workspaceId,
+              workspaceId: backing.workspaceId,
               sessionId: projection.sessionId,
               ...(projection.expectedEventOrdinal === undefined ? {} : { expectedEventOrdinal: projection.expectedEventOrdinal }),
-              idempotencyKey: `${projection.reason}:${runtimeRef.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
+              idempotencyKey: `${projection.reason}:${backing.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
             })
           }
           if (shouldInvalidateBootstrapFresh(event.type)) input.push(directory)
@@ -456,15 +459,17 @@ function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extra
     sinks: {
       schedule: (event) => {
         const projection = sessionProjectionEvent(event)
-        const runtimeRef = projection ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }) : undefined
-        if (projection && runtimeRef) {
+        const backing = projection
+          ? sessionProjectionBacking(sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }))
+          : undefined
+        if (projection && backing) {
           void scheduleSessionProjectionPull({
             action: projection.action,
             reason: projection.reason,
-            workspaceId: runtimeRef.workspaceId,
+            workspaceId: backing.workspaceId,
             sessionId: projection.sessionId,
             ...(projection.expectedEventOrdinal === undefined ? {} : { expectedEventOrdinal: projection.expectedEventOrdinal }),
-            idempotencyKey: `${projection.reason}:${runtimeRef.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
+            idempotencyKey: `${projection.reason}:${backing.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
           })
         }
         if (shouldInvalidateBootstrapFresh(event.type)) input.push(directory)
