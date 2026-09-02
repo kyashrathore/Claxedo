@@ -124,18 +124,19 @@
  *      observed within a 20s window despite the gate genuinely reaching ready — needs
  *      further isolation before re-enabling (see HARNESS NOTES for what is and is not yet
  *      distinguished).
- *   5. [BLOCKED by behavior 3's gap — `test.fixme`] Pausing the real host tunnel
- *      (`/__fixture/tunnel/pause`) and then reloading should render the terminal offline
- *      view (matching `core-user-hosted-workspace` behavior 6's warm-reload-while-paused
- *      contract). The real host-tunnel pause mechanism itself is independently proven
- *      (manual `curl` through the real relay: 200 before pause, 503
- *      `user_hosted_app_offline` after) — the UI reaching `workspace-offline` reliably for
- *      THIS spec's draft-navigation pattern is blocked on the same fix behavior 3 needs.
- *   6. [BLOCKED by behavior 3's gap — `test.fixme`] Resuming the real host tunnel
+ *   5. [RED against a REAL CLIENT GAP — run for real, see the note above the test] Pausing
+ *      the real host tunnel (`/__fixture/tunnel/pause`) and then reloading should render
+ *      the terminal offline view (matching `core-user-hosted-workspace` behavior 6's
+ *      warm-reload-while-paused contract). The real host-tunnel pause mechanism itself is
+ *      independently proven (manual `curl` through the real relay: 200 before pause, 503
+ *      `user_hosted_app_offline` after); what fails is the client, which classifies this
+ *      workspace as LOCAL after the reload and so never mounts the gate that owns the
+ *      offline view.
+ *   6. [RED, same cause as behavior 5] Resuming the real host tunnel
  *      (`/__fixture/tunnel/resume`) and clicking the offline view's visible Retry control
  *      should reconnect the SAME page back to `ready` WITHOUT another `page.reload()`. Real
  *      tunnel resume itself is independently proven (manual `curl`: 200 again after
- *      resume) — blocked on the same UI gap as behavior 5.
+ *      resume); the assertion is unreachable while behavior 5's offline view never renders.
  *   7. [FINDING — corrects a stale premise, see HARNESS NOTES] A viewer-role runtime access
  *      token, minted for the SAME real workspace/relay, is allowed a REAL GET (health, file
  *      read) but REAL-denied (403 `relay_role_denied`) any write method AND any
@@ -194,10 +195,12 @@
  *     frontend is served through `e2e/helpers/live-user-hosted-relay-frontend-server.mjs`
  *     (a `vite` dev server started via vite's JS API, reusing the real
  *     `vite.cloud.config.ts` verbatim — same plugins/aliases/proxy route list) rather than
- *     plain `bun run dev`, for exactly one reason: `packages/claxedo-server/src/routes/
- *     bootstrap.ts`'s `/api/claxedo/bootstrap` handler takes the LOCAL, unsigned bootstrap
- *     path (`localBootstrapBody`) for ANY request whose real socket peer is loopback
- *     (`isLoopbackLocalRequest`, `local-only-projection.ts`) REGARDLESS of a valid bearer
+ *     plain `bun run dev`, for exactly one reason: `packages/claxedo-local-server/src/
+ *     deployments/shared-routes/bootstrap.ts`'s `/api/claxedo/bootstrap` handler — the one
+ *     the self-hosted app mounts (`deployments/self-hosted-node/app.ts`'s `BootstrapRoutes`)
+ *     — takes the LOCAL, unsigned bootstrap path (`localBootstrap`) for ANY request whose
+ *     real socket peer is loopback (`isLoopbackLocalRequest`,
+ *     `claxedo-server-core/src/platform/http/peer-address.ts`) REGARDLESS of a valid bearer
  *     token — and the LOCAL body's project scan reports the raw stored `Workspace.kind`
  *     (`"local"|"cloud"` only, `workspace-store.ts:23`), never `"user-hosted"`. The real
  *     `kind: "user-hosted"` value only appears in the SIGNED bootstrap body
@@ -207,17 +210,31 @@
  *     user-hosted connect gate instead of the (broken, for a relay-only workspace) cloud
  *     provisioning pipeline. Since this whole spec necessarily runs over loopback (its own
  *     dedicated backend and frontend are both 127.0.0.1 by construction), the signed path
- *     is otherwise unreachable — UNLESS the request carries `X-Forwarded-For` naming a
- *     non-loopback client, which `isLoopbackLocalRequest`'s own comment documents as the
- *     intentional "a local reverse proxy fronting external traffic" escape hatch. The
- *     dedicated-frontend launcher is exactly that reverse proxy: it stamps a real
- *     `X-Forwarded-For: 203.0.113.10` (RFC 5737 TEST-NET-3, never a routable client) on
- *     every proxied request, the same signal a production nginx/Cloudflare front door
- *     would add. No claxedo-server or claxedo-app product source is modified — this is
- *     test-harness composition of a real, documented product code path, verified
- *     empirically (`kind: "user-hosted"` appears in the live bootstrap response only once
- *     this header is present, confirmed via direct `curl` against this spec's own fixture
- *     before this launcher script existed).
+ *     is otherwise unreachable — UNLESS the request carries a forwarded-client header, on
+ *     which `isLoopbackLocalRequest` fails closed: forwarding destroys the direct
+ *     socket-to-client relationship unsigned-local trust rests on. The dedicated-frontend
+ *     launcher is exactly that front door: it stamps a real `X-Forwarded-For:
+ *     203.0.113.10` (RFC 5737 TEST-NET-3, never a routable client) on every proxied
+ *     request, the same signal a production nginx/Cloudflare front door would add. That
+ *     stamp covers the SAME-ORIGIN `/api/...` calls a page makes through this dev server
+ *     (the lane this spec's own in-page product calls take); the app's own control-plane
+ *     calls resolve `VITE_CLAXEDO_SERVER_URL` into an absolute base
+ *     (`src/platform/api/api.ts`'s `getClaxedoServerUrl`) and reach the backend directly,
+ *     so they still take the local bootstrap path and the app resolves this workspace's
+ *     `kind: "user-hosted"` from the seeded project inventory instead. No claxedo-server
+ *     or claxedo-app product source is modified — this is test-harness composition of a
+ *     real, documented product code path.
+ *   - Behavior 2's PTY assertions are what caught the managed runtime having no stream
+ *     authority: `packages/workspace-runtime/src/routes/pty.ts`'s `POST /` mints the
+ *     agent-hook capability through `policy.authorizeStream`, and the embedded
+ *     (in-process) managed composition had none, so every managed terminal answered 503
+ *     `terminal_capability_authority_unavailable`. The authority bundle a managed-private
+ *     policy is composed from now carries the stream capability
+ *     (`workspace-runtime/src/session-access-policy.ts`'s `ManagedSessionAuthority`), and
+ *     `embeddedManagedPrivateSessionPolicy`
+ *     (`claxedo-server/src/deployments/self-hosted-node/app.ts`) answers it through the
+ *     same owner the HTTP oracle serves remotely, `authorizeRuntimeSessionStream`
+ *     (`claxedo-server/src/routes/runtime-session-authority.ts`).
  *   - Fixture extensions added by this spec's author (additive only, default-preserving,
  *     the two other consumers of this fixture file are both `e2e-legacy` and already
  *     `test.skip`d so nothing else was at risk): `CLAXEDO_E2E_RELAY_FIXTURE_TOKEN_TTL_SECONDS`
@@ -266,16 +283,19 @@
  *     "terminated" network hiccup observed once during this spec's own manual verification
  *     (retried successfully) — `turn-oracle.ts`'s 20s hardcoded timeouts have comfortable
  *     headroom for this harness specifically.
- *   - `signed-browser-relay-fixture.mjs`'s `configureEmbeddedWorkspaceRuntime({ opencodeUrl:
- *     opencode.url })` call passes a shape (`{ opencodeUrl }`) that no longer matches
- *     `embedded-workspace-runtime.ts`'s current signature (`{ opencodeRequest,
- *     opencodeCompat? }`) — a real, load-bearing-looking drift this spec's author noticed
- *     while reading the fixture but did NOT need to fix: the embedded runtime resolves its
- *     own real `opencode` engine independently of that stale call for this workspace kind
- *     (confirmed empirically — real session creation/prompting works correctly, see behavior
- *     3), so the mismatched call is dead/no-op code, not a live bug blocking this spec. Left
- *     as-is; flagged here rather than silently "fixed" so a maintainer can decide whether to
- *     delete it.
+ *   - The fixture seeds its canned session through the real private-session protocol, not a
+ *     direct row write: `reserveSession` (the authenticated reservation boundary behind
+ *     `POST /reserve`, `claxedo-server/src/routes/private-session-registration.ts`),
+ *     `registerRuntimeSession` (the RHT-authenticated runtime half that creates the
+ *     `session_history` row), `acquireSessionTurn` (turn admission — it both mints the
+ *     fencing token and records the admitted producer for the turn id), then
+ *     `syncSessionMessages` carrying that token and `releaseSessionTurn`. The authority
+ *     refuses a snapshot with user messages that carries no fencing token, and refuses a
+ *     user message whose turn has no admitted producer
+ *     (`claxedo-server-core/src/authority/adapters/sqlite/private-session-authority.ts`), so
+ *     the seeded session is exactly the state a real host checkpoint produces — which is
+ *     also why the fixture publishes its `sessionId`: managed workspace-runtime routes are
+ *     session-scoped and a consumer must use the registered id, not a literal of its own.
  *
  * OUT OF SCOPE — the mocked-relay connect pipeline UI matrix (3-step pipeline copy,
  *   transient-hiccup retry-budget tolerance, warm-start optimistic-ready timing) —
@@ -298,6 +318,7 @@ import { spawn } from "node:child_process"
 import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { e2eAuthViteEnvironment, resolveE2EAuthMode } from "../auth-mode"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 
 const LIVE = process.env.CLAXEDO_E2E_LIVE === "1"
@@ -310,6 +331,11 @@ type FixtureInfo = {
   relayUrl: string
   workspaceId: string
   hostId: string
+  // The session the fixture registered through the real private-session protocol
+  // (reserve -> register -> turn admission -> fenced snapshot). Managed
+  // workspace-runtime routes are session-scoped, so PTY creation needs this id
+  // rather than a literal restated here.
+  sessionId: string
   runtimeAccessToken: string
   directory: string
   role: string
@@ -379,7 +405,15 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
         ...extraEnv,
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      // The fixture owns its lifetime through this stdin pipe
+      // (`signed-browser-relay-fixture.mjs`'s `process.stdin.once("end", …)`):
+      // EOF is its parent-death signal, so it shuts down the moment stdin
+      // closes. `"ignore"` hands it /dev/null, which reads EOF immediately —
+      // the fixture would print its readiness JSON and then tear the whole
+      // backend down before the first navigation. Holding a real pipe open is
+      // what keeps it alive, and closing it (or this worker dying) still stops
+      // it — the same contract `helpers/web-signed-relay-harness.ts` uses.
+      stdio: ["pipe", "pipe", "pipe"],
     },
   )
 
@@ -412,6 +446,7 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
             !parsed.backendUrl ||
             !parsed.relayUrl ||
             !parsed.workspaceId ||
+            !parsed.sessionId ||
             !parsed.runtimeAccessToken ||
             !parsed.controlPlaneToken
           ) {
@@ -514,6 +549,15 @@ async function startFrontend(input: { backendUrl: string }): Promise<RunningFron
       cwd: APP_DIR,
       env: {
         ...process.env,
+        // The same build environment `scripts/serve-e2e-app.ts` gives the shared
+        // e2e dev server, so this dedicated instance serves the SAME app the rest
+        // of the suite drives — only its backend target differs. `vite.cloud
+        // .config.ts`'s `resolveBrowserAuthBuildSelection` refuses to pick a
+        // browser auth adapter implicitly, so this selection is required, not
+        // decorative.
+        ...e2eAuthViteEnvironment(resolveE2EAuthMode()),
+        VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
+        VITE_CLAXEDO_E2E: "1",
         VITE_CLAXEDO_SERVER_URL: input.backendUrl,
         PORT: String(port),
       },
@@ -768,7 +812,11 @@ test.describe("live user-hosted relay @live", () => {
     await gateReachesReady(page)
 
     const connection = await mintConnectionFromPage(page, fixture.info)
-    expect(connection.role).toBe("editor")
+    // The real mint derives the role from the caller's own authority role on the
+    // workspace (`connections/user-hosted-connection.ts`'s `relayRole(result.role)`),
+    // not from any fixture setting: `browserSubject` is the identity that registered
+    // this workspace, so the authority answers "owner" and the token carries it.
+    expect(connection.role).toBe("owner")
 
     const health = await relayFetchFromPage(page, {
       relayUrl: connection.relayUrl,
@@ -793,7 +841,12 @@ test.describe("live user-hosted relay @live", () => {
       token: connection.runtimeAccessToken,
       path: "/api/wr/pty",
       method: "POST",
-      body: { cwd: "." },
+      // A managed workspace runtime scopes every terminal to a session it can
+      // authorize the caller against (`workspace-runtime/src/routes/pty.ts` ->
+      // `session-access-policy`); an unscoped create is refused 400
+      // `pty_session_id_required`, and `GET /api/wr/pty` only lists rows whose
+      // session the caller may read.
+      body: { cwd: ".", sessionId: fixture.info.sessionId },
     })
     expect(created.ok, JSON.stringify(created)).toBe(true)
     const directPtyId = (created.json as { id?: string })?.id
@@ -932,32 +985,27 @@ test.describe("live user-hosted relay @live", () => {
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeEnabled()
   })
 
-  // PARTIALLY UN-BLOCKED (2026-07-20): was blocked by the same draft-nav mis-routing gap
-  // behavior 3 documents — `gateReachesReady()`'s "no cloud-startup-view" check could pass
-  // on a transient state that was not the genuine WorkspaceGate-ready condition
-  // (`core-user-hosted-workspace.spec.ts`'s mock reaches ready synchronously; this real,
-  // network-latency-having app raced the Local/Cloud draft picker in). Root cause fixed in
-  // `resolveDraftWorkspaceKind` (`src/features/session/ui/view-state.ts`), wired in
-  // `routeWorkspaceKind` (`src/features/session/ui/session-screen.tsx`) — the directory-ref
-  // fallback used to collapse ANY resolved `ws_`-shaped ref into "cloud" regardless of its
-  // OWN resolved kind; it now carries the ref's real kind through, so a user-hosted draft
-  // nav never routes through the Local/Cloud picker or the cloud pipeline. Proof: a fresh
-  // Tier L run of behavior 1 (identical `seedWorkspace` -> draft-nav -> `gateReachesReady`
-  // sequence this test's setup reuses) passes cleanly in isolation.
-  //
-  // This test needs no model/provider credentials (pause/resume + offline view only),
-  // unlike behavior 3, so it is otherwise runnable — the body below is real, not a
-  // placeholder. Left as `test.fixme` (not un-fixme'd) because this machine had OTHER
-  // agents' concurrent Playwright/Vite processes saturating CPU and racing the same
-  // `e2e/playwright/test-results` output dir while authoring this fix (verified via `ps
-  // aux`: concurrent `core-user-hosted-workspace`/`core-harness-ownership-cloud` runs +
-  // two `vite --config vite.cloud.config.ts` processes at ~100% CPU each), which produced
-  // non-reproducible timeouts unrelated to this fix (traces/screenshots themselves failed
-  // to write with ENOENT). Re-run this file alone (`CLAXEDO_E2E_LIVE=1 CLAXEDO_E2E_SUITE=live
-  // PLAYWRIGHT_SKIP_WEBSERVER=1 npx playwright test live-user-hosted-relay.spec.ts -g
-  // "behaviors 5,6"`) on an otherwise-idle machine to confirm, then flip `test.fixme` to
-  // `test`.
-  test.fixme(
+  // RED against a REAL CLIENT GAP — run for real, evidence captured, deliberately not
+  // `test.fixme`d. After `POST /__fixture/tunnel/pause` (the real
+  // `stopUserHostedWorkspaceTunnel`) and a reload, `[data-testid="workspace-offline"]`
+  // (`src/features/workspaces/data/workspace-gate.tsx`) never renders: the page comes
+  // back as the ordinary composer with the workspace-environment control reading
+  // "Local" (captured accessibility snapshot in this run's
+  // `test-results/.../error-context.md`). A workspace the client classifies as local
+  // never mounts WorkspaceGate's connect/offline branch at all, so a paused tunnel is
+  // invisible to it — the offline view is unreachable rather than late. The
+  // classification owner is `src/platform/runtime/session-workspace.ts` reading the
+  // project inventory through `signedWorkspaceFromProjects` /
+  // `localWorkspaceInProjects` (`src/platform/runtime/agent/signed-workspace.ts`); this
+  // spec seeds `kind: "user-hosted"` into `opencode.global.dat:globalSync.project`
+  // (see `seedWorkspace`) and that seed is re-applied on every navigation, so the
+  // resolution that lands on "Local" happens after the seed, not instead of it.
+  // Behaviors 1/2/7 stay green because none of them require the gate: behavior 1
+  // asserts only that no `cloud-startup-view` is stuck, which also holds for a
+  // locally-classified workspace, and 2/7 address the relay lane directly. Fixing this
+  // belongs in the client's workspace classification, not in this spec or in the relay
+  // and runtime it drives.
+  test(
     "pausing the real host tunnel surfaces the offline view on reload, and resuming lets Retry reconnect without another reload — behaviors 5,6",
     async ({ page }) => {
       test.setTimeout(90_000)

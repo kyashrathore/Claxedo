@@ -21,7 +21,9 @@ import {
 } from "@claxedo/workspace-runtime/host"
 import {
   managedWorkspaceSessionAccessPolicy,
+  sessionAccessRequiresWrite,
   type ProcessObserver,
+  type SessionAccessStreamDecision,
   type SessionAuthorityInput,
 } from "@claxedo/workspace-runtime"
 import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/errors/posthog"
@@ -112,8 +114,11 @@ import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/r
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import {
+  authorizeRuntimeSessionStream,
   RuntimeSessionAuthorityRoutes,
+  sessionStreamLeaseVerifier,
   type RuntimeSessionAuthorityOptions,
+  type SessionStreamLeaseClaims,
 } from "../../routes/runtime-session-authority"
 import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
@@ -269,12 +274,64 @@ function selfHostedPrivateSessionAuthority(
   return candidate as unknown as Pick<PrivateSessionAuthority, "reserveSession">
 }
 
+/**
+ * The private-session authority for the embedded workspace runtime.
+ *
+ * The runtime shares this process with the control plane, so it calls the
+ * authority directly instead of crossing `POST /api/runtime-authority/
+ * session-authorize`. Streams reach the same owner the HTTP oracle serves
+ * (`authorizeRuntimeSessionStream`) and receive the same signed lease, bound
+ * to the `embedded` transport: an in-process runtime holds no Relay Host
+ * Token chain, so a renewal re-checks private-session membership rather than
+ * a parent Runtime Access Token.
+ */
 export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
   const runtimeAuthority = selfHostedRuntimeAuthority(authority)
+  const principalOf = (input: SessionAuthorityInput) => input.actor.actorKind === "human"
+    ? { principalKind: "user" as const, actorId: input.actor.actorId, actorKind: "human" as const }
+    : { principalKind: "service" as const, actorId: input.actor.actorId, actorKind: "agent" as const }
+  const denied = (error: unknown) => {
+    if (error instanceof ControlPlaneAuthError && (error.status === 401 || error.status === 403 || error.status === 503)) {
+      return { allowed: false as const, status: error.status, code: error.code, message: error.message }
+    }
+    return {
+      allowed: false as const,
+      status: 503 as const,
+      code: "session_authority_unavailable",
+      message: error instanceof Error ? error.message : "Session authority is unavailable",
+    }
+  }
+  const decideStream = async (
+    input: SessionAuthorityInput,
+    lease?: string,
+  ): Promise<SessionAccessStreamDecision> => {
+    const action = sessionAccessRequiresWrite(input) ? "write" as const : "read" as const
+    try {
+      const claims: SessionStreamLeaseClaims = lease
+        ? await sessionStreamLeaseVerifier()(lease)
+        : {
+            ...principalOf(input),
+            transport: "embedded",
+            orgId: input.authority.orgId,
+            workspaceId: input.authority.workspaceId,
+            sessionId: input.sessionId,
+            action,
+          }
+      if (lease && (claims.sessionId !== input.sessionId || claims.action !== action)) {
+        return {
+          allowed: false,
+          status: 401,
+          code: "session_stream_lease_invalid",
+          message: "Session stream lease is invalid or mismatched",
+        }
+      }
+      return await authorizeRuntimeSessionStream({ authority: runtimeAuthority }, claims)
+    } catch (error) {
+      return denied(error)
+    }
+  }
   const decide = async (input: SessionAuthorityInput, action: "read" | "write" | "register") => {
-    const principal = input.actor.actorKind === "human"
-      ? { principalKind: "user" as const, actorId: input.actor.actorId, actorKind: "human" as const }
-      : { principalKind: "service" as const, actorId: input.actor.actorId, actorKind: "agent" as const }
+    const principal = principalOf(input)
     try {
       if (action === "register") {
         if (!input.registrationOperationId) {
@@ -302,21 +359,16 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
       }
       return { allowed: true as const }
     } catch (error) {
-      if (error instanceof ControlPlaneAuthError && (error.status === 401 || error.status === 403 || error.status === 503)) {
-        return { allowed: false as const, status: error.status, code: error.code, message: error.message }
-      }
-      return {
-        allowed: false as const,
-        status: 503 as const,
-        code: "session_authority_unavailable",
-        message: error instanceof Error ? error.message : "Session authority is unavailable",
-      }
+      return denied(error)
     }
   }
   return managedWorkspaceSessionAccessPolicy({
-    authorizeSessionRead: (input) => decide(input, "read"),
-    authorizeSessionWrite: (input) => decide(input, "write"),
-    registerSession: (input) => decide(input, "register"),
+    authority: {
+      authorizeSessionRead: (input) => decide(input, "read"),
+      authorizeSessionWrite: (input) => decide(input, "write"),
+      authorizeSessionStream: decideStream,
+      registerSession: (input) => decide(input, "register"),
+    },
   })
 }
 

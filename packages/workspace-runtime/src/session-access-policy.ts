@@ -165,11 +165,30 @@ export type SessionAuthorityPredicate = (
   input: SessionAuthorityInput,
 ) => Promise<SessionAccessDecision | boolean | void> | SessionAccessDecision | boolean | void
 
+export type SessionAuthorityStreamPredicate = (
+  input: SessionAuthorityInput,
+  lease?: string,
+) => Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
+
+/**
+ * The private-session authority a managed composition delegates to.
+ *
+ * It is one bundle because the capabilities are one contract: a policy that
+ * can admit a request but not the live stream behind it still reports itself
+ * as `managed-private`, and every managed terminal or session stream then
+ * fails at the point it asks for the lease its agent callbacks renew.
+ */
+export type ManagedSessionAuthority = {
+  authorizeSessionRead: SessionAuthorityPredicate
+  authorizeSessionWrite: SessionAuthorityPredicate
+  authorizeSessionStream: SessionAuthorityStreamPredicate
+  registerSession: SessionAuthorityPredicate
+}
+
 export type ManagedWorkspaceSessionAccessPolicyOptions = {
   requireActor?: boolean
-  authorizeSessionRead?: SessionAuthorityPredicate
-  authorizeSessionWrite?: SessionAuthorityPredicate
-  registerSession?: SessionAuthorityPredicate
+  /** Absent for the unbound local flavour; a whole bundle for managed-private. */
+  authority?: ManagedSessionAuthority
 }
 
 type SessionRouteDecision =
@@ -307,15 +326,12 @@ function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | vo
 export function managedWorkspaceSessionAccessPolicy(
   options: ManagedWorkspaceSessionAccessPolicyOptions = {},
 ): SessionAccessPolicy {
-  const authorityBacked = Boolean(options.authorizeSessionRead && options.authorizeSessionWrite && options.registerSession)
+  const authority = options.authority
   const authorize = async (input: SessionAccessPolicyInput) => {
     const workspace = authorizeManaged(input, options.requireActor === true)
     if (!workspace.allowed || !input.authority || !input.sessionId) return workspace
     if (!input.actor) return workspace
-    const predicate = sessionAccessRequiresWrite(input)
-      ? options.authorizeSessionWrite
-      : options.authorizeSessionRead
-    if (!predicate) {
+    if (!authority) {
       return {
         allowed: false,
         status: 403,
@@ -323,6 +339,9 @@ export function managedWorkspaceSessionAccessPolicy(
         message: "Managed session access requires creator, participant, or organization administrator authority",
       } satisfies SessionAccessDecision
     }
+    const predicate = sessionAccessRequiresWrite(input)
+      ? authority.authorizeSessionWrite
+      : authority.authorizeSessionRead
     return normalizeAuthorityDecision(await predicate({
       ...input,
       actor: input.actor,
@@ -331,7 +350,29 @@ export function managedWorkspaceSessionAccessPolicy(
     }))
   }
   return {
-    sessionAuthority: authorityBacked ? "managed-private" : "local",
+    sessionAuthority: authority ? "managed-private" : "local",
+    ...(authority
+      ? {
+          async authorizeStream(input: SessionAccessPolicyInput & { sessionId: string }, lease?: string) {
+            const workspace = authorizeManaged(input, options.requireActor === true)
+            if (!workspace.allowed) return workspace
+            if (!input.authority || !input.actor) {
+              return {
+                allowed: false as const,
+                status: 403 as const,
+                code: "session_actor_required",
+                message: "Managed session streams require verified actor claims",
+              }
+            }
+            return authority.authorizeSessionStream({
+              ...input,
+              actor: input.actor,
+              authority: input.authority,
+              sessionId: input.sessionId,
+            }, lease)
+          },
+        }
+      : {}),
     async authorize(input) {
       return authorize(input)
     },
@@ -343,7 +384,7 @@ export function managedWorkspaceSessionAccessPolicy(
       if (!workspace.allowed) return workspace
       if (!input.authority) return { allowed: true }
       if (!input.actor) return workspace
-      if (!options.registerSession) {
+      if (!authority) {
         return {
           allowed: false,
           status: 403,
@@ -351,7 +392,7 @@ export function managedWorkspaceSessionAccessPolicy(
           message: "Managed session creation requires creator registration authority",
         }
       }
-      return normalizeAuthorityDecision(await options.registerSession({
+      return normalizeAuthorityDecision(await authority.registerSession({
         ...input,
         actor: input.actor,
         authority: input.authority,

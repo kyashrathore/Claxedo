@@ -45,21 +45,96 @@ type RuntimeSessionAuthorityPort = Pick<
   }) => Promise<unknown>
 }
 
-type StreamLeaseClaims = PrivateSessionRuntimePrincipal & {
+/**
+ * How the runtime holding a lease proved its identity, and therefore what a
+ * renewal re-checks. A relay host presents a Relay Host Token minted from a
+ * durable Runtime Access Token, so every renewal re-checks that parent token
+ * is still active. An embedded runtime runs inside the control plane process
+ * that mints the lease and has no token chain of its own.
+ */
+export type SessionStreamLeaseBinding =
+  | { transport: "relay-host"; hostId: string; parentRuntimeAccessTokenJti: string }
+  | { transport: "embedded" }
+
+export type SessionStreamLeaseClaims = PrivateSessionRuntimePrincipal & SessionStreamLeaseBinding & {
   orgId: string
   workspaceId: string
-  hostId: string
-  parentRuntimeAccessTokenJti: string
   sessionId: string
   action: "read" | "write"
 }
 
-type TurnLeaseClaims = StreamLeaseClaims & {
+/** Prompt admission is reached only over the Relay Host Token chain. */
+type TurnLeaseClaims = Extract<SessionStreamLeaseClaims, { transport: "relay-host" }> & {
   turnId: string
   authorityLeaseId: string
   fencingToken: number
   acquiredAt: number
   expiresAt: number
+}
+
+export type RuntimeSessionStreamDecision =
+  | { allowed: true; lease: string; expiresAt: number }
+  | { allowed: false; status: 401; code: string; message: string }
+
+export type RuntimeSessionStreamOptions = {
+  authority: Pick<RuntimeSessionAuthorityPort, "authorizeRuntimeSession" | "runtimeAccessTokenActive">
+  mintStreamLease?: (claims: SessionStreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
+  env?: Record<string, string | undefined>
+}
+
+/**
+ * The one owner of "may this principal keep a live stream on this session,
+ * and what proof carries it until the next renewal".
+ *
+ * `RuntimeSessionAuthorityRoutes` serves it over HTTP to isolated runtimes;
+ * the self-hosted composition calls it in process for its embedded runtime.
+ * Both re-run it on every renewal, so a revoked participant or a revoked
+ * parent token ends the stream at the next refresh. A denial from the
+ * private-session authority itself surfaces as the `ControlPlaneAuthError`
+ * that authority throws.
+ */
+export async function authorizeRuntimeSessionStream(
+  options: RuntimeSessionStreamOptions,
+  claims: SessionStreamLeaseClaims,
+): Promise<RuntimeSessionStreamDecision> {
+  const denial = await runtimeAccessTokenDenial(options.authority, claims)
+  if (denial) return { allowed: false, status: 401, ...denial }
+  await options.authority.authorizeRuntimeSession({
+    ...sessionLeasePrincipal(claims),
+    sessionId: claims.sessionId,
+    workspaceId: claims.workspaceId,
+    action: claims.action,
+  })
+  const minter = options.mintStreamLease ?? streamLeaseMinter(options.env ?? process.env)
+  return { allowed: true, ...await minter(claims) }
+}
+
+/** Verifies a lease this control plane minted and returns its bound claims. */
+export function sessionStreamLeaseVerifier(env: Record<string, string | undefined> = process.env) {
+  return streamLeaseVerifier(env)
+}
+
+function sessionLeasePrincipal(claims: SessionStreamLeaseClaims): PrivateSessionRuntimePrincipal {
+  return claims.principalKind === "user"
+    ? { principalKind: "user", actorId: claims.actorId, actorKind: "human" }
+    : { principalKind: "service", actorId: claims.actorId, actorKind: "agent" }
+}
+
+async function runtimeAccessTokenDenial(
+  authority: Pick<RuntimeSessionAuthorityPort, "runtimeAccessTokenActive">,
+  claims: SessionStreamLeaseClaims,
+) {
+  if (claims.transport !== "relay-host") return
+  const active = asRecord(await authority.runtimeAccessTokenActive({
+    jti: claims.parentRuntimeAccessTokenJti,
+    workspaceId: claims.workspaceId,
+    hostId: claims.hostId,
+  }))
+  if (active?.active === true) return
+  return {
+    code: text(active?.code) ?? "runtime_access_token_inactive",
+    message: text(active?.reason) ?? "Runtime Access Token is inactive",
+  }
 }
 
 export type RuntimeSessionAuthorityOptions = {
@@ -68,8 +143,8 @@ export type RuntimeSessionAuthorityOptions = {
   turnAuthority?: SessionTurnAuthority
   env?: Record<string, string | undefined>
   verifyRelayProof?: (token: string) => Promise<RelayHostPrivateSessionClaims>
-  mintStreamLease?: (claims: StreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
-  verifyStreamLease?: (lease: string) => Promise<StreamLeaseClaims>
+  mintStreamLease?: (claims: SessionStreamLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
+  verifyStreamLease?: (lease: string) => Promise<SessionStreamLeaseClaims>
   mintTurnLease?: (claims: TurnLeaseClaims) => Promise<{ lease: string; expiresAt: number }>
   verifyTurnLease?: (lease: string) => Promise<TurnLeaseClaims>
 }
@@ -165,7 +240,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       }, 400)
     }
 
-    let claims: StreamLeaseClaims
+    let claims: SessionStreamLeaseClaims
     let ownedTurn: TurnLeaseClaims | undefined
     if ((action === "turn_renew" || action === "turn_release") && turnLeaseId) {
       const verified = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(turnLeaseId).catch(() => undefined)
@@ -207,6 +282,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           : { principalKind: "service", actorId: proof.actorId, actorKind: "agent" }
         claims = {
           ...principal,
+          transport: "relay-host",
           orgId: proof.orgId,
           workspaceId: proof.workspaceId,
           hostId: proof.hostId,
@@ -222,9 +298,7 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
     }
 
     try {
-      const principal: PrivateSessionRuntimePrincipal = claims.principalKind === "user"
-        ? { principalKind: "user", actorId: claims.actorId, actorKind: "human" }
-        : { principalKind: "service", actorId: claims.actorId, actorKind: "agent" }
+      const principal = sessionLeasePrincipal(claims)
       if (action === "register") {
         await options.authority.registerRuntimeSession({
           ...principal,
@@ -253,23 +327,20 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         return context.json({ allowed: true })
       }
 
-      if (stream || isTurnAction(action)) {
-        const active = asRecord(await options.authority.runtimeAccessTokenActive({
-          jti: claims.parentRuntimeAccessTokenJti,
-          workspaceId: claims.workspaceId,
-          hostId: claims.hostId,
-        }))
-        if (active?.active !== true) {
+      if (isTurnAction(action)) {
+        // Turn admission is reached only over the Relay Host Token chain: the
+        // request validation above accepts a lease only together with
+        // `stream`, and `stream` is only ever a read/write action.
+        if (claims.transport !== "relay-host") {
           return context.json({
             error: {
-              code: text(active?.code) ?? "runtime_access_token_inactive",
-              message: text(active?.reason) ?? "Runtime Access Token is inactive",
+              code: "session_turn_lease_invalid",
+              message: "Session turn admission requires a Relay Host Token chain",
             },
           }, 401)
         }
-      }
-
-      if (isTurnAction(action)) {
+        const denial = await runtimeAccessTokenDenial(options.authority, claims)
+        if (denial) return context.json({ error: denial }, 401)
         if (!options.turnAuthority) {
           return context.json({
             error: {
@@ -316,17 +387,24 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         return context.json(await options.turnAuthority.releaseSessionTurn(owned))
       }
 
+      if (stream) {
+        const decision = await authorizeRuntimeSessionStream({
+          authority: options.authority,
+          ...(options.mintStreamLease ? { mintStreamLease: options.mintStreamLease } : {}),
+          env,
+        }, claims)
+        if (!decision.allowed) {
+          return context.json({ error: { code: decision.code, message: decision.message } }, decision.status)
+        }
+        return context.json({ allowed: true, lease: decision.lease, expiresAt: decision.expiresAt })
+      }
       await options.authority.authorizeRuntimeSession({
         ...principal,
         sessionId,
         workspaceId: claims.workspaceId,
         action,
       })
-      if (!stream) return context.json({ allowed: true })
-      return context.json({
-        allowed: true,
-        ...await (options.mintStreamLease ?? streamLeaseMinter(env))(claims),
-      })
+      return context.json({ allowed: true })
     } catch (error) {
       if (error instanceof SessionTurnConflictError || error instanceof SessionTurnLeaseLostError) {
         return context.json({
@@ -391,7 +469,7 @@ function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_r
 }
 
 function streamLeaseMinter(env: Record<string, string | undefined>) {
-  return async (claims: StreamLeaseClaims) => {
+  return async (claims: SessionStreamLeaseClaims) => {
     const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)
     if (!pem) throw new Error("Stream lease signing key is unavailable")
     const now = Math.floor(Date.now() / 1_000)
@@ -403,8 +481,10 @@ function streamLeaseMinter(env: Record<string, string | undefined>) {
       actor_kind: claims.actorKind,
       org_id: claims.orgId,
       workspace_id: claims.workspaceId,
-      host_id: claims.hostId,
-      parent_jti: claims.parentRuntimeAccessTokenJti,
+      transport: claims.transport,
+      ...(claims.transport === "relay-host"
+        ? { host_id: claims.hostId, parent_jti: claims.parentRuntimeAccessTokenJti }
+        : {}),
       session_id: claims.sessionId,
       action: claims.action,
     })
@@ -420,7 +500,7 @@ function streamLeaseMinter(env: Record<string, string | undefined>) {
 }
 
 function streamLeaseVerifier(env: Record<string, string | undefined>) {
-  return async (lease: string): Promise<StreamLeaseClaims> => {
+  return async (lease: string): Promise<SessionStreamLeaseClaims> => {
     const pem = keyPem(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)
     if (!pem) throw new Error("Stream lease verification key is unavailable")
     const { payload } = await jwtVerify(lease, await importSPKI(pem, "EdDSA"), {
@@ -443,17 +523,22 @@ function streamLeaseVerifier(env: Record<string, string | undefined>) {
     const parentRuntimeAccessTokenJti = text(payload.parent_jti)
     const sessionId = text(payload.session_id)
     const action = payload.action
-    if (!actorId || !orgId || !workspaceId || !hostId || !parentRuntimeAccessTokenJti || !sessionId
+    const transport = payload.transport
+    if (!actorId || !orgId || !workspaceId || !sessionId
       || (action !== "read" && action !== "write")) throw new Error("Stream lease claims are invalid")
+    const binding: SessionStreamLeaseBinding = transport === "embedded"
+      ? { transport: "embedded" }
+      : transport === "relay-host" && hostId && parentRuntimeAccessTokenJti
+        ? { transport: "relay-host", hostId, parentRuntimeAccessTokenJti }
+        : (() => { throw new Error("Stream lease binding is invalid") })()
     const principal: PrivateSessionRuntimePrincipal = principalKind === "user"
       ? { principalKind: "user", actorId, actorKind: "human" }
       : { principalKind: "service", actorId, actorKind: "agent" }
     return {
       ...principal,
+      ...binding,
       orgId,
       workspaceId,
-      hostId,
-      parentRuntimeAccessTokenJti,
       sessionId,
       action,
     }
@@ -532,6 +617,7 @@ function turnLeaseVerifier(env: Record<string, string | undefined>) {
       : { principalKind: "service", actorId, actorKind: "agent" }
     return {
       ...principal,
+      transport: "relay-host",
       orgId,
       workspaceId,
       hostId,

@@ -63,9 +63,14 @@ function managedApp(
   })
   const policy = managedWorkspaceSessionAccessPolicy({
     requireActor: true,
-    authorizeSessionRead: ({ sessionId }) => sessionId === "ses_visible",
-    authorizeSessionWrite: ({ sessionId }) => sessionId === "ses_visible",
-    registerSession: () => true,
+    authority: {
+      authorizeSessionRead: ({ sessionId }) => sessionId === "ses_visible",
+      authorizeSessionWrite: ({ sessionId }) => sessionId === "ses_visible",
+      authorizeSessionStream: ({ sessionId }) => sessionId === "ses_visible"
+        ? { allowed: true, lease: "worktree-lease", expiresAt: Date.now() + 15_000 }
+        : { allowed: false, status: 403, code: "session_private", message: "Session is private" },
+      registerSession: () => true,
+    },
   })
   app.route("/", WorktreeRoutes(manager, options.withPolicy === false ? {} : { sessionAccessPolicy: policy }))
   return app

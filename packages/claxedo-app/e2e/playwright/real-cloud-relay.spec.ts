@@ -243,7 +243,11 @@ async function startFixture(): Promise<FixtureInfo> {
         OPENCODE_DISABLE_MODELS_FETCH: "true",
         ...claudeScriptedEnv(scripted.url, path.join(REPO_ROOT, "node_modules", ".cache", "real-cloud-relay-claude")),
       },
-      stdio: ["ignore", "pipe", "pipe"],
+      // The fixture owns its lifetime through the stdin pipe: it resumes stdin
+      // and shuts down on EOF, so an ignored stdin hands it an immediate EOF
+      // and it tears itself down while this spec is still booting. Same
+      // contract as `e2e/helpers/web-signed-relay-harness.ts`.
+      stdio: ["pipe", "pipe", "pipe"],
     },
   )
 

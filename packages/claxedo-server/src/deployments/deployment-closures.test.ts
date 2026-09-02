@@ -85,7 +85,10 @@ const ENTRIES = [
   // +4 modules (150 -> 154): the already-reachable workspace SessionEnv facade
   // now delegates to focused factory, protocol, runtime-env, and admission
   // owners. No package edge was added.
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 154, packages: 28 },
+  // +1 module (154 -> 155): `workspace/routes/share-routes.ts`, the one
+  // `workspaceShareRoutes` owner, served by every hosted composition through
+  // `routes/hosted/workspace.ts`. No package edge.
+  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 155, packages: 28 },
   // The usage authority and dev's host-enrollment extraction add one runtime
   // module each relative to their common base; neither adds a Worker package.
   // +1 module (109 -> 110): `hosts/workgraph/settlement-rearm.ts`, the single
@@ -118,7 +121,9 @@ const ENTRIES = [
   // `hosted-core-app.ts` composition this Worker shares with the Node hosted
   // entry. All four are dependency-neutral in the emitted Worker graph, so no
   // package moves.
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 126, packages: 14 },
+  // +1 module (126 -> 127): `workspace/routes/share-routes.ts` through the same
+  // `routes/hosted/workspace.ts` mount. No package edge.
+  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 127, packages: 14 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.

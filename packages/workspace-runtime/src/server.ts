@@ -431,8 +431,14 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     env: process.env,
   })
   if (options.target) ProcessManager.bindProcessObserver(options.target.directory, options.processObserver)
+  // One policy for every surface this app mounts. A loopback or embedded
+  // runtime is reached only through its own process boundary and carries the
+  // unbound local flavour; any other exposure answers a remote caller and
+  // must delegate to the control plane's session authority.
   const sessionAccessPolicy = options.sessionAccessPolicy
-    ?? (options.relayHostAuth ? remoteWorkspaceSessionAccessPolicyFromEnv() : undefined)
+    ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
+      ? managedWorkspaceSessionAccessPolicy()
+      : remoteWorkspaceSessionAccessPolicyFromEnv())
   const host = createWorkspaceHost({
     ...(options.opencodeUrl ? { opencodeUrl: options.opencodeUrl } : {}),
     ...(options.opencodeHeaders ? { opencodeHeaders: options.opencodeHeaders } : {}),
@@ -442,7 +448,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
     ...(options.providerCatalog ? { providerCatalog: options.providerCatalog } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
-    ...(sessionAccessPolicy ? { sessionAccessPolicy } : {}),
+    sessionAccessPolicy,
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
     ...(options.agentExtensionStateRoot ? { agentExtensionStateRoot: options.agentExtensionStateRoot } : {}),
@@ -452,9 +458,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
     ...(options.runtimeEventAuthorization ? { runtimeEventAuthorization: options.runtimeEventAuthorization } : {}),
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
-    sessionAccessPolicy: options.sessionAccessPolicy ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
-      ? managedWorkspaceSessionAccessPolicy()
-      : remoteWorkspaceSessionAccessPolicyFromEnv()),
   })
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
@@ -548,7 +551,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   if (worktrees) {
     app.route(
       WorkspaceRuntimeRoutes.worktrees,
-      WorktreeRoutes(worktrees, sessionAccessPolicy ? { sessionAccessPolicy } : {}),
+      WorktreeRoutes(worktrees, { sessionAccessPolicy }),
     )
   }
   app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({

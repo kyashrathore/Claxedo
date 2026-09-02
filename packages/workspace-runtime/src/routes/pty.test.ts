@@ -8,7 +8,7 @@ import { PtyRoutes } from "./pty"
 import { Pty } from "../pty/index"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import type { SessionAccessPolicy } from "../session-access-policy"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { createDiskHistory } from "../pty/history-disk"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
@@ -389,6 +389,64 @@ describe("PtyRoutes", () => {
         sessionId: "session_a",
         authorityLease: "terminal-capability",
       })
+    } finally {
+      create.mockRestore()
+      bind.mockRestore()
+      commit.mockRestore()
+    }
+  })
+
+  test("mints the terminal agent-hook capability from a canonical managed-private composition", async () => {
+    // The composition under test is the one every managed host builds, not a
+    // hand-written policy object: a managed runtime whose authority bundle
+    // comes from `managedWorkspaceSessionAccessPolicy` must be able to
+    // authorize the agent-hook stream, or every managed terminal answers 503
+    // `terminal_capability_authority_unavailable`.
+    const streamed: Array<{ sessionId: string; operation: string; lease?: string }> = []
+    const policy = managedWorkspaceSessionAccessPolicy({
+      requireActor: true,
+      authority: {
+        authorizeSessionRead: () => true,
+        authorizeSessionWrite: () => true,
+        authorizeSessionStream: (input, lease) => {
+          streamed.push({
+            sessionId: input.sessionId,
+            operation: input.operation,
+            ...(lease ? { lease } : {}),
+          })
+          return { allowed: true, lease: "authority-lease", expiresAt: 1_700_000_000_000 }
+        },
+        registerSession: () => true,
+      },
+    })
+    expect(policy.sessionAuthority).toBe("managed-private")
+    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      id: "pty_managed",
+      sessionId: input.sessionId,
+      title: "Terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/workspace",
+      status: "running" as const,
+      pid: 1,
+    }))
+    const bind = spyOn(Pty, "bindAccessOwner").mockReturnValue(true)
+    const commit = spyOn(Pty, "commit").mockReturnValue(undefined)
+
+    try {
+      const created = await appForActor("editor_a", policy).request("http://localhost/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Terminal", sessionId: "session_a" }),
+      })
+      expect(created.status).toBe(200)
+      expect(streamed).toEqual([{ sessionId: "session_a", operation: "agent_lifecycle_write" }])
+      expect(create.mock.calls[0]?.[2]).toMatchObject({
+        sessionId: "session_a",
+        authorityLease: "authority-lease",
+        authorityExpiresAt: 1_700_000_000_000,
+      })
+      expect(create.mock.calls[0]?.[0]?.env?.CLAXEDO_AGENT_HOOK_TOKEN).toBeTypeOf("string")
     } finally {
       create.mockRestore()
       bind.mockRestore()

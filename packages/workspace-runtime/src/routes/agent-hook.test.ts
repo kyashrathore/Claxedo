@@ -47,14 +47,16 @@ function relayAuth(
 
 const managedPolicy = managedWorkspaceSessionAccessPolicy({
   requireActor: true,
-  authorizeSessionRead: () => true,
-  authorizeSessionWrite: () => true,
-  registerSession: () => true,
-})
-managedPolicy.authorizeStream = async (_input, lease) => ({
-  allowed: true,
-  lease: lease ? `${lease}:renewed` : "terminal-lease",
-  expiresAt: Date.now() + 15_000,
+  authority: {
+    authorizeSessionRead: () => true,
+    authorizeSessionWrite: () => true,
+    authorizeSessionStream: (_input, lease) => ({
+      allowed: true,
+      lease: lease ? `${lease}:renewed` : "terminal-lease",
+      expiresAt: Date.now() + 15_000,
+    }),
+    registerSession: () => true,
+  },
 })
 managedPolicy.authorizeHost = async (input) => {
   const rank = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const

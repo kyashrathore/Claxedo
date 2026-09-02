@@ -8,8 +8,19 @@ import {
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
+  type ManagedSessionAuthority,
   type SessionAccessPolicyInput,
 } from "./session-access-policy"
+
+/** Every managed composition supplies the whole authority bundle. */
+function allowAll(): ManagedSessionAuthority {
+  return {
+    authorizeSessionRead: () => true,
+    authorizeSessionWrite: () => true,
+    authorizeSessionStream: () => ({ allowed: true, lease: "lease_1", expiresAt: Date.now() + 15_000 }),
+    registerSession: () => true,
+  }
+}
 
 const authority = {
   managed: true as const,
@@ -46,10 +57,7 @@ describe("SessionAccessPolicy", () => {
   })
 
   test("filters actor-less managed collections instead of authorizing the whole list", async () => {
-    const policy = managedWorkspaceSessionAccessPolicy({
-      authorizeSessionRead: () => true,
-      authorizeSessionWrite: () => true,
-    })
+    const policy = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
     const input: SessionAccessPolicyInput = {
       authority,
       operation: "session_list",
@@ -64,10 +72,7 @@ describe("SessionAccessPolicy", () => {
   })
 
   test("denies a workspace viewer a session write with session_write_forbidden", async () => {
-    const policy = managedWorkspaceSessionAccessPolicy({
-      authorizeSessionRead: () => true,
-      authorizeSessionWrite: () => true,
-    })
+    const policy = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
     const viewer = { ...authority, role: "viewer" as const }
     const actor = { actorId: "actor_1", actorKind: "human" as const }
 
@@ -93,8 +98,11 @@ describe("SessionAccessPolicy", () => {
     const participants = new Set(["actor_alice"])
     const policy = managedWorkspaceSessionAccessPolicy({
       requireActor: true,
-      authorizeSessionRead: (input) => participants.has(input.actor.actorId),
-      authorizeSessionWrite: (input) => participants.has(input.actor.actorId),
+      authority: {
+        ...allowAll(),
+        authorizeSessionRead: (input) => participants.has(input.actor.actorId),
+        authorizeSessionWrite: (input) => participants.has(input.actor.actorId),
+      },
     })
     const input = {
       authority,
@@ -177,14 +185,16 @@ describe("SessionAccessPolicy", () => {
     let peak = 0
     const policy = managedWorkspaceSessionAccessPolicy({
       requireActor: true,
-      authorizeSessionRead: async () => {
-        active += 1
-        peak = Math.max(peak, active)
-        await Promise.resolve()
-        active -= 1
-        return true
+      authority: {
+        ...allowAll(),
+        authorizeSessionRead: async () => {
+          active += 1
+          peak = Math.max(peak, active)
+          await Promise.resolve()
+          active -= 1
+          return true
+        },
       },
-      authorizeSessionWrite: () => true,
     })
 
     const sessionIds = Array.from({ length: 50 }, (_, index) => `ses_${index}`)

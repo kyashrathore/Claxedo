@@ -125,9 +125,16 @@ export function remoteWorkspaceSessionAccessPolicy(options: {
   ) as Promise<SessionAccessDecision>
   const policy = managedWorkspaceSessionAccessPolicy({
     requireActor: true,
-    authorizeSessionRead: authorize,
-    authorizeSessionWrite: authorize,
-    registerSession: (input) => request(input, "register") as Promise<SessionAccessDecision>,
+    authority: {
+      authorizeSessionRead: authorize,
+      authorizeSessionWrite: authorize,
+      authorizeSessionStream: (input, lease) => request(
+        input,
+        sessionAccessRequiresWrite(input) ? "write" : "read",
+        { stream: true, ...(lease ? { lease } : {}) },
+      ) as Promise<SessionAccessStreamDecision>,
+      registerSession: (input) => request(input, "register") as Promise<SessionAccessDecision>,
+    },
   })
   policy.authorizeHost = async (input) => {
     const url = options.url?.trim()
@@ -155,11 +162,6 @@ export function remoteWorkspaceSessionAccessPolicy(options: {
       return denied(503, "session_authority_unavailable")
     }
   }
-  policy.authorizeStream = (input, lease) => request(
-    input as SessionAuthorityInput,
-    sessionAccessRequiresWrite(input) ? "write" : "read",
-    { stream: true, ...(lease ? { lease } : {}) },
-  ) as Promise<SessionAccessStreamDecision>
   policy.markRegistrationAmbiguous = (input) => request(
     input as SessionAuthorityInput,
     "registration_ambiguous",
