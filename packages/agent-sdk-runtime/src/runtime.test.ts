@@ -1166,6 +1166,29 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
+  test("carries the turn author into the harness prompt and omits it when absent", async () => {
+    const authors: Array<unknown> = []
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(),
+      harnesses: [testHarness({
+        sendMessage: async function* (_id, input) {
+          authors.push("author" in input ? input.author : "absent")
+          yield { type: "finish", sessionId: _id }
+        },
+      })],
+    })
+    const session = await runtime.sessions.create({ directory: undefined, harness: { id: "pi", access: "native" } })
+    const author = { id: "actor_public_alice", name: "Alice", avatarUrl: "https://images.example.test/alice.png", kind: "human" as const }
+
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_authored", text: "hello", author })
+    await tick()
+    await runtime.turns.start({ sessionId: session.id, messageId: "msg_anonymous", text: "hello again" })
+    await tick()
+
+    expect(authors).toEqual([author, "absent"])
+    runtime.dispose()
+  })
+
   test("leaves an operator ACP model at its own default when no model is selected", async () => {
     const models: Array<{ providerID: string; modelID: string }> = []
     const base = testHarness({

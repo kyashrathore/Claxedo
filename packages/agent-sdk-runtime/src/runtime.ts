@@ -767,6 +767,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
           ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
+          ...(turn.author ? { author: turn.author } : {}),
         }
         if (activeTurnAdmissions.has(turn.sessionId)) {
           throw new AgentRuntimeTurnAdmissionError(turn.sessionId)

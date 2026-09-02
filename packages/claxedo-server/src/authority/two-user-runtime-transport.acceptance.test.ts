@@ -257,6 +257,7 @@ function runtimeAdapter() {
         unrevert: false,
         configOptions: false,
         subagents: false,
+        goals: false,
       }
     },
     async *sendMessage(sessionId, input) {
