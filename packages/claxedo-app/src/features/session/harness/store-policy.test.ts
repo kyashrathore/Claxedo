@@ -123,6 +123,13 @@ describe("harness store policy", () => {
       workspaceRuntime: false,
       workspaceKind: "cloud",
     })).toBe(true)
+    // A user-hosted workspace is a machine's workspace: its draft starts from
+    // that machine's harness, even though its config API is never loopback.
+    expect(shouldHydrateDraftFromHarnessStatus({
+      useLocalHarnessConfig: false,
+      workspaceRuntime: true,
+      workspaceKind: "user-hosted",
+    })).toBe(true)
     expect(refreshHarnessTypeForScope({ directory: "workspace:ws_1", harness: "opencode" })).toBe("opencode")
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "opencode" })).toBeUndefined()
     expect(refreshHarnessTypeForScope({ directory: "/tmp/project", harness: "claude-acp" })).toBe("claude-acp")

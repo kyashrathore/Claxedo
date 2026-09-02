@@ -64,11 +64,19 @@ export function shouldRefreshDirectoryAfterHarnessStatus(input?: HarnessScopeInp
   return !input?.sessionId || input.sessionId === "new"
 }
 
+/**
+ * Whether a new-session draft takes its harness from the workspace's status
+ * probe. A workspace served by a machine — this one (`local`) or one reached
+ * through the relay (`user-hosted`) — carries that machine's harness
+ * configuration, and a draft starts from it exactly as the desktop does. Cloud
+ * sandboxes keep the draft-default policy.
+ */
 export function shouldHydrateDraftFromHarnessStatus(input: {
   useLocalHarnessConfig: boolean
   workspaceRuntime?: boolean
   workspaceKind?: HarnessWorkspaceKind | null
 }) {
+  if (input.workspaceKind === "user-hosted") return true
   if (!input.useLocalHarnessConfig) return false
   if (!input.workspaceRuntime) return true
   return input.workspaceKind === "local"
