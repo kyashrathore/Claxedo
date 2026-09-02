@@ -159,3 +159,21 @@ you by <owner>" (any surface).
 
 Out of scope here: send-path collapse and session-open batching (plan 148's
 performance follow-up); Durable Object placement.
+
+## Execution log
+
+- 2026-09-02, steps 1–4 landed: `867a20854f` (catalog owner), `b4cb2589ae`,
+  `4db2c6015e` (session source per kind, event-applied lists, role and host
+  state in the rail, control plane 409 for a user-hosted list). Two runtime
+  gaps remain, with owners:
+  - `session.deleted` does not exist on the user-hosted path:
+    `workspace-runtime/src/routes/session-core.ts` `SessionLifecycleEvent`
+    has no delete phase and `DELETE /session/:id` publishes nothing, so a
+    session deleted on the host leaves the web rail only on the next fetch.
+    Owner: workspace-runtime lifecycle events.
+  - No stream is open for a relay-backed workspace without an open pane:
+    `app/integrations/claxedo-events.tsx` `claxedoEventStreamTargets`
+    deliberately limits observation to the route's session. Live rail rows
+    for the other workspaces need a role-scoped per-workspace stream on the
+    runtime (list-level events only), then the app subscribes per visible
+    catalog row. Owner: workspace-runtime events + the events integration.
