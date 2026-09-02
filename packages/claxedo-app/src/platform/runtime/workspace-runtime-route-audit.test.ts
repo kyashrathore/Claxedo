@@ -2200,6 +2200,7 @@ describe("workspace runtime route audit", () => {
 
   test("workspace directory alias canonicalization is shared from signed-workspace identity", async () => {
     const globalSdk = await Bun.file(path.join(root, "app/providers/global-sdk/provider.tsx")).text()
+    const runtimeProjection = await Bun.file(path.join(root, "app/providers/global-sdk/runtime-event-projection.ts")).text()
     const signedWorkspace = await Bun.file(path.join(root, "platform/runtime/agent/signed-workspace.ts")).text()
 
     expect(await Bun.file(path.join(root, "overrides/app/providers/global-sdk/provider.tsx")).exists()).toBe(false)
@@ -2208,10 +2209,10 @@ describe("workspace runtime route audit", () => {
     expect(globalSdk).toMatch(/const placement = globalSdkClientPlacement\(workspaceId\)/)
     expect(globalSdk).toMatch(/fetch: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
     expect(globalSdk).not.toMatch(/transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/)
-    expect(globalSdk).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
-    expect(globalSdk).toMatch(/return sessionID/)
-    expect(globalSdk).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId\}`/)
-    expect(globalSdk).toMatch(/directory: input\.directory/)
+    expect(runtimeProjection).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
+    expect(runtimeProjection).toMatch(/return sessionID/)
+    expect(runtimeProjection).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId \?\? ""\}`/)
+    expect(runtimeProjection).toMatch(/directory: input\.directory/)
     expect(globalSdk).toMatch(/return `session\.status:\$\{payload\.properties\.sessionID\}`/)
     expect(globalSdk).not.toMatch(/workspaceIdFromDirectoryRef/)
     expect(globalSdk).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)

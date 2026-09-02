@@ -24,7 +24,10 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // both gained the one small producer that names the model their harness
       // reported. Moving either producer to a shared owner is not possible —
       // ACP options keep the agent's protocol shape and the SDK's do not.
-      "runtime.ts": 987,
+      // Re-measured for the turn author travelling with its prompt and the
+      // turn message-id owner: the runtime hands the harness the turn's author
+      // and mints the reply id through agent-event-runtime's convention.
+      "runtime.ts": 992,
       "harnesses/acp/index.ts": 844,
       "harnesses/codex/driver.ts": 755,
       "harnesses/shared/sdk-runtime-adapter.ts": 890,
