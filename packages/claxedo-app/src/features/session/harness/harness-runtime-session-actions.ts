@@ -1,5 +1,5 @@
 import { createOpencodeClient as defaultCreateOpencodeClient } from "@opencode-ai/sdk/v2/client"
-import { harnessWorkspaceRuntimeRef, type HarnessScopeInput } from "./store-policy"
+import type { HarnessScopeInput } from "./store-policy"
 import type {
   PreparedRuntimeSession,
   PreparedRuntimeSessionConfig,
@@ -29,6 +29,8 @@ type CreateHarnessRuntimeSessionClient = (input: {
 type HarnessRuntimeSessionRuntime<ScopeInput extends HarnessScopeInput> = {
   useLocalHarnessConfig(input?: ScopeInput): boolean
   harnessSessionFetch(input?: ScopeInput): typeof fetch
+  /** The relay-backed workspace the inventory describes for a scope, if any. */
+  workspaceRef(input?: ScopeInput): { workspaceId: string } | undefined
 }
 
 export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }>(input: {
@@ -39,7 +41,7 @@ export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessSco
   const createClient = input.createClient ?? (defaultCreateOpencodeClient as CreateHarnessRuntimeSessionClient)
 
   const canUseRuntimeSession = (params?: ScopeInput) =>
-    input.runtime.useLocalHarnessConfig(params) || !!harnessWorkspaceRuntimeRef(params)
+    input.runtime.useLocalHarnessConfig(params) || !!input.runtime.workspaceRef(params)
 
   const create = async (params: {
     input: ScopeInput

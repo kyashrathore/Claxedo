@@ -106,7 +106,7 @@ describe("acquireSubmitSessionTarget", () => {
     expect(createClients).toEqual([])
   })
 
-  test("harness claim failure does not fall back to OpenCode create", async () => {
+  test("harness claim failure is reported and does not fall back to OpenCode create", async () => {
     const booted: string[] = []
     const errors: unknown[] = []
     const createClients: string[] = []
@@ -124,7 +124,7 @@ describe("acquireSubmitSessionTarget", () => {
         createClients.push(input.harnessType)
         return submitSessionClient()
       },
-      onOpencodeCreateError: (err) => errors.push(err),
+      onCreateError: (err) => errors.push(err),
     })
 
     expect(target).toEqual({
@@ -133,7 +133,7 @@ describe("acquireSubmitSessionTarget", () => {
       created: false,
     })
     expect(booted).toEqual([])
-    expect(errors).toEqual([])
+    expect(errors.map((err) => (err as Error).message)).toEqual(["claim failed"])
     expect(createClients).toEqual([])
   })
 
@@ -195,7 +195,7 @@ describe("acquireSubmitSessionTarget", () => {
           throw new Error("create failed")
         },
       }),
-      onOpencodeCreateError: (err) => errors.push(err),
+      onCreateError: (err) => errors.push(err),
     })
 
     expect(target).toEqual({
@@ -475,7 +475,7 @@ function acquireSessionTarget(overrides: Partial<AcquireSessionTargetInput>) {
     boot: () => {},
     createSessionClient: () => submitSessionClient(),
     claimHarnessSession: async () => undefined,
-    onOpencodeCreateError: () => {},
+    onCreateError: () => {},
     ...overrides,
   })
 }

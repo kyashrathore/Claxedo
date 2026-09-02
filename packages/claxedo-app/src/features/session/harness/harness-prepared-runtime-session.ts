@@ -1,5 +1,6 @@
 import {
   planPreparedHarnessSession,
+  type PreparedHarnessSessionPlan,
   type PreparedHarnessSessionState,
   type PreparedRuntimeSession,
   type PreparedSessionDirectory,
@@ -20,6 +21,15 @@ export type PreparedRuntimeSessionCache = {
   getPreparing(scope: string): PreparedRuntimeSessionPending | undefined
   setPreparing(scope: string, value: PreparedRuntimeSessionPending): void
   removePreparing(scope: string): void
+}
+
+function claimFailureReason(status: PreparedHarnessSessionPlan["status"]) {
+  switch (status) {
+    case "disabled": return "This workspace cannot start a harness session from here"
+    case "missing-directory": return "The session has no workspace directory"
+    case "no-model": return "Choose a model to continue"
+    default: return "The harness session could not be started"
+  }
 }
 
 export function createPreparedRuntimeSessionStore<ScopeInput extends { directory?: PreparedSessionDirectory }>(input: {
@@ -97,10 +107,22 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
     })
   }
 
+  /**
+   * Take a runtime session for a submit. A harness that cannot start one is an
+   * error the submit reports, never a silent no-op: the prompt would otherwise
+   * sit in the composer with nothing said.
+   */
   const claim = async (scope: string, params: ScopeInput): Promise<{ id: string } | undefined> => {
     if (input.state(scope).harness === "opencode") return undefined
     const item = await prepare(scope, params)
-    if (!item) return undefined
+    if (!item) {
+      const plan = planPreparedHarnessSession({
+        enabled: input.canUseRuntimeSession(params),
+        directory: params.directory,
+        state: input.state(scope),
+      })
+      throw new Error(claimFailureReason(plan.status))
+    }
     take(scope)
     return { id: item.id }
   }

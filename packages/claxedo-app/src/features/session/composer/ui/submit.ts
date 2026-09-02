@@ -469,7 +469,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           sessionId: targetInput.sessionID,
           sessionConfig: targetInput.sessionConfig,
         }),
-      onOpencodeCreateError: (err) => {
+      onCreateError: (err) => {
         const message = errorMessage(err)
         reportCloudStartupError(message)
         showToast({

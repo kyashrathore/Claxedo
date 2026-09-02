@@ -75,7 +75,8 @@ export type SubmitSessionTargetAcquisitionInput = {
     readonly sessionID: string | undefined
     readonly sessionConfig: SubmitSessionTargetAcquisitionInput["sessionConfig"]
   }) => Promise<SubmitSessionTarget | undefined>
-  readonly onOpencodeCreateError: (err: unknown) => void
+  /** Reports a session that could not be created, for either harness mode. */
+  readonly onCreateError: (err: unknown) => void
 }
 
 export type CloudStartupState = {
@@ -169,13 +170,16 @@ async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionI
       directory: input.sessionDirectory,
       sessionID: reservation?.sessionId ?? input.explicitSessionID,
       sessionConfig: input.sessionConfig,
-    }).catch(() => undefined)
+    }).catch((err) => {
+      input.onCreateError(err)
+      return undefined
+    })
     if (session) input.boot(session.id)
     return session
   }
 
   return await createOpencodeSession(input, reservation).catch((err) => {
-    input.onOpencodeCreateError(err)
+    input.onCreateError(err)
     return undefined
   })
 }
