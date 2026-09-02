@@ -22,6 +22,8 @@
  *   POST /api/workspace/:id/connection/refresh
  *   POST /api/workspace/:id/host-assignment
  *   DELETE /api/workspace/:id/host-assignment
+ *   POST   /api/workspace/:id/shares
+ *   DELETE /api/workspace/:id/shares
  *   GET  /internal/relay/target
  *   GET  /internal/relay/revocation
  *   POST /internal/sandbox-manager/gc

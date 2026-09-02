@@ -855,3 +855,35 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect([401, 403]).toContain(res.status)
   })
 })
+
+describe("workspace shares (POST/DELETE /:id/shares)", () => {
+  test("grants a share through the authority for a signed caller", async () => {
+    const grantWorkspaceShare = vi.fn(async () => ({ granted: true, grant_id: "grant_1" }))
+    const { app } = buildApp({ authority: fakeConvexAuthority({ grantWorkspaceShare }) })
+    const res = await app.request(post("/ws_user/shares", {
+      role: "viewer",
+      target: { kind: "user", userId: "user_2" },
+    }))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ granted: true, grant_id: "grant_1" })
+    expect(grantWorkspaceShare).toHaveBeenCalledWith(expect.anything(), {
+      workspaceId: "ws_user",
+      role: "viewer",
+      target: { kind: "user", userId: "user_2" },
+    })
+  })
+
+  test("refuses an anonymous caller and a share with no target", async () => {
+    const grantWorkspaceShare = vi.fn(async () => ({ granted: true }))
+    const { app } = buildApp({ authority: fakeConvexAuthority({ grantWorkspaceShare }) })
+    const anonymous = await app.request(new Request("http://cp.test/ws_user/shares", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ role: "viewer", target: { kind: "user", userId: "user_2" } }),
+    }))
+    expect(anonymous.status).toBe(401)
+    const targetless = await app.request(post("/ws_user/shares", { role: "viewer" }))
+    expect(targetless.status).toBe(400)
+    expect(grantWorkspaceShare).not.toHaveBeenCalled()
+  })
+})

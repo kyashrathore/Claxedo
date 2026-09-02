@@ -24,6 +24,7 @@ import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } fr
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, rec, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
 import { connectionRateLimitError, controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
 import { sandboxLeaseCapError, type ActiveSandboxLeaseCounter } from "../../workspace/runtime-token-guards"
 import { authenticatedGitHubCloneSource } from "../../workspace/repository-clone"
@@ -602,6 +603,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         if (!body.ok) return c.json({ error: body.error }, body.status)
         return connectionResponse(c, body.body.previousJti)
       })
+      .route("/", workspaceShareRoutes(services, options))
       .post("/:id/host-assignment", async (c) => {
         // Sharing under machine-wide enrollment: the OWNER assigns the
         // workspace to one of their enrolled hosts. No challenge and no

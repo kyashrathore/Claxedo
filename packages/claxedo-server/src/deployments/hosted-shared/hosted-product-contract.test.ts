@@ -203,6 +203,7 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     // unassigns — one path, two verbs). The replacement for the retired
     // per-workspace `user-hosted/(challenge|register|heartbeat|pause)` quartet.
     "/api/workspace/:id/host-assignment",
+    "/api/workspace/:id/shares",
     "/api/workspace/:id/lifecycle/:operation",
     "/api/workspace/create",
     "/api/workspace/resolve",
