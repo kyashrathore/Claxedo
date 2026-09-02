@@ -418,3 +418,95 @@ control plane twice in one evening (`token endpoint timed out after 21998ms`,
 then `userinfo failed: 401`), which signed the desktop out and unpublished the
 machine; that transport stall is the same class recorded in
 `reference_transient_auth_blip_cascade` and is not addressed here.
+
+### Corrected 2026-09-02 (second pass: full web access, measured)
+
+Goal restated for this pass: enroll a device on the desktop, then do from the
+web client everything the desktop does against that device's workspace, over
+the relay, with no perceptible lag. Every defect below was found by evidence
+from the real clients (CDP against the desktop renderer; the browser pane's
+`performance` resource entries and fetch probes against the hosted app;
+`wrangler d1` reads and `wrangler tail` against staging), and each fix removes
+the cause rather than patching the symptom. Staging releases 47–51.
+
+- **Desktop "Workspace failed to start / connection 404"** (`0dcfc9d4b1`).
+  A signed-in desktop fetched its shell and global bootstrap through the
+  AccountPort and resolved every directory against the control plane first,
+  so the renderer's project inventory was the control plane's hosted list.
+  Once a share carried the workspace's real directory, the machine treated
+  its own worktree as user-hosted and tried to reach itself over the relay.
+  The app server now owns its bootstrap; a directory never leaves the
+  server; only a workspace id the server disowns is asked of the control
+  plane. `account.get` had no caller left and is gone from the port, the
+  desktop operation table, and the operation matrix.
+- **Web composer stuck on "Harness OpenCode / No model results"** — four
+  layers, each proven before the next was touched:
+  `3e68cee416` the hosted harness status route existed but its probe was
+  never composed into either hosted root (every call answered
+  `workspace_not_found`), and the body lacked the `harness`/`activeHarness`
+  identity the app decodes; `4eef1bc45d` a web draft never asked for the
+  status at all (`shouldHydrateDraftFromHarnessStatus` was loopback-only);
+  `ec917791ab` the draft hydrated before the signed inventory loaded, so the
+  kind was unknown, the seed harness was committed and the scope marked seen
+  forever — a `workspace:` draft now resolves its record first, and the
+  store's workspace-runtime predicate reads the inventory it already has;
+  `67f5799ec2` the status request carried only the machine's filesystem path
+  as `directory`, which the hosted shell cannot map — requests carry the
+  workspace id and the shell treats the id as the identity.
+- **Web send reserved a session and then did nothing** (`835a074f90`). The
+  runtime-session gate resolved the workspace without the inventory, the
+  prepared-session plan was disabled, and the claim's `undefined` was
+  swallowed. The gate reads the inventory-backed ref, a claim that cannot
+  start a session throws its reason, and the submit reports it through the
+  same call-site reporter as an OpenCode create failure (`onCreateError`).
+- **"Retry sharing controls" on every host-created session** (`f91f492f25`).
+  The control plane denied the share listing for sessions its registry
+  never held. Listing shares for a session the authority does not hold now
+  answers an empty, unmanageable context to a workspace reader, which the
+  web already renders as no sharing controls; strangers are still refused.
+- **Dead workspaces in every client's inventory** (`9b88098572`). Unsharing
+  or revoking deleted the host assignment and left the user-hosted workspace
+  row behind (two such rows on staging, whose ids the daemon no longer
+  served). A user-hosted workspace now lives exactly as long as its host
+  assignment: unassign retires it, revoking a machine retires everything it
+  served, sharing again revives the same record; cloud rows are untouched;
+  mirrored in the sqlite authority. The two staging rows were retired through
+  the desktop's own unshare.
+
+Measured from the browser after release 51 (staging, Singapore edge):
+
+| Step (web client, over the relay) | Time |
+| --- | --- |
+| Enter → session reserved on the control plane | 0.99 s |
+| → `POST /session` on the host through the relay | 1.09 s |
+| → prompt dispatched (`prompt_async`) | 0.75 s |
+| → new session screen, messages ready | 0.58 s (≈2.2 s from Enter) |
+| Harness status (control plane → relay → host) | 2.3–2.9 s |
+| Harness model options (relay → host) | 0.5–1.3 s |
+| Transcript (52 messages) after route start, warm plane | 0.2 s |
+| Same, first cold open after a deploy | 7.8 s (13.5 s from navigation) |
+| Relay event streams held open from the browser | 75–80 s and counting |
+
+A curl attach to the relay `/global/event?sessionID=…` received busy,
+message.updated, message.part.updated, text and session.error events live
+while a prompt ran (222 events in 28 s).
+
+Not verified, with the blocker named: no harness on the machine can currently
+ANSWER a prompt — `claude auth status` reports logged out, Codex answers
+"You've hit your usage limit", the Cursor SDK needs an explicit API key, and
+OpenCode has no providers configured. Session creation, dispatch, live event
+delivery and the error turn are proven; a streamed assistant reply is not,
+and only the machine's owner can log a harness in. Shell and summarize answer
+409 `unsupported_operation` for the claude and codex harnesses on the runtime
+itself — identical on the desktop, so not a parity gap. The web Settings →
+Devices panel could not be driven from the hidden browser pane (its rail and
+account menu do not mount while the page is hidden); the route it reads
+(`/api/claxedo/remote-access/devices`) answers the machine "macOS" with its
+four workspaces. The control plane's own `/api/wr/events` stream closes every
+16 s and the app reconnects; the relay streams do not.
+
+Pre-existing on the branch, untouched: 78 failing bun tests in `claxedo-app`
+(legacy `codex-acp` identity expectations under `features/session/harness`,
+credential resolution, new-session handoff); the desktop's hosted-transport
+stall-recovery retry (`a6259627f8`) remains and is corrective code now that
+the HTTP/3 cause is known.
