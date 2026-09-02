@@ -133,9 +133,12 @@ export function setupHostConnectorChild(input: {
   /**
    * Budget for the enrollment that follows the bootstrap reply — the
    * createRequest/enroll/heartbeat round trips the child now runs after
-   * answering. Wider than the startup budget on purpose: this deployment's
-   * edge can withhold a POST response on a warm connection for around twelve
-   * seconds, so the budget has to cover one such stall plus a retry.
+   * answering. Wider than the startup budget on purpose: it must exceed the
+   * worst-case SUM of three sequential hosted control-plane calls, each
+   * already bounded on its own by the account layer's per-request deadline
+   * (`HOSTED_REQUEST_DEADLINE_MS` in `../account/hosted-transport.ts`), not
+   * approximate it — an enrollment legitimately taking close to that sum on a
+   * slow-but-working deployment must finish, not be reported as a hung child.
    */
   enrollmentTimeoutMs?: number
   onError?: (stage: string, error: unknown) => void
@@ -325,7 +328,9 @@ export function setupHostConnectorChild(input: {
       // expiry, a rejected beat, a revocation — reaches this process.
       const decided = await bounded(
         Promise.race([enrolled.promise, cancelled]),
-        input.enrollmentTimeoutMs ?? 45_000,
+        // 60s: three sequential hosted calls (createRequest/enroll/heartbeat)
+        // at 20s each — see the option doc above.
+        input.enrollmentTimeoutMs ?? 60_000,
         "Host Connector child enrollment",
       )
       if (startedIn !== era) return status

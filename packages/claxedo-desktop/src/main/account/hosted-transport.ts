@@ -1,118 +1,111 @@
 /**
- * Stall recovery for hosted control-plane requests from Electron main.
+ * One HTTP attempt, bounded by a single deadline — and the hosted
+ * control-plane request built on top of it.
  *
- * Live Cloudflare deployments intermittently stall a request that reuses a
- * keep-alive connection: the edge delivers the request headers to the Worker
- * but response headers never come back, so the fetch sits until the transport's
- * own five-minute headers timeout. The desktop's signed bootstrap awaited one
- * control-plane read, so one stalled request left the renderer on the splash screen
- * indefinitely. (Full audit trail: docs/handoffs/cloudflare-multiplayer-migration.md,
- * "Continuation 2026-08-31".)
+ * `fetchWithDeadline` is shared by every request the account modules make:
+ * hosted control-plane calls here, and the OAuth token endpoint in
+ * `electron-seams.ts`. There is exactly one definition of what a bounded
+ * attempt means: start the real fetch, abort it if the deadline elapses
+ * before a response arrives, and report that as a distinguishable
+ * `DeadlineExceededError`. A parent signal (an explicit caller cancellation,
+ * or account logout) always wins over the deadline and is never translated
+ * into a timeout — the caller asked to stop, it did not time out.
  *
- * The recovery is the same one the token transport uses: bound the wait for
- * response HEADERS, abort the stalled attempt (destroying the poisoned
- * socket), and retry once on a fresh connection. Retrying is confined to
- * requests the caller declares retryable — GET/HEAD reads — because aborting
- * before the retry guarantees only that the STALLED attempt cannot have been
- * processed; a slow-but-delivered mutation cannot be told apart from a stall,
- * so unsafe methods keep their single attempt and the transport default.
+ * There is no retry here, and never will be. A retry can only be safe when a
+ * caller can tell "never reached the server" apart from "reached it, and it
+ * is just slow" — across a real network that distinction is not observable,
+ * so a retried mutation risks applying twice. A bounded deadline is the safe
+ * half of that: the caller gets a clear, terminal error instead of a hang.
+ *
+ * Full incident history for why a retry used to live here:
+ * docs/handoffs/cloudflare-multiplayer-migration.md.
  */
 
-type HostedFetch = (
+export type BoundedFetch = (
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string; signal?: AbortSignal },
 ) => Promise<Response>
 
-export const HOSTED_HEADERS_STALL_MS = 8_000
-export const HOSTED_RETRY_HEADERS_STALL_MS = 20_000
-
-class HostedHeadersStallError extends Error {
+export class DeadlineExceededError extends Error {
   constructor(afterMs: number) {
-    super(`hosted request produced no response headers within ${String(afterMs)}ms`)
+    super(`request produced no response within ${String(afterMs)}ms`)
   }
 }
 
-async function attemptOnce(
-  fetchImpl: HostedFetch,
+export async function fetchWithDeadline(
+  fetchImpl: BoundedFetch,
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string },
-  stallMs: number,
-  track: (controller: AbortController) => () => void,
-  parentSignal?: AbortSignal,
+  deadlineMs: number,
+  options: {
+    parentSignal?: AbortSignal
+    /** Registers this attempt's controller with a caller-wide cancellation set (e.g. logout). */
+    track?: (controller: AbortController) => () => void
+    /**
+     * Keep the deadline timer ref'd instead of the default unref'd.
+     *
+     * An unref'd timer must not be the event loop's only reason to stay
+     * alive: on Windows, Bun does not fire an unref'd timer once every other
+     * ref'd handle is gone, which turns a bounded deadline into a permanent
+     * hang instead of a timeout. The OAuth token exchange can be the only
+     * pending work on the loop (a directly injected `fetch` with no socket of
+     * its own, as tests use), so it opts into a ref'd timer; every other
+     * caller runs alongside Electron's own event sources and stays with the
+     * default so a pending request cannot itself keep the process alive after
+     * the user quits.
+     */
+    refTimer?: boolean
+  } = {},
 ): Promise<Response> {
+  const { parentSignal, track, refTimer = false } = options
   const controller = new AbortController()
-  const untrack = track(controller)
+  const untrack = track?.(controller)
   const abortFromParent = () => controller.abort(parentSignal?.reason)
   if (parentSignal?.aborted) abortFromParent()
   else parentSignal?.addEventListener("abort", abortFromParent, { once: true })
-  let stalled: HostedHeadersStallError | undefined
+  let timedOut: DeadlineExceededError | undefined
   const handle = setTimeout(() => {
-    stalled = new HostedHeadersStallError(stallMs)
-    controller.abort(stalled)
-  }, stallMs)
-  handle.unref?.()
+    timedOut = new DeadlineExceededError(deadlineMs)
+    controller.abort(timedOut)
+  }, deadlineMs)
+  if (!refTimer) handle.unref?.()
   let settled = false
   try {
     const response = await fetchImpl(url, { ...init, signal: controller.signal })
     settled = true
     return response
   } catch (error) {
-    // The abort we dispatched surfaces as the transport's own rejection; the
-    // retry decision keys on the stall type, so translate it here. A parent
-    // cancellation is never translated — it must propagate and end the call.
-    throw parentSignal?.aborted ? error : stalled ?? error
+    // The abort WE dispatched surfaces as the transport's own rejection;
+    // translating it here means a caller can tell a deadline apart from a
+    // real network failure without knowing the transport's error shape.
+    throw parentSignal?.aborted ? error : timedOut ?? error
   } finally {
     clearTimeout(handle)
     // On success the parent link stays: a streaming response's body read is
     // still bound to this attempt's signal, and the parent (caller abort or
     // logout) must be able to end it for the response's whole life.
-    if (!settled) {
-      parentSignal?.removeEventListener("abort", abortFromParent)
-    }
-    untrack()
+    if (!settled) parentSignal?.removeEventListener("abort", abortFromParent)
+    untrack?.()
   }
 }
 
+export const HOSTED_REQUEST_DEADLINE_MS = 20_000
+
 /**
- * One hosted request, with a single fresh-connection retry when a retryable
- * request stalls before response headers.
+ * One hosted control-plane request, bounded by `deadlineMs`. Reads and
+ * mutations alike get exactly this: one attempt, one deadline.
  *
- * `track` registers each attempt's AbortController with the caller (the
+ * `track` registers the attempt's AbortController with the caller (the
  * account service aborts every active request on logout) and returns the
  * matching deregistration.
  */
-export async function fetchHostedWithStallRecovery(
-  fetchImpl: HostedFetch,
+export async function fetchHosted(
+  fetchImpl: BoundedFetch,
   url: string,
   init: { method: string; headers: Record<string, string>; body?: string },
   track: (controller: AbortController) => () => void,
   parentSignal?: AbortSignal,
-  budgets: { stallMs: number; retryStallMs: number } = {
-    stallMs: HOSTED_HEADERS_STALL_MS,
-    retryStallMs: HOSTED_RETRY_HEADERS_STALL_MS,
-  },
+  deadlineMs: number = HOSTED_REQUEST_DEADLINE_MS,
 ): Promise<Response> {
-  const retryable = init.method === "GET" || init.method === "HEAD"
-  if (!retryable) {
-    // Single attempt, no headers deadline: a mutation that is merely slow must
-    // not be aborted, because a delivered-but-slow request is indistinguishable
-    // from a stalled one and a retry could apply it twice.
-    const controller = new AbortController()
-    const untrack = track(controller)
-    const abortFromParent = () => controller.abort(parentSignal?.reason)
-    if (parentSignal?.aborted) abortFromParent()
-    else parentSignal?.addEventListener("abort", abortFromParent, { once: true })
-    try {
-      return await fetchImpl(url, { ...init, signal: controller.signal })
-    } finally {
-      parentSignal?.removeEventListener("abort", abortFromParent)
-      untrack()
-    }
-  }
-  try {
-    return await attemptOnce(fetchImpl, url, init, budgets.stallMs, track, parentSignal)
-  } catch (error) {
-    if (!(error instanceof HostedHeadersStallError) || parentSignal?.aborted) throw error
-    return await attemptOnce(fetchImpl, url, init, budgets.retryStallMs, track, parentSignal)
-  }
+  return fetchWithDeadline(fetchImpl, url, init, deadlineMs, { parentSignal, track })
 }

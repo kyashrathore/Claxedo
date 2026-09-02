@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import { fetchHostedWithStallRecovery } from "./hosted-transport"
+import { DeadlineExceededError, fetchHosted, fetchWithDeadline } from "./hosted-transport"
 
 const INIT_GET = { method: "GET", headers: { authorization: "Bearer t" } }
 const INIT_POST = { method: "POST", headers: { authorization: "Bearer t" }, body: "{}" }
-const FAST = { stallMs: 40, retryStallMs: 60 }
+const FAST_DEADLINE = 40
 
 function tracker() {
   const active = new Set<AbortController>()
@@ -16,58 +16,108 @@ function tracker() {
   }
 }
 
-describe("fetchHostedWithStallRecovery", () => {
-  test("retries a stalled GET once on a fresh connection", async () => {
-    const { track } = tracker()
-    const attempts: Array<{ aborted: boolean }> = []
-    const response = await fetchHostedWithStallRecovery(
-      (_url, init) => {
-        const attempt = { aborted: false }
-        attempts.push(attempt)
-        if (attempts.length === 1) {
-          return new Promise<Response>((_resolve, reject) => {
+describe("fetchWithDeadline", () => {
+  // `fetchHosted` below exercises the shape every hosted call uses; this
+  // covers the primitive's own knobs directly, since `electron-seams.ts`'s
+  // token transport calls `fetchWithDeadline` with a plain deadline (no
+  // `track`) and `refTimer: true`.
+  test("returns the response when it arrives before the deadline", async () => {
+    const response = await fetchWithDeadline(
+      async () => Response.json({ ok: true }),
+      "https://core.example/api/auth/oauth2/token",
+      { method: "POST", headers: {} },
+      50,
+    )
+    expect(await response.json()).toEqual({ ok: true })
+  })
+
+  test("with refTimer: true, still fires the deadline (a ref'd timer times out, it does not hang)", async () => {
+    let aborted = false
+    await expect(
+      fetchWithDeadline(
+        (_url, init) =>
+          new Promise<Response>((_resolve, reject) => {
             init.signal?.addEventListener("abort", () => {
-              attempt.aborted = true
+              aborted = true
               reject(new Error("socket destroyed"))
             })
-          })
-        }
-        return Promise.resolve(Response.json({ ok: true }))
+          }),
+        "https://core.example/api/auth/oauth2/token",
+        { method: "POST", headers: {} },
+        20,
+        { refTimer: true },
+      ),
+    ).rejects.toThrow(DeadlineExceededError)
+    expect(aborted).toBe(true)
+  })
+})
+
+describe("fetchHosted", () => {
+  test("returns the response from a single attempt", async () => {
+    const { track } = tracker()
+    let attempts = 0
+    const response = await fetchHosted(
+      async () => {
+        attempts += 1
+        return Response.json({ ok: true })
       },
       "https://core.example/api/claxedo/bootstrap",
       INIT_GET,
       track,
       undefined,
-      FAST,
+      FAST_DEADLINE,
     )
     expect(await response.json()).toEqual({ ok: true })
-    expect(attempts.length).toBe(2)
-    // The stalled socket must be destroyed before the retry begins.
-    expect(attempts[0]!.aborted).toBe(true)
+    expect(attempts).toBe(1)
   })
 
-  test("never retries a mutation", async () => {
+  test("never retries a GET that produces no response before the deadline", async () => {
     const { track } = tracker()
     let attempts = 0
     await expect(
-      fetchHostedWithStallRecovery(
-        () => {
+      fetchHosted(
+        (_url, init) => {
           attempts += 1
-          return Promise.reject(new Error("connection reset"))
+          return new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new Error("socket destroyed")))
+          })
+        },
+        "https://core.example/api/claxedo/bootstrap",
+        INIT_GET,
+        track,
+        undefined,
+        FAST_DEADLINE,
+      ),
+    ).rejects.toThrow(DeadlineExceededError)
+    expect(attempts).toBe(1)
+  })
+
+  test("never retries a mutation, and bounds it by the same deadline", async () => {
+    const { track } = tracker()
+    let attempts = 0
+    await expect(
+      fetchHosted(
+        (_url, init) => {
+          attempts += 1
+          return new Promise<Response>((_resolve, reject) => {
+            init.signal?.addEventListener("abort", () => reject(new Error("socket destroyed")))
+          })
         },
         "https://core.example/api/workspace/create",
         INIT_POST,
         track,
+        undefined,
+        FAST_DEADLINE,
       ),
-    ).rejects.toThrow("connection reset")
+    ).rejects.toThrow(DeadlineExceededError)
     expect(attempts).toBe(1)
   })
 
-  test("propagates a parent abort without retrying", async () => {
+  test("propagates a parent abort without a deadline error", async () => {
     const { track } = tracker()
     const parent = new AbortController()
     let attempts = 0
-    const pending = fetchHostedWithStallRecovery(
+    const pending = fetchHosted(
       (_url, init) => {
         attempts += 1
         return new Promise<Response>((_resolve, reject) => {
@@ -78,7 +128,7 @@ describe("fetchHostedWithStallRecovery", () => {
       INIT_GET,
       track,
       parent.signal,
-      FAST,
+      FAST_DEADLINE,
     )
     parent.abort(new Error("caller cancelled"))
     await expect(pending).rejects.toThrow("caller cancelled")
@@ -89,7 +139,7 @@ describe("fetchHostedWithStallRecovery", () => {
     const { track, active } = tracker()
     const parent = new AbortController()
     let streamSignal: AbortSignal | undefined
-    const response = await fetchHostedWithStallRecovery(
+    const response = await fetchHosted(
       (_url, init) => {
         streamSignal = init.signal
         return Promise.resolve(new Response("data: x\n\n"))
@@ -98,7 +148,7 @@ describe("fetchHostedWithStallRecovery", () => {
       INIT_GET,
       track,
       parent.signal,
-      FAST,
+      FAST_DEADLINE,
     )
     expect(response.ok).toBe(true)
     expect(active.size).toBe(0)
@@ -109,13 +159,12 @@ describe("fetchHostedWithStallRecovery", () => {
     expect(streamSignal?.aborted).toBe(true)
   })
 
-  test("registers every attempt for logout-time abort while in flight", async () => {
+  test("registers the attempt for logout-time abort while in flight", async () => {
     const { track, active } = tracker()
-    let seen = 0
-    const pending = fetchHostedWithStallRecovery(
+    let seenDuringFlight = -1
+    const pending = fetchHosted(
       (_url, init) => {
-        seen += 1
-        expect(active.size).toBe(1)
+        seenDuringFlight = active.size
         return new Promise<Response>((_resolve, reject) => {
           init.signal?.addEventListener("abort", () => reject(new Error("socket destroyed")))
         })
@@ -124,10 +173,10 @@ describe("fetchHostedWithStallRecovery", () => {
       INIT_GET,
       track,
       undefined,
-      FAST,
+      FAST_DEADLINE,
     )
     await expect(pending).rejects.toThrow()
-    expect(seen).toBe(2)
+    expect(seenDuringFlight).toBe(1)
     expect(active.size).toBe(0)
   })
 })

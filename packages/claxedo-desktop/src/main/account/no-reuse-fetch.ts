@@ -1,20 +1,19 @@
 /**
  * Control-plane fetch without connection reuse.
  *
- * Live Cloudflare deployments can poison a keep-alive socket: requests written
- * to it stop arriving at the Worker entirely while the connection itself stays
- * "usable". Node's pooled fetch then deals every retry onto another warm —
- * equally poisoned — socket, and the desktop's steady polling keeps those
- * sockets alive indefinitely, so the app never recovers while a freshly
- * connected curl succeeds immediately. (Observed live 2026-08-31: the app's
- * stalled reads produced no Worker invocations at all while parallel
- * fresh-connection probes returned 200 in under a second; full audit trail in
- * docs/handoffs/cloudflare-multiplayer-migration.md.)
+ * A keep-alive socket a remote edge has silently stopped delivering on looks
+ * exactly like an idle, reusable one to Node's pool: the connection stays
+ * "usable", so the pool keeps handing it out, and every request placed on it
+ * — including a would-be retry — is poisoned the same way a fresh connection
+ * is not. The only way to guarantee a request cannot land on such a socket is
+ * to never reuse one.
  *
  * `agent: false` gives every request its own connection and closes it after
- * the response, which is exactly the behavior every successful probe used.
- * Control-plane traffic is low-rate, so the extra handshake is an acceptable
- * price for removing the poisoned-pool failure class outright.
+ * the response. Control-plane traffic is low-rate, so the extra handshake is
+ * an acceptable price for removing the poisoned-pool failure class outright,
+ * rather than compensating for it with a retry each caller would otherwise
+ * need to implement. Full incident history:
+ * docs/handoffs/cloudflare-multiplayer-migration.md.
  */
 
 import { request as httpsRequest } from "node:https"

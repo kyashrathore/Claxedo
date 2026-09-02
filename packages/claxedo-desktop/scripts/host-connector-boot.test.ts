@@ -26,6 +26,22 @@ async function until(condition: () => boolean, description: string) {
   throw new Error(`timed out waiting for ${description}`)
 }
 
+/**
+ * Like `until`, but for a condition that depends on REAL wall-clock time
+ * elapsing (a `setInterval` tick) rather than one more microtask turn. 1,000
+ * `Bun.sleep(0)` turns finish in a couple of milliseconds total — nowhere
+ * near enough for even a single-digit-millisecond timer to fire — so this
+ * polls against the clock instead of a fixed attempt count.
+ */
+async function untilElapsed(condition: () => boolean, description: string, budgetMs = 2_000) {
+  const deadline = Date.now() + budgetMs
+  while (Date.now() < deadline) {
+    if (condition()) return
+    await Bun.sleep(1)
+  }
+  throw new Error(`timed out waiting for ${description}`)
+}
+
 function childHarness(options?: {
   /**
    * Withhold this operation's answer until `release()`.
@@ -200,6 +216,40 @@ describe("the private bootstrap protocol", () => {
       status: { status: "stopped", reason: "closed" },
     })
     expect(child.sent.some((message) => message.type === "status" && message.status.status === "enrolled")).toBe(false)
+    child.runtime.close()
+  })
+
+  test("pushes a fresh status after a timer-driven heartbeat, not just after enrollment", async () => {
+    // Observed live: the desktop reported the lease expired 645s ago while the
+    // control plane had it live with 41s left and an 18s-old heartbeat ack —
+    // because nothing pushed a status update for a heartbeat nobody was
+    // waiting on. `heartbeatIntervalMs` is small here so a real timer tick
+    // fires inside the test without a fake clock.
+    const child = childHarness()
+    child.send({ type: "bootstrap", requestId: "bootstrap", heartbeatIntervalMs: 20 })
+    await until(
+      () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push",
+    )
+    const enrolledPush = child.sent.find(
+      (message) => message.type === "status" && message.status.status === "enrolled",
+    )
+    expect(enrolledPush).toMatchObject({ status: { enrollment: { expires_at: 10_000 } } })
+
+    await untilElapsed(
+      () => child.accountOperations.some((message) => message.name === "host.enrollmentHeartbeat"),
+      "the timer-driven heartbeat",
+    )
+    await untilElapsed(
+      () =>
+        child.sent.some(
+          (message) =>
+            message.type === "status"
+            && message.status.status === "enrolled"
+            && message.status.enrollment.expires_at === 11_000,
+        ),
+      "a status push carrying the heartbeat-renewed lease",
+    )
     child.runtime.close()
   })
 

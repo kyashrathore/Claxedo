@@ -15,6 +15,7 @@ import type { CallbackDisposition, OAuthSeams, TokenSet } from "./oauth-flow"
 import type { CredentialFile } from "./credential-store"
 import { ACCOUNT_CREDENTIAL_RECORD } from "./marker"
 import type { RefreshOutcome } from "./desktop-native-auth"
+import { fetchWithDeadline } from "./hosted-transport"
 
 /**
  * A loopback listener on an OS-assigned port.
@@ -181,91 +182,16 @@ export function controlPlaneBearerFromTokenPayload(payload: {
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000
 
 /**
- * How long the first attempt may sit without response headers before it is
- * abandoned for a fresh-connection retry. Divided budgets keep the retry
- * meaningful when a caller passes a small overall timeout.
- */
-const TOKEN_REQUEST_STALL_RETRY_MS = 8_000
-
-class TokenEndpointTimeoutError extends Error {}
-
-async function postToTokenEndpointOnce(
-  fetchImpl: typeof fetch,
-  tokenUrl: string,
-  form: Record<string, string>,
-  timeoutMs: number,
-  parentSignal?: AbortSignal,
-) {
-  const controller = new AbortController()
-  let rejectAborted!: (error: Error) => void
-  const aborted = new Promise<never>((_resolve, reject) => {
-    rejectAborted = reject
-  })
-  const abortFromParent = () => {
-    const reason = parentSignal?.reason instanceof Error ? parentSignal.reason : new Error("token request cancelled")
-    controller.abort(reason)
-    rejectAborted(reason)
-  }
-  if (parentSignal?.aborted) abortFromParent()
-  else parentSignal?.addEventListener("abort", abortFromParent, { once: true })
-
-  let handle: ReturnType<typeof setTimeout> | undefined
-  let timedOut: TokenEndpointTimeoutError | undefined
-  const timeout = new Promise<never>((_resolve, reject) => {
-    handle = setTimeout(() => {
-      const error = new TokenEndpointTimeoutError(`token endpoint timed out after ${String(timeoutMs)}ms`)
-      timedOut = error
-      controller.abort(error)
-      reject(error)
-    }, timeoutMs)
-    // Deliberately ref'd, unlike nodeTimer(): this timer is the race's only
-    // wake-up when the transport holds no live handle, and bun on win32 never
-    // fires an unref'd timer once the loop has no ref'd handles left — which
-    // turned this bounded timeout into a permanent hang (CI unit lane, run
-    // 374). It cannot outlive the request it bounds: at most timeoutMs, and
-    // cleared in the finally below the moment the race settles. A pending
-    // real fetch refs the loop on its own, so quit behavior is unchanged.
-  })
-
-  try {
-    return await Promise.race([
-      fetchImpl(tokenUrl, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-        body: new URLSearchParams(form).toString(),
-        signal: controller.signal,
-      }),
-      timeout,
-      aborted,
-    ])
-  } catch (error) {
-    // The abort dispatched by OUR timer can surface as the transport's own
-    // rejection before the timeout promise settles. The caller classifies a
-    // stall by this error type, so keep the translation here.
-    throw timedOut ?? error
-  } finally {
-    if (handle) clearTimeout(handle)
-    parentSignal?.removeEventListener("abort", abortFromParent)
-  }
-}
-
-/**
- * The token transport: one request, plus one fresh-connection retry when the
- * first attempt stalls without response headers.
+ * The token transport: one bounded attempt, no retry.
  *
- * Live Cloudflare deployments intermittently stall a POST whose keep-alive
- * connection previously served a GET: the edge delivers the request headers to
- * the Worker but withholds the body, so the endpoint waits forever and the
- * fetch never resolves — while the same POST on a fresh connection completes
- * in under a second. The desktop always fetches the auth descriptor moments
- * before exchanging a code, so sign-in rides exactly that warm GET connection.
- *
- * Aborting the stalled attempt destroys its socket, which both forces the
- * retry onto a new connection and guarantees the authorization server can
- * never process the first attempt's grant — its request body never arrived —
- * so resending the same one-use code or refresh token cannot trigger replay
- * revocation of the retry's tokens. Only OUR stall timeout retries; a parent
- * cancellation or any answered request propagates unchanged.
+ * A retry can only be safe when a caller can tell "never reached the server"
+ * apart from "reached it, and it is just slow" — across a real network that
+ * distinction is not observable, and a retried grant risks the authorization
+ * server seeing the same one-use code or refresh token twice. The deadline
+ * below is the safe half of that: if no response arrives in time, the attempt
+ * is aborted and the caller gets a clear, terminal error. `fetchWithDeadline`
+ * is defined once, in `hosted-transport.ts`, and shared with every hosted
+ * control-plane request rather than re-implemented here.
  */
 async function postToTokenEndpoint(
   fetchImpl: typeof fetch,
@@ -274,16 +200,25 @@ async function postToTokenEndpoint(
   timeoutMs: number,
   parentSignal?: AbortSignal,
 ) {
-  const stallBudgetMs = Math.min(Math.ceil(timeoutMs / 3), TOKEN_REQUEST_STALL_RETRY_MS)
-  const startedAt = Date.now()
-  try {
-    return await postToTokenEndpointOnce(fetchImpl, tokenUrl, form, stallBudgetMs, parentSignal)
-  } catch (error) {
-    if (!(error instanceof TokenEndpointTimeoutError) || parentSignal?.aborted) throw error
-    const remainingMs = timeoutMs - (Date.now() - startedAt)
-    if (remainingMs <= 0) throw error
-    return await postToTokenEndpointOnce(fetchImpl, tokenUrl, form, remainingMs, parentSignal)
-  }
+  return fetchWithDeadline(
+    fetchImpl,
+    tokenUrl,
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+      body: new URLSearchParams(form).toString(),
+    },
+    timeoutMs,
+    {
+      parentSignal,
+      // The token exchange can be the only pending work on the event loop —
+      // a directly injected `fetch` with no socket of its own, as tests use —
+      // so its deadline timer must be able to wake the process on its own.
+      // See `hosted-transport.ts`'s `refTimer` for what an unref'd timer would
+      // cost here (a permanent hang, not a timeout, on Windows).
+      refTimer: true,
+    },
+  )
 }
 
 /**

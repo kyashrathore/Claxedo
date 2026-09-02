@@ -71,6 +71,18 @@ export type ConnectorOptions = {
    * the parent process) owns opening and closing the relay connection.
    */
   onServing?: (tunnel: Record<string, unknown> | undefined) => void
+  /**
+   * Every time a heartbeat renews the lease — on the timer, or forced by
+   * `shareWorkspace`/`unshareWorkspace` — with the state that now holds it.
+   *
+   * `state()` always answers this immediately; a caller across a process
+   * boundary (Electron main's Host Connector child) does not poll it and can
+   * only know the lease was renewed if told, so this is the one place that
+   * tells it. Firing on every successful beat, not just the ones a caller
+   * happened to be waiting on, is what keeps the cross-process status current
+   * between explicit requests.
+   */
+  onLeaseRenewed?: (state: Extract<ConnectorState, { status: "enrolled" }>) => void
 }
 
 export type ConnectorState =
@@ -273,6 +285,10 @@ export function createHostConnector(options: ConnectorOptions) {
         // The serving credential for everything assigned∩acked, straight
         // from the ack that renewed the lease.
         options.onServing?.(result.hostTunnel)
+        // `state` down to `links` are now the coherent result of this beat —
+        // renewed expiry, reconciled shares — so tell a listener now rather
+        // than leaving it to notice on its own next read.
+        options.onLeaseRenewed?.(state)
       } catch (error) {
         // Same test on the failing path, for the opposite mistake. A beat that
         // was already open when the user paused comes back rejected — the

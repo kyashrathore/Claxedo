@@ -69,6 +69,7 @@ async function connector(
   overrides: Partial<ConnectorTransport> = {},
   onError?: (stage: "enroll" | "heartbeat" | "share", error: unknown) => void,
   onServing?: (tunnel: Record<string, unknown> | undefined) => void,
+  onLeaseRenewed?: (state: { status: "enrolled"; enrollment: { expires_at: number } }) => void,
 ) {
   const t = transport(overrides)
   let tick: (() => void) | undefined
@@ -82,6 +83,7 @@ async function connector(
     heartbeatIntervalMs: 30_000,
     ...(onError ? { onError } : {}),
     ...(onServing ? { onServing } : {}),
+    ...(onLeaseRenewed ? { onLeaseRenewed } : {}),
     setInterval: (fn) => {
       tick = fn
       ticks.push(fn)
@@ -143,6 +145,42 @@ describe("heartbeat", () => {
     tick()
     await vi.waitFor(() => expect(calls.beats).toHaveLength(1))
     expect(instance.state()).toMatchObject({ status: "enrolled", enrollment: { expires_at: 2_000 } })
+  })
+
+  test("tells a listener about the renewed lease on every tick, not just an explicit beat()", async () => {
+    // A timer-driven tick has no caller waiting on its result; `state()`
+    // holds the answer, but nothing across a process boundary polls it. The
+    // desktop's Host Connector child forwards exactly this to the parent, and
+    // a heartbeat that renewed the lease without telling anyone is how the
+    // parent's copy of the status went on reporting the ORIGINAL enrollment
+    // long after the real lease had been extended.
+    const renewals: Array<{ expires_at: number }> = []
+    const { instance, tick } = await connector({}, undefined, undefined, (state) => {
+      renewals.push(state.enrollment)
+    })
+    await instance.start()
+
+    tick()
+    await vi.waitFor(() => expect(renewals).toHaveLength(1))
+    expect(renewals[0]).toMatchObject({ expires_at: 2_000 })
+  })
+
+  test("does not tell a listener about a lease that was not renewed", async () => {
+    // A disruption (no answer) and a revocation (a decisive refusal) both
+    // leave the lease exactly where it was; a listener told about either
+    // would show a lease extension that never happened.
+    const renewals: unknown[] = []
+    const { instance } = await connector(
+      { heartbeat: async () => { throw new Error(DISRUPTION) } },
+      undefined,
+      undefined,
+      (state) => renewals.push(state),
+    )
+    await instance.start()
+
+    await instance.beat()
+
+    expect(renewals).toEqual([])
   })
 
   test("stops on rejection instead of re-enrolling", async () => {

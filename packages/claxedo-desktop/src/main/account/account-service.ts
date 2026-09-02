@@ -29,7 +29,7 @@ import {
   resolveHostedOperation,
   type HostedOperationName,
 } from "./hosted-operations"
-import { fetchHostedWithStallRecovery } from "./hosted-transport"
+import { fetchHosted } from "./hosted-transport"
 import { accountPerfMark, accountPerfNow } from "./account-perf"
 
 export type { RefreshOutcome } from "./desktop-native-auth"
@@ -59,9 +59,14 @@ type Credential = { ok: true; token: string } | { ok: false; detail: string }
 
 /**
  * After a refresh fails, further renewals answer with that failure instead of
- * re-running the exchange, for this long. Boot issues its hosted operations
- * serially, and each would otherwise wait out a full bounded refresh against a
- * deployment that is already known to be stalling.
+ * re-running the exchange, for this long.
+ *
+ * Design invariant, independent of any one deployment's behavior: boot issues
+ * its hosted operations serially, and without this each one would re-attempt
+ * the full bounded refresh against a deployment already known to be failing,
+ * chaining N sequential timeouts behind the splash screen instead of one. See
+ * `account-service.test.ts`, "a failed refresh answers later operations
+ * without re-running until the cool-down passes".
  */
 const REFRESH_FAILURE_COOLDOWN_MS = 20_000
 
@@ -299,11 +304,8 @@ export function createAccountService(options: AccountServiceOptions) {
     // revision rejects stale ownership/re-entrancy. This is not claimed as a
     // cross-process filesystem CAS (rename alone cannot provide one).
     if (renewing) return renewing
-    // A failed refresh answers for the next window instead of re-running.
-    // Hosted operations arrive serially during boot, and each one otherwise
-    // re-attempts the full bounded refresh; when the deployment is stalling
-    // (see hosted-transport.ts), that chained the splash screen behind one
-    // ~30s refresh per operation for minutes. Failing fast lets the shell
+    // A failed refresh answers for the next window instead of re-running: see
+    // `REFRESH_FAILURE_COOLDOWN_MS` above. Failing fast lets the shell
     // bootstrap fall back and render while the account stays degraded.
     if (renewFailure && options.now() - renewFailure.at < REFRESH_FAILURE_COOLDOWN_MS) {
       return Promise.resolve<Credential>({ ok: false, detail: renewFailure.detail })
@@ -563,13 +565,9 @@ export function createAccountService(options: AccountServiceOptions) {
       if (startedIn !== era || !held) throw new Error("not signed in")
       const request = resolveHostedOperation(name, input)
       const fetchStarted = accountPerfNow()
-      // Stall recovery lives at this seam: reads that produce no response
-      // headers are retried once on a fresh connection, mutations keep their
-      // single attempt. See hosted-transport.ts for the live failure this
-      // absorbs (the signed bootstrap froze on the splash behind one stalled
-      // control-plane read).
+      // One bounded attempt per hosted call — see hosted-transport.ts.
       const issue = (token: string) =>
-        fetchHostedWithStallRecovery(
+        fetchHosted(
           options.fetch,
           `${held.binding.controlPlaneOrigin}${request.path}`,
           {
@@ -707,12 +705,11 @@ export function createAccountService(options: AccountServiceOptions) {
       let firstChunk = true
       let httpOkAt: number | undefined
       try {
-        // The SSE open is a read: a stalled establishment (headers never
-        // arrive) is retried once on a fresh connection instead of sitting
-        // behind the transport's own multi-minute headers timeout. The read
-        // loop below still uses `controller`, which stays registered for
-        // logout/caller aborts for the stream's whole life.
-        const response = await fetchHostedWithStallRecovery(
+        // The SSE open is one bounded attempt, like every other hosted call —
+        // see hosted-transport.ts. The read loop below still uses
+        // `controller`, which stays registered for logout/caller aborts for
+        // the stream's whole life.
+        const response = await fetchHosted(
           options.fetch,
           `${held.binding.controlPlaneOrigin}${request.path}`,
           {

@@ -112,6 +112,26 @@ surfaced the rest of the story and passed end to end:
 - Retained Convex turn adapter, producer provenance, and the other checkpoint
   P1s below remain as before.
 
+## Follow-up: the retry layers above were removed once their causes were fixed
+
+The stall-abort-retry remedies described above were corrective code layered on
+top of three root causes, each since fixed at its own owner:
+
+1. The hosted Worker could memoize an unsettled composition — fixed by
+   `packages/claxedo-server/src/deployments/hosted-workerd/settled-composition-cache.ts`.
+2. The browser path stalled on HTTP/3 — the zone owner disabled it.
+3. Node's keep-alive pool could reuse a poisoned socket — fixed by
+   `no-reuse-fetch.ts`, which never reuses a connection at all.
+
+With all three fixed, a second attempt on a fresh connection no longer had a
+failure mode to recover from — it only risked applying a mutation twice. The
+token transport (`electron-seams.ts`) and the hosted-request transport
+(`hosted-transport.ts`, `account-service.ts`) now make exactly one attempt per
+request, bounded by a single deadline (shared mechanics in
+`bounded-fetch.ts`), and report a clear terminal error instead of retrying.
+`no-reuse-fetch.ts` stays — it is the fix, not a workaround. See each file's
+header comment for the design invariant that replaced the incident narrative.
+
 ## Why this checkpoint exists
 
 The user asked to pause implementation, publish an honest done/pending report, and push the branch so another agent can review and continue. This document records the current code state and the adversarial review findings. It is not a release declaration.

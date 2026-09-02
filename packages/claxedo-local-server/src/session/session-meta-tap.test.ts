@@ -4,7 +4,15 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { globalBus, type GlobalEvent } from "@claxedo/server-core/platform/runtime/lib/bus"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "./session-meta-tap"
+
+/** Captures every `globalBus` frame published while the test runs. */
+function watchGlobalBus() {
+  const seen: GlobalEvent[] = []
+  const unsubscribe = globalBus.subscribe((event) => seen.push(event))
+  return { seen, unsubscribe }
+}
 
 /**
  * Request-level, on purpose.
@@ -30,7 +38,11 @@ afterEach(() => {
   rmSync(dataDir, { recursive: true, force: true })
 })
 
-function mount(store: { put_session_meta: ReturnType<typeof vi.fn>; delete_session_meta: ReturnType<typeof vi.fn> }) {
+function mount(store: {
+  put_session_meta: ReturnType<typeof vi.fn>
+  delete_session_meta: ReturnType<typeof vi.fn>
+  session_meta: ReturnType<typeof vi.fn>
+}) {
   const app = new Hono()
   app.use(sessionMetaProjectionTap(store as never))
   // Stands in for the workspace runtime proxy, which answers these itself.
@@ -41,10 +53,11 @@ function mount(store: { put_session_meta: ReturnType<typeof vi.fn>; delete_sessi
   return app
 }
 
-function store() {
+function store(meta?: Record<string, unknown>) {
   return {
     put_session_meta: vi.fn(async (_id: string, _meta: Record<string, unknown>) => {}),
     delete_session_meta: vi.fn(async (_id: string) => {}),
+    session_meta: vi.fn(async (_id: string) => meta),
   }
 }
 
@@ -73,6 +86,65 @@ describe("session meta projection tap", () => {
 
     expect(projection.delete_session_meta).toHaveBeenCalledWith("ses_1")
     expect(projection.put_session_meta).not.toHaveBeenCalled()
+  })
+
+  test("publishes session.deleted on globalBus, the way the desktop's session list already consumes", async () => {
+    // The live defect: this same relay-shaped surface publishes
+    // `session.lifecycle` `creating`/`created` for a new session
+    // (`packages/workspace-runtime/src/routes/session-core.ts`) but nothing at
+    // all for a delete, so a session removed from the web stayed in the
+    // desktop's sidebar. `session.deleted` is the native-opencode-shaped event
+    // the sidebar's reducer already switches on
+    // (`packages/claxedo-app/src/features/session/data/sync/session-list-events.ts`).
+    const projection = store({ directory: "/work", parentID: undefined })
+    const bus = watchGlobalBus()
+    try {
+      await mount(projection).request("http://localhost/session/ses_1?directory=%2Fwork", { method: "DELETE" })
+    } finally {
+      bus.unsubscribe()
+    }
+
+    const published = bus.seen.find((event) => event.payload.type === "session.deleted")
+    expect(published).toMatchObject({
+      directory: "/work",
+      payload: { type: "session.deleted", properties: { info: { id: "ses_1" } } },
+    })
+  })
+
+  test("keeps the visible session count when a deleted session was a subsession", async () => {
+    // The sidebar only decrements its total for a top-level session; a
+    // subsession's `parentID` must survive into the event or every reply
+    // thread deletion would undercount the list.
+    const projection = store({ directory: "/work", parentID: "ses_parent" })
+    const bus = watchGlobalBus()
+    try {
+      await mount(projection).request("http://localhost/session/ses_1?directory=%2Fwork", { method: "DELETE" })
+    } finally {
+      bus.unsubscribe()
+    }
+
+    const published = bus.seen.find((event) => event.payload.type === "session.deleted")
+    expect(published).toMatchObject({
+      payload: { properties: { info: { id: "ses_1", parentID: "ses_parent" } } },
+    })
+  })
+
+  test("never fails the response when the delete publish throws", async () => {
+    const projection = store()
+    const unsubscribe = globalBus.subscribe(() => {
+      throw new Error("no subscriber to see this")
+    })
+    let response: Response
+    try {
+      response = await mount(projection).request("http://localhost/session/ses_1?directory=%2Fwork", {
+        method: "DELETE",
+      })
+    } finally {
+      unsubscribe()
+    }
+
+    expect(response.status).toBe(200)
+    expect(projection.delete_session_meta).toHaveBeenCalledWith("ses_1")
   })
 
   test("records nothing for a failed request", async () => {

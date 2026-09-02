@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from "hono"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { SessionProjectionStore } from "@claxedo/server-core/authority/session-projection"
+import { globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 
 /**
  * Records local session metadata as sessions are created, renamed, and deleted.
@@ -16,9 +17,18 @@ import type { SessionProjectionStore } from "@claxedo/server-core/authority/sess
  *
  * Best-effort by construction: recording never blocks the response and never
  * changes it. A failure here costs a stale session list, not a failed request.
+ *
+ * A delete ALSO publishes `session.deleted` on `globalBus` (the native-opencode
+ * compat envelope claxedo-app's session list already reconciles by, on the
+ * `/global/event` stream every local/unsigned workspace uses). Creation
+ * publishes its own `session.lifecycle` notice from
+ * `packages/workspace-runtime/src/routes/session-core.ts`; deletion has no
+ * matching call anywhere in that route, so a session removed through this same
+ * relay-shaped surface (by a web client, or by `DELETE /workspaces/:id/session/:sid`)
+ * never told a desktop watching this workspace, and its sidebar kept the row.
  */
 export function sessionMetaProjectionTap(
-  projectionStore: Pick<SessionProjectionStore, "put_session_meta" | "delete_session_meta">,
+  projectionStore: Pick<SessionProjectionStore, "put_session_meta" | "delete_session_meta" | "session_meta">,
 ): MiddlewareHandler {
   return async (c, next) => {
     await next()
@@ -42,7 +52,27 @@ export function sessionMetaProjectionTap(
       if (isDelete) {
         const sessionId = sessionMatch?.[1]
         if (!sessionId) return
-        await projectionStore.delete_session_meta(decodeURIComponent(sessionId))
+        const decodedId = decodeURIComponent(sessionId)
+        // Read before deleting: once the row is gone, nothing here can still
+        // answer which directory or parent it belonged to, and the sidebar
+        // needs both — the directory to address the right per-directory
+        // cache, the parent to know a subsession's deletion must not change
+        // the visible session count.
+        const meta = await projectionStore.session_meta(decodedId).catch(() => undefined)
+        await projectionStore.delete_session_meta(decodedId)
+        globalBus.publish({
+          directory: meta?.directory ?? directory,
+          payload: {
+            type: "session.deleted",
+            properties: {
+              info: {
+                id: decodedId,
+                ...(meta?.parentID ? { parentID: meta.parentID } : {}),
+                ...(meta?.directory ? { directory: meta.directory } : {}),
+              },
+            },
+          },
+        })
         return
       }
       const body = (await res

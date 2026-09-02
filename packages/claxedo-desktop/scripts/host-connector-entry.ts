@@ -146,12 +146,15 @@ export function runHostConnectorChild(port: ChildPort) {
    * The enrollment handshake, run after the bootstrap has already been
    * answered.
    *
-   * Every step here is a control-plane POST proxied through Electron main, and
-   * this deployment's edge can withhold a response on a warm connection for
-   * longer than the supervisor's bootstrap budget. Awaited inline it made one
-   * stalled request look like a dead child. The outcome reaches the parent on
-   * the `status` channel instead — the same channel `onError`, the re-share
-   * loop and every later heartbeat transition already use.
+   * Every step here is a control-plane POST proxied through Electron main,
+   * each individually bounded by the account layer's own per-request
+   * deadline — a bound wide enough that awaiting the whole handshake inline,
+   * before answering bootstrap, would make a merely slow (not stuck) chain of
+   * calls look like a dead child to the supervisor's much tighter startup
+   * budget. So bootstrap answers first, and this handshake's outcome reaches
+   * the parent asynchronously on the `status` channel instead — the same
+   * channel `onError`, the re-share loop and every later heartbeat transition
+   * already use.
    */
   const enroll = async (message: Extract<HostConnectorParentMessage, { type: "bootstrap" }>) => {
     const active = connector
@@ -214,6 +217,13 @@ export function runHostConnectorChild(port: ChildPort) {
         })
       },
       onServing: (tunnel) => send({ type: "serving", tunnel: tunnel ?? null }),
+      // A timer-driven heartbeat renews the lease with nobody on this side
+      // waiting for it — the parent's copy of the status only advances when
+      // told. Push the fresh snapshot (renewed `expires_at`, reconciled
+      // shares) every time, not only on the request/response paths below.
+      onLeaseRenewed: () => {
+        if (connector) send({ type: "status", status: snapshot() })
+      },
     })
     // Bootstrapped means "this process is alive and holds its machine
     // identity", not "the enrollment network calls succeeded". The caller

@@ -510,7 +510,7 @@ describe("bound desktop account lifecycle", () => {
 
     await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
     // Boot issues hosted operations serially; each must NOT wait out another
-    // full refresh against a deployment already known to be stalling.
+    // full refresh against a deployment already known to be failing.
     await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
     await expect(service.run("org.list")).rejects.toThrow("could not renew the session")
     expect(refreshAttempts).toBe(1)
