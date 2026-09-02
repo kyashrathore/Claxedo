@@ -895,7 +895,16 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     const who = await this.requirePrincipal(auth)
     const sessionId = requireText(args.sessionId, "sessionId")
     const workspaceId = requireText(args.workspaceId, "workspaceId")
-    const session = await this.requireSessionAccess(who, sessionId, workspaceId, "read")
+    const session = await this.requireSessionAccess(who, sessionId, workspaceId, "read").catch(async (err) => {
+      // A session the control plane does not hold — one a machine created in
+      // a user-hosted workspace and never registered — has no shares here and
+      // none to manage. That is a definite answer for anyone who can read the
+      // workspace; only a caller without workspace access is denied.
+      if (!(err instanceof ControlPlaneAuthError)) throw err
+      await this.requireWorkspaceAccess(who, workspaceId, "read")
+      return undefined
+    })
+    if (!session) return { can_manage_shares: false, grants: [], participants: [], teams: [] }
     const canManage = !!(await this.database
       .prepare(
         `

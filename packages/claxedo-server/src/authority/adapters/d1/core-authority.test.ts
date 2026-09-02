@@ -308,6 +308,18 @@ describe("composed Better Auth + D1 authority", () => {
       teams: [{ team_id: defaultTeam.team_id, is_shared: true }],
     })
 
+    // A session the control plane does not hold (created on a machine, never
+    // registered) has no shares here: a workspace member gets a definite empty
+    // answer, and only a caller without workspace access is denied.
+    await expect(authority.listSessionShares!(alice, {
+      sessionId: "ses_created_on_the_machine",
+      workspaceId: "ws_team_sharing",
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    await expect(authority.listSessionShares!(outsider, {
+      sessionId: "ses_created_on_the_machine",
+      workspaceId: "ws_team_sharing",
+    })).rejects.toMatchObject({ code: "workspace_authorization_denied" })
+
     await authority.recordRuntimeAccessToken(bob, {
       jti: "jti_team_bob",
       workspaceId: "ws_team_sharing",

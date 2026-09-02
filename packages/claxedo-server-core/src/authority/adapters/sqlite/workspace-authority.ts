@@ -2000,12 +2000,15 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       const workspace = workspaceByPublicId(db, args.workspaceId)
-      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
-      if (!workspace || !session || session.workspace_id !== args.workspaceId || session.deleted_at) {
-        throw new Error("Session not found")
-      }
+      if (!workspace || workspace.deleted_at) throw new Error("Session not found")
       const workspaceRole = authorizeWorkspaceForUser(db, workspace, who, "read")
       if (!workspaceRole) throw new Error("session_share_admin_required")
+      const session = db.prepare(`SELECT * FROM session_history WHERE session_id = ?`).get(args.sessionId) as SessionRow | undefined
+      // A session this authority does not hold has no shares here and none to
+      // manage — a definite answer for a workspace reader, not an error.
+      if (!session || session.workspace_id !== args.workspaceId || session.deleted_at) {
+        return { can_manage_shares: false, grants: [], participants: [], teams: [] }
+      }
       const isOrgAdmin = orgAdminForUser(db, who, workspace.org_id)
       const canManageShares = session.creator_actor_id === who.token_identifier
         || isOrgAdmin

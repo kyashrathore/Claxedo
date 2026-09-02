@@ -203,10 +203,16 @@ describe("sqlite Org→Team + session share", () => {
       sessionId: "ses_private",
       workspaceId: "ws_team_share",
     })).rejects.toThrow("session_share_admin_required")
+    // A session this authority does not hold has no shares: a workspace reader
+    // gets a definite empty answer; a stranger to the workspace is refused.
     await expect(authority.listSessionShares!(alice, {
       sessionId: "ses_missing",
       workspaceId: "ws_team_share",
-    })).rejects.toThrow("Session not found")
+    })).resolves.toEqual({ can_manage_shares: false, grants: [], participants: [], teams: [] })
+    await expect(authority.listSessionShares!(signedAuth("stranger"), {
+      sessionId: "ses_missing",
+      workspaceId: "ws_team_share",
+    })).rejects.toThrow("session_share_admin_required")
 
     db().prepare(`UPDATE org_memberships SET role = 'admin' WHERE org_id = ? AND token_identifier = ?`)
       .run(org.org_id, bob.user.tokenIdentifier)
