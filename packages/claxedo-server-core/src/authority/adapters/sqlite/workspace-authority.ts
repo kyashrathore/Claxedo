@@ -215,6 +215,19 @@ async function verifyHostSignature(input: {
   }
 }
 
+/**
+ * A user-hosted workspace exists in the inventory exactly as long as a machine
+ * is assigned to serve it: unsharing it or revoking its machine retires the
+ * row, and sharing it again revives the same record. Cloud rows are never
+ * touched here — their lifetime is the sandbox's.
+ */
+function retireUserHostedWorkspaceSql(where: string) {
+  return `
+    UPDATE workspaces SET deleted_at = ?, updated_at = ?
+    WHERE access = 'user-hosted' AND deleted_at IS NULL AND ${where}
+  `
+}
+
 function refuseCloudWorkspace(workspace: { backing?: unknown; access?: unknown }) {
   if (workspace.backing === "cloud-vm" || workspace.access === "cloud") {
     throw new Error("workspace_backing_conflict: cannot attach a local host link to a cloud workspace")
@@ -1586,6 +1599,10 @@ export function createSqliteWorkspaceAuthority(
       // id), so its assignments could never become routable again — leaving
       // them would only accumulate dangling rows that a later re-share must
       // displace. The cascade keeps "revoke = nothing routable" exactly true.
+      db.prepare(retireUserHostedWorkspaceSql(`workspace_id IN (
+        SELECT workspace_id FROM host_workspace_assignments
+        WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
+      )`)).run(now, now, who.token_identifier, args.hostId ?? null, args.hostId ?? null)
       db.prepare(`
         DELETE FROM host_workspace_assignments
         WHERE owner_token_identifier = ? AND (? IS NULL OR host_id = ?)
@@ -1624,6 +1641,10 @@ export function createSqliteWorkspaceAuthority(
         const enrollment = db.prepare(`SELECT * FROM host_enrollments WHERE owner_token_identifier = ? AND host_id = ?`)
           .get(who.token_identifier, args.hostId) as HostEnrollmentRow | undefined
         if (!enrollment || enrollment.revoked_at) throw new Error("Host enrollment not found")
+        db.prepare(`
+          UPDATE workspaces SET deleted_at = NULL, updated_at = ?
+          WHERE workspace_id = ? AND access = 'user-hosted' AND deleted_at IS NOT NULL
+        `).run(now, args.workspaceId)
         const existing = workspaceByPublicId(db, args.workspaceId)
         if (existing) {
           if (existing.deleted_at || !authorizeWorkspaceForUser(db, existing, who, "admin")) throw new Error("Workspace not found")
@@ -1687,9 +1708,13 @@ export function createSqliteWorkspaceAuthority(
       const db = database()
       const who = user(auth)
       requireWorkspace(db, who, args.workspaceId, "admin")
-      const result = db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`)
-        .run(args.workspaceId)
-      return { unassigned: result.changes > 0 }
+      const now = Date.now()
+      return db.transaction(() => {
+        const result = db.prepare(`DELETE FROM host_workspace_assignments WHERE workspace_id = ?`)
+          .run(args.workspaceId)
+        db.prepare(retireUserHostedWorkspaceSql("workspace_id = ?")).run(now, now, args.workspaceId)
+        return { unassigned: result.changes > 0 }
+      })()
     },
     /** Routable host: owner-assigned AND machine-acked AND live lease. */
     async activeWorkspaceHost(auth: SignedControlPlaneAuth, args) {

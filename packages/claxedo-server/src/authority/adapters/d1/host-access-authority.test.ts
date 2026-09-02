@@ -316,6 +316,57 @@ describe("D1 host access and workspace sharing authority", () => {
     ).first()).toEqual({ display_name: "Claxedo", remote_directory: "/Users/me/test/opencode" })
   })
 
+  /**
+   * A user-hosted workspace is the share itself: unsharing retires it from the
+   * inventory, revoking the machine retires everything it served, and sharing
+   * again revives the same record instead of colliding with it.
+   */
+  test("a user-hosted workspace lives exactly as long as its host assignment", async () => {
+    const input = await setup()
+    const { alice } = await fixture(input)
+    const key = await hostKey()
+    const request = await input.hostAccess.createHostEnrollmentRequest(alice, { hostId: "machine-l" })
+    await input.hostAccess.enrollHost(alice, {
+      hostId: "machine-l",
+      publicKey: key.publicKey,
+      requestId: request.request_id,
+      signature: await key.sign(hostEnrollmentPayload({
+        hostId: "machine-l",
+        requestId: request.request_id,
+        nonce: request.nonce,
+      })),
+    })
+    const listed = async () => (await input.workspace.listWorkspaces(alice) as Array<{ workspace_id: string }>)
+      .map((row) => row.workspace_id).sort()
+
+    await input.workspace.createWorkspace(alice, {
+      workspaceId: "ws_shared",
+      orgId: "org_acme",
+      displayName: "Shared",
+      backing: "local-worktree",
+      access: "user-hosted",
+    })
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_shared", hostId: "machine-l" })
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_local", hostId: "machine-l" })
+    expect(await listed()).toEqual(["ws_cloud", "ws_local", "ws_shared"])
+
+    // Unsharing one retires exactly that one.
+    await expect(input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_shared" })).resolves.toEqual({ unassigned: true })
+    expect(await listed()).toEqual(["ws_cloud", "ws_local"])
+    await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_shared" })).rejects.toBeDefined()
+
+    // Sharing it again revives the same record, description intact.
+    await input.hostAccess.assignWorkspaceHost(alice, { workspaceId: "ws_shared", hostId: "machine-l" })
+    expect(await listed()).toEqual(["ws_cloud", "ws_local", "ws_shared"])
+    await expect(input.workspace.openWorkspace(alice, { workspaceId: "ws_shared" })).resolves.toMatchObject({
+      workspace: { access: "user-hosted", display_name: "Shared" },
+    })
+
+    // Revoking the machine retires everything it served; the fixture's cloud row is untouched.
+    await input.hostAccess.revokeHostEnrollment(alice, { hostId: "machine-l" })
+    expect(await listed()).toEqual(["ws_cloud"])
+  })
+
   test("routes a workspace through owner assignment AND the machine's acked set on a live lease", async () => {
     const input = await setup()
     const { alice, outsider } = await fixture(input)
@@ -386,10 +437,10 @@ describe("D1 host access and workspace sharing authority", () => {
     await expect(input.hostAccess.assignWorkspaceHost(outsider, { workspaceId: "ws_local", hostId: "machine-b" }))
       .rejects.toMatchObject({ code: "host_attestation_denied" })
 
-    // Unassign wins over a still-acked set: routing is intent AND consent.
+    // Unsharing retires the workspace: nothing is routable because nothing is listed.
     await input.hostAccess.unassignWorkspaceHost(alice, { workspaceId: "ws_local" })
-    expect(await input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" }))
-      .toEqual({ active: false })
+    await expect(input.hostAccess.activeWorkspaceHost(alice, { workspaceId: "ws_local" }))
+      .rejects.toMatchObject({ code: "workspace_authorization_denied" })
 
     // The lease expiring makes everything inert without touching assignments.
     input.advance(8_001)
@@ -403,6 +454,9 @@ describe("D1 host access and workspace sharing authority", () => {
       .prepare("select count(*) as n from host_workspace_assignments")
       .first<{ n: number }>()
     expect(dangling?.n).toBe(0)
+    // The machine's workspaces go with it; the fixture's cloud row stays.
+    expect((await input.workspace.listWorkspaces(alice) as Array<{ workspace_id: string }>).map((row) => row.workspace_id))
+      .toEqual(["ws_cloud"])
   })
 
   test("enrolls a machine once per canonical owner with expiry, pause, revoke, and replay resistance", async () => {

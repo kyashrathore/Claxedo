@@ -365,6 +365,28 @@ describe("workspace assignments", () => {
     expect(again.find((w) => w.workspace_id === "ws_desc")).toMatchObject({ display_name: "Claxedo", remote_directory: "/Users/me/test/opencode" })
   })
 
+  test("a user-hosted workspace lives exactly as long as its host assignment", async () => {
+    const api = authority()
+    const { hostId } = await enroll(api, { displayName: "Laptop B" })
+    const listed = async () => (await api.listWorkspaces(owner) as Array<{ workspace_id: string }>)
+      .map((row) => row.workspace_id).sort()
+
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_shared", hostId, displayName: "Shared" })
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_kept", hostId })
+    expect(await listed()).toEqual(["ws_kept", "ws_shared"])
+
+    await expect(api.unassignWorkspaceHost!(owner, { workspaceId: "ws_shared" })).resolves.toEqual({ unassigned: true })
+    expect(await listed()).toEqual(["ws_kept"])
+    await expect(api.openWorkspace(owner, { workspaceId: "ws_shared" })).rejects.toThrow()
+
+    await api.assignWorkspaceHost!(owner, { workspaceId: "ws_shared", hostId })
+    expect(await listed()).toEqual(["ws_kept", "ws_shared"])
+    expect((await api.openWorkspace(owner, { workspaceId: "ws_shared" })).workspace).toMatchObject({ display_name: "Shared" })
+
+    await api.revokeHostEnrollment!(owner, { hostId })
+    expect(await listed()).toEqual([])
+  })
+
   test("routes a workspace through owner assignment AND the machine's acked set", async () => {
     const api = authority()
     const { keys, hostId } = await enroll(api, { displayName: "Laptop B" })
@@ -457,7 +479,9 @@ describe("workspace assignments", () => {
     await expect(api.unassignWorkspaceHost!(owner, { workspaceId: "ws_alpha" }))
       .resolves.toEqual({ unassigned: true })
 
-    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toEqual({ active: false })
+    // Unsharing retires the workspace: nothing is routable because nothing is listed.
+    await expect(api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).rejects.toThrow("Workspace not found")
+    expect(await api.listWorkspaces(owner)).toEqual([])
   })
 
   test("an expired lease makes everything inert without touching assignments", async () => {
@@ -495,7 +519,9 @@ describe("workspace assignments", () => {
     const dangling = reader.prepare(`SELECT COUNT(*) AS n FROM host_workspace_assignments`).get() as { n: number }
     expect(dangling.n).toBe(0)
     expect(await api.activeHostEnrollment!(owner)).toEqual({ active: false, reason: "revoked" })
-    expect(await api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).toEqual({ active: false })
+    // The machine's workspaces go with it.
+    await expect(api.activeWorkspaceHost!(owner, { workspaceId: "ws_alpha" })).rejects.toThrow("Workspace not found")
+    expect(await api.listWorkspaces(owner)).toEqual([])
   })
 
   test("marking a second device open lands on the assignment", async () => {

@@ -198,6 +198,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     if (!enrollment || enrollment.revoked_at !== null) {
       throw new D1HostAccessAuthorityError("host_attestation_denied", "Host enrollment is unavailable")
     }
+    await this.database.prepare(`
+      update workspaces set deleted_at = null, updated_at = ?
+      where workspace_id = ? and access = 'user-hosted' and deleted_at is not null
+    `).bind(this.now(), workspaceId).run()
     let workspace = await this.workspace(workspaceId)
     if (workspace) {
       workspace = await this.requireWorkspaceAccess(who, workspaceId, "admin")
@@ -254,10 +258,14 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
     const who = await this.requirePrincipal(auth)
     const workspaceId = requireText(args.workspaceId, "workspaceId")
     await this.requireWorkspaceAccess(who, workspaceId, "admin")
-    const result = await this.database.prepare(`
-      delete from host_workspace_assignments where workspace_id = ?
-    `).bind(workspaceId).run()
-    return { unassigned: changes(result) > 0 }
+    const now = this.now()
+    const [result] = await this.database.batch([
+      this.database.prepare(`
+        delete from host_workspace_assignments where workspace_id = ?
+      `).bind(workspaceId),
+      this.database.prepare(retireUserHostedWorkspaceSql("workspace_id = ?")).bind(now, now, workspaceId),
+    ])
+    return { unassigned: changes(result!) > 0 }
   }
 
   /** Routable host: owner-assigned AND machine-acked AND live lease. */
@@ -551,6 +559,10 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       // id), so its assignments could never become routable again — leaving
       // them would only accumulate dangling rows that a later re-share must
       // displace. The cascade keeps "revoke = nothing routable" exactly true.
+      this.database.prepare(retireUserHostedWorkspaceSql(`workspace_id in (
+        select workspace_id from host_workspace_assignments
+        where owner_actor_id = ? and (? is null or host_id = ?)
+      )`)).bind(now, now, who.actorId, hostId ?? null, hostId ?? null),
       this.database.prepare(`
         delete from host_workspace_assignments
         where owner_actor_id = ? and (? is null or host_id = ?)
@@ -574,7 +586,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         now,
       ),
     ])
-    return { revoked: changes(results[0]!), runtime_tokens_revoked: changes(results[2]!) }
+    return { revoked: changes(results[0]!), runtime_tokens_revoked: changes(results[3]!) }
   }
 
   async grantWorkspaceShare(
@@ -1074,6 +1086,19 @@ function requireShareRole(role: string): "viewer" | "editor" | "admin" {
     throw new D1HostAccessAuthorityError("invalid_input", "Unknown workspace share role")
   }
   return role
+}
+
+/**
+ * A user-hosted workspace exists in the inventory exactly as long as a machine
+ * is assigned to serve it: unsharing it or revoking its machine retires the
+ * row, and sharing it again revives the same record. Cloud rows are never
+ * touched here — their lifetime is the sandbox's.
+ */
+function retireUserHostedWorkspaceSql(where: string) {
+  return `
+    update workspaces set deleted_at = ?, updated_at = ?
+    where access = 'user-hosted' and deleted_at is null and ${where}
+  `
 }
 
 function requireLocalWorkspace(workspace: WorkspaceRow) {
