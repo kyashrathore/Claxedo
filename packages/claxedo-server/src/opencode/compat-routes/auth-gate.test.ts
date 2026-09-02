@@ -194,17 +194,23 @@ describe("the gate stays inside the compat router", () => {
   // `app.route("/", sub)` re-registers the sub-app's middleware onto the PARENT
   // router, so a `.use("*", ...)` inside OpenCodeCompatRoutes would also gate
   // every parent route registered after the mount — in server.ts that is
-  // /documents, /api/control, /api/workspace, /api/claxedo/events,
-  // /internal/documents and more, several of which authenticate with something
-  // other than a control-plane bearer (installation tokens, runtime access
-  // tokens) and would start failing in signed mode. The gate is therefore
-  // registered at the compat router's own paths, and this pins that.
+  // /documents, /api/control, /api/workspace, /internal/documents and more,
+  // several of which authenticate with something other than a control-plane
+  // bearer (installation tokens, runtime access tokens) and would start failing
+  // in signed mode. The gate is therefore registered at the compat router's own
+  // paths, and this pins that.
+  //
+  // The probes below are paths the compat router does NOT own. `/global/event`,
+  // `/api/wr/events` and `/api/claxedo/events` are the compat router's own
+  // three spellings of the central bus stream, so it answers them first by
+  // design; their gating is covered by the SURFACES table above.
   function serverLikeApp() {
     const app = new Hono()
     app.get("/global/health", (c) => c.json({ mountedBeforeCompat: true }))
     app.route("/", OpenCodeCompatRoutes({ authConfig: signedConfig, verifier }))
     app.get("/documents/doc_1", (c) => c.json({ mountedAfterCompat: true }))
-    app.get("/api/claxedo/events", (c) => c.json({ mountedAfterCompat: true }))
+    app.get("/internal/documents/doc_1", (c) => c.json({ mountedAfterCompat: true }))
+    app.get("/api/workspace/ws_1", (c) => c.json({ mountedAfterCompat: true }))
     app.get("/api/control/sessions", (c) => c.json({ mountedAfterCompat: true }))
     return app
   }
@@ -221,7 +227,7 @@ describe("the gate stays inside the compat router", () => {
     expect(gates.length).toBe(handlers.size)
   })
 
-  test.each(["/documents/doc_1", "/api/claxedo/events", "/api/control/sessions"])(
+  test.each(["/documents/doc_1", "/internal/documents/doc_1", "/api/workspace/ws_1", "/api/control/sessions"])(
     "%s, mounted after the compat router, is untouched by its gate",
     async (route) => {
       const res = await serverLikeApp().request(`http://box.example${route}`)

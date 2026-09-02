@@ -1223,11 +1223,15 @@ describe("createCentralSessionRuntime", () => {
         },
       },
     })
+    // An acknowledged abort releases the session's turn admission, so the
+    // aborted generation's remaining harness frames — its `session-status:
+    // error` and `error` — are fenced and never reach the hub. The turn still
+    // settles: the abort answers `cancelled`, the prompt route returns the
+    // assistant message carrying the abort error, and the usage revision below
+    // records the stop. What the hub sees is the session and its busy status.
     expect(events.map((event) => event.payload.type)).toEqual([
       "session-info",
       "session-status",
-      "session-status",
-      "error",
     ])
     await runtime.flushUsage()
     expect(usage.at(-1)).toMatchObject({

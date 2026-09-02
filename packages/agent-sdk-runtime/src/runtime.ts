@@ -765,6 +765,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
           ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
+          // The turn's author travels with the prompt as well as with the
+          // durable turn record: a harness stamps it onto the user message it
+          // builds itself, and without it every message a harness authors is
+          // attributed to nobody.
+          ...(turn.author ? { author: turn.author } : {}),
         }
         if (activeTurnAdmissions.has(turn.sessionId)) {
           throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
