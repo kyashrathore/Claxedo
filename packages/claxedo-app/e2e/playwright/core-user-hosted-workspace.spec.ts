@@ -914,12 +914,32 @@ async function installUserHostedRuntimeMock(
     }
     if (url.pathname === "/provider/auth") return json(route, {})
 
-    if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)
-    // The usage outbox beacon fires on every boot (installUsageOutboxWakeups);
-    // an empty outbox syncs to zeros. Same contract mock-runtime serves.
+    // ---- Central boot reads (bare origin, ALWAYS) ----
+    // Each of these is issued by a mount, not by a workspace: the shell's
+    // home-directory read (`pathQuery` via `queryOptions.path(null)`,
+    // src/app/app-shell-state.ts), the central connection's health probe
+    // (`checkOpenCodeServerHealthCached`, src/app/connection/server.tsx), this
+    // machine's remote-access device list (src/platform/remote-access/
+    // http-machine-remote-access.ts) and the usage outbox beacon
+    // (`installUsageOutboxWakeups`). They belong with the bootstrap/inventory
+    // block above — central discovery, never the per-workspace runtime lane —
+    // and answering them here is what keeps behavior 3's oracle meaning "no
+    // bare RUNTIME equivalent". They are issued concurrently with the first
+    // `/api/wr/health` probe, i.e. with the very request that flips `ready`, so
+    // an unmodeled one falls through to the counter below on whichever side of
+    // that race it lands and reads as a bare runtime hit it never was.
+    if (url.pathname === "/path") {
+      return json(route, { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" })
+    }
+    if (url.pathname === "/global/health") return json(route, { healthy: true, version: "1.0.0-test" })
+    // The central is up; nothing has been published from this surface.
+    if (url.pathname === "/api/claxedo/remote-access/devices") return json(route, { devices: [] })
+    // An empty outbox syncs to zeros. Same contract mock-runtime serves.
     if (url.pathname === "/api/claxedo/usage/sync") {
       return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     }
+
+    if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)
     return json(route, { error: "unhandled request in core-user-hosted-workspace mock", path: url.pathname }, 598)
   })
 
