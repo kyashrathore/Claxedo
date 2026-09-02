@@ -232,17 +232,7 @@ describe("workspace runtime record", () => {
     ])
   })
 
-  test("desktop signed mode resolves through AccountPort workspace.resolve", async () => {
-    const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
-    const run = mock(async (operation: string, input?: Record<string, unknown>) => {
-      expect(operation).toBe("workspace.resolve")
-      expect(input).toEqual({ workspaceId: "ws_1" })
-      return {
-        workspaceId: "ws_1",
-        kind: "cloud",
-        status: "ready",
-      }
-    })
+  function signedAccountPort(run: (operation: string, input?: Record<string, unknown>) => Promise<unknown>) {
     ;(globalThis as { api?: { account: Record<string, unknown> } }).api = {
       account: {
         run,
@@ -252,10 +242,86 @@ describe("workspace runtime record", () => {
         signOut: async () => ({ status: "unsigned" }),
       },
     }
+  }
 
-    const result = await fetchWorkspaceRecord({ workspaceId: "ws_1" })
+  async function withServerFetch<T>(handler: (url: string) => Response, body: () => Promise<T>) {
+    const original = globalThis.fetch
+    globalThis.fetch = Object.assign(async (input: Parameters<typeof fetch>[0]) => handler(requestUrl(input)), {
+      preconnect: original.preconnect,
+    })
+    try {
+      return await body()
+    } finally {
+      globalThis.fetch = original
+    }
+  }
+
+  test("a signed desktop resolves a directory through its own server, never the control plane", async () => {
+    const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
+    const run = mock(async () => {
+      throw new Error("a filesystem directory belongs to the app server")
+    })
+    signedAccountPort(run)
+
+    const result = await withServerFetch(
+      (url) => {
+        expect(url).toBe("http://runtime.test/api/workspace/resolve?directory=%2FUsers%2Fme%2Frepo")
+        return Response.json({ workspaceId: "ws_local", directory: "/Users/me/repo", kind: "local" })
+      },
+      () => fetchWorkspaceRecord({ baseUrl: "http://runtime.test", directory: "/Users/me/repo" }),
+    )
+
+    expect(result).toMatchObject({ workspaceId: "ws_local", kind: "local" })
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  test("a directory the server disowns is no workspace, even on a signed desktop", async () => {
+    const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
+    const run = mock(async () => ({ workspaceId: "ws_remote", kind: "user-hosted" }))
+    signedAccountPort(run)
+
+    const result = await withServerFetch(
+      () => new Response("not found", { status: 404 }),
+      () => fetchWorkspaceRecord({ baseUrl: "http://runtime.test", directory: "/Users/me/elsewhere" }),
+    )
+
+    expect(result).toBeNull()
+    expect(run).not.toHaveBeenCalled()
+  })
+
+  test("a workspace id the server disowns resolves through AccountPort workspace.resolve", async () => {
+    const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
+    const run = mock(async (operation: string, input?: Record<string, unknown>) => {
+      expect(operation).toBe("workspace.resolve")
+      expect(input).toEqual({ workspaceId: "ws_1" })
+      return { workspaceId: "ws_1", kind: "cloud", status: "ready" }
+    })
+    signedAccountPort(run)
+
+    const result = await withServerFetch(
+      (url) => {
+        expect(url).toBe("http://runtime.test/api/workspace/resolve?workspaceId=ws_1")
+        return new Response("not found", { status: 404 })
+      },
+      () => fetchWorkspaceRecord({ baseUrl: "http://runtime.test", workspaceId: "ws_1" }),
+    )
+
     expect(result).toMatchObject({ workspaceId: "ws_1", status: "ready" })
     expect(run).toHaveBeenCalledTimes(1)
+  })
+
+  test("a workspace id the server hosts stays local on a signed desktop", async () => {
+    const { fetchWorkspaceRecord } = await import("./workspace-runtime-record")
+    const run = mock(async () => ({ workspaceId: "ws_1", kind: "user-hosted" }))
+    signedAccountPort(run)
+
+    const result = await withServerFetch(
+      () => Response.json({ workspaceId: "ws_1", directory: "/Users/me/repo", kind: "local" }),
+      () => fetchWorkspaceRecord({ baseUrl: "http://runtime.test", workspaceId: "ws_1" }),
+    )
+
+    expect(result).toMatchObject({ workspaceId: "ws_1", kind: "local" })
+    expect(run).not.toHaveBeenCalled()
   })
 
   test("options.request override bypasses AccountPort for resolve", async () => {

@@ -262,7 +262,7 @@ describe("the closed operation set", () => {
       method: "DELETE",
       path: "/api/claxedo/host/enrollments",
       body: { hostId: "someone-else" },
-      operation: "account.get",
+      operation: "account.mode",
     })
 
     const names = (operations: Array<{ name: string }>) => operations.map((operation) => operation.name)

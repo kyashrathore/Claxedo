@@ -567,7 +567,7 @@ export function createAccountService(options: AccountServiceOptions) {
       // headers are retried once on a fresh connection, mutations keep their
       // single attempt. See hosted-transport.ts for the live failure this
       // absorbs (the signed bootstrap froze on the splash behind one stalled
-      // `account.get`).
+      // control-plane read).
       const issue = (token: string) =>
         fetchHostedWithStallRecovery(
           options.fetch,

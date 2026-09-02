@@ -75,7 +75,6 @@ export type AccountState =
  * something absent fails to compile rather than at runtime.
  */
 export type HostedOperationName =
-  | "account.get"
   | "account.mode"
   | "account.compatibility"
   | "account.cliExchange"

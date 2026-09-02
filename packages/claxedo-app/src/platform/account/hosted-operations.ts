@@ -165,7 +165,6 @@ function connection(raw: unknown): DecodeResult<Record<string, unknown>> {
 }
 
 export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec> = {
-  "account.get": { safe: true, decode: object },
   "account.mode": { safe: true, decode: object },
   "account.compatibility": { safe: true, decode: object },
   // Mints a CLI session token. A replayed exchange must not mint twice — and

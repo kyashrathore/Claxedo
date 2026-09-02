@@ -50,7 +50,7 @@ describe("HostedOperationName", () => {
   test("would notice an operation the matrix does not declare", () => {
     // Mutation check: the extractor must actually read the union, not return a
     // set that trivially satisfies the subset assertion.
-    const mutated = portSource.replace(`  | "account.get"`, `  | "account.get"\n  | "hostedFetch.any"`)
+    const mutated = portSource.replace(`  | "account.mode"`, `  | "account.mode"\n  | "hostedFetch.any"`)
     const inMatrix = new Set(matrixOperations())
     expect(declaredOperations(mutated).filter((operation) => !inMatrix.has(operation))).toEqual(["hostedFetch.any"])
   })

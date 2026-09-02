@@ -4,8 +4,8 @@
  * Live Cloudflare deployments intermittently stall a request that reuses a
  * keep-alive connection: the edge delivers the request headers to the Worker
  * but response headers never come back, so the fetch sits until the transport's
- * own five-minute headers timeout. The desktop's signed bootstrap awaits
- * `account.get`, so one stalled request left the renderer on the splash screen
+ * own five-minute headers timeout. The desktop's signed bootstrap awaited one
+ * control-plane read, so one stalled request left the renderer on the splash screen
  * indefinitely. (Full audit trail: docs/handoffs/cloudflare-multiplayer-migration.md,
  * "Continuation 2026-08-31".)
  *

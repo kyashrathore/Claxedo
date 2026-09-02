@@ -50,11 +50,6 @@ export type HostedOperation = {
 }
 
 export const HOSTED_OPERATIONS = {
-  "account.get": {
-    method: "GET",
-    path: "/api/claxedo/bootstrap",
-    optionalQuery: ["harness", "scope"],
-  },
   "account.mode": { method: "GET", path: "/api/claxedo/mode" },
   "account.compatibility": { method: "GET", path: "/api/claxedo/compatibility" },
   // No idempotency key. The app registry says "the idempotency key for that

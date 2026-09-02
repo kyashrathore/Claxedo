@@ -820,7 +820,6 @@ function contractDocumentsBackend(): DocumentsRouteBackend<ContractDocumentHandl
  * before its decoder is reached. Three did.
  */
 const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
-  "account.get": {},
   "account.mode": {},
   "account.compatibility": {},
   "account.cliExchange": { code: "device_code_1" },

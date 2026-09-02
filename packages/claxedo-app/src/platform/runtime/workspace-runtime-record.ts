@@ -1,5 +1,6 @@
 import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, normalizeUrl } from "@/platform/api/api"
-import { hostedControlCall } from "@/platform/account/hosted-control-call"
+import { signedAccountRun } from "@/platform/account/hosted-control-call"
+import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -82,36 +83,36 @@ export type WorkspaceRecordScope = {
 }
 
 /**
- * One raw read of the record from the control plane. `null` means "no
- * workspace for this scope" (the resolve route's 404); any other bad status
- * throws, so a transient failure is never cached as a real "no workspace".
+ * One raw read of the record. The app server owns every filesystem directory it
+ * serves and every workspace it hosts, so a scope resolves there first: on the
+ * machine that hosts a shared workspace, that workspace is local (the relay
+ * exists for other machines). A workspace id the server disowns (404) belongs
+ * to the control plane, reached through the desktop AccountPort when signed
+ * in; a directory never leaves the server. `null` means "no workspace for this
+ * scope" anywhere; any other bad status throws, so a transient failure is
+ * never cached as a real "no workspace".
  */
 export async function fetchWorkspaceRecord(input: WorkspaceRecordScope): Promise<WorkspaceRuntimeSnapshot | null> {
-  // Custom request (tests) keeps the HTTP path. Desktop AccountPort otherwise.
-  if (!input.request) {
-    const workspaceId = input.workspaceId
-      ?? workspaceIdFromRef(input.directory)
-      ?? localWorkspaceAssociationId(input.directory)
-    const params: Record<string, unknown> = {}
-    // Mirror workspaceResolveUrl: directory only when not identified by id.
-    if (input.directory && !workspaceId) params.directory = input.directory
-    if (workspaceId) params.workspaceId = workspaceId
-    if (input.create) params.create = true
-    try {
-      return await hostedControlCall<WorkspaceRuntimeSnapshot | null>(
-        "workspace.resolve",
-        params,
-        async () => fetchWorkspaceRecordHttp(input),
-      )
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err)
-      if (/operation "workspace\.resolve" failed: 404\b/.test(message) || /\bfailed: 404\b/.test(message)) {
-        return null
-      }
-      throw err
+  const served = await fetchWorkspaceRecordHttp(input)
+  if (served || input.request) return served
+  const workspaceId = input.workspaceId
+    ?? workspaceIdFromRef(input.directory)
+    ?? localWorkspaceAssociationId(input.directory)
+  if (!workspaceId) return null
+  const run = await signedAccountRun()
+  if (!run) return null
+  try {
+    return decodeHostedResult<WorkspaceRuntimeSnapshot | null>(
+      "workspace.resolve",
+      await run("workspace.resolve", { workspaceId, ...(input.create ? { create: true } : {}) }),
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    if (/operation "workspace\.resolve" failed: 404\b/.test(message) || /\bfailed: 404\b/.test(message)) {
+      return null
     }
+    throw err
   }
-  return fetchWorkspaceRecordHttp(input)
 }
 
 async function fetchWorkspaceRecordHttp(input: WorkspaceRecordScope): Promise<WorkspaceRuntimeSnapshot | null> {

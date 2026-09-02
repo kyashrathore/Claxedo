@@ -1,7 +1,38 @@
-import { describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, mock, test } from "bun:test"
 import { bootstrapInitialShell, fetchShellBootstrap } from "./shell-bootstrap"
 
+afterEach(() => {
+  delete (globalThis as { api?: unknown }).api
+})
+
 describe("fetchShellBootstrap", () => {
+  test("a signed desktop takes the shell from its own server, not the account port", async () => {
+    const run = mock(async () => {
+      throw new Error("the app server owns its shell bootstrap")
+    })
+    ;(globalThis as { api?: { account: Record<string, unknown> } }).api = {
+      account: {
+        run,
+        state: async () => ({ status: "signed" }),
+        onState: () => () => undefined,
+        signIn: async () => ({ status: "signed" }),
+        signOut: async () => ({ status: "unsigned" }),
+      },
+    }
+
+    const result = await fetchShellBootstrap({
+      baseUrl: "http://127.0.0.1:3101",
+      request: Object.assign(async () => Response.json({
+        healthy: true,
+        path: { home: "/Users/test", state: "/state", config: "/config", worktree: "", directory: "" },
+        project: [{ id: "project-local", worktree: "/repo", name: "repo", workspaces: { ws_local: { id: "ws_local", kind: "local" } } }],
+      }), { preconnect: fetch.preconnect }),
+    })
+
+    expect(result?.project[0]?.id).toBe("project-local")
+    expect(run).not.toHaveBeenCalled()
+  })
+
   test("requests only the lightweight shell projection", async () => {
     let requestUrl = ""
     const result = await fetchShellBootstrap({

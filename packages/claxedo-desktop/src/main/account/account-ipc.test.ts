@@ -249,9 +249,9 @@ describe("operation channels", () => {
     // channel does — otherwise the closed set is decoration.
     const h = harness()
 
-    h.invoke(hostedOperationChannel("workspace.checkpoints.list"), { id: "ws_1", operation: "account.get" })
+    h.invoke(hostedOperationChannel("workspace.checkpoints.list"), { id: "ws_1", operation: "account.mode" })
 
-    expect(h.calls).toEqual([{ name: "workspace.checkpoints.list", input: { id: "ws_1", operation: "account.get" } }])
+    expect(h.calls).toEqual([{ name: "workspace.checkpoints.list", input: { id: "ws_1", operation: "account.mode" } }])
   })
 
   test("pass an empty object when the renderer sends nothing", async () => {
@@ -259,9 +259,9 @@ describe("operation channels", () => {
     // reads as a crash rather than a bad call.
     const h = harness()
 
-    await h.invoke(hostedOperationChannel("account.get"))
+    await h.invoke(hostedOperationChannel("account.mode"))
 
-    expect(h.calls[0]).toEqual({ name: "account.get", input: {} })
+    expect(h.calls[0]).toEqual({ name: "account.mode", input: {} })
   })
 
   test("return whatever the service decoded", async () => {

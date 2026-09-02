@@ -100,7 +100,6 @@ is the authoritative source for this column.
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
-| `account.get` | `features/settings/ui/account-section.tsx` | `GET /api/claxedo/bootstrap` | unary | safe | Sanitized identity/org only. The renderer receives display state, never a token. |
 | `account.mode` | `features/settings/ui/account-section.tsx` | `GET /api/claxedo/mode` | unary | safe | Deployment posture; drives which hosted surfaces render. |
 | `account.compatibility` | `app/boot/data/bootstrap-orchestrator.ts` | `GET /api/claxedo/compatibility` | unary | safe | Client/server version gate. |
 | `account.cliExchange` | `app/routes/cli-login-token.ts` | `POST /api/auth/cli/exchange` | unary | unsafe | Mints a CLI session token. A replayed exchange must not mint twice, and nothing stops it: the route mints from the bearer and never reads the request body, so each call is a fresh separately-revocable pair. Refused to the renderer entirely (`RENDERER_WITHHELD_OPERATIONS`), because the result is itself a credential. |

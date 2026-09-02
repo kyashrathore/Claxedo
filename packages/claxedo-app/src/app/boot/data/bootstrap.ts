@@ -34,8 +34,6 @@ import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { signedAccountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { synchronizeServiceCatalogFromBootstrap } from "@/app/composition/service-contributions"
 
@@ -125,15 +123,6 @@ function opencodeProviderUrl(input: { serverUrl?: string; harnessType?: string; 
 
 async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, harnessType?: string): Promise<Boot | undefined> {
   try {
-    const run = await signedAccountRun()
-    // Desktop signed mode: renderer has no bearer — bootstrap is account.get.
-    if (run) {
-      const data = decodeHostedResult<unknown>(
-        "account.get",
-        await run("account.get", harnessType ? { harness: harnessType } : {}),
-      )
-      return isBoot(data) ? data : undefined
-    }
     const res = await fetchFn(claxedoBootstrapUrl({ serverUrl: baseUrl, harnessType }), {
       headers: { Accept: "application/json" },
       // Cookies exist only on the hosted cookie product. The loopback daemon

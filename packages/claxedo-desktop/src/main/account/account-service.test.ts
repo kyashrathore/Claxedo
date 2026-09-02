@@ -129,9 +129,9 @@ describe("bound desktop account lifecycle", () => {
     const h = harness({ store: memoryStore(CREDENTIAL) })
     await h.service.restore()
 
-    expect(await h.service.run("account.get")).toEqual({ ok: true })
+    expect(await h.service.run("account.mode")).toEqual({ ok: true })
     expect(h.auth.validates()).toBe(2)
-    expect(h.requests[0]?.url).toBe("https://core.example/api/claxedo/bootstrap")
+    expect(h.requests[0]?.url).toBe("https://core.example/api/claxedo/mode")
     expect(h.requests[0]?.init.headers.authorization).toBe("Bearer at_1")
     expect(JSON.stringify(h.service.state())).not.toContain("at_1")
     expect(JSON.stringify(h.service.state())).not.toContain("rt_1")
@@ -146,7 +146,7 @@ describe("bound desktop account lifecycle", () => {
     const h = harness({ store: memoryStore(CREDENTIAL), auth: selectedAuth })
 
     await h.service.restore()
-    await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
+    await expect(h.service.run("account.mode")).rejects.toThrow("not signed in")
     expect(h.store.held()).toBeUndefined()
     expect(h.store.rejected).toEqual(["configuration changed"])
     expect(h.requests).toEqual([])
@@ -165,7 +165,7 @@ describe("bound desktop account lifecycle", () => {
     await h.service.restore()
     expect(h.service.state()).toMatchObject({ status: "unavailable" })
     expect(h.store.held()).toBeDefined()
-    await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
+    await expect(h.service.run("account.mode")).rejects.toThrow("not signed in")
   })
 
   /**
@@ -187,14 +187,14 @@ describe("bound desktop account lifecycle", () => {
     })
 
     await h.service.restore()
-    await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
+    await expect(h.service.run("account.mode")).rejects.toThrow("not signed in")
     // Fail closed — but the credential itself was never in question.
     expect(h.service.state()).toMatchObject({ status: "unavailable" })
     expect(h.store.held(), "the credential is intact — nothing rejected it").toBeDefined()
     expect(h.store.rejected).toEqual([])
 
     reachable = true
-    await expect(h.service.run("account.get")).resolves.toBeDefined()
+    await expect(h.service.run("account.mode")).resolves.toBeDefined()
     expect(h.service.state(), "recovery must be observable as a return to signed").toMatchObject({ status: "signed" })
   })
 
@@ -301,14 +301,14 @@ describe("bound desktop account lifecycle", () => {
     expect(h.service.state()).toMatchObject({ status: "signed" })
 
     reachable = false
-    await expect(h.service.run("account.get")).rejects.toThrow("not signed in")
+    await expect(h.service.run("account.mode")).rejects.toThrow("not signed in")
     expect(h.service.state(), "fail closed while the deployment is unreachable, and say it is transient").toMatchObject({
       status: "unavailable",
       transient: true,
     })
 
     reachable = true
-    await expect(h.service.run("account.get")).resolves.toBeDefined()
+    await expect(h.service.run("account.mode")).resolves.toBeDefined()
     expect(h.service.state(), "the session must return without a new sign-in").toMatchObject({ status: "signed" })
   })
 
@@ -334,7 +334,7 @@ describe("bound desktop account lifecycle", () => {
     })
 
     await h.service.restore()
-    await expect(h.service.run("account.get")).resolves.toMatchObject({ ok: true })
+    await expect(h.service.run("account.mode")).resolves.toMatchObject({ ok: true })
     expect(seenTokens.length, "the retired token, then the renewed one").toBe(2)
     expect(h.service.state(), "a recoverable 401 must not sign the user out").toMatchObject({ status: "signed" })
   })
@@ -346,7 +346,7 @@ describe("bound desktop account lifecycle", () => {
     })
 
     await h.service.restore()
-    await expect(h.service.run("account.get")).rejects.toThrow("session rejected")
+    await expect(h.service.run("account.mode")).rejects.toThrow("session rejected")
     expect(h.service.state()).toMatchObject({ status: "unavailable", reason: "revoked" })
   })
 
@@ -373,7 +373,7 @@ describe("bound desktop account lifecycle", () => {
     })
     await h.service.restore()
 
-    await Promise.all([h.service.run("account.get"), h.service.run("account.mode")])
+    await Promise.all([h.service.run("account.mode"), h.service.run("account.mode")])
     expect(selectedAuth.refreshes()).toBe(1)
     expect(h.store.held()).toMatchObject({
       binding: BINDING,
@@ -508,7 +508,7 @@ describe("bound desktop account lifecycle", () => {
     })
     await service.restore()
 
-    await expect(service.run("account.get")).rejects.toThrow("could not renew the session")
+    await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
     // Boot issues hosted operations serially; each must NOT wait out another
     // full refresh against a deployment already known to be stalling.
     await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
@@ -516,7 +516,7 @@ describe("bound desktop account lifecycle", () => {
     expect(refreshAttempts).toBe(1)
 
     clock += 21_000
-    await expect(service.run("account.get")).rejects.toThrow("could not renew the session")
+    await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
     expect(refreshAttempts).toBe(2)
   })
 
@@ -533,7 +533,7 @@ describe("bound desktop account lifecycle", () => {
     })
     await h.service.restore()
 
-    await expect(h.service.run("account.get")).rejects.toThrow("session rejected")
+    await expect(h.service.run("account.mode")).rejects.toThrow("session rejected")
     expect(h.store.held()).toBeUndefined()
     // Bounded: one renewal and one re-issue. The point of the original
     // assertion — never loop against a token the server keeps refusing —
@@ -555,7 +555,7 @@ describe("bound desktop account lifecycle", () => {
 
     // Sending no credential is a client bug, not a statement about the
     // session, so it must not cost the user their sign-in.
-    await expect(h.service.run("account.get")).rejects.toThrow("Bearer token is required")
+    await expect(h.service.run("account.mode")).rejects.toThrow("Bearer token is required")
     expect(store.held()).toBeDefined()
     expect(h.service.state()).toMatchObject({ status: "signed" })
   })
@@ -585,7 +585,7 @@ describe("bound desktop account lifecycle", () => {
     })
     await h.service.restore()
 
-    await expect(h.service.run("account.get")).resolves.toMatchObject({ ok: true })
+    await expect(h.service.run("account.mode")).resolves.toMatchObject({ ok: true })
     expect(seen.length).toBe(2)
     expect(h.service.state()).toMatchObject({ status: "signed" })
   })
