@@ -77,3 +77,20 @@ control plane that owns it).
 5. Re-run plan 148's verification and the app's architecture ratchets; add a
    ratchet that forbids new query keys under `["global", …]` and new
    `getClaxedoServerUrl()` call sites outside the placement resolver.
+
+## Execution log
+
+- 2026-09-02 E (machines), `a41b2363fa`: marketplace requests resolve the
+  focused workspace's placement through one transport owner
+  (`features/extensions/marketplace/transport.ts`); machine scope carries the
+  workspace id on the wire. Deferred, with its owner named: a remote host does
+  not serve machine-scope extension management over a per-workspace relay
+  token, because the host tunnel deliberately denies `/api/claxedo/*` (those
+  routes describe the machine, and a relayed request would inherit loopback
+  trust). Offering it needs its own authorization, most likely the owner's
+  device channel that Settings → Devices already uses, not the workspace
+  relay; owner: the relay role model / `user-hosted-surface.ts`. Diagnostics
+  dialog relabelled "This device". Documents: repository-backed documents are
+  local to the backend that indexes them by construction (`backends/local/
+  backend.ts:130-137`, `hosted/managed.ts:234-238`), so no client routing
+  change; agent-open and conflict routes are already relay-proxied.
