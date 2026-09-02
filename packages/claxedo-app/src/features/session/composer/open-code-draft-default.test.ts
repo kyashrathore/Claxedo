@@ -140,4 +140,79 @@ describe("OpenCode workspace draft defaults", () => {
       undefined,
     ])
   })
+
+  /**
+   * OpenCode has no `harness-config-options` surface — the workspace runtime and
+   * the daemon both answer that route 404 for it — so the model it resolves for
+   * itself is the connected provider catalog's own default. A workspace that
+   * remembers nothing opens on that, instead of on "Select model".
+   */
+  test("opens a workspace that remembers nothing on the model OpenCode resolved", () => {
+    const owner = controller()
+    const writes: unknown[] = []
+
+    expect(restoreOpenCodeDraftDefault({
+      controller: owner.value,
+      scope: "draft:1",
+      directory: "/repo",
+      sessionId: "new",
+      newSession: true,
+      ready: true,
+      models: [{ id: "gpt-5.5", provider: { id: "openai" } }],
+      resolvedDefault: { providerID: "openai", modelID: "gpt-5.5" },
+      write: (value) => writes.push(value),
+      writeVariant: (value) => writes.push(["variant", value]),
+    })).toBe(true)
+
+    expect(writes).toEqual([{ providerID: "openai", modelID: "gpt-5.5" }, ["variant", undefined]])
+    expect(owner.calls).toEqual([["resolve", "draft:1", {
+      supportedHarnesses: ["opencode"],
+      eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
+      declaredDefaultModel: { providerID: "openai", modelID: "gpt-5.5" },
+    }]])
+  })
+
+  test("a remembered OpenCode model outranks the resolved default", () => {
+    const model = { providerID: "anthropic", modelID: "claude-sonnet-5" }
+    const owner = controller({ model })
+    const writes: unknown[] = []
+
+    expect(restoreOpenCodeDraftDefault({
+      controller: owner.value,
+      scope: "draft:1",
+      directory: "/repo",
+      sessionId: "new",
+      newSession: true,
+      ready: true,
+      models: [
+        { id: "claude-sonnet-5", provider: { id: "anthropic" } },
+        { id: "gpt-5.5", provider: { id: "openai" } },
+      ],
+      resolvedDefault: { providerID: "openai", modelID: "gpt-5.5" },
+      write: (value) => writes.push(value),
+      writeVariant: (value) => writes.push(["variant", value]),
+    })).toBe(true)
+
+    expect(writes).toEqual([model, ["variant", undefined]])
+  })
+
+  test("a machine with no connected provider writes nothing rather than guessing", () => {
+    const owner = controller()
+    const writes: unknown[] = []
+
+    expect(restoreOpenCodeDraftDefault({
+      controller: owner.value,
+      scope: "draft:1",
+      directory: "/repo",
+      sessionId: "new",
+      newSession: true,
+      ready: true,
+      models: [],
+      write: (value) => writes.push(value),
+      writeVariant: (value) => writes.push(["variant", value]),
+    })).toBe(false)
+
+    expect(writes).toEqual([])
+    expect(owner.calls).toEqual([])
+  })
 })

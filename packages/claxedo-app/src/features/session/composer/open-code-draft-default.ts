@@ -71,9 +71,26 @@ export function writeOpenCodeDraftVariant(input: DraftInput & {
   }, input.labels)
 }
 
+/**
+ * What a new OpenCode draft opens on.
+ *
+ * OpenCode is the one harness with no `harness-config-options` surface — both
+ * the workspace runtime and the daemon answer that route 404 for it
+ * ("opencode model options are exposed through /provider, not harness config
+ * options"), so the model OpenCode would run is the provider catalog's own
+ * answer, `resolvedDefault`, rather than anything a harness probe reports.
+ *
+ * Two sources, one order, and the order IS the rule: a model this workspace
+ * remembers for OpenCode wins, and only a workspace that remembers nothing
+ * falls to the resolved default. The resolved default is SHOWN, never
+ * remembered — `writeOpenCodeDraftModel` is the only path that persists a
+ * choice, and it runs on an explicit pick.
+ */
 export function restoreOpenCodeDraftDefault(input: DraftInput & {
   ready: boolean
   models: ModelRow[]
+  /** The model OpenCode resolves for itself: the highest-ranked connected provider's default. */
+  resolvedDefault?: ModelKey
   write(model: ModelKey): void
   writeVariant(variant?: string): void
 }) {
@@ -81,7 +98,8 @@ export function restoreOpenCodeDraftDefault(input: DraftInput & {
   const snapshot = input.controller.read(input.scope)
   if (snapshot.harness !== "opencode" || snapshot.draftDefaultState !== undefined) return false
   const saved = snapshot.draftDefaultModel
-  if (!saved) return false
+  const chosen = saved ?? input.resolvedDefault
+  if (!chosen) return false
   const eligibleModels = input.models.flatMap((item) => {
     const model = { providerID: item.provider.id, modelID: item.id }
     return [model, ...Object.keys(item.variants ?? {}).map((variant) => ({ ...model, variant }))]
@@ -89,10 +107,11 @@ export function restoreOpenCodeDraftDefault(input: DraftInput & {
   const applied = input.controller.resolveDraftDefault(input.scope, {
     supportedHarnesses: ["opencode"],
     eligibleModels,
+    ...(input.resolvedDefault ? { declaredDefaultModel: input.resolvedDefault } : {}),
   })
   if (applied) {
-    input.write(saved)
-    input.writeVariant(saved.variant)
+    input.write(chosen)
+    input.writeVariant(chosen.variant)
   }
   return applied
 }

@@ -36,7 +36,6 @@ export type HarnessStoreState = {
   draftDefaultWorkspaceKey?: string
   draftDefault?: DraftDefault
   draftDefaultState?: DraftDefaultResult["state"]
-  draftDefaultWritePending?: boolean
 }
 
 export type HarnessStorePatch = Partial<HarnessStoreState>
@@ -69,7 +68,6 @@ export function initialHarnessStoreState(input: {
     configError: undefined,
     draftDefaultAuthority: scopeAuthority(input.scope),
     draftDefaultRevision: 0,
-    draftDefaultWritePending: false,
   }
 }
 

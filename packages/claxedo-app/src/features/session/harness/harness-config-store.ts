@@ -96,7 +96,6 @@ export function createHarnessConfigStore() {
     applyPatch: harnessStore.applyPatch,
     draftDefaultApplication: harnessStore.draftDefaultApplication,
     resolveDraftDefault: harnessStore.applyDraftDefault,
-    completeRememberedHarness: harnessStore.completeRememberedHarness,
     setOptionsLoading: harnessStore.setOptionsLoading,
     readState: (scope) => {
       const state = harnessStore.state(scope)

@@ -809,7 +809,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     await search.fill("Sonnet")
     const model = page
       .locator('[data-component="harness-model-picker"]')
-      .getByText(/Sonnet/i)
+      .locator('[data-slot="list-item"]', { hasText: /^Sonnet$/ })
       .first()
     await expect(model, "the real Claude catalog did not expose an explicit Sonnet model").toBeVisible({
       timeout: 15_000,

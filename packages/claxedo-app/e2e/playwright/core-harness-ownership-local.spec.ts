@@ -500,6 +500,106 @@ test.describe("core harness ownership (local) @core", () => {
     })
   }
 
+  /**
+   * The REAL native-SDK catalog, not a one-row stand-in.
+   *
+   * Captured 2026-09-02 from `query(...).supportedModels()` against the local
+   * `claude` CLI, which is what `ClaudeDriver.fetchModels`
+   * (`agent-sdk-runtime/src/harnesses/claude/driver.ts`) maps into the `model`
+   * config option. Two facts only this shape carries, and both are load-bearing:
+   * the FIRST row is the harness's own `default` sentinel, and it is the option's
+   * `currentValue` — so the harness always resolves a default the user did not
+   * choose, and every other row is a choice made ON TOP of that default.
+   */
+  const REAL_CLAUDE_SDK_MODELS = [
+    { id: "default", name: "Default (recommended)" },
+    { id: "opus[1m]", name: "Opus (1M context)" },
+    { id: "claude-fable-5[1m]", name: "Fable" },
+    { id: "sonnet", name: "Sonnet" },
+    { id: "haiku", name: "Haiku" },
+  ]
+
+  test("a native-SDK harness shows the model it resolved until the user picks one, and the pick survives a reload", async ({
+    page,
+  }) => {
+    await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: "ses_core_harness_claude_resolved_default",
+      harness: "claude-sdk",
+      harnessModels: { "claude-sdk": REAL_CLAUDE_SDK_MODELS },
+    })
+    await seedOneProject(page, DIR)
+    await openDraftPrompt(page, DIR)
+
+    const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    // Rule 1 — the harness-resolved model is what a draft with no choice shows.
+    await expect(control).toHaveAttribute("data-model", "default", { timeout: 20_000 })
+    await expect(control).toContainText(/Default \(recommended\)/i)
+
+    // Rule 2 — an explicit pick is authoritative for this (workspace, harness).
+    await control.click()
+    const picker = page.locator('[data-component="harness-model-picker"]')
+    const search = page.getByRole("textbox", { name: /Search models/i }).last()
+    await expect(search).toBeVisible({ timeout: 10_000 })
+    await search.fill("Sonnet")
+    await picker.locator('[data-slot="list-item"]', { hasText: /^Sonnet$/ }).first().click()
+    await expect(control).toHaveAttribute("data-model", "sonnet", { timeout: 10_000 })
+    await expect(control).toContainText(/Sonnet/i)
+
+    // Rule 3 — it survives a reload of the same (server, workspace, harness) scope.
+    await page.reload()
+    await page.waitForLoadState("domcontentloaded")
+    const reloaded = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    await expect(reloaded).toHaveAttribute("data-harness", "claude-sdk", { timeout: 20_000 })
+    await expect(
+      reloaded,
+      "the harness-resolved default overwrote the model the user explicitly chose",
+    ).toHaveAttribute("data-model", "sonnet", { timeout: 20_000 })
+  })
+
+  test("switching to a native-SDK harness with a slow model probe still lets the pick beat the resolved default", async ({
+    page,
+  }) => {
+    await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: "ses_core_harness_claude_slow_probe",
+      harness: "opencode",
+      harnessModels: { "claude-sdk": REAL_CLAUDE_SDK_MODELS },
+    })
+    // The real `claude` model probe is a short-lived SDK query against the CLI
+    // and takes seconds, not milliseconds (`ClaudeDriver.fetchModels` budgets
+    // MODEL_LIST_TIMEOUT_MS for it). The switcher fires the options load without
+    // awaiting it, so that latency is what separates "the harness resolved a
+    // default" from "the user picked" in wall-clock order. Registered AFTER the
+    // mock so it wins the route and falls through to the mock's own answer.
+    await page.route("**/api/claxedo/agent-config/harness/options**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500))
+      return route.fallback()
+    })
+    await seedOneProject(page, DIR)
+    await openDraftPrompt(page, DIR)
+    await expectOnlyOpenCodeModelControl(page)
+
+    // One "Claude" row: the first-party ACP rows left the picker when
+    // operator-configured ACP connections became the ACP group, and this mock
+    // deployment configures none — so the only Claude on offer is the native SDK.
+    await switchDraftHarness(page, /^Claude$/, 0)
+    const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    await expect(control).toHaveAttribute("data-harness", "claude-sdk", { timeout: 20_000 })
+    await expect(control).toHaveAttribute("data-model", "default", { timeout: 20_000 })
+
+    await control.click()
+    const picker = page.locator('[data-component="harness-model-picker"]')
+    const search = page.getByRole("textbox", { name: /Search models/i }).last()
+    await expect(search).toBeVisible({ timeout: 10_000 })
+    await search.fill("Sonnet")
+    await picker.locator('[data-slot="list-item"]', { hasText: /^Sonnet$/ }).first().click()
+    await expect(
+      control,
+      "the user's model pick did not stick over the harness-resolved default",
+    ).toHaveAttribute("data-model", "sonnet", { timeout: 10_000 })
+  })
+
   test("a newly-created busy Claude native session keeps its harness and model during the first turn", async ({
     page,
   }) => {

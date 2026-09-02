@@ -412,4 +412,65 @@ describe("harness options state — thought level", () => {
     expect(result.patch.thoughtLevels).toEqual([])
     expect(result.patch.selectedThoughtLevel).toBeUndefined()
   })
+
+  /**
+   * The REAL native-SDK answer, captured 2026-09-02 from
+   * `query(...).supportedModels()` against the local `claude` CLI — the source
+   * `ClaudeDriver.fetchModels` maps into the `model` config option. The first
+   * row is the harness's own `default` sentinel and it is the option's
+   * `currentValue`, so the harness ALWAYS names a model the user did not
+   * choose. Both rules below hang off that shape.
+   */
+  const realClaudeModelOption = {
+    id: "model",
+    name: "Model",
+    category: "model",
+    type: "select" as const,
+    currentValue: "default",
+    selectOptions: [
+      { id: "default", name: "Default (recommended)", description: "Opus 5 with 1M context \u00b7 Best for everyday, complex tasks" },
+      { id: "opus[1m]", name: "Opus (1M context)", description: "Opus 5 with 1M context \u00b7 Best for everyday, complex tasks" },
+      { id: "claude-fable-5[1m]", name: "Fable", description: "Fable 5 \u00b7 Most capable" },
+      { id: "sonnet", name: "Sonnet", description: "Sonnet 5 \u00b7 Efficient for routine tasks" },
+      { id: "haiku", name: "Haiku", description: "Haiku 4.5 \u00b7 Fastest" },
+    ],
+  }
+
+  test("a scope with no choice adopts the model the native SDK harness resolved", () => {
+    const result = applyHarnessOptionsResponse({
+      type: "claude-sdk",
+      selectedModel: "",
+      tries: 0,
+      payload: {
+        source: "harness",
+        stale: false,
+        options: [realClaudeModelOption],
+        resolvedModel: { id: "default", name: "Default (recommended)" },
+      },
+    })
+    expect(result.patch.selectedModel).toBe("default")
+    expect(result.patch.dynamicModels?.map((item) => item.id)).toEqual([
+      "default",
+      "opus[1m]",
+      "claude-fable-5[1m]",
+      "sonnet",
+      "haiku",
+    ])
+    expect(result.patch.configError).toBeUndefined()
+  })
+
+  test("the harness-resolved default never displaces a model the user already chose", () => {
+    const result = applyHarnessOptionsResponse({
+      type: "claude-sdk",
+      selectedModel: "sonnet",
+      tries: 0,
+      payload: {
+        source: "harness",
+        stale: false,
+        options: [realClaudeModelOption],
+        resolvedModel: { id: "default", name: "Default (recommended)" },
+      },
+    })
+    expect(result.patch.selectedModel).toBe("sonnet")
+  })
 })

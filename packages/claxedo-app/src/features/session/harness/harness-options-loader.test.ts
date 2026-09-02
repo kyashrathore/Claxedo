@@ -3,7 +3,6 @@ import { createHarnessOptionsLoader, type HarnessOptionsLoaderCache } from "./ha
 import type { HarnessOptionsStatePatch } from "./options-state"
 import type { HarnessType, OptionsResponse } from "./profile"
 import type { DraftDefaultApplication, ResolveDraftDefaultInput } from "./draft-default-policy"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
 
 const scope = "draft:/repo:route"
 
@@ -198,7 +197,6 @@ describe("harness options loader", () => {
       application: DraftDefaultApplication
       input: Omit<ResolveDraftDefaultInput, "saved">
     }> = []
-    const completed: Array<ModelKey | undefined> = []
     const loader = loaderFor({
       fetch: async () => optionsResponse({
         source: "harness",
@@ -215,10 +213,6 @@ describe("harness options loader", () => {
       draftDefaultApplication: () => captured,
       resolveDraftDefault: (application, input) => {
         resolutions.push({ application, input })
-        return true
-      },
-      completeRememberedHarness: (_scope, _type, model) => {
-        completed.push(model)
         return true
       },
     })
@@ -240,7 +234,6 @@ describe("harness options loader", () => {
         declaredDefaultModel: { providerID: "claude-acp", modelID: "sonnet" },
       },
     }])
-    expect(completed).toEqual([{ providerID: "claude-acp", modelID: "sonnet" }])
   })
 
   test("keeps a captured default unresolved while options are stale", async () => {
@@ -418,7 +411,6 @@ function loaderFor(input: {
     application: DraftDefaultApplication,
     input: Omit<ResolveDraftDefaultInput, "saved">,
   ) => boolean
-  completeRememberedHarness?: (scope: string, type: HarnessType, model?: ModelKey) => boolean
   readState?: () => { readiness?: string; configError?: string } | undefined
 }) {
   return createHarnessOptionsLoader<{ name?: string }>({
@@ -429,7 +421,6 @@ function loaderFor(input: {
     applyPatch: (_scope, patch) => patches.push(patch),
     draftDefaultApplication: input.draftDefaultApplication,
     resolveDraftDefault: input.resolveDraftDefault,
-    completeRememberedHarness: input.completeRememberedHarness,
     setOptionsLoading: (_scope, value) => loading.push(value),
     readState: input.readState,
     errorMessage: input.errorMessage ?? (async (_res, fallback) => fallback),

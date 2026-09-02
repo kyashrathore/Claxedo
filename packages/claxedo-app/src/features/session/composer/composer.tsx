@@ -54,6 +54,7 @@ import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
 import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
+import { firstConnectedModel } from "./model-strategy"
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
 import { createComposerEngine } from "./v2/engine"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
@@ -155,9 +156,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }),
     hydrate: () => { void local.model.hydrate() },
   }))
+  // The model OpenCode itself would run: the default of the highest-ranked
+  // connected provider. A draft in a workspace that remembers nothing opens on
+  // it, so a fresh profile reads a concrete model instead of "Select model".
+  const openCodeResolvedDefault = createMemo(() =>
+    firstConnectedModel({ connected: providers.connected(), defaults: providers.default() }))
   createEffect(() => restoreOpenCodeDraftDefault({
     controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
-    newSession: isNewSessionVariant(), ready: local.model.ready(), models: local.model.list(), write: local.model.set, writeVariant: local.model.variant.set,
+    newSession: isNewSessionVariant(), ready: local.model.ready(), models: local.model.list(),
+    resolvedDefault: openCodeResolvedDefault(), write: local.model.set, writeVariant: local.model.variant.set,
   }))
   const harnessPending = createMemo(() => {
     const nextScope = scope()
