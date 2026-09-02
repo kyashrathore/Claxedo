@@ -66,31 +66,6 @@ export function harnessModelConfigurable(harness: SessionHarness) {
   return harness.access === "acp" || isNativeSdkHarnessId(harness.id)
 }
 
-/**
- * Why an `access: "acp"` identity cannot run here, or `undefined` when it can.
- *
- * An ACP harness id is a REFERENCE into the operator's accepted ACP connection
- * registry (`UserAgentConfig.acp`); that registry owns the command, so the
- * workspace runtime refuses any ACP identity it holds no applied descriptor
- * for. Checking the same registry where the identity ENTERS the server keeps
- * the refusal legible: without it a harness naming an unknown connection is
- * accepted, and every later runtime call fails with an opaque transport error
- * that names neither the connection nor what to do about it.
- */
-export function acpConnectionUnavailable(
-  harness: SessionHarness,
-  config: { acp?: Record<string, { enabled?: boolean }> },
-) {
-  if (harness.access !== "acp") return
-  const connection = config.acp?.[harness.id]
-  if (!connection) {
-    return `ACP connection "${harness.id}" is not configured. Add it under ACP connections before selecting it.`
-  }
-  if (connection.enabled === false) {
-    return `ACP connection "${harness.id}" is disabled. Enable it under ACP connections before selecting it.`
-  }
-}
-
 export function harnessConfigOptionsUnavailable(harness: SessionHarness) {
   if (harness.id === "opencode") return "opencode model options are exposed through /provider, not harness config options"
   if (harness.id === "pi") return "pi does not expose harness config options"
