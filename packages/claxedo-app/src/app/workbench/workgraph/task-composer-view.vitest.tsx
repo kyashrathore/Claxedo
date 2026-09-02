@@ -23,7 +23,8 @@ const mocks = vi.hoisted(() => ({
   })),
 }))
 
-vi.mock("@tanstack/solid-query", () => ({
+vi.mock("@tanstack/solid-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/solid-query")>()),
   useQuery: () => ({ data: [{ worktree: "/repo/main", name: "Main" }] }),
 }))
 vi.mock("@/app/integrations/sync/query-options", () => ({
