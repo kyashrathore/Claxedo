@@ -28,7 +28,7 @@ import { DataProvider } from "@/ui/session-kit-context"
 import { SessionSyncProvider } from "@/features/session/providers/session-sync"
 import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute } from "@/platform/identity/route"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import { DEFAULT_HARNESS_ID, type SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import {
@@ -153,11 +153,10 @@ function DirectoryDataProvider(props: ParentProps<{
     enabled: hydrateDirectoryAgents(),
   }))
   // The persisted model store belongs to this pane's (server, workspace) and
-  // keys its maps by harness. `session-pane-scope.tsx` puts OpenCode on the
-  // wire as an absent harness for the passive query family; the store needs the
-  // id itself, so it is read back here.
+  // keys its maps by harness — the pane's own harness id, the same one Settings
+  // names when it edits the store for this workspace.
   const modelsWorkspaceKey = createMemo(() => sdk.workspace(props.directory)?.workspaceId || props.directory)
-  const modelsHarness = createMemo(() => props.harnessType?.() ?? "opencode")
+  const modelsHarness = createMemo(() => props.harnessType?.() ?? DEFAULT_HARNESS_ID)
   const navigateToSession = (sessionID: string) => {
     props.onNavigateToSession?.(sessionID)
   }
@@ -222,6 +221,9 @@ export function DirectoryScope(props: ParentProps<{
   onSessionHref?: (sessionID: string) => string
   onSyncSession?: (sessionID: string) => void | Promise<void>
 }>) {
+  // The session-list wire convention: an ABSENT harness names the OpenCode
+  // session family. It is applied here, at the one read that speaks it;
+  // `props.harnessType` is the pane's real harness id.
   const passiveHarnessType = createMemo(() => {
     const type = props.harnessType?.()
     return type === "opencode" ? undefined : type
@@ -237,7 +239,11 @@ export function DirectoryScope(props: ParentProps<{
     if (workspaceId && isRelayBackedWorkspaceKind(kind)) return { workspaceId, kind }
     return sessionWorkspaceRuntimeRef({ directory: props.directory, sessionRef: props.sessionRef?.() })
   })
-  const dataProviderHarnessType = createMemo(() => passiveHarnessType() ?? (runtimeRef() ? "opencode" : undefined))
+  // Harness-KEYED reads (agent profiles, the model store) take the pane's
+  // harness as SessionPaneScope resolved it. A plain local directory is a
+  // normal scope with a resolved harness like any other, so its agent list is
+  // read for that harness rather than for an unknown one.
+  const dataProviderHarnessType = createMemo(() => props.harnessType?.())
   // The session cache is a `skipToken` slot (populated by refreshDirectorySessionCache,
   // not auto-fetched) — but route it through the authority anyway so it is
   // STRUCTURALLY connection-aware: a relay-backed scope only reads cache once its

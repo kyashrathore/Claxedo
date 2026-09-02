@@ -1,6 +1,6 @@
 import { createContext, createMemo, createSignal, useContext, type Accessor, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { BUILTIN_HARNESS_IDS } from "@/platform/identity/session-ref"
+import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS_ID } from "@/platform/identity/session-ref"
 import { harnessDisplayLabel } from "@/ui/harness-display"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import {
@@ -80,9 +80,10 @@ export function SettingsScopeProvider(props: ParentProps) {
     ...acp().map((row) => ({ id: row.key, label: row.label })),
   ])
   // Unselected, the surface opens on the harness this workspace was last used
-  // with — the same record a new draft in it opens on. A workspace with no
-  // history opens on the first harness the picker offers; there is no implied
-  // OpenCode.
+  // with — the same record a new draft in it opens on — and, with no history,
+  // on the same product default a new draft opens on. Settings and a pane on
+  // one workspace therefore name one harness between them, and edit one half of
+  // its per-harness model store.
   const harness = createMemo(() => {
     const selected = selectedHarness()
     if (selected && harnesses().some((option) => option.id === selected)) return selected
@@ -91,7 +92,7 @@ export function SettingsScopeProvider(props: ParentProps) {
       ? readWorkspaceHarnessDefault({ serverUrl: getClaxedoServerUrl(), workspaceKey: current.key })
       : undefined
     if (remembered && harnesses().some((option) => option.id === remembered)) return remembered
-    return BUILTIN_HARNESS_IDS[0]
+    return DEFAULT_HARNESS_ID
   })
 
   const value: SettingsScope = {

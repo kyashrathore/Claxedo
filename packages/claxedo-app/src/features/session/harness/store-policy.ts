@@ -11,7 +11,7 @@ import {
   sessionResourceAuthorityKey,
   sessionResourceAuthorityScope,
 } from "../store/session-resource-authority"
-import type { SessionRef } from "@/platform/identity/session-ref"
+import { DEFAULT_HARNESS_ID, type SessionRef } from "@/platform/identity/session-ref"
 import {
   harnessHasConfigOptions,
   pickHarness,
@@ -31,12 +31,35 @@ export const harnessScope = panePreferenceScope
 export const isDraftScope = isDraftPaneScope
 
 /**
- * The harness a scope's transient state starts on: OpenCode, the product's
- * default, stated once here. Every real answer — the workspace's draft default
- * or the session's own config — replaces it during hydration.
+ * The harness a scope's transient state starts on: the product default. Every
+ * real answer — the workspace's draft default or the session's own config —
+ * replaces it during hydration.
  */
 export function initialHarness(): HarnessType {
-  return "opencode"
+  return DEFAULT_HARNESS_ID
+}
+
+/**
+ * The harness-store scope for a pane, from the pane's own identity.
+ *
+ * A draft's transient harness state is filed under its draft surface and an
+ * existing session's under the session id — the same derivation
+ * `composerModeSnapshot` performs, kept here so a pane and the composer inside
+ * it can never read two different scopes for one surface.
+ */
+export function paneHarnessScope(input: {
+  directory?: string
+  sessionId?: string
+  surfaceId?: string
+  draftId?: string
+}) {
+  const session = input.sessionId && input.sessionId !== "new" ? input.sessionId : undefined
+  if (session) return harnessScope({ sessionId: session })
+  return harnessScope({
+    directory: input.directory,
+    surfaceId: input.surfaceId,
+    draftId: input.draftId ?? input.surfaceId,
+  })
 }
 
 export function shouldShowModelOptionsStaleWarning(input: {

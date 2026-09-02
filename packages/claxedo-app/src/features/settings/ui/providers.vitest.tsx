@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
   /** Every (scope, harness) pair the page asked a catalog for, in order. */
   requests: [] as Array<{ scope?: string; harness: string }>,
   catalogs: {} as Record<string, string[]>,
+  /** The harness the workspace's draft-default record remembers, if any. */
+  rememberedHarness: undefined as string | undefined,
 }))
 
 vi.mock("@/features/settings/app-ports", async () => {
@@ -76,7 +78,7 @@ vi.mock("@/features/settings/app-ports", async () => {
     }),
     useSDK: () => { throw new Error("no workspace SDK scope") },
     useEnabledAcpHarnesses: () => () => [],
-    readWorkspaceHarnessDefault: () => "opencode",
+    readWorkspaceHarnessDefault: () => state.rememberedHarness,
   }
 })
 
@@ -155,6 +157,7 @@ function choose(testId: string, value: string) {
 
 beforeEach(() => {
   state.requests.length = 0
+  state.rememberedHarness = "opencode"
   state.catalogs = {
     "workspace:ws_local|opencode": ["anthropic", "openai"],
     "workspace:ws_local|claude-sdk": ["claude-sdk"],
@@ -211,6 +214,30 @@ describe("Settings → Providers reads under the selected (workspace, harness)",
     choose("settings-scope-harness", "claude-sdk")
 
     await waitFor(() => expect(screen.queryByText("provider.custom.title")).toBeNull())
+  })
+
+  // A workspace nobody has picked a harness in yet is the ordinary first-run
+  // state, and it opens on the SAME harness a new draft in it opens on — so
+  // Settings and that workspace's composer edit one half of its per-harness
+  // model store, not two.
+  test("a workspace with nothing remembered opens on the product default harness", async () => {
+    state.rememberedHarness = undefined
+    mount()
+
+    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("ws_local"))
+    expect(select("settings-scope-harness").value).toBe("opencode")
+    expect(state.requests.at(-1)).toEqual({ scope: "workspace:ws_local", harness: "opencode" })
+  })
+
+  // The custom-provider entry ADDS a provider to the OpenCode registry, so an
+  // empty registry is exactly when it has to stay reachable.
+  test("the custom-provider entry still renders when the OpenCode catalog is empty", async () => {
+    state.catalogs = {}
+    mount()
+
+    await waitFor(() =>
+      expect(screen.getByText("settings.providers.catalog.empty:OpenCode|main")).toBeInTheDocument())
+    expect(screen.getByText("provider.custom.title")).toBeInTheDocument()
   })
 
   test("no catalog is ever requested without a harness", async () => {

@@ -1,4 +1,4 @@
-import { createMemo, type Accessor } from "solid-js"
+import { createMemo, createRoot, getOwner, runWithOwner, type Accessor } from "solid-js"
 import { createStore } from "solid-js/store"
 import { uniqueBy } from "remeda"
 import { createSimpleContext } from "@opencode-ai/ui/context"
@@ -149,22 +149,75 @@ export type ModelsScope = {
   scope?: Accessor<string | undefined>
 }
 
+/** One workspace's persisted model document, backed by its own storage target. */
+function createModelStoreRecord(target: ReturnType<typeof Persist.serverWorkspace>) {
+  return persisted(
+    {
+      ...target,
+      migrate: (value: unknown) => decodeModelStoreRecord(value, "opencode"),
+    },
+    createStore<ModelStoreRecord>({
+      user: {},
+      recent: [],
+      variant: {},
+    }),
+  )
+}
+
+export type ModelStoreRegistry = {
+  /** The one record for this (server, workspace), created on first ask. */
+  record: (serverUrl: string, workspaceKey: string) => ReturnType<typeof createModelStoreRecord>
+}
+
+/**
+ * The persisted model records this app session holds, one per (server, workspace).
+ *
+ * Two surfaces are routinely open on one workspace at the same time — a pane's
+ * composer and the Settings Models page — and both edit that workspace's single
+ * document, so both hold the SAME record: an edit on one is an edit on the
+ * other, and neither can overwrite the other on unmount. The registry keeps each
+ * record for the shell's lifetime, because a record outlives any one pane or
+ * dialog.
+ *
+ * The harness is deliberately NOT part of the key: it keys the maps INSIDE the
+ * record, which is what lets one workspace's harnesses keep separate visibility,
+ * variants and recents in one document.
+ */
+export const { use: useModelStoreRegistry, provider: ModelStoreRegistryProvider } =
+  createSimpleContext<ModelStoreRegistry, Record<string, unknown>>({
+    name: "ModelStoreRegistry",
+    gate: false,
+    init: (): ModelStoreRegistry => {
+      const owner = getOwner()
+      const records = new Map<string, ReturnType<typeof createModelStoreRecord>>()
+      return {
+        record(serverUrl, workspaceKey) {
+          // Keyed by the persistence TARGET rather than by the raw arguments:
+          // two callers can name one document with differently-spelled server
+          // URLs (`sdk.url` in a pane, `getClaxedoServerUrl()` in Settings),
+          // and the target is where that spelling is already normalized away.
+          const target = Persist.serverWorkspace(serverUrl, workspaceKey, STORE_KEY, [LEGACY_GLOBAL_MODEL_KEY])
+          const id = `${target.storage ?? ""}:${target.key}`
+          const existing = records.get(id)
+          if (existing) return existing
+          // Owned by the registry, not by the mount that asked first, so the
+          // record's write effect lives exactly as long as the record.
+          const created = owner
+            ? runWithOwner(owner, () => createModelStoreRecord(target))!
+            : createRoot(() => createModelStoreRecord(target))
+          records.set(id, created)
+          return created
+        },
+      }
+    },
+  })
+
 const modelsContextInput = {
   name: "Models", gate: true,
   init: (input: ModelsScope) => {
     const providers = useProviders(input.harness, input.scope ?? (() => undefined))
 
-    const [store, setStore, _, ready] = persisted(
-      {
-        ...Persist.serverWorkspace(input.serverUrl(), input.workspaceKey(), STORE_KEY, [LEGACY_GLOBAL_MODEL_KEY]),
-        migrate: (value: unknown) => decodeModelStoreRecord(value, "opencode"),
-      },
-      createStore<ModelStoreRecord>({
-        user: {},
-        recent: [],
-        variant: {},
-      }),
-    )
+    const [store, setStore, _, ready] = useModelStoreRegistry().record(input.serverUrl(), input.workspaceKey())
 
     const harness = () => input.harness()
 

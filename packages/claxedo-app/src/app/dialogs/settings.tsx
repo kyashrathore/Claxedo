@@ -30,20 +30,29 @@ import type { ParentProps } from "solid-js"
  * The model store these settings edit.
  *
  * Visibility and variants belong to (server, workspace, harness), so Settings
- * mounts its own store under the pair the scope selector names rather than
- * editing whatever store a pane happens to have open.
+ * reads the store of the pair the scope selector names — the same store a pane
+ * open on that workspace reads, so an edit here is an edit there.
+ *
+ * `ModelsProvider` binds its (server, workspace) once, at mount, so the subtree
+ * is keyed on the pair: it waits for the catalog to name a workspace, and it
+ * rebinds when the selector picks another.
  */
 function SettingsModelsScope(props: ParentProps) {
   const scope = useSettingsScope()
+  const boundWorkspace = createMemo(() => scope.workspaceKey() || undefined)
   return (
-    <ModelsProvider
-      workspaceKey={scope.workspaceKey}
-      harness={scope.harness}
-      serverUrl={scope.serverUrl}
-      scope={scope.scopeRef}
-    >
-      {props.children}
-    </ModelsProvider>
+    <Show keyed when={boundWorkspace()}>
+      {(workspaceKey) => (
+        <ModelsProvider
+          workspaceKey={() => workspaceKey}
+          harness={scope.harness}
+          serverUrl={scope.serverUrl}
+          scope={scope.scopeRef}
+        >
+          {props.children}
+        </ModelsProvider>
+      )}
+    </Show>
   )
 }
 

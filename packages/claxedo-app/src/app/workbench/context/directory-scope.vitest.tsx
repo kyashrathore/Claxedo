@@ -799,9 +799,13 @@ describe("DirectoryScope bootstrap gating", () => {
       workspace,
     })
 
+    // The pane's harness arrives as a PROP: SessionPaneScope resolves it (from
+    // the session's ref, or from the harness store for a draft) and
+    // DirectoryScope spends it verbatim in the agent query key.
     render(() => (
       <DirectoryScope {...directoryScopeProps}
         directory={directory}
+        harnessType={() => "opencode"}
         workspaceId={() => workspace.workspaceId}
         workspaceKind={() => workspace.kind}
         sessionId={() => "ses_cloud"}

@@ -45,7 +45,7 @@ vi.mock("@/features/session/app-ports", async () => {
   }
 })
 
-const { ModelsProvider, useModels } = await import("./models")
+const { ModelsProvider, ModelStoreRegistryProvider, useModels } = await import("./models")
 const { Persist } = await import("@/platform/persistence/persist")
 
 const SERVER = "http://127.0.0.1:2593"
@@ -78,18 +78,48 @@ function mount(input: { workspaceKey: string; harness: () => string }) {
     return <div data-testid="mounted" />
   }
   render(() => (
-    <ModelsProvider
-      workspaceKey={() => input.workspaceKey}
-      harness={input.harness}
-      serverUrl={() => SERVER}
-    >
-      <Probe />
-    </ModelsProvider>
+    <ModelStoreRegistryProvider>
+      <ModelsProvider
+        workspaceKey={() => input.workspaceKey}
+        harness={input.harness}
+        serverUrl={() => SERVER}
+      >
+        <Probe />
+      </ModelsProvider>
+    </ModelStoreRegistryProvider>
   ))
   return () => {
     if (!api) throw new Error("ModelsProvider did not mount")
     return api
   }
+}
+
+/**
+ * Mounts TWO surfaces on one workspace under ONE registry — the shape the app
+ * shell has, with a pane's composer and the Settings Models page open at once.
+ */
+function mountPair(workspaceKey: string) {
+  const api: Array<ReturnType<typeof useModels> | undefined> = [undefined, undefined]
+  const Probe = (props: { index: number }) => {
+    api[props.index] = useModels()
+    return <div data-testid={`mounted-${props.index}`} />
+  }
+  const Surface = (props: { index: number }) => (
+    <ModelsProvider workspaceKey={() => workspaceKey} harness={() => "opencode"} serverUrl={() => SERVER}>
+      <Probe index={props.index} />
+    </ModelsProvider>
+  )
+  render(() => (
+    <ModelStoreRegistryProvider>
+      <Surface index={0} />
+      <Surface index={1} />
+    </ModelStoreRegistryProvider>
+  ))
+  return api.map((_, index) => () => {
+    const value = api[index]
+    if (!value) throw new Error("ModelsProvider did not mount")
+    return value
+  })
 }
 
 beforeEach(() => {
@@ -130,6 +160,22 @@ describe("the model store is per (server, workspace, harness)", () => {
     expect(stored(workspace).user.opencode).toEqual([{ ...OPUS, visibility: "hide" }])
     expect(stored(workspace).user["claude-sdk"]).toEqual([{ ...OPUS, visibility: "show" }])
     expect(stored(workspace).recent).toEqual([{ ...OPUS, harness: "opencode" }])
+  })
+
+  // Settings and a pane's composer are routinely open on the same workspace at
+  // once and edit this one document, so both hold the same record: an edit on
+  // one is visible on the other immediately, and neither overwrites the other.
+  test("two surfaces on one (server, workspace) read and write the same record", async () => {
+    const workspace = nextWorkspaceKey("ws")
+    const [pane, settings] = mountPair(workspace)
+
+    settings().setVisibility(OPUS, false)
+
+    expect(pane().visible(OPUS)).toBe(false)
+    await waitFor(() => expect(stored(workspace)?.user?.opencode).toEqual([{ ...OPUS, visibility: "hide" }]))
+
+    pane().variant.set(OPUS, "thinking")
+    expect(settings().variant.get(OPUS)).toBe("thinking")
   })
 
   test("another workspace on the same server starts from its own bucket", async () => {

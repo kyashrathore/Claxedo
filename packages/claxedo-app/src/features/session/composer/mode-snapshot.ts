@@ -1,4 +1,4 @@
-import { panePreferenceScope } from "@/features/session/preferences/pane"
+import { paneHarnessScope } from "@/features/session/harness/store-policy"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
 import type { ComposerMode } from "./mode"
 
@@ -23,7 +23,7 @@ export function composerModeSnapshot(input: ComposerModeSnapshotInput) {
     harnessSessionId,
     draftId,
     directory,
-    scope: panePreferenceScope({
+    scope: paneHarnessScope({
       directory: harnessDirectory,
       sessionId: harnessSessionId,
       surfaceId: input.surfaceId,

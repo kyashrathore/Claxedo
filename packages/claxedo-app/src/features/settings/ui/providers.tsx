@@ -187,7 +187,11 @@ export const SettingsProviders: Component = () => {
             </p>
           </Show>
 
-          <Show when={providerItems().length > 0}>
+          {/* The custom-provider entry ADDS a provider to the OpenCode
+              registry, so it renders whenever this harness owns that registry.
+              An empty catalog is exactly when a user reaches for it, so it
+              cannot depend on the catalog already having rows. */}
+          <Show when={providerItems().length > 0 || showCustom()}>
             <div class="flex flex-col gap-3" data-component="harness-providers-section">
               <h3 class="text-14-medium text-text-strong">
                 {language.t("settings.providers.section.harness", { harness: harnessLabel() })}

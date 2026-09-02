@@ -20,6 +20,16 @@ export const HARNESS_IDS = BUILTIN_HARNESS_IDS
 export type BuiltinHarnessId = (typeof BUILTIN_HARNESS_IDS)[number]
 
 /**
+ * The harness a scope opens on when nothing has been remembered for it.
+ *
+ * Stated once, beside the ids themselves, because every surface that names a
+ * harness before an authority answers — a new draft, the Settings scope
+ * selector — names this same one. The order of the id list above carries no
+ * meaning and is not a default.
+ */
+export const DEFAULT_HARNESS_ID: BuiltinHarnessId = "opencode"
+
+/**
  * An operator-configured ACP connection, addressed by its canonical
  * access-qualified key `acp:<slug>`. These are open by design — the server's
  * trusted config is their registry — so the app treats the key as an opaque

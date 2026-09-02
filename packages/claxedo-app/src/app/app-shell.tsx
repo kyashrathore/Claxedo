@@ -17,6 +17,7 @@ import { AppShellLayout } from "./app-shell-layout"
 
 import { isDemoMode } from "@/platform/api/api"
 import { PromptHarnessControllersProvider } from "../features/session/composer/ui/harness-controller"
+import { ModelStoreRegistryProvider } from "../features/session/providers/models"
 import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
 import { ClaxedoRouteStateBridge } from "./workbench/state/route-bridge"
 import { routeSuppressesEmptyDraftSession } from "./workbench/state/provider"
@@ -190,7 +191,15 @@ export function ClaxedoAppShellInner(props: ParentProps) {
       {isDemoMode() && <DemoTourController />}
       <ClaxedoRouteStateBridge>
         <PromptHarnessControllersProvider>
-          <ClaxedoAppShellContent>{props.children}</ClaxedoAppShellContent>
+          {/* One persisted model document per (server, workspace), for the
+              shell's lifetime. A pane's composer and the Settings Models page
+              are routinely open on the same workspace at once and edit that one
+              document, so they must hold the same record rather than a copy
+              each. Mounted here, above every pane and above the dialog host's
+              caller, so both find it. */}
+          <ModelStoreRegistryProvider>
+            <ClaxedoAppShellContent>{props.children}</ClaxedoAppShellContent>
+          </ModelStoreRegistryProvider>
         </PromptHarnessControllersProvider>
       </ClaxedoRouteStateBridge>
     </>
