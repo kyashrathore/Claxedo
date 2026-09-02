@@ -27,6 +27,13 @@ const descriptor = {
   },
 }
 
+/** The hosted composition every success-path case here runs against. */
+const HOSTED = {
+  apiOrigin: "https://api.example.test",
+  appOrigin: "https://app.example.test",
+  centralTransport: "signed-web",
+} as const
+
 describe("Better Auth browser adapter", () => {
   test("hydrates the cookie session and normalized profile, validated against the live descriptor", async () => {
     const clientOptions: unknown[] = []
@@ -52,7 +59,7 @@ describe("Better Auth browser adapter", () => {
       },
     })
 
-    await adapter.initialize({ apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test" })
+    await adapter.initialize(HOSTED)
     const auth = adapter.useAuth()
 
     expect(clientOptions).toEqual([
@@ -109,7 +116,7 @@ describe("Better Auth browser adapter", () => {
       }),
     })
 
-    await adapter.initialize({ apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test" })
+    await adapter.initialize(HOSTED)
 
     expect(started.sort()).toEqual(["descriptor", "session"])
     expect(adapter.useAuth().isSignedIn()).toBe(true)
@@ -169,7 +176,7 @@ describe("Better Auth browser adapter", () => {
         signOut: async () => ({ data: null, error: null }),
       }),
     })
-    await adapter.initialize({ apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test" })
+    await adapter.initialize(HOSTED)
 
     await adapter.useAuth().signIn({ method: "github", redirectUrl: "/after-auth" })
     expect(getSessionCalls).toBe(1)
@@ -196,7 +203,7 @@ describe("Better Auth browser adapter", () => {
         signOut: async () => ({ data: null, error: null }),
       }),
     })
-    await adapter.initialize({ apiOrigin: "https://api.example.test", appOrigin: "https://app.example.test" })
+    await adapter.initialize(HOSTED)
 
     await expect(
       adapter.useAuth().signIn({
@@ -205,5 +212,118 @@ describe("Better Auth browser adapter", () => {
       }),
     ).rejects.toThrow("same-origin callback")
     expect(socialCalls).toBe(0)
+  })
+})
+
+/**
+ * The four compositions `initialize` has to answer for. All four resolve: the
+ * shell renders unconditionally and the session status is the answer, which is
+ * the invariant a rejecting `initialize` broke — a plain-http origin replaced
+ * the whole app, `/login` included, with a startup-failure panel.
+ */
+describe("Better Auth browser adapter startup outcomes", () => {
+  const refusingClient = () => ({
+    getSession: async () => {
+      throw new Error("the session client must not be reached")
+    },
+    signIn: {
+      social: async () => ({ data: null, error: null }),
+      email: async () => ({ data: null, error: null }),
+    },
+    signUp: { email: async () => ({ data: null, error: null }) },
+    signOut: async () => ({ data: null, error: null }),
+  })
+
+  test.each([
+    ["an http API origin", { apiOrigin: "http://api.example.test", appOrigin: "https://app.example.test" }],
+    ["an http app origin", { apiOrigin: "https://api.example.test", appOrigin: "http://app.example.test" }],
+  ])("%s is anonymous, not a failed boot, and asks the deployment nothing", async (_, origins) => {
+    let requests = 0
+    let clients = 0
+    const adapter = createBetterAuthBrowserAdapter({
+      request: async () => {
+        requests += 1
+        return Response.json(descriptor)
+      },
+      createClient: () => {
+        clients += 1
+        return refusingClient()
+      },
+    })
+
+    await expect(adapter.initialize(origins)).resolves.toBeUndefined()
+    const auth = adapter.useAuth()
+
+    expect(requests).toBe(0)
+    expect(clients).toBe(0)
+    expect(auth.loading()).toBe(false)
+    expect(auth.isSignedIn()).toBe(false)
+    await expect(auth.signIn({ method: "github" })).rejects.toThrow(/HTTPS/)
+  })
+
+  test("an HTTPS descriptor that cannot be loaded is anonymous, and says why on sign-in", async () => {
+    const adapter = createBetterAuthBrowserAdapter({
+      request: async () => {
+        throw new Error("descriptor request failed: network unreachable")
+      },
+      createClient: () => ({
+        getSession: async () => ({ data: { session: null, user: null }, error: null }),
+        signIn: {
+          social: async () => ({ data: null, error: null }),
+          email: async () => ({ data: null, error: null }),
+        },
+        signUp: { email: async () => ({ data: null, error: null }) },
+        signOut: async () => ({ data: null, error: null }),
+      }),
+    })
+
+    await expect(
+      adapter.initialize(HOSTED),
+    ).resolves.toBeUndefined()
+    const auth = adapter.useAuth()
+
+    expect(auth.loading()).toBe(false)
+    expect(auth.isSignedIn()).toBe(false)
+    await expect(auth.signIn({ method: "github" })).rejects.toThrow(/network unreachable/)
+    // Idempotent, and still not a startup failure: Log out of nothing is a
+    // no-op rather than a button that throws.
+    await expect(auth.signOut()).resolves.toBeUndefined()
+    await expect(auth.refreshSession()).resolves.toBeUndefined()
+  })
+
+  test("an HTTPS deployment loads, and reports loading only while it is in flight", async () => {
+    let openDescriptor: () => void = () => {}
+    const descriptorGate = new Promise<void>((resolve) => {
+      openDescriptor = resolve
+    })
+    const adapter = createBetterAuthBrowserAdapter({
+      request: async () => {
+        await descriptorGate
+        return Response.json(descriptor)
+      },
+      createClient: () => ({
+        getSession: async () => ({ data: { session: { id: "session_1" }, user: { id: "user_1" } }, error: null }),
+        signIn: {
+          social: async () => ({ data: null, error: null }),
+          email: async () => ({ data: null, error: null }),
+        },
+        signUp: { email: async () => ({ data: null, error: null }) },
+        signOut: async () => ({ data: null, error: null }),
+      }),
+    })
+    const auth = adapter.useAuth()
+
+    // Before anyone starts it, the honest answer is anonymous, not loading:
+    // a session that waits for a resolution nobody asked for never resolves.
+    expect(auth.loading()).toBe(false)
+
+    const started = adapter.initialize(HOSTED)
+    expect(auth.loading()).toBe(true)
+
+    openDescriptor()
+    await started
+
+    expect(auth.loading()).toBe(false)
+    expect(auth.isSignedIn()).toBe(true)
   })
 })

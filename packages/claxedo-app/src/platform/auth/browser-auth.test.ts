@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { loadBrowserAuthDescriptor } from "./browser-auth"
+import { browserAuthUnavailable, loadBrowserAuthDescriptor } from "./browser-auth"
 
 const betterAuthDescriptor = {
   adapter: "better-auth",
@@ -101,5 +101,40 @@ describe("browser auth descriptor boundary", () => {
         request: async () => Response.json({ ...betterAuthDescriptor, ...overrides }),
       }),
     ).rejects.toThrow("does not match the better-auth browser build")
+  })
+})
+
+describe("browser sign-in availability", () => {
+  test("a loopback central plane has no accounts to offer", () => {
+    // The e2e, dev and self-host composition. The composition root reads this
+    // from `centralTransportForServer` and hands it down, so no descriptor is
+    // requested and no provider SDK is loaded.
+    expect(
+      browserAuthUnavailable({
+        apiOrigin: "https://api.example.test",
+        appOrigin: "https://app.example.test",
+        centralTransport: "loopback",
+      }),
+    ).toContain("loopback")
+  })
+
+  test("a plain-http deployment cannot run the HTTPS-only descriptor contract", () => {
+    // A plain-http self-host, and any http app origin: both are deployments
+    // without a sign-in flow, reported as a reason rather than thrown, so the
+    // shell and `/login` render either way.
+    expect(browserAuthUnavailable({ apiOrigin: "http://api.example.test", appOrigin: "https://app.example.test", centralTransport: "signed-web" }))
+      .toContain("HTTPS")
+    expect(browserAuthUnavailable({ apiOrigin: "https://api.example.test", appOrigin: "http://app.example.test", centralTransport: "signed-web" }))
+      .toContain("HTTPS")
+  })
+
+  test("the hosted HTTPS composition has a sign-in flow", () => {
+    expect(
+      browserAuthUnavailable({
+        apiOrigin: "https://api.example.test",
+        appOrigin: "https://app.example.test",
+        centralTransport: "signed-web",
+      }),
+    ).toBeNull()
   })
 })

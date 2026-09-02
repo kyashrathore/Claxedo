@@ -3,6 +3,8 @@ import { createAuthClient } from "better-auth/client"
 
 import {
   assertBrowserAuthDescriptorBinding,
+  browserAuthUnavailable,
+  browserAuthUnavailableReason,
   loadBrowserAuthDescriptor,
   type BrowserAuthAdapter,
   type BrowserAuthDescriptor,
@@ -76,7 +78,13 @@ export function createBetterAuthBrowserAdapter(
   const [descriptor, setDescriptor] = createSignal<BrowserAuthDescriptor | null>(null)
   const [session, setSession] = createSignal<unknown>(null)
   const [user, setUser] = createSignal<AuthDisplayUser | null>(null)
-  const [loading, setLoading] = createSignal(true)
+  // False until `initialize` is actually in flight, so `loading` means exactly
+  // "an initialization is running". An adapter nobody started, and one that
+  // settled without a sign-in flow, are both anonymous on their first read
+  // rather than a session that waits for a resolution nobody is producing.
+  const [loading, setLoading] = createSignal(false)
+  /** Why nobody can sign in here, once `initialize` has decided. */
+  const [unavailable, setUnavailable] = createSignal<string | null>(null)
   let appOrigin = ""
   let configuredOrigins: { apiOrigin: string; appOrigin: string } | undefined
   let client: BetterAuthBrowserClient | undefined
@@ -119,6 +127,9 @@ export function createBetterAuthBrowserAdapter(
   const refreshSession = async () => {
     const bypass = testBrowserAuth()
     if (bypass.token || bypass.user || browserAuthTestSignedOut()) return
+    // Refreshing a session this deployment cannot have already leaves the
+    // caller in the state it asked for; only sign-in has something to refuse.
+    if (unavailable()) return
     await reloadDescriptor()
     await hydrateSession()
   }
@@ -128,6 +139,10 @@ export function createBetterAuthBrowserAdapter(
       recordBrowserAuthTestSignIn(options?.redirectUrl)
       return
     }
+    // The deployment has no sign-in flow, or its startup could not reach one.
+    // Say which, rather than posting credentials at a client that is not there.
+    const reason = unavailable()
+    if (reason) throw new Error(reason)
     await reloadDescriptor()
     const method = selectedMethod(options?.method)
     const redirect = callbackUrl(options?.redirectUrl, appOrigin)
@@ -148,6 +163,8 @@ export function createBetterAuthBrowserAdapter(
   }
 
   const signUp = async (options?: BrowserAuthSignUpOptions) => {
+    const reason = unavailable()
+    if (reason) throw new Error(reason)
     const method = selectedMethod(options?.method)
     if (method !== "email-password" || options?.method !== "email-password") {
       if (method !== "google" && method !== "github") throw new Error(`Better Auth cannot run ${method}`)
@@ -169,7 +186,8 @@ export function createBetterAuthBrowserAdapter(
     adapter: "better-auth",
     transport: "cookie",
     implementationMarker: "claxedo-browser-auth:better-auth",
-    async initialize(nextOrigins) {
+    async initialize(deployment) {
+      const nextOrigins = { apiOrigin: deployment.apiOrigin, appOrigin: deployment.appOrigin }
       const bypass = testBrowserAuth()
       if (bypass.token || bypass.user || browserAuthTestSignedOut()) {
         setSession(null)
@@ -177,8 +195,19 @@ export function createBetterAuthBrowserAdapter(
         setLoading(false)
         return
       }
+      // Deployments with no sign-in flow at all (loopback central, non-HTTPS
+      // origins) settle here, without a request and without a session client.
+      const unsupported = browserAuthUnavailable(deployment)
+      if (unsupported) {
+        setUnavailable(unsupported)
+        setSession(null)
+        setUser(null)
+        setLoading(false)
+        return
+      }
       configuredOrigins = nextOrigins
       appOrigin = nextOrigins.appOrigin
+      setLoading(true)
       // The descriptor call validates the live configuration (adapter,
       // deployment, origins) against this build's expectations; it is not
       // where the session client gets its base URL — `createClient` below
@@ -186,22 +215,35 @@ export function createBetterAuthBrowserAdapter(
       // made. So the descriptor fetch and the session hydration below no
       // longer chain: they are two independent reads of the same origins,
       // and firing them together turns two round trips gating first paint
-      // into one. A bad descriptor still fails boot the same way — it
-      // rejects this same `Promise.all`, same as before.
+      // into one.
       client = (input.createClient ?? productionClientFactory)({
         baseURL: nextOrigins.apiOrigin,
         fetchOptions: { credentials: "include" },
       })
-      const [live] = await Promise.all([
-        loadBrowserAuthDescriptor({
-          selectedAdapter: "better-auth",
-          ...nextOrigins,
-          ...(input.request ? { request: input.request } : {}),
-        }),
-        hydrateSession(),
-      ])
-      setDescriptor(live)
-      setLoading(false)
+      try {
+        const [live] = await Promise.all([
+          loadBrowserAuthDescriptor({
+            selectedAdapter: "better-auth",
+            ...nextOrigins,
+            ...(input.request ? { request: input.request } : {}),
+          }),
+          hydrateSession(),
+        ])
+        setDescriptor(live)
+        setUnavailable(null)
+      } catch (error) {
+        // A descriptor this build cannot accept, or a deployment that did not
+        // answer: nobody is signed in and nobody can sign in. That is an
+        // anonymous session with a reason, not a failed boot — the shell and
+        // `/login` still render, and `signIn()` repeats this sentence.
+        client = undefined
+        configuredOrigins = undefined
+        setUnavailable(browserAuthUnavailableReason(error))
+        setSession(null)
+        setUser(null)
+      } finally {
+        setLoading(false)
+      }
     },
     useAuth() {
       return {
@@ -216,6 +258,15 @@ export function createBetterAuthBrowserAdapter(
           const bypass = testBrowserAuth()
           if (!client && (bypass.token || bypass.user)) {
             markBrowserAuthTestSignedOut()
+            setSession(null)
+            setUser(null)
+            clearPersistedAuthState()
+            return
+          }
+          // Signing out of a deployment that signs nobody in already leaves
+          // the user where they asked to be; a Log out that throws is just a
+          // broken button. Purge local state and stop.
+          if (unavailable()) {
             setSession(null)
             setUser(null)
             clearPersistedAuthState()

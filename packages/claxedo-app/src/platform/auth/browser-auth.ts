@@ -57,11 +57,41 @@ export type BrowserAuthState = {
   organization: Accessor<{ id?: string } | null | undefined>
 }
 
+/**
+ * The deployment an adapter is being started against.
+ *
+ * `centralTransport` is not re-derived here from `apiOrigin`: the composition
+ * root reads it from `centralTransportForServer`, the same call `CloudAuthGate`
+ * makes to decide whether a signed session is required at all, and hands the
+ * answer down. One reading, one owner, and the gate and the adapter cannot
+ * disagree about which deployment this is.
+ */
+export type BrowserAuthDeployment = {
+  apiOrigin: string
+  appOrigin: string
+  centralTransport: "loopback" | "signed-web"
+}
+
 export type BrowserAuthAdapter = {
   readonly adapter: BrowserAuthAdapterId
   readonly transport: "cookie" | "bearer"
   readonly implementationMarker: string
-  initialize(input: { apiOrigin: string; appOrigin: string }): Promise<void>
+  /**
+   * Start signing in, reporting the outcome through `useAuth()`'s signals
+   * rather than through this promise.
+   *
+   * It RESOLVES in every case, including every case in which nobody can be
+   * signed in (`browserAuthUnavailable`, a failed descriptor, a provider SDK
+   * that would not load). The composition root starts it before `render()` and
+   * does not await it, so a rejection here would have nowhere to go but a
+   * startup-failure panel — which is how a plain-http origin once replaced the
+   * entire shell, `/login` included, with an error box.
+   *
+   * `loading` is true only while this call is in flight. An adapter nobody
+   * initialized is therefore `anonymous` on its first read, never a session
+   * that waits forever for a resolution that is not coming.
+   */
+  initialize(input: BrowserAuthDeployment): Promise<void>
   useAuth(): BrowserAuthState
   getToken(options?: { skipCache?: boolean }): Promise<string | null>
 }
@@ -83,6 +113,50 @@ export function assertBrowserAuthDescriptorBinding(expected: BrowserAuthDescript
   ) {
     throw new BrowserAuthConfigurationError("live browser auth configuration binding changed")
   }
+}
+
+/**
+ * Why this deployment has no browser sign-in flow at all, or null when it has
+ * one. Two answers, both of them normal deployments rather than failures:
+ *
+ *  - A loopback central plane authenticates by loopback. It has no accounts,
+ *    so there is nothing to ask it — no descriptor request, no provider SDK.
+ *  - Any non-HTTPS origin: a self-host on `http://host.lan:3001`, the dev
+ *    server, an e2e preview. `loadBrowserAuthDescriptor` below is HTTPS-only,
+ *    so the flow cannot start.
+ *
+ * A REASON and not an exception, because an adapter has to keep working after
+ * it: the shell still renders, `useAuthSession().status()` is `anonymous`
+ * immediately, and a sign-in attempt refuses with this sentence.
+ *
+ * Deliberately NOT a startup failure. A build that cannot sign anyone in is
+ * still a usable app, and painting an error panel instead of the shell means
+ * the sign-in surfaces the user came for never render at all.
+ *
+ * Consulted AFTER an adapter's own test-auth bypass: the e2e harness injects a
+ * principal directly and never reaches a deployment, so "this deployment has
+ * no sign-in flow" has nothing to say about it.
+ */
+export function browserAuthUnavailable(deployment: BrowserAuthDeployment): string | null {
+  if (deployment.centralTransport === "loopback") {
+    return "Sign-in is unavailable: this app talks to a loopback Claxedo server, which has no accounts."
+  }
+  if (!exactOrigin(deployment.apiOrigin) || !exactOrigin(deployment.appOrigin)) {
+    return "Sign-in is unavailable: it requires the app and the Claxedo server on exact HTTPS origins."
+  }
+  return null
+}
+
+/**
+ * The same reason, for a startup that got as far as asking the deployment and
+ * did not get a usable answer (the descriptor request failed, the live
+ * descriptor does not match this build, the provider SDK would not load).
+ * Same outcome as above and for the same reason: anonymous, with something to
+ * say when the user tries to sign in.
+ */
+export function browserAuthUnavailableReason(error: unknown): string {
+  const detail = error instanceof Error && error.message ? error.message : String(error)
+  return `Sign-in is unavailable: ${detail}`
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -1,8 +1,11 @@
 import { createEffect, createSignal, onCleanup } from "solid-js"
 import {
   assertBrowserAuthDescriptorBinding,
+  browserAuthUnavailable,
+  browserAuthUnavailableReason,
   loadBrowserAuthDescriptor,
   type BrowserAuthAdapter,
+  type BrowserAuthDeployment,
   type BrowserAuthDescriptor,
   type BrowserAuthSignInOptions,
   type BrowserAuthSignUpOptions,
@@ -67,15 +70,29 @@ function handleAuthIdentityChange(nextUser: unknown) {
 const [authResources, setAuthResources] = createSignal<{
   session: ClerkSession
   descriptor: BrowserAuthDescriptor | null
-}>({ session: null, descriptor: null })
+  /**
+   * Why nobody can sign in here, once `initializeClerk` has decided. Null
+   * while a sign-in flow is possible — including before initialization, where
+   * the honest answer is that nothing has been asked yet.
+   */
+  unavailable: string | null
+}>({ session: null, descriptor: null, unavailable: null })
 const session = () => authResources().session
 const descriptor = () => authResources().descriptor
+const unavailable = () => authResources().unavailable
 const setSession = (value: ClerkSession) => setAuthResources((current) => ({ ...current, session: value }))
 const setDescriptor = (value: BrowserAuthDescriptor) =>
   setAuthResources((current) => ({ ...current, descriptor: value }))
 const [user, setUser] = createSignal<AuthDisplayUser | null>(null)
 // Start as false - will be set to true only when Clerk initialization starts
 const [loading, setLoading] = createSignal(false)
+
+/** Record an outcome in which this deployment signs nobody in. */
+function reportUnavailable(reason: string) {
+  setAuthResources((current) => ({ ...current, session: null, unavailable: reason }))
+  setUser(null)
+  setLoading(false)
+}
 
 function envString(input: unknown) {
   return typeof input === "string" ? input : undefined
@@ -84,7 +101,7 @@ function envString(input: unknown) {
 /**
  * Initialize Clerk lazily. Only call this when auth is enabled.
  */
-export function initializeClerk(origins: { apiOrigin: string; appOrigin: string }): Promise<void> {
+export function initializeClerk(deployment: BrowserAuthDeployment): Promise<void> {
   if (clerkLoadPromise) return clerkLoadPromise
 
   const bypass = testBrowserAuth()
@@ -107,8 +124,22 @@ export function initializeClerk(origins: { apiOrigin: string; appOrigin: string 
     return Promise.resolve()
   }
 
+  // Deployments with no sign-in flow at all (loopback central, non-HTTPS
+  // origins) settle here, without a request and without loading the SDK.
+  // `clerkLoadPromise` stays null, so `getAuthToken()` answers null rather
+  // than awaiting a load that never happened.
+  const unsupported = browserAuthUnavailable(deployment)
+  if (unsupported) {
+    reportUnavailable(unsupported)
+    return Promise.resolve()
+  }
+
   setLoading(true)
-  clerkLoadPromise = loadBrowserAuthDescriptor({ selectedAdapter: "clerk", ...origins })
+  clerkLoadPromise = loadBrowserAuthDescriptor({
+    selectedAdapter: "clerk",
+    apiOrigin: deployment.apiOrigin,
+    appOrigin: deployment.appOrigin,
+  })
     .then((live) => {
       setDescriptor(live)
       if (!clerkPubKey) throw new Error("VITE_CLERK_PUBLISHABLE_KEY is required by the selected Clerk browser build")
@@ -140,6 +171,13 @@ export function initializeClerk(origins: { apiOrigin: string; appOrigin: string 
         setSession(resources.session ?? null)
         setUser(resources.user ?? null)
       })
+    })
+    .catch((error: unknown) => {
+      // The deployment answered with something this build cannot sign in
+      // against, or did not answer at all. That is an anonymous session with a
+      // reason — the shell and `/login` still render, and `signIn()` below
+      // repeats this sentence to whoever tries.
+      reportUnavailable(browserAuthUnavailableReason(error))
     })
 
   return clerkLoadPromise
@@ -253,6 +291,10 @@ export function useAuth() {
       // recording the invocation itself.
       recordBrowserAuthTestSignIn(options?.redirectUrl)
       if (!clerkLoadPromise && (testBrowserAuth().token || testBrowserAuth().user)) return
+      // The deployment has no sign-in flow, or its startup could not reach one.
+      // Say which, rather than redirecting into a provider that is not there.
+      const reason = unavailable()
+      if (reason) throw new Error(reason)
       await reloadClerkDescriptor()
       const instance = await ensureClerkLoaded()
       const redirectUrl = options?.redirectUrl ?? window.location.origin
@@ -288,6 +330,8 @@ export function useAuth() {
       if (options?.method && options.method !== "clerk") {
         throw new Error(`sign-up method ${options.method} is not selected by the live Clerk descriptor`)
       }
+      const reason = unavailable()
+      if (reason) throw new Error(reason)
       await reloadClerkDescriptor()
       const instance = await ensureClerkLoaded()
       const redirectUrl = options?.redirectUrl ?? window.location.origin

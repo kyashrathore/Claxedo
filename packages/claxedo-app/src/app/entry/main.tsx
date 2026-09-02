@@ -34,7 +34,7 @@ import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/http-machine-remote-access-binding"
 import { hostedServiceContributionLoaders } from "@/app/composition/hosted-contribution-loader"
-import { withStartupTimeout } from "./startup-timeout"
+import { startBrowserAuth } from "./browser-auth-startup"
 
 const OAuthConsentPage = lazy(() => import("@/app/routes/oauth-consent"))
 const HostedOAuthConsentRoute = () => (
@@ -133,6 +133,19 @@ const config = {
 }
 initClaxedo(config)
 
+/**
+ * Start signing in, beside the other module-scope bindings and before render.
+ *
+ * See `browser-auth-startup.ts`: nothing here waits for it, and nothing here
+ * can fail because of it.
+ */
+startBrowserAuth({
+  authEnabled: config.authEnabled === true,
+  adapter: browserAuthAdapter,
+  apiOrigin: getClaxedoServerUrl(),
+  appOrigin: window.location.origin,
+})
+
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
 if (!isDemoMode()) {
   initPostHog()
@@ -211,17 +224,6 @@ const platform: Platform = {
 
 async function startApp() {
   if (import.meta.env.DEV) console.log("[claxedo:boot]", "start", window.location.href)
-  if (config.authEnabled) {
-    // Bounded: this is the only await between a blank page and `render()`.
-    // See `startup-timeout.ts` for the live hang that made it mandatory.
-    await withStartupTimeout(
-      browserAuthAdapter.initialize({
-        apiOrigin: getClaxedoServerUrl(),
-        appOrigin: window.location.origin,
-      }),
-      "Signing in",
-    )
-  }
   // In demo mode, start MSW to mock server responses before rendering
   if (isDemoMode()) {
     for (const key of Object.keys(localStorage)) {
@@ -391,6 +393,15 @@ async function startApp() {
     })
 }
 
+/**
+ * The last resort, for a state in which no shell can exist at all — the demo
+ * fixtures could not be written, or `render()` itself threw.
+ *
+ * Reserved for exactly that. Anything the app can honestly represent as state
+ * belongs in the shell instead: "nobody is signed in" is a session status, not
+ * a startup failure, and painting this panel for it hides `/login` behind an
+ * error box the user cannot act on.
+ */
 function renderStartupFailure(error: unknown) {
   if (!(root instanceof HTMLElement)) return
   const message = error instanceof Error && error.message ? error.message : "Unknown startup failure"
@@ -420,9 +431,7 @@ function renderStartupFailure(error: unknown) {
   body.style.color = "var(--text-weak)"
   body.style.fontSize = "var(--font-size-small)"
 
-  // A startup failure is usually transient (a stalled response, a dropped
-  // connection). Without this the only way out of the panel is knowing to
-  // reload by hand.
+  // Without this the only way out of the panel is knowing to reload by hand.
   const retry = document.createElement("button")
   retry.textContent = "Try again"
   retry.style.marginTop = "16px"
