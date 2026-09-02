@@ -724,3 +724,44 @@ after send and the reply rendered as it streamed. The desktop connector
 stayed `enrolled` with all four relay sockets open through the release
 window. The server suite on the readiness change reports the same four
 dev-inherited failures and nothing else.
+
+## Re-verified on release 58 (the consolidated tree) 2026-09-02
+
+Release 58 (`release-acc-consol-260902-190000-3851`, ledger stateRevision 152
+`open`) carries plans 149 and 150 as executed today (`a41b2363fa`,
+`cb0a4b7b3c`, `867a20854f`, `b4cb2589ae`, `a332e5ad03`, `fee0734535`,
+`d50db1b10c`, `91835fabb0`, `c3bed4757b`, `4db2c6015e`, `27c5928899`). The
+desktop was rebuilt and relaunched; its signed session survived the restart,
+the connector re-enrolled the same host and the daemon reports all four relay
+sockets open.
+
+From the owner's Chrome on the hosted app (measured with the page's resource
+timing): `get-session` 230 ms; then one catalog round trip, `/api/workspace?
+access=cloud` and `?access=user-hosted` in parallel (679 / 689 ms) plus
+`/api/claxedo/services` (414 ms); no `/api/claxedo/bootstrap`, no `/project`,
+no `/api/control/session-list`, no `/api/control/sessions?workspaceId=`; the
+user-hosted workspace's session list came from the runtime over the relay
+(`/session?roots=true`, 680 ms). The draft header reads "Self-hosted ·
+Connected via relay". A prompt sent from a new draft produced a streamed Claude
+reply ("Yes, I can hear you."), daemon timestamps user 1788352332704 →
+assistant completed 1788352338643, a 5.9 s turn, rendered live.
+
+Observed and left open: the catalog's two list calls were issued three times
+within the first 13 s of boot (three observers of the same key before the
+first answer settles); a Send clicked within ~2 s of "New Session", while the
+draft's harness options are still hydrating, opens the harness picker instead
+of sending, and the second click sends.
+
+Verification on the consolidated tree: app `bun run typecheck` (tsgo +
+architecture 267) clean; app bun suite 6065 pass / 0 fail after the audit
+repin; app vitest 1186 pass, 2 dev-inherited; server 3557 pass, 4
+dev-inherited; local-server 298, server-core 534, host-connector 38, relay
+426, agent-event-runtime 141, agent-sdk-runtime 610 all green; desktop 752
+pass, 2 dev-inherited; workspace-runtime 985 pass, 3 dev-inherited;
+`bun run test:architecture-ratchets` holds.
+
+PR groups for today's commits: group 1 (control plane) `d50db1b10c` (server
+half), `27c5928899`, the server halves of `867a20854f` and `4db2c6015e`;
+group 2 (runtime) `fee0734535`; group 3 (desktop / local-server)
+`d50db1b10c` (daemon half); group 4 (web app) everything else; group 5 (docs)
+the plan commits.
