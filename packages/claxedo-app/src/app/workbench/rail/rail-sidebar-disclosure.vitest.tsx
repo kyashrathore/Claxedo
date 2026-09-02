@@ -461,10 +461,9 @@ describe("RailSidebar disclosure controls", () => {
       "data-session-statuses",
       "local-session:working",
     ))
-    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({
-      directory: "/repo/main",
-      workspaceId: "local-association",
-    })
+    // A local row's poll goes to its directory authority alone: the inventory
+    // association is how the sidebar groups the row, never a routing input.
+    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({ directory: "/repo/main" })
   })
 
   test("an ambiguous id event never projects one placement into another when a refetch fails", async () => {

@@ -27,9 +27,9 @@ describe("lazy account production wiring", () => {
 
   test("signed-to-unsigned suspends Host Connector publication, and a returning account resumes it", () => {
     expect(main).toMatch(/onStateChange:\s*\(next, previous\)\s*=>/)
-    expect(main).toMatch(/previous\.status === "signed" && next\.status !== "signed"\)/)
-    // Both edges, because only having the first is what let a ~2s descriptor
-    // 503 un-publish this machine for good.
+    // The verdict is one owned function (`remoteAccessFollow`), so a transient
+    // lapse holds and only a real sign-out suspends; both edges are wired.
+    expect(main).toMatch(/remoteAccessFollow\(previous, next\)/)
     // Tolerant of the formatter breaking the optional-call across lines.
     expect(main).toMatch(/hostConnector\s*\?\.suspendForAuthLapse\(\)/)
     expect(main).toMatch(/hostConnector\s*\?\.resumeAfterAuthLapse\(\)/)
