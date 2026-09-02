@@ -31,6 +31,7 @@ import {
 import { createSubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
+import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { sessionGoalKey, type SessionGoalData } from "@/features/session/store/session-goal-query"
@@ -489,6 +490,34 @@ describe("global sdk event fetch", () => {
     })
 
     expect(events).toEqual([
+      // The row the parts hang from comes FIRST. The transcript store files a
+      // part against an existing message, so a viewer that has never seen this
+      // reply — anyone attached to a session another client is driving — has
+      // nothing to attach to without it.
+      {
+        directory: "/repo/main",
+        payload: {
+          id: "message.updated:assistant-1",
+          type: "message.updated",
+          properties: {
+            sessionID: "runtime-session-1",
+            info: {
+              id: "assistant-1",
+              sessionID: "runtime-session-1",
+              role: "assistant",
+              time: { created: expect.any(Number) },
+              parentID: "runtime-session-1",
+              modelID: "",
+              providerID: "",
+              mode: "auto",
+              agent: "",
+              path: { cwd: "/repo/main", root: "/repo/main" },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            },
+          },
+        },
+      },
       {
         directory: "/repo/main",
         payload: {
@@ -991,7 +1020,38 @@ describe("global sdk event fetch", () => {
     })
   })
 
+  test("runtime events open for the session the scope names, on the route's workspace identity", () => {
+    // ATTACH: the route names a running session this client never created, so
+    // nothing has marked a live session yet — only the workspace-route sentinel
+    // exists. The scope owner supplies the session; the sentinel supplies the
+    // relay identity to route the stream with.
+    expect(runtimeEventLiveSession({
+      sessionID: "route",
+      directory: "ws_user_hosted",
+      workspaceId: "ws_user_hosted",
+      workspaceKind: "user-hosted",
+    }, [], "ses_attached")).toEqual({
+      sessionID: "ses_attached",
+      directory: "ws_user_hosted",
+      workspaceId: "ws_user_hosted",
+      workspaceKind: "user-hosted",
+    })
+  })
+
+  test("runtime events retarget to the scope when the live session is the one left behind", () => {
+    // A navigation from one session to another must move the stream even though
+    // the live session still names the session whose history was fetched last.
+    expect(runtimeEventLiveSession({
+      sessionID: "ses_previous",
+      directory: "/repo/main",
+      workspaceId: "ws_signed",
+      workspaceKind: "cloud",
+    }, [], "ses_next")?.sessionID).toBe("ses_next")
+  })
+
   test("event directory routing prefers typed workspaceId over directory shape", () => {
+    // The frame's own `/runtime/repo` is the HOST's path and addresses nothing
+    // here; the workspace's address is what every consumer is keyed by.
     expect(eventDirectoryForLiveSession({
       directory: "/runtime/repo",
       liveSession: {
@@ -999,7 +1059,7 @@ describe("global sdk event fetch", () => {
         directory: "/repo/alias",
         workspaceId: "ws_typed",
       },
-    })).toBe("ws_typed")
+    })).toBe("workspace:ws_typed")
   })
 
   test("event directory routing keeps legacy workspace-id directory fallback only when workspaceId is absent", () => {
@@ -1009,14 +1069,14 @@ describe("global sdk event fetch", () => {
         sessionID: "session-1",
         directory: "ws_legacy",
       },
-    })).toBe("ws_legacy")
+    })).toBe("workspace:ws_legacy")
     expect(eventDirectoryForLiveSession({
       directory: "/runtime/repo",
       liveSession: {
         sessionID: "session-1",
         directory: "workspace:ws_legacy",
       },
-    })).toBe("ws_legacy")
+    })).toBe("workspace:ws_legacy")
     expect(eventDirectoryForLiveSession({
       directory: "global",
       liveSession: {
@@ -1031,6 +1091,18 @@ describe("global sdk event fetch", () => {
         directory: "/repo/local",
       },
     })).toBe("/runtime/repo")
+  })
+
+  test("a live session's events are addressed the same way its pane and its session row are", () => {
+    // One owner for the address: `sessionRowDirectory`. A pane on a
+    // relay-backed workspace registers its conversation under that exact
+    // string (`conversationScopeKey` is an exact match), so an event published
+    // under the bare id reaches no pane at all.
+    const workspaceId = "ws_attached"
+    expect(eventDirectoryForLiveSession({
+      directory: "/host/machine/worktree",
+      liveSession: { sessionID: "run_attached", directory: "/host/machine/worktree", workspaceId },
+    })).toBe(sessionRowDirectory({ workspaceId, hostDirectory: "/host/machine/worktree" }))
   })
 
   test("signed mode sends idle global events to the control-plane lifecycle stream", async () => {

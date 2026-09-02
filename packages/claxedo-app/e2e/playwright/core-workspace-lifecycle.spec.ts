@@ -764,6 +764,7 @@ test.describe("core workspace lifecycle @core", () => {
             access: "cloud",
             backing: "cloud-vm",
             runtimeKind: "cloud",
+            sessionAuthority: "managed-private",
             workspaceId: "wsid_main_cloud",
             role: "owner",
             relayUrl: "https://relay.test",

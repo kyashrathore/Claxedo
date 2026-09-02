@@ -1166,6 +1166,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
           access: "cloud",
           backing: "cloud-vm",
           runtimeKind: "cloud",
+          sessionAuthority: "managed-private",
           workspaceId: WORKSPACE_ID,
           relayUrl: RELAY_ORIGIN,
           runtimeAccessToken: "test-runtime-access-token",

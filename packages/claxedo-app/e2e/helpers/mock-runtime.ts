@@ -3089,6 +3089,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         ? json(r, {
             access: "cloud",
             backing: "cloud-vm",
+            // A cloud sandbox's runtime delegates to the control plane's session
+            // authority, so it serves SESSION-SCOPED event streams only. The
+            // mint is the only place the client learns that, and the app opens
+            // no workspace stream until it does — so omitting this makes the
+            // whole event bus silent, exactly as it would in production.
+            sessionAuthority: "managed-private",
             workspaceId,
             role: "owner",
             relayUrl: relayOrigin,

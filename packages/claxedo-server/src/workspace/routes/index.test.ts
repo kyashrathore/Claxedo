@@ -1858,6 +1858,9 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toEqual({
       access: "cloud",
       backing: "cloud-vm",
+      // The stream scope the sandbox's runtime composition serves — a client
+      // cannot discover it, so the mint states it.
+      sessionAuthority: "managed-private",
       workspaceId: "ws_1",
       hostId: "ws_1",
       relayUrl: "https://relay.example.test",
@@ -2073,6 +2076,9 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toMatchObject({
       access: "cloud",
       backing: "cloud-vm",
+      // A loopback caller of the local server is served by its own EMBEDDED
+      // workspace runtime, which composes the unbound local policy.
+      sessionAuthority: "local",
       workspaceId: "ws_1",
       hostId: "ws_1",
       relayUrl: "http://relay.test",
@@ -2197,6 +2203,9 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toMatchObject({
       access: "cloud",
       backing: "cloud-vm",
+      // A loopback caller of the local server is served by its own EMBEDDED
+      // workspace runtime, which composes the unbound local policy.
+      sessionAuthority: "local",
       workspaceId: "ws_1",
       hostId: "ws_1",
       relayUrl: "http://localhost",
@@ -2314,6 +2323,9 @@ describe("workspace routes signed control plane authority", () => {
       access: "user-hosted",
       backing: "local-worktree",
       runtimeKind: "user-hosted",
+      // The owner's own daemon composes the unbound local policy, so it serves
+      // the WORKSPACE-WIDE event streams as well as session-scoped ones.
+      sessionAuthority: "local",
       workspaceId: "ws_shared",
       homeRegion: "us-east",
       relayUrl: "https://relay.example.test",
@@ -2599,6 +2611,9 @@ describe("workspace routes signed control plane authority", () => {
     await expect(res.json()).resolves.toEqual({
       access: "cloud",
       backing: "cloud-vm",
+      // The stream scope the sandbox's runtime composition serves — a client
+      // cannot discover it, so the mint states it.
+      sessionAuthority: "managed-private",
       workspaceId: "ws_1",
       hostId: "ws_1",
       relayUrl: "https://relay.example.test",

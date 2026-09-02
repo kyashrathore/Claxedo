@@ -6,6 +6,7 @@ import { normalizeCompatEventWithDiagnostics, type CompatEnvelope, withDir } fro
 import { createOpencodeCompatProjectionState, type OpencodeCompatProjectionState } from "./state"
 import type {
   EventMessageCompleted,
+  EventMessageUpdated,
   EventMessagePartDelta,
   EventMessagePartUpdated,
   EventPermissionAsked,
@@ -41,6 +42,21 @@ export type OpencodeCompatProjectionOptions = {
   sessionId: string
   directory: string
   assistantMessageId: string
+  /**
+   * Whether this projection is the turn's ONLY producer of OpenCode-shaped
+   * events, and so owes its consumers the assistant message row its parts hang
+   * from.
+   *
+   * The OpenCode consumers file a part against an EXISTING message, so a turn's
+   * row has to precede its first part. On the host, the runtime composes this
+   * projection with its own compat producer, which already opens every turn
+   * with that row and knows the agent and model this lane never carries — so
+   * announcing here would only overwrite a complete row with a thinner one, and
+   * those callers leave this off. A consumer reading a workspace's
+   * runtime-events stream has the lane and nothing else: it is the whole
+   * producer for that turn, and turns this on.
+   */
+  announcesAssistantMessage?: boolean
   clock?: () => number
   initialSnapshot?: ProjectionSnapshot<OpencodeCompatProjectionState>
 }
@@ -178,6 +194,84 @@ function sessionAgent(sessionID: string, agentId: string): EventSessionAgent {
     type: "session.agent",
     properties: { sessionID, agentId },
   }
+}
+
+function messageUpdated(info: EventMessageUpdated["properties"]["info"]): EventMessageUpdated {
+  return {
+    id: `message.updated:${info.id}`,
+    type: "message.updated",
+    properties: { sessionID: info.sessionID, info },
+  }
+}
+
+/**
+ * The user message an announced assistant reply answers.
+ *
+ * The runtime names a turn's reply `${userMessageId}_r` before an engine has
+ * chosen its own id (`AgentRuntime`'s `stableAssistantMessageId`), and that is
+ * the only place the parent survives on this lane: an `AgentRuntimeEvent`
+ * carries the assistant message id and nothing about the message it answers.
+ * A reply announced under any other id has no user message to name, and the
+ * runtime's own compat producer parents that case on the session.
+ */
+function announcedTurnParent(assistantMessageId: string, sessionId: string) {
+  return assistantMessageId.endsWith("_r") ? assistantMessageId.slice(0, -2) : sessionId
+}
+
+/**
+ * The assistant row a turn's parts hang from.
+ *
+ * The OpenCode compat consumers file a part against an EXISTING message: the
+ * transcript store's `upsertPart` / `appendPartDelta` drop a part whose message
+ * row it has never seen. The runtime's own compat producer opens every turn
+ * with this row (`sdk-runtime-adapter`'s `start`: busy, the user row, then the
+ * assistant row) before a single part, and this projection stands in for that
+ * producer on the runtime-events lane, so it owes its consumers the same row.
+ *
+ * Only the identity fields are knowable here — an `AgentRuntimeEvent` names no
+ * model or provider — so those stay empty and the session's own settled
+ * transcript remains authoritative for them.
+ */
+function announcedAssistantMessage(ctx: CompatContext, now: number): EventMessageUpdated["properties"]["info"] {
+  return {
+    id: ctx.assistantMsgId,
+    sessionID: ctx.sessionId,
+    role: "assistant",
+    time: { created: now },
+    parentID: announcedTurnParent(ctx.assistantMsgId, ctx.sessionId),
+    modelID: "",
+    providerID: "",
+    mode: "auto",
+    agent: ctx.agentId,
+    path: { cwd: ctx.directory, root: ctx.directory },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  }
+}
+
+const PART_BEARING_COMPAT_EVENTS = new Set([
+  "message.part.updated",
+  "message.part.delta",
+  "message.completed",
+])
+
+/**
+ * Prepends the turn's assistant row the first time this projection emits
+ * anything that hangs off it. Announcing on the first PART rather than on turn
+ * start keeps a session that only ever reports status/diagnostics free of an
+ * empty reply row.
+ */
+function withAnnouncedAssistantMessage(
+  ctx: CompatContext,
+  events: CompatEnvelope[],
+  now: () => number,
+  announces: boolean,
+) {
+  if (!announces) return events
+  if (ctx.announcedAssistantMsgId === ctx.assistantMsgId) return events
+  if (!events.some((event) => PART_BEARING_COMPAT_EVENTS.has(event.payload.type))) return events
+  ctx.announcedAssistantMsgId = ctx.assistantMsgId
+  return [withDir(ctx.directory, messageUpdated(announcedAssistantMessage(ctx, now()))), ...events]
 }
 
 function sessionConfig(properties: EventSessionConfig["properties"]): EventSessionConfig {
@@ -1282,6 +1376,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     }
 
     case "session-agent":
+      ctx.agentId = chunk.agentId
       return [withDir(ctx.directory, sessionAgent(ctx.sessionId, chunk.agentId))]
 
     case "config-update":
@@ -1355,6 +1450,8 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
 function syncState(ctx: CompatContext, state: OpencodeCompatProjectionState) {
   state.assistantMsgId = ctx.assistantMsgId
+  state.announcedAssistantMsgId = ctx.announcedAssistantMsgId
+  state.agentId = ctx.agentId
   state.accumulatedText = ctx.accumulatedText
   state.accumulatedThinkingText = ctx.accumulatedThinkingText
   state.proposedPlanText = ctx.proposedPlanText
@@ -1432,7 +1529,12 @@ export function createOpencodeCompatProjection(options: OpencodeCompatProjection
     const next = createOpencodeCompatProjectionState(state)
     const ctx = createContext(options, next)
     try {
-      const events = normalizeProjectionEvents(ctx, phase, eventType, project(ctx))
+      const events = normalizeProjectionEvents(
+        ctx,
+        phase,
+        eventType,
+        withAnnouncedAssistantMessage(ctx, project(ctx), now, options.announcesAssistantMessage === true),
+      )
       syncState(ctx, next)
       state = next
       return events

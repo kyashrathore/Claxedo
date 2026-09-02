@@ -25,7 +25,7 @@ import {
   routeDirectory,
   type ClaxedoEventStreamTarget,
 } from "./claxedo-event-targets"
-import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
+import { markWorkspaceReconnected, markWorkspaceReconnecting, workspaceSessionAuthority } from "../../features/workspaces/data/workspace-connection"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import {
   streamSyncArmedTimer,
@@ -39,6 +39,7 @@ import {
   reportSessionEventStreamClosed,
   reportSessionEventStreamOpen,
   sessionEventScopeId,
+  setSessionEventRouteScope,
 } from "@/platform/runtime/session-event-scope"
 import { queryClient } from "@/platform/query/query-client"
 import { readProjectCatalog } from "@/platform/query/control-plane"
@@ -569,7 +570,10 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       directory: routeDirectory(props.pathname()),
       // `session-event-scope` owns which session the scoped stream must carry;
       // the route is its standing input, not a second decider.
-      sessionID: sessionEventScopeId(claxedoEventRouteSessionID(props.pathname())),
+      sessionID: sessionEventScopeId(),
+      // …and the minted connection owns whether a scoped stream is the only
+      // kind this workspace's runtime serves.
+      sessionAuthority: workspaceSessionAuthority,
       projects: readProjectCatalog(props.serverUrl()),
       accountSigned,
     })
@@ -584,6 +588,15 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       connections.set(key, connectTarget(target, accountState))
     }
   }
+
+  // This provider is the app's reader of the shell route for event purposes, so
+  // it is what publishes the route's session to `session-event-scope`. Both
+  // lanes then read one answer: this provider's workspace bus below, and the
+  // global-sdk provider's runtime-events stream, which mounts underneath and
+  // cannot see this one's closures.
+  const publishRouteScope = () => setSessionEventRouteScope(claxedoEventRouteSessionID(props.pathname()))
+  publishRouteScope()
+  createEffect(publishRouteScope)
 
   // Route identity and project/workspace identity resolve independently. A
   // client-side navigation can supply the former after boot, while the project

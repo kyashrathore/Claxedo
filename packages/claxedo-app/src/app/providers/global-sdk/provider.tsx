@@ -4,7 +4,7 @@ import { createOpencodeCompatProjection, runtimeOwnsOpencodeCompatProjection, ty
 import { record, reportRuntimeContractMismatch, runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, createEffect, on, onCleanup, onMount } from "solid-js"
 import { createSdkForServer } from "@/app/connection/server-client"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -22,6 +22,7 @@ import {
   registerSessionEventStreamLane,
   reportSessionEventStreamClosed,
   reportSessionEventStreamOpen,
+  sessionEventScopeId,
   whenSessionEventStreamsOpen,
 } from "@/platform/runtime/session-event-scope"
 import { queryClient } from "@/platform/query/query-client"
@@ -46,6 +47,13 @@ import {
   USER_HOSTED_WORKSPACE_KIND,
   type GlobalSdkClientOptions,
 } from "./live-session"
+import {
+  cachedProjectInventory,
+  initialRouteDirectory,
+  initialRouteWorkspace,
+  runtimeWorkspaceKind,
+  shouldUseSignedEventAccess,
+} from "./route-event-scope"
 import { EVENT_STREAM_STALL_MS } from "@claxedo/agent-event-runtime"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
@@ -58,54 +66,6 @@ const claxedoExtensionEventTypes = new Set<string>(["message.completed", "sessio
 export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEvent {
   return !claxedoExtensionEventTypes.has(event.type)
 }
-function runtimeWorkspaceKind(input: unknown) {
-  if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
-}
-function initialRouteDirectory() {
-  if (typeof window === "undefined") return
-  return shellRouteDirectoryFromPathname(window.location.pathname)
-}
-
-function cachedProjectInventory(baseUrl?: string) {
-  return baseUrl ? queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(baseUrl)) ?? [] : []
-}
-function initialRouteWorkspace(baseUrl?: string) {
-  const directory = initialRouteDirectory()
-  if (!directory) return
-  for (const project of cachedProjectInventory(baseUrl) as Array<Project & {
-    workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string; directory?: Project["worktree"] }>
-  }>) {
-    const match = Object.entries(project.workspaces ?? {})
-      .find(([key, workspace]) =>
-        (sameWorkspaceDirectory(key, directory) || sameWorkspaceDirectory(workspace.directory, directory)) &&
-        (workspace.kind === "cloud" || workspace.kind === USER_HOSTED_WORKSPACE_KIND)
-      )
-    if (!match) continue
-    const [key, workspace] = match
-    return {
-      directory,
-      workspaceId: workspace.workspaceId ?? workspace.id ?? key,
-      workspaceKind: workspace.kind,
-    }
-  }
-  return undefined
-}
-
-function shouldUseSignedEventAccess(input: {
-  hasSignedAccess: boolean
-  serverUrl?: string
-  liveSession?: LiveSession
-}) {
-  if (!input.hasSignedAccess) return false
-  if (initialRouteWorkspace(input.serverUrl)) return true
-  if (centralTransportForServer(input.serverUrl) !== "loopback") return true
-  const directory = input.liveSession?.directory ?? initialRouteDirectory()
-  if (!directory && input.liveSession?.workspaceId) return true
-  if (!directory) return true
-  return !!(directory && sessionWorkspaceRuntimeRef({ directory })) ||
-    isUserHostedWorkspaceDirectory(directory)
-}
-
 type RuntimeProjectionCache = Map<string, OpencodeCompatProjection>
 type RuntimeCoveredSessions = Set<string>
 
@@ -130,6 +90,13 @@ export function projectRuntimeEventEnvelope(
     sessionId: input.sessionId,
     directory: input.directory,
     assistantMessageId,
+    // Nothing else produces OpenCode-shaped events for this turn here. The
+    // runtime-events lane carries the turn's parts and names the message they
+    // belong to, but never a row for that message, and the transcript store
+    // files a part against an existing row. A turn this client did not start —
+    // anyone attached to a session another client is driving — has no row until
+    // this projection announces one.
+    announcesAssistantMessage: true,
   })
   projections.set(key, projection)
   return projection.ingest(input.payload).map((event) => ({
@@ -411,6 +378,15 @@ const globalSDKContextInput = {
       liveSessionRestartTimer = setTimeout(restartLiveSessionStreams, delay)
     }
 
+    // The scope owner is the authority on which session the runtime-events lane
+    // carries, and it changes on navigation — including a navigation to a
+    // session this client never created. Retarget the open stream from the scope
+    // itself, so an ATTACH opens the same lane a create does instead of waiting
+    // for a history fetch to mark a live session.
+    createEffect(on(sessionEventScopeId, () => {
+      if (started) scheduleLiveSessionRestart()
+    }, { defer: true }))
+
     const startRuntimeEvents = () => {
       if (runtimeRun) return runtimeRun
       const projections: RuntimeProjectionCache = new Map()
@@ -443,7 +419,16 @@ const globalSDKContextInput = {
               signal: runtimeAttempt.signal,
               headers,
             }
-            const session = runtimeEventLiveSession(liveSession, cachedProjectInventory(currentServer.http.url))
+            // `session-event-scope` — not this provider's own live session —
+            // owns WHICH session's frames must be streaming. `eventLiveSession()`
+            // supplies the workspace identity to route with, including for a
+            // session reached purely by navigation, where no history fetch has
+            // marked a live session yet.
+            const session = runtimeEventLiveSession(
+              eventLiveSession(),
+              cachedProjectInventory(currentServer.http.url),
+              sessionEventScopeId(),
+            )
             if (!session || session.host !== "central" && !session.directory && !session.workspaceId) {
               await wait(RECONNECT_DELAY_MS)
               continue
@@ -696,7 +681,7 @@ const globalSDKContextInput = {
       start()
       const give = new AbortController()
       await Promise.race([
-        whenSessionEventStreamsOpen(liveSession?.sessionID, { signal: give.signal }),
+        whenSessionEventStreamsOpen(sessionEventScopeId(), { signal: give.signal }),
         wait(timeoutMs),
       ])
       give.abort()

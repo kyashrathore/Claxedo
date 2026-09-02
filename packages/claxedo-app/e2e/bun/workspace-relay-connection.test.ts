@@ -38,6 +38,7 @@ function connection(input: Partial<WorkspaceConnectionInfo> = {}): WorkspaceConn
   return {
     access: "cloud",
     backing: "cloud-vm",
+    sessionAuthority: "managed-private",
     workspaceId: "ws_1",
     role: "editor",
     relayUrl: "http://relay.test",

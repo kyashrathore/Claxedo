@@ -14,6 +14,7 @@ import {
   openWorkspaceConnection,
   setWorkspaceConnectionObserver,
   type WorkspaceConnectionInfo,
+  type WorkspaceSessionAuthority,
 } from "@/platform/runtime/agent/workspace-relay-connection"
 import {
   placementFromWorkspaceConnection,
@@ -81,6 +82,11 @@ export type WorkspaceConnectionState = {
   refs: number
   rolePlacement: ConnectionPlacementState
   relayPlacement?: Placement
+  // Which event-stream scopes the runtime behind this connection serves, as the
+  // control plane reported it when it minted the connection. Absent until the
+  // mint answers; a LOCAL workspace has no mint and is answered from frame zero
+  // because its runtime is this machine's own embedded one.
+  sessionAuthority?: WorkspaceSessionAuthority
 }
 
 type EventsApi = ReturnType<typeof useClaxedoEventsOptional>
@@ -169,6 +175,18 @@ export function workspaceOffline(workspaceId: string | undefined): WorkspaceOffl
   if (!workspaceId) return undefined
   const status = connections[workspaceId]?.status
   return isOfflineStatus(status) ? status.offline : undefined
+}
+
+/**
+ * Which event-stream scopes this workspace's runtime serves, or `undefined`
+ * while the connection has not yet said. Consumers must WAIT on `undefined`
+ * rather than assume: an unscoped stream opened against a managed-private
+ * runtime is a permanent 400, and a session-scoped stream opened against a
+ * local one silently narrows the workspace bus to one session.
+ */
+export function workspaceSessionAuthority(workspaceId: string | undefined): WorkspaceSessionAuthority | undefined {
+  if (!workspaceId) return undefined
+  return connections[workspaceId]?.sessionAuthority
 }
 
 export function connectionPlacement(workspaceId: string | undefined): ConnectionPlacementState | undefined {
@@ -263,6 +281,7 @@ function applyWorkspaceConnectionInfo(info: WorkspaceConnectionInfo) {
     produce((state) => {
       if (!state) return
       state.relayPlacement = placementFromWorkspaceConnection(info)
+      state.sessionAuthority = info.sessionAuthority
       const next = transitionConnectionPlacement(state.rolePlacement, { type: "role", role: info.role })
       if (next) state.rolePlacement = next
     }),
@@ -494,8 +513,14 @@ export function acquireWorkspaceConnection(input: AcquireWorkspaceConnectionInpu
     rolePlacement: input.kind === "local"
       ? { state: "role-known", workspaceId, role: "owner" }
       : { state: "role-pending", workspaceId },
+    // A local workspace never mints a connection: its runtime is this process's
+    // own embedded one, composed with the unbound local policy, so its stream
+    // scope is known from frame zero rather than reported by the control plane.
     ...(input.kind === "local"
-      ? { relayPlacement: { workspaceId, hosting: "workspace", transport: "loopback", role: "owner" } satisfies Placement }
+      ? {
+        relayPlacement: { workspaceId, hosting: "workspace", transport: "loopback", role: "owner" } satisfies Placement,
+        sessionAuthority: "local" as const,
+      }
       : {}),
   })
   driveConnection(workspaceId, runtime, { keepReadyWhileChecking: warmUserHosted })

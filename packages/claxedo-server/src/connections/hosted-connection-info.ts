@@ -220,6 +220,11 @@ export async function hostedConnectionInfo(
       access: "cloud" as const,
       backing: "cloud-vm" as const,
       runtimeKind: "cloud" as const,
+      // The hosted sandbox runs the workspace runtime behind the relay with a
+      // non-loopback exposure, so it composes the remote session authority and
+      // serves session-scoped event streams only. See the sibling
+      // `user-hosted-connection.ts` for the other composition.
+      sessionAuthority: "managed-private" as const,
       workspaceId,
       homeRegion,
       relayUrl,

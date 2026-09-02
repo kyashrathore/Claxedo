@@ -22,7 +22,10 @@ import {
   conversationEntryIdsForTest,
   hydrateRegisteredConversationSnapshot,
 } from "@/features/session/conversation/conversation-registry"
+import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { conversationSnapshotKey } from "@/features/session/conversation/conversation-chat-client"
+import { eventDirectoryForLiveSession } from "@/app/providers/global-sdk/live-session"
+import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 import {
   flushQueryPersistence,
   installQueryPersister,
@@ -1166,5 +1169,170 @@ describe("global sync event ingress", () => {
     expect(conversationEntryIdsForTest()).toEqual(["/repo\0ses_shared"])
     dispose()
     clearConversationChatRegistryForTest()
+  })
+})
+
+describe("live session events reach the pane that registered the session", () => {
+  // One workspace, two clients. The host is running a turn; this client merely
+  // navigated to the session, so nothing it did created the reply — the turn's
+  // frames arrive on the workspace's runtime-events lane and are projected into
+  // OpenCode-shaped directory events by `projectRuntimeEventEnvelope`.
+  //
+  // Producer and consumer have to name ONE scope for that to land:
+  // `eventDirectoryForLiveSession` decides the address the projected events are
+  // published under, and `conversationScopeKey` is an exact
+  // `directory\0sessionID` match on the address the pane registered. Both go
+  // through `sessionRowDirectory`, so this pins them against each other rather
+  // than against a literal.
+  const WORKSPACE_ID = "ws_attached_live"
+  const HOST_DIR = "/Users/host/worktree"
+  const SESSION_ID = "run_attached_live"
+  const ASSISTANT_ID = "msg_host_turn_r"
+  const paneDirectory = sessionRowDirectory({ workspaceId: WORKSPACE_ID, hostDirectory: HOST_DIR })
+
+  afterEach(() => {
+    clearConversationChatRegistryForTest()
+  })
+
+  function attachedPaneIngress(globalEvents: ReturnType<typeof eventSource>) {
+    return createGlobalSyncEventIngress({
+      ...revocationDefaults,
+      globalEvents: globalEvents.source,
+      claxedoEvents: undefined,
+      projects: () => [],
+      projectFor: () => undefined,
+      children: {
+        directories: () => [paneDirectory],
+        has: (directory) => directory === paneDirectory,
+        mark: () => undefined,
+        sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+      },
+      push: () => undefined,
+      refresh: () => undefined,
+      setGlobalProject: () => undefined,
+      sessionInventoryLoaded: () => false,
+      applySessionEvent: () => undefined,
+      sessionTitles: noopSessionTitles,
+      draftWasRolledBack: () => false,
+      cacheSessions: () => undefined,
+      sessionCacheLimit: (_directory, fallback) => fallback,
+    })
+  }
+
+  function assistantText(directory: string) {
+    const snapshot = registeredConversationSnapshot(directory, SESSION_ID)
+    return (snapshot.parts[ASSISTANT_ID] ?? [])
+      .flatMap((part) => (part.type === "text" ? [part.text] : []))
+      .join("")
+  }
+
+  test("a delta published for the live session reaches the conversation the pane registered", () => {
+    hydrateRegisteredConversationSnapshot({
+      directory: paneDirectory,
+      sessionID: SESSION_ID,
+      messages: [{
+        id: ASSISTANT_ID,
+        sessionID: SESSION_ID,
+        role: "assistant",
+        time: { created: 1 },
+        parentID: "msg_host_turn",
+        modelID: "",
+        providerID: "",
+        mode: "auto",
+        agent: "",
+        path: { cwd: HOST_DIR, root: HOST_DIR },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      }],
+      parts: {
+        [ASSISTANT_ID]: [{
+          id: `${ASSISTANT_ID}_text`,
+          sessionID: SESSION_ID,
+          messageID: ASSISTANT_ID,
+          type: "text",
+          text: "",
+        }],
+      },
+    })
+
+    const globalEvents = eventSource()
+    const dispose = attachedPaneIngress(globalEvents)
+
+    // The runtime stamps its own filesystem path on the frame; the live session
+    // carries the workspace identity. This is the address the provider hands the
+    // ingress for every projected event of that session.
+    const directory = eventDirectoryForLiveSession({
+      directory: HOST_DIR,
+      liveSession: { sessionID: SESSION_ID, directory: HOST_DIR, workspaceId: WORKSPACE_ID },
+    })
+    globalEvents.emit({
+      name: directory,
+      details: {
+        type: "message.part.delta",
+        properties: {
+          sessionID: SESSION_ID,
+          messageID: ASSISTANT_ID,
+          partID: `${ASSISTANT_ID}_text`,
+          field: "text",
+          delta: "streamed while attached",
+        },
+      },
+    })
+
+    expect(assistantText(paneDirectory)).toBe("streamed while attached")
+    dispose()
+  })
+
+  test("the bare workspace id is not an address any pane registered", () => {
+    // The negative half: the same frame addressed by the workspace id alone
+    // reaches nothing. Without it, a producer that stopped resolving the
+    // address would still look fine as long as SOMETHING applied the event.
+    hydrateRegisteredConversationSnapshot({
+      directory: paneDirectory,
+      sessionID: SESSION_ID,
+      messages: [{
+        id: ASSISTANT_ID,
+        sessionID: SESSION_ID,
+        role: "assistant",
+        time: { created: 1 },
+        parentID: "msg_host_turn",
+        modelID: "",
+        providerID: "",
+        mode: "auto",
+        agent: "",
+        path: { cwd: HOST_DIR, root: HOST_DIR },
+        cost: 0,
+        tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      }],
+      parts: {
+        [ASSISTANT_ID]: [{
+          id: `${ASSISTANT_ID}_text`,
+          sessionID: SESSION_ID,
+          messageID: ASSISTANT_ID,
+          type: "text",
+          text: "",
+        }],
+      },
+    })
+
+    const globalEvents = eventSource()
+    const dispose = attachedPaneIngress(globalEvents)
+
+    globalEvents.emit({
+      name: WORKSPACE_ID,
+      details: {
+        type: "message.part.delta",
+        properties: {
+          sessionID: SESSION_ID,
+          messageID: ASSISTANT_ID,
+          partID: `${ASSISTANT_ID}_text`,
+          field: "text",
+          delta: "streamed while attached",
+        },
+      },
+    })
+
+    expect(assistantText(paneDirectory)).toBe("")
+    dispose()
   })
 })

@@ -24,12 +24,19 @@
  * withholds the turn's frames until it opens and then flushes them in one late
  * burst.
  *
- * So the scope is owned here instead: the composer publishes the session id it
- * just created through {@link holdSessionEventScope} before it dispatches that
- * session's first prompt, and the shell route is the standing input for every
- * other navigation. The route wins whenever it names a session, because a
- * navigation to another session is the user moving on; the held id only bridges
- * the draft route, where the route names no session at all.
+ * So the scope is owned here instead, with two writers and one answer: the
+ * composer publishes the session id it just created through
+ * {@link holdSessionEventScope} before it dispatches that session's first
+ * prompt, and the route's reader publishes the shell route's session through
+ * {@link setSessionEventRouteScope} on every navigation. The route wins whenever
+ * it names a session, because a navigation to another session is the user moving
+ * on; the held id only bridges the draft route, where the route names no session
+ * at all.
+ *
+ * Both lanes READ that answer — {@link sessionEventScopeId} is reactive, so a
+ * navigation retargets both. That is what makes an ATTACH (reaching a running
+ * session by its route rather than creating it in the composer) open the same
+ * lanes a create does.
  *
  * The two providers cannot share one of their own closures for this: the events
  * provider mounts ABOVE the global-sdk provider (`app/entry/app.tsx`'s
@@ -63,6 +70,8 @@ type LaneState = {
 type SessionEventScopeState = {
   /** The session the composer published; overridden by any route session id. */
   held?: string
+  /** The shell route's own session identity, published by the route's reader. */
+  route?: string
   lanes: Partial<Record<SessionEventStreamLane, LaneState>>
 }
 
@@ -81,14 +90,26 @@ export function holdSessionEventScope(sessionId: string): void {
 }
 
 /**
- * The session the scoped streams must carry.
- *
- * `routeSessionId` is the shell route's own session identity (absent on a draft
- * route). It is authoritative whenever it names a session: opening a different
- * session is the user moving on from the one the composer published.
+ * Publishes the shell route's own session identity (absent on a draft route).
+ * Called by the route's reader on every navigation.
  */
-export function sessionEventScopeId(routeSessionId?: string): string | undefined {
-  return routeSessionId?.trim() || scopeState.held
+export function setSessionEventRouteScope(routeSessionId?: string): void {
+  setScopeState("route", routeSessionId?.trim() || undefined)
+}
+
+/**
+ * The session the scoped streams must carry, read reactively.
+ *
+ * The route is authoritative whenever it names a session: opening a different
+ * session is the user moving on from the one the composer published. Both lanes
+ * read THIS rather than deriving their own answer — the runtime-events lane used
+ * to derive its session from the live-session the history fetch happened to
+ * mark, so a session reached by navigation (an attach) opened no lane until a
+ * fetch had already run, and its turn's deltas were only ever seen as a whole
+ * completed turn on the next refetch.
+ */
+export function sessionEventScopeId(): string | undefined {
+  return scopeState.route ?? scopeState.held
 }
 
 /** Declares that a provider drives this lane, so readiness waits for it. */
@@ -150,7 +171,7 @@ export function whenSessionEventStreamsOpen(
   })
 }
 
-/** Test seam: drops every lane registration, open report and held scope. */
+/** Test seam: drops every lane registration, open report and published scope. */
 export function resetSessionEventScope(): void {
-  setScopeState({ held: undefined, lanes: {} })
+  setScopeState({ held: undefined, route: undefined, lanes: {} })
 }

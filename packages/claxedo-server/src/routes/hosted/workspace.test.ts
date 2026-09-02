@@ -313,6 +313,10 @@ describe("hosted connection", () => {
     expect(await res.json()).toMatchObject({
       access: "user-hosted",
       backing: "local-worktree",
+      // The owner's own daemon composes the unbound local session policy, so it
+      // serves WORKSPACE-WIDE event streams (a terminal's `pty.stream` belongs
+      // to no session). Only the mint can tell the client that.
+      sessionAuthority: "local",
       relayUrl: "https://relay.test",
       runtimeAccessToken: "rat-token",
     })
@@ -493,6 +497,9 @@ describe("hosted connection", () => {
       access: "cloud",
       backing: "cloud-vm",
       runtimeKind: "cloud",
+      // A provisioned sandbox delegates to the control plane's session
+      // authority, so it serves SESSION-SCOPED streams only.
+      sessionAuthority: "managed-private",
       workspaceId: "ws_1",
       homeRegion: "eu-west",
       relayUrl: "https://relay.test",

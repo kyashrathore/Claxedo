@@ -119,6 +119,12 @@ export async function cloudConnectionInfo(
     connection: {
       access: "cloud",
       backing: "cloud-vm",
+      // A provisioned sandbox is a non-loopback workspace-runtime exposure, so
+      // `createWorkspaceRuntimeApp` composes `remoteWorkspaceSessionAccessPolicyFromEnv()`
+      // and reports `sessionAuthority: "managed-private"`: its event streams
+      // exist per session and an unscoped one answers 400
+      // `session_event_scope_required`.
+      sessionAuthority: "managed-private",
       workspaceId: ws.id,
       hostId,
       relayUrl,
@@ -204,6 +210,11 @@ export async function localLoopbackCloudConnectionInfo(
     connection: {
       access: "cloud",
       backing: "cloud-vm",
+      // This branch answers a LOOPBACK caller of the local server, whose
+      // workspace runtimes are the embedded ones it starts itself
+      // (`configureEmbeddedWorkspaceRuntime`) — an embedded exposure, so the
+      // unbound local policy, so workspace-wide streams.
+      sessionAuthority: "local",
       workspaceId: ws.id,
       hostId,
       relayUrl: localLoopbackRelayUrl(request, options),

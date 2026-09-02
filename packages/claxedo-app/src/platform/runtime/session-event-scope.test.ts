@@ -7,6 +7,7 @@ import {
   resetSessionEventScope,
   sessionEventScopeId,
   sessionEventStreamsOpen,
+  setSessionEventRouteScope,
   whenSessionEventStreamsOpen,
 } from "./session-event-scope"
 
@@ -25,15 +26,24 @@ const settled = async (promise: Promise<void>) => {
 
 describe("sessionEventScopeId", () => {
   test("bridges the draft route with the session the composer published", () => {
-    expect(sessionEventScopeId(undefined)).toBeUndefined()
+    expect(sessionEventScopeId()).toBeUndefined()
     holdSessionEventScope("ses_created")
-    expect(sessionEventScopeId(undefined)).toBe("ses_created")
+    expect(sessionEventScopeId()).toBe("ses_created")
   })
 
   test("the route wins once it names a session, so navigating away retargets", () => {
     holdSessionEventScope("ses_created")
-    expect(sessionEventScopeId("ses_other")).toBe("ses_other")
-    expect(sessionEventScopeId("  ")).toBe("ses_created")
+    setSessionEventRouteScope("ses_other")
+    expect(sessionEventScopeId()).toBe("ses_other")
+    setSessionEventRouteScope("  ")
+    expect(sessionEventScopeId()).toBe("ses_created")
+  })
+
+  test("names the session an ATTACH reached by route, with nothing held", () => {
+    // The route is a standing input, not a handoff from the composer: a session
+    // this client never created must scope the same streams a created one does.
+    setSessionEventRouteScope("ses_attached")
+    expect(sessionEventScopeId()).toBe("ses_attached")
   })
 })
 

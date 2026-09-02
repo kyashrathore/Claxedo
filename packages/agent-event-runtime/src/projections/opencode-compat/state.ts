@@ -3,6 +3,15 @@ import type { ToolDisplay } from "../../contracts/agent-runtime-event"
 
 export type OpencodeCompatProjectionState = {
   assistantMsgId?: string
+  /**
+   * The assistant message id this projection has already announced a
+   * `message.updated` row for. Kept as the id rather than a flag so a turn that
+   * retargets its reply announces the new row instead of hanging its parts off
+   * an envelope the consumer never received.
+   */
+  announcedAssistantMsgId?: string
+  /** The agent the lane last named (`session-agent`), for the announced row. */
+  agentId: string
   accumulatedText: string
   accumulatedThinkingText: string
   proposedPlanText: string
@@ -25,6 +34,8 @@ export function createOpencodeCompatProjectionState(
 ): OpencodeCompatProjectionState {
   return {
     assistantMsgId: initial?.assistantMsgId,
+    announcedAssistantMsgId: initial?.announcedAssistantMsgId,
+    agentId: initial?.agentId ?? "",
     accumulatedText: initial?.accumulatedText ?? "",
     accumulatedThinkingText: initial?.accumulatedThinkingText ?? "",
     proposedPlanText: initial?.proposedPlanText ?? "",

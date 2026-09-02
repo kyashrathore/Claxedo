@@ -548,6 +548,10 @@ async function installCloudRuntimeMock(
       return json(route, {
         access: "cloud",
         backing: "cloud-vm",
+        // What `cloud-connection.ts` mints: a provisioned sandbox's runtime
+        // delegates to the control plane's session authority, so it serves
+        // SESSION-SCOPED event streams only.
+        sessionAuthority: "managed-private",
         workspaceId: WORKSPACE_ID,
         role: "owner",
         relayUrl: url.origin,

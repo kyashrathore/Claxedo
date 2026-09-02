@@ -19,6 +19,7 @@ import type { AccountState } from "@/platform/account/account-port"
 import { parseShellRoute, shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { centralTransportForServer, createTransport } from "@/platform/runtime/transport"
+import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
 import { controlPlaneEventsUrl } from "@/platform/runtime/agent/workspace-control-routes"
 
 type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
@@ -80,6 +81,14 @@ export function claxedoEventStreamTargets(input: {
   directory?: string
   projects?: ProjectCache
   sessionID?: string
+  /**
+   * Which stream scopes the resolved workspace's runtime serves, read from the
+   * connection the control plane minted (`workspaceSessionAuthority`). Asked
+   * for the workspace THIS function resolved, so the workspace is identified
+   * once. Answering `undefined` (the mint has not landed) opens no workspace
+   * stream, because either guess is wrong for one of the two compositions.
+   */
+  sessionAuthority?: (workspaceId: string) => WorkspaceSessionAuthority | undefined
   /** Whether the account is signed in; only the signed-web deployment needs it. */
   accountSigned?: boolean
 }): ClaxedoEventStreamTarget[] {
@@ -111,15 +120,38 @@ export function claxedoEventStreamTargets(input: {
     : []
   if (!workspace) return base
   const sessionID = input.sessionID?.trim()
-  // A managed-private runtime serves SESSION-scoped streams only:
-  // `authorizeSessionEventScope` (workspace-runtime routes/session-event-privacy.ts:50-60)
-  // answers an unscoped request with a permanent 400 `session_event_scope_required`.
-  // Which session that is comes from `session-event-scope.ts`, not from the
-  // route alone — see its module comment for why the composer has to be able to
-  // publish a just-created session before the route navigates to it.
-  // Local keeps the broad workspace stream (`pty.created`, `agent.lifecycle`,
-  // `worktree.ready`) — so the CATALOG, not a caller's inventory, must say "local".
-  if (workspace.kind !== "local" && (!sessionID || sessionID === "new")) return base
+  // Only a MANAGED-PRIVATE runtime serves session-scoped streams and nothing
+  // else: `authorizeSessionEventScope` (workspace-runtime
+  // routes/session-event-privacy.ts:50-60) answers an unscoped request on such a
+  // runtime with a permanent 400 `session_event_scope_required`. Which session
+  // that is comes from `session-event-scope.ts`, not from the route alone — see
+  // its module comment for why the composer has to be able to publish a
+  // just-created session before the route navigates to it.
+  //
+  // Every other runtime — this machine's embedded one, and the owner's daemon
+  // behind a user-hosted workspace — composes the unbound local policy and
+  // serves the broad workspace stream, which is where `pty.*` (a terminal's
+  // bytes), `process.*`, `agent.lifecycle` and `worktree.*` are published. Those
+  // frames belong to no session, so a session-scoped stream is not a narrower
+  // way to get them: it is the wrong stream, and a route with no session (a
+  // terminal, the workspace overview) could not open one at all.
+  //
+  // The workspace KIND cannot decide WHICH scopes a relay-backed runtime
+  // serves — it names who owns the machine, not how that machine's runtime
+  // composed its session authority, and the connection the control plane
+  // minted carries the answer. It does decide whether there is a connection to
+  // ask at all: a LOCAL workspace is served by this surface's own embedded
+  // runtime over loopback, which composes the unbound local policy by
+  // construction and mints nothing. Waiting there waits forever, and a
+  // harness-created session's `session.lifecycle` — published on the workspace
+  // bus and nowhere else — then has no stream to arrive on, so the rail never
+  // learns the session exists.
+  const sessionAuthority = workspace.kind === "local"
+    ? ("local" as const)
+    : input.sessionAuthority?.(workspace.workspaceId)
+  if (!sessionAuthority) return base
+  const managedPrivate = sessionAuthority === "managed-private"
+  if (managedPrivate && (!sessionID || sessionID === "new")) return base
   return [
     ...base,
     {
@@ -127,7 +159,7 @@ export function claxedoEventStreamTargets(input: {
       serverUrl,
       workspaceId: workspace.workspaceId,
       workspaceKind: workspace.kind,
-      ...(workspace.kind !== "local" && sessionID ? { sessionID } : {}),
+      ...(managedPrivate && sessionID ? { sessionID } : {}),
       ...("directory" in workspace && workspace.directory
         ? { directory: workspace.directory }
         : input.directory

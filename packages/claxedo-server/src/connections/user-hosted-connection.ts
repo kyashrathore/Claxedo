@@ -141,6 +141,16 @@ export async function userHostedConnectionInfo(
       access: "user-hosted" as const,
       backing: "local-worktree" as const,
       runtimeKind: "user-hosted" as const,
+      // Which stream scopes the runtime behind this connection serves. A
+      // user-hosted workspace is served by the owner's own daemon, whose
+      // embedded workspace runtime composes `managedWorkspaceSessionAccessPolicy()`
+      // with no injected authority — `sessionAuthority: "local"` — so it answers
+      // WORKSPACE-WIDE `/api/wr/events` and `/api/wr/runtime-events` as well as
+      // session-scoped ones. Only a managed-private runtime rejects an unscoped
+      // stream with 400 `session_event_scope_required`, and a client cannot
+      // discover which composition it is talking to; the control plane knows
+      // because it is the one that decided where the workspace runs.
+      sessionAuthority: "local" as const,
       workspaceId,
       homeRegion,
       relayUrl,

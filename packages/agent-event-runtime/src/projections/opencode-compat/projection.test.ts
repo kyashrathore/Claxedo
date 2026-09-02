@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test"
 import { createOpencodeCompatProjection } from "./projection"
 
+// The client-side composition: a consumer reading a workspace's runtime-events
+// stream, where this projection is the turn's whole OpenCode-shaped producer.
 function makeProjection() {
   return createOpencodeCompatProjection({
     sessionId: "session-1",
     directory: "/repo",
     assistantMessageId: "assistant-1",
+    announcesAssistantMessage: true,
     clock: () => 100,
   })
 }
@@ -81,6 +84,137 @@ describe("createOpencodeCompatProjection", () => {
       revision: 1,
       childSessionId: "child-session-1",
     })).toEqual([])
+  })
+
+  // A turn a VIEWER observes has no client-side origin: nothing on this
+  // machine created its assistant message, and the runtime-events lane names
+  // that message without ever carrying a row for it. The OpenCode consumers
+  // file a part against an EXISTING message (`upsertPart` / `appendPartDelta`
+  // in claxedo-app's `opencode-conversation.ts` return false for an unknown
+  // message id), and the runtime's own compat producer opens every turn with
+  // that row before any part (`sdk-runtime-adapter`'s `start`: busy, the user
+  // row, then the assistant row). This projection stands in for that producer
+  // on the runtime-events lane, so it owes its consumers the same row.
+  test("announces the assistant message row before the first part of a turn", () => {
+    const projection = createOpencodeCompatProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "msg_host_turn_r",
+      announcesAssistantMessage: true,
+      clock: () => 100,
+    })
+
+    const first = projection.ingest({ type: "text-delta", delta: "hel" })
+
+    expect(first.map((event) => event.payload.type)).toEqual([
+      "message.updated",
+      "message.part.updated",
+      "message.part.delta",
+    ])
+    expect(first[0]).toEqual({
+      directory: "/repo",
+      payload: {
+        id: "message.updated:msg_host_turn_r",
+        type: "message.updated",
+        properties: {
+          sessionID: "session-1",
+          info: {
+            id: "msg_host_turn_r",
+            sessionID: "session-1",
+            role: "assistant",
+            time: { created: 100 },
+            // The `${userMessageId}_r` the runtime announced: the turn this
+            // reply answers, which is what puts it under that user message in
+            // the timeline.
+            parentID: "msg_host_turn",
+            modelID: "",
+            providerID: "",
+            mode: "auto",
+            agent: "",
+            path: { cwd: "/repo", root: "/repo" },
+            cost: 0,
+            tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          },
+        },
+      },
+    })
+    // Once per turn, not once per part.
+    expect(projection.ingest({ type: "text-delta", delta: "lo" }).map((event) => event.payload.type)).toEqual([
+      "message.part.delta",
+    ])
+    expect(projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "bash" })
+      .map((event) => event.payload.type)).toEqual(["message.part.updated"])
+  })
+
+  test("the host composition announces nothing — its own producer owns the row", () => {
+    // `createTurnEventProjector` (agent-sdk-runtime) and the workspace
+    // runtime's `createPromptEventProjection` append their own
+    // `buildAssistantMessage` row at turn start, complete with the agent and
+    // model this lane never carries. A row announced here would land after it
+    // and overwrite it with a thinner one.
+    const projection = createOpencodeCompatProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "assistant-1",
+      clock: () => 100,
+    })
+
+    expect(projection.ingest({ type: "text-delta", delta: "hi" }).map((event) => event.payload.type)).toEqual([
+      "message.part.updated",
+      "message.part.delta",
+    ])
+  })
+
+  test("announces the row for a turn whose reply the runtime named itself", () => {
+    // No `_r` suffix means no user message id to recover, which is the same
+    // case the runtime's own producer parents on the session.
+    const projection = makeProjection()
+
+    expect(projection.ingest({ type: "text-delta", delta: "hi" })[0]?.payload).toMatchObject({
+      type: "message.updated",
+      properties: { info: { id: "assistant-1", parentID: "session-1" } },
+    })
+  })
+
+  test("names the agent the lane reported on the announced row", () => {
+    const projection = makeProjection()
+
+    projection.ingest({ type: "session-agent", agentId: "build" })
+
+    expect(projection.ingest({ type: "text-delta", delta: "hi" })[0]?.payload).toMatchObject({
+      type: "message.updated",
+      properties: { info: { agent: "build" } },
+    })
+  })
+
+  test("a status-only session never announces a reply row", () => {
+    const projection = makeProjection()
+
+    expect(projection.ingest({ type: "session-status", status: "busy" }).map((event) => event.payload.type))
+      .toEqual(["session.status"])
+    expect(projection.snapshot().state.announcedAssistantMsgId).toBeUndefined()
+  })
+
+  test("a resumed projection does not re-announce a row its consumer already has", () => {
+    const first = createOpencodeCompatProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "assistant-1",
+      announcesAssistantMessage: true,
+    })
+    first.ingest({ type: "text-delta", delta: "hello" })
+
+    const next = createOpencodeCompatProjection({
+      sessionId: "session-1",
+      directory: "/repo",
+      assistantMessageId: "assistant-1",
+      announcesAssistantMessage: true,
+      initialSnapshot: first.snapshot(),
+    })
+
+    expect(next.ingest({ type: "text-delta", delta: "!" }).map((event) => event.payload.type)).toEqual([
+      "message.part.delta",
+    ])
   })
 
   test("emits text deltas incrementally", () => {
@@ -247,6 +381,7 @@ describe("createOpencodeCompatProjection", () => {
     const projection = makeProjection()
 
     expect(projection.ingest({ type: "proposed-plan-delta", delta: "## Plan\n" }).map((event) => event.payload.type)).toEqual([
+      "message.updated",
       "message.part.updated",
       "message.part.delta",
     ])
@@ -347,7 +482,9 @@ describe("createOpencodeCompatProjection", () => {
   test("keeps out-of-order completed tools terminal when metadata arrives later", () => {
     const projection = makeProjection()
 
+    // The tool part is this turn's first, so it carries the assistant row.
     const completed = projection.ingest({ type: "tool-output", toolCallId: "tool-1", output: "done" })
+      .filter((event) => event.payload.type !== "message.updated")
     const metadata = projection.ingest({ type: "tool-start", toolCallId: "tool-1", toolName: "bash" })
 
     expect(completed[0]?.payload).toMatchObject({
@@ -456,14 +593,13 @@ describe("createOpencodeCompatProjection", () => {
       },
     })
     expect(projection.snapshot()).toEqual(before)
-    expect(projection.ingest({ type: "text-delta", delta: "ok" })[0]?.payload).toMatchObject({
-      type: "message.part.updated",
-      properties: {
-        part: {
-          text: "",
-        },
-      },
-    })
+    // A throw leaves nothing announced either, so the retry still opens with
+    // the assistant row its part needs.
+    expect(projection.ingest({ type: "text-delta", delta: "ok" }).map((event) => event.payload.type)).toEqual([
+      "message.updated",
+      "message.part.updated",
+      "message.part.delta",
+    ])
   })
 
   test("returns projection snapshots that do not mutate after later tool updates", () => {
@@ -515,7 +651,7 @@ describe("createOpencodeCompatProjection", () => {
           intent: "read",
         },
       },
-    })
+    }).filter((item) => item.payload.type !== "message.updated")
 
     expect(event?.payload).toMatchObject({
       properties: {
@@ -544,7 +680,7 @@ describe("createOpencodeCompatProjection", () => {
         filePath: "src/index.ts",
         locations: [{ path: "src/index.ts", line: 3 }],
       },
-    })
+    }).filter((item) => item.payload.type !== "message.updated")
     const [completed] = projection.ingest({ type: "tool-output", toolCallId: "tool-1", output: "done" })
 
     expect(started?.payload).toMatchObject({

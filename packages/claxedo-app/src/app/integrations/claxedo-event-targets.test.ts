@@ -6,7 +6,21 @@ import {
   eventStreamTargetKey,
   CLAXEDO_EVENTS_RELAY_PATH,
 } from "./claxedo-event-targets"
-import { holdSessionEventScope, resetSessionEventScope, sessionEventScopeId } from "@/platform/runtime/session-event-scope"
+import {
+  holdSessionEventScope,
+  resetSessionEventScope,
+  sessionEventScopeId,
+  setSessionEventRouteScope,
+} from "@/platform/runtime/session-event-scope"
+import type { WorkspaceSessionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
+
+/**
+ * The `sessionAuthority` resolver the events provider passes, standing in for
+ * `workspaceSessionAuthority` reading the minted connection.
+ */
+function serves(authority: WorkspaceSessionAuthority) {
+  return () => authority
+}
 
 /**
  * A `typeof fetch` test double, without a cast.
@@ -29,6 +43,7 @@ describe("claxedoEventStreamTargets", () => {
       serverUrl: "http://127.0.0.1:3001",
       directory: "/repo/local",
       accountSigned: false,
+      sessionAuthority: serves("local"),
       projects: [{
         workspaces: {
           "/repo/local": {
@@ -56,6 +71,7 @@ describe("claxedoEventStreamTargets", () => {
       accountSigned: true,
       directory: "/repo/local",
       accountSigned: false,
+      sessionAuthority: serves("local"),
       projects: [{
         workspaces: {
           "/repo/local": {
@@ -80,6 +96,7 @@ describe("claxedoEventStreamTargets", () => {
       accountSigned: true,
       directory: "/repo/local",
       sessionID: "session-local",
+      sessionAuthority: serves("local"),
       projects: [{
         workspaces: {
           "/repo/local": {
@@ -107,6 +124,7 @@ describe("claxedoEventStreamTargets", () => {
       accountSigned: true,
       directory: "/repo/cloud",
       sessionID: "session-cloud",
+      sessionAuthority: serves("managed-private"),
       projects: [{
         workspaces: {
           "/repo/cloud": {
@@ -143,6 +161,7 @@ describe("claxedoEventStreamTargets", () => {
       accountSigned: true,
       directory: "ws_cloud",
       sessionID: "session-cloud",
+      sessionAuthority: serves("managed-private"),
     })
     expect(targets[0]).toEqual({
       kind: "central",
@@ -161,6 +180,7 @@ describe("claxedoEventStreamTargets", () => {
       accountSigned: true,
       directory: "workspace:ws_cloud",
       sessionID: "session-cloud",
+      sessionAuthority: serves("managed-private"),
     })
     expect(targets[1]).toMatchObject({
       kind: "workspace",
@@ -174,6 +194,7 @@ describe("claxedoEventStreamTargets", () => {
       serverUrl: "http://127.0.0.1:3001",
       directory: "ws_cloud",
       sessionID: "session-cloud",
+      sessionAuthority: serves("managed-private"),
     })
     expect(targets[0]).toEqual({ kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") })
     expect(targets[1]).toMatchObject({
@@ -188,6 +209,7 @@ describe("claxedoEventStreamTargets", () => {
       serverUrl: "http://127.0.0.1:3001",
       directory: "workspace:ws_cloud",
       sessionID: "session-cloud",
+      sessionAuthority: serves("managed-private"),
     })
     expect(targets[0]).toEqual({ kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") })
     expect(targets[1]).toMatchObject({
@@ -204,11 +226,13 @@ describe("claxedoEventStreamTargets", () => {
     // turn's frames do.
     const draftRoute = claxedoEventRouteSessionID("/w/ws_cloud/session/new")
     expect(draftRoute).toBeUndefined()
+    setSessionEventRouteScope(draftRoute)
     expect(claxedoEventStreamTargets({
       serverUrl: "https://control.example.test",
       accountSigned: true,
       directory: "ws_cloud",
-      sessionID: sessionEventScopeId(draftRoute),
+      sessionID: sessionEventScopeId(),
+      sessionAuthority: serves("managed-private"),
     })).toEqual([
       { kind: "central", url: new URL("https://control.example.test/api/claxedo/events") },
     ])
@@ -219,7 +243,8 @@ describe("claxedoEventStreamTargets", () => {
         serverUrl: "https://control.example.test",
         accountSigned: true,
         directory: "ws_cloud",
-        sessionID: sessionEventScopeId(draftRoute),
+        sessionID: sessionEventScopeId(),
+        sessionAuthority: serves("managed-private"),
       })[1]).toMatchObject({
         kind: "workspace",
         workspaceId: "ws_cloud",
@@ -235,8 +260,88 @@ describe("claxedoEventStreamTargets", () => {
       serverUrl: "https://control.example.test",
       accountSigned: true,
       directory: "ws_cloud",
+      sessionAuthority: serves("managed-private"),
     })).toEqual([
       { kind: "central", url: new URL("https://control.example.test/api/claxedo/events") },
+    ])
+  })
+
+  test("opens the WORKSPACE-wide stream for a runtime that serves one, with no session on the route", () => {
+    // A terminal route names no session, and the bytes a terminal renders ride
+    // `pty.stream` on the workspace bus — a stream that belongs to no session.
+    // The owner's own daemon serves it, so the workspace kind ("user-hosted")
+    // must not be read as "session-scoped only".
+    expect(claxedoEventStreamTargets({
+      serverUrl: "https://control.example.test",
+      accountSigned: true,
+      directory: "ws_user_hosted",
+      sessionAuthority: serves("local"),
+    })).toEqual([
+      { kind: "central", url: new URL("https://control.example.test/api/claxedo/events") },
+      {
+        kind: "workspace",
+        serverUrl: "https://control.example.test",
+        workspaceId: "ws_user_hosted",
+        workspaceKind: "user-hosted",
+        directory: "ws_user_hosted",
+      },
+    ])
+  })
+
+  test("never narrows a workspace-wide runtime's stream to the route's session", () => {
+    const targets = claxedoEventStreamTargets({
+      serverUrl: "https://control.example.test",
+      accountSigned: true,
+      directory: "ws_user_hosted",
+      sessionID: "ses_attached",
+      sessionAuthority: serves("local"),
+    })
+    expect(targets[1]).not.toHaveProperty("sessionID")
+  })
+
+  test("opens no workspace stream until the connection says which scopes the runtime serves", () => {
+    // Neither guess is safe: an unscoped stream is a permanent 400 on a
+    // managed-private runtime, and a session-scoped one silently drops every
+    // pty/process/worktree frame on a local one.
+    expect(claxedoEventStreamTargets({
+      serverUrl: "https://control.example.test",
+      accountSigned: true,
+      directory: "ws_cloud",
+      sessionID: "ses_attached",
+    })).toEqual([
+      { kind: "central", url: new URL("https://control.example.test/api/claxedo/events") },
+    ])
+  })
+
+  test("a local workspace opens its stream with no connection to wait for", () => {
+    // There is no mint for a local workspace and never will be: it is served by
+    // this surface's own embedded runtime over loopback, which composes the
+    // unbound local policy by construction. Waiting on the connection there
+    // waits forever, and a harness-created session's `session.lifecycle` —
+    // published on the workspace bus and nowhere else — would have no stream to
+    // arrive on.
+    expect(claxedoEventStreamTargets({
+      serverUrl: "http://127.0.0.1:3001",
+      directory: "/repo/local",
+      accountSigned: false,
+      projects: [{
+        workspaces: {
+          "/repo/local": {
+            workspaceId: "ws_local_only",
+            kind: "local",
+            directory: "/repo/local",
+          },
+        },
+      }],
+    })).toEqual([
+      { kind: "central", url: new URL("http://127.0.0.1:3001/api/claxedo/events") },
+      {
+        kind: "workspace",
+        serverUrl: "http://127.0.0.1:3001",
+        workspaceId: "ws_local_only",
+        workspaceKind: "local",
+        directory: "/repo/local",
+      },
     ])
   })
 
