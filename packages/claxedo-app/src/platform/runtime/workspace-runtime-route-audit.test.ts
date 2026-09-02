@@ -1001,10 +1001,12 @@ describe("workspace runtime route audit", () => {
       expect(text).not.toMatch(/@\/hooks\/use-providers|@claxedo\/hooks\/use-providers/)
       expect(text).not.toMatch(/["']\/hooks\/use-providers["']/)
     }
-    expect(settings).toMatch(/useProviders\("opencode"\)/)
-    expect(settings).toMatch(/openCodeProviders\.queryKey\(\)/)
+    // Settings reads the catalog of the workspace and harness its scope selector names.
+    expect(settings).toMatch(/useProviders\(scope\.harness, scope\.scopeRef\)/)
+    expect(settings).not.toMatch(/useProviders\("opencode"\)|useProviders\("pi"\)/)
+    expect(settings).toMatch(/providers\.queryKey\(\)/)
     expect(settings).toMatch(/removeProviderAuthEntry/)
-    expect(settings).toMatch(/disconnectOpenCodeProvider/)
+    expect(settings).toMatch(/disconnectProvider/)
     // Provider config is the workspace runtime's file, not a server global:
     // Settings reads no `/global/config` and PATCHes no disabled-provider list.
     expect(settings).not.toMatch(/globalConfig/)
@@ -1033,14 +1035,14 @@ describe("workspace runtime route audit", () => {
     expect(general).not.toMatch(/@claxedo\/context\/config/)
     // Auth is read for the SAME (scope, harness) the catalog is: one hook next
     // to `useProviders`, not the boot path's central-scope query option.
-    expect(connect).toMatch(/useProviderAuth\(\(\) => props\.harness\)/)
-    expect(connect).toMatch(/useProviders\(\(\) => props\.harness\)/)
+    expect(connect).toMatch(/useProviderAuth\(\(\) => props\.harness, \(\) => props\.workspaceScope\)/)
+    expect(connect).toMatch(/useProviders\(\(\) => props\.harness, \(\) => props\.workspaceScope\)/)
     expect(connect).not.toMatch(/queryOptions\.providerAuth/)
     expect(connect).toMatch(/claxedoCredentialRequest/)
     expect(connect).not.toMatch(/globalSync\.data\.(?:provider|provider_auth)/)
     expect(connect).not.toMatch(/globalSync\.set\("provider"/)
     expect(custom).not.toMatch(/globalConfig/)
-    expect(custom).toMatch(/queryOptions\.providers\(null, "opencode"\)/)
+    expect(custom).toMatch(/useProviders\("opencode", \(\) => props\.scope\)/)
     expect(custom).toMatch(/claxedoCredentialRequest/)
     expect(custom).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
     expect(custom).not.toMatch(/@\/app\/dialogs\/select-provider/)

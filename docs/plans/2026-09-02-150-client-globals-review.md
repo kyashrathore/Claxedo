@@ -110,3 +110,9 @@ control plane that owns it).
   builder plus a relay allow-list check for `/provider` on the workspace
   surface); the desktop's legacy global model store is not migrated (owner:
   `persist.ts` desktop legacy branch).
+- Open after the Settings step: `app/dialogs/custom-provider.tsx` still
+  writes a custom provider through the SDK's `global.config.update`, i.e. a
+  central `/global/config` patch that the hosted plane no longer serves. A
+  custom provider is an entry in the OpenCode runtime's config for the chosen
+  workspace, so the write belongs on that workspace's runtime config route.
+  Owner: the custom-provider dialog plus the runtime's config write.
