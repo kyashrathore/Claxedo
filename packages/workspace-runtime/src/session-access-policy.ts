@@ -191,6 +191,11 @@ const WRITE_OPERATIONS = new Set<SessionAccessOperation>([
   "tool_write",
   "pty_write",
   "agent_lifecycle_write",
+  "goal_start",
+  "goal_pause",
+  "goal_resume",
+  "goal_stop",
+  "goal_delete",
 ])
 
 const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const

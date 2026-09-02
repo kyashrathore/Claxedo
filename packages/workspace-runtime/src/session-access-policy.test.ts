@@ -89,6 +89,73 @@ describe("SessionAccessPolicy", () => {
     })).resolves.toEqual({ allowed: true })
   })
 
+  test("denies a workspace viewer every goal mutation and routes editors to the write authority", async () => {
+    const seen: string[] = []
+    const policy = managedWorkspaceSessionAccessPolicy({
+      authorizeSessionRead: (input) => {
+        seen.push(`read:${input.operation}`)
+        return true
+      },
+      authorizeSessionWrite: (input) => {
+        seen.push(`write:${input.operation}`)
+        return true
+      },
+    })
+    const actor = { actorId: "actor_1", actorKind: "human" as const }
+    const goalMutations = ["goal_start", "goal_pause", "goal_resume", "goal_stop", "goal_delete"] as const
+
+    // Starting, pausing, resuming, stopping, or deleting a Goal changes session
+    // state, so the role-rank gate must refuse a viewer before any
+    // creator/participant check runs.
+    for (const operation of goalMutations) {
+      await expect(policy.authorize({
+        authority: { ...authority, role: "viewer" },
+        actor,
+        operation,
+        sessionId: "ses_1",
+      })).resolves.toMatchObject({ allowed: false, code: "session_write_forbidden", status: 403 })
+    }
+
+    // An editor is allowed, and reaches the WRITE authority predicate — which is
+    // what makes the control plane see scope "write" for these operations.
+    for (const operation of goalMutations) {
+      await expect(policy.authorize({
+        authority,
+        actor,
+        operation,
+        sessionId: "ses_1",
+      })).resolves.toEqual({ allowed: true })
+    }
+
+    expect(seen).toEqual(goalMutations.map((operation) => `write:${operation}`))
+  })
+
+  test("keeps goal reads on the read authority for a workspace viewer", async () => {
+    const seen: string[] = []
+    const policy = managedWorkspaceSessionAccessPolicy({
+      authorizeSessionRead: (input) => {
+        seen.push(`read:${input.operation}`)
+        return true
+      },
+      authorizeSessionWrite: (input) => {
+        seen.push(`write:${input.operation}`)
+        return true
+      },
+    })
+    const goalReads = ["goal_read", "goal_state", "goal_capabilities"] as const
+
+    for (const operation of goalReads) {
+      await expect(policy.authorize({
+        authority: { ...authority, role: "viewer" },
+        actor: { actorId: "actor_1", actorKind: "human" },
+        operation,
+        sessionId: "ses_1",
+      })).resolves.toEqual({ allowed: true })
+    }
+
+    expect(seen).toEqual(goalReads.map((operation) => `read:${operation}`))
+  })
+
   test("denies a workspace editor who is not a private-session participant", async () => {
     const participants = new Set(["actor_alice"])
     const policy = managedWorkspaceSessionAccessPolicy({

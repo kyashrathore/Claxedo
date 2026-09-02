@@ -1,5 +1,20 @@
 import { describe, expect, test } from "bun:test"
-import { SESSION_CORE_ROUTE_ACCESS, SESSION_V2_PROXY_ROUTE_ACCESS } from "../session-access-policy"
+import {
+  SESSION_CORE_ROUTE_ACCESS,
+  SESSION_V2_PROXY_ROUTE_ACCESS,
+  sessionAccessRequiresWrite,
+} from "../session-access-policy"
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"])
+
+/**
+ * Mutating session-core routes that a reviewer has deliberately classified as
+ * reads. Intentionally empty: every POST/PUT/PATCH/DELETE below drives a Session
+ * or Goal state change, so all of them must clear the `role >= editor` gate in
+ * `authorizeManaged` and reach the control plane with the `write` scope. Adding
+ * an entry means someone decided a mutating verb changes no state — say why here.
+ */
+const MUTATING_ROUTES_CLASSIFIED_AS_READS: readonly string[] = []
 
 const EXPECTED_SESSION_CORE_ROUTES = [
   "DELETE /session/:id",
@@ -70,6 +85,27 @@ describe("OpenCode-compatible session route inventory", () => {
       "GET /event": { kind: "stream", operation: "session_event_stream" },
     })
     expect(Object.values(SESSION_CORE_ROUTE_ACCESS).every((decision) => decision.kind !== undefined)).toBe(true)
+  })
+
+  test("requires workspace write authority for every mutating route", () => {
+    const mutating = Object.entries(SESSION_CORE_ROUTE_ACCESS)
+      .filter(([route]) => MUTATING_METHODS.has(route.split(" ")[0]!))
+
+    // Guards the guard: if the route table or its key shape ever changes, an
+    // empty match must not silently pass this assertion.
+    expect(mutating.length).toBe(
+      EXPECTED_SESSION_CORE_ROUTES.filter((route) => MUTATING_METHODS.has(route.split(" ")[0]!)).length,
+    )
+    expect(mutating.length).toBeGreaterThan(0)
+
+    const notWriteGated = mutating.flatMap(([route, decision]) => {
+      if (MUTATING_ROUTES_CLASSIFIED_AS_READS.includes(route)) return []
+      const method = route.split(" ")[0]!
+      if (decision.kind === "workspace") return [route]
+      return sessionAccessRequiresWrite({ operation: decision.operation, method }) ? [] : [route]
+    })
+
+    expect(notWriteGated).toEqual([])
   })
 
   test("keeps the opaque Session V2 proxy behind a prefix-level decision", async () => {
