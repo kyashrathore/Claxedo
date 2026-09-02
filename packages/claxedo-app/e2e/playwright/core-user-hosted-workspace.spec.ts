@@ -169,6 +169,12 @@
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionInventoryPath, isSessionListPath } from "../helpers/contracts/session-list"
+import {
+  isSessionRegistrationReservePath,
+  parseSessionReservationRequest,
+  sessionReservationResponse,
+  sessionReservationStatus,
+} from "../helpers/contracts/session-registration"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { stampTestAuth } from "../playwright-global-setup"
@@ -462,8 +468,35 @@ async function installUserHostedRuntimeMock(
       return json(route, { connections: [] })
     }
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
-    if (url.pathname === "/api/wr/events") {
+    // ONE central stream under three spellings, exactly as both real servers
+    // mount it (claxedo-local-server compat-routes/index.ts and
+    // claxedo-server/src/routes/hosted/shell.ts each map `/global/event`,
+    // `/api/wr/events` and `/api/claxedo/events` onto a single handler).
+    // `/api/claxedo/events` is the one `ClaxedoEventsProvider` opens for a
+    // signed account, so leaving it out did not silence a stream — it made the
+    // provider retry a rejected fetch for the life of the page, which is where
+    // those bare-origin hits came from.
+    if (url.pathname === "/api/wr/events" || url.pathname === "/api/claxedo/events") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
+    }
+    // Session share grants (`listSessionShares`, src/features/session/data/
+    // session-share-api.ts → GET /api/control/sessions/:id/shares?workspaceId=…).
+    // Control-plane people data about a session, never the workspace runtime —
+    // same category as the inventory above. Nobody has shared this session.
+    if (/^\/api\/control\/sessions\/[^/]+\/shares$/.test(url.pathname) && method === "GET") {
+      return json(route, { can_manage_shares: true, grants: [], participants: [], teams: [] })
+    }
+    // The signed session-reservation boundary a relay-backed send crosses
+    // BEFORE the runtime create (`reservePrivateSession`,
+    // src/platform/runtime/private-session-reservation.ts). Bare origin by
+    // design — it is the control plane's own route — so it is not part of
+    // Behavior 3's runtime lane either. Unanswered it does not degrade: the
+    // client refuses a receipt that is not its own intent and the send aborts
+    // before any session exists. See ../helpers/contracts/session-registration.ts.
+    if (isSessionRegistrationReservePath(url.pathname) && method === "POST") {
+      const reservation = parseSessionReservationRequest(request.postDataJSON?.() ?? undefined, request.url())
+      const result = sessionReservationResponse(reservation)
+      return json(route, result, sessionReservationStatus(result))
     }
     if (/^\/api\/control\/workspaces\/[^/]+\/sessions\/[^/]+\/(register|checkpoint|repair)$/.test(url.pathname) && method === "POST") {
       // `src/runtime/session-projection.ts` fire-and-forget projection pull —

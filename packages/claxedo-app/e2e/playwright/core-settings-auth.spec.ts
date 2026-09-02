@@ -771,19 +771,10 @@ async function mockProviderCatalog(page: Page, input: { connected: ProviderFixtu
     connected: indexCatalog.connected,
     default: indexCatalog.default,
   }
-  // Bootstrap owns the initial provider index. Install this route after the shared
-  // runtime so the settings page starts from the same canonical catalog that a real
-  // control plane supplies. The /provider route below supplies detail metadata after
-  // the settings surface identifies which connected providers need it.
-  await page.route("**/api/claxedo/bootstrap**", (route) => json(route, {
-    healthy: true,
-    version: "1.0.0-test",
-    path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
-    project: [{ id: "proj_mock_runtime", worktree: DIR, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
-    provider: listBody,
-    provider_auth: {},
-    config: {},
-  }))
+  // `GET /provider?harness=<harness>&directory=<scope>` is the ONLY route the
+  // catalog comes from: `providerListQuery` reads that scoped route, and
+  // `?provider=<id>` is its detail form. The index shape below is what the real
+  // route answers.
   const fulfillProvider = (route: Parameters<Parameters<Page["route"]>[1]>[0]) => {
     if (route.request().method() !== "GET" && route.request().resourceType() !== "fetch" && route.request().resourceType() !== "xhr") {
       return route.continue()
@@ -1448,9 +1439,9 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const openCodeSection = page.locator('[data-component="opencode-providers-section"]')
-      await expect(openCodeSection.getByText("Anthropic")).toBeVisible()
-      const row = openCodeSection.locator("div.border-b").filter({ hasText: "Anthropic" })
+      const harnessSection = page.locator('[data-component="harness-providers-section"]')
+      await expect(harnessSection.getByText("Anthropic")).toBeVisible()
+      const row = harnessSection.locator("div.border-b").filter({ hasText: "Anthropic" })
       await row.getByRole("button", { name: "Connect" }).click()
 
       await expect(row.getByLabel(/Anthropic API key/i)).toBeVisible()
@@ -1480,13 +1471,13 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const openCodeSection = page.locator('[data-component="opencode-providers-section"]')
-      const envRow = openCodeSection.locator('[data-provider="anthropic"]')
+      const harnessSection = page.locator('[data-component="harness-providers-section"]')
+      const envRow = harnessSection.locator('[data-provider="anthropic"]')
       await expect(envRow).toHaveCount(1)
       await expect(envRow.getByText("Environment", { exact: true })).toBeVisible()
       await expect(envRow.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
 
-      const apiRow = openCodeSection.locator('[data-provider="openai"]')
+      const apiRow = harnessSection.locator('[data-provider="openai"]')
       await expect(apiRow).toHaveCount(1)
       await expect(apiRow.getByText("API key", { exact: true })).toBeVisible()
       await apiRow.getByRole("button", { name: "Disconnect" }).click()
@@ -1533,7 +1524,7 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const row = page.locator('[data-component="opencode-providers-section"]').locator('[data-provider="clinepass-2"]')
+      const row = page.locator('[data-component="harness-providers-section"]').locator('[data-provider="clinepass-2"]')
       await row.getByRole("button", { name: "Disconnect" }).click()
 
       await expect.poll(() => authHits.configPatch.length, { timeout: 10_000 }).toBe(1)

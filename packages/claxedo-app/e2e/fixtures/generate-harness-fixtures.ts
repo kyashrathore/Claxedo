@@ -37,6 +37,15 @@
  *     a reduced scenario (Pi's spec 10 coverage only needs to prove it shares the
  *     native rendering path, not repeat the full matrix — see the spec's SPEC block).
  *
+ * FIXTURE KEY vs HARNESS IDENTITY: the `<harness>` in the filename (and in the
+ * `directory`/`sessionID` strings `identity()` bakes into every envelope) is a
+ * TRACE FAMILY NAME, not a harness identity. `claude-acp` here means "the trace
+ * recorded from Claude over ACP"; the identity the app and the runtime speak for
+ * that harness is `acp:claude` (`normalizeHarnessIdentity`,
+ * agent-sdk-runtime/src/harness-types.ts). The rendering-matrix spec maps between
+ * the two (`HARNESS_IDENTITY_BY_FIXTURE`) so the committed traces stay byte-stable
+ * while the harness vocabulary moves.
+ *
  * Run: `bun run e2e/fixtures/generate-harness-fixtures.ts` from packages/claxedo-app.
  * Commit the resulting JSON under e2e/fixtures/harness-traces/.
  */

@@ -110,15 +110,15 @@ test.describe("@core permission picker — the harness's own modes", () => {
     // are separate products reached over separate transports, and a spec that let them
     // converge would stop noticing if one started answering for the other.
     {
-      harness: "claude-acp",
+      harness: "acp:claude",
       ids: ["auto", "default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"],
       // claude-agent-acp's rung is literally `{ id: "auto", name: "Auto" }`, so
       // "Auto" on the trigger here is the AGENT's word, not Claxedo's.
       auto: "auto",
       label: /^Auto$/i,
     },
-    { harness: "codex-acp", ids: ["read-only", "agent", "agent-full-access"], auto: "agent", label: /^Agent$/i },
-    { harness: "cursor-acp", ids: ["agent", "plan", "ask"], auto: "agent", label: /^Agent$/i },
+    { harness: "acp:codex", ids: ["read-only", "agent", "agent-full-access"], auto: "agent", label: /^Agent$/i },
+    { harness: "acp:cursor", ids: ["agent", "plan", "ask"], auto: "agent", label: /^Agent$/i },
   ]
 
   for (const item of DRAFT_CASES) {

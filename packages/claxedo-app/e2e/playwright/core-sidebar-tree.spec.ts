@@ -1075,7 +1075,7 @@ test.describe("core sidebar tree @core", () => {
       sessionId: SESSION_ID,
       projectId: PROJECT_ID,
       projectName: "sidebar-tree",
-      harness: "codex-acp",
+      harness: "acp:codex",
       workspaces: {
         [DIR]: { workspaceId: PROJECT_ID, kind: "local", directory: DIR, available: true },
       },

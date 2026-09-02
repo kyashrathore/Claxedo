@@ -960,7 +960,19 @@ test.describe("core processes @core", () => {
         })
         .catch(() => {})
     }
+    // `ProcessPaneProvider` reads the crash off `useClaxedoEvents`
+    // (src/app/workbench/context/process-pane.tsx), whose CENTRAL stream target
+    // is `/api/claxedo/events` — `/api/wr/events` is the workspace-scoped
+    // spelling and is also what global-sdk's compat loop is rewritten to, so
+    // pinning only that one let the other reader claim the single `times: 1`
+    // interception and the crash never reached the process pane. Both real
+    // servers mount ONE handler on `/global/event`, `/api/wr/events` and
+    // `/api/claxedo/events` (claxedo-local-server/src/opencode/compat-routes,
+    // claxedo-server/src/routes/hosted/shell.ts), so serving the same frames on
+    // every central spelling is the contract, not a workaround. Delivering the
+    // crash more than once is idempotent: it re-asserts the same crashed state.
     await page.route("**/api/wr/events**", deliverCrashEvent, { times: 1 })
+    await page.route("**/api/claxedo/events**", deliverCrashEvent, { times: 1 })
     await page.route("**/api/wr/runtime-events**", deliverCrashEvent, { times: 1 })
 
     await openWorkspace(page, DIR)

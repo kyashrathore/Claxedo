@@ -172,6 +172,11 @@
  *   contract, not a verdict on it).
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
+import {
+  isWorkspaceListPath,
+  workspaceListResponse,
+  type ControlPlaneWorkspaceRow,
+} from "../helpers/contracts/workspace-list"
 import { isSessionListPath } from "../helpers/contracts/session-list"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { stampTestAuth } from "../playwright-global-setup"
@@ -271,6 +276,46 @@ async function seed(page: Page) {
     },
     { directory: DIR, uhDirectory: UH_DIR },
   )
+}
+
+/**
+ * The two workspaces above, as the CONTROL PLANE lists them.
+ *
+ * The boot aggregate stopped carrying the project inventory, so
+ * `workspaceCatalogQuery` (src/features/workspaces/data/workspace-catalog.ts)
+ * now reads the central's own `/project` AND `/api/workspace?access=cloud` /
+ * `?access=user-hosted`, then folds the two. These rows are the same
+ * workspaces `bootstrapBody().project` declares, seen from the other side —
+ * `remote_directory` is what makes `mergeWorkspaceCatalog` recognise them as
+ * one workspace instead of listing each twice. The row type is bound to the
+ * authority's own projection (see helpers/contracts/workspace-list.ts).
+ */
+function controlPlaneWorkspaceRows(): ControlPlaneWorkspaceRow[] {
+  return [
+    {
+      workspace_id: WORKSPACE_ID,
+      org_id: "org_core13",
+      project_id: PROJECT_ID,
+      display_name: "cloud",
+      backing: "cloud-vm",
+      access: "cloud",
+      remote_directory: DIR,
+      role: "owner",
+    },
+    {
+      workspace_id: UH_WORKSPACE_ID,
+      org_id: "org_core13",
+      project_id: PROJECT_ID,
+      display_name: "shared",
+      backing: "local-worktree",
+      access: "user-hosted",
+      remote_directory: UH_DIR,
+      role: "owner",
+      // Listing is not reachability: behavior 3 drives the host offline through
+      // the runtime HEALTH probe, and the row stays listed either way.
+      host_online: true,
+    },
+  ]
 }
 
 function bootstrapBody() {
@@ -407,6 +452,22 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
 
     // ---- Same-origin: bootstrap + composer-harness (central claxedo-server) ----
     if (url.pathname === "/api/claxedo/bootstrap") return json(route, bootstrapBody())
+    // The project inventory left the boot aggregate (`bootstrapGlobal` reads
+    // only `healthy`/`path`/`services` off it now), so the sidebar catalog asks
+    // the two sources directly. Unanswered, `client.project.list()` threw on
+    // this file's 598 sentinel and the WHOLE catalog query failed, which left
+    // every pane without a resolved workspace — no offline view, no
+    // access-denied view, no composer.
+    if (url.pathname === "/project" || url.pathname === "/experimental/project") {
+      return json(route, bootstrapBody().project)
+    }
+    if (url.pathname === "/project/current") return json(route, bootstrapBody().project[0])
+    if (isWorkspaceListPath(url.pathname)) {
+      return json(route, workspaceListResponse({
+        access: url.searchParams.get("access"),
+        workspaces: controlPlaneWorkspaceRows(),
+      }))
+    }
     // Boot-time central-server surface fired against the loopback central URL
     // (`.env.local`'s VITE_CLAXEDO_SERVER_URL). All are tolerated by the
     // app when they fail, but answering them keeps the unhandled ledger clean.
@@ -434,7 +495,15 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     if (url.pathname === "/api/claxedo/agent-config/agents")
       return json(route, [{ id: "build", name: "build", mode: "primary" }])
     if (url.pathname === "/api/claxedo/agent-config/commands") return json(route, [])
-    if (url.pathname === "/global/event" || url.pathname === "/event") {
+    // One stream, three spellings — both real servers mount a single handler on
+    // all of them (claxedo-local-server compat-routes/index.ts:168-177,
+    // claxedo-server routes/hosted/shell.ts:745-747). `/api/claxedo/events` is
+    // `ClaxedoEventsProvider`'s CENTRAL target, opened on every signed page.
+    if (
+      url.pathname === "/global/event" ||
+      url.pathname === "/event" ||
+      url.pathname === "/api/claxedo/events"
+    ) {
       return route.fulfill({
         status: 200,
         contentType: "text/event-stream",

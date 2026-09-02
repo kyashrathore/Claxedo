@@ -362,7 +362,7 @@
  *     `harness-options-loader.ts` and `harness-switcher.ts` were real and are
  *     pinned by unit tests, but they were not the whole story.
  *     Individual scenarios pass in isolation — a standalone driver that opens a
- *     draft, clicks `[data-key="claude-acp"]` and polls shows the trigger on
+ *     draft, clicks `[data-key="acp:claude"]` and polls shows the trigger on
  *     "Claude" within 1s and the model control settled on a real catalog by 5s,
  *     repeatably — and the same scenario passes in some full runs and not
  *     others, with the residual failure always "Loading models past 45s" on a
@@ -771,7 +771,7 @@ function harnessPickerTarget(harnessKey: string) {
   // harnessKey therefore has NO picker row: those scenarios ride the seeded
   // server default (`makeWorkspace` → `seedDefaultHarness`), which the draft
   // hydrates on mount.
-  if (harnessKey === "claude-acp" || harnessKey === "codex-acp" || harnessKey === "cursor-acp") return null
+  if (harnessKey === "acp:claude" || harnessKey === "acp:codex" || harnessKey === "acp:cursor") return null
   if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: 0 }
   if (harnessKey.startsWith("codex")) return { label: /^Codex$/, index: 0 }
   if (harnessKey.startsWith("cursor")) return { label: /^Cursor$/, index: 0 }
@@ -1297,7 +1297,7 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
       timeout: 60_000,
     })
     await expect(card.locator('[data-slot="subagent-status"]')).toHaveText(/Pending|Working|Completed/, { timeout: 30_000 })
-    if (harness.id === "codex-acp") {
+    if (harness.id === "acp:codex") {
       const sessionID = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1)
       expect(sessionID).toBeTruthy()
       await expect.poll(async () => {
@@ -1366,10 +1366,10 @@ async function runWorkspaceSubagentJourney(
 
 async function runCursorHarnessBoundary(page: Page) {
   scripted?.resetCounts()
-  const dir = await makeWorkspace("cursor", "cursor-acp")
+  const dir = await makeWorkspace("cursor", "acp:cursor")
   await seedOneProject(page, dir)
   const input = await openDraftPrompt(page, dir)
-  await switchDraftHarness(page, "cursor-acp")
+  await switchDraftHarness(page, "acp:cursor")
 
   const notice = page.getByRole("alert").filter({ hasText: "Couldn't load Cursor models" })
   const modelControl = page.locator('[data-action="prompt-harness-model"]')
@@ -1929,13 +1929,13 @@ test.describe("real harness journeys @core @tier-real", () => {
   }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
     requireBinary(binary, "claude", "install the Claude CLI to include the claude-acp harness in this lane.")
-    const dir = await makeWorkspace("claude-acp", "claude-acp")
+    const dir = await makeWorkspace("claude-acp", "acp:claude")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, {
-      id: "claude-acp",
+      id: "acp:claude",
       dialect: "messages",
       option: /^Claude$/,
-      harnessKey: "claude-acp",
+      harnessKey: "acp:claude",
     })
   })
 
@@ -2025,13 +2025,13 @@ test.describe("real harness journeys @core @tier-real", () => {
   test("claude ACP runs a provider-issued Agent call as an openable subagent", async ({ page }) => {
     const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
     requireBinary(binary, "claude", "install the Claude CLI to exercise ACP subagents.")
-    const dir = await makeWorkspace("claude-acp-subagent", "claude-acp")
+    const dir = await makeWorkspace("claude-acp-subagent", "acp:claude")
     await seedOneProject(page, dir)
     await runRealSubagentJourney(page, dir, {
-      id: "claude-acp",
+      id: "acp:claude",
       dialect: "messages",
       option: /^Claude$/,
-      harnessKey: "claude-acp",
+      harnessKey: "acp:claude",
       tool: {
         name: "Agent",
         input: {
@@ -2122,13 +2122,13 @@ test.describe("real harness journeys @core @tier-real", () => {
   }) => {
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
     requireBinary(binary, "codex", "install the Codex CLI to include the codex-acp harness in this lane.")
-    const dir = await makeWorkspace("codex-acp", "codex-acp")
+    const dir = await makeWorkspace("codex-acp", "acp:codex")
     await seedOneProject(page, dir)
     await runRealHarnessJourney(page, dir, {
-      id: "codex-acp",
+      id: "acp:codex",
       dialect: "responses",
       option: /^Codex$/,
-      harnessKey: "codex-acp",
+      harnessKey: "acp:codex",
     })
   })
 
@@ -2334,13 +2334,13 @@ test.describe("real harness journeys @core @tier-real", () => {
   test("codex ACP runs a provider-issued spawn_agent call as a status-only subagent", async ({ page }) => {
     const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
     requireBinary(binary, "codex", "install the Codex CLI to exercise ACP subagent metadata.")
-    const dir = await makeWorkspace("codex-acp-subagent", "codex-acp")
+    const dir = await makeWorkspace("codex-acp-subagent", "acp:codex")
     await seedOneProject(page, dir)
     await runRealSubagentJourney(page, dir, {
-      id: "codex-acp",
+      id: "acp:codex",
       dialect: "responses",
       option: /^Codex$/,
-      harnessKey: "codex-acp",
+      harnessKey: "acp:codex",
       tool: {
         name: "spawn_agent",
         namespace: "agents",
@@ -2405,11 +2405,11 @@ test.describe("real harness journeys @core @tier-real", () => {
       openable: true,
       permissionMode: "bypassPermissions",
     })
-    await runWorkspaceSubagentJourney(page, "demo-claude-acp", "claude-acp", {
-      id: "claude-acp",
+    await runWorkspaceSubagentJourney(page, "demo-claude-acp", "acp:claude", {
+      id: "acp:claude",
       dialect: "messages",
       option: /^Claude$/,
-      harnessKey: "claude-acp",
+      harnessKey: "acp:claude",
       tool: {
         name: "Agent",
         input: {
@@ -2473,11 +2473,11 @@ test.describe("real harness journeys @core @tier-real", () => {
       permissionMode: "full-access",
       effort: "Ultra",
     })
-    await runWorkspaceSubagentJourney(page, "demo-codex-acp", "codex-acp", {
-      id: "codex-acp",
+    await runWorkspaceSubagentJourney(page, "demo-codex-acp", "acp:codex", {
+      id: "acp:codex",
       dialect: "responses",
       option: /^Codex$/,
-      harnessKey: "codex-acp",
+      harnessKey: "acp:codex",
       tool: {
         name: "spawn_agent",
         namespace: "agents",

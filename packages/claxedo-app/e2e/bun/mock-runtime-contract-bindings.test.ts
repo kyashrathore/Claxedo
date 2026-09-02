@@ -11,6 +11,13 @@ import {
 import { workspaceResolveResponse } from "../helpers/contracts/workspace-resolve"
 import { unconfiguredWorkspaceDriversResponse } from "../helpers/contracts/workspace-drivers"
 import {
+  isWorkspaceListPath,
+  workspaceListResponse,
+  type ControlPlaneWorkspaceRow,
+} from "../helpers/contracts/workspace-list"
+import { isServiceCatalogPath, serviceCatalogStateResponse } from "../helpers/contracts/service-catalog"
+import { isOrgListPath, orgListResponse, type ControlPlaneOrgRow } from "../helpers/contracts/org-list"
+import {
   activeWorktreeResponse,
   parseWorktreeCreateBody,
   WORKTREE_CREATE_SUCCESS_STATUS,
@@ -177,5 +184,121 @@ describe("mock-runtime canonical route bindings", () => {
       status: 200,
       body: { file: "README.md", patch: "" },
     })
+  })
+
+  // The row LITERALS below are typed `ControlPlaneWorkspaceRow`, which is
+  // derived from the authority's own `listWorkspaces` projection — so a field
+  // the authority adds, renames, or drops fails this file's typecheck rather
+  // than drifting silently. What this test adds on top is the ROUTE's own
+  // behavior: which rows each `?access` value returns.
+  test("filters the control-plane workspace list the way both real route handlers do", () => {
+    const cloud: ControlPlaneWorkspaceRow = {
+      workspace_id: "ws_cloud",
+      org_id: "org_1",
+      project_id: "proj_1",
+      display_name: "main",
+      backing: "cloud-vm",
+      access: "cloud",
+      remote_directory: "/workspace",
+      role: "owner",
+    }
+    const userHosted: ControlPlaneWorkspaceRow = {
+      workspace_id: "ws_shared",
+      org_id: "org_1",
+      project_id: "proj_1",
+      display_name: "shared",
+      backing: "local-worktree",
+      access: "user-hosted",
+      remote_directory: "/repo/shared",
+      role: "viewer",
+      // Only a user-hosted row carries reachability — the rail reads it as
+      // "host offline" before any pane opens the workspace.
+      host_online: false,
+    }
+    const workspaces = [cloud, userHosted]
+
+    // `?access=user-hosted` is the ONLY filtering value.
+    expect(workspaceListResponse({ access: "user-hosted", workspaces })).toEqual({
+      workspaces: [userHosted],
+    })
+    // `?access=cloud` is "what can this principal reach", not "cloud only" —
+    // it answers the whole visible inventory, which is why the catalog can
+    // fold the two calls without losing a row.
+    expect(workspaceListResponse({ access: "cloud", workspaces })).toEqual({ workspaces })
+    expect(workspaceListResponse({ access: null, workspaces })).toEqual({ workspaces })
+  })
+
+  test("matches only the BARE workspace list path, never a sibling workspace route", () => {
+    expect(isWorkspaceListPath("/api/workspace")).toBe(true)
+    expect(isWorkspaceListPath("/api/workspace/")).toBe(true)
+    for (const pathname of [
+      "/api/workspace/resolve",
+      "/api/workspace/drivers",
+      "/api/workspace/create",
+      "/api/workspace/ws_1/connection",
+      "/api/workspace/ws_1/checkpoints",
+      "/api/claxedo/workspace/resolve",
+    ]) {
+      expect(isWorkspaceListPath(pathname)).toBe(false)
+    }
+  })
+
+  test("projects the service catalog through the real browser projection", () => {
+    expect(isServiceCatalogPath("/api/claxedo/services")).toBe(true)
+    expect(isServiceCatalogPath("/api/claxedo/service")).toBe(false)
+
+    // The mock composes no service provider, which is exactly the case the real
+    // route answers an empty catalog for.
+    expect(serviceCatalogStateResponse()).toEqual({ authenticated: true, services: [] })
+    // `authenticated: false` is the authoritative sign-out the app deactivates
+    // loaded services on — a pair, never an error.
+    expect(serviceCatalogStateResponse({ authenticated: false })).toEqual({
+      authenticated: false,
+      services: [],
+    })
+    // Operator-only descriptor fields (entrypoint, binding, trust) must never
+    // reach the browser; the projection is what strips them.
+    expect(serviceCatalogStateResponse({
+      services: [{
+        serviceId: "documents",
+        bindingName: "DOCUMENTS_SERVICE",
+        protocolVersion: "claxedo.service.v1",
+        schemaVersion: 1,
+        state: "enabled",
+        entrypoint: "https://documents.internal",
+        trust: {
+          environmentId: "env_1",
+          deploymentId: "dep_1",
+          bindingProvenance: "wrangler",
+        },
+      }],
+    })).toEqual({
+      authenticated: true,
+      services: [{
+        serviceId: "documents",
+        protocolVersion: "claxedo.service.v1",
+        schemaVersion: 1,
+        state: "enabled",
+      }],
+    })
+  })
+
+  test("answers the org list as the bare array the switcher indexes, on the BARE path only", () => {
+    expect(isOrgListPath("/api/control/orgs")).toBe(true)
+    for (const pathname of [
+      "/api/control/orgs/org_1/teams",
+      "/api/control/orgs/org_1/ensure-default-team",
+      "/api/control/organizations",
+      "/api/control/sessions",
+    ]) {
+      expect(isOrgListPath(pathname)).toBe(false)
+    }
+
+    // A bare array, never an envelope: `listOrgs` (org-team-api.ts) parses the
+    // body straight into `OrgListItem[]` and the rail switcher calls `.find` on
+    // it. `[]` is the authority's own answer for a principal in no org.
+    expect(orgListResponse()).toEqual([])
+    const rows: ControlPlaneOrgRow[] = [{ org_id: "org_1", name: "Acme", kind: "team", role: "owner" }]
+    expect(orgListResponse(rows)).toEqual(rows)
   })
 })

@@ -51,6 +51,7 @@ export type {
 } from "./capabilities"
 export { requireGoalResource } from "./adapter-contract"
 export type {
+  AgentConfigOptions,
   AgentGoalMutationFailure,
   AgentGoalMutationResult,
   AgentGoalResource,

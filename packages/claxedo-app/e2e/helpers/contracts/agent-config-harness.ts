@@ -182,7 +182,7 @@ export const HARNESS_POST_TOP_LEVEL_FIELDS: Readonly<Record<string, FieldSpec>> 
       if (value === undefined) return undefined
       // `harnessFromRequest` passes `input ?? fallback` to normalizeHarnessIdentity
       // (agent-config-harness.ts:54), which accepts a STRING as well as an object
-      // (harness-types.ts:109-113) — so `harness: "claude-acp"` is legal here.
+      // (harness-types.ts:109-113) — so `harness: "acp:claude"` is legal here.
       if (typeof value === "string") return undefined
       if (typeof value !== "object" || value === null || Array.isArray(value)) {
         return `harness must be an object or a string, got ${typeOf(value)}`

@@ -561,9 +561,9 @@ test.describe("live real-harness smoke @live", () => {
         "this live smoke run.",
     )
     const dir = await makeWorkspace("claude-acp")
-    await seedDefaultHarness(dir, "claude-acp")
+    await seedDefaultHarness(dir, "acp:claude")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "claude-acp", seededHarness: "claude-acp" })
+    await runLiveHarnessSmoke(page, dir, { id: "acp:claude", seededHarness: "acp:claude" })
   })
 
   test("claude native SDK harness completes 3 real turns and survives reload — behaviors 3,6,7", async ({ page }) => {
@@ -590,9 +590,9 @@ test.describe("live real-harness smoke @live", () => {
         "this live smoke run.",
     )
     const dir = await makeWorkspace("codex-acp")
-    await seedDefaultHarness(dir, "codex-acp")
+    await seedDefaultHarness(dir, "acp:codex")
     await seedOneProject(page, dir)
-    await runLiveHarnessSmoke(page, dir, { id: "codex-acp", seededHarness: "codex-acp" })
+    await runLiveHarnessSmoke(page, dir, { id: "acp:codex", seededHarness: "acp:codex" })
   })
 
   test("codex native SDK harness completes 3 real turns and survives reload — behavior 5", async ({
