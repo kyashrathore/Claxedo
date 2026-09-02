@@ -216,17 +216,50 @@ export function mcpPrimaryAction(entry: CatalogEntry, installed: InstalledRecord
   }
 }
 
-export function mcpExtensionUrl(apiBase: string, path = "", input?: {
+export type ExtensionScopeInput = {
   scope?: ExtensionScope
   directory?: string
   workspaceId?: string
-}) {
-  const suffix = path ? path.startsWith("/") ? path : `/${path}` : ""
-  const url = new URL(`/api/claxedo/agent-config/extensions${suffix}`, apiBase)
+}
+
+/**
+ * The scope a request names, spelled once for both route families.
+ *
+ * `workspaceId` rides machine scope as well as workspace scope: a machine-scope
+ * question is "whose machine", and the answer is the machine serving that
+ * workspace (`transport.ts`). Project scope keeps carrying the directory it is
+ * about; the two are never both meaningful.
+ */
+function applyExtensionScope(url: URL, input?: ExtensionScopeInput) {
   if (input?.scope) url.searchParams.set("scope", input.scope)
   if ((!input?.scope || input.scope === "project") && input?.directory) url.searchParams.set("directory", input.directory)
-  if (input?.scope === "workspace" && input.workspaceId) url.searchParams.set("workspaceId", input.workspaceId)
+  if ((input?.scope === "workspace" || input?.scope === "machine") && input.workspaceId) {
+    url.searchParams.set("workspaceId", input.workspaceId)
+  }
   return url
+}
+
+/** The Claxedo server's extensions family — the machine the app itself talks to. */
+export function mcpExtensionUrl(apiBase: string, path = "", input?: ExtensionScopeInput) {
+  const suffix = path ? path.startsWith("/") ? path : `/${path}` : ""
+  return applyExtensionScope(new URL(`/api/claxedo/agent-config/extensions${suffix}`, apiBase), input)
+}
+
+/**
+ * The same family on a workspace runtime's OWN surface.
+ *
+ * A relayed caller cannot use the central path: `user-hosted-surface.ts` denies
+ * `/api/claxedo/*` across the host tunnel, so the machine serving a remote
+ * workspace answers here or not at all.
+ *
+ * No `workspaceId` param: the runtime transport addresses the workspace in the
+ * path (`/workspaces/<id>/…`) and strips a duplicate from the query, so the
+ * identity rides the request either way.
+ */
+export function workspaceRuntimeExtensionsPath(path = "", input?: Omit<ExtensionScopeInput, "workspaceId">) {
+  const suffix = path ? path.startsWith("/") ? path : `/${path}` : ""
+  const url = applyExtensionScope(new URL(`/api/wr/extensions${suffix}`, "http://claxedo.local"), input)
+  return `${url.pathname}${url.search}`
 }
 
 export function buildMcpInstallRequest(entry: CatalogEntry, directory?: string) {

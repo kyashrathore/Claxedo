@@ -146,7 +146,14 @@ export const appLocal: Policy = {
   // Goal authority cache/query/controller, runtime Goal client/event ingress,
   // the active-Goal dock, and the review-pass Stop fallback + shared JSON
   // reader: thirteen modules.
-  ceilings: { modules: 957, packages: 38 },
+  // Plan 150 section E: `features/extensions/marketplace/transport.ts` — the
+  // one module that decides WHICH MACHINE answers an extensions request, so the
+  // marketplace stops asking `getClaxedoServerUrl()` for a workspace served
+  // elsewhere. Owned by the extensions feature, reachable only through the
+  // already-lazy marketplace panel: one module, no package edge.
+  // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
+  // catalog owner) in the same slice: one more module, no package edge.
+  ceilings: { modules: 959, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

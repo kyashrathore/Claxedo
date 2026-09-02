@@ -140,3 +140,38 @@ describe("MarketplacePanel entries — flat two-line rows at any width", () => {
     }
   })
 })
+
+/*
+ * The panel acts on the MACHINE SERVING THE WORKSPACE it is showing, not on
+ * whichever machine happens to run the app. Rendered against a user-hosted
+ * directory, every machine-scope request has to leave through that workspace's
+ * runtime transport — the desktop's own `/api/claxedo/agent-config/extensions`
+ * surface would be scanning and mutating the wrong `~/.claude`.
+ */
+describe("MarketplacePanel machine scope — the workspace's machine answers", () => {
+  test("a user-hosted workspace's machine scan goes to that workspace's runtime", async () => {
+    const { queryClient } = await import("@/platform/query/query-client")
+    queryClient.clear()
+    const calls: string[] = []
+    const request = (async (resource: RequestInfo | URL, init?: RequestInit) => {
+      const req = resource instanceof Request ? resource : new Request(String(resource), init)
+      calls.push(`${req.method} ${new URL(req.url).pathname}${new URL(req.url).search}`)
+      if (new URL(req.url).pathname === "/api/claxedo/workspace/resolve") {
+        return Response.json({ workspaceId: "ws_host", kind: "user-hosted", directory: "/repo/main" })
+      }
+      if (req.url.includes("/api/wr/extensions/catalog")) return Response.json(CATALOG)
+      return Response.json({ desired: { installs: [] } })
+    }) as typeof fetch
+
+    render(() => (
+      <DialogProvider>
+        <MarketplacePanel directory="/repo/main" request={request} />
+      </DialogProvider>
+    ))
+
+    await waitFor(() =>
+      expect(calls).toContain("GET /workspaces/ws_host/api/wr/extensions/machine-scan?scope=machine"))
+    expect(calls).toContain("GET /workspaces/ws_host/api/wr/extensions?scope=machine")
+    expect(calls.some((call) => call.includes("/api/claxedo/agent-config/extensions"))).toBe(false)
+  })
+})

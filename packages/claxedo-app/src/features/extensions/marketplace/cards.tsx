@@ -18,6 +18,13 @@ export const MachineSection: Component<{
   search: string
   onDelete: (item: MachineDiscoveredItem) => void
   deleting: Record<string, boolean>
+  /**
+   * The machine serving this workspace did not answer the scan. Distinguished
+   * from an empty scan on purpose: "nothing under ~/.claude" is a claim about
+   * a filesystem, and asserting it about a machine that never replied is the
+   * bug this section had when every scan went to the desktop's own OS.
+   */
+  unavailable?: boolean
 }> = (props) => {
   const grouped = createMemo(() => {
     const buckets = new Map<MachineHarness, MachineDiscoveredItem[]>()
@@ -35,9 +42,11 @@ export const MachineSection: Component<{
         <div class="flex flex-col">
           <h2 class="text-compact font-semibold tracking-tight text-text-strong">On this machine</h2>
           <p class="text-xs text-text-weaker">
-            {props.search
-              ? `${props.items.length} of ${props.totalCount} matching "${props.search}"`
-              : `${props.totalCount} skill${props.totalCount === 1 ? "" : "s"} and plugins discovered across Claude, Codex, Cursor, and Agents.`}
+            {props.unavailable
+              ? "This workspace runs on another machine, which does not answer machine-scope extension queries."
+              : props.search
+                ? `${props.items.length} of ${props.totalCount} matching "${props.search}"`
+                : `${props.totalCount} skill${props.totalCount === 1 ? "" : "s"} and plugins discovered across Claude, Codex, Cursor, and Agents.`}
           </p>
         </div>
       </div>
@@ -46,7 +55,11 @@ export const MachineSection: Component<{
         fallback={
           <div class="grid place-items-center rounded-md border border-dashed border-border-weak-base/40 px-6 py-12 text-text-weak">
             <span class="text-sm">
-              {props.search ? "No machine items match the search." : "No skills detected under ~/.claude, ~/.codex, ~/.cursor, or ~/.agents."}
+              {props.unavailable
+                ? "Machine-scope extensions are managed on the machine itself."
+                : props.search
+                  ? "No machine items match the search."
+                  : "No skills detected under ~/.claude, ~/.codex, ~/.cursor, or ~/.agents."}
             </span>
           </div>
         }

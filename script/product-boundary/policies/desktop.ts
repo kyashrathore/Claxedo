@@ -261,7 +261,14 @@ export const desktopRendererUnsigned: Policy = {
   // (composer intent/submission/draft, authority cache/query/controller,
   // runtime client/ingress, dock, Stop fallback + shared JSON reader):
   // thirteen modules.
-  ceilings: { modules: 1043, packages: 59 },
+  // Plan 150 section E: `features/extensions/marketplace/transport.ts` — the
+  // one module that decides WHICH MACHINE answers an extensions request, so the
+  // marketplace stops asking `getClaxedoServerUrl()` for a workspace served
+  // elsewhere. Owned by the extensions feature, reachable only through the
+  // already-lazy marketplace panel: one module, no package edge.
+  // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
+  // catalog owner) in the same slice: one more module, no package edge.
+  ceilings: { modules: 1045, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

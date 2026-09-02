@@ -3,10 +3,7 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { requestMarketplaceConfirm } from "./confirm-dialog"
-import { mcpExtensionUrl } from "./api"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { createAgentConfigAccountFetch } from "@/platform/account/agent-config-account-fetch"
-import { centralTransportForServer, unsignedLocalFetch } from "@/platform/runtime/transport"
+import { createMarketplaceExtensionsRequest } from "./transport"
 import {
   applyDiscoveredState,
   categoryEntries,
@@ -40,31 +37,14 @@ import "./marketplace.css"
 export const MarketplacePanel: Component<{ directory?: string; request?: typeof fetch }> = (props) => {
   const dialog = useDialog()
 
-  // Agent-config / extensions routes live on claxedo-server,
-  // NOT on workspace-runtime. The previous `useGlobalSDK().url` is
-  // normalized to the workspace-runtime port (4096) by
-  // `normalizeServerUrl`, so building catalog URLs against it produced
-  // 404s for every marketplace request. Use the dedicated claxedo-server
-  // URL helper instead, which respects VITE_CLAXEDO_SERVER_URL and
-  // falls back to the local Claxedo server.
-  const apiBase = () => getClaxedoServerUrl()
-  const fetchFn = props.request ?? createAgentConfigAccountFetch(authFetch, apiBase())
-  // Rubric Q4: replace the URL-shape-inferred `claxedoServerFetch` with an
-  // explicit branch on loopback. Loopback Claxedo server bypasses the bearer
-  // (`unsignedLocalFetch`); remote control plane uses AccountPort (desktop) or
-  // authFetch (browser).
-  const localRequest = (): typeof fetch =>
-    centralTransportForServer(apiBase()) === "loopback"
-      ? unsignedLocalFetch
-      : fetchFn
-  const extensionUrl = (
-    path = "",
-    input?: {
-      scope?: "machine" | "project" | "workspace"
-      directory?: string
-      workspaceId?: string
-    },
-  ) => mcpExtensionUrl(apiBase(), path, input)
+  // Every extensions request goes to the machine serving the workspace this
+  // panel is showing — `transport.ts` owns that branch (central for a local
+  // workspace, the workspace's runtime transport for a cloud or user-hosted
+  // one). The panel below states WHAT it wants; it never picks a base URL.
+  const extensionsRequest = createMarketplaceExtensionsRequest({
+    ...(props.directory ? { directory: props.directory } : {}),
+    ...(props.request ? { request: props.request } : {}),
+  })
 
   const [activeCategory, setActiveCategory] = createSignal<CatalogCategoryId | "all" | "installed" | "on-machine">("featured")
   const [search, setSearch] = createSignal("")
@@ -72,6 +52,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
   const [installedRecords, setInstalledRecords] = createSignal<InstalledRecord[]>([])
   const [discovered, setDiscovered] = createSignal<DiscoveredExtension[]>([])
   const [machineItems, setMachineItems] = createSignal<MachineDiscoveredItem[]>([])
+  const [machineUnavailable, setMachineUnavailable] = createSignal(false)
   const [scanLoading, setScanLoading] = createSignal(false)
   const [machineDeleting, setMachineDeleting] = createSignal<Record<string, boolean>>({})
   const [enablementState, setEnablementState] = createSignal<Record<string, EnablementStatus>>({})
@@ -109,8 +90,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
   }
 
   const [catalog] = createResource(async () => {
-    const url = extensionUrl("/catalog")
-    const res = await localRequest()(url.toString(), { headers: { Accept: "application/json" } })
+    const res = await extensionsRequest({ path: "/catalog", init: { headers: { Accept: "application/json" } } })
     return catalogFromJson(await jsonOrError(res))
   })
 
@@ -121,8 +101,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
         directory = props.directory
         if (!directory) return
       }
-      const url = extensionUrl("", { scope, directory })
-      const res = await localRequest()(url.toString(), { headers: { Accept: "application/json" } })
+      const res = await extensionsRequest({
+        scope,
+        ...(directory ? { directory } : {}),
+        init: { headers: { Accept: "application/json" } },
+      })
       if (!res.ok) return
       const added = installedRecordsFromJson(await responseJson(res), scope, directory)
       if (!added) return
@@ -145,8 +128,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     }
     setScanLoading(true)
     try {
-      const url = extensionUrl("/scan", { directory: dir })
-      const res = await localRequest()(url.toString(), { headers: { Accept: "application/json" } })
+      const res = await extensionsRequest({
+        path: "/scan",
+        directory: dir,
+        init: { headers: { Accept: "application/json" } },
+      })
       const result = discoveredExtensionsFromJson(await jsonOrError(res))
       setDiscovered(result)
       if (result.length === 0) {
@@ -164,14 +150,18 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
 
   const loadMachineItems = async () => {
     try {
-      const url = extensionUrl("/machine-scan")
-      const res = await localRequest()(url.toString(), { headers: { Accept: "application/json" } })
-      if (!res.ok) return
+      const res = await extensionsRequest({
+        path: "/machine-scan",
+        scope: "machine",
+        init: { headers: { Accept: "application/json" } },
+      })
+      if (!res.ok) return setMachineUnavailable(true)
       const items = machineItemsFromJson(await responseJson(res))
-      if (!items) return
+      if (!items) return setMachineUnavailable(true)
+      setMachineUnavailable(false)
       setMachineItems(items)
     } catch {
-      /* non-fatal */
+      setMachineUnavailable(true)
     }
   }
 
@@ -228,41 +218,26 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
         directory = props.directory
         if (!directory) throw new Error("Open a project directory to install at project scope")
       }
-      const url = extensionUrl("", {
+      // Pin the install record to the catalog's own id. Server-side,
+      // `installFetchedAgentExtension` derives the id from the fetched
+      // package's own manifest/directory basename whenever the caller omits
+      // one, and that basename equals the catalog id only by coincidence
+      // (`anthropic-skill-pdf` resolves to `pdf`). Sending it explicitly keeps
+      // installed.json/lock.json/materialized.json, this function's optimistic
+      // record, and the card's own `entry.id` addressing the same install.
+      const res = await extensionsRequest({
         scope: entry.recommendedScope,
-        directory,
-      })
-      const res = await localRequest()(url.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          source: entry.source,
-          scope: entry.recommendedScope,
-          targets: entry.recommendedTargets,
-          // Pin the install record to the catalog's own id. Server-side,
-          // `installFetchedAgentExtension` falls back to a name derived from
-          // the fetched package's own manifest/directory basename
-          // (`id = input.id ?? packageName`) whenever the caller omits `id` —
-          // that fallback only happens to equal the catalog id for entries
-          // whose upstream repo directory is named identically to the
-          // catalog's id (true for claxedo-mcp by coincidence, since this
-          // repo controls both). For a third-party catalog entry like
-          // anthropic-skill-pdf (github.com/anthropics/skills/tree/main/
-          // skills/pdf), the fallback resolves to "pdf", NOT
-          // "anthropic-skill-pdf" — so installed.json/lock.json/
-          // materialized.json end up keyed differently than the catalog and
-          // this very card's entry.id, and the optimistic local record this
-          // function appends below (keyed by entry.id) silently disagrees
-          // with what a page reload's GET /extensions would report for the
-          // same install. isEntryInstalled()/findInstalledRecord() paper
-          // over the mismatch with a packageNameFromSource() fallback match,
-          // which is why the UI still shows "Installed" either way — but the
-          // underlying state files disagree with the catalog id. Send it
-          // explicitly so every persisted record is addressable by the same
-          // id the marketplace card and this function's own optimistic
-          // update already use.
-          id: entry.id,
-        }),
+        ...(directory ? { directory } : {}),
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({
+            source: entry.source,
+            scope: entry.recommendedScope,
+            targets: entry.recommendedTargets,
+            id: entry.id,
+          }),
+        },
       })
       await jsonOrError(res)
       setStatus(entry.id, "installed")
@@ -308,13 +283,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     if (!confirmed) return
     setStatus(entry.id, "uninstalling")
     try {
-      const url = extensionUrl(`/${encodeURIComponent(record.id)}`, {
+      const res = await extensionsRequest({
+        path: `/${encodeURIComponent(record.id)}`,
         scope: record.scope,
-        directory: record.directory,
-      })
-      const res = await localRequest()(url.toString(), {
-        method: "DELETE",
-        headers: { Accept: "application/json" },
+        ...(record.directory ? { directory: record.directory } : {}),
+        init: { method: "DELETE", headers: { Accept: "application/json" } },
       })
       await jsonOrError(res)
       // Drop every row this entry answers to in that scope, not just the one
@@ -343,13 +316,11 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     const { path, nextEnabled } = enablementToggle(record)
     setEnablementState((prev) => ({ ...prev, [entry.id]: "toggling" }))
     try {
-      const url = extensionUrl(`/${encodeURIComponent(record.id)}/${path}`, {
+      const res = await extensionsRequest({
+        path: `/${encodeURIComponent(record.id)}/${path}`,
         scope: record.scope,
-        directory: record.directory,
-      })
-      const res = await localRequest()(url.toString(), {
-        method: "POST",
-        headers: { Accept: "application/json" },
+        ...(record.directory ? { directory: record.directory } : {}),
+        init: { method: "POST", headers: { Accept: "application/json" } },
       })
       await jsonOrError(res)
       setInstalledRecords((prev) => prev.map((r) => (r === record ? { ...r, enabled: nextEnabled } : r)))
@@ -379,11 +350,14 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     if (discoveredPending()[item.path]) return
     setDiscoveredPending((prev) => ({ ...prev, [item.path]: action }))
     try {
-      const url = extensionUrl(`/${action}`, { directory: dir })
-      const res = await localRequest()(url.toString(), {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ directory: dir, path: item.path }),
+      const res = await extensionsRequest({
+        path: `/${action}`,
+        directory: dir,
+        init: {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
+          body: JSON.stringify({ directory: dir, path: item.path }),
+        },
       })
       const body = await jsonOrError(res)
       const state = discoveredStateFromResponse(body) ?? discoveredStateForAction(action)
@@ -416,12 +390,10 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
     if (!confirmed) return
     setMachineDeleting((prev) => ({ ...prev, [key]: true }))
     try {
-      const url = extensionUrl(
-        `/machine-scan/${encodeURIComponent(item.harness)}/${encodeURIComponent(item.kind)}/${encodeURIComponent(item.name)}`,
-      )
-      const res = await localRequest()(url.toString(), {
-        method: "DELETE",
-        headers: { Accept: "application/json" },
+      const res = await extensionsRequest({
+        path: `/machine-scan/${encodeURIComponent(item.harness)}/${encodeURIComponent(item.kind)}/${encodeURIComponent(item.name)}`,
+        scope: "machine",
+        init: { method: "DELETE", headers: { Accept: "application/json" } },
       })
       await jsonOrError(res)
       setMachineItems((prev) => prev.filter((i) => !(i.harness === item.harness && i.kind === item.kind && i.name === item.name)))
@@ -607,6 +579,7 @@ export const MarketplacePanel: Component<{ directory?: string; request?: typeof 
                   items={filteredMachineItems()}
                   totalCount={machineItems().length}
                   search={search()}
+                  unavailable={machineUnavailable()}
                   onDelete={deleteMachineItem}
                   deleting={machineDeleting()}
                 />
