@@ -62,14 +62,21 @@
  *      no external binary) completes 3 turns in one session, each proven by the
  *      full three-layer oracle, and a page reload re-renders all 3 replies from
  *      the real persisted store with no duplication.
- *   2. The `claude-acp` harness (a genuinely spawned `claude-agent-acp`
- *      subprocess, `packages/agent-sdk-runtime/src/harnesses/acp/*`) completes
- *      the same 3-turn + reload journey against the scripted Messages endpoint.
+ *   2. RESERVED — ACP is out of this lane by construction. An ACP harness is an
+ *      operator-configured connection (`UserAgentConfig.acp`): the operator's
+ *      config owns its executable, arguments, and credentials, and the
+ *      workspace runtime refuses any ACP identity it holds no applied
+ *      descriptor for (`WorkspaceHarnessUnavailableError`). This lane installs
+ *      and redirects its own binaries, so it can only drive harnesses the
+ *      product itself ships. ACP coverage lives with the generic runtime
+ *      integration suites — `agent-sdk-runtime/src/harnesses/acp/*` and
+ *      `workspace-runtime/src/workspace/runtime.test.ts`, which drive a real
+ *      ACP process and its config-options/model channels — plus the mocked
+ *      operator-connection journeys in `core-harness-ownership-*`. The behavior
+ *      numbers stay put because CI's per-scenario gate greps them by name.
  *   3. The `claude-sdk` harness (in-process `@anthropic-ai/claude-agent-sdk`
  *      driver, no subprocess) completes the same 3-turn + reload journey.
- *   4. The `codex-acp` harness (a genuinely spawned `codex-acp` subprocess)
- *      completes the same 3-turn + reload journey against the scripted
- *      Responses endpoint.
+ *   4. RESERVED — see behavior 2.
  *   5. The `codex-app-server` (native Codex SDK) harness completes the same
  *      3-turn + reload journey.
  *   6. Every scenario's model traffic actually went through the scripted
@@ -79,7 +86,8 @@
  *      tier's central claim ("no real provider was contacted") an assertion
  *      rather than a hope: a harness that silently fell back to a real endpoint
  *      would leave the scripted counter at zero while the reply still rendered.
- *   7. Selecting `Cursor` never routes the turn through another provider.
+ *   7. Selecting `Cursor` (the `cursor-sdk` harness) never routes the turn
+ *      through another provider.
  *      Cursor's endpoint is proprietary and has no base-URL knob, so it cannot
  *      be redirected at the scripted server; this spec therefore proves the
  *      invariant-4 half that matters — either the harness locks in and renders
@@ -153,9 +161,9 @@
  *     | harness | mechanism | dialect |
  *     |---|---|---|
  *     | opencode (embedded engine) | `OPENCODE_CONFIG_CONTENT` on the server process, carrying a `provider.tier-real.options.baseURL` block | chat/completions |
- *     | claude-acp, claude-sdk | `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` + `CLAUDE_CONFIG_DIR` | messages |
- *     | codex-acp, codex-app-server | scratch `CODEX_HOME` holding a generated `config.toml` with a `model_providers.scripted` block (`wire_api="responses"`); `CODEX_CONFIG` additionally for the codex-acp wrapper | responses |
- *     | cursor | IMPOSSIBLE — proprietary endpoint, no base-URL knob | (none) |
+ *     | claude-sdk | `ANTHROPIC_BASE_URL` + `ANTHROPIC_API_KEY` + `CLAUDE_CONFIG_DIR` | messages |
+ *     | codex-app-server | scratch `CODEX_HOME` holding a generated `config.toml` with a `model_providers.scripted` block (`wire_api="responses"`) | responses |
+ *     | cursor-sdk | IMPOSSIBLE — proprietary endpoint, no base-URL knob | (none) |
  *
  *     `CLAUDE_CONFIG_DIR` is not decoration, it is load-bearing: the claude
  *     CLI's own `settings.json` `env` block OVERRIDES the process environment,
@@ -170,24 +178,19 @@
  *     Codex ignores `OPENAI_BASE_URL` entirely in ChatGPT auth mode; the
  *     `model_providers` override is the only way in. `requires_openai_auth:
  *     false` is what lets the scripted lane run with no ChatGPT session at all.
- *   - WHY THE CODEX ROW IS `CODEX_HOME` AND NOT `CODEX_CONFIG` — paid for by a
- *     false-green this spec caught on its first run. `CODEX_CONFIG` is a
- *     convention of the `@agentclientprotocol/codex-acp` WRAPPER (its
- *     `startAcpServer()` reads `process.env.CODEX_CONFIG`), not an env var the
- *     codex binary understands: `strings $(which codex)` contains no such name.
- *     `codex-app-server` never sees it at all —
- *     `packages/agent-sdk-runtime/src/harnesses/codex/driver.ts:630` spawns
+ *   - WHY THE CODEX ROW IS `CODEX_HOME` — paid for by a false-green this spec
+ *     caught on its first run. `codex-app-server` reads no config env var of
+ *     its own: `packages/agent-sdk-runtime/src/harnesses/codex/driver.ts` spawns
  *     `codex app-server --listen stdio://` with no `-c` override, and
- *     `ensureProcess` (driver.ts:406) passes only `CODEX_HOME` plus an optional
- *     `OPENAI_API_KEY`. With `CODEX_CONFIG` alone, BOTH codex harnesses fell
- *     through to the developer's real `~/.codex/config.toml`: three correct
- *     markers rendered on screen, zero scripted requests, answered by the
- *     `model` pinned in that real config (`gpt-5.6-sol`, visible in the UI
- *     alongside a real "skills context budget" warning) on the machine owner's
- *     own quota. Writing a `config.toml` into a scratch home and setting
- *     `CODEX_HOME` — which `CodexDriver` already honors (driver.ts:149) —
- *     redirects both variants with NO product change, verified against the real
- *     binary. `CODEX_CONFIG` is kept alongside it for the wrapper's own path.
+ *     `ensureProcess` passes only `CODEX_HOME` plus an optional
+ *     `OPENAI_API_KEY`. Without `CODEX_HOME` the harness falls through to the
+ *     developer's real `~/.codex/config.toml`: three correct markers rendered
+ *     on screen, zero scripted requests, answered by the `model` pinned in that
+ *     real config (`gpt-5.6-sol`, visible in the UI alongside a real "skills
+ *     context budget" warning) on the machine owner's own quota. Writing a
+ *     `config.toml` into a scratch home and setting `CODEX_HOME` — which
+ *     `CodexDriver` already honors — redirects it with NO product change,
+ *     verified against the real binary.
  *   - The "harness silently reverts to OpenCode" symptom this spec first
  *     reported was TWO separate bugs, both now fixed — recorded because the
  *     misreading is easy to repeat:
@@ -218,17 +221,16 @@
  *     landing check reads the TRIGGER's label, not the option's
  *     `aria-selected`: while the listbox is open EVERY option renders
  *     `aria-selected="false"`, including the selected one (verified by dumping
- *     the live listbox HTML), and the listbox unmounts on close. The label
- *     cannot distinguish a harness's ACP and native-SDK variants, so the
- *     per-variant proof is behavior 6's dialect counters, not this check.
- *   - FIXED (behavior 4, codex-acp): the responses emitter must stream the FULL
- *     delta sequence, not just created/output_item.done/completed. `codex
- *     app-server` only emits the `item/agentMessage/delta` notification — the
- *     one `@agentclientprotocol/codex-acp` turns into an ACP
- *     `agent_message_chunk` — when it SEES the text arrive as
- *     `output_text.delta`. Against the terminal-only shape it completed the
- *     turn with correct token usage and emitted no delta at all, so the wrapper
- *     forwarded no assistant text. Proven by driving `codex app-server`
+ *     the live listbox HTML), and the listbox unmounts on close. The family
+ *     label names the vendor, so behavior 6's dialect counters remain the proof
+ *     that the turn ran on the harness the scenario asked for.
+ *   - FIXED (behavior 5, codex-app-server): the responses emitter must stream
+ *     the FULL delta sequence, not just created/output_item.done/completed.
+ *     `codex app-server` only emits the `item/agentMessage/delta` notification
+ *     — the one the driver turns into assistant text — when it SEES the text
+ *     arrive as `output_text.delta`. Against the terminal-only shape it
+ *     completed the turn with correct token usage and emitted no delta at all,
+ *     so no assistant text was forwarded. Proven by driving `codex app-server`
  *     directly over its own JSON-RPC: streamed shape -> `item/agentMessage/
  *     delta` present with the marker; terminal-only shape -> absent. See
  *     `respondResponses` in `scripted-model-server.ts`; do not drop those
@@ -258,12 +260,9 @@
  *     fenced to the duplicate-render work; whoever owns that file should take
  *     this with the evidence above rather than re-deriving it here.
  *
- *     This race is NOT claude-specific. After behavior 4's fix, codex-acp was
- *     seen failing the same way once in a combined run (reply for T2 never
- *     rendered) while passing 3/3 solo and passing the combined run before and
- *     after. So any Tier R scenario can lose it; claude-sdk just loses it most
- *     often. That is one more reason it is a client-side delivery race rather
- *     than a per-harness defect.
+ *     This race is NOT claude-specific: any Tier R scenario can lose it, which
+ *     is one more reason it is a client-side delivery race rather than a
+ *     per-harness defect.
  *
  *     RESOLVED (2026-08-02). Behaviors 1 and 3 were TWO defects, not one, and
  *     the paragraph that used to sit here — "server side is fully exonerated,
@@ -311,12 +310,11 @@
  *     passed and the same set failed, every time. The old symptom (the composer
  *     stuck on the previous scenario's harness reading "Loading models") no
  *     longer occurs. That reproducibility is what turned the three failures it
- *     left into diagnosable defects rather than noise — behaviors 1, 3 and 4,
- *     all since fixed (see above and the codex note); the lane now runs 6/6.
- *     Behaviors 2 and 5 passed even then, which is what demonstrated the tier's
- *     core claim early: a real ACP subprocess and a real native-SDK harness
- *     both complete 3 turns against the scripted endpoint, with the
- *     cross-dialect counters proving no real provider was contacted.
+ *     left into diagnosable defects rather than noise — behaviors 1, 3 and 5,
+ *     all since fixed (see above and the codex note). That is what demonstrates
+ *     the tier's core claim: real native-SDK harnesses complete 3 turns against
+ *     the scripted endpoint, with the cross-dialect counters proving no real
+ *     provider was contacted.
  *
  *     What is RULED OUT for the cross-scenario coupling, each by direct
  *     experiment rather than reasoning — do not re-spend this time:
@@ -362,7 +360,7 @@
  *     `harness-options-loader.ts` and `harness-switcher.ts` were real and are
  *     pinned by unit tests, but they were not the whole story.
  *     Individual scenarios pass in isolation — a standalone driver that opens a
- *     draft, clicks `[data-key="acp:claude"]` and polls shows the trigger on
+ *     draft, clicks `[data-key="claude-sdk"]` and polls shows the trigger on
  *     "Claude" within 1s and the model control settled on a real catalog by 5s,
  *     repeatably — and the same scenario passes in some full runs and not
  *     others, with the residual failure always "Loading models past 45s" on a
@@ -448,7 +446,6 @@ import path from "node:path"
 import { promisify } from "node:util"
 import {
   claudeScriptedEnv,
-  codexScriptedConfigJson,
   codexScriptedConfigToml,
   opencodeScriptedProviderConfig,
   startScriptedModelServer,
@@ -546,11 +543,9 @@ async function startServer() {
       OPENCODE_DISABLE_MODELS_FETCH: "true",
       CLAXEDO_PI_MODEL: "anthropic/claude-sonnet-4-6",
       ...claudeScriptedEnv(scripted.url, claudeConfigDir),
-      // Both codex knobs: CODEX_HOME redirects the CLI itself (the load-bearing
-      // one, for both codex-app-server and codex-acp), CODEX_CONFIG additionally
-      // reaches the codex-acp wrapper's own startup path.
+      // CODEX_HOME redirects the CLI itself, which is the only knob
+      // `codex app-server` reads — see the injection table.
       CODEX_HOME: codexHome,
-      CODEX_CONFIG: codexScriptedConfigJson(scripted.v1Url),
       CODEX_THREAD_ID: undefined,
       CODEX_INTERNAL_ORIGINATOR_OVERRIDE: undefined,
       CODEX_CI: undefined,
@@ -756,22 +751,17 @@ function sessionUrlPattern() {
  * Selects a harness on a DRAFT composer, and proves the selection actually
  * landed before returning.
  *
- * The current composer has one combined picker. Harness rows are grouped ACP
- * then Native SDK, so the duplicated family label's index identifies access;
- * the scenario's dialect counter remains the decisive per-variant proof.
+ * The current composer has one combined picker, and every harness this lane
+ * drives has a built-in row in it: the picker's ACP group is discovery-driven
+ * over the operator's configured connections (agent-harness-selector's
+ * BUILTIN_HARNESS_OPTIONS carries the native harnesses only), and this lane
+ * configures none.
  *
  * The selected row itself is the setup oracle. A non-empty model label is not:
  * the previous OpenCode model can remain visible while the asynchronous switch
  * is still pending, which used to let this setup return on the wrong harness.
  */
 function harnessPickerTarget(harnessKey: string) {
-  // The picker's built-in rows are the NATIVE harnesses only — first-party ACP
-  // options left it when operator-configured ACP connections became the ACP
-  // group (agent-harness-selector BUILTIN_HARNESS_OPTIONS). A first-party ACP
-  // harnessKey therefore has NO picker row: those scenarios ride the seeded
-  // server default (`makeWorkspace` → `seedDefaultHarness`), which the draft
-  // hydrates on mount.
-  if (harnessKey === "acp:claude" || harnessKey === "acp:codex" || harnessKey === "acp:cursor") return null
   if (harnessKey.startsWith("claude")) return { label: /^Claude$/, index: 0 }
   if (harnessKey.startsWith("codex")) return { label: /^Codex$/, index: 0 }
   if (harnessKey.startsWith("cursor")) return { label: /^Cursor$/, index: 0 }
@@ -781,17 +771,6 @@ function harnessPickerTarget(harnessKey: string) {
 async function switchDraftHarness(page: Page, harnessKey: string) {
   const trigger = page.locator('[data-action="prompt-harness-model"]').last()
   const target = harnessPickerTarget(harnessKey)
-  if (!target) {
-    // No picker row (first-party ACP): the seeded default is the selection
-    // mechanism. Pin that the draft actually hydrated onto it before the
-    // journey proceeds — same determinism as the aria-current wait below.
-    await expect(trigger, `draft did not hydrate seeded harness "${harnessKey}"`).toHaveAttribute(
-      "data-harness",
-      harnessKey,
-      { timeout: 45_000 },
-    )
-    return
-  }
   await expect(trigger).toBeEnabled({ timeout: 30_000 })
   await trigger.click()
   const picker = page.locator('[data-component="harness-model-picker"]')
@@ -1035,6 +1014,23 @@ async function expectRailRowTracksTheSession(
 
 type HarnessUsage = { turns: number; tokens: number }
 
+/**
+ * The value the usage ledger records in its `harness` dimension.
+ *
+ * That dimension is the SERVER's canonical harness key — `meteringHarnessId`
+ * (`claxedo-server-core/session/harness/index.ts`) over `harnessKey`
+ * (`agent-sdk-runtime/harness-types.ts`) — which names a native SDK harness by
+ * its bare vendor id. The app's picker id is a client-side presentation of the
+ * same identity, so `claude-sdk` settles as `claude` and `codex-app-server` as
+ * `codex`; `opencode` and `pi` are spelled the same on both sides.
+ */
+function meteringHarnessDimension(harnessKey: string) {
+  if (harnessKey === "claude-sdk") return "claude"
+  if (harnessKey === "codex-app-server") return "codex"
+  if (harnessKey === "cursor-sdk") return "cursor"
+  return harnessKey
+}
+
 async function harnessUsage(harness: string): Promise<HarnessUsage> {
   const url = new URL("/api/claxedo/usage", BACKEND_URL)
   const until = Date.now() + 60_000
@@ -1112,7 +1108,7 @@ async function expectUsageDashboardWorks(page: Page) {
 /** Drives the shared "3 scripted turns + reload, full oracle each turn" journey. */
 async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCase) {
   scripted?.resetCounts()
-  const meteringKey = harness.harnessKey ?? "opencode"
+  const meteringKey = meteringHarnessDimension(harness.harnessKey ?? "opencode")
   const usageBefore = await harnessUsage(meteringKey)
   const runId = `${Date.now()}`.slice(-6)
   const input = await openDraftPrompt(page, dir)
@@ -1297,21 +1293,6 @@ async function runRealSubagentJourney(page: Page, dir: string, harness: Subagent
       timeout: 60_000,
     })
     await expect(card.locator('[data-slot="subagent-status"]')).toHaveText(/Pending|Working|Completed/, { timeout: 30_000 })
-    if (harness.id === "acp:codex") {
-      const sessionID = new URL(page.url()).pathname.split("/").filter(Boolean).at(-1)
-      expect(sessionID).toBeTruthy()
-      await expect.poll(async () => {
-        const response = await fetch(
-          `${BACKEND_URL}/session/${encodeURIComponent(sessionID!)}/subagents?directory=${encodeURIComponent(dir)}`,
-        )
-        if (!response.ok) return `http:${response.status}`
-        const rows = await response.json() as Array<{ status?: string }>
-        return rows.at(-1)?.status
-      }, {
-        message: "Codex ACP canonical subagent state never settled",
-        timeout: 30_000,
-      }).toBe("completed")
-    }
     await demoBeat(page)
     await expect(card.locator('[data-slot="subagent-status"]')).toHaveText("Completed", {
       timeout: 90_000,
@@ -1366,10 +1347,10 @@ async function runWorkspaceSubagentJourney(
 
 async function runCursorHarnessBoundary(page: Page) {
   scripted?.resetCounts()
-  const dir = await makeWorkspace("cursor", "acp:cursor")
+  const dir = await makeWorkspace("cursor", "cursor-sdk")
   await seedOneProject(page, dir)
   const input = await openDraftPrompt(page, dir)
-  await switchDraftHarness(page, "acp:cursor")
+  await switchDraftHarness(page, "cursor-sdk")
 
   const notice = page.getByRole("alert").filter({ hasText: "Couldn't load Cursor models" })
   const modelControl = page.locator('[data-action="prompt-harness-model"]')
@@ -1739,7 +1720,7 @@ test.describe("real harness journeys @core @tier-real", () => {
       const dock = await startGoalFromComposer(page, input, entry, objective)
 
       if (entry === "add-menu") {
-        await expect(dock.getByText("active", { exact: true })).toBeVisible()
+        await expect(dock.getByText("Active", { exact: true })).toBeVisible()
         const evidence = path.join(
           APP_DIR,
           "test-results/evidence/real-harness-local/opencode-goal-add-menu-active.png",
@@ -1748,12 +1729,12 @@ test.describe("real harness journeys @core @tier-real", () => {
         await page.screenshot({ path: evidence })
         await testInfo.attach("opencode-goal-add-menu-active", { path: evidence, contentType: "image/png" })
         await dock.getByRole("button", { name: "Pause", exact: true }).click()
-        await expect(dock.getByText("paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(dock.getByText("Paused", { exact: true })).toBeVisible({ timeout: 30_000 })
         scripted?.setReplyDelayMs(0)
         await dock.getByRole("button", { name: "Resume", exact: true }).click()
       }
 
-      await expect(dock.getByText("complete", { exact: true })).toBeVisible({ timeout: 90_000 })
+      await expect(dock.getByText("Complete", { exact: true })).toBeVisible({ timeout: 90_000 })
       await expect(dock).toContainText("Iteration 2")
       const evaluations = scripted?.requests.filter((request) =>
         request.prompt.includes("You are an independent completion evaluator.")) ?? []
@@ -1924,21 +1905,6 @@ test.describe("real harness journeys @core @tier-real", () => {
     await demoBeat(page)
   })
 
-  test("claude ACP harness completes exact turns, reload, and visible usage — behaviors 2,6,8,9,11", async ({
-    page,
-  }) => {
-    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
-    requireBinary(binary, "claude", "install the Claude CLI to include the claude-acp harness in this lane.")
-    const dir = await makeWorkspace("claude-acp", "acp:claude")
-    await seedOneProject(page, dir)
-    await runRealHarnessJourney(page, dir, {
-      id: "acp:claude",
-      dialect: "messages",
-      option: /^Claude$/,
-      harnessKey: "acp:claude",
-    })
-  })
-
   test("claude native SDK harness completes exact turns, reload, and visible usage — behaviors 3,6,8,9,11", async ({
     page,
   }) => {
@@ -1973,8 +1939,13 @@ test.describe("real harness journeys @core @tier-real", () => {
         await waitForHarnessReady(page)
         const dock = await startGoalFromComposer(page, input, entry, `Prove Claude ${entry} Goal Stop`)
 
-        await expect(dock.getByText("active", { exact: true })).toBeVisible()
-        await expect(dock.getByRole("button", { name: /Pause|Resume|Delete/ })).toHaveCount(0)
+        await expect(dock.getByText("Active", { exact: true })).toBeVisible()
+        // A native Claude Goal runs inside the provider session, so Claxedo
+        // cannot pause or resume it — but it CAN drop its own record of one,
+        // which `createNativeGoalResource` advertises per session for an
+        // available driver. Delete is therefore the only control on this dock.
+        await expect(dock.getByRole("button", { name: /Pause|Resume/ })).toHaveCount(0)
+        await expect(dock.getByRole("button", { name: "Delete", exact: true })).toHaveCount(1)
         if (entry === "slash") {
           scripted?.setReplyDelayMs(0)
           await expect.poll(() => scripted?.requests.filter((request) =>
@@ -1990,7 +1961,7 @@ test.describe("real harness journeys @core @tier-real", () => {
         const stop = page.locator('[data-action="prompt-submit"]').last()
         await expect(stop).toHaveAccessibleName("Stop")
         await stop.click()
-        await expect(dock.getByText("paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(dock.getByText("Paused", { exact: true })).toBeVisible({ timeout: 30_000 })
         expectScriptedTraffic("messages", 1)
       }
     } finally {
@@ -2013,30 +1984,6 @@ test.describe("real harness journeys @core @tier-real", () => {
         input: {
           description: "Verify child delegation",
           prompt: "Reply with exactly CHILD-CLAUDE-NATIVE",
-          subagent_type: "general-purpose",
-          run_in_background: false,
-        },
-      },
-      openable: true,
-      permissionMode: "bypassPermissions",
-    })
-  })
-
-  test("claude ACP runs a provider-issued Agent call as an openable subagent", async ({ page }) => {
-    const binary = await resolveBinary("claude", "CLAXEDO_E2E_CLAUDE_BIN")
-    requireBinary(binary, "claude", "install the Claude CLI to exercise ACP subagents.")
-    const dir = await makeWorkspace("claude-acp-subagent", "acp:claude")
-    await seedOneProject(page, dir)
-    await runRealSubagentJourney(page, dir, {
-      id: "acp:claude",
-      dialect: "messages",
-      option: /^Claude$/,
-      harnessKey: "acp:claude",
-      tool: {
-        name: "Agent",
-        input: {
-          description: "Verify ACP child delegation",
-          prompt: "Reply with exactly CHILD-CLAUDE-ACP",
           subagent_type: "general-purpose",
           run_in_background: false,
         },
@@ -2101,12 +2048,12 @@ test.describe("real harness journeys @core @tier-real", () => {
         const dock = await startGoalFromComposer(page, input, entry, objective)
         if (entry === "add-menu") {
           await dock.getByRole("button", { name: "Pause", exact: true }).click()
-          await expect(dock.getByText("paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+          await expect(dock.getByText("Paused", { exact: true })).toBeVisible({ timeout: 30_000 })
           scripted?.setReplyDelayMs(0)
           await dock.getByRole("button", { name: "Resume", exact: true }).click()
         }
 
-        await expect(dock.getByText("complete", { exact: true })).toBeVisible({ timeout: 90_000 })
+        await expect(dock.getByText("Complete", { exact: true })).toBeVisible({ timeout: 90_000 })
         await expect(dock).toContainText("Iteration 2")
         expect(scripted?.requests.filter((request) =>
           request.reply.kind === "text" && request.reply.text.includes('"met":'))).toHaveLength(2)
@@ -2115,21 +2062,6 @@ test.describe("real harness journeys @core @tier-real", () => {
     } finally {
       scripted?.setReplyDelayMs(0)
     }
-  })
-
-  test("codex ACP harness completes exact turns, reload, and visible usage — behaviors 4,6,8,9,11", async ({
-    page,
-  }) => {
-    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
-    requireBinary(binary, "codex", "install the Codex CLI to include the codex-acp harness in this lane.")
-    const dir = await makeWorkspace("codex-acp", "acp:codex")
-    await seedOneProject(page, dir)
-    await runRealHarnessJourney(page, dir, {
-      id: "acp:codex",
-      dialect: "responses",
-      option: /^Codex$/,
-      harnessKey: "acp:codex",
-    })
   })
 
   test("codex native SDK harness completes exact turns, reload, and visible usage — behaviors 5,6,8,9,11", async ({
@@ -2162,17 +2094,17 @@ test.describe("real harness journeys @core @tier-real", () => {
         await waitForHarnessReady(page)
         const dock = await startGoalFromComposer(page, input, entry, `Prove Codex ${entry} Goal controls`)
 
-        await expect(dock.getByText("active", { exact: true })).toBeVisible()
+        await expect(dock.getByText("Active", { exact: true })).toBeVisible()
         await expect.poll(() => scripted?.counts().responses ?? 0, {
           timeout: 30_000,
           message: "native Codex Goal never reached the configured responses provider",
         }).toBeGreaterThanOrEqual(1)
         const requestsBeforePause = scripted?.counts().responses ?? 0
         await dock.getByRole("button", { name: "Pause", exact: true }).click()
-        await expect(dock.getByText("paused", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(dock.getByText("Paused", { exact: true })).toBeVisible({ timeout: 30_000 })
         scripted?.setReplyDelayMs(0)
         await dock.getByRole("button", { name: "Resume", exact: true }).click()
-        await expect(dock.getByText("active", { exact: true })).toBeVisible({ timeout: 30_000 })
+        await expect(dock.getByText("Active", { exact: true })).toBeVisible({ timeout: 30_000 })
         await expect.poll(() => scripted?.counts().responses ?? 0, {
           timeout: 30_000,
           message: "resuming native Codex Goal did not continue provider work",
@@ -2331,30 +2263,6 @@ test.describe("real harness journeys @core @tier-real", () => {
     })
   })
 
-  test("codex ACP runs a provider-issued spawn_agent call as a status-only subagent", async ({ page }) => {
-    const binary = await resolveBinary("codex", "CLAXEDO_E2E_CODEX_BIN")
-    requireBinary(binary, "codex", "install the Codex CLI to exercise ACP subagent metadata.")
-    const dir = await makeWorkspace("codex-acp-subagent", "acp:codex")
-    await seedOneProject(page, dir)
-    await runRealSubagentJourney(page, dir, {
-      id: "acp:codex",
-      dialect: "responses",
-      option: /^Codex$/,
-      harnessKey: "acp:codex",
-      tool: {
-        name: "spawn_agent",
-        namespace: "agents",
-        input: {
-          task_name: "demo_child",
-          message: "Reply with exactly CHILD-CODEX-ACP",
-        },
-      },
-      openable: false,
-      permissionMode: "agent-full-access",
-      effort: "Ultra",
-    })
-  })
-
   test("cursor harness materializes without silently routing through another provider — behavior 7", async ({
     page,
   }) => {
@@ -2398,23 +2306,6 @@ test.describe("real harness journeys @core @tier-real", () => {
         input: {
           description: "Verify child delegation",
           prompt: "Reply with exactly CHILD-CLAUDE-NATIVE",
-          subagent_type: "general-purpose",
-          run_in_background: false,
-        },
-      },
-      openable: true,
-      permissionMode: "bypassPermissions",
-    })
-    await runWorkspaceSubagentJourney(page, "demo-claude-acp", "acp:claude", {
-      id: "acp:claude",
-      dialect: "messages",
-      option: /^Claude$/,
-      harnessKey: "acp:claude",
-      tool: {
-        name: "Agent",
-        input: {
-          description: "Verify ACP child delegation",
-          prompt: "Reply with exactly CHILD-CLAUDE-ACP",
           subagent_type: "general-purpose",
           run_in_background: false,
         },
@@ -2471,23 +2362,6 @@ test.describe("real harness journeys @core @tier-real", () => {
       },
       openable: true,
       permissionMode: "full-access",
-      effort: "Ultra",
-    })
-    await runWorkspaceSubagentJourney(page, "demo-codex-acp", "acp:codex", {
-      id: "acp:codex",
-      dialect: "responses",
-      option: /^Codex$/,
-      harnessKey: "acp:codex",
-      tool: {
-        name: "spawn_agent",
-        namespace: "agents",
-        input: {
-          task_name: "demo_child",
-          message: "Reply with exactly CHILD-CODEX-ACP",
-        },
-      },
-      openable: false,
-      permissionMode: "agent-full-access",
       effort: "Ultra",
     })
     await runCursorHarnessBoundary(page)

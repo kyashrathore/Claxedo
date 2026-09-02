@@ -60,9 +60,14 @@ export function createNativeGoalResource(host: NativeGoalResourceHost): AgentGoa
     // driver no longer holds is cleared from the projection, and a driver
     // `delete` clears a live one. Only a live Goal on a driver without
     // `delete` is truly undeletable, so advertise per-session honesty.
+    //
+    // An UNAVAILABLE capability advertises nothing extra: `goalActionAvailable`
+    // denies every action on it, so widening `actions` there would publish a
+    // choice the same contract refuses to honor.
     readCapabilities: async (sessionId, directory) => {
       const required = requireWorkspaceDirectory(directory)
       const capabilities = await native.capabilities(sessionId, required)
+      if (!capabilities.available) return capabilities
       if (capabilities.actions.includes("delete")) return capabilities
       const deletable = !!native.delete || !(await native.read(sessionId, required))
       return deletable ? { ...capabilities, actions: [...capabilities.actions, "delete"] } : capabilities

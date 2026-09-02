@@ -16,6 +16,7 @@ import { resolveHarnessForRequest } from "@claxedo/server-core/session/harness/r
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import {
+  acpConnectionUnavailable,
   cloudRuntimeSessionHarness,
   harnessBinary,
   harnessConfigOptionsUnavailable,
@@ -170,6 +171,11 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
       })
     : undefined
   if (!body || !next) return c.json(errorBody("agent_config_harness_required", "harness is required"), 400)
+  const config = await loadUserConfig()
+  const unconfiguredAcp = acpConnectionUnavailable(next, config)
+  if (unconfiguredAcp) {
+    return c.json(errorBody("agent_config_acp_connection_unavailable", unconfiguredAcp), 400)
+  }
   const sessionId = body.sessionId || c.req.query("sessionId") || c.req.header("x-session-id")
   const directory = body.directory || c.req.query("directory") || c.req.header("x-opencode-directory")
   const workspaceId = body.workspaceId || c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id")
@@ -203,7 +209,6 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
     return c.json({ ok: true })
   }
 
-  const config = await loadUserConfig()
   if (!sameHarness(defaultHarness(config), next)) delete config.model
   config.harness = next
   await saveUserConfig(config)
@@ -325,6 +330,10 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
   }
   if (harness.id === "opencode" || harness.id === "pi") {
     return c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 404)
+  }
+  const unconfiguredAcp = acpConnectionUnavailable(harness, await loadUserConfig())
+  if (unconfiguredAcp) {
+    return c.json(errorBody("agent_config_acp_connection_unavailable", unconfiguredAcp), 400)
   }
   const nativeSdkId = harness.access === "native" && isNativeSdkHarnessId(harness.id) ? harness.id : undefined
   // Native SDK harnesses live-list from the runtime like everyone else; the
