@@ -19,18 +19,40 @@ export type HarnessConfigOption = {
   selectOptions?: Array<{ id: string; name: string }>
 }
 
+export type ResolvedHarnessModel = { id: string; name: string }
+
 export type OptionsResponse = {
   options: HarnessConfigOption[]
   source: "harness" | "catalog"
   stale: boolean
+  /** The model the harness resolved for itself, when it named one. */
+  resolvedModel?: ResolvedHarnessModel
+}
+
+/** The runtime's own answer shape for `/api/wr/harness-config-options`. */
+export type RuntimeHarnessConfigOptions = {
+  options: HarnessConfigOption[]
+  resolvedModel?: ResolvedHarnessModel
+}
+
+export function isRuntimeHarnessConfigOptions(value: unknown): value is RuntimeHarnessConfigOptions {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false
+  const row = value as Record<string, unknown>
+  if (!Array.isArray(row.options)) return false
+  const resolved = row.resolvedModel
+  if (resolved === undefined) return true
+  if (!resolved || typeof resolved !== "object") return false
+  const model = resolved as Record<string, unknown>
+  return typeof model.id === "string" && typeof model.name === "string"
 }
 
 /** Canonical successful response for the local harness-options proxy. */
-export function liveHarnessOptionsResponse(options: HarnessConfigOption[]): OptionsResponse {
+export function liveHarnessOptionsResponse(live: RuntimeHarnessConfigOptions): OptionsResponse {
   return {
-    options,
+    options: live.options,
     source: "harness",
     stale: false,
+    ...(live.resolvedModel ? { resolvedModel: live.resolvedModel } : {}),
   }
 }
 

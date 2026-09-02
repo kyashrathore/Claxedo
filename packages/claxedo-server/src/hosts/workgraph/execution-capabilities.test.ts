@@ -315,11 +315,13 @@ describe("WorkGraph execution capability composition", () => {
         resolveRepositoryDirectory: (requestedDirectory) => requestedDirectory === directory ? directory : undefined,
         harness: async () => "acp:openclaw",
         engineLoaded: () => true,
-        harnessConfigOptions: async (requestedDirectory, harness) => requestedDirectory === directory && harness === "acp:openclaw" ? [{
-          id: "model",
-          currentValue: "gpt-5.6-sol",
-          options: [{ value: "gpt-5.6-sol", name: "GPT-5.6-Sol" }],
-        }] : [],
+        harnessConfigOptions: async (requestedDirectory, harness) => requestedDirectory === directory && harness === "acp:openclaw"
+          ? { options: [{
+              id: "model",
+              currentValue: "gpt-5.6-sol",
+              options: [{ value: "gpt-5.6-sol", name: "GPT-5.6-Sol" }],
+            }] }
+          : { options: [] },
         opencodeRequest: async (request) => {
           const pathname = new URL(request.url).pathname
           return Response.json(
