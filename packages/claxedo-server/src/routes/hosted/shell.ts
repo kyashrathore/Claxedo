@@ -264,7 +264,10 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     // presented by the WorkGraph surface; the projects rail is for workspaces
     // a user can actually open.
     if (workspaceId.startsWith("wg-")) continue
-    const directory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? "/workspace"
+    // A workspace served elsewhere is addressed by its id; the host's own path
+    // is location metadata.
+    const directory = `workspace:${workspaceId}`
+    const remoteDirectory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory)
     const projectId = txt(row?.project_id) ?? txt(row?.projectID) ?? workspaceId
     const workspaceName = txt(row?.workspace_name) ?? txt(row?.workspaceName) ?? txt(row?.display_name) ?? txt(row?.displayName) ?? workspaceId
     const created = num(row?.created_at) ?? num(row?.createdAt) ?? now
@@ -289,6 +292,7 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
       kind: txt(row?.access) ?? txt(row?.backing) ?? "cloud",
       workspace_name: workspaceName,
       directory,
+      ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
       // Carried so the client can derive an owner/repo label of its own (the
       // rail already does) without a second round-trip.
       ...(txt(row?.repo_url) ?? txt(row?.repoUrl) ? { repo_url: txt(row?.repo_url) ?? txt(row?.repoUrl) } : {}),
