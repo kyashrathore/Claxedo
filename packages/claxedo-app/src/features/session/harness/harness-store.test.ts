@@ -11,12 +11,7 @@ beforeEach(() => {
 })
 
 describe("harness store facade", () => {
-  test("reads an empty projection without seeding, ignoring the retired pane maps", () => {
-    storage.setItem("claxedo:runner", "acp:claude")
-    storage.setItem("claxedo:acp-model", "legacy-model")
-    storage.setItem("claxedo:harness-map", JSON.stringify({ "session:ses_1": "acp:codex" }))
-    storage.setItem("claxedo:acp-model-map", JSON.stringify({ "session:ses_1": "gpt-5.5" }))
-
+  test("reads an empty projection without seeding", () => {
     const store = createHarnessStore(storage)
 
     expect(store.state("session:ses_1")).toBeUndefined()
@@ -31,7 +26,6 @@ describe("harness store facade", () => {
   })
 
   test("reuses one immutable initial projection for repeated unseeded reads", () => {
-    storage.setItem("claxedo:runner", "acp:claude")
     const store = createHarnessStore(storage)
     const first = store.read("session:ses_1")
     const readsAfterFirst = storage.getCount
@@ -149,7 +143,7 @@ describe("harness store facade", () => {
     expect(store.selectedModel("draft:/repo:route")).toBe("")
   })
 
-  test("promotes full transient state without writing harness preference maps", () => {
+  test("promotes full transient state to the session scope", () => {
     const store = createHarnessStore(storage)
 
     store.seed("draft:one")
@@ -167,10 +161,6 @@ describe("harness store facade", () => {
       configError: "missing binary",
       workspaceId: "ws_1",
     })
-    store.save("draft:one", "harness", "acp:codex")
-    store.save("draft:one", "model", "gpt-5.5")
-    store.save("draft:one", "agent", "build")
-    storage.setItem("claxedo:model-variant-map", JSON.stringify({ "draft:one": "fast" }))
 
     store.promote("draft:one", "session:ses_1")
 
@@ -191,10 +181,6 @@ describe("harness store facade", () => {
       configError: "missing binary",
       workspaceId: "ws_1",
     })
-    expect(storage.getItem("claxedo:harness-map")).toBeNull()
-    expect(storage.getItem("claxedo:acp-model-map")).toBeNull()
-    expect(storage.getItem("claxedo:agent-mode-map")).toBeNull()
-    expect(JSON.parse(storage.getItem("claxedo:model-variant-map")!)).toEqual({ "draft:one": "fast" })
   })
 
   test("restores a saved pair only through its captured exact-eligibility revision", () => {

@@ -37,7 +37,6 @@ describe("harness options state", () => {
         selectedModel: "sonnet",
         configError: undefined,
       },
-      saveModel: "sonnet",
       retry: false,
       clearTries: true,
     })
@@ -127,7 +126,6 @@ describe("harness options state", () => {
         selectedModel: "sonnet",
         configError: undefined,
       },
-      saveModel: "sonnet",
       retry: true,
       clearTries: false,
     })
@@ -227,7 +225,6 @@ describe("harness options state", () => {
         selectedModel: "default",
         configError: undefined,
       },
-      saveModel: "default",
       managedDefault: true,
       retry: false,
       clearTries: true,

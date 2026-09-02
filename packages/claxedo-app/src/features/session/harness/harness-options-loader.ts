@@ -21,7 +21,6 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
   preserveSelectedModel?(scope: string): boolean
   seed(scope: string): void
   applyPatch(scope: string, patch: HarnessOptionsStatePatch): void
-  saveModel(scope: string, model: string): void
   draftDefaultApplication?(scope: string, type: HarnessType): DraftDefaultApplication | undefined
   resolveDraftDefault?(
     application: DraftDefaultApplication,
@@ -108,7 +107,6 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       input.applyPatch(scope, resolvingDefault && !decision.managedDefault
         ? withoutSelection(decision.patch, payload.stale)
         : decision.patch)
-      if (!resolvingDefault && decision.saveModel) input.saveModel(scope, decision.saveModel)
       if (resolvingDefault && !payload.stale) {
         const eligibleModels = (decision.patch.dynamicModels ?? []).map((model) => ({
           providerID: type,

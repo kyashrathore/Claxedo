@@ -20,7 +20,6 @@ import {
   type HarnessScopeInput,
 } from "./store-policy"
 
-type PreferenceKey = "harness" | "model" | "agent"
 type HarnessDirectory = NonNullable<HarnessScopeInput["directory"]>
 
 export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>(input: {
@@ -28,7 +27,6 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
   clearOptionsTries(scope: string): void
   applyPatch(scope: string, patch: HarnessStorePatch): void
   state(scope: string): HarnessStoreState | undefined
-  save(scope: string, key: PreferenceKey, value: string): void
   fetchConfigOptions(scope: string, type: HarnessType, params?: ScopeInput): void
   bootstrap(params: { harnessType?: string }): Promise<void>
   ensureDirectory(params: { directory: HarnessDirectory; harnessType?: string; quiet: boolean }): Promise<void>
@@ -38,8 +36,6 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
     input.dropPrepared(scope)
     input.applyPatch(scope, workspaceDraftHarnessResetPatch())
     input.clearOptionsTries(scope)
-    input.save(scope, "harness", "opencode")
-    input.save(scope, "model", "")
   }
 
   const refresh = async (directory?: HarnessScopeInput["directory"], harnessType?: string, opts?: { draft?: boolean }) => {
@@ -74,8 +70,6 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
     // thing worth protecting here.
     if (failedHarness(data) && current?.harness && current.harness !== "opencode" && want !== current.harness) return
     input.applyPatch(scope, harnessStatusPatch({ data, current }))
-    input.save(scope, "harness", want)
-    if (data.model) input.save(scope, "model", data.model)
     if (shouldFetchConfigOptionsForScope(want, hardFailedHarness(data), params)) {
       input.fetchConfigOptions(scope, want, params)
     } else if (harnessHasConfigOptions(want) && hardFailedHarness(data)) {

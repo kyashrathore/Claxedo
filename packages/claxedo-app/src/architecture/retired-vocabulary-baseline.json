@@ -1,8 +1,6 @@
 [
   "features/session/ui/controls/agent-harness-selector.vitest.tsx",
   "features/session/harness/harness-config-store.test.ts",
-  "features/session/harness/harness-preferences.test.ts",
-  "features/session/harness/harness-store.test.ts",
   "app/workbench/state/route-bridge-resolution.ts",
   "app/workbench/state/route-intent.test.ts",
   "app/workbench/state/route-intent.ts",

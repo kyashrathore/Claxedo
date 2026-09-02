@@ -12,7 +12,6 @@ let tries: Record<string, number | undefined>
 let harness: HarnessType
 let selectedModel: string | undefined
 let patches: HarnessOptionsStatePatch[]
-let savedModels: string[]
 let loading: boolean[]
 
 beforeEach(() => {
@@ -21,7 +20,6 @@ beforeEach(() => {
   harness = "claude-acp"
   selectedModel = "sonnet"
   patches = []
-  savedModels = []
   loading = []
 })
 
@@ -51,7 +49,6 @@ describe("harness options loader", () => {
       selectedModel: "sonnet",
       optionsLoading: false,
     })
-    expect(savedModels).toEqual(["sonnet"])
   })
 
   test("keeps stale options loading and schedules bounded retry", async () => {
@@ -235,7 +232,6 @@ describe("harness options loader", () => {
       optionsLoading: false,
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
     })
-    expect(savedModels).toEqual([])
     expect(resolutions).toEqual([{
       application: captured,
       input: {
@@ -431,7 +427,6 @@ function loaderFor(input: {
     selectedModel: () => selectedModel,
     seed: () => {},
     applyPatch: (_scope, patch) => patches.push(patch),
-    saveModel: (_scope, model) => savedModels.push(model),
     draftDefaultApplication: input.draftDefaultApplication,
     resolveDraftDefault: input.resolveDraftDefault,
     completeRememberedHarness: input.completeRememberedHarness,

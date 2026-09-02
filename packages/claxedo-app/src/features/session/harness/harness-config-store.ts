@@ -95,7 +95,6 @@ export function createHarnessConfigStore() {
     preserveSelectedModel: harnessStore.protectDraftModel,
     seed: harnessStore.seed,
     applyPatch: harnessStore.applyPatch,
-    saveModel: (scope, model) => harnessStore.save(scope, "model", model),
     draftDefaultApplication: harnessStore.draftDefaultApplication,
     resolveDraftDefault: harnessStore.applyDraftDefault,
     completeRememberedHarness: harnessStore.completeRememberedHarness,
@@ -123,7 +122,6 @@ export function createHarnessConfigStore() {
     clearOptionsTries: (scope: string) => clearHarnessOptionsTries(base, scope),
     applyPatch: harnessStore.applyPatch,
     state: harnessStore.state,
-    save: harnessStore.save,
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },
@@ -178,8 +176,6 @@ export function createHarnessConfigStore() {
     acceptsDraftModel: harnessStore.acceptsDraftModel,
     setSelectedModel: harnessStore.setSelectedModel,
     setSelectedAgent: harnessStore.setSelectedAgent,
-    saveModel: (scope, model) => harnessStore.save(scope, "model", model),
-    saveAgent: (scope, name) => harnessStore.save(scope, "agent", name),
     rememberDraftModel: (scope, model, input, labels) => {
       rememberDraftModel(scope, model, input, labels)
     },
@@ -200,8 +196,6 @@ export function createHarnessConfigStore() {
       void preparedRuntimeSessions.drop(scope)
     },
     applyPatch: harnessStore.applyPatch,
-    saveHarness: (scope, type) => harnessStore.save(scope, "harness", type),
-    saveModel: (scope, model) => harnessStore.save(scope, "model", model),
     beginDraftHarnessChoice: (scope, type, input) => {
       const identity = draftDefaultIdentity(input)
       if (identity) harnessStore.beginDraftHarnessChoice(scope, identity, type)
@@ -270,8 +264,8 @@ export function createHarnessConfigStore() {
   // This hits the harness route directly — which now forwards `/api/wr/health`'s
   // `harnessHealth` (D1 fix) — and moves readiness ready<->degraded so the
   // composer health peek + Send gate react. Deliberately does NOT re-fetch config
-  // options, re-save preferences, or touch harness/model identity: it only
-  // transitions readiness, and only when it owns that transition.
+  // options or touch harness/model identity: it only transitions readiness, and
+  // only when it owns that transition.
   const probeHarnessHealth = async (scope: string, input?: ScopeInput) => {
     if (!input?.directory) return
     const current = harnessStore.read(scope)

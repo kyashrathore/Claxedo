@@ -31,8 +31,6 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   seed(scope: string): void
   dropPrepared(scope: string): void
   applyPatch(scope: string, patch: HarnessStorePatch): void
-  saveHarness(scope: string, type: HarnessType): void
-  saveModel(scope: string, model: string): void
   beginDraftHarnessChoice?(scope: string, type: HarnessType, params?: ScopeInput): void
   rememberDraftHarness(scope: string, type: HarnessType, params?: ScopeInput): void
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
@@ -78,7 +76,6 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     if (!params?.sessionId || params.sessionId === "new") input.beginDraftHarnessChoice?.(scope, type, params)
     input.applyPatch(scope, harnessSwitchStartPatch({ type }))
     input.cache.clearOptionsTries(scope)
-    input.saveHarness(scope, type)
 
     if (!params?.sessionId || params.sessionId === "new") {
       const accepted = await switchDraftHarness(scope, type, params, binary, useLocalHarnessConfig, active)

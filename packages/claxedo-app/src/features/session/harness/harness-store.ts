@@ -10,30 +10,32 @@ import {
   harnessModels,
   harnessReadyForSubmit,
 } from "./selection"
-import type {
-  HarnessStorePatch,
-  HarnessStoreState,
+import {
+  initialHarnessStoreState,
+  type HarnessStorePatch,
+  type HarnessStoreState,
 } from "./store-state"
-import { createHarnessPreferences } from "./harness-preferences"
 import {
   resolveDraftDefault,
   shouldApplyDraftDefault,
   type DraftDefaultApplication,
   type ResolveDraftDefaultInput,
 } from "./draft-default-policy"
-import type { DraftDefaultLabels, DraftDefaultScope } from "./draft-defaults"
-
-type PreferenceKey = "harness" | "model" | "agent"
+import {
+  createDraftDefaultPreferences,
+  type DraftDefaultLabels,
+  type DraftDefaultScope,
+} from "./draft-defaults"
 
 export function createHarnessStore(storage: PanePreferenceStorage) {
   const [store, setStore] = createStore<Record<string, HarnessStoreState>>({})
-  const preferences = createHarnessPreferences(storage)
+  const draftDefaults = createDraftDefaultPreferences(storage)
   const initialByScope = new Map<string, HarnessStoreState>()
 
   const initialState = (scope: string) => {
     const existing = initialByScope.get(scope)
     if (existing) return existing
-    const created = preferences.initialState(scope)
+    const created = initialHarnessStoreState({ scope })
     initialByScope.set(scope, created)
     return created
   }
@@ -58,10 +60,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     })
   }
 
-  const save = (scope: string, key: PreferenceKey, value: string) => {
-    preferences.save(scope, key, value)
-  }
-
   const promote = (from: string, to: string) => {
     seed(from)
     setStore(to, {
@@ -70,7 +68,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       draftDefaultRevision: (read(from).draftDefaultRevision ?? 0) + 1,
       draftDefaultWritePending: false,
     })
-    preferences.promote(from, to)
   }
 
   const owner = (scope: string) => {
@@ -92,7 +89,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     }
 
     const revision = (current.draftDefaultRevision ?? 0) + 1
-    const saved = preferences.draftDefaults.read(identity)
+    const saved = draftDefaults.read(identity)
     const type = saved?.harness ?? "opencode"
     setStore(scope, {
       draftDefaultAuthority: "unresolved",
@@ -194,13 +191,13 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     // The live selection belongs to the harness being LEFT unless it is a model
     // `type` itself can serve; otherwise `type` keeps whatever it remembered on
     // its own slot rather than being blanked by the other harness's choice.
-    const remembered = preferences.draftDefaults.readHarness(identity, type)
+    const remembered = draftDefaults.readHarness(identity, type)
     const model = selected && liveConfigModel &&
       (type === "pi" || type === "opencode" || selected.providerID === type)
       ? selected
       : remembered?.model
     const choiceLabels = labels ?? (model === remembered?.model ? remembered?.labels : undefined)
-    const persisted = preferences.draftDefaults.save(identity, {
+    const persisted = draftDefaults.save(identity, {
       harness: type,
       ...(model ? { model } : {}),
       ...(choiceLabels ? { labels: choiceLabels } : {}),
@@ -230,7 +227,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
   ) => {
     seed(scope)
     const current = read(scope)
-    const remembered = preferences.draftDefaults.readHarness(identity, type)
+    const remembered = draftDefaults.readHarness(identity, type)
     const model = remembered?.model
     setStore(scope, {
       draftDefaultAuthority: "explicit",
@@ -255,7 +252,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     seed(scope)
     const current = read(scope)
     if (!canSelectDraftModel(current, model)) return false
-    const persisted = preferences.draftDefaults.save(identity, { harness: current.harness, model, ...(labels ? { labels } : {}) })
+    const persisted = draftDefaults.save(identity, { harness: current.harness, model, ...(labels ? { labels } : {}) })
     setStore(scope, {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
@@ -284,7 +281,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       current.harness !== type ||
       !current.draftDefaultWorkspaceKey
     ) return false
-    const persisted = preferences.draftDefaults.save({
+    const persisted = draftDefaults.save({
       serverUrl: current.draftDefaultServerUrl ?? "",
       workspaceKey: current.draftDefaultWorkspaceKey,
     }, { harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) })
@@ -306,7 +303,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     rememberDraftHarness,
     rememberDraftModel,
     read,
-    save,
     seed,
     state: (scope: string) => store[scope],
     touch,

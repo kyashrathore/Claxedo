@@ -29,7 +29,6 @@ export type HarnessOptionsStatePatch = {
 
 export type HarnessOptionsDecision = {
   patch: HarnessOptionsStatePatch
-  saveModel?: string
   /** A live operator ACP answered, but owns model selection outside ACP. */
   managedDefault?: boolean
   retry: boolean
@@ -98,7 +97,6 @@ export function applyHarnessOptionsResponse(input: {
           configError: undefined,
           optionsLoading: false,
         },
-        saveModel: DEFAULT_HARNESS_MODEL.id,
         managedDefault: true,
         retry: false,
         clearTries: true,
@@ -172,7 +170,6 @@ export function applyHarnessOptionsResponse(input: {
       configError: undefined,
       optionsLoading: retry ? base.optionsLoading : false,
     },
-    saveModel: next,
     retry,
     clearTries,
   }

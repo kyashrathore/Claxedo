@@ -12,7 +12,6 @@ let state: HarnessStoreState
 let dropped: string[]
 let clearedTries: string[]
 let patches: HarnessStorePatch[]
-let saved: { scope: string; key: "harness" | "model" | "agent"; value: string }[]
 let optionFetches: { scope: string; type: HarnessType; directory?: string; sessionId?: string }[]
 let bootstraps: { harnessType?: string }[]
 let ensures: { directory: string; harnessType?: string; quiet: boolean }[]
@@ -35,7 +34,6 @@ beforeEach(() => {
   dropped = []
   clearedTries = []
   patches = []
-  saved = []
   optionFetches = []
   bootstraps = []
   ensures = []
@@ -43,7 +41,7 @@ beforeEach(() => {
 })
 
 describe("harness status actions", () => {
-  test("resets workspace drafts through store patch, prepared drop, retry cleanup, and saved preferences", () => {
+  test("resets workspace drafts through store patch, prepared drop, and retry cleanup", () => {
     actions().resetWorkspaceDraftHarness(scope)
 
     expect(dropped).toEqual([scope])
@@ -62,10 +60,6 @@ describe("harness status actions", () => {
       configError: undefined,
     }])
     expect("harnessBinary" in patches[0]).toBe(false)
-    expect(saved).toEqual([
-      { scope, key: "harness", value: "opencode" },
-      { scope, key: "model", value: "" },
-    ])
   })
 
   test("routes refreshes to bootstrap, draft ensure, or ordinary directory refresh", async () => {
@@ -81,7 +75,7 @@ describe("harness status actions", () => {
     expect(refreshes).toEqual([{ directory: "/repo", harnessType: "acp:cursor" }])
   })
 
-  test("applies status, persists harness and model, fetches options, and refreshes draft directories", async () => {
+  test("applies status, fetches options, and refreshes draft directories", async () => {
     const order: string[] = []
     const subject = actions({
       fetchConfigOptions: (scope, type, params) => {
@@ -106,10 +100,6 @@ describe("harness status actions", () => {
       selectedModel: "gpt-5.5",
       readiness: "ready",
     })
-    expect(saved).toEqual([
-      { scope, key: "harness", value: "acp:codex" },
-      { scope, key: "model", value: "gpt-5.5" },
-    ])
     expect(optionFetches).toEqual([{ scope, type: "acp:codex", directory: "/repo", sessionId: "new" }])
     expect(ensures).toEqual([{ directory: "/repo", harnessType: "acp:codex", quiet: true }])
     expect(order).toEqual(["options", "ensure"])
@@ -160,7 +150,6 @@ describe("harness status actions", () => {
     }, { directory: "/repo", sessionId: "new" })
 
     expect(patches).toEqual([])
-    expect(saved).toEqual([])
     expect(optionFetches).toEqual([])
   })
 
@@ -183,17 +172,6 @@ describe("harness status actions", () => {
       readiness: "error",
       configError: "claude binary not found",
     })
-    expect(saved).toEqual([{ scope, key: "harness", value: "acp:claude" }])
-  })
-
-  test("does not clear saved model when status has no truthy model", async () => {
-    await actions().applyStatus(scope, {
-      type: "acp:claude",
-      activeType: "acp:claude",
-      model: "",
-    }, { directory: "/repo", sessionId: "new" })
-
-    expect(saved).toEqual([{ scope, key: "harness", value: "acp:claude" }])
   })
 
   // Third stranding path behind the Tier R "Loading models" hang. When a
@@ -252,7 +230,6 @@ function actions(overrides?: {
     clearOptionsTries: (scope) => clearedTries.push(scope),
     applyPatch: (_scope, patch) => patches.push(patch),
     state: () => state,
-    save: (scope, key, value) => saved.push({ scope, key, value }),
     fetchConfigOptions: overrides?.fetchConfigOptions ?? ((scope, type, params) => {
       optionFetches.push({ scope, type, directory: params?.directory, sessionId: params?.sessionId })
     }),
