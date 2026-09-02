@@ -6,6 +6,7 @@ import {
   upsertCreatedSessionListRow,
 } from "@/features/session/data/query/session-list"
 import { removeSessionInventoryQueryData } from "@/features/session/data/sync/session-inventory"
+import { sessionRowDirectory } from "@/features/session/data/sync/session-source"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
 import type { DirectorySessionCacheValue } from "../../../features/session/data/sync/queries"
 import { applyGlobalProjectEvent } from "@/platform/sync/global-event-projector"
@@ -209,7 +210,7 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       // is APPLIED rather than used as a doorbell for a refetch: a created row
       // appears with no list request at all, and an updated title or timestamp
       // reorders in place.
-      applySessionEventToSessionList({ info: raw, type: sessionEventType, directory })
+      applySessionEventToSessionList({ info: raw, type: sessionEventType, directory, projects: input.projects() })
       projectCanonicalSessionTitle({
         writer: input.sessionTitles,
         info: raw,
@@ -517,14 +518,15 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   const info: LifecycleSession = inventoryProjectID
     ? { ...eventInfo, projectID: inventoryProjectID }
     : eventInfo
-  const workspaceId = signedWorkspaceId(
+  const workspaceId = addressedWorkspaceId(
     typeof info.workspaceID === "string" ? info.workspaceID : event.workspaceId,
+    input.projects(),
   )
   upsertCreatedSessionListRow({
     row: {
       sessionId: info.id,
       title: info.title,
-      directory: info.directory,
+      directory: sessionRowDirectory({ workspaceId, hostDirectory: info.directory }),
       projectId: info.projectID,
       ...(workspaceId ? { workspaceId } : {}),
       createdAt: info.time.created,
@@ -545,14 +547,24 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
 }
 
 /**
- * A workspace id a session row may be keyed by.
+ * The workspace a session row is ADDRESSED by, or nothing.
  *
- * Local association UUIDs are not signed workspace ids. Stamping one mints a
- * `workspace:<uuid>:session:<id>` row beside the `local:<dir>` row for the same
- * session (open issue #14 / tier-real local harness strict-mode duplicates).
+ * A minted `ws_*` id is self-identifying. A caller-chosen id is not: a machine
+ * publishes its own LOCAL workspace under the id it already held, and the
+ * control plane stores that id verbatim (`registerLocalForSharing`), so the
+ * SAME uuid shape names a user-hosted workspace on one machine and a purely
+ * local association on another. The resolved project catalog is the authority
+ * for that distinction and `sessionWorkspaceRuntimeRef` is its reader: it
+ * answers with the workspace's real kind, and `undefined` both for one the
+ * catalog knows as local and for one it has never heard of. Failing closed
+ * there is what keeps a local session's row from gaining a `workspace:<uuid>`
+ * twin beside its `local:<dir>` row (open issue #14 / tier-real local harness
+ * strict-mode duplicates).
  */
-function signedWorkspaceId(value: string | undefined) {
-  return value && /^ws_/.test(value) ? value : undefined
+function addressedWorkspaceId(value: string | undefined, projects: GlobalProject[]) {
+  if (!value) return undefined
+  if (/^ws_/.test(value)) return value
+  return sessionWorkspaceRuntimeRef({ directory: `workspace:${value}`, projects })?.workspaceId
 }
 
 /**
@@ -569,9 +581,16 @@ function applySessionEventToSessionList(input: {
   info: LifecycleSession
   type: SessionEventType
   directory: DirectoryRef
+  projects: GlobalProject[]
 }) {
-  const workspaceId = signedWorkspaceId(txt(input.info.workspaceID) ?? txt(input.info.workspaceId))
-  const directory = input.info.directory || input.directory
+  const workspaceId = addressedWorkspaceId(
+    txt(input.info.workspaceID) ?? txt(input.info.workspaceId),
+    input.projects,
+  )
+  const directory = sessionRowDirectory({
+    workspaceId,
+    hostDirectory: input.info.directory || input.directory,
+  })
   const identity = {
     sessionId: input.info.id,
     directory,

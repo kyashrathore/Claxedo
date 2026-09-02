@@ -138,6 +138,95 @@ function claxedoEventSource() {
   }
 }
 
+/**
+ * The frames a workspace served by ANOTHER machine publishes, and the catalog
+ * that classifies it.
+ *
+ * `workspace-runtime`'s `sessionLifecycleInfo` fills `info.directory` from the
+ * store row / `assertTarget` result, and `assertTarget` has already translated
+ * the app's `workspace:<id>` request header into the pinned host path, so no
+ * producer ever puts a workspace address back on the wire — `info.directory` is
+ * the producing machine's own path, always.
+ */
+const HOST_DIR = "/Users/host/repo"
+/** A live user-hosted workspace id: caller-chosen, never a minted `ws_*`. */
+const USER_HOSTED_UUID = "5f39af3e-75c4-4392-baaf-574acbbf9db9"
+/** The same shape, but only ever this machine's own local association. */
+const LOCAL_ASSOCIATION_UUID = "9c1d2f80-4b6a-4d1e-9f27-1a3b5c7d9e11"
+
+function hostProject(workspace: { id: string; kind: string }) {
+  return {
+    id: "proj_host",
+    worktree: HOST_DIR,
+    sandboxes: [HOST_DIR],
+    time: { created: 1, updated: 1 },
+    workspaces: { [workspace.id]: { id: workspace.id, kind: workspace.kind, directory: HOST_DIR } },
+  }
+}
+
+function createdFrame(sessionId: string, workspaceId: string) {
+  return {
+    type: "session.created",
+    properties: {
+      info: {
+        id: sessionId,
+        title: "created on the host",
+        directory: HOST_DIR,
+        workspaceID: workspaceId,
+        time: { created: 10, updated: 20 },
+      },
+    },
+  } satisfies RoutableEvent
+}
+
+function lifecycleFrame(sessionId: string, workspaceId: string) {
+  return {
+    type: "session.lifecycle",
+    phase: "created",
+    directory: HOST_DIR,
+    workspaceId,
+    sessionID: sessionId,
+    info: {
+      id: sessionId,
+      slug: sessionId.replace(/_/g, "-"),
+      projectID: "runtime_git_project_hash",
+      workspaceID: workspaceId,
+      directory: HOST_DIR,
+      title: "created on the host",
+      version: "1",
+      time: { created: 30, updated: 40 },
+    },
+    ts: 40,
+  } satisfies ClaxedoEvent
+}
+
+function hostIngressInput(overrides: {
+  globalEvents: Parameters<typeof createGlobalSyncEventIngress>[0]["globalEvents"]
+  claxedoEvents: Parameters<typeof createGlobalSyncEventIngress>[0]["claxedoEvents"]
+  projects: Parameters<typeof createGlobalSyncEventIngress>[0]["projects"]
+}) {
+  return {
+    ...revocationDefaults,
+    ...overrides,
+    projectFor: () => undefined,
+    children: {
+      directories: () => [],
+      has: () => false,
+      mark: () => undefined,
+      sessionCache: () => ({ session: [], total: 0, limit: 0, at: 0 }),
+    },
+    push: () => undefined,
+    refresh: () => undefined,
+    setGlobalProject: () => undefined,
+    sessionInventoryLoaded: () => false,
+    applySessionEvent: () => undefined,
+    sessionTitles: noopSessionTitles,
+    draftWasRolledBack: () => false,
+    cacheSessions: () => undefined,
+    sessionCacheLimit: (_directory: string, fallback: number) => fallback,
+  } satisfies Parameters<typeof createGlobalSyncEventIngress>[0]
+}
+
 describe("global sync event ingress", () => {
   test("keeps central runtime session-info updates out of workspace inventory", () => {
     const globalEvents = eventSource()
@@ -513,6 +602,148 @@ describe("global sync event ingress", () => {
       queryClient.getQueryData<{ items: Array<{ sessionId: string; title: string }> }>(key)?.items,
     ).toEqual([expect.objectContaining({ sessionId: "ses_created", title: "created on the host" })])
     expect(queryClient.getQueryState(key)?.isInvalidated).toBe(false)
+    dispose()
+  })
+
+  /**
+   * A minted `ws_*` id is self-identifying, so it addresses the row by
+   * workspace with no catalog at all. The row is read back THROUGH its
+   * directory (messages, config, agents, transcript), so it must carry the
+   * workspace address rather than the producing host's path.
+   */
+  test("a minted ws_ id addresses the row by workspace with no catalog loaded", () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const key = queryKeys.shell.sessionList("http://test.local", {
+      scope: "workspace",
+      workspaceId: "ws_1",
+      directory: "workspace:ws_1",
+      groupBy: "none",
+      archived: "active",
+      status: [],
+      environment: [],
+      git: [],
+      sort: "updated_desc",
+      limit: 20,
+    })
+    queryClient.setQueryData<SessionListResponse>(key, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 20 },
+      items: [],
+      totalKnown: 0,
+    })
+    const dispose = createGlobalSyncEventIngress(
+      hostIngressInput({
+        globalEvents: globalEvents.source,
+        claxedoEvents: claxedoEvents.source,
+        projects: () => [],
+      }),
+    )
+
+    globalEvents.emit({ name: HOST_DIR, details: createdFrame("ses_stream", "ws_1") })
+    claxedoEvents.emit(lifecycleFrame("ses_lifecycle", "ws_1"))
+
+    const items = queryClient.getQueryData<SessionListResponse>(key)?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_lifecycle", "ses_stream"])
+    expect(items?.map((item) => item.directory)).toEqual(["workspace:ws_1", "workspace:ws_1"])
+    dispose()
+  })
+
+  /**
+   * A shared machine publishes the workspace under the id it ALREADY held — a
+   * `randomUUID()` from its own workspace store — and the control plane keeps
+   * that id verbatim, so a live user-hosted host's frames name a uuid, never a
+   * minted `ws_*` id. The catalog knowing that uuid as `user-hosted` is what
+   * makes the row workspace-addressed.
+   */
+  test("a uuid the catalog knows as user-hosted addresses the row by workspace", () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const key = queryKeys.shell.sessionList("http://test.local", {
+      scope: "workspace",
+      workspaceId: USER_HOSTED_UUID,
+      directory: `workspace:${USER_HOSTED_UUID}`,
+      groupBy: "none",
+      archived: "active",
+      status: [],
+      environment: [],
+      git: [],
+      sort: "updated_desc",
+      limit: 20,
+    })
+    queryClient.setQueryData<SessionListResponse>(key, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 20 },
+      items: [],
+      totalKnown: 0,
+    })
+    const dispose = createGlobalSyncEventIngress(
+      hostIngressInput({
+        globalEvents: globalEvents.source,
+        claxedoEvents: claxedoEvents.source,
+        projects: () => [hostProject({ id: USER_HOSTED_UUID, kind: "user-hosted" })],
+      }),
+    )
+
+    globalEvents.emit({ name: HOST_DIR, details: createdFrame("ses_stream", USER_HOSTED_UUID) })
+    claxedoEvents.emit(lifecycleFrame("ses_lifecycle", USER_HOSTED_UUID))
+
+    const items = queryClient.getQueryData<SessionListResponse>(key)?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_lifecycle", "ses_stream"])
+    expect(items?.map((item) => item.directory))
+      .toEqual([`workspace:${USER_HOSTED_UUID}`, `workspace:${USER_HOSTED_UUID}`])
+    expect(items?.map((item) => item.sessionRef)).toEqual([
+      `workspace:${USER_HOSTED_UUID}:session:ses_lifecycle`,
+      `workspace:${USER_HOSTED_UUID}:session:ses_stream`,
+    ])
+    dispose()
+  })
+
+  /**
+   * The same uuid shape, but the catalog knows it only as this machine's LOCAL
+   * association. Addressing it by workspace would mint a `workspace:<uuid>` row
+   * beside the `local:<dir>` row for one session (issue #14), so the row stays
+   * local: the host path IS an address this app can read.
+   */
+  test("a uuid the catalog knows only as a local association keeps the local row", () => {
+    queryClient.clear()
+    const globalEvents = eventSource()
+    const claxedoEvents = claxedoEventSource()
+    const key = queryKeys.shell.sessionList("http://test.local", {
+      scope: "workspace",
+      directory: HOST_DIR,
+      groupBy: "none",
+      archived: "active",
+      status: [],
+      environment: [],
+      git: [],
+      sort: "updated_desc",
+      limit: 20,
+    })
+    queryClient.setQueryData<SessionListResponse>(key, {
+      view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 20 },
+      items: [],
+      totalKnown: 0,
+    })
+    const dispose = createGlobalSyncEventIngress(
+      hostIngressInput({
+        globalEvents: globalEvents.source,
+        claxedoEvents: claxedoEvents.source,
+        projects: () => [hostProject({ id: LOCAL_ASSOCIATION_UUID, kind: "local" })],
+      }),
+    )
+
+    globalEvents.emit({ name: HOST_DIR, details: createdFrame("ses_stream", LOCAL_ASSOCIATION_UUID) })
+    claxedoEvents.emit(lifecycleFrame("ses_lifecycle", LOCAL_ASSOCIATION_UUID))
+
+    const items = queryClient.getQueryData<SessionListResponse>(key)?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_lifecycle", "ses_stream"])
+    expect(items?.map((item) => item.directory)).toEqual([HOST_DIR, HOST_DIR])
+    expect(items?.map((item) => item.sessionRef)).toEqual([
+      `local:${HOST_DIR}:session:ses_lifecycle`,
+      `local:${HOST_DIR}:session:ses_stream`,
+    ])
+    expect(items?.some((item) => item.workspaceId)).toBe(false)
     dispose()
   })
 

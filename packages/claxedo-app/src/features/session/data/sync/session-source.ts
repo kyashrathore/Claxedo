@@ -43,6 +43,32 @@ export type SessionSource =
 const USER_HOSTED_SESSION_LIST_STALE_MS = 30_000
 
 /**
+ * The directory a session row carries, for every workspace kind.
+ *
+ * Every later read of that session — messages, config, agents, the transcript —
+ * is scoped by this value, so it has to be an address THIS app can resolve, and
+ * one answer has to hold whichever producer stamped the row (a fetched list, or
+ * a `session.created`/`session.updated` frame applied by `event-ingress`).
+ *
+ * - `local`: the host IS this machine, so its path is the row's directory.
+ * - `cloud` and `user-hosted`: the workspace is addressed by its signed id —
+ *   over the registry, or over the relay — while `hostDirectory` is a path on
+ *   ANOTHER machine. Carrying it makes every later read scope itself by a
+ *   directory this app cannot reach and 404, so the row carries
+ *   `workspace:<workspaceId>` instead.
+ *
+ * The signed `ws_*` id is what separates the two: a row that has one is
+ * addressed by workspace, a row without one names a path on this machine.
+ */
+export function sessionRowDirectory(input: {
+  workspaceId: string | undefined
+  /** The path the producing runtime reported — its OWN machine's, always. */
+  hostDirectory: string
+}) {
+  return input.workspaceId ? `workspace:${input.workspaceId}` : input.hostDirectory
+}
+
+/**
  * The app's own central server's list: the daemon's on a local surface, the
  * control plane's registry on the hosted web. Global Chat's sessions belong to
  * no workspace and live there, by the same rule that puts a local workspace's
@@ -159,11 +185,12 @@ function userHostedNavigationRow(
     sessionRef: `workspace:${source.workspaceId}:session:${sessionId}`,
     sessionId,
     title: txt(item?.title) ?? "Untitled session",
-    // The HOST's own filesystem path never becomes this row's directory. With
-    // it in place the app scopes every later read by that path — messages,
-    // config, agents and the transcript all 404 — instead of addressing the
-    // workspace by id over the relay.
-    directory: `workspace:${source.workspaceId}`,
+    // The runtime answers with the HOST's own filesystem path; what the row
+    // carries is `sessionRowDirectory`'s to decide.
+    directory: sessionRowDirectory({
+      workspaceId: source.workspaceId,
+      hostDirectory: txt(item?.directory) ?? "",
+    }),
     workspaceId: source.workspaceId,
     ...(source.projectId ? { projectId: source.projectId } : {}),
     createdAt,

@@ -2,7 +2,15 @@ import { afterEach, describe, expect, test } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { upsertCreatedSessionListRow, type SessionListQuery, type SessionListResponse } from "../query/session-list"
-import { centralSessionSource, sessionSourceForWorkspace, sessionSourceQueryOptions } from "./session-source"
+import {
+  centralSessionSource,
+  sessionRowDirectory,
+  sessionSourceForWorkspace,
+  sessionSourceQueryOptions,
+} from "./session-source"
+
+/** The path a user-hosted runtime reports for itself — another machine's. */
+const HOST_DIR = "/Users/host/repo"
 
 const CONTROL = "https://control.test"
 
@@ -71,14 +79,25 @@ describe("sessionSourceForWorkspace", () => {
   })
 })
 
+describe("sessionRowDirectory", () => {
+  test("only a local row carries the producing host's filesystem path", () => {
+    // Local: the host IS this machine, so its path is an address the app reads.
+    expect(sessionRowDirectory({ workspaceId: undefined, hostDirectory: "/repo" })).toBe("/repo")
+    // User-hosted: the path names the user's own laptop, reachable only by id.
+    expect(sessionRowDirectory({ workspaceId: "ws_1", hostDirectory: HOST_DIR })).toBe("workspace:ws_1")
+    // Cloud: the path names the sandbox's own root, reachable only by id.
+    expect(sessionRowDirectory({ workspaceId: "ws_cloud", hostDirectory: "/workspace" })).toBe("workspace:ws_cloud")
+  })
+})
+
 describe("a user-hosted workspace's list", () => {
   test("is served by the workspace runtime over the relay, never by the control plane", async () => {
     const { requested, request } = recordingFetch({
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
       "https://relay.test/workspaces/ws_1/session": () => Response.json([
-        { id: "ses_new", title: "created on the laptop", directory: "/Users/me/repo", time: { created: 10, updated: 40 } },
-        { id: "ses_old", title: "older", directory: "/Users/me/repo", time: { created: 1, updated: 2 } },
-        { id: "ses_archived", title: "archived", directory: "/Users/me/repo", time: { created: 1, updated: 3, archived: 5 } },
+        { id: "ses_new", title: "created on the laptop", directory: HOST_DIR, time: { created: 10, updated: 40 } },
+        { id: "ses_old", title: "older", directory: HOST_DIR, time: { created: 1, updated: 2 } },
+        { id: "ses_archived", title: "archived", directory: HOST_DIR, time: { created: 1, updated: 3, archived: 5 } },
         { nope: true },
       ]),
     })
@@ -137,7 +156,7 @@ describe("a user-hosted workspace's list", () => {
     const { requested, request } = recordingFetch({
       [`${CONTROL}/api/workspace/ws_1/connection`]: relayConnection,
       "https://relay.test/workspaces/ws_1/session": () => Response.json([
-        { id: "ses_old", title: "older", time: { created: 1, updated: 2 } },
+        { id: "ses_old", title: "older", directory: HOST_DIR, time: { created: 1, updated: 2 } },
       ]),
     })
     const query = railQuery()
@@ -151,13 +170,16 @@ describe("a user-hosted workspace's list", () => {
     const before = requested.length
 
     // What `event-ingress` applies when the host's stream reports a session
-    // created on the machine itself.
+    // created on the machine itself: the runtime names its OWN filesystem path
+    // in `info.directory` and the frame's signed `ws_*` id, and the row's
+    // directory comes from `sessionRowDirectory` — the same owner the fetched
+    // rows above went through.
     upsertCreatedSessionListRow({
       baseUrl: CONTROL,
       row: {
         sessionId: "ses_live",
         title: "created on the laptop",
-        directory: "workspace:ws_1",
+        directory: sessionRowDirectory({ workspaceId: "ws_1", hostDirectory: HOST_DIR }),
         projectId: "prj_1",
         workspaceId: "ws_1",
         createdAt: 100,
@@ -165,8 +187,11 @@ describe("a user-hosted workspace's list", () => {
       },
     })
 
-    expect(queryClient.getQueryData<SessionListResponse>(options.queryKey)?.items?.map((item) => item.sessionId))
-      .toEqual(["ses_live", "ses_old"])
+    const items = queryClient.getQueryData<SessionListResponse>(options.queryKey)?.items
+    expect(items?.map((item) => item.sessionId)).toEqual(["ses_live", "ses_old"])
+    // The live row and the fetched rows address the same workspace, so every
+    // later read scoped by either one reaches the host over the relay.
+    expect(items?.map((item) => item.directory)).toEqual(["workspace:ws_1", "workspace:ws_1"])
     expect(requested).toHaveLength(before)
   })
 })
