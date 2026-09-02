@@ -162,7 +162,14 @@ export const appLocal: Policy = {
   // inventory through existing owners, so this is three modules and no package
   // edge. The retired machine-scan module `features/settings/provider-detect.ts`
   // is deleted in the same slice, and the measured closure is 962.
-  ceilings: { modules: 962, packages: 38 },
+  // The session event streams gain their single owner: `platform/runtime/
+  // session-event-scope.ts` (which session's scoped streams must be open, and
+  // whether each lane has one) plus `app/integrations/claxedo-event-targets.ts`
+  // (the pure target list the events provider was already computing inline).
+  // Reviewed owners: the platform runtime layer, which both the events provider
+  // and the global-sdk provider already depend on, and the events integration
+  // itself. Two modules, no package edge, and the measured closure is 964.
+  ceilings: { modules: 964, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

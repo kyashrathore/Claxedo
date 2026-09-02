@@ -58,12 +58,9 @@ test("the event stream resumes from Last-Event-ID on reconnect instead of replay
         children: undefined,
         pathname: () => "/",
         serverUrl: () => "http://127.0.0.1:3001",
-        // The central `/api/claxedo/events` stream this test exercises only
-        // opens for a signed account (see `reconcileTargets`'s
-        // `includeCentral: accountSigned`) — an unsigned local product has no
-        // unscoped control-plane route to connect to at all. `authFetch` is
-        // mocked below regardless of `accountStreamAvailable`, whose hosted
-        // bridge is absent in this test environment.
+        // `authFetch` is mocked below regardless of `accountStreamAvailable`,
+        // whose hosted bridge is absent in this test environment; a signed
+        // account is what routes the central target through it.
         accountState: () => ({ status: "signed", identity: { userId: "user_cursor_test" } }),
       })
     } catch (error) {

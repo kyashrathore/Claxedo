@@ -18,6 +18,12 @@ import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fastSessionSwitchAnyNetworkQuiet, fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
+import {
+  registerSessionEventStreamLane,
+  reportSessionEventStreamClosed,
+  reportSessionEventStreamOpen,
+  whenSessionEventStreamsOpen,
+} from "@/platform/runtime/session-event-scope"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
@@ -321,8 +327,6 @@ const globalSDKContextInput = {
 
     const FLUSH_FRAME_MS = 16
     const STREAM_YIELD_MS = 8
-    let streamReady = false
-    const readyResolvers = new Set<() => void>()
 
     const deltaKey = (directory: string, messageID: string, partID: string) => `${directory}:${messageID}:${partID}`
 
@@ -366,15 +370,6 @@ const globalSDKContextInput = {
       error instanceof TypeError && error.message.toLowerCase() === "network error"
     const runtimeCoveredSessions: RuntimeCoveredSessions = new Set()
     const subagents = createSubagentRegistry()
-    const markStreamReady = () => {
-      if (streamReady) return
-      streamReady = true
-      for (const resolve of readyResolvers) resolve()
-      readyResolvers.clear()
-    }
-    const markStreamPending = () => {
-      streamReady = false
-    }
 
     let attempt: AbortController | undefined
     let runtimeAttempt: AbortController | undefined
@@ -419,6 +414,11 @@ const globalSDKContextInput = {
     const startRuntimeEvents = () => {
       if (runtimeRun) return runtimeRun
       const projections: RuntimeProjectionCache = new Map()
+      // The runtime-events stream is one of the two lanes that carry a
+      // session's live frames, and it is always scoped to one parent session.
+      // The scope owner needs to know it exists so a caller can wait for THIS
+      // session's stream instead of for "some stream, once".
+      const releaseLane = registerSessionEventStreamLane("runtime-events")
       runtimeRun = (async () => {
         let failures = 0
         while (!abort.signal.aborted && started) {
@@ -486,6 +486,10 @@ const globalSDKContextInput = {
               request,
               relayRequest: request,
               }).fetch(`${runtimePath.pathname}${runtimePath.search}`, init)
+            // Open, not first-frame: a caller waiting to dispatch a turn needs
+            // the stream to be listening before the turn's frames exist, and a
+            // healthy stream can be quiet for its whole heartbeat interval.
+            reportSessionEventStreamOpen("runtime-events", session.sessionID)
             let yielded = Date.now()
             for await (const item of sseJsonStream(response, runtimeAttempt.signal, (id) => {
               lastRuntimeEventId = id
@@ -504,7 +508,6 @@ const globalSDKContextInput = {
                 liveSession: eventLiveSession(),
               })
               heartbeat.reset()
-              markStreamReady()
               becameReady = true
               streamErrorLogged = false
               if (runtimeReplayGap(envelope)) {
@@ -578,6 +581,7 @@ const globalSDKContextInput = {
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
             runtimeAttempt = undefined
+            reportSessionEventStreamClosed("runtime-events")
           }
 
           if (abort.signal.aborted || !started) return
@@ -586,6 +590,7 @@ const globalSDKContextInput = {
         }
       })().finally(() => {
         runtimeRun = undefined
+        releaseLane()
         flush()
       })
       return runtimeRun
@@ -605,7 +610,6 @@ const globalSDKContextInput = {
             continue
           }
           attempt = new AbortController()
-          markStreamPending()
           heartbeat.touch()
           let becameReady = false
           const onAbort = () => {
@@ -625,7 +629,6 @@ const globalSDKContextInput = {
               lastGlobalEventId = id
             })) {
               heartbeat.reset()
-              markStreamReady()
               becameReady = true
               streamErrorLogged = false
               const event = compatEventEnvelope(item)
@@ -677,23 +680,26 @@ const globalSDKContextInput = {
       attempt?.abort()
       runtimeAttempt?.abort()
       heartbeat.clear()
-      markStreamPending()
-      for (const resolve of readyResolvers) resolve()
-      readyResolvers.clear()
     }
 
+    /**
+     * Resolves once the event streams that carry the CURRENT live session's
+     * frames are open — the workspace bus and this provider's runtime-events
+     * stream, as reported to `session-event-scope`. The composer awaits it
+     * before dispatching a turn, so the turn's frames arrive live rather than
+     * as a late burst when the stream finally opens.
+     *
+     * `timeoutMs` bounds how long a user's prompt is held for a stream that is
+     * not coming up; the wait is dropped rather than left behind.
+     */
     const ready = async (timeoutMs = 8_000) => {
       start()
-      if (streamReady) return
-      let resolveReady: (() => void) | undefined
+      const give = new AbortController()
       await Promise.race([
-        new Promise<void>((resolve) => {
-          resolveReady = resolve
-          readyResolvers.add(resolve)
-        }),
+        whenSessionEventStreamsOpen(liveSession?.sessionID, { signal: give.signal }),
         wait(timeoutMs),
       ])
-      if (resolveReady) readyResolvers.delete(resolveReady)
+      give.abort()
     }
 
     onMount(() => {

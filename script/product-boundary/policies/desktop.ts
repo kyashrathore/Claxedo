@@ -275,7 +275,12 @@ export const desktopRendererUnsigned: Policy = {
   // under. Reviewed owner: the settings feature; reachable only through the
   // already-lazy Settings dialog. Three modules, no package edge; the measured
   // closure is 1048.
-  ceilings: { modules: 1048, packages: 59 },
+  // The same two session-event-stream owners app-local reviews
+  // (`platform/runtime/session-event-scope.ts` and
+  // `app/integrations/claxedo-event-targets.ts`) are reachable from the
+  // renderer's own events provider. Two modules, no package edge; the measured
+  // closure is 1050.
+  ceilings: { modules: 1050, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

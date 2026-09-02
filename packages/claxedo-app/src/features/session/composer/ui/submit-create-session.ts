@@ -24,6 +24,7 @@ import {
   reservePrivateSession,
   type PrivateSessionReservation,
 } from "@/platform/runtime/private-session-reservation"
+import { holdSessionEventScope } from "@/platform/runtime/session-event-scope"
 
 export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull
 
@@ -174,14 +175,38 @@ async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionI
       input.onCreateError(err)
       return undefined
     })
-    if (session) input.boot(session.id)
+    if (session) {
+      input.boot(session.id)
+      openSessionEventStreams(session.id)
+    }
     return session
   }
 
-  return await createOpencodeSession(input, reservation).catch((err) => {
+  const session = await createOpencodeSession(input, reservation).catch((err) => {
     input.onCreateError(err)
     return undefined
   })
+  if (session) openSessionEventStreams(session.id)
+  return session
+}
+
+/**
+ * Publishes the created session to `session-event-scope`, the owner of which
+ * session's scoped streams must be open.
+ *
+ * A relay-backed runtime serves SESSION-scoped event streams, so until some
+ * owner names the session there is no stream to receive it on. This is the
+ * first moment the session id is authoritative and the last moment before the
+ * caller dispatches its first prompt, so publishing here is what lets both
+ * lanes open BEFORE that turn's frames exist — the shell route still points at
+ * the draft at this point and only navigates afterwards.
+ *
+ * A local (loopback) runtime is unmanaged: its workspace stream already carries
+ * every session, so the published scope changes nothing there and needs no
+ * branch of its own.
+ */
+function openSessionEventStreams(sessionID: string) {
+  holdSessionEventScope(sessionID)
 }
 
 async function createOpencodeSession(
