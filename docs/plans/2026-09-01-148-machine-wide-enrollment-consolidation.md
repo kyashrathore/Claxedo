@@ -606,3 +606,39 @@ leftover of an earlier run.
   turn's live events end in the provider's error (Codex usage limit) rather
   than a completion; the live path is verified up to and including that
   error event. Logging a harness in is the owner's step.
+
+## Merged with dev 2026-09-02
+
+The branch was 113 commits ahead of and 46 behind local `dev`, with 114 files
+changed on both sides and two checkpoint commits carrying most of the branch's
+delta. A commit-by-commit rebase would have re-resolved dev's runtime
+refactors at every checkpoint, so dev was merged in once (`d98181076a`); the
+pre-merge tip is tagged `pre-rebase/cloudflare-multiplayer-migration-2026-09-02`.
+The branch is now 114 ahead and 0 behind dev, so each PR group diffs cleanly
+against dev.
+
+Verification after the merge (all run from the worktree):
+
+| package | command | result |
+| --- | --- | --- |
+| agent-sdk-runtime | `bun run typecheck`, `bun run test`, `check:source-shape`, `verify:public-api` | clean; 601 pass |
+| workspace-runtime | `bun run typecheck`, `bun run test` | clean; 984 pass, 3 fail (dev-inherited, below) |
+| claxedo-server-core | typecheck, test | clean; 534 pass |
+| claxedo-server | typecheck, `vitest run` | clean; 3554 pass, 4 fail (dev-inherited, below) |
+| claxedo-local-server | typecheck, test | clean; 296 pass |
+| claxedo-desktop | typecheck, `bun run test` | clean; 752 pass, 2 fail (dev-inherited, below) |
+| claxedo-host-connector, workspace-relay, agent-event-runtime | typecheck, test | clean; 38 / 335+78+13 / 141 pass |
+| claxedo-app | `bun run typecheck` (tsgo + architecture), `bun run test`, `bun run test:vitest` | clean; 6036 pass; 1170 pass, 2 fail (dev-inherited, below) |
+| repo | `bun run test:architecture-ratchets` | product boundary holds; ceilings exact (app-local 957/38, desktop-renderer-unsigned 1043/59, desktop-main 87/24, local-server 60/21, hosted-node 154/28, self-hosted 155/35) |
+| repo | `bun install --frozen-lockfile --dry-run` | lockfile consistent (the run then stops at the known opencode postinstall) |
+
+Failures inherited from dev (each reproduced byte-identically on a detached
+`dev` worktree; none touch branch-owned code):
+
+- `workspace-runtime/src/workspace/runtime.test.ts` ×3 (`s-lazy`, `s-mem`, `s-disk`): dev's authoritative runtime refuses `PATCH /session/:id/config` for an id the store never bound, and these tests still materialise the store through that call.
+- `claxedo-server/src/opencode/compat-routes/auth-gate.test.ts`: dev `9d48806d7e` mounted `/api/claxedo/events` inside the compat router, which its own auth-gate contract says is parent-owned.
+- `claxedo-server/src/tests/integration/session-grouping.integration.test.ts:102`: dev `29aebaa9f1` made local workspaces store `local:` refs; the expectation still says `workspace:`.
+- `claxedo-server/src/session/runtime.test.ts:1226`: dev's `abort()` releases admission before the turn publishes its terminal error.
+- `claxedo-server/src/authority/two-user-runtime-transport.acceptance.test.ts:508`: dev's internal merge `34cca15f58` dropped `author` from the `PromptInput` built in `turns.start`.
+- `claxedo-desktop/src/main/diagnostics/spawn-inventory.test.ts` ×2: dev `e4105227e3` renamed the codex driver to `app-server-process.ts`; the inventory still lists `driver.ts`.
+- `claxedo-app/src/app/workbench/rail/workspace-panel-disposal.vitest.tsx` ×2: 10 s timeouts on dev as well.
