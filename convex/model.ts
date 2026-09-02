@@ -315,6 +315,10 @@ function orgShareRole(memberships: readonly OrgMembership[], grants: readonly Wo
     .map((grant) => typeof grant.role === "string" ? grant.role as WorkspaceRole : undefined))
 }
 
+// A team share confers a workspace role from a `team_memberships` row alone.
+// The caller must therefore establish, separately, that the user still has
+// standing in the workspace's org — see `workspaceRoleForUser` for why that is
+// the `directOrgRole` result and why it costs nothing extra.
 function teamShareRole(memberships: readonly TeamMembership[], grants: readonly WorkspaceShareGrant[]) {
   const memberTeamIds = new Set(memberships.map((membership: any) => membership.team_id))
   return maxRole(grants
@@ -393,10 +397,28 @@ export async function workspaceRoleForUser(ctx: { db: Db }, workspace: Record<st
     directWorkspace,
     directProject,
     directOrg,
-    teamProject: teamProjectResult,
+    // DEFENCE IN DEPTH — a team-conferred role requires live standing in the
+    // workspace's org, matching what `orgShareRole` above already demands of an
+    // org share (`memberOrgIds`) and what `teams.addMember` demands at write
+    // time (`team_member_org_membership_required`).
+    //
+    // Without it, `team_memberships` is a second, independent source of
+    // workspace authority that no membership revocation touches: nothing in
+    // `teamProjectRole`/`teamShareRole` re-reads `org_memberships`, so a
+    // stranded team row — a missed cleanup, a team created in another tenant
+    // before the `workspace_share_*_mismatch` fence existed — keeps resolving
+    // to editor/admin for someone with no membership in the org at all.
+    //
+    // `directOrg` is exactly the predicate wanted and is already in hand:
+    // `directOrgRole` returns a role only when the org is live AND the user
+    // holds an `org_memberships` row or owns the org — the same
+    // membership-or-owner test `orgAdminForUser` applies, minus its admin bar.
+    // So this gate adds no reads, and it degrades to "no team role" in the same
+    // direction every other guard here degrades.
+    teamProject: directOrg ? teamProjectResult : undefined,
     share: shareRole(shares, user._id),
     orgShare: orgShareRole(orgs, shares),
-    teamShare: teamShareRole(teams, shares),
+    teamShare: directOrg ? teamShareRole(teams, shares) : undefined,
   })
 }
 
@@ -406,11 +428,15 @@ export async function workspaceRole(ctx: { db: Db } & IdentityCtx, workspace: Re
 
 export async function projectRoleForUser(ctx: { db: Db }, project: Record<string, unknown>, user: { _id: unknown }) {
   if (project.deleted_at) return
+  const directOrg = await directOrgRole(ctx.db, user._id, project.org_id)
   return combineRolePrecedence({
     owner: project.owner_user_id === user._id,
     directProject: await directProjectRole(ctx.db, user._id, project.project_id),
-    directOrg: await directOrgRole(ctx.db, user._id, project.org_id),
-    teamProject: await teamProjectRole(ctx.db, user._id, project.project_id, project.org_id),
+    directOrg,
+    // Same org-standing gate as `workspaceRoleForUser`, for the same reason.
+    // Here it also SAVES a read: a caller with no standing in the org never
+    // reaches the team-grant lookup at all.
+    teamProject: directOrg ? await teamProjectRole(ctx.db, user._id, project.project_id, project.org_id) : undefined,
   })
 }
 

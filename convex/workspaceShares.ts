@@ -145,6 +145,28 @@ export const grant = authedMutation({
     const org = await grantedOrg(ctx, args.granted_to_clerk_org_id)
     const team = await grantedTeam(ctx, args.granted_to_team_public_id, args.granted_to_team_id)
     if (!user && !org && !team) throw new Error("Share target not found")
+    // TENANT FENCE. A workspace share confers a real WorkspaceRole:
+    // `model.ts teamShareRole`/`orgShareRole` turn `granted_to_team_id` /
+    // `granted_to_org_id` into an editor/admin role on this workspace. Neither
+    // re-checks that the granted principal belongs to the workspace's org, so
+    // without this the mutation is a cross-tenant escalation: a workspace admin
+    // could hand a team or org in a DIFFERENT tenant admin over their
+    // workspace, and — because a workspace role is what `sessionShares` gates
+    // on — bypass the session-level `session_share_*_mismatch` guards
+    // (convex/sessionShares.ts) that already refuse exactly this.
+    //
+    // Deliberately mirrors those guards, including their shapes: the team check
+    // is unconditional, while the org check is skipped for a workspace still
+    // carrying `org_id: undefined` from before the tenancy migration.
+    //
+    // `revoke` below is deliberately NOT fenced: it only ever removes access,
+    // and fencing it would strand any cross-tenant grant written before this.
+    if (team && team.org_id !== workspace.org_id) {
+      throw new Error("workspace_share_team_org_mismatch")
+    }
+    if (org && workspace.org_id && org._id !== workspace.org_id) {
+      throw new Error("workspace_share_org_mismatch")
+    }
     const actor = await upsertUser(ctx)
     const active = (await grantsForTarget(ctx, workspace._id, { user, org, team }))
       .filter((item: any) => !item.revoked_at)

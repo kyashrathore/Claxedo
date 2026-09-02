@@ -49,6 +49,7 @@ import { internal } from "./_generated/api"
 import { clerkRoleFor, orgMembershipTombstone } from "./clerkTombstones"
 import { cronAction, cronMutation, cronQuery, orgByClerkOrgId, userByClerkSubject } from "./model"
 import { revokeOrgWorkspaceTokens } from "./orgs"
+import { ensureDefaultTeamMembership, removeOrgTeamMemberships } from "./teams"
 
 // ===========================================================================
 // Bounds. Every one of these is a number chosen against a documented limit,
@@ -519,6 +520,15 @@ export const applyReconcileCorrections = cronMutation({
         // reconciled-away member keeps working until token expiry.
         await revokeOrgWorkspaceTokens(ctx, existing.org_id, existing.user_id, Date.now())
         await ctx.db.delete(existing._id)
+        // Same fallback argument as the token revocation above, and the same
+        // parity requirement: team membership is what `model.ts teamProjectRole`
+        // / `teamShareRole` resolve a workspace role from, and neither re-reads
+        // `org_memberships`. A sweep that removes the org row but leaves the
+        // team rows revokes nothing the authorization path actually consults.
+        const teamMembershipsRemoved = await removeOrgTeamMemberships(ctx, {
+          orgId: existing.org_id,
+          userId: existing.user_id,
+        })
         // Tombstoned with the sweep's OBSERVATION time. Clerk did not tell us
         // when the membership vanished — only that it is absent now — so the
         // observation instant is the honest bound, and it is what a late
@@ -539,6 +549,7 @@ export const applyReconcileCorrections = cronMutation({
             clerk_subject: correction.clerk_subject,
             revoked_role: correction.role,
             clerk_observed_at: args.observed_at,
+            team_memberships_removed: teamMembershipsRemoved,
           },
         })
         applied += 1
@@ -570,6 +581,21 @@ export const applyReconcileCorrections = cronMutation({
           updated_at: now,
         })
         if (tombstone) await ctx.db.delete(tombstone._id)
+        // Parity with the webhook create path (orgs.ts): a restored membership
+        // must land in the org's canonical default team, or the restored member
+        // holds an org row with none of the team-conferred project/share access
+        // every other member of that org has.
+        await ensureDefaultTeamMembership(ctx, {
+          orgId: org._id,
+          userId: user._id,
+          // Re-normalized rather than trusted: `corrections` crosses the
+          // function boundary as `v.any()`, so the role is a bare string here.
+          // `clerkRoleFor` is the one mapping both mirror paths share, and it is
+          // idempotent on the values the diff already produced.
+          role: clerkRoleFor(correction.role),
+          creatorUserId: user._id,
+          now,
+        })
         await recordMembershipAudit(ctx, {
           org,
           userId: user._id,
@@ -603,7 +629,18 @@ export const applyReconcileCorrections = cronMutation({
         if ((existing.role === "owner" || existing.role === "admin") && correction.to === "member") {
           await revokeOrgWorkspaceTokens(ctx, existing.org_id, existing.user_id, Date.now())
         }
-        await ctx.db.patch(existing._id, { role: correction.to, updated_at: Date.now() })
+        const roleCorrectedAt = Date.now()
+        await ctx.db.patch(existing._id, { role: correction.to, updated_at: roleCorrectedAt })
+        // Parity with the webhook role path (orgs.ts): the default-team row
+        // carries its own copy of the org role, so leaving it at the old value
+        // keeps the stale role live wherever team role is read.
+        await ensureDefaultTeamMembership(ctx, {
+          orgId: org._id,
+          userId: user._id,
+          role: clerkRoleFor(correction.to),
+          creatorUserId: user._id,
+          now: roleCorrectedAt,
+        })
         await recordMembershipAudit(ctx, {
           org,
           userId: user._id,

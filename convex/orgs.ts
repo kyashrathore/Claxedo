@@ -17,7 +17,7 @@ import {
 import { isLiveLease } from "./sandboxLeases"
 import { WORKGRAPH_OWNER_TABLES, ownerDeletionIndex } from "./workgraphOwnerDeletion"
 import { revokeWorkspaceUserTokens } from "./runtimeAccessTokens"
-import { ensureDefaultTeamMembership, removeDefaultTeamMembership } from "./teams"
+import { ensureDefaultTeamMembership, removeOrgTeamMemberships } from "./teams"
 
 export async function personalOrgForUser(ctx: any, user: { _id: unknown; name?: string; email?: string }) {
   const existing = (
@@ -350,7 +350,12 @@ async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
   const revokedRole = membership.role
   await revokeOrgWorkspaceTokens(ctx, org._id, user._id, Date.now())
   await ctx.db.delete(membership._id)
-  await removeDefaultTeamMembership(ctx, { orgId: org._id, userId: user._id })
+  // Removing the org membership must remove EVERY team membership it stood
+  // behind, not just the default team's: `teams.addMember` requires an
+  // `org_memberships` row to ADD a member, but `model.ts teamProjectRole` /
+  // `teamShareRole` never re-read that row, so a surviving non-default team row
+  // keeps conferring a workspace role after the org membership is gone.
+  const teamMembershipsRemoved = await removeOrgTeamMemberships(ctx, { orgId: org._id, userId: user._id })
   // W6.3: the delete path previously wrote NO audit record at all, which made
   // the single most security-relevant event in the mirror — access being taken
   // away, or failing to be — completely invisible after the fact. `audit_events`
@@ -367,6 +372,7 @@ async function deleteClerkMembership(ctx: any, data: Record<string, any>) {
       clerk_subject: clerkSubject,
       revoked_role: revokedRole,
       clerk_updated_at: updatedAt,
+      team_memberships_removed: teamMembershipsRemoved,
     },
   })
 }

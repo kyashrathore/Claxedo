@@ -99,14 +99,38 @@ export async function ensureDefaultTeamMembership(
   return team
 }
 
-export async function removeDefaultTeamMembership(ctx: any, input: { orgId: unknown; userId: unknown }) {
-  const team = await defaultTeamForOrg(ctx, input.orgId)
-  if (!team) return
-  const existing = await ctx.db
+/**
+ * Every `team_memberships` row this user holds in this org, removed.
+ *
+ * This used to be `removeDefaultTeamMembership`, and dropped ONLY the default
+ * team's row. That was a standing-access hole: `teams.addMember` can put a user
+ * in any number of non-default teams, and `model.ts teamProjectRole` /
+ * `teamShareRole` resolve a WorkspaceRole from those rows. So an org membership
+ * that was removed (Clerk webhook, or the reconcile sweep) left the ex-member
+ * holding every team-conferred role they had outside the default team —
+ * including admin, which is enough to re-mint runtime access tokens.
+ *
+ * Read through `by_user` rather than by walking the org's teams: the bound is
+ * then the user's team count, not the org's team count. Deleted teams are
+ * included on purpose — the membership row is what confers the role, and
+ * leaving it behind would make an un-delete restore revoked access.
+ *
+ * Returns the number of rows removed so the caller can record it (the audit
+ * trail for a revocation should say how much was actually taken away).
+ */
+export async function removeOrgTeamMemberships(ctx: any, input: { orgId: unknown; userId: unknown }) {
+  const memberships = await ctx.db
     .query("team_memberships")
-    .withIndex("by_team_user", (q: any) => q.eq("team_id", team._id).eq("user_id", input.userId))
-    .unique()
-  if (existing) await ctx.db.delete(existing._id)
+    .withIndex("by_user", (q: any) => q.eq("user_id", input.userId))
+    .collect()
+  let removed = 0
+  for (const membership of memberships) {
+    const team = await ctx.db.get(membership.team_id)
+    if (!team || team.org_id !== input.orgId) continue
+    await ctx.db.delete(membership._id)
+    removed += 1
+  }
+  return removed
 }
 
 export async function ensureDefaultTeamProjectGrant(
