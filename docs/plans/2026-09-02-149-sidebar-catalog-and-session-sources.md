@@ -56,6 +56,37 @@ connection; the rail shows no role or online state for a workspace that was
 never opened, and the "Shared" badge means "my machine publishes this", not
 "shared with me".
 
+## Surfaces and sources (two independent axes)
+
+The surface decides who the central server is and who the principal is; the
+workspace decides where its sessions live. The rail must treat them as
+independent axes.
+
+| surface | central server | principal | catalog |
+| --- | --- | --- | --- |
+| local unsigned (desktop shell, or a browser tab on the loopback page) | the daemon | none | daemon `/project` |
+| local signed (desktop, or a loopback tab whose daemon holds the account) | the daemon, proxying the control plane through the account bridge | the daemon's account | daemon `/project` + control-plane workspace list (cloud, user-hosted) |
+| hosted web signed | the control plane | the browser session | control-plane workspace list |
+
+| session source | reached via | on which surfaces |
+| --- | --- | --- |
+| own machine, direct | loopback daemon | local unsigned, local signed |
+| cloud workspace | control-plane registry; runtime over the relay | local signed, hosted web |
+| own machine, over the relay | relay connection, owner role | hosted web |
+| teammate's connected machine | relay connection, shared role | local signed, hosted web |
+
+Rules:
+
+- **Dedupe by workspace id, prefer direct.** On a signed desktop the same
+  workspace appears in the daemon's `/project` and in the control plane's
+  user-hosted list (published by this machine). The catalog merges them into
+  one row and reads sessions from the daemon, never through its own tunnel.
+- **Own-over-relay and teammate-over-relay are one source.** They differ only
+  in the role the relay token carries; affordances follow the role.
+- Open question: whether an unsigned surface can ever reach a cloud session.
+  No principal exists to present to the control plane, so the model assumes
+  not; if a case exists it gets its own row here before step 1 starts.
+
 ## Target model
 
 Three authorities, one owner each, and the rail reads only through them.
