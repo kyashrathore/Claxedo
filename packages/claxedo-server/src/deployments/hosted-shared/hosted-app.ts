@@ -11,8 +11,8 @@
  *   GET  /api/claxedo/mode
  *   GET  /api/claxedo/compatibility
  *   GET  /api/claxedo/events      (auth-gated live-sync SSE stream)
- *   GET  /api/claxedo/bootstrap   (aggregate shell boot payload)
- *   GET  /global/health | /global/config
+ *   GET  /api/claxedo/services    (first-party service catalog for the principal)
+ *   GET  /global/health
  *   GET  /project | /project/current | /path | /provider | /provider/auth
  *   GET  /.well-known/jwks.json
  *   POST /api/auth/device/code | /api/auth/device/token

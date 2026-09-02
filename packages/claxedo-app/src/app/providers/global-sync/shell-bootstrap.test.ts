@@ -29,7 +29,7 @@ describe("fetchShellBootstrap", () => {
       }), { preconnect: fetch.preconnect }),
     })
 
-    expect(result?.project[0]?.id).toBe("project-local")
+    expect(result?.path.home).toBe("/Users/test")
     expect(run).not.toHaveBeenCalled()
   })
 
@@ -48,19 +48,19 @@ describe("fetchShellBootstrap", () => {
     })
 
     expect(new URL(requestUrl).searchParams.get("scope")).toBe("shell")
-    expect(result?.project[0]?.id).toBe("project-1")
+    expect(result?.path.home).toBe("/Users/test")
   })
 
   test("does not accept a partial response as a ready shell", async () => {
     const result = await fetchShellBootstrap({
       baseUrl: "http://127.0.0.1:3101",
-      request: Object.assign(async () => Response.json({ healthy: true, project: [] }), { preconnect: fetch.preconnect }),
+      request: Object.assign(async () => Response.json({ healthy: true }), { preconnect: fetch.preconnect }),
     })
 
     expect(result).toBeUndefined()
   })
 
-  test("publishes only shell state and leaves provider/config caches cold", async () => {
+  test("publishes only path and readiness, never the workspace catalog", async () => {
     const patches: object[] = []
     await bootstrapInitialShell({
       baseUrl: "http://127.0.0.1:3101",
@@ -75,7 +75,6 @@ describe("fetchShellBootstrap", () => {
 
     expect(patches).toEqual([{
       path: { home: "/Users/test", state: "/state", config: "/config", worktree: "", directory: "" },
-      project: [{ id: "project-1", worktree: "/repo", name: "repo" }],
       ready: true,
     }])
   })

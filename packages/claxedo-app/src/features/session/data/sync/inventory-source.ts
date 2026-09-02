@@ -12,10 +12,10 @@ import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from
 import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { controlSessionListUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { controlSessionListUrl, workspaceListUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { applySessionFilter, type SessionFilter } from "../../../../platform/sync/global-sync/session-filter"
 import { paginateSessions } from "../../../../platform/sync/global-sync/session-pagination"
-import { mapInventoryToSessions, signedInventoryItems, signedInventoryProjects } from "../query/inventory"
+import { mapInventoryToSessions, signedInventoryItems } from "../query/inventory"
 import {
   inventoryRecord as rec,
   inventorySessionAttachments,
@@ -72,12 +72,6 @@ function inventoryServerUrl(serverUrl: string | undefined) {
 
 function usesLocalControlTransport(baseUrl: string | undefined) {
   return centralTransportForServer(baseUrl) === "loopback"
-}
-
-function controlWorkspaceListUrl(input: { serverUrl?: string; access?: SignedWorkspaceKind }) {
-  const url = new URL("/api/workspace", inventoryServerUrl(input.serverUrl))
-  if (input.access) url.searchParams.set("access", input.access)
-  return url
 }
 
 function experimentalSessionUrl(input: {
@@ -325,8 +319,8 @@ export function createSignedInventorySource(input: {
       if (!Array.isArray(body.workspaces)) throw new Error(`${operation} returned an invalid workspaces payload`)
       return body.workspaces
     }
-    const res = await input.authFetch(controlWorkspaceListUrl({
-      serverUrl: input.baseUrl(),
+    const res = await input.authFetch(workspaceListUrl({
+      baseUrl: input.baseUrl(),
       access,
     }), { headers: { Accept: "application/json" } })
     if (!res.ok) throw new Error(`Control-plane ${access} workspace list failed with ${res.status}`)
@@ -387,7 +381,6 @@ export function createSignedInventorySource(input: {
       byDirectory[key] = group
     }
     return {
-      projects: signedInventoryProjects({ workspaces }),
       groups: Object.values(byDirectory).map((group) => ({
         ...group,
         sessions: group.sessions.sort((a, b) => (b.time.updated ?? 0) - (a.time.updated ?? 0)),

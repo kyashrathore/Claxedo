@@ -10,7 +10,6 @@ import { sanitizeProject } from "./project-sanitize"
 import { projectForDirectory } from "./project-owner"
 import { initialRouteDirectory, workspaceDirectoryRef } from "./bootstrap-scope"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { createDirectoryCacheManager } from "@/platform/sync/directory-cache-manager"
 import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back-drafts"
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
@@ -21,7 +20,6 @@ import type { SessionFilter } from "@/platform/sync/global-sync/session-filter"
 import { GLOBAL_SESSION_PAGE_SIZE } from "@/platform/sync/global-sync/session-pagination"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
-import { setProviderQueryData } from "@/platform/query/provider-cache"
 import { type SessionInventoryStoredValue, type SessionInventoryValue } from "../../../features/session/data/sync/queries"
 import {
   applySessionInventoryLifecycle,
@@ -38,8 +36,12 @@ import {
 } from "../../../features/session/data/sync/inventory-writers"
 import { migrateLegacyProjectInventoryToQueryCache } from "../../integrations/sync/project-inventory"
 import { removeSessionIdentity } from "@/platform/sync/global-session-identity"
-import { mergeSignedInventoryProjects } from "../../../features/session/data/query/inventory"
-import { projectListQuery } from "@/platform/query/control-plane"
+import {
+  applyWorkspaceCatalog,
+  readWorkspaceCatalog,
+  refreshWorkspaceCatalog,
+  workspaceCatalogQueryKey,
+} from "@/features/workspaces/data/workspace-catalog"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import {
   cachedGlobalSyncSdkClient,
@@ -110,23 +112,24 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
   const [ready, setReady] = createSignal(false)
   const [error, setError] = createSignal<InitError | undefined>()
   const [reload, setReload] = createSignal<undefined | "pending" | "complete">()
-  const projectQueryKey = queryKeys.controlPlane.projects(globalSDK.url)
   migrateLegacyProjectInventoryToQueryCache<Project>({
     cache: {
-      read: () => queryClient.getQueryData<Project[]>(projectQueryKey),
-      write: (value) => queryClient.setQueryData(projectQueryKey, value),
+      read: () => queryClient.getQueryData<Project[]>(workspaceCatalogQueryKey(globalSDK.url)),
+      write: (value) => applyWorkspaceCatalog({ baseUrl: globalSDK.url, next: value }),
     },
     sanitize: sanitizeProject,
   })
-  const projects = () => queryClient.getQueryData<Project[]>(projectQueryKey) ?? []
+  const projects = () => readWorkspaceCatalog(globalSDK.url)
+  const catalogInput = () => ({
+    baseUrl: globalSDK.url,
+    client: globalSDK.client,
+    request: platform.fetch,
+    signedAccess: hasSignedAccess(),
+  })
   const setGlobalState = (patch: Partial<GlobalBootstrapState>) => {
     if ("ready" in patch) setReady(!!patch.ready)
     if ("error" in patch) setError(patch.error as InitError | undefined)
     if (patch.path) queryClient.setQueryData(queryKeys.directory.path(globalSDK.url, ""), patch.path)
-    if (patch.project) setProjects(patch.project)
-    if (patch.provider) setProviderQueryData(queryKeys.controlPlane.providers(globalSDK.url), patch.provider)
-    if (patch.provider_auth) queryClient.setQueryData(queryKeys.controlPlane.providerAuth(globalSDK.url), patch.provider_auth)
-    if (patch.config) queryClient.setQueryData(["global", globalSDK.url ?? "", "config"], patch.config)
     if ("reload" in patch) setReload(patch.reload)
   }
 
@@ -219,12 +222,11 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       }) || signedWorkspaceProjects().length > 0
       const signedSnapshot = useSignedSnapshot
         ? await signedInventorySource.fetchSignedWorkspaceSnapshot()
-        : { projects: [], groups: [] as WorkspaceGroup[] }
+        : { groups: [] as WorkspaceGroup[] }
       if (!isCurrent()) throw new Error("Session authority changed during inventory load")
       if (useSignedSnapshot && centralTransportForServer(globalSDK.url) !== "loopback") {
         const snapshot = signedSnapshot
         const wsResult = snapshot.groups
-        setProjects(snapshot.projects, { preserveSignedAliases: false })
         reconcileAuthorizedSessionPersistence(wsResult.flatMap((group) => group.sessions), scope)
         const byWorkspace = Object.fromEntries(wsResult.map((group) => [workspaceGroupKey(group), group] as const))
         const workspaceState = Object.fromEntries(wsResult.map((group) => [
@@ -256,9 +258,6 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
       const sessions = flatResult.data.filter((s) => !!s?.id && !s.parentID)
       const cursor = flatResult.cursor
 
-      if (signedSnapshot.projects.length > 0) {
-        setProjects((projects) => mergeSignedInventoryProjects(projects, signedSnapshot.projects))
-      }
       const rows = sessions.flatMap((s) => {
         const item = inventoryRow(s)
         if (isGlobal(item)) {
@@ -489,78 +488,6 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
     })
   }
 
-  async function reloadProjects() {
-    const next = await queryClient.fetchQuery(projectListQuery({
-      baseUrl: globalSDK.url,
-      client: globalSDK.client,
-    }))
-    setProjects(next)
-    return next
-  }
-
-  async function ensureProject(directory: string) {
-    const dir = directory.trim()
-    if (!dir) return
-    const workspace = await resolveWorkspaceRuntime({
-      baseUrl: globalSDK.url,
-      request: platform.fetch,
-      directory: dir,
-      create: true,
-    })
-    if (!workspace) throw new Error("Failed to ensure workspace")
-    queryClient.invalidateQueries({ queryKey: queryKeys.runtime.workspace({ baseUrl: globalSDK.url, directory: dir }) })
-    queryClient.invalidateQueries({ queryKey: queryKeys.controlPlane.projects(globalSDK.url) })
-    await reloadProjects()
-  }
-
-  const mergeSignedWorkspaceAliases = (next: Project[]) => {
-    const merged = [...next] as Array<Project & {
-      workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string; directory?: Project["worktree"] }>
-    }>
-    for (const project of projects() as Array<Project & {
-      workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string; directory?: Project["worktree"] }>
-    }>) {
-      const aliases = Object.entries(project.workspaces ?? {})
-        .filter(([, workspace]) => isRelayBackedWorkspaceKind(workspaceKind(workspace.kind)))
-      if (aliases.length === 0) continue
-      const existing = merged.find((item) => item.id === project.id)
-      if (existing) {
-        existing.workspaces = {
-          ...Object.fromEntries(aliases),
-          ...(existing.workspaces ?? {}),
-        }
-        existing.sandboxes = [...new Set([...(existing.sandboxes ?? []), ...aliases.map(([key]) => key)])]
-        continue
-      }
-      if (merged.some((item) =>
-        aliases.some(([key, workspace]) => {
-          const found = item.workspaces?.[key]
-          return found?.id === workspace.id || found?.workspaceId === workspace.workspaceId
-        })
-      )) continue
-      merged.push(project)
-    }
-    return merged
-  }
-
-  const setProjects = (
-    next: Project[] | ((project: Project[]) => Project[] | void),
-    options: { preserveSignedAliases?: boolean } = {},
-  ) => {
-    const value = typeof next === "function"
-      ? (() => {
-          const draft = projects().slice()
-          return next(draft) ?? draft
-        })()
-      : next
-    const merged = options.preserveSignedAliases === false ? value : mergeSignedWorkspaceAliases(value)
-    queryClient.setQueryData(projectQueryKey, merged)
-  }
-
-  const applyProjectUpdate = (next: Project[] | ((store: Project[]) => Project[])) => {
-    setProjects(next)
-  }
-
   const paused = () => reload() !== undefined
   let bootstrapOrchestrator: ReturnType<typeof createBootstrapOrchestrator> | undefined
 
@@ -696,8 +623,14 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
     projectFor,
     children,
     push: queue.push,
-    refresh: queue.refresh,
-    setGlobalProject: applyProjectUpdate,
+    // `global.disposed` / `server.connected` mean the whole global surface
+    // changed underneath us: re-run the queued bootstraps AND re-read the
+    // catalog from its own sources.
+    refresh: () => {
+      queue.refresh()
+      void refreshWorkspaceCatalog(catalogInput())
+    },
+    setGlobalProject: (next) => applyWorkspaceCatalog({ baseUrl: globalSDK.url, next }),
     sessionInventoryLoaded: () => sessionInventory().loaded,
     applySessionEvent: applySessionEventToGlobal,
     sessionTitles: {

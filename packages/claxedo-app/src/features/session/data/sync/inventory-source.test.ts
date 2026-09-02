@@ -295,7 +295,6 @@ describe("global sync inventory source helpers", () => {
 
     const snapshot = await source.fetchSignedWorkspaceSnapshot()
 
-    expect(snapshot.projects.map((project) => project.id).sort()).toEqual(["project_cloud", "project_user"])
     expect(snapshot.groups.map((group) => group.workspaceId).sort()).toEqual(["ws_cloud"])
     expect(snapshot.groups.find((group) => group.workspaceId === "ws_cloud")?.sessions.map((item) => item.id))
       .toEqual(["ses_new", "ses_old"])

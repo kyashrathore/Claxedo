@@ -4,12 +4,10 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { DialogCustomProvider, localHarnessChecks, useProviders, useShellQueryOptions as useQueryOptions, type LocalHarnessStatus } from "@/features/settings/app-ports"
+import { DialogCustomProvider, localHarnessChecks, useProviders, type LocalHarnessStatus } from "@/features/settings/app-ports"
 import { createEffect, createMemo, createSignal, type Component, For, Show } from "solid-js"
-import { useQuery } from "@tanstack/solid-query"
-import type { Config } from "@opencode-ai/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
-import { filterConnectedByDisabledProviders, popularProviders } from "@/platform/query/provider-list"
+import { popularProviders } from "@/platform/query/provider-list"
 import { SettingsList } from "@/features/settings/ui/list"
 import { useLanguage } from "@/platform/i18n/provider"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
@@ -19,7 +17,6 @@ import { agentSetupStatus, listStoredCredentialProviders, runProviderDetect } fr
 import {
   canDisconnectProvider,
   disconnectOpenCodeProvider,
-  patchGlobalDisabledProviders,
   providerSourceTagKey,
   removeProviderAuthEntry,
 } from "@/features/settings/provider-settings-logic"
@@ -57,15 +54,12 @@ const PROVIDER_NOTES = [
 export const SettingsProviders: Component = () => {
   const dialog = useDialog()
   const language = useLanguage()
-  const queryOptions = useQueryOptions()
-  const configQuery = useQuery(() => queryOptions.globalConfig())
   // Must pass "opencode" explicitly — unqualified `/provider` resolves to the
   // workspace default harness (agents), not the OpenCode catalog.
   const openCodeProviders = useProviders("opencode")
   const piProviders = useProviders("pi")
   const providerList = createMemo(() => openCodeProviders.state())
   const providerItems = createMemo(() => Array.from(providerList().all.values()))
-  const config = createMemo(() => configQuery.data ?? {})
 
   const source = (item: ProviderItem): ProviderSource | undefined => {
     if (!("source" in item)) return
@@ -145,12 +139,7 @@ export const SettingsProviders: Component = () => {
     }),
   )
 
-  const type = (item: ProviderItem) =>
-    language.t(providerSourceTagKey({
-      source: source(item),
-      config: config(),
-      providerId: item.id,
-    }))
+  const type = (item: ProviderItem) => language.t(providerSourceTagKey(source(item)))
 
   const canDisconnect = (item: ProviderItem) => canDisconnectProvider(source(item))
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
@@ -176,32 +165,8 @@ export const SettingsProviders: Component = () => {
     await disconnectOpenCodeProvider({
       providerId: providerID,
       name,
-      source: item && "source" in item ? source(item) : undefined,
-      config: config(),
-      serverUrl: getClaxedoServerUrl(),
       deleteCredential: async (id) => {
         await claxedoCredentialRequest({ providerId: id }, { method: "DELETE" })
-      },
-      patchDisabledProviders: async (next) => {
-        const before = config().disabled_providers ?? []
-        queryClient.setQueryData<Config>(queryOptions.globalConfig().queryKey, {
-          ...config(),
-          disabled_providers: next,
-        })
-        try {
-          await patchGlobalDisabledProviders({
-            serverUrl: getClaxedoServerUrl(),
-            disabledProviders: next,
-            request: authFetch,
-          })
-          void queryClient.invalidateQueries({ queryKey: queryOptions.globalConfig().queryKey })
-        } catch (err) {
-          queryClient.setQueryData<Config>(queryOptions.globalConfig().queryKey, {
-            ...config(),
-            disabled_providers: before,
-          })
-          throw err
-        }
       },
       removeAuth: async (id) => {
         await removeProviderAuthEntry({
@@ -226,10 +191,7 @@ export const SettingsProviders: Component = () => {
     })
   }
 
-  const openCodeConnected = createMemo(() => {
-    const list = filterConnectedByDisabledProviders(providerList(), config().disabled_providers)
-    return new Set(list.connected)
-  })
+  const openCodeConnected = createMemo(() => new Set(providerList().connected))
   const piConnected = createMemo(() => new Set(piProviders.connected().map((item) => item.id)))
 
   return (
@@ -258,6 +220,7 @@ export const SettingsProviders: Component = () => {
                     status={status().status}
                     detail={status().detail}
                     providerId={AGENT_CONNECT[check.id]}
+                    harness={AGENT_CONNECT[check.id]}
                     note={language.t("settings.providers.agents.sharedCredential")}
                     onConnected={() => refreshProviders()}
                   />
@@ -309,6 +272,7 @@ export const SettingsProviders: Component = () => {
                         name={item.name}
                         status="missing"
                         providerId={item.id}
+                        harness="opencode"
                         note={note(item.id) ? language.t(note(item.id)!) : undefined}
                         onConnected={() => refreshProviders()}
                       />

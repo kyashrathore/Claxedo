@@ -105,12 +105,11 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/auth/:providerID",
   ],
   shell: [
-    "/api/claxedo/bootstrap",
     "/api/claxedo/compatibility",
     "/api/claxedo/events",
     "/api/claxedo/health",
     "/api/claxedo/mode",
-    "/global/config",
+    "/api/claxedo/services",
     "/global/event",
     "/global/health",
     "/path",

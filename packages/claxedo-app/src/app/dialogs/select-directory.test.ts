@@ -1,16 +1,12 @@
 import { describe, expect, test } from "bun:test"
 
 import {
-  claxedoBootstrapUrl,
   workspaceRuntimeFilePath,
   workspaceRuntimeFindFilePath,
 } from "@/platform/runtime/agent/dialog-select-directory-routes"
 
 describe("dialog select directory route helpers", () => {
-  test("builds bootstrap and workspace runtime paths locally", () => {
-    expect(String(claxedoBootstrapUrl({ serverUrl: "https://control.example.test/" }))).toBe(
-      "https://control.example.test/api/claxedo/bootstrap",
-    )
+  test("builds workspace runtime paths locally", () => {
     expect(workspaceRuntimeFilePath({
       resource: "file",
       scope: "/Users/me/project",

@@ -100,10 +100,9 @@ describe("bootstrapDirectory provider routing", () => {
     // The central global /provider route (404 on hosted centrals) is never hit.
     expect(calls.filter((url) => url.startsWith(`${CENTRAL}/provider`))).toEqual([])
 
-    // Every harness — OpenCode included — owns its own provider cache key
-    // (see `providerCacheHarness`), and workspace catalogs are scoped to the
-    // workspace they were fetched for, so the relay catalog lands under the
-    // workspace-scoped, harness-qualified key.
+    // Every harness — OpenCode included — owns its own provider cache key, and
+    // workspace catalogs are scoped to the workspace they were fetched for, so
+    // the relay catalog lands under the workspace-scoped, harness-qualified key.
     const providers = queryClient.getQueryData<NormalizedProviderListResponse>(
       queryKeys.controlPlane.providers(CENTRAL, `workspace:${WS}`, "opencode"),
     )

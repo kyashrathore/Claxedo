@@ -95,7 +95,7 @@ describe("resource-closed hosted core app", () => {
       "/api/claxedo/auth/descriptor",
       "/api/claxedo/auth/bootstrap-owner",
       "/api/claxedo/auth/profile",
-      "/api/claxedo/bootstrap",
+      "/api/claxedo/services",
       "/api/claxedo/events",
       "/api/control/sessions",
       "/api/control/session-list",
@@ -226,26 +226,25 @@ describe("resource-closed hosted core app", () => {
     expect(() => createHostedCoreApp(missingRuntime, options)).toThrow(/runtime private-session authority is not composed/)
   })
 
-  test("returns an empty service catalog to anonymous and signed bootstraps", async () => {
+  test("returns an empty service catalog to anonymous and signed callers", async () => {
     const app = createHostedCoreApp(plane(), options)
-    const anonymous = await app.fetch(new Request("https://core.test/api/claxedo/bootstrap"))
-    expect(await anonymous.json()).toMatchObject({
-      authenticated: false,
-      services: [],
-      auth: {
-        adapter: "better-auth",
-        browser: { transport: "cookie", trustedOrigins: ["https://app.test"] },
-        native: {
-          cli: { flow: "device-authorization", clientId: "claxedo-cli" },
-          desktop: { flow: "authorization-code-pkce", clientId: "claxedo-desktop" },
-        },
+    const anonymous = await app.fetch(new Request("https://core.test/api/claxedo/services"))
+    expect(await anonymous.json()).toEqual({ authenticated: false, services: [] })
+    // The auth descriptor is its own route; the service catalog never restates it.
+    const descriptor = await app.fetch(new Request("https://core.test/api/claxedo/auth/descriptor"))
+    expect(await descriptor.json()).toMatchObject({
+      adapter: "better-auth",
+      browser: { transport: "cookie", trustedOrigins: ["https://app.test"] },
+      native: {
+        cli: { flow: "device-authorization", clientId: "claxedo-cli" },
+        desktop: { flow: "authorization-code-pkce", clientId: "claxedo-desktop" },
       },
     })
-    const signed = await app.fetch(new Request("https://core.test/api/claxedo/bootstrap", {
+    const signed = await app.fetch(new Request("https://core.test/api/claxedo/services", {
       headers: { authorization: "Bearer user-1" },
     }))
     expect(await signed.json()).toMatchObject({ authenticated: true, services: [] })
-    const cookieSigned = await app.fetch(new Request("https://core.test/api/claxedo/bootstrap", {
+    const cookieSigned = await app.fetch(new Request("https://core.test/api/claxedo/services", {
       headers: { cookie: "__Secure-claxedo.session_token=browser-session" },
     }))
     expect(await cookieSigned.json()).toMatchObject({ authenticated: true, services: [] })
@@ -312,7 +311,7 @@ describe("resource-closed hosted core app", () => {
     expect([403, 415]).not.toContain(accepted.status)
   })
 
-  test("projects operator service metadata out of signed bootstrap JSON", async () => {
+  test("projects operator service metadata out of the signed service catalog JSON", async () => {
     const app = createHostedCoreApp(plane(), {
       ...options,
       serviceCatalog: async () => [{
@@ -334,7 +333,7 @@ describe("resource-closed hosted core app", () => {
         },
       }],
     })
-    const response = await app.fetch(new Request("https://core.test/api/claxedo/bootstrap", {
+    const response = await app.fetch(new Request("https://core.test/api/claxedo/services", {
       headers: { authorization: "Bearer user-1" },
     }))
     const body = await response.text()

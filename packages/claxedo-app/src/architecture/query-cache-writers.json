@@ -59,13 +59,17 @@
       "family": "provider catalog query cache",
       "writer": "platform/query/provider-cache.ts",
       "status": "live"
+    },
+    {
+      "family": "workspace catalog",
+      "writer": "features/workspaces/data/workspace-catalog.ts",
+      "status": "live"
     }
   ],
   "grandfathered": [
     "features/workspaces/actions/project-actions.tsx",
     "features/review/ui/review-vcs-cache.ts",
     "features/terminal/workbench/pane-terminal-recovery.ts",
-    "app/dialogs/custom-provider.tsx",
     "features/settings/ui/providers.tsx",
     "app/providers/global-sync/provider.tsx",
     "platform/sync/global-sync/queue.ts",

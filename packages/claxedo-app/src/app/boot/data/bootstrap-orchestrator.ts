@@ -11,7 +11,8 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { agentListQuery, pathQuery } from "../../../features/session/data/query/directory"
-import { projectListQuery, providerAuthQuery, providerListQuery } from "@/platform/query/control-plane"
+import { providerAuthQuery, providerListQuery } from "@/platform/query/control-plane"
+import { workspaceCatalogQuery } from "@/features/workspaces/data/workspace-catalog"
 import { mapInventoryToSessions } from "../../../features/session/data/query/inventory"
 import { cleanupDroppedSessionCaches } from "../../../features/session/data/sync/session-cache-cleanup"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/platform/sync/session-load"
@@ -34,7 +35,7 @@ type DirectoryRef = string
 type SessionRow = SessionCacheValue["session"][number]
 type GlobalConfig = Config
 type QueryOptionsClient =
-  Parameters<typeof projectListQuery>[0]["client"] &
+  Parameters<typeof workspaceCatalogQuery>[0]["client"] &
   Parameters<typeof providerListQuery>[0]["client"] &
   Parameters<typeof providerAuthQuery>[0]["client"] &
   Parameters<typeof pathQuery>[0]["client"] &
@@ -166,19 +167,19 @@ export function sessionLoadRequestKey(directory: DirectoryRef) {
 export function createQueryOptionsApi(input: {
   globalSDK: () => QueryOptionsClient
   sdkFor: (directory: DirectoryRef) => QueryOptionsClient
+  hasSignedAccess: () => boolean
   baseUrl?: string
   request?: typeof fetch
   harnessType?: string
 }) {
   return {
-    globalConfig: () =>
-      queryOptions({
-        queryKey: ["global", input.baseUrl ?? "", "config"],
-        staleTime: 5 * 60 * 1000,
-        queryFn: async () => (await input.globalSDK().global.config.get()).data ?? ({} as GlobalConfig),
-      }),
-    projects: () => projectListQuery({ baseUrl: input.baseUrl, client: input.globalSDK() }),
-    providers: (directory: DirectoryRef | null, harnessType?: string) =>
+    projects: () => workspaceCatalogQuery({
+      baseUrl: input.baseUrl,
+      client: input.globalSDK(),
+      request: input.request,
+      signedAccess: input.hasSignedAccess(),
+    }),
+    providers: (directory: DirectoryRef | null, harnessType: string) =>
       providerListQuery({
         baseUrl: input.baseUrl,
         client: directory === null ? input.globalSDK() : input.sdkFor(directory),
@@ -186,7 +187,7 @@ export function createQueryOptionsApi(input: {
         harnessType,
         request: input.request,
       }),
-    providerAuth: (harnessType?: string) => providerAuthQuery({
+    providerAuth: (harnessType: string) => providerAuthQuery({
       baseUrl: input.baseUrl,
       client: input.globalSDK(),
       harnessType,
@@ -546,6 +547,7 @@ export function createBootstrapOrchestrator(input: {
     queryOptionsApi: createQueryOptionsApi({
       globalSDK: input.globalSDK,
       sdkFor: input.sdkFor,
+      hasSignedAccess: input.hasSignedAccess,
       baseUrl: input.baseUrl(),
       request: input.platformFetch() ?? authFetch,
     }),

@@ -11,9 +11,8 @@
  *   GET /api/claxedo/events     — auth-gated hosted live-sync SSE stream,
  *                                 resumable by `Last-Event-ID` when a
  *                                 LiveSyncRoom is bound (see deployments/hosted-workerd/live-sync-room.cf.ts)
- *   GET /api/claxedo/bootstrap  — aggregate boot payload (signed → Convex workspaces)
+ *   GET /api/claxedo/services   — { authenticated, services } first-party catalog
  *   GET /global/health          — { healthy, version }
- *   GET /global/config          — {}
  *   GET /project                — signed → Convex workspace projects, else []
  *   GET /project/current        — synthetic project derived from ?directory
  *   GET /path                   — synthetic path derived from ?directory
@@ -179,13 +178,6 @@ function emptyProvider() {
     all: [],
     default: {},
     connected: [],
-  }
-}
-
-function emptyConfigProviders() {
-  return {
-    providers: [],
-    default: {},
   }
 }
 
@@ -598,23 +590,25 @@ async function signedProjects(c: Context, options: HostedShellRouteOptions, acti
   return signedShellProjects(Array.isArray(workspaces) ? workspaces : [], Date.now())
 }
 
-async function signedBootstrapState(c: Context, options: HostedShellRouteOptions) {
+/**
+ * The browser-visible first-party service catalog.
+ *
+ * `authenticated: false` is authoritative: the app deactivates already-loaded
+ * services on it, so an unsigned request must answer the pair rather than an
+ * error. This is also the app's first signed read of the session, so it is
+ * where the owner's runtime activation is scheduled.
+ */
+async function signedServiceCatalogState(c: Context, options: HostedShellRouteOptions) {
   const hasCredential = options.authentication
     ? requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)
     : !!bearerToken(c.req.header("authorization") ?? null)
-  if (!hasCredential) {
-    return { authenticated: false, projects: [], services: EMPTY_SERVICE_CATALOG }
-  }
+  if (!hasCredential) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
   const auth = await signedAuth(c, options)
-  if (!auth) return { authenticated: false, projects: [], services: EMPTY_SERVICE_CATALOG }
+  if (!auth) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
   if (options.activateOwner) guardedWaitUntil(c)?.(options.activateOwner(auth))
-  const [workspaces, services] = await Promise.all([
-    options.listWorkspaces ? options.listWorkspaces(auth) : [],
-    options.serviceCatalog ? options.serviceCatalog(auth) : EMPTY_SERVICE_CATALOG,
-  ])
+  const services = options.serviceCatalog ? await options.serviceCatalog(auth) : EMPTY_SERVICE_CATALOG
   return {
     authenticated: true,
-    projects: signedShellProjects(Array.isArray(workspaces) ? workspaces : [], Date.now()),
     services: projectServiceCatalogForBrowser(services),
   }
 }
@@ -752,26 +746,13 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     .get("/api/claxedo/events", events)
     .get("/api/wr/events", events)
     .get("/global/event", events)
-    .get("/api/claxedo/bootstrap", async (c) => {
+    // The first-party service catalog for this principal. The app reads it on
+    // its own rather than as one field of a boot aggregate: every other field
+    // that aggregate carried is per-workspace, per-harness, or a stub, and the
+    // workspace catalog is the app's own query over `/api/workspace`.
+    .get("/api/claxedo/services", async (c) => {
       try {
-        const provider = emptyProvider()
-        const state = await signedBootstrapState(c, options)
-        return c.json({
-          healthy: true,
-          version: version(options),
-          // Public, origin-bound client configuration. It contains no provider
-          // secret and is returned before sign-in so browser/native clients can
-          // choose the selected adapter without build-time vendor coupling.
-          auth: options.authentication?.descriptor,
-          path: hostedPath(),
-          authenticated: state.authenticated,
-          project: state.projects,
-          services: state.services,
-          provider,
-          provider_auth: {},
-          config: {},
-          config_providers: emptyConfigProviders(),
-        })
+        return c.json(await signedServiceCatalogState(c, options))
       } catch (err) {
         return authErrorResponse(c, err)
       }
@@ -781,7 +762,6 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
       }))
-    .get("/global/config", (c) => c.json({}))
     .get("/project", async (c) => {
       try {
         return c.json(await signedProjects(c, options))

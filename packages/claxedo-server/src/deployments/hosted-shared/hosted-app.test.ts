@@ -1383,11 +1383,8 @@ describe("hosted shell boot surface", () => {
     expect(body.all).toEqual([])
   })
 
-  test("/global/config and /provider/auth return empty records", async () => {
+  test("/provider/auth returns an empty record", async () => {
     const app = createHostedApp(fakePlane())
-    const config = await app.fetch(new Request("http://cp.test/global/config"))
-    expect(config.status).toBe(200)
-    expect(await config.json()).toEqual({})
     const auth = await app.fetch(new Request("http://cp.test/provider/auth"))
     expect(auth.status).toBe(200)
     expect(await auth.json()).toEqual({})
@@ -1429,35 +1426,32 @@ describe("hosted shell boot surface", () => {
     expect(typeof time.updated).toBe("number")
   })
 
-  test("/api/claxedo/bootstrap aggregates a healthy boot payload with signed projects", async () => {
+  test("/api/claxedo/bootstrap is not served by a hosted central", async () => {
     const app = createHostedApp(fakePlane())
     const res = await app.fetch(
       new Request("http://cp.test/api/claxedo/bootstrap", {
         headers: { authorization: "Bearer user_1" },
       }),
     )
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body).toMatchObject({
-      healthy: true,
-      version: "1.0.0",
-      path: { home: "", state: "", config: "", worktree: "", directory: "" },
-      provider: { all: [], default: {}, connected: [] },
-      provider_auth: {},
-      config: {},
-      config_providers: { providers: [], default: {} },
-    })
-    const project = body.project as Array<Record<string, unknown>>
-    expect(project).toHaveLength(1)
-    expect(project[0]).toMatchObject({ id: "ws-yash-staging-1" })
-
-    // Anonymous bootstrap is still healthy with an empty project inventory.
-    const anonymous = await app.fetch(new Request("http://cp.test/api/claxedo/bootstrap"))
-    expect(anonymous.status).toBe(200)
-    expect(await anonymous.json()).toMatchObject({ healthy: true, project: [] })
+    expect(res.status).toBe(404)
   })
 
-  test("signed bootstrap schedules idempotent WorkGraph owner activation without delaying boot", async () => {
+  test("/api/claxedo/services answers the principal's catalog and marks anonymous callers unauthenticated", async () => {
+    const app = createHostedApp(fakePlane())
+    const signed = await app.fetch(
+      new Request("http://cp.test/api/claxedo/services", {
+        headers: { authorization: "Bearer user_1" },
+      }),
+    )
+    expect(signed.status).toBe(200)
+    expect(await signed.json()).toMatchObject({ authenticated: true, services: expect.any(Array) })
+
+    const anonymous = await app.fetch(new Request("http://cp.test/api/claxedo/services"))
+    expect(anonymous.status).toBe(200)
+    expect(await anonymous.json()).toEqual({ authenticated: false, services: [] })
+  })
+
+  test("the signed service catalog read schedules idempotent WorkGraph owner activation without delaying boot", async () => {
     const plane = fakePlane()
     let finish!: () => void
     const activation = vi.fn(async () => {
@@ -1478,7 +1472,7 @@ describe("hosted shell boot surface", () => {
     const waitUntil = vi.fn()
     const app = createHostedApp(plane, { workGraphOwnerActivation: activation })
     const response = await app.fetch(
-      new Request("http://cp.test/api/claxedo/bootstrap", {
+      new Request("http://cp.test/api/claxedo/services", {
         headers: { authorization: "Bearer owner_a" },
       }),
       {},
@@ -1499,7 +1493,7 @@ describe("hosted shell boot surface", () => {
       retryable: true,
     })
 
-    const anonymous = await app.fetch(new Request("http://cp.test/api/claxedo/bootstrap"), {}, {
+    const anonymous = await app.fetch(new Request("http://cp.test/api/claxedo/services"), {}, {
       waitUntil,
       passThroughOnException: vi.fn(),
     } as never)

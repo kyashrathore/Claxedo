@@ -8,7 +8,7 @@ import { Project } from "@opencode-ai/sdk/v2"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { same } from "@/lib/same"
 import { createScrollPersistence, type SessionScroll } from "@/app/providers/layout-scroll"
-import { validProjectRef, validWorktree } from "@/platform/sync/worktree"
+import { validProjectRef } from "@/platform/sync/worktree"
 import {
   planProjectColorAssignment,
   projectCatalog,
@@ -354,7 +354,7 @@ function createLayoutContextValue() {
       const actions = resolveSandboxRootActions({
         projects: sidebarProjects(),
         rootFor,
-        valid: validWorktree,
+        valid: validProjectRef,
       })
       batch(() => {
         for (const worktree of actions.removals) server.projects.remove(worktree)
@@ -451,7 +451,7 @@ function createLayoutContextValue() {
         api: apiProjects,
         sidebar: sidebarProjects().map((p) => p.worktree),
         isClosed: server.projects.isClosed,
-        valid: validWorktree,
+        valid: validProjectRef,
       })
       if (!next) return
 
@@ -475,9 +475,9 @@ function createLayoutContextValue() {
         list,
         open(directory: string) {
           const root = rootFor(directory)
-          if (!validWorktree(root)) return
+          if (!validProjectRef(root)) return
           ensureDirectorySessionCache(root)
-          if (!shouldStoreOpenedProject({ root, sidebar: sidebarProjects(), isLocal: server.isLocal(), valid: validWorktree })) return
+          if (!shouldStoreOpenedProject({ root, sidebar: sidebarProjects(), isLocal: server.isLocal(), valid: validProjectRef })) return
           server.projects.open(root)
         },
         close(directory: string) {
