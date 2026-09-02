@@ -2,6 +2,12 @@ export { WorkspaceRuntimeRouteManifest, WorkspaceRuntimeRoutes, workspaceRuntime
   from "./routes/manifest"
 export type { WorkspaceRuntimeRouteFamily }
   from "./routes/manifest"
+export {
+  disabledProviders,
+  nextDisabledProviders,
+  ProviderConfigRoutes,
+} from "./routes/provider-config"
+export type { ProviderConfigRouteOptions, ProviderConfigStore } from "./routes/provider-config"
 export { PtyRoutes } from "./routes/pty"
 export { ProcessRoutes } from "./routes/process"
 export { runtimeEventsHandler } from "./routes/events"

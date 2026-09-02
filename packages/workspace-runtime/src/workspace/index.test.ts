@@ -187,6 +187,7 @@ describe("workspace module wiring", () => {
 
     const seen = paths(app)
     expect(seen).toContain("/api/wr/harness-config-options")
+    expect(seen).toContain("/api/wr/provider-config")
     expect(seen).toContain("/global/event")
     expect(seen).toContain("/session/status")
 

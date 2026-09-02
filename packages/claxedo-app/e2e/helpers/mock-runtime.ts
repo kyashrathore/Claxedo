@@ -85,6 +85,7 @@ import {
   WORKTREE_CREATE_SUCCESS_STATUS,
 } from "./contracts/worktrees"
 import { driveEmptyRuntimeDiffRoute } from "./contracts/runtime-diff"
+import { createRuntimeProviderConfig, type RuntimeProviderConfig } from "./contracts/provider-config"
 import { contractRoute } from "./contracts/contract-route"
 import {
   centralStreamHeartbeat,
@@ -576,6 +577,13 @@ export type MockRuntimeHandles = {
    * source of a row's status after a reload, when no SSE frame replays the live state.
    */
   setSessionStatus: (sessionId: string, status?: LiveSessionStatus) => void
+  /**
+   * The provider configuration this workspace's runtime owns, as
+   * `PATCH /api/wr/provider-config` leaves it. `disabled()` is what the catalog
+   * read filters its connected list by, so a spec that stubs `/provider` itself
+   * must apply the same filter.
+   */
+  providerConfig: RuntimeProviderConfig
   session: { id: string; dir: string; projectId: string }
 }
 
@@ -685,6 +693,11 @@ class EventBus {
     this.append({ directory: "", payload, flat: true })
   }
 
+  /** The sequence a connection opening NOW resumes from: everything already logged is behind it. */
+  lastId() {
+    return this.seq
+  }
+
   /**
    * One call = one HTTP connection. `lastEventId` is the connection's own
    * SSE `Last-Event-ID` header (the client's cursor): serve every event with
@@ -736,6 +749,26 @@ function lastEventIdOf(route: Route): number | undefined {
   if (!raw) return undefined
   const parsed = Number(raw)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+/**
+ * The cursor a `/api/wr/events` connection actually resumes from.
+ *
+ * A `?sessionID=` request is a MANAGED-PRIVATE stream — a relay-backed runtime
+ * serves no other kind (`authorizeSessionEventScope` answers an unscoped
+ * request with 400 `session_event_scope_required`). The real handler
+ * (`workspace-runtime/src/routes/runtime-events.ts`) serves such a cursor-less
+ * connection NOTHING from its replay buffer: it resumes at "now" and bootstraps
+ * the reader's cursor with an opening heartbeat. Modelling that is what makes a
+ * consumer that opens LATE genuinely miss the frames it missed, so a spec can
+ * tell the difference between a stream opened before a turn and one opened
+ * after it. The unscoped (local) stream keeps the mock's full-log-on-first-
+ * connect, which specs rely on to catch up while the app is still booting.
+ */
+function workspaceStreamCursor(route: Route, bus: EventBus) {
+  const cursor = lastEventIdOf(route)
+  if (cursor !== undefined) return cursor
+  return new URL(route.request().url()).searchParams.has("sessionID") ? bus.lastId() : undefined
 }
 
 // Every event frame carries its sequence as an SSE `id:` line so id-tracking
@@ -909,6 +942,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // hydrate GET path (behaviors 2-9, which DO pre-seed) never sends a body, so this
   // reassignment is a no-op for every other scenario in this file.
   let harness = options.harness ?? "opencode"
+  // The provider configuration this workspace's runtime owns. Settings writes
+  // it through `PATCH /api/wr/provider-config`; `providerResponse()` below is
+  // derived from it, the way the engine derives its connected catalog.
+  const providerConfig = createRuntimeProviderConfig({ harness: () => harness })
   let savedModel: { providerID: string; modelID: string } | null | undefined
   let savedAgent: string | null | undefined
   let savedVariant: string | null | undefined
@@ -1249,7 +1286,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         },
       ],
       default: { [activeProviderID]: harnessModel().id },
-      connected: [activeProviderID],
+      // Same filter the engine applies: a provider this workspace's harness
+      // config disables is no longer connected, so a disconnect written through
+      // `PATCH /api/wr/provider-config` shows up in the very next catalog read.
+      connected: providerConfig.disabled().includes(activeProviderID) ? [] : [activeProviderID],
     }
   }
 
@@ -1944,7 +1984,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const workspaceScoped = url.pathname.startsWith("/workspaces/") ||
       url.searchParams.has("directory") ||
       request.headers()["x-opencode-directory"]?.startsWith("workspace:") === true
-    const batch = await busWrEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+    const cursor = workspaceStreamCursor(route, busWrEvents)
+    const batch = await busWrEvents.drain(sseIdleTimeoutMs, cursor)
     const now = Date.now()
     // Most flat lifecycle frames originate on a workspace runtime stream. Worktree
     // provisioning is the exception: its ready/failed signal is central because a
@@ -1963,7 +2004,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // deliberately carry NO `id:` line — they must not advance an
     // id-tracking reader's cursor.
     const body =
-      sseBody(batch.filter((entry) => !entry.flat), () => workspaceStreamHeartbeat(lastEventIdOf(route))) +
+      sseBody(batch.filter((entry) => !entry.flat), () => workspaceStreamHeartbeat(cursor)) +
       replays.map((entry) => sseFrame(entry.payload)).join("")
     await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
   }
@@ -2099,6 +2140,22 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/provider?**", (r) => (api(r) ? json(r, providerResponse()) : r.continue()))
   await page.route("**/provider/auth", (r) => (api(r) ? json(r, {}) : r.continue()))
   await page.route("**/provider/auth?**", (r) => (api(r) ? json(r, {}) : r.continue()))
+
+  // The write half of `/provider`, driven through the REAL workspace-runtime
+  // router: a config-declared provider disconnects by being disabled in this
+  // workspace's harness configuration, not by an auth DELETE.
+  const providerConfigHandler = async (r: Route) => {
+    if (!api(r)) return r.continue()
+    if (!new URL(r.request().url()).pathname.endsWith("/api/wr/provider-config")) return r.fallback()
+    const driven = await providerConfig.handle({
+      url: r.request().url(),
+      method: r.request().method(),
+      body: r.request().postData(),
+    })
+    return json(r, driven.body, driven.status)
+  }
+  await contractRoute(page, "**/api/wr/provider-config", providerConfigHandler)
+  await contractRoute(page, "**/api/wr/provider-config?**", providerConfigHandler)
 
   // Bare-path glob only (no query-string wildcard): Playwright's glob-to-regex
   // anchors the pattern's end, so `**/config` alone does NOT match the app's real
@@ -3154,11 +3211,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await contractRoute(page, `${base}/api/wr/diff/**`, runtimeDiffHandler)
 
     const relayEventHandler = async (route: Route) => {
-      const batch = await busRelayEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+      const cursor = workspaceStreamCursor(route, busRelayEvents)
+      const batch = await busRelayEvents.drain(sseIdleTimeoutMs, cursor)
       await route.fulfill({
         status: 200,
         contentType: "text/event-stream",
-        body: sseBody(batch, () => workspaceStreamHeartbeat(lastEventIdOf(route))),
+        body: sseBody(batch, () => workspaceStreamHeartbeat(cursor)),
       }).catch(() => {})
     }
     const relayRuntimeEventHandler = async (route: Route) => {
@@ -3329,6 +3387,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     emitRuntime,
     releaseAbort: () => releaseAbort(),
     setSessionStatus,
+    providerConfig,
     session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID },
   }
 }

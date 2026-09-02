@@ -4,7 +4,8 @@ export const RouteDomain = {
   // agent-config / credentials registry surfaces (MCP config, slash commands,
   // agent profile, secrets registry). Tests in `workspace/runtime-dispatch/route-ownership-contract.test.ts` classify
   // `/api/claxedo/agent-config`, `/api/claxedo/credentials`,
-  // `/api/wr/config`, `/api/wr/harness-config-options`, `/mcp`, `/agent`,
+  // `/api/wr/config`, `/api/wr/harness-config-options`,
+  // `/api/wr/provider-config`, `/mcp`, `/agent`,
   // `/command` under this domain.
   AgentConfigRegistry: "agent-config-registry",
   AgentSessionRuntime: "agent-session-runtime",
@@ -151,7 +152,7 @@ const ROUTE_RULES = [
   exact(["/global/event", "/api/wr/events", "/api/wr/runtime-events"], RouteDomain.SandboxRuntime, runtime),
   exact(["/api/wr/health", "/api/wr/capabilities"], RouteDomain.SandboxRuntime, runtime),
   exact(
-    ["/api/wr/config", "/api/wr/harness-config-options"],
+    ["/api/wr/config", "/api/wr/harness-config-options", "/api/wr/provider-config"],
     RouteDomain.AgentConfigRegistry,
     runtime,
     "Phase 2 moves canonical config ownership fully into Agent Config Registry.",

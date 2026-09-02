@@ -688,9 +688,11 @@ describe("workspace runtime route audit", () => {
         offenders.push(file)
       }
     }
-    const events = await Bun.file(path.join(root, "app/integrations/claxedo-events.tsx")).text()
-    expect(events).toMatch(/sessionWorkspaceRuntimeRef/)
-    expect(events).not.toMatch(/workspaceIdFromDirectoryRef/)
+    // The stream targets are chosen in `claxedo-event-targets.ts`; the provider
+    // beside it only opens what that module returns.
+    const targets = await Bun.file(path.join(root, "app/integrations/claxedo-event-targets.ts")).text()
+    expect(targets).toMatch(/sessionWorkspaceRuntimeRef/)
+    expect(targets).not.toMatch(/workspaceIdFromDirectoryRef/)
     expect(offenders).toEqual([])
   })
 
@@ -1008,9 +1010,18 @@ describe("workspace runtime route audit", () => {
     expect(settings).toMatch(/removeProviderAuthEntry/)
     expect(settings).toMatch(/disconnectProvider/)
     // Provider config is the workspace runtime's file, not a server global:
-    // Settings reads no `/global/config` and PATCHes no disabled-provider list.
+    // Settings reads no `/global/config` and PATCHes no disabled-provider list
+    // there. A config-declared row disconnects through the scoped
+    // `PATCH /api/wr/provider-config` for the (workspace, harness) the scope
+    // selector names, and that writer is the only one in the app.
     expect(settings).not.toMatch(/globalConfig/)
     expect(settings).not.toMatch(/disabled_providers/)
+    expect(settings).toMatch(/setProviderDisabled/)
+    const providerSettingsLogic = await Bun.file(
+      path.join(root, "features/settings/provider-settings-logic.ts"),
+    ).text()
+    expect(providerSettingsLogic).toMatch(/["']\/api\/wr\/provider-config["']/)
+    expect(providerSettingsLogic).not.toMatch(/\/global\/config/)
     expect(settings).toMatch(/provider-settings-logic/)
     expect(settings).toMatch(/claxedoCredentialRequest\(\{ providerId: id \}/)
     expect(settings).not.toMatch(/useGlobalSync/)

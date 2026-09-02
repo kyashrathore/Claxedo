@@ -707,6 +707,35 @@ describe("workspace runtime auth helpers", () => {
     expect(body.options.some((item) => item.category === "model")).toBe(false)
   })
 
+  test("harness config options names the unapplied ACP connection instead of failing untyped", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-unapplied-acp-"))
+    tempDirs.push(dir)
+    process.env.HOME = dir
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const app = new Hono()
+    mountTestHost(app, {
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
+    })
+
+    // `stranger` is a well-formed ACP identity the applied registry has no
+    // descriptor for. It must reach the caller as this route's own error body,
+    // not as the framework's untyped 500 — the local server relays this message
+    // into the composer's model control.
+    const res = await app.request(
+      `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=acp:stranger`,
+    )
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: {
+        code: "harness_config_options_unavailable",
+        harness: "stranger",
+        message: 'ACP connection "stranger" is not configured on this runtime',
+      },
+    })
+  })
+
   test("runtime config apply serializes concurrent pushes", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-apply-queue-"))
     tempDirs.push(dir)
@@ -2083,6 +2112,79 @@ describe("workspace runtime auth helpers", () => {
     // A host that says "unavailable" is answered as the compat router would.
     const broken = await app.request("http://localhost/provider?harness=broken")
     expect(broken.status).toBe(502)
+  })
+
+  /**
+   * The write half of `/provider`. Disconnecting a CONFIG-declared provider has
+   * no credential to drop, so it lands in the harness config this workspace's
+   * runtime owns — and the very next catalog read is derived from it.
+   */
+  test("disables a config-declared provider in this workspace's opencode config", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-config-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const seen: Array<{ method: string; path: string; body?: unknown }> = []
+    let config: Record<string, unknown> = { provider: { "clinepass-2": { name: "Cline pass 2" } } }
+    const handler: OpenCodeRequestFn = async (req) => {
+      const url = new URL(req.url)
+      const body = req.method === "PATCH" ? await req.json() as Record<string, unknown> : undefined
+      seen.push({ method: req.method, path: url.pathname, ...(body ? { body } : {}) })
+      if (url.pathname === "/global/config") {
+        if (req.method === "PATCH") config = { ...config, ...body }
+        return Response.json(config)
+      }
+      if (url.pathname === "/provider") {
+        const disabled = new Set((config.disabled_providers as string[] | undefined) ?? [])
+        return Response.json({
+          all: [{ id: "clinepass-2", name: "Cline pass 2", env: [], models: { "kimi-k3": { id: "kimi-k3", name: "Kimi K3" } } }],
+          connected: ["clinepass-2"].filter((id) => !disabled.has(id)),
+          default: {},
+        })
+      }
+      return new Response("unexpected", { status: 500 })
+    }
+
+    const app = new Hono()
+    mountTestHost(app, { opencodeRequest: handler, opencodeCompat: true })
+
+    const before = await app.request("http://localhost/provider?harness=opencode")
+    expect(await before.json()).toMatchObject({ connected: ["clinepass-2"] })
+
+    const disable = await app.request("http://localhost/api/wr/provider-config?harness=opencode&directory=workspace:ws_1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "clinepass-2", disabled: true }),
+    })
+    expect(disable.status).toBe(200)
+    expect(await disable.json()).toEqual({ harness: "opencode", disabled_providers: ["clinepass-2"] })
+    expect(seen.filter((item) => item.path === "/global/config")).toEqual([
+      { method: "GET", path: "/global/config" },
+      { method: "PATCH", path: "/global/config", body: { disabled_providers: ["clinepass-2"] } },
+    ])
+
+    const after = await app.request("http://localhost/provider?harness=opencode")
+    expect(await after.json()).toMatchObject({ connected: [] })
+  })
+
+  test("refuses a provider-config write for a harness that declares no providers", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-config-unsupported-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const app = new Hono()
+    mountTestHost(app, { opencodeCompat: true })
+
+    const res = await app.request("http://localhost/api/wr/provider-config?harness=claude-sdk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic", disabled: true }),
+    })
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({ error: { code: "provider_config_unsupported_harness" } })
   })
 
   test("still refuses a non-opencode catalog when no host seam is supplied", async () => {

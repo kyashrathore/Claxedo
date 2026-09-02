@@ -56,6 +56,7 @@ import { assertTarget, workspaceDir, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeRunner, type RuntimeSnapshot } from "../routes/config"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { OpenCodeCompatRoutes } from "../routes/opencode-compat"
+import { ProviderConfigRoutes, type ProviderConfigStore } from "../routes/provider-config"
 import { SessionRoutes } from "../routes/session"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
 import { sessionV2Proxy } from "../routes/session-v2-proxy"
@@ -2099,9 +2100,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             },
           }, 404)
         }
-        const adapter = await ensureSessionAdapter(targetRunner)
         const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
         try {
+          // Adapter selection is inside the guarded region because it is a
+          // source of the very failure this route reports: an ACP identity with
+          // no applied connection descriptor raises
+          // `WorkspaceHarnessUnavailableError` before any process is spawned.
+          // Selecting outside it let that escape as an untyped 500, so the
+          // caller saw a transport failure instead of the named reason.
+          const adapter = await ensureSessionAdapter(targetRunner)
           if (!adapter.probeConfigOptions) {
             return c.json({
               ok: false,
@@ -2210,6 +2217,48 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           return c.json(providerUnavailable("opencode", errorMessage(cause)), 502)
         }
       })
+
+      // The write half of `GET /provider` above. A provider the harness config
+      // DECLARES has no credential to drop, so disconnecting it means naming it
+      // in that config's `disabled_providers` — and that config belongs to this
+      // workspace's runtime, never to a central server global. Same
+      // (workspace, harness) scope the catalog read carries, so the read
+      // reflects the write on the next fetch.
+      app.route("/", ProviderConfigRoutes({
+        defaultHarness: () => runner.id,
+        store: async (harnessId) => {
+          // Only opencode keeps a provider registry in config; every other
+          // harness answers `/provider` from the host-injected catalog, which
+          // has no per-workspace declaration to disable.
+          if (harnessId !== "opencode") return undefined
+          if (hostOptions.opencodeCompat !== true) {
+            throw new Error("opencode provider configuration is unavailable because compatibility proxying is disabled")
+          }
+          const adapter = runner.id === "opencode"
+            ? await ensureSessionAdapter(runner)
+            : await ensureSessionAdapter({ id: "opencode", access: "native" })
+          if (!hasAdapterCapability(adapter, "http-proxy")) {
+            throw new Error("opencode provider configuration is not reachable through this harness adapter")
+          }
+          const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
+          const call = async (init?: RequestInit) => {
+            const headers = new Headers(hostOptions.opencodeHeaders)
+            headers.set("accept", "application/json")
+            if (init?.body) headers.set("content-type", "application/json")
+            const res = await request(new Request(`${OPENCODE_INTERNAL_BASE}/global/config`, { ...init, headers }))
+            if (!res.ok) throw new Error(`opencode configuration request failed with status ${res.status}`)
+            return await res.json() as Record<string, unknown>
+          }
+          const store: ProviderConfigStore = {
+            read: () => call(),
+            // The engine disposes every cached InstanceState when a config
+            // update actually changes the file, so the catalog `GET /provider`
+            // re-derives is the one this write produced.
+            write: (patch) => call({ method: "PATCH", body: JSON.stringify(patch) }),
+          }
+          return store
+        },
+      }))
 
       app.get("/experimental/tool/ids", async (c) => {
         const adapter = await ensureSessionAdapter(runner)

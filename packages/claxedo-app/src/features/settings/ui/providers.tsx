@@ -19,6 +19,7 @@ import {
   disconnectProvider,
   providerSourceTagKey,
   removeProviderAuthEntry,
+  setProviderDisabled,
 } from "@/features/settings/provider-settings-logic"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
 import { SettingsScopeSelector } from "@/features/settings/ui/scope-selector"
@@ -111,10 +112,11 @@ export const SettingsProviders: Component = () => {
     queryClient.setQueryData<NormalizedProviderListResponse | undefined>(providers.queryKey(), patch)
   }
 
-  const disconnect = async (providerID: string, name: string) => {
+  const disconnect = async (item: ProviderItem) => {
     await disconnectProvider({
-      providerId: providerID,
-      name,
+      providerId: item.id,
+      name: item.name,
+      source: source(item),
       deleteCredential: async (id) => {
         await claxedoCredentialRequest({ providerId: id }, { method: "DELETE" })
       },
@@ -124,6 +126,16 @@ export const SettingsProviders: Component = () => {
           providerId: id,
           harness: scope.harness(),
           directory: scope.scopeRef(),
+          request: authFetch,
+        })
+      },
+      disableInConfig: async (id) => {
+        await setProviderDisabled({
+          serverUrl: getClaxedoServerUrl(),
+          providerId: id,
+          harness: scope.harness(),
+          directory: scope.scopeRef(),
+          disabled: true,
           request: authFetch,
         })
       },
@@ -240,7 +252,7 @@ export const SettingsProviders: Component = () => {
                           <div class="flex shrink-0 items-center gap-2">
                             <Tag>{type(item)}</Tag>
                             <Show when={canDisconnect(item)}>
-                              <Button size="large" variant="ghost" onClick={() => void disconnect(item.id, item.name)}>
+                              <Button size="large" variant="ghost" onClick={() => void disconnect(item)}>
                                 {language.t("common.disconnect")}
                               </Button>
                             </Show>
