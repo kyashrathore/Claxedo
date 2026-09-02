@@ -3,6 +3,7 @@ import { SERVICE_PROTOCOL_VERSION, type BrowserServiceDescriptor } from "@claxed
 import { HostedContributionError } from "@/platform/account/hosted-contribution-port"
 
 import {
+  activateServicesForLocalCentral,
   configureServiceContributions,
   createServiceContributions,
   synchronizeServiceCatalogFromBootstrap,
@@ -116,6 +117,48 @@ describe("first-party service contributions", () => {
     expect(await synchronizeServiceCatalogFromBootstrap({ authenticated: false, services: [] })).toBe(true)
     expect(registered).toEqual([])
     expect(contributions.catalog()).toEqual([])
+    expect(contributions.availableContentTypes()).toEqual([])
+  })
+
+  test("a loopback central admits every configured loader and sign-out cannot revoke it", async () => {
+    const loaded: string[] = []
+    const registered: string[] = []
+    const contributions = configureServiceContributions({
+      local: [],
+      loaders: {
+        documents: async () => { loaded.push("documents"); return { contentSurfaces: [surface("docs", "pages-index")] } },
+      },
+      register: (item) => registered.push(item.id),
+      unregister: (item) => registered.splice(registered.indexOf(item.id), 1),
+    })
+
+    expect(await activateServicesForLocalCentral()).toBe(true)
+    expect(loaded).toEqual(["documents"])
+    expect(registered).toEqual(["docs"])
+    // A service the composition ships no loader for stays absent — the build is
+    // the authority here, so it can admit nothing it cannot load.
+    expect(contributions.active("workgraph")).toBe(false)
+    // Reported from the ports, not from a catalog this central never issued.
+    expect(contributions.catalog()).toEqual([])
+    expect(contributions.availableContentTypes()).toEqual(["page", "pages-index"])
+
+    // There is no principal on a loopback central, so the account reporting
+    // "not signed" is not a revocation of anything.
+    contributions.signOut()
+    expect(registered).toEqual(["docs"])
+  })
+
+  test("a composition with no service loaders configured admits nothing on a loopback central", async () => {
+    const registered: string[] = []
+    const contributions = configureServiceContributions({
+      local: [],
+      loaders: {},
+      register: (item) => registered.push(item.id),
+      unregister: (item) => registered.splice(registered.indexOf(item.id), 1),
+    })
+
+    expect(await activateServicesForLocalCentral()).toBe(true)
+    expect(registered).toEqual([])
     expect(contributions.availableContentTypes()).toEqual([])
   })
 

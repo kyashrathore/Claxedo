@@ -52,11 +52,15 @@ export function createServiceContributions(input: ServiceContributionsInput) {
 
   return {
     catalog: () => catalog,
+    // Read from the ports, not from `catalog`: a central that publishes no
+    // catalog can still admit services (`activateAvailable`), and a content
+    // type this composition cannot actually render must never be reported as
+    // available because a descriptor said "enabled".
     availableContentTypes: () => [
       ...input.local.map((surface) => String(surface.surface)),
-      ...catalog
-        .filter((descriptor) => descriptor.state === "enabled")
-        .flatMap((descriptor) => SERVICE_CONTENT_TYPES[descriptor.serviceId]),
+      ...FIRST_PARTY_SERVICE_IDS.filter((serviceId) => ports[serviceId].active()).flatMap(
+        (serviceId) => SERVICE_CONTENT_TYPES[serviceId],
+      ),
     ],
     active: (serviceId: FirstPartyServiceId) => ports[serviceId].active(),
     async apply(next: BrowserServiceCatalog) {
@@ -85,6 +89,27 @@ export function createServiceContributions(input: ServiceContributionsInput) {
       }
       catalog = normalized
     },
+    /**
+     * Activate every service this composition carries a loader for.
+     *
+     * For a central that publishes no catalog at all. Same closed order and
+     * same all-or-nothing unwind as `apply`; it differs only in where the
+     * permission comes from, so it deliberately leaves `catalog` empty rather
+     * than inventing descriptors the central never issued.
+     */
+    async activateAvailable() {
+      const activated: FirstPartyServiceId[] = []
+      try {
+        for (const serviceId of FIRST_PARTY_SERVICE_IDS) {
+          if (!input.loaders[serviceId] || ports[serviceId].active()) continue
+          await ports[serviceId].activate()
+          activated.push(serviceId)
+        }
+      } catch (error) {
+        for (const serviceId of activated.toReversed()) ports[serviceId].deactivate()
+        throw error
+      }
+    },
     deactivateAll() {
       for (const serviceId of FIRST_PARTY_SERVICE_IDS) ports[serviceId].deactivate()
       catalog = []
@@ -94,22 +119,40 @@ export function createServiceContributions(input: ServiceContributionsInput) {
 
 export type ConfiguredServiceContributions = ReturnType<typeof createServiceContributions> & {
   applyAuthenticated(catalog: BrowserServiceCatalog): Promise<void>
+  activateForLocalCentral(): Promise<void>
   signOut(): void
 }
 
 let configured: ConfiguredServiceContributions | undefined
 
 export function configureServiceContributions(input: Omit<ServiceContributionsInput, "signedIn">) {
-  let signed = false
-  const contributions = createServiceContributions({ ...input, signedIn: () => signed })
+  /**
+   * Which authority admitted the services this window holds.
+   *
+   * `principal` is a hosted central's signed catalog. `local-central` is a
+   * loopback daemon: it has no principal, publishes no catalog, and its boot
+   * aggregate carries neither field (`localBootstrapBody`,
+   * packages/claxedo-local-server/src/deployments/shared-routes/bootstrap.ts).
+   * `documentsAccess` (src/features/documents/access.ts) already treats that
+   * transport as full access, so on it the build's own loaders are the
+   * authority — which is why account sign-out cannot revoke them: there is no
+   * principal on a loopback central to sign out of.
+   */
+  let authority: "none" | "principal" | "local-central" = "none"
+  const contributions = createServiceContributions({ ...input, signedIn: () => authority !== "none" })
   configured = {
     ...contributions,
     async applyAuthenticated(catalog) {
-      signed = true
+      authority = "principal"
       await contributions.apply(catalog)
     },
+    async activateForLocalCentral() {
+      authority = "local-central"
+      await contributions.activateAvailable()
+    },
     signOut() {
-      signed = false
+      if (authority === "local-central") return
+      authority = "none"
       contributions.deactivateAll()
     },
   }
@@ -138,5 +181,26 @@ export async function synchronizeServiceCatalogFromBootstrap(value: unknown) {
   }
   if (bootstrap.authenticated !== true) return false
   await target.applyAuthenticated(requireBrowserServiceCatalog(bootstrap.services ?? []))
+  return true
+}
+
+/**
+ * Admit this build's services on a central that issues no catalog.
+ *
+ * A loopback central is a single-user local daemon. It serves no
+ * `GET /api/claxedo/services` and its boot aggregate carries no `services`
+ * field, so `synchronizeServiceCatalogFromBootstrap` can only ever ignore it —
+ * which left `page`, `pages-index` and the WorkGraph content types with no
+ * registered surface at all in every composition whose central is loopback
+ * (the desktop's own sidecar, and the browser lane's Tier M harness), even
+ * though `documentsAccess` reports that transport as full access.
+ *
+ * Returns false when the composition configured no service loaders — an
+ * unsigned local build, which genuinely ships none of these bundles.
+ */
+export async function activateServicesForLocalCentral() {
+  const target = configuredServiceContributions()
+  if (!target) return false
+  await target.activateForLocalCentral()
   return true
 }

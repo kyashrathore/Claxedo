@@ -26,7 +26,10 @@ import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { synchronizeServiceCatalogFromBootstrap } from "@/app/composition/service-contributions"
+import {
+  activateServicesForLocalCentral,
+  synchronizeServiceCatalogFromBootstrap,
+} from "@/app/composition/service-contributions"
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>
 export type GlobalBootstrapSdk = Pick<OpencodeClient, "global" | "path" | "project" | "provider">
@@ -196,11 +199,12 @@ function serviceCatalogUrl(serverUrl: string | undefined) {
 /**
  * The first-party service catalog for a hosted central.
  *
- * The daemon answers it inside its loopback bootstrap; a hosted central has no
- * aggregate to ride on, so the catalog is its own small read. The payload is
- * the `{ authenticated, services }` pair `synchronizeServiceCatalogFromBootstrap`
- * consumes — `authenticated: false` is authoritative sign-out and must
- * deactivate already-loaded services.
+ * Only a hosted central issues one, and it has no aggregate to ride on, so the
+ * catalog is its own small read. The payload is the `{ authenticated, services }`
+ * pair `synchronizeServiceCatalogFromBootstrap` consumes —
+ * `authenticated: false` is authoritative sign-out and must deactivate
+ * already-loaded services. A loopback daemon mounts no such route and its
+ * aggregate carries no `services`; see `activateServicesForLocalCentral`.
  */
 async function fetchServiceCatalog(baseUrl: string, fetchFn: typeof globalThis.fetch) {
   const res = await fetchFn(serviceCatalogUrl(baseUrl), {
@@ -241,9 +245,23 @@ export async function bootstrapGlobal(input: {
     return
   }
 
+  // A loopback central issues no catalog, in the aggregate or anywhere else, so
+  // the build's loaders are the authority for what it may render — the same
+  // answer `documentsAccess` already gives for this transport. Resolved before
+  // the aggregate and independently of it: service availability is a property
+  // of the central, not of whether the daemon answered a boot payload.
+  try {
+    await activateServicesForLocalCentral()
+  } catch (error) {
+    showToast({
+      variant: "error",
+      title: input.requestFailedTitle,
+      description: formatServerError(error, input.translate),
+    })
+  }
+
   const boot = await bootstrapData(input.baseUrl, input.fetch, input.harnessType)
   if (boot?.healthy) {
-    await synchronizeServiceCatalogFromBootstrap(boot)
     const path = boot.path ?? EMPTY_PATH
     input.setGlobalState({ path })
     queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), path)
