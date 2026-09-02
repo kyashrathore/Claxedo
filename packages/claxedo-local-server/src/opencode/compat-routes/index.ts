@@ -78,6 +78,15 @@ function syncResultStatus(input: Awaited<ReturnType<typeof syncOpencodeMcpConfig
  * /api/workspace and /api/control, several of which authenticate with an
  * installation or runtime-access token rather than a control-plane bearer and
  * would start failing in signed mode. `auth-gate.test.ts` pins both halves.
+ *
+ * `/api/claxedo/events` is one of THIS router's own paths (`compatRoutes`
+ * below answers it directly, alongside its `/global/event` and `/api/wr/events`
+ * aliases), not one of the parent routes above — it never belongs in that
+ * after-list. Every composition that mounts this router (`self-hosted-node`,
+ * the desktop `local-app`) must let it answer here first rather than also
+ * registering its own handler for the same path: Hono resolves the
+ * first-registered handler for an exact path, so a later same-path mount is
+ * unreachable dead code, not a second implementation.
  */
 export function OpenCodeCompatRoutes(options: OpenCodeCompatRouteOptions = {}) {
   const app = new Hono()

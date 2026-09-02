@@ -23,6 +23,7 @@ import { workspaceRuntimeBus } from "../bus"
 import { withDir } from "../compat-events"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
+import { harnessQueryParam } from "./http"
 import { sessionStatusSnapshot } from "./session-status-snapshot"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionAccessPolicy } from "../session-access-policy"
@@ -219,7 +220,7 @@ export function SessionRoutes(
   function requestedHarness(c: {
     req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined }
   }) {
-    const raw = c.req.query("harness") ?? c.req.query("runner") ?? undefined
+    const raw = harnessQueryParam(c.req)
     if (raw === undefined) return undefined
     const identity = normalizeHarnessIdentity(raw)
     if (!identity) throw new HTTPException(400, { message: `Unknown harness "${raw}"` })

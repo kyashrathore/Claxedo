@@ -19,6 +19,23 @@ function allowAll(): ManagedSessionAuthority {
     authorizeSessionWrite: () => true,
     authorizeSessionStream: () => ({ allowed: true, lease: "lease_1", expiresAt: Date.now() + 15_000 }),
     registerSession: () => true,
+    acquireTurn: (input) => ({
+      allowed: true,
+      turnId: input.turnId,
+      leaseId: "turn_lease_1",
+      fencingToken: 1,
+      acquiredAt: Date.now(),
+      expiresAt: Date.now() + 15_000,
+    }),
+    renewTurn: (input) => ({
+      allowed: true,
+      turnId: input.turnId,
+      leaseId: input.leaseId,
+      fencingToken: input.fencingToken + 1,
+      acquiredAt: Date.now(),
+      expiresAt: Date.now() + 15_000,
+    }),
+    releaseTurn: () => ({ released: true }),
   }
 }
 
@@ -205,5 +222,58 @@ describe("SessionAccessPolicy", () => {
       sessionIds,
     })).resolves.toEqual(sessionIds)
     expect(peak).toBe(16)
+  })
+
+  test("gates turn admission behind verified actor and authority claims, then delegates to the bundle", async () => {
+    const policy = managedWorkspaceSessionAccessPolicy({ requireActor: true, authority: allowAll() })
+    const actor = { actorId: "actor_1", actorKind: "human" as const }
+
+    await expect(policy.acquireTurn!({
+      authority,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+    })).resolves.toMatchObject({ allowed: false, code: "session_actor_required", status: 403 })
+
+    await expect(policy.acquireTurn!({
+      actor,
+      authority,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+    })).resolves.toMatchObject({ allowed: true, turnId: "turn_1", leaseId: "turn_lease_1", fencingToken: 1 })
+
+    await expect(policy.renewTurn!({
+      actor,
+      authority,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+      leaseId: "turn_lease_1",
+      fencingToken: 1,
+    })).resolves.toMatchObject({ allowed: true, fencingToken: 2 })
+
+    await expect(policy.releaseTurn!({
+      actor,
+      authority,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+      leaseId: "turn_lease_1",
+      fencingToken: 2,
+    })).resolves.toEqual({ released: true })
+  })
+
+  test("denies turn admission on the same role rank as any other session write", async () => {
+    const policy = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
+    const viewer = { ...authority, role: "viewer" as const }
+
+    await expect(policy.acquireTurn!({
+      actor: { actorId: "actor_1", actorKind: "human" },
+      authority: viewer,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+    })).resolves.toMatchObject({ allowed: false, code: "session_write_forbidden", status: 403 })
   })
 })

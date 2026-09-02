@@ -23,7 +23,6 @@ import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessRequiresWrite,
   type ProcessObserver,
-  type SessionAccessPolicyInput,
   type SessionAccessStreamDecision,
   type SessionAuthorityInput,
 } from "@claxedo/workspace-runtime"
@@ -32,7 +31,6 @@ import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
-import { eventsHandler } from "@claxedo/server-core/platform/http/events"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
@@ -293,14 +291,15 @@ function selfHostedPrivateSessionAuthority(
  * Turn admission is the same story one layer down. Declaring
  * `sessionAuthority: "managed-private"` is what turns on the runtime's durable
  * prompt admission (`acquireManagedPromptLease`, workspace-runtime
- * routes/session-core.ts), so a managed policy that carries no turn callbacks
- * answers every prompt 503 `session_turn_authority_unavailable` — the whole
- * composition can authorize a turn and then refuse to admit it. The callbacks
- * below reach `selfHostedTurnAuthority`, the same owner
- * `RuntimeSessionAuthorityRoutes` serves remotely; the authority's own
- * `leaseId` travels back unwrapped because an in-process caller needs no
- * cross-process proof to bind it to (the remote oracle mints a signed lease
- * for exactly that reason).
+ * routes/session-core.ts), so `ManagedSessionAuthority` (workspace-runtime
+ * session-access-policy.ts) requires `acquireTurn`/`renewTurn`/`releaseTurn`
+ * alongside read/write/stream/register: this authority bundle cannot be built
+ * without them, so a managed-private policy can never authorize a turn and
+ * then refuse to admit it. The callbacks below reach `selfHostedTurnAuthority`,
+ * the same owner `RuntimeSessionAuthorityRoutes` serves remotely; the
+ * authority's own `leaseId` travels back unwrapped because an in-process
+ * caller needs no cross-process proof to bind it to (the remote oracle mints
+ * a signed lease for exactly that reason).
  */
 export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
   const runtimeAuthority = selfHostedRuntimeAuthority(authority)
@@ -390,69 +389,54 @@ export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthorit
     return denied(error)
   }
   // A turn is admitted for a verified identity on a named workspace, exactly
-  // like a stream. Absent claims are a denial rather than a crash, and the
-  // shape is the one `authorizeStream` already answers with.
-  const turnInput = (input: SessionAccessPolicyInput & { sessionId: string; turnId: string }) => {
-    if (!input.actor || !input.authority) return undefined
-    return {
-      ...principalOf({ ...input, actor: input.actor, authority: input.authority }),
-      sessionId: input.sessionId,
-      workspaceId: input.authority.workspaceId,
-      turnId: input.turnId,
-    }
-  }
-  const turnActorRequired = {
-    allowed: false as const,
-    status: 403 as const,
-    code: "session_actor_required",
-    message: "Managed session turns require verified actor claims",
-  }
+  // like a stream: `managedWorkspaceSessionAccessPolicy` already refused the
+  // call before reaching here if the actor or authority claims are absent.
+  const turnInput = (input: SessionAuthorityInput & { turnId: string }) => ({
+    ...principalOf(input),
+    sessionId: input.sessionId,
+    workspaceId: input.authority.workspaceId,
+    turnId: input.turnId,
+  })
   const policy = managedWorkspaceSessionAccessPolicy({
     authority: {
       authorizeSessionRead: (input) => decide(input, "read"),
       authorizeSessionWrite: (input) => decide(input, "write"),
       authorizeSessionStream: decideStream,
       registerSession: (input) => decide(input, "register"),
+      acquireTurn: async (input) => {
+        try {
+          return { allowed: true as const, ...await turnAuthority.acquireSessionTurn(turnInput(input)) }
+        } catch (error) {
+          return turnDenied(error)
+        }
+      },
+      renewTurn: async (input) => {
+        try {
+          return {
+            allowed: true as const,
+            ...await turnAuthority.renewSessionTurn({
+              ...turnInput(input),
+              leaseId: input.leaseId,
+              fencingToken: input.fencingToken,
+            }),
+          }
+        } catch (error) {
+          return turnDenied(error)
+        }
+      },
+      releaseTurn: async (input) => {
+        try {
+          return await turnAuthority.releaseSessionTurn({
+            ...turnInput(input),
+            leaseId: input.leaseId,
+            fencingToken: input.fencingToken,
+          })
+        } catch (error) {
+          return turnDenied(error)
+        }
+      },
     },
   })
-  policy.acquireTurn = async (input) => {
-    const turn = turnInput(input)
-    if (!turn) return turnActorRequired
-    try {
-      return { allowed: true as const, ...await turnAuthority.acquireSessionTurn(turn) }
-    } catch (error) {
-      return turnDenied(error)
-    }
-  }
-  policy.renewTurn = async (input) => {
-    const turn = turnInput(input)
-    if (!turn) return turnActorRequired
-    try {
-      return {
-        allowed: true as const,
-        ...await turnAuthority.renewSessionTurn({
-          ...turn,
-          leaseId: input.leaseId,
-          fencingToken: input.fencingToken,
-        }),
-      }
-    } catch (error) {
-      return turnDenied(error)
-    }
-  }
-  policy.releaseTurn = async (input) => {
-    const turn = turnInput(input)
-    if (!turn) return turnActorRequired
-    try {
-      return await turnAuthority.releaseSessionTurn({
-        ...turn,
-        leaseId: input.leaseId,
-        fencingToken: input.fencingToken,
-      })
-    } catch (error) {
-      return turnDenied(error)
-    }
-  }
   return policy
 }
 
@@ -1110,21 +1094,17 @@ export function createSelfHostedApp(
 
     // Runtime-owned local routes are dispatched through the embedded
     // workspace-runtime host by workspaceRuntimeProxy above.
+    //
+    // Claxedo events SSE lives on `OpenCodeCompatRoutes` above, not here: that
+    // router answers `/global/event`, `/api/wr/events`, and `/api/claxedo/events`
+    // itself (its own three spellings of the central bus stream, gated by the
+    // same control-plane bearer via `controlPlaneRouteAuth`), so a second
+    // `/api/claxedo/events` mounted after it here would never be reached —
+    // Hono resolves the first-registered handler for an exact path.
+    // `createSelfHostedApp` requires `services.localExecution.enabled`
+    // (asserted above) before this point is ever reached, so this composition
+    // never runs without that router mounted.
   }
-  // Claxedo events SSE — auth-gated via the same control-plane bearer used
-  // by /api/control/* and /api/workspace/*. authFetch on the
-  // frontend already attaches the token because the consumer uses fetch+
-  // ReadableStream, not raw EventSource. Signed subscribers resolve their
-  // AUTHORITY-INTERNAL org id at connect so org-scoped events
-  // (document.changed/provision, stamped with internal ids) are visible.
-  app.get(
-    "/api/claxedo/events",
-    eventsHandler({
-      ...authRouteOptions(services),
-      allowLoopbackLocal: true,
-      ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
-    }),
-  )
 
   const documentsBackend = localDocumentsBackend()
   // Documents doorbell. The documents backend is

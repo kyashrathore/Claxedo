@@ -130,6 +130,23 @@ describe("embedded workspace runtime", () => {
             : { allowed: false as const, status: 403 as const, code: "session_private", message: "Not a participant" }
         },
         registerSession: () => true,
+        acquireTurn: (input) => ({
+          allowed: true,
+          turnId: input.turnId,
+          leaseId: "turn_lease_1",
+          fencingToken: 1,
+          acquiredAt: Date.now(),
+          expiresAt: Date.now() + 15_000,
+        }),
+        renewTurn: (input) => ({
+          allowed: true,
+          turnId: input.turnId,
+          leaseId: input.leaseId,
+          fencingToken: input.fencingToken + 1,
+          acquiredAt: Date.now(),
+          expiresAt: Date.now() + 15_000,
+        }),
+        releaseTurn: () => ({ released: true }),
       },
     })
     configureEmbeddedWorkspaceRuntime({

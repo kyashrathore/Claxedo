@@ -170,19 +170,39 @@ export type SessionAuthorityStreamPredicate = (
   lease?: string,
 ) => Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
 
+export type SessionAuthorityTurnAcquirePredicate = (
+  input: SessionAuthorityInput & { turnId: string },
+) => Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+
+export type SessionAuthorityTurnRenewPredicate = (
+  input: SessionAuthorityInput & { turnId: string; leaseId: string; fencingToken: number },
+) => Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+
+export type SessionAuthorityTurnReleasePredicate = (
+  input: SessionAuthorityInput & { turnId: string; leaseId: string; fencingToken: number },
+) => Promise<SessionTurnReleaseDecision> | SessionTurnReleaseDecision
+
 /**
  * The private-session authority a managed composition delegates to.
  *
  * It is one bundle because the capabilities are one contract: a policy that
  * can admit a request but not the live stream behind it still reports itself
  * as `managed-private`, and every managed terminal or session stream then
- * fails at the point it asks for the lease its agent callbacks renew.
+ * fails at the point it asks for the lease its agent callbacks renew. Turn
+ * admission is the same contract's fifth capability — a `managed-private`
+ * policy always turns on durable prompt admission (see `managedTurnAdmission`
+ * in `routes/session-core.ts`), so the bundle carries `acquireTurn`/
+ * `renewTurn`/`releaseTurn` as required members rather than an optional
+ * add-on a composer can forget to wire up.
  */
 export type ManagedSessionAuthority = {
   authorizeSessionRead: SessionAuthorityPredicate
   authorizeSessionWrite: SessionAuthorityPredicate
   authorizeSessionStream: SessionAuthorityStreamPredicate
   registerSession: SessionAuthorityPredicate
+  acquireTurn: SessionAuthorityTurnAcquirePredicate
+  renewTurn: SessionAuthorityTurnRenewPredicate
+  releaseTurn: SessionAuthorityTurnReleasePredicate
 }
 
 export type ManagedWorkspaceSessionAccessPolicyOptions = {
@@ -317,6 +337,13 @@ function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | vo
   return result
 }
 
+const turnActorRequired = {
+  allowed: false as const,
+  status: 403 as const,
+  code: "session_actor_required",
+  message: "Managed session turns require verified actor claims",
+}
+
 /**
  * Workspace policy with an injectable creator/participant authority boundary.
  * Managed session-specific operations fail closed when the authority callbacks
@@ -370,6 +397,49 @@ export function managedWorkspaceSessionAccessPolicy(
               authority: input.authority,
               sessionId: input.sessionId,
             }, lease)
+          },
+          async acquireTurn(input: SessionAccessPolicyInput & { sessionId: string; turnId: string }) {
+            const workspace = authorizeManaged(input, options.requireActor === true)
+            if (!workspace.allowed) return workspace
+            if (!input.authority || !input.actor) return turnActorRequired
+            return authority.acquireTurn({
+              ...input,
+              actor: input.actor,
+              authority: input.authority,
+              sessionId: input.sessionId,
+            })
+          },
+          async renewTurn(input: SessionAccessPolicyInput & {
+            sessionId: string
+            turnId: string
+            leaseId: string
+            fencingToken: number
+          }) {
+            const workspace = authorizeManaged(input, options.requireActor === true)
+            if (!workspace.allowed) return workspace
+            if (!input.authority || !input.actor) return turnActorRequired
+            return authority.renewTurn({
+              ...input,
+              actor: input.actor,
+              authority: input.authority,
+              sessionId: input.sessionId,
+            })
+          },
+          async releaseTurn(input: SessionAccessPolicyInput & {
+            sessionId: string
+            turnId: string
+            leaseId: string
+            fencingToken: number
+          }) {
+            const workspace = authorizeManaged(input, options.requireActor === true)
+            if (!workspace.allowed) return workspace
+            if (!input.authority || !input.actor) return turnActorRequired
+            return authority.releaseTurn({
+              ...input,
+              actor: input.actor,
+              authority: input.authority,
+              sessionId: input.sessionId,
+            })
           },
         }
       : {}),

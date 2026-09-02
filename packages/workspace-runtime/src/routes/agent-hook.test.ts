@@ -56,6 +56,23 @@ const managedPolicy = managedWorkspaceSessionAccessPolicy({
       expiresAt: Date.now() + 15_000,
     }),
     registerSession: () => true,
+    acquireTurn: (input) => ({
+      allowed: true,
+      turnId: input.turnId,
+      leaseId: "turn_lease_1",
+      fencingToken: 1,
+      acquiredAt: Date.now(),
+      expiresAt: Date.now() + 15_000,
+    }),
+    renewTurn: (input) => ({
+      allowed: true,
+      turnId: input.turnId,
+      leaseId: input.leaseId,
+      fencingToken: input.fencingToken + 1,
+      acquiredAt: Date.now(),
+      expiresAt: Date.now() + 15_000,
+    }),
+    releaseTurn: () => ({ released: true }),
   },
 })
 managedPolicy.authorizeHost = async (input) => {

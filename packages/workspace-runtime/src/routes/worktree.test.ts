@@ -70,6 +70,23 @@ function managedApp(
         ? { allowed: true, lease: "worktree-lease", expiresAt: Date.now() + 15_000 }
         : { allowed: false, status: 403, code: "session_private", message: "Session is private" },
       registerSession: () => true,
+      acquireTurn: (input) => ({
+        allowed: true,
+        turnId: input.turnId,
+        leaseId: "turn_lease_1",
+        fencingToken: 1,
+        acquiredAt: Date.now(),
+        expiresAt: Date.now() + 15_000,
+      }),
+      renewTurn: (input) => ({
+        allowed: true,
+        turnId: input.turnId,
+        leaseId: input.leaseId,
+        fencingToken: input.fencingToken + 1,
+        acquiredAt: Date.now(),
+        expiresAt: Date.now() + 15_000,
+      }),
+      releaseTurn: () => ({ released: true }),
     },
   })
   app.route("/", WorktreeRoutes(manager, options.withPolicy === false ? {} : { sessionAccessPolicy: policy }))

@@ -134,6 +134,21 @@ export function remoteWorkspaceSessionAccessPolicy(options: {
         { stream: true, ...(lease ? { lease } : {}) },
       ) as Promise<SessionAccessStreamDecision>,
       registerSession: (input) => request(input, "register") as Promise<SessionAccessDecision>,
+      acquireTurn: (input) => request(
+        input,
+        "turn_acquire",
+        { turnId: input.turnId },
+      ) as Promise<SessionTurnLeaseDecision>,
+      renewTurn: (input) => request(
+        input,
+        "turn_renew",
+        { turnId: input.turnId, leaseId: input.leaseId, fencingToken: input.fencingToken },
+      ) as Promise<SessionTurnLeaseDecision>,
+      releaseTurn: (input) => request(
+        input,
+        "turn_release",
+        { turnId: input.turnId, leaseId: input.leaseId, fencingToken: input.fencingToken },
+      ) as Promise<SessionTurnReleaseDecision>,
     },
   })
   policy.authorizeHost = async (input) => {
@@ -177,21 +192,6 @@ export function remoteWorkspaceSessionAccessPolicy(options: {
     "compensation_complete",
     { reason: input.reason },
   ) as Promise<SessionAccessDecision>
-  policy.acquireTurn = (input) => request(
-    input as SessionAuthorityInput,
-    "turn_acquire",
-    { turnId: input.turnId },
-  ) as Promise<SessionTurnLeaseDecision>
-  policy.renewTurn = (input) => request(
-    input as SessionAuthorityInput,
-    "turn_renew",
-    { turnId: input.turnId, leaseId: input.leaseId, fencingToken: input.fencingToken },
-  ) as Promise<SessionTurnLeaseDecision>
-  policy.releaseTurn = (input) => request(
-    input as SessionAuthorityInput,
-    "turn_release",
-    { turnId: input.turnId, leaseId: input.leaseId, fencingToken: input.fencingToken },
-  ) as Promise<SessionTurnReleaseDecision>
   return policy
 }
 

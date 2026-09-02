@@ -141,3 +141,23 @@ describe("the guard on the composed app", () => {
     expect(built.routeOwnership.owner("/api/claxedo/probe")).toBe("self-hosted-node")
   })
 })
+
+describe("the central events stream", () => {
+  // `withRouteOwnership` above only catches a SECOND COMPOSITION claiming a
+  // prefix another one already owns (its own docstring says so); it does not
+  // catch two handlers registered for the same exact path inside ONE
+  // composition, which is exactly the shape this bug had: `OpenCodeCompatRoutes`
+  // answers `/api/claxedo/events` itself (one of its own three spellings of the
+  // central bus stream); this composition registers no second handler for it,
+  // unreachable `app.get("/api/claxedo/events", ...)` after it. Hono resolves
+  // the first-registered handler for an exact path, so the second one never
+  // ran — dead code with no failing test, until this one.
+  test("exactly one handler is registered for GET /api/claxedo/events", () => {
+    const built = selfHosted()
+
+    const matches = built.app.routes.filter(
+      (route) => route.method === "GET" && route.path === "/api/claxedo/events",
+    )
+    expect(matches).toHaveLength(1)
+  })
+})

@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
+import { boundedJsonBody, errorBody, harnessQueryParam, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import { WorkspaceRuntimeRoutes } from "./manifest"
 
 /**
@@ -91,7 +91,7 @@ export const ProviderConfigRoutes = (options: ProviderConfigRouteOptions) =>
       throw err
     })
     .patch(WorkspaceRuntimeRoutes.providerConfig, async (c) => {
-      const harness = c.req.query("harness") || c.req.query("runner") || options.defaultHarness()
+      const harness = harnessQueryParam(c.req) || options.defaultHarness()
       const body = providerDisableRequest(await boundedJsonBody<unknown>(c, null))
       if (!body) {
         return c.json(

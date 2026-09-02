@@ -54,6 +54,7 @@ import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore } from "../store"
 import { assertTarget, workspaceDir, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeRunner, type RuntimeSnapshot } from "../routes/config"
+import { harnessQueryParam } from "../routes/http"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { OpenCodeCompatRoutes } from "../routes/opencode-compat"
 import { ProviderConfigRoutes, type ProviderConfigStore } from "../routes/provider-config"
@@ -1552,7 +1553,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   async function listSessions(input: {
     req: { query: (k: string) => string | undefined }
   }, directory: string) {
-    const requestedRunner = normalizeHarnessIdentity(input.req.query("harness") || input.req.query("runner") || undefined)
+    const requestedRunner = normalizeHarnessIdentity(harnessQueryParam(input.req))
     if (requestedRunner) {
       const target: RuntimeRunner = {
         id: requestedRunner.id,
@@ -2082,7 +2083,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         if (options.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
       }
       app.get("/api/wr/harness-config-options", async (c) => {
-        const requestedHarness = normalizeHarnessIdentity(c.req.query("harness") || c.req.query("runner") || c.req.query("type"))
+        const requestedHarness = normalizeHarnessIdentity(harnessQueryParam(c.req) || c.req.query("type"))
         const targetRunner = requestedHarness
           ? {
               id: requestedHarness.id,
@@ -2162,7 +2163,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // Cloud control plane proxies /provider through here so the session
       // sidebar can list model metadata for both OpenCode and ACP runners.
       app.get("/provider", async (c) => {
-        const requestedHarness = c.req.query("harness") || c.req.query("runner")
+        const requestedHarness = harnessQueryParam(c.req)
         const harnessId = requestedHarness || runner.id
         if (harnessId !== "opencode") {
           // Not the kit's to answer: see `WorkspaceHostOptions.providerCatalog`.
@@ -2459,7 +2460,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // silently creates the session on the wrong adapter — and when the
           // active runner is ACP, spawns a process the caller never asked for.
           const query = (c as { req: { query: (k: string) => string | undefined } }).req
-          const requested = normalizeHarnessIdentity(query.query("harness") || query.query("runner") || undefined)
+          const requested = normalizeHarnessIdentity(harnessQueryParam(query))
           const adapter = await adapterForSession({
             ...(id ? { sessionId: id } : {}),
             directory,
