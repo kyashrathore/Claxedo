@@ -171,6 +171,12 @@ describe("pure export mirrors match the real ../api.ts implementation", () => {
       expect(fixture.module.isHostedAppHostname(input)).toBe(real.isHostedAppHostname(input))
     }
 
+    const loopbackInputs = ["http://localhost:2593", "http://127.0.0.1:2593/x", "https://[::1]:8443", "http://app.test", "ws://localhost:1", "not a url", undefined]
+    for (const input of loopbackInputs) {
+      expect(fixture.module.isLoopbackHttpUrl(input)).toBe(real.isLoopbackHttpUrl(input))
+      expect(fixture.module.usesUnsignedLocalTransport(input)).toBe(real.usesUnsignedLocalTransport(input))
+    }
+
     // isEmbedMode/isDemoMode read window.location — compare under the same URL.
     window.location.href = "http://localhost/demo/?embed=1"
     expect(fixture.module.isEmbedMode()).toBe(real.isEmbedMode())
