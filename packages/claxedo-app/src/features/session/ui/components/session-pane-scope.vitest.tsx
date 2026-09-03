@@ -241,6 +241,7 @@ describe("SessionPaneScope", () => {
     ))
 
     expect(calls.directoryScopeProps?.harnessType?.()).toBe("opencode")
+  })
 
   test("routes a draft's local provider directory through its explicit workspace route", () => {
     calls.projects = [{

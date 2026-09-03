@@ -117,7 +117,9 @@ export function createHostedAgentPluginsComposition(input: {
           ? { defaultHomeRegion: input.plane.services.defaultHomeRegion }
           : {}),
         orgId: identity.organizationId,
-        subject: "agent-plugins-provisioner",
+        // Provisioning is a machine actor, not the signed human: it materializes
+        // the pinned plugin trees before any user turn runs.
+        runtimeActor: { principalKind: "service", actorId: "agent-plugins-provisioner", actorKind: "agent" },
         role: "owner",
         resume: false,
       })

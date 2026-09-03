@@ -1,4 +1,5 @@
-import { record, text, type JsonRecord } from "../shared/sdk-runtime-values"
+import type { JsonRecord } from "../shared/sdk-runtime-driver"
+import { record, text } from "../shared/sdk-runtime-values"
 
 /**
  * Projecting a remote MCP server's elicitation as an ordinary Codex question.
