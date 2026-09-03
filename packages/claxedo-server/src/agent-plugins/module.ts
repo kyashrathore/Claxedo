@@ -3,6 +3,7 @@ import type { SignedAgentPluginActivationStore } from "@claxedo/server-core/agen
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneServices } from "../authority/services"
 import { HostedAgentPluginRoutes } from "./routes"
 import type { Hono } from "hono"
@@ -13,6 +14,8 @@ import type { AgentPluginSelfRuntimeReader } from "./runtime/self-runtime"
 /** One hosted feature composition. No generic hosted entry statically imports this module. */
 export function hostedAgentPluginsModule(input: {
   services: ControlPlaneServices
+  /** The deployment's request-authentication adapter; see `HostedAgentPluginRoutes`. */
+  authentication?: RequestAuthenticationAdapter
   sources(auth: SignedControlPlaneAuth): CatalogSourceProvider
   activations: SignedAgentPluginActivationStore
   artifacts: AgentPluginArtifactStore

@@ -1,7 +1,7 @@
 ---
 title: "feat: port the hosted Agent Plugins composition from Convex/Clerk to Better Auth + D1"
 date: 2026-09-04
-status: in-progress
+status: in-progress (WP1–WP3 committed on the branch; staging release 65 + live pass in progress)
 branch: codex/refactor-agent-plugins
 ---
 
@@ -67,11 +67,15 @@ pulls (below).
 
 ### Signed desktop (V2 local half, V3 local half)
 
-New hosted route `GET /api/claxedo/plugins/runtime/self`: the signed user's all-projects effective set as an
-`AgentPluginRuntimeApplyRequest` plus gateway secrets (origin-style gateway URLs, no wildcard DNS). Electron main
-pulls it on sign-in, after every activation mutation, and every 10 minutes (gateway token TTL is 30), and hands
-it to the daemon's embedded runtime apply route, which materializes a `signed` generation and applies the
-harness launch machine-wide while signed in. Sign-out re-applies the machine (unsigned) generation.
+New hosted route `GET /api/claxedo/plugins/runtime/self` (`runtime/self-runtime.ts`): the signed user's
+all-projects effective set as an `AgentPluginRuntimeApplyRequest` plus the gateway secrets a sandbox driver would
+have brokered (origin-style gateway URLs, no wildcard DNS) and `expiresAt`. Electron main
+(`main/agent-plugins-signed-sync.ts`) pulls it on sign-in, after every `agentPlugins.*` mutation, and five minutes
+before the credential expires (retry 60 s on failure), and PUTs it to the daemon's loopback
+`/api/claxedo/plugins/signed-runtime` (`activation/signed-runtime-routes.ts`). The daemon materializes it under
+`<dataDir>/runtime-signed` and every harness launches with that generation while it is applied; a re-pull at the
+same revision with a rotated bearer re-projects. Sign-out PUTs `null`, which clears the signed generation and the
+machine world launches again. The operation is renderer-withheld: only main holds the account credential.
 
 ## Work packages
 
@@ -91,3 +95,35 @@ harness launch machine-wide while signed in. Sign-out re-applies the machine (un
   Composio/Context7 connected without re-auth, and the local harness config carries the gateway endpoints.
 - V2/V3 cloud: proven by the miniflare rail only; live cloud VM verification is blocked on the D1 sandbox lease
   store (owner decision).
+
+## Progress log (2026-09-04)
+
+- WP1 `b2d9ee6b99`, WP2 `b287661ceb` (with review fixes: partition-scoped upsert, owner-gated attempt polling,
+  409 `connection_exists`, owner-scoped runtime resolution, no un-revoke in `readSecret`, sampled sweep), WP3
+  `da12ab4d55`.
+- Verified: `@claxedo/server` typecheck; server suite 259/260 files before the WP2 fixes (the one failure was the
+  public-package count after this branch retired the extensions package; fixed), then connections + agent-plugins +
+  closure suites 172/172; local-server agent-plugins 12 files/40 tests incl. the signed apply/rotate/clear flow;
+  desktop suite 763/763 after adding `agentPlugins.runtimeSelf` to the operation matrix; ratchets 2/2 + product
+  boundary (desktop ceiling 88).
+- **V1 unsigned, live**: dev desktop from this worktree (`CLAXEDO_AGENT_PLUGINS=1 bun run predev`, then
+  `electron-vite dev`) enabled `["claxedo","context7"]` for all four harnesses through the daemon's
+  `POST /api/claxedo/plugins/activation` → revision 1 applied; `~/.claxedo-dev/runtime/agent-plugins` holds
+  `generation-1-…` with `harnesses/{opencode,claude,codex}` projections and the Claude `.mcp.json`; the machine-wide
+  Codex `~/.codex/config.toml` gained `[plugins."context7@claxedo-agent-plugins"]` and Cursor gained
+  `~/.cursor/plugins/local/claxedo--context7--…`. The daemon's `harnessLaunch()` is project-agnostic by
+  construction, so every project on the machine launches with it.
+- Negative flow observed: signed in against release 64 (no plugin routes), main logs
+  `signed world sync failed: control plane answered 404` every 60 s and the daemon's signed runtime stays
+  `{active:false}` (machine world keeps launching).
+- Staging incident: `wrangler secret put CLAXEDO_CREDENTIALS_KEK` created an untagged "Secret Change" version and
+  the candidate worker answered 503 `deployment_candidate_unavailable` (`CF_VERSION_METADATA.tag is required`)
+  for ~12 min; recovered by redeploying the tagged release-64 version. Secrets now ride the release through
+  `CLAXEDO_RELEASE_SECRETS_FILE`.
+- Release 65 (`release-acc-plugins-260904-033000-3851`) failed `/__release/candidate-health`: the worker logged
+  `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1 but CLAXEDO_CF_KV_URL is not configured` because the base plane's
+  `workerCredentials(env)` only saw the string-only composition env and never the `CLAXEDO_CREDENTIALS` binding.
+  Fixed in `be995567e6` (`credentialsNamespace` seam on `HostedControlPlaneAdapterBindings` and the Better Auth +
+  D1 composition input; compose test fails without it). The failed candidate's locked ledger row was retired with
+  `prepare-better-auth-d1.ts --rollback-candidate` (active 164 → 166, release 64 still open); release 66
+  (`release-acc-plugins2-260904-040500-3851`) follows.

@@ -1,3 +1,4 @@
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { Hono, type Context } from "hono"
 import { acquirePluginArtifact } from "@claxedo/server-core/agent-plugins/artifacts/acquire"
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
@@ -290,6 +291,13 @@ async function retainedView(input: {
 /** Signed personal/project and organization-default Agent Plugins API. */
 export function HostedAgentPluginRoutes(input: {
   services: ControlPlaneServices
+  /**
+   * The deployment's request-authentication adapter. Better Auth + D1 planes
+   * authenticate through it and compose no token verifier, so a route that
+   * only knew `services.auth.verifier` answered every signed caller with
+   * `auth_verifier_unavailable`.
+   */
+  authentication?: RequestAuthenticationAdapter
   sources: SignedSources
   artifacts: AgentPluginArtifactStore
   activations: SignedAgentPluginActivationStore
@@ -302,6 +310,7 @@ export function HostedAgentPluginRoutes(input: {
   const app = new Hono()
   const authenticate = async (request: Request) => {
     const result = await signedOrError(request, {
+      ...(input.authentication ? { authentication: input.authentication } : {}),
       authConfig: input.services.auth.config,
       ...(input.services.auth.verifier ? { verifier: input.services.auth.verifier } : {}),
       requireSigned: true,

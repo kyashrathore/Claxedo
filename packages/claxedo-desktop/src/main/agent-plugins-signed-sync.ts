@@ -101,6 +101,11 @@ export function setupAgentPluginsSignedSync(input: {
   return {
     follow(state) {
       if (!input.enabled || stopped) return
+      // A transient outage of the control plane (a release window, a network
+      // blip) is not a sign-out: the signed world stays applied and the
+      // refresh timer keeps retrying, so harnesses never fall back to the
+      // machine world mid-session. Only an explicit unsigned state withdraws.
+      if (state.status === "unavailable") return
       const next = state.status === "signed"
       if (next === signed) return
       signed = next

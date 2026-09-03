@@ -44,10 +44,24 @@ describe("signed Agent Plugins sync", () => {
     const { sync, pushes } = harness()
     sync.follow({ status: "signed" })
     await settle()
-    sync.follow({ status: "unavailable" })
+    sync.follow({ status: "unsigned" })
     sync.follow({ status: "unsigned" })
     await settle()
     expect(pushes).toEqual([expect.any(String), "null"])
+  })
+
+  test("a transient unavailable account keeps the signed world applied", async () => {
+    // A release window answers the descriptor with 503 and the account reads
+    // "unavailable" for a minute; harnesses must not lose their plugins for it.
+    const { sync, pushes } = harness()
+    sync.follow({ status: "signed" })
+    await settle()
+    sync.follow({ status: "unavailable" })
+    await settle()
+    expect(pushes).toEqual([expect.any(String)])
+    sync.follow({ status: "signed" })
+    await settle()
+    expect(pushes).toHaveLength(1)
   })
 
   test("retries after a control-plane refusal instead of pushing a bad body", async () => {

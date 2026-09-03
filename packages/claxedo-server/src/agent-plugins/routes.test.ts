@@ -1,3 +1,4 @@
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -209,6 +210,7 @@ async function fixture(options: {
   mcp?: boolean
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   mcpClientMetadata?: ReturnType<typeof hostedMcpClientMetadata>
+  authentication?: RequestAuthenticationAdapter
 } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-hosted-agent-plugins-"))
   roots.push(root)
@@ -260,8 +262,10 @@ async function fixture(options: {
   const activations = new MemorySignedActivations()
   const artifacts = new MemoryArtifacts()
   const reconcile = { reconcile: vi.fn(async () => ({ state: "applied" as const })) }
+  if (options.authentication) delete (services.auth as { verifier?: unknown }).verifier
   const app = HostedAgentPluginRoutes({
     services,
+    ...(options.authentication ? { authentication: options.authentication } : {}),
     sources: () => sources,
     activations,
     artifacts,
@@ -288,6 +292,36 @@ async function request(app: ReturnType<typeof HostedAgentPluginRoutes>, pathName
 }
 
 describe("hosted Agent Plugins routes", () => {
+  test("authenticates through the deployment's request adapter when the plane composes no token verifier", async () => {
+    // Better Auth + D1 planes authenticate every request through the adapter
+    // and have no verifier; staging release 66 answered every plugin route
+    // with auth_verifier_unavailable until the routes accepted the adapter.
+    const authentication: RequestAuthenticationAdapter = {
+      descriptor: {} as RequestAuthenticationAdapter["descriptor"],
+      authenticate: async (request) => {
+        if (request.headers.get("authorization") !== "Bearer member") throw new Error("unexpected credential")
+        return {
+          userId: "user-main",
+          actorId: "user-main",
+          actorKind: "human",
+          deploymentId: "deployment-1",
+          sessionId: "session-1",
+          authenticatedAt: 1,
+          methods: [],
+          assurance: "standard",
+          client: { kind: "browser" },
+          identity: { adapter: "better-auth", issuer: "https://auth.test", subject: "member" },
+        } as unknown as Awaited<ReturnType<RequestAuthenticationAdapter["authenticate"]>>
+      },
+    }
+    const subject = await fixture({ authentication })
+    const response = await request(subject.app, "/")
+    expect(response.status).toBe(200)
+    expect(subject.usersMe).toHaveBeenCalledTimes(1)
+    const body = await response.json() as { revision: number }
+    expect(body.revision).toBe(0)
+  })
+
   test("establishes the canonical authority user before reading activation state", async () => {
     const subject = await fixture()
     let principalReady = false

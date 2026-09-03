@@ -235,6 +235,7 @@ export function createHostedAgentPluginsComposition(input: {
   })
   const module = hostedAgentPluginsModule({
     services,
+    authentication: input.authentication,
     sources: () => claxedo,
     activations,
     artifacts,
