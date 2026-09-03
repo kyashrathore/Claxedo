@@ -39,6 +39,7 @@ const MIGRATIONS = [
   "0018_drop_agent_extensions.sql",
   "0019_agent_plugin_activations.sql",
   "0020_hosted_connections.sql",
+  "0021_mcp_oauth_clients.sql",
 ]
 
 const NOW = 1_900_000_000_000

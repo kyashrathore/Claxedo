@@ -1,3 +1,4 @@
+import type { McpOAuthDynamicRegistrationPort } from "@claxedo/server-core/agent-plugins/mcp/discovery"
 import { createHash } from "node:crypto"
 import type { SandboxBrokeredSecret, SandboxDriverMetadata } from "@claxedo/sandbox-manager"
 import {
@@ -125,6 +126,8 @@ export type HostedMcpRuntimePreparerInput = {
     fetch(url: string, init?: RequestInit): Promise<Response>
     preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
     clientIdMetadataDocumentUrl?: string
+    /** RFC 7591 registration port; absent means only pre-registered/CIMD clients resolve. */
+    dynamicRegistration?: McpOAuthDynamicRegistrationPort
   }
   gatewayUrl: string
   /** Defaults to `subdomain`, the sandbox-isolating shape. */
@@ -173,6 +176,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
             ...(input.oauth.clientIdMetadataDocumentUrl
               ? { clientIdMetadataDocumentUrl: input.oauth.clientIdMetadataDocumentUrl }
               : {}),
+            ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
           })
           discovery.set(server.url, discovered)
         }
@@ -205,6 +209,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
                   ...(input.oauth.clientIdMetadataDocumentUrl
                     ? { clientIdMetadataDocumentUrl: input.oauth.clientIdMetadataDocumentUrl }
                     : {}),
+                  ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
                 })
               } catch (selectedCause) {
                 discoveryFailure = selectedCause

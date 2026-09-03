@@ -36,6 +36,11 @@ export function hostedMcpCatalogAuthentication(
         ...(oauth.clientIdMetadataDocumentUrl
           ? { clientIdMetadataDocumentUrl: oauth.clientIdMetadataDocumentUrl }
           : {}),
+        // A catalog read may therefore REGISTER this deployment's client with a
+        // newly seen authorization server. That is the same deployment-wide,
+        // idempotent client the connect flow would create moments later; the
+        // registry makes the second discovery reuse it rather than repeat it.
+        ...(oauth.dynamicRegistration ? { dynamicRegistration: oauth.dynamicRegistration } : {}),
       })
       if (result.status === "public") return { state: "public" }
       return {

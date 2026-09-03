@@ -1,6 +1,31 @@
 export type McpOAuthClientRegistration =
   | { kind: "pre-registered"; clientId: string; clientSecret?: string }
   | { kind: "client-id-metadata-document"; clientId: string }
+  | { kind: "dynamic"; clientId: string; clientSecret?: string }
+
+/** One issued OAuth client, as both the registry and the token exchange see it. */
+export type McpOAuthDynamicClient = { clientId: string; clientSecret?: string }
+
+/**
+ * Persistence for RFC 7591 dynamic client registration. Discovery performs the
+ * registration request itself and stays free of storage: `lookup` answers
+ * whether this deployment already holds a client for an issuer, and `register`
+ * durably records the one it just obtained (returning the row that won, so two
+ * concurrent registrations converge on a single client).
+ *
+ * `clientMetadata` is the deployment's own RFC 7591 client metadata document
+ * WITHOUT `client_id` — the same body the client-id-metadata-document route
+ * publishes, which is what makes the two registration paths one identity.
+ */
+export type McpOAuthDynamicRegistrationPort = {
+  clientMetadata: Readonly<Record<string, unknown>>
+  lookup(issuer: string): Promise<McpOAuthDynamicClient | undefined>
+  register(input: {
+    issuer: string
+    registrationEndpoint: string
+    metadata: Record<string, unknown>
+  }): Promise<McpOAuthDynamicClient>
+}
 
 export type McpOAuthDiscovery = {
   resource: string
@@ -149,19 +174,82 @@ function stringArray(value: unknown): string[] {
   return Array.isArray(value) && value.every((item) => typeof item === "string") ? [...new Set(value)] as string[] : []
 }
 
-function registration(input: {
+/**
+ * RFC 9728 §3.3: a resource server's metadata `resource` value identifies the
+ * protected resource, and it MAY name a broader resource than the exact URL
+ * that was requested — Context7 advertises its origin (`https://mcp.context7.com`)
+ * for the MCP endpoint at `/mcp/oauth`. So the canonical value is accepted when
+ * it is the exact URL, or a same-origin prefix of it that ends on a path
+ * SEGMENT boundary. A different origin is always refused: that is the binding
+ * that stops one server from claiming another's tokens. A canonical value
+ * carrying a query is only ever accepted exactly.
+ */
+function resourceIdentifies(canonical: URL, resource: URL) {
+  if (canonical.origin !== resource.origin) return false
+  if (canonical.toString() === resource.toString()) return true
+  if (canonical.search) return false
+  if (canonical.pathname === "/") return true
+  const prefix = canonical.pathname.endsWith("/") ? canonical.pathname : `${canonical.pathname}/`
+  return resource.pathname.startsWith(prefix)
+}
+
+async function dynamicRegistration(input: {
+  fetch: Fetch
+  issuer: string
+  metadata: Record<string, unknown>
+  port: McpOAuthDynamicRegistrationPort
+}): Promise<McpOAuthClientRegistration | undefined> {
+  const endpoint = typeof input.metadata.registration_endpoint === "string"
+    ? safeEndpoint(input.metadata.registration_endpoint)
+    : undefined
+  if (!endpoint) return undefined
+  const known = await input.port.lookup(input.issuer)
+  if (known?.clientId.trim()) {
+    return { kind: "dynamic", clientId: known.clientId, ...(known.clientSecret ? { clientSecret: known.clientSecret } : {}) }
+  }
+  const response = await safeFetch(input.fetch, endpoint, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json" },
+    body: JSON.stringify(input.port.clientMetadata),
+  })
+  // RFC 7591 §3.2.1 answers 201; a 200 is common in the wild and equally usable.
+  if (!response.ok) throw new Error(`dynamic client registration failed with ${response.status}`)
+  const raw = await boundedJson(response)
+  if (!record(raw) || typeof raw.client_id !== "string" || !raw.client_id.trim()) {
+    throw new Error("dynamic client registration response carries no client_id")
+  }
+  // The registry, not this function, decides which client wins a race and
+  // where an issued secret lives; whatever it returns is the durable answer.
+  const stored = await input.port.register({
+    issuer: input.issuer,
+    registrationEndpoint: endpoint.toString(),
+    metadata: raw,
+  })
+  if (!stored.clientId.trim()) throw new Error("dynamic client registration was not persisted")
+  return { kind: "dynamic", clientId: stored.clientId, ...(stored.clientSecret ? { clientSecret: stored.clientSecret } : {}) }
+}
+
+async function registration(input: {
+  fetch: Fetch
   issuer: string
   metadata: Record<string, unknown>
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
   clientIdMetadataDocumentUrl?: string
-}): McpOAuthClientRegistration | undefined {
+  dynamicRegistration?: McpOAuthDynamicRegistrationPort
+}): Promise<McpOAuthClientRegistration | undefined> {
   const configured = input.preRegistered?.[input.issuer]
   if (configured?.clientId.trim()) return { kind: "pre-registered", clientId: configured.clientId, ...(configured.clientSecret ? { clientSecret: configured.clientSecret } : {}) }
   const document = input.clientIdMetadataDocumentUrl ? safeEndpoint(input.clientIdMetadataDocumentUrl) : undefined
   if (document && input.metadata.client_id_metadata_document_supported === true) {
     return { kind: "client-id-metadata-document", clientId: document.toString() }
   }
-  return undefined
+  if (!input.dynamicRegistration) return undefined
+  return dynamicRegistration({
+    fetch: input.fetch,
+    issuer: input.issuer,
+    metadata: input.metadata,
+    port: input.dynamicRegistration,
+  })
 }
 
 async function discoverAuthorizationServer(input: {
@@ -172,6 +260,7 @@ async function discoverAuthorizationServer(input: {
   scopes: string[]
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
   clientIdMetadataDocumentUrl?: string
+  dynamicRegistration?: McpOAuthDynamicRegistrationPort
 }): Promise<McpOAuthDiscovery> {
   const issuerUrl = safeEndpoint(input.issuer)
   if (!issuerUrl) throw new Error(`Authorization server ${input.issuer} is unsafe`)
@@ -190,11 +279,13 @@ async function discoverAuthorizationServer(input: {
   if (!stringArray(authorizationMetadata.raw.code_challenge_methods_supported).includes("S256")) {
     throw new McpOAuthDiscoveryError("pkce-unsupported", `Authorization server ${input.issuer} does not advertise PKCE S256`)
   }
-  const client = registration({
+  const client = await registration({
+    fetch: input.fetch,
     issuer: input.issuer,
     metadata: authorizationMetadata.raw,
     preRegistered: input.preRegistered,
     clientIdMetadataDocumentUrl: input.clientIdMetadataDocumentUrl,
+    dynamicRegistration: input.dynamicRegistration,
   })
   if (!client) {
     throw new McpOAuthDiscoveryError(
@@ -214,7 +305,15 @@ async function discoverAuthorizationServer(input: {
   }
 }
 
-/** MCP 2026 protected-resource and authorization-server discovery, with no DCR fallback. */
+/**
+ * MCP 2026 protected-resource and authorization-server discovery.
+ *
+ * Client registration is resolved in one fixed order: a deployment-configured
+ * pre-registered client, then a client-id metadata document when the
+ * authorization server advertises support, then RFC 7591 dynamic registration
+ * when the server advertises a registration endpoint AND the caller supplied
+ * the persistence port. Without that port there is no DCR fallback.
+ */
 export async function discoverMcpOAuth(input: {
   resourceUrl: string
   fetch: Fetch
@@ -222,6 +321,7 @@ export async function discoverMcpOAuth(input: {
   requiredScopes?: readonly string[]
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
   clientIdMetadataDocumentUrl?: string
+  dynamicRegistration?: McpOAuthDynamicRegistrationPort
 }): Promise<McpOAuthDiscoveryResult> {
   const resource = safeEndpoint(input.resourceUrl, { loopback: true })
   if (!resource) throw new McpOAuthDiscoveryError("invalid-resource", "MCP resource URL is unsafe")
@@ -239,7 +339,9 @@ export async function discoverMcpOAuth(input: {
     const resourceMetadata = await firstMetadata(input.fetch, protectedResourceCandidates(resource, challenge.metadata))
     if (!resourceMetadata) throw new Error("protected resource metadata is unavailable")
     const canonicalResource = typeof resourceMetadata.raw.resource === "string" ? safeEndpoint(resourceMetadata.raw.resource, { loopback: true }) : undefined
-    if (!canonicalResource || canonicalResource.toString() !== resource.toString()) throw new Error("protected resource metadata does not identify the exact MCP resource")
+    if (!canonicalResource || !resourceIdentifies(canonicalResource, resource)) {
+      throw new Error("protected resource metadata does not identify the MCP resource")
+    }
     const issuers = stringArray(resourceMetadata.raw.authorization_servers).filter((value) => !!safeEndpoint(value))
     if (!issuers.length) throw new Error("protected resource metadata advertises no safe authorization server")
     const challengeScopes = challenge.scopes ?? []
@@ -255,6 +357,7 @@ export async function discoverMcpOAuth(input: {
       ...(input.clientIdMetadataDocumentUrl
         ? { clientIdMetadataDocumentUrl: input.clientIdMetadataDocumentUrl }
         : {}),
+      ...(input.dynamicRegistration ? { dynamicRegistration: input.dynamicRegistration } : {}),
     })
     if (input.selectedIssuer) {
       if (!issuers.includes(input.selectedIssuer)) {

@@ -28,6 +28,7 @@ const CONTROL_PLANE_MIGRATIONS = [
   "0018_drop_agent_extensions.sql",
   "0019_agent_plugin_activations.sql",
   "0020_hosted_connections.sql",
+  "0021_mcp_oauth_clients.sql",
 ]
 
 const BEFORE_ADAPTER_REBUILD = CONTROL_PLANE_MIGRATIONS.slice(

@@ -1,4 +1,4 @@
-import type { McpOAuthDiscovery } from "./discovery"
+import type { McpOAuthDiscovery, McpOAuthDynamicClient } from "./discovery"
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
 type OAuthTokens = { accessToken: string; refreshToken?: string; expiresAt?: number; fields?: Record<string, string> }
@@ -112,7 +112,11 @@ export async function createMcpOAuthIntegration(input: {
 }): Promise<McpOAuthIntegration> {
   const id = await mcpOAuthIntegrationId(input)
   const frozen = context(input.discovery, input.callbackUrl)
-  const clientSecret = input.discovery.client.kind === "pre-registered" ? input.discovery.client.clientSecret : undefined
+  // A client-id metadata document identity has no secret by construction; the
+  // other two kinds carry one only when the authorization server issued it.
+  const clientSecret = input.discovery.client.kind === "client-id-metadata-document"
+    ? undefined
+    : input.discovery.client.clientSecret
   const clientAuth = (body: URLSearchParams) => {
     body.set("client_id", frozen.client_id)
     if (clientSecret) body.set("client_secret", clientSecret)
@@ -174,7 +178,7 @@ export async function createMcpOAuthIntegration(input: {
 
 function attemptDiscovery(value: Readonly<Record<string, string>>): McpOAuthDiscovery | undefined {
   const kind = value.client_kind
-  if (kind !== "pre-registered" && kind !== "client-id-metadata-document") return undefined
+  if (kind !== "pre-registered" && kind !== "client-id-metadata-document" && kind !== "dynamic") return undefined
   const responseIss = value.response_iss_required
   if (responseIss !== "true" && responseIss !== "false") return undefined
   try {
@@ -195,9 +199,10 @@ function attemptDiscovery(value: Readonly<Record<string, string>>): McpOAuthDisc
       tokenEndpoint: value.token_endpoint,
       authorizationResponseIssuerParameterSupported: responseIss === "true",
       scopes: value.scopes ? value.scopes.split(" ").filter(Boolean) : [],
-      client: kind === "pre-registered"
-        ? { kind, clientId: value.client_id }
-        : { kind, clientId: value.client_id },
+      // No secret is ever read back from the attempt: a durable attempt row is
+      // public-ish metadata. The pre-registered secret comes from configuration
+      // and the dynamic one from the client registry, both below.
+      client: { kind, clientId: value.client_id },
     }
   } catch {
     return undefined
@@ -211,6 +216,8 @@ export async function createMcpOAuthIntegrationFromAttempt(input: {
   attemptContext: Readonly<Record<string, string>>
   fetch: Fetch
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
+  /** Resolves the deployment's dynamically registered client for an issuer. */
+  dynamicRegistration?: { lookup(issuer: string): Promise<McpOAuthDynamicClient | undefined> }
   now?: () => number
 }): Promise<McpOAuthIntegration> {
   const discovery = attemptDiscovery(input.attemptContext)
@@ -221,6 +228,16 @@ export async function createMcpOAuthIntegrationFromAttempt(input: {
       throw new Error("MCP OAuth pre-registration no longer matches the attempt")
     }
     discovery.client = { ...discovery.client, ...(configured.clientSecret ? { clientSecret: configured.clientSecret } : {}) }
+  }
+  if (discovery.client.kind === "dynamic") {
+    // Same re-validation the pre-registered path performs, against the registry
+    // instead of configuration: the attempt names a client id, and only the one
+    // this deployment actually holds for that issuer may be presented.
+    const registered = await input.dynamicRegistration?.lookup(discovery.issuer)
+    if (!registered || registered.clientId !== discovery.client.clientId) {
+      throw new Error("MCP OAuth dynamic registration no longer matches the attempt")
+    }
+    discovery.client = { ...discovery.client, ...(registered.clientSecret ? { clientSecret: registered.clientSecret } : {}) }
   }
   const built = await createMcpOAuthIntegration({
     pluginInstanceId: "callback",

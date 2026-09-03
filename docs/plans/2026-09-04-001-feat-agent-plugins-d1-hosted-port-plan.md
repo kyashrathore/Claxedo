@@ -127,3 +127,28 @@ machine world launches again. The operation is renderer-withheld: only main hold
   D1 composition input; compose test fails without it). The failed candidate's locked ledger row was retired with
   `prepare-better-auth-d1.ts --rollback-candidate` (active 164 → 166, release 64 still open); release 66
   (`release-acc-plugins2-260904-040500-3851`) follows.
+- Release 66 (`release-acc-plugins2-260904-040500-3851`, rev 168 open) deployed and dev-opened; `/api/claxedo/plugins`,
+  `/plugins/runtime/self`, `/api/claxedo/integrations`, `/plugins/mcp/*` all exist (401 without a bearer). Signed
+  desktop calls then answered 503 `auth_verifier_unavailable`: the routes only knew `services.auth.verifier`, while
+  the Better Auth + D1 plane authenticates through its request adapter. Fixed in `6f74d0a60e` (adapter threaded
+  through `hostedAgentPluginsModule` → `HostedAgentPluginRoutes`; route test with adapter and no verifier). Same
+  commit: a transient `unavailable` account no longer withdraws the signed world. Release 67 follows.
+- Release 67 (`release-acc-plugins3-260904-042500-3851`, rev 170 open): signed desktop pull works end to end.
+  Two more defects found live and fixed: the daemon died on restart after a Cursor activation because the re-read
+  refused Cursor's harness-owned root (`de038ef3c1`: `external` roots), and a generation an older build wrote could
+  not be restored at all (`5a8fdc589c`: re-project from the SQLite activation store instead of refusing to start).
+- **V2 local half, live**: `POST /api/claxedo/plugins/activation` (signed, `target.scope=all-projects`, all four
+  harnesses) through the desktop account channel → control plane revision 1 → main refreshed `runtime/self` →
+  daemon `signed-runtime` `{active:true, revision:1}` with `runtime-signed/.../generation-1-…` carrying the
+  Context7 projections for Claude, Codex (`launch.json` marketplace) and OpenCode (`opencode.json` skills path).
+  Fresh-machine simulation: wiping `~/.claxedo-dev/runtime-signed` and triggering any `agentPlugins.*` op
+  re-materialized revision 1 from the control plane alone. Sign-out → `{active:false}` ("signed world withdrawn;
+  the machine world launches"); sign-in → re-pulled revision 1.
+- **V3 root causes (live targets)**: the signed catalog reports Context7 `discovery-failed` and Composio
+  `unsupported-client-registration`. Context7's protected-resource metadata names the origin
+  (`https://mcp.context7.com`) rather than the exact `/mcp/oauth` URL, which discovery refused; and neither Clerk
+  (Context7) nor Composio advertises `client_id_metadata_document_supported` — both offer RFC 7591 dynamic
+  registration only, which the branch did not implement (pre-registered or client-id-metadata-document only).
+  Fix in flight: prefix-tolerant resource matching + dynamic client registration persisted in
+  `mcp_oauth_clients` (migration 0021). The consent click itself needs the owner's logged-in browser; the
+  Claude-in-Chrome extension reports no connected browser in this session, so that step stays owner-blocked.

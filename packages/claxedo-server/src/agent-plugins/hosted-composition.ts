@@ -33,6 +33,16 @@ import {
 } from "./mcp/runtime-preparation"
 import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
+import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
+
+/**
+ * The credential partition a deployment-wide secret belongs to. Not an org id:
+ * `hostedOrgCredentials` partitions its KV keys and HKDF subkeys by this value,
+ * and a deployment-wide OAuth client is owned by the deployment, not by any one
+ * tenant. Orgs are minted as `org_...`, so this value can never collide with
+ * one.
+ */
+const DEPLOYMENT_CREDENTIAL_PARTITION = "deployment"
 
 export type HostedAgentPluginsWorkerEnv = Record<string, unknown> & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
@@ -137,11 +147,49 @@ export function createHostedAgentPluginsComposition(input: {
   const publicUrl = required(env.CLAXEDO_PUBLIC_URL ?? env.BETTER_AUTH_URL, "CLAXEDO_PUBLIC_URL")
   const clientMetadata = hostedMcpClientMetadata(publicUrl)
   const preRegistered = oauthClients(env.CLAXEDO_MCP_OAUTH_CLIENTS)
+  // The RFC 7591 registration body is this deployment's PUBLISHED client
+  // metadata document minus `client_id` (which RFC 7591 forbids a client from
+  // choosing). Reusing the same object is what keeps a dynamically registered
+  // client and a client-id-metadata-document client one identity rather than
+  // two drifting ones.
+  const { client_id: _published, ...registrationMetadata } = clientMetadata.document
   const oauth = {
     callbackUrl: clientMetadata.redirectUri,
     fetch: (url: string, init?: RequestInit) => fetch(url, init),
     ...(preRegistered ? { preRegistered } : {}),
     clientIdMetadataDocumentUrl: clientMetadata.clientId,
+    dynamicRegistration: {
+      clientMetadata: registrationMetadata,
+      ...createD1McpOAuthClientRegistry({
+        database: input.database,
+        // A dynamic client registration is DEPLOYMENT-wide (`mcp_oauth_clients`
+        // is keyed by issuer alone), while the encrypted credential store is
+        // partitioned per organization and needs a tenant id. There is no
+        // "deployment org" the composition can reach here — it is constructed
+        // once, before any request resolves an org — and filing the secret
+        // under whichever org happened to connect first would make it
+        // unreadable for every other org that shares the client. So the fixed
+        // partition id "deployment" names the deployment itself, matching the
+        // row's scope exactly. It is constructed lazily because
+        // `hostedOrgCredentials` fails closed when the hosted credential flag
+        // or KEK is absent, and both live targets
+        // (`token_endpoint_auth_method: "none"`) never issue a secret at all.
+        secrets: {
+          put: async (providerId, secret) => {
+            await hostedOrgCredentials(DEPLOYMENT_CREDENTIAL_PARTITION, input.env).putCredential({
+              provider_id: providerId,
+              kind: "oauth_token",
+              source: "managed",
+              label: "MCP OAuth client secret",
+              secret,
+            })
+          },
+          get: async (providerId) =>
+            (await hostedOrgCredentials(DEPLOYMENT_CREDENTIAL_PARTITION, input.env)
+              .resolveCredentialSecret?.(providerId)) ?? undefined,
+        },
+      }),
+    },
   }
 
   const connectionsInput = {

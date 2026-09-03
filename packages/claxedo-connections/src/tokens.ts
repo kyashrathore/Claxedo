@@ -131,8 +131,11 @@ export function createTokenService(deps: TokenDeps) {
       if (!envelope) throw new ConnectionTokenError(409, "connection_not_available", "error")
 
       const fresh = credential.expiresAt === undefined || credential.expiresAt - now() > REFRESH_BUFFER_MS
+      // Declared non-secret fields (e.g. the MCP resource an OAuth grant was
+      // bound to) travel with every token kind: the gateway matches on them.
+      const fields = Object.keys(row.fields).length ? { fields: row.fields } : {}
       if (fresh) {
-        return { token: envelope.access, tokenType: "bearer" }
+        return { token: envelope.access, tokenType: "bearer", ...fields }
       }
       if (!envelope.refresh) {
         await deps.credentials.setStatus(providerId, "error", "refresh_failed")
@@ -148,7 +151,7 @@ export function createTokenService(deps: TokenDeps) {
       const refreshed = await readSecret()
       const refreshedEnvelope = refreshed === null ? undefined : parseEnvelope(refreshed)
       if (!refreshedEnvelope) throw new ConnectionTokenError(409, "connection_not_available", "error")
-      return { token: refreshedEnvelope.access, tokenType: "bearer" }
+      return { token: refreshedEnvelope.access, tokenType: "bearer", ...fields }
     },
   }
 }

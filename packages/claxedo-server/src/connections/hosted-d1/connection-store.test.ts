@@ -9,7 +9,9 @@ import { createD1ConnectionStore, HostedConnectionExistsError, HostedConnectionP
 // 0002 owns `users` and `orgs`, which 0020's foreign keys reference; 0020 owns
 // the table under test. The real migration files run — a hand-written schema in
 // the test would prove the store works against a table that does not ship.
-const MIGRATIONS = ["0002_workspace_authority.sql", "0020_hosted_connections.sql"]
+// 0021 is inert here (it adds only `mcp_oauth_clients`, which this store never
+// reads) and runs so the applied order matches production.
+const MIGRATIONS = ["0002_workspace_authority.sql", "0020_hosted_connections.sql", "0021_mcp_oauth_clients.sql"]
 
 const active: Miniflare[] = []
 

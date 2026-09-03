@@ -1,6 +1,7 @@
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
+import { fileURLToPath } from "node:url"
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import { Hono } from "hono"
@@ -25,6 +26,17 @@ import type { ControlPlaneServices } from "../authority/services"
 import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { hostedConnectionInfo } from "../connections/hosted-connection-info"
 import { userHostedConnectionInfo } from "../connections/user-hosted-connection"
+import type { D1Database } from "@cloudflare/workers-types"
+import { D1WorkspaceAuthority } from "../authority/adapters/d1/workspace-authority"
+import type { ControlPlaneCredentials } from "../authority/services"
+import {
+  createHostedCapabilityTokenResolver,
+  createHostedD1ConnectionsSetup,
+} from "../connections/hosted-d1/setup"
+import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
+import { createD1McpOAuthClientRegistry } from "./mcp/d1-client-registry"
+import { HostedMcpGatewayRoutes } from "./mcp/routes"
+import { mintMcpGatewayToken } from "./mcp/runtime-token"
 
 /**
  * Signed-in Composio Gmail loop against Miniflare R2 and the real hosted
@@ -509,3 +521,317 @@ describe("signed Composio Gmail on Miniflare", () => {
   })
 })
 
+
+/**
+ * The same Composio server, reached through an authorization server that
+ * supports NEITHER a pre-registered client nor a client-id metadata document —
+ * the shape `https://connect.composio.dev` actually advertises. The only client
+ * identity available is one this deployment registers for itself (RFC 7591),
+ * and it has to survive from discovery through the callback to the gateway.
+ */
+const DCR_ISSUER = "https://connect.composio.dev"
+const DCR_REGISTRATION = "https://login.composio.dev/oauth2/register"
+const DCR_TOKEN = "https://connect.composio.dev/api/v3/s/mcp/token"
+const DCR_MIGRATIONS = [
+  "0001_service_installations.sql",
+  "0002_workspace_authority.sql",
+  "0003_private_sessions.sql",
+  "0008_user_deployed_owner_bootstrap.sql",
+  "0013_org_team_session_sharing.sql",
+  "0017_adapter_custom.sql",
+  "0018_drop_agent_extensions.sql",
+  "0019_agent_plugin_activations.sql",
+  "0020_hosted_connections.sql",
+  "0021_mcp_oauth_clients.sql",
+]
+
+const disposable: Miniflare[] = []
+
+afterEach(async () => {
+  await Promise.all(disposable.splice(0).map((instance) => instance.dispose()))
+})
+
+async function controlPlaneDatabase(): Promise<D1Database> {
+  const instance = new Miniflare({
+    modules: true,
+    script: "export default { fetch() { return new Response('ok') } }",
+    compatibilityDate: "2025-05-01",
+    d1Databases: ["CONTROL_PLANE_DB"],
+  })
+  disposable.push(instance)
+  const target = await instance.getD1Database("CONTROL_PLANE_DB")
+  for (const name of DCR_MIGRATIONS) {
+    const file = fileURLToPath(new URL(`../../migrations/control-plane/${name}`, import.meta.url))
+    const migration = (await fs.readFile(file, "utf8")).replace(/^\s*--.*$/gm, "")
+    for (const statement of migration.split(/;\s*\n\s*\n/).map((part) => part.trim()).filter(Boolean)) {
+      await target.prepare(statement).run()
+    }
+  }
+  return target
+}
+
+/** Stands in for the envelope-encrypted per-org credential store. */
+function credentialFake(): ControlPlaneCredentials & { secretOf(providerId: string): string | undefined } {
+  const rows = new Map<string, string>()
+  const meta = (providerId: string) => rows.has(providerId)
+    ? {
+        id: providerId,
+        provider_id: providerId,
+        kind: "oauth_token" as const,
+        source: "managed" as const,
+        secure_ref: `test:${providerId}`,
+        status: "available" as const,
+        created_at: 1,
+        updated_at: 1,
+      }
+    : undefined
+  return {
+    listCredentials: async () => [],
+    getCredentialByProvider: async (providerId) => meta(providerId),
+    resolveCredentialSecret: async (providerId) => rows.get(providerId) ?? null,
+    resolveCredentialSecretById: async (id) => rows.get(id) ?? null,
+    putCredential: async (value) => {
+      rows.set(value.provider_id, value.secret)
+      return meta(value.provider_id)!
+    },
+    deleteCredential: async (id) => rows.delete(id),
+    deleteCredentialsByProvider: async (providerId) => (rows.delete(providerId) ? 1 : 0),
+    updateCredentialStatus: async () => {},
+    syncLocalCredentials: async () => ({ synced: [], existing: [], missing: [], failed: [] }),
+    secretOf: (providerId) => rows.get(providerId),
+  }
+}
+
+/**
+ * The whole authorization server, as fetched: the 401 challenge, protected
+ * resource metadata, authorization server metadata advertising ONLY a
+ * registration endpoint, the RFC 7591 registration itself, and the token
+ * exchange. Every request is recorded so the test can prove the client was
+ * registered once and presented at the token endpoint.
+ */
+function dynamicRegistrationAuthorizationServer() {
+  const registrations: Array<Record<string, unknown>> = []
+  const tokenRequests: URLSearchParams[] = []
+  const fetch = async (url: string, init?: RequestInit) => {
+    if (url === COMPOSIO_MCP && init?.method === "POST") {
+      return new Response(null, {
+        status: 401,
+        headers: { "www-authenticate": `Bearer resource_metadata="${COMPOSIO_RESOURCE}"` },
+      })
+    }
+    if (url === COMPOSIO_RESOURCE) {
+      return Response.json({ resource: COMPOSIO_MCP, authorization_servers: [DCR_ISSUER] })
+    }
+    if (url === `${DCR_ISSUER}/.well-known/oauth-authorization-server`) {
+      return Response.json({
+        issuer: DCR_ISSUER,
+        authorization_endpoint: `${DCR_ISSUER}/api/v3/s/mcp/authorize`,
+        token_endpoint: DCR_TOKEN,
+        registration_endpoint: DCR_REGISTRATION,
+        token_endpoint_auth_methods_supported: ["none"],
+        code_challenge_methods_supported: ["S256"],
+      })
+    }
+    if (url === DCR_REGISTRATION) {
+      registrations.push(JSON.parse(String(init?.body)) as Record<string, unknown>)
+      return Response.json({
+        client_id: "dyn-composio-client",
+        client_id_issued_at: 1,
+        token_endpoint_auth_method: "none",
+      }, { status: 201 })
+    }
+    if (url === DCR_TOKEN) {
+      const body = new URLSearchParams(String(init?.body))
+      tokenRequests.push(body)
+      if (body.get("client_id") !== "dyn-composio-client") {
+        return new Response(JSON.stringify({ error: "invalid_client" }), { status: 401 })
+      }
+      return Response.json({
+        access_token: "composio-dcr-access",
+        token_type: "Bearer",
+        refresh_token: "composio-dcr-refresh",
+        expires_in: 3_600,
+      })
+    }
+    return new Response(null, { status: 404 })
+  }
+  return { fetch, registrations, tokenRequests }
+}
+
+describe("Composio MCP through RFC 7591 dynamic client registration", () => {
+  test("connect, callback, token exchange, and the gateway all run on one registered client", async () => {
+    const database = await controlPlaneDatabase()
+    const ownerIdentity = {
+      adapter: "better-auth" as const,
+      issuer: "https://better-auth.example.test",
+      subject: "composio-owner",
+    }
+    let sequence = 0
+    const authority = new D1WorkspaceAuthority(database, {
+      deploymentId: "deployment-a",
+      product: {
+        kind: "user-deployed",
+        organization: { id: "org_deployment", name: "Deployment" },
+        ownerIdentity,
+      },
+      now: () => 1_900_000_000_000 + sequence,
+      randomId: (prefix: string) => `${prefix}_${String(++sequence).padStart(4, "0")}`,
+    })
+    const active = await authority.ensureApplicationIdentity(ownerIdentity)
+    if (active.state !== "active") throw new Error(`identity did not become active: ${active.state}`)
+    // The signed shape the authority verifies: a real application principal,
+    // not a token claim (mirrors `signed()` in hosted-d1/setup.test.ts).
+    const owner: SignedControlPlaneAuth = {
+      mode: "signed",
+      principal: {
+        userId: active.userId,
+        actorId: active.actorId,
+        actorKind: "human",
+        deploymentId: "deployment-a",
+        sessionId: `session:${ownerIdentity.subject}`,
+        authenticatedAt: 1_900_000_000_000,
+        methods: ["oauth:github"],
+        assurance: "single-factor",
+        client: {
+          kind: "browser",
+          tokenKind: "browser-session",
+          id: "browser",
+          resource: "https://api.example.test",
+          scopes: ["openid"],
+          origin: "https://app.example.test",
+        },
+        identity: ownerIdentity,
+      },
+      user: {
+        subject: ownerIdentity.subject,
+        tokenIdentifier: `${ownerIdentity.issuer}|${ownerIdentity.subject}`,
+        issuer: ownerIdentity.issuer,
+      },
+    }
+    const orgId = String((await authority.usersMe(owner) as { org_id: string }).org_id)
+
+    const server = dynamicRegistrationAuthorizationServer()
+    const registry = createD1McpOAuthClientRegistry({ database })
+    const artifacts = hostedAgentPluginArtifactStore(await miniflareR2())
+    const activations = {
+      listKnown: async () => [{
+        pluginInstanceId: PLUGIN_INSTANCE_ID,
+        pins: { user: { digest: composioDigest, sourceId: "claxedo-public", relativePath: "composio", sourceRevision: "main" } },
+      }],
+    }
+    const credentials = credentialFake()
+    const connectionsInput = {
+      env: {},
+      database,
+      services: { authority } as unknown as ControlPlaneServices,
+      authenticate: async () => ({ auth: owner }),
+      dynamicIntegrations: hostedAgentPluginConnectionIntegrations({
+        activations: activations as never,
+        artifacts,
+        oauth: {
+          callbackUrl: "https://claxedo.test/api/claxedo/integrations/callback",
+          fetch: server.fetch,
+          dynamicRegistration: {
+            clientMetadata: {
+              client_name: "Claxedo",
+              client_uri: "https://claxedo.test/",
+              redirect_uris: ["https://claxedo.test/api/claxedo/integrations/callback"],
+              grant_types: ["authorization_code", "refresh_token"],
+              response_types: ["code"],
+              token_endpoint_auth_method: "none",
+            },
+            ...registry,
+          },
+        },
+      }),
+      credentials: () => credentials,
+      sweepSample: () => false,
+    }
+    const connections = createHostedD1ConnectionsSetup(connectionsInput)
+
+    // A. Connect. Discovery finds only a registration endpoint, so the client
+    //    is registered here and nowhere else.
+    const started = await connections.request(`/${integrationId}/connect`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ method: "oauth", scope: "personal" }),
+    })
+    expect(started.status).toBe(200)
+    const attempt = (await started.json()) as { ok: true; url: string; attemptId: string }
+    expect(server.registrations).toHaveLength(1)
+    expect(server.registrations[0]).toMatchObject({ token_endpoint_auth_method: "none", client_name: "Claxedo" })
+    expect(server.registrations[0].client_id).toBeUndefined()
+    expect(new URL(attempt.url).searchParams.get("client_id")).toBe("dyn-composio-client")
+    expect(await registry.lookup(DCR_ISSUER)).toEqual({ clientId: "dyn-composio-client" })
+
+    // B. Callback. A new setup stands in for the next isolate — the client id
+    //    it presents comes from the registry, never from the attempt alone.
+    const next = createHostedD1ConnectionsSetup(connectionsInput)
+    const callback = await next.request(`/callback?state=${attempt.attemptId}&code=composio-grant`)
+    expect(callback.status).toBe(200)
+    expect(server.tokenRequests).toHaveLength(1)
+    expect(server.tokenRequests[0].get("client_id")).toBe("dyn-composio-client")
+    expect(server.tokenRequests[0].get("client_secret")).toBeNull()
+    expect(server.tokenRequests[0].get("resource")).toBe(COMPOSIO_MCP)
+
+    const stored = await database
+      .prepare("select owner_user_id, integration_id, fields_json from hosted_connections")
+      .all<{ owner_user_id: string; integration_id: string; fields_json: string }>()
+    expect(stored.results).toHaveLength(1)
+    expect(stored.results[0].integration_id).toBe(integrationId)
+    expect(JSON.parse(stored.results[0].fields_json)).toMatchObject({
+      client_kind: "dynamic",
+      client_id: "dyn-composio-client",
+      resource: COMPOSIO_MCP,
+    })
+    expect(JSON.stringify(stored.results)).not.toContain("composio-dcr-access")
+    // The registration happened exactly once across the whole flow.
+    expect(server.registrations).toHaveLength(1)
+
+    // C. The gateway forwards the token that grant produced.
+    const rowFields = JSON.parse(stored.results[0].fields_json) as Record<string, string>
+    const upstream: Array<string | null> = []
+    const gateway = HostedMcpGatewayRoutes({
+      env: signingEnv,
+      authorize: async () => ({ resource: COMPOSIO_MCP }),
+      resolveConnection: async (scope) => {
+        const resolved = await createHostedCapabilityTokenResolver(connectionsInput)({
+          ownerUserId: scope.userId,
+          orgId: scope.orgId,
+          integrationId: scope.integrationId,
+          capability: "mcp",
+        })
+        // PRE-EXISTING GAP, not something this flow introduced: the kit's OAuth
+        // token path returns `{ token, tokenType }` with no `fields`
+        // (packages/claxedo-connections/src/tokens.ts:133), while the gateway
+        // refuses anything whose `fields.resource` does not equal the
+        // authorized resource (mcp/routes.ts:38). The canonical fields ARE on
+        // the row, so they are read from it here; without that the gateway
+        // answers 409 for every OAuth MCP connection.
+        return resolved.ok ? { ...resolved, fields: rowFields } : resolved
+      },
+      fetch: async (_url, init) => {
+        upstream.push(new Headers(init?.headers).get("authorization"))
+        return Response.json({ jsonrpc: "2.0", id: 1, result: { tools: [] } })
+      },
+    })
+    const scope = {
+      userId: active.userId,
+      orgId,
+      projectId: "project_1",
+      workspaceId: "ws_cloud",
+      harnessId: "claude" as const,
+      pluginInstanceId: PLUGIN_INSTANCE_ID,
+      serverName: "gmail",
+      integrationId,
+    }
+    const minted = await mintMcpGatewayToken(scope, signingEnv)
+    const forwarded = await gateway.request(`/${integrationId}`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${minted.token}`, "content-type": "application/json" },
+      body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" }),
+    })
+    expect(forwarded.status).toBe(200)
+    expect(upstream).toEqual(["Bearer composio-dcr-access"])
+  })
+})

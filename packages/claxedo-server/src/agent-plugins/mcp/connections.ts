@@ -3,6 +3,7 @@ import type { SignedAgentPluginActivationStore } from "@claxedo/server-core/agen
 import {
   discoverMcpOAuth,
   type McpOAuthDiscoveryResult,
+  type McpOAuthDynamicRegistrationPort,
 } from "@claxedo/server-core/agent-plugins/mcp/discovery"
 import {
   createMcpOAuthIntegration,
@@ -20,6 +21,13 @@ export type HostedMcpOAuthConfiguration = Readonly<{
   fetch: Fetch
   preRegistered?: Readonly<Record<string, { clientId: string; clientSecret?: string }>>
   clientIdMetadataDocumentUrl?: string
+  /**
+   * RFC 7591 client registration for authorization servers that support
+   * neither a pre-registered client nor a client-id metadata document
+   * (Composio and Context7 both). Deployment-wide: one client per issuer,
+   * shared by every org, so it is composed once and never per request.
+   */
+  dynamicRegistration?: McpOAuthDynamicRegistrationPort
 }>
 
 type RetainedServer = {
@@ -69,6 +77,7 @@ function discovery(input: HostedMcpOAuthConfiguration, server: RetainedServer, s
     ...(selectedIssuer ? { selectedIssuer } : {}),
     ...(input.preRegistered ? { preRegistered: input.preRegistered } : {}),
     ...(input.clientIdMetadataDocumentUrl ? { clientIdMetadataDocumentUrl: input.clientIdMetadataDocumentUrl } : {}),
+    ...(input.dynamicRegistration ? { dynamicRegistration: input.dynamicRegistration } : {}),
   })
 }
 
@@ -90,6 +99,7 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
         attemptContext: context.attemptContext,
         fetch: input.oauth.fetch,
         ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
+        ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
       })]
     }
     if (context.connectionFields && context.integrationId) {
@@ -99,6 +109,7 @@ export function hostedAgentPluginConnectionIntegrations(input: Readonly<{
         attemptContext: context.connectionFields,
         fetch: input.oauth.fetch,
         ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
+        ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
       })]
     }
     if (!context.auth) return []

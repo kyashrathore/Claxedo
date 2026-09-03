@@ -192,4 +192,60 @@ describe("MCP OAuth Connections integration", () => {
       fetch: vi.fn(),
     })).rejects.toThrow("pre-registration no longer matches")
   })
+
+  it("re-validates a dynamically registered client against the registry and presents its secret", async () => {
+    const calls: Array<[string, RequestInit | undefined]> = []
+    const fetch = async (url: string, init?: RequestInit) => {
+      calls.push([url, init])
+      return new Response(JSON.stringify({ access_token: "access", token_type: "Bearer" }), { status: 200 })
+    }
+    const original = await createMcpOAuthIntegration({
+      pluginInstanceId: "plugin@sha256:abc",
+      serverName: "docs",
+      // A dynamic attempt freezes only the client id; the secret is never in it.
+      discovery: discovery({ client: { kind: "dynamic", clientId: "dyn-1", clientSecret: "issued" } }),
+      callbackUrl: "https://claxedo.example/api/connections/callback",
+      fetch,
+    })
+    expect(original.impl.attemptContext.client_kind).toBe("dynamic")
+    expect(JSON.stringify(original.impl.attemptContext)).not.toContain("issued")
+
+    const reconstructed = await createMcpOAuthIntegrationFromAttempt({
+      integrationId: original.decl.id,
+      serverName: "docs",
+      attemptContext: original.impl.attemptContext,
+      dynamicRegistration: { lookup: async () => ({ clientId: "dyn-1", clientSecret: "issued" }) },
+      fetch,
+    })
+    await expect(reconstructed.impl.callback(
+      "code",
+      "verifier",
+      original.impl.attemptContext,
+      { issuer: "https://login.example" },
+    )).resolves.toMatchObject({ accessToken: "access" })
+    const body = new URLSearchParams(String(calls[0]?.[1]?.body))
+    expect(body.get("client_id")).toBe("dyn-1")
+    expect(body.get("client_secret")).toBe("issued")
+  })
+
+  it.each([
+    ["the registry holds a different client", async () => ({ clientId: "other" })],
+    ["the registry holds nothing", async () => undefined],
+    ["no registry is composed at all", undefined],
+  ])("fails callback reconstruction for a dynamic client when %s", async (_case, lookup) => {
+    const original = await createMcpOAuthIntegration({
+      pluginInstanceId: "plugin@sha256:abc",
+      serverName: "docs",
+      discovery: discovery({ client: { kind: "dynamic", clientId: "dyn-1" } }),
+      callbackUrl: "https://claxedo.example/api/connections/callback",
+      fetch: vi.fn(),
+    })
+    await expect(createMcpOAuthIntegrationFromAttempt({
+      integrationId: original.decl.id,
+      serverName: "docs",
+      attemptContext: original.impl.attemptContext,
+      ...(lookup ? { dynamicRegistration: { lookup } } : {}),
+      fetch: vi.fn(),
+    })).rejects.toThrow("dynamic registration no longer matches")
+  })
 })
