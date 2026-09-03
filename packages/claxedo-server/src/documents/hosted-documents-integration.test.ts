@@ -327,9 +327,10 @@ function portEntry(value: DocumentIndexEntry): DocumentEntry {
 
 function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAuth) {
   const provider = {
-    mintRuntimeAccessToken: async (input: { workspaceId: string; hostId: string; subject: string; orgId: string; role: "viewer" | "editor" | "owner" }) => ({
+    mintRuntimeAccessToken: async (input: { workspaceId: string; hostId: string; principalKind: "user" | "service"; actorId: string; actorKind: "human" | "agent"; orgId: string; role: "viewer" | "editor" | "owner" }) => ({
       token: await mintRuntimeAccessToken({
-        subject: input.subject, orgId: input.orgId, workspaceId: input.workspaceId, hostId: input.hostId, role: input.role,
+        principalKind: input.principalKind, actorId: input.actorId, actorKind: input.actorKind,
+        orgId: input.orgId, workspaceId: input.workspaceId, hostId: input.hostId, role: input.role,
       }, privateKey, "EdDSA"),
       expiresAt: Date.now() + 300_000,
     }),
@@ -338,7 +339,7 @@ function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAut
   return {
     auth: { config: { enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" }, verifier: async () => auth },
     authority: {
-      usersMe: async () => ({ id: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" }),
+      usersMe: async () => ({ id: "user_1", actor_id: "user_1", actor_kind: "human" as const }),
       resolveOrgId: async () => "org_1",
       authorizeProject: async () => ({ ok: true, role: "editor", orgId: "org_1" }),
       resolveSession: async (_auth: SignedControlPlaneAuth, input: { sessionId: string }) => ({ workspace_id: "cloud_ws", session_id: input.sessionId }),
@@ -346,7 +347,10 @@ function controlPlaneServices(privateKey: CryptoKey, auth: SignedControlPlaneAut
       openWorkspace: async (_auth: SignedControlPlaneAuth, input: { workspaceId: string }) => input.workspaceId === "local_ws"
         ? { allowed: true, role: "editor", workspace: { workspace_id: "local_ws", org_id: "org_1", project_id: "project_1", access: "user-hosted", backing: "local-worktree" } }
         : { allowed: true, role: "editor", workspace: { workspace_id: "cloud_ws", org_id: "org_1", project_id: "project_1", access: "cloud", backing: "cloud-vm" } },
-      activeLocalHostLink: async () => ({ active: true, host_id: "local_host", workspace_id: "local_ws", expires_at: Date.now() + 60_000, last_seen_at: Date.now() }),
+      // Renamed from `activeLocalHostLink` when host assignment went
+      // machine-wide (`feat(authority): machine-wide host assignments`);
+      // `local-relay.ts` reads the routable host through this name now.
+      activeWorkspaceHost: async () => ({ active: true, host_id: "local_host", workspace_id: "local_ws", expires_at: Date.now() + 60_000, last_seen_at: Date.now() }),
       listWorkspaces: async () => [{ workspace_id: "local_ws", project_id: "project_1", access: "user-hosted", backing: "local-worktree" }],
     },
     sandbox: { sandboxManager: { target: async () => ({ status: "ready", hostId: "cloud_host", homeRegion: "us-east" }) } },

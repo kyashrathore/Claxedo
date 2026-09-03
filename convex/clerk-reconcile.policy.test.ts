@@ -289,6 +289,10 @@ describe("the sweep corrects a seeded divergence within one cycle (W6.3 DoD)", (
         workspace_id: workspaceId,
         minted_for_user_id: userId,
         host_id: "host_1",
+        principal_kind: "user",
+        actor_id: userId,
+        actor_kind: "human",
+        role: "owner",
         expires_at: 9_999_999,
         created_at: 1,
       })

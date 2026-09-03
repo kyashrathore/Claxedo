@@ -1,3 +1,4 @@
+import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
 import type { Message } from "@opencode-ai/sdk/v2"
@@ -82,6 +83,8 @@ export type SessionPromptTurnInput = {
   }) => ActiveTurnScope | undefined
   publishUserMessage?: boolean
   streamErrorMessage?: (error: unknown) => string
+  /** Current durable lease generation, checked before every producer publish. */
+  turnAdmission?: { valid(): boolean; fencingToken(): number }
 }
 
 export type RuntimePromptTurnInput = {
@@ -95,6 +98,8 @@ export type RuntimePromptTurnInput = {
   createActiveTurnScope?: () => ActiveTurnScope | undefined
   streamErrorMessage?: (error: unknown) => string
   onAdmissionSettled?: (error?: unknown) => void
+  /** Current durable lease generation, checked before every producer publish. */
+  turnAdmission?: { valid(): boolean; fencingToken(): number }
   actor?: { actorId: string; actorKind: "human" | "agent" }
   author?: {
     id: string
@@ -105,7 +110,7 @@ export type RuntimePromptTurnInput = {
 }
 
 function mkAssistantId(userMessageId?: string) {
-  if (userMessageId) return userMessageId + "_r"
+  if (userMessageId) return assistantMessageIdForTurn(userMessageId)
   const ts = Date.now().toString(16)
   const rand = Math.random().toString(36).slice(2, 10)
   return `msg_${ts}${rand}`
@@ -292,6 +297,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       ...(input.body.permissionMode ? { permissionMode: input.body.permissionMode } : {}),
       ...(input.body.variant !== undefined ? { variant: input.body.variant } : {}),
       ...(input.author ? { author: input.author } : {}),
+      ...(input.turnAdmission ? { admission: input.turnAdmission } : {}),
     } satisfies Omit<AgentRuntimeTurnStartInput, "actorId" | "actorKind">
     turn = await (input.actor
       ? input.runtime.turns.start({
@@ -311,7 +317,9 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
       const result = await nextWithAbort(iterator, activeTurn?.signal)
       if (result.done) break
       const item = result.value
+      if (input.turnAdmission && !input.turnAdmission.valid()) break
       for (const event of projection.events(item.payload)) {
+        if (input.turnAdmission && !input.turnAdmission.valid()) break
         input.publishStatus({ type: "process.status", directory: scope, configId: input.sessionId, status: "streaming" })
         input.publishGlobal(withDir(scope, event))
         if (event.type === "message.updated" && event.properties.info.role === "assistant") {
@@ -366,7 +374,9 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
   let assistantMessagePublished = false
   try {
     for await (const item of sendMessageWithAbort(input.adapter, input.sessionId, promptInput, input.directory, activeTurn?.signal)) {
+      if (input.turnAdmission && !input.turnAdmission.valid()) break
       for (const event of events.events(item)) {
+        if (input.turnAdmission && !input.turnAdmission.valid()) break
         input.publishStatus({ type: "process.status", directory: scope, configId: input.sessionId, status: "streaming" })
         input.publishGlobal(withDir(scope, event))
         if (event.type === "message.updated" && event.properties.info.role === "assistant") {
@@ -378,8 +388,10 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
       assistantId = events.assistantId()
     }
   } catch (err) {
-    error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
-    input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
+    if (!input.turnAdmission || input.turnAdmission.valid()) {
+      error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
+      input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
+    }
   } finally {
     activeTurn?.dispose?.()
   }

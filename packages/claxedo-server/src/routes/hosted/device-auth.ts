@@ -18,8 +18,9 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
+  type AdapterNativeSessionAuthPort,
 } from "@claxedo/server-core/platform/auth/auth"
-import { isCliRefreshToken, mintCliSessionTokens, refreshCliSessionTokens } from "@claxedo/server-core/platform/auth/cli-session-token"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 
 export type HostedDeviceAuthProvider = {
@@ -34,10 +35,11 @@ export type HostedDeviceAuthProvider = {
 }
 
 export type HostedDeviceAuthOptions = {
+  authentication?: RequestAuthenticationAdapter
   provider?: HostedDeviceAuthProvider
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
-  env?: Record<string, string | undefined>
+  native?: AdapterNativeSessionAuthPort
   ensureCliUser?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   /** Per-client limiter for the unauthenticated device endpoints. */
   rateLimiter?: ConnectionRateLimiter
@@ -154,6 +156,9 @@ function rateLimited(c: Context, limiter: ConnectionRateLimiter, endpoint: strin
 }
 
 export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
+  if (options.authentication && options.native && options.authentication.descriptor.adapter !== options.native.adapter) {
+    throw new Error("Native session issuer must belong to the selected request authentication adapter")
+  }
   const app = new Hono()
   const provider = options.provider
   // Unauthenticated endpoints: keep a conservative per-client budget.
@@ -172,9 +177,9 @@ export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
     let auth: SignedControlPlaneAuth
     try {
       const context = await controlPlaneAuthContext(c.req.raw, {
+        authentication: options.authentication,
         ...(options.authConfig ? { config: options.authConfig } : {}),
         ...(options.verifier ? { verifier: options.verifier } : {}),
-        ...(options.env ? { cliTokenEnv: options.env } : {}),
       })
       if (context.mode !== "signed") {
         return c.json(
@@ -190,8 +195,16 @@ export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
       throw err
     }
     await options.ensureCliUser?.(auth)
+    if (!options.native) {
+      return c.json({
+        error: {
+          code: "cli_token_issuer_unavailable",
+          message: "The selected authentication adapter has no native session issuer",
+        },
+      }, 503)
+    }
     try {
-      return c.json(await mintCliSessionTokens(auth, options.env))
+      return c.json(await options.native.issue(auth))
     } catch (err) {
       return c.json(
         {
@@ -210,9 +223,9 @@ export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
     if (limited) return limited
     const body = object(await c.req.json().catch(() => ({})))
     const refreshToken = clean(body.refresh_token) ?? clean(body.refreshToken)
-    if (isCliRefreshToken(refreshToken)) {
+    if (refreshToken && options.native?.acceptsRefreshToken(refreshToken)) {
       try {
-        return c.json(await refreshCliSessionTokens(refreshToken, options.env))
+        return c.json(await options.native.refresh(refreshToken))
       } catch {
         return c.json(
           {
@@ -243,6 +256,27 @@ export function HostedDeviceAuthRoutes(options: HostedDeviceAuthOptions = {}) {
       )
     }
     return broker(provider, provider.tokenUrl, tokenPayload(provider, body))
+  })
+
+  app.post("/api/auth/cli/revoke", async (c) => {
+    const limited = rateLimited(c, rateLimiter, "cli-revoke")
+    if (limited) return limited
+    if (!options.native) {
+      return c.json({
+        error: { code: "cli_token_issuer_unavailable", message: "The selected authentication adapter has no native session issuer" },
+      }, 503)
+    }
+    const body = object(await c.req.json().catch(() => ({})))
+    const token = clean(body.token)
+    if (!token) {
+      return c.json({ error: { code: "cli_token_required", message: "token is required" } }, 400)
+    }
+    try {
+      const result = await options.native.revoke(token)
+      return c.json({ revoked_at: result.revokedAt })
+    } catch {
+      return c.json({ error: { code: "cli_token_invalid", message: "CLI token is invalid, expired, or revoked" } }, 401)
+    }
   })
 
   return app

@@ -8,7 +8,7 @@ import { PtyRoutes } from "./pty"
 import { Pty } from "../pty/index"
 import { errorBody, JSON_BODY_LIMIT_BYTES } from "./http"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
-import type { SessionAccessPolicy } from "../session-access-policy"
+import { managedWorkspaceSessionAccessPolicy, type SessionAccessPolicy } from "../session-access-policy"
 import { createDiskHistory } from "../pty/history-disk"
 
 const upgradeWebSocket = (() => () => new Response(null, { status: 501 })) as unknown as UpgradeWebSocket
@@ -23,25 +23,26 @@ function relayAuth(
   return {
     iss: "workspace-relay",
     aud: "workspace-host-service",
-    sub: "user_1",
+    principal_kind: "user",
+    actor_id: actorId,
+    actor_kind: "human",
     org_id: "org_1",
     workspace_id: "ws_1",
     host_id: "host_1",
     role,
-    actor_id: actorId,
-    actor_kind: "human",
     access: "cloud",
     backing: "cloud-vm",
     exp: now + 60,
     iat: now,
     jti: "jti_1",
+    parent_jti: "rat_jti_1",
   }
 }
 
 function privateSessionPolicy(owners: Record<string, string>): SessionAccessPolicy {
   const allowed = (actorId: string | undefined, sessionId: string | undefined) =>
     !!sessionId && owners[sessionId] === actorId
-  return {
+  const policy: SessionAccessPolicy = {
     sessionAuthority: "managed-private",
     authorize: async (input) => allowed(input.actor?.actorId, input.sessionId)
       ? { allowed: true }
@@ -49,6 +50,10 @@ function privateSessionPolicy(owners: Record<string, string>): SessionAccessPoli
     filterSessions: async (input) => input.sessionIds.filter((sessionId) => allowed(input.actor?.actorId, sessionId)),
     authorizePrefix: async () => ({ allowed: true }),
   }
+  policy.authorizeStream = async (input, lease) => allowed(input.actor?.actorId, input.sessionId)
+    ? { allowed: true, lease: lease ?? "terminal-capability", expiresAt: Date.now() + 15_000 }
+    : { allowed: false, status: 403, code: "private_session", message: "Session is private" }
+  return policy
 }
 
 function appForRole(role: NonNullable<RelayHostAuthContext["relayHostAuth"]>["role"]) {
@@ -351,6 +356,8 @@ describe("PtyRoutes", () => {
       status: "running" as const,
       pid: 1,
     }))
+    const bind = spyOn(Pty, "bindAccessOwner").mockReturnValue(true)
+    const commit = spyOn(Pty, "commit").mockReturnValue(undefined)
     const app = appForActor("editor_a", privateSessionPolicy({ session_a: "editor_a" }))
 
     try {
@@ -378,8 +385,89 @@ describe("PtyRoutes", () => {
       expect(allowed.status).toBe(200)
       await expect(allowed.json()).resolves.toMatchObject({ sessionId: "session_a" })
       expect(create).toHaveBeenCalledTimes(1)
+      expect(create.mock.calls[0]?.[2]).toMatchObject({
+        sessionId: "session_a",
+        authorityLease: "terminal-capability",
+      })
     } finally {
       create.mockRestore()
+      bind.mockRestore()
+      commit.mockRestore()
+    }
+  })
+
+  test("mints the terminal agent-hook capability from a canonical managed-private composition", async () => {
+    // The composition under test is the one every managed host builds, not a
+    // hand-written policy object: a managed runtime whose authority bundle
+    // comes from `managedWorkspaceSessionAccessPolicy` must be able to
+    // authorize the agent-hook stream, or every managed terminal answers 503
+    // `terminal_capability_authority_unavailable`.
+    const streamed: Array<{ sessionId: string; operation: string; lease?: string }> = []
+    const policy = managedWorkspaceSessionAccessPolicy({
+      requireActor: true,
+      authority: {
+        authorizeSessionRead: () => true,
+        authorizeSessionWrite: () => true,
+        authorizeSessionStream: (input, lease) => {
+          streamed.push({
+            sessionId: input.sessionId,
+            operation: input.operation,
+            ...(lease ? { lease } : {}),
+          })
+          return { allowed: true, lease: "authority-lease", expiresAt: 1_700_000_000_000 }
+        },
+        registerSession: () => true,
+        acquireTurn: (input) => ({
+          allowed: true,
+          turnId: input.turnId,
+          leaseId: "turn_lease_1",
+          fencingToken: 1,
+          acquiredAt: Date.now(),
+          expiresAt: Date.now() + 15_000,
+        }),
+        renewTurn: (input) => ({
+          allowed: true,
+          turnId: input.turnId,
+          leaseId: input.leaseId,
+          fencingToken: input.fencingToken + 1,
+          acquiredAt: Date.now(),
+          expiresAt: Date.now() + 15_000,
+        }),
+        releaseTurn: () => ({ released: true }),
+      },
+    })
+    expect(policy.sessionAuthority).toBe("managed-private")
+    const create = spyOn(Pty, "create").mockImplementation(async (input) => ({
+      id: "pty_managed",
+      sessionId: input.sessionId,
+      title: "Terminal",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/workspace",
+      status: "running" as const,
+      pid: 1,
+    }))
+    const bind = spyOn(Pty, "bindAccessOwner").mockReturnValue(true)
+    const commit = spyOn(Pty, "commit").mockReturnValue(undefined)
+
+    try {
+      const created = await appForActor("editor_a", policy).request("http://localhost/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: "Terminal", sessionId: "session_a" }),
+      })
+      expect(created.status).toBe(200)
+      expect(streamed).toEqual([{ sessionId: "session_a", operation: "agent_lifecycle_write" }])
+      expect(create.mock.calls[0]?.[2]).toMatchObject({
+        sessionId: "session_a",
+        authorityLease: "authority-lease",
+        authorityExpiresAt: 1_700_000_000_000,
+      })
+      expect(create.mock.calls[0]?.[0]?.env?.CLAXEDO_AGENT_HOOK_TOKEN).toBeTypeOf("string")
+    } finally {
+      create.mockRestore()
+      bind.mockRestore()
+      commit.mockRestore()
     }
   })
 

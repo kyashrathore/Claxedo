@@ -97,5 +97,7 @@ materializer helpers live only in `@claxedo/agent-extensions`;
   and how to get enforcement.
 - [Self-Host on Fly.io](./self-host-fly.md): the `claxedo deploy` wizard —
   a zero-Convex/Clerk unsigned single-user control plane on your own Fly account.
+- [User-deployed Cloudflare](./user-deployed-cloudflare.md): generated Better Auth + D1 greenfield workflow;
+  currently certifies the fail-closed `locked` release and names the gates still blocking an open deployment.
 - [MCP](./mcp.md): current MCP server tools and environment variables.
 - [Supported Surfaces](./supported-surfaces.md): source-grounded status table.

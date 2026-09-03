@@ -299,7 +299,7 @@ export function createIdentityAwareEventSource<T>(input: {
     replayDecision?: EventDeliveryDecision,
   ) => {
     const sessionId = input.sessionId(event)
-    let delivered = false
+    const deliveries: Connection<T>[] = []
     for (const result of decisions) {
       if (!scope.connections.has(result.connection)) continue
       if (result.next === "terminate") {
@@ -310,14 +310,14 @@ export function createIdentityAwareEventSource<T>(input: {
         if (sessionId && result.connection.authorizedSessions.has(sessionId)) disconnect(scope, result.connection)
         continue
       }
-      delivered = true
+      deliveries.push(result.connection)
       if (sessionId) result.connection.authorizedSessions.add(sessionId)
-      void Promise.resolve(result.connection.push(event)).catch(() => undefined)
     }
-    if (!delivered && replayDecision === "deliver") delivered = true
+    const delivered = deliveries.length > 0 || replayDecision === "deliver"
     if (delivered) {
       scope.replay.push(event)
       scope.retainedCursor = retained.idFor(event) ?? scope.retainedCursor
+      for (const connection of deliveries) void Promise.resolve(connection.push(event)).catch(() => undefined)
     }
     evict(scope)
   }

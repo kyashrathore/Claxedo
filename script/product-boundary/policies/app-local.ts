@@ -120,15 +120,72 @@ export const appLocal: Policy = {
   // AccountPort SSE stream adapter (`account-stream-fetch`): 921 + 1 = 922.
   // Agent-config extensions AccountPort adapter (marketplace): 922 + 1 = 923
   // modules. Provider-settings translations are split into one lazy feature
-  // dictionary per non-English locale: 923 + 16 = 939. Removing the retired
-  // local UI extension view, registry, and loader subtracts three modules:
-  // 939 - 3 = 936, still no package edge.
+  // dictionary per non-English locale: 923 + 16 = 939. The reviewed auth and
+  // Cloudflare-deployable flow adds the service-contribution catalog,
+  // bootstrap-owner route, and canonical private-session reservation client.
+  // `@claxedo/service-contract` is their dependency-neutral vocabulary owner.
+  // 2026-09-01: +2 `workspace/user-hosted-serving.ts` + its loopback control
+  // routes — the machine's ONE relay serving connection under machine-wide
+  // enrollment (reviewed owner: local-server workspace domain).
+  // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`.
+  // Remote access is machine level, so the published set is reconciled against
+  // this machine's local workspace inventory instead of a per-workspace tick
+  // list; reviewed owner is the workspaces data domain, which already owns both
+  // halves (`share-workspace` decides what is local, `shared-workspaces` reads
+  // what is published) and is the only layer allowed to import them —
+  // `features/onboarding` may not.
+  // Session open/switch instrumentation (`platform/performance/session-perf.ts`
+  // and its screen-side owner `features/session/ui/session-open-perf.ts`)
+  // adds two modules and no package edge.
+  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the
+  // signed inventory from the shared Query cache: one module, no package edge.
+  // Removing the retired local UI extension view, registry, and loader
+  // subtracts three modules.
   // The Goal-mode merge re-lands the universal-Goal session owners on top of
   // the local/cloud split: composer Goal intent/submission/draft lifecycle,
   // Goal authority cache/query/controller, runtime Goal client/event ingress,
   // the active-Goal dock, and the review-pass Stop fallback + shared JSON
-  // reader: 936 + 13 = 949 modules, no new package edge.
-  ceilings: { modules: 949, packages: 41 },
+  // reader: thirteen modules.
+  // Plan 150 section E: `features/extensions/marketplace/transport.ts` — the
+  // one module that decides WHICH MACHINE answers an extensions request, so the
+  // marketplace stops asking `getClaxedoServerUrl()` for a workspace served
+  // elsewhere. Owned by the extensions feature, reachable only through the
+  // already-lazy marketplace panel: one module, no package edge.
+  // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
+  // catalog owner) in the same slice: one more module, no package edge.
+  // Plan 150 section C makes Settings a (workspace, harness) surface: the
+  // Settings feature gains its scope owner (`features/settings/scope/
+  // settings-scope.tsx` and its pure `settings-scope-options.ts`) and the
+  // picker that drives it (`features/settings/ui/scope-selector.tsx`). All
+  // three are owned by the settings feature and reachable only through the
+  // already-lazy Settings dialog; they read the catalog and the harness
+  // inventory through existing owners, so this is three modules and no package
+  // edge. The retired machine-scan module `features/settings/provider-detect.ts`
+  // is deleted in the same slice, and the measured closure is 962.
+  // The session event streams gain their single owner: `platform/runtime/
+  // session-event-scope.ts` (which session's scoped streams must be open, and
+  // whether each lane has one) plus `app/integrations/claxedo-event-targets.ts`
+  // (the pure target list the events provider was already computing inline).
+  // Reviewed owners: the platform runtime layer, which both the events provider
+  // and the global-sdk provider already depend on, and the events integration
+  // itself. Two modules, no package edge, and the measured closure is 964.
+  // `app/providers/global-sdk/route-event-scope.ts` is the runtime-events
+  // lane's route-derived scope input, split out of the global-sdk provider;
+  // one module, no package edge; the measured closure is 965.
+  // `app/providers/global-sdk/runtime-event-projection.ts` is what a frame off
+  // the runtime-events stream MEANS — the compat envelope, the OpenCode-shaped
+  // events it projects into, which lane may project them, and what a replay gap
+  // invalidates — split out of the global-sdk provider, which keeps the
+  // connections. Reviewed owner: the global-sdk provider itself, whose module
+  // this already was; one module, no package edge; the measured closure is 966.
+  // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` is the one
+  // owner of the runtime's turn message-id convention — the app reads a reply's
+  // parent from it in `features/session/data/session-types` and
+  // `features/session/conversation/opencode-conversation`, and the compat
+  // projection the app already depends on mints and resolves ids through it.
+  // Reviewed owner: the agent event contracts package, which this closure
+  // already carries; one module, no package edge; the measured closure is 967.
+  ceilings: { modules: 967, packages: 38 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

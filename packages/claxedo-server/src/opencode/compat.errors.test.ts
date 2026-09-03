@@ -55,7 +55,7 @@ describe("opencode compat error model", () => {
   })
 
   test("returns structured provider/auth validation errors", async () => {
-    const oauth = await app.request("/provider/anthropic/oauth/start?runner=claude-acp", { method: "POST" })
+    const oauth = await app.request("/provider/anthropic/oauth/start?harness=claude", { method: "POST" })
     expect(oauth.status).toBe(404)
     expect(await oauth.json()).toEqual({
       error: {
@@ -123,8 +123,8 @@ describe("opencode compat error model", () => {
       }),
     )
 
-    const empty = await emptyEnv.request("/provider?runner=claude-acp")
-    const configured = await configuredEnv.request("/provider?runner=claude-acp")
+    const empty = await emptyEnv.request("/provider?harness=claude")
+    const configured = await configuredEnv.request("/provider?harness=claude")
     const health = await configuredEnv.request("/global/health")
 
     expect(empty.status).toBe(200)
@@ -134,10 +134,10 @@ describe("opencode compat error model", () => {
     const emptyBody = await empty.json()
     const configuredBody = await configured.json()
 
-    expect(emptyBody.connected).not.toContain("claude-acp")
-    expect(emptyBody.all.find((item: { id: string }) => item.id === "claude-acp")?.source).toBe("config")
-    expect(configuredBody.connected).toContain("claude-acp")
-    expect(configuredBody.all.find((item: { id: string }) => item.id === "claude-acp")?.source).toBe("env")
+    expect(emptyBody.connected).not.toContain("claude-sdk")
+    expect(emptyBody.all.find((item: { id: string }) => item.id === "claude-sdk")?.source).toBe("config")
+    expect(configuredBody.connected).toContain("claude-sdk")
+    expect(configuredBody.all.find((item: { id: string }) => item.id === "claude-sdk")?.source).toBe("env")
   })
 
   test("serves the Pi catalog under a harness-qualified provider route", async () => {

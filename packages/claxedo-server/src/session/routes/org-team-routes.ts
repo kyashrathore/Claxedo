@@ -1,4 +1,4 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -8,15 +8,76 @@ import {
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { apiError, signedOrError } from "../../workspace/route-support"
 
 type Options = {
+  authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   cliTokenEnv?: Record<string, string | undefined>
 }
 
 const bodyLimitBytes = 16 * 1024
+
+type OrgTeamError = {
+  status: 400 | 403 | 404 | 409
+  code: string
+  message: string
+}
+
+function hasErrorCode(error: unknown, code: string) {
+  const value = error && typeof error === "object" && "code" in error
+    ? (error as { code?: unknown }).code
+    : undefined
+  const message = error instanceof Error ? error.message : String(error)
+  return value === code || message === code || message.includes(code)
+}
+
+function orgTeamAuthorityError(error: unknown): OrgTeamError | undefined {
+  if (hasErrorCode(error, "organization_policy_denied")) {
+    return { status: 403, code: "organization_policy_denied", message: "Organization creation is disabled for this deployment" }
+  }
+  if (hasErrorCode(error, "org_admin_required")) {
+    return { status: 403, code: "org_admin_required", message: "Organization administrator authority is required" }
+  }
+  if (hasErrorCode(error, "team_member_org_membership_required")) {
+    return { status: 403, code: "team_member_org_membership_required", message: "The team member must belong to the team organization" }
+  }
+  if (hasErrorCode(error, "org_membership_required")) {
+    return { status: 403, code: "org_membership_required", message: "Organization membership is required" }
+  }
+  if (hasErrorCode(error, "team_not_allowed_on_personal_org")) {
+    return { status: 400, code: "team_not_allowed_on_personal_org", message: "Personal organizations cannot contain teams" }
+  }
+  if (hasErrorCode(error, "team_member_target_required")) {
+    return { status: 400, code: "team_member_target_required", message: "Exactly one team member target is required" }
+  }
+  if (hasErrorCode(error, "organization_not_found") || String(error).includes("Organization not found")) {
+    return { status: 404, code: "organization_not_found", message: "Organization not found" }
+  }
+  if (hasErrorCode(error, "team_not_found") || String(error).includes("Team not found")) {
+    return { status: 404, code: "team_not_found", message: "Team not found" }
+  }
+  if (hasErrorCode(error, "team_member_not_found")) {
+    return { status: 404, code: "team_member_not_found", message: "Team member not found" }
+  }
+  if (hasErrorCode(error, "project_not_found") || String(error).includes("Project not found")) {
+    return { status: 404, code: "project_not_found", message: "Project not found" }
+  }
+  if (hasErrorCode(error, "resource_conflict")) {
+    return { status: 409, code: "resource_conflict", message: "Organization or team authority changed concurrently" }
+  }
+  return undefined
+}
+
+/** Canonical HTTP envelope for organization/team authority failures across adapters. */
+export function orgTeamErrorResponse(c: Context, error: unknown): Response {
+  if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+  const mapped = orgTeamAuthorityError(error)
+  if (mapped) return c.json({ error: apiError(mapped.code, mapped.message) }, mapped.status)
+  throw error
+}
 
 export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Options = {}) {
   const limited = bodyLimit({
@@ -48,8 +109,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         const auth = await signed(c.req.raw)
         return c.json(await requireAuthority(services).listOrgs(auth))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .post("/orgs", limited, async (c) => {
@@ -61,8 +121,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         if (!body.name?.trim()) return c.json({ error: apiError("org_name_required", "name is required") }, 400)
         return c.json(await create(auth, { name: body.name.trim() }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .get("/orgs/:orgId/teams", async (c) => {
@@ -72,8 +131,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         if (!list) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
         return c.json(await list(auth, { orgId: c.req.param("orgId") }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .post("/orgs/:orgId/teams", limited, async (c) => {
@@ -85,8 +143,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         if (!body.name?.trim()) return c.json({ error: apiError("team_name_required", "name is required") }, 400)
         return c.json(await create(auth, { orgId: c.req.param("orgId"), name: body.name.trim() }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .post("/orgs/:orgId/ensure-default-team", limited, async (c) => {
@@ -96,8 +153,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         if (!ensure) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
         return c.json(await ensure(auth, { orgId: c.req.param("orgId") }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .get("/teams/:teamId/members", async (c) => {
@@ -107,8 +163,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         if (!list) return c.json({ error: apiError("not_implemented", "Teams unavailable") }, 501)
         return c.json(await list(auth, { teamId: c.req.param("teamId") }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .post("/teams/:teamId/members", limited, async (c) => {
@@ -125,8 +180,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
           ...(body.role === "member" || body.role === "admin" || body.role === "owner" ? { role: body.role } : {}),
         }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .delete("/teams/:teamId/members", limited, async (c) => {
@@ -142,8 +196,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
           ...(typeof body.userPublicId === "string" ? { userPublicId: body.userPublicId } : {}),
         }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .post("/teams/:teamId/projects", limited, async (c) => {
@@ -161,8 +214,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
           role: body.role,
         }))
       } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        return orgTeamErrorResponse(c, err)
       }
     })
     .delete("/teams/:teamId/projects", limited, async (c) => {

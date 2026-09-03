@@ -13,6 +13,7 @@ import {
   type TunnelWsFrame,
 } from "@claxedo/workspace-relay-protocol"
 import {
+  RELAY_ALLOWED_REQUEST_HEADERS,
   authorizeWorkspaceRelayRequest,
   createWorkspaceRelay,
   createWorkspaceRelayTrace,
@@ -26,6 +27,7 @@ import {
 import { WorkspaceRelayAuthError, verifyHostTunnelToken, type RuntimeAccessTokenClaims } from "./auth"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken } from "./http"
+import { isUserHostedTarget } from "./user-hosted-forwarding"
 
 /**
  * Bun expresses HTTP idle timeout in seconds. Runtime SSE heartbeats arrive
@@ -109,6 +111,15 @@ type PendingTunnelHttpResponse = {
   // whenever pendingChunks fully drains.
   slowConsumerTimeout?: ReturnType<typeof setTimeout>
   responseStarted: boolean
+  /**
+   * The relay's own CORS headers for this request, applied to whatever the
+   * tunnelled host answers with. The browser talks to the RELAY, so the
+   * relay's allowlist is the one that decides what it may read — the host
+   * behind the tunnel runs its own, unrelated policy, and passing its headers
+   * through made a relay's configured app origin readable only when the host
+   * happened to allow it too.
+   */
+  corsHeaders: (upstream: Headers) => Headers
 }
 
 export type WorkspaceRelayHostTunnelOptions = {
@@ -363,8 +374,14 @@ function jsonError(code: string, message: string, status: number) {
   })
 }
 
-function corsJsonError(request: Request, code: string, message: string, status: number) {
-  const headers = relayCorsHeaders(request)
+function corsJsonError(
+  request: Request,
+  originAllowed: RelayOriginMatcher,
+  code: string,
+  message: string,
+  status: number,
+) {
+  const headers = relayCorsHeaders(request, originAllowed)
   headers.set("content-type", "application/json")
   return new Response(JSON.stringify({ error: { code, message } }), { status, headers })
 }
@@ -466,18 +483,30 @@ function isEventStream(input: TunnelHeaderMap) {
   )
 }
 
+/**
+ * The browser-origin allowlist this relay instance enforces.
+ *
+ * `createWorkspaceRelayBun` compiles ONE matcher from the deployment's
+ * `allowedOrigins` (falling back to the product default list) and hands it to
+ * every path that answers a browser: the WebSocket admission check, the
+ * workspace fast path's preflight, and every CORS header it stamps. It is a
+ * required parameter rather than a defaulted one so a new call site cannot
+ * silently answer from the built-in list while the deployment configured its
+ * own — which is exactly how a self-hosted relay's own app origin passed the
+ * upgrade check and still failed every fast-path preflight.
+ */
+type RelayOriginMatcher = (origin: string) => boolean
+
 // Same default policy the HTTP path and the Cloudflare adapter apply
-// (./cors-origins). The Bun adapter compiles an options-specific matcher for
-// WebSocket admission while these module-level helpers retain the product
-// default for call sites without an options bag.
+// (./cors-origins), used when a deployment configures no `allowedOrigins`.
 const defaultRelayOriginMatcher = createOriginMatcher(DEFAULT_RELAY_APP_ORIGINS)
 
-function allowedCorsOrigin(origin: string | null, matcher = defaultRelayOriginMatcher) {
+function allowedCorsOrigin(origin: string | null, matcher: RelayOriginMatcher) {
   if (!origin) return
   if (matcher(origin)) return origin
 }
 
-function requireAllowedOrigin(request: Request, matcher = defaultRelayOriginMatcher) {
+function requireAllowedOrigin(request: Request, matcher: RelayOriginMatcher) {
   const origin = request.headers.get("origin")
   if (allowedCorsOrigin(origin, matcher)) return null
   return jsonError(
@@ -487,7 +516,7 @@ function requireAllowedOrigin(request: Request, matcher = defaultRelayOriginMatc
   )
 }
 
-function relayCorsHeaders(request: Request, input = new Headers()) {
+function relayCorsHeaders(request: Request, originAllowed: RelayOriginMatcher, input = new Headers()) {
   const result = new Headers(input)
   result.delete("access-control-allow-origin")
   result.delete("access-control-allow-credentials")
@@ -495,10 +524,10 @@ function relayCorsHeaders(request: Request, input = new Headers()) {
   result.delete("access-control-allow-methods")
   result.delete("access-control-expose-headers")
   result.delete("access-control-max-age")
-  const origin = allowedCorsOrigin(request.headers.get("origin"))
+  const origin = allowedCorsOrigin(request.headers.get("origin"), originAllowed)
   if (origin) {
     result.set("access-control-allow-origin", origin)
-    result.set("access-control-allow-headers", "Accept, Authorization, Content-Type, Last-Event-ID, X-Fetch-Bypass-Throttle, X-Daytona-Skip-Preview-Warning, X-Workspace-Id, X-OpenCode-Directory, X-Claxedo-Runner, X-Claxedo-Model, X-Claxedo-Draft-Id, X-Claxedo-Binary")
+    result.set("access-control-allow-headers", RELAY_ALLOWED_REQUEST_HEADERS)
     result.set("access-control-allow-methods", "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS")
   }
   return result
@@ -609,6 +638,7 @@ function cleanupHostTunnelSocket(input: {
   hostTunnelStateDebounce: Map<string, HostTunnelStateEntry>
   options: WorkspaceRelayOptions
   bunOptions: WorkspaceRelayBunOptions
+  originAllowed: RelayOriginMatcher
   request?: Request
   disconnectDirectory: boolean
   closeChannels: boolean
@@ -621,7 +651,7 @@ function cleanupHostTunnelSocket(input: {
     failPendingHttpResponse({
       entry: pending,
       response: input.request
-        ? corsJsonError(input.request, "user_hosted_app_offline", "User-hosted workspace is offline", 503)
+        ? corsJsonError(input.request, input.originAllowed, "user_hosted_app_offline", "User-hosted workspace is offline", 503)
         : jsonError("user_hosted_app_offline", "User-hosted workspace is offline", 503),
       error: new Error("User-hosted tunnel disconnected"),
     })
@@ -816,6 +846,7 @@ export const __slowConsumerInternalsForTest = {
 async function tunnelHttpRequest(input: {
   ws: Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
   request: Request
+  originAllowed: RelayOriginMatcher
   workspaceId: string
   path: string
   relayHostToken: string
@@ -892,7 +923,7 @@ async function tunnelHttpRequest(input: {
       const error = new Error("User-hosted tunnel response timed out")
       failPendingHttpResponse({
         entry,
-        response: corsJsonError(input.request, "user_hosted_tunnel_timeout", "User-hosted tunnel response timed out", 504),
+        response: corsJsonError(input.request, input.originAllowed, "user_hosted_tunnel_timeout", "User-hosted tunnel response timed out", 504),
         error,
       })
     }, input.responseTimeoutMs)
@@ -905,11 +936,12 @@ async function tunnelHttpRequest(input: {
       pendingChunks: [],
       bytesQueued: 0,
       responseStarted: false,
+      corsHeaders: (upstream) => relayCorsHeaders(input.request, input.originAllowed, upstream),
     })
   })
   const body = input.request.method === "GET" || input.request.method === "HEAD"
     ? undefined
-    : await readBoundedBody(input.request, input.requestBodyMaxBytes)
+    : await readBoundedBody(input.request, input.originAllowed, input.requestBodyMaxBytes)
   if (body && "response" in body) {
     const entry = input.ws.data.pending.get(requestId)
     if (entry) clearPendingTimers(entry)
@@ -937,7 +969,11 @@ async function tunnelHttpRequest(input: {
   return await pending
 }
 
-async function readBoundedBody(request: Request, maxBytes: number): Promise<{ bodyBase64: string } | { response: Response } | undefined> {
+async function readBoundedBody(
+  request: Request,
+  originAllowed: RelayOriginMatcher,
+  maxBytes: number,
+): Promise<{ bodyBase64: string } | { response: Response } | undefined> {
   if (!request.body) return undefined
   const reader = request.body.getReader()
   const chunks: Uint8Array[] = []
@@ -953,7 +989,7 @@ async function readBoundedBody(request: Request, maxBytes: number): Promise<{ bo
         // ignore cancel failures
       }
       return {
-        response: corsJsonError(request, "request_body_too_large", "Tunnel request body exceeds the relay limit", 413),
+        response: corsJsonError(request, originAllowed, "request_body_too_large", "Tunnel request body exceeds the relay limit", 413),
       }
     }
     chunks.push(next.value)
@@ -968,6 +1004,7 @@ async function readBoundedBody(request: Request, maxBytes: number): Promise<{ bo
 
 async function directHttpRequest(input: {
   request: Request
+  originAllowed: RelayOriginMatcher
   targetUrl: string
   relayHostToken: string
   workspaceId: string
@@ -999,7 +1036,7 @@ async function directHttpRequest(input: {
     const release = limiter ? await span("direct-http-queue", () => limiter.acquire()) : undefined
     try {
       const upstream = await span("upstream-fetch", async () => await fetch(input.targetUrl, init))
-      const headers = relayCorsHeaders(input.request, upstream.headers)
+      const headers = relayCorsHeaders(input.request, input.originAllowed, upstream.headers)
       const contentType = upstream.headers.get("content-type") ?? ""
       const streamResponse =
         contentType.includes("text/event-stream") ||
@@ -1024,6 +1061,7 @@ async function directHttpRequest(input: {
     const aborted = err instanceof Error && err.name === "AbortError"
     return corsJsonError(
       input.request,
+      input.originAllowed,
       aborted ? "upstream_timeout" : "upstream_unavailable",
       aborted ? "Workspace upstream timed out" : "Workspace upstream is unavailable",
       aborted ? 504 : 503,
@@ -1244,7 +1282,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         )
       }
       if (draining && workspaceId) {
-        const headers = relayCorsHeaders(request)
+        const headers = relayCorsHeaders(request, relayOriginMatcher)
         const body = JSON.stringify({
           error: {
             code: "relay_draining",
@@ -1296,7 +1334,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       if (request.method === "OPTIONS") {
         return new Response(null, {
           status: 204,
-          headers: relayCorsHeaders(request),
+          headers: relayCorsHeaders(request, relayOriginMatcher),
         })
       }
       if (!websocketRequest(request)) {
@@ -1304,12 +1342,13 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
         const response = await trace.span("relay-total", async () => {
           const relay = await authorizeWorkspaceRelayRequest(options, request, workspaceId, trace)
           if (!relay.ok) return relay.response
-          if (relay.request.target.access === "user-hosted") {
+          if (isUserHostedTarget(relay.request.target)) {
             const tunnel = hostTunnel(hostTunnels, relay.request.target.hostId)
             return tunnel
               ? await trace.span("tunnel-http", async () => await tunnelHttpRequest({
                 ws: tunnel,
                 request,
+                originAllowed: relayOriginMatcher,
                 workspaceId: relay.request.target.workspaceId,
                 path: `${relay.request.path}${url.search}`,
                 relayHostToken: relay.request.relayHostToken,
@@ -1323,6 +1362,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           }
           return await directHttpRequest({
             request,
+            originAllowed: relayOriginMatcher,
             targetUrl: workspaceRelayTargetUrl(
               relay.request.target,
               relay.request.path,
@@ -1342,7 +1382,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
       if (!relay.ok) return relay.response
       const originDenied = requireAllowedOrigin(request, relayOriginMatcher)
       if (originDenied) return originDenied
-      if (relay.request.target.access === "user-hosted") {
+      if (isUserHostedTarget(relay.request.target)) {
         const tunnel = hostTunnel(hostTunnels, relay.request.target.hostId)
         if (!tunnel) {
           return new Response("User-hosted workspace is offline", { status: 503 })
@@ -1473,7 +1513,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               if (isEventStream(response.headers)) clearTimeout(pending.timeout)
               pending.resolve(new Response(pending.stream, {
                 status: response.status,
-                headers: headers(response.headers),
+                headers: pending.corsHeaders(headers(response.headers)),
               }))
             }
           }
@@ -1595,6 +1635,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               hostTunnelStateDebounce,
               options,
               bunOptions,
+              originAllowed: relayOriginMatcher,
               disconnectDirectory: false,
               closeChannels: true,
             })
@@ -1712,6 +1753,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             hostTunnelStateDebounce,
             options,
             bunOptions,
+            originAllowed: relayOriginMatcher,
             disconnectDirectory: true,
             closeChannels: true,
           })

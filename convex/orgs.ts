@@ -709,7 +709,6 @@ export const ORG_WORKSPACE_DOC_TABLES: readonly ScopedRows[] = [
   { table: "workspace_memberships", index: "by_workspace_user", field: "workspace_id" },
   { table: "workspace_share_grants", index: "by_workspace", field: "workspace_id" },
   { table: "session_share_grants", index: "by_workspace", field: "workspace_id" },
-  { table: "local_host_links", index: "by_workspace", field: "workspace_id" },
   { table: "runtime_access_tokens", index: "by_workspace_user", field: "workspace_id" },
   { table: "agent_extension_installs", index: "by_workspace", field: "workspace_id" },
   { table: "agent_extension_policy_overrides", index: "by_workspace", field: "workspace_id" },
@@ -718,7 +717,9 @@ export const ORG_WORKSPACE_DOC_TABLES: readonly ScopedRows[] = [
 
 /** Workspace children keyed on the PUBLIC workspace id string. */
 export const ORG_WORKSPACE_PUBLIC_TABLES: readonly ScopedRows[] = [
-  { table: "host_attestation_challenges", index: "by_workspace", field: "workspace_id" },
+  // Owner intent that host H serves workspace X. Dies with the workspace: the
+  // enrollment (user-owned, retained) stays, but nothing routable remains.
+  { table: "host_workspace_assignments", index: "by_workspace", field: "workspace_id" },
   { table: "runtime_leases", index: "by_workspace_id", field: "workspace_id" },
   { table: "sandbox_lease_events", index: "by_workspace_id", field: "workspace_id" },
   { table: "wakes", index: "by_workspace_created", field: "workspace_id" },
@@ -739,6 +740,25 @@ const ORG_SESSION_CASCADE: ParentCascade = {
     // `by_session_user` and `by_user` — neither names a workspace or an org —
     // so like the transcript it is only reachable through its session.
     { table: "session_participants", index: "by_session_user", field: "session_id", parentKey: "session_id" },
+  ],
+}
+
+/**
+ * Canonical private-session state is workspace-owned, but every dependent row
+ * is indexed by the immutable session id rather than by organization. Drain
+ * those children before the session row so an interrupted batched purge can
+ * never strand transcript, participant, registration, or fencing state.
+ */
+export const ORG_PRIVATE_SESSION_CASCADE: ParentCascade = {
+  table: "private_sessions",
+  index: "by_workspace_updated",
+  field: "workspace_id",
+  children: [
+    { table: "private_session_registrations", index: "by_session_id", field: "session_id", parentKey: "session_id" },
+    { table: "private_session_participants", index: "by_session_actor", field: "session_id", parentKey: "session_id" },
+    { table: "private_session_messages", index: "by_session_ordinal", field: "session_id", parentKey: "session_id" },
+    { table: "private_session_turn_leases", index: "by_session_id", field: "session_id", parentKey: "session_id" },
+    { table: "private_session_turn_producers", index: "by_session_turn", field: "session_id", parentKey: "session_id" },
   ],
 }
 
@@ -792,7 +812,13 @@ export const ORG_PURGED_TABLES: readonly string[] = [
   ...ORG_CLERK_TABLES.map((plan) => plan.table),
   ...ORG_WORKSPACE_DOC_TABLES.map((plan) => plan.table),
   ...ORG_WORKSPACE_PUBLIC_TABLES.map((plan) => plan.table),
-  ...[ORG_SESSION_CASCADE, ORG_PROJECT_CASCADE, ORG_TEAM_CASCADE, ORG_CONNECTION_CASCADE].flatMap((cascade) => [
+  ...[
+    ORG_SESSION_CASCADE,
+    ORG_PRIVATE_SESSION_CASCADE,
+    ORG_PROJECT_CASCADE,
+    ORG_TEAM_CASCADE,
+    ORG_CONNECTION_CASCADE,
+  ].flatMap((cascade) => [
     cascade.table,
     ...cascade.children.map((child) => child.table),
   ]),
@@ -884,6 +910,12 @@ export const ORG_RETAINED_TABLES: Readonly<Record<string, string>> = {
   // as authority over the purged org — the resulting connection rows and their
   // credentials ARE reaped, by `ORG_CONNECTION_CASCADE`.
   connection_attempts: "short-lived, untenanted connect handshakes; self-expiring and reaped on a cron",
+  // Service installation state is keyed by deployment identity, not by an org
+  // or workspace. One deployment can serve many organizations, so deleting it
+  // for one tenant would disable shared infrastructure. Neither table contains
+  // user identity or grants authority over tenant data.
+  service_installations: "deployment-wide service topology; not org-owned",
+  service_installation_audit: "deployment-wide service lifecycle audit; not org-owned",
   // W4.4: infrastructure mutual exclusion, one row per cron LANE (a logical name
   // like "workgraph_reconcile"), never per tenant. `holder` is an
   // isolate/invocation identity. Purging a lane's lease because some org was
@@ -1029,6 +1061,7 @@ async function drainWorkspaces(ctx: any, orgId: unknown, state: BatchState) {
     if (!workspace) return true
     // Sessions carry their own children, so they cascade before the flat lists.
     if (!(await drainCascade(ctx, ORG_SESSION_CASCADE, workspace._id, state))) return false
+    if (!(await drainCascade(ctx, ORG_PRIVATE_SESSION_CASCADE, workspace._id, state))) return false
     if (!(await drainAll(ctx, ORG_WORKSPACE_DOC_TABLES, workspace._id, state))) return false
     if (!(await drainAll(ctx, ORG_WORKSPACE_PUBLIC_TABLES, workspace.workspace_id, state))) return false
     if (state.remaining === 0) return false

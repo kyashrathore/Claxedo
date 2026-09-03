@@ -27,7 +27,6 @@ import { Hono, type Context } from "hono"
 import { z } from "zod"
 import {
   ControlPlaneAuthError,
-  controlPlaneAuthConfig,
   controlPlaneAuthErrorBody,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -35,7 +34,13 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { controlPlaneRateLimitError } from "../../workspace/runtime-token-guards"
-import { parsedBody, signedOrError, type WorkspaceRouteOptions } from "../../workspace/route-support"
+import {
+  configuredHostTunnelTokenSigner,
+  configuredRelayUrl,
+  parsedBody,
+  signedOrError,
+  type WorkspaceRouteOptions,
+} from "../../workspace/route-support"
 
 const hostId = z.string().trim().min(1).max(200)
 
@@ -53,7 +58,18 @@ const enrollBody = z
   .strict()
 
 const heartbeatBody = z
-  .object({ hostId, signature: z.string().min(1).max(4_000), ttlMs: z.number().int().positive().optional() })
+  .object({
+    hostId,
+    signature: z.string().min(1).max(4_000),
+    ttlMs: z.number().int().positive().optional(),
+    // The served set the signature covers (heartbeat payload v2): one
+    // signature per interval carries the machine's whole consent set.
+    workspaceIds: z.array(z.string().min(1).max(200)).max(200),
+    // How the runtime this machine serves composed its session access. The
+    // machine is the only party that knows, so it says here; a beat that omits
+    // it leaves the enrollment undeclared and mints no stream scope.
+    sessionAuthority: z.enum(["local", "managed-private"]).optional(),
+  })
   .strict()
 
 const pauseBody = z.object({ hostId: hostId.optional(), paused: z.boolean() }).strict()
@@ -61,19 +77,6 @@ const pauseBody = z.object({ hostId: hostId.optional(), paused: z.boolean() }).s
 function missingBearer() {
   return { error: { code: "unauthorized", message: "Missing bearer token" } }
 }
-
-/**
- * The authority may not implement enrollment yet.
- *
- * The port's methods are optional while both authorities are being built out.
- * A 501 that says so beats a `TypeError: not a function` reaching the client as
- * a 500, and it disappears when Unit 6's hard cut makes the methods required.
- */
-function unsupported() {
-  return { error: { code: "not_implemented", message: "This control plane does not support machine enrollment" } }
-}
-
-class EnrollmentUnsupported extends Error {}
 
 /**
  * Per-account budget for `POST /requests`, the one route here that WRITES a row
@@ -158,7 +161,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         // Signed only. There is no unsigned path to machine enrollment: a
         // loopback caller with no account has no account to enroll a machine
         // against.
-        { ...options, authConfig: options.authConfig ?? controlPlaneAuthConfig(), requireSigned: true as const },
+        { ...options, requireSigned: true as const },
         services,
       )
       if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
@@ -191,7 +194,6 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       try {
         return c.json((await run({ body: parsed.body as Body, auth, authority: requireAuthority(services) })) as never)
       } catch (err) {
-        if (err instanceof EnrollmentUnsupported) return c.json(unsupported(), 501)
         if (err instanceof ControlPlaneAuthError) {
           return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
         }
@@ -199,19 +201,12 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       }
     }
 
-  /** Present or 501 — the port's methods are optional until the hard cut. */
-  function required<T>(method: T | undefined): NonNullable<T> {
-    if (!method) throw new EnrollmentUnsupported()
-    return method as NonNullable<T>
-  }
-
   return app
     .post(
       "/requests",
       handle<z.infer<typeof requestBody>>(requestBody, async ({ body, auth, authority }) => {
-        const create = required(authority.createHostEnrollmentRequest)
         await authority.usersMe(auth)
-        return create(auth, { hostId: body.hostId })
+        return authority.createHostEnrollmentRequest(auth, { hostId: body.hostId })
       }, "POST", {
         limiter: enrollmentRequestRateLimiter,
         key: "host.enrollments.requests",
@@ -221,12 +216,11 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     .post(
       "/",
       handle<z.infer<typeof enrollBody>>(enrollBody, async ({ body, auth, authority }) => {
-        const enroll = required(authority.enrollHost)
         await authority.usersMe(auth)
         // The connector signed the nonce with its own private key. This server
         // only records the enrollment — it never holds the host key, and
         // nothing is written until the authority verifies the signature.
-        const enrollment = await enroll(auth, {
+        const enrollment = await authority.enrollHost(auth, {
           hostId: body.hostId,
           publicKey: body.publicKey,
           requestId: body.requestId,
@@ -245,12 +239,38 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     .post(
       "/heartbeat",
       handle<z.infer<typeof heartbeatBody>>(heartbeatBody, async ({ body, auth, authority }) => {
-        const beat = required(authority.heartbeatHostEnrollment)
-        return beat(auth, {
+        const result = await authority.heartbeatHostEnrollment(auth, {
           hostId: body.hostId,
           signature: body.signature,
+          workspaceIds: body.workspaceIds,
           ...(body.ttlMs === undefined ? {} : { ttlMs: body.ttlMs }),
+          ...(body.sessionAuthority ? { sessionAuthority: body.sessionAuthority } : {}),
         })
+        // The serving credential rides the ack: ONE Host Tunnel Token whose
+        // workspace_ids claim is exactly the set that is BOTH owner-assigned
+        // and covered by the signature this beat just verified. The machine
+        // (re)opens or re-registers its single relay connection from the same
+        // response that renewed its lease. Local workspaces have no home
+        // region of their own; the deployment default names the relay.
+        const assigned = new Set(result.assigned_workspace_ids ?? [])
+        const serveable = body.workspaceIds.filter((workspaceId) => assigned.has(workspaceId)).sort()
+        const signer = configuredHostTunnelTokenSigner(options)
+        const relayUrl = configuredRelayUrl(options)
+        if (!signer || serveable.length === 0) return result
+        const credential = await signer({
+          subject: auth.user.subject,
+          hostId: body.hostId,
+          workspaceIds: serveable,
+        })
+        return {
+          ...result,
+          hostTunnel: {
+            ...credential,
+            hostId: body.hostId,
+            workspaceIds: serveable,
+            ...(relayUrl ? { relayUrl } : {}),
+          },
+        }
       }, "POST", {
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.heartbeat",
@@ -260,8 +280,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     .post(
       "/pause",
       handle<z.infer<typeof pauseBody>>(pauseBody, async ({ body, auth, authority }) => {
-        const pause = required(authority.pauseHostEnrollment)
-        const result = await pause(auth, {
+        const result = await authority.pauseHostEnrollment(auth, {
           ...(body.hostId ? { hostId: body.hostId } : {}),
           paused: body.paused,
         })
@@ -278,7 +297,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
     )
     .get(
       "/",
-      handle<Record<string, never>>(pauseBody, async ({ auth, authority }) => required(authority.activeHostEnrollment)(auth), "GET", {
+      handle<Record<string, never>>(pauseBody, async ({ auth, authority }) => authority.activeHostEnrollment(auth), "GET", {
         limiter: controlPlaneRateLimiter,
         key: "host.enrollments.active",
         action: "host_enrollment.active.denied",

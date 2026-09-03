@@ -2,7 +2,6 @@ import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/ser
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
   apiError,
   captureWorkspaceTelemetry,
@@ -17,6 +16,7 @@ import {
   runtimeTokenOrgId,
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 export async function hostedConnectionInfo(
   services: ControlPlaneServices | undefined,
@@ -26,7 +26,6 @@ export async function hostedConnectionInfo(
   previousJti?: string,
 ) {
   const authority = requireAuthority(services)
-  const actor = await resolveRuntimeActor(authority, auth)
   const result = await authority.openWorkspace(auth, { workspaceId })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
   if (authz) return authz
@@ -159,10 +158,11 @@ export async function hostedConnectionInfo(
   if (previousToken) return previousToken
 
   const role = relayRole(result.role)
+  const actor = await resolveRuntimeActor(authority, auth)
   const signer = configuredRuntimeAccessTokenSigner(options)
   const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
   const token = await signer({
-    subject: auth.user.subject,
+    principalKind: "user",
     ...actor,
     orgId,
     workspaceId,
@@ -220,6 +220,11 @@ export async function hostedConnectionInfo(
       access: "cloud" as const,
       backing: "cloud-vm" as const,
       runtimeKind: "cloud" as const,
+      // The hosted sandbox runs the workspace runtime behind the relay with a
+      // non-loopback exposure, so it composes the remote session authority and
+      // serves session-scoped event streams only. See the sibling
+      // `user-hosted-connection.ts` for the other composition.
+      sessionAuthority: "managed-private" as const,
       workspaceId,
       homeRegion,
       relayUrl,

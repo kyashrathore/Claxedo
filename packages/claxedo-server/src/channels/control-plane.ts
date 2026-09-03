@@ -18,6 +18,8 @@ import {
   sanitizeChannelText,
   type ChannelDenialReason,
   type ChannelId,
+  type ChannelAccessStore,
+  type ChannelIdentityBindingStore,
   type ChatSdkBot,
   type SessionRef,
   type SessionResolver,
@@ -33,6 +35,9 @@ import type { ControlPlaneServices } from "../authority/services"
 import type { ProjectAction } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { signedOrError } from "../workspace/route-support"
 import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { createCredentialWhatsAppBaileysAuthStateStore } from "./whatsapp-baileys-auth-state"
 
@@ -63,9 +68,13 @@ function repoTarget(input: string | undefined) {
   return { owner: match[1], name: match[2] }
 }
 
-function channelFromThreadKey(input: string | undefined): ChannelId | undefined {
-  const value = input?.split(":")[0]
+function channelId(input: unknown): ChannelId | undefined {
+  const value = typeof input === "string" ? input : undefined
   if (value === "github" || value === "slack" || value === "telegram" || value === "discord" || value === "whatsapp") return value
+}
+
+function channelFromThreadKey(input: string | undefined): ChannelId | undefined {
+  return channelId(input?.split(":")[0])
 }
 
 async function channelWorkspace(input: { workspaceId?: string }) {
@@ -225,6 +234,9 @@ export function createControlPlaneChannels(input: {
   chatBot?: ChatSdkBot | Promise<ChatSdkBot>
   whatsappBaileysSocket?: WhatsAppBaileysSocket | Promise<WhatsAppBaileysSocket | undefined>
   whatsappBaileysQrHandler?: (qr: string) => void
+  /** Explicit storage ports for isolated service compositions and tests. */
+  accessStore?: ChannelAccessStore
+  identityBindingStore?: ChannelIdentityBindingStore
 }) {
   const env = input.env ?? process.env
   // Fail-closed posture check (OpenClaw's webhook-secret CVE series #13116 et al.):
@@ -441,8 +453,8 @@ export function createControlPlaneChannels(input: {
     .split(",")
     .map((entry) => entry.trim())
     .filter(Boolean)
-  const accessStore = createSqliteChannelAccessStore()
-  const bindings = createSqliteChannelIdentityBindingStore()
+  const accessStore = input.accessStore ?? createSqliteChannelAccessStore()
+  const bindings = input.identityBindingStore ?? createSqliteChannelIdentityBindingStore()
   // Default policy is LAYER-AWARE: in signed/hosted mode the account auth path
   // (authorize()) already gates who may act, so the DM gate defaults open;
   // in unsigned single-owner mode the pairing gate IS the defense, so it
@@ -683,6 +695,7 @@ export function mountControlPlaneChannels(app: HonoType, input: {
   whatsappBaileysSocket?: WhatsAppBaileysSocket | Promise<WhatsAppBaileysSocket | undefined>
   whatsappBaileysQrHandler?: (qr: string) => void
   channels?: ReturnType<typeof createControlPlaneChannels>
+  authentication?: RequestAuthenticationAdapter
 }) {
   if (input.requireLoopbackForFake !== false) {
     app.use("/api/channels/fake", async (c, next) => {
@@ -726,6 +739,72 @@ export function mountControlPlaneChannels(app: HonoType, input: {
     const result = await channels.access.approve(code, "admin:route")
     if (!result.ok) return c.json(errorBody("channels_pairing_failed", result.message), 400)
     return c.json({ ok: true, channel: result.channel, externalUserId: result.externalUserId })
+  })
+  app.post("/api/channels/pairing/claim", async (c) => {
+    const authority = input.services.authority
+    if (!authority) return c.json(errorBody("channels_authority_unavailable", "Channel identity authority is unavailable"), 503)
+    const authResult = await signedOrError(c.req.raw, {
+      ...(input.authentication
+        ? { authentication: input.authentication }
+        : {
+            authConfig: input.services.auth.config,
+            ...(input.services.auth.verifier ? { verifier: input.services.auth.verifier } : {}),
+          }),
+      requireSigned: true,
+    }, input.services)
+    if ("error" in authResult) return c.json(authResult.error, authResult.status as 400 | 401 | 403 | 503)
+    if (!authResult.auth) return c.json(errorBody("channels_pairing_unauthorized", "Signed account authentication is required"), 401)
+    const body = await c.req.json().catch(() => ({})) as { code?: unknown }
+    const code = typeof body.code === "string" ? body.code.trim() : ""
+    if (!code) return c.json(errorBody("channels_pairing_invalid", "Missing pairing code"), 400)
+    try {
+      const result = await channels.access.approve(code, "authenticated-claim", async (identity) => {
+        const binding = await authority.bindChannelIdentity(authResult.auth!, identity)
+        return { accountId: binding.userId, boundBy: `actor:${binding.actorId}` }
+      })
+      if (!result.ok) return c.json(errorBody("channels_pairing_failed", result.message), 400)
+      return c.json({ ok: true, channel: result.channel, externalUserId: result.externalUserId })
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError) {
+        return c.json(controlPlaneAuthErrorBody(error), error.status)
+      }
+      throw error
+    }
+  })
+  app.delete("/api/channels/identity", async (c) => {
+    const authority = input.services.authority
+    if (!authority) return c.json(errorBody("channels_authority_unavailable", "Channel identity authority is unavailable"), 503)
+    const authResult = await signedOrError(c.req.raw, {
+      ...(input.authentication
+        ? { authentication: input.authentication }
+        : {
+            authConfig: input.services.auth.config,
+            ...(input.services.auth.verifier ? { verifier: input.services.auth.verifier } : {}),
+          }),
+      requireSigned: true,
+    }, input.services)
+    if ("error" in authResult) return c.json(authResult.error, authResult.status as 400 | 401 | 403 | 503)
+    if (!authResult.auth) return c.json(errorBody("channels_identity_unauthorized", "Signed account authentication is required"), 401)
+    const body = await c.req.json().catch(() => ({})) as { channel?: unknown; externalUserId?: unknown }
+    const channel = channelId(body.channel)
+    if (!channel || typeof body.externalUserId !== "string") {
+      return c.json(errorBody("channels_identity_invalid", "A supported channel and externalUserId are required"), 400)
+    }
+    try {
+      const result = await authority.revokeChannelIdentity(authResult.auth, {
+        channel,
+        externalUserId: body.externalUserId,
+      })
+      if (result.revoked) {
+        await channels.access.revoke(channel, body.externalUserId)
+      }
+      return c.json(result)
+    } catch (error) {
+      if (error instanceof ControlPlaneAuthError) {
+        return c.json(controlPlaneAuthErrorBody(error), error.status)
+      }
+      throw error
+    }
   })
   return channels
 }

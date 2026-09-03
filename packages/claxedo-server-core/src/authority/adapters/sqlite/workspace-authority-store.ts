@@ -21,6 +21,108 @@ export type SqliteWorkspaceAuthorityOptions = {
   path?: string
 }
 
+const CANONICAL_RUNTIME_ACCESS_TOKENS_SCHEMA = `
+CREATE TABLE runtime_access_tokens (
+  jti TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  host_id TEXT NOT NULL,
+  principal_kind TEXT NOT NULL,
+  actor_id TEXT NOT NULL,
+  actor_kind TEXT NOT NULL,
+  role TEXT NOT NULL,
+  minted_for_token_identifier TEXT,
+  expires_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  created_at INTEGER NOT NULL
+);`
+
+const CANONICAL_CHANNEL_IDENTITIES_SCHEMA = `
+CREATE TABLE channel_identities (
+  binding_id TEXT PRIMARY KEY,
+  channel TEXT NOT NULL,
+  external_user_id TEXT NOT NULL,
+  token_identifier TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER
+);
+CREATE UNIQUE INDEX IF NOT EXISTS channel_identities_active_external
+  ON channel_identities (channel, external_user_id)
+  WHERE revoked_at IS NULL;`
+
+const CANONICAL_PRIVATE_SESSIONS_SCHEMA = `
+CREATE TABLE session_registration_operations (
+  operation_id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL UNIQUE,
+  workspace_id TEXT NOT NULL,
+  creator_actor_id TEXT NOT NULL,
+  operation_kind TEXT NOT NULL,
+  parent_session_id TEXT,
+  requested_title TEXT,
+  state TEXT NOT NULL,
+  state_reason TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE TABLE session_history (
+  session_id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  creator_actor_id TEXT NOT NULL,
+  operation_id TEXT NOT NULL UNIQUE,
+  title TEXT,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  max_event_ordinal INTEGER NOT NULL DEFAULT 0,
+  deleted_at INTEGER
+);
+CREATE INDEX session_history_by_workspace_updated
+  ON session_history (workspace_id, updated_at DESC);
+CREATE TABLE session_participants (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  participant_actor_id TEXT NOT NULL,
+  added_by_actor_id TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  revoked_at INTEGER,
+  PRIMARY KEY (session_id, participant_actor_id)
+);
+CREATE INDEX session_participants_by_actor
+  ON session_participants (participant_actor_id, revoked_at);
+CREATE TABLE session_messages (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  message_id TEXT NOT NULL,
+  author_actor_id TEXT,
+  role TEXT,
+  ordinal INTEGER NOT NULL,
+  data TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, message_id)
+);
+CREATE TABLE session_turn_leases (
+  session_id TEXT PRIMARY KEY,
+  workspace_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  lease_id TEXT NOT NULL UNIQUE,
+  fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+  actor_id TEXT NOT NULL,
+  acquired_at INTEGER NOT NULL,
+  expires_at INTEGER NOT NULL CHECK (expires_at > acquired_at),
+  released_at INTEGER
+);
+CREATE INDEX session_turn_leases_by_expiry
+  ON session_turn_leases (released_at, expires_at, session_id);
+CREATE TABLE session_turn_producers (
+  session_id TEXT NOT NULL,
+  workspace_id TEXT NOT NULL,
+  turn_id TEXT NOT NULL,
+  fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+  actor_id TEXT NOT NULL,
+  admitted_at INTEGER NOT NULL,
+  PRIMARY KEY (session_id, turn_id),
+  UNIQUE (session_id, fencing_token)
+);`
+
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS users (
   token_identifier TEXT PRIMARY KEY,
@@ -114,37 +216,10 @@ CREATE TABLE IF NOT EXISTS workspace_share_grants (
     + (granted_to_team_id IS NOT NULL) = 1
   )
 );
-CREATE TABLE IF NOT EXISTS host_attestation_challenges (
-  challenge_id TEXT PRIMARY KEY,
-  workspace_id TEXT NOT NULL,
-  owner_token_identifier TEXT NOT NULL,
-  host_id TEXT NOT NULL,
-  nonce TEXT NOT NULL,
-  expires_at INTEGER NOT NULL,
-  used_at INTEGER,
-  created_at INTEGER NOT NULL
-);
-CREATE TABLE IF NOT EXISTS local_host_links (
-  workspace_id TEXT NOT NULL,
-  host_id TEXT NOT NULL,
-  owner_token_identifier TEXT NOT NULL,
-  public_key TEXT NOT NULL,
-  display_name TEXT,
-  last_seen_at INTEGER NOT NULL,
-  expires_at INTEGER NOT NULL,
-  paused_at INTEGER,
-  paused_by TEXT,
-  paused_reason TEXT,
-  revoked_at INTEGER,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  PRIMARY KEY (workspace_id, host_id)
-);
--- Machine-wide remote access (Unit 6). One row per (owner, machine) — NOT per
--- workspace, which is the whole difference from local_host_links above. A user
--- with twelve projects on one laptop enrolls the laptop once; the workspaces a
--- session may reach are decided at request time from the workspace tables, not
--- baked into a registration row.
+-- Machine-wide remote access. One row per (owner, machine) — NOT per
+-- workspace: a user with twelve projects on one laptop enrolls the laptop
+-- once, and the workspaces a session may reach are decided at request time
+-- from the workspace tables rather than baked into a registration row.
 --
 -- The UNIQUE below is that rule, enforced by the database rather than by every
 -- caller remembering to check first.
@@ -160,15 +235,42 @@ CREATE TABLE IF NOT EXISTS host_enrollments (
   paused_by TEXT,
   paused_reason TEXT,
   revoked_at INTEGER,
+  -- The machine's last-acked served set (JSON array of public workspace ids),
+  -- written only by a verified heartbeat v2 signature, plus when it was acked.
+  acked_workspace_ids TEXT,
+  acked_at INTEGER,
+  -- How the runtime this machine serves composed its session access
+  -- ('local' | 'managed-private'), as the machine declared it on its last
+  -- heartbeat. NULL means it declared nothing, and a connection minted from
+  -- this row then carries no stream scope at all.
+  session_authority TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   UNIQUE (owner_token_identifier, host_id)
 );
 CREATE INDEX IF NOT EXISTS host_enrollments_by_owner ON host_enrollments (owner_token_identifier);
 CREATE INDEX IF NOT EXISTS host_enrollments_by_expires_at ON host_enrollments (expires_at);
--- The one-use nonce a machine signs to prove it holds the private key. Separate
--- table from host_attestation_challenges because that one is keyed by workspace
--- and this flow has no workspace to key by.
+-- The OWNER's declaration that host H serves workspace X (machine-wide
+-- enrollment, assignment grain). Pure data: no liveness of its own — the
+-- enrollment lease answers "is the machine here", the machine's consent is the
+-- heartbeat-acked set on host_enrollments, and routing requires all three.
+--
+-- One workspace, one host: a local association id names a directory on ONE
+-- machine, so workspace_id alone is the key.
+CREATE TABLE IF NOT EXISTS host_workspace_assignments (
+  workspace_id TEXT PRIMARY KEY,
+  host_id TEXT NOT NULL,
+  owner_token_identifier TEXT NOT NULL,
+  second_device_open_at INTEGER,
+  assigned_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS host_workspace_assignments_by_host
+  ON host_workspace_assignments (host_id);
+CREATE INDEX IF NOT EXISTS host_workspace_assignments_by_owner
+  ON host_workspace_assignments (owner_token_identifier);
+-- The one-use nonce a machine signs to prove it holds the private key. It
+-- carries no workspace: enrollment is machine-wide.
 --
 -- expires_at carries TWO meanings over a row's life, and the transition is what
 -- bounds the table: while used_at is NULL it is the challenge deadline
@@ -314,17 +416,102 @@ CREATE TABLE IF NOT EXISTS audit_events (
   metadata TEXT,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS channel_identities (
-  channel TEXT NOT NULL,
-  external_user_id TEXT NOT NULL,
-  token_identifier TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  revoked_at INTEGER,
-  PRIMARY KEY (channel, external_user_id)
-);
+${CANONICAL_CHANNEL_IDENTITIES_SCHEMA.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")}
 `
 
-const SQLITE_TENANCY_SCHEMA_VERSION = 3
+const SQLITE_TENANCY_SCHEMA_VERSION = 4
+
+function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
+  const columns = db.prepare("PRAGMA table_info(session_history)").all() as Array<{ name: string }>
+  const canonical = columns.some((column) => column.name === "creator_actor_id")
+    && columns.some((column) => column.name === "operation_id")
+  if (canonical) {
+    if (!tableExists(db, "session_registration_operations")) {
+      throw new Error("private_session_registration_schema_missing")
+    }
+    ensureSessionTurnSchema(db)
+    return
+  }
+
+  for (const archive of [
+    "legacy_session_history_pre_private_sessions",
+    "legacy_session_messages_pre_private_sessions",
+    "legacy_session_participants_pre_private_sessions",
+  ]) {
+    if (tableExists(db, archive)) throw new Error(`private_session_archive_collision:${archive}`)
+  }
+
+  // Legacy workspace-visible rows have no canonical registration operation or
+  // actor provenance. Preserve them as an operator-inspectable archive, but do
+  // not project them into the private-session authority by inventing either.
+  db.exec(`
+    DROP INDEX IF EXISTS session_history_by_creator;
+    DROP INDEX IF EXISTS session_history_by_workspace_creator;
+    DROP INDEX IF EXISTS session_participants_by_actor;
+    ALTER TABLE session_history RENAME TO legacy_session_history_pre_private_sessions;
+    ALTER TABLE session_messages RENAME TO legacy_session_messages_pre_private_sessions;
+    ALTER TABLE session_participants RENAME TO legacy_session_participants_pre_private_sessions;
+    ${CANONICAL_PRIVATE_SESSIONS_SCHEMA}
+  `)
+  ensureSessionTurnSchema(db)
+}
+
+function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS session_turn_leases (
+      session_id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      lease_id TEXT NOT NULL UNIQUE,
+      fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+      actor_id TEXT NOT NULL,
+      acquired_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL CHECK (expires_at > acquired_at),
+      released_at INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS session_turn_leases_by_expiry
+      ON session_turn_leases (released_at, expires_at, session_id);
+    CREATE TABLE IF NOT EXISTS session_turn_producers (
+      session_id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      fencing_token INTEGER NOT NULL CHECK (fencing_token >= 1),
+      actor_id TEXT NOT NULL,
+      admitted_at INTEGER NOT NULL,
+      PRIMARY KEY (session_id, turn_id),
+      UNIQUE (session_id, fencing_token)
+    );
+  `)
+  addColumn(db, "session_history", "snapshot_hash", "TEXT")
+}
+
+function migrateRuntimeAccessTokenSchema(db: SqliteAuthorityDb) {
+  const columns = db.prepare("PRAGMA table_info(runtime_access_tokens)").all() as Array<{ name: string }>
+  if (["principal_kind", "actor_id", "actor_kind", "role"].every((name) => columns.some((column) => column.name === name))) {
+    return
+  }
+  const archive = "legacy_runtime_access_tokens_pre_canonical_actor"
+  if (tableExists(db, archive)) throw new Error(`runtime_access_token_archive_collision:${archive}`)
+  // A legacy row cannot prove canonical actor kind and role. Archiving it
+  // revokes it at the schema boundary instead of fabricating those claims.
+  db.exec(`
+    ALTER TABLE runtime_access_tokens RENAME TO ${archive};
+    ${CANONICAL_RUNTIME_ACCESS_TOKENS_SCHEMA}
+  `)
+}
+
+function migrateChannelIdentitySchema(db: SqliteAuthorityDb) {
+  const columns = db.prepare("PRAGMA table_info(channel_identities)").all() as Array<{ name: string }>
+  if (columns.some((column) => column.name === "binding_id")) return
+  const archive = "legacy_channel_identities_pre_canonical_actor"
+  if (tableExists(db, archive)) throw new Error(`channel_identity_archive_collision:${archive}`)
+  // Legacy token-identifier bindings have no stable binding identity. Archive
+  // them so reopening the authority cannot silently treat them as canonical.
+  db.exec(`
+    ALTER TABLE channel_identities RENAME TO ${archive};
+    ${CANONICAL_CHANNEL_IDENTITIES_SCHEMA}
+  `)
+}
 
 /**
  * Upgrades pre-tenant local authority databases in one SQLite transaction.
@@ -605,6 +792,9 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
     rebuildUsersIfNeeded(db)
     rebuildProjectsIfNeeded(db)
     rebuildWorkspacesIfNeeded(db)
+    migratePrivateSessionSchema(db)
+    migrateRuntimeAccessTokenSchema(db)
+    migrateChannelIdentitySchema(db)
     db.exec(`
       CREATE INDEX IF NOT EXISTS users_by_subject ON users (subject);
       CREATE UNIQUE INDEX IF NOT EXISTS users_by_public_id ON users (public_id);
@@ -810,24 +1000,18 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
           if (!fs.existsSync(backup)) fs.copyFileSync(file, backup)
         }
         db.exec(SCHEMA)
-        const localHostColumns = db.prepare("PRAGMA table_info(local_host_links)").all() as Array<{ name: string }>
-        if (!localHostColumns.some((column) => column.name === "second_device_open_at")) {
-          db.exec("ALTER TABLE local_host_links ADD COLUMN second_device_open_at INTEGER")
-        }
-        const sessionHistoryColumns = db.prepare("PRAGMA table_info(session_history)").all() as Array<{ name: string }>
-        if (!sessionHistoryColumns.some((column) => column.name === "max_event_ordinal")) {
-          db.exec("ALTER TABLE session_history ADD COLUMN max_event_ordinal INTEGER NOT NULL DEFAULT 0")
-        }
+        // Databases created before heartbeat v2: the CREATE above is IF NOT
+        // EXISTS, so the acked-set columns must be added in place.
+        addColumn(db, "host_enrollments", "acked_workspace_ids", "TEXT")
+        addColumn(db, "host_enrollments", "acked_at", "INTEGER")
+        // Databases created before hosts declared their runtime's session
+        // composition: same reason, same in-place add.
+        addColumn(db, "host_enrollments", "session_authority", "TEXT")
         migrateAuthorityTenancySchema(db)
         const messageColumns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{ name: string }>
         if (!messageColumns.some((column) => column.name === "author_actor_id")) {
           db.exec("ALTER TABLE session_messages ADD COLUMN author_actor_id TEXT")
         }
-        db.exec("CREATE INDEX IF NOT EXISTS session_history_by_creator ON session_history (created_by_token_identifier)")
-        db.exec(`
-          CREATE INDEX IF NOT EXISTS session_history_by_workspace_creator
-          ON session_history (workspace_id, created_by_token_identifier, updated_at DESC)
-        `)
       } catch (error) {
         db.close()
         throw error

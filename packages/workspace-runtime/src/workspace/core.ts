@@ -38,9 +38,13 @@ export function mountWorkspaceEvents(app: Hono, options: {
   sessionAccessPolicy?: SessionAccessPolicy
 }) {
   const policy = sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy())
-  app.get(WorkspaceRuntimeRoutes.events, runtimeBusEventsHandler(undefined, { policy }))
+  app.get(WorkspaceRuntimeRoutes.events, runtimeBusEventsHandler(undefined, {
+    policy,
+    sessionAccessPolicy: options.sessionAccessPolicy,
+  }))
   app.get(WorkspaceRuntimeRoutes.runtimeEvents, runtimeEventsHandler(options.eventHub, {
     policy,
+    sessionAccessPolicy: options.sessionAccessPolicy,
     ...(options.runtimeEventAuthorization ?? {}),
   }))
 }
@@ -67,7 +71,7 @@ export function mountWorkspaceProcess(app: Hono, sessionAccessPolicy?: SessionAc
   app.route(WorkspaceRuntimeRoutes.process, ProcessRoutes(sessionAccessPolicy))
 }
 
-export function mountWorkspaceFiles(app: Hono) {
+export function mountWorkspaceFiles(app: Hono, sessionAccessPolicy?: SessionAccessPolicy) {
   app.route(WorkspaceRuntimeRoutes.diff, DiffRoutes())
   app.route(WorkspaceRuntimeRoutes.git, GitSourceRoutes())
   app.route(WorkspaceRuntimeApiPrefix, FileRoutes())
@@ -82,9 +86,9 @@ export function mountWorkspaceCore(
   options: {
     eventHub: RuntimeEventHub
     exposure: WorkspaceRuntimeExposure
-    sessionAccessPolicy?: SessionAccessPolicy
     processObserver?: ProcessObserver
     runtimeEventAuthorization?: RuntimeEventAuthorization
+    sessionAccessPolicy?: SessionAccessPolicy
     transcripts?: WorkspaceTranscriptRoutesOptions
   },
 ) {

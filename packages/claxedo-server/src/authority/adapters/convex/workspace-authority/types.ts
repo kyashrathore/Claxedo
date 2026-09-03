@@ -23,6 +23,7 @@ export type ConvexExecutor = {
 export type ConvexAuthorityInput = {
   url?: string
   executor?: ConvexExecutor
+  executorForAuth?: (auth?: SignedControlPlaneAuth) => ConvexExecutor
   serviceToken?: string
 }
 

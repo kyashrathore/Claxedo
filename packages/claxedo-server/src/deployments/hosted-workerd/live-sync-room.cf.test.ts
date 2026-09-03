@@ -287,7 +287,11 @@ describe("LiveSyncRoom — fan-out core", () => {
     )
     const reader = response.body!.getReader()
     expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
-    await expect(reader.read()).rejects.toThrow("bearer expired")
+    // A CLEAN end, not an errored stream. Five-minute bearers expire under
+    // long-lived streams as a matter of course; erroring here made every
+    // wr/events invocation die as an uncaught worker exception on that cycle.
+    // The clean close is the client's reconnect-with-a-fresh-token cue.
+    expect(await reader.read()).toMatchObject({ done: true })
     expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(0)
   })
 
@@ -301,7 +305,9 @@ describe("LiveSyncRoom — fan-out core", () => {
     )
     const reader = response.body!.getReader()
     expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
-    await expect(reader.read()).rejects.toThrow("live-sync authorization changed")
+    // Also a clean end: the reconnect re-authorizes from scratch and lands in
+    // the right room, or is refused with a real 401 at open time.
+    expect(await reader.read()).toMatchObject({ done: true })
     expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(0)
   })
 

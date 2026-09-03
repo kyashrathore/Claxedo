@@ -69,7 +69,6 @@ export type WorkspaceRuntimeServiceExposure = {
 }
 
 export type WorkspaceRuntimeServerOptions = {
-  sessionAccessPolicy?: SessionAccessPolicy
   /** Optional local owner observer. Remote/relay compositions omit it. */
   processObserver?: ProcessObserver
   onTurnOutcome?: WorkspaceHostOptions["onTurnOutcome"]
@@ -91,8 +90,12 @@ export type WorkspaceRuntimeServerOptions = {
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
   opencodeCompat?: boolean
+  /** Host-owned catalog for non-opencode harnesses. See {@link WorkspaceHostOptions.providerCatalog}. */
+  providerCatalog?: WorkspaceHostOptions["providerCatalog"]
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  /** Explicit private-session authority. Relay-hosted runtimes default to the remote oracle. */
+  sessionAccessPolicy?: SessionAccessPolicy
   target?: WorkspaceTarget
   storeRoot?: string
   /** Host-owned root for Agent Extension replay state. See {@link WorkspaceHostOptions.agentExtensionStateRoot}. */
@@ -414,6 +417,11 @@ async function runtimeLiveness(host: Host, options: WorkspaceRuntimeServerOption
   })
 }
 
+function trustedAgentHookCallback(input: { token: string; path: string; method: string }, workspaceId: string) {
+  if (input.method !== "POST" || input.path !== `${WorkspaceRuntimeRoutes.hook}/agent-lifecycle`) return false
+  return Pty.agentHookAccessForToken(input.token)?.context.authority.workspaceId === workspaceId
+}
+
 export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions = {}): WorkspaceRuntimeApp {
   const internalSecrets = options.internalSecrets ?? retainedWorkspaceRuntimeInternalSecrets()
   assertWorkspaceRuntimeExposure({
@@ -423,6 +431,14 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     env: process.env,
   })
   if (options.target) ProcessManager.bindProcessObserver(options.target.directory, options.processObserver)
+  // One policy for every surface this app mounts. A loopback or embedded
+  // runtime is reached only through its own process boundary and carries the
+  // unbound local flavour; any other exposure answers a remote caller and
+  // must delegate to the control plane's session authority.
+  const sessionAccessPolicy = options.sessionAccessPolicy
+    ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
+      ? managedWorkspaceSessionAccessPolicy()
+      : remoteWorkspaceSessionAccessPolicyFromEnv())
   const host = createWorkspaceHost({
     ...(options.opencodeUrl ? { opencodeUrl: options.opencodeUrl } : {}),
     ...(options.opencodeHeaders ? { opencodeHeaders: options.opencodeHeaders } : {}),
@@ -430,7 +446,9 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.piModelBackend ? { piModelBackend: options.piModelBackend } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
     ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
+    ...(options.providerCatalog ? { providerCatalog: options.providerCatalog } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
+    sessionAccessPolicy,
     ...(options.target ? { target: options.target } : {}),
     ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
     ...(options.agentExtensionStateRoot ? { agentExtensionStateRoot: options.agentExtensionStateRoot } : {}),
@@ -440,9 +458,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.onCompatEvent ? { onCompatEvent: options.onCompatEvent } : {}),
     ...(options.runtimeEventAuthorization ? { runtimeEventAuthorization: options.runtimeEventAuthorization } : {}),
     ...(options.transcripts ? { transcripts: options.transcripts } : {}),
-    sessionAccessPolicy: options.sessionAccessPolicy ?? (options.exposure?.kind === "loopback" || options.exposure?.kind === "embedded"
-      ? managedWorkspaceSessionAccessPolicy()
-      : remoteWorkspaceSessionAccessPolicyFromEnv()),
   })
   const worktrees = options.target
       ? new WorkspaceWorktreeManager({
@@ -495,6 +510,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
           && (
             input.method === "GET" && input.path === WorkspaceRuntimeRoutes.health
           ))
+        || trustedAgentHookCallback(input, relayHostAuthOptions.workspaceId)
         || await relayHostAuthOptions.trustedDirectTokenForRequest?.(input)
         || false,
     }) as MiddlewareHandler
@@ -532,8 +548,17 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.managementAuth ? { managementAuth: options.managementAuth } : {}),
     ...(options.managementTarget ? { managementTarget: options.managementTarget } : {}),
   }))
-  if (worktrees) app.route(WorkspaceRuntimeRoutes.worktrees, WorktreeRoutes(worktrees))
-  app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({ checkpoint: host.checkpoint, worktrees }))
+  if (worktrees) {
+    app.route(
+      WorkspaceRuntimeRoutes.worktrees,
+      WorktreeRoutes(worktrees, { sessionAccessPolicy }),
+    )
+  }
+  app.route(WorkspaceRuntimeRoutes.checkpoint, CheckpointRoutes({
+    checkpoint: host.checkpoint,
+    worktrees,
+    sessionAccessPolicy,
+  }))
   // Binding management inherits the workspace exposure/auth boundary. Tool
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.

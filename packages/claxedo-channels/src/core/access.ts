@@ -74,6 +74,7 @@ export type ChannelIdentityBinding = {
 export type ChannelAccessStore = {
   isAllowed(channel: ChannelId, externalUserId: string): Promise<boolean>
   allow(channel: ChannelId, externalUserId: string, approvedBy: string): Promise<void>
+  disallow(channel: ChannelId, externalUserId: string): Promise<void>
   listPending(channel?: ChannelId): Promise<PairingRequest[]>
   findPending(code: string): Promise<PairingRequest | undefined>
   findPendingBySender(channel: ChannelId, externalUserId: string): Promise<PairingRequest | undefined>
@@ -86,6 +87,7 @@ export type ChannelIdentityBindingStore = {
   get(channel: ChannelId, externalUserId: string): Promise<ChannelIdentityBinding | undefined>
   listBoundForAccount(accountId: string): Promise<ChannelIdentityBinding[]>
   put(binding: ChannelIdentityBinding): Promise<void>
+  delete(channel: ChannelId, externalUserId: string): Promise<void>
 }
 
 /** Why an inbound was refused — logged to an owner-visible audit, not the sender. */
@@ -113,10 +115,16 @@ export type ChannelAccess = {
   /** Gate an inbound envelope. Call this FIRST, before any other work. */
   gate(envelope: Pick<InboundEnvelope, "channel" | "externalUserId" | "chatType" | "mentions">): Promise<ChannelAccessDecision>
   /** Approve a pending pairing code; records the approver for audit. */
-  approve(code: string, approvedBy: string): Promise<
+  approve(
+    code: string,
+    approvedBy: string,
+    bind?: (identity: { channel: ChannelId; externalUserId: string }) => Promise<{ accountId: string; boundBy: string }>,
+  ): Promise<
     | { ok: true; channel: ChannelId; externalUserId: string }
     | { ok: false; message: string }
   >
+  /** Remove the local allow/binding projection after canonical revocation. */
+  revoke(channel: ChannelId, externalUserId: string): Promise<void>
   listPending(channel?: ChannelId): Promise<PairingRequest[]>
 }
 
@@ -188,6 +196,9 @@ export function createMemoryChannelAccessStore(): ChannelAccessStore {
     async allow(channel, externalUserId) {
       allowed.add(`${channel}:${externalUserId}`)
     },
+    async disallow(channel, externalUserId) {
+      allowed.delete(`${channel}:${externalUserId}`)
+    },
     async listPending(channel) {
       return [...pending.values()].filter((item) => !channel || item.channel === channel)
     },
@@ -218,6 +229,9 @@ export function createMemoryChannelIdentityBindingStore(): ChannelIdentityBindin
     },
     async put(binding) {
       bindings.set(key(binding.channel, binding.externalUserId), binding)
+    },
+    async delete(channel, externalUserId) {
+      bindings.delete(key(channel, externalUserId))
     },
   }
 }
@@ -310,25 +324,38 @@ export function createChannelAccess(input: {
       if (input.dmPolicy === "allowlist") return { admission: "drop", reason: "dm_not_allowlisted" }
       return pairingGate(envelope.channel, envelope.externalUserId)
     },
-    async approve(code, approvedBy) {
+    async approve(code, approvedBy, bind) {
       const at = now()
       const hit = await input.store.findPending(code.toUpperCase())
       if (!hit || hit.expiresAt <= at) {
         if (hit) await input.store.deletePending(hit.code)
         return { ok: false, message: "Unknown or expired pairing code." }
       }
+      // The authenticated account binding is the authoritative producer. It
+      // runs before the local allow/delete projection so a failed canonical
+      // write never consumes the one-time pairing code. A retry safely repairs
+      // a later local projection failure because canonical binds are idempotent.
+      const linked = await bind?.({ channel: hit.channel, externalUserId: hit.externalUserId })
       await input.store.allow(hit.channel, hit.externalUserId, approvedBy)
       await input.store.deletePending(hit.code)
-      // Record a pending identity binding: paired but not yet account-linked.
+      // Legacy operator approval may admit the sender, but only an
+      // authenticated claim can turn it into an account binding.
       await input.bindings?.put({
         channel: hit.channel,
         externalUserId: hit.externalUserId,
-        accountId: null,
-        status: "pending",
+        accountId: linked?.accountId ?? null,
+        status: linked ? "bound" : "pending",
         boundAt: at,
-        boundBy: approvedBy,
+        boundBy: linked?.boundBy ?? approvedBy,
       })
       return { ok: true, channel: hit.channel, externalUserId: hit.externalUserId }
+    },
+    async revoke(channel, externalUserId) {
+      // Both operations are idempotent. Canonical revocation runs before this
+      // projection, so an interrupted request can safely repeat the route and
+      // finish either local delete without re-authorizing the sender.
+      await input.store.disallow(channel, externalUserId)
+      await input.bindings?.delete(channel, externalUserId)
     },
     listPending: (channel) => input.store.listPending(channel),
   }

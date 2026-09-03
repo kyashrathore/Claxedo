@@ -47,6 +47,11 @@ function services(): ControlPlaneServices {
   }
 }
 
+/** A cloud workspace: the list read looks at the kind before choosing its source. */
+function cloudWorkspaceOpen() {
+  return vi.fn(async () => ({ role: "owner", workspace: { access: "cloud", backing: "cloud-vm", org_id: "org_1" } }))
+}
+
 function servicesWithWorkspaceOpenAuthorization(
   authorizeWorkspaceOpen: NonNullable<ControlPlaneServices["authority"]>["authorizeWorkspaceOpen"],
 ) {
@@ -739,6 +744,8 @@ describe("control plane session routes", () => {
   test("routes loopback bearer inventory and replay through signed authority without browser-only headers", async () => {
     const svc = services()
     const convex = {
+      openWorkspace: cloudWorkspaceOpen(),
+
       listSessions: vi.fn(async () => [
         {
           session_id: "session-1",
@@ -1098,6 +1105,8 @@ describe("control plane session routes", () => {
   test("serves signed session-list through the same logical response shape", async () => {
     const svc = services()
     const convex = {
+      openWorkspace: cloudWorkspaceOpen(),
+
       listSessions: vi.fn(async () => [
         {
           session_id: "session-1",
@@ -1138,6 +1147,8 @@ describe("control plane session routes", () => {
   test("serves signed project-scoped workspace session-list through workspace authority", async () => {
     const svc = services()
     const convex = {
+      openWorkspace: cloudWorkspaceOpen(),
+
       listSessions: vi.fn(async () => [
         {
           session_id: "session-1",
@@ -1179,6 +1190,8 @@ describe("control plane session routes", () => {
         { workspace_id: "ws_b", project_id: "proj_alpha" },
         { workspace_id: "ws_other", project_id: "proj_beta" },
       ]),
+      openWorkspace: cloudWorkspaceOpen(),
+
       listSessions: vi.fn(async (_auth: unknown, args: { workspaceId: string }) =>
         args.workspaceId === "ws_a"
           ? [{ session_id: "ses_a", title: "From A", created_at: 1, updated_at: 2 }]
@@ -1216,6 +1229,8 @@ describe("control plane session routes", () => {
     const svc = services()
     const convex = {
       listWorkspaces: vi.fn(async () => [{ workspace_id: "ws_a", project_id: "proj_other" }]),
+      openWorkspace: cloudWorkspaceOpen(),
+
       listSessions: vi.fn(async () => []),
     }
     svc.authority = convex as never
@@ -1233,6 +1248,8 @@ describe("control plane session routes", () => {
   test("session-list matches prefixed environment and git filter values", async () => {
     const svc = services()
     const convex = {
+      openWorkspace: cloudWorkspaceOpen(),
+
       listSessions: vi.fn(async () => [
         {
           session_id: "session-match",
@@ -1275,6 +1292,8 @@ describe("control plane session routes", () => {
   test("session-list does not accept legacy provider environment filters", async () => {
     const svc = services()
     const convex = {
+      openWorkspace: cloudWorkspaceOpen(),
+
       listSessions: vi.fn(async () => [
         {
           session_id: "session-match",

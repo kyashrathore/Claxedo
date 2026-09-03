@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "bun", "@cloudflare/workers-types"],
+    "skipLibCheck": true
+  },
+  "include": [],
+  "files": [
+    "src/authority/adapters/d1/agent-extension-authority.ts",
+    "src/authority/adapters/d1/audit-authority.ts",
+    "src/authority/adapters/d1/agent-extension-authority.test.ts"
+  ]
+}

@@ -13,6 +13,16 @@ import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/
 import { ConvexHttpClient } from "convex/browser"
 import { anyApi, type FunctionReference } from "convex/server"
 import { controlPlaneTimeoutMs, withTimeout } from "../authority/adapters/convex/timeout"
+import type {
+  ApplyPolarStateArgs,
+  ApplyPolarStateResult,
+  BillingStore,
+  BillingStoreEnv,
+  CheckoutContext,
+  EntitlementState,
+} from "./store-contract"
+
+export type { BillingStore } from "./store-contract"
 
 export class BillingStoreUnavailableError extends Error {
   constructor(message: string) {
@@ -32,70 +42,6 @@ type BillingApi = {
 }
 
 const billingApi = anyApi as unknown as BillingApi
-
-export type OrgBillingStateWrite = {
-  plan: "free" | "pro"
-  subscription_status?: string
-  polar_subscription_id?: string
-  seats_licensed?: number
-  current_period_end?: number
-  preserve_seats?: boolean
-}
-
-export type ApplyPolarStateArgs = {
-  polar_customer_id: string
-  source_ts: number
-  source: "customer_state" | "subscription_event" | "reconciliation"
-  org_states: Array<{ org_id?: string; state: OrgBillingStateWrite }>
-}
-
-export type ApplyPolarStateResult = {
-  results: Array<{ org_id: string; applied: boolean; reason?: string }>
-  unresolved: string[]
-}
-
-export type EntitlementStateRef = { orgId?: string; clerkOrgId?: string }
-
-export type EntitlementState =
-  | { found: false }
-  | {
-      found: true
-      org_id: string
-      plan?: "free" | "pro"
-      subscription_status?: string
-      seats_licensed?: number
-      /** F1: current org member count — the entitlement decision denies an org over its licensed seats. */
-      member_count?: number
-      current_period_end?: number
-      billing_synced_at?: number
-      polar_state_modified_at?: number
-      /** F11: wall-clock of the FIRST past_due transition — the grace anchor. */
-      past_due_since?: number
-    }
-
-export type CheckoutContext = {
-  org_id: string
-  clerk_org_id?: string
-  role?: string
-  member_count: number
-  plan?: "free" | "pro"
-  subscription_status?: string
-  seats_licensed?: number
-  polar_customer_id?: string
-}
-
-export type BillingStore = {
-  entitlementState(ref: EntitlementStateRef): Promise<EntitlementState>
-  applyPolarState(args: ApplyPolarStateArgs): Promise<ApplyPolarStateResult>
-  checkoutContext(userToken: string, clerkOrgId?: string): Promise<CheckoutContext>
-  listReconcileFlagged(): Promise<Array<{ org_id: string; polar_customer_id: string }>>
-  listDeletedWithSubscription(): Promise<
-    Array<{ org_id: string; polar_customer_id: string; polar_subscription_id: string }>
-  >
-}
-
-export type BillingStoreEnv = Record<string, string | undefined>
-
 
 /**
  * Convex-backed store. Construction never touches the network; missing config

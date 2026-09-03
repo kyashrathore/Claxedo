@@ -201,6 +201,54 @@ describe("Convex session visibility policy", () => {
     }
   })
 
+  test("hosted transcript retention uses the canonical owner and fails after org revocation", async () => {
+    const previousServiceToken = process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+    process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = "svc_secret"
+    try {
+      const t = convexTest(schema, modules)
+      const { orgId, ownerId } = await seedWorkspace(t)
+      const membershipId = await t.run(async (ctx) =>
+        await ctx.db.insert("org_memberships", stamped({
+          org_id: orgId,
+          user_id: ownerId,
+          role: "owner",
+        }) as never),
+      )
+      const args = {
+        service_token: "svc_secret",
+        organization_id: orgId,
+        owner_user_id: ownerId,
+        workspace_id: "ws_1",
+        session_id: "ses_retained",
+        updated_at: 42,
+        messages: [
+          { info: { id: "msg_user", role: "user" }, parts: [{ type: "text", text: "Plan it" }] },
+          { info: { id: "msg_assistant", role: "assistant" }, parts: [{ type: "text", text: "Done" }] },
+        ],
+      }
+
+      await expect(t.mutation(api.sessions.retainWorkGraphSessionTranscript, args as never)).resolves.toEqual({ ok: true })
+      await t.run(async (ctx) => {
+        expect(await ctx.db.query("session_history").collect()).toEqual([
+          expect.objectContaining({ session_id: "ses_retained", updated_at: 42 }),
+        ])
+        expect((await ctx.db.query("session_messages").collect()).map((row) => row.message_id)).toEqual([
+          "msg_user",
+          "msg_assistant",
+        ])
+      })
+
+      await t.run(async (ctx) => await ctx.db.delete(membershipId))
+      await expect(t.mutation(api.sessions.retainWorkGraphSessionTranscript, {
+        ...args,
+        session_id: "ses_after_revocation",
+      } as never)).rejects.toThrow("WorkGraph organization membership is required")
+    } finally {
+      if (previousServiceToken === undefined) delete process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN
+      else process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN = previousServiceToken
+    }
+  })
+
   test("revoked creators cannot manage participants", async () => {
     const t = convexTest(schema, modules)
     const { workspaceId } = await seedWorkspace(t)

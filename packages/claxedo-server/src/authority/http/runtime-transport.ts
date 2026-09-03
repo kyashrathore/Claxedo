@@ -1,12 +1,12 @@
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import type { WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
-import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ControlPlaneServices } from "../services"
 import { ControlPlaneProtocolError, txt, type ControlPlaneHttpOptions } from "./protocol"
 import { resolveWorkspaceRuntimeTarget } from "../runtime-target"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
+import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
 
 export function runtimePath(path: string, query?: Record<string, string | undefined>) {
   const url = new URL(path, "http://workspace-runtime.local")
@@ -30,7 +30,7 @@ export async function verifiedRuntimeJson<T>(
 ) {
   const health = await runtimeJson<Record<string, unknown>>(services, options, {
     ...input,
-    path: "/global/health",
+    path: WORKSPACE_RUNTIME_IDENTITY_PATH,
   })
   if (txt(health.workspaceId) !== input.workspaceId) {
     throw new ControlPlaneProtocolError(
@@ -110,13 +110,11 @@ async function runtimeFetch(
   const token = await provider.mintRuntimeAccessToken({
     workspaceId: input.workspaceId,
     hostId: target.hostId,
-    subject: input.auth?.mode === "signed" ? input.auth.user.subject : "control-plane",
-    principalKind: input.auth?.mode === "signed" ? "user" : "service",
     ...(input.auth?.mode === "signed"
-      ? await resolveRuntimeActor(requireAuthority(services), input.auth)
-      : { actorId: "control-plane", actorKind: "agent" as const }),
+      ? { principalKind: "user" as const, auth: input.auth, ...await resolveRuntimeActor(requireAuthority(services), input.auth) }
+      : CONTROL_PLANE_RUNTIME_ACTOR),
     orgId,
-    role: input.auth?.mode === "signed" ? input.authorityRole! : "owner",
+    role: input.auth?.mode === "signed" ? requiredRole(input.authorityRole) : "owner",
     ttlMs: 10 * 60_000,
   })
   const relayUrl = await provider.getRelayEndpoint(input.workspaceId, target.homeRegion)
@@ -130,4 +128,9 @@ async function runtimeFetch(
       headers,
     },
   )
+}
+
+function requiredRole(role: RelayRole | undefined): RelayRole {
+  if (role) return role
+  throw new ControlPlaneProtocolError(403, "workspace_authorization_denied", "Workspace role is required for runtime token minting")
 }

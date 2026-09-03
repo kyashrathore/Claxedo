@@ -53,6 +53,7 @@ import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
   sessionAccessDenied,
+  type SessionAccessDecision,
   type SessionAccessOperation,
   type SessionAccessPolicy,
 } from "../session-access-policy"
@@ -61,6 +62,18 @@ import {
   eventDeliveryPrincipal,
   sessionEventDeliveryPolicy,
 } from "../event-delivery"
+import {
+  authorizeSessionEventScope,
+  isSessionEventScopeResponse,
+  scopedReplay,
+  waitForSessionEventStream,
+  unknownEventSessionId,
+} from "./session-event-privacy"
+import {
+  acquireSessionTurnLease,
+  type ActiveSessionTurnLease,
+} from "./session-turn-lease"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 
 export type { RuntimeSessionBusEvent } from "../session/service"
 
@@ -98,6 +111,7 @@ type SessionBus = {
 type MessageSnapshot = {
   messages: AgentMessage[]
   maxEventOrdinal?: number
+  fencingToken?: number
 }
 
 type Ctx = Context
@@ -526,6 +540,134 @@ function turnAdmissionConflict(c: Ctx) {
   }, 409)
 }
 
+function managedRegistration(opts: Opts) {
+  return opts.sessionAccessPolicy?.sessionAuthority === "managed-private"
+}
+
+function managedTurnAdmission(opts: Opts) {
+  return opts.sessionAccessPolicy?.sessionAuthority === "managed-private"
+}
+
+async function acquireManagedPromptLease(input: {
+  opts: Opts
+  c: Ctx
+  sessionId: string
+  turnId?: string
+  onLost: () => Promise<void> | void
+}): Promise<{ lease?: ActiveSessionTurnLease; rejected?: Response }> {
+  if (!managedTurnAdmission(input.opts)) return {}
+  if (!input.turnId) {
+    return {
+      rejected: Response.json(errorBody(
+        "session_turn_id_required",
+        "Managed prompts require a stable messageID before runtime mutation",
+      ), { status: 400 }),
+    }
+  }
+  const acquired = await acquireSessionTurnLease({
+    policy: input.opts.sessionAccessPolicy!,
+    access: {
+      ...sessionAccessContext(input.c as never),
+      operation: "prompt",
+      sessionId: input.sessionId,
+      method: input.c.req.method,
+      path: input.c.req.path,
+    },
+    turnId: input.turnId,
+    onLost: input.onLost,
+  })
+  if (!acquired.acquired) return { rejected: sessionAccessDenied(acquired.decision) }
+  return { lease: acquired.lease }
+}
+
+function turnScope(base: ActiveTurnScope | undefined, lease: ActiveSessionTurnLease | undefined): ActiveTurnScope | undefined {
+  if (!lease) return base
+  return {
+    signal: base?.signal ? AbortSignal.any([base.signal, lease.signal]) : lease.signal,
+    ...(base?.dispose ? { dispose: base.dispose } : {}),
+  }
+}
+
+async function stopLostTurn(
+  runtime: AgentRuntime | undefined,
+  adapter: AgentHarnessAdapter,
+  sessionId: string,
+  directory: RuntimeDirectory,
+) {
+  if (runtime) {
+    await runtime.turns.abort(sessionId, directory).catch(() => undefined)
+    return
+  }
+  await adapter.abort?.(sessionId, directory).catch(() => undefined)
+}
+
+function lostTurnResponse(sessionId: string) {
+  return Response.json(errorBody(
+    "session_turn_lease_lost",
+    `Session ${sessionId} turn authority was lost before completion`,
+  ), { status: 409 })
+}
+
+function registrationOperationId(c: Ctx) {
+  const value = c.req.header("x-claxedo-session-registration-operation")?.trim()
+  return value || undefined
+}
+
+function registrationInput(c: Ctx, sessionId: string, operationId: string, title?: string) {
+  return {
+    ...sessionAccessContext(c as never),
+    operation: "session_create" as const,
+    sessionId,
+    registrationOperationId: operationId,
+    ...(title ? { sessionTitle: title } : {}),
+    method: c.req.method,
+    path: c.req.path,
+  }
+}
+
+async function markRegistrationAmbiguous(
+  opts: Opts,
+  c: Ctx,
+  sessionId: string,
+  operationId: string,
+  reason: string,
+) {
+  return await opts.sessionAccessPolicy?.markRegistrationAmbiguous?.({
+    ...registrationInput(c, sessionId, operationId),
+    reason,
+  })
+}
+
+async function compensateRegistration(input: {
+  opts: Opts
+  c: Ctx
+  adapter: AgentHarnessAdapter
+  directory: RuntimeDirectory
+  sessionId: string
+  operationId: string
+  reason: string
+}) {
+  const policy = input.opts.sessionAccessPolicy
+  if (!policy?.beginRegistrationCompensation || !policy.completeRegistrationCompensation) {
+    throw new Error("Managed session compensation authority is unavailable")
+  }
+  const registration = registrationInput(input.c, input.sessionId, input.operationId)
+  const begun = await policy.beginRegistrationCompensation({ ...registration, reason: input.reason })
+  if (!begun.allowed) throw new Error(`Session compensation was denied: ${begun.code}`)
+  try {
+    await input.adapter.deleteSession(input.sessionId, input.directory)
+    await input.opts.afterDeleteSession?.(input.c, input.directory, input.sessionId)
+  } catch (error) {
+    throw new AggregateError([error], "Session compensation could not delete runtime state")
+  }
+  const completed = await policy.completeRegistrationCompensation({ ...registration, reason: input.reason })
+  if (!completed.allowed) throw new Error(`Session compensation completion was denied: ${completed.code}`)
+}
+
+function unavailableRegistration(message: string): Exclude<SessionAccessDecision, { allowed: true }> {
+  return { allowed: false, status: 503, code: "session_registration_unavailable", message }
+}
+
 function unsupportedLiveAgentListError(error: unknown) {
   if (!(error instanceof Error)) return false
   return error.message.includes("does not expose live agent options")
@@ -605,43 +747,63 @@ async function registerCreatedSession(
   opts: Opts,
   c: Ctx,
   sessionId: string,
+  operationId: string | undefined,
   sessionTitle?: string,
-) {
-  if (!opts.sessionAccessPolicy) return
-  if (!opts.sessionAccessPolicy.registerSession) {
-    if (opts.sessionAccessPolicy.sessionAuthority !== "managed-private") return
-    return sessionAccessDenied({
-      allowed: false,
-      status: 403,
-      code: "session_authority_required",
-      message: "Managed session creation requires creator registration authority",
-    })
-  }
-  const input = {
-    ...sessionAccessContext(c as never),
-    operation: "session_create",
-    sessionId,
-    ...(sessionTitle ? { sessionTitle } : {}),
-    method: c.req.method,
-    path: c.req.path,
-  } as const
-  let decision
-  try {
-    decision = await opts.sessionAccessPolicy.registerSession(input)
-  } catch (firstError) {
-    // Registration is idempotent for one (actor, workspace, session id).
-    // A transport timeout can happen after the authority committed, so one
-    // same-id retry is the reconciliation read/write before compensation.
-    try {
-      decision = await opts.sessionAccessPolicy.registerSession(input)
-    } catch (reconcileError) {
-      throw new AggregateError(
-        [firstError, reconcileError],
-        "Session creator registration could not be reconciled",
-      )
+) : Promise<
+  | { kind: "registered" }
+  | { kind: "ambiguous"; response: Response }
+  | { kind: "denied"; response: Response }
+> {
+  if (!managedRegistration(opts)) return { kind: "registered" }
+  if (!operationId) {
+    return {
+      kind: "denied",
+      response: Response.json(errorBody(
+        "session_reservation_required",
+        "Managed session creation requires a reservation operation",
+      ), { status: 400 }),
     }
   }
-  if (!decision.allowed) return sessionAccessDenied(decision)
+  if (!opts.sessionAccessPolicy) {
+    return {
+      kind: "ambiguous",
+      response: sessionAccessDenied(unavailableRegistration("Managed session registration policy is unavailable")),
+    }
+  }
+  if (!opts.sessionAccessPolicy.registerSession) {
+    return {
+      kind: "ambiguous",
+      response: sessionAccessDenied(unavailableRegistration("Managed session registration authority is unavailable")),
+    }
+  }
+  const input = registrationInput(c, sessionId, operationId, sessionTitle)
+  let decision: SessionAccessDecision
+  try {
+    decision = await opts.sessionAccessPolicy.registerSession(input)
+  } catch (error) {
+    const reason = `registration_transport_error: ${errorMessage(error)}`
+    try {
+      await markRegistrationAmbiguous(opts, c, sessionId, operationId, reason)
+    } catch {
+      // The runtime state must still be preserved: registration may have
+      // committed before the transport failed, even if reconciliation storage
+      // is temporarily unavailable too.
+    }
+    return {
+      kind: "ambiguous",
+      response: sessionAccessDenied(unavailableRegistration("Session creator registration outcome is ambiguous; retry the same reservation operation")),
+    }
+  }
+  if (decision.allowed) return { kind: "registered" }
+  if (decision.status === 503) {
+    try {
+      await markRegistrationAmbiguous(opts, c, sessionId, operationId, decision.code)
+    } catch {
+      // Preserve possibly registered runtime state for the exact-id retry.
+    }
+    return { kind: "ambiguous", response: sessionAccessDenied(decision) }
+  }
+  return { kind: "denied", response: sessionAccessDenied(decision) }
 }
 
 async function rollbackCreatedSession(
@@ -872,10 +1034,17 @@ export function createSessionRoutes(opts: Opts) {
       return c.json(await filterSessionStatus(opts, c, status ?? {}))
     })
     .post("/session", async (c) => {
-      const guarded = await sessionOperationGuard(opts, c, "", "session_create")
-      if (guarded) return guarded
       const directory = await opts.resolveDirectory(c)
       const body = (await c.req.json().catch(() => ({}))) as { id?: string; title?: string }
+      const guarded = await sessionOperationGuard(opts, c, "", "session_create")
+      if (guarded) return guarded
+      const operationId = registrationOperationId(c)
+      if (managedRegistration(opts) && (!body.id || !operationId)) {
+        return c.json(errorBody(
+          "session_reservation_required",
+          "Managed session creation requires a preassigned session id and reservation operation",
+        ), 400)
+      }
       const config = normalizeSessionCreateConfig(body)
       const draftId = parseDraftId(c.req.header("x-claxedo-draft-id"))
       const workspaceId = await opts.resolveWorkspaceId?.(c, directory)
@@ -892,9 +1061,10 @@ export function createSessionRoutes(opts: Opts) {
         if (config.model && hasAdapterCapability(adapter, "runtime-config")) {
           adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
         }
-        const session = opts.createSession
+        const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
+        const session = existing ?? (opts.createSession
           ? await opts.createSession(c, directory, body.title, body.id)
-          : await adapter.createSession(directory, body.title, body.id)
+          : await adapter.createSession(directory, body.title, body.id))
         if (Object.keys(config).length > 0) {
           try {
             if (opts.updateSessionConfig) {
@@ -907,22 +1077,20 @@ export function createSessionRoutes(opts: Opts) {
             throw error
           }
         }
-        let registration: Response | undefined
-        try {
-          registration = await registerCreatedSession(opts, c, session.id, body.title)
-        } catch (error) {
-          await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
-          throw error
+        const registration = await registerCreatedSession(opts, c, session.id, operationId, body.title)
+        if (registration.kind === "ambiguous") {
+          return registration.response
         }
-        if (registration) {
-          await rollbackCreatedSession(
+        if (registration.kind === "denied") {
+          await compensateRegistration({
             opts,
             c,
             adapter,
             directory,
-            session.id,
-            new Error(`Session creator registration was denied with status ${registration.status}`),
-          )
+            sessionId: session.id,
+            operationId: operationId!,
+            reason: `registration_denied_${registration.response.status}`,
+          })
           opts.publishSessionLifecycle?.({
             type: "session.lifecycle",
             phase: "failed",
@@ -932,12 +1100,24 @@ export function createSessionRoutes(opts: Opts) {
             message: "Session creator registration was denied",
             ts: Date.now(),
           })
-          return registration
+          return registration.response
         }
         try {
           await after(opts.afterCreateSession?.(c, directory, session))
         } catch (error) {
-          await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+          if (managedRegistration(opts)) {
+            await compensateRegistration({
+              opts,
+              c,
+              adapter,
+              directory,
+              sessionId: session.id,
+              operationId: operationId!,
+              reason: `post_create_projection_failed: ${errorMessage(error)}`,
+            })
+          } else {
+            await rollbackCreatedSession(opts, c, adapter, directory, session.id, error)
+          }
           throw error
         }
         opts.publishSessionLifecycle?.({
@@ -1111,46 +1291,70 @@ export function createSessionRoutes(opts: Opts) {
       const access = sessionAccessContext(c as never)
       const parsedBody = (await c.req.json().catch(() => ({}))) as SessionPromptBody
       const body = await opts.transformPromptBody?.(c, { sessionId: id, directory, body: parsedBody }) ?? parsedBody
+      const turnAdmission = await acquireManagedPromptLease({
+        opts,
+        c,
+        sessionId: id,
+        turnId: body.messageID,
+        onLost: () => stopLostTurn(runtime, adapter, id, directory),
+      })
+      if (turnAdmission.rejected) return turnAdmission.rejected
       if (!runtime) await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
-      const turn = await (async () => {
+      const activeTurn = runtime && opts.createActiveTurnScope
+        ? turnScope(opts.createActiveTurnScope({ c, adapter, directory, sessionId: id }), turnAdmission.lease)
+        : undefined
+      try {
+        const turn = await (async () => {
         try {
           return runtime
             ? await runRuntimePromptTurn({
-            runtime,
-            sessionId: id,
-            directory,
-            body,
-            publishGlobal: opts.publishGlobal,
-            publishStatus: (event) => opts.sessionBus.publish(event),
-            createActiveTurnScope: opts.createActiveTurnScope
-              ? () => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id })
-              : undefined,
-            actor: access.actor,
-            author: access.author,
+                runtime,
+                sessionId: id,
+                directory,
+                body,
+                publishGlobal: opts.publishGlobal,
+                publishStatus: (event) => opts.sessionBus.publish(event),
+                activeTurn,
+                ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
+                actor: access.actor,
+                author: access.author,
               })
             : await runSessionPromptTurn({
-            adapter,
-            sessionId: id,
-            directory,
-            body,
-            publishGlobal: opts.publishGlobal,
-            publishStatus: (event) => opts.sessionBus.publish(event),
-            createActiveTurnScope: opts.createActiveTurnScope
-              ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
-              : undefined,
+                adapter,
+                sessionId: id,
+                directory,
+                body,
+                publishGlobal: opts.publishGlobal,
+                publishStatus: (event) => opts.sessionBus.publish(event),
+                createActiveTurnScope: opts.createActiveTurnScope
+                  ? ({ adapter, directory, sessionId }) => turnScope(
+                      opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
+                      turnAdmission.lease,
+                    )
+                  : undefined,
+                ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
               })
         } finally {
-          await flushDocumentsAfterTurn(opts, id)
+          if (!turnAdmission.lease?.lost()) await flushDocumentsAfterTurn(opts, id)
         }
-      })().catch((error) => {
+        })()
+        if (turnAdmission.lease?.lost() || (turnAdmission.lease && !turnAdmission.lease.valid())) {
+          return lostTurnResponse(id)
+        }
+        await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
+        if (turnAdmission.lease?.lost() || (turnAdmission.lease && !turnAdmission.lease.valid())) {
+          return lostTurnResponse(id)
+        }
+        const output = sessionPromptReply(turn)
+        if (output.assistantMessage) opts.publishGlobal(withDir(turn.scope, messageUpdated(output.assistantMessage)))
+        return c.json(output.body)
+      } catch (error) {
+        if (turnAdmission.lease?.lost()) return lostTurnResponse(id)
         if (isAgentRuntimeTurnConflictError(error)) return turnAdmissionConflict(c)
         throw error
-      })
-      if (turn instanceof Response) return turn
-      await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
-      const output = sessionPromptReply(turn)
-      if (output.assistantMessage) opts.publishGlobal(withDir(turn.scope, messageUpdated(output.assistantMessage)))
-      return c.json(output.body)
+      } finally {
+        await turnAdmission.lease?.release().catch(() => undefined)
+      }
     })
     .get("/session/:id/message", async (c) => {
       const sessionId = c.req.param("id")
@@ -1347,30 +1551,45 @@ export function createSessionRoutes(opts: Opts) {
       const adapter = await opts.resolveAdapter(c, { sessionId, directory })
       const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "fork", "forkSession", "fork", sessionId)
       if (unsupported) return unsupported
-      const body = (await c.req.json().catch(() => ({}))) as { messageId?: string }
-      const child = await adapter.forkSession!(sessionId, body.messageId ?? "", directory)
-      let registration: Response | undefined
-      try {
-        registration = await registerCreatedSession(opts, c, child.id)
-      } catch (error) {
-        await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
-        throw error
+      const body = (await c.req.json().catch(() => ({}))) as { id?: string; messageId?: string }
+      const operationId = registrationOperationId(c)
+      if (managedRegistration(opts) && (!body.id || !operationId)) {
+        return c.json(errorBody(
+          "session_reservation_required",
+          "Managed session forks require a preassigned child session id and reservation operation",
+        ), 400)
       }
-      if (registration) {
-        await rollbackCreatedSession(
+      const child = await adapter.forkSession!(sessionId, body.messageId ?? "", directory, body.id)
+      const registration = await registerCreatedSession(opts, c, child.id, operationId)
+      if (registration.kind === "ambiguous") return registration.response
+      if (registration.kind === "denied") {
+        await compensateRegistration({
           opts,
           c,
           adapter,
           directory,
-          child.id,
-          new Error(`Forked session creator registration was denied with status ${registration.status}`),
-        )
-        return registration
+          sessionId: child.id,
+          operationId: operationId!,
+          reason: `registration_denied_${registration.response.status}`,
+        })
+        return registration.response
       }
       try {
         await after(opts.afterCreateSession?.(c, directory, child))
       } catch (error) {
-        await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
+        if (managedRegistration(opts)) {
+          await compensateRegistration({
+            opts,
+            c,
+            adapter,
+            directory,
+            sessionId: child.id,
+            operationId: operationId!,
+            reason: `post_create_projection_failed: ${errorMessage(error)}`,
+          })
+        } else {
+          await rollbackCreatedSession(opts, c, adapter, directory, child.id, error)
+        }
         throw error
       }
       return c.json(child, 201)
@@ -1385,6 +1604,48 @@ export function createSessionRoutes(opts: Opts) {
       if (unsupported) return unsupported
       const body = (await c.req.json().catch(() => ({}))) as { command?: string }
       await adapter.executeCommand!(sessionId, body.command ?? "", directory)
+      return c.json({ ok: true })
+    })
+    .post("/session/:id/shell", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "shell")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "shell", "shell")
+      if (unsupported) return unsupported
+      const body = (await c.req.json().catch(() => ({}))) as {
+        command?: string
+        agent?: string
+        model?: { providerID: string; modelID: string }
+        messageID?: string
+      }
+      await adapter.shell!(sessionId, {
+        command: body.command ?? "",
+        agent: body.agent ?? "",
+        ...(body.model ? { model: body.model } : {}),
+        ...(body.messageID ? { messageID: body.messageID } : {}),
+      }, directory)
+      return c.json({ ok: true })
+    })
+    .post("/session/:id/summarize", async (c) => {
+      const sessionId = c.req.param("id")
+      const guarded = await sessionOperationGuard(opts, c, sessionId, "summarize")
+      if (guarded) return guarded
+      const directory = await opts.resolveDirectory(c, { sessionId })
+      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
+      const unsupported = await unsupportedIfUnavailable(c, adapter, directory, "commands", "summarize", "summarize")
+      if (unsupported) return unsupported
+      const body = (await c.req.json().catch(() => ({}))) as {
+        providerID?: string
+        modelID?: string
+        auto?: boolean
+      }
+      await adapter.summarize!(sessionId, {
+        providerID: body.providerID ?? "",
+        modelID: body.modelID ?? "",
+        ...(body.auto !== undefined ? { auto: body.auto } : {}),
+      }, directory)
       return c.json({ ok: true })
     })
     .post("/session/:id/prompt_async", async (c) => {
@@ -1423,6 +1684,21 @@ export function createSessionRoutes(opts: Opts) {
         }
       }
       const runtime = await opts.resolveRuntime?.(c, { sessionId: id, directory })
+      const turnAdmission = await acquireManagedPromptLease({
+        opts,
+        c,
+        sessionId: id,
+        turnId: body.messageID,
+        onLost: () => stopLostTurn(runtime, adapter, id, directory),
+      })
+      if (turnAdmission.rejected) {
+        if (body.messageID) {
+          const admitted = promptAdmissions.get(id)
+          admitted?.delete(body.messageID)
+          if (admitted?.size === 0) promptAdmissions.delete(id)
+        }
+        return turnAdmission.rejected
+      }
       const access = sessionAccessContext(c as never)
       if (!runtime) await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
       let settleAdmission: ((error?: unknown) => void) | undefined
@@ -1442,8 +1718,12 @@ export function createSessionRoutes(opts: Opts) {
                 publishGlobal: opts.publishGlobal,
                 publishStatus: (event) => opts.sessionBus.publish(event),
                 createActiveTurnScope: opts.createActiveTurnScope
-                  ? () => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id })
+                  ? () => turnScope(
+                      opts.createActiveTurnScope?.({ c, adapter, directory, sessionId: id }),
+                      turnAdmission.lease,
+                    )
                   : undefined,
+                ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
                 streamErrorMessage: streamTurnErrorMessage,
                 onAdmissionSettled: settleAdmission,
                 actor: access.actor,
@@ -1459,10 +1739,16 @@ export function createSessionRoutes(opts: Opts) {
                 publishUserMessage: false,
                 streamErrorMessage: streamTurnErrorMessage,
                 createActiveTurnScope: opts.createActiveTurnScope
-                  ? ({ adapter, directory, sessionId }) => opts.createActiveTurnScope?.({ c, adapter, directory, sessionId })
+                  ? ({ adapter, directory, sessionId }) => turnScope(
+                      opts.createActiveTurnScope?.({ c, adapter, directory, sessionId }),
+                      turnAdmission.lease,
+                    )
                   : undefined,
+                ...(turnAdmission.lease ? { turnAdmission: turnAdmission.lease } : {}),
               })
-          await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
+          if (!turnAdmission.lease?.lost()) {
+            await after(opts.afterMessageCheckpoint?.(c, directory, id, turn.messages))
+          }
         } catch (error) {
           settleAdmission?.(error)
           if (isAgentRuntimeTurnConflictError(error)) return
@@ -1472,8 +1758,12 @@ export function createSessionRoutes(opts: Opts) {
           // disclosure instead of being flattened to the literal "Stream error".
           opts.publishGlobal(withDir(compatScope(directory, id), sessionError(streamTurnErrorMessage(error), id)))
         } finally {
-          await flushDocumentsAfterTurn(opts, id)
-          await after(opts.afterMessageCheckpoint?.(c, directory, id, await adapter.getMessages(id, directory)))
+          const leaseLost = turnAdmission.lease?.lost() ?? false
+          if (!leaseLost) {
+            await flushDocumentsAfterTurn(opts, id)
+            await after(opts.afterMessageCheckpoint?.(c, directory, id, await adapter.getMessages(id, directory)))
+          }
+          await turnAdmission.lease?.release().catch(() => undefined)
         }
       })()
       const admissionError = admission ? await awaitAdmissionAck(admission) : undefined
@@ -1585,14 +1875,19 @@ export function createSessionRoutes(opts: Opts) {
       return c.json({ ok: true })
     })
     .get("/event", async (c) => {
-      const guarded = await sessionOperationGuard(opts, c, "", "session_event_stream")
-      if (guarded) return guarded
+      const scope = await authorizeSessionEventScope(c, opts.sessionAccessPolicy, "sessionID")
+      if (isSessionEventScopeResponse(scope)) return scope
+      const allows = scope.managed
+        ? (event: unknown) => unknownEventSessionId(event) === scope.sessionId
+        : (_event: unknown) => true
       const opened = sessionEventSource.open(eventDeliveryPrincipal(c))
       await opened.ready
       return streamSSE(c, async (stream) => {
         let cleanup: () => void = () => {}
         cleanup = attachSseFanout({
-          subscribe: (listener) => opened.subscribe(listener, () => {
+          subscribe: (listener) => opened.subscribe((event) => {
+            if (allows(event)) listener(event)
+          }, () => {
             cleanup()
             stream.abort()
           }),
@@ -1603,17 +1898,12 @@ export function createSessionRoutes(opts: Opts) {
             })
           },
           heartbeat: { type: "heartbeat" },
-          heartbeatMs: 2 * 60_000,
+          heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
           lastEventId: c.req.header("last-event-id"),
-          replay: opened.replay,
+          replay: scope.managed ? scopedReplay(opened.replay, allows) : opened.replay,
           replayLive: false,
         })
-        await new Promise<void>((resolve) => {
-          stream.onAbort(() => {
-            cleanup()
-            resolve()
-          })
-        })
+        await waitForSessionEventStream(stream, scope, opts.sessionAccessPolicy, cleanup)
       })
     })
 

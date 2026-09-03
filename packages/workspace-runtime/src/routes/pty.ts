@@ -150,6 +150,33 @@ export function PtyRoutes(
         })
       }
       const port = requestPort(c.req.url)
+      const accessContext = sessionAccessContext(c)
+      const agentHookAuthority = accessContext.actor && accessContext.authority && input.sessionId
+        ? policy.authorizeStream
+          ? await policy.authorizeStream({
+              ...accessContext,
+              operation: "agent_lifecycle_write",
+              sessionId: input.sessionId,
+              method: c.req.method,
+              path: c.req.path,
+            })
+          : {
+              allowed: false as const,
+              status: 503 as const,
+              code: "terminal_capability_authority_unavailable",
+              message: "Managed terminal callback authority is unavailable",
+            }
+        : undefined
+      if (agentHookAuthority && !agentHookAuthority.allowed) return sessionAccessDenied(agentHookAuthority)
+      const agentHookAccess = accessContext.actor && accessContext.authority && input.sessionId && agentHookAuthority?.allowed
+        ? {
+            token: crypto.randomUUID().replaceAll("-", ""),
+            context: { actor: accessContext.actor, authority: accessContext.authority },
+            sessionId: input.sessionId,
+            authorityLease: agentHookAuthority.lease,
+            authorityExpiresAt: agentHookAuthority.expiresAt,
+          }
+        : undefined
       const info = await Pty.create(
         {
           ...input,
@@ -158,6 +185,7 @@ export function PtyRoutes(
             ...(input.env ?? {}),
             ...(port ? { CLAXEDO_PORT: port } : {}),
             ...(workspaceId ? { CLAXEDO_WORKSPACE_ID: workspaceId } : {}),
+            ...(agentHookAccess ? { CLAXEDO_AGENT_HOOK_TOKEN: agentHookAccess.token } : {}),
           },
         },
         processObserver
@@ -171,7 +199,13 @@ export function PtyRoutes(
               ...(input.sessionId ? { sessionId: input.sessionId } : {}),
             }
           : undefined,
+        agentHookAccess,
       )
+      const actorId = sessionAccessContext(c).actor?.actorId
+      if (actorId && !Pty.bindAccessOwner(info.id, actorId)) {
+        await Pty.remove(info.id)
+        return c.json(errorBody("pty_owner_bind_failed", "Terminal ownership could not be recorded"), 503)
+      }
       // Ownership transfers only once the public create path has completed.
       // From this point the PTY belongs to the user and must outlive any
       // renderer/WebSocket connection that happens to observe it.

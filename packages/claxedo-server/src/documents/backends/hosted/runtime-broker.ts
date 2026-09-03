@@ -48,7 +48,6 @@ export function createHostedDocumentRuntimeBroker(
       const access = await provider.mintRuntimeAccessToken({
         workspaceId,
         hostId: target.hostId,
-        subject: input.auth.user.subject,
         principalKind: "user",
         ...await resolveRuntimeActor(authority, input.auth),
         orgId,
@@ -192,7 +191,6 @@ export function createHostedDocumentRuntimeBroker(
       const access = await provider.mintRuntimeAccessToken({
         workspaceId,
         hostId: target.hostId,
-        subject: input.auth.user.subject,
         principalKind: "user",
         ...await resolveRuntimeActor(authority, input.auth),
         orgId: input.entry.org_id,

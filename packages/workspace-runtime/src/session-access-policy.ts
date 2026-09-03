@@ -44,6 +44,8 @@ export type SessionAccessOperation =
   | "unrevert"
   | "fork"
   | "command"
+  | "shell"
+  | "summarize"
   | "delete"
   | "session_event_stream"
   | "session_v2_proxy"
@@ -55,6 +57,10 @@ export type SessionAccessOperation =
   | "pty_write"
   | "agent_lifecycle_read"
   | "agent_lifecycle_write"
+  | "agent_setup_read"
+  | "agent_setup_write"
+  | "worktree_read"
+  | "worktree_write"
   | "goal_state"
   | "goal_capabilities"
   | "goal_read"
@@ -69,36 +75,84 @@ export type SessionAccessPolicyInput = {
   authority?: SessionWorkspaceAuthority
   /** Signed request proof forwarded only to the narrow authority callback. */
   credential?: string
+  /** Cancels only the in-flight authority request; never serialized. */
+  signal?: AbortSignal
   operation: SessionAccessOperation
   sessionId?: string
   sessionTitle?: string
+  /** Immutable reserve/register operation created before runtime creation. */
+  registrationOperationId?: string
   method?: string
   path?: string
 }
 
 export type SessionAccessDecision =
   | { allowed: true }
-  | { allowed: false; status: 401 | 403 | 503; code: string; message: string }
+  | { allowed: false; status: 401 | 403 | 409 | 503; code: string; message: string }
 
 export type SessionAccessStreamDecision =
-  | { allowed: true; lease?: string; expiresAt: number }
+  | { allowed: true; lease: string; expiresAt: number }
+  | Exclude<SessionAccessDecision, { allowed: true }>
+export type SessionTurnLeaseDecision =
+  | {
+      allowed: true
+      turnId: string
+      leaseId: string
+      fencingToken: number
+      acquiredAt: number
+      expiresAt: number
+    }
+  | Exclude<SessionAccessDecision, { allowed: true }>
+export type SessionTurnReleaseDecision =
+  | { released: boolean }
   | Exclude<SessionAccessDecision, { allowed: true }>
 
 export type SessionAccessPolicy = {
   /** Composition marker: non-loopback managed hosts require private-session authority. */
-  sessionAuthority?: "local" | "managed-private"
+  sessionAuthority: "local" | "managed-private"
   authorize(input: SessionAccessPolicyInput): Promise<SessionAccessDecision> | SessionAccessDecision
   filterSessions(
     input: SessionAccessPolicyInput & { sessionIds: readonly string[] },
   ): Promise<readonly string[]> | readonly string[]
   authorizePrefix(input: SessionAccessPolicyInput & { method: string; path: string }): Promise<SessionAccessDecision> | SessionAccessDecision
+  authorizeHost?(
+    input: SessionAccessPolicyInput & { minimumRole: "viewer" | "editor" | "admin" | "owner" },
+  ): Promise<SessionAccessDecision> | SessionAccessDecision
   registerSession?(
-    input: SessionAccessPolicyInput & { sessionId: string },
+    input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string },
+  ): Promise<SessionAccessDecision> | SessionAccessDecision
+  markRegistrationAmbiguous?(
+    input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string; reason: string },
+  ): Promise<SessionAccessDecision> | SessionAccessDecision
+  beginRegistrationCompensation?(
+    input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string; reason: string },
+  ): Promise<SessionAccessDecision> | SessionAccessDecision
+  completeRegistrationCompensation?(
+    input: SessionAccessPolicyInput & { sessionId: string; registrationOperationId: string; reason: string },
   ): Promise<SessionAccessDecision> | SessionAccessDecision
   authorizeStream?(
     input: SessionAccessPolicyInput & { sessionId: string },
     lease?: string,
   ): Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
+  acquireTurn?(
+    input: SessionAccessPolicyInput & { sessionId: string; turnId: string },
+  ): Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+  renewTurn?(
+    input: SessionAccessPolicyInput & {
+      sessionId: string
+      turnId: string
+      leaseId: string
+      fencingToken: number
+    },
+  ): Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+  releaseTurn?(
+    input: SessionAccessPolicyInput & {
+      sessionId: string
+      turnId: string
+      leaseId: string
+      fencingToken: number
+    },
+  ): Promise<SessionTurnReleaseDecision> | SessionTurnReleaseDecision
 }
 
 export type SessionAuthorityInput = SessionAccessPolicyInput & {
@@ -111,11 +165,50 @@ export type SessionAuthorityPredicate = (
   input: SessionAuthorityInput,
 ) => Promise<SessionAccessDecision | boolean | void> | SessionAccessDecision | boolean | void
 
+export type SessionAuthorityStreamPredicate = (
+  input: SessionAuthorityInput,
+  lease?: string,
+) => Promise<SessionAccessStreamDecision> | SessionAccessStreamDecision
+
+export type SessionAuthorityTurnAcquirePredicate = (
+  input: SessionAuthorityInput & { turnId: string },
+) => Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+
+export type SessionAuthorityTurnRenewPredicate = (
+  input: SessionAuthorityInput & { turnId: string; leaseId: string; fencingToken: number },
+) => Promise<SessionTurnLeaseDecision> | SessionTurnLeaseDecision
+
+export type SessionAuthorityTurnReleasePredicate = (
+  input: SessionAuthorityInput & { turnId: string; leaseId: string; fencingToken: number },
+) => Promise<SessionTurnReleaseDecision> | SessionTurnReleaseDecision
+
+/**
+ * The private-session authority a managed composition delegates to.
+ *
+ * It is one bundle because the capabilities are one contract: a policy that
+ * can admit a request but not the live stream behind it still reports itself
+ * as `managed-private`, and every managed terminal or session stream then
+ * fails at the point it asks for the lease its agent callbacks renew. Turn
+ * admission is the same contract's fifth capability — a `managed-private`
+ * policy always turns on durable prompt admission (see `managedTurnAdmission`
+ * in `routes/session-core.ts`), so the bundle carries `acquireTurn`/
+ * `renewTurn`/`releaseTurn` as required members rather than an optional
+ * add-on a composer can forget to wire up.
+ */
+export type ManagedSessionAuthority = {
+  authorizeSessionRead: SessionAuthorityPredicate
+  authorizeSessionWrite: SessionAuthorityPredicate
+  authorizeSessionStream: SessionAuthorityStreamPredicate
+  registerSession: SessionAuthorityPredicate
+  acquireTurn: SessionAuthorityTurnAcquirePredicate
+  renewTurn: SessionAuthorityTurnRenewPredicate
+  releaseTurn: SessionAuthorityTurnReleasePredicate
+}
+
 export type ManagedWorkspaceSessionAccessPolicyOptions = {
   requireActor?: boolean
-  authorizeSessionRead?: SessionAuthorityPredicate
-  authorizeSessionWrite?: SessionAuthorityPredicate
-  registerSession?: SessionAuthorityPredicate
+  /** Absent for the unbound local flavour; a whole bundle for managed-private. */
+  authority?: ManagedSessionAuthority
 }
 
 type SessionRouteDecision =
@@ -168,6 +261,8 @@ export const SESSION_CORE_ROUTE_ACCESS = {
   "POST /session/:id/message": { kind: "authorize", operation: "prompt" },
   "POST /session/:id/prompt_async": { kind: "authorize", operation: "prompt" },
   "POST /session/:id/revert": { kind: "authorize", operation: "revert" },
+  "POST /session/:id/shell": { kind: "authorize", operation: "shell" },
+  "POST /session/:id/summarize": { kind: "authorize", operation: "summarize" },
   "POST /session/:id/unrevert": { kind: "authorize", operation: "unrevert" },
   "POST /session/:sessionId/permissions/:permId": { kind: "authorize", operation: "permission_response" },
   "PUT /session/:id/permission-mode": { kind: "authorize", operation: "permission_mode_write" },
@@ -186,11 +281,15 @@ const WRITE_OPERATIONS = new Set<SessionAccessOperation>([
   "unrevert",
   "fork",
   "command",
+  "shell",
+  "summarize",
   "delete",
   "checkpoint_write",
   "tool_write",
   "pty_write",
   "agent_lifecycle_write",
+  "agent_setup_write",
+  "worktree_write",
 ])
 
 const ROLE_RANK = { viewer: 0, editor: 1, admin: 2, owner: 3 } as const
@@ -238,6 +337,13 @@ function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | vo
   return result
 }
 
+const turnActorRequired = {
+  allowed: false as const,
+  status: 403 as const,
+  code: "session_actor_required",
+  message: "Managed session turns require verified actor claims",
+}
+
 /**
  * Workspace policy with an injectable creator/participant authority boundary.
  * Managed session-specific operations fail closed when the authority callbacks
@@ -247,15 +353,12 @@ function normalizeAuthorityDecision(result: SessionAccessDecision | boolean | vo
 export function managedWorkspaceSessionAccessPolicy(
   options: ManagedWorkspaceSessionAccessPolicyOptions = {},
 ): SessionAccessPolicy {
-  const authorityBacked = Boolean(options.authorizeSessionRead && options.authorizeSessionWrite && options.registerSession)
+  const authority = options.authority
   const authorize = async (input: SessionAccessPolicyInput) => {
     const workspace = authorizeManaged(input, options.requireActor === true)
     if (!workspace.allowed || !input.authority || !input.sessionId) return workspace
     if (!input.actor) return workspace
-    const predicate = sessionAccessRequiresWrite(input)
-      ? options.authorizeSessionWrite
-      : options.authorizeSessionRead
-    if (!predicate) {
+    if (!authority) {
       return {
         allowed: false,
         status: 403,
@@ -263,6 +366,9 @@ export function managedWorkspaceSessionAccessPolicy(
         message: "Managed session access requires creator, participant, or organization administrator authority",
       } satisfies SessionAccessDecision
     }
+    const predicate = sessionAccessRequiresWrite(input)
+      ? authority.authorizeSessionWrite
+      : authority.authorizeSessionRead
     return normalizeAuthorityDecision(await predicate({
       ...input,
       actor: input.actor,
@@ -271,7 +377,72 @@ export function managedWorkspaceSessionAccessPolicy(
     }))
   }
   return {
-    sessionAuthority: authorityBacked ? "managed-private" : "local",
+    sessionAuthority: authority ? "managed-private" : "local",
+    ...(authority
+      ? {
+          async authorizeStream(input: SessionAccessPolicyInput & { sessionId: string }, lease?: string) {
+            const workspace = authorizeManaged(input, options.requireActor === true)
+            if (!workspace.allowed) return workspace
+            if (!input.authority || !input.actor) {
+              return {
+                allowed: false as const,
+                status: 403 as const,
+                code: "session_actor_required",
+                message: "Managed session streams require verified actor claims",
+              }
+            }
+            return authority.authorizeSessionStream({
+              ...input,
+              actor: input.actor,
+              authority: input.authority,
+              sessionId: input.sessionId,
+            }, lease)
+          },
+          async acquireTurn(input: SessionAccessPolicyInput & { sessionId: string; turnId: string }) {
+            const workspace = authorizeManaged(input, options.requireActor === true)
+            if (!workspace.allowed) return workspace
+            if (!input.authority || !input.actor) return turnActorRequired
+            return authority.acquireTurn({
+              ...input,
+              actor: input.actor,
+              authority: input.authority,
+              sessionId: input.sessionId,
+            })
+          },
+          async renewTurn(input: SessionAccessPolicyInput & {
+            sessionId: string
+            turnId: string
+            leaseId: string
+            fencingToken: number
+          }) {
+            const workspace = authorizeManaged(input, options.requireActor === true)
+            if (!workspace.allowed) return workspace
+            if (!input.authority || !input.actor) return turnActorRequired
+            return authority.renewTurn({
+              ...input,
+              actor: input.actor,
+              authority: input.authority,
+              sessionId: input.sessionId,
+            })
+          },
+          async releaseTurn(input: SessionAccessPolicyInput & {
+            sessionId: string
+            turnId: string
+            leaseId: string
+            fencingToken: number
+          }) {
+            const workspace = authorizeManaged(input, options.requireActor === true)
+            if (!workspace.allowed) return workspace
+            if (!input.authority || !input.actor) return turnActorRequired
+            return authority.releaseTurn({
+              ...input,
+              actor: input.actor,
+              authority: input.authority,
+              sessionId: input.sessionId,
+            })
+          },
+        }
+      : {}),
     async authorize(input) {
       return authorize(input)
     },
@@ -283,7 +454,7 @@ export function managedWorkspaceSessionAccessPolicy(
       if (!workspace.allowed) return workspace
       if (!input.authority) return { allowed: true }
       if (!input.actor) return workspace
-      if (!options.registerSession) {
+      if (!authority) {
         return {
           allowed: false,
           status: 403,
@@ -291,7 +462,7 @@ export function managedWorkspaceSessionAccessPolicy(
           message: "Managed session creation requires creator registration authority",
         }
       }
-      return normalizeAuthorityDecision(await options.registerSession({
+      return normalizeAuthorityDecision(await authority.registerSession({
         ...input,
         actor: input.actor,
         authority: input.authority,

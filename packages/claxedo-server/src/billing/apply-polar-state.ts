@@ -21,7 +21,7 @@
  * one module serves both sources.
  */
 
-import type { ApplyPolarStateArgs, ApplyPolarStateResult, BillingStore, OrgBillingStateWrite } from "./store"
+import type { ApplyPolarStateArgs, ApplyPolarStateResult, BillingStore, OrgBillingStateWrite } from "./store-contract"
 
 /** Subscription statuses that entitle (ADR 014 §3: past_due is grace-managed in entitlement.ts). */
 const ENTITLING_STATUSES = new Set(["active", "trialing", "past_due"])

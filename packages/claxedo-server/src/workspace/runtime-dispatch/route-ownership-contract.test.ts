@@ -99,7 +99,6 @@ describe("route ownership", () => {
     const paths = [
       "/config",
       "/global/config",
-      "/provider",
       "/provider/auth",
       "/provider/claude-acp/oauth/start",
       "/auth/openai",
@@ -129,6 +128,7 @@ describe("route ownership", () => {
       "/mcp/local/disconnect",
       "/agent",
       "/command",
+      "/provider",
     ]
 
     for (const path of paths) {

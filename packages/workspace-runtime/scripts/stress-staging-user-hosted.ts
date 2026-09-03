@@ -116,22 +116,42 @@ function base64url(input: Buffer) {
   return input.toString("base64url")
 }
 
-function registrationPayload(input: {
-  workspaceId: string
-  hostId: string
-  challengeId: string
-  nonce: string
-}) {
+/**
+ * Machine-enrollment payload (v1) and heartbeat v2, byte-identical to the
+ * authority's verifiers (`hostEnrollmentPayload` /
+ * `hostEnrollmentHeartbeatPayloadV2`). Rebuilt here rather than imported: this
+ * script drives a STAGING control plane over HTTP and must not link server
+ * code. The literals are the contract, so drift fails at the first call.
+ */
+function enrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {
   return [
-    "claxedo.local-host-link.register.v1",
-    `workspace_id=${input.workspaceId}`,
+    "claxedo.host-enrollment.enroll.v1",
     `host_id=${input.hostId}`,
-    `challenge_id=${input.challengeId}`,
+    `request_id=${input.requestId}`,
     `nonce=${input.nonce}`,
   ].join("\n")
 }
 
-async function registerUserHosted(input: {
+function heartbeatPayloadV2(input: { hostId: string; ttlMs?: number; workspaceIds: readonly string[] }) {
+  return [
+    "claxedo.host-enrollment.heartbeat.v2",
+    `host_id=${input.hostId}`,
+    `ttl_ms=${input.ttlMs ?? ""}`,
+    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
+  ].join("\n")
+}
+
+const STRESS_LEASE_TTL_MS = 300_000
+
+/**
+ * Enroll this machine, assign the workspace to it, and ack the served set.
+ *
+ * Three calls where the retired flow had two, and the extra one is the point:
+ * enrollment proves the machine, assignment is the owner's intent, and the
+ * heartbeat's signed set is the machine's consent. Routing needs all three, so
+ * the tunnel this returns is not usable until the beat lands.
+ */
+async function serveUserHostedWorkspace(input: {
   env: Env
   token: string
   workspaceId: string
@@ -141,51 +161,81 @@ async function registerUserHosted(input: {
   const centralUrl = requireEnv(input.env, "CLAXEDO_CENTRAL_URL")
   const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
   const publicKey = JSON.stringify(pair.publicKey.export({ format: "jwk" }))
-  const challenge = await expectJson<{
-    challenge?: { challengeId?: string; nonce?: string }
-  }>(await fetch(route(centralUrl, `/api/workspace/${encodeURIComponent(input.workspaceId)}/user-hosted/challenge`), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${input.token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      hostId: input.hostId,
-      displayName: input.displayName,
-    }),
-  }), "user-hosted challenge")
-  const challengeId = challenge.challenge?.challengeId
-  const nonce = challenge.challenge?.nonce
-  if (!challengeId || !nonce) throw new Error("Challenge response was missing challengeId/nonce")
+  const privateKey = createPrivateKey({ key: pair.privateKey.export({ format: "jwk" }), format: "jwk" })
+  const machineSign = (payload: string) =>
+    base64url(signData("sha256", Buffer.from(payload), { key: privateKey, dsaEncoding: "ieee-p1363" }))
+  const headers = {
+    authorization: `Bearer ${input.token}`,
+    "content-type": "application/json",
+  }
 
-  const signature = base64url(signData("sha256", Buffer.from(registrationPayload({
-    workspaceId: input.workspaceId,
-    hostId: input.hostId,
-    challengeId,
-    nonce,
-  })), {
-    key: createPrivateKey({ key: pair.privateKey.export({ format: "jwk" }), format: "jwk" }),
-    dsaEncoding: "ieee-p1363",
-  }))
-  return await expectJson<{
-    workspace?: { workspace_id?: string; home_region?: string }
-    hostTunnel?: { hostTunnelToken?: string; relayUrl?: string; tokenExpiresAt?: number }
-  }>(await fetch(route(centralUrl, `/api/workspace/${encodeURIComponent(input.workspaceId)}/user-hosted/register`), {
-    method: "POST",
-    headers: {
-      authorization: `Bearer ${input.token}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      hostId: input.hostId,
-      publicKey,
-      challengeId,
-      signature,
-      displayName: input.displayName,
-      ttlMs: 300_000,
-      remoteDirectory: "staging-stress",
+  const request = await expectJson<{ request_id?: string; nonce?: string }>(
+    await fetch(route(centralUrl, "/api/claxedo/host/enrollments/requests"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ hostId: input.hostId }),
     }),
-  }), "user-hosted register")
+    "machine enrollment request",
+  )
+  const requestId = request.request_id
+  const nonce = request.nonce
+  if (!requestId || !nonce) throw new Error("Enrollment request response was missing request_id/nonce")
+
+  await expectJson<{ enrollment?: { host_id?: string } }>(
+    await fetch(route(centralUrl, "/api/claxedo/host/enrollments"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        hostId: input.hostId,
+        publicKey,
+        requestId,
+        signature: machineSign(enrollmentPayload({ hostId: input.hostId, requestId, nonce })),
+        displayName: input.displayName,
+        ttlMs: STRESS_LEASE_TTL_MS,
+      }),
+    }),
+    "machine enrollment",
+  )
+
+  const assigned = await expectJson<{
+    assignment?: { workspace_id?: string; host_id?: string }
+    hostTunnel?: { hostTunnelToken?: string; relayUrl?: string; tokenExpiresAt?: number; homeRegion?: string }
+  }>(
+    await fetch(route(centralUrl, `/api/workspace/${encodeURIComponent(input.workspaceId)}/host-assignment`), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        hostId: input.hostId,
+        displayName: input.displayName,
+        remoteDirectory: "staging-stress",
+      }),
+    }),
+    "workspace host assignment",
+  )
+
+  const beat = await expectJson<{ assigned_workspace_ids?: string[] }>(
+    await fetch(route(centralUrl, "/api/claxedo/host/enrollments/heartbeat"), {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        hostId: input.hostId,
+        signature: machineSign(
+          heartbeatPayloadV2({
+            hostId: input.hostId,
+            ttlMs: STRESS_LEASE_TTL_MS,
+            workspaceIds: [input.workspaceId],
+          }),
+        ),
+        ttlMs: STRESS_LEASE_TTL_MS,
+        workspaceIds: [input.workspaceId],
+      }),
+    }),
+    "machine heartbeat",
+  )
+  if (!beat.assigned_workspace_ids?.includes(input.workspaceId)) {
+    throw new Error("Heartbeat ack did not report the workspace as owner-assigned")
+  }
+  return assigned
 }
 
 async function waitForRuntime(url: string) {
@@ -413,7 +463,7 @@ async function main() {
   let runtimeServer: ReturnType<typeof startServer> | undefined
   let tunnel: ReturnType<typeof startWorkspaceRelayHostTunnel> | undefined
   try {
-    const registered = await registerUserHosted({
+    const registered = await serveUserHostedWorkspace({
       env,
       token: session.token,
       workspaceId,
@@ -422,7 +472,7 @@ async function main() {
     })
     const relayUrl = registered.hostTunnel?.relayUrl ?? requireEnv(env, "CLAXEDO_WORKSPACE_RELAY_URL")
     const hostTunnelToken = registered.hostTunnel?.hostTunnelToken
-    if (!hostTunnelToken) throw new Error("Register response did not include a Host Tunnel Token")
+    if (!hostTunnelToken) throw new Error("Host assignment did not include a Host Tunnel Token")
 
     runtimeServer = startServer(0, {
       target: { workspaceId, directory: workspaceDir },
@@ -466,7 +516,9 @@ async function main() {
       relayUrl,
       workspaceId,
       hostId,
-      homeRegion: registered.workspace?.home_region,
+      // The assignment's credential carries the region the relay is chosen
+      // by; there is no workspace row in this response to read it from.
+      homeRegion: registered.hostTunnel?.homeRegion,
     }
     const relayRoute = (path: string, init: RequestInit = {}) => ({
       url: route(connection.relayUrl!, `/workspaces/${encodeURIComponent(workspaceId)}${path}`),
@@ -556,7 +608,14 @@ async function main() {
   } finally {
     tunnel?.close()
     runtimeServer?.close()
-    await fetch(route(centralUrl, `/api/workspace/${encodeURIComponent(workspaceId)}/user-hosted/pause`), {
+    // Withdraw the owner's intent first, then park the machine. Either alone
+    // stops routing; doing both leaves staging with no assignment AND no live
+    // lease, so a later run starts from the same empty state every time.
+    await fetch(route(centralUrl, `/api/workspace/${encodeURIComponent(workspaceId)}/host-assignment`), {
+      method: "DELETE",
+      headers: { authorization: `Bearer ${session.token}` },
+    }).catch(() => undefined)
+    await fetch(route(centralUrl, "/api/claxedo/host/enrollments/pause"), {
       method: "POST",
       headers: {
         authorization: `Bearer ${session.token}`,

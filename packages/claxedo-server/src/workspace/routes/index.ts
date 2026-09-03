@@ -31,7 +31,6 @@ import { newWorkspaceId } from "../../platform/auth/workspace-id"
 import { apiError, captureWorkspaceTelemetry, parsedBody, rec, signedAccessOptions, signedOrError, type WorkspaceRouteOptions } from "../route-support"
 import { controlPlaneRateLimitError } from "../runtime-token-guards"
 import { addWorktree, cloneRepo, repoNameFromUrl } from "../git"
-import { heartbeatLocalHostLink, pauseLocalHostLink, registerLocalHostLink } from "../local-host-link"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
 import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
 import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/routes/sandbox-driver-routes"
@@ -61,6 +60,13 @@ const createBody = z
   .refine((body) => Boolean(body.connectionId) === Boolean(body.repo), {
     message: "connectionId and repo must be provided together",
   })
+
+const hostAssignmentBody = z
+  .object({
+    displayName: z.string().trim().min(1).max(200).optional(),
+    orgId: z.string().optional(),
+  })
+  .strict()
 
 const log = Log.create({ service: "workspace-routes" })
 
@@ -241,14 +247,115 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
         return c.json(await listProjects())
       })
       .route("/", workspaceConnectionRoutes(services, options))
-      .post("/:id/user-hosted/register", async (c) => {
-        return registerLocalHostLink(c, services, options)
+      .post("/:id/host-assignment", async (c) => {
+        // Sharing under machine-wide enrollment: the OWNER assigns this local
+        // workspace to THIS machine (`localHostIdentity()` inside the service —
+        // host identity is server-owned). The service adds the workspace to
+        // its served set and forces one signed heartbeat; the route answers
+        // only after that beat acked the workspace, so success means routable.
+        const authResult = await signedOrError(c.req.raw, { ...options, requireSigned: true }, services)
+        if ("error" in authResult) return c.json(authResult.error, authResult.status)
+        const auth = authResult.auth
+        if (!auth) {
+          return c.json(
+            controlPlaneAuthErrorBody(
+              new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required"),
+            ),
+            401,
+          )
+        }
+        const ws = await resolveWorkspace({ workspaceId: c.req.param("id") })
+        if (!ws) return c.json({ error: apiError("workspace_not_found", "Workspace not found") }, 404)
+        if (ws.kind !== "local") {
+          return c.json({
+            error: apiError("host_assignment_local_workspace_required", "Only local workspaces can be assigned for user-hosted sharing"),
+          }, 400)
+        }
+        const rawBody = await c.req.json().catch(() => ({}))
+        if (rec(rawBody)?.hostId) {
+          return c.json({
+            error: apiError("host_assignment_identity_server_owned", "Host assignment machine identity is server-owned"),
+          }, 400)
+        }
+        const parsed = parsedBody(hostAssignmentBody, rawBody)
+        if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
+        const body = parsed.body
+        try {
+          const authority = requireAuthority(services)
+          await authority.usersMe(auth)
+          const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
+            key: `hostAssignment.assign:${ws.id}`,
+            action: "host_workspace_assignment.assign.denied",
+            workspaceId: ws.id,
+          })
+          if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
+          if (!options.hostAssignments) {
+            return c.json({ error: apiError("not_implemented", "This deployment does not support host assignments") }, 501)
+          }
+          const result = await options.hostAssignments.assignWorkspace(auth, {
+            workspaceId: ws.id,
+            displayName: body.displayName ?? ws.workspace_name ?? ws.project_name ?? ws.repo_name ?? ws.id,
+            ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
+            ...(options.defaultHomeRegion ? { homeRegion: options.defaultHomeRegion } : {}),
+            ...(ws.project_id ? { projectId: ws.project_id } : {}),
+            ...(ws.repo_url ?? ws.git_remote ? { repoUrl: ws.repo_url ?? ws.git_remote } : {}),
+            ...(ws.repo_name ? { repoName: ws.repo_name } : {}),
+            ...(ws.git_branch ? { gitBranch: ws.git_branch } : {}),
+          })
+          await authority.auditAllow(auth, {
+            action: "host_workspace_assignment.assigned",
+            workspaceId: ws.id,
+            metadata: { hostId: result.assignment.host_id },
+          })
+          captureWorkspaceTelemetry({
+            services,
+            auth,
+            event: "host_workspace_assignment.assigned",
+            workspaceId: ws.id,
+            properties: { hostId: result.assignment.host_id },
+          })
+          return c.json(result)
+        } catch (err) {
+          if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+          throw err
+        }
       })
-      .post("/:id/user-hosted/heartbeat", async (c) => {
-        return heartbeatLocalHostLink(c, services, options, controlPlaneRateLimiter)
-      })
-      .post("/:id/user-hosted/pause", async (c) => {
-        return pauseLocalHostLink(c, services, options)
+      .delete("/:id/host-assignment", async (c) => {
+        const workspaceId = c.req.param("id")
+        const authResult = await signedOrError(c.req.raw, { ...options, requireSigned: true }, services)
+        if ("error" in authResult) return c.json(authResult.error, authResult.status)
+        const auth = authResult.auth
+        if (!auth) {
+          return c.json(
+            controlPlaneAuthErrorBody(
+              new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required"),
+            ),
+            401,
+          )
+        }
+        try {
+          const authority = requireAuthority(services)
+          await authority.usersMe(auth)
+          const rateLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
+            key: `hostAssignment.unassign:${workspaceId}`,
+            action: "host_workspace_assignment.unassign.denied",
+            workspaceId,
+          })
+          if (rateLimit) return c.json(rateLimit.body, rateLimit.status)
+          if (!options.hostAssignments) {
+            return c.json({ error: apiError("not_implemented", "This deployment does not support host assignments") }, 501)
+          }
+          const result = await options.hostAssignments.unassignWorkspace(auth, workspaceId)
+          await authority.auditAllow(auth, {
+            action: "host_workspace_assignment.unassigned",
+            workspaceId,
+            metadata: {},
+          })
+          return c.json(result)
+        } catch (err) {
+          if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
+          throw err
+        }
       })
       .route("/", workspaceShareRoutes(services, options))
       .delete("/:id", async (c) => {

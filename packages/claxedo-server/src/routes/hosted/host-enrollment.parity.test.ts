@@ -82,8 +82,19 @@ function enrollmentPayload(input: { hostId: string; requestId: string; nonce: st
   ].join("\n")
 }
 
-function heartbeatPayload(input: { hostId: string; ttlMs?: number }) {
-  return ["claxedo.host-enrollment.heartbeat.v1", `host_id=${input.hostId}`, `ttl_ms=${input.ttlMs ?? ""}`].join("\n")
+/**
+ * Heartbeat payload v2: the machine's ONE signature per interval also covers
+ * the workspaces it currently serves (sorted, comma-joined). Restated here
+ * rather than imported so a drift in either authority's literal fails parity
+ * instead of following it.
+ */
+function heartbeatPayload(input: { hostId: string; ttlMs?: number; workspaceIds: readonly string[] }) {
+  return [
+    "claxedo.host-enrollment.heartbeat.v2",
+    `host_id=${input.hostId}`,
+    `ttl_ms=${input.ttlMs ?? ""}`,
+    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
+  ].join("\n")
 }
 
 type Recorded = { status: number; body: unknown }
@@ -367,12 +378,24 @@ describe("host enrollment is the same feature on both authorities", () => {
     async (env) => {
       const owner = env.as("user_owner")
       const { hostId, key, enrollment } = await enroll(owner)
-      const beat = await owner.post("/heartbeat", { hostId, signature: key.sign(heartbeatPayload({ hostId })) })
+      const workspaceIds: string[] = []
+      const beat = await owner.post("/heartbeat", {
+        hostId,
+        signature: key.sign(heartbeatPayload({ hostId, workspaceIds })),
+        workspaceIds,
+      })
       const enrolledExpiry = (enrollment.body as { enrollment: { expires_at: number } }).enrollment.expires_at
       const beatBody = beat.body as { expires_at: number }
       return { ...(stable(beat) as Record<string, unknown>), extended: beatBody.expires_at >= enrolledExpiry }
     },
-    { status: 200, body: { expires_at: "<number>", last_seen_at: "<number>" }, extended: true },
+    {
+      status: 200,
+      // The owner's assignment view rides back on every ack (empty here — no
+      // workspace was assigned). No `hostTunnel`: the route mints one only
+      // when a signer is configured AND the beat acked an assigned workspace.
+      body: { expires_at: "<number>", last_seen_at: "<number>", assigned_workspace_ids: [] },
+      extended: true,
+    },
   )
 
   parity(
@@ -381,7 +404,28 @@ describe("host enrollment is the same feature on both authorities", () => {
       const owner = env.as("user_owner")
       const { hostId } = await enroll(owner)
       const attacker = hostKey()
-      return (await owner.post("/heartbeat", { hostId, signature: attacker.sign(heartbeatPayload({ hostId })) })).status
+      return (await owner.post("/heartbeat", {
+        hostId,
+        signature: attacker.sign(heartbeatPayload({ hostId, workspaceIds: [] })),
+        workspaceIds: [],
+      })).status
+    },
+    500,
+  )
+
+  parity(
+    "refuses a heartbeat whose signature covers a different served set",
+    async (env) => {
+      // The v2 payload binds the signature to the acked workspaces. Accepting
+      // a body whose set differs from the signed one would let a stolen beat
+      // ack workspaces the machine never consented to serve.
+      const owner = env.as("user_owner")
+      const { hostId, key } = await enroll(owner)
+      return (await owner.post("/heartbeat", {
+        hostId,
+        signature: key.sign(heartbeatPayload({ hostId, workspaceIds: [] })),
+        workspaceIds: ["ws_injected"],
+      })).status
     },
     500,
   )
@@ -514,8 +558,9 @@ describe("host enrollment is the same feature on both authorities", () => {
       })
       const beat = await owner.post("/heartbeat", {
         hostId,
-        signature: key.sign(heartbeatPayload({ hostId, ttlMs: 120_000 })),
+        signature: key.sign(heartbeatPayload({ hostId, ttlMs: 120_000, workspaceIds: [] })),
         ttlMs: 120_000,
+        workspaceIds: [],
       })
       // A window rather than an instant: each backend reads its own clock. The
       // claim is that a requested TTL is applied, not clamped to the 60s
@@ -546,6 +591,11 @@ describe("both authorities implement the whole enrollment port", () => {
     "heartbeatHostEnrollment",
     "pauseHostEnrollment",
     "activeHostEnrollment",
+    // The owner-assignment grain that replaced per-workspace links: assign,
+    // unassign, and the routing read that requires assigned ∩ acked ∩ live.
+    "assignWorkspaceHost",
+    "unassignWorkspaceHost",
+    "activeWorkspaceHost",
   ] as const
 
   test("sqlite", () => {

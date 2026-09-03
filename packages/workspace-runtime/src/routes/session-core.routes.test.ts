@@ -39,6 +39,8 @@ const EXPECTED_SESSION_CORE_ROUTES = [
   "POST /session/:id/message",
   "POST /session/:id/prompt_async",
   "POST /session/:id/revert",
+  "POST /session/:id/shell",
+  "POST /session/:id/summarize",
   "POST /session/:id/unrevert",
   "POST /session/:sessionId/permissions/:permId",
   "PUT /session/:id/permission-mode",
@@ -73,12 +75,13 @@ describe("OpenCode-compatible session route inventory", () => {
   })
 
   test("keeps the opaque Session V2 proxy behind a prefix-level decision", async () => {
-    const source = await Bun.file(new URL("../workspace/runtime.ts", import.meta.url)).text()
-    const routes = [...source.matchAll(/app\.all\("(\/api\/session[^\"]*)"/g)]
+    const runtimeSource = await Bun.file(new URL("../workspace/runtime.ts", import.meta.url)).text()
+    const proxySource = await Bun.file(new URL("./session-v2-proxy.ts", import.meta.url)).text()
+    const routes = [...runtimeSource.matchAll(/app\.all\("(\/api\/session[^\"]*)"/g)]
       .map((match) => `ALL ${match[1]}`)
       .sort()
 
     expect(Object.keys(SESSION_V2_PROXY_ROUTE_ACCESS).sort()).toEqual(routes)
-    expect(source).toContain("sessionAccessPolicy.authorizePrefix({")
+    expect(proxySource).toContain("policy.authorizePrefix({")
   })
 })

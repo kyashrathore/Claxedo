@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "types": ["node", "bun", "@cloudflare/workers-types"],
+    "skipLibCheck": true
+  },
+  "include": [],
+  "files": [
+    "../claxedo-server-core/src/authority/repository-key.ts",
+    "src/authority/adapters/d1/workspace-authority.ts",
+    "src/authority/adapters/d1/workspace-authority.test.ts"
+  ]
+}

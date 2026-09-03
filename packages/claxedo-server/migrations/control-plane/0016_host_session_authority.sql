@@ -1,0 +1,21 @@
+-- The HOST declares how the runtime it serves composed its session access.
+--
+-- The composition is not a fact the control plane holds, and it cannot be
+-- reasoned out from a workspace's access or backing. The same product composes
+-- either flavour depending on whether a session authority was injected — a
+-- desktop daemon leaves it local, a `claxedo up` host with an authority
+-- composes `managed-private` — and only the machine knows which one it built.
+-- Assuming "local" at a managed-private host makes every client open the
+-- workspace-wide event stream that runtime answers with a permanent 400
+-- `session_event_scope_required`.
+--
+-- So the machine says, on the same heartbeat that renews its lease, and this
+-- column records exactly what it said. NULL means it said nothing: a
+-- connection minted from such a host carries no stream scope, and the client
+-- opens no workspace stream rather than picking a flavour on its own.
+--
+-- Deliberately not covered by the heartbeat signature. That signature proves
+-- machine CONSENT to serve a workspace set; this is a description of a
+-- composition, which can neither grant nor widen access — the runtime itself
+-- admits or refuses every stream.
+alter table host_enrollments add column session_authority text;

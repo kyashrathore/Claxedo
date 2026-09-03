@@ -23,7 +23,7 @@
 
 import { describe, expect, test, vi } from "vitest"
 import { BillingRoutes, type PolarClientLike } from "./routes"
-import type { BillingStore } from "./store"
+import type { BillingStore } from "./store-contract"
 import type { DurableIdempotencyStore } from "../authority/http/idempotency"
 import { signStandardWebhook } from "./standard-webhooks"
 

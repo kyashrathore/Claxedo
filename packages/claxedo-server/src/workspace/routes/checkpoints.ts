@@ -1,16 +1,26 @@
 import { Hono } from "hono"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import { ControlPlaneAuthError, controlPlaneAuthConfig, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
+import type { ClerkVerifier, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { createWorkspaceCheckpointService } from "../../workspace/checkpoints"
 import { signedOrError } from "../route-support"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { RelayRole } from "@claxedo/workspace-relay"
+
+type CheckpointRouteOptions = {
+  loopbackRelayUrl?: string
+  defaultHomeRegion?: string
+  allowUnsignedLocal?: boolean
+  authentication?: RequestAuthenticationAdapter
+  verifier?: ClerkVerifier
+}
+
 export function WorkspaceCheckpointRoutes(
   services?: ControlPlaneServices,
-  options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean } = {},
+  options: CheckpointRouteOptions = {},
 ) {
   return new Hono()
     .get("/:id/checkpoints", async (c) => {
@@ -124,15 +134,16 @@ async function authorized(
   request: Request,
   workspaceId: string,
   services: ControlPlaneServices | undefined,
-  options: { allowUnsignedLocal?: boolean },
+  options: Pick<CheckpointRouteOptions, "allowUnsignedLocal" | "authentication" | "verifier">,
   write = false,
 ) {
   if (options.allowUnsignedLocal && services && !services.auth.config.enabled) {
     return { auth: undefined, role: "owner" as const, orgId: undefined }
   }
   const auth = await signedOrError(request, {
-    authConfig: services?.auth.config ?? controlPlaneAuthConfig(),
-    verifier: services?.auth.verifier,
+    authentication: options.authentication,
+    authConfig: services?.auth.config,
+    verifier: options.verifier ?? services?.auth.verifier,
     requireSigned: true,
   }, services)
   if ("error" in auth) {
@@ -179,13 +190,12 @@ function service(
   role: RelayRole,
   workspaceOrgId: string | undefined,
   services: ControlPlaneServices,
-  options: { loopbackRelayUrl?: string; defaultHomeRegion?: string; allowUnsignedLocal?: boolean },
+  options: CheckpointRouteOptions,
 ) {
   const sandboxManager = services.sandbox.sandboxManager
   if (!sandboxManager) throw new Error("sandbox_manager_unavailable")
   let principalPromise: Promise<{
     principalKind: "user" | "service"
-    subject: string
     actorId: string
     actorKind: "human" | "agent"
     orgId: string | undefined
@@ -197,14 +207,12 @@ function service(
   const principal = () => principalPromise ??= auth
     ? resolveRuntimeActor(requireAuthority(services), auth).then((actor) => ({
         principalKind: "user" as const,
-        subject: auth.user.subject,
         orgId: workspaceOrgId,
         role,
         ...actor,
       }))
     : Promise.resolve({
         principalKind: "service" as const,
-        subject: "control-plane",
         actorId: "control-plane",
         actorKind: "agent" as const,
         orgId: undefined,
@@ -224,14 +232,25 @@ function service(
       relayProvider: services.relay.provider,
       loopbackRelayUrl: options.loopbackRelayUrl,
       defaultHomeRegion: services.defaultHomeRegion ?? options.defaultHomeRegion,
-      ...identity,
+      runtimeActor: {
+        principalKind: identity.principalKind,
+        actorId: identity.actorId,
+        actorKind: identity.actorKind,
+        ...("actorPublicId" in identity && identity.actorPublicId ? { actorPublicId: identity.actorPublicId } : {}),
+        ...("actorName" in identity && identity.actorName ? { actorName: identity.actorName } : {}),
+        ...("actorAvatarUrl" in identity && identity.actorAvatarUrl ? { actorAvatarUrl: identity.actorAvatarUrl } : {}),
+      },
+      orgId: identity.orgId,
+      role: identity.role,
       resume,
     })
   }
   return createWorkspaceCheckpointService({
     sandboxManager,
-    inspectRuntimeRequest: async (workspaceId, path, init) => await runtimeRequest(workspaceId, path, init, false),
-    runtimeRequest: async (workspaceId, path, init) => await runtimeRequest(workspaceId, path, init, true),
+    inspectRuntimeRequest: async (workspaceId, path, init) =>
+      await runtimeRequest(workspaceId, path, init, false),
+    runtimeRequest: async (workspaceId, path, init) =>
+      await runtimeRequest(workspaceId, path, init, true),
   })
 }
 

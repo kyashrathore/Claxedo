@@ -36,6 +36,7 @@ import {
   CodexHarnessAdapter,
   OpenCodeHarnessAdapter,
   PiHarnessAdapter,
+  type AgentConfigOptions,
   type AgentHarnessAdapter,
   type OpenCodeRequestFn,
 } from "@claxedo/agent-sdk-runtime/adapters"
@@ -589,7 +590,7 @@ describe("workspace runtime auth helpers", () => {
       },
       async applyConfig() {},
       async probeConfigOptions() {
-        return options
+        return { options }
       },
       dispose() {},
     } as unknown as AgentHarnessAdapter
@@ -632,14 +633,16 @@ describe("workspace runtime auth helpers", () => {
       async applyConfig() {},
       async probeConfigOptions() {
         probes += 1
-        return [{
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "gpt-5.3-codex",
-          selectOptions: [{ id: "gpt-5.3-codex", value: "gpt-5.3-codex", name: "gpt-5.3-codex" }],
-        }]
+        return {
+          options: [{
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "gpt-5.3-codex",
+            selectOptions: [{ id: "gpt-5.3-codex", value: "gpt-5.3-codex", name: "gpt-5.3-codex" }],
+          }],
+        }
       },
       dispose() {},
     } as unknown as AgentHarnessAdapter
@@ -656,12 +659,81 @@ describe("workspace runtime auth helpers", () => {
     const res = await app.request(
       `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=acp:openclaw`,
     )
-    const body = await res.json() as AgentConfigOption[]
+    const body = await res.json() as AgentConfigOptions
 
     expect(res.status).toBe(200)
     expect(probes).toBe(1)
-    expect(body[0]?.currentValue).toBe("gpt-5.3-codex")
-    expect(body[0]?.selectOptions?.some((item) => item.value === "gpt-5.3-codex")).toBe(true)
+    expect(body.options[0]?.currentValue).toBe("gpt-5.3-codex")
+    expect(body.options[0]?.selectOptions?.some((item) => item.value === "gpt-5.3-codex")).toBe(true)
+    expect("resolvedModel" in body).toBe(false)
+  })
+
+  test("harness config options reports the model an ACP agent resolved for itself", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-resolved-model-"))
+    tempDirs.push(dir)
+    process.env.HOME = dir
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const adapter = {
+      adapterCapabilities: ["runtime-config"] as const,
+      setModel() {},
+      setAuth() {},
+      async applyConfig() {},
+      async probeConfigOptions(): Promise<AgentConfigOptions> {
+        return {
+          options: [{ id: "mode", name: "Mode", category: "mode", type: "select", currentValue: "code" }],
+          resolvedModel: { id: "openclaw-pro", name: "Openclaw Pro" },
+        }
+      },
+      dispose() {},
+    } as unknown as AgentHarnessAdapter
+    const registry: WorkspaceHarnessRegistry = [{
+      match: (runner) => runner.id === "openclaw" && runner.access === "acp",
+      create: () => adapter,
+    }]
+    const app = new Hono()
+    mountTestHost(app, {
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
+      harnesses: registry,
+    })
+
+    const res = await app.request(
+      `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=acp:openclaw`,
+    )
+    const body = await res.json() as AgentConfigOptions
+
+    expect(res.status).toBe(200)
+    expect(body.resolvedModel).toEqual({ id: "openclaw-pro", name: "Openclaw Pro" })
+    expect(body.options.some((item) => item.category === "model")).toBe(false)
+  })
+
+  test("harness config options names the unapplied ACP connection instead of failing untyped", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-options-unapplied-acp-"))
+    tempDirs.push(dir)
+    process.env.HOME = dir
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const app = new Hono()
+    mountTestHost(app, {
+      harness: { id: "openclaw", access: "acp", connection: { kind: "process", binary: "openclaw-acp" } },
+    })
+
+    // `stranger` is a well-formed ACP identity the applied registry has no
+    // descriptor for. It must reach the caller as this route's own error body,
+    // not as the framework's untyped 500 — the local server relays this message
+    // into the composer's model control.
+    const res = await app.request(
+      `http://localhost/api/wr/harness-config-options?directory=${encodeURIComponent(dir)}&harness=acp:stranger`,
+    )
+    expect(res.status).toBe(502)
+    expect(await res.json()).toEqual({
+      ok: false,
+      error: {
+        code: "harness_config_options_unavailable",
+        harness: "stranger",
+        message: 'ACP connection "stranger" is not configured on this runtime',
+      },
+    })
   })
 
   test("runtime config apply serializes concurrent pushes", async () => {
@@ -2010,24 +2082,151 @@ describe("workspace runtime auth helpers", () => {
     expect(seen.map((s) => s.path)).toEqual(["/provider", "/experimental/tool/ids", "/global/event"])
   })
 
-  test("managed proxied event streams drop malformed frames while preserving public heartbeats", async () => {
+  /**
+   * Non-opencode harnesses get their catalog from the HOST, through the seam,
+   * or not at all. The kit must never invent one (it has no credentials to
+   * derive it from) and must not answer "unavailable" when the host can.
+   */
+  test("serves a non-opencode provider catalog through the host-injected seam", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-seam-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const asked: Array<{ harnessId: string; providerId?: string }> = []
+
+    const app = new Hono()
+    mountTestHost(app, {
+      opencodeCompat: true,
+      providerCatalog: async (input) => {
+        asked.push(input)
+        if (input.harnessId === "broken") return { ok: false, error: { code: "provider_models_unavailable" } }
+        return { all: [{ id: "anthropic", name: "Anthropic", models: { "claude-x": { id: "claude-x" } } }], default: {}, connected: ["anthropic"] }
+      },
+    })
+
+    const pi = await app.request("http://localhost/provider?harness=pi&provider=anthropic")
+    expect(pi.status).toBe(200)
+    expect(await pi.json()).toMatchObject({ connected: ["anthropic"] })
+    expect(asked).toEqual([{ harnessId: "pi", providerId: "anthropic" }])
+
+    // A host that says "unavailable" is answered as the compat router would.
+    const broken = await app.request("http://localhost/provider?harness=broken")
+    expect(broken.status).toBe(502)
+  })
+
+  /**
+   * The write half of `/provider`. Disconnecting a CONFIG-declared provider has
+   * no credential to drop, so it lands in the harness config this workspace's
+   * runtime owns — and the very next catalog read is derived from it.
+   */
+  test("disables a config-declared provider in this workspace's opencode config", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-config-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const seen: Array<{ method: string; path: string; body?: unknown }> = []
+    let config: Record<string, unknown> = { provider: { "clinepass-2": { name: "Cline pass 2" } } }
+    const handler: OpenCodeRequestFn = async (req) => {
+      const url = new URL(req.url)
+      const body = req.method === "PATCH" ? await req.json() as Record<string, unknown> : undefined
+      seen.push({ method: req.method, path: url.pathname, ...(body ? { body } : {}) })
+      if (url.pathname === "/global/config") {
+        if (req.method === "PATCH") config = { ...config, ...body }
+        return Response.json(config)
+      }
+      if (url.pathname === "/provider") {
+        const disabled = new Set((config.disabled_providers as string[] | undefined) ?? [])
+        return Response.json({
+          all: [{ id: "clinepass-2", name: "Cline pass 2", env: [], models: { "kimi-k3": { id: "kimi-k3", name: "Kimi K3" } } }],
+          connected: ["clinepass-2"].filter((id) => !disabled.has(id)),
+          default: {},
+        })
+      }
+      return new Response("unexpected", { status: 500 })
+    }
+
+    const app = new Hono()
+    mountTestHost(app, { opencodeRequest: handler, opencodeCompat: true })
+
+    const before = await app.request("http://localhost/provider?harness=opencode")
+    expect(await before.json()).toMatchObject({ connected: ["clinepass-2"] })
+
+    const disable = await app.request("http://localhost/api/wr/provider-config?harness=opencode&directory=workspace:ws_1", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "clinepass-2", disabled: true }),
+    })
+    expect(disable.status).toBe(200)
+    expect(await disable.json()).toEqual({ harness: "opencode", disabled_providers: ["clinepass-2"] })
+    expect(seen.filter((item) => item.path === "/global/config")).toEqual([
+      { method: "GET", path: "/global/config" },
+      { method: "PATCH", path: "/global/config", body: { disabled_providers: ["clinepass-2"] } },
+    ])
+
+    const after = await app.request("http://localhost/provider?harness=opencode")
+    expect(await after.json()).toMatchObject({ connected: [] })
+  })
+
+  test("refuses a provider-config write for a harness that declares no providers", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-config-unsupported-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+
+    const app = new Hono()
+    mountTestHost(app, { opencodeCompat: true })
+
+    const res = await app.request("http://localhost/api/wr/provider-config?harness=claude-sdk", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic", disabled: true }),
+    })
+
+    expect(res.status).toBe(404)
+    expect(await res.json()).toMatchObject({ error: { code: "provider_config_unsupported_harness" } })
+  })
+
+  test("still refuses a non-opencode catalog when no host seam is supplied", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-provider-noseam-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const app = new Hono()
+    mountTestHost(app, { opencodeCompat: true })
+
+    const res = await app.request("http://localhost/provider?harness=pi")
+    expect(res.status).toBe(502)
+    expect(await res.json()).toMatchObject({ ok: false, error: { code: "provider_models_unavailable", harness: "pi" } })
+  })
+
+  test("managed event streams use the canonical filtered hub instead of an untrusted upstream", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-managed-events-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const encoder = new TextEncoder()
-    const handler: OpenCodeRequestFn = async () => new Response(new ReadableStream<Uint8Array>({
-      start(controller) {
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "server.heartbeat", properties: {} } })}\n\n`))
-        controller.enqueue(encoder.encode("data: not-json\n\n"))
-        controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "future.transcript", properties: { text: "secret" } } })}\n\n`))
-        controller.close()
-      },
-    }), { headers: { "Content-Type": "text/event-stream" } })
+    let upstreamRequests = 0
+    const handler: OpenCodeRequestFn = async () => {
+      upstreamRequests += 1
+      return new Response(new ReadableStream<Uint8Array>({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "server.heartbeat", properties: {} } })}\n\n`))
+          controller.enqueue(encoder.encode("data: not-json\n\n"))
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "future.transcript", properties: { text: "secret" } } })}\n\n`))
+          controller.close()
+        },
+      }), { headers: { "Content-Type": "text/event-stream" } })
+    }
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
       authorize: async () => ({ allowed: true }),
       authorizePrefix: async () => ({ allowed: true }),
       filterSessions: async (input) => input.sessionIds,
+      authorizeStream: async () => ({
+        allowed: true,
+        lease: "lease_managed_events",
+        expiresAt: Date.now() + 60_000,
+      }),
     }
     const host = createWorkspaceHost({
       opencodeRequest: handler,
@@ -2052,16 +2251,75 @@ describe("workspace runtime auth helpers", () => {
     })
     await host.apply({ version: 1, runner: { type: "opencode" }, auth: {}, mcp: {} })
 
-    const response = await app.request("http://localhost/global/event", {
+    const response = await app.request("http://localhost/global/event?sessionID=session_public_heartbeat", {
       headers: { Accept: "text/event-stream" },
     })
-    const body = await response.text()
+    const reader = response.body!.getReader()
+    const first = await reader.read()
+    const body = new TextDecoder().decode(first.value)
+    await reader.cancel()
 
     expect(response.status).toBe(200)
-    expect(body).toContain("server.heartbeat")
+    expect(body).toContain("server.connected")
     expect(body).not.toContain("not-json")
     expect(body).not.toContain("future.transcript")
     expect(body).not.toContain("secret")
+    expect(upstreamRequests).toBe(0)
+    host.dispose()
+  })
+
+  test("managed global event revocation ends the reader and ignores later private frames", async () => {
+    const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-managed-global-revoke-"))
+    tempDirs.push(dir)
+    process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
+    const hub = createRuntimeEventHub()
+    let authorityCalls = 0
+    const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
+      authorize: async () => ({ allowed: true }),
+      authorizePrefix: async () => ({ allowed: true }),
+      filterSessions: async (input) => input.sessionIds,
+      authorizeStream: async () => {
+        authorityCalls += 1
+        return authorityCalls === 1
+          ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
+          : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+      },
+    }
+    const app = new Hono()
+    app.use("*", async (c, next) => {
+      ;(c as any).set("relayHostAuth", {
+        actor_id: "actor_1",
+        actor_kind: "human",
+        workspace_id: "workspace_1",
+        org_id: "org_1",
+        host_id: "host_1",
+        role: "editor",
+      })
+      await next()
+    })
+    const host = mountTestHost(app, { eventHub: hub, sessionAccessPolicy: policy })
+
+    const response = await app.request("http://localhost/global/event?sessionID=ses_private", {
+      headers: { Accept: "text/event-stream" },
+    })
+    const reader = response.body!.getReader()
+    expect((await reader.read()).done).toBe(false)
+    const ended = await Promise.race([
+      reader.read().then((item) => item.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ])
+    hub.publishGlobal({
+      directory: "/repo",
+      payload: {
+        type: "session.updated",
+        properties: { info: { id: "ses_private" } },
+      } as CompatEvent,
+    })
+
+    expect(response.status).toBe(200)
+    expect(ended).toBe(true)
+    expect((await reader.read()).done).toBe(true)
     host.dispose()
   })
 
@@ -3147,7 +3405,15 @@ describe("workspace host adapter + store caching (characterization)", () => {
     // created lazily on first store() call.
     expect(dbExists()).toBe(false)
 
-    // Bind a session through a store()-backed path to materialize the store.
+    // Creating a session is the store()-backed path that materializes the
+    // store: it binds the session row and the adapter writes the session's
+    // first config alongside it. A config PATCH only ACCEPTS an update onto a
+    // bound session, so the create has to come first.
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}&runner=claude`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s-lazy", title: "Lazy store" }),
+    })
     const update = await app.request(
       `http://localhost/session/s-lazy/config?directory=${encodeURIComponent(dir)}&runner=claude`,
       {
@@ -3161,6 +3427,7 @@ describe("workspace host adapter + store caching (characterization)", () => {
         }),
       },
     )
+    expect(created.status).toBe(201)
     expect(update.status).toBe(200)
     expect(dbExists()).toBe(true)
 
@@ -3430,8 +3697,11 @@ describe("workspace host store factory seam (Unit 2)", () => {
       storeFactory: injected.factory,
     })
 
-    // Store-backed route: PATCH then GET the session config. This exercises the
-    // lazy session-config store() path (getSessionConfig/updateSessionConfig).
+    // Store-backed routes: create the session, then PATCH and GET its config.
+    // This exercises the lazy session-config store() path (bindSession /
+    // getSessionConfig / updateSessionConfig). The create is what binds the
+    // session and its first config row; a PATCH only accepts an update onto a
+    // session the store already holds.
     const config = {
       harness: { id: "claude", access: "native" },
       model: { providerID: "anthropic", modelID: "sonnet" },
@@ -3439,6 +3709,11 @@ describe("workspace host store factory seam (Unit 2)", () => {
       agent: "build",
     } satisfies SessionConfig
 
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}&runner=claude`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s-mem" }),
+    })
     const update = await app.request(
       `http://localhost/session/s-mem/config?directory=${encodeURIComponent(dir)}&runner=claude`,
       {
@@ -3451,6 +3726,7 @@ describe("workspace host store factory seam (Unit 2)", () => {
       `http://localhost/session/s-mem/config?directory=${encodeURIComponent(dir)}&runner=claude`,
     )
 
+    expect(created.status).toBe(201)
     expect(update.status).toBe(200)
     expect(read.status).toBe(200)
     expect(await read.json()).toEqual(config)
@@ -3551,6 +3827,11 @@ describe("workspace host store factory seam (Unit 2)", () => {
       storeRoot,
     })
 
+    const created = await app.request(`http://localhost/session?directory=${encodeURIComponent(dir)}&runner=claude`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id: "s-disk" }),
+    })
     const update = await app.request(
       `http://localhost/session/s-disk/config?directory=${encodeURIComponent(dir)}&runner=claude`,
       {
@@ -3564,6 +3845,7 @@ describe("workspace host store factory seam (Unit 2)", () => {
         }),
       },
     )
+    expect(created.status).toBe(201)
     expect(update.status).toBe(200)
     expect(fs.existsSync(storeRoot)).toBe(true)
 
@@ -4057,7 +4339,7 @@ describe("global compatibility stream (Unit 4)", () => {
       ;(c as unknown as { set(name: string, value: unknown): void }).set("relayHostAuth", {
         iss: "workspace-relay",
         aud: "workspace-host-service",
-        sub: "user_1",
+        principal_kind: "user",
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
@@ -4069,6 +4351,7 @@ describe("global compatibility stream (Unit 4)", () => {
         exp: now + 60,
         iat: now,
         jti: "rat_1",
+        parent_jti: "parent_rat_1",
       })
       await next()
     })
@@ -4255,6 +4538,9 @@ describe("session create workspace isolation (Unit 4)", () => {
           created
             .filter((row) => row.directory === directory)
             .map((row) => ({ id: row.id, time: { created: 1, updated: 2 } })),
+        getSession: async (id: string, directory: string) => created.some((row) => row.id === id && row.directory === directory)
+          ? { id, time: { created: 1, updated: 2 } }
+          : null,
         createSession: async (directory: string, _title?: string, id?: string) => {
           const next = { id: id ?? `ses_${created.length}`, directory }
           created.push(next)
@@ -4280,7 +4566,8 @@ describe("session create workspace isolation (Unit 4)", () => {
     }
 
     try {
-      expect((await create(home, { id: "ses_home", title: "Home" })).status).toBe(201)
+      const homeCreated = await create(home, { id: "ses_home", title: "Home" })
+      expect(homeCreated.status).toBe(201)
       expect(await listIds(home)).toContain("ses_home")
       expect(await listIds(other)).not.toContain("ses_home")
 

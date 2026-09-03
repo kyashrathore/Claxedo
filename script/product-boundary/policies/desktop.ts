@@ -53,9 +53,27 @@ export const desktopMainComposition: Policy = {
   // daemon-exit lifecycle owner. Account identity resolution (`account/identity.ts`,
   // reached through the lazy account composition the source walk includes)
   // publishes display name/email after OAuth. Account IPC and service timing
-  // share `account/account-perf.ts` as the single diagnostics owner; keep the
-  // measured closure ceiling exact with no headroom.
-  ceilings: { modules: 79, packages: 23 },
+  // share `account/account-perf.ts` as the single diagnostics owner. The
+  // credential-bound auth descriptor and native refresh owner replace the old
+  // userinfo identity module, a reviewed net +1 module with no package growth.
+  // Control-plane transport resilience adds two reviewed owners:
+  // `account/hosted-transport.ts` (stall recovery for hosted reads) and
+  // `account/no-reuse-fetch.ts` (fresh-connection node http(s) fetch), the
+  // latter bringing `node:https` and `node:stream` into the main closure.
+  // Keep the measured closure exact with no headroom.
+  // 2026-09-01: +1 `host-connector/child-protocol.ts` growth is internal; the
+  // new module is the serving push path in `main/index.ts` reaching the
+  // supervisor's onServing seam (machine-wide enrollment). 83/24.
+  // `host-connector/account-follow.ts` is the one owner of what remote access
+  // does when the account changes (verdicts, not reachability): one module.
+  // `host-connector/local-workspace-description.ts` — the machine's own description
+  // of a shared workspace, read from the daemon at share time: one module.
+  // +2 `main/dev-identity.ts` and its electron-free policy half
+  // `main/dev-identity-policy.ts` — the one owner of a linked worktree's
+  // per-instance app name, icon tint and userData suffix, reached from
+  // `main/index.ts` and `main/windows.ts`. Electron and node:fs/path only, so
+  // no package edge: 87/24.
+  ceilings: { modules: 87, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -107,7 +125,13 @@ export const desktopAccountComposition: Policy = {
     requiredPackages: ["electron"],
   },
 
-  ceilings: { modules: 15, packages: 6 },
+  // Control-plane transport resilience: `account/no-reuse-fetch.ts` (reviewed
+  // owner of the fresh-connection node http(s) fetch) joins through
+  // `account/index.ts`, adding `node:https` to the composition closure.
+  // 2026-09-01: +1 — the account composition now reaches the host-connector
+  // protocol's shared types through the supervisor's assignment ops
+  // (workspace.assignHost via runAccountOperation). 17/7.
+  ceilings: { modules: 17, packages: 7 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-account.json",
     minModules: 10,
@@ -212,14 +236,64 @@ export const desktopRendererUnsigned: Policy = {
   // 999 + 1 (workspace-create-api) + 1 (hosted-control-call) + 3 (integrations/
   // documents/WorkGraph) + 1 (control-plane fetch) + 1 (SSE stream) + 1
   // (agent-config extensions) = 1007. The 16 lazy provider-settings locale
-  // dictionaries shared with app-local bring this to 1023. Removing the retired
-  // local UI extension view, registry, and loader subtracts three modules:
-  // 1023 - 3 = 1020, with no package edge.
+  // dictionaries shared with app-local bring this to 1023. The reviewed
+  // deployable-service split adds the service contribution catalog, Documents
+  // and WorkGraph contribution roots, bootstrap-owner route, and canonical
+  // private-session reservation client while retiring the monolithic hosted
+  // contribution loader: net +5 modules. `@claxedo/service-contract` is the
+  // one dependency-neutral package addition.
+  // 2026-09-01: +2 `app/shell-revealed.ts` (the one window-once splash flag
+  // both shell boundaries consult) and the unshare path through
+  // `platform/remote-access` (machine-wide enrollment share toggle).
+  // 2026-09-01: +1 `features/workspaces/data/auto-share-local-workspaces.ts`,
+  // the same reconciler app-local took. Enabling remote access on the desktop
+  // now publishes every local workspace the machine holds rather than the ones
+  // a user ticked, and this is the module that keeps the two sets equal.
+  // Reviewed owner: the workspaces data domain (see app-local.ts).
+  // Session open/switch instrumentation (`platform/performance/session-perf.ts`
+  // and its screen-side owner `features/session/ui/session-open-perf.ts`)
+  // adds two modules and no package edge.
+  // `platform/runtime/agent/cached-signed-workspace.ts` — the one reader of the
+  // signed inventory from the shared Query cache: one module, no package edge.
+  // Removing the retired local UI extension view, registry, and loader
+  // subtracts three modules.
   // The Goal-mode merge adds the same session Goal owners app-local reviews
   // (composer intent/submission/draft, authority cache/query/controller,
   // runtime client/ingress, dock, Stop fallback + shared JSON reader):
-  // 1020 + 13 = 1033 modules, no new package edge.
-  ceilings: { modules: 1033, packages: 62 },
+  // thirteen modules.
+  // Plan 150 section E: `features/extensions/marketplace/transport.ts` — the
+  // one module that decides WHICH MACHINE answers an extensions request, so the
+  // marketplace stops asking `getClaxedoServerUrl()` for a workspace served
+  // elsewhere. Owned by the extensions feature, reachable only through the
+  // already-lazy marketplace panel: one module, no package edge.
+  // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
+  // catalog owner) in the same slice: one more module, no package edge.
+  // Plan 150 section C: the same three Settings scope modules app-local
+  // reviews (`features/settings/scope/settings-scope.tsx`, its pure
+  // `settings-scope-options.ts`, and `features/settings/ui/scope-selector.tsx`)
+  // — the explicit (workspace, harness) selection Providers and Models read
+  // under. Reviewed owner: the settings feature; reachable only through the
+  // already-lazy Settings dialog. Three modules, no package edge; the measured
+  // closure is 1048.
+  // The same two session-event-stream owners app-local reviews
+  // (`platform/runtime/session-event-scope.ts` and
+  // `app/integrations/claxedo-event-targets.ts`) are reachable from the
+  // renderer's own events provider. Two modules, no package edge; the measured
+  // closure is 1050.
+  // `app/providers/global-sdk/route-event-scope.ts` reaches this renderer
+  // through the same global-sdk provider; one module, no package edge; the
+  // measured closure is 1051.
+  // `app/providers/global-sdk/runtime-event-projection.ts` reaches it the same
+  // way — the meaning half of the global-sdk provider, split from the half that
+  // owns the connections. Reviewed owner: the global-sdk provider; one module,
+  // no package edge; the measured closure is 1052.
+  // `@claxedo/agent-event-runtime`'s `contracts/turn-message-ids` reaches this
+  // renderer through the same session feature modules as the app entry: it is
+  // the one owner of the runtime's turn message-id convention, which the
+  // session transcript reads to place a reply under the message it answers.
+  // Reviewed owner: the agent event contracts package, already in this
+  // closure; one module, no package edge; the measured closure is 1053.
+  ceilings: { modules: 1053, packages: 59 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -257,40 +331,28 @@ export const desktopHostedContribution: Policy = {
   ],
   permittedOutsideRoots: MANIFEST_READS,
   control: {
-    minModules: 250,
+    minModules: 4,
     requiredModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
-      `${APP}/app/composition/hosted-contribution-loader.ts`,
+      `${APP}/platform/remote-access/machine-remote-access.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],
-    requiredPackages: ["solid-js", "@claxedo/workgraph"],
+    requiredPackages: [],
   },
-  // The hosted task composer now reaches the existing canonical config owner.
-  // Tenant-aware multiplayer adds the agent-runtime request-error mapper to
-  // the already reachable hosted contribution graph: 301 + 1 = 302 modules.
-  // Workspace resolve + connection mint/refresh AccountPort wiring pulls in the
-  // shared bridge (`hosted-control-call`) and result decoders (`hosted-operations`)
-  // through `workspace-runtime-record` / `workspace-relay-connection`:
-  // 302 + 2 = 304 modules, still no package edge.
-  // Control-plane AccountPort fetch adapter:
-  // 304 + 1 = 305 modules, still no package edge.
-  // AccountPort SSE stream adapter for central `session.events`:
-  // 305 + 1 = 306. The 16 lazy provider-settings locale dictionaries shared
-  // with app-local bring this to 322. Removing the two retired UI extension
-  // owners reachable from hosted contributions leaves 320 modules, still no
-  // package edge.
-  // Goal-mode merge: the hosted contribution reaches the session Goal query/
-  // transport owners through the shared session store: 320 + 10 = 330 modules,
-  // no new package edge.
-  ceilings: { modules: 330, packages: 40 },
+  // Optional service renderers now have independent catalog-driven roots. This
+  // activation entry owns only desktop machine remote access and its shared
+  // contract, so the reviewed closure deliberately shrinks from 322/40 to 4/0:
+  // the Goal-mode session owners the monolithic loader used to drag in are
+  // reached from their own service roots, not from this activation entry.
+  ceilings: { modules: 4, packages: 0 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
-    minModules: 500,
-    minChunks: 50,
+    minModules: 4,
+    minChunks: 1,
     requiredModules: [
       `${DESKTOP}/renderer/hosted-contributions.ts`,
-      `${APP}/app/composition/hosted-contribution-loader.ts`,
+      `${APP}/platform/remote-access/machine-remote-access.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access-binding.ts`,
       `${DESKTOP}/renderer/remote-access/electron-machine-remote-access.ts`,
     ],

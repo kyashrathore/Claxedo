@@ -65,10 +65,7 @@ function clientOptions(input?: { ensure?: ReturnType<typeof vi.fn>; tokenExpiry?
     options: {
       sandboxManager,
       relayProvider: relay,
-      subject: "control-plane",
-      principalKind: "service",
-      actorId: "control-plane",
-      actorKind: "agent",
+      runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
       role: "owner",
     },
   })
@@ -172,10 +169,7 @@ describe("WorkspaceRuntimeClient", () => {
       options: {
         sandboxManager,
         relayProvider: relay,
-        subject: "control-plane",
-        principalKind: "service",
-        actorId: "control-plane",
-        actorKind: "agent",
+        runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
         role: "owner",
       },
     })

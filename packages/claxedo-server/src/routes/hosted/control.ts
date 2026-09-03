@@ -1,5 +1,6 @@
 import { Hono } from "hono"
 import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import {
   pullHostedControlSession as pullControlSession,
   pullHostedControlSessionMessages as pullControlSessionMessages,
@@ -16,6 +17,7 @@ import {
 } from "../../authority/http/idempotency"
 import { rec, signedOrError, txt } from "../../workspace/route-support"
 type Options = {
+  authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   cliTokenEnv?: Record<string, string | undefined>
@@ -75,6 +77,7 @@ async function signedAuth(
   options: Options,
 ) {
   const authResult = await signedOrError(request, {
+    authentication: options.authentication,
     authConfig: options.authConfig,
     ...(options.verifier ? { verifier: options.verifier } : {}),
     ...(options.cliTokenEnv ? { cliTokenEnv: options.cliTokenEnv } : {}),

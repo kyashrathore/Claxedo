@@ -13,6 +13,7 @@ import {
   type HostedControlPlaneServicesOptions,
   type WorkspaceAuthority,
 } from "./services"
+import { testManagedSessionAuthority } from "../test-support/managed-session-authority"
 
 function fakePorts(sync = fakeSync()) {
   return {
@@ -89,7 +90,7 @@ function hostedOptions(
 
 function fakeAuthority(): WorkspaceAuthority {
   const fn = () => vi.fn()
-  return {
+  return testManagedSessionAuthority({
     usersMe: fn(),
     listOrgs: fn(),
     resolveOrgId: fn(),
@@ -101,11 +102,6 @@ function fakeAuthority(): WorkspaceAuthority {
     openWorkspace: fn(),
     listWorkspaces: fn(),
     registerLocalForSharing: fn(),
-    createLocalHostLinkChallenge: fn(),
-    registerLocalHostLink: fn(),
-    heartbeatLocalHostLink: fn(),
-    pauseLocalHostLink: fn(),
-    activeLocalHostLink: fn(),
     deleteWorkspace: fn(),
     createCloudWorkspace: fn(),
     grantWorkspaceShare: fn(),
@@ -133,7 +129,7 @@ function fakeAuthority(): WorkspaceAuthority {
     deleteAgentExtensionPolicyOverride: fn(),
     auditAllow: fn(),
     auditDeny: fn(),
-  } as unknown as WorkspaceAuthority
+  })
 }
 
 describe("control-plane services", () => {
@@ -446,8 +442,10 @@ describe("control-plane services", () => {
     expect(text).toContain("credentials: services.credentials")
     // Prefix match: workspaceRouteOptions gained a connections argument in the
     // parallel connections work; the composition contract here is only that the
-    // workspace routes are constructed from services + workspaceRouteOptions.
-    expect(text).toMatch(/WorkspaceRoutes\(\s*services,\s*workspaceRouteOptions\(services/)
+    // workspace routes are constructed from services + workspaceRouteOptions,
+    // plus the machine-share seam wired from the remote-access service.
+    expect(text).toMatch(/WorkspaceRoutes\(\s*services,\s*\{\s*\.\.\.workspaceRouteOptions\(services/)
+    expect(text).toContain("hostAssignments: remoteAccessService")
     expect(text).toContain("app.route(\"/\", JwksRoutes(process.env))")
     expect(text).toContain("InternalRelayResolverRoutes({")
     expect(text).toContain("BootstrapRoutes({")
@@ -569,7 +567,7 @@ describe("control-plane services", () => {
     const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
     const sync = fakeSync()
     const services = createControlPlaneServices(fakePorts(sync), {
-      authority: null,
+      authority: testManagedSessionAuthority(),
       relay: { resolverToken: "expected-relay-token" },
     })
     const built = createSelfHostedApp(services)
@@ -633,10 +631,10 @@ describe("control-plane services", () => {
     // correctly-routed write apart from a crash in the authorization path.
     const authorizeSessionWrite = vi.fn(async () => {})
     const services = createControlPlaneServices(fakePorts(sync), {
-      authority: {
+      authority: testManagedSessionAuthority({
         authorizeSessionRead,
         authorizeSessionWrite,
-      } as never,
+      } as never),
       auth: customVerifierAuthAdapter({
         issuer: "https://auth.example.test",
         verifier: async (token) => ({
@@ -850,7 +848,9 @@ describe("control-plane services", () => {
 
   test("createSelfHostedApp gates remote central runtime events with signed auth", async () => {
     const { createSelfHostedApp } = await import("../deployments/self-hosted-node/app")
-    const built = createSelfHostedApp(createControlPlaneServices(fakePorts(), { authority: null }))
+    const built = createSelfHostedApp(createControlPlaneServices(fakePorts(), {
+      authority: testManagedSessionAuthority(),
+    }))
 
     // In an unsigned-local deployment a REMOTE caller is now denied by
     // the global unsigned-local guard before the per-route bearer gate

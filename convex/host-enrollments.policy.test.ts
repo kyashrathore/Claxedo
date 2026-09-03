@@ -47,8 +47,18 @@ function enrollmentPayload(input: { hostId: string; requestId: string; nonce: st
   ].join("\n")
 }
 
-function heartbeatPayload(input: { hostId: string; ttlMs?: number }) {
-  return ["claxedo.host-enrollment.heartbeat.v1", `host_id=${input.hostId}`, `ttl_ms=${input.ttlMs ?? ""}`].join("\n")
+/**
+ * Heartbeat v2: one signature per interval covers the machine's served set
+ * (sorted, comma-joined). Deliberately spelled out here rather than imported —
+ * the test pins the exact bytes the function must verify.
+ */
+function heartbeatPayload(input: { hostId: string; ttlMs?: number; workspaceIds?: readonly string[] }) {
+  return [
+    "claxedo.host-enrollment.heartbeat.v2",
+    `host_id=${input.hostId}`,
+    `ttl_ms=${input.ttlMs ?? ""}`,
+    `workspaces=${[...(input.workspaceIds ?? [])].sort().join(",")}`,
+  ].join("\n")
 }
 
 function asOwner(t: ReturnType<typeof convexTest>) {
@@ -221,10 +231,12 @@ describe("Convex host enrollment heartbeat", () => {
 
     const beat = await owner.mutation(api.hostEnrollments.heartbeat, {
       host_id: hostId,
+      workspace_ids: [],
       signature: key.sign(heartbeatPayload({ hostId })),
     })
 
     expect(beat.expires_at).toBeGreaterThanOrEqual(enrollment.expires_at)
+    expect(beat.assigned_workspace_ids).toEqual([])
   })
 
   test("rejects a heartbeat signed with a different key", async () => {
@@ -236,9 +248,146 @@ describe("Convex host enrollment heartbeat", () => {
     await expect(
       owner.mutation(api.hostEnrollments.heartbeat, {
         host_id: hostId,
+        workspace_ids: [],
         signature: attacker.sign(heartbeatPayload({ hostId })),
       }),
     ).rejects.toThrow()
+  })
+
+  test("rejects a signature over a different served set than the one claimed", async () => {
+    // The set IS the consent. Accepting a mismatch would let a caller ack
+    // workspaces the machine never signed for.
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    const { key, hostId } = await enroll(owner)
+
+    await expect(
+      owner.mutation(api.hostEnrollments.heartbeat, {
+        host_id: hostId,
+        workspace_ids: ["ws_claimed"],
+        signature: key.sign(heartbeatPayload({ hostId, workspaceIds: [] })),
+      }),
+    ).rejects.toThrow(/Invalid host attestation/)
+  })
+
+  test("stores the verified served set on the enrollment", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    const { key, hostId } = await enroll(owner)
+
+    await owner.mutation(api.hostEnrollments.heartbeat, {
+      host_id: hostId,
+      workspace_ids: ["ws_beta", "ws_alpha"],
+      signature: key.sign(heartbeatPayload({ hostId, workspaceIds: ["ws_alpha", "ws_beta"] })),
+    })
+
+    const [row] = await t.run(async (ctx) => ctx.db.query("host_enrollments").collect())
+    expect(row!.acked_workspace_ids).toEqual(["ws_alpha", "ws_beta"])
+    expect(row!.acked_at).toBeDefined()
+  })
+})
+
+describe("Convex workspace assignments", () => {
+  test("routes a workspace through owner assignment AND the machine's acked set", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    const { key, hostId } = await enroll(owner, { displayName: "Laptop B" })
+
+    // Assigning a never-registered workspace cold-registers it, exactly as
+    // the retired per-workspace registration did.
+    await expect(
+      owner.mutation(api.hostEnrollments.assignWorkspace, { workspace_id: "ws_alpha", host_id: hostId }),
+    ).resolves.toEqual({ assigned: true, workspace_id: "ws_alpha", host_id: hostId })
+    const workspaces = await t.run(async (ctx) => ctx.db.query("workspaces").collect())
+    expect(workspaces.map((workspace) => workspace.workspace_id)).toContain("ws_alpha")
+
+    // Owner intent alone is not routable: no ack yet.
+    expect(await owner.query(api.hostEnrollments.activeWorkspaceHost, { workspace_id: "ws_alpha" }))
+      .toEqual({ active: false })
+
+    // Ack the set: now routable, and the response reconciles owner intent.
+    const beat = await owner.mutation(api.hostEnrollments.heartbeat, {
+      host_id: hostId,
+      workspace_ids: ["ws_alpha"],
+      signature: key.sign(heartbeatPayload({ hostId, workspaceIds: ["ws_alpha"] })),
+    })
+    expect(beat.assigned_workspace_ids).toEqual(["ws_alpha"])
+    expect(await owner.query(api.hostEnrollments.activeWorkspaceHost, { workspace_id: "ws_alpha" }))
+      .toMatchObject({ active: true, host_id: hostId, workspace_id: "ws_alpha", display_name: "Laptop B" })
+    expect(await owner.query(api.hostEnrollments.listAssignments, {})).toMatchObject([
+      { host_id: hostId, display_name: "Laptop B", workspace_ids: ["ws_alpha"], acked_workspace_ids: ["ws_alpha"] },
+    ])
+  })
+
+  test("assigning requires a live enrollment for that machine", async () => {
+    const t = convexTest(schema, modules)
+    await enroll(asOwner(t))
+
+    await expect(
+      asOther(t).mutation(api.hostEnrollments.assignWorkspace, { workspace_id: "ws_alpha", host_id: "host_laptop" }),
+    ).rejects.toThrow(/Host enrollment not found/)
+  })
+
+  test("unassign wins over a still-acked set: routing is intent AND consent", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    const { key, hostId } = await enroll(owner)
+    await owner.mutation(api.hostEnrollments.assignWorkspace, { workspace_id: "ws_alpha", host_id: hostId })
+    await owner.mutation(api.hostEnrollments.heartbeat, {
+      host_id: hostId,
+      workspace_ids: ["ws_alpha"],
+      signature: key.sign(heartbeatPayload({ hostId, workspaceIds: ["ws_alpha"] })),
+    })
+    expect(await owner.query(api.hostEnrollments.activeWorkspaceHost, { workspace_id: "ws_alpha" }))
+      .toMatchObject({ active: true })
+
+    await expect(owner.mutation(api.hostEnrollments.unassignWorkspace, { workspace_id: "ws_alpha" }))
+      .resolves.toEqual({ unassigned: true })
+
+    expect(await owner.query(api.hostEnrollments.activeWorkspaceHost, { workspace_id: "ws_alpha" }))
+      .toEqual({ active: false })
+  })
+
+  test("an expired lease makes the assignment inert without touching it", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    const { key, hostId } = await enroll(owner)
+    await owner.mutation(api.hostEnrollments.assignWorkspace, { workspace_id: "ws_alpha", host_id: hostId })
+    await owner.mutation(api.hostEnrollments.heartbeat, {
+      host_id: hostId,
+      workspace_ids: ["ws_alpha"],
+      signature: key.sign(heartbeatPayload({ hostId, workspaceIds: ["ws_alpha"] })),
+    })
+
+    // convex-test cannot advance the module's clock, so lapse the lease the
+    // way time would: by moving the row's expiry into the past.
+    await t.run(async (ctx) => {
+      const [row] = await ctx.db.query("host_enrollments").collect()
+      await ctx.db.patch(row!._id, { expires_at: Date.now() - 1 })
+    })
+
+    expect(await owner.query(api.hostEnrollments.activeWorkspaceHost, { workspace_id: "ws_alpha" }))
+      .toEqual({ active: false })
+    expect(await owner.query(api.hostEnrollments.listAssignments, {})).toEqual([])
+    expect(await t.run(async (ctx) => ctx.db.query("host_workspace_assignments").collect())).toHaveLength(1)
+  })
+
+  test("marking a second device open lands on the assignment", async () => {
+    const t = convexTest(schema, modules)
+    const owner = asOwner(t)
+    const { key, hostId } = await enroll(owner)
+    await owner.mutation(api.hostEnrollments.assignWorkspace, { workspace_id: "ws_alpha", host_id: hostId })
+    await owner.mutation(api.hostEnrollments.heartbeat, {
+      host_id: hostId,
+      workspace_ids: ["ws_alpha"],
+      signature: key.sign(heartbeatPayload({ hostId, workspaceIds: ["ws_alpha"] })),
+    })
+
+    const marked = await owner.mutation(api.hostEnrollments.markSecondDeviceOpen, { workspace_id: "ws_alpha" })
+
+    expect(marked.recorded).toBe(true)
+    expect(await owner.query(api.hostEnrollments.activeWorkspaceHost, { workspace_id: "ws_alpha" }))
+      .toMatchObject({ active: true, second_device_open_at: marked.second_device_open_at })
   })
 })
 

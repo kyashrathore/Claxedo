@@ -21,12 +21,20 @@ import { DocumentVersionConflictError, DocumentWorkspaceError } from "../errors"
 import type { DocumentHandle, DocumentVersion, SnapshotID } from "../port"
 import { createDocumentsService, DocumentsServiceError, type DocumentsServiceScope } from "../../documents/service"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
+import type { RouteGuardExemption } from "../../platform/auth/request-guard"
 
 export { DocumentAgentOpenError } from "../backend"
 export type { DocumentsBackend as DocumentsRouteBackend } from "../backend"
 
 const LOCAL_ORG = "__local__"
 const MAX_BODY_BYTES = 2 * 1024 * 1024
+
+export const DOCUMENTS_ROUTE_GUARD_EXEMPTION: RouteGuardExemption = {
+  prefix: "/documents",
+  bodyCap: true,
+  reason: "Documents carry markdown bodies up to the service-owned 2 MiB limit.",
+  enforcedBy: "src/documents/routes/index.ts (MAX_BODY_BYTES, enforced on create and update)",
+}
 
 const CreateDocumentBody = z
   .object({

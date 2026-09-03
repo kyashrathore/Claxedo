@@ -1,13 +1,20 @@
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { WhatsAppBaileysSocket } from "@claxedo/channels"
+import { Hono } from "hono"
+import {
+  createMemoryChannelAccessStore,
+  createMemoryChannelIdentityBindingStore,
+  type WhatsAppBaileysSocket,
+} from "@claxedo/channels"
 import { createSelfHostedApp } from "../deployments/self-hosted-node/app"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { createCentralControlApp } from "../central-runtime"
-import { createControlPlaneChannels } from "./control-plane"
+import { createControlPlaneChannels, mountControlPlaneChannels } from "./control-plane"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./run-audit"
+import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
+import { testManagedSessionAuthority } from "../test-support/managed-session-authority"
 
 afterEach(() => {
   vi.useRealTimers()
@@ -93,13 +100,11 @@ function services(input: {
     // first statement. That mismatch, not any channels behavior, is what broke
     // these tests; the flag was always describing the wrong composition.
     localExecution: { enabled: true },
-    ...(input.signed
+    authority: testManagedSessionAuthority(input.signed
       ? {
-          authority: {
             authorizeChannelProject: input.authorizeChannelProject ?? vi.fn(async () => ({ ok: true, role: "editor", orgId: "org_1" })),
             authorizeChannelWorkspace: vi.fn(async () => {}),
-          } as never,
-        }
+        } as never
       : {}),
   }
 }
@@ -120,6 +125,80 @@ async function registeredRepoWorkspace(input: {
 }
 
 describe("channels ingress", () => {
+  test("claims and revokes a channel identity through signed canonical authority", async () => {
+    const bindChannelIdentity = vi.fn(async (_auth: unknown, identity: { channel: string; externalUserId: string }) => ({
+      bindingId: "binding_canonical",
+      created: true,
+      userId: "user_account",
+      actorId: "actor:account-token",
+      actorKind: "human" as const,
+      principalKind: "user" as const,
+      ...identity,
+    }))
+    const revokeChannelIdentity = vi.fn(async () => ({ revoked: true }))
+    const svc = services({ signed: true })
+    Object.assign(svc.authority!, { bindChannelIdentity, revokeChannelIdentity })
+    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const accessStore = createMemoryChannelAccessStore()
+    const identityBindingStore = createMemoryChannelIdentityBindingStore()
+    const channels = createControlPlaneChannels({
+      services: svc,
+      runtime: centralControl.runtime,
+      env: { CLAXEDO_CHANNEL_DM_POLICY: "pairing" },
+      includeFake: false,
+      accessStore,
+      identityBindingStore,
+    })
+    const externalUserId = `claim-${crypto.randomUUID()}`
+    await channels.access.gate({ channel: "telegram", externalUserId, chatType: "dm" })
+    const [pending] = (await channels.access.listPending("telegram"))
+      .filter((request) => request.externalUserId === externalUserId)
+    expect(pending).toBeDefined()
+
+    const app = new Hono()
+    mountControlPlaneChannels(app, {
+      services: svc,
+      runtime: centralControl.runtime,
+      env: { CLAXEDO_CHANNEL_DM_POLICY: "pairing" },
+      channels,
+      authentication: testRequestAuthenticationAdapter(),
+      requireLoopbackForFake: false,
+    })
+    const claim = await app.request("https://core.test/api/channels/pairing/claim", {
+      method: "POST",
+      headers: { authorization: "Bearer account-token", "content-type": "application/json" },
+      body: JSON.stringify({ code: pending!.code }),
+    })
+    expect(claim.status).toBe(200)
+    expect(bindChannelIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ principal: expect.objectContaining({ actorId: "actor:account-token" }) }),
+      { channel: "telegram", externalUserId },
+    )
+    expect(await channels.bindings.get("telegram", externalUserId)).toMatchObject({
+      status: "bound",
+      accountId: "user_account",
+      boundBy: "actor:actor:account-token",
+    })
+
+    const revoke = await app.request("https://core.test/api/channels/identity", {
+      method: "DELETE",
+      headers: { authorization: "Bearer account-token", "content-type": "application/json" },
+      body: JSON.stringify({ channel: "telegram", externalUserId }),
+    })
+    expect(revoke.status).toBe(200)
+    await expect(revoke.json()).resolves.toEqual({ revoked: true })
+    expect(revokeChannelIdentity).toHaveBeenCalledWith(
+      expect.objectContaining({ principal: expect.objectContaining({ actorId: "actor:account-token" }) }),
+      { channel: "telegram", externalUserId },
+    )
+    expect(await identityBindingStore.get("telegram", externalUserId)).toBeUndefined()
+    expect(await accessStore.isAllowed("telegram", externalUserId)).toBe(false)
+    expect(await channels.access.gate({ channel: "telegram", externalUserId, chatType: "dm" })).toMatchObject({
+      admission: "drop",
+      reason: "dm_pairing_required",
+    })
+  })
+
   test("keeps fake channel ingress loopback-only until signed channel auth lands", async () => {
     const { app } = createSelfHostedApp(services())
     const blocked = await app.request("https://control.example.test/api/channels/fake", {

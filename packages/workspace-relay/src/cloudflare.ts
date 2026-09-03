@@ -15,6 +15,7 @@ import {
   type TunnelWsFrame,
 } from "@claxedo/workspace-relay-protocol"
 import {
+  RELAY_ALLOWED_REQUEST_HEADERS,
   authorizeWorkspaceRelayRequest,
   workspaceRelayForwardHeaders,
   workspaceRelayForwardRequestInit,
@@ -25,6 +26,7 @@ import {
 } from "./server"
 import { createWorkspaceRelayDirectory } from "./directory"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS, parseAllowedOrigins } from "./cors-origins"
+import { isUserHostedTarget } from "./user-hosted-forwarding"
 
 export type WorkspaceRelayDurableObjectId = unknown
 
@@ -847,7 +849,7 @@ function corsHeaders(request: Request) {
   return {
     "access-control-allow-origin": origin,
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
-    "access-control-allow-headers": "Accept, Authorization, Content-Type, Last-Event-ID, X-Fetch-Bypass-Throttle, X-Daytona-Skip-Preview-Warning, X-Workspace-Id, X-OpenCode-Directory, X-Claxedo-Runner, X-Claxedo-Model, X-Claxedo-Draft-Id, X-Claxedo-Binary",
+    "access-control-allow-headers": RELAY_ALLOWED_REQUEST_HEADERS,
     "access-control-max-age": "86400",
     vary: "Origin",
   }
@@ -1915,7 +1917,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     if (!websocketRequest(request)) return json("websocket_upgrade_required", "Workspace Relay requires a WebSocket upgrade", 426)
     const authorized = await authorizeWorkspaceRelayRequest(relayOptions, request, workspaceId)
     if (!authorized.ok) return authorized.response
-    if (authorized.request.target.access !== "cloud") return admitUserHostedClient(request, authorized.request)
+    if (isUserHostedTarget(authorized.request.target)) return admitUserHostedClient(request, authorized.request)
     return await admitCloudClient(request, authorized.request)
   }
 
@@ -2119,7 +2121,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       })
     )
     if (!authorized.ok) return authorized.response
-    if (authorized.request.target.access !== "cloud") {
+    if (isUserHostedTarget(authorized.request.target)) {
       trace && (trace.routeKind = "user-hosted-http")
       return forwardUserHostedHttp(request, authorized.request, trace)
     }

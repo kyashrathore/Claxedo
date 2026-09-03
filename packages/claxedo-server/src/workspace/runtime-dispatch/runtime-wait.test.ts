@@ -314,7 +314,6 @@ describe("workspaceRuntimeProxy startup wait", () => {
     expect(relayProvider.mintRuntimeAccessToken).toHaveBeenCalledWith({
       workspaceId: "ws_1",
       hostId: "host_1",
-      subject: "control-plane",
       principalKind: "service",
       actorId: "control-plane",
       actorKind: "agent",

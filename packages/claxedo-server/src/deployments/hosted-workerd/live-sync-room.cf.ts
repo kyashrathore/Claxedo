@@ -838,10 +838,31 @@ export function connectLiveSyncRoom(
       }
       const heartbeat = async () => {
         if (stopped) return
-        try {
-          if (reauthorize && !sameSubscriber(subscriber, await reauthorize())) {
-            throw new Error("live-sync authorization changed")
+        if (reauthorize) {
+          let current: LiveSyncSubscriber | undefined
+          try {
+            current = await reauthorize()
+          } catch {
+            // Bearer tokens outlive nothing: a five-minute access token WILL
+            // expire under a long-lived stream, and the re-check then throws
+            // an AuthenticationError with the response already streaming — no
+            // 401 can exist anymore. That is the CLIENT's cue to reconnect
+            // with a fresh token, not a server failure: erroring the stream
+            // here ended every wr/events invocation as an uncaught exception
+            // on a five-minute cycle. Close cleanly instead; the client's
+            // reconnect performs a full, fresh authorization.
+            stop()
+            return
           }
+          if (!sameSubscriber(subscriber, current)) {
+            // Same shape for a subscriber whose authorization CHANGED (org
+            // moved, actor revoked): the reconnect re-authorizes from scratch
+            // and lands in the right room — or is refused with a real 401.
+            stop()
+            return
+          }
+        }
+        try {
           if (!write(HEARTBEAT)) return
           timer = setTimeout(() => void heartbeat(), intervalMs)
           ;(timer as { unref?: () => void }).unref?.()

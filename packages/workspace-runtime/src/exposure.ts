@@ -176,6 +176,9 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
     const parsed = JSON.parse(value) as unknown
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return
     const row = parsed as Record<string, unknown>
+    const principal_kind = row.principal_kind === "user" || row.principal_kind === "service"
+      ? row.principal_kind
+      : undefined
     const actor_id = stringValue(row.actor_id)
     const actor_kind = row.actor_kind === "human" || row.actor_kind === "agent" ? row.actor_kind : undefined
     const actor_public_id = stringValue(row.actor_public_id)
@@ -185,8 +188,20 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
     const role = row.role === "viewer" || row.role === "editor" || row.role === "admin" || row.role === "owner"
       ? row.role
       : undefined
-    if (!actor_id || !actor_kind || !actor_public_id || !actor_name || !workspace_id || !org_id || !role) return
+    if (
+      !principal_kind
+      || !actor_id
+      || !actor_kind
+      || (principal_kind === "user" && actor_kind !== "human")
+      || (principal_kind === "service" && actor_kind !== "agent")
+      || !actor_public_id
+      || !actor_name
+      || !workspace_id
+      || !org_id
+      || !role
+    ) return
     return {
+      principal_kind,
       actor_id,
       actor_kind,
       actor_public_id,
@@ -196,15 +211,9 @@ function parseEmbeddedRelayHostAuth(value: string | undefined): RelayHostAuthCon
       org_id,
       role,
       ...(stringValue(row.host_id) ? { host_id: stringValue(row.host_id) } : {}),
-      access: "user-hosted",
-      backing: "local-worktree",
-      iss: "workspace-relay",
-      aud: "workspace-host-service",
-      sub: actor_id,
-      exp: Math.floor(Date.now() / 1000) + 60,
-      iat: Math.floor(Date.now() / 1000),
-      jti: `embedded_${actor_public_id}`,
-    } as RelayHostAuthContext["relayHostAuth"]
+      ...(row.access === "cloud" || row.access === "user-hosted" ? { access: row.access } : {}),
+      ...(row.backing === "cloud-vm" || row.backing === "local-worktree" ? { backing: row.backing } : {}),
+    }
   } catch {
     return
   }

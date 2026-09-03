@@ -8,6 +8,7 @@ import {
   ORG_CLERK_TABLES,
   ORG_DELETION_BATCH_SIZE,
   ORG_DIRECT_TABLES,
+  ORG_PRIVATE_SESSION_CASCADE,
   ORG_PURGED_TABLES,
   ORG_RETAINED_TABLES,
   ORG_WORKSPACE_DOC_TABLES,
@@ -156,6 +157,21 @@ async function seedTenant(ctx: any, key: string, ownerId: unknown, leaseStatus =
   const sessionId = `session_${key}`
   await ctx.db.insert("session_history", minimalRow("session_history", full, { workspace_id: workspaceDocId, session_id: sessionId }))
   await ctx.db.insert("session_messages", minimalRow("session_messages", full, { session_id: sessionId, workspace_id: workspaceDocId, ordinal: 1 }))
+  const privateSessionId = `private_session_${key}`
+  await ctx.db.insert("private_sessions", minimalRow("private_sessions", full, {
+    session_id: privateSessionId,
+    workspace_id: workspaceDocId,
+    workspace_public_id: workspacePublicId,
+    creator_actor_id: ownerId,
+    operation_id: `private_operation_${key}`,
+    max_event_ordinal: 1,
+  }))
+  for (const child of ORG_PRIVATE_SESSION_CASCADE.children) {
+    await ctx.db.insert(child.table, minimalRow(child.table, full, {
+      [child.field]: privateSessionId,
+      workspace_id: workspaceDocId,
+    }))
+  }
   const projectId = await ctx.db.insert("projects", minimalRow("projects", full, { org_id: orgId }))
   await ctx.db.insert("project_memberships", minimalRow("project_memberships", full, { project_id: projectId, user_id: ownerId }))
   const connectionId = `connection_${key}`
@@ -192,6 +208,7 @@ async function tenantRows(ctx: any, item: Tenant) {
   for (const plan of ORG_WORKSPACE_DOC_TABLES) rows.push(...await scopedRows(ctx, plan, item.workspaceDocId))
   for (const plan of ORG_WORKSPACE_PUBLIC_TABLES) rows.push(...await scopedRows(ctx, plan, item.workspacePublicId))
   rows.push(...await cascadeRows(ctx, ORG_SESSION_CASCADE, item.workspaceDocId))
+  rows.push(...await cascadeRows(ctx, ORG_PRIVATE_SESSION_CASCADE, item.workspaceDocId))
   rows.push(...await cascadeRows(ctx, ORG_PROJECT_CASCADE, item.orgId))
   rows.push(...await cascadeRows(ctx, ORG_CONNECTION_CASCADE, item.orgId))
   const workspace = await ctx.db.get(item.workspaceDocId)

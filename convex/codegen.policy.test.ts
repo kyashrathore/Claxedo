@@ -45,20 +45,22 @@ describe("Convex generated API artifacts", () => {
       // W4.4: the fenced cron lease that serializes a cron body across isolates.
       "cronLease",
       "crons",
-      // Unit 6's machine-wide remote access. Replaces `localHostLinks` at the
-      // cutover; both are listed while the hard cut is pending.
+      // Machine-wide remote access: enrollment plus the owner's
+      // host↔workspace assignments.
       "hostEnrollments",
       "http",
       // W4.2: the durable idempotency store behind `DurableIdempotencyStore`.
       "idempotency",
-      "localHostLinks",
       "migrations",
       "model",
       "orgs",
+      "privateSessions",
       "projectMemberships",
       "projects",
       "runtimeAccessTokens",
       "sandboxLeases",
+      "serviceInstallations",
+      "sessionAccess",
       "sessionShares",
       "sessions",
       "teams",

@@ -4,6 +4,7 @@ import path from "path"
 import type { UserMessage } from "@opencode-ai/sdk/v2"
 import {
   ACP_RECOVER,
+  AgentRuntimeStaleTurnError,
   AgentMessagePageError,
   type AgentMessagePage,
   type AgentMessagePageInput,
@@ -78,6 +79,7 @@ type Turn = {
   variant?: string
   actorId?: string
   actorKind?: "human" | "agent"
+  fencingToken?: number
   author?: {
     id: string
     name: string
@@ -975,6 +977,44 @@ export class RuntimeStore {
     allocateKey: () => string
     allocateChildSessionId?: () => string
   }): AdmittedSubagentObservation {
+    const admitted = this.admitObservation(input)
+    this.linkChildSession(input.parentSessionId, admitted.event.childSessionId)
+    return admitted
+  }
+
+  /**
+   * Record the parent a delegation's child session belongs to.
+   *
+   * Admission is where this store learns the association, and the session row
+   * is the only place a later `GET /session/:id` can read it back from — an
+   * adapter that owns its sessions upstream is never consulted for a session
+   * this store already has a row for. Without this the child of an OpenCode
+   * `task` call answered as a root session, so the app rendered its transcript
+   * without the child heading or the parent it belongs to.
+   *
+   * Written through `bindSession` like every other session write, so it is
+   * journaled and survives a rehydrate. The bind upserts and the projection
+   * COALESCEs the parent, so re-admitting the same observation changes nothing.
+   */
+  private linkChildSession(parentSessionId: string, childSessionId?: string) {
+    if (!childSessionId || childSessionId === parentSessionId) return
+    const child = this.getSession(childSessionId) as { directory?: string; parentID?: string } | null
+    if (child?.parentID === parentSessionId) return
+    const parent = this.getSession(parentSessionId) as { directory?: string } | null
+    this.bindSession({
+      sessionId: childSessionId,
+      directory: child?.directory ?? parent?.directory ?? "",
+      agentSessionId: this.getAgentSessionId(childSessionId) ?? childSessionId,
+      parentSessionId,
+    })
+  }
+
+  private admitObservation(input: {
+    parentSessionId: string
+    observation: SubagentObservation
+    allocateKey: () => string
+    allocateChildSessionId?: () => string
+  }): AdmittedSubagentObservation {
     this.db.exec("BEGIN IMMEDIATE")
     try {
       // Another host instance may have admitted an observation since this
@@ -1649,7 +1689,11 @@ export class RuntimeStore {
     }
   }
 
-  private insertRuntimeJournal(row: Row, seq = this.next(row.sessionId), options: { ignoreDuplicate?: boolean } = {}) {
+  private insertRuntimeJournal(
+    row: Row,
+    seq = this.next(row.sessionId),
+    options: { ignoreDuplicate?: boolean; insideTransaction?: boolean } = {},
+  ) {
     const type = row.kind === "control" ? row.control.type : row.payload.type
     const partId =
       row.kind === "event" && row.payload.type === "message.part.updated" ? row.payload.properties.part.id : null
@@ -1667,7 +1711,7 @@ export class RuntimeStore {
       row.kind === "control" && (row.control.type === "turn.start" || row.control.type === "turn.finish")
         ? row.control.assistantMessageId
         : null
-    this.transaction(() => {
+    const insert = () => {
       if (partId && !options.ignoreDuplicate) {
         this.db
           .prepare(
@@ -1717,7 +1761,9 @@ export class RuntimeStore {
           JSON.stringify(row.kind === "control" ? row.control : row.payload),
           row.kind === "event" && row.source ? JSON.stringify(row.source) : null,
         )
-    })
+    }
+    if (options.insideTransaction) insert()
+    else this.transaction(insert)
     return { ...row, seq }
   }
 
@@ -1727,15 +1773,50 @@ export class RuntimeStore {
       .run(row.sessionId, row.seq, row.ts)
   }
 
-  private commit(row: Row) {
+  private latestFencingToken(sessionId: string) {
+    const row = this.db.prepare(`
+      SELECT CAST(json_extract(payload_json, '$.fencingToken') AS INTEGER) AS fencing_token
+      FROM runtime_journal
+      WHERE session_id = ? AND kind = 'control' AND type = 'turn.start'
+        AND json_type(payload_json, '$.fencingToken') = 'integer'
+      ORDER BY seq DESC
+      LIMIT 1
+    `).get(sessionId) as { fencing_token: number } | null
+    return row?.fencing_token
+  }
+
+  private assertFencingToken(sessionId: string, fencingToken: number | undefined, advance = false) {
+    if (fencingToken === undefined) return
+    if (!Number.isSafeInteger(fencingToken) || fencingToken <= 0) throw new AgentRuntimeStaleTurnError(sessionId)
+    const current = this.latestFencingToken(sessionId)
+    if (current === undefined) {
+      if (advance) return
+      throw new AgentRuntimeStaleTurnError(sessionId)
+    }
+    if (advance ? fencingToken < current : fencingToken !== current) {
+      throw new AgentRuntimeStaleTurnError(sessionId)
+    }
+  }
+
+  private commit(row: Row, fence: { fencingToken?: number; advance?: boolean } = {}) {
     if (
       this.deleted(row.sessionId) &&
       !(row.kind === "control" && (row.control.type === "session.bind" || row.control.type === "session.delete"))
     ) {
       throw new Error(`Session ${row.sessionId} was deleted`)
     }
-    const journaled = this.insertRuntimeJournal(row)
+    if (fence.fencingToken === undefined) {
+      const journaled = this.insertRuntimeJournal(row)
+      this.transaction(() => {
+        this.apply(journaled)
+        this.checkpoint(journaled)
+      })
+      return journaled
+    }
+    let journaled!: Row
     this.transaction(() => {
+      this.assertFencingToken(row.sessionId, fence.fencingToken, fence.advance)
+      journaled = this.insertRuntimeJournal(row, this.next(row.sessionId), { insideTransaction: true })
       this.apply(journaled)
       this.checkpoint(journaled)
     })
@@ -2424,6 +2505,7 @@ export class RuntimeStore {
     actorId?: string
     actorKind?: "human" | "agent"
     author?: Turn["author"]
+    fencingToken?: number
   }) {
     const active = this.db
       .prepare(
@@ -2452,6 +2534,12 @@ export class RuntimeStore {
       provider_session_id: string | null
     } | null
     if (active) {
+      const activeControl = JSON.parse((this.db.prepare(`
+        SELECT payload_json FROM runtime_journal
+        WHERE session_id = ? AND kind = 'control' AND type = 'turn.start' AND assistant_message_id = ?
+        ORDER BY seq DESC LIMIT 1
+      `).get(input.sessionId, input.assistantMessageId) as { payload_json: string }).payload_json) as Turn
+      if (input.fencingToken !== activeControl.fencingToken) throw new AgentRuntimeStaleTurnError(input.sessionId)
       return {
         sessionId: input.sessionId,
         seq: active.seq,
@@ -2478,10 +2566,13 @@ export class RuntimeStore {
         ...(input.system ? { system: input.system } : {}),
         ...(input.variant ? { variant: input.variant } : {}),
         ...(input.actorId && input.actorKind ? { actorId: input.actorId, actorKind: input.actorKind } : {}),
+        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
         ...(input.author ? { author: input.author } : {}),
       },
     }
-    const committed = this.commit(row)
+    const committed = this.commit(row, {
+      ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken, advance: true } : {}),
+    })
     return {
       sessionId: committed.sessionId,
       seq: committed.seq,
@@ -2583,6 +2674,7 @@ export class RuntimeStore {
       requestId?: string
       frame?: unknown
     }
+    fencingToken?: number
   }) {
     const row: Row = {
       seq: this.next(input.sessionId),
@@ -2593,7 +2685,9 @@ export class RuntimeStore {
       payload: input.payload,
       ...(input.source ? { source: input.source } : {}),
     }
-    const committed = this.commit(row)
+    const committed = this.commit(row, {
+      ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
+    })
     if (committed.kind !== "event") throw new Error("Expected event journal row")
     return {
       sessionId: committed.sessionId,
@@ -2605,7 +2699,13 @@ export class RuntimeStore {
     } satisfies RuntimeStoreAppendOutput
   }
 
-  finishTurn(input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) {
+  finishTurn(input: {
+    sessionId: string
+    assistantMessageId?: string
+    outcome: AgentTurnOutcome
+    fencingToken?: number
+  }) {
+    this.assertFencingToken(input.sessionId, input.fencingToken)
     const active = this.db
       .prepare(
         `
@@ -2648,22 +2748,26 @@ export class RuntimeStore {
             ...(control.variant ? { variant: control.variant } : {}),
           }),
         ),
+        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
       }).payload)
       events.push(this.appendEvent({
         sessionId: input.sessionId,
         ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
         payload: sessionError(input.outcome.error ?? "turn failed", input.sessionId),
+        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
       }).payload)
     } else if (!this.hasMessageCompleted(input.sessionId, active.assistant_message_id)) {
       this.appendEvent({
         sessionId: input.sessionId,
         ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
         payload: messageCompleted(input.sessionId, active.assistant_message_id),
+        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
       })
       this.appendEvent({
         sessionId: input.sessionId,
         ...(active.provider_session_id ? { agentSessionId: active.provider_session_id } : {}),
         payload: sessionIdle(input.sessionId),
+        ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
       })
     }
 
@@ -2678,6 +2782,8 @@ export class RuntimeStore {
         assistantMessageId: active.assistant_message_id,
         outcome: { ...input.outcome, assistantMessageId: active.assistant_message_id },
       },
+    }, {
+      ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
     })
     return { events }
   }
@@ -3420,6 +3526,10 @@ export class RuntimeStore {
       .prepare("SELECT COALESCE(MAX(seq), 0) AS seq FROM runtime_journal WHERE session_id = ?")
       .get(sessionId) as { seq: number }
     return row.seq
+  }
+
+  getSessionFencingToken(sessionId: string) {
+    return this.latestFencingToken(sessionId)
   }
 
   acquireTurnLease(sessionId: string) {

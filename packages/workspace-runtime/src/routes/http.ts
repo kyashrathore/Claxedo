@@ -6,6 +6,16 @@ export function bearerToken(header: string | null | undefined) {
   return match?.[1]?.trim() || undefined
 }
 
+/**
+ * The one place a request names a harness/runner: `?harness=` is the current
+ * name, `?runner=` is the alias every existing caller still sends. Every
+ * route that lets a caller pick a harness reads through here instead of
+ * re-deriving its own fallback chain.
+ */
+export function harnessQueryParam(req: { query(name: string): string | undefined }) {
+  return req.query("harness") || req.query("runner")
+}
+
 export function errorBody(code: string, message: string, details?: Record<string, unknown>) {
   return {
     error: {

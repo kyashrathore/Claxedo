@@ -5,11 +5,23 @@ import { isTerminalRuntimeEvent, runtimeEventsHandler } from "./events"
 import { createWorkspaceHost } from "../workspace"
 import { loopbackWorkspaceRuntimeExposure } from "../exposure"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
 const event = (sessionId: string, delta: string): Omit<RuntimeEventEnvelope, "contractVersion"> => ({
   directory: "/workspace",
   sessionId,
   payload: { type: "text-delta", delta },
+})
+
+const subagentEvent = (
+  sessionId: string,
+  subagentKey: string,
+  status: "running" | "completed",
+  revision: number,
+): Omit<RuntimeEventEnvelope, "contractVersion"> => ({
+  directory: "/workspace",
+  sessionId,
+  payload: { type: "subagent-updated", subagentKey, status, revision },
 })
 
 function mount(input: { authorize?: (parentSessionId: string) => boolean }) {
@@ -20,6 +32,38 @@ function mount(input: { authorize?: (parentSessionId: string) => boolean }) {
     resolveParentSessionId: (runtimeEvent) => runtimeEvent.sessionId.startsWith("child-")
       ? runtimeEvent.sessionId.slice("child-".length)
       : undefined,
+  }))
+  return { app, hub }
+}
+
+const managedPolicy = (authorize: SessionAccessPolicy["authorize"]): SessionAccessPolicy => ({
+  sessionAuthority: "managed-private",
+  authorize,
+  authorizeStream: async (input) => {
+    const decision = await authorize(input)
+    return decision.allowed ? { allowed: true, lease: "lease_test", expiresAt: Date.now() + 60_000 } : decision
+  },
+  authorizePrefix: authorize,
+  filterSessions: (input) => input.sessionIds,
+  registerSession: () => ({ allowed: true }),
+})
+
+function managedMount(authorize: SessionAccessPolicy["authorize"] = () => ({ allowed: true })) {
+  const app = new Hono()
+  const hub = createRuntimeEventHub()
+  app.use("*", async (c, next) => {
+    ;(c as any).set("relayHostAuth", {
+      actor_id: "actor_1",
+      actor_kind: "human",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      host_id: "host_1",
+      role: "editor",
+    })
+    await next()
+  })
+  app.get("/runtime-events", runtimeEventsHandler(hub, {
+    sessionAccessPolicy: managedPolicy(authorize),
   }))
   return { app, hub }
 }
@@ -37,6 +81,43 @@ async function readUntil(response: Response, value: string) {
 }
 
 describe("runtime event parent authorization", () => {
+  test("managed revocation ends the reader and ignores later private frames", async () => {
+    const app = new Hono()
+    const hub = createRuntimeEventHub()
+    let authorityCalls = 0
+    const accessPolicy = managedPolicy(() => ({ allowed: true }))
+    accessPolicy.authorizeStream = async () => {
+      authorityCalls += 1
+      return authorityCalls === 1
+        ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
+        : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+    }
+    app.use("*", async (c, next) => {
+      ;(c as any).set("relayHostAuth", {
+        actor_id: "actor_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+      })
+      await next()
+    })
+    app.get("/runtime-events", runtimeEventsHandler(hub, { sessionAccessPolicy: accessPolicy }))
+
+    const response = await app.request("http://localhost/runtime-events?parentSessionId=parent-a")
+    const reader = response.body!.getReader()
+    const ended = await Promise.race([
+      reader.read().then((item) => item.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ])
+    hub.publishRuntime(event("parent-a", "must-not-write"))
+
+    expect(response.status).toBe(200)
+    expect(ended).toBe(true)
+    expect((await reader.read()).done).toBe(true)
+  })
+
   test("retains every terminal subagent lifecycle update for replay", () => {
     for (const status of ["completed", "failed", "killed", "interrupted"] as const) {
       expect(isTerminalRuntimeEvent({
@@ -71,6 +152,30 @@ describe("runtime event parent authorization", () => {
 
     expect(text).toContain("allowed-replay")
     expect(text).not.toContain("denied-replay")
+  })
+
+  test("replays a terminal child update to a late subscriber without crossing parent scope", async () => {
+    const { app, hub } = mount({})
+    hub.publishRuntime(subagentEvent("child-parent-a", "child-a", "completed", 3))
+    hub.publishRuntime(subagentEvent("child-parent-b", "child-b", "completed", 7))
+    // Evict the terminal frame from the ordinary ring. Terminal retention is
+    // the recovery owner when the browser attaches after the parent stream has
+    // already gone idle.
+    for (let index = 0; index < 300; index += 1) {
+      hub.publishRuntime(event("child-parent-a", `noise-${index}`))
+    }
+
+    const controller = new AbortController()
+    const response = await app.request("http://localhost/runtime-events?parentSessionId=parent-a", {
+      headers: { "Last-Event-ID": "0" },
+      signal: controller.signal,
+    })
+    const text = await readUntil(response, '"subagentKey":"child-a"')
+    controller.abort()
+
+    expect(text).toContain('"subagentKey":"child-a"')
+    expect(text).toContain('"status":"completed"')
+    expect(text).not.toContain('"subagentKey":"child-b"')
   })
 
   test("filters live child events to the authorized parent", async () => {

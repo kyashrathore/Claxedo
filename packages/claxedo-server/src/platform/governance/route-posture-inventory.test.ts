@@ -50,8 +50,10 @@ const ANONYMOUS_OK: ReadonlyArray<{ path: string; serves: string }> = [
   { path: "/global/health", serves: "Liveness for load balancers, which cannot present a credential." },
   { path: "/api/claxedo/mode", serves: "Which capabilities this deployment composed; no tenant data." },
   { path: "/api/claxedo/compatibility", serves: "Protocol version numbers the client needs pre-auth to negotiate." },
-  { path: "/api/claxedo/bootstrap", serves: "Version plus empty path strings; the hosted plane has no local dirs." },
-  { path: "/global/config", serves: "The literal empty object; hosted has no shell config." },
+  {
+    path: "/api/claxedo/services",
+    serves: "{ authenticated: false, services: [] }; the catalog itself requires signed auth.",
+  },
 
   // --- SPA shell mirrors: echo the caller's own query, or a constant shape.
   { path: "/path", serves: "Echoes the caller's own ?directory back in the opencode path shape." },

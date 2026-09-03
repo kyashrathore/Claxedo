@@ -2,6 +2,7 @@ import { describe, expect, test } from "vitest"
 import { createSelfHostedApp, isConnectionsCredentialPath } from "../../deployments/self-hosted-node/app"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 
 // Regression guard for the connections token-reflection hardening.
 //
@@ -21,7 +22,7 @@ function createTestApp() {
         projectionStore: centralStore.projectionStore,
         durableSessionLog: centralStore.durableSessionLog,
       },
-      { localExecution: { enabled: true }, telemetry: { capture: () => {} } },
+      { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
   ).app
 }

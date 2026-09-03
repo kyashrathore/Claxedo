@@ -233,8 +233,11 @@ async function acpProviders(harness: string, harnessConfigOptions?: (harness: st
 
 async function liveHarnessModels(harness: string, harnessConfigOptions?: (harness: string) => Promise<unknown>) {
   if (!harnessConfigOptions) return
-  const options = await harnessConfigOptions(harness).catch(() => undefined)
-  if (!Array.isArray(options)) return
+  const answer = await harnessConfigOptions(harness).catch(() => undefined)
+  const options = answer && typeof answer === "object" && Array.isArray((answer as { options?: unknown }).options)
+    ? (answer as { options: unknown[] }).options
+    : undefined
+  if (!options) return
   const modelOption = options.find((option): option is Record<string, unknown> =>
     !!option && typeof option === "object" && (option as Record<string, unknown>).id === "model")
   const choices = modelOption && Array.isArray(modelOption.selectOptions)

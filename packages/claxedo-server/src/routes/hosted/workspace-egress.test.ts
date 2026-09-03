@@ -183,7 +183,7 @@ describe("POST /create with a driver that cannot contain egress", () => {
    * These three tests previously asserted the manager REFUSED the create
    * (`ensureHost` never called, no lease, a `workspace.create.
    * sandbox_egress_refused` telemetry event). That posture failed closed but
-   * took the most likely production driver offline: `defaultSandboxDriverName`
+   * took the most likely production driver offline: explicit cloudflare selection
    * prefers cloudflare, and cloudflare declares `egressControl: "none"`.
    *
    * The create now proceeds. What must NOT happen is the driver receiving a

@@ -74,12 +74,23 @@ async function resolveTarget(claims) {
   }
 }
 
+// The browser-origin allowlist the relay enforces, in the same comma-separated
+// pattern grammar `CLAXEDO_RELAY_ALLOWED_ORIGINS` carries in a real deployment
+// (`workspace-relay/src/cors-origins.ts`). Absent, the relay keeps its built-in
+// default list; a driver that serves the app from a front-door origin names
+// that origin here, the way a self-hosted deployment names its own.
+const allowedOrigins = (process.env.CLAXEDO_RELAY_ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map((item) => item.trim())
+  .filter(Boolean)
+
 const relayHandler = createWorkspaceRelayBun({
   runtimeAccessKey,
   relayHostSigningKey,
   relayHostAlgorithm: "EdDSA",
   directory: createWorkspaceRelayDirectory({ ttlMs: 10 * 60_000 }),
   resolveTarget,
+  ...(allowedOrigins.length ? { allowedOrigins } : {}),
   audit: (event) => {
     if (event.result === "deny") console.error(`[workspace-relay-fixture] ${JSON.stringify(event)}`)
   },

@@ -7,6 +7,10 @@ import { ControlPlaneProtocolError, num, rec, txt, type ControlPlaneHttpOptions 
 import { runtimeJson, runtimePath, verifiedRuntimeJson } from "./runtime-transport"
 import type { RelayRole } from "@claxedo/workspace-relay"
 
+function workspaceRoleAllowsWrite(role: unknown) {
+  return role === "editor" || role === "admin" || role === "owner"
+}
+
 export async function resolveSessionGateway(
   services: ControlPlaneServices,
   sessionId: string,
@@ -130,21 +134,18 @@ export async function pullControlSessionMessages(
       (status) => sessionIsIdle(status, input.sessionId),
       () => false,
     )
-    while (true) {
-      const maxEventOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
-      await requireAuthority(services).syncSessionMessages(auth, {
-        workspaceId: ws.id,
-        sessionId: input.sessionId,
-        messages: services.projectionStore.read_session_messages(input.sessionId),
-        maxEventOrdinal,
-        intakeReady,
-      })
-      if (services.projectionStore.read_session_max_event_ordinal(input.sessionId) === maxEventOrdinal) return
-    }
+    await requireAuthority(services).syncSessionMessages(auth, {
+      workspaceId: ws.id,
+      sessionId: input.sessionId,
+      messages: payload.messages,
+      maxEventOrdinal: payload.maxEventOrdinal
+        ?? services.projectionStore.read_session_max_event_ordinal(input.sessionId),
+      ...(payload.fencingToken === undefined ? {} : { fencingToken: payload.fencingToken }),
+      intakeReady,
+    })
   }
   const currentMessages = services.projectionStore.read_session_messages(input.sessionId)
   if (payload.maxEventOrdinal !== undefined && payload.maxEventOrdinal < currentOrdinal) {
-    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -159,7 +160,6 @@ export async function pullControlSessionMessages(
     currentMessages.length > 0 &&
     payload.messages.length <= currentMessages.length
   ) {
-    await syncAuthority()
     await syncPulledSessionMetadata(services, auth, ws, input.sessionId, payload.session)
     return {
       ok: true,
@@ -170,7 +170,6 @@ export async function pullControlSessionMessages(
     }
   }
   if (payload.maxEventOrdinal === undefined && payload.messages.length < currentMessages.length) {
-    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -186,7 +185,6 @@ export async function pullControlSessionMessages(
     })
   if (applied === false) {
     const canonicalOrdinal = services.projectionStore.read_session_max_event_ordinal(input.sessionId)
-    await syncAuthority()
     return {
       ok: true,
       skipped: true,
@@ -230,17 +228,21 @@ async function workspaceForPull(
     const authoritativeOrgId = txt(opened?.workspace?.org_id)
     const authoritativeProjectId = txt(opened?.workspace?.project_id)
     if (authoritativeOrgId && hit.org_id && hit.org_id !== authoritativeOrgId) {
-      throw new ControlPlaneProtocolError(409, "workspace_tenant_conflict", "Workspace organization does not match authority")
+      throw new ControlPlaneProtocolError(
+        409,
+        "workspace_tenant_conflict",
+        "Local workspace organization does not match workspace authority",
+      )
     }
     if (authoritativeProjectId && hit.project_id && hit.project_id !== authoritativeProjectId) {
-      throw new ControlPlaneProtocolError(409, "workspace_project_conflict", "Workspace project does not match authority")
+      throw new ControlPlaneProtocolError(
+        409,
+        "workspace_project_conflict",
+        "Local workspace project does not match workspace authority",
+      )
     }
-    const ws = {
-      ...hit,
-      ...(authoritativeOrgId ? { org_id: authoritativeOrgId } : {}),
-      ...(authoritativeProjectId ? { project_id: authoritativeProjectId } : {}),
-    }
-    return { ws, authorityWorkspace: opened?.workspace, authorityRole: workspaceRole(opened?.role) }
+    const ws = authoritativeOrgId && !hit.org_id ? { ...hit, org_id: authoritativeOrgId } : hit
+    return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
   }
   if (auth?.mode !== "signed") {
     throw new ControlPlaneProtocolError(404, "workspace_not_found", `workspace ${workspaceId} not found`)
@@ -259,15 +261,11 @@ async function workspaceForPull(
     created_at: stamp,
     updated_at: stamp,
   } satisfies Workspace
-  return { ws, authorityWorkspace: opened?.workspace, authorityRole: workspaceRole(opened?.role) }
+  return { ws, authorityWorkspace: opened?.workspace, authorityRole: relayRole(opened?.role) }
 }
 
-function workspaceRole(input: unknown): RelayRole | undefined {
-  return input === "viewer" || input === "editor" || input === "admin" || input === "owner" ? input : undefined
-}
-
-function workspaceRoleAllowsWrite(input: unknown) {
-  return input === "editor" || input === "admin" || input === "owner"
+function relayRole(value: unknown): RelayRole | undefined {
+  return value === "viewer" || value === "editor" || value === "admin" || value === "owner" ? value : undefined
 }
 
 function sessionStamp(input: Record<string, unknown>) {
@@ -303,6 +301,7 @@ function messagesPayload(input: unknown) {
     )
   }
   const maxEventOrdinal = row.maxEventOrdinal
+  const fencingToken = row.fencingToken
   if (
     maxEventOrdinal !== undefined
     && (typeof maxEventOrdinal !== "number" || !Number.isInteger(maxEventOrdinal) || maxEventOrdinal < 0)
@@ -313,9 +312,20 @@ function messagesPayload(input: unknown) {
       "Workspace runtime returned an invalid message snapshot",
     )
   }
+  if (
+    fencingToken !== undefined
+    && (typeof fencingToken !== "number" || !Number.isSafeInteger(fencingToken) || fencingToken <= 0)
+  ) {
+    throw new ControlPlaneProtocolError(
+      502,
+      "workspace_runtime_snapshot_invalid",
+      "Workspace runtime returned an invalid message snapshot fence",
+    )
+  }
   return {
     messages: row.messages,
     maxEventOrdinal,
+    fencingToken,
     session: row.session,
   }
 }

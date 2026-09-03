@@ -2263,7 +2263,13 @@ describe("hosted WorkGraph runtime outbox", () => {
       launched: [{ state: "running" }],
       results: [{ settled: false, state: "retrying_explicit_completion" }],
     })
-    expect(mintedTokens[0]).toMatchObject({ subject: "clerk-user-a", orgId: "org-a" })
+    expect(mintedTokens[0]).toMatchObject({
+      principalKind: "user",
+      actorId: "internal-user-a",
+      actorKind: "human",
+      orgId: "org-a",
+      role: "owner",
+    })
     expect(mutations).toHaveLength(6)
     expect(ensureInputs[0]).toMatchObject({
       env: {
@@ -2376,7 +2382,6 @@ describe("hosted WorkGraph runtime outbox", () => {
 
   test("retains the transcript durably before a hosted completion is accepted", async () => {
     const retained: Record<string, unknown>[] = []
-    const resolvedActors: Record<string, unknown>[] = []
     const mintedTokens: Record<string, unknown>[] = []
     const snapshotRequests: string[] = []
     const retain = createHostedSessionTranscriptRetention(
@@ -2388,9 +2393,8 @@ describe("hosted WorkGraph runtime outbox", () => {
       {
         now: () => 42,
         executor: {
-          query: async (_fn, args) => {
-            resolvedActors.push(args)
-            return { actor_id: "internal-user-a", actor_kind: "human" }
+          query: async () => {
+            throw new Error("canonical owner IDs must not be resolved as provider subjects")
           },
           mutation: async (_fn, args) => {
             retained.push(args)
@@ -2413,16 +2417,14 @@ describe("hosted WorkGraph runtime outbox", () => {
     )
     await retain!({
       organizationId: "org-a",
-      ownerSubject: "clerk-user-a",
+      ownerUserId: "internal-user-a",
       workspaceId: "workspace-a",
       sessionId: "session-a",
     })
     expect(snapshotRequests).toEqual([
       "https://relay.test/workspaces/workspace-a/session/session-a/message?snapshot=1",
     ])
-    expect(resolvedActors).toEqual([{ service_token: "service-secret", subject: "clerk-user-a" }])
     expect(mintedTokens).toEqual([expect.objectContaining({
-      subject: "clerk-user-a",
       actorId: "internal-user-a",
       actorKind: "human",
     })])
@@ -2430,7 +2432,7 @@ describe("hosted WorkGraph runtime outbox", () => {
       {
         service_token: "service-secret",
         organization_id: "org-a",
-        owner_subject: "clerk-user-a",
+        owner_user_id: "internal-user-a",
         workspace_id: "workspace-a",
         session_id: "session-a",
         updated_at: 42,
@@ -2461,7 +2463,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     await expect(
       retain!({
         organizationId: "org-a",
-        ownerSubject: "clerk-user-a",
+        ownerUserId: "clerk-user-a",
         workspaceId: "workspace-a",
         sessionId: "session-a",
       }),
@@ -2483,7 +2485,7 @@ describe("hosted WorkGraph runtime outbox", () => {
     )
     const failure = await retain!({
       organizationId: "org-a",
-      ownerSubject: "clerk-user-a",
+      ownerUserId: "clerk-user-a",
       workspaceId: "workspace-a",
       sessionId: "session-a",
     }).catch((error) => error)

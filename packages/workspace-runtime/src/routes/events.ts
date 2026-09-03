@@ -3,12 +3,20 @@ import { attachSseFanout, type SseReplayBuffer } from "@claxedo/agent-sdk-runtim
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import type { RuntimeEventEnvelope, RuntimeEventHub } from "../runtime-event-hub"
 import type { Context } from "hono"
+import type { SessionAccessPolicy } from "../session-access-policy"
+import {
+  authorizeSessionEventScope,
+  isSessionEventScopeResponse,
+  scopedReplay,
+  waitForSessionEventStream,
+} from "./session-event-privacy"
 import {
   createIdentityAwareEventSource,
   defaultEventDeliveryPolicy,
   eventDeliveryPrincipal,
   type EventDeliveryOptions,
 } from "../event-delivery"
+import { EVENT_STREAM_HEARTBEAT_MS } from "@claxedo/agent-event-runtime"
 
 export function isTerminalRuntimeEvent(event: RuntimeEventEnvelope) {
   return event.payload.type === "finish" ||
@@ -27,7 +35,9 @@ export type RuntimeEventAuthorization = {
   resolveParentSessionId: (event: RuntimeEventEnvelope) => string | undefined
 }
 
-export type RuntimeEventOptions = EventDeliveryOptions<RuntimeEventEnvelope> & Partial<RuntimeEventAuthorization>
+export type RuntimeEventOptions = EventDeliveryOptions<RuntimeEventEnvelope>
+  & Partial<RuntimeEventAuthorization>
+  & { sessionAccessPolicy?: SessionAccessPolicy }
 
 export function runtimeEventsHandler(
   eventHub: RuntimeEventHub,
@@ -42,9 +52,12 @@ export function runtimeEventsHandler(
   source.open({ mode: "unmanaged-local", connectionId: "local-replay" })
   return async function handler(c: Context) {
     const parentSessionId = c.req.query("parentSessionId")
-    if (parentSessionId && (!options.authorizeParent || !await options.authorizeParent(c, parentSessionId))) {
+    const scope = await authorizeSessionEventScope(c, options.sessionAccessPolicy, "parentSessionId")
+    if (isSessionEventScopeResponse(scope)) return scope
+    if (parentSessionId && options.authorizeParent && !await options.authorizeParent(c, parentSessionId)) {
       return c.json({ error: "Forbidden" }, 403)
     }
+    if (parentSessionId && !options.authorizeParent && !scope.managed) return c.json({ error: "Forbidden" }, 403)
     const allows = (event: RuntimeEventEnvelope) => {
       const eventParentSessionId = options.resolveParentSessionId?.(event)
       if (eventParentSessionId) return eventParentSessionId === parentSessionId
@@ -53,8 +66,8 @@ export function runtimeEventsHandler(
     }
     const opened = source.open(await (options.principal?.(c) ?? eventDeliveryPrincipal(c)))
     await opened.ready
-    const scopedReplay = parentSessionId || options.resolveParentSessionId
-      ? filterReplay(opened.replay, allows)
+    const replayForScope = parentSessionId || options.resolveParentSessionId
+      ? scopedReplay(opened.replay, allows)
       : opened.replay
     return streamSSE(c, async (stream) => {
       const heartbeat = { type: "heartbeat" } as const
@@ -73,9 +86,9 @@ export function runtimeEventsHandler(
           })
         },
         heartbeat,
-        heartbeatMs: 30_000,
+        heartbeatMs: EVENT_STREAM_HEARTBEAT_MS,
         lastEventId: c.req.header("last-event-id"),
-        replay: scopedReplay,
+        replay: replayForScope,
         replayLive: false,
         replayGap: ({ lastEventId, throughId }) => ({
           contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION as RuntimeEventEnvelope["contractVersion"],
@@ -93,27 +106,7 @@ export function runtimeEventsHandler(
           },
         }),
       })
-      await new Promise<void>((resolve) => {
-        stream.onAbort(() => {
-          cleanup()
-          resolve()
-        })
-      })
+      await waitForSessionEventStream(stream, scope, options.sessionAccessPolicy, cleanup)
     })
-  }
-}
-
-function filterReplay(
-  replay: SseReplayBuffer<RuntimeEventEnvelope>,
-  allows: (event: RuntimeEventEnvelope) => boolean,
-): SseReplayBuffer<RuntimeEventEnvelope> {
-  return {
-    push: (event) => replay.push(event),
-    idFor: (event) => replay.idFor(event),
-    lastId: () => replay.lastId(),
-    hasGap: (lastEventId, throughId) => replay.hasGap(lastEventId, throughId),
-    replayAfter: (lastEventId, throughId) => replay.replayAfter(lastEventId, throughId)
-      .filter((event) => allows(event.payload)),
-    isTerminal: (event) => replay.isTerminal(event),
   }
 }

@@ -20,12 +20,12 @@ import {
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { AgentRuntimeTurnConflictError, createAgentRuntime } from "@claxedo/agent-sdk-runtime"
 import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memory"
-import { Hono } from "hono"
-import type { SessionAccessPolicy } from "../session-access-policy"
 // These fixtures carry only the fields the routes under test read; the cast
 // keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
 import type { Message } from "@opencode-ai/sdk/v2"
+import { Hono } from "hono"
+import type { SessionAccessPolicy } from "../session-access-policy"
 
 function adapter(input: {
   onDirectory?: (directory: RuntimeDirectory) => void
@@ -108,10 +108,394 @@ function adapter(input: {
     replyQuestion: async () => {},
     rejectQuestion: async () => {},
     applyConfig: async () => {},
-    probeConfigOptions: async () => [],
+    probeConfigOptions: async () => ({ options: [] }),
     dispose: () => {},
   }
 }
+
+function managedRoutes(input: {
+  policy: SessionAccessPolicy
+  adapter: AgentHarnessAdapter
+  listSessions?: () => Promise<AgentSession[]>
+  runtime?: AgentRuntime
+  publishGlobal?: (event: CompatEnvelope) => void
+  afterMessageCheckpoint?: () => void
+}) {
+  const routes = createSessionRoutes({
+    resolveAdapter: () => input.adapter,
+    resolveDirectory: () => "/workspace",
+    ...(input.listSessions ? { listSessions: input.listSessions } : {}),
+    ...(input.runtime ? { resolveRuntime: () => input.runtime } : {}),
+    ...(input.afterMessageCheckpoint ? { afterMessageCheckpoint: input.afterMessageCheckpoint } : {}),
+    sessionAccessPolicy: input.policy,
+    sessionBus: { publish() {}, subscribe: () => () => {} },
+    publishGlobal: input.publishGlobal ?? (() => {}),
+  })
+  const app = new Hono()
+  app.use("*", async (context, next) => {
+    ;(context as any).set("relayHostAuth", {
+      actor_id: "actor_1",
+      actor_kind: "human",
+      org_id: "org_1",
+      workspace_id: "ws_1",
+      host_id: "host_1",
+      role: "editor",
+    } as never)
+    await next()
+  })
+  return app.route("/", routes)
+}
+
+function managedPolicy(overrides: Partial<SessionAccessPolicy> = {}): SessionAccessPolicy {
+  const lease = (turnId: string, leaseId = "turn_lease_test") => ({
+    allowed: true as const,
+    turnId,
+    leaseId,
+    fencingToken: 1,
+    acquiredAt: Date.now(),
+    expiresAt: Date.now() + 60_000,
+  })
+  return {
+    sessionAuthority: "managed-private",
+    authorize: async () => ({ allowed: true }),
+    authorizeStream: async () => ({ allowed: true, lease: "lease_test", expiresAt: Date.now() + 60_000 }),
+    authorizePrefix: async () => ({ allowed: true }),
+    filterSessions: async (input) => input.sessionIds,
+    registerSession: async () => ({ allowed: true }),
+    markRegistrationAmbiguous: async () => ({ allowed: true }),
+    beginRegistrationCompensation: async () => ({ allowed: true }),
+    completeRegistrationCompensation: async () => ({ allowed: true }),
+    acquireTurn: async (input) => lease(input.turnId),
+    renewTurn: async (input) => lease(input.turnId, input.leaseId),
+    releaseTurn: async () => ({ released: true }),
+    ...overrides,
+  }
+}
+
+describe("createSessionRoutes private-session lifecycle", () => {
+  test("managed event revocation ends the reader and ignores later private frames", async () => {
+    let authorityCalls = 0
+    let listener: ((event: unknown) => void) | undefined
+    const policy = managedPolicy({
+      authorizeStream: async () => {
+        authorityCalls += 1
+        return authorityCalls === 1
+          ? { allowed: true, lease: "lease_short", expiresAt: Date.now() + 30 }
+          : { allowed: false, status: 403, code: "session_revoked", message: "revoked" }
+      },
+    })
+    const app = createSessionRoutes({
+      resolveAdapter: () => adapter(),
+      resolveDirectory: () => "/workspace",
+      sessionAccessPolicy: policy,
+      sessionBus: {
+        publish: () => {},
+        subscribe: (next) => {
+          listener = next
+          return () => {
+            listener = undefined
+          }
+        },
+      },
+      publishGlobal: () => {},
+    })
+    const wrapped = new Hono()
+    wrapped.use("*", async (c, next) => {
+      ;(c as any).set("relayHostAuth", {
+        actor_id: "actor_1",
+        actor_kind: "human",
+        org_id: "org_1",
+        workspace_id: "ws_1",
+        host_id: "host_1",
+        role: "editor",
+      })
+      await next()
+    })
+    wrapped.route("/", app)
+
+    const response = await wrapped.request("http://localhost/event?sessionID=ses_private")
+    const reader = response.body!.getReader()
+    const ended = await Promise.race([
+      reader.read().then((item) => item.done),
+      new Promise<false>((resolve) => setTimeout(() => resolve(false), 500)),
+    ])
+    listener?.({ type: "session.updated", properties: { info: { id: "ses_private" } } })
+
+    expect(response.status).toBe(200)
+    expect(ended).toBe(true)
+    expect((await reader.read()).done).toBe(true)
+  })
+
+  test("requires a preassigned session and reservation operation before runtime mutation", async () => {
+    let creates = 0
+    const fixture = { ...adapter(), getSession: async () => null, createSession: async () => {
+      creates += 1
+      return { id: "ses_1" }
+    } }
+    const response = await managedRoutes({ policy: managedPolicy(), adapter: fixture }).request("/session", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({}),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_reservation_required" } })
+    expect(creates).toBe(0)
+  })
+
+  test("registers the exact reserved operation before returning create success", async () => {
+    const calls: unknown[] = []
+    const fixture = { ...adapter(), getSession: async () => null, createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }) }
+    const policy = managedPolicy({
+      registerSession: async (value) => {
+        calls.push(value)
+        return { allowed: true }
+      },
+    })
+    const response = await managedRoutes({ policy, adapter: fixture }).request("/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-claxedo-session-registration-operation": "op_create_1",
+      },
+      body: JSON.stringify({ id: "ses_1", title: "Private" }),
+    })
+    expect(response.status).toBe(201)
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({
+      sessionId: "ses_1",
+      registrationOperationId: "op_create_1",
+      sessionTitle: "Private",
+      actor: { actorId: "actor_1", actorKind: "human" },
+      authority: { orgId: "org_1", workspaceId: "ws_1", role: "editor" },
+    })
+  })
+
+  test("marks an unavailable registration ambiguous and preserves runtime state for exact retry", async () => {
+    let existing = false
+    let creates = 0
+    let deletes = 0
+    let attempts = 0
+    const ambiguous: unknown[] = []
+    const fixture = {
+      ...adapter(),
+      getSession: async (id: string) => existing ? { id, title: "Private", time: { created: 1, updated: 1 } } : null,
+      createSession: async (_directory: string, _title?: string, id?: string) => {
+        creates += 1
+        existing = true
+        return { id: id! }
+      },
+      deleteSession: async () => { deletes += 1; existing = false },
+    }
+    const policy = managedPolicy({
+      registerSession: async () => ++attempts === 1
+        ? { allowed: false, status: 503, code: "authority_unavailable", message: "retry" }
+        : { allowed: true },
+      markRegistrationAmbiguous: async (value) => { ambiguous.push(value); return { allowed: true } },
+    })
+    const request = () => managedRoutes({ policy, adapter: fixture }).request("/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-claxedo-session-registration-operation": "op_create_1",
+      },
+      body: JSON.stringify({ id: "ses_1", title: "Private" }),
+    })
+
+    expect((await request()).status).toBe(503)
+    expect(creates).toBe(1)
+    expect(deletes).toBe(0)
+    expect(ambiguous).toHaveLength(1)
+    expect((await request()).status).toBe(201)
+    expect(creates).toBe(1)
+  })
+
+  test("compensates runtime state after definitive registration denial", async () => {
+    const calls: string[] = []
+    const fixture = {
+      ...adapter(),
+      getSession: async () => null,
+      createSession: async (_directory: string, _title?: string, id?: string) => ({ id: id! }),
+      deleteSession: async () => { calls.push("delete") },
+    }
+    const policy = managedPolicy({
+      registerSession: async () => ({ allowed: false, status: 403, code: "session_private", message: "denied" }),
+      beginRegistrationCompensation: async () => { calls.push("begin"); return { allowed: true } },
+      completeRegistrationCompensation: async () => { calls.push("complete"); return { allowed: true } },
+    })
+    const response = await managedRoutes({ policy, adapter: fixture }).request("/session", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-claxedo-session-registration-operation": "op_create_1",
+      },
+      body: JSON.stringify({ id: "ses_1" }),
+    })
+    expect(response.status).toBe(403)
+    expect(calls).toEqual(["begin", "delete", "complete"])
+  })
+
+  test("requires an exact reservation before a managed fork mutates runtime state", async () => {
+    let forks = 0
+    const fixture = {
+      ...adapter(),
+      getSession: async () => null,
+      forkSession: async () => { forks += 1; return { id: "unexpected" } },
+    }
+    const response = await managedRoutes({ policy: managedPolicy(), adapter: fixture }).request("/session/ses_parent/fork", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageId: "msg_1" }),
+    })
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_reservation_required" } })
+    expect(forks).toBe(0)
+  })
+
+  test("forks into the reserved child id and registers the exact operation before success", async () => {
+    const calls: unknown[] = []
+    const fixture = {
+      ...adapter(),
+      getSession: async () => null,
+      forkSession: async (parentId: string, messageId: string, directory: RuntimeDirectory, childId?: string) => {
+        calls.push({ parentId, messageId, directory, childId })
+        return { id: childId! }
+      },
+    }
+    const policy = managedPolicy({
+      registerSession: async (value) => { calls.push(value); return { allowed: true } },
+    })
+    const response = await managedRoutes({ policy, adapter: fixture }).request("/session/ses_parent/fork", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-claxedo-session-registration-operation": "op_fork_1",
+      },
+      body: JSON.stringify({ id: "ses_child", messageId: "msg_1" }),
+    })
+    expect(response.status).toBe(201)
+    expect(calls[0]).toEqual({
+      parentId: "ses_parent",
+      messageId: "msg_1",
+      directory: "/workspace",
+      childId: "ses_child",
+    })
+    expect(calls[1]).toMatchObject({
+      sessionId: "ses_child",
+      registrationOperationId: "op_fork_1",
+      actor: { actorId: "actor_1", actorKind: "human" },
+    })
+    expect(await response.json()).toEqual({ id: "ses_child" })
+  })
+
+  test("filters list rows through private-session authority", async () => {
+    const policy = managedPolicy({ filterSessions: async () => ["ses_visible"] })
+    const response = await managedRoutes({
+      policy,
+      adapter: adapter(),
+      listSessions: async () => [
+        { id: "ses_visible", title: "Visible", time: { created: 1, updated: 1 } },
+        { id: "ses_private", title: "Private", time: { created: 1, updated: 1 } },
+      ],
+    }).request("/session")
+    expect((await response.json() as Array<{ id: string }>).map((row) => row.id)).toEqual(["ses_visible"])
+  })
+
+  test("requires a stable message id before a managed prompt mutates the runtime", async () => {
+    let sends = 0
+    const fixture = {
+      ...adapter(),
+      sendMessage: () => {
+        sends += 1
+        return (async function* () {})()
+      },
+    }
+    const response = await managedRoutes({ policy: managedPolicy(), adapter: fixture }).request(
+      "/session/ses_private/message",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
+      },
+    )
+
+    expect(response.status).toBe(400)
+    expect(await response.json()).toMatchObject({ error: { code: "session_turn_id_required" } })
+    expect(sends).toBe(0)
+  })
+
+  test("returns a durable admission conflict before a managed prompt mutates the runtime", async () => {
+    let sends = 0
+    const fixture = {
+      ...adapter(),
+      sendMessage: () => {
+        sends += 1
+        return (async function* () {})()
+      },
+    }
+    const response = await managedRoutes({
+      policy: managedPolicy({
+        acquireTurn: async () => ({
+          allowed: false,
+          status: 409,
+          code: "session_turn_in_progress",
+          message: "A durable turn is already active",
+        }),
+      }),
+      adapter: fixture,
+    }).request("/session/ses_private/message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageID: "msg_2", parts: [{ type: "text", text: "hello" }] }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({ error: { code: "session_turn_in_progress" } })
+    expect(sends).toBe(0)
+  })
+
+  test("holds the durable turn through checkpoint and final message publication", async () => {
+    const calls: string[] = []
+    const assistant = {
+      info: { id: "assistant_1", sessionID: "ses_private", role: "assistant" },
+      parts: [],
+    } as AgentMessage
+    const fixture = adapter({
+      events: [
+        messageUpdated(assistant.info as Message),
+        sessionIdle("ses_private"),
+      ],
+      messages: [assistant],
+    })
+    const response = await managedRoutes({
+      policy: managedPolicy({
+        releaseTurn: async () => {
+          calls.push("release")
+          return { released: true }
+        },
+      }),
+      adapter: fixture,
+      afterMessageCheckpoint: () => {
+        calls.push("checkpoint")
+      },
+      publishGlobal: (event) => {
+        calls.push(`publish:${event.payload.type}`)
+      },
+    }).request("/session/ses_private/message", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messageID: "user_1", parts: [{ type: "text", text: "hello" }] }),
+    })
+
+    expect(response.status).toBe(200)
+    const checkpoint = calls.indexOf("checkpoint")
+    const finalPublish = calls.lastIndexOf("publish:message.updated")
+    const release = calls.indexOf("release")
+    expect(checkpoint).toBeGreaterThanOrEqual(0)
+    expect(finalPublish).toBeGreaterThanOrEqual(0)
+    expect(release).toBeGreaterThan(checkpoint)
+    expect(release).toBeGreaterThan(finalPublish)
+  })
+})
 
 describe("createSessionRoutes message paging", () => {
   const first = { info: { id: "message-1", role: "user" }, parts: [] } as AgentMessage
@@ -373,6 +757,9 @@ function registrationPolicy(
     authorizePrefix: async () => ({ allowed: true }),
     filterSessions: async (input) => input.sessionIds,
     registerSession,
+    markRegistrationAmbiguous: async () => ({ allowed: true }),
+    beginRegistrationCompensation: async () => ({ allowed: true }),
+    completeRegistrationCompensation: async () => ({ allowed: true }),
   }
 }
 
@@ -471,10 +858,14 @@ describe("createSessionRoutes directory-less sessions", () => {
           ? { allowed: false, status: 403, code: "session_private", message: "Registration denied" }
           : { allowed: true }
       }),
+      getSession: (_directory, id) => persisted.has(id)
+        ? { id, title: "Private", time: { created: 1, updated: 1 } }
+        : null,
     })
 
     const request = () => app.request("http://localhost/session", {
       method: "POST",
+      headers: { "x-claxedo-session-registration-operation": "op_stable" },
       body: JSON.stringify({ id: "session_stable" }),
     })
     expect((await request()).status).toBe(403)
@@ -486,7 +877,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     ])
   })
 
-  test("reconciles a timeout after registration commit before compensating", async () => {
+  test("preserves an ambiguous registration for exact-operation retry", async () => {
     const calls: string[] = []
     let registrations = 0
     const item = adapter()
@@ -503,9 +894,14 @@ describe("createSessionRoutes directory-less sessions", () => {
       }),
     })
 
-    const response = await app.request("http://localhost/session", { method: "POST", body: "{}" })
+    const request = () => app.request("http://localhost/session", {
+      method: "POST",
+      headers: { "x-claxedo-session-registration-operation": "op_committed" },
+      body: JSON.stringify({ id: "session_committed" }),
+    })
 
-    expect(response.status).toBe(201)
+    expect((await request()).status).toBe(503)
+    expect((await request()).status).toBe(201)
     expect(registrations).toBe(2)
     expect(calls).toEqual([])
   })
@@ -532,7 +928,8 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     const response = await app.request("http://localhost/session/session_parent/fork", {
       method: "POST",
-      body: JSON.stringify({ messageId: "message_1" }),
+      headers: { "x-claxedo-session-registration-operation": "op_fork_child" },
+      body: JSON.stringify({ id: "session_child", messageId: "message_1" }),
     })
 
     expect(response.status).toBe(201)
@@ -560,7 +957,8 @@ describe("createSessionRoutes directory-less sessions", () => {
 
     const response = await app.request("http://localhost/session/session_parent/fork", {
       method: "POST",
-      body: "{}",
+      headers: { "x-claxedo-session-registration-operation": "op_fork_denied" },
+      body: JSON.stringify({ id: "session_child" }),
     })
 
     expect(response.status).toBe(403)
@@ -581,6 +979,7 @@ describe("createSessionRoutes directory-less sessions", () => {
   test("filters transcript-bearing collections through the verified relay actor", async () => {
     const calls: Array<{ operation: string; actorId?: string; sessionIds: string[] }> = []
     const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
       authorize: async () => ({ allowed: true }),
       authorizePrefix: async () => ({ allowed: true }),
       filterSessions: async (input) => {
@@ -1066,6 +1465,218 @@ describe("createSessionRoutes directory-less sessions", () => {
     })
     expect(unsupported.status).toBe(409)
     expect(await unsupported.json()).toMatchObject({ error: { code: "unsupported_operation" } })
+  })
+
+  test("shell forwards command, agent, model, and messageID to the adapter and discards its result", async () => {
+    const calls: unknown[] = []
+    const app = createSessionRoutes({
+      resolveAdapter: () => ({
+        ...adapter(),
+        shell: async (id: string, input: unknown, directory: RuntimeDirectory) => {
+          calls.push({ id, input, directory })
+        },
+      }),
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    })
+
+    const response = await app.request("http://localhost/session/session_1/shell", {
+      method: "POST",
+      body: JSON.stringify({
+        command: "ls -la",
+        agent: "build",
+        model: { providerID: "opencode", modelID: "model" },
+        messageID: "msg_1",
+      }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
+    expect(calls).toEqual([{
+      id: "session_1",
+      input: {
+        command: "ls -la",
+        agent: "build",
+        model: { providerID: "opencode", modelID: "model" },
+        messageID: "msg_1",
+      },
+      directory: "/workspace",
+    }])
+  })
+
+  test("shell defaults command and agent to empty strings and omits model/messageID when absent", async () => {
+    const calls: unknown[] = []
+    const app = createSessionRoutes({
+      resolveAdapter: () => ({
+        ...adapter(),
+        shell: async (_id: string, input: unknown) => { calls.push(input) },
+      }),
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    })
+
+    const response = await app.request("http://localhost/session/session_1/shell", {
+      method: "POST",
+      body: JSON.stringify({}),
+    })
+
+    expect(response.status).toBe(200)
+    expect(calls).toEqual([{ command: "", agent: "" }])
+  })
+
+  test("shell refuses when the adapter does not advertise commands support", async () => {
+    const response = await createSessionRoutes({
+      resolveAdapter: () => ({
+        ...adapter(),
+        readHarnessCapabilities: () => ({
+          harness: "codex",
+          abort: false,
+          reconnect: false,
+          replay: false,
+          permissions: false,
+          questions: false,
+          todos: false,
+          commands: false,
+          fork: false,
+          revert: false,
+          unrevert: false,
+          configOptions: false,
+          subagents: false,
+        }),
+        shell: undefined,
+      }) as unknown as AgentHarnessAdapter,
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    }).request("http://localhost/session/session_1/shell", {
+      method: "POST",
+      body: JSON.stringify({ command: "ls", agent: "build" }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: { code: "unsupported_operation", capability: "commands", harness: "codex" },
+    })
+  })
+
+  test("shell refuses when the harness advertises commands but the adapter has no shell method", async () => {
+    const response = await createSessionRoutes({
+      resolveAdapter: () => ({ ...adapter(), shell: undefined }) as unknown as AgentHarnessAdapter,
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    }).request("http://localhost/session/session_1/shell", {
+      method: "POST",
+      body: JSON.stringify({ command: "ls", agent: "build" }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: { code: "unsupported_operation", reason: "adapter_method_unavailable" },
+    })
+  })
+
+  test("summarize forwards providerID, modelID, and auto to the adapter and discards its result", async () => {
+    const calls: unknown[] = []
+    const app = createSessionRoutes({
+      resolveAdapter: () => ({
+        ...adapter(),
+        summarize: async (id: string, input: unknown, directory: RuntimeDirectory) => {
+          calls.push({ id, input, directory })
+        },
+      }),
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    })
+
+    const response = await app.request("http://localhost/session/session_1/summarize", {
+      method: "POST",
+      body: JSON.stringify({ providerID: "opencode", modelID: "model", auto: true }),
+    })
+
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ ok: true })
+    expect(calls).toEqual([{
+      id: "session_1",
+      input: { providerID: "opencode", modelID: "model", auto: true },
+      directory: "/workspace",
+    }])
+  })
+
+  test("summarize defaults providerID and modelID to empty strings and omits auto when absent", async () => {
+    const calls: unknown[] = []
+    const app = createSessionRoutes({
+      resolveAdapter: () => ({
+        ...adapter(),
+        summarize: async (_id: string, input: unknown) => { calls.push(input) },
+      }),
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    })
+
+    const response = await app.request("http://localhost/session/session_1/summarize", {
+      method: "POST",
+      body: JSON.stringify({}),
+    })
+
+    expect(response.status).toBe(200)
+    expect(calls).toEqual([{ providerID: "", modelID: "" }])
+  })
+
+  test("summarize refuses when the adapter does not advertise commands support", async () => {
+    const response = await createSessionRoutes({
+      resolveAdapter: () => ({
+        ...adapter(),
+        readHarnessCapabilities: () => ({
+          harness: "codex",
+          abort: false,
+          reconnect: false,
+          replay: false,
+          permissions: false,
+          questions: false,
+          todos: false,
+          commands: false,
+          fork: false,
+          revert: false,
+          unrevert: false,
+          configOptions: false,
+          subagents: false,
+        }),
+        summarize: undefined,
+      }) as unknown as AgentHarnessAdapter,
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    }).request("http://localhost/session/session_1/summarize", {
+      method: "POST",
+      body: JSON.stringify({ providerID: "opencode", modelID: "model" }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: { code: "unsupported_operation", capability: "commands", harness: "codex" },
+    })
+  })
+
+  test("summarize refuses when the harness advertises commands but the adapter has no summarize method", async () => {
+    const response = await createSessionRoutes({
+      resolveAdapter: () => ({ ...adapter(), summarize: undefined }) as unknown as AgentHarnessAdapter,
+      resolveDirectory: () => "/workspace",
+      sessionBus: { publish: () => {}, subscribe: () => () => {} },
+      publishGlobal: () => {},
+    }).request("http://localhost/session/session_1/summarize", {
+      method: "POST",
+      body: JSON.stringify({ providerID: "opencode", modelID: "model" }),
+    })
+
+    expect(response.status).toBe(409)
+    expect(await response.json()).toMatchObject({
+      error: { code: "unsupported_operation", reason: "adapter_method_unavailable" },
+    })
   })
 
   test("prompt_async falls back to 204 when admission does not settle within the bound", async () => {

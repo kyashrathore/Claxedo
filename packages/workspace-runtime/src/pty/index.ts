@@ -46,6 +46,7 @@ import type {
   ProcessOwnerKind,
   ProcessOwnerOperations,
 } from "../managed-processes/process-observer"
+import type { SessionAccessActor, SessionWorkspaceAuthority } from "../session-access-policy"
 
 async function getSpawn() {
   await ensureSpawnHelper()
@@ -90,6 +91,16 @@ async function ensureSetup(port: number) {
 }
 
 export namespace Pty {
+  export type AgentHookAccessBinding = {
+    token: string
+    context: {
+      actor: SessionAccessActor
+      authority: SessionWorkspaceAuthority
+    }
+    sessionId: string
+    authorityLease: string
+    authorityExpiresAt: number
+  }
   const log = Log.create({ service: "pty" })
 
   /**
@@ -334,6 +345,13 @@ export namespace Pty {
     cleanupOperation?: Promise<void>
     removeOperation?: Promise<void>
     owner?: ProcessOwnerHandle
+    /** Verified relay actor that created this public terminal. Never accepted
+     * from request input and deliberately absent from the public PTY info. */
+    accessOwnerActorId?: string
+    /** One terminal-scoped callback capability derived from verified relay
+     * claims at PTY creation. The child receives only the opaque token; actor,
+     * tenant, workspace, and role remain runtime-owned state. */
+    agentHookAccess?: AgentHookAccessBinding
   }
 
   function clearInterrupt(session: ActiveSession) {
@@ -516,6 +534,44 @@ export namespace Pty {
     return sessions.get(id)?.info
   }
 
+  /** Bind access only after the public route has created the PTY itself. */
+  export function bindAccessOwner(id: string, actorId: string) {
+    const session = sessions.get(id)
+    if (!session || session.removed) return false
+    if (session.accessOwnerActorId && session.accessOwnerActorId !== actorId) return false
+    session.accessOwnerActorId = actorId
+    return true
+  }
+
+  export function accessOwner(id: string) {
+    return sessions.get(id)?.accessOwnerActorId
+  }
+
+  export function agentHookAccessForToken(token: string) {
+    if (!token) return
+    for (const [terminalId, session] of sessions) {
+      if (session.exited || session.removed) continue
+      if (session.agentHookAccess?.token !== token) continue
+      return { terminalId, ...session.agentHookAccess }
+    }
+  }
+
+  export function renewAgentHookAccess(token: string, lease: { authorityLease: string; authorityExpiresAt: number }) {
+    for (const session of sessions.values()) {
+      if (session.exited || session.removed || session.agentHookAccess?.token !== token) continue
+      session.agentHookAccess.authorityLease = lease.authorityLease
+      session.agentHookAccess.authorityExpiresAt = lease.authorityExpiresAt
+      return true
+    }
+    return false
+  }
+
+  export function agentHookToken(id: string) {
+    const session = sessions.get(id)
+    if (!session || session.exited || session.removed) return
+    return session.agentHookAccess?.token
+  }
+
   export function hasAddrInUse(id: string) {
     return sessions.get(id)?.addrInUse ?? false
   }
@@ -541,6 +597,7 @@ export namespace Pty {
       sessionId?: string
       operations?: ProcessOwnerOperations
     },
+    agentHookAccess?: AgentHookAccessBinding,
   ) {
     const createStart = performance.now()
     const id = "pty_" + crypto.randomUUID().replace(/-/g, "")
@@ -773,6 +830,7 @@ export namespace Pty {
       orphanTimer: undefined,
       interruptTimer: undefined,
       ...(owner ? { owner } : {}),
+      ...(agentHookAccess ? { agentHookAccess } : {}),
     }
     sessions.set(id, session)
     armOrphanTimer(id, session)

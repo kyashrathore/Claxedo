@@ -9,11 +9,7 @@ import { composeWorkerSandboxManager } from "./adapters/worker/hosted-compose"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { pullHostedControlSession, pullHostedControlSessionMessages } from "./hosted-session-pull"
 import type { ControlPlaneServices } from "./services"
-import type {
-  SandboxDriver,
-  SandboxEgressUnenforcedEvent,
-  SandboxManager,
-} from "@claxedo/sandbox-manager"
+import type { SandboxDriver, SandboxEgressUnenforcedEvent, SandboxManager } from "@claxedo/sandbox-manager"
 
 function pullServices(): ControlPlaneServices {
   return {
@@ -101,7 +97,7 @@ function env(overrides: Record<string, string> = {}) {
  * Security review 2026-07-27 §6.14, follow-up.
  *
  * A hosted deployment whose driver declares `egressControl: "none"` — which
- * `defaultSandboxDriverName`'s first choice, cloudflare, does — boots fine and
+ * the explicitly selected cloudflare driver does — boots fine and
  * creates fine, and every sandbox it provisions can reach any host on the
  * internet. The manager already warns to `console.warn`, but inside a Worker
  * isolate that reaches only whoever is tailing logs at that moment. The point
@@ -117,7 +113,7 @@ describe("sandbox egress unenforced signal", () => {
     reason: "sandbox_egress_uncontained",
     driver: "cloudflare",
     egressControl: "none",
-    message: "[sandbox-manager] SANDBOX EGRESS IS UNRESTRICTED: driver \"cloudflare\" …",
+    message: '[sandbox-manager] SANDBOX EGRESS IS UNRESTRICTED: driver "cloudflare" …',
   }
 
   test("names the uncontained driver on the ops plane, and keeps the console line", () => {
@@ -231,33 +227,49 @@ function uncontainedDriver(id: string): SandboxDriver {
 
 describe("hosted service composition", () => {
   test("requires a current public verification key alongside the signing key", () => {
-    expect(() => composeHostedControlPlane({
-      ...env(),
-      CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: undefined,
-    })).toThrow("CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM")
+    expect(() =>
+      composeHostedControlPlane({
+        ...env(),
+        CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: undefined,
+      }),
+    ).toThrow("CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM")
   })
 
   test("rejects unsupported token algorithms at composition", () => {
-    expect(() => composeHostedControlPlane(env({
-      CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "ES256",
-    }))).toThrow(HostedWorkerCompositionError)
-    expect(() => composeHostedControlPlane(env({
-      CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "ES256",
-    }))).toThrow("CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM must be EdDSA")
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "ES256",
+        }),
+      ),
+    ).toThrow(HostedWorkerCompositionError)
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "ES256",
+        }),
+      ),
+    ).toThrow("CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM must be EdDSA")
   })
 
   test("passes the supplied hosted env into Worker credential composition", () => {
-    expect(() => composeHostedControlPlane(env({
-      CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
-    }))).toThrow("CLAXEDO_CF_KV_URL")
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
+        }),
+      ),
+    ).toThrow("CLAXEDO_CF_KV_URL")
   })
 
   test("keeps Claxedo home regions and relay endpoint mapping in hosted services", async () => {
-    const plane = composeHostedControlPlane(env({
-      CLAXEDO_HOME_REGION: "apac-south",
-      CLAXEDO_WORKSPACE_RELAY_URL_APAC_SOUTH: "https://relay.apac-south.test",
-      CLAXEDO_WORKSPACE_RELAY_URL_EU_WEST: "https://relay.eu.test",
-    }))
+    const plane = composeHostedControlPlane(
+      env({
+        CLAXEDO_HOME_REGION: "apac-south",
+        CLAXEDO_WORKSPACE_RELAY_URL_APAC_SOUTH: "https://relay.apac-south.test",
+        CLAXEDO_WORKSPACE_RELAY_URL_EU_WEST: "https://relay.eu.test",
+      }),
+    )
 
     expect(plane.services.defaultHomeRegion).toBe("apac-south")
     expect(plane.services.relay.relayUrl).toBe("https://relay.default.test")
@@ -270,12 +282,14 @@ describe("hosted service composition", () => {
   })
 
   test("maps hosted device-login env to a provider-neutral broker config", () => {
-    const plane = composeHostedControlPlane(env({
-      CLAXEDO_DEVICE_LOGIN_ISSUER: "https://login.test/",
-      CLAXEDO_DEVICE_LOGIN_CLIENT_ID: "claxedo-cli",
-      CLAXEDO_DEVICE_LOGIN_AUDIENCE: "convex",
-      CLAXEDO_DEVICE_LOGIN_SCOPE: "openid offline_access",
-    }))
+    const plane = composeHostedControlPlane(
+      env({
+        CLAXEDO_DEVICE_LOGIN_ISSUER: "https://login.test/",
+        CLAXEDO_DEVICE_LOGIN_CLIENT_ID: "claxedo-cli",
+        CLAXEDO_DEVICE_LOGIN_AUDIENCE: "convex",
+        CLAXEDO_DEVICE_LOGIN_SCOPE: "openid offline_access",
+      }),
+    )
 
     expect(plane.deviceAuthProvider).toMatchObject({
       issuer: "https://login.test/",
@@ -288,20 +302,22 @@ describe("hosted service composition", () => {
   })
 
   test("parses finite hosted safety limits for rate limits and sandbox retries", () => {
-    const plane = composeHostedControlPlane(env({
-      CLAXEDO_CONNECTION_RATE_LIMIT: "3",
-      CLAXEDO_CONNECTION_RATE_LIMIT_WINDOW_MS: "15000",
-      CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "17",
-      CLAXEDO_CONTROL_PLANE_RATE_LIMIT_WINDOW_MS: "45000",
-      // Default request guard knobs. The window is parsed like any other
-      // here; the operational requirement that PRODUCTION keep it at 60s (so the
-      // local fuse and the Cloudflare binding's fixed period mean the same
-      // minute) is a config invariant asserted by rate-limit-config-drift.test.ts,
-      // not a parsing rule.
-      CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: "250",
-      CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT_WINDOW_MS: "30000",
-      CLAXEDO_SANDBOX_MAX_RETRY_COUNT: "4",
-    }))
+    const plane = composeHostedControlPlane(
+      env({
+        CLAXEDO_CONNECTION_RATE_LIMIT: "3",
+        CLAXEDO_CONNECTION_RATE_LIMIT_WINDOW_MS: "15000",
+        CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "17",
+        CLAXEDO_CONTROL_PLANE_RATE_LIMIT_WINDOW_MS: "45000",
+        // Default request guard knobs. The window is parsed like any other
+        // here; the operational requirement that PRODUCTION keep it at 60s (so the
+        // local fuse and the Cloudflare binding's fixed period mean the same
+        // minute) is a config invariant asserted by rate-limit-config-drift.test.ts,
+        // not a parsing rule.
+        CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT: "250",
+        CLAXEDO_DEFAULT_REQUEST_RATE_LIMIT_WINDOW_MS: "30000",
+        CLAXEDO_SANDBOX_MAX_RETRY_COUNT: "4",
+      }),
+    )
 
     // Exhaustive `toEqual`, deliberately not `toMatchObject`: this is the one
     // place a NEW safety limit shipping without a parsed env knob (or with the
@@ -326,42 +342,75 @@ describe("hosted service composition", () => {
     expect(() => composeHostedControlPlane({ ...env(), CLAXEDO_WORKSPACE_AUTHORITY_URL: undefined })).toThrow(
       "CLAXEDO_WORKSPACE_AUTHORITY_URL",
     )
-    expect(() => composeHostedControlPlane({
-      ...env(),
-      CLAXEDO_WORKSPACE_AUTHORITY_URL: undefined,
-      CONVEX_URL: "https://legacy.convex.test",
-    })).toThrow("CLAXEDO_WORKSPACE_AUTHORITY_URL")
+    expect(() =>
+      composeHostedControlPlane({
+        ...env(),
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: undefined,
+        CONVEX_URL: "https://legacy.convex.test",
+      }),
+    ).toThrow("CLAXEDO_WORKSPACE_AUTHORITY_URL")
     const plane = composeHostedControlPlane(env())
     expect(plane.services.authority).toBeDefined()
+    expect(plane.privateSessionAuthority).toBeDefined()
   })
 
   test("fails closed when a hosted safety limit is invalid", () => {
-    expect(() => composeHostedControlPlane(env({
-      CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "0",
-    }))).toThrow(HostedWorkerCompositionError)
-    expect(() => composeHostedControlPlane(env({
-      CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "0",
-    }))).toThrow("CLAXEDO_CONTROL_PLANE_RATE_LIMIT must be a positive integer")
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "0",
+        }),
+      ),
+    ).toThrow(HostedWorkerCompositionError)
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_CONTROL_PLANE_RATE_LIMIT: "0",
+        }),
+      ),
+    ).toThrow("CLAXEDO_CONTROL_PLANE_RATE_LIMIT must be a positive integer")
   })
 
   test("fails closed when the Convex Control Plane service token is missing", () => {
     // Every service-authenticated Convex path requires this credential, so the
     // hosted plane must reject the deployment before it serves requests.
-    expect(() => composeHostedControlPlane(env({
-      CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "   ",
-    }))).toThrow(HostedWorkerCompositionError)
-    expect(() => composeHostedControlPlane(env({
-      CLAXEDO_SANDBOX_DRIVER: "fetch",
-      CLAXEDO_SANDBOX_DRIVER_URL: "https://driver.test",
-      CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "   ",
-    }))).toThrow("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN")
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "   ",
+        }),
+      ),
+    ).toThrow(HostedWorkerCompositionError)
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_SANDBOX_DRIVER: "fetch",
+          CLAXEDO_SANDBOX_DRIVER_URL: "https://driver.test",
+          CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "   ",
+        }),
+      ),
+    ).toThrow("CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN")
     // With the token, both driver and driver-less hosted compositions succeed.
-    expect(composeHostedControlPlane(env({
-      CLAXEDO_SANDBOX_DRIVER: "fetch",
-      CLAXEDO_SANDBOX_DRIVER_URL: "https://driver.test",
-      CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "svc_secret",
-    })).services.sandbox.sandboxManager).toBeDefined()
+    expect(
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_SANDBOX_DRIVER: "fetch",
+          CLAXEDO_SANDBOX_DRIVER_URL: "https://driver.test",
+          CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "svc_secret",
+        }),
+      ).services.sandbox.sandboxManager,
+    ).toBeDefined()
     expect(composeHostedControlPlane(env()).services.sandbox.sandboxManager).toBeUndefined()
+  })
+
+  test("fails closed when a selected sandbox driver cannot provide its driver and lease-store pair", () => {
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_SANDBOX_DRIVER: "cloudflare",
+        }),
+      ),
+    ).toThrow("does not provide the sandbox driver and durable lease store required by CLAXEDO_SANDBOX_DRIVER")
   })
 
   test("throws on present-but-invalid sandbox lease durations and defaults when unset", () => {
@@ -390,28 +439,37 @@ describe("hosted service composition", () => {
   })
 
   test("fails composition when the runtime admin token reuses the relay resolver token", () => {
-    expect(() => composeHostedControlPlane(env({
-      CLAXEDO_RUNTIME_ADMIN_TOKEN: "resolver-token",
-    }))).toThrow("CLAXEDO_RUNTIME_ADMIN_TOKEN must not reuse CLAXEDO_RELAY_RESOLVER_TOKEN")
+    expect(() =>
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_RUNTIME_ADMIN_TOKEN: "resolver-token",
+        }),
+      ),
+    ).toThrow("CLAXEDO_RUNTIME_ADMIN_TOKEN must not reuse CLAXEDO_RELAY_RESOLVER_TOKEN")
     // Distinct tokens compose fine.
-    expect(composeHostedControlPlane(env({
-      CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-token",
-    })).resolverToken).toBe("resolver-token")
+    expect(
+      composeHostedControlPlane(
+        env({
+          CLAXEDO_RUNTIME_ADMIN_TOKEN: "admin-token",
+        }),
+      ).resolverToken,
+    ).toBe("resolver-token")
   })
 })
 
 describe("sandbox relay target lookup (single shared implementation)", () => {
-  const readySandboxManager = () => ({
-    target: vi.fn(async () => ({
-      status: "ready",
-      sandboxId: "sandbox_1",
-      url: "https://runtime.test/ws_1",
-      hostId: "host_1",
-      epoch: 1,
-      homeRegion: "us-east",
-    })),
-    touch: vi.fn(async () => ({ touched: true, status: "ready" })),
-  }) as unknown as SandboxManager & { target: ReturnType<typeof vi.fn>; touch: ReturnType<typeof vi.fn> }
+  const readySandboxManager = () =>
+    ({
+      target: vi.fn(async () => ({
+        status: "ready",
+        sandboxId: "sandbox_1",
+        url: "https://runtime.test/ws_1",
+        hostId: "host_1",
+        epoch: 1,
+        homeRegion: "us-east",
+      })),
+      touch: vi.fn(async () => ({ touched: true, status: "ready" })),
+    }) as unknown as SandboxManager & { target: ReturnType<typeof vi.fn>; touch: ReturnType<typeof vi.fn> }
 
   test("fails closed without a sandbox manager", async () => {
     const lookup = sandboxRelayTargetLookup({})

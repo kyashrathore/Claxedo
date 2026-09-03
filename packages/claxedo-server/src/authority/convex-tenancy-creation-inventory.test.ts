@@ -26,7 +26,6 @@ describe("Convex tenancy creation inventory", () => {
   test("every workspace insert assigns org and project identity at first write", () => {
     const inserts = insertWindows("workspaces")
     expect(inserts.map((insert) => insert.file).sort()).toEqual([
-      "localHostLinks.ts",
       "workspaces.ts",
       "workspaces.ts",
       "workspaces.ts",

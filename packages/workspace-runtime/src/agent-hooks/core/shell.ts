@@ -133,8 +133,9 @@ export function getTerminalEnvVars(params: {
   workspaceId: string
   port: number
   shell?: string
+  agentHookToken?: string
 }): Record<string, string> {
-  const { tabId, terminalId, workspaceId, port, shell } = params
+  const { tabId, terminalId, workspaceId, port, shell, agentHookToken } = params
 
   const env: Record<string, string> = {
     CLAXEDO_HOME_DIR: CLAXEDO_DIR,
@@ -143,6 +144,7 @@ export function getTerminalEnvVars(params: {
     CLAXEDO_WORKSPACE_ID: workspaceId,
     CLAXEDO_PORT: String(port),
     CLAXEDO_SERVER_PORT: String(port),
+    ...(agentHookToken ? { CLAXEDO_AGENT_HOOK_TOKEN: agentHookToken } : {}),
   }
 
   const base = process.env.PATH || ""

@@ -1,4 +1,5 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { WorkspaceShareTarget } from "@claxedo/server-core/platform/auth/authority"
 import { isCliAccessAuth } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { convexApi } from "./api"
 import { requireAllowed, requireExecutor } from "./executor"
@@ -108,98 +109,10 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
       }
       return requireExecutor(input, auth).mutation(convexApi.workspaces.registerLocalForSharing, body)
     },
-    async createLocalHostLinkChallenge(auth: SignedControlPlaneAuth, args: {
-      workspaceId: string
-      hostId: string
-    }) {
-      const body = {
-        workspace_id: args.workspaceId,
-        host_id: args.hostId,
-      }
-      if (isCliAccessAuth(auth)) {
-        return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(
-          convexApi.localHostLinks.createChallengeForService,
-          { ...serviceArgs(auth), ...body },
-        ) as Promise<{ challenge_id: string; nonce: string; expires_at: number }>
-      }
-      return requireExecutor(input, auth).mutation(convexApi.localHostLinks.createChallenge, body) as Promise<{ challenge_id: string; nonce: string; expires_at: number }>
-    },
-    async registerLocalHostLink(auth: SignedControlPlaneAuth, args: {
-      workspaceId: string
-      hostId: string
-      publicKey: string
-      challengeId: string
-      signature: string
-      displayName?: string
-      ttlMs?: number
-    }) {
-      const body = {
-        workspace_id: args.workspaceId,
-        host_id: args.hostId,
-        public_key: args.publicKey,
-        challenge_id: args.challengeId,
-        signature: args.signature,
-        ...(args.displayName ? { display_name: args.displayName } : {}),
-        ...(args.ttlMs === undefined ? {} : { ttl_ms: args.ttlMs }),
-      }
-      if (isCliAccessAuth(auth)) {
-        return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(
-          convexApi.localHostLinks.registerForService,
-          { ...serviceArgs(auth), ...body },
-        )
-      }
-      return requireExecutor(input, auth).mutation(convexApi.localHostLinks.register, body)
-    },
-    async heartbeatLocalHostLink(auth: SignedControlPlaneAuth, args: {
-      workspaceId: string
-      hostId: string
-      signature: string
-      ttlMs?: number
-    }) {
-      const body = {
-        workspace_id: args.workspaceId,
-        host_id: args.hostId,
-        signature: args.signature,
-        ...(args.ttlMs === undefined ? {} : { ttl_ms: args.ttlMs }),
-      }
-      if (isCliAccessAuth(auth)) {
-        return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(
-          convexApi.localHostLinks.heartbeatForService,
-          { ...serviceArgs(auth), ...body },
-        )
-      }
-      return requireExecutor(input, auth).mutation(convexApi.localHostLinks.heartbeat, body)
-    },
-    async pauseLocalHostLink(auth: SignedControlPlaneAuth, args: {
-      workspaceId: string
-      hostId?: string
-      paused: boolean
-    }) {
-      const body = {
-        workspace_id: args.workspaceId,
-        paused: args.paused,
-        ...(args.hostId ? { host_id: args.hostId } : {}),
-      }
-      if (isCliAccessAuth(auth)) {
-        return requireExecutor(input, undefined, { allowUnsigned: true }).mutation(
-          convexApi.localHostLinks.pauseForService,
-          { ...serviceArgs(auth), ...body },
-        )
-      }
-      return requireExecutor(input, auth).mutation(convexApi.localHostLinks.pause, body)
-    },
-    async activeLocalHostLink(auth: SignedControlPlaneAuth, args: {
-      workspaceId: string
-    }) {
-      return requireExecutor(input, auth).query(convexApi.localHostLinks.active, {
-        workspace_id: args.workspaceId,
-      }) as Promise<
-        | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
-        | { active: false }
-      >
-    },
     async markSecondDeviceOpen(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
-      return requireExecutor(input, auth).mutation(convexApi.localHostLinks.markSecondDeviceOpen, {
+      // Assignment grain: the "second device open" fact lives on the owner's
+      // host_workspace_assignments row, not on the retired per-workspace link.
+      return requireExecutor(input, auth).mutation(convexApi.hostEnrollments.markSecondDeviceOpen, {
         workspace_id: args.workspaceId,
       }) as Promise<{ recorded: boolean; second_device_open_at: number }>
     },
@@ -234,39 +147,27 @@ export function workspaceAuthority(input: ConvexAuthorityInput, serviceArgs: Ser
     async grantWorkspaceShare(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
       role: "viewer" | "editor" | "admin"
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
+      target: WorkspaceShareTarget
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaceShares.grant, {
         workspace_id: args.workspaceId,
         role: args.role,
-        ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
-        ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
-        ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
-        ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
-        ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
+        ...(args.target.kind === "actor" ? { target_actor_id: args.target.actorId } : {}),
+        ...(args.target.kind === "user" ? { target_user_id: args.target.userId } : {}),
+        ...(args.target.kind === "org" ? { target_org_id: args.target.orgId } : {}),
       })
     },
     async revokeWorkspaceShare(auth: SignedControlPlaneAuth, args: {
       workspaceId: string
       grantId?: string
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
+      target?: WorkspaceShareTarget
     }) {
       return requireExecutor(input, auth).mutation(convexApi.workspaceShares.revoke, {
         workspace_id: args.workspaceId,
         ...(args.grantId ? { grant_id: args.grantId } : {}),
-        ...(args.grantedToTokenIdentifier ? { granted_to_token_identifier: args.grantedToTokenIdentifier } : {}),
-        ...(args.grantedToClerkSubject ? { granted_to_clerk_subject: args.grantedToClerkSubject } : {}),
-        ...(args.grantedToClerkOrgId ? { granted_to_clerk_org_id: args.grantedToClerkOrgId } : {}),
-        ...(args.grantedToTeamPublicId ? { granted_to_team_public_id: args.grantedToTeamPublicId } : {}),
-        ...(args.grantedToTeamId ? { granted_to_team_id: args.grantedToTeamId } : {}),
+        ...(args.target?.kind === "actor" ? { target_actor_id: args.target.actorId } : {}),
+        ...(args.target?.kind === "user" ? { target_user_id: args.target.userId } : {}),
+        ...(args.target?.kind === "org" ? { target_org_id: args.target.orgId } : {}),
       })
     },
   }

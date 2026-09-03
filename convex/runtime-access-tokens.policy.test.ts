@@ -133,10 +133,10 @@ describe("Convex runtime access token principal policy", () => {
     })
   })
 
-  test("fails closed for legacy rows without an explicit principal kind", async () => {
+  test("rejects legacy rows without an explicit principal kind at the schema boundary", async () => {
     const t = convexTest(schema, modules)
     const ids = await seed(t)
-    await t.run(async (ctx) => {
+    await expect(t.run(async (ctx) => {
       await ctx.db.insert("runtime_access_tokens", {
         jti: "legacy-token",
         workspace_id: ids.workspaceId,
@@ -146,13 +146,6 @@ describe("Convex runtime access token principal policy", () => {
         expires_at: Date.now() + 60_000,
         created_at: 1,
       } as never)
-    })
-
-    await expect(t.query(api.runtimeAccessTokens.active, {
-      ...service,
-      jti: "legacy-token",
-      workspace_id: "ws-runtime-policy",
-      host_id: "host-1",
-    } as never)).resolves.toMatchObject({ active: false, code: "runtime_access_token_revoked" })
+    })).rejects.toThrow("Missing required field `principal_kind`")
   })
 })

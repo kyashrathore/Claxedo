@@ -18,7 +18,6 @@ import {
 } from "./model"
 import { recordLlmTurnFact } from "./usageMetering"
 import { enqueueIndependentSessionIntake } from "./workgraphBackground"
-import { requireTrustedWorkGraphTenantSubject } from "./workgraphModel"
 import { sessionRoleForUser } from "./sessionAccess"
 import type { Doc, Id } from "./_generated/dataModel"
 
@@ -978,6 +977,29 @@ export const syncMessagesForService = serviceMutation({
   },
 })
 
+async function requireWorkGraphSessionOwner(
+  ctx: any,
+  args: { organization_id: Id<"orgs">; owner_user_id: Id<"users">; workspace_id: string },
+) {
+  const [user, workspace] = await Promise.all([
+    ctx.db.get(args.owner_user_id),
+    workspaceByPublicId(ctx.db, args.workspace_id),
+  ])
+  if (
+    !user ||
+    !workspace ||
+    workspace.deleted_at ||
+    workspace.owner_user_id !== args.owner_user_id ||
+    workspace.org_id !== args.organization_id
+  ) {
+    throw new Error("WorkGraph Session workspace not found")
+  }
+  if (!(await orgMembership(ctx.db, args.organization_id, args.owner_user_id))) {
+    throw new Error("WorkGraph organization membership is required")
+  }
+  return { user, workspace }
+}
+
 export const syncWorkGraphSession = serviceMutation({
   args: {
     organization_id: v.id("orgs"),
@@ -990,27 +1012,7 @@ export const syncWorkGraphSession = serviceMutation({
     messages: v.array(v.any()),
   },
   handler: async (ctx, args) => {
-    const [user, workspace] = await Promise.all([
-      ctx.db.get(args.owner_user_id),
-      workspaceByPublicId(ctx.db, args.workspace_id),
-    ])
-    if (
-      !user ||
-      !workspace ||
-      workspace.deleted_at ||
-      workspace.owner_user_id !== args.owner_user_id ||
-      workspace.org_id !== args.organization_id
-    ) {
-      throw new Error("WorkGraph Session workspace not found")
-    }
-    // Verify the owner is still a member of the org, matching the guarantee the
-    // sibling retainWorkGraphSessionTranscript gets from
-    // requireTrustedWorkGraphTenantSubject. Without this, a workspace owner who
-    // was removed from the org could still have transcript synced under a stale
-    // ownership row.
-    if (!(await orgMembership(ctx.db, args.organization_id, args.owner_user_id))) {
-      throw new Error("WorkGraph organization membership is required")
-    }
+    const { user, workspace } = await requireWorkGraphSessionOwner(ctx, args)
     await upsertVisibilityRows(ctx, {
       user,
       workspace,
@@ -1040,39 +1042,23 @@ export const syncWorkGraphSession = serviceMutation({
   },
 })
 
-// Completion-time transcript retention for hosted WorkGraph Runs. The
-// caller (the run-operation broker) only holds the runtime token's
-// Clerk subject, so the durable owner is resolved through the same trusted
-// tenant-subject path the WorkGraph command executor uses. The workspace must
-// already exist (the launch sync created it) — an absent workspace fails the
-// retention rather than fabricating one at completion time.
+// Completion-time transcript retention for hosted WorkGraph Runs. The broker
+// carries the canonical durable owner ID established at launch; provider
+// subjects are intentionally absent from this boundary. The workspace must
+// already exist — an absent or revoked tenant relationship fails closed.
 export const retainWorkGraphSessionTranscript = serviceMutation({
   args: {
     organization_id: v.id("orgs"),
-    owner_subject: v.string(),
+    owner_user_id: v.id("users"),
     workspace_id: v.string(),
     session_id: v.string(),
     updated_at: v.optional(v.number()),
     messages: v.array(v.any()),
   },
   handler: async (ctx, args) => {
-    const tenant = await requireTrustedWorkGraphTenantSubject(
-      ctx,
-      args.service_token,
-      args.organization_id,
-      args.owner_subject,
-    )
-    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
-    if (
-      !workspace ||
-      workspace.deleted_at ||
-      workspace.owner_user_id !== tenant.owner_user_id ||
-      workspace.org_id !== args.organization_id
-    ) {
-      throw new Error("WorkGraph Session workspace not found")
-    }
+    const { user, workspace } = await requireWorkGraphSessionOwner(ctx, args)
     await upsertVisibilityRows(ctx, {
-      user: tenant.user,
+      user,
       workspace,
       sessions: [
         {
@@ -1082,14 +1068,14 @@ export const retainWorkGraphSessionTranscript = serviceMutation({
       ],
     })
     await syncMessageRows(ctx, {
-      user: tenant.user,
+      user,
       workspace,
       session_id: args.session_id,
       messages: args.messages,
       intakeReady: false,
     })
     await meterWorkGraphTranscriptTurns(ctx, {
-      user: tenant.user,
+      user,
       workspace,
       session_id: args.session_id,
       messages: args.messages,
