@@ -16,6 +16,7 @@ import { cursorAgentPluginAdapter } from "./runtime/adapters/cursor"
 import { openCodeAgentPluginAdapter } from "./runtime/adapters/opencode"
 import { clearActiveGeneration, readActiveGeneration } from "./runtime/generation"
 import {
+  AgentPluginMaterializationError,
   materializeAgentPluginGeneration,
   readMaterializedAgentPluginGeneration,
   agentPluginHarnessLaunch,
@@ -87,9 +88,19 @@ export function createLocalAgentPluginsComposition(
   const apply = async (revision: number) => {
     const active = await readActiveGeneration(runtimeRoot)
     if (active?.revision === revision) {
-      activeGeneration = await readMaterializedAgentPluginGeneration(runtimeRoot)
-      appliedRevision = revision
-      return
+      try {
+        activeGeneration = await readMaterializedAgentPluginGeneration(runtimeRoot)
+        appliedRevision = revision
+        return
+      } catch (cause) {
+        if (!(cause instanceof AgentPluginMaterializationError)) throw cause
+        // The active generation cannot be restored (a manifest an older build
+        // wrote, a projection removed from disk). The SQLite activation store
+        // is the durable state, so re-project it rather than refusing to
+        // start; the stale pointer is dropped first because activation only
+        // moves forward.
+        await clearActiveGeneration(runtimeRoot)
+      }
     }
     const selections = activations.listKnown().flatMap((known) => {
       const byDigest = new Map<ArtifactDigest, string[]>()

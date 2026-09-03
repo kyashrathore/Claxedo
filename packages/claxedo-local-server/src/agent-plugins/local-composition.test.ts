@@ -89,6 +89,38 @@ describe("local Agent Plugins composition", () => {
     expect(skills).not.toContain(collection)
     await expect(fs.readFile(path.join(skills, "review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: review")
+
+    // A restart over a generation this build cannot restore (here: a manifest
+    // whose projection root escapes the generation, as older builds wrote for
+    // Cursor) must re-project the durable activation state, not refuse to start.
+    const generationRoot = skills.slice(0, skills.indexOf(`${path.sep}plugins${path.sep}`))
+    const manifestPath = path.join(generationRoot, "generation.json")
+    const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")) as {
+      projections: { opencode: { pluginRoots: Array<{ root: string }> } }
+    }
+    manifest.projections.opencode.pluginRoots[0]!.root = "../../../../escaped"
+    await fs.writeFile(manifestPath, JSON.stringify(manifest))
+    const restarted = createLocalAgentPluginsComposition({
+      CODEX_HOME: path.join(root, "codex-home"),
+      HOME: path.join(root, "home"),
+    }, {
+      sources: {
+        async listAuthorizedSources() {
+          return [await fileSystemCollectionSource({
+            id: "claxedo",
+            kind: "claxedo",
+            label: "Claxedo",
+            revision: "fixture-revision",
+          }, collection)]
+        },
+      },
+    })
+    await restarted.ready
+    const relaunch = await restarted.harnessLaunch()
+    const reprojected = (relaunch.opencode?.config as { skills: { paths: string[] } }).skills.paths[0]!
+    expect(reprojected).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
+    expect(reprojected.startsWith(generationRoot + path.sep)).toBe(false)
+    await expect(fs.readFile(path.join(reprojected, "review", "SKILL.md"), "utf8")).resolves.toContain("name: review")
   })
 
   test("a signed world pushed through the loopback surface launches instead of the machine world until withdrawn", async () => {
