@@ -118,6 +118,25 @@ describe("resource-closed hosted core app", () => {
     )).toEqual([])
   })
 
+  test("mounts build-composed route contributions and the integrations family under their own owners", async () => {
+    const { Hono } = await import("hono")
+    const contribution = new Hono().get("/", (c) => c.json({ plugins: true }))
+    const integrations = new Hono().get("/", (c) => c.json({ integrations: true }))
+    const app = createHostedCoreApp(plane(), {
+      ...options,
+      routeContributions: [{ id: "agent-plugins", path: "/api/claxedo/plugins", routes: contribution }],
+      integrationRoutes: integrations,
+    })
+    const plugins = await app.fetch(new Request("https://core.test/api/claxedo/plugins"))
+    expect(await plugins.json()).toEqual({ plugins: true })
+    const integrationsResponse = await app.fetch(new Request("https://core.test/api/claxedo/integrations"))
+    expect(await integrationsResponse.json()).toEqual({ integrations: true })
+    // The base composition serves neither family at all.
+    const base = createHostedCoreApp(plane(), options)
+    expect((await base.fetch(new Request("https://core.test/api/claxedo/plugins"))).status).toBe(404)
+    expect((await base.fetch(new Request("https://core.test/api/claxedo/integrations"))).status).toBe(404)
+  })
+
   test("authenticates org and session-share routes through the Better Auth cookie adapter", async () => {
     const app = createHostedCoreApp(plane(), options)
     const headers = { cookie: "__Secure-claxedo.session_token=browser-session" }

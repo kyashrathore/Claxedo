@@ -100,6 +100,19 @@ export async function activateGeneration(runtimeRoot: string, generation: Active
   }
 }
 
+/**
+ * Withdraw the active pointer without touching generation bytes.
+ *
+ * Used when a runtime must re-project the SAME revision — a refreshed gateway
+ * credential changes the harness-facing MCP config but not the activation
+ * world — and when a signed desktop signs out and its signed world must stop
+ * launching. The materializer's monotonic-revision rule stays intact: it
+ * refuses to advance onto an equal revision, so the pointer is cleared first.
+ */
+export async function clearActiveGeneration(runtimeRoot: string) {
+  await fs.rm(path.join(agentPluginRuntimeRoot(runtimeRoot), "active.json"), { force: true })
+}
+
 export async function cleanupInactiveGenerations(runtimeRoot: string, keep = 1) {
   const active = await readActiveGeneration(runtimeRoot)
   const root = path.join(agentPluginRuntimeRoot(runtimeRoot), "generations")

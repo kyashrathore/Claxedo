@@ -79,7 +79,8 @@ function mcpServer(value: unknown): value is RuntimeMcpServer {
     && SECRET_NAME.test(value.brokeredSecretName)
 }
 
-function request(input: unknown): AgentPluginRuntimeApplyRequest | undefined {
+/** The one validator every apply surface shares: the VM route and the signed desktop pull. */
+export function parseAgentPluginRuntimeApplyRequest(input: unknown): AgentPluginRuntimeApplyRequest | undefined {
   if (!record(input)
     || input.version !== 1
     || !record(input.identity)
@@ -127,9 +128,17 @@ function cloudflareEgressHosts(value: string) {
   return new Set(parsed.map((host) => host.trim().toLowerCase()))
 }
 
-function runtimeMcpServers(
+/**
+ * Resolve gateway placeholders into harness-facing MCP projections.
+ *
+ * `env` is wherever the brokered secret VALUES live for this runtime: the
+ * sandbox's process environment on a VM, or the desktop daemon's in-memory
+ * map of the credentials the signed pull carried. Either way the name in the
+ * apply request is the key and the value is the bearer without its scheme.
+ */
+export function runtimeMcpServers(
   rows: AgentPluginRuntimeApplyRequest["mcpServers"],
-  env: NodeJS.ProcessEnv,
+  env: Record<string, string | undefined>,
 ): RuntimeMcpServerProjection[] {
   const proxyUrl = env.CLAXEDO_EGRESS_PROXY_URL?.trim()
   const proxyToken = env.CLAXEDO_EGRESS_TOKEN?.trim()
@@ -170,7 +179,8 @@ function runtimeMcpServers(
   })
 }
 
-async function artifactStore(rows: AgentPluginRuntimeApplyRequest["artifacts"]): Promise<AgentPluginArtifactStore> {
+/** A read-only store over the trees an apply request delivered, digest-verified before use. */
+export async function runtimeArtifactStore(rows: AgentPluginRuntimeApplyRequest["artifacts"]): Promise<AgentPluginArtifactStore> {
   const values = new Map<string, RetainedAgentPluginArtifact>()
   for (const row of rows) {
     if (values.has(row.digest)) throw new Error(`Artifact ${row.digest} is duplicated`)
@@ -206,7 +216,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
           if (isRequestBodyTooLarge(cause)) return c.json(requestBodyTooLargeBody(), 413)
           throw cause
         }
-        const body = request(raw)
+        const body = parseAgentPluginRuntimeApplyRequest(raw)
         if (!body) return c.json(badRequest("Agent Plugins runtime request failed validation"), 400)
         const selectedDigests = new Set(body.selections.map((selection) => selection.artifactDigest))
         const deliveredDigests = new Set(body.artifacts.map((artifact) => artifact.digest))
@@ -232,7 +242,7 @@ export function agentPluginWorkspaceRuntimeContribution(input: {
             identity: body.identity,
             revision: body.revision,
             selections: body.selections,
-            artifacts: await artifactStore(body.artifacts),
+            artifacts: await runtimeArtifactStore(body.artifacts),
             mcpServers: runtimeMcpServers(body.mcpServers, input.env ?? process.env),
             adapters: [
               openCodeAgentPluginAdapter(),

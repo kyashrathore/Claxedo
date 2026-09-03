@@ -9,7 +9,6 @@ const serverRoot = path.resolve(import.meta.dirname, "../..")
 const repoRoot = path.resolve(serverRoot, "../..")
 const sandboxScriptsRoot = path.join(serverRoot, "scripts/sandbox")
 const cloudflareSandboxRoot = path.join(sandboxScriptsRoot, "cloudflare-worker")
-const agentPluginsConvexProfileRoot = path.join(serverRoot, ".artifacts/agent-plugins-convex-profile")
 
 type Target = "central" | "cloudflare-sandbox"
 type Command = {
@@ -53,46 +52,15 @@ export function hostedDeployCommands(input: {
   }
   return input.targets.flatMap((target): Command[] => {
     if (target === "central") {
-      betterAuthD1ReleaseInputs(env, input.staging ? "staging" : "production")
+      betterAuthD1ReleaseInputs(env, input.staging ? "staging" : "production", {
+        mode: "locked",
+        ...(input.agentPlugins ? { agentPlugins: true } : {}),
+      })
       return [
         // The Agent Plugins product is one build profile, not a runtime flag:
-        // its Convex component schema, its Worker bindings, and the browser
-        // build all come from the same `--agent-plugins` selection below.
-        ...(input.agentPlugins
-          ? [
-              {
-                name: "central.agent_plugins.convex_profile",
-                cwd: serverRoot,
-                cmd: "bun",
-                args: ["run", "scripts/agent-plugins/build-convex-profile.ts", "--enabled"],
-              },
-              {
-                name: input.dryRun
-                  ? "central.agent_plugins.convex.dry_run"
-                  : "central.agent_plugins.convex.deploy",
-                cwd: agentPluginsConvexProfileRoot,
-                cmd: "bunx",
-                args: [
-                  "convex",
-                  "deploy",
-                  "--typecheck-components",
-                  ...(input.dryRun ? ["--dry-run"] : []),
-                  "--message",
-                  "Claxedo Agent Plugins deployment profile",
-                ],
-              },
-              {
-                name: "central.agent_plugins.profile",
-                cwd: serverRoot,
-                cmd: "bun",
-                args: [
-                  "run",
-                  "scripts/agent-plugins/build-worker-profile.ts",
-                  ...(input.staging ? ["--staging"] : []),
-                ],
-              },
-            ]
-          : []),
+        // the certified Worker artifact, its R2/KV bindings, its feature
+        // variables and secrets, and the browser build all follow the same
+        // `--agent-plugins` selection inside the release script.
         {
           name: input.dryRun ? "better_auth_d1.release.preflight" : "better_auth_d1.release.deploy",
           cwd: serverRoot,
@@ -101,6 +69,7 @@ export function hostedDeployCommands(input: {
             "run",
             "scripts/deploy/release-better-auth-d1.ts",
             ...(input.staging ? ["--staging"] : []),
+            ...(input.agentPlugins ? ["--agent-plugins"] : []),
             ...(!input.dryRun ? ["--deploy"] : []),
           ],
         },

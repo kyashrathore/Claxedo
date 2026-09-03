@@ -251,7 +251,7 @@ async function fixture(options: {
       usersMe,
       listWorkspaces: vi.fn(async () => []),
       listOrgs: vi.fn(async (auth: SignedControlPlaneAuth) => [{
-        clerk_org_id: "org-main",
+        org_id: "org-main",
         role: auth.user.subject === "admin" ? "admin" : "member",
       }]),
     },

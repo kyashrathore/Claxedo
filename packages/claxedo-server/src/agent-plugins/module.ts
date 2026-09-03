@@ -8,6 +8,7 @@ import { HostedAgentPluginRoutes } from "./routes"
 import type { Hono } from "hono"
 import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
 import type { HostedMcpClientMetadata } from "./mcp/client-metadata"
+import type { AgentPluginSelfRuntimeReader } from "./runtime/self-runtime"
 
 /** One hosted feature composition. No generic hosted entry statically imports this module. */
 export function hostedAgentPluginsModule(input: {
@@ -19,6 +20,7 @@ export function hostedAgentPluginsModule(input: {
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   mcpClientMetadata?: HostedMcpClientMetadata
   mcpGatewayRoutes?: Hono
+  selfRuntime?: AgentPluginSelfRuntimeReader
 }): AgentPluginsModule {
   const routes = HostedAgentPluginRoutes(input)
   if (input.mcpGatewayRoutes) routes.route("/mcp", input.mcpGatewayRoutes)

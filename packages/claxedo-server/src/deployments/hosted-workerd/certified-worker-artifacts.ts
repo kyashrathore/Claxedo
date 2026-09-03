@@ -12,6 +12,7 @@ export const CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS = [
   "user-deployed-better-auth-d1-locked",
   "user-deployed-better-auth-d1-live-sync-migration-bridge",
   "user-deployed-better-auth-d1-candidate",
+  "user-deployed-better-auth-d1-candidate-agent-plugins",
 ] as const
 
 export type CertifiedHostedWorkerArtifactId = (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[number]
@@ -47,6 +48,8 @@ const LOCKED_ENTRYPOINT = "src/deployments/hosted-workerd/better-auth-d1-locked-
 const LIVE_SYNC_MIGRATION_BRIDGE_ENTRYPOINT =
   "src/deployments/hosted-workerd/better-auth-d1-live-sync-migration-bridge.cf.ts"
 const CANDIDATE_ENTRYPOINT = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
+const CANDIDATE_AGENT_PLUGINS_ENTRYPOINT =
+  "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.cf.ts"
 
 const ARTIFACTS = Object.freeze({
   "user-deployed-better-auth-d1-locked": Object.freeze({
@@ -90,6 +93,32 @@ const ARTIFACTS = Object.freeze({
       optionalServices: false as const,
       billing: false as const,
       sandboxDriver: false as const,
+    }),
+  }),
+  // The same release train and Worker name as the plain candidate: the Agent
+  // Plugins build is a feature-selected artifact of the user-deployed product,
+  // not a second product. It adds the immutable plugin artifact bucket and the
+  // org-partitioned credential namespace, and nothing else.
+  "user-deployed-better-auth-d1-candidate-agent-plugins": Object.freeze({
+    artifactId: "user-deployed-better-auth-d1-candidate-agent-plugins" as const,
+    adapterProfile: "better-auth-d1" as const,
+    productPosture: "user-deployed" as const,
+    sandboxPosture: "control-plane-only" as const,
+    entrypointFromPackageRoot: CANDIDATE_AGENT_PLUGINS_ENTRYPOINT,
+    entrypointFromPackageChild: `../${CANDIDATE_AGENT_PLUGINS_ENTRYPOINT}`,
+    workerNames: Object.freeze({
+      production: "claxedo-user-deployed-locked",
+      staging: "claxedo-user-deployed-locked-staging",
+    }),
+    resources: Object.freeze({
+      authDatabase: true as const,
+      controlPlaneDatabase: true as const,
+      requestLimiter: true as const,
+      liveSyncRoom: true as const,
+      optionalServices: false as const,
+      billing: false as const,
+      sandboxDriver: false as const,
+      agentPlugins: true as const,
     }),
   }),
   "user-deployed-better-auth-d1-live-sync-migration-bridge": Object.freeze({

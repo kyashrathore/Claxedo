@@ -134,36 +134,22 @@ describe("hosted deploy command selection", () => {
     ).toThrow(/custom API origin/)
   })
 
-  test("selects the whole Agent Plugins product profile with one build flag", () => {
+  test("selects the Agent Plugins artifact through the one release script flag", () => {
     const commands = hostedDeployCommands({
       staging: true,
       dryRun: true,
-      targets: ["central", "app", "cloudflare-sandbox"],
+      targets: ["central"],
       agentPlugins: true,
-      env: claxedoHostedEnv,
+      env: { ...betterAuthD1Env, CLAXEDO_STAGING_CREDENTIALS_KV_NAMESPACE_ID: "8ba5baa64c82449080d36d3008208fa9" },
     })
 
-    expect(commands.find((command) => command.name === "central.agent_plugins.profile")).toBeDefined()
-    expect(commands.find((command) => command.name === "central.agent_plugins.profile")?.args).toContain("--staging")
-    expect(commands.find((command) => command.name === "central.agent_plugins.convex_profile")?.args).toEqual([
+    expect(commands.map((command) => command.name)).toEqual(["better_auth_d1.release.preflight"])
+    expect(commands[0]?.args).toEqual([
       "run",
-      "scripts/agent-plugins/build-convex-profile.ts",
-      "--enabled",
-    ])
-    expect(commands.find((command) => command.name === "central.agent_plugins.convex.dry_run")?.args).toContain(
-      "--dry-run",
-    )
-    expect(commands.findIndex((command) => command.name === "central.agent_plugins.convex.dry_run")).toBeLessThan(
-      commands.findIndex((command) => command.name === "central.worker.dry_run"),
-    )
-    expect(commands.find((command) => command.name === "central.worker.dry_run")?.args).toContain(
-      ".artifacts/agent-plugins-worker-profile/wrangler.toml",
-    )
-    expect(commands.find((command) => command.name === "app.assets.build")?.env).toMatchObject({
-      CLAXEDO_AGENT_PLUGINS: "1",
-    })
-    expect(commands.find((command) => command.name === "cloudflare_sandbox.bundle_host")?.args).toContain(
+      "scripts/deploy/release-better-auth-d1.ts",
+      "--staging",
       "--agent-plugins",
-    )
+    ])
+    expect(JSON.stringify(commands)).not.toContain("convex")
   })
 })

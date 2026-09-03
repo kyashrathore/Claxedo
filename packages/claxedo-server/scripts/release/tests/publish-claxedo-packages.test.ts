@@ -18,8 +18,9 @@ import { runtimePackages } from "../publish-runtime-packages"
 const repoRoot = path.resolve(import.meta.dirname, "../../../../..")
 
 describe("publish-claxedo-packages", () => {
-  test("covers exactly the 12 public packages, and `others` is the set the runtime script misses", () => {
-    expect(claxedoPackages).toHaveLength(12)
+  test("covers exactly the 11 public packages, and `others` is the set the runtime script misses", () => {
+    // The retired extensions package left the public set when Agent Plugins replaced it.
+    expect(claxedoPackages).toHaveLength(11)
     const runtimeNames = new Set(runtimePackages.map((item) => item.name))
     expect(selectPackages("runtime-family").map((item) => item.name).sort())
       .toEqual([...runtimeNames].sort())

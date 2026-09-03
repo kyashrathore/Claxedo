@@ -220,6 +220,7 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `agentPlugins.activation` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/activation` | unary | unsafe | Writes user all-project or explicit-project choices at an optimistic revision. |
 | `agentPlugins.organizationDefault` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/organization-default` | unary | unsafe | Organization-admin positive default mutation. |
 | `agentPlugins.update` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/update` | unary | unsafe | Explicitly acquires and pins changed bytes. |
+| `agentPlugins.runtimeSelf` | `main/agent-plugins-signed-sync.ts` | `GET /api/claxedo/plugins/runtime/self` | unary | safe | The signed user's own runtime world plus gateway credentials; main-only, handed to the daemon's loopback signed-runtime surface. Withheld from the renderer. |
 
 ### Provisioning and sandbox
 

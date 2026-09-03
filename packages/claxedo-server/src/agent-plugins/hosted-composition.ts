@@ -1,30 +1,50 @@
-import type { HostedAppOverrides } from "../deployments/hosted-shared/hosted-app"
-import { sandboxDriver, type HostedControlPlane } from "../authority/hosted-services"
+import type { D1Database } from "@cloudflare/workers-types"
+import type { Hono } from "hono"
+import { sandboxDriverCatalog, sandboxDriverId } from "@claxedo/sandbox-manager/driver-catalog"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
-import { ConvexSignedAgentPluginActivationStore } from "./activation/convex-store"
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
+import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
+import { claxedoPublicGitHubCatalogSourceProvider } from "@claxedo/server-core/agent-plugins/sources/github-public"
+import type { HostedControlPlane } from "../authority/hosted-services"
+import { hostedOrgCredentials } from "../credentials/worker/index"
 import {
-  hostedAgentPluginArtifactStore,
-  type AgentPluginR2Bucket,
-} from "./artifacts/r2-artifact-adapter"
+  createHostedCapabilityAuthFailureReporter,
+  createHostedCapabilityConnectionResolver,
+  createHostedCapabilityTokenResolver,
+  createHostedD1ConnectionsSetup,
+  hostedConnectionsAuthenticate,
+} from "../connections/hosted-d1/setup"
+import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
+import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
+import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
-import { claxedoPublicGitHubCatalogSourceProvider } from "@claxedo/server-core/agent-plugins/sources/github-public"
+import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
 import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
 import { HostedMcpGatewayRoutes } from "./mcp/routes"
 import { hostedMcpGatewayAuthorization } from "./mcp/gateway-authorization"
 import {
   agentPluginMcpRuntimePlan,
-  createHostedMcpRuntimePreparation,
+  createHostedMcpRuntimePreparer,
+  type McpGatewayEndpointStyle,
 } from "./mcp/runtime-preparation"
 import { hostedMcpCatalogAuthentication } from "./mcp/catalog-auth"
-import { hostedOrgCredentials } from "../credentials/worker/index"
-import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import { hostedMcpClientMetadata } from "./mcp/client-metadata"
 
 export type HostedAgentPluginsWorkerEnv = Record<string, unknown> & {
   CLAXEDO_AGENT_PLUGINS?: AgentPluginR2Bucket
   CLAXEDO_CREDENTIALS?: CloudflareKvNamespaceBinding
+}
+
+/** What the feature entry hands the hosted core app. Nothing here is a runtime flag. */
+export type HostedAgentPluginsComposition = {
+  routeContributions: readonly ControlPlaneRouteContribution[]
+  integrationRoutes: Hono
+  prepareRuntime: (workspaceId: string) => Promise<WorkspaceRuntimePreparation>
+  provisionRuntime: (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => Promise<void>
 }
 
 function required(value: string | undefined, name: string) {
@@ -63,28 +83,58 @@ function oauthClients(
   return result
 }
 
+function endpointStyle(value: string | undefined): McpGatewayEndpointStyle {
+  if (value === undefined || value === "" || value === "origin") return "origin"
+  if (value === "subdomain") return "subdomain"
+  throw new Error("CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_STYLE must be origin or subdomain")
+}
+
 /**
- * The complete hosted feature composition. Only the enabled Worker entry
- * imports this file, so an ordinary hosted build has no routes, storage
- * binding reads, activation adapter, catalog fetcher, or VM provisioner.
+ * The runtime credential can only stay unreadable to the agent when the
+ * selected sandbox driver brokers secrets. A control-plane-only deployment
+ * has no driver at all, and its cloud runtimes are never created, so the
+ * answer there is "none" — authenticated cloud MCP is refused per server, not
+ * per plugin (`runtime-preparation.ts`).
+ */
+function secretBrokering(plane: HostedControlPlane) {
+  if (!plane.services.sandbox.sandboxManager) return "none" as const
+  const selected = sandboxDriverId(plane.env.CLAXEDO_SANDBOX_DRIVER?.trim())
+  if (!selected) return "none" as const
+  return sandboxDriverCatalog[selected].metadata.secretBrokering
+}
+
+/**
+ * The complete hosted feature composition over Better Auth + D1.
+ *
+ * Only the Agent Plugins Worker entry imports this file, so an ordinary hosted
+ * build has no plugin routes, storage binding reads, activation store,
+ * Connections family, catalog fetcher, or VM provisioner. Everything durable
+ * lives in `CONTROL_PLANE_DB` (activations, Connections rows, attempts), the
+ * `CLAXEDO_AGENT_PLUGINS` R2 bucket (immutable plugin artifacts), and the
+ * org-partitioned `CLAXEDO_CREDENTIALS` KV namespace (envelope-encrypted
+ * OAuth material). Identity and authorization come from the same D1 authority
+ * every other hosted route uses.
  */
 export function createHostedAgentPluginsComposition(input: {
   env: HostedAgentPluginsWorkerEnv
   plane: HostedControlPlane
-}): Pick<HostedAppOverrides, "connectionIntegrations" | "connectionRuntime" | "credentials"> {
+  database: D1Database
+  authentication: RequestAuthenticationAdapter
+}): HostedAgentPluginsComposition {
   const bucket = input.env.CLAXEDO_AGENT_PLUGINS
   if (!bucket) throw new Error("Enabled Agent Plugins build requires CLAXEDO_AGENT_PLUGINS R2")
   if (!input.env.CLAXEDO_CREDENTIALS) {
     throw new Error("Enabled Agent Plugins build requires CLAXEDO_CREDENTIALS KV")
   }
   const env = stringEnvironment(input.env)
+  const services = input.plane.services
+  const authority = requireAuthority(services)
   const artifacts = hostedAgentPluginArtifactStore(bucket)
-  const activations = new ConvexSignedAgentPluginActivationStore({
-    url: required(env.CLAXEDO_WORKSPACE_AUTHORITY_URL, "CLAXEDO_WORKSPACE_AUTHORITY_URL"),
-    serviceToken: required(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN, "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN"),
-  })
+  const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   const claxedo = claxedoPublicGitHubCatalogSourceProvider()
-  const publicUrl = required(env.CLAXEDO_PUBLIC_URL, "CLAXEDO_PUBLIC_URL")
+  // The public origin doubles as the OAuth client identity document host and,
+  // by default, as the MCP gateway origin (see `McpGatewayEndpointStyle`).
+  const publicUrl = required(env.CLAXEDO_PUBLIC_URL ?? env.BETTER_AUTH_URL, "CLAXEDO_PUBLIC_URL")
   const clientMetadata = hostedMcpClientMetadata(publicUrl)
   const preRegistered = oauthClients(env.CLAXEDO_MCP_OAUTH_CLIENTS)
   const oauth = {
@@ -93,7 +143,31 @@ export function createHostedAgentPluginsComposition(input: {
     ...(preRegistered ? { preRegistered } : {}),
     clientIdMetadataDocumentUrl: clientMetadata.clientId,
   }
-  const runtime = createHostedAgentPluginRuntimeProvisioner({
+
+  const connectionsInput = {
+    env,
+    database: input.database,
+    services,
+    authenticate: hostedConnectionsAuthenticate({ authentication: input.authentication, services }),
+    dynamicIntegrations: hostedAgentPluginConnectionIntegrations({ activations, artifacts, oauth }),
+    credentials: (orgId: string) => hostedOrgCredentials(orgId, input.env),
+  }
+  const integrationRoutes = createHostedD1ConnectionsSetup(connectionsInput)
+  const resolveConnection = createHostedCapabilityConnectionResolver(connectionsInput)
+  const resolveToken = createHostedCapabilityTokenResolver(connectionsInput)
+  const reportAuthFailure = createHostedCapabilityAuthFailureReporter(connectionsInput)
+
+  const preparer = createHostedMcpRuntimePreparer({
+    activations,
+    artifacts,
+    resolveConnection,
+    oauth,
+    gatewayUrl: env.CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL?.trim() || publicUrl,
+    endpointStyle: endpointStyle(env.CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_STYLE),
+    signingEnv: env,
+    secretBrokering: secretBrokering(input.plane),
+  })
+  const provisioner = createHostedAgentPluginRuntimeProvisioner({
     activations,
     artifacts,
     runtimeFetch: (workspaceId, identity, requestPath, init) => {
@@ -107,15 +181,9 @@ export function createHostedAgentPluginsComposition(input: {
         updated_at: 0,
       }
       return sandboxFetch(workspace, requestPath, init, {
-        ...(input.plane.services.sandbox.sandboxManager
-          ? { sandboxManager: input.plane.services.sandbox.sandboxManager }
-          : {}),
-        ...(input.plane.services.relay.provider
-          ? { relayProvider: input.plane.services.relay.provider }
-          : {}),
-        ...(input.plane.services.defaultHomeRegion
-          ? { defaultHomeRegion: input.plane.services.defaultHomeRegion }
-          : {}),
+        ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
+        ...(services.relay.provider ? { relayProvider: services.relay.provider } : {}),
+        ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
         orgId: identity.organizationId,
         // Provisioning is a machine actor, not the signed human: it materializes
         // the pinned plugin trees before any user turn runs.
@@ -125,56 +193,64 @@ export function createHostedAgentPluginsComposition(input: {
       })
     },
   })
+
+  // The hosted prepare/provision rail is a CLOUD VM rail: it pushes the
+  // retained trees into a sandbox the control plane can reach through the
+  // sandbox manager. A user-hosted workspace runs on the owner's machine, and
+  // that machine pulls the signed world itself (`GET /runtime/self`), so the
+  // connection mint for it must not fail closed on a rail that does not apply.
+  const cloudWorkspace = async (workspaceId: string) => {
+    const row = await input.database
+      .prepare("select backing, access from workspaces where workspace_id = ? and deleted_at is null")
+      .bind(workspaceId)
+      .first<{ backing: string; access: string }>()
+    return row?.backing === "cloud-vm" && row.access === "cloud"
+  }
+  const prepareRuntime = async (workspaceId: string): Promise<WorkspaceRuntimePreparation> => {
+    if (!(await cloudWorkspace(workspaceId))) return {}
+    return preparer.forSnapshot(await activations.runtimeSnapshot(workspaceId))
+  }
+  const provisionRuntime = async (workspaceId: string, preparation?: WorkspaceRuntimePreparation) => {
+    if (!(await cloudWorkspace(workspaceId))) return
+    await provisioner.provision(workspaceId, agentPluginMcpRuntimePlan(preparation))
+  }
+
+  const gateway = HostedMcpGatewayRoutes({
+    env,
+    authorize: hostedMcpGatewayAuthorization({ activations, artifacts }),
+    resolveConnection: async (scope) => resolveToken({
+      ownerUserId: scope.userId,
+      orgId: scope.orgId,
+      integrationId: scope.integrationId,
+      capability: "mcp",
+    }),
+    reportAuthFailure: (scope, connectionId) => reportAuthFailure({
+      ownerUserId: scope.userId,
+      orgId: scope.orgId,
+      integrationId: scope.integrationId,
+      connectionId,
+      capability: "mcp",
+    }),
+    fetch: (url, init) => fetch(url, init),
+  })
+  const module = hostedAgentPluginsModule({
+    services,
+    sources: () => claxedo,
+    activations,
+    artifacts,
+    // Activation is durable immediately. Each runtime is brought to this
+    // revision at its next readiness boundary; no route claims a running VM
+    // was updated without an apply receipt.
+    reconcile: { reconcile: async () => ({ state: "scheduled" }) },
+    mcpAuthentication: hostedMcpCatalogAuthentication(oauth),
+    mcpClientMetadata: clientMetadata,
+    mcpGatewayRoutes: gateway,
+    selfRuntime: createHostedAgentPluginSelfRuntime({ activations, artifacts, preparer }),
+  })
   return {
-    credentials: (orgId) => hostedOrgCredentials(orgId, input.env),
-    connectionIntegrations: hostedAgentPluginConnectionIntegrations({ activations, artifacts, oauth }),
-    connectionRuntime: (connections) => {
-      const prepareRuntime = createHostedMcpRuntimePreparation({
-        activations,
-        artifacts,
-        resolveConnection: connections.resolveConnection,
-        oauth,
-        gatewayUrl: required(env.CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL, "CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_URL"),
-        signingEnv: env,
-        secretBrokering: sandboxDriver(input.plane.env)?.metadata.secretBrokering ?? "none",
-      })
-      const gateway = HostedMcpGatewayRoutes({
-        env,
-        authorize: hostedMcpGatewayAuthorization({ activations, artifacts }),
-        resolveConnection: async (scope) => connections.resolveToken({
-          ownerUserId: scope.userId,
-          orgId: scope.orgId,
-          integrationId: scope.integrationId,
-          capability: "mcp",
-        }),
-        reportAuthFailure: (scope, connectionId) => connections.reportAuthFailure({
-          ownerUserId: scope.userId,
-          orgId: scope.orgId,
-          integrationId: scope.integrationId,
-          connectionId,
-          capability: "mcp",
-        }),
-        fetch: (url, init) => fetch(url, init),
-      })
-      const module = hostedAgentPluginsModule({
-        services: input.plane.services,
-        sources: () => claxedo,
-        activations,
-        artifacts,
-        // Activation is durable immediately. Each runtime is brought to this
-        // revision at its next readiness boundary; no route claims a running VM
-        // was updated without an apply receipt.
-        reconcile: { reconcile: async () => ({ state: "scheduled" }) },
-        mcpAuthentication: hostedMcpCatalogAuthentication(oauth),
-        mcpClientMetadata: clientMetadata,
-        mcpGatewayRoutes: gateway,
-      })
-      return {
-        routeContributions: module.routeContributions,
-        prepareRuntime,
-        provisionRuntime: (workspaceId, preparation) =>
-          runtime.provision(workspaceId, agentPluginMcpRuntimePlan(preparation)).then(() => undefined),
-      }
-    },
+    routeContributions: module.routeContributions,
+    integrationRoutes,
+    prepareRuntime,
+    provisionRuntime,
   }
 }

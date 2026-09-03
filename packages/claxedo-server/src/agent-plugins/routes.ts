@@ -26,6 +26,7 @@ import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
 import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
 import type { HostedMcpClientMetadata } from "./mcp/client-metadata"
+import type { AgentPluginSelfRuntimeReader } from "./runtime/self-runtime"
 
 type SignedSources = (auth: SignedControlPlaneAuth) => CatalogSourceProvider
 
@@ -132,17 +133,27 @@ async function mcpServerViews(input: {
   }))
 }
 
+/**
+ * Organization defaults and organization Connections are admin surfaces. The
+ * authority reports the caller's role per organization; a single-org product
+ * (user-deployed) has exactly one row, a multi-org product resolves the one
+ * the caller is acting in the same way the activation store does.
+ */
 async function canManageOrganization(input: {
   services: ControlPlaneServices
   auth: SignedControlPlaneAuth
+  me: unknown
 }) {
-  if (!input.auth.user.orgId || !input.services.authority) return false
+  if (!input.services.authority) return false
+  const orgId = record(input.me) && typeof input.me.org_id === "string"
+    ? input.me.org_id
+    : await input.services.authority.resolveOrgId(input.auth).catch(() => undefined)
+  if (!orgId) return false
   const result = await input.services.authority.listOrgs(input.auth)
   if (!Array.isArray(result)) return false
   return result.some((value) => {
     if (!record(value)) return false
-    return value.clerk_org_id === input.auth.user.orgId
-      && (value.role === "admin" || value.role === "owner")
+    return value.org_id === orgId && (value.role === "admin" || value.role === "owner")
   })
 }
 
@@ -285,6 +296,8 @@ export function HostedAgentPluginRoutes(input: {
   reconcile: AgentPluginReconcilePort
   mcpAuthentication?: AgentPluginMcpCatalogAuthenticationResolver
   mcpClientMetadata?: HostedMcpClientMetadata
+  /** The signed user's own runtime world for a machine they own; absent in compositions without one. */
+  selfRuntime?: AgentPluginSelfRuntimeReader
 }) {
   const app = new Hono()
   const authenticate = async (request: Request) => {
@@ -293,7 +306,12 @@ export function HostedAgentPluginRoutes(input: {
       ...(input.services.auth.verifier ? { verifier: input.services.auth.verifier } : {}),
       requireSigned: true,
     }, input.services)
-    if ("error" in result || !result.auth) return result
+    if (!result.auth) {
+      if (result.error) return { error: result.error, status: result.status ?? 401 }
+      // `requireSigned` answers a missing bearer with an error above; an
+      // absent auth without one is a posture bug, not a client mistake.
+      throw new ControlPlaneAuthError(401, "missing_bearer_token", "Signed auth is required")
+    }
     if (!input.services.authority) {
       throw new ControlPlaneAuthError(
         503,
@@ -301,8 +319,8 @@ export function HostedAgentPluginRoutes(input: {
         "Agent Plugins requires the workspace authority",
       )
     }
-    await input.services.authority.usersMe(result.auth)
-    return { auth: result.auth }
+    const me: unknown = await input.services.authority.usersMe(result.auth)
+    return { auth: result.auth, me }
   }
   const apply = async (revision: number) => {
     try {
@@ -372,7 +390,7 @@ export function HostedAgentPluginRoutes(input: {
         : id
       return [[id, { id, label }] as const]
     })).values()].toSorted((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id))
-    const organizationManager = await canManageOrganization({ services: input.services, auth })
+    const organizationManager = await canManageOrganization({ services: input.services, auth, me: authResult.me })
     return c.json({
       revision: after,
       canManageOrganizationDefaults: organizationManager,
@@ -387,6 +405,19 @@ export function HostedAgentPluginRoutes(input: {
 
   app.get("/", (c) => catalog(c, { fresh: false }))
   app.get("/refresh", (c) => catalog(c, { fresh: true }))
+
+  // The signed desktop's pull: everything the user's own machine must
+  // materialize, plus the gateway credentials a sandbox driver would have
+  // brokered. Authenticated exactly like the catalog; the response is the
+  // VM apply request shape so the desktop reuses the one materializer.
+  if (input.selfRuntime) {
+    const selfRuntime = input.selfRuntime
+    app.get("/runtime/self", async (c) => {
+      const authResult = await authenticate(c.req.raw)
+      if ("error" in authResult || !authResult.auth) return c.json("error" in authResult ? authResult.error : error("missing_bearer_token", "Signed auth is required"), "status" in authResult ? authResult.status : 401)
+      return c.json(await selfRuntime(authResult.auth), 200, { "cache-control": "no-store" })
+    })
+  }
   app.get("/projects/:projectId", (c) => catalog(c, { fresh: false, projectId: c.req.param("projectId") }))
   app.get("/projects/:projectId/refresh", (c) => catalog(c, { fresh: true, projectId: c.req.param("projectId") }))
 

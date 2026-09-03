@@ -28,6 +28,7 @@ const BETTER_AUTH_D1_LOCKED_ARTIFACT = "user-deployed-better-auth-d1-locked" as 
 const BETTER_AUTH_D1_LIVE_SYNC_MIGRATION_BRIDGE_ARTIFACT =
   "user-deployed-better-auth-d1-live-sync-migration-bridge" as const
 const BETTER_AUTH_D1_CUTOVER_ARTIFACT = "user-deployed-better-auth-d1-candidate" as const
+const BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_ARTIFACT = "user-deployed-better-auth-d1-candidate-agent-plugins" as const
 const publicDnsResolver = new Resolver()
 publicDnsResolver.setServers(["1.1.1.1", "1.0.0.1"])
 
@@ -124,6 +125,17 @@ export function betterAuthD1DeploymentManifest(input: {
     apiOrigin: input.release.apiOrigin,
     appOrigin: input.release.authConfiguration.appOrigin,
     authMethods: Object.freeze([...input.release.authConfiguration.methods].sort()),
+    ...(input.release.agentPlugins
+      ? {
+          agentPlugins: Object.freeze({
+            artifactBucket: Object.freeze({ binding: "CLAXEDO_AGENT_PLUGINS" as const, bucketName: input.release.agentPlugins.bucketName }),
+            credentialsNamespace: Object.freeze({
+              binding: "CLAXEDO_CREDENTIALS" as const,
+              namespaceId: input.release.agentPlugins.credentialsNamespaceId,
+            }),
+          }),
+        }
+      : {}),
     resources: Object.freeze({
       authDatabase: Object.freeze({
         binding: "AUTH_DB" as const,
@@ -213,7 +225,7 @@ function assertIsolatedDeploymentResources(env: NodeJS.ProcessEnv) {
 export function betterAuthD1ReleaseInputs(
   env: NodeJS.ProcessEnv,
   environment: BetterAuthD1ReleaseEnvironment,
-  options: Readonly<{ mode: BetterAuthD1ReleaseMode; browserBuildId?: string }> = { mode: "locked" },
+  options: Readonly<{ mode: BetterAuthD1ReleaseMode; browserBuildId?: string; agentPlugins?: boolean }> = { mode: "locked" },
 ) {
   const profile = resolveDeploymentProfileFromEnv(env)
   if (
@@ -301,6 +313,25 @@ export function betterAuthD1ReleaseInputs(
   ) {
     throw new Error("CLAXEDO_PREVIOUS_STATE_REVISION must be a non-negative integer")
   }
+  // The Agent Plugins build binds the immutable artifact bucket and the
+  // org-partitioned credential namespace, turns the hosted credential surface
+  // on, and names the public origin the OAuth client identity document and the
+  // MCP gateway are served from. All of it is release input, none of it is a
+  // runtime discovery.
+  const agentPlugins = options.agentPlugins
+    ? {
+        credentialsNamespaceId: (() => {
+          const value = environmentValue(env, environment, "CREDENTIALS_KV_NAMESPACE_ID")
+          if (!/^[0-9a-f]{32}$/i.test(value)) {
+            throw new Error(`CLAXEDO_${environment.toUpperCase()}_CREDENTIALS_KV_NAMESPACE_ID must be a real KV namespace ID`)
+          }
+          return value
+        })(),
+        bucketName:
+          env[`CLAXEDO_${environment.toUpperCase()}_AGENT_PLUGINS_BUCKET`]?.trim() ||
+          (environment === "staging" ? "claxedo-agent-plugins-staging" : "claxedo-agent-plugins"),
+      }
+    : undefined
   const candidateStateRevision = previousStateRevision === undefined ? 0 : previousStateRevision + 1
   const candidateOperationId =
     previousStateRevision === undefined ? `initialize:${releaseId}` : required(env, "CLAXEDO_RELEASE_OPERATION_ID")
@@ -323,6 +354,7 @@ export function betterAuthD1ReleaseInputs(
       : []
   return {
     mode: options.mode,
+    ...(agentPlugins ? { agentPlugins } : {}),
     browserBuildId,
     relayBuildId: LOCKED_RELAY_BUILD_ID,
     environment,
@@ -349,6 +381,7 @@ export function betterAuthD1ReleaseInputs(
       "CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM",
       "CLAXEDO_RELAY_HOST_VERIFY_PEM",
       ...methods.map((method) => (method === "google" ? "GOOGLE_CLIENT_SECRET" : "GITHUB_CLIENT_SECRET")),
+      ...(agentPlugins ? ["CLAXEDO_CREDENTIALS_KEK"] : []),
     ],
     runtimeVariables: [
       ["CLAXEDO_DEPLOYMENT_MODE", "hosted"],
@@ -367,6 +400,13 @@ export function betterAuthD1ReleaseInputs(
       ["CLAXEDO_WORKSPACE_RELAY_URL", relayUrl],
       ...cutoverVariables,
       ...publicProviderVariables,
+      ...(agentPlugins
+        ? ([
+            ["CLAXEDO_HOSTED_CREDENTIALS_ENABLED", "1"],
+            ["CLAXEDO_PUBLIC_URL", apiOrigin.origin],
+            ["CLAXEDO_AGENT_PLUGINS_MCP_GATEWAY_STYLE", "origin"],
+          ] as const)
+        : []),
     ] as Array<readonly [string, string]>,
   }
 }
@@ -374,6 +414,7 @@ export function betterAuthD1ReleaseInputs(
 type BetterAuthD1WranglerConfigInput = {
   staging: boolean
   mode?: BetterAuthD1ReleaseMode
+  agentPlugins?: { credentialsNamespaceId: string; bucketName: string }
   authDatabaseId: string
   authDatabaseName: string
   controlPlaneDatabaseId: string
@@ -386,7 +427,8 @@ function renderBetterAuthD1WranglerConfigForArtifact(
   artifactId:
     | typeof BETTER_AUTH_D1_LOCKED_ARTIFACT
     | typeof BETTER_AUTH_D1_LIVE_SYNC_MIGRATION_BRIDGE_ARTIFACT
-    | typeof BETTER_AUTH_D1_CUTOVER_ARTIFACT,
+    | typeof BETTER_AUTH_D1_CUTOVER_ARTIFACT
+    | typeof BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_ARTIFACT,
   liveSyncResources: boolean,
 ) {
   const quote = (value: string) => JSON.stringify(value)
@@ -402,6 +444,17 @@ class_name = "LiveSyncRoom"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["LiveSyncRoom"]
+`
+    : ""
+  const agentPluginsResources = input.agentPlugins
+    ? `
+[[r2_buckets]]
+binding = "CLAXEDO_AGENT_PLUGINS"
+bucket_name = ${quote(input.agentPlugins.bucketName)}
+
+[[kv_namespaces]]
+binding = "CLAXEDO_CREDENTIALS"
+id = ${quote(input.agentPlugins.credentialsNamespaceId)}
 `
     : ""
   return `name = ${quote(releaseTrain.workerName)}
@@ -440,14 +493,18 @@ namespace_id = ${quote(input.namespaceId)}
 [ratelimits.simple]
 limit = 600
 period = 60
-${liveSyncConfiguration}
+${liveSyncConfiguration}${agentPluginsResources}
 `
+}
+
+export function betterAuthD1CutoverArtifact(agentPlugins: boolean) {
+  return agentPlugins ? BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_ARTIFACT : BETTER_AUTH_D1_CUTOVER_ARTIFACT
 }
 
 export function renderBetterAuthD1WranglerConfig(input: BetterAuthD1WranglerConfigInput) {
   return renderBetterAuthD1WranglerConfigForArtifact(
     input,
-    input.mode === "cutover" ? BETTER_AUTH_D1_CUTOVER_ARTIFACT : BETTER_AUTH_D1_LOCKED_ARTIFACT,
+    input.mode === "cutover" ? betterAuthD1CutoverArtifact(Boolean(input.agentPlugins)) : BETTER_AUTH_D1_LOCKED_ARTIFACT,
     input.mode === "cutover",
   )
 }
@@ -1063,6 +1120,8 @@ async function main() {
   const deploy = process.argv.includes("--deploy")
   const bootstrap = process.argv.includes("--bootstrap")
   const cutover = process.argv.includes("--cutover")
+  const agentPlugins = process.argv.includes("--agent-plugins")
+  if (agentPlugins && !cutover) throw new Error("--agent-plugins selects the candidate artifact and requires --cutover")
   const environment = staging ? "staging" : "production"
   if (bootstrap && cutover) throw new Error("--bootstrap and --cutover are mutually exclusive")
   const workerName = betterAuthD1WorkerName(environment)
@@ -1073,7 +1132,9 @@ async function main() {
     const apiOrigin = exactHttpsOrigin(process.env, `CLAXEDO_${environment.toUpperCase()}_API_ORIGIN`).origin
     await run(["bun", "run", "build:better-auth"], {
       cwd: appRoot,
-      env: { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin },
+      // The browser carries the Agent Plugins UI chunk only in the same build
+      // that ships the Worker with the routes, so one flag selects both.
+      env: { ...process.env, VITE_CLAXEDO_SERVER_URL: apiOrigin, ...(agentPlugins ? { CLAXEDO_AGENT_PLUGINS: "1" } : {}) },
     })
     await run(["bun", "scripts/browser-auth-bundle-identity.ts", "better-auth", browserDirectory], {
       cwd: appRoot,
@@ -1088,6 +1149,7 @@ async function main() {
   const input = betterAuthD1ReleaseInputs(process.env, environment, {
     mode: cutover ? "cutover" : "locked",
     ...(browserBuildId ? { browserBuildId } : {}),
+    ...(agentPlugins ? { agentPlugins: true } : {}),
   })
   const authConfigurationId = await betterAuthDeploymentConfigurationId(input.authConfiguration)
   const temporary = await mkdtemp(path.join(serverRoot, ".claxedo-better-auth-release-"))
@@ -1096,7 +1158,11 @@ async function main() {
     const bundleDirectory = path.join(temporary, "bundle")
     const bundle = path.join(
       bundleDirectory,
-      cutover ? "better-auth-d1-candidate-worker.cf.js" : "better-auth-d1-locked-worker.cf.js",
+      cutover
+        ? agentPlugins
+          ? "better-auth-d1-candidate-worker.agent-plugins.cf.js"
+          : "better-auth-d1-candidate-worker.cf.js"
+        : "better-auth-d1-locked-worker.cf.js",
     )
     await writeFile(config, renderBetterAuthD1WranglerConfig({ staging, ...input }))
     const configArgs = ["--config", config]

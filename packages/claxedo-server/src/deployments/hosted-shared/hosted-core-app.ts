@@ -39,7 +39,7 @@ import {
 } from "../../routes/user-deployed-identity-admission"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { SessionPeopleControlRoutes } from "../../session/routes/session-people-routes"
-import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
+import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
 import {
   createFixedWindowConnectionRateLimiter,
@@ -62,10 +62,14 @@ import {
   type LiveSyncRoomNamespace,
 } from "../../platform/http/live-sync-publish"
 import type { StaticProductDescriptor } from "./deployment-profile"
+import {
+  mountControlPlaneRouteContributions,
+  type ControlPlaneRouteContribution,
+} from "@claxedo/server-core/platform/http/route-contribution"
 
 export type HostedCoreProductWorkspaceOptions = Pick<
   HostedWorkspaceRouteOptions,
-  "connections" | "countActiveOrgSandboxLeases" | "sandboxUsage"
+  "connections" | "countActiveOrgSandboxLeases" | "sandboxUsage" | "prepareRuntime" | "provisionRuntime"
 >
 
 export type HostedCoreAppOptions = {
@@ -80,6 +84,19 @@ export type HostedCoreAppOptions = {
   requestGuardExemptions: readonly RouteGuardExemption[]
   productWorkspace?: HostedCoreProductWorkspaceOptions
   userDeployedIdentityAdmission?: UserDeployedIdentityAdmission
+  /**
+   * Build-composed product route families (Agent Plugins today). An entry
+   * passes an explicit array; the base core passes none and imports no
+   * feature implementation. Mounted under their own owner so a contribution
+   * cannot silently shadow a core family.
+   */
+  routeContributions?: readonly ControlPlaneRouteContribution[]
+  /**
+   * The hosted Connections family (`/api/claxedo/integrations`), supplied only
+   * by an entry that composed a durable D1 Connections setup. The base core
+   * serves no integration routes at all.
+   */
+  integrationRoutes?: Hono
 }
 
 /**
@@ -165,7 +182,8 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     issuer: options.authentication.descriptor.issuer,
     jwksUrl: `request-adapter:${encodeURIComponent(options.authentication.descriptor.configurationVersion)}`,
   } as const
-  const app = withRouteOwnership(new Hono(), createRouteOwnership(), "hosted-core")
+  const ownership = createRouteOwnership()
+  const app = withRouteOwnership(new Hono(), ownership, "hosted-core")
 
   app.use(securityHeaders())
   if (options.authentication.descriptor.browser.transport === "cookie") {
@@ -373,6 +391,11 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       telemetry: services.telemetry,
     }),
   )
+  if (options.integrationRoutes) app.route("/api/claxedo/integrations", options.integrationRoutes)
+  mountControlPlaneRouteContributions({
+    contributions: options.routeContributions ?? [],
+    mount: (contribution) => mountOwnedRoute(app, ownership, `contribution:${contribution.id}`, contribution.path, contribution.routes as never),
+  })
   // An API worker's unrouted paths must not render as a PAGE.
   //
   // Hono answers anything unmatched with the bare text "404 Not Found", and a

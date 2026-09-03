@@ -70,6 +70,7 @@ import type { DiagnosticsWebContents } from "./diagnostics/ipc"
 import { createElectronSource } from "./diagnostics/electron-source"
 import { createProcessMetricsSource } from "./diagnostics/process-metrics-source"
 import { claxedoServerForkOptions } from "./server-child-process"
+import { setupAgentPluginsSignedSync, type AgentPluginsSignedSync } from "./agent-plugins-signed-sync"
 import {
   CLAXEDO_DAEMON_PROTOCOL,
   claxedoDaemonDiscoveryPath,
@@ -712,14 +713,21 @@ installIpcCallerGuard({
 // leave open.
 const bakedAccountConfig = import.meta.env as Record<string, string | undefined>
 let hostConnector: ReturnType<typeof setupElectronHostConnector> | undefined
+let agentPluginsSync: AgentPluginsSignedSync | undefined
 const account = setupLazyAccount({
   ipcMain,
   userDataDir: app.getPath("userData"),
   adapterReady: app.whenReady(),
   env: accountConfigEnvironment(process.env, bakedAccountConfig),
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
+  // An activation made from this machine is applied here at once rather than
+  // at the next timed pull; the pull itself stays the only path to the daemon.
+  onOperation: (name) => {
+    if (name.startsWith("agentPlugins.") && name !== "agentPlugins.runtimeSelf") void agentPluginsSync?.refresh()
+  },
   onStateChange: (next, previous) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ACCOUNT_STATE_CHANGED_CHANNEL, next)
+    agentPluginsSync?.follow(next)
     // Remote access follows the account, in BOTH directions.
     //
     // Stopping on auth loss is the fail-closed half and stays exactly as
@@ -810,6 +818,18 @@ const pushServing = async (tunnel: Record<string, unknown> | null) => {
 void serverReady.promise.then(() => {
   if (lastServingCredential) void pushServing(lastServingCredential)
 })
+
+// The signed Agent Plugins world follows the account the same way remote
+// access does: main pulls it with the credential only main holds and the daemon
+// materializes it. A daemon built without Agent Plugins answers 404 and the
+// sync goes quiet; nothing here decides whether the feature exists.
+agentPluginsSync = setupAgentPluginsSignedSync({
+  enabled: true,
+  runAccountOperation: (name, params) => account.run(name as never, params),
+  serverUrl: async () => (await serverReady.promise).url,
+  log: { info: (message) => logger.log(message), warn: (message) => logger.warn(message) },
+})
+void account.ready.then(() => agentPluginsSync?.follow(account.state()))
 
 hostConnector = setupElectronHostConnector({
   runAccountOperation: (name, params) => account.run(name as never, params),

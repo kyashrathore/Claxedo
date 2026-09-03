@@ -70,7 +70,12 @@ export const desktopMainComposition: Policy = {
   // per-instance app name, icon tint and userData suffix, reached from
   // `main/index.ts` and `main/windows.ts`. Electron and node:fs/path only, so
   // no package edge: 87/24.
-  ceilings: { modules: 87, packages: 24 },
+  // +1 `main/agent-plugins-signed-sync.ts` — the one owner of how the daemon's
+  // signed Agent Plugins world follows the account: main pulls the signed
+  // user's runtime with the credential only it holds and hands it to the
+  // daemon's loopback surface. Reached from `main/index.ts`; timers and fetch
+  // only, so no package edge: 88/24.
+  ceilings: { modules: 88, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,

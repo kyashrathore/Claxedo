@@ -1,4 +1,5 @@
 import type { AccountState } from "./account-service"
+import type { HostedOperationName } from "./hosted-operations"
 import { registerAccountIpc, type AccountIpcService, type AccountIpcTarget } from "./account-ipc"
 import type { AccountConfigEnv } from "./account-config"
 import type { AccountAssemblyInput, createAccountAssembly } from "./index"
@@ -32,6 +33,8 @@ export function setupLazyAccount(input: {
   env?: AccountConfigEnv
   onError?: AccountAssemblyInput["onError"]
   onStateChange?: AccountAssemblyInput["onStateChange"]
+  /** Observes every completed operation by name; the value never crosses. */
+  onOperation?: (name: HostedOperationName) => void
   load?: () => Promise<AccountModule>
 }): LazyAccount {
   let assembly: ReturnType<typeof createAccountAssembly> | undefined
@@ -60,7 +63,11 @@ export function setupLazyAccount(input: {
       if (!assembly && !hasAccountCredentialRecord(input.userDataDir)) return
       await (await ensureLoaded()).service.signOut()
     },
-    run: async (name, params) => await (await ensureLoaded()).service.run(name, params),
+    run: async (name, params) => {
+      const result = await (await ensureLoaded()).service.run(name, params)
+      input.onOperation?.(name)
+      return result
+    },
     openStream: async (stream) => await (await ensureLoaded()).service.openStream(stream),
   }
 

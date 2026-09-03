@@ -12,6 +12,7 @@ import type { WorkspaceRuntimePreparation } from "../../workspace/route-support"
 import {
   desiredAgentPluginSelections,
   type AgentPluginRuntimeProjectionPlan,
+  type SignedAgentPluginRuntimeSnapshot,
   type SignedAgentPluginRuntimeSnapshotReader,
 } from "../runtime/provision"
 import { mintMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
@@ -69,7 +70,21 @@ function gatewayBase(input: string) {
   return url
 }
 
-function gatewayEndpoint(base: URL, scope: McpGatewayTokenScope) {
+/**
+ * Where a runtime's brokered gateway credential may travel.
+ *
+ * `subdomain`: one `mcp-<key>-<gateway-host>` origin per brokered secret, so a
+ * sandbox driver's host-scoped secret injection cannot leak one server's
+ * credential to another. Needs a proxied wildcard DNS record below the gateway
+ * zone. `origin`: the gateway on its own origin, for runtimes whose credential
+ * lives in a process the user already owns (the signed desktop) and for
+ * deployments without wildcard DNS. The gateway route verifies the token's
+ * audience and scope either way; the host split is an egress-isolation
+ * property, not an authorization one.
+ */
+export type McpGatewayEndpointStyle = "subdomain" | "origin"
+
+function gatewayEndpoint(base: URL, scope: McpGatewayTokenScope, style: McpGatewayEndpointStyle) {
   const key = createHash("sha256").update(JSON.stringify([
     scope.workspaceId,
     scope.harnessId,
@@ -82,7 +97,7 @@ function gatewayEndpoint(base: URL, scope: McpGatewayTokenScope) {
   // subdomain. Cloudflare Universal SSL covers one label below the zone; the
   // former `mcp-<key>.<gateway-host>` shape required a paid/custom wildcard
   // certificate before a runtime could complete TLS.
-  endpoint.hostname = `mcp-${key}-${base.hostname}`
+  if (style === "subdomain") endpoint.hostname = `mcp-${key}-${base.hostname}`
   endpoint.pathname = `/api/claxedo/plugins/mcp/${encodeURIComponent(scope.integrationId)}`
   const secretName = `CLAXEDO_MCP_${key.toUpperCase()}`
   return { url: endpoint.toString(), host: endpoint.hostname, secretName }
@@ -102,7 +117,7 @@ function unavailable(input: {
  * Resolve one immutable activation snapshot into runtime MCP projections and
  * the existing sandbox-manager secret channel. No upstream token is read here.
  */
-export function createHostedMcpRuntimePreparation(input: {
+export type HostedMcpRuntimePreparerInput = {
   activations: SignedAgentPluginRuntimeSnapshotReader
   artifacts: AgentPluginArtifactStore
   resolveConnection: ConnectionReadiness
@@ -112,13 +127,28 @@ export function createHostedMcpRuntimePreparation(input: {
     clientIdMetadataDocumentUrl?: string
   }
   gatewayUrl: string
+  /** Defaults to `subdomain`, the sandbox-isolating shape. */
+  endpointStyle?: McpGatewayEndpointStyle
   signingEnv: Record<string, string | undefined>
   secretBrokering: SandboxDriverMetadata["secretBrokering"]
-}) {
+}
+
+export function createHostedMcpRuntimePreparation(input: HostedMcpRuntimePreparerInput) {
+  const preparer = createHostedMcpRuntimePreparer(input)
+  return async (workspaceId: string): Promise<WorkspaceRuntimePreparation> =>
+    preparer.forSnapshot(await input.activations.runtimeSnapshot(workspaceId))
+}
+
+/**
+ * The same preparation over an already-resolved snapshot. The signed desktop
+ * pull resolves the user's all-projects world itself, so it needs the plan and
+ * secrets without a workspace to look up.
+ */
+export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerInput) {
   const base = gatewayBase(input.gatewayUrl)
+  const style = input.endpointStyle ?? "subdomain"
   const oauthFetch = (url: string, init?: RequestInit) => input.oauth.fetch(url, init)
-  return async (workspaceId: string): Promise<WorkspaceRuntimePreparation> => {
-    const snapshot = await input.activations.runtimeSnapshot(workspaceId)
+  const forSnapshot = async (snapshot: SignedAgentPluginRuntimeSnapshot): Promise<WorkspaceRuntimePreparation> => {
     const selections = desiredAgentPluginSelections(snapshot)
     const mcpServers: AgentPluginRuntimeApplyRequest["mcpServers"] = []
     const secrets: SandboxBrokeredSecret[] = []
@@ -230,7 +260,7 @@ export function createHostedMcpRuntimePreparation(input: {
             serverName: server.name,
             integrationId,
           }
-          const endpoint = gatewayEndpoint(base, scope)
+          const endpoint = gatewayEndpoint(base, scope, style)
           const credential = await mintMcpGatewayToken(scope, input.signingEnv)
           secrets.push({
             name: endpoint.secretName,
@@ -253,6 +283,7 @@ export function createHostedMcpRuntimePreparation(input: {
     }
     return { ...(secrets.length ? { secrets } : {}), state }
   }
+  return { forSnapshot }
 }
 
 export function agentPluginMcpRuntimePlan(preparation: WorkspaceRuntimePreparation | undefined) {

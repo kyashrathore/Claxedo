@@ -86,6 +86,10 @@ export const HOSTED_OPERATIONS = {
     body: ["pluginInstanceId", "expectedRevision", "authority"],
     response: "http",
   },
+  // Main's own pull of the signed world for this machine. The answer carries
+  // gateway bearer credentials, so it is withheld from the renderer
+  // (`RENDERER_WITHHELD_OPERATIONS`) and handed only to the daemon.
+  "agentPlugins.runtimeSelf": { method: "GET", path: "/api/claxedo/plugins/runtime/self", response: "http" },
   // TWO operations, one per access kind, each with the access FIXED in the path.
   //
   // `GET /api/workspace` with no `?access=` is not a broader list — it is

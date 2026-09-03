@@ -81,6 +81,8 @@ const ENTRIES = [
 const CLOUD_ENTRIES = ENTRIES.filter((item) => item.name !== "self-hosted-node")
 const BETTER_AUTH_D1_LOCKED_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
 const BETTER_AUTH_D1_CANDIDATE_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
+const BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY =
+  "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.cf.ts"
 const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.ts"
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
@@ -188,6 +190,40 @@ describe("server deployment entry closures", () => {
           "@claxedo/wakes",
           "@polar-sh/sdk",
         ].includes(name),
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps the plain candidate free of Agent Plugins and the feature candidate closed over exactly it", () => {
+    const plain = closure(BETTER_AUTH_D1_CANDIDATE_ENTRY, { runtimeOnly: true })
+    const plainFiles = plain.modules.map((module) => module.relative)
+    expect(plainFiles.filter((file) => file.includes("src/agent-plugins/") || file.includes("connections/hosted-d1/"))).toEqual([])
+
+    const feature = closure(BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, { runtimeOnly: true })
+    const files = feature.modules.map((module) => module.relative)
+    expect(feature.unresolved).toEqual([])
+    expect(feature.opaque).toEqual([])
+    expect(files).toContain(BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY)
+    expect(files).toContain(BETTER_AUTH_D1_CANDIDATE_ENTRY)
+    expect(files).toContain("src/agent-plugins/hosted-composition.ts")
+    expect(files).toContain("src/agent-plugins/activation/d1-store.ts")
+    expect(files).toContain("src/connections/hosted-d1/setup.ts")
+    // The feature adds routes, storage adapters, and the hosted Connections
+    // family — never the desktop product, a sandbox provider SDK, or billing.
+    expect(
+      files.filter((file) =>
+        [
+          "better-auth-d1-locked-worker",
+          "packages/claxedo-local-server/src",
+          "billing/",
+          "documents/",
+          "convex",
+        ].some((value) => file.toLowerCase().includes(value)),
+      ),
+    ).toEqual([])
+    expect(
+      feature.packages.filter((name) =>
+        ["@claxedo/local-server", "@claxedo/documents-service", "@claxedo/wakes", "@polar-sh/sdk", "convex"].includes(name),
       ),
     ).toEqual([])
   })
