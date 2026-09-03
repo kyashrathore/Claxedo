@@ -121,7 +121,7 @@ migration.**
 
 `WorkspaceAuthority` is the honest cost here: **71 methods**, covering
 identity, orgs, projects, workspaces, sessions, shares, channels, runtime
-tokens, agent extensions, and audit. It is one interface rather than five
+tokens, and audit. It is one interface rather than five
 because it is one transaction domain. There is no partial-implementation path;
 `requireAuthority()` fails closed.
 
@@ -188,6 +188,6 @@ adapter runs.
 
 Everything above the ports is provider-neutral and already written: the relay
 and runtime-access-token machinery, sandbox lease management, the private
-session and share model, channels, agent extensions, the workspace runtime and
+session and share model, channels, the workspace runtime and
 its route-contribution seam, MCP tools, and the whole app shell. The ports are
 the only place a backend is named.

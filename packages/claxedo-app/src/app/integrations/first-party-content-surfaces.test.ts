@@ -20,7 +20,6 @@ beforeAll(async () => {
   mock.module("../../features/documents/ui/content/pages-index-content", () => ({
     PagesIndexContent: () => null,
   }))
-  }))
 
   mod = await import("./first-party-content-surfaces")
   // The hosted set is a SEPARATE module now — importing it here is exactly the

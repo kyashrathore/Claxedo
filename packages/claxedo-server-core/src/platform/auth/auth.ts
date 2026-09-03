@@ -1,5 +1,3 @@
-import { decodeJwt } from "jose"
-
 export type EnabledConfig = {
   enabled: true
   /** Static composition identity. */
@@ -7,8 +5,6 @@ export type EnabledConfig = {
   issuer: string
   jwksUrl: string
   audience?: string
-  /** Native OAuth access tokens carry `client_id`, not `aud`. */
-  oauthClientId?: string
 }
 
 type DisabledConfig = {
@@ -23,7 +19,7 @@ export type SignedControlPlaneAuth = {
   mode: "signed"
   /** Present only for Authorization transport. Browser cookies are never copied into this field. */
   token?: string
-  tokenKind?: "cli" | "clerk-oauth"
+  tokenKind?: "cli"
   principal?: ControlPlanePrincipal
   user: {
     subject: string
@@ -142,39 +138,6 @@ export type BetterAuthSession = {
 
 export type BetterAuthVerifier = (token: string) => Promise<BetterAuthSession | null | undefined>
 
-/**
- * Classify an already-verified bearer's OAuth `client_id` claim.
- *
- * Native OAuth access tokens carry `client_id` instead of an OIDC `aud`, so a
- * token issued to any other client is not this deployment's and is rejected.
- * Exported so the retained Clerk adapter classifies with the same rule.
- */
-export function clerkOAuthTokenKind(payload: Record<string, unknown>, config: EnabledConfig) {
-  const clientId = typeof payload.client_id === "string" ? payload.client_id.trim() : ""
-  if (!clientId) return
-  if (!config.oauthClientId || clientId !== config.oauthClientId) {
-    throw new ControlPlaneAuthError(
-      401,
-      "invalid_bearer_token",
-      "Clerk OAuth access token was issued to an unrecognized client",
-    )
-  }
-  return "clerk-oauth" as const
-}
-
-function verifiedBearerTokenKind(token: string, verified: VerifiedClerkAuth, config: EnabledConfig) {
-  if (verified.tokenKind) return verified.tokenKind
-  let payload: Record<string, unknown>
-  try {
-    payload = decodeJwt(token)
-  } catch {
-    // A custom verifier may authenticate an opaque bearer. It has no JWT
-    // classification to add, and the verifier's result remains authoritative.
-    return
-  }
-  return clerkOAuthTokenKind(payload, config)
-}
-
 function adapterConfig(input: {
   adapter: AuthAdapterId
   issuer: string
@@ -270,26 +233,6 @@ export function bearerToken(header: string | null) {
   return match?.[1]?.trim() || undefined
 }
 
-/**
- * Tokens the control plane has verified but Convex cannot verify directly.
- *
- * CLI tokens are signed by Claxedo. Clerk OAuth access tokens use the OAuth
- * `client_id` claim and deliberately have no OIDC `aud`, so neither belongs in
- * Convex's OIDC provider list. Both cross the authority boundary through the
- * service-token facade with this already-verified canonical identity.
- */
-export function usesServiceAuthority(auth: SignedControlPlaneAuth) {
-  return auth.tokenKind === "cli" || auth.tokenKind === "clerk-oauth"
-}
-
-export function serviceAuthorityUser(auth: SignedControlPlaneAuth) {
-  return {
-    token_identifier: auth.user.tokenIdentifier,
-    subject: auth.user.subject,
-    issuer: auth.user.issuer,
-  }
-}
-
 export async function controlPlaneAuthContext(
   request: Request,
   options: {
@@ -344,10 +287,8 @@ export async function controlPlaneAuthContext(
       throw new ControlPlaneAuthError(503, "auth_verifier_unavailable", "Authentication verifier is unavailable")
     }
     const verified = await options.verifier(token, config)
-    const tokenKind = verifiedBearerTokenKind(token, verified, config)
     return {
       ...verified,
-      ...(tokenKind ? { tokenKind } : {}),
       token,
     }
   } catch (err) {

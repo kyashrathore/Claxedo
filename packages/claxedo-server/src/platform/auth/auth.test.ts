@@ -212,39 +212,6 @@ describe("control plane auth", () => {
     expect(second).toMatchObject({ user: { tokenIdentifier: `${enabledConfig.issuer}|user_1` } })
   })
 
-  test("marks a verified Clerk OAuth token for the service authority path", async () => {
-    const verifier = tokenVerifierAsClerk({
-      verify: async () => ({
-        subject: "user_1",
-        scopes: ["openid"],
-        claims: { client_id: "desktop_client" },
-      }),
-    })
-
-    await expect(verifier("oauth-token", {
-      ...enabledConfig,
-      oauthClientId: "desktop_client",
-    })).resolves.toMatchObject({
-      tokenKind: "clerk-oauth",
-      user: { tokenIdentifier: `${enabledConfig.issuer}|user_1` },
-    })
-  })
-
-  test("rejects a Clerk OAuth token issued to another client", async () => {
-    const verifier = tokenVerifierAsClerk({
-      verify: async () => ({
-        subject: "user_1",
-        scopes: ["openid"],
-        claims: { client_id: "other_client" },
-      }),
-    })
-
-    await expect(verifier("oauth-token", {
-      ...enabledConfig,
-      oauthClientId: "desktop_client",
-    })).rejects.toThrow("unrecognized client")
-  })
-
   test("fails closed when signed cloud auth is enabled but misconfigured", async () => {
     await expect(controlPlaneAuthContext(new Request("http://localhost"), {
       config: {
