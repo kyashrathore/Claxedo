@@ -1,3 +1,4 @@
+import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
@@ -88,6 +89,8 @@ export type BetterAuthD1UserDeployedCompositionInput = {
   product: Extract<D1AuthorityProductPolicy, { kind: "user-deployed" }>
   emailSender?: AuthEmailSender
   now?: () => number
+  /** Bound by feature entries that enable the hosted credential store (Agent Plugins). */
+  credentialsNamespace?: CloudflareKvNamespaceBinding
 }
 
 export type BetterAuthD1UserDeployedComposition = {
@@ -207,6 +210,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     runtimeSessionAuthority: authority,
     privateSessionAuthority: authority,
     turnAuthority: authority,
+    ...(input.credentialsNamespace ? { credentialsNamespace: input.credentialsNamespace } : {}),
     userHostedResolver: createD1UserHostedTargetResolver(input.controlPlaneDatabase, {
       ...(input.now ? { now: input.now } : {}),
       deploymentId,

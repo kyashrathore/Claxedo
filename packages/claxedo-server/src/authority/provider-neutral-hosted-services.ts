@@ -17,6 +17,7 @@
  */
 
 import type { ControlPlaneAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   hostTunnelTokenSigner,
@@ -256,6 +257,13 @@ export type HostedControlPlaneAdapterBindings = {
   privateSessionAuthority?: PrivateSessionAuthority
   /** Required by adapters that certify managed multiplayer prompt admission. */
   turnAuthority?: SessionTurnAuthority
+  /**
+   * The org-partitioned credentials KV namespace, when the deployment binds
+   * one. `env` is strings only, so a binding object cannot ride in it; without
+   * this the credential store falls back to the REST KV configuration and a
+   * deployment with `CLAXEDO_HOSTED_CREDENTIALS_ENABLED=1` refuses to start.
+   */
+  credentialsNamespace?: CloudflareKvNamespaceBinding
 }
 
 /**
@@ -337,7 +345,9 @@ export function composeProviderNeutralHostedControlPlane(
     projectionStore: unusedStore<ProjectionStore>("Session projection store"),
     durableSessionLog: unusedStore<DurableSessionLog>("Durable session log"),
     auth: bindings.auth,
-    credentials: workerCredentials(env),
+    credentials: workerCredentials(
+      bindings.credentialsNamespace ? { ...env, CLAXEDO_CREDENTIALS: bindings.credentialsNamespace } : env,
+    ),
     relay: {
       relayUrl,
       relayUrls,

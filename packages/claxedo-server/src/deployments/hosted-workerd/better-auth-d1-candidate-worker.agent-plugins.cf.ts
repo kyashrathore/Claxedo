@@ -31,7 +31,13 @@ export type BetterAuthD1AgentPluginsCandidateWorkerEnv = BetterAuthD1CandidateWo
 // wedged auth init can never leave a half-featured app behind.
 const composition = settledCompositionCache(
   (env: BetterAuthD1AgentPluginsCandidateWorkerEnv) => {
-    const base = composeBetterAuthD1UserDeployedControlPlane(betterAuthD1CandidateCompositionInput(env))
+    // The credentials KV binding is an object, so it cannot ride in the
+    // string-only composition env; the base plane needs it for
+    // `workerCredentials`, which the hosted-credentials flag turns on.
+    const base = composeBetterAuthD1UserDeployedControlPlane({
+      ...betterAuthD1CandidateCompositionInput(env),
+      ...(env.CLAXEDO_CREDENTIALS ? { credentialsNamespace: env.CLAXEDO_CREDENTIALS } : {}),
+    })
     const feature = createHostedAgentPluginsComposition({
       env,
       plane: base.plane,

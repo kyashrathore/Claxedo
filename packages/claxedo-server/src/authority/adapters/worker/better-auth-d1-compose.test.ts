@@ -137,6 +137,47 @@ describe("Better Auth + D1 user-deployed composition", () => {
     expect(controlSql.some((sql) => sql.trim() === "select 1")).toBe(true)
   })
 
+  test("hands a bound credentials KV namespace to the hosted credential store", async () => {
+    // The composition env is strings only, so the binding object cannot ride
+    // in it. Without the explicit seam a deployment with the hosted credential
+    // store enabled refuses to start asking for the REST KV configuration —
+    // which is exactly how staging release 65 failed its candidate health.
+    const { authDatabase, controlPlaneDatabase } = await databases()
+    const credentialEnv = env({
+      CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
+      CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 7).toString("base64"),
+    })
+    const input = {
+      authDatabase,
+      controlPlaneDatabase,
+      environmentId: "staging",
+      descriptorExpiresAt: 1_900_000_000_000,
+      now: () => 1_800_000_000_000,
+      product: {
+        kind: "user-deployed" as const,
+        organization: { id: "org_deployment", name: "My deployment" },
+        ownerBootstrap: "one-use-claim" as const,
+      },
+    }
+    expect(() => composeBetterAuthD1UserDeployedControlPlane({ ...input, env: credentialEnv })).toThrow(
+      /CLAXEDO_CF_KV_URL is not configured/,
+    )
+    const binding = {
+      get: async () => null,
+      put: async () => undefined,
+      delete: async () => undefined,
+      list: async () => ({ keys: [], list_complete: true, cacheStatus: null }),
+    }
+    const composed = composeBetterAuthD1UserDeployedControlPlane({
+      ...input,
+      env: credentialEnv,
+      credentialsNamespace: binding as never,
+    })
+    expect(await composed.plane.services.credentials.listCredentials("org_deployment")).toEqual([])
+    // Let Better Auth's init settle before the databases are disposed.
+    await composed.authReady.catch(() => undefined)
+  })
+
   test("composes the real auth, authority, empty service catalog, and no-billing posture", async () => {
     const { authDatabase, controlPlaneDatabase } = await databases()
     const composed = composeBetterAuthD1UserDeployedControlPlane({
