@@ -29,6 +29,13 @@ directly using the short-lived Runtime Access Token in that response. Relay is
 the data plane; Hosted Server is not a byte proxy and Electron IPC is not one
 either.
 
+The one-time user-deployed owner claim is also browser-only. The operator-facing
+`app/routes/bootstrap-owner.tsx` sends the claim from a transient password input
+to the fixed `POST /api/claxedo/auth/bootstrap-owner` route using the browser's
+same signed session. It is deliberately absent from Electron's account port:
+desktop is not an initial deployment-owner provisioning surface, and main must
+never receive or retain this one-use secret.
+
 Two consequences worth stating plainly:
 
 - Tunnelling Runtime bytes through Electron IPC would serialize every terminal
@@ -46,10 +53,11 @@ Also excluded from AccountPort (intentional non-rows):
 - **Sandbox driver** routes (`GET|PUT /api/workspace/drivers*`) — local sidecar
   only; signed hosted sessions may view them through the local proxy but do not
   spend the Hosted Server bearer on them.
-- **Per-workspace hostLink** challenge / heartbeat / pause / second-device-open —
-  desktop reaches these through Host Connector zero-argument IPC; browser
-  self-hosted uses the page session over HTTP. Machine-wide enrollment is the
-  `host.enroll*` rows below.
+- **Machine pause / second-device-open** — desktop reaches these through Host
+  Connector IPC; browser self-hosted uses the page session over HTTP. The
+  enrollment handshake itself is the `host.enroll*` rows below, and
+  request / enroll / heartbeat are Host-Connector-child rows in the machine
+  remote access section.
 - **Retired** `GET /documents/events` — editors now use the central
   `session.events` doorbell.
 
@@ -90,7 +98,6 @@ is the authoritative source for this column.
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
-| `account.get` | `features/settings/ui/account-section.tsx` | `GET /api/claxedo/bootstrap` | unary | safe | Sanitized identity/org only. The renderer receives display state, never a token. |
 | `account.mode` | `features/settings/ui/account-section.tsx` | `GET /api/claxedo/mode` | unary | safe | Deployment posture; drives which hosted surfaces render. |
 | `account.compatibility` | `app/boot/data/bootstrap-orchestrator.ts` | `GET /api/claxedo/compatibility` | unary | safe | Client/server version gate. |
 | `account.cliExchange` | `app/routes/cli-login-token.ts` | `POST /api/auth/cli/exchange` | unary | unsafe | Mints a CLI session token. A replayed exchange must not mint twice, and nothing stops it: the route mints from the bearer and never reads the request body, so each call is a fresh separately-revocable pair. Refused to the renderer entirely (`RENDERER_WITHHELD_OPERATIONS`), because the result is itself a credential. |
@@ -108,8 +115,8 @@ is the authoritative source for this column.
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
-| `workspace.list.cloud` | `features/session/data/sync/inventory-source.ts` | `GET /api/workspace?access=cloud` | unary | safe | The access kind is fixed in the path, not a parameter — see below. |
-| `workspace.list.userHosted` | `features/session/data/sync/inventory-source.ts` | `GET /api/workspace?access=user-hosted` | unary | safe | The laptop rows. A caller wanting the whole picture runs both operations and merges, which is what `fetchSignedWorkspaceSnapshotUncached` already does. |
+| `workspace.list.cloud` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?access=cloud` | unary | safe | The access kind is fixed in the path, not a parameter — see below. |
+| `workspace.list.userHosted` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?access=user-hosted` | unary | safe | The laptop rows. A caller wanting the whole picture runs both operations and merges, which is what `controlPlaneCatalog` already does. |
 | `workspace.resolve` | `platform/runtime/workspace-runtime-record.ts` | `GET /api/workspace/resolve` | unary | safe | Optional query: `workspaceId`, `directory`, `create`. Desktop signed mode calls through AccountPort. |
 | `workspace.create` | `features/workspaces/data/workspace-create-api.ts` | `POST /api/workspace/create` | unary | unsafe | Provisions a cloud VM. Without a key, an uncertain response creates a second VM — and there is no key to replay. `createCloudBody` in `claxedo-server/src/routes/hosted/workspace.ts` is `.strict()` with no idempotency field, so a key sent from a client 400s the whole request. Classified `unsafe` until the route accepts one; an uncertain response must be surfaced, never retried. Desktop signed mode calls this through AccountPort; browser keeps `api.post`. |
 | `workspace.lifecycle` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | unsafe | Stop/replace/cleanup/destroy. The route reads only `approved` and `checkpointId` and accepts no key. `stop`, `cleanup` and `destroy` converge on a state and tolerate a retry; `replace` provisions, so it does not — classified by its worst member. Every operation but `stop` refuses with 409 unless `approved: true` is in the body. |
@@ -145,10 +152,11 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
-| `hostLink.register` | `features/workspaces/data/share-workspace.ts` | `POST /api/workspace/:id/user-hosted/register` | unary | idempotency-key | Per-workspace registration. Unit 6 replaces it with one machine-wide enrollment; recorded here as the current producer. |
-| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Unit 6's replacement for `hostLink.register`: enrolls the MACHINE once, with no workspace in the path. The key is the machine identity and it is a real one — `enrollForUser` patches the existing row for the same `host_id` rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
+| `workspace.assignHost` | `src/main/host-connector/child-supervisor.ts` | `POST /api/workspace/:id/host-assignment` | unary | idempotency-key | The OWNER's declaration that this host serves the workspace — pure data, an upsert on workspace_id. No challenge and no machine signature: liveness is the enrollment lease and consent is the heartbeat's acked set; routing needs all three. **Main-only**: the host id must be THIS machine's, which only the supervisor knows, so `RENDERER_WITHHELD_OPERATIONS` refuses the account channel and the renderer's route is the data-only `claxedo.hostConnector.share` IPC. |
+| `workspace.unassignHost` | `src/main/host-connector/child-supervisor.ts` | `DELETE /api/workspace/:id/host-assignment` | unary | safe | Withdraws the owner's assignment; routing refuses immediately (intent AND consent). Main-only for the same reason as assign. |
+| `host.enrollCurrentMachine` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments` | unary | idempotency-key (`hostId`) | Enrolls the MACHINE once, with no workspace in the path — the successor of the retired per-workspace host-link registration. The key is the machine identity and it is a real one — `enrollForUser` patches the existing row for the same `host_id` rather than inserting a second. **Main-only.** `publicKey` and `signature` are the machine identity, so a caller that supplies them enrolls a machine whose private half main has never seen; the route stores whatever public key it is handed, and a second enrollment on a known `host_id` overwrites the honest key and clears a revocation. The only caller is Electron main's Host Connector, which fills those fields from the key it owns. The renderer's route to this feature is the connector's own zero-argument IPC (`claxedo.hostConnector.start`), and `RENDERER_WITHHELD_OPERATIONS` refuses the account channel. |
 | `host.enrollmentNonce` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/requests` | unary | unsafe | The one-use nonce the machine signs. Unsafe rather than safe: each call mints a new nonce, so a retry burns one. It carries no secret — the nonce is public and worthless without the machine's private key — but a caller that retried freely would fill the request table. Main-only, like the enrollment it precedes: a renderer able to mint nonces holds step one of the handshake, and the account channel is refused. |
-| `host.enrollmentHeartbeat` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/heartbeat` | unary | safe | Presence, signed by the machine key. Safe to retry: the server extends an existing enrollment rather than creating anything, and a heartbeat that arrives twice is a heartbeat. A REJECTED one is not retried at all — the connector stops, because re-enrolling would be it overruling a revocation. Main-only for the same reason as the other two: the signature is the machine key's. |
+| `host.enrollmentHeartbeat` | `platform/account/account-port.ts` | `POST /api/claxedo/host/enrollments/heartbeat` | unary | safe | Presence AND consent, signed by the machine key: the v2 payload covers the served workspace set, the response returns the owner's assignment view for reconciliation plus ONE Host Tunnel credential for the assigned∩acked set. Safe to retry only by RE-SIGNING — every signature hash is single-use at the authority. A REJECTED beat is not retried at all — the connector stops, because re-enrolling would be it overruling a revocation. Main-only: the signature is the machine key's. |
 
 ### Sessions
 
