@@ -105,7 +105,7 @@ configureApiRuntime({
  * `platform/auth/auth-session.ts` used to `import { useAuth }` statically. It
  * is called unconditionally from the shell's provider tree (`app/entry/app.tsx`
  * mounts it, and BOTH products render that shell), so that one import was the
- * remaining chain by which `local.tsx` reached Clerk:
+ * remaining chain by which `local.tsx` reached the auth vendor:
  * `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts ->
  * a provider implementation`. It now keeps only an `import type` edge to the
  * neutral browser-auth contract, which the bundler erases.

@@ -5,7 +5,7 @@ import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 
 const root = path.join(realpathSync(os.tmpdir()), `network-policy-routes-${randomUUID().slice(0, 8)}`)
@@ -23,7 +23,7 @@ const authConfig = {
   jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
 } as const
 
-const verifier: ClerkVerifier = async (token, config) => ({
+const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed",
   user: {
     subject: token,
@@ -103,21 +103,23 @@ describe("network policy routes", () => {
     })
   })
 
-  test("signed cloud mode honors environment auth config without injected options", async () => {
+  test("signed cloud mode honors an explicitly composed auth config", async () => {
     const old = {
       CLAXEDO_SIGNED_CLOUD_AUTH: process.env.CLAXEDO_SIGNED_CLOUD_AUTH,
-      CLERK_JWT_ISSUER: process.env.CLERK_JWT_ISSUER,
-      CLERK_JWKS_URL: process.env.CLERK_JWKS_URL,
       CLAXEDO_WORKSPACE_AUTHORITY_URL: process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL,
     }
-    process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
-    process.env.CLERK_JWT_ISSUER = "https://clerk.example.test"
-    process.env.CLERK_JWKS_URL = "https://clerk.example.test/.well-known/jwks.json"
-    process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "https://convex.example.test"
+    delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
+    delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
     try {
       const route = new Hono().route("/api/claxedo/network-policy", NetworkPolicyRoutes({
         services: services(),
         verifier,
+        authConfig: {
+          enabled: true,
+          adapter: "custom",
+          issuer: "https://idp.example.test",
+          jwksUrl: "https://idp.example.test/.well-known/jwks.json",
+        },
       }))
       const res = await route.request("http://localhost/api/claxedo/network-policy/groups")
       expect(res.status).toBe(401)

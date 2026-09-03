@@ -9,11 +9,11 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
@@ -54,7 +54,7 @@ const checkBody = z.object({
 type Options = {
   services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
 }
 
 async function routeAuth(request: Request, options: Options) {

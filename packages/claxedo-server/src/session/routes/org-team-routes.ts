@@ -5,7 +5,7 @@ import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -14,7 +14,7 @@ import { apiError, signedOrError } from "../../workspace/route-support"
 type Options = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
 }
 

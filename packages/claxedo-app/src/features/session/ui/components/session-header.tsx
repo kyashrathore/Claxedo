@@ -1,4 +1,4 @@
-// Session titlebar: project search + Share (central/Convex sessions only when signed in).
+// Session titlebar: project search + Share (central sessions only when signed in).
 import { Button } from "@opencode-ai/ui/button"
 import { Keybind } from "@opencode-ai/ui/keybind"
 import { getFilename } from "@opencode-ai/core/util/path"

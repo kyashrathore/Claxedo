@@ -766,10 +766,10 @@ describe("persisted deployment release history", () => {
     ).rejects.toThrow(/workerBuildId is stale/)
     await expect(
       admitDeploymentOperation(db, identity, {
-        binding: { ...deploymentAdmissionBinding(canary), adapterProfile: "clerk-convex" },
+        binding: { ...deploymentAdmissionBinding(canary), productPosture: "claxedo-hosted" },
         operation: { kind: "probe", probe: "release_status" },
       }),
-    ).rejects.toThrow(/adapterProfile is stale/)
+    ).rejects.toThrow(/productPosture is stale/)
     await expect(
       admitDeploymentOperation(db, identity, {
         binding: deploymentAdmissionBinding(canary),

@@ -416,11 +416,10 @@ describe("control-plane services", () => {
     expect(text).toContain("export function createSelfHostedApp(")
     expect(text).toContain("services: ControlPlaneServices")
     expect(text).toContain("export function createDefaultLocalControlPlaneServices()")
-    expect(text).toContain("const authorityUrl = convexAuthorityUrlFromEnv(process.env)")
     // Embedded Better Auth (CLAXEDO_EMBEDDED_AUTH=1) selects the betterAuthAdapter
-    // branch; the Clerk env adapter remains the default.
-    expect(text).toContain("? betterAuthAdapter({ issuer: EMBEDDED_AUTH_ISSUER, verifier: getEmbeddedAuth().verifier })")
-    expect(text).toContain(": clerkAuthAdapter({ env: process.env, authorityConfigured: !!authorityUrl })")
+    // branch; otherwise services default to local-only with SQLite authority.
+    expect(text).toContain("{ auth: betterAuthAdapter({ issuer: EMBEDDED_AUTH_ISSUER, verifier: getEmbeddedAuth().verifier }) }")
+    expect(text).toContain("const authority = createSqliteWorkspaceAuthority()")
     expect(text).toContain("const centralStore = createSqliteCentralStore({ mode: getSessionWriteMode })")
     expect(text).toContain("projectionStore: centralStore.projectionStore,")
     expect(text).toContain("const sandboxManager = createWorkspaceSupervisorSandboxManager()")
@@ -457,10 +456,11 @@ describe("control-plane services", () => {
     expect(text).toContain("app.route(\"/\", centralControl.app)")
   })
 
-  test("local composition fails closed at boot when signed auth has no workspace authority", async () => {
-    // Deployer trap: signed auth enabled + no authority previously answered 503
-    // on every request; the default local composition must refuse to boot with
-    // an actionable message instead.
+  test("local composition ignores ambient signed-auth env without embedded auth", async () => {
+    // The retired Clerk + Convex hosted composition is gone: ambient signed
+    // env without CLAXEDO_EMBEDDED_AUTH no longer fails closed — the default
+    // local composition boots local-only on SQLite. Only embedded Better Auth
+    // selects signed mode.
     const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
     const previous = {
       signed: process.env.CLAXEDO_SIGNED_CLOUD_AUTH,
@@ -469,17 +469,15 @@ describe("control-plane services", () => {
     }
     process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "true"
     delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-    // The embedded Better Auth issuer is the ONE exception to this trap
-    // (SQLite authority + embedded issuer = valid signed config); make sure
-    // it is off so the fail-closed path is exercised.
     delete process.env.CLAXEDO_EMBEDDED_AUTH
     try {
-      expect(() => createDefaultLocalControlPlaneServices()).toThrow(
-        new ControlPlaneCompositionError(
-          "hosted_dependency_missing",
-          "Signed/cloud auth requires a workspace authority; set CLAXEDO_WORKSPACE_AUTHORITY_URL or enable CLAXEDO_EMBEDDED_AUTH=1",
-        ),
-      )
+      const services = createDefaultLocalControlPlaneServices()
+      expect(services.auth.config).toEqual({
+        enabled: false,
+        mode: "local-only",
+        reason: "no auth adapter configured",
+      })
+      services.close()
     } finally {
       for (const [key, value] of [
         ["CLAXEDO_SIGNED_CLOUD_AUTH", previous.signed],

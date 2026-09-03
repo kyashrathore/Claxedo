@@ -15,7 +15,6 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 const repoRoot = path.resolve(appRoot, "../..")
 const config = readFileSync(path.join(appRoot, "playwright.config.ts"), "utf8")
 const workflow = readFileSync(path.join(repoRoot, ".github/workflows/test.yml"), "utf8")
-const workgraphStressWorkflow = readFileSync(path.join(repoRoot, ".github/workflows/workgraph-stress.yml"), "utf8")
 const setupBun = readFileSync(path.join(repoRoot, ".github/actions/setup-bun/action.yml"), "utf8")
 const crabboxGroups = readFileSync(path.join(repoRoot, "script/cbx-ci.ts"), "utf8")
 const crabboxCi = readFileSync(path.join(repoRoot, "script/cbx-ci-remote.sh"), "utf8")
@@ -44,7 +43,6 @@ describe("e2e auth mode matrix", () => {
   test("Playwright owns both explicit modes and a real no-user Vite composition", () => {
     expect(authMode).toContain('e2eAuthModes = ["test-user", "local-unsigned"] as const')
     expect(authMode).toContain('VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1"')
-    expect(authMode).toContain('VITE_CLERK_PUBLISHABLE_KEY: ""')
     expect(authMode).toContain('VITE_AUTH_ENABLED: "true"')
     expect(config).toContain("resolveE2EAuthMode()")
   })
@@ -60,7 +58,7 @@ describe("e2e auth mode matrix", () => {
    */
   test("every e2e vite launcher reads the one build-environment owner", () => {
     expect(authMode).toContain("export function e2eAppViteEnvironment(")
-    expect(authMode).toContain('VITE_CLAXEDO_AUTH_ADAPTER: "clerk"')
+    expect(authMode).toContain('VITE_CLAXEDO_AUTH_ADAPTER: "better-auth"')
     expect(authMode).toContain('VITE_CLAXEDO_E2E: "1"')
     for (const [name, source] of Object.entries(viteLaunchers)) {
       // The spread into the child's env, not a mention in prose: a launcher
@@ -119,8 +117,6 @@ describe("e2e auth mode matrix", () => {
     expect(packageJson.scripts["test:e2e:core"]).not.toContain("test:e2e:workgraph")
     expect(packageJson.scripts["test:e2e:mobile:mode"]).toContain('--grep-invert "@workgraph-real"')
     expect(crabboxGroups).not.toContain("pr-e2e-workgraph")
-    expect(workgraphStressWorkflow).toContain("workflow_dispatch:")
-    expect(workgraphStressWorkflow).not.toContain("\n  schedule:")
 
     expect(buildApp).toContain("e2eAppViteEnvironment(authMode)")
     expect(buildApp).toContain("claxedo-e2e-build.json")

@@ -35,8 +35,8 @@ batching, and no record of which deployment it ran against — a double-run over
 billing tables is a customer-facing money bug. The last survivor,
 `sandboxLeases.normalizeLegacyFields`, is retro-registered as migration #001
 (`convex/migrations.ts` → `normalizeRuntimeLeaseLegacyFields`) and its export
-remains only for the break-glass maintenance script
-(`packages/claxedo-server/scripts/maintenance/normalize-convex-sandbox-leases.ts`).
+remained only for the retired break-glass maintenance script (removed with the
+Convex backend).
 
 ## What is deliberately NOT required (pre-PMF honesty, ADR 016 §5.2)
 

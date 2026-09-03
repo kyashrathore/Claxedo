@@ -4,7 +4,7 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -21,7 +21,7 @@ import { WorkspaceRuntimeTargetError } from "../runtime-target"
 
 export type ControlPlaneHttpOptions = {
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
   runtimeFetch?: (input: {
     workspaceId: string

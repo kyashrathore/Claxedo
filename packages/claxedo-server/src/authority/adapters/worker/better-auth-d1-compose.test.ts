@@ -21,6 +21,7 @@ const CONTROL_MIGRATIONS = [
   "0008_user_deployed_owner_bootstrap.sql",
   "0012_cold_local_host_challenges.sql",
   "0013_org_team_session_sharing.sql",
+  "0017_adapter_custom.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 const AUTH_MIGRATIONS = ["0001_better_auth.sql", "0003_authentication_evidence.sql"]
   .map((name) => fileURLToPath(new URL(`../../../../migrations/auth/${name}`, import.meta.url)))

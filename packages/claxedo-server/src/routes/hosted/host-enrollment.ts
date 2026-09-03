@@ -83,7 +83,7 @@ function missingBearer() {
  * per call.
  *
  * Not covered by the app-wide `defaultRequestGuard` in
- * `deployments/hosted-shared/hosted-app.ts`, and the difference is the point:
+ * `deployments/hosted-shared/hosted-core-app.ts`, and the difference is the point:
  * that guard is IP-keyed by design, so it bounds one network path and says
  * nothing about one ACCOUNT. A signed caller behind rotating addresses — a
  * cloud function, a residential proxy pool — passes it while minting enrollment

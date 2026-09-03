@@ -18,7 +18,7 @@ export const AccountTable = sqliteTable("account", {
   // discovered from that control plane. Nullable columns preserve the local
   // row as quarantined evidence during migration; account service code refuses
   // to refresh or use any row whose tuple is incomplete.
-  auth_adapter: text().$type<"better-auth" | "clerk">(),
+  auth_adapter: text().$type<"better-auth">(),
   auth_deployment_id: text(),
   auth_configuration_version: text(),
   auth_issuer: text(),

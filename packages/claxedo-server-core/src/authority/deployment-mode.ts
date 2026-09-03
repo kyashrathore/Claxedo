@@ -132,11 +132,11 @@ export function hostedBootRequirementFailures(
   if (!flagEnabled(env.CLAXEDO_SIGNED_CLOUD_AUTH)) {
     failures.push("signed cloud auth is not enabled (set CLAXEDO_SIGNED_CLOUD_AUTH=true)")
   }
-  if (!clean(env.CLERK_JWT_ISSUER) && !clean(env.CLERK_ISSUER_URL)) {
-    failures.push("no signed-auth token issuer (set CLERK_JWT_ISSUER)")
+  if (!clean(env.CONTROL_PLANE_JWT_ISSUER) && !clean(env.CLERK_JWT_ISSUER) && !clean(env.CLERK_ISSUER_URL)) {
+    failures.push("no signed-auth token issuer (set CONTROL_PLANE_JWT_ISSUER)")
   }
-  if (!clean(env.CLERK_JWKS_URL)) {
-    failures.push("no signed-auth JWKS URL (set CLERK_JWKS_URL)")
+  if (!clean(env.CONTROL_PLANE_JWKS_URL) && !clean(env.CLERK_JWKS_URL)) {
+    failures.push("no signed-auth JWKS URL (set CONTROL_PLANE_JWKS_URL)")
   }
   if (!input.authorityConfigured) {
     failures.push("no workspace authority (set CLAXEDO_WORKSPACE_AUTHORITY_URL)")

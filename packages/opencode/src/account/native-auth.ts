@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 
-export const NativeAuthAdapter = Schema.Literals(["better-auth", "clerk"])
+export const NativeAuthAdapter = Schema.Literals(["better-auth"])
 export type NativeAuthAdapter = Schema.Schema.Type<typeof NativeAuthAdapter>
 
 export const NativeAuthFlow = Schema.Literals(["device-authorization", "adapter-native"])
@@ -208,13 +208,6 @@ export function parseCliAuthDescriptor(input: unknown, configuredServer: string,
       "Better Auth CLI requires OAuth Device Authorization",
     )
   }
-  if (raw.adapter === "clerk" && raw.native.cli.flow !== "adapter-native") {
-    throw new NativeAuthDescriptorError(
-      "unsupported_native_flow",
-      "Clerk CLI requires its declared adapter-native flow",
-    )
-  }
-
   const revocationEndpoint = exactHttpsUrl(raw.native.cli.revocation.endpoint, "native.cli.revocation.endpoint")
   if (revocationEndpoint.origin !== tokenEndpointOrigin) {
     throw new NativeAuthDescriptorError(
@@ -235,13 +228,6 @@ export function parseCliAuthDescriptor(input: unknown, configuredServer: string,
       "Better Auth CLI requires its issuer-bound RFC 7009 revocation endpoint",
     )
   }
-  if (raw.adapter === "clerk" && revocation.protocol !== "adapter-native") {
-    throw new NativeAuthDescriptorError(
-      "unsupported_native_flow",
-      "Clerk CLI requires its declared adapter-native revocation protocol",
-    )
-  }
-
   return {
     adapter: raw.adapter,
     deploymentId: nonEmpty(raw.deploymentId, "deploymentId"),
@@ -287,7 +273,7 @@ export function credentialBindingFromRow(row: NativeCredentialBindingRow): Persi
     scopes = undefined
   }
   if (
-    (row.auth_adapter !== "better-auth" && row.auth_adapter !== "clerk") ||
+    row.auth_adapter !== "better-auth" ||
     !row.auth_deployment_id ||
     !row.auth_configuration_version ||
     !row.auth_issuer ||

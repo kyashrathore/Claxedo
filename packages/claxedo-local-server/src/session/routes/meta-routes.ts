@@ -5,11 +5,11 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
@@ -32,7 +32,7 @@ import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 type Options = {
   services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   refreshSessionProjection?: (workspace: Workspace) => Promise<void>
 }
 

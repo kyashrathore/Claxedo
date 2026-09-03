@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, localOnlyAuthAdapter, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../services"
 
 const mocks = vi.hoisted(() => ({
@@ -631,7 +631,7 @@ describe("control plane HTTP protocol", () => {
       issuer: "https://clerk.test",
       jwksUrl: "https://clerk.test/jwks",
     } as const
-    const verifier: ClerkVerifier = async (token, config) => ({
+    const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
       mode: "signed",
       user: {
         subject: token,

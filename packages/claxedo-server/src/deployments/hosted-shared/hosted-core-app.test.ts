@@ -6,7 +6,7 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
 import { coreAppHomeOrigin, createHostedCoreApp } from "./hosted-core-app"
 import { sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
-import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
+import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
 
@@ -57,7 +57,7 @@ function plane(): HostedControlPlane {
       sandboxMaxRetryCount: 5,
     },
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
-    cliSessionTokenRegistry: durableCliSessionTokenRegistry().registry,
+    cliSessionTokenRegistry: createInMemoryCliSessionTokenRegistry(),
     privateSessionAuthority: sessionAuthority,
     runtimeSessionAuthority: sessionAuthority,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },

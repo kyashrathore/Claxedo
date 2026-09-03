@@ -34,7 +34,7 @@ function requireRoomSegment(value: string | undefined, description: string): str
 
 /**
  * The room name for a principal. `orgId` here is the AUTHORITY-INTERNAL org id
- * that `connectLiveSyncRoom` keys subscribers with — Clerk org claims
+ * that `connectLiveSyncRoom` keys subscribers with — organization claims
  * (`org_...`) are a different namespace, and passing one names a room nobody
  * ever joins.
  *

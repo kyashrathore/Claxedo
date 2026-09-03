@@ -7,39 +7,36 @@ import type { RefreshExchange } from "./electron-seams"
 const NOW = 1_800_000_000_000
 const CORE = "https://core.example.com"
 
-function descriptor(adapter: "better-auth" | "clerk" = "better-auth") {
-  const issuer = adapter === "better-auth" ? `${CORE}/api/auth` : "https://clerk.example.com"
+function descriptor() {
+  const issuer = `${CORE}/api/auth`
   return {
-    adapter,
+    adapter: "better-auth" as const,
     deploymentId: "deployment-1",
     configurationVersion: "auth-v1",
     expiresAt: NOW + 60_000,
     issuer,
-    methods: adapter === "better-auth" ? ["github"] : ["clerk"],
+    methods: ["github"],
     browser: { trustedOrigins: ["https://app.example.com"] },
     native: {
       cli: {},
       desktop: {
-        flow: adapter === "better-auth" ? "authorization-code-pkce" : "adapter-native",
-        clientId: `desktop-${adapter}`,
+        flow: "authorization-code-pkce",
+        clientId: "desktop-better-auth",
         resource: `${CORE}/control-plane`,
         scopes: ["offline_access", "workspace:read"],
         tokenEndpointOrigin: new URL(issuer).origin,
         controlPlaneOrigin: CORE,
-        revocation:
-          adapter === "better-auth"
-            ? {
-                protocol: "rfc7009",
-                endpoint: `${CORE}/api/auth/oauth2/revoke`,
-                tokenEndpointAuthMethod: "none",
-              }
-            : { protocol: "adapter-native", endpoint: "https://clerk.example.com/native/revoke" },
+        revocation: {
+          protocol: "rfc7009",
+          endpoint: `${CORE}/api/auth/oauth2/revoke`,
+          tokenEndpointAuthMethod: "none",
+        },
       },
     },
   }
 }
 
-function harness(adapter: "better-auth" | "clerk") {
+function harness() {
   const requests: Array<{ url: string; init?: RequestInit }> = []
   const exchanges: Parameters<OAuthSeams["exchange"]>[0][] = []
   const refreshes: Parameters<RefreshExchange>[0][] = []
@@ -67,7 +64,7 @@ function harness(adapter: "better-auth" | "clerk") {
   }
   const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
     requests.push({ url: String(url), init })
-    if (String(url) === `${CORE}/api/claxedo/auth/descriptor`) return Response.json(descriptor(adapter))
+    if (String(url) === `${CORE}/api/claxedo/auth/descriptor`) return Response.json(descriptor())
     return new Response(null, { status: 200 })
   }) as typeof fetch
   const refresh: RefreshExchange = async (input) => {
@@ -92,7 +89,7 @@ function harness(adapter: "better-auth" | "clerk") {
 
 describe("descriptor-selected desktop native auth", () => {
   test("runs Better Auth authorization code + S256 PKCE on an OS-assigned loopback port", async () => {
-    const h = harness("better-auth")
+    const h = harness()
     const signed = await h.auth.signIn()
 
     expect(signed).toMatchObject({ ok: true, credential: { binding: { adapter: "better-auth" } } })
@@ -111,30 +108,8 @@ describe("descriptor-selected desktop native auth", () => {
     ])
   })
 
-  test("uses only Clerk's adapter-native OAuth endpoints and never sends Better Auth resource syntax", async () => {
-    const h = harness("clerk")
-    const signed = await h.auth.signIn()
-    if (!signed.ok) throw new Error(signed.detail)
-    await h.auth.refresh(signed.credential)
-    const revocation = await h.auth.revoke(signed.credential)
-
-    expect(new URL(h.opened()).origin + new URL(h.opened()).pathname).toBe("https://clerk.example.com/oauth/authorize")
-    expect(new URL(h.opened()).searchParams.get("resource")).toBeNull()
-    expect(h.exchanges[0]).toMatchObject({ tokenUrl: "https://clerk.example.com/oauth/token" })
-    expect(h.exchanges[0]).not.toHaveProperty("resource")
-    expect(h.refreshes).toEqual([
-      {
-        tokenUrl: "https://clerk.example.com/oauth/token",
-        clientId: "desktop-clerk",
-        refreshToken: "refresh-1",
-      },
-    ])
-    expect(revocation).toMatchObject({ state: "uncertain" })
-    expect(h.requests.map((request) => request.url)).not.toContain("https://clerk.example.com/native/revoke")
-  })
-
   test("revalidates descriptor expiry and immutable config before refresh and API use", async () => {
-    const h = harness("better-auth")
+    const h = harness()
     const signed = await h.auth.signIn()
     if (!signed.ok) throw new Error(signed.detail)
     ;(signed.credential.binding as { configurationVersion: string }).configurationVersion = "auth-v0"
@@ -144,7 +119,7 @@ describe("descriptor-selected desktop native auth", () => {
   })
 
   test("revokes Better Auth remotely with the bound public client and refresh token", async () => {
-    const h = harness("better-auth")
+    const h = harness()
     const signed = await h.auth.signIn()
     if (!signed.ok) throw new Error(signed.detail)
 
@@ -158,7 +133,7 @@ describe("descriptor-selected desktop native auth", () => {
   })
 
   test("rechecks descriptor expiry before refresh, API validation, and logout", async () => {
-    const h = harness("better-auth")
+    const h = harness()
     const signed = await h.auth.signIn()
     if (!signed.ok) throw new Error(signed.detail)
     h.expireDescriptor()

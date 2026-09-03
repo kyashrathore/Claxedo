@@ -103,7 +103,6 @@ export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
   testIgnore: [
-    "**/deployed-workgraph.spec.ts",
     ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts", "**/real-desktop-*.spec.ts"]),
   ],
   grep,
@@ -149,7 +148,6 @@ export default defineConfig({
       // suite here.
       testIgnore: [
         "**/mobile-*.spec.ts",
-        "**/deployed-workgraph.spec.ts",
         ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts", "**/real-desktop-*.spec.ts"]),
       ],
       use: { ...devices["Desktop Chrome"] },
@@ -165,7 +163,6 @@ export default defineConfig({
       // UA emulation on the browser this repo actually installs.
       name: "mobile",
       testMatch: ["**/mobile-*.spec.ts"],
-      testIgnore: ["**/deployed-workgraph.spec.ts"],
       use: { ...devices["iPhone 13"], browserName: "chromium" },
     },
   ],

@@ -30,7 +30,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -164,7 +164,7 @@ export type BillingRouteOptions = {
   env: BillingEnv
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   /** Test seams. Defaults: Convex-backed store; SDK client from env. */
   store: BillingStore
   polar?: PolarClientLike

@@ -80,7 +80,7 @@ export type CompatTokens = {
 
 /**
  * The authoritative write. PostHog capture is best-effort by design, so
- * the number a paid plan may later be gated on lands in Convex as well.
+ * the number a paid plan may later be gated on lands in the central store as well.
  * `activated` reports the idempotent first-ok-turn check-and-set, which is what
  * lets `user_activated` fire exactly once per user for all time.
  */

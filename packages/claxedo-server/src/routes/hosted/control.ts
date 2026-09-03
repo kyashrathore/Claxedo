@@ -1,5 +1,5 @@
 import { Hono } from "hono"
-import type { ClerkVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneTokenVerifier, ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import {
   pullHostedControlSession as pullControlSession,
@@ -19,7 +19,7 @@ import { rec, signedOrError, txt } from "../../workspace/route-support"
 type Options = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
 }
 

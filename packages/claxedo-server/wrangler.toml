@@ -1,8 +1,12 @@
-# Cloudflare Worker config for the hosted Claxedo control plane.
+# RETIRED legacy config for the removed Clerk + Convex hosted control plane.
 #
-# This deploys ONLY the Worker-safe hosted control plane (src/deployments/hosted-workerd/worker.ts →
-# src/hosted-app.ts). The local Node server (src/server.ts) is unaffected and is
-# never bundled here.
+# Kept as a reference only: the DO migration history (v1/v2/v3) and the
+# rate-limit binding shape are pinned by in-repo drift tests, and generated
+# user-deployed configs must prove they do not reuse the legacy worker name
+# or migration history. Do NOT deploy from this file — its `main` entrypoint
+# was removed with the retained product. Control-plane deploys use the
+# generated Better Auth + D1 configs (see scripts/deploy/release-better-auth-d1.ts).
+# The local Node server (src/server.ts) is unaffected and is never bundled here.
 #
 # Build / verify (no Cloudflare account needed):
 #   npx wrangler deploy --dry-run --outdir dist-worker
@@ -25,7 +29,7 @@ main = "src/deployments/hosted-workerd/worker.ts"
 #     Worker reads bindings through (control-plane/worker-credentials.ts
 #     defaults its env argument to process.env).
 #   2025-09-01 strip_authorization_on_cross_origin_redirect — outbound calls to
-#     Convex/Clerk/Polar/Daytona lose Authorization across a cross-origin hop.
+#     Polar/Daytona lose Authorization across a cross-origin hop.
 #   2026-02-24 delete_all_deletes_alarm — DO deleteAll() also clears alarms,
 #     which WorkGraphSettler / ClaxedoWakeLane schedule.
 # A `wrangler deploy --dry-run` only bundles; it exercises none of these, and
@@ -39,25 +43,15 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 [observability]
 enabled = true
 
-# D13 sandbox lease reaper: drives the
-# driver-side reconciliation sweep — the `scheduled` handler in src/deployments/hosted-workerd/worker.ts
-# calls sandbox GC and the bounded WorkGraph reconciler. Operators and the
-# deployment smoke can invoke that same reconciler through the rate-limited,
-# selector-free `/internal/workgraph/reconcile` route with
-# CLAXEDO_RUNTIME_ADMIN_TOKEN. Every 15 minutes per the 10–15 minute
-# truth-keeper band, offset from the Convex lease-table sweep (10 minutes,
-# convex/crons.ts) so the lease-side marks generally land before the
-# driver-side destroy pass. Cron Triggers are NOT inherited by environments,
-# hence the explicit [env.staging.triggers] below.
+# D13 sandbox lease reaper (legacy schedule reference): the retired worker's
+# `scheduled` handler drove sandbox GC and the bounded WorkGraph reconciler
+# every 15 minutes. Cron Triggers are NOT inherited by environments, hence the
+# explicit [env.staging.triggers] below.
 [triggers]
 crons = ["* * * * *", "*/15 * * * *"]
 
-# Public (non-secret) configuration. Secrets are set with `wrangler secret put`:
-#   CLAXEDO_WORKSPACE_AUTHORITY_URL (or set as a var below), CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN,
-#   CLAXEDO_WORKSPACE_RELAY_URL, CLAXEDO_RELAY_RESOLVER_TOKEN,
-#   CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
-#   CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM (+ optional _NEXT_*),
-#   CLERK_JWT_ISSUER, CLERK_JWKS_URL (+ optional CLERK_JWT_AUDIENCE).
+# Public (non-secret) configuration. Secrets are set with `wrangler secret put`.
+# (Legacy list retained for reference; this file is not deployed.)
 #
 # Observability (D12) — one vendor carries product analytics AND error
 # tracking, so one key configures both planes. Sending takes TWO opt-ins and

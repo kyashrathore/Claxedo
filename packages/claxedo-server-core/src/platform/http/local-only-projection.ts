@@ -4,14 +4,14 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
-import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   label: string
   missingBearerAsAuthError?: boolean
 }

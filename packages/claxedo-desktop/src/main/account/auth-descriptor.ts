@@ -4,11 +4,11 @@ import type { TokenSet } from "./oauth-flow"
 export type DesktopCredentialBinding = {
   kind: "desktop"
   tokenKind: "access-token"
-  adapter: "better-auth" | "clerk"
+  adapter: "better-auth"
   deploymentId: string
   configurationVersion: string
   issuer: string
-  flow: "authorization-code-pkce" | "adapter-native"
+  flow: "authorization-code-pkce"
   tokenEndpointOrigin: string
   controlPlaneOrigin: string
   id: string
@@ -22,21 +22,16 @@ export type BoundDesktopCredential = {
 }
 
 export type DesktopAuthDescriptor = {
-  adapter: "better-auth" | "clerk"
+  adapter: "better-auth"
   expiresAt: number
   binding: DesktopCredentialBinding
   authorizeUrl: string
   tokenUrl: string
-  revocation:
-    | {
-        protocol: "rfc7009"
-        endpoint: string
-        tokenEndpointAuthMethod: "none"
-      }
-    | {
-        protocol: "adapter-native"
-        endpoint: string
-      }
+  revocation: {
+    protocol: "rfc7009"
+    endpoint: string
+    tokenEndpointAuthMethod: "none"
+  }
 }
 
 export class DesktopAuthDescriptorError extends Error {
@@ -144,7 +139,7 @@ export function parseDesktopAuthDescriptor(
   const configuredOrigin = exactHttpsOrigin(configuredCoreOrigin, "Configured core origin")
   const root = object(value, "Authentication descriptor")
   const adapter = root.adapter
-  if (adapter !== "better-auth" && adapter !== "clerk") {
+  if (adapter !== "better-auth") {
     return fail("invalid_descriptor", "Authentication descriptor has an unknown adapter")
   }
   const deploymentId = text(root.deploymentId, "deploymentId")
@@ -206,16 +201,7 @@ export function parseDesktopAuthDescriptor(
       tokenEndpointAuthMethod: "none",
     }
   } else {
-    if (desktop.flow !== "adapter-native" || revocation.protocol !== "adapter-native") {
-      return fail("unsupported_native_flow", "Clerk desktop requires its adapter-native flow and revocation")
-    }
-    if (issuer !== tokenEndpointOrigin) {
-      return fail("deployment_mismatch", "Clerk issuer must be its exact declared token origin")
-    }
-    flow = "adapter-native"
-    authorizeUrl = `${issuer}/oauth/authorize`
-    tokenUrl = `${issuer}/oauth/token`
-    parsedRevocation = { protocol: "adapter-native", endpoint: revocationEndpoint }
+    return fail("unsupported_native_flow", "Only the Better Auth desktop flow is supported")
   }
 
   const binding = {
@@ -284,14 +270,14 @@ export function parseBoundDesktopCredential(value: unknown): BoundDesktopCredent
         ? "access-token"
         : fail("credential_binding_mismatch", "Stored credential token kind is invalid"),
     adapter:
-      binding.adapter === "better-auth" || binding.adapter === "clerk"
+      binding.adapter === "better-auth"
         ? binding.adapter
         : fail("credential_binding_mismatch", "Stored credential adapter is invalid"),
     deploymentId: text(binding.deploymentId, "Stored credential deploymentId"),
     configurationVersion: text(binding.configurationVersion, "Stored credential configurationVersion"),
     issuer: exactHttpsUrl(binding.issuer, "Stored credential issuer"),
     flow:
-      binding.flow === "authorization-code-pkce" || binding.flow === "adapter-native"
+      binding.flow === "authorization-code-pkce"
         ? binding.flow
         : fail("credential_binding_mismatch", "Stored credential flow is invalid"),
     tokenEndpointOrigin: exactHttpsOrigin(binding.tokenEndpointOrigin, "Stored credential tokenEndpointOrigin"),

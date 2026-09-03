@@ -399,23 +399,6 @@ async function installCloudRuntimeMock(
     const request = route.request()
     const url = new URL(request.url())
     const method = request.method()
-    // Let real Clerk network calls through unmocked. The dev server backing
-    // this suite (`vite preview`, a built production bundle) reports
-    // `import.meta.env.DEV === false`, which short-circuits `testAuth()`'s
-    // very first guard in `src/utils/auth-client.ts` (`if (!import.meta.env.DEV
-    // && import.meta.env.MODE !== "test") return {}`) BEFORE it ever reaches
-    // the `navigator.webdriver` auto-bypass check — so the webdriver-detection
-    // escape hatch this suite otherwise relies on never engages here, and
-    // `initClaxedo` (VITE_AUTH_ENABLED=true in .env.local) really does call
-    // `initializeClerk()`. Catching this spec's own catch-all 598 on Clerk's
-    // `dev_browser`/`client` endpoints breaks Clerk's SDK init with "ClerkJS:
-    // Something went wrong initializing Clerk in development mode.", which the
-    // central events stream then surfaces as a stream failure — unrelated to
-    // this spec's own mocked surface, and the real Clerk dev sandbox
-    // (VITE_CLERK_PUBLISHABLE_KEY in .env.local) answers these harmlessly over
-    // real network, so let them through rather than intercepting.
-    if (url.hostname.endsWith(".clerk.accounts.dev") || url.hostname.endsWith(".clerk.com")) return route.continue()
-
     // ---- Central Claxedo event bus (pty/provision/lifecycle events) ----
     if (url.pathname === "/api/wr/events") {
       const batch = await provisionBus.drain(4000, lastEventId(route))

@@ -11,7 +11,7 @@ import {
   controlPlaneAuthErrorBody,
   localOnlyAuthAdapter,
   type SignedControlPlaneAuth,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -32,7 +32,7 @@ export type { ControlPlaneServices } from "./authority/services"
 
 export type CentralControlAppOptions = {
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   createEnv?: SessionEnvFactory
   admitWorkspaceSession?: (input: {
     sessionId: string

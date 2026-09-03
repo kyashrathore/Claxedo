@@ -17,7 +17,7 @@ import {
   forgetRuntimeDocuments,
   relayWorkspaceRuntimeExposure,
 } from "../../../workspace-runtime/src/index"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier, type ControlPlaneAuthConfig, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { DocumentsRoutes, type DocumentsRouteBackend } from "./routes/index"
 import { createHostedDocumentsBackend } from "./backends/hosted/backend"
@@ -170,7 +170,7 @@ describe("hosted remote documents genuine integration", () => {
     const authConfig: ControlPlaneAuthConfig = {
       enabled: true, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks",
     }
-    const verifier: ClerkVerifier = async () => ({ ...signed, token: undefined } as never)
+    const verifier: ControlPlaneTokenVerifier = async () => ({ ...signed, token: undefined } as never)
     const central = (backend: ReturnType<typeof createHostedDocumentsBackend>) => new Hono().route(
       "/documents",
       DocumentsRoutes({ backend: backend as never, services, authConfig, verifier }),

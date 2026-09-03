@@ -114,7 +114,7 @@ export function resetApiRuntime() {
  * (destroying a cloud sandbox) and `platform/runtime/agent/agent-runtime-client.ts`
  * (the signed control-plane init) — and both used to import `getAuthToken` from
  * `@/platform/auth/auth-client` for one call each. That is the same edge this
- * module cut for itself above, and it put Clerk in the LOCAL bundle through two
+ * module cut for itself above, and it put the auth vendor in the LOCAL bundle through two
  * modules the local shell genuinely needs.
  *
  * So the binder this module already owns answers for them too. Reading is
@@ -455,7 +455,7 @@ export function getDefaultBaseUrl(): string {
  * token, which is the same state a signed build is in before sign-in, so every
  * branch below already handled it.
  *
- * When the server rejects the cached Clerk token as expired
+ * When the server rejects the cached bearer token as expired
  * (`invalid_bearer_token`), force-refresh the JWT once and retry. This
  * avoids the "everything stuck in loading" mode where a stale token
  * causes every request to silently 401 and the panels never recover.
@@ -547,7 +547,7 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
     }
   }
 
-  // Only retry if we sent a bearer (Clerk) token and the server told
+  // Only retry if we sent a bearer token and the server told
   // us it's invalid. We don't retry basic-auth failures; those need
   // user action regardless.
   if (firstResponse.status !== 401 || !first.token) return firstResponse
@@ -556,7 +556,7 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
   const code = await responseErrorCode(firstResponse)
   if (code !== "invalid_bearer_token") return firstResponse
 
-  // Step 2: force-refresh the Clerk JWT and retry.
+  // Step 2: force-refresh the bearer token and retry.
   const retried = await buildRequest(true)
   const retriedResponse = retried.request instanceof Request
     ? await throttledFetch(() => fetch(retried.request as Request), throttleInit(undefined, retried.request), retried.request)

@@ -20,7 +20,7 @@ import os from "node:os"
 import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest"
-import type { ClerkVerifier, ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneTokenVerifier, ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 const root = path.join(realpathSync(os.tmpdir()), `credential-org-isolation-${randomUUID().slice(0, 8)}`)
 mkdirSync(root, { recursive: true })
@@ -47,7 +47,7 @@ const ISSUER = "https://isolation.test"
  * which carry no `org_id` claim — the case that must fall back to the subject
  * rather than to a shared partition.
  */
-const verifier: ClerkVerifier = async (token) => ({
+const verifier: ControlPlaneTokenVerifier = async (token) => ({
   mode: "signed",
   user: {
     subject: token.startsWith("personal_") ? token : `user_of_${token}`,

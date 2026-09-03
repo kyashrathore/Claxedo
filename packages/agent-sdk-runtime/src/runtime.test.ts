@@ -13,7 +13,6 @@ import type { RuntimeEventHub } from "./runtime-event-hub"
 import { claude, pi } from "./harnesses"
 import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
-import { createConvexRuntimeStore } from "./stores/convex"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
 import type { AgentMessage, AgentRuntimeStreamEvent, SessionConfig } from "./index"
 import { storeRows } from "./test-utils/store-internals"
@@ -2043,129 +2042,6 @@ describe("createAgentRuntime", () => {
     } finally {
       removeTestTempDir(root)
     }
-  })
-
-  test("keeps convex isolated behind its subpath", () => {
-    expect(() => createConvexRuntimeStore()).toThrow("requires a Convex client, authority, or projection callbacks")
-    expect(() => createConvexRuntimeStore({ client: {} })).toThrow("client-backed persistence is not implemented")
-    expect(createConvexRuntimeStore({ projection: {} })).toBeTruthy()
-  })
-
-  test("surfaces convex projection failures from flush", async () => {
-    const store = storeRows(createConvexRuntimeStore({
-      projection: {
-        syncSession: async () => {
-          throw new Error("projection down")
-        },
-      },
-    }))
-
-    store.bindSession({
-      sessionId: "ses_1",
-      directory: "/repo",
-      agentSessionId: "ses_1",
-    })
-
-    await expect(store.flush()).rejects.toThrow("projection down")
-  })
-
-  test("syncs sessions and messages through a hosted Convex authority", async () => {
-    const calls: Array<{ method: string; args: unknown }> = []
-    const store = storeRows(createConvexRuntimeStore({
-      auth: { token: "signed" },
-      workspaceId: "ws_1",
-      authority: {
-        openWorkspace: async (_auth, args) => calls.push({ method: "openWorkspace", args }),
-        upsertSessionVisibility: async (_auth, args) => calls.push({ method: "upsertSessionVisibility", args }),
-        syncSessionMessages: async (_auth, args) => calls.push({ method: "syncSessionMessages", args }),
-      },
-    }))
-
-    store.bindSession({
-      sessionId: "ses_1",
-      directory: "/repo",
-      title: "Review",
-      agentSessionId: "ses_1",
-    })
-    store.startTurn({
-      sessionId: "ses_1",
-      userMessageId: "msg_user",
-      assistantMessageId: "msg_assistant",
-      agent: "build",
-      model: { providerID: "pi", modelID: "virtual" },
-      parts: [{ type: "text", text: "hello" }],
-    })
-    store.appendEvent({
-      sessionId: "ses_1",
-      payload: messagePartUpdated({
-        id: "part_1",
-        sessionID: "ses_1",
-        messageID: "msg_assistant",
-        type: "text",
-        text: "done",
-      }),
-    })
-    await store.flush()
-
-    expect(calls.map((call) => call.method)).toEqual([
-      "openWorkspace",
-      "upsertSessionVisibility",
-      "openWorkspace",
-      "upsertSessionVisibility",
-      "openWorkspace",
-      "syncSessionMessages",
-      "openWorkspace",
-      "syncSessionMessages",
-    ])
-    expect(calls[1]?.args).toMatchObject({
-      workspaceId: "ws_1",
-      sessions: [{ sessionId: "ses_1", title: "Review" }],
-    })
-    expect(calls.at(-1)?.args).toMatchObject({
-      workspaceId: "ws_1",
-      sessionId: "ses_1",
-      messages: [
-        { info: { id: "msg_user", role: "user" }, parts: [{ text: "hello" }] },
-        { info: { id: "msg_assistant", role: "assistant" }, parts: [{ text: "done" }] },
-      ],
-    })
-  })
-
-  test("syncs turn outcomes through convex session projection", async () => {
-    const sessions: unknown[] = []
-    const store = storeRows(createConvexRuntimeStore({
-      projection: {
-        syncSession: (session) => {
-          sessions.push(session)
-        },
-      },
-    }))
-
-    store.bindSession({
-      sessionId: "ses_1",
-      directory: "/repo",
-      title: "Review",
-      agentSessionId: "ses_1",
-    })
-    store.startTurn({
-      sessionId: "ses_1",
-      userMessageId: "msg_user",
-      assistantMessageId: "msg_assistant",
-      agent: "build",
-      model: { providerID: "pi", modelID: "virtual" },
-      parts: [{ type: "text", text: "hello" }],
-    })
-    store.finishTurn({
-      sessionId: "ses_1",
-      assistantMessageId: "msg_assistant",
-      outcome: { status: "completed", completedAt: 123 },
-    })
-    await store.flush()
-
-    expect(sessions.at(-1)).toMatchObject({
-      id: "ses_1",
-      lastTurn: { status: "completed", completedAt: 123, assistantMessageId: "msg_assistant" },
-    })
   })
 
   test("records failed turn errors on the active assistant message", () => {

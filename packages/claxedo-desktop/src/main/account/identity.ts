@@ -8,7 +8,7 @@
 
 import type { AccountIdentity } from "./account-service"
 
-/** Derive Clerk/OIDC userinfo from the registered token endpoint. */
+/** Derive OIDC userinfo from the registered token endpoint. */
 export function userInfoUrlFromTokenUrl(tokenUrl: string): string | undefined {
   const trimmed = tokenUrl.trim()
   if (!trimmed) return undefined
@@ -28,7 +28,7 @@ export function userInfoUrlFromTokenUrl(tokenUrl: string): string | undefined {
 /**
  * Map a userinfo JSON body to the sanitized identity the renderer may see.
  *
- * Accepts the common OIDC claim names plus Clerk's occasional `username`.
+ * Accepts the common OIDC claim names plus the occasional provider `username`.
  * Unknown shapes still produce a usable `{ userId }` so sign-in is not blocked
  * by a profile that is merely incomplete.
  */

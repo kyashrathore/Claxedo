@@ -68,7 +68,7 @@ export type TokenVerifier<TClaims extends Record<string, unknown> = Record<strin
   verify(token: string): Promise<TokenClaims<TClaims>>
 }
 
-export type ClerkTokenVerifierClaims = JWTPayload & {
+export type OidcTokenVerifierClaims = JWTPayload & {
   iss: string
   sub: string
   exp: number
@@ -93,8 +93,8 @@ export class TokenVerifierError extends Error {
 
 // ─────────────────────────────────────────────────────────────────────
 // HttpTokenVerifier — calls a remote verifier endpoint over HTTP.
-// Use this when your authority lives behind a network call (Clerk,
-// Convex, custom OIDC introspection endpoint, etc.).
+// Use this when your authority lives behind a network call
+// (custom OIDC introspection endpoint, etc.).
 // ─────────────────────────────────────────────────────────────────────
 
 export type HttpTokenVerifierOptions = {
@@ -178,14 +178,14 @@ export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): Toke
 }
 
 // ─────────────────────────────────────────────────────────────────────
-// ClerkTokenVerifier — verifies real Clerk session JWTs against JWKS.
+// OidcTokenVerifier — verifies short-lived session JWTs against a JWKS.
 //
-// Clerk session tokens are short-lived JWTs. They arrive on backend
-// requests through `Authorization: Bearer <token>` or the `__session`
-// cookie, and should be verified against the Clerk instance JWKS.
+// Session tokens arrive on backend requests through
+// `Authorization: Bearer <token>` and are verified against the issuer's
+// JWKS.
 // ─────────────────────────────────────────────────────────────────────
 
-export type ClerkTokenVerifierOptions = {
+export type OidcTokenVerifierOptions = {
   issuer: string
   jwksUrl: string
   audience?: string
@@ -193,12 +193,12 @@ export type ClerkTokenVerifierOptions = {
   algorithms?: Array<"ES256" | "EdDSA" | "RS256">
 }
 
-const clerkJwks = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
+const oidcJwks = new Map<string, ReturnType<typeof createRemoteJWKSet>>()
 
-export function createClerkTokenVerifier(options: ClerkTokenVerifierOptions): TokenVerifier<ClerkTokenVerifierClaims> {
+export function createOidcTokenVerifier(options: OidcTokenVerifierOptions): TokenVerifier<OidcTokenVerifierClaims> {
   const algorithms = options.algorithms ?? ["ES256", "EdDSA", "RS256"]
-  const remote = clerkJwks.get(options.jwksUrl) ?? createRemoteJWKSet(new URL(options.jwksUrl))
-  clerkJwks.set(options.jwksUrl, remote)
+  const remote = oidcJwks.get(options.jwksUrl) ?? createRemoteJWKSet(new URL(options.jwksUrl))
+  oidcJwks.set(options.jwksUrl, remote)
   return {
     async verify(token) {
       try {
@@ -207,11 +207,11 @@ export function createClerkTokenVerifier(options: ClerkTokenVerifierOptions): To
           audience: options.audience,
           algorithms,
         })
-        const claims = clerkClaims(result.payload)
+        const claims = oidcClaims(result.payload)
         if (!claims) {
           throw new TokenVerifierError({
-            code: "clerk_claims_invalid",
-            message: "Clerk token is missing required session claims",
+            code: "oidc_claims_invalid",
+            message: "Session token is missing required claims",
           })
         }
         return {
@@ -223,8 +223,8 @@ export function createClerkTokenVerifier(options: ClerkTokenVerifierOptions): To
         if (err instanceof TokenVerifierError) throw err
         const unavailable = err instanceof joseErrors.JWKSTimeout || !(err instanceof joseErrors.JOSEError)
         throw new TokenVerifierError({
-          code: unavailable ? "clerk_verifier_unavailable" : "clerk_token_invalid",
-          message: unavailable ? "Clerk session verifier is unavailable" : "Clerk session token is invalid",
+          code: unavailable ? "oidc_verifier_unavailable" : "oidc_token_invalid",
+          message: unavailable ? "Session verifier is unavailable" : "Session token is invalid",
           status: unavailable ? 503 : 401,
           cause: err,
         })
@@ -302,7 +302,7 @@ function tokenVerifierBaseClaims(input: Record<string, unknown> | undefined): To
   }
 }
 
-function clerkClaims(input: JWTPayload): ClerkTokenVerifierClaims | undefined {
+function oidcClaims(input: JWTPayload): OidcTokenVerifierClaims | undefined {
   if (!input.iss || !input.sub || !input.exp) return
   return {
     ...input,

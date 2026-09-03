@@ -33,7 +33,6 @@ describe("serverExtensions", () => {
     })
 
     const ext = serverExtensions({
-      convexUrl: "",
       authBaseUrl: "http://localhost:4444",
       gatewayUrl: "http://127.0.0.1:3000/",
       claxedoServerUrl: "http://127.0.0.1:3001/",
@@ -52,7 +51,6 @@ describe("serverExtensions", () => {
     })
 
     const ext = serverExtensions({
-      convexUrl: "",
       authBaseUrl: "http://localhost:4444",
       gatewayUrl: "http://127.0.0.1:3000/",
       claxedoServerUrl: "http://127.0.0.1:3001/",
@@ -63,7 +61,6 @@ describe("serverExtensions", () => {
 
   test("skips gateway resolution when cloud autoswitch is disabled", async () => {
     const ext = serverExtensions({
-      convexUrl: "",
       authBaseUrl: "http://localhost:4444",
       gatewayUrl: "http://127.0.0.1:3000/",
       claxedoServerUrl: "http://127.0.0.1:3001/",
@@ -76,7 +73,6 @@ describe("serverExtensions", () => {
 
   test("transformUrl trims whitespace and strips trailing slashes via the shared normalizeUrl", () => {
     const ext = serverExtensions({
-      convexUrl: "",
       authBaseUrl: "http://localhost:4444",
       gatewayUrl: "http://127.0.0.1:3000/",
       claxedoServerUrl: "http://127.0.0.1:3001/",

@@ -3,10 +3,10 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
-import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 /**
  * The per-route bearer gate for control-plane routers that have no finer-grained
@@ -44,7 +44,7 @@ import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk
  */
 export type ControlPlaneRouteAuthOptions = {
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
 }
 
 export async function requireSignedControlPlaneRoute(

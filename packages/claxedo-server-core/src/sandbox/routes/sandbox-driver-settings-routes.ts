@@ -19,10 +19,10 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "../../platform/auth/auth"
-import { controlPlaneAuthConfig } from "../../platform/auth/clerk-adapter"
+import { controlPlaneAuthConfig } from "../../platform/auth/auth"
 import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
 import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../../credentials/operations/sandbox-verify"
 import type { CredentialProbe } from "../../credentials/operations/discovery"
@@ -32,7 +32,7 @@ export type SandboxDriverSettingsRouteOptions = {
   credentials: ControlPlaneCredentials
   env?: SandboxDriverEnv
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   fetch?: typeof fetch
   /** Hosted compositions gate provider inventory with their signed workspace policy. */
   authorizeRead?: (request: Request) => Promise<Response | undefined>

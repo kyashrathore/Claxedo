@@ -1,7 +1,7 @@
 export type EnabledConfig = {
   enabled: true
-  /** Static composition identity. Only Clerk owns the retained legacy CLI verifier. */
-  adapter?: "clerk" | "better-auth" | "custom"
+  /** Static composition identity. */
+  adapter?: "better-auth" | "custom"
   issuer: string
   jwksUrl: string
   audience?: string
@@ -84,9 +84,9 @@ export class ControlPlaneAuthError extends Error {
   }
 }
 
-export type VerifiedClerkAuth = Omit<SignedControlPlaneAuth, "token">
+export type VerifiedControlPlaneAuth = Omit<SignedControlPlaneAuth, "token">
 
-export type ClerkVerifier = (token: string, config: EnabledConfig) => Promise<VerifiedClerkAuth>
+export type ControlPlaneTokenVerifier = (token: string, config: EnabledConfig) => Promise<VerifiedControlPlaneAuth>
 
 export type AdapterNativeSessionTokenSet = {
   access_token: string
@@ -99,23 +99,23 @@ export type AdapterNativeSessionTokenSet = {
 }
 
 /**
- * Retained-adapter ownership for Claxedo-issued native sessions. Better Auth
+ * Adapter-owned native sessions (Claxedo-issued CLI token sets). Better Auth
  * does not implement this port: its OAuth server owns device authorization,
  * refresh, introspection, and RFC 7009 revocation directly.
  */
 export type AdapterNativeSessionAuthPort = {
-  adapter: "clerk"
+  adapter: "custom"
   acceptsAccessToken(token: string): boolean
   acceptsRefreshToken(token: string): boolean
   issue(auth: SignedControlPlaneAuth): Promise<AdapterNativeSessionTokenSet>
   refresh(refreshToken: string): Promise<AdapterNativeSessionTokenSet>
-  authenticate(accessToken: string): Promise<VerifiedClerkAuth>
+  authenticate(accessToken: string): Promise<VerifiedControlPlaneAuth>
   revoke(token: string): Promise<{ revokedAt: number }>
 }
 
 export type ControlPlaneAuthAdapter = {
   config: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   native?: AdapterNativeSessionAuthPort
 }
 
@@ -139,7 +139,7 @@ export type BetterAuthSession = {
 export type BetterAuthVerifier = (token: string) => Promise<BetterAuthSession | null | undefined>
 
 function adapterConfig(input: {
-  adapter: "clerk" | "better-auth" | "custom"
+  adapter: "better-auth" | "custom"
   issuer: string
   jwksUrl?: string
   audience?: string
@@ -176,7 +176,7 @@ export function customVerifierAuthAdapter(input: {
   issuer: string
   audience?: string
   jwksUrl?: string
-  verifier: ClerkVerifier
+  verifier: ControlPlaneTokenVerifier
 }): ControlPlaneAuthAdapter {
   return {
     config: adapterConfig({ ...input, adapter: input.adapter ?? "custom" }),
@@ -218,6 +218,15 @@ export function betterAuthAdapter(input: {
   }) satisfies ControlPlaneAuthAdapter
 }
 
+/**
+ * Neutral default auth config. Signed deployments pass an explicit config
+ * from their Better Auth composition; without one every request stays
+ * unsigned-local (desktop loopback). No Clerk/Convex fallback exists.
+ */
+export function controlPlaneAuthConfig(): ControlPlaneAuthConfig {
+  return { enabled: false, mode: "local-only", reason: "signed/cloud auth is disabled" }
+}
+
 export function bearerToken(header: string | null) {
   if (!header) return
   const match = /^Bearer\s+(.+)$/i.exec(header.trim())
@@ -228,7 +237,7 @@ export async function controlPlaneAuthContext(
   request: Request,
   options: {
     config?: ControlPlaneAuthConfig
-    verifier?: ClerkVerifier
+    verifier?: ControlPlaneTokenVerifier
     cliTokenEnv?: Record<string, string | undefined>
     authentication?: RequestAuthenticationAdapter
   } = {},

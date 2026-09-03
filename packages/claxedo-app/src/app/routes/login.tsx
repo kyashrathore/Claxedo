@@ -118,7 +118,7 @@ export default function LoginPage(props: LoginPageProps = {}) {
   const socialMethods = () =>
     auth.methods().filter((method): method is "google" | "github" => method === "google" || method === "github")
   const emailPasswordEnabled = () => auth.methods().includes("email-password")
-  const genericContinue = () => auth.methods().length === 0 || auth.methods().includes("clerk")
+  const genericContinue = () => auth.methods().length === 0
   const providerName = (method: "google" | "github") => (method === "google" ? "Google" : "GitHub")
 
   return (
@@ -135,7 +135,7 @@ export default function LoginPage(props: LoginPageProps = {}) {
               type="button"
               class="w-full rounded-lg bg-surface-interactive-base px-4 py-3 text-sm font-medium text-text-on-interactive-base transition hover:bg-surface-interactive-base/90 disabled:cursor-wait disabled:opacity-70"
               disabled={redirecting()}
-              onClick={() => void continueWith(auth.methods().includes("clerk") ? "clerk" : undefined)}
+              onClick={() => void continueWith(undefined)}
             >
               <Show when={redirecting()} fallback="Continue">
                 Redirecting...

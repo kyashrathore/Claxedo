@@ -80,16 +80,14 @@ describe("desktop authentication descriptor", () => {
     })
   })
 
-  test("selects Clerk's adapter-native endpoints without a Better Auth fallback", () => {
-    const parsed = parseDesktopAuthDescriptor(clerkDescriptor(), CORE, NOW)
-
-    expect(parsed).toMatchObject({
-      adapter: "clerk",
-      authorizeUrl: "https://clerk.example.com/oauth/authorize",
-      tokenUrl: "https://clerk.example.com/oauth/token",
-      revocation: { protocol: "adapter-native" },
-      binding: { adapter: "clerk", flow: "adapter-native" },
-    })
+  test("rejects the removed Clerk adapter-native descriptor", () => {
+    try {
+      parseDesktopAuthDescriptor(clerkDescriptor(), CORE, NOW)
+      throw new Error("expected rejection")
+    } catch (error) {
+      expect(error).toBeInstanceOf(DesktopAuthDescriptorError)
+      expect((error as DesktopAuthDescriptorError).code).toBe("invalid_descriptor")
+    }
   })
 
   for (const [name, mutate, code, configuredOrigin] of [
@@ -170,11 +168,11 @@ describe("desktop authentication descriptor", () => {
     const drifts: DesktopCredentialBinding[] = [
       { ...first.binding, kind: "cli" as never },
       { ...first.binding, tokenKind: "browser-session" as never },
-      { ...first.binding, adapter: "clerk" },
+      { ...first.binding, adapter: "unknown" as never },
       { ...first.binding, deploymentId: "deployment-2" },
       { ...first.binding, configurationVersion: "auth-v2" },
       { ...first.binding, issuer: "https://other.example.com" },
-      { ...first.binding, flow: "adapter-native" },
+      { ...first.binding, flow: "unknown" as never },
       { ...first.binding, tokenEndpointOrigin: "https://tokens.example.com" },
       { ...first.binding, controlPlaneOrigin: "https://other.example.com" },
       { ...first.binding, id: "another-client" },

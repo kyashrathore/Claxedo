@@ -264,8 +264,7 @@ describe("the local entry", () => {
     const selection = readFileSync(path.join(appRoot, "vite.browser-auth.ts"), "utf8")
     expect(importSpecifiers(hosted)).toContain("#browser-auth-adapter")
     expect(selection).toContain("better-auth-browser-auth.ts")
-    expect(selection).toContain("clerk-browser-auth.ts")
-    expect(selection).toContain("there is no browser auth fallback")
+    expect(selection).not.toContain("clerk-browser-auth.ts")
   })
 
   test("the local vite config builds the local html, not the hosted one", () => {

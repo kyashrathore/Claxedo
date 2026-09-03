@@ -1,9 +1,9 @@
 /** Provider-neutral authentication contracts for hosted control planes. */
 
-export const AUTH_ADAPTERS = ["better-auth", "clerk"] as const
+export const AUTH_ADAPTERS = ["better-auth", "custom"] as const
 export const AUTH_CLIENT_KINDS = ["browser", "cli", "desktop"] as const
 export const AUTH_ASSURANCE_LEVELS = ["insufficient", "single-factor", "multi-factor", "phishing-resistant"] as const
-export const INTERACTIVE_AUTH_METHODS = ["google", "github", "email-password", "clerk"] as const
+export const INTERACTIVE_AUTH_METHODS = ["google", "github", "email-password"] as const
 export const AUTHENTICATION_EVIDENCE_METHODS = [
   "oauth:google",
   "oauth:github",
@@ -11,7 +11,6 @@ export const AUTHENTICATION_EVIDENCE_METHODS = [
   "totp",
   "passkey",
   "recovery",
-  "clerk",
 ] as const
 
 export type AuthAdapterId = (typeof AUTH_ADAPTERS)[number]

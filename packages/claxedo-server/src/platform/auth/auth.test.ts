@@ -1,7 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest"
-import { createServer, type Server } from "node:http"
-import { once } from "node:events"
-import { exportJWK, generateKeyPair, SignJWT } from "jose"
+import { describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
 import {
   ControlPlaneAuthError,
@@ -12,12 +9,7 @@ import {
   devAuthAdapter,
   localOnlyAuthAdapter,
 } from "@claxedo/server-core/platform/auth/auth"
-import {
-  clerkAuthAdapter,
-  controlPlaneAuthConfig,
-  signedCloudAuthRequested,
-  tokenVerifierAsClerk,
-} from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { isCliAccessTokenCandidate } from "@claxedo/server-core/platform/auth/cli-session-token"
 import {
   assertHostedBootRequirements,
@@ -27,12 +19,10 @@ import {
 
 const enabledConfig = {
   enabled: true,
-  adapter: "clerk",
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  adapter: "custom",
+  issuer: "https://idp.example.test",
+  jwksUrl: "https://idp.example.test/.well-known/jwks.json",
 } as const
-
-const servers: Server[] = []
 
 function untrustedJwt(payload: Record<string, unknown>) {
   return [
@@ -42,75 +32,13 @@ function untrustedJwt(payload: Record<string, unknown>) {
   ].join(".")
 }
 
-afterEach(async () => {
-  await Promise.all(servers.splice(0).map((server) => new Promise<void>((resolve) => server.close(() => resolve()))))
-})
-
-async function listen(handler: (req: import("node:http").IncomingMessage, res: import("node:http").ServerResponse) => void) {
-  const server = createServer(handler)
-  servers.push(server)
-  server.listen(0, "127.0.0.1")
-  await once(server, "listening")
-  const address = server.address()
-  if (!address || typeof address === "string") throw new Error("server did not bind to a TCP port")
-  return `http://127.0.0.1:${address.port}`
-}
-
 describe("control plane auth", () => {
-  test("keeps signed cloud auth disabled unless explicitly configured", () => {
-    expect(controlPlaneAuthConfig({})).toEqual({
+  test("stays local-only by default; signed deployments compose an explicit adapter", () => {
+    expect(controlPlaneAuthConfig()).toEqual({
       enabled: false,
       mode: "local-only",
       reason: "signed/cloud auth is disabled",
     })
-  })
-
-  test("requires Clerk and workspace-authority config when signed cloud auth is enabled", () => {
-    expect(controlPlaneAuthConfig({ CLAXEDO_SIGNED_CLOUD_AUTH: "true" })).toEqual({
-      enabled: false,
-      mode: "misconfigured",
-      reason: "CLERK_JWT_ISSUER, CLERK_JWKS_URL, and CLAXEDO_WORKSPACE_AUTHORITY_URL are required for signed/cloud auth",
-    })
-  })
-
-  test("fails closed when the composition reports no workspace authority", () => {
-    // auth.ts knows no backend URL env names: the composition root resolves the
-    // authority (via the storage adapter) and passes only its presence in.
-    expect(controlPlaneAuthConfig({
-      CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-      CLERK_JWT_ISSUER: "https://clerk.example.test",
-      CLERK_JWKS_URL: "https://clerk.example.test/.well-known/jwks.json",
-    }, { authorityConfigured: false })).toEqual({
-      enabled: false,
-      mode: "misconfigured",
-      reason: "CLERK_JWT_ISSUER, CLERK_JWKS_URL, and CLAXEDO_WORKSPACE_AUTHORITY_URL are required for signed/cloud auth",
-    })
-  })
-
-  test("reports whether the deployment requested signed cloud auth", () => {
-    expect(signedCloudAuthRequested({})).toBe(false)
-    expect(signedCloudAuthRequested({ CLAXEDO_SIGNED_CLOUD_AUTH: "true" })).toBe(true)
-    expect(signedCloudAuthRequested({ CLAXEDO_SIGNED_CLOUD_AUTH: "0" })).toBe(false)
-  })
-
-  test("builds enabled config from Clerk env and the composed authority presence", () => {
-    const env = {
-      CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-      CLERK_JWT_ISSUER: "https://clerk.example.test",
-      CLERK_JWKS_URL: "https://clerk.example.test/.well-known/jwks.json",
-      CLERK_JWT_AUDIENCE: "convex",
-    }
-    const enabled = {
-      enabled: true,
-      adapter: "clerk",
-      issuer: "https://clerk.example.test",
-      jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
-      audience: "convex",
-    }
-    expect(controlPlaneAuthConfig(env, { authorityConfigured: true })).toEqual(enabled)
-    // Callers that cannot assert authority presence (per-request ambient config)
-    // stay enabled: the composition roots fail closed at boot instead.
-    expect(controlPlaneAuthConfig(env)).toEqual(enabled)
   })
 
   test("accepts bearer tokens only from the Authorization header shape", () => {
@@ -147,14 +75,9 @@ describe("control plane auth", () => {
     })
   })
 
-  test("builds Clerk auth adapter from env and an optional verifier", async () => {
-    const adapter = clerkAuthAdapter({
-      env: {
-        CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-        CLERK_JWT_ISSUER: "https://clerk.example.test",
-        CLERK_JWKS_URL: "https://clerk.example.test/.well-known/jwks.json",
-      },
-      authorityConfigured: true,
+  test("builds an explicit adapter from a composed verifier", async () => {
+    const adapter = customVerifierAuthAdapter({
+      issuer: "https://idp.example.test",
       verifier: async (token, config) => ({
         mode: "signed",
         user: {
@@ -174,7 +97,7 @@ describe("control plane auth", () => {
       mode: "signed",
       user: {
         subject: "user_1",
-        issuer: "https://clerk.example.test",
+        issuer: "https://idp.example.test",
       },
     })
   })
@@ -264,21 +187,30 @@ describe("control plane auth", () => {
 
   test("keeps the authority principal stable across tokens from a unified verifier", async () => {
     const tokenIds = ["token_1", "token_2"]
-    const verifier = tokenVerifierAsClerk({
-      verify: async () => ({
-        subject: "user_1",
-        scopes: [],
-        claims: {
-          jti: tokenIds.shift(),
+    const adapter = customVerifierAuthAdapter({
+      issuer: enabledConfig.issuer,
+      verifier: async () => ({
+        mode: "signed" as const,
+        user: {
+          subject: "user_1",
+          tokenIdentifier: `${enabledConfig.issuer}|user_1`,
+          issuer: enabledConfig.issuer,
         },
       }),
     })
 
-    const first = await verifier("first", enabledConfig)
-    const second = await verifier("second", enabledConfig)
+    const first = await controlPlaneAuthContext(
+      new Request("http://localhost", { headers: { Authorization: "Bearer first" } }),
+      adapter,
+    )
+    const second = await controlPlaneAuthContext(
+      new Request("http://localhost", { headers: { Authorization: "Bearer second" } }),
+      adapter,
+    )
 
-    expect(first.user.tokenIdentifier).toBe(`${enabledConfig.issuer}|user_1`)
-    expect(second.user.tokenIdentifier).toBe(first.user.tokenIdentifier)
+    expect(tokenIds).toEqual(["token_1", "token_2"])
+    expect(first).toMatchObject({ user: { tokenIdentifier: `${enabledConfig.issuer}|user_1` } })
+    expect(second).toMatchObject({ user: { tokenIdentifier: `${enabledConfig.issuer}|user_1` } })
   })
 
   test("fails closed when signed cloud auth is enabled but misconfigured", async () => {
@@ -302,33 +234,6 @@ describe("control plane auth", () => {
       status: 401,
       code: "missing_bearer_token",
     } satisfies Partial<ControlPlaneAuthError>)
-  })
-
-  test("keeps retained CLI token routing inside the Clerk adapter", async () => {
-    const providerVerifier = vi.fn(async () => {
-      throw new Error("the provider verifier must not receive a CLI credential")
-    })
-    const candidate = untrustedJwt({ claxedo_token_kind: "claxedo_cli_access" })
-
-    expect(isCliAccessTokenCandidate(candidate)).toBe(true)
-    expect(isCliAccessTokenCandidate(untrustedJwt({ claxedo_token_kind: "claxedo_cli_refresh" }))).toBe(false)
-    expect(isCliAccessTokenCandidate("not-a-jwt")).toBe(false)
-    const adapter = clerkAuthAdapter({
-      env: {
-        CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-        CLERK_JWT_ISSUER: enabledConfig.issuer,
-        CLERK_JWKS_URL: enabledConfig.jwksUrl,
-      },
-      verifier: providerVerifier,
-      authorityConfigured: true,
-    })
-    await expect(controlPlaneAuthContext(new Request("http://localhost", {
-      headers: { authorization: `Bearer ${candidate}` },
-    }), {
-      ...adapter,
-      config: enabledConfig,
-    })).rejects.toMatchObject({ status: 503, code: "auth_verifier_unavailable" })
-    expect(providerVerifier).not.toHaveBeenCalled()
   })
 
   test("never routes a CLI-shaped credential around the selected Better Auth verifier", async () => {
@@ -369,7 +274,7 @@ describe("control plane auth", () => {
     )
   })
 
-  test("delegates valid bearer verification to the configured Clerk verifier", async () => {
+  test("delegates valid bearer verification to the configured verifier", async () => {
     await expect(controlPlaneAuthContext(new Request("http://localhost", {
       headers: {
         Authorization: "Bearer tok_123",
@@ -389,72 +294,10 @@ describe("control plane auth", () => {
       token: "tok_123",
       user: {
         subject: "tok_123",
-        tokenIdentifier: "https://clerk.example.test|tok_123",
-        issuer: "https://clerk.example.test",
+        tokenIdentifier: "https://idp.example.test|tok_123",
+        issuer: "https://idp.example.test",
       },
     })
-  })
-
-  test("verifies current and legacy organization claims through the configured remote Clerk JWKS", async () => {
-    const keys = await generateKeyPair("EdDSA", { extractable: true })
-    const jwk = {
-      ...await exportJWK(keys.publicKey),
-      alg: "EdDSA",
-      kid: "clerk_test_key",
-      use: "sig",
-    }
-    const issuer = await listen((req, res) => {
-      if (req.url !== "/.well-known/jwks.json") {
-        res.writeHead(404)
-        res.end()
-        return
-      }
-      res.writeHead(200, { "content-type": "application/json" })
-      res.end(JSON.stringify({ keys: [jwk] }))
-    })
-    const legacyToken = await new SignJWT({ org_id: "org_1" })
-      .setProtectedHeader({ alg: "EdDSA", kid: "clerk_test_key" })
-      .setIssuedAt()
-      .setIssuer(issuer)
-      .setAudience("convex")
-      .setSubject("user_1")
-      .setExpirationTime("2m")
-      .sign(keys.privateKey)
-    const currentToken = await new SignJWT({ o: { id: "org_1", rol: "admin", slg: "example" } })
-      .setProtectedHeader({ alg: "EdDSA", kid: "clerk_test_key" })
-      .setIssuedAt()
-      .setIssuer(issuer)
-      .setAudience("convex")
-      .setSubject("user_1")
-      .setExpirationTime("2m")
-      .sign(keys.privateKey)
-
-    for (const token of [legacyToken, currentToken]) {
-      const adapter = clerkAuthAdapter({
-        env: {
-          CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-          CLERK_JWT_ISSUER: issuer,
-          CLERK_JWKS_URL: `${issuer}/.well-known/jwks.json`,
-          CLERK_JWT_AUDIENCE: "convex",
-        },
-        authorityConfigured: true,
-      })
-      await expect(controlPlaneAuthContext(new Request("http://localhost", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }), adapter)).resolves.toEqual({
-        mode: "signed",
-        token,
-        user: {
-          subject: "user_1",
-          tokenIdentifier: `${issuer}|user_1`,
-          issuer,
-          audience: "convex",
-          orgId: "org_1",
-        },
-      })
-    }
   })
 })
 
@@ -466,8 +309,8 @@ describe("deployment mode matrix", () => {
   const hostedEnv = {
     CLAXEDO_DEPLOYMENT_MODE: "hosted",
     CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-    CLERK_JWT_ISSUER: "https://clerk.example.test",
-    CLERK_JWKS_URL: "https://clerk.example.test/.well-known/jwks.json",
+    CONTROL_PLANE_JWT_ISSUER: "https://idp.example.test",
+    CONTROL_PLANE_JWKS_URL: "https://idp.example.test/.well-known/jwks.json",
     CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-token",
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "private-key",
     CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: "public-key",
@@ -475,10 +318,10 @@ describe("deployment mode matrix", () => {
 
   test("hosted + complete config boots with signed auth enabled and unsigned-local unreachable", async () => {
     expect(() => assertHostedBootRequirements(hostedEnv, { authorityConfigured: true })).not.toThrow()
-    const config = controlPlaneAuthConfig(hostedEnv, { authorityConfigured: true })
-    expect(config).toEqual(enabledConfig)
-    // With the booted config, a bearer-less request can NEVER be served as
-    // unsigned-local — it is a 401, not a pass-through.
+    // Signed deployments compose an explicit adapter; the neutral default
+    // stays local-only. With an enabled config, a bearer-less request can
+    // NEVER be served as unsigned-local — it is a 401, not a pass-through.
+    const config = enabledConfig
     await expect(controlPlaneAuthContext(new Request("http://localhost"), { config })).rejects.toMatchObject({
       status: 401,
       code: "missing_bearer_token",
@@ -487,8 +330,8 @@ describe("deployment mode matrix", () => {
 
   test.each([
     ["CLAXEDO_SIGNED_CLOUD_AUTH", /CLAXEDO_SIGNED_CLOUD_AUTH=true/],
-    ["CLERK_JWT_ISSUER", /CLERK_JWT_ISSUER/],
-    ["CLERK_JWKS_URL", /CLERK_JWKS_URL/],
+    ["CONTROL_PLANE_JWT_ISSUER", /CONTROL_PLANE_JWT_ISSUER/],
+    ["CONTROL_PLANE_JWKS_URL", /CONTROL_PLANE_JWKS_URL/],
     ["CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", /CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN/],
     ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", /CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM/],
     ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM", /CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM/],
@@ -507,7 +350,7 @@ describe("deployment mode matrix", () => {
   test("absent mode = self-host: auth config resolution is byte-for-byte today's behavior", async () => {
     expect(deploymentMode({})).toBe("local")
     // Zero-config env resolves the exact same unsigned-local pass-through.
-    const config = controlPlaneAuthConfig({})
+    const config = controlPlaneAuthConfig()
     expect(config).toEqual({
       enabled: false,
       mode: "local-only",

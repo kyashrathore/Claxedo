@@ -20,8 +20,8 @@ Your code runs locally, or inside sandboxes that *you* configure and control. Wh
 
 If you choose to use the hosted cloud control plane, some coordination data leaves your device so that your workspaces can sync and be reached from more than one place:
 
-- **Authentication** is handled by [Clerk](https://clerk.com), which stores your account identity (such as your email and login credentials).
-- **Workspace and session metadata** — things like workspace names, session identifiers, and timestamps — is stored in [Convex](https://convex.dev). Your source code is not the point of this database; it holds the metadata needed to coordinate sessions.
+- **Authentication** is handled by [Better Auth](https://better-auth.com), which stores your account identity (such as your email and login credentials) in the deployment's own database.
+- **Workspace and session metadata** — things like workspace names, session identifiers, and timestamps — is stored in [Cloudflare D1](https://developers.cloudflare.com/d1/) databases owned by the deployment. Your source code is not the point of this database; it holds the metadata needed to coordinate sessions.
 - **Infrastructure** runs on [Cloudflare](https://cloudflare.com), which processes network traffic to deliver the service.
 
 You only enter hosted mode by signing in and opting into it.

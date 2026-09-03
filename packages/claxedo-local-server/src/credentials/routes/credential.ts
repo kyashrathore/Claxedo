@@ -17,7 +17,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -98,7 +98,7 @@ export type CredentialRoutesOptions = {
    * signed auth on → the verified `org_id` claim.
    */
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   /** Test/composition override for org resolution. */
   resolveOrg?: (request: Request) => Promise<string> | string
 }

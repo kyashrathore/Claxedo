@@ -3,7 +3,7 @@ import { bodyLimit } from "hono/body-limit"
 import {
   ControlPlaneAuthError,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -18,7 +18,7 @@ export type PrivateSessionRegistrationRouteOptions = {
   authority: Pick<PrivateSessionAuthority, "reserveSession">
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   services?: ControlPlaneServices
 }
 

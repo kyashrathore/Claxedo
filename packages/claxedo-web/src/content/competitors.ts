@@ -96,13 +96,13 @@ export const claxedoFeatures: Record<FeatureKey, FeatureState> = {
 // Claxedo's constant column for the detailed per-page capability table.
 export const claxedoCapabilities: Record<CapabilityKey, string> = {
   what: "Open-source workspace + control plane you self-host",
-  team: "Multi-user — accounts + org scoping (Clerk+Convex profile today)",
+  team: "Multi-user — accounts + org scoping (Better Auth + D1)",
   harnesses: "Claude Code, Codex, Gemini CLI, OpenCode, + any CLI via ACP",
   interfaces: "Chat UI + first-class terminal",
   platforms: "Desktop (Mac/Win/Linux) + web + mobile web",
   remote: "Relay — reach the same session from any device",
   ledger: "WorkGraph — every task, attempt, and approval is a durable record that outlives sessions and restarts",
-  selfHost: "Yes — single node, or Clerk+Convex on your own Cloudflare",
+  selfHost: "Yes — single node, or Better Auth + D1 on your own Cloudflare",
   license: "Open source",
   backing: "Independent · open source",
   pricing: "Free during beta; bring your own provider + sandbox",

@@ -22,6 +22,7 @@ const MIGRATIONS = [
   "0011_session_turn_producers.sql",
   "0012_cold_local_host_challenges.sql",
   "0013_org_team_session_sharing.sql",
+  "0017_adapter_custom.sql",
 ].map((name) => fileURLToPath(new URL(`../../../../migrations/control-plane/${name}`, import.meta.url)))
 
 const active: Miniflare[] = []
@@ -544,7 +545,7 @@ describe("composed Better Auth + D1 authority", () => {
         product: {
           kind: "user-deployed",
           organization: { id: "org_deployment", name: "Deployment" },
-          ownerIdentity: { adapter: "clerk", issuer: "https://clerk.example.test", subject: "owner" },
+          ownerIdentity: { adapter: "custom", issuer: "https://custom.example.test", subject: "owner" },
         },
       }),
     ).toThrowError(expect.objectContaining({ code: "product_identity_adapter_mismatch" }))

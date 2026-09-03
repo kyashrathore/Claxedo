@@ -2,7 +2,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from "vit
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { localOnlyAuthAdapter, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import { createAgentConfigRoutes } from "@claxedo/local-server/agent-config/routes/index"
 import { AgentExtensionConflictError, installCachedAgentExtension } from "@claxedo/local-server/hosts/agent-extensions/install"
@@ -51,7 +51,7 @@ const authConfig = {
   jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
 } as const
 
-const verifier: ClerkVerifier = async (token, config) => ({
+const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed",
   token,
   user: {

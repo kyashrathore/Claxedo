@@ -20,25 +20,11 @@ import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters
 /**
  * Which authority factory the REAL composition invoked.
  *
- * The posture's `sqliteAuthority` field is a data-residency claim, so a test
- * that asserts it against the value the same function just produced proves
- * nothing — that is exactly how it stayed a hard-coded `true` while
- * `createDefaultLocalControlPlaneServices` selected Convex. Both adapter
- * modules are wrapped rather than replaced: the composition builds its real
- * authority, and the wrapper only records which branch ran.
+ * Self-host always composes SQLite. The SQLite adapter module is wrapped
+ * rather than replaced: the composition builds its real authority, and the
+ * wrapper only records that the SQLite branch ran.
  */
-const composedAuthorities = vi.hoisted(() => [] as Array<"convex" | "sqlite">)
-
-vi.mock("../../authority/adapters/convex/workspace-authority", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../authority/adapters/convex/workspace-authority")>()
-  return {
-    ...actual,
-    createConvexAuthority: (input?: Parameters<typeof actual.createConvexAuthority>[0]) => {
-      composedAuthorities.push("convex")
-      return actual.createConvexAuthority(input)
-    },
-  }
-})
+const composedAuthorities = vi.hoisted(() => [] as Array<"sqlite">)
 
 vi.mock("@claxedo/server-core/authority/adapters/sqlite/workspace-authority", async (importOriginal) => {
   const actual = await importOriginal<
@@ -148,7 +134,7 @@ describe("the reported authority is the one the composition builds", () => {
 
   test("local trust ignores a stale authority URL in both composition and posture", async () => {
     // A developer may have a hosted URL in an ambient env file, but local
-    // trust must neither move self-hosted data to Convex nor refuse to boot.
+    // trust must neither move self-hosted data remotely nor refuse to boot.
     const { composed, posture } = await compose("https://authority.example.convex.cloud")
 
     expect(composed).toEqual(["sqlite"])
@@ -157,8 +143,8 @@ describe("the reported authority is the one the composition builds", () => {
   })
 
   test("a blank authority URL is not a remote authority", async () => {
-    // `convexAuthorityUrlFromEnv` trims and treats empty as absent; a posture
-    // that read the variable itself would refuse a deploy over whitespace.
+    // A blank URL is absent; a posture that read the variable itself would
+    // refuse a deploy over whitespace.
     const { composed, posture } = await compose("   ")
 
     expect(composed).toEqual(["sqlite"])

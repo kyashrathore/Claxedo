@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 
 const state = vi.hoisted(() => ({
   status: "unsigned" as "unsigned" | "pending" | "signed",
-  methods: ["clerk"] as Array<"clerk" | "google" | "github" | "email-password">,
+  methods: [] as Array<"google" | "github" | "email-password">,
   signIn: vi.fn(async () => {}),
   navigate: vi.fn(),
 }))
@@ -30,7 +30,7 @@ import LoginPage, { loginOAuthContinuation } from "./login"
 
 beforeEach(() => {
   state.status = "unsigned"
-  state.methods = ["clerk"]
+  state.methods = []
   state.signIn.mockClear()
   state.navigate.mockClear()
 })

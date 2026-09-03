@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { CredentialMetadata } from "@claxedo/server-core/credentials/types"
 
@@ -338,7 +338,7 @@ const authConfig = {
   jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
 } as const
 
-const verifier: ClerkVerifier = async (token, config) => ({
+const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed" as const,
   user: {
     subject: token,
@@ -561,7 +561,7 @@ describe("workspace routes signed control plane authority", () => {
   })
 
   test("signed mode refuses a remote caller whose bearer fails verification", async () => {
-    const strictVerifier: ClerkVerifier = async (token) => {
+    const strictVerifier: ControlPlaneTokenVerifier = async (token) => {
       if (token !== "user_1") throw new ControlPlaneAuthError(401, "invalid_bearer_token", "invalid")
       return { mode: "signed" as const, user: { subject: token, tokenIdentifier: token, issuer: authConfig.issuer } }
     }

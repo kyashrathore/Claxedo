@@ -22,6 +22,9 @@ const MIGRATIONS = [
   fileURLToPath(
     new URL("../../../../migrations/control-plane/0013_org_team_session_sharing.sql", import.meta.url),
   ),
+  fileURLToPath(
+    new URL("../../../../migrations/control-plane/0017_adapter_custom.sql", import.meta.url),
+  ),
 ]
 const active: Miniflare[] = []
 
@@ -119,7 +122,7 @@ describe("D1 hosted workspace authority", () => {
     ).toBe(1)
 
     const alice = await signed(authority, aliceIdentity)
-    const clerkIdentity = identity("clerk-alice", "clerk")
+    const clerkIdentity = identity("custom-alice", "custom")
     await authority.linkApplicationIdentity(alice, { identity: clerkIdentity })
     const clerkResolution = await authority.ensureApplicationIdentity(clerkIdentity)
     expect(clerkResolution).toEqual({

@@ -185,7 +185,7 @@ that a deployment is uncontained *before* its first workspace exists.
 
 ## Related
 
-- [Deploy Runbook](./deploy-runbook.md) — deploy order and required bindings.
+- [User-Deployed Cloudflare](./user-deployed-cloudflare.md) — deploy order and required bindings.
 - [Hosted Control Plane Worker](./hosted-control-plane-worker.md) —
   `CLAXEDO_SANDBOX_DRIVER` and per-driver credentials.
 - [Production Environment Runbook](./production-environment-runbook.md) —

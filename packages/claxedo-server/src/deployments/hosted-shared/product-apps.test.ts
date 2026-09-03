@@ -6,7 +6,7 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { BillingStore } from "../../billing/store-contract"
-import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
+import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { createUserDeployedProductApp } from "./user-deployed-product-app"
 import { createClaxedoHostedProductApp } from "./claxedo-hosted-product-app"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
@@ -56,7 +56,7 @@ function plane(): HostedControlPlane {
       sandboxMaxRetryCount: 5,
     },
     relayTargetLookup: vi.fn(async () => null),
-    cliSessionTokenRegistry: durableCliSessionTokenRegistry().registry,
+    cliSessionTokenRegistry: createInMemoryCliSessionTokenRegistry(),
     privateSessionAuthority: sessionAuthority,
     runtimeSessionAuthority: sessionAuthority,
     env: { CLAXEDO_DEPLOYMENT_MODE: "hosted" },

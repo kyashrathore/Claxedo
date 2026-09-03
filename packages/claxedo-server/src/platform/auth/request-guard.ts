@@ -149,7 +149,7 @@ export function pathMatchesPrefix(path: string, prefix: string) {
  * reading identity from the request before any route has verified it, and an
  * UNVERIFIED subject is attacker-supplied: anyone could reach a fresh bucket by
  * varying a claim or sending a new garbage token, which turns the limiter into
- * decoration. Verifying the JWT here instead would put a Clerk JWKS check on
+ * decoration. Verifying the JWT here instead would put a JWKS check on
  * the front of every request including unauthenticated ones — an amplification
  * vector of its own.
  *

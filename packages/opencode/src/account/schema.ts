@@ -71,7 +71,7 @@ export class AccountTransportError extends Schema.TaggedErrorClass<AccountTransp
 export type AccountError = AccountRepoError | AccountServiceError | AccountTransportError
 
 export class NativeLoginBinding extends Schema.Class<NativeLoginBinding>("NativeLoginBinding")({
-  adapter: Schema.Literals(["better-auth", "clerk"]),
+  adapter: Schema.Literals(["better-auth"]),
   deploymentId: Schema.String,
   configurationVersion: Schema.String,
   descriptorExpiresAt: Schema.Number,

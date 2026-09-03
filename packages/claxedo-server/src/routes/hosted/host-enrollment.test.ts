@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
-import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { HostTunnelTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ControlPlaneServices } from "../../authority/services"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
@@ -22,7 +22,7 @@ const authConfig = {
   jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
 } as const
 
-const verifier: ClerkVerifier = async (token, config) => ({
+const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed" as const,
   user: { subject: token, tokenIdentifier: `${config.issuer}|${token}`, issuer: config.issuer },
 })
@@ -306,7 +306,7 @@ describe("GET /", () => {
 /**
  * Per-account abuse budget.
  *
- * The app-wide `defaultRequestGuard` in `deployments/hosted-shared/hosted-app.ts`
+ * The app-wide `defaultRequestGuard` in `deployments/hosted-shared/hosted-core-app.ts`
  * already limits this route, and empirically fires on it — but it is IP-keyed
  * BY DESIGN, so it bounds one network path and says nothing about one account.
  * These tests are about the other axis, the one the plan's Unit 6 abuse-control

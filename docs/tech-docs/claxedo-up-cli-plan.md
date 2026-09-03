@@ -41,7 +41,7 @@ cites it for the CLI/device-login phase.
 - Host tunnel client:
   `packages/workspace-runtime/src/workspace-relay-host-tunnel.ts`
 - Hosted app composition:
-  `packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts`
+  `packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts`
 
 ## Configuration
 

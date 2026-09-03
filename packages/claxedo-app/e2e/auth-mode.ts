@@ -35,9 +35,8 @@ const e2ePreviewSettingsFlags = {
 export function e2eAppViteEnvironment(mode: E2EAuthMode = resolveE2EAuthMode()): Record<string, string> {
   return {
     ...e2eAuthEnvironment(mode),
-    // The e2e suite drives the Clerk build on every surface; `better-auth` is
-    // its own build lane (`bun run build:better-auth`) with its own coverage.
-    VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
+    // The e2e suite drives the Better Auth build on every surface.
+    VITE_CLAXEDO_AUTH_ADAPTER: "better-auth",
     VITE_CLAXEDO_E2E: "1",
   }
 }
@@ -47,7 +46,6 @@ function e2eAuthEnvironment(mode: E2EAuthMode): Record<string, string> {
     return {
       VITE_AUTH_ENABLED: "true",
       VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1",
-      VITE_CLERK_PUBLISHABLE_KEY: "",
       VITE_SANDBOX_ENABLED: "true",
       ...e2ePreviewSettingsFlags,
     }

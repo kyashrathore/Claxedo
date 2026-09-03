@@ -4,7 +4,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import {
   ControlPlaneAuthError,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
@@ -19,7 +19,7 @@ import {
 type Options = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
   sessionShareChangedSink?: SessionShareChangedSink
 }

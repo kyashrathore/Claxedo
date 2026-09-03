@@ -20,17 +20,17 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   services?: ControlPlaneServicesContract
   env?: Record<string, string | undefined>
 }

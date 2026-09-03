@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { exportJWK, generateKeyPair, SignJWT } from "jose"
 import {
-  createClerkTokenVerifier,
+  createOidcTokenVerifier,
   createHttpTokenVerifier,
   createStaticTokenVerifier,
   TokenVerifierError,
@@ -220,8 +220,8 @@ describe("HttpTokenVerifier", () => {
   })
 })
 
-describe("ClerkTokenVerifier", () => {
-  test("verifies a Clerk-style session JWT against JWKS", async () => {
+describe("OidcTokenVerifier", () => {
+  test("verifies a session JWT against JWKS", async () => {
     const key = await generateKeyPair("ES256")
     const publicJwk = await exportJWK(key.publicKey)
     const server = Bun.serve({
@@ -235,7 +235,7 @@ describe("ClerkTokenVerifier", () => {
         scp: ["session:read", "workspace:write"],
       })
         .setProtectedHeader({ alg: "ES256", kid: "kid-1" })
-        .setIssuer("https://clerk.example.test")
+        .setIssuer("https://idp.example.test")
         .setAudience("claxedo")
         .setSubject("user_1")
         .setJti("jti_1")
@@ -243,15 +243,15 @@ describe("ClerkTokenVerifier", () => {
         .setExpirationTime(now + 300)
         .sign(key.privateKey)
 
-      await expect(createClerkTokenVerifier({
-        issuer: "https://clerk.example.test",
+      await expect(createOidcTokenVerifier({
+        issuer: "https://idp.example.test",
         audience: "claxedo",
         jwksUrl: String(server.url),
       }).verify(token)).resolves.toMatchObject({
         subject: "user_1",
         scopes: ["session:read", "workspace:write"],
         claims: {
-          iss: "https://clerk.example.test",
+          iss: "https://idp.example.test",
           aud: "claxedo",
           sub: "user_1",
           sid: "sess_1",
@@ -264,17 +264,17 @@ describe("ClerkTokenVerifier", () => {
     }
   })
 
-  test("rejects invalid Clerk session tokens", async () => {
+  test("rejects invalid session tokens", async () => {
     const server = Bun.serve({
       port: 0,
       fetch: () => Response.json({ keys: [] }),
     })
     try {
-      await expect(createClerkTokenVerifier({
-        issuer: "https://clerk.example.test",
+      await expect(createOidcTokenVerifier({
+        issuer: "https://idp.example.test",
         jwksUrl: String(server.url),
       }).verify("not-a-jwt")).rejects.toMatchObject({
-        code: "clerk_token_invalid",
+        code: "oidc_token_invalid",
       })
     } finally {
       server.stop(true)

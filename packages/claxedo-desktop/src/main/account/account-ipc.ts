@@ -77,7 +77,7 @@ const ACCOUNT_STREAM_RESERVATION_TTL_MS = 30_000
  * one of the same handshake — signs it, and enrolls a machine whose private
  * half main has never seen, under the owner's account and on main's bearer.
  * Worse on a second call: `enrollForUser` in
- * `convex/hostEnrollments.ts` PATCHES an existing row for the same `host_id`,
+ * the host-enrollment store PATCHES an existing row for the same `host_id`,
  * overwriting `public_key` and clearing `paused_at`/`revoked_at` — the exact
  * "same machine id presenting a different public key" takeover
  * `identity-store.ts` treats as unusable, and an

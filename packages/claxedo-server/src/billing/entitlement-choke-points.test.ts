@@ -1,6 +1,6 @@
 import { describe, expect, test, vi } from "vitest"
 import { HostedWorkspaceRoutes } from "../routes/hosted/workspace"
-import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import type { SandboxManager } from "@claxedo/sandbox-manager"
 
@@ -18,7 +18,7 @@ const authConfig = {
   jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
 } as const
 
-const verifier: ClerkVerifier = async (token, config) => ({
+const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed" as const,
   user: { subject: token, tokenIdentifier: `${config.issuer}|${token}`, issuer: config.issuer },
 })

@@ -1,8 +1,8 @@
 import { describe, expect, test } from "vitest"
 import { hostedDeployCommands } from "./deploy-hosted"
 
-const claxedoHostedEnv = {
-  CLAXEDO_ADAPTER_PROFILE: "clerk-convex",
+const sandboxEnv = {
+  CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
   CLAXEDO_PRODUCT_POSTURE: "claxedo-hosted",
   CLAXEDO_SANDBOX_POSTURE: "full-hosted",
   CLAXEDO_SANDBOX_DRIVER: "cloudflare",
@@ -35,24 +35,12 @@ const betterAuthD1Env = {
 }
 
 describe("hosted deploy command selection", () => {
-  test("targets the explicit staging Worker environment", () => {
-    expect(
-      hostedDeployCommands({ staging: true, dryRun: true, targets: ["central"], env: claxedoHostedEnv })[0]!.args,
-    ).toEqual(["deploy", "--env", "staging", "--dry-run", "--outdir", "dist-worker"])
-  })
-
-  test("targets the top-level production Worker when staging is false", () => {
-    expect(
-      hostedDeployCommands({ staging: false, dryRun: false, targets: ["central"], env: claxedoHostedEnv })[0]!.args,
-    ).toEqual(["deploy", "--env", ""])
-  })
-
   test("installs Cloudflare Sandbox Worker dependencies from the committed lockfile", () => {
     const commands = hostedDeployCommands({
       staging: false,
       dryRun: false,
       targets: ["cloudflare-sandbox"],
-      env: claxedoHostedEnv,
+      env: sandboxEnv,
     })
 
     expect(commands.find((command) => command.name === "cloudflare_sandbox.dependencies")).toMatchObject({
@@ -75,19 +63,17 @@ describe("hosted deploy command selection", () => {
     ).toThrowError(/adapter profile must be/)
   })
 
-  test("does not pretend the Clerk-only browser build is a Better Auth artifact", () => {
+  test("rejects the retired app target", () => {
     expect(() =>
       hostedDeployCommands({
         staging: false,
         dryRun: true,
+        // @ts-expect-error retired target: app deploys go through the
+        // deploy-claxedo-app workflows, not this script.
         targets: ["app"],
-        env: {
-          ...betterAuthD1Env,
-          VITE_CLERK_PUBLISHABLE_KEY: "must-not-leak",
-          VITE_CONVEX_URL: "https://must-not-leak.test",
-        },
+        env: betterAuthD1Env,
       }),
-    ).toThrow(/supports only the central target/)
+    ).toThrow(/supports only the central and cloudflare-sandbox targets/)
   })
 
   test("refuses to deploy a sandbox resource for control-plane-only", () => {
@@ -102,7 +88,7 @@ describe("hosted deploy command selection", () => {
           CLAXEDO_SANDBOX_POSTURE: "control-plane-only",
         },
       }),
-    ).toThrowError(/supports only the central target/)
+    ).toThrowError(/full-hosted Cloudflare sandbox profile/)
   })
 
   test("uses the single-artifact Better Auth D1 release orchestrator", () => {

@@ -37,3 +37,20 @@ export function createWorkGraphConnectionsPort(input: Readonly<{
     },
   }
 }
+
+export class HostedConnectionCredentialUnavailableError extends Error {
+  readonly code = "hosted_connection_credential_unavailable"
+
+  constructor(connectionId: string) {
+    super(`Credential for Connection ${connectionId} is unavailable`)
+  }
+}
+
+export class HostedConnectionReconnectRequiredError extends Error {
+  readonly code = "hosted_connection_reconnect_required"
+  readonly status = 409
+
+  constructor(connectionId: string) {
+    super(`Connection ${connectionId} requires reconnect`)
+  }
+}

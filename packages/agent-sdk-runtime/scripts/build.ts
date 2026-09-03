@@ -35,7 +35,6 @@ const ENTRIES = [
   "src/subagent-admission.ts",
   "src/stores/memory.ts",
   "src/stores/sqlite.ts",
-  "src/stores/convex.ts",
 ]
 
 const EXTERNALS = Object.keys({

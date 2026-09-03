@@ -10,7 +10,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -30,7 +30,7 @@ import { SessionPeopleControlRoutes } from "./session-people-routes"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   beforeLocalList?: () => Promise<void>
   createHybridSession?: (input: { sessionId?: string; title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
   sessionShareChangedSink?: SessionShareChangedSink

@@ -3,14 +3,14 @@
  *
  * This is the one base entry for every desktop build. An official release may
  * emit `hosted-contributions.ts` as a separate hashed chunk, but this module
- * neither imports Clerk nor receives a bearer. Electron main owns the account;
+ * neither imports the auth vendor client nor receives a bearer. Electron main owns the account;
  * the existing AccountPort lifecycle asks the loader below for that optional
  * chunk only after main reports a signed account.
  *
  * Concretely, what this entry does NOT import, and why each matters:
  *
  *   - `@claxedo/app/auth` — the package's authenticated-identity subpath, and
- *     the edge by which the old renderer reached `auth-client.ts` and Clerk.
+ *     the edge by which the old renderer reached `auth-client.ts` and the auth vendor client.
  *   - `@/platform/remote-access/machine-remote-access`'s binder — it lives in
  *     the optional chunk and cannot execute before account-driven activation.
  *

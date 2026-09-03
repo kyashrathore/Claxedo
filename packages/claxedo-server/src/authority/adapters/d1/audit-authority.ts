@@ -43,7 +43,7 @@ const MAX_AUDIT_METADATA_BYTES = 4096
 /**
  * Worker-safe bounded audit writer.
  *
- * Workspace attribution follows the retained Convex rule: only a caller with
+ * Workspace attribution follows the retained rule: only a caller with
  * read access may file an event under a workspace. Denied or missing workspace
  * claims are kept separately as unverified attempts and never enter tenant
  * audit indexes. Metadata is a fixed scalar allowlist, not arbitrary JSON.

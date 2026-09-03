@@ -2,11 +2,11 @@ import {
   ControlPlaneAuthError,
   bearerToken,
   controlPlaneAuthContext,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { internalAdminAuthorized } from "../http/internal-admin-auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
@@ -30,7 +30,7 @@ import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-
 export const RoutePosture = {
   /** Loopback only. The desktop/self-host surface; no bearer is consulted. */
   LocalOnly: "LOCAL_ONLY",
-  /** A Clerk-verified user identity is required. */
+  /** A verified signed user identity is required. */
   SignedUser: "SIGNED_USER",
   /** Machine-to-machine: a shared secret, never a user. */
   ServiceToken: "SERVICE_TOKEN",
@@ -44,7 +44,7 @@ export type RoutePosture = (typeof RoutePosture)[keyof typeof RoutePosture]
 
 export type PostureOptions = {
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
 }
 

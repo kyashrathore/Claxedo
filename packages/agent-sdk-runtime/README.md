@@ -159,9 +159,8 @@ First-party stores live on explicit subpaths:
 
 - `@claxedo/agent-sdk-runtime/stores/memory`
 - `@claxedo/agent-sdk-runtime/stores/sqlite`
-- `@claxedo/agent-sdk-runtime/stores/convex`
 
-The root import does not load SQLite or Convex.
+The root import does not load SQLite.
 
 ### Harness Factories
 
@@ -410,7 +409,6 @@ Entry point status:
 - Advanced: `@claxedo/agent-sdk-runtime/adapters`,
   `@claxedo/agent-sdk-runtime/subagent-admission`,
   `@claxedo/agent-sdk-runtime/message-page`
-- Integration: `@claxedo/agent-sdk-runtime/stores/convex`,
   `@claxedo/agent-sdk-runtime/session-env`,
   `@claxedo/agent-sdk-runtime/virtual-session-env`,
   `@claxedo/agent-sdk-runtime/runtime-event-hub`,

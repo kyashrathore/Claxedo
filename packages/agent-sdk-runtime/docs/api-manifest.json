@@ -51,10 +51,6 @@
       "status": "stable",
       "purpose": "Local durable runtime store."
     },
-    "@claxedo/agent-sdk-runtime/stores/convex": {
-      "status": "integration",
-      "purpose": "Dependency-isolated first-party Convex runtime store adapter."
-    },
     "@claxedo/agent-sdk-runtime/capabilities": {
       "status": "stable",
       "purpose": "Harness and adapter capability types and helpers."
@@ -129,8 +125,7 @@
     "@claxedo/agent-sdk-runtime/adapters": "cd38d3f3dcf419e33a6c103a67d509bbb59ed2c2180fb2146087d866fc27d121",
     "@claxedo/agent-sdk-runtime/message-page": "5f0eca22b31f08ff39cab082dc6e351484e3e6bfa68d97a12a4b9617b2d4f0e5",
     "@claxedo/agent-sdk-runtime/stores/memory": "77cac9db9d4dc91df4d6dd4fa3b123df691a14d2363edc9d669d5515fd8800ea",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "8ecbb66122132ae2f659945c02f01bcd1efcaf4a19fe82aea56266006d06d0db",
-    "@claxedo/agent-sdk-runtime/stores/convex": "2ae4d497e1ed99fa189e72f78396fb2ea4e9effc2e8710626d0d844a43b9d6a5"
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "8ecbb66122132ae2f659945c02f01bcd1efcaf4a19fe82aea56266006d06d0db"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [
@@ -226,12 +221,6 @@
       "import": "@claxedo/agent-sdk-runtime/stores/sqlite",
       "kind": "function",
       "purpose": "Create a local durable runtime store."
-    },
-    "createConvexRuntimeStore": {
-      "status": "integration",
-      "import": "@claxedo/agent-sdk-runtime/stores/convex",
-      "kind": "function",
-      "purpose": "Create a dependency-isolated Convex-backed runtime store adapter."
     },
     "PromptInput": {
       "status": "stable",

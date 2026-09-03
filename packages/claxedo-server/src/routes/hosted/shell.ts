@@ -33,7 +33,7 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type ControlPlaneAuthContext,
   type SignedControlPlaneAuth,
@@ -57,7 +57,7 @@ import type { RelayRole } from "@claxedo/workspace-relay"
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
   authConfig: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   /** Reported by /global/health and the bootstrap aggregate. */
   version?: string
   /** Signed project inventory source (Convex workspaces.list). */
@@ -228,7 +228,7 @@ function ownerRepo(remote: string | undefined) {
  * `display_name` is deliberately LAST-but-one: it is the WORKSPACE name, and
  * the hosted create dialog posts `workspaceName: "main"` for the first
  * workspace, so preferring it labelled every hosted cloud project "main".
- * There is no `project_name` column (convex/schema.ts workspaces) — the repo
+ * There is no `project_name` column on workspaces — the repo
  * identity is the only project-scoped name the row actually carries.
  */
 function projectDisplayName(row: Record<string, unknown> | undefined, projectId: string) {

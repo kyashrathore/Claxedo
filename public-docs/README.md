@@ -4,8 +4,8 @@
 > It exists for release, deployment, and package-maintenance workflows. What
 > reads this directory:
 >
-> - `deploy-control-plane.yml`, `deploy-convex.yml`, and `deploy-relay.yml` cite
->   [`deploy-runbook.md`](./deploy-runbook.md) and
+> - `deploy-claxedo-app.yml` and `deploy-relay.yml` cite
+>   [`user-deployed-cloudflare.md`](./user-deployed-cloudflare.md) and
 >   [`relay-and-deployment.md`](./relay-and-deployment.md) by path in their
 >   rollback instructions.
 > - `packages/workspace-runtime/scripts/verify-publish.ts` gates publishing on the

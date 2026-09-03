@@ -33,7 +33,7 @@ import { z } from "zod"
 import {
   HostedConnectionCredentialUnavailableError,
   HostedConnectionReconnectRequiredError,
-} from "./hosted/connections"
+} from "./connections"
 
 const syncInput = z.strictObject({ idempotencyKey: z.string().trim().min(1), summary: z.string().trim().min(1), status: z.string().trim().min(1).optional() })
 

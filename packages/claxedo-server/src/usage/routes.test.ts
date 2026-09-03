@@ -1,10 +1,10 @@
 import { describe, expect, test, vi } from "vitest"
-import { ControlPlaneAuthError, type ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { UsageRoutes } from "@claxedo/server-core/usage/routes"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 
 const authConfig = { enabled: true as const, issuer: "https://auth.test", jwksUrl: "custom:test" }
-const verifier: ClerkVerifier = async (token) => ({
+const verifier: ControlPlaneTokenVerifier = async (token) => ({
   mode: "signed",
   token,
   user: { subject: "user_from_token", orgId: "org_from_token", tokenIdentifier: "token_1", issuer: authConfig.issuer },

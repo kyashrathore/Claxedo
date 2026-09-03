@@ -1638,7 +1638,7 @@ function requireActor(row: IdentityRow) {
 }
 
 function validateIdentity(identity: AuthIdentity) {
-  if (identity.adapter !== "better-auth" && identity.adapter !== "clerk") {
+  if (identity.adapter !== "better-auth" && identity.adapter !== "custom") {
     throw new D1WorkspaceAuthorityError("invalid_input", "Unknown authentication adapter")
   }
   requireText(identity.issuer, "identity.issuer")

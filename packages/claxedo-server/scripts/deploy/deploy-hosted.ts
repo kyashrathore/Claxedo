@@ -7,11 +7,10 @@ import { betterAuthD1ReleaseInputs } from "./release-better-auth-d1"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const repoRoot = path.resolve(serverRoot, "../..")
-const appRoot = path.join(repoRoot, "packages/claxedo-app")
 const sandboxScriptsRoot = path.join(serverRoot, "scripts/sandbox")
 const cloudflareSandboxRoot = path.join(sandboxScriptsRoot, "cloudflare-worker")
 
-type Target = "central" | "app" | "cloudflare-sandbox"
+type Target = "central" | "cloudflare-sandbox"
 type Command = {
   name: string
   cwd: string
@@ -24,7 +23,7 @@ function clean(value: string | undefined) {
   return value?.trim() || undefined
 }
 
-function targets(args = process.argv, fallback = "central,app") {
+function targets(args = process.argv, fallback = "central") {
   const targetFlag = args.findIndex((arg) => arg === "--target" || arg === "--targets")
   const input =
     clean(process.env.CLAXEDO_DEPLOY_TARGETS) ??
@@ -34,7 +33,7 @@ function targets(args = process.argv, fallback = "central,app") {
     fallback
   return input.split(",").map((item) => {
     const target = item.trim()
-    if (target === "central" || target === "app" || target === "cloudflare-sandbox") return target
+    if (target === "central" || target === "cloudflare-sandbox") return target
     throw new Error(`Unknown deploy target: ${target}`)
   })
 }
@@ -47,79 +46,24 @@ export function hostedDeployCommands(input: {
 }): Command[] {
   const env = input.env ?? process.env
   const profile = resolveDeploymentProfileFromEnv(env)
-  if (profile.adapterProfile === "better-auth-d1" && input.targets.some((target) => target !== "central")) {
-    throw new Error("the Better Auth D1 locked composition supports only the central target")
+  if (input.targets.some((target) => target !== "central" && target !== "cloudflare-sandbox")) {
+    throw new Error("the Better Auth D1 composition supports only the central and cloudflare-sandbox targets")
   }
   return input.targets.flatMap((target): Command[] => {
     if (target === "central") {
-      if (profile.adapterProfile === "better-auth-d1") {
-        betterAuthD1ReleaseInputs(env, input.staging ? "staging" : "production")
-        return [
-          {
-            name: input.dryRun ? "better_auth_d1.release.preflight" : "better_auth_d1.release.deploy",
-            cwd: serverRoot,
-            cmd: "bun",
-            args: [
-              "run",
-              "scripts/deploy/release-better-auth-d1.ts",
-              ...(input.staging ? ["--staging"] : []),
-              ...(!input.dryRun ? ["--deploy"] : []),
-            ],
-          },
-        ]
-      }
+      betterAuthD1ReleaseInputs(env, input.staging ? "staging" : "production")
       return [
         {
-          name: input.dryRun ? "central.worker.dry_run" : "central.worker.deploy",
+          name: input.dryRun ? "better_auth_d1.release.preflight" : "better_auth_d1.release.deploy",
           cwd: serverRoot,
-          cmd: "wrangler",
+          cmd: "bun",
           args: [
-            "deploy",
-            "--env",
-            input.staging ? "staging" : "",
-            ...(input.dryRun ? ["--dry-run", "--outdir", "dist-worker"] : []),
+            "run",
+            "scripts/deploy/release-better-auth-d1.ts",
+            ...(input.staging ? ["--staging"] : []),
+            ...(!input.dryRun ? ["--deploy"] : []),
           ],
         },
-      ]
-    }
-    if (target === "app") {
-      return [
-        {
-          name: "app.assets.build",
-          cwd: appRoot,
-          cmd: "bun",
-          args: ["run", "build"],
-          env: {
-            VITE_CLAXEDO_SERVER_URL: clean(env.CLAXEDO_CENTRAL_URL) ?? "",
-            VITE_AUTH_ENABLED: "true",
-            VITE_CLAXEDO_PRODUCT_POSTURE: profile.productPosture,
-            VITE_CLAXEDO_AUTH_ADAPTER: profile.authAdapter,
-            ...(profile.adapterProfile === "clerk-convex" && clean(env.VITE_CLERK_PUBLISHABLE_KEY)
-              ? { VITE_CLERK_PUBLISHABLE_KEY: clean(env.VITE_CLERK_PUBLISHABLE_KEY)! }
-              : {}),
-            ...(profile.adapterProfile === "clerk-convex" && clean(env.VITE_CONVEX_URL)
-              ? { VITE_CONVEX_URL: clean(env.VITE_CONVEX_URL)! }
-              : {}),
-          },
-        },
-        ...(input.dryRun
-          ? []
-          : [
-              {
-                name: "app.pages.deploy",
-                cwd: appRoot,
-                cmd: "wrangler",
-                args: [
-                  "pages",
-                  "deploy",
-                  "dist",
-                  "--project-name",
-                  clean(env.CLAXEDO_PAGES_PROJECT) ?? "claxedo-app-staging",
-                  "--branch",
-                  input.staging ? "staging" : "dev",
-                ],
-              },
-            ]),
       ]
     }
     if (target === "cloudflare-sandbox") {

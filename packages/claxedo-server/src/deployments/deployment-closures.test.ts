@@ -1,25 +1,23 @@
 import { describe, expect, it } from "vitest"
 import path from "node:path"
-import { shortestForbiddenChain, sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
+import { sourceClosure } from "@claxedo/server-core/platform/governance/source-closure"
 
 /**
  * What each server deployment entry closes over.
  *
- * This package ships three production entries, and they are three different
- * products: two cloud compositions (`hosted-node`, `hosted-workerd`) that are
- * signed, multi-tenant and hold no local execution, and one single-binary
- * (`self-hosted-node`) that does run local workspaces. They share `src/`, so
- * the only thing keeping them apart is which modules each entry can REACH —
- * and reachability is not visible in a composition file, which lists what a
+ * This package ships one Node entry — the single-binary
+ * (`self-hosted-node`) that runs local workspaces — plus the Better Auth +
+ * D1 worker compositions. The retired Clerk + Convex cloud entries
+ * (`hosted-node`, `hosted-workerd/worker.ts`) were removed; the re-add path
+ * lives in the `clerk-convex-cp` skill. Entries share `src/`, so the only
+ * thing keeping them apart is which modules each entry can REACH — and
+ * reachability is not visible in a composition file, which lists what a
  * deployment mounts rather than what its graph drags along.
  *
  * Scope is deliberately narrow, because most of this boundary is already
  * enforced and a second copy of a rule is a second thing to keep in step:
  *
- *   - `hosted-workerd/worker.import-graph.test.ts` already walks `worker.ts`
- *     and `hosted-shared/hosted-app.ts` and forbids the self-hosted
- *     composition (`deployments/self-hosted-node/`), Node-only packages, and
- *     unmarked workerd-only modules. Nothing here restates that.
+
  *   - `@claxedo/local-server`'s own `self-hosted-execution.test.ts` already
  *     forbids every production file in this package from reaching a deep
  *     `@claxedo/local-server/...` path — but it constrains WHICH subpath, not
@@ -58,72 +56,6 @@ const ROOT = path.resolve(import.meta.dirname, "../..")
 // entry does not reach the config/credential consumers and therefore did not
 // move. No module or provider SDK was added to either closure.
 const ENTRIES = [
-  // +8 modules (132 -> 140) for the unified usage ledger: the route,
-  // projection/pricing path, revision contract, turn meter, SQLite ledger and
-  // its schema, plus the existing local-host identity owner used to stamp
-  // durable facts. The only package edges are Node `fs` for that durable local
-  // ledger and the pinned, read-only `tokentracker-cli` pricing catalog.
-  // Combined with dev's sandbox-contract split, the exact package count is 28.
-  // The reviewed multiplayer graph adds the canonical private-session
-  // reservation route and retained-provider/runtime-authority composition;
-  // all remain hosted owners and the exact source closure is now 146 modules.
-  // +4 modules (146 -> 150) for the machine-share owner surface the hosted
-  // control plane now serves directly: `routes/remote-access.ts` (the shared
-  // owner/machine route factory — item 2 of the governance sweep gated its
-  // GET "/" the same as its neighbours), `hosted-shared/hosted-remote-access-
-  // service.ts` (the hosted `RemoteAccessOwnerService` composed over the D1/
-  // Convex authority), `authority/relay-token-record.ts` (the one owner of
-  // "which authority path records a minted relay runtime token", extracted
-  // so a user-principal mint and the control plane's own no longer duplicate
-  // the choice), and `hosted-shared/hosted-usage-ledger.ts` (the unified
-  // usage dashboard, mounted only when the plane has a Convex workspace-
-  // authority binding). All four are real hosted-product capabilities landed
-  // on this branch (`feat(hosted): the owner's view of their machines, and
-  // the project route`; `feat(hosted): harness health for a user-hosted
-  // workspace, and the usage surface`; `fix(session-list): list a user-
-  // hosted workspace's sessions from its host`). No new package.
-  // +4 modules (150 -> 154): the already-reachable workspace SessionEnv facade
-  // now delegates to focused factory, protocol, runtime-env, and admission
-  // owners. No package edge was added.
-  // +1 module (154 -> 155): `workspace/routes/share-routes.ts`, the one
-  // `workspaceShareRoutes` owner, served by every hosted composition through
-  // `routes/hosted/workspace.ts`. No package edge.
-  { name: "hosted-node", entry: "src/deployments/hosted-node/index.ts", modules: 155, packages: 28 },
-  // The usage authority and dev's host-enrollment extraction add one runtime
-  // module each relative to their common base; neither adds a Worker package.
-  // +1 module (109 -> 110): `hosts/workgraph/settlement-rearm.ts`, the single
-  // rearm predicate that replaced the two diverged copies in the Settler DO
-  // and the wakes sinks. Dependency-free, no new package.
-  // +1 module (110 -> 111): `authority/runtime-target.ts`, the canonical
-  // runtime transport target shared by hosted and Node authority pull paths.
-  // Dependency-free, no new package.
-  // +1 module (111 -> 112): the 236-byte `agent-sdk-runtime/message-page`
-  // contract. It replaces runtime imports of the 6.7 MB all-adapters barrel,
-  // stays dependency-free in the emitted Worker graph, and adds no package.
-  // +1 module (112 -> 113): hosted billing/Convex usage ownership moved out of
-  // the provider-neutral workspace route into one explicit legacy-product
-  // adapter. This keeps the future user-deployed core from closing over it;
-  // the legacy hosted entry deliberately injects it until static product roots
-  // replace this entry.
-  // +1 dependency-neutral package (13 -> 14): the authenticated bootstrap now
-  // publishes the fixed service catalog through @claxedo/service-contract.
-  // The closure must contain the vocabulary, but never either implementation.
-  // +3 modules (113 -> 116): provider-neutral hosted composition, its
-  // fail-closed composition error, and the retained sandbox-driver adapter.
-  // The clean Better Auth+D1 roots below prove these retained provider edges
-  // do not leak into user-deployed artifacts.
-  // The same reviewed multiplayer owners are Worker-safe and bring no optional
-  // provider SDK into this root. The exact source closure is now 122 modules.
-  // +4 modules (122 -> 126): the same machine-share owner surface as
-  // hosted-node above — `routes/remote-access.ts`, `hosted-shared/hosted-
-  // remote-access-service.ts`, `authority/relay-token-record.ts`, and
-  // `hosted-shared/hosted-usage-ledger.ts` — reached through the identical
-  // `hosted-core-app.ts` composition this Worker shares with the Node hosted
-  // entry. All four are dependency-neutral in the emitted Worker graph, so no
-  // package moves.
-  // +1 module (126 -> 127): `workspace/routes/share-routes.ts` through the same
-  // `routes/hosted/workspace.ts` mount. No package edge.
-  { name: "hosted-workerd", entry: "src/deployments/hosted-workerd/worker.ts", modules: 127, packages: 14 },
   // +1 module (139 -> 140) on 2026-08-08: `deployments/route-ownership.ts`,
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.
@@ -153,7 +85,7 @@ const ENTRIES = [
   { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 155, packages: 35 },
 ] as const
 
-/** The two cloud compositions. Neither runs a workspace on its own box. */
+/** The remaining cloud compositions. */
 const CLOUD_ENTRIES = ENTRIES.filter((item) => item.name !== "self-hosted-node")
 const BETTER_AUTH_D1_LOCKED_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
 const BETTER_AUTH_D1_CANDIDATE_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
@@ -161,15 +93,6 @@ const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.t
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
   return sourceClosure({ entry: path.join(ROOT, entry), root: ROOT, ...options })
-}
-
-function chainTo(entry: string, isForbidden: (relative: string) => boolean) {
-  const found = shortestForbiddenChain({
-    entry: path.join(ROOT, entry),
-    root: ROOT,
-    isForbidden: (module) => isForbidden(module.relative),
-  })
-  return found?.map((module) => module.relative).join("\n  -> ") ?? null
 }
 
 describe("server deployment entry closures", () => {
@@ -312,21 +235,6 @@ describe("server deployment entry closures", () => {
       // broke at runtime with a clean import graph the whole time.
       expect(result.opaque, `${name} has an import the walk cannot follow`).toEqual([])
     }
-  })
-
-  it("keeps the self-hosted composition out of the Node cloud entry", () => {
-    // `worker.import-graph.test.ts` makes this assertion for `worker.ts`.
-    // `hosted-node/index.ts` had no import-graph gate of any kind, and it is
-    // the entry most able to reach the single binary by accident: both run on
-    // Node, so nothing about a `better-sqlite3` or `node:fs` edge would break
-    // the build the way it breaks a Worker bundle. The cloud plane pulling in
-    // embedded auth, the SQLite authority and local execution would simply
-    // work in CI and be wrong in production.
-    const chain = chainTo("src/deployments/hosted-node/index.ts", (relative) =>
-      relative.startsWith("src/deployments/self-hosted-node/"),
-    )
-
-    expect(chain, `hosted-node reaches the self-hosted composition:\n  ${chain}`).toBeNull()
   })
 
   it("keeps the desktop package out of both cloud entries", () => {

@@ -90,8 +90,8 @@ is the honest reading and the one a caller must act on.
 
 ## The matrix
 
-Paths are Hosted Server route templates as mounted by `createHostedApp`
-(`packages/claxedo-server/src/deployments/hosted-shared/hosted-app.ts`), which
+Paths are Hosted Server route templates as mounted by `createHostedCoreApp`
+(`packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts`), which
 is the authoritative source for this column.
 
 ### Account and organization

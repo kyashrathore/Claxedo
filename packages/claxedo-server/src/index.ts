@@ -38,12 +38,11 @@ export {
   devAuthAdapter,
   localOnlyAuthAdapter,
   type BetterAuthVerifier,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthAdapter,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
-export { clerkAuthAdapter, tokenVerifierAsClerk } from "@claxedo/server-core/platform/auth/clerk-adapter"
 export {
   hostTunnelTokenSigner,
   runtimeAccessTokenSigner,

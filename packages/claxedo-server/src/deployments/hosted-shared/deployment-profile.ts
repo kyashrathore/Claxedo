@@ -2,12 +2,13 @@
  * Static deployment identity for the hosted control-plane products.
  *
  * These values are build/deploy inputs. They are deliberately independent of
- * credentials: discovering a Clerk key, a Convex URL, or a sandbox token must
- * never select a product or adapter. Deployment tooling resolves this contract
- * once and hands the resulting descriptor to a thin composition entrypoint.
+ * credentials: discovering an auth key, a database URL, or a sandbox token
+ * must never select a product or adapter. Deployment tooling resolves this
+ * contract once and hands the resulting descriptor to a thin composition
+ * entrypoint.
  */
 
-export const CERTIFIED_ADAPTER_PROFILES = ["better-auth-d1", "clerk-convex"] as const
+export const CERTIFIED_ADAPTER_PROFILES = ["better-auth-d1"] as const
 export const PRODUCT_POSTURES = ["claxedo-hosted", "user-deployed"] as const
 export const SANDBOX_POSTURES = ["control-plane-only", "full-hosted"] as const
 export const SANDBOX_DRIVERS = ["cloudflare", "daytona", "exe", "fetch"] as const
@@ -63,11 +64,6 @@ type CommonDeploymentProfile = {
       adapterProfile: "better-auth-d1"
       authAdapter: "better-auth"
       controlPlaneAdapter: "d1"
-    }
-  | {
-      adapterProfile: "clerk-convex"
-      authAdapter: "clerk"
-      controlPlaneAdapter: "convex"
     }
 ) &
   (
@@ -162,18 +158,11 @@ export function resolveDeploymentProfile(input: DeploymentProfileInput): Deploym
           return { sandboxPosture } as const
         })()
 
-  const adapters =
-    adapterProfile === "better-auth-d1"
-      ? ({
-          adapterProfile,
-          authAdapter: "better-auth",
-          controlPlaneAdapter: "d1",
-        } as const)
-      : ({
-          adapterProfile,
-          authAdapter: "clerk",
-          controlPlaneAdapter: "convex",
-        } as const)
+  const adapters = {
+    adapterProfile,
+    authAdapter: "better-auth",
+    controlPlaneAdapter: "d1",
+  } as const
 
   const product = STATIC_PRODUCT_DESCRIPTORS[productPosture]
 

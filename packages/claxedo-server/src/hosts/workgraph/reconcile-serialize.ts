@@ -18,15 +18,15 @@ import type { WorkGraphReconcileResult } from "../../routes/hosted/workgraph-adm
  * each be served by a fresh isolate. The guard was real; its scope was one
  * isolate, which is not the scope of the hazard.
  *
- * `leaseFencedReconcile` closes that with a Convex-held lease
- * (`convex/cronLease.ts`). The two layers compose deliberately and are NOT
+ * `leaseFencedReconcile` closes that with a centrally-held lease.
+ * The two layers compose deliberately and are NOT
  * redundant:
  *
  *   - the local flag is free and catches the common same-isolate overlap
  *     without a network round trip;
  *   - the lease catches the cross-isolate case the flag cannot see.
  *
- * Local first, so a same-isolate overlap never spends a Convex call.
+ * Local first, so a same-isolate overlap never spends a store call.
  */
 export function skipOverlappingReconcile(
   reconcile: () => Promise<WorkGraphReconcileResult>,
@@ -50,7 +50,7 @@ export function skipOverlappingReconcile(
  * motivating incident is a HANG. A lease that could not expire would convert one
  * hung holder into a reconciler that never runs again — strictly worse than the
  * overlap it prevents, since an overlap eventually makes progress and a
- * permanent stall never does. `convex/cronLease.ts` documents the fence and the
+ * permanent stall never does. The lease documents the fence and the
  * expiry rules; this wrapper only has to release what it acquires.
  *
  * A refused acquisition returns `skipped: true`, the SAME shape as the local
@@ -81,7 +81,7 @@ export function leaseFencedReconcile(input: {
       return await input.reconcile()
     } finally {
       // Release so the NEXT tick starts immediately instead of waiting out the
-      // TTL. Fence-checked on the Convex side, so a release from a holder whose
+      // TTL. Fence-checked on the store side, so a release from a holder whose
       // lease was already taken over is a no-op rather than a way to free the
       // current holder's claim.
       //

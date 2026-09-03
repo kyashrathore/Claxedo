@@ -22,7 +22,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -41,7 +41,7 @@ export type RepositoryAccessResult =
 export type ConnectionsHostOptions = {
   credentials: ControlPlaneCredentials
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   env?: Record<string, string | undefined>
   publicUrl?: string
   turnCredentials?: ConnectionTurnCredentials

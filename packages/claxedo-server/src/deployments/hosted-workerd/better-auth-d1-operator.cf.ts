@@ -178,7 +178,7 @@ function parseAdmissionBinding(value: unknown): DeploymentAdmissionBinding {
   const productPosture = stringField(body, "productPosture")
   const sandboxPosture = stringField(body, "sandboxPosture")
   const phase = stringField(body, "phase")
-  if (adapterProfile !== "better-auth-d1" && adapterProfile !== "clerk-convex")
+  if (adapterProfile !== "better-auth-d1")
     throw new Error("invalid adapter profile binding")
   if (productPosture !== "claxedo-hosted" && productPosture !== "user-deployed")
     throw new Error("invalid product posture binding")

@@ -1,25 +1,11 @@
 /**
- * The generic timeout helpers have ONE home, and the Convex adapter is not a
- * back door to them.
+ * The generic timeout helpers have ONE home: `platform/runtime/timeout.ts`.
  *
- * `withTimeout` and `ControlPlaneRequestTimeoutError` are transport-generic:
- * nothing in either is Convex-specific. They live in `platform/runtime/timeout.ts`.
- * `authority/adapters/convex/timeout.ts` re-exports them for its own callers'
- * convenience and adds `controlPlaneTimeoutMs`, which IS Convex-specific — its
- * env names are spelled `CLAXEDO_CONVEX_*`.
- *
- * The defect this prevents: a module that wants only the generic helper reaching
- * for the adapter path because that is where it used to live, which silently
- * gives a non-Convex module a Convex dependency. Two files had already done it
- * (`deployments/shared-routes/internal-relay.ts` imported only the error type,
- * `routes/hosted/internal-relay.test.ts` only `withTimeout`) and neither call
- * has anything to do with Convex.
- *
- * Importing the adapter path is still correct for a module that genuinely calls
- * Convex and therefore wants `controlPlaneTimeoutMs` — `billing/store.ts` and
- * `hosts/wakes/wake-settlement-dispatcher.ts` both do. So the rule is not "never
- * import the adapter", it is "do not import the adapter for the generic
- * symbols", which is what the assertion below checks.
+ * `withTimeout` and `ControlPlaneRequestTimeoutError` are transport-generic.
+ * The retired Convex adapter used to re-export them for its own callers'
+ * convenience; that back door is gone with the adapter. This test keeps the
+ * rule: no `adapters/convex/timeout` import path may reappear, so a future
+ * adapter cannot silently reintroduce a second home for the generic symbols.
  */
 
 import fs from "node:fs"

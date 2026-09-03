@@ -350,7 +350,6 @@ function isSignedInGateMetric(): Metric {
   const allowed = new Set([
     "platform/auth/auth-session.ts",
     "platform/auth/better-auth-browser-auth.ts",
-    "platform/auth/clerk-browser-auth.ts",
   ])
   return {
     name: "isSignedInGates",

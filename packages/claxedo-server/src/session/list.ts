@@ -76,8 +76,7 @@ export async function signedSessionList(
       workspaceIds.map(async (workspaceId) => {
         const rows = await authority.listSessions(auth, { workspaceId })
         // The authority's per-workspace list carries neither the workspace id
-        // it was asked for nor (always) a project id — see convex/sessions.ts
-        // `list`. Both are known here, and without them every row would fail
+        // it was asked for nor (always) a project id. Both are known here, and without them every row would fail
         // the project-scope filter (`rowInScope`) and build a workspace-less
         // sessionRef.
         return (Array.isArray(rows) ? rows : []).map((row) => ({

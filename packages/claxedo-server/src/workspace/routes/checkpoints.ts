@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { ClerkVerifier, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneTokenVerifier, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
@@ -15,7 +15,7 @@ type CheckpointRouteOptions = {
   defaultHomeRegion?: string
   allowUnsignedLocal?: boolean
   authentication?: RequestAuthenticationAdapter
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
 }
 
 export function WorkspaceCheckpointRoutes(

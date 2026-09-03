@@ -36,6 +36,7 @@ export class ControlPlaneCompositionError extends Error {
   constructor(
     public readonly code:
       | "hosted_dependency_missing"
+      | "hosted_composition_removed"
       | "hosted_auth_disabled"
       | "hosted_sync_mode_invalid"
       | "self_host_app_required",

@@ -90,15 +90,12 @@ import {
   controlPlaneAuthContext,
   ControlPlaneAuthError,
 } from "@claxedo/server-core/platform/auth/auth"
-import { clerkAuthAdapter, signedCloudAuthRequested } from "@claxedo/server-core/platform/auth/clerk-adapter"
 import {
-  assertHostedBootRequirements,
   deploymentMode,
   unsignedLocalRequestGuard,
 } from "@claxedo/server-core/authority/deployment-mode"
 import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
-import { convexAuthorityUrlFromEnv, createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
@@ -176,7 +173,6 @@ import { DEFAULT_CLAXEDO_SERVER_PORT, embeddedWorkspaceRuntimeSessionAuthority }
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
-import { createConvexUsageLedger } from "../../authority/adapters/convex/usage-ledger"
 import type { UsageLedger } from "../../platform/telemetry/product/metering"
 import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-server/self-hosted-execution"
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -576,7 +572,7 @@ export const SELF_HOST_DOCUMENT_FRAME_ANCESTORS = "frame-ancestors 'self'"
  * VALIDATED, by serving the real `packages/claxedo-app/dist` from this server
  * with these exact headers and driving it in a browser against a live backend:
  * The SPA boots and renders (project list, not a white screen), the module
- * entry + Clerk vendor bundle + CSS load, the inline <style> and the inline
+ * entry + auth vendor bundle + CSS load, the inline <style> and the inline
  * style attribute on <html> apply, WASM compiles on the main thread, two blob
  * workers and `assets/markdown-shiki.worker-*.js` (a same-origin MODULE
  * worker, served by this mount with these headers) construct and run, the
@@ -588,9 +584,8 @@ export const SELF_HOST_DOCUMENT_FRAME_ANCESTORS = "frame-ancestors 'self'"
  * not.
  *
  * NOT yet exercised, which is why this stays REPORT-ONLY: sign-in/sign-up
- * (Clerk's frontend API origin, Turnstile at challenges.cloudflare.com, the
- * Clerk avatar host on img-src) — the box ran unsigned-local, so Clerk loaded
- * but no auth flow ran; a real workspace session and the terminal's wss to a
+ * (auth provider origin, Turnstile at challenges.cloudflare.com) — the box
+ * ran unsigned-local, so no auth flow ran; a real workspace session and the terminal's wss to a
  * relay; file review actually driving the Shiki worker. KNOWN GAP: a LAN
  * self-host deploy whose control plane is a plaintext NON-loopback origin
  * (e.g. document on `http://192.168.1.5:3001`, control plane on
@@ -1177,7 +1172,7 @@ export function createSelfHostedApp(
       // Public/deployed boxes MUST set CLAXEDO_CREDENTIALS_TOKEN (see
       // CredentialRoutesOptions.token). Local loopback dev may leave it unset.
       ...(process.env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: process.env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
-      ...((signedCloudAuthRequested(process.env) || deploymentMode(process.env) === "hosted") ? {
+      ...((embeddedAuthEnabled(process.env) || deploymentMode(process.env) === "hosted") ? {
         authenticate: async (request: Request) => {
           const auth = await controlPlaneAuthContext(request, {
             config: services.auth.config,
@@ -1368,29 +1363,15 @@ export function captureControlPlaneStartupTelemetry(
 }
 
 export function createDefaultLocalControlPlaneServices() {
-  // The Convex adapter owns the authority URL env name; the composition only
-  // threads the resolved presence.
   const trust = deploymentMode(process.env)
-  const authorityUrl = convexAuthorityUrlFromEnv(process.env)
   const embeddedAuth = embeddedAuthEnabled(process.env)
   if (trust === "hosted") {
-    // Fail-closed hosted boot: CLAXEDO_DEPLOYMENT_MODE=hosted REFUSES to
-    // start unless signed auth is fully configured and a workspace authority
-    // is resolved — one thrown error naming every missing piece. A hosted
-    // deployment that cannot authenticate must be down, not open; absent
-    // mode (self-host) keeps the zero-config boot below bit-for-bit.
-    assertHostedBootRequirements(process.env, { authorityConfigured: !!authorityUrl })
-  }
-  if (signedCloudAuthRequested(process.env) && !authorityUrl && !embeddedAuth) {
-    // Fail closed at BOOT (mirror of the hosted requiredHostedDependency rule):
-    // Signed auth without a workspace authority would otherwise answer 503 on
-    // every request instead of telling the deployer what is missing.
-    // Exception: CLAXEDO_EMBEDDED_AUTH=1 is a valid signed config WITHOUT a
-    // remote authority URL — the local SQLite workspace authority plus the
-    // embedded Better Auth issuer covers a self-host box with no Convex/Clerk.
+    // Hosted mode moved to the Better Auth + D1 worker; the Node self-host
+    // entrypoint no longer boots a hosted composition. Fail closed with a
+    // human-actionable error instead of silently running local-only.
     throw new ControlPlaneCompositionError(
-      "hosted_dependency_missing",
-      "Signed/cloud auth requires a workspace authority; set CLAXEDO_WORKSPACE_AUTHORITY_URL or enable CLAXEDO_EMBEDDED_AUTH=1",
+      "hosted_composition_removed",
+      "CLAXEDO_DEPLOYMENT_MODE=hosted is not supported by the self-hosted Node entrypoint; deploy the Better Auth + D1 worker instead",
     )
   }
   const sandboxManager = createWorkspaceSupervisorSandboxManager()
@@ -1399,9 +1380,7 @@ export function createDefaultLocalControlPlaneServices() {
   // SQLite here so the renderer's first session-list request does not pay for
   // migrations, repair checks, WAL checkpointing, and statement preparation.
   ClaxedoDB.raw()
-  const authority = trust === "hosted"
-    ? createConvexAuthority({ url: authorityUrl! })
-    : createSqliteWorkspaceAuthority()
+  const authority = createSqliteWorkspaceAuthority()
   const services = createControlPlaneServices(
     {
       projectionStore: centralStore.projectionStore,
@@ -1409,12 +1388,11 @@ export function createDefaultLocalControlPlaneServices() {
     },
     {
       // Embedded Better Auth issuer (CLAXEDO_EMBEDDED_AUTH=1) => signed mode
-      // backed by the in-process better-auth instance; otherwise Clerk env.
-      auth: embeddedAuth
-        ? betterAuthAdapter({ issuer: EMBEDDED_AUTH_ISSUER, verifier: getEmbeddedAuth().verifier })
-        : clerkAuthAdapter({ env: process.env, authorityConfigured: !!authorityUrl }),
-      // Hosted trust uses its configured Convex authority. Local trust always
-      // uses SQLite, even when development env files contain stale hosted URLs.
+      // backed by the in-process better-auth instance; otherwise local-only.
+      ...(embeddedAuth
+        ? { auth: betterAuthAdapter({ issuer: EMBEDDED_AUTH_ISSUER, verifier: getEmbeddedAuth().verifier }) }
+        : {}),
+      // Self-host always uses SQLite.
       authority,
       relay: localRelayFromEnv(sandboxManager, authority),
       sandbox: {
@@ -1507,10 +1485,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
   const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
-  const authorityUrl = convexAuthorityUrlFromEnv(process.env)
-  const usageLedger = authorityUrl && process.env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN?.trim()
-    ? createConvexUsageLedger({ url: authorityUrl })
-    : undefined
+  const usageLedger: UsageLedger | undefined = undefined
   const usageOutbox = createUsageOutboxSync({
     local: usageRevisionStore,
     ...(usageLedger ? { central: usageLedger } : {}),
@@ -1742,9 +1717,8 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   }
   configureAgentConfig({
     ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),
-    // Reuse the authority selected by this composition. Local trust has
-    // already selected SQLite even if an ambient Convex URL is present;
-    // hosted trust has already failed closed or selected Convex.
+    // Reuse the authority selected by this composition (always SQLite;
+    // hosted trust fails closed above).
     ...(services.authority ? { workspaceAuthority: services.authority } : {}),
   })
   configureWorkspaceSupervisor({

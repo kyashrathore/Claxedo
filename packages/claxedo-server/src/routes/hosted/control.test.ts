@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest"
-import type { ClerkVerifier } from "@claxedo/server-core/platform/auth/auth"
+import type { ControlPlaneTokenVerifier } from "@claxedo/server-core/platform/auth/auth"
 import { HostedControlRoutes } from "./control"
 
 const authConfig = {
@@ -8,7 +8,7 @@ const authConfig = {
   jwksUrl: "https://clerk.test/jwks",
 } as const
 
-const verifier: ClerkVerifier = async (token, config) => ({
+const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed",
   user: {
     subject: token,

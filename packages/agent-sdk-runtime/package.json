@@ -154,13 +154,6 @@
       "development": "./dist/stores/sqlite.mjs",
       "import": "./dist/stores/sqlite.mjs",
       "default": "./dist/stores/sqlite.mjs"
-    },
-    "./stores/convex": {
-      "types": "./dist/stores/convex.d.ts",
-      "bun": "./dist/stores/convex.mjs",
-      "development": "./dist/stores/convex.mjs",
-      "import": "./dist/stores/convex.mjs",
-      "default": "./dist/stores/convex.mjs"
     }
   },
   "files": [

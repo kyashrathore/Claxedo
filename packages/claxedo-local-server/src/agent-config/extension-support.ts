@@ -17,7 +17,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -71,7 +71,7 @@ export type AgentConfigRouteOptions = {
   }) => AgentExtensionPolicyOverride[] | Promise<AgentExtensionPolicyOverride[]>)
   services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   homeDir?: string
   updateCentralSessionModel?: (sessionId: string, model: { providerID: string; modelID: string }) => Promise<void>
   invalidateCentralSession?: (sessionId: string) => void
@@ -107,7 +107,7 @@ export async function workspaceExtensionScope(input: {
   workspaceId?: string | null
   services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
 }): Promise<WorkspaceExtensionScope | Response> {
   if (!input.workspaceId) return errorResponse(400, "agent_extension_workspace_id_required", "workspaceId is required for workspace Agent Extensions")
   try {

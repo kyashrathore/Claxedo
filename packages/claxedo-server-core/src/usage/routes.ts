@@ -5,7 +5,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "../platform/auth/auth"
 import type { SqliteUsageLedger } from "./adapters/sqlite-usage-ledger"
@@ -725,7 +725,7 @@ function centralUsageFacts(value: unknown): { available: boolean; facts: TurnUsa
 export function UsageRoutes(input: {
   ledger: UsageLedger
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   telemetry?: UsageTelemetry
 }) {
   const app = new Hono()

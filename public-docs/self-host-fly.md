@@ -168,17 +168,14 @@ Volume and data:
   above one machine in this mode — the SQLite store and live sessions live on
   that one machine.
 
-## Layering signed / hosted mode later
+## Layering signed mode later
 
-Signed mode (real accounts, hosted workspace authority, relay) is additive: keep
-the same Fly app and add the signing/identity secrets. Use
-`packages/claxedo-server/.env.example` as the source of truth for the exact
-names, and set each with `fly secrets set` — for example the Clerk verification
-inputs (`CLERK_JWT_ISSUER`, `CLERK_JWKS_URL`, `CLERK_SECRET_KEY`), the workspace
-authority and relay URLs, and the runtime-access-token signing key. The hosted
-Cloudflare Worker shape and its full required/optional matrix are documented in
-`public-docs/hosted-control-plane-worker.md`; the operational deploy and
-rollback doctrine is in `public-docs/deploy-runbook.md`.
+Signed mode (real accounts via the embedded Better Auth issuer) is additive:
+keep the same Fly app and set `CLAXEDO_EMBEDDED_AUTH=1` plus the auth secrets.
+Use `packages/claxedo-server/.env.example` as the source of truth for the exact
+names, and set each with `fly secrets set`. The Cloudflare user-deployed shape
+and its full required/optional matrix are documented in
+`public-docs/user-deployed-cloudflare.md`.
 
 ## Telemetry
 
@@ -211,4 +208,4 @@ A Fly rollback is itself a deploy: find the last good image with
 `fly releases -a <app> --image` and redeploy it. Note that a rollback applies
 the _current_ `fly.toml` and secrets, not those from the old release — the
 in-repo config is the only source of config truth. See
-`public-docs/deploy-runbook.md` for the full per-unit rollback doctrine.
+`public-docs/user-deployed-cloudflare.md` for the deploy and rollback doctrine.

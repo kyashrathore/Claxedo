@@ -368,10 +368,8 @@ Minimum store responsibilities:
 
 ```ts
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
-import { createConvexRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/convex"
 
 const localStore = createSqliteRuntimeStore({ root: ".agent-runtime" })
-const convexStore = createConvexRuntimeStore({
   workspaceId,
   auth,
   authority,

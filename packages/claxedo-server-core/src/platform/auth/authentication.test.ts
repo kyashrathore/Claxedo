@@ -428,9 +428,9 @@ describe("provider-neutral control-plane authentication", () => {
   test("rejects missing or unknown native revocation contracts at the runtime descriptor boundary", () => {
     const clerkDescriptor = {
       ...betterAuthDescriptor,
-      adapter: "clerk",
-      issuer: "https://clerk.example.test",
-      methods: ["clerk"],
+      adapter: "custom",
+      issuer: "https://custom.example.test",
+      methods: ["github"],
       browser: {
         transport: "bearer",
         credentialPolicy: "authorization-only",
@@ -443,19 +443,19 @@ describe("provider-neutral control-plane authentication", () => {
         cli: {
           ...betterAuthDescriptor.native.cli,
           flow: "adapter-native",
-          tokenEndpointOrigin: "https://clerk.example.test",
+          tokenEndpointOrigin: "https://custom.example.test",
           revocation: {
             protocol: "adapter-native",
-            endpoint: "https://clerk.example.test/native/revoke",
+            endpoint: "https://custom.example.test/native/revoke",
           },
         },
         desktop: {
           ...betterAuthDescriptor.native.desktop,
           flow: "adapter-native",
-          tokenEndpointOrigin: "https://clerk.example.test",
+          tokenEndpointOrigin: "https://custom.example.test",
           revocation: {
             protocol: "adapter-native",
-            endpoint: "https://clerk.example.test/native/revoke",
+            endpoint: "https://custom.example.test/native/revoke",
           },
         },
       },
@@ -502,12 +502,12 @@ describe("provider-neutral control-plane authentication", () => {
     }
   })
 
-  test("Clerk and Better Auth execute through the same neutral principal boundary", async () => {
+  test("Custom and Better Auth execute through the same neutral principal boundary", async () => {
     const clerkDescriptor = {
       ...betterAuthDescriptor,
-      adapter: "clerk",
-      issuer: "https://clerk.example.test",
-      methods: ["clerk"],
+      adapter: "custom",
+      issuer: "https://custom.example.test",
+      methods: ["github"],
       browser: {
         transport: "bearer",
         credentialPolicy: "authorization-only",
@@ -520,19 +520,19 @@ describe("provider-neutral control-plane authentication", () => {
         cli: {
           ...betterAuthDescriptor.native.cli,
           flow: "adapter-native",
-          tokenEndpointOrigin: "https://clerk.example.test",
+          tokenEndpointOrigin: "https://custom.example.test",
           revocation: {
             protocol: "adapter-native",
-            endpoint: "https://clerk.example.test/native/revoke",
+            endpoint: "https://custom.example.test/native/revoke",
           },
         },
         desktop: {
           ...betterAuthDescriptor.native.desktop,
           flow: "adapter-native",
-          tokenEndpointOrigin: "https://clerk.example.test",
+          tokenEndpointOrigin: "https://custom.example.test",
           revocation: {
             protocol: "adapter-native",
-            endpoint: "https://clerk.example.test/native/revoke",
+            endpoint: "https://custom.example.test/native/revoke",
           },
         },
       },
@@ -542,13 +542,13 @@ describe("provider-neutral control-plane authentication", () => {
       descriptor: clerkDescriptor,
       verify: async () => ({
         ...(browserSession() as Record<string, unknown>),
-        adapter: "clerk",
-        issuer: "https://clerk.example.test",
+        adapter: "custom",
+        issuer: "https://custom.example.test",
       }),
     })
     await expect(selected.authenticate(new Request("https://api.example.test", {
-      headers: { authorization: "Bearer clerk" },
-    }))).resolves.toMatchObject({ identity: { adapter: "clerk" }, actorKind: "human" })
+      headers: { authorization: "Bearer custom" },
+    }))).resolves.toMatchObject({ identity: { adapter: "custom" }, actorKind: "human" })
   })
 
   test("the lifecycle port supports durable idempotent terminal deletion operations", async () => {

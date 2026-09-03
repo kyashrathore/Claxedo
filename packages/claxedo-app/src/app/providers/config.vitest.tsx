@@ -5,7 +5,6 @@ import { ConfigProvider, useConfig, useConfigOptional } from "./config"
 import type { ClaxedoConfig } from "../entry/index"
 
 const config: ClaxedoConfig = {
-  convexUrl: "https://convex.test",
   authBaseUrl: "https://auth.test",
   gatewayUrl: "https://gateway.test",
 }

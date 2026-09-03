@@ -132,30 +132,32 @@ export function createDesktopNativeAuth(input: {
   }
 
   const select = (descriptor: DesktopAuthDescriptor): SelectedDesktopAdapter => {
-    if (descriptor.adapter === "better-auth") {
-      return {
-        oauth: {
-          authorizeUrl: descriptor.authorizeUrl,
+    if (descriptor.adapter !== "better-auth") {
+      throw new DesktopAuthDescriptorError("invalid_descriptor", "Only the Better Auth desktop flow is supported")
+    }
+    return {
+      oauth: {
+        authorizeUrl: descriptor.authorizeUrl,
+        tokenUrl: descriptor.tokenUrl,
+        clientId: descriptor.binding.id,
+        scope: descriptor.binding.scopes.join(" "),
+        resource: descriptor.binding.resource,
+        timeoutMs,
+      },
+      refresh: (refreshToken) =>
+        input.refresh({
           tokenUrl: descriptor.tokenUrl,
           clientId: descriptor.binding.id,
-          scope: descriptor.binding.scopes.join(" "),
+          refreshToken,
           resource: descriptor.binding.resource,
-          timeoutMs,
-        },
-        refresh: (refreshToken) =>
-          input.refresh({
-            tokenUrl: descriptor.tokenUrl,
-            clientId: descriptor.binding.id,
-            refreshToken,
-            resource: descriptor.binding.resource,
-          }),
-        revoke: async (credential) => {
-          if (descriptor.revocation.protocol !== "rfc7009") {
-            return {
-              state: "uncertain",
-              detail: "Better Auth revocation contract changed before logout",
-            }
+        }),
+      revoke: async (credential) => {
+        if (descriptor.revocation.protocol !== "rfc7009") {
+          return {
+            state: "uncertain",
+            detail: "Better Auth revocation contract changed before logout",
           }
+        }
           try {
             const response = await fetchImpl(descriptor.revocation.endpoint, {
               method: "POST",
@@ -192,32 +194,6 @@ export function createDesktopNativeAuth(input: {
         },
       }
     }
-
-    return {
-      oauth: {
-        authorizeUrl: descriptor.authorizeUrl,
-        tokenUrl: descriptor.tokenUrl,
-        clientId: descriptor.binding.id,
-        scope: descriptor.binding.scopes.join(" "),
-        timeoutMs,
-      },
-      refresh: (refreshToken) =>
-        input.refresh({
-          tokenUrl: descriptor.tokenUrl,
-          clientId: descriptor.binding.id,
-          refreshToken,
-        }),
-      // Clerk token revocation is a Backend API operation requiring the
-      // deployment's server credential. The current descriptor intentionally
-      // exposes only an adapter-native marker, not a public-client request
-      // shape. Do not reinterpret it as RFC 7009 or send the refresh token to
-      // an invented endpoint; local removal remains explicit but uncertain.
-      revoke: async () => ({
-        state: "uncertain",
-        detail: "Clerk adapter-native remote revocation is not exposed to this public desktop client",
-      }),
-    }
-  }
 
   const validate = async (credential: BoundDesktopCredential) => {
     const descriptor = await discover()

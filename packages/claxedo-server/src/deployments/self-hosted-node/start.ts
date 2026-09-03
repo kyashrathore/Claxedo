@@ -24,7 +24,6 @@
 import fs from "node:fs"
 import path from "node:path"
 import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
-import { convexAuthorityUrlFromEnv } from "../../authority/adapters/convex/workspace-authority"
 import { embeddedAuthEnabled } from "./embedded-auth"
 import { selfHostedCapabilities } from "./capabilities"
 import { startServer } from "./app"
@@ -55,13 +54,12 @@ export function staticAppPosture(staticDir: string | undefined) {
 /**
  * Which workspace authority this environment will actually compose.
  *
- * `createDefaultLocalControlPlaneServices` chooses Convex only for hosted
- * trust; local trust deliberately stays on SQLite even when a developer's
- * environment contains a stale hosted URL. Read both inputs here too, so the
- * posture reports the authority the composition is about to build.
+ * Self-host always composes SQLite. Hosted trust is rejected outright: that
+ * environment wants the Better Auth + D1 worker composition.
  */
-export function selectedWorkspaceAuthority(env: NodeJS.ProcessEnv): "convex" | "sqlite" {
-  return deploymentMode(env) === "hosted" && convexAuthorityUrlFromEnv(env) ? "convex" : "sqlite"
+export function selectedWorkspaceAuthority(env: NodeJS.ProcessEnv): "sqlite" {
+  void env
+  return "sqlite"
 }
 
 /**
@@ -82,10 +80,8 @@ export function selfHostedPosture(env: NodeJS.ProcessEnv) {
     // has one — it chooses WHICH, never whether. The field stays so a future
     // composition that builds none cannot pass by omission.
     authority: true,
-    // The data-residency claim, and therefore the one that must never be a
-    // literal. A stale hosted URL cannot make this false in local trust because
-    // the composition ignores that URL too. Hosted trust still reports Convex
-    // and is rejected: that environment wants the hosted composition.
+    // The data-residency claim. Self-host always composes SQLite; hosted
+    // trust is rejected before anything is built.
     sqliteAuthority: workspaceAuthority === "sqlite",
     // The product IS local execution; `createDefaultLocalControlPlaneServices`
     // composes it, and `createSelfHostedApp` refuses outright without it.

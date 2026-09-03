@@ -15,7 +15,7 @@ import type { ExecutionProfileDefaults, WorkGraphContext } from "@claxedo/workgr
 import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -37,7 +37,7 @@ import { createLocalWorkGraphMasterRuntime } from "../local/master-runtime"
 
 export type LocalWorkGraphAuthOptions = Readonly<{
   authConfig: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   authority?: WorkspaceAuthority
 }>
 

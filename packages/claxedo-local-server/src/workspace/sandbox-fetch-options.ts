@@ -1,7 +1,7 @@
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
   controlPlaneAuthContext,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -12,7 +12,7 @@ import type { SandboxFetchOptions } from "@claxedo/server-core/workspace/http/sa
 type AuthorizedSandboxFetchOptions = {
   services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
 }
 
 /**

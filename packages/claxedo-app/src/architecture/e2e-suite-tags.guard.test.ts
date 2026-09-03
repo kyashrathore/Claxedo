@@ -18,11 +18,6 @@
  *      `test.describe(...)`/`test(...)` title.
  *   3. Every `@tag` appearing in any test title is a LANE_TAG, a SUB_SELECTOR_TAGS
  *      entry, or the carve-out tag — so a misspelled tag cannot masquerade as a lane.
- *
- * DELIBERATE EXEMPTION — `deployed-workgraph.spec.ts` is `testIgnore`d by
- * `playwright.config.ts` and owned by `playwright.deployed.config.ts`, so it has no lane
- * by design (see the LANE note in that file). It is the only exemption; adding another
- * means adding another config, not another untagged spec.
  */
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
@@ -72,9 +67,6 @@ const SUB_SELECTOR_TAGS = [
   "@surface-web",
 ] as const
 
-/** Owned by `playwright.deployed.config.ts`; `testIgnore`d by the main config. */
-const UNLANED_BY_DESIGN = ["deployed-workgraph.spec.ts"] as const
-
 const specFiles = readdirSync(specDir)
   .filter((file) => file.endsWith(".spec.ts"))
   .sort()
@@ -110,7 +102,6 @@ describe("e2e suite lane tags", () => {
 
   test("every spec carries a recognised lane tag", () => {
     const offenders = specFiles.flatMap((file) => {
-      if ((UNLANED_BY_DESIGN as readonly string[]).includes(file)) return []
       const tags = tagsIn(file)
       if (tags.some((tag) => (LANE_TAGS as readonly string[]).includes(tag))) return []
       return [

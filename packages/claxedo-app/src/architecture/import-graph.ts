@@ -199,7 +199,7 @@ function browserAuthBuildRoots(appRoot: string) {
   const selectionFile = path.join(appRoot, "vite.browser-auth.ts")
   if (!existsSync(selectionFile)) return []
   const selection = readFileSync(selectionFile, "utf8")
-  return ["platform/auth/better-auth-browser-auth.ts", "platform/auth/clerk-browser-auth.ts"].filter((file) =>
+  return ["platform/auth/better-auth-browser-auth.ts"].filter((file) =>
     selection.includes(`./src/${file}`),
   )
 }

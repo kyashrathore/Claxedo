@@ -1,8 +1,8 @@
 import type { Accessor } from "solid-js"
 import type { AuthDisplayUser } from "./auth-display"
 
-export const BROWSER_AUTH_ADAPTERS = ["better-auth", "clerk"] as const
-export const BROWSER_AUTH_METHODS = ["google", "github", "email-password", "clerk"] as const
+export const BROWSER_AUTH_ADAPTERS = ["better-auth"] as const
+export const BROWSER_AUTH_METHODS = ["google", "github", "email-password"] as const
 
 export type BrowserAuthAdapterId = (typeof BROWSER_AUTH_ADAPTERS)[number]
 export type BrowserAuthMethod = (typeof BROWSER_AUTH_METHODS)[number]
@@ -34,12 +34,12 @@ export type BrowserAuthDescriptor = {
 
 export type BrowserAuthSignInOptions =
   | { method?: undefined; redirectUrl?: string }
-  | { method: "google" | "github" | "clerk"; redirectUrl?: string }
+  | { method: "google" | "github"; redirectUrl?: string }
   | { method: "email-password"; email: string; password: string; redirectUrl?: string }
 
 export type BrowserAuthSignUpOptions =
   | { method?: undefined; redirectUrl?: string }
-  | { method: "google" | "github" | "clerk"; redirectUrl?: string }
+  | { method: "google" | "github"; redirectUrl?: string }
   | { method: "email-password"; email: string; password: string; name?: string; redirectUrl?: string }
 
 export type BrowserAuthState = {
@@ -215,7 +215,6 @@ function browserAuthMethods(value: unknown): BrowserAuthMethod[] | undefined {
       case "google":
       case "github":
       case "email-password":
-      case "clerk":
         methods.push(entry)
         break
       default:
@@ -235,13 +234,15 @@ function parseDescriptor(
   const methods = browserAuthMethods(descriptor?.methods)
   const trustedOrigins = stringArray(browser?.trustedOrigins)
   const scopes = stringArray(browser?.scopes)
-  const allowedMethods =
-    input.selectedAdapter === "better-auth"
-      ? new Set<unknown>(["google", "github", "email-password"])
-      : new Set<unknown>(["clerk"])
-  const expectedTransport = input.selectedAdapter === "better-auth" ? "cookie" : "bearer"
-  const expectedPolicy =
-    input.selectedAdapter === "better-auth" ? "reject-cookie-and-authorization" : "authorization-only"
+  const allowedMethods = new Set<unknown>(["google", "github", "email-password"])
+  const expectedTransport = "cookie"
+  const expectedPolicy = "reject-cookie-and-authorization"
+
+  if (input.selectedAdapter !== "better-auth") {
+    throw new BrowserAuthConfigurationError(
+      `live auth descriptor does not match the ${input.selectedAdapter} browser build`,
+    )
+  }
 
   if (
     descriptor?.adapter !== input.selectedAdapter ||
@@ -269,47 +270,17 @@ function parseDescriptor(
     )
   }
 
-  if (input.selectedAdapter === "better-auth") {
-    if (
-      descriptor.issuer !== `${input.apiOrigin}/api/auth` ||
-      !cookie ||
-      !present(cookie.name) ||
-      cookie.path !== "/" ||
-      cookie.secure !== true ||
-      cookie.httpOnly !== true ||
-      cookie.hostOnly !== true ||
-      (cookie.sameSite !== "lax" && cookie.sameSite !== "strict")
-    ) {
-      throw new BrowserAuthConfigurationError("live Better Auth descriptor has an invalid cookie contract")
-    }
-    return {
-      adapter: input.selectedAdapter,
-      deploymentId: descriptor.deploymentId,
-      configurationVersion: descriptor.configurationVersion,
-      expiresAt: descriptor.expiresAt,
-      issuer: descriptor.issuer,
-      methods,
-      browser: {
-        trustedOrigins,
-        clientId: browser.clientId,
-        resource: browser.resource,
-        scopes,
-        transport: "cookie",
-        credentialPolicy: "reject-cookie-and-authorization",
-        cookie: {
-          name: cookie.name,
-          path: "/",
-          secure: true,
-          httpOnly: true,
-          hostOnly: true,
-          sameSite: cookie.sameSite,
-        },
-      },
-    }
-  }
-
-  if (cookie !== undefined) {
-    throw new BrowserAuthConfigurationError("live Clerk descriptor must not select cookie transport")
+  if (
+    descriptor.issuer !== `${input.apiOrigin}/api/auth` ||
+    !cookie ||
+    !present(cookie.name) ||
+    cookie.path !== "/" ||
+    cookie.secure !== true ||
+    cookie.httpOnly !== true ||
+    cookie.hostOnly !== true ||
+    (cookie.sameSite !== "lax" && cookie.sameSite !== "strict")
+  ) {
+    throw new BrowserAuthConfigurationError("live Better Auth descriptor has an invalid cookie contract")
   }
   return {
     adapter: input.selectedAdapter,
@@ -323,8 +294,16 @@ function parseDescriptor(
       clientId: browser.clientId,
       resource: browser.resource,
       scopes,
-      transport: "bearer",
-      credentialPolicy: "authorization-only",
+      transport: "cookie",
+      credentialPolicy: "reject-cookie-and-authorization",
+      cookie: {
+        name: cookie.name,
+        path: "/",
+        secure: true,
+        httpOnly: true,
+        hostOnly: true,
+        sameSite: cookie.sameSite,
+      },
     },
   }
 }
@@ -340,7 +319,7 @@ export async function loadBrowserAuthDescriptor(input: {
   }
   const request = input.request ?? fetch
   const response = await request(`${input.apiOrigin}/api/claxedo/auth/descriptor`, {
-    credentials: input.selectedAdapter === "better-auth" ? "include" : "omit",
+    credentials: "include",
     headers: { accept: "application/json" },
   })
   if (!response.ok) {

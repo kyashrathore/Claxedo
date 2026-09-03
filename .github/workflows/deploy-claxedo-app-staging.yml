@@ -1,9 +1,6 @@
 name: deploy-claxedo-app-staging
 
-# App-only staging releases enter through this lock-owning workflow. Commits
-# that also touch the ordered Cloud deployment unit are handled by
-# deploy-control-plane.yml, which invokes the same reusable app workflow only
-# after Convex, Worker, and authenticated smoke succeed.
+# App-only staging releases enter through this lock-owning workflow.
 on:
   push:
     branches: [dev]
@@ -44,9 +41,9 @@ jobs:
             fi
             changed=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA")
           fi
-          ordered=$(printf '%s\n' "$changed" | awk '/^(convex\/|packages\/(claxedo-server|claxedo-connections|workgraph|agent-sdk-runtime|channels|sandbox-manager|wakes|workspace-relay|workspace-relay-protocol)\/|\.github\/actions\/setup-bun\/action\.yml$|\.github\/workflows\/(deploy-control-plane|deploy-claxedo-app|deploy-claxedo-app-staging)\.yml$)/')
+          ordered=$(printf '%s\n' "$changed" | awk '/^(packages\/(claxedo-server|claxedo-connections|workgraph|agent-sdk-runtime|channels|sandbox-manager|wakes|workspace-relay|workspace-relay-protocol)\/|\.github\/actions\/setup-bun\/action\.yml$|\.github\/workflows\/(deploy-claxedo-app|deploy-claxedo-app-staging)\.yml$)/')
           if [ -n "$ordered" ]; then
-            echo "App deployment is delegated to the ordered control-plane workflow because this commit changes its deployment unit:"
+            echo "App deployment is deferred because this commit changes the server deployment unit:"
             printf '%s\n' "$ordered"
             echo "deploy=false" >> "$GITHUB_OUTPUT"
             exit 0

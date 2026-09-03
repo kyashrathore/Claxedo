@@ -133,19 +133,19 @@ export type ActiveSandboxLeaseCounter = (input: {
  *    Cloudflare isolates, and it says nothing about how many sandboxes are
  *    already running.
  *  - This cap bounds TOTAL LIVE SANDBOXES, and it is evaluated against durable
- *    Convex state, so it holds no matter how many isolates the flood is spread
+ *    central state, so it holds no matter how many isolates the flood is spread
  *    across, and it still holds for a slow drip that never trips a rate limit.
  *
  * An unenforceable count (`undefined`) does NOT block the request. That is
  * deliberate and is not a hole an attacker can open: the count comes from the
- * same Convex deployment as the `createCloudWorkspace` write that immediately
+ * same deployment as the `createCloudWorkspace` write that immediately
  * follows it, so any condition that makes the count unavailable also fails the
- * write. Blocking here would only convert a Convex blip into a create outage.
+ * write. Blocking here would only convert a store blip into a create outage.
  *
  * SCOPING. The count is keyed on the ids the LEASE ROWS actually carry, as
  * `sandboxLeases.recordTenant` stamps them:
  *
- *  - `orgId` is the Clerk `org_id` claim (`runtime_leases.org_id`). It is
+ *  - `orgId` is the `org_id` claim (`runtime_leases.org_id`). It is
  *    deliberately NOT `authority.resolveOrgId`, which answers in the
  *    authority's own internal org id space: keying the count on one id space
  *    while the rows carry another produces a count of zero forever, i.e. a cap

@@ -25,17 +25,11 @@ jobs:
           APP_URL: ${{ vars.CLAXEDO_APP_URL }}
           PAGES_PROJECT: ${{ vars.CLAXEDO_PAGES_PROJECT }}
           PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
-          WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
-          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
-          CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          for name in CONTROL_PLANE_URL APP_URL PAGES_PROJECT PAGES_BRANCH CLERK_PUBLISHABLE_KEY CLERK_SECRET_KEY WORKGRAPH_SMOKE_USER_A_ID WORKGRAPH_SMOKE_USER_A_EMAIL WORKGRAPH_SMOKE_ORGANIZATION_A_ID CONVEX_URL CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
+          for name in CONTROL_PLANE_URL APP_URL PAGES_PROJECT PAGES_BRANCH CLOUDFLARE_API_TOKEN CLOUDFLARE_ACCOUNT_ID; do
             [ -n "${!name}" ] || { echo "::error::$name is not configured in the protected environment"; exit 1; }
           done
 
@@ -47,10 +41,6 @@ jobs:
           BASE="${BASE_URL%/}"
           curl -fsS --max-time 15 "$BASE/api/claxedo/health" | jq -e '.ok == true' > /dev/null
           curl -fsS --max-time 15 "$BASE/api/claxedo/mode" | jq -e '.signedAuth == true' > /dev/null
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
-            -H "Authorization: Bearer app-deploy-garbage-${GITHUB_RUN_ID}" \
-            "$BASE/api/workgraph/snapshot?limit=1")
-          [ "$code" = "401" ] || { echo "::error::target WorkGraph auth probe returned $code, expected 401"; exit 1; }
 
       - name: Build WorkGraph dependency closure for app
         run: bun turbo build --filter='@claxedo/workgraph...'
@@ -60,8 +50,7 @@ jobs:
         env:
           VITE_CLAXEDO_SERVER_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           VITE_AUTH_ENABLED: "true"
-          VITE_CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          VITE_CONVEX_URL: ${{ vars.VITE_CONVEX_URL }}
+          VITE_CLAXEDO_AUTH_ADAPTER: "better-auth"
           # Public by design: VITE_ vars ship in the client bundle — this is
           # the PostHog PROJECT key (capture-only), never a personal API
           # key. Empty key leaves analytics.ts uninitialized: no client,
@@ -125,41 +114,11 @@ jobs:
           CLAXEDO_PAGES_BRANCH: ${{ vars.CLAXEDO_PAGES_BRANCH }}
         run: bunx wrangler pages deploy dist --project-name "$CLAXEDO_PAGES_PROJECT" --branch "$CLAXEDO_PAGES_BRANCH"
 
-      - name: Verify deployed WorkGraph route
+      - name: Verify deployed app shell
         env:
           APP_URL: ${{ vars.CLAXEDO_APP_URL }}
         run: |
           set -euo pipefail
-          body=$(curl -fsS --max-time 15 "${APP_URL%/}/workgraph")
+          body=$(curl -fsS --max-time 15 "${APP_URL%/}/")
           printf '%s' "$body" | grep -F '<div id="root"' > /dev/null \
-            || { echo "::error::deployed /workgraph did not return the Claxedo app shell"; exit 1; }
-
-      - name: Install Playwright Chromium
-        working-directory: packages/claxedo-app
-        run: bunx playwright install --with-deps chromium
-
-      - name: Authenticated deployed WorkGraph browser gate
-        working-directory: packages/claxedo-app
-        timeout-minutes: 10
-        env:
-          CLAXEDO_APP_URL: ${{ vars.CLAXEDO_APP_URL }}
-          CLAXEDO_CONTROL_PLANE_URL: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
-          CLERK_PUBLISHABLE_KEY: ${{ vars.VITE_CLERK_PUBLISHABLE_KEY }}
-          CLERK_SECRET_KEY: ${{ secrets.CLERK_SECRET_KEY }}
-          WORKGRAPH_SMOKE_USER_A_ID: ${{ vars.WORKGRAPH_SMOKE_USER_A_ID }}
-          WORKGRAPH_SMOKE_USER_A_EMAIL: ${{ vars.WORKGRAPH_SMOKE_USER_A_EMAIL }}
-          WORKGRAPH_SMOKE_ORGANIZATION_A_ID: ${{ vars.WORKGRAPH_SMOKE_ORGANIZATION_A_ID }}
-          WORKGRAPH_SMOKE_REPOSITORY_URL: ${{ github.server_url }}/${{ github.repository }}.git
-          WORKGRAPH_SMOKE_BASE_REVISION: ${{ github.sha }}
-        run: bun run test:e2e:deployed-workgraph
-
-      - name: Upload deployed WorkGraph browser artifacts
-        if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: deployed-workgraph-${{ inputs.target_environment }}-${{ github.run_attempt }}
-          if-no-files-found: ignore
-          retention-days: 7
-          path: |
-            packages/claxedo-app/e2e/playwright/test-results/deployed-workgraph
-            packages/claxedo-app/e2e/playwright/report/deployed-workgraph
+            || { echo "::error::deployed app did not return the Claxedo app shell"; exit 1; }

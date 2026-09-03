@@ -15,7 +15,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
   type AdapterNativeSessionAuthPort,
@@ -38,7 +38,7 @@ export type HostedDeviceAuthOptions = {
   authentication?: RequestAuthenticationAdapter
   provider?: HostedDeviceAuthProvider
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   native?: AdapterNativeSessionAuthPort
   ensureCliUser?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   /** Per-client limiter for the unauthenticated device endpoints. */

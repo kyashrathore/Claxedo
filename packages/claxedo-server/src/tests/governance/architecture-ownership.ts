@@ -28,12 +28,9 @@ export const ARCHITECTURE_OWNERSHIP = [
   {
     area: "authority",
     module: "authority/adapters/convex/workspace-authority/index.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "control-plane Convex authority adapter",
-    tests: [
-      "authority/adapters/convex/workspace-authority/index.test.ts",
-      "authority/services.test.ts",
-    ],
+    status: OwnershipStatus.Deleted,
+    owner: "control-plane Convex authority adapter (removed; D1 is canonical)",
+    canonicalReplacement: "authority/adapters/d1/workspace-authority.ts",
   },
   {
     area: "authority",
@@ -47,11 +44,9 @@ export const ARCHITECTURE_OWNERSHIP = [
   {
     area: "authority",
     module: "authority/adapters/worker/hosted-compose.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "Worker hosted authority/lease composition adapter",
-    tests: [
-      "authority/hosted-services.test.ts",
-    ],
+    status: OwnershipStatus.Deleted,
+    owner: "Worker hosted authority/lease composition adapter (removed; Better Auth + D1 composes via better-auth-d1-compose)",
+    canonicalReplacement: "authority/adapters/worker/better-auth-d1-compose.ts",
   },
   {
     area: "lease",
@@ -79,19 +74,14 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "sandbox/stores/sqlite.ts",
     status: OwnershipStatus.Canonical,
     owner: "SandboxLeaseStore local durable driver",
-    tests: ["sandbox/stores/lease-store-equivalence.test.ts"],
+    tests: ["workspace/supervisor/cloud.test.ts"],
   },
   {
     area: "lease",
     module: "sandbox/stores/convex.ts",
-    status: OwnershipStatus.Canonical,
-    owner: "SandboxLeaseStore hosted durable driver",
-    tests: [
-      "sandbox/stores/lease-store-equivalence.test.ts",
-      // Convex-side lease policy the hosted store depends on. Lives in
-      // convex/ per Convex's testing layout, not under src/.
-      "../../../convex/sandbox-leases.policy.test.ts",
-    ],
+    status: OwnershipStatus.Deleted,
+    owner: "SandboxLeaseStore hosted durable driver (removed with the Convex backend)",
+    canonicalReplacement: "sandbox/stores/sqlite.ts",
   },
   {
     area: "lease",
@@ -178,7 +168,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     module: "credentials/worker/index.ts",
     status: OwnershipStatus.Canonical,
     owner: "hosted credential registry adapter",
-    tests: ["authority/hosted-services.test.ts"],
+    tests: ["credentials/worker/index.test.ts"],
   },
   {
     area: "registry",

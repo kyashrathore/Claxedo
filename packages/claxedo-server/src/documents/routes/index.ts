@@ -4,7 +4,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -118,7 +118,7 @@ export type DocumentsRouteOptions<H extends DocumentHandle = DocumentHandle> = R
   backend?: DocumentsBackend<H>
   services?: ControlPlaneServices
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   authority?: WorkspaceAuthority
   documentChangedSink?: DocumentChangedSink
 }>

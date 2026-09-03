@@ -5,7 +5,7 @@ import type {
   AdapterNativeSessionAuthPort,
   AdapterNativeSessionTokenSet,
   SignedControlPlaneAuth,
-  VerifiedClerkAuth,
+  VerifiedControlPlaneAuth,
 } from "./auth"
 import {
   resolveCliSessionTokenRegistry,
@@ -499,7 +499,7 @@ export async function verifyCliAccessBearer(
   token: string,
   env: Env = process.env,
   options: CliSessionTokenOptions = {},
-): Promise<VerifiedClerkAuth> {
+): Promise<VerifiedControlPlaneAuth> {
   const registry = resolveCliSessionTokenRegistry(options.registry)
   const { payload } = await verifyCliToken(token, ACCESS_KIND, audience(env), env, registry)
   const user = serviceUser(payload)
@@ -574,15 +574,15 @@ export async function revokeCliSessionCredential(
   return { revokedAt: Date.now() }
 }
 
-/** Explicit retained-Clerk native-session issuer/verifier composition. */
-export function createClerkNativeSessionAuthPort(input: {
+/** Native-session issuer/verifier composition (Claxedo-issued CLI token sets). */
+export function createNativeSessionAuthPort(input: {
   env?: Env
   registry?: CliSessionTokenRegistry
 } = {}): AdapterNativeSessionAuthPort {
   const env = input.env ?? process.env
   const options = input.registry ? { registry: input.registry } : {}
   return {
-    adapter: "clerk",
+    adapter: "custom",
     acceptsAccessToken: isCliAccessTokenCandidate,
     acceptsRefreshToken: isCliRefreshToken,
     issue: (auth) => mintCliSessionTokens(auth, env, options),

@@ -366,7 +366,7 @@ function complete(
     message: status === "completed" ? "Master is up to date" : "Master stopped",
     updatedAt: completedAt,
     // A completed turn surfaces its audit's resulting diffs as the master's
-    // durable receipts, mirroring the Convex runtime (`recordMasterTurn` sets
+    // durable receipts, mirroring the hosted runtime (`recordMasterTurn` sets
     // `receiptRefs: args.resulting_diffs` alongside "Master is up to date").
     ...(receiptRefs ? { receiptRefs } : {}),
   })

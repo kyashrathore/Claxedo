@@ -97,14 +97,14 @@ export function ownerClaimIdentity(env: NodeJS.ProcessEnv): AuthIdentity {
     }
     return { adapter, issuer, subject }
   }
-  if (adapter === "clerk") {
+  if (adapter === "custom") {
     return {
       adapter,
       issuer: boundedIdentityPart(required(env, "CLAXEDO_BOOTSTRAP_OWNER_ISSUER"), "owner issuer"),
       subject,
     }
   }
-  throw new Error("CLAXEDO_BOOTSTRAP_OWNER_ADAPTER must be better-auth or clerk")
+  throw new Error("CLAXEDO_BOOTSTRAP_OWNER_ADAPTER must be better-auth or custom")
 }
 
 function canonicalExpiry(env: NodeJS.ProcessEnv, now: Date) {

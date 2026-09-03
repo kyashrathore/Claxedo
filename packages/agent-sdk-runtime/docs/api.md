@@ -53,9 +53,8 @@ Kind: Functions
 
 - `createMemoryRuntimeStore` from `@claxedo/agent-sdk-runtime/stores/memory`
 - `createSqliteRuntimeStore` from `@claxedo/agent-sdk-runtime/stores/sqlite`
-- `createConvexRuntimeStore` from `@claxedo/agent-sdk-runtime/stores/convex`
 
-The root import does not load SQLite or Convex.
+The root import does not load SQLite.
 
 ### Harness Factories
 

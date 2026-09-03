@@ -99,7 +99,7 @@ async function sleep(ms: number) {
 
 /**
  * Backoff for a single scheduling attempt. The sync-back is what puts a session
- * into Convex, so a pull that never lands is a session the sidebar can never
+ * into the central store, so a pull that never lands is a session the sidebar can never
  * show once its workspace dies. The old schedule gave up ~4s in, which loses
  * every pull that overlaps a sandbox still booting or a brief network dip.
  */

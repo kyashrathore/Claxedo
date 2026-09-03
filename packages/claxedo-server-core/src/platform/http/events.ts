@@ -6,7 +6,7 @@ import {
   ControlPlaneAuthError,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -53,7 +53,7 @@ type ClaxedoEventBus = Pick<typeof claxedoBus, "subscribe">
 
 export type EventsHandlerOptions = {
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   allowLoopbackLocal?: boolean
   /**
    * Resolves the caller's AUTHORITY-INTERNAL org id (`authority.resolveOrgId`)

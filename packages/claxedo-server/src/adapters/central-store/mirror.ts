@@ -1,12 +1,12 @@
 /**
- * Convex Mirror Adapter — interface and wiring for publishing
+ * Central-Store Mirror Adapter — interface and wiring for publishing
  * workspace/session/image state to the central queryable store.
  *
  * A sandbox lease event source can be injected so this module batches
- * and debounces writes to Convex without owning lease storage.
+ * and debounces writes to the central store without owning lease storage.
  *
- * For v1, the adapter interface is defined here but the actual Convex
- * client integration lives in the hosted product layer (outside
+ * For v1, the adapter interface is defined here but the actual store
+ * client integration lives in the product layer (outside
  * claxedo-server). A no-op adapter is provided for local/dev use.
  */
 

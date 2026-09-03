@@ -27,8 +27,6 @@ import {
  * Configuration for initializing Claxedo cloud extensions.
  */
 export interface ClaxedoConfig extends ProductUiFlagConfig {
-  /** Convex deployment URL (e.g., https://xxx.convex.cloud) */
-  convexUrl: string
   /** Base URL for auth endpoints (defaults to window.location.origin) */
   authBaseUrl: string
   /** Gateway URL for session proxying (e.g., http://127.0.0.1:3000) */
@@ -40,7 +38,7 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
   // PLUGGABLE FEATURE FLAGS
   // ─────────────────────────────────────────────
 
-  /** Enable Clerk auth + claxedo server (default: false) */
+  /** Enable Better Auth + claxedo server (default: false) */
   authEnabled?: boolean
   /** Allow cloud sandbox workspace creation (default: false) */
   sandboxEnabled?: boolean
@@ -61,16 +59,15 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
  *
  * Call this before rendering the app to register all cloud functionality.
  * Extensions are conditionally registered based on feature flags:
- * - authEnabled: Clerk auth + claxedo server
+ * - authEnabled: Better Auth + claxedo server
  * - sandboxEnabled: Cloud sandbox workspace creation
  * - globalChatEnabled: Global Chat rail sections
  * - daytonaApiKey: Direct Daytona API key for no-auth sandbox mode
  *
  * @example
  * ```tsx
- * await initClaxedo({
- *   convexUrl: import.meta.env.VITE_CONVEX_URL,
- *   authBaseUrl: window.location.origin,
+  * await initClaxedo({
+  *   authBaseUrl: window.location.origin,
  *   gatewayUrl: "http://127.0.0.1:3000",
  *   authEnabled: true,
  *   sandboxEnabled: true,
@@ -142,7 +139,6 @@ export function getDefaultConfig(): ClaxedoConfig {
   const envString = (value: unknown) => (typeof value === "string" ? value : undefined)
 
   return {
-    convexUrl: import.meta.env.VITE_CONVEX_URL ?? "",
     authBaseUrl: envString(import.meta.env.VITE_AUTH_BASE_URL) ?? window.location.origin,
     gatewayUrl: envString(import.meta.env.VITE_OPENCODE_BACKEND_URL) ?? "http://127.0.0.1:3000",
     cloudAutoSwitch: import.meta.env.VITE_CLOUD_AUTOSWITCH !== "false",
@@ -158,7 +154,7 @@ export function getDefaultConfig(): ClaxedoConfig {
 }
 
 // The authenticated-identity surface lives on `@claxedo/app/auth`, not here.
-// Re-exporting it from the main entry made Clerk a static edge of every build
+// Re-exporting it from the main entry made the auth vendor a static edge of every build
 // that imports this module for `getDefaultConfig` — including the local one,
 // which can never sign in. See `entry/auth.ts`.
 export type { ClaxedoConfig as Config }

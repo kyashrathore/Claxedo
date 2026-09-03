@@ -7,7 +7,7 @@ import { randomUUID } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 import { Hono } from "hono"
-import { localOnlyAuthAdapter, type ClerkVerifier, type ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
+import { localOnlyAuthAdapter, type ControlPlaneTokenVerifier, type ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ProjectAction, WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createLocalManagedDocumentWorkspace, managedDocumentRelativePath } from "../backends/local/managed"
 import {
@@ -99,7 +99,7 @@ const authConfig: ControlPlaneAuthConfig = {
   jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
 }
 
-const verifier: ClerkVerifier = async (token, config) => ({
+const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   mode: "signed",
   user: { subject: token, tokenIdentifier: `${config.issuer}|${token}`, issuer: config.issuer },
 })

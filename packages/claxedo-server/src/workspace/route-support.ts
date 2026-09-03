@@ -6,7 +6,7 @@ import {
   bearerToken,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
@@ -49,7 +49,7 @@ export type WorkspaceRouteOptions = {
   hostAssignments?: LocalHostAssignments
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   cliTokenEnv?: Record<string, string | undefined>
   credentials?: ControlPlaneCredentials
   /** Transport for provider-facing probes (sandbox key verification). Tests stub it. */
@@ -170,7 +170,7 @@ export async function routeAuth(
   options: {
     authentication?: RequestAuthenticationAdapter
     authConfig?: ControlPlaneAuthConfig
-    verifier?: ClerkVerifier
+    verifier?: ControlPlaneTokenVerifier
     cliTokenEnv?: Record<string, string | undefined>
     requireSigned?: boolean
   },
@@ -190,7 +190,7 @@ export async function signedOrError(
   options: {
     authentication?: RequestAuthenticationAdapter
     authConfig?: ControlPlaneAuthConfig
-    verifier?: ClerkVerifier
+    verifier?: ControlPlaneTokenVerifier
     requireSigned?: boolean
   },
   services?: ControlPlaneServices,

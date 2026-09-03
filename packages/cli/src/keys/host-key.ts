@@ -79,7 +79,7 @@ export async function loadMachineHostKey(): Promise<MachineHostKey> {
  *
  * Byte-identical to the authority's verifier
  * (`hostEnrollmentPayload` in claxedo-server's `workspace/local-host.ts` and
- * the D1/SQLite/Convex adapters). Copied rather than imported so the CLI
+ * the D1/SQLite adapters). Copied rather than imported so the CLI
  * carries no server dependency; the literal IS the contract, and a drifting
  * copy fails loudly at the first enrollment rather than silently.
  */

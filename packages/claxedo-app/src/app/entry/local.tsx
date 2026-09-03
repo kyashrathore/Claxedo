@@ -10,7 +10,7 @@
  *
  * Concretely, what this entry does NOT import, and why each matters:
  *
- *   - `@/platform/auth/auth-client` — Clerk. The largest single dependency in
+ *   - `@/platform/auth/auth-client` — the auth vendor client. The largest single dependency in
  *     the hosted bundle, and an unsigned desktop can never use it.
  *   - `@/platform/api/api`'s `authFetch` — attaches a bearer. There is no
  *     bearer here; the local server authenticates by loopback.

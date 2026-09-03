@@ -41,40 +41,33 @@ describe("hosted deployment profile", () => {
     })
   })
 
-  test("resolves both certified Claxedo-hosted adapter profiles with Polar billing", () => {
-    for (const adapterProfile of ["better-auth-d1", "clerk-convex"] as const) {
-      expect(
-        resolveDeploymentProfile({
-          adapterProfile,
-          productPosture: "claxedo-hosted",
-          sandboxPosture: "full-hosted",
-          sandboxDriver: "cloudflare",
-        }),
-      ).toMatchObject({
-        adapterProfile,
+  test("resolves the certified Claxedo-hosted adapter profile with Polar billing", () => {
+    expect(
+      resolveDeploymentProfile({
+        adapterProfile: "better-auth-d1",
         productPosture: "claxedo-hosted",
-        organizationPolicy: "multi-org",
-        multiplayer: true,
-        billing: "polar",
         sandboxPosture: "full-hosted",
         sandboxDriver: "cloudflare",
-      })
-    }
+      }),
+    ).toMatchObject({
+      adapterProfile: "better-auth-d1",
+      productPosture: "claxedo-hosted",
+      organizationPolicy: "multi-org",
+      multiplayer: true,
+      billing: "polar",
+      sandboxPosture: "full-hosted",
+      sandboxDriver: "cloudflare",
+    })
   })
 
   test("rejects uncertified product and adapter combinations", () => {
     expect(() =>
       resolveDeploymentProfile({
-        adapterProfile: "clerk-convex",
+        adapterProfile: "better-auth-d1",
         productPosture: "user-deployed",
-        sandboxPosture: "control-plane-only",
+        sandboxPosture: "full-hosted",
       }),
-    ).toThrowError(
-      new DeploymentProfileError(
-        "uncertified_profile",
-        "user-deployed + clerk-convex is not a certified deployment profile",
-      ),
-    )
+    ).toThrowError(DeploymentProfileError)
   })
 
   test.each([
@@ -86,14 +79,14 @@ describe("hosted deployment profile", () => {
   })
 
   test("does not accept mixed auth and storage pairs as production profiles", () => {
-    for (const adapterProfile of ["clerk-d1", "better-auth-convex"]) {
+    for (const adapterProfile of ["clerk-convex", "clerk-d1", "better-auth-convex"]) {
       expect(() =>
         resolveDeploymentProfile({
           adapterProfile,
           productPosture: "claxedo-hosted",
           sandboxPosture: "control-plane-only",
         }),
-      ).toThrowError(/adapter profile must be "better-auth-d1" or "clerk-convex"/)
+      ).toThrowError(/adapter profile must be "better-auth-d1"/)
     }
   })
 
@@ -132,7 +125,7 @@ describe("hosted deployment profile", () => {
         CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
         CLOUDFLARE_API_TOKEN: "cloudflare-secret",
       }),
-    ).toThrowError(/adapter profile must be/)
+    ).toThrowError(/adapter profile must be "better-auth-d1"/)
 
     expect(
       resolveDeploymentProfileFromEnv({

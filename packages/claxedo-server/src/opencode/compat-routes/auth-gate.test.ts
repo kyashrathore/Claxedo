@@ -22,7 +22,7 @@ const { OpenCodeCompatRoutes } = await import("@claxedo/local-server/opencode/co
 const { ControlPlaneAuthError } = await import("@claxedo/server-core/platform/auth/auth")
 const { RouteHandler, routeOwnership } = await import("@claxedo/server-core/platform/governance/route-ownership")
 type ControlPlaneAuthConfig = import("@claxedo/server-core/platform/auth/auth").ControlPlaneAuthConfig
-type ClerkVerifier = import("@claxedo/server-core/platform/auth/auth").ClerkVerifier
+type ControlPlaneTokenVerifier = import("@claxedo/server-core/platform/auth/auth").ControlPlaneTokenVerifier
 
 afterAll(async () => {
   process.env.CLAXEDO_DATA_DIR = prev.CLAXEDO_DATA_DIR
@@ -59,7 +59,7 @@ const unsignedLocalConfig: ControlPlaneAuthConfig = {
 
 const GOOD_TOKEN = "valid-bearer"
 
-const verifier: ClerkVerifier = async (token) => {
+const verifier: ControlPlaneTokenVerifier = async (token) => {
   if (token !== GOOD_TOKEN) {
     throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is invalid")
   }
