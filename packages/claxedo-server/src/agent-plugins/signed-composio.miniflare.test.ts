@@ -375,7 +375,16 @@ describe("signed Composio Gmail on Miniflare", () => {
 
     const local = await userHostedConnectionInfo({
       authority: {
-        usersMe: vi.fn(async () => ({
+          // The host declares its runtime's session authority on the heartbeat;
+        // the user-hosted mint asks for it before the plugin gate runs.
+        activeWorkspaceHost: vi.fn(async () => ({
+          active: true,
+          host_id: "host_1",
+          workspace_id: "ws_local",
+          expires_at: Date.now() + 60_000,
+          last_seen_at: Date.now(),
+        })),
+      usersMe: vi.fn(async () => ({
           subject: USER.userId,
           // `resolveRuntimeActor` requires a full actor identity before it will
           // hand out a runtime token.
@@ -420,7 +429,16 @@ describe("signed Composio Gmail on Miniflare", () => {
 
     const cloud = await hostedConnectionInfo({
       authority: {
-        usersMe: vi.fn(async () => ({
+          // The host declares its runtime's session authority on the heartbeat;
+        // the user-hosted mint asks for it before the plugin gate runs.
+        activeWorkspaceHost: vi.fn(async () => ({
+          active: true,
+          host_id: "host_1",
+          workspace_id: "ws_local",
+          expires_at: Date.now() + 60_000,
+          last_seen_at: Date.now(),
+        })),
+      usersMe: vi.fn(async () => ({
           subject: USER.userId,
           // `resolveRuntimeActor` requires a full actor identity before it will
           // hand out a runtime token.
