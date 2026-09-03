@@ -37,12 +37,9 @@ const LANE_TAGS = ["@core", "@live", "@marketing"] as const
 /**
  * Tags that refine a selection *within* a lane rather than granting one. A spec may
  * carry these, but never *only* these.
- *   `@workgraph-real` — carved out of the sharded core lane by `test:e2e:core:base`'s
- *     `--grep-invert`. Its dedicated CI jobs are temporarily paused; the explicit
- *     local/manual commands remain available.
  *   `@tier-real` — Tier R (`real-*.spec.ts`): everything real except the scripted model
- *     endpoint. Carved out of the sharded core lane the same way `@workgraph-real` is,
- *     and run by the separate `e2e (tier-real)` CI job. See `e2e/INVARIANTS.md` rule 6.
+ *     endpoint. Carved out of the sharded core lane by `test:e2e:core:base`'s
+ *     `--grep-invert`, and run by the separate `e2e (tier-real)` CI job. See `e2e/INVARIANTS.md` rule 6.
  *   `@documents-*-canary` — release-canary selectors used by the `test:e2e:documents:*`
  *     scripts to run a subset of an already-laned spec.
  *   `@onboarding-enabled` — onboarding tests built with their production feature flag
@@ -57,7 +54,6 @@ const LANE_TAGS = ["@core", "@live", "@marketing"] as const
  *     needs its own registry entry there before it exists, or it silently double-runs.
  */
 const SUB_SELECTOR_TAGS = [
-  "@workgraph-real",
   "@tier-real",
   "@documents-release-canary",
   "@documents-rich-canary",

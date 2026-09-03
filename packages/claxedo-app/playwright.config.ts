@@ -31,16 +31,13 @@ const authMode = resolveE2EAuthMode()
 //               `packages/claxedo-web/public/screenshots`. Never in CI: it rewrites
 //               committed assets.
 //   all       — no tag filter; includes the lanes CI cannot run. Local/nightly only.
-// `@workgraph-real` is not a lane of its own: it is a sub-selector inside `core`,
-// carved out of the sharded lane by `test:e2e:core:base`'s `--grep-invert`. Its
-// dedicated CI jobs are temporarily paused, while the explicit local/manual commands
-// remain available. The `@documents-*-canary` tags are also sub-selectors.
+// The `@documents-*-canary` tags are sub-selectors inside `core`.
 // `@surface-desktop` / `@surface-web` are sub-selectors of the same kind, added for
 // `docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md`'s lane x scenario
 // matrix: every spec that drives the packaged Electron app carries `@surface-desktop`,
 // every spec that drives a browser surface carries `@surface-web`, so a spec can be
 // selected by WHICH SURFACE it exercises independent of which suite (core/live) or
-// which other sub-selector (`@tier-real`, `@workgraph-real`) it also carries.
+// which other sub-selector (`@tier-real`) it also carries.
 // Packaged-app specs are collected only when CLAXEDO_E2E_DESKTOP=1. This keeps
 // browser lanes at zero skips while the desktop CI lane still executes every
 // `desktop-*.spec.ts` test against the artifact it requires.
@@ -69,12 +66,9 @@ const video =
       ? "on"
       : "retain-on-failure"
 const screenshot = process.env.PLAYWRIGHT_SCREENSHOT === "1" ? "on" : "only-on-failure"
-const workGraphReal = process.env.CLAXEDO_WORKGRAPH_REAL_E2E === "1"
-const workGraphApiPort = Number(process.env.CLAXEDO_WORKGRAPH_E2E_API_PORT ?? 4311)
 const liveBackendPort = Number(process.env.CLAXEDO_E2E_LIVE_BACKEND_PORT ?? 3001)
 // Tier R (`real-*.spec.ts`, @tier-real): real claxedo-server + real harness
-// binaries against a scripted model endpoint. It uses the same carve-out mechanics
-// as @workgraph-real, but retains its own CI job and backend port baked into the app
+// binaries against a scripted model endpoint. Tier R retains its own CI job and backend port baked into the app
 // build — a shard cannot host it because a shard's build points at :3001.
 const tierReal = process.env.CLAXEDO_TIER_REAL_E2E === "1"
 const tierRealBackendPort = Number(process.env.CLAXEDO_TIER_REAL_BACKEND_PORT ?? 4317)
@@ -93,7 +87,7 @@ const webServer =
   process.env.PLAYWRIGHT_SKIP_WEBSERVER === "1"
     ? undefined
     : {
-        command: `${workGraphReal ? `bun --cwd ../workgraph run build && ` : ""}${workGraphReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${workGraphApiPort} ` : ""}${tierReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${tierRealBackendPort} ` : suite === "live" ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${liveBackendPort} ` : ""}bun run serve:e2e -- ${serveMode} ${port}`,
+        command: `${tierReal ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${tierRealBackendPort} ` : suite === "live" ? `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:${liveBackendPort} ` : ""}bun run serve:e2e -- ${serveMode} ${port}`,
         url: baseURL,
         reuseExistingServer: reuse,
         timeout: prebuilt ? 600_000 : 120_000,
