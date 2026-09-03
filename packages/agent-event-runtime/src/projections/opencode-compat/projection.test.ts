@@ -236,9 +236,7 @@ describe("createOpencodeCompatProjection", () => {
     })
     // The row is opened once; every later chunk only extends its text.
     expect(second.map((event) => event.payload.type)).toEqual(["message.part.delta"])
-    expect([first.at(-1)?.payload, second[0]?.payload].map((payload) => (payload as {
-      properties: { messageID: string; delta: string }
-    }).properties)).toEqual([
+    expect([first.at(-1)?.payload, second[0]?.payload].map((payload) => (payload as { properties: Record<string, unknown> }).properties)).toEqual([
       { sessionID: "session-1", messageID: "msg_host_turn", partID: "000000_msg_host_turn-text", field: "text", delta: "explain " },
       { sessionID: "session-1", messageID: "msg_host_turn", partID: "000000_msg_host_turn-text", field: "text", delta: "this file" },
     ])
