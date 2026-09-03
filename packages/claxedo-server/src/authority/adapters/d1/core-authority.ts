@@ -22,11 +22,6 @@ import {
   D1_HOST_ACCESS_AUTHORITY_METHODS,
   type D1HostAccessAuthorityPort,
 } from "./host-access-authority"
-import {
-  D1AgentExtensionAuthority,
-  D1_AGENT_EXTENSION_AUTHORITY_METHODS,
-  type D1AgentExtensionAuthorityPort,
-} from "./agent-extension-authority"
 import { D1AuditAuthority, D1_AUDIT_AUTHORITY_METHODS, type D1AuditAuthorityPort } from "./audit-authority"
 import {
   D1ChannelRuntimeAuthority,
@@ -40,7 +35,6 @@ export type D1CoreAuthorityPort = D1WorkspaceAuthorityCore &
   PrivateSessionAuthority &
   SessionTurnAuthority &
   D1HostAccessAuthorityPort &
-  D1AgentExtensionAuthorityPort &
   D1AuditAuthorityPort &
   D1ChannelRuntimeAuthorityPort
 
@@ -107,7 +101,6 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...shared,
     registerLocalForSharing: (auth, input) => workspace.registerLocalForSharing(auth, input),
   })
-  const extensions = new D1AgentExtensionAuthority(database, shared)
   const audit = new D1AuditAuthority(database, shared)
   const channelsAndRuntime = new D1ChannelRuntimeAuthority(database, shared)
 
@@ -115,7 +108,6 @@ export function createD1CoreAuthority(database: D1Database, options: D1CoreAutho
     ...bindMethods(workspace, D1_WORKSPACE_AUTHORITY_METHODS),
     ...bindMethods(sessions, D1_SESSION_AUTHORITY_METHODS),
     ...bindMethods(hosts, D1_HOST_ACCESS_AUTHORITY_METHODS),
-    ...bindMethods(extensions, D1_AGENT_EXTENSION_AUTHORITY_METHODS),
     ...bindMethods(audit, D1_AUDIT_AUTHORITY_METHODS),
     ...bindMethods(channelsAndRuntime, D1_CHANNEL_RUNTIME_AUTHORITY_METHODS),
     ...bindMethods(workspace, WORKSPACE_LIFECYCLE_METHODS),

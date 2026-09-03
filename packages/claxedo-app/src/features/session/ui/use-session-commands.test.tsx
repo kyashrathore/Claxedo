@@ -401,8 +401,8 @@ describe("upstream contract", async () => {
     return commands
   }
 
-  // `mcp.toggle` is deliberately NOT here. Its dialog read Agent Extensions
-  // marketplace install state, so retiring that subsystem retired the command
+  // `mcp.toggle` is deliberately NOT here. Its dialog read the retired
+  // marketplace's install state, so retiring that subsystem retired the command
   // with it; plugin-contributed MCP servers are governed from the Agent Plugins
   // catalog instead. This is a knowing divergence from upstream.
   test("keeps upstream model, file, fork, and navigation commands registered", () => {

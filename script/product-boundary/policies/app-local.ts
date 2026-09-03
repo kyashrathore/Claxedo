@@ -147,11 +147,9 @@ export const appLocal: Policy = {
   // Goal authority cache/query/controller, runtime Goal client/event ingress,
   // the active-Goal dock, and the review-pass Stop fallback + shared JSON
   // reader: thirteen modules.
-  // Plan 150 section E: `features/extensions/marketplace/transport.ts` — the
-  // one module that decides WHICH MACHINE answers an extensions request, so the
-  // marketplace stops asking `getClaxedoServerUrl()` for a workspace served
-  // elsewhere. Owned by the extensions feature, reachable only through the
-  // already-lazy marketplace panel: one module, no package edge.
+  // Plan 150 section E named a machine-routing module owned by the retired
+  // marketplace feature; that whole feature is gone, so it contributes nothing
+  // to this closure any more.
   // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
   // catalog owner) in the same slice: one more module, no package edge.
   // Plan 150 section C makes Settings a (workspace, harness) surface: the

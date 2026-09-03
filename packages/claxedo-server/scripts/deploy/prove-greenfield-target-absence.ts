@@ -39,9 +39,7 @@ export const GREENFIELD_AUTH_TABLE_COUNTS = Object.freeze({
 } as const)
 
 export const GREENFIELD_CONTROL_PLANE_TABLE_COUNTS = Object.freeze({
-  agent_extension_installs: 0,
   actors: 0,
-  agent_extension_policy_overrides: 0,
   authority_audit_events: 0,
   authority_batch_assertions: 0,
   auth_identities: 0,
