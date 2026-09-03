@@ -80,6 +80,27 @@ export function projectId(project: ProjectCatalogItem | undefined) {
   return project?.id ?? project?.project_id ?? project?.projectID
 }
 
+/**
+ * The cloud-create payload for one project, read from the catalog.
+ *
+ * Lives beside the other catalog readers rather than in the composer: which
+ * fields a create carries is a question about the project inventory, and the
+ * composer should not have to know that a repo URL is discovered per workspace.
+ */
+export function cloudWorkspaceCreateInput(
+  projects: readonly ProjectCatalogItem[],
+  id: string,
+  gitBranch?: string,
+) {
+  const project = projects.find((item) => projectId(item) === id)
+  const repoUrl = projectRepoUrl(project)
+  return {
+    projectId: id,
+    ...(repoUrl ? { repoUrl } : {}),
+    ...(gitBranch ? { gitBranch } : {}),
+  }
+}
+
 /** Repository source already discovered by the authoritative project inventory. */
 export function projectRepoUrl(project: ProjectCatalogItem | undefined) {
   if (!project) return undefined

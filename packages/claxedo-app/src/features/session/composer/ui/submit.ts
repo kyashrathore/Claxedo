@@ -34,7 +34,7 @@ import {
   type ResolvedSubmitMode,
   type SubmitMode,
 } from "../../submit/index"
-import { knownWorkspaceKind, projectId as catalogProjectId, projectRepoUrl, type ProjectCatalogItem } from "../workspace-resolver"
+import { cloudWorkspaceCreateInput, knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-machine"
 import { dispatchCommandPromptSubmit } from "./submit-command-prompt"
 import { createSubmitAbort } from "./submit-abort"
@@ -271,14 +271,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       onCloudStartup: input.onCloudStartup,
       rememberCloudStartup,
       publishCloudHandoff,
-      createCloudWorkspace: async (projectId) => {
-        const project = projectCatalog().find((item) => catalogProjectId(item) === projectId)
-        return (input.createCloudWorkspace ?? createHostedWorkspace)({
-          projectId,
-          ...(projectRepoUrl(project) ? { repoUrl: projectRepoUrl(project) } : {}),
-          ...(sourceBranch ? { gitBranch: sourceBranch } : {}),
-        })
-      },
+      createCloudWorkspace: async (projectId) =>
+        (input.createCloudWorkspace ?? createHostedWorkspace)(
+          cloudWorkspaceCreateInput(projectCatalog(), projectId, sourceBranch),
+        ),
       createLocalWorktree: (directory) => sdk.client.worktree.create({
         directory,
         ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),
