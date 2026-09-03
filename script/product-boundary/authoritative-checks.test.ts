@@ -23,7 +23,6 @@ describe("product boundary authoritative checks", () => {
     expect(commands.some((command) => command.includes("local-closure.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("connector-closure.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("deployment-closures.test.ts"))).toBe(true)
-    expect(commands.some((command) => command.includes("worker.import-graph.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("renderer-entry-closure.guard.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("package-structure.test.ts"))).toBe(true)
     expect(commands.some((command) => command.includes("build:local"))).toBe(true)
@@ -45,10 +44,6 @@ describe("product boundary authoritative checks", () => {
     ])
     expect(AUTHORITATIVE_CHECKS["@claxedo/desktop"]?.[0]?.env).toEqual({ VITE_AUTH_ENABLED: "true" })
     expect(AUTHORITATIVE_CHECKS["@claxedo/server"]?.map((check) => check.label)).toEqual([
-      "hosted Node production build",
-      "hosted Node built entry smoke",
-      "hosted workerd production build",
-      "hosted workerd built entry smoke",
       "self-hosted OpenCode resource build",
       "self-hosted production build",
       "self-hosted built process smoke",

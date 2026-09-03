@@ -23,11 +23,7 @@ export type BetterAuthD1CoreEnv = HostedCoreCommonEnv & {
   CLAXEDO_RECOVERY_EPOCH: string
 }
 
-export type ClerkConvexCoreEnv = HostedCoreCommonEnv & {
-  CLAXEDO_ADAPTER_PROFILE: "clerk-convex"
-}
-
-export type HostedCoreProductEnv = BetterAuthD1CoreEnv | ClerkConvexCoreEnv
+export type HostedCoreProductEnv = BetterAuthD1CoreEnv
 
 export type WorkGraphInstalledCoreEnv = HostedCoreProductEnv & {
   WORKGRAPH_SERVICE: WorkGraphServiceRpc

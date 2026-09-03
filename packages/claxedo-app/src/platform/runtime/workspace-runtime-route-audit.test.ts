@@ -525,7 +525,7 @@ describe("workspace runtime route audit", () => {
   test("workspace mutation UIs are gated by backend-derived role policy", async () => {
     const networkPolicy = await Bun.file(path.join(root, networkPolicySettings)).text()
     const serverPolicyTest = await Bun.file(
-      path.join(root, "..", "..", "..", "convex/agent-extensions.policy.test.ts"),
+      path.join(root, "..", "..", "claxedo-server/src/authority/adapters/d1/agent-extension-authority.test.ts"),
     ).text()
     const serverRouteTest = await Bun.file(
       path.join(root, "..", "..", "claxedo-server/src/agent-config/routes/extensions.test.ts"),
@@ -558,8 +558,8 @@ describe("workspace runtime route audit", () => {
     expect(can("manage.runners", placement("editor"))).toBe(false)
     expect(can("read.workspace", placement("viewer"))).toBe(true)
     expect(can("use.terminal", placement("viewer"))).toBe(false)
-    expect(serverPolicyTest).toMatch(/denies %s workspace members admin Agent Extension mutations/)
-    expect(serverPolicyTest).toMatch(/allows admin workspace members to manage Agent Extension installs/)
+    expect(serverPolicyTest).toMatch(/fails closed across tenant\/deployment boundaries/)
+    expect(serverPolicyTest).toMatch(/applies org, user, and workspace policy precedence/)
     expect(serverRouteTest).toMatch(/authorizeWorkspaceAgentExtensionsAdmin/)
     expect(serverNetworkPolicyTest).toMatch(/signed workspace writes require admin authority/)
   })

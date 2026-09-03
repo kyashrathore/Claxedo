@@ -52,14 +52,6 @@ describe("self-hosted entry contract", () => {
     expect(manifest.scripts.start).toContain(SELF_HOSTED_ENTRY)
   })
 
-  test("the cloud-hosted Node script boots a different entry", () => {
-    // Self-hosted and cloud-hosted Node are separate products sharing one
-    // package. If they ever converged on one script the self-hosted posture
-    // assertion would be running against hosted boot requirements.
-    expect(manifest.scripts["start:hosted"]).toContain("src/deployments/hosted-node/index.ts")
-    expect(manifest.scripts["start:hosted"]).not.toContain(SELF_HOSTED_ENTRY)
-  })
-
   test("the Docker image runs the same entry as the package scripts", () => {
     const dockerfile = read("Dockerfile")
     const cmd = dockerfile.split("\n").findLast((line) => line.startsWith("CMD "))

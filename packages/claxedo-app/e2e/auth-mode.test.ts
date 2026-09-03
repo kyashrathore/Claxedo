@@ -21,17 +21,16 @@ describe("E2E auth mode", () => {
       VITE_SANDBOX_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true",
-      VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
+      VITE_CLAXEDO_AUTH_ADAPTER: "better-auth",
       VITE_CLAXEDO_E2E: "1",
     })
     expect(e2eAppViteEnvironment("local-unsigned")).toEqual({
       VITE_AUTH_ENABLED: "true",
       VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1",
-      VITE_CLERK_PUBLISHABLE_KEY: "",
       VITE_SANDBOX_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true",
-      VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
+      VITE_CLAXEDO_AUTH_ADAPTER: "better-auth",
       VITE_CLAXEDO_E2E: "1",
     })
   })

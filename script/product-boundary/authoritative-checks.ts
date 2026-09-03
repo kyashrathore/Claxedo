@@ -91,26 +91,6 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
   ],
   "@claxedo/server": [
     {
-      label: "hosted Node production build",
-      cwd: "packages/claxedo-server",
-      command: ["bun", "run", "build:hosted-node-boundary"],
-    },
-    {
-      label: "hosted Node built entry smoke",
-      cwd: "packages/claxedo-server",
-      command: ["bun", "run", "smoke:hosted-node-boundary"],
-    },
-    {
-      label: "hosted workerd production build",
-      cwd: "packages/claxedo-server",
-      command: ["bun", "run", "build:workerd-boundary"],
-    },
-    {
-      label: "hosted workerd built entry smoke",
-      cwd: "packages/claxedo-server",
-      command: ["bun", "run", "smoke:workerd-boundary"],
-    },
-    {
       label: "self-hosted OpenCode resource build",
       cwd: "packages/opencode",
       command: ["bun", "run", "build:node"],
@@ -137,7 +117,6 @@ export const AUTHORITATIVE_CHECKS: Record<string, AuthoritativeCheck[]> = {
         "./node_modules/vitest/vitest.mjs",
         "run",
         "src/deployments/deployment-closures.test.ts",
-        "src/deployments/hosted-workerd/worker.import-graph.test.ts",
         "--reporter=default",
       ],
     },

@@ -23,8 +23,8 @@ import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/
 const hostedCompleteEnv = {
   CLAXEDO_DEPLOYMENT_MODE: "hosted",
   CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-  CLERK_JWT_ISSUER: "https://clerk.example.test",
-  CLERK_JWKS_URL: "https://clerk.example.test/.well-known/jwks.json",
+  CONTROL_PLANE_JWT_ISSUER: "https://idp.example.test",
+  CONTROL_PLANE_JWKS_URL: "https://idp.example.test/.well-known/jwks.json",
   CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-token",
   CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "private-key",
   CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: "public-key",
@@ -39,13 +39,13 @@ const unsignedLocalConfig: ControlPlaneAuthConfig = {
 const misconfiguredConfig: ControlPlaneAuthConfig = {
   enabled: false,
   mode: "misconfigured",
-  reason: "CLERK_JWT_ISSUER, CLERK_JWKS_URL, and CLAXEDO_WORKSPACE_AUTHORITY_URL are required for signed/cloud auth",
+  reason: "signed auth is misconfigured",
 }
 
 const enabledConfig: ControlPlaneAuthConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://idp.example.test",
+  jwksUrl: "https://idp.example.test/.well-known/jwks.json",
 }
 
 function guardedApp(options: Parameters<typeof unsignedLocalRequestGuard>[0]) {
@@ -84,8 +84,8 @@ describe("hosted boot requirements (fail-closed boot)", () => {
 
   test.each([
     ["CLAXEDO_SIGNED_CLOUD_AUTH", /signed cloud auth is not enabled \(set CLAXEDO_SIGNED_CLOUD_AUTH=true\)/],
-    ["CLERK_JWT_ISSUER", /no signed-auth token issuer \(set CLERK_JWT_ISSUER\)/],
-    ["CLERK_JWKS_URL", /no signed-auth JWKS URL \(set CLERK_JWKS_URL\)/],
+    ["CONTROL_PLANE_JWT_ISSUER", /no signed-auth token issuer \(set CONTROL_PLANE_JWT_ISSUER\)/],
+    ["CONTROL_PLANE_JWKS_URL", /no signed-auth JWKS URL \(set CONTROL_PLANE_JWKS_URL\)/],
     ["CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", /no Control Plane service token \(set CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN\)/],
     ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", /no Runtime Access Token signing private key/],
     ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM", /no Runtime Access Token verification public key/],
@@ -98,11 +98,6 @@ describe("hosted boot requirements (fail-closed boot)", () => {
     expect(() => assertHostedBootRequirements(hostedCompleteEnv, { authorityConfigured: false })).toThrowError(
       /no workspace authority \(set CLAXEDO_WORKSPACE_AUTHORITY_URL\)/,
     )
-  })
-
-  test("CLERK_ISSUER_URL is accepted as the issuer alias", () => {
-    const env = { ...hostedCompleteEnv, CLERK_JWT_ISSUER: undefined, CLERK_ISSUER_URL: "https://clerk.example.test" }
-    expect(hostedBootRequirementFailures(env, { authorityConfigured: true })).toEqual([])
   })
 
   test("hosted + embedded self-host auth is a hard conflict", () => {
@@ -129,8 +124,8 @@ describe("hosted boot requirements (fail-closed boot)", () => {
     expect(thrown).toBeInstanceOf(DeploymentModeError)
     expect(thrown?.code).toBe("hosted_boot_requirements_missing")
     expect(thrown?.message).toMatch(/CLAXEDO_SIGNED_CLOUD_AUTH=true/)
-    expect(thrown?.message).toMatch(/CLERK_JWT_ISSUER/)
-    expect(thrown?.message).toMatch(/CLERK_JWKS_URL/)
+    expect(thrown?.message).toMatch(/CONTROL_PLANE_JWT_ISSUER/)
+    expect(thrown?.message).toMatch(/CONTROL_PLANE_JWKS_URL/)
     expect(thrown?.message).toMatch(/CLAXEDO_WORKSPACE_AUTHORITY_URL/)
     expect(thrown?.message).toMatch(/CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN/)
     expect(thrown?.message).toMatch(/CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM/)
@@ -288,9 +283,8 @@ describe("Node composition boot wiring (createDefaultLocalControlPlaneServices)"
   const KEYS = [
     "CLAXEDO_DEPLOYMENT_MODE",
     "CLAXEDO_SIGNED_CLOUD_AUTH",
-    "CLERK_JWT_ISSUER",
-    "CLERK_ISSUER_URL",
-    "CLERK_JWKS_URL",
+    "CONTROL_PLANE_JWT_ISSUER",
+    "CONTROL_PLANE_JWKS_URL",
     "CLAXEDO_WORKSPACE_AUTHORITY_URL",
     "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN",
     "CLAXEDO_EMBEDDED_AUTH",
@@ -314,7 +308,7 @@ describe("Node composition boot wiring (createDefaultLocalControlPlaneServices)"
     }
   }
 
-  test("mode=hosted with missing pieces REFUSES to boot, naming every piece", async () => {
+  test("mode=hosted REFUSES to boot in the self-hosted entrypoint", async () => {
     const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
     await withEnv({ CLAXEDO_DEPLOYMENT_MODE: "hosted" }, () => {
       let thrown: Error | undefined
@@ -323,39 +317,8 @@ describe("Node composition boot wiring (createDefaultLocalControlPlaneServices)"
       } catch (err) {
         thrown = err as Error
       }
-      expect(thrown).toBeInstanceOf(DeploymentModeError)
-      expect(thrown?.message).toMatch(/refuses to start/)
-      expect(thrown?.message).toMatch(/CLAXEDO_SIGNED_CLOUD_AUTH=true/)
-      expect(thrown?.message).toMatch(/CLERK_JWT_ISSUER/)
-      expect(thrown?.message).toMatch(/CLERK_JWKS_URL/)
-      expect(thrown?.message).toMatch(/CLAXEDO_WORKSPACE_AUTHORITY_URL/)
-      expect(thrown?.message).toMatch(/CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN/)
+      expect(thrown?.message).toMatch(/not supported by the self-hosted Node entrypoint/)
     })
-  })
-
-  test("mode=hosted with signed auth but no authority refuses to boot naming ONLY the authority", async () => {
-    const { createDefaultLocalControlPlaneServices } = await import("../deployments/self-hosted-node/app")
-    await withEnv(
-      {
-        CLAXEDO_DEPLOYMENT_MODE: "hosted",
-        CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-        CLERK_JWT_ISSUER: "https://clerk.example.test",
-        CLERK_JWKS_URL: "https://clerk.example.test/.well-known/jwks.json",
-        CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-token",
-        CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "private-key",
-        CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: "public-key",
-      },
-      () => {
-        let thrown: Error | undefined
-        try {
-          createDefaultLocalControlPlaneServices()
-        } catch (err) {
-          thrown = err as Error
-        }
-        expect(thrown?.message).toMatch(/no workspace authority/)
-        expect(thrown?.message).not.toMatch(/CLERK_JWKS_URL/)
-      },
-    )
   })
 
   test("invalid mode value refuses to boot loudly", async () => {
