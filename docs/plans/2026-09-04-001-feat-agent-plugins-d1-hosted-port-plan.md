@@ -152,3 +152,12 @@ machine world launches again. The operation is renderer-withheld: only main hold
   Fix in flight: prefix-tolerant resource matching + dynamic client registration persisted in
   `mcp_oauth_clients` (migration 0021). The consent click itself needs the owner's logged-in browser; the
   Claude-in-Chrome extension reports no connected browser in this session, so that step stays owner-blocked.
+- `bba574288b`: RFC 7591 dynamic client registration (`mcp_oauth_clients`, migration 0021; secrets via the
+  deployment credential partition, never in D1 rows), prefix-tolerant resource identifiers, the runtime preparer
+  threads the same port, and the Connections kit now carries declared fields on OAuth tokens (the MCP gateway
+  matched `fields.resource` and answered 409 for every OAuth connection before). Release 68 carries it.
+- Known gap, pre-existing on the branch: `packages/claxedo-desktop` `verify:closure` fails its emitted-manifest
+  check (`desktop-hosted-contribution` requires `platform/remote-access/machine-remote-access.ts` in its chunk,
+  but the module lands in the shared main chunk; its importers are identical on dev). The source ratchets and the
+  product-boundary source checks pass; the emitted check needs a chunking decision by the desktop owner.
+- Branch pushed to `origin/codex/refactor-agent-plugins` (no PR, per owner).
