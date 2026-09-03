@@ -37,6 +37,13 @@ import {
   SESSION_CREATE_STATUS,
 } from "./contracts/session-create"
 import {
+  parseSessionReservationRequest,
+  sessionReservationResponse,
+  sessionReservationStatus,
+  SESSION_REGISTRATION_RESERVE_PATH,
+  type SessionReservationIntent,
+} from "./contracts/session-registration"
+import {
   assertSessionConfigPatchResponse,
   parseSessionConfigPatch,
   sessionConfigPatchHarnessSwitchBody,
@@ -59,6 +66,13 @@ import { emptySessionInventoryResponse } from "./contracts/session-inventory"
 import { workspaceResolveResponse } from "./contracts/workspace-resolve"
 import { unconfiguredWorkspaceDriversResponse } from "./contracts/workspace-drivers"
 import {
+  isWorkspaceListPath,
+  workspaceListResponse,
+  type ControlPlaneWorkspaceRow,
+} from "./contracts/workspace-list"
+import { isServiceCatalogPath, serviceCatalogStateResponse } from "./contracts/service-catalog"
+import { isOrgListPath, orgListResponse } from "./contracts/org-list"
+import {
   localHarnessOptionsResponse,
   runtimeHarnessOptionsResponse,
   type BoundHarnessConfigOption,
@@ -71,6 +85,7 @@ import {
   WORKTREE_CREATE_SUCCESS_STATUS,
 } from "./contracts/worktrees"
 import { driveEmptyRuntimeDiffRoute } from "./contracts/runtime-diff"
+import { createRuntimeProviderConfig, type RuntimeProviderConfig } from "./contracts/provider-config"
 import { contractRoute } from "./contracts/contract-route"
 import {
   centralStreamHeartbeat,
@@ -83,17 +98,39 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
+/**
+ * The harness vocabulary the APP speaks — the `type` string it posts to
+ * `/api/claxedo/agent-config/harness` and reads back from it, and the id it
+ * uses as a provider id (`src/features/session/harness/selection.ts:75`).
+ *
+ * Two families, and they are NOT interchangeable:
+ *   - native built-ins, addressed by their legacy composite strings
+ *     (`claude-sdk`, `codex-app-server`, `cursor-sdk`) or bare id (`opencode`,
+ *     `pi`) — `normalizeHarnessIdentity` resolves them to `{id, access:"native"}`;
+ *   - open ACP connections, addressed by the canonical `acp:<slug>`
+ *     presentation — resolved to `{id: slug, access: "acp"}`.
+ *
+ * `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts) accepts
+ * nothing else, and the server runs that same validator — a fixture outside
+ * this vocabulary would name a harness the product cannot produce.
+ */
 export type Harness =
   | "opencode"
-  | "claude-acp"
-  | "codex-acp"
-  | "cursor-acp"
+  | "acp:claude"
+  | "acp:codex"
+  | "acp:cursor"
   | "claude-sdk"
   | "codex-app-server"
   | "cursor-sdk"
   | "pi"
 
-export type HarnessModelOption = { id: string; name: string }
+/**
+ * `description` is the harness-supplied detail line every real native-SDK row
+ * carries (`ClaudeDriver.fetchModels` forwards `model.description`), and the
+ * picker renders it under the name. Fixtures carry it so a row's text here has
+ * the same shape it has against a real harness.
+ */
+export type HarnessModelOption = { id: string; name: string; description?: string }
 
 export type HarnessReadiness = "ready" | "polling" | "error"
 
@@ -245,6 +282,16 @@ export type MockRuntimeRequests = {
    * browser surface, `GET /api/wr/diff/vcs/file`, and `GET /api/control/sessions` —
    * the last of which this list found itself, on its first honest run.
    *
+   * A second cohort is the app's own per-surface reads of the control plane.
+   * All are mocked below: `GET /api/workspace?access=cloud`
+   * and `?access=user-hosted` (the sidebar catalog's control-plane half), `GET
+   * /api/claxedo/services` (the first-party service catalog, read directly off
+   * loopback), and `GET /api/claxedo/events` (`ClaxedoEventsProvider`'s central
+   * stream — one handler with `/api/wr/events` on both real servers). Mode 2
+   * again: all four rejected against 127.0.0.1:3001, and the catalog's loopback
+   * branch catches its own failure, so the rail simply lost every
+   * cloud/user-hosted row with nothing louder than these ledger entries.
+   *
    * FORMAT is `"<METHOD> <origin><pathname>"`. The query string is dropped so the list
    * is stable across runs (directories, session ids and cache-busters all live there);
    * the ORIGIN is kept, deliberately, because a request that escapes to a third party
@@ -309,6 +356,11 @@ export type MockRuntimeRequests = {
    * unreachable while the POST answered with a full status payload.
    */
   harnessGetCount: number
+  /**
+   * `POST /api/control/session-registrations/reserve` — the intent each signed
+   * session create reserved before it reached a runtime, in order.
+   */
+  sessionReservations: SessionReservationIntent[]
   /** `POST /workspaces/:workspaceId/session` — cloud/relay-lane session creation (see `MockRuntimeOptions.cloud`). */
   cloudSessionCreateCount: number
   /** Per-request draft id + body for the cloud lane, same contract as `createSessionBodies`. */
@@ -531,6 +583,13 @@ export type MockRuntimeHandles = {
    * source of a row's status after a reload, when no SSE frame replays the live state.
    */
   setSessionStatus: (sessionId: string, status?: LiveSessionStatus) => void
+  /**
+   * The provider configuration this workspace's runtime owns, as
+   * `PATCH /api/wr/provider-config` leaves it. `disabled()` is what the catalog
+   * read filters its connected list by, so a spec that stubs `/provider` itself
+   * must apply the same filter.
+   */
+  providerConfig: RuntimeProviderConfig
   session: { id: string; dir: string; projectId: string }
 }
 
@@ -597,7 +656,12 @@ type PendingEvent = { directory: string; payload: MockWireEvent; flat?: boolean 
 //   `/api/wr/events` (`signedRuntimeEventInput`, src/platform/api/api.ts:185).
 // - `ClaxedoEventsProvider` (`src/app/integrations/claxedo-events.tsx`, its
 //   inline reader loop) resumes the same way: it reads `id:` lines (:508-509)
-//   and sends `Last-Event-ID` (:461). It is NOT a reader that wrapped frames
+//   and sends `Last-Event-ID` (:461). Its CENTRAL target is
+//   `controlPlaneEventsUrl` -> `/api/claxedo/events`, a path
+//   `signedRuntimeEventInput` does not touch. That spelling is registered on the SAME handler below, because
+//   both real servers mount one handler on all three central spellings — so
+//   the two readers still share this channel's log, which is what the cursor
+//   split is for. It is NOT a reader that wrapped frames
 //   pass through harmlessly — `normalizeClaxedoStreamEvent` (:158-169) unwraps
 //   `{directory, payload}` and applies the payload, so directory events
 //   (permission / question / message) DO reach the shell caches through it.
@@ -633,6 +697,11 @@ class EventBus {
   /** See `MockRuntimeHandles.emitFlat` — appends an unwrapped SSE frame. */
   emitFlat(payload: MockWireEvent) {
     this.append({ directory: "", payload, flat: true })
+  }
+
+  /** The sequence a connection opening NOW resumes from: everything already logged is behind it. */
+  lastId() {
+    return this.seq
   }
 
   /**
@@ -688,6 +757,26 @@ function lastEventIdOf(route: Route): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+/**
+ * The cursor a `/api/wr/events` connection actually resumes from.
+ *
+ * A `?sessionID=` request is a MANAGED-PRIVATE stream — a relay-backed runtime
+ * serves no other kind (`authorizeSessionEventScope` answers an unscoped
+ * request with 400 `session_event_scope_required`). The real handler
+ * (`workspace-runtime/src/routes/runtime-events.ts`) serves such a cursor-less
+ * connection NOTHING from its replay buffer: it resumes at "now" and bootstraps
+ * the reader's cursor with an opening heartbeat. Modelling that is what makes a
+ * consumer that opens LATE genuinely miss the frames it missed, so a spec can
+ * tell the difference between a stream opened before a turn and one opened
+ * after it. The unscoped (local) stream keeps the mock's full-log-on-first-
+ * connect, which specs rely on to catch up while the app is still booting.
+ */
+function workspaceStreamCursor(route: Route, bus: EventBus) {
+  const cursor = lastEventIdOf(route)
+  if (cursor !== undefined) return cursor
+  return new URL(route.request().url()).searchParams.has("sessionID") ? bus.lastId() : undefined
+}
+
 // Every event frame carries its sequence as an SSE `id:` line so id-tracking
 // readers (global-sdk's sseJsonStream) build the cursor they resume with.
 function sseBody(batch: LoggedEvent[], emptyFrame: () => string) {
@@ -736,15 +825,25 @@ export const DEFAULT_WORKSPACE_FILES: { path: string; content: string }[] = [
 
 const DEFAULT_HARNESS_MODELS: Record<Harness, HarnessModelOption[]> = {
   opencode: [BIG_PICKLE],
-  "claude-acp": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6" }],
-  "codex-acp": [{ id: "gpt-5.2-codex", name: "GPT-5.2 Codex" }],
-  "cursor-acp": [{ id: "cursor-auto", name: "Cursor Auto" }],
-  "claude-sdk": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6" }],
+  "acp:claude": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6" }],
+  "acp:codex": [{ id: "gpt-5.2-codex", name: "GPT-5.2 Codex" }],
+  "acp:cursor": [{ id: "cursor-auto", name: "Cursor Auto" }],
+  "claude-sdk": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6", description: "Sonnet 4.6 · Efficient for routine tasks" }],
   "codex-app-server": [{ id: "gpt-5.5", name: "GPT-5.5" }],
   "cursor-sdk": [{ id: "cursor-auto", name: "Cursor Auto" }],
   pi: [{ id: "virtual", name: "Virtual" }],
 }
 
+/**
+ * The provider id a harness's models are catalogued under.
+ *
+ * The app is the producer here: `harnessModels()`
+ * (`src/features/session/harness/selection.ts:75`) and the options loader
+ * (`harness-options-loader.ts:112`) both stamp `providerID` with the harness
+ * TYPE — so an open ACP connection's provider id is its `acp:<slug>` key, which
+ * is also what the runtime store round-trips (`workspace-runtime/src/store.test.ts`
+ * pins `providerID: "acp:openclaw"` beside `harness: {id:"openclaw", access:"acp"}`).
+ */
 function providerIdFor(harness: Harness): string {
   return harness === "opencode" ? "opencode" : harness
 }
@@ -819,6 +918,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const SESSION_ID = options.sessionId ?? "ses_mock_runtime"
   const PROJECT_ID = options.projectId ?? "proj_mock_runtime"
   const PROJECT_NAME = options.projectName ?? "mock-runtime"
+  // Every control-plane workspace row belongs to a tenant; the authority's row
+  // projection makes `org_id` non-optional. One mock tenant owns them all.
+  const MOCK_ORG_ID = "org_mock_runtime"
   const createdLocalWorktrees: Array<{ directory: string; name: string; branch: string }> = []
   const localProjectRow = () => {
     const createdWorkspaces = Object.fromEntries(createdLocalWorktrees.map((worktree) => [worktree.directory, {
@@ -846,6 +948,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // hydrate GET path (behaviors 2-9, which DO pre-seed) never sends a body, so this
   // reassignment is a no-op for every other scenario in this file.
   let harness = options.harness ?? "opencode"
+  // The provider configuration this workspace's runtime owns. Settings writes
+  // it through `PATCH /api/wr/provider-config`; `providerResponse()` below is
+  // derived from it, the way the engine derives its connected catalog.
+  const providerConfig = createRuntimeProviderConfig({ harness: () => harness })
   let savedModel: { providerID: string; modelID: string } | null | undefined
   let savedAgent: string | null | undefined
   let savedVariant: string | null | undefined
@@ -887,6 +993,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     harnessOptionsCount: 0,
     harnessPostCount: 0,
     harnessGetCount: 0,
+    sessionReservations: [],
     cloudSessionCreateCount: 0,
     cloudSessionCreateBodies: [],
     cloudPromptCount: 0,
@@ -1185,7 +1292,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         },
       ],
       default: { [activeProviderID]: harnessModel().id },
-      connected: [activeProviderID],
+      // Same filter the engine applies: a provider this workspace's harness
+      // config disables is no longer connected, so a disconnect written through
+      // `PATCH /api/wr/provider-config` shows up in the very next catalog read.
+      connected: providerConfig.disabled().includes(activeProviderID) ? [] : [activeProviderID],
     }
   }
 
@@ -1450,6 +1560,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const CLOUD_PROJECT_ID = cloud?.projectId ?? `proj_cloud_${CLOUD_WORKSPACE_ID}`
   const CLOUD_PROJECT_NAME = cloud?.projectName ?? `cloud-${CLOUD_WORKSPACE_ID}`
   const CLOUD_SESSION_ID = `ses_cloud_${CLOUD_WORKSPACE_ID}`
+  /**
+   * The id of the cloud lane's ONE session.
+   *
+   * The real route honours a caller-supplied `body.id` — it is how a signed
+   * client hands the runtime the session id it already reserved with the
+   * control plane (`session-core.ts:1066`, `createSession(c, directory, title,
+   * body.id)`), and `managedRegistration` REQUIRES one. So the id is the
+   * client's when it names one, and this fixture's own otherwise (the harness
+   * lane, `createHarnessRuntimeSessionActions.create`, sends no id). Answering
+   * a different id than the one asked for would be a session the caller never
+   * created, and every event this lane emits would address the wrong one.
+   */
+  let cloudSessionId = CLOUD_SESSION_ID
   let cloudHarness: Harness = cloud?.harness ?? "opencode"
   let cloudSavedModel: { providerID: string; modelID: string } | null | undefined
   let cloudSavedAgent: string | null | undefined
@@ -1512,8 +1635,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
 
   function cloudSessionRow() {
     return {
-      id: CLOUD_SESSION_ID,
-      slug: CLOUD_SESSION_ID,
+      id: cloudSessionId,
+      slug: cloudSessionId,
       projectID: CLOUD_PROJECT_ID,
       directory: CLOUD_WORKSPACE_ID,
       title: textOf(cloudMessages[0]?.parts) || "",
@@ -1546,6 +1669,57 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
+  /**
+   * The rows `GET /api/workspace?access=…` answers with — the SAME workspaces
+   * the resolve/connection/checkpoint routes already model, seen from the
+   * control plane's side.
+   *
+   * Only relay-backed workspaces exist here. A `local` workspace has no signed
+   * identity and is never registered with a control plane, so listing one would
+   * be inventing a row the real authority cannot produce; the local lane is
+   * answered by `/project` (`centralOwnsProjects`, workspace-catalog.ts) and
+   * `mergeWorkspaceCatalog` folds the two sides together.
+   *
+   * `org_id`/`project_id`/`display_name` are REQUIRED by the authority's row
+   * projection (see ./contracts/workspace-list.ts) — the type is what says so.
+   */
+  function controlPlaneWorkspaceRows(): ControlPlaneWorkspaceRow[] {
+    const rows: ControlPlaneWorkspaceRow[] = []
+    if (cloud) {
+      rows.push({
+        workspace_id: CLOUD_WORKSPACE_ID,
+        org_id: MOCK_ORG_ID,
+        project_id: CLOUD_PROJECT_ID,
+        display_name: "main",
+        backing: "cloud-vm",
+        access: "cloud",
+        repo_name: CLOUD_PROJECT_NAME,
+        remote_directory: CLOUD_WORKSPACE_ID,
+        role: "owner",
+      })
+    }
+    for (const [directory, workspace] of Object.entries(options.workspaces ?? {})) {
+      if (workspace.kind !== "cloud" && workspace.kind !== "user-hosted") continue
+      const workspaceId = workspace.workspaceId ?? workspace.id ?? directory
+      if (rows.some((row) => row.workspace_id === workspaceId)) continue
+      rows.push({
+        workspace_id: workspaceId,
+        org_id: MOCK_ORG_ID,
+        project_id: PROJECT_ID,
+        display_name: workspace.workspace_name ?? workspaceId,
+        backing: workspace.kind === "cloud" ? "cloud-vm" : "local-worktree",
+        access: workspace.kind,
+        remote_directory: workspace.directory ?? directory,
+        role: "owner",
+        // Reachability, not authorization — and only ever asked about a machine
+        // someone owns. `available: false` is the spec's way of modelling a
+        // workspace whose host is not serving it.
+        ...(workspace.kind === "user-hosted" ? { host_online: workspace.available !== false } : {}),
+      })
+    }
+    return rows
+  }
+
   function cloudUserMessage(input: {
     id: string
     text: string
@@ -1556,13 +1730,13 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return {
       info: {
         id: input.id,
-        sessionID: CLOUD_SESSION_ID,
+        sessionID: cloudSessionId,
         role: "user",
         time: { created: Date.now() },
         agent: input.agent,
         model: { providerID: input.providerID, modelID: input.modelID },
       },
-      parts: [textPart(CLOUD_SESSION_ID, input.id, input.text)],
+      parts: [textPart(cloudSessionId, input.id, input.text)],
     }
   }
 
@@ -1576,7 +1750,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return {
       info: {
         id: input.id,
-        sessionID: CLOUD_SESSION_ID,
+        sessionID: cloudSessionId,
         role: "assistant",
         time: { created: Date.now() },
         parentID: input.parentID,
@@ -1616,7 +1790,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // `eventDirectoryForLiveSession`/live-session routing keys off this field.
     await wait(timings.busy)
     emit(
-      { type: "session.status", properties: { sessionID: CLOUD_SESSION_ID, status: { type: "busy" } } },
+      { type: "session.status", properties: { sessionID: cloudSessionId, status: { type: "busy" } } },
       CLOUD_WORKSPACE_ID,
     )
 
@@ -1630,7 +1804,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     })
     cloudMessages = [...cloudMessages, assistantRow]
     emit(
-      { type: "message.updated", properties: { sessionID: CLOUD_SESSION_ID, info: assistantRow.info } },
+      { type: "message.updated", properties: { sessionID: cloudSessionId, info: assistantRow.info } },
       CLOUD_WORKSPACE_ID,
     )
 
@@ -1646,7 +1820,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         {
           type: "message.part.delta",
           properties: {
-            sessionID: CLOUD_SESSION_ID,
+            sessionID: cloudSessionId,
             messageID: input.assistantID,
             partID,
             field: "text",
@@ -1656,12 +1830,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         CLOUD_WORKSPACE_ID,
       )
     }
-    const finalPart = textPart(CLOUD_SESSION_ID, input.assistantID, accumulated)
+    const finalPart = textPart(cloudSessionId, input.assistantID, accumulated)
     cloudMessages = cloudMessages.map((row) =>
       row.info.id === input.assistantID ? { ...row, parts: [finalPart] } : row,
     )
     emit(
-      { type: "message.part.updated", properties: { sessionID: CLOUD_SESSION_ID, part: finalPart, time: Date.now() } },
+      { type: "message.part.updated", properties: { sessionID: cloudSessionId, part: finalPart, time: Date.now() } },
       CLOUD_WORKSPACE_ID,
     )
 
@@ -1675,7 +1849,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       {
         type: "message.updated",
         properties: {
-          sessionID: CLOUD_SESSION_ID,
+          sessionID: cloudSessionId,
           info: cloudMessages.find((row) => row.info.id === input.assistantID)!.info,
         },
       },
@@ -1683,7 +1857,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     )
 
     await wait(timings.idle)
-    emit({ type: "session.idle", properties: { sessionID: CLOUD_SESSION_ID } }, CLOUD_WORKSPACE_ID)
+    emit({ type: "session.idle", properties: { sessionID: cloudSessionId } }, CLOUD_WORKSPACE_ID)
   }
 
   // ------------------------------------------------------------------------
@@ -1748,6 +1922,19 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       : r.continue(),
   )
 
+  // The first-party service catalog. Off loopback this REPLACES the aggregate
+  // above (`bootstrapGlobal` reads it directly, src/app/boot/data/bootstrap.ts),
+  // and a failure raises the "request failed" toast rather than degrading
+  // quietly — so it is answered here even though every Tier M page currently
+  // resolves a LOOPBACK central and therefore takes the aggregate branch. The
+  // zero state is the honest one: the mock composes no service provider, which
+  // is exactly when the real route answers an empty catalog.
+  await contractRoute(page, "**/api/claxedo/services**", (r) => {
+    if (!api(r)) return r.continue()
+    if (!isServiceCatalogPath(new URL(r.request().url()).pathname)) return r.fallback()
+    return json(r, serviceCatalogStateResponse())
+  })
+
   const sseIdleTimeoutMs = 4000
   const eventStreamHandler = async (route: Route) => {
     if (!api(route)) return route.continue()
@@ -1803,7 +1990,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const workspaceScoped = url.pathname.startsWith("/workspaces/") ||
       url.searchParams.has("directory") ||
       request.headers()["x-opencode-directory"]?.startsWith("workspace:") === true
-    const batch = await busWrEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+    const cursor = workspaceStreamCursor(route, busWrEvents)
+    const batch = await busWrEvents.drain(sseIdleTimeoutMs, cursor)
     const now = Date.now()
     // Most flat lifecycle frames originate on a workspace runtime stream. Worktree
     // provisioning is the exception: its ready/failed signal is central because a
@@ -1822,7 +2010,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     // deliberately carry NO `id:` line — they must not advance an
     // id-tracking reader's cursor.
     const body =
-      sseBody(batch.filter((entry) => !entry.flat), () => workspaceStreamHeartbeat(lastEventIdOf(route))) +
+      sseBody(batch.filter((entry) => !entry.flat), () => workspaceStreamHeartbeat(cursor)) +
       replays.map((entry) => sseFrame(entry.payload)).join("")
     await route.fulfill({ status: 200, contentType: "text/event-stream", body }).catch(() => {})
   }
@@ -1840,6 +2028,27 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }).catch(() => {})
   }
   await contractRoute(page, "**/api/wr/events**", wrEventsHandler)
+  // `/api/claxedo/events` is the SAME stream, not a third one. Both real
+  // servers mount one handler on all three central spellings —
+  // claxedo-local-server/src/opencode/compat-routes/index.ts (`streamGlobalEvents` mounts)
+  // (`/global/event`, `/api/wr/events`, `/api/claxedo/events` -> the single
+  // `streamGlobalEvents`) and claxedo-server/src/routes/hosted/shell.ts (the `events` mounts)
+  // (the same three -> the single `events`) — so serving it anything other than
+  // this handler's body would be inventing a contract.
+  //
+  // It is the CENTRAL target of `ClaxedoEventsProvider`
+  // (`claxedoEventStreamTargets` -> `controlPlaneEventsUrl`,
+  // src/app/integrations/claxedo-events.tsx), opened whenever the account is
+  // signed — which every `CLAXEDO_E2E_AUTH_MODE=test-user` page is. That
+  // provider is the mock's only reader that understands FLAT frames
+  // (`emitFlat`, e.g. `worktree.ready`); `authFetch` rewrites the global-sdk
+  // compat loop's `/global/event` to `/api/wr/events` for a signed document
+  // (`signedRuntimeEventInput`, src/platform/api/api.ts), so the two readers
+  // share this route's log and each resumes from its own `Last-Event-ID` —
+  // exactly the case `EventBus`'s cursor resume exists for (see its comment).
+  // Unmocked, this request escaped to the central origin and the provider
+  // retried a rejected fetch for the life of every page.
+  await contractRoute(page, "**/api/claxedo/events**", wrEventsHandler)
   await contractRoute(page, "**/api/wr/runtime-events**", wrRuntimeEventsHandler)
 
   // ProcessPane reconciles once when a workspace shell mounts. The shared
@@ -1898,6 +2107,17 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     if (new URL(r.request().url()).pathname !== "/api/control/sessions") return r.fallback()
     return json(r, emptySessionInventoryResponse())
   })
+  // GET /api/control/orgs — the signed principal's organizations. Reaching
+  // Settings (or opening the rail account menu) mounts the org/team switcher,
+  // which issues this read; unhandled, it escaped through the vite proxy to the
+  // real, unreachable 127.0.0.1:3001. See ./contracts/org-list.ts for the real
+  // handler, the bare-array shape the switcher requires, and why `[]` is the
+  // route's own answer rather than a stub.
+  await contractRoute(page, "**/api/control/orgs**", (r) => {
+    if (!api(r)) return r.continue()
+    if (!isOrgListPath(new URL(r.request().url()).pathname)) return r.fallback()
+    return json(r, orgListResponse())
+  })
   // The route split renamed the local spelling to `GET /api/claxedo/session`
   // (claxedo-local-server/src/session/routes/meta-routes.ts) — same contract,
   // same empty answer. The glob necessarily also matches
@@ -1926,6 +2146,22 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   await page.route("**/provider?**", (r) => (api(r) ? json(r, providerResponse()) : r.continue()))
   await page.route("**/provider/auth", (r) => (api(r) ? json(r, {}) : r.continue()))
   await page.route("**/provider/auth?**", (r) => (api(r) ? json(r, {}) : r.continue()))
+
+  // The write half of `/provider`, driven through the REAL workspace-runtime
+  // router: a config-declared provider disconnects by being disabled in this
+  // workspace's harness configuration, not by an auth DELETE.
+  const providerConfigHandler = async (r: Route) => {
+    if (!api(r)) return r.continue()
+    if (!new URL(r.request().url()).pathname.endsWith("/api/wr/provider-config")) return r.fallback()
+    const driven = await providerConfig.handle({
+      url: r.request().url(),
+      method: r.request().method(),
+      body: r.request().postData(),
+    })
+    return json(r, driven.body, driven.status)
+  }
+  await contractRoute(page, "**/api/wr/provider-config", providerConfigHandler)
+  await contractRoute(page, "**/api/wr/provider-config?**", providerConfigHandler)
 
   // Bare-path glob only (no query-string wildcard): Playwright's glob-to-regex
   // anchors the pattern's end, so `**/config` alone does NOT match the app's real
@@ -2053,7 +2289,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
      * Note each vendor's ACP list differs from its SDK list above — same product,
      * two transports, genuinely different surfaces.
      */
-    "claude-acp": {
+    "acp:claude": {
       modes: [
         { id: "auto", name: "Auto", level: "auto" },
         { id: "default", name: "Manual", level: "ask" },
@@ -2063,14 +2299,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         { id: "bypassPermissions", name: "Bypass Permissions", level: "full" },
       ],
     },
-    "codex-acp": {
+    "acp:codex": {
       modes: [
         { id: "read-only", name: "Read-only", level: "ask" },
         { id: "agent", name: "Agent", level: "auto" },
         { id: "agent-full-access", name: "Agent (full access)", level: "full" },
       ],
     },
-    "cursor-acp": {
+    "acp:cursor": {
       modes: [
         { id: "agent", name: "Agent", level: "auto" },
         { id: "plan", name: "Plan" },
@@ -2080,10 +2316,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   }
   const modeTableFor = (harness: string) => {
     if (harness === "opencode") return MODES_BY_HARNESS.opencode!
-    // Each ACP agent has its own table now, so no `-acp` fallback: an unknown one
-    // must surface as a missing fixture rather than silently borrow another
-    // agent's modes, which is the exact bug this feature exists to prevent.
-    if (harness.endsWith("-acp")) {
+    // Each ACP connection has its own table: an unknown one surfaces as a
+    // missing fixture rather than borrowing another agent's modes.
+    if (harness.startsWith("acp:")) {
       const table = MODES_BY_HARNESS[harness]
       if (!table) throw new Error(`mock-runtime: no permission modes recorded for ${harness}`)
       return table
@@ -2158,6 +2393,28 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // MID-FLOW, remounting the pane scope (keyed on the workspace key) under
   // the user — observed as the fork spec's slash popover closing and its
   // fork navigation landing on the bogus scope's slug.
+  // The control plane's workspace list — the sidebar catalog's only source for
+  // relay-backed workspaces (`workspaceCatalogQuery` asks for both access kinds
+  // concurrently, src/features/workspaces/data/workspace-catalog.ts). It has no
+  // handler here at all until now: both calls escaped to the central origin
+  // (127.0.0.1:3001, nothing listening) and REJECTED, which the catalog's
+  // loopback branch swallows (`.catch(() => [])`) — so the rail silently lost
+  // every cloud/user-hosted row and the boot tripwire recorded two escapes.
+  //
+  // Registered BEFORE `/resolve`, `/drivers`, `/create`, `/:id/connection` and
+  // `/:id/checkpoints` so those keep winning (Playwright resolves handlers
+  // last-registered-first), and guarded on the exact BARE pathname besides, so
+  // it can never shadow a sibling `/api/workspace/...` route.
+  await contractRoute(page, "**/api/workspace**", (r) => {
+    if (!api(r)) return r.continue()
+    const url = new URL(r.request().url())
+    if (!isWorkspaceListPath(url.pathname) || r.request().method() !== "GET") return r.fallback()
+    return json(r, workspaceListResponse({
+      access: url.searchParams.get("access"),
+      workspaces: controlPlaneWorkspaceRows(),
+    }))
+  })
+
   const localWorkspaceResolve = (r: Route) => {
     if (!api(r)) return r.continue()
     const directory = new URL(r.request().url()).searchParams.get("directory") ?? DIR
@@ -2749,6 +3006,27 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, child ? childSessionRow(child) : sessionRow(textOf(messages[0]?.parts) || ""))
   })
 
+  // The signed control plane's session-reservation boundary. A signed client
+  // reserves the session id it is about to create BEFORE it reaches the runtime
+  // (`reservePrivateSession`, src/platform/runtime/private-session-reservation.ts)
+  // and refuses to continue unless the receipt echoes its own immutable intent —
+  // so an unmocked reservation does not degrade, it ABORTS the send: no session
+  // create, no prompt, no reply. It is mounted on the PRIMARY origin for every
+  // page (never relay-prefixed, and never gated on `cloud`) because it is the
+  // control plane's route, taken by any relay-backed workspace — cloud and
+  // user-hosted alike.
+  await contractRoute(page, `**${SESSION_REGISTRATION_RESERVE_PATH}`, (r) => {
+    if (!api(r)) return r.continue()
+    if (r.request().method() !== "POST") return r.fallback()
+    const url = r.request().url()
+    // CONTRACT: the same body the real route accepts, and the receipt built
+    // from it — see e2e/helpers/contracts/session-registration.ts.
+    const reservation = parseSessionReservationRequest(r.request().postDataJSON?.() ?? undefined, url)
+    requests.sessionReservations.push(reservation)
+    const result = sessionReservationResponse(reservation)
+    return json(r, result, sessionReservationStatus(result))
+  })
+
   // --------------------------------------------------------------------
   // Cloud: mount a full relay-lane workspace-runtime session (connection
   // mint + `/workspaces/:workspaceId/...` session/prompt/message/config/
@@ -2817,6 +3095,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         ? json(r, {
             access: "cloud",
             backing: "cloud-vm",
+            // A cloud sandbox's runtime delegates to the control plane's session
+            // authority, so it serves SESSION-SCOPED event streams only. The
+            // mint is the only place the client learns that, and the app opens
+            // no workspace stream until it does — so omitting this makes the
+            // whole event bus silent, exactly as it would in production.
+            sessionAuthority: "managed-private",
             workspaceId,
             role: "owner",
             relayUrl: relayOrigin,
@@ -2939,11 +3223,12 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     await contractRoute(page, `${base}/api/wr/diff/**`, runtimeDiffHandler)
 
     const relayEventHandler = async (route: Route) => {
-      const batch = await busRelayEvents.drain(sseIdleTimeoutMs, lastEventIdOf(route))
+      const cursor = workspaceStreamCursor(route, busRelayEvents)
+      const batch = await busRelayEvents.drain(sseIdleTimeoutMs, cursor)
       await route.fulfill({
         status: 200,
         contentType: "text/event-stream",
-        body: sseBody(batch, () => workspaceStreamHeartbeat(lastEventIdOf(route))),
+        body: sseBody(batch, () => workspaceStreamHeartbeat(cursor)),
       }).catch(() => {})
     }
     const relayRuntimeEventHandler = async (route: Route) => {
@@ -2986,6 +3271,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         requests.cloudSessionCreateBodies.push({ draftId, body })
         const sessionHarness = new URL(url).searchParams.get("harness")
         if (sessionHarness && sessionHarness in harnessModels) cloudHarness = sessionHarness as Harness
+        // The signed lane reserves its session id first and hands it over here;
+        // the real route creates the session UNDER that id (see `cloudSessionId`).
+        cloudSessionId = typeof body.id === "string" ? body.id : CLOUD_SESSION_ID
         cloudSessionCreated = true
         cloudMessages = []
         const created = cloudSessionRow()
@@ -3111,6 +3399,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     emitRuntime,
     releaseAbort: () => releaseAbort(),
     setSessionStatus,
+    providerConfig,
     session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID },
   }
 }

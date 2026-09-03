@@ -22,21 +22,27 @@
  *     keyed by session id once a session exists (`saved.session[sessionId]`). Before a
  *     session exists (a fresh draft), `store.draft` holds the pick IN MEMORY ONLY — it
  *     does NOT survive reload by itself. What DOES survive reload for a fresh draft is
- *     the MODEL CATALOG's global "recent" list (`useModels()`, `src/features/session/providers/models.tsx`,
- *     persisted at localStorage key `opencode.global.dat:model` under `.recent`): picking
+ *     the MODEL CATALOG's "recent" list (`useModels()`, `src/features/session/providers/models.tsx`,
+ *     persisted under `.recent` in that (server, workspace)'s bucket —
+ *     `Persist.serverWorkspace(server, workspace, "model")`, localStorage key
+ *     `opencode.server.<serverhash>.workspace.<dirhash>.dat:workspace:model`): picking
  *     a model calls `model.set(item, {recent:true})`, which pushes it onto
  *     `models.recent.list()`; on the next load, `currentModelKey()`'s fallback chain
  *     (`fallback = savedModel() ?? recentModel() ?? configuredModel() ?? defaultModel()`,
  *     `src/context/local.tsx:371`) picks the most-recently-used model back up as the
  *     active model even though the draft's own scope is empty.
- *   - Model VISIBILITY (Settings→Models) lives in `useModels()`'s `store.user` (also
- *     `opencode.global.dat:model`, the `.user` array of `{providerID,modelID,visibility}`
- *     rows), read by `models.visible()` (`src/features/session/providers/models.tsx:118`): an explicit
+ *   - Model VISIBILITY (Settings→Models) lives in `useModels()`'s `store.user`, keyed by
+ *     harness inside that same (server, workspace) bucket — a `.user[harness]` array of
+ *     `{providerID,modelID,visibility}` rows — read by `models.visible()`
+ *     (`src/features/session/providers/models.tsx`): an explicit
  *     "hide"/"show" wins; otherwise a model released within ~6 months defaults visible
  *     ("latest"), otherwise a model with a KNOWN release date older than that defaults
- *     HIDDEN, otherwise (unknown/invalid date) defaults visible. This is a single GLOBAL
- *     reactive store — a Settings dialog toggle takes effect in the composer's model
- *     popover immediately, no reload needed (same signal, both are just consumers).
+ *     HIDDEN, otherwise (unknown/invalid date) defaults visible. One record per
+ *     (server, workspace) is shared by every surface on it (`ModelStoreRegistryProvider`,
+ *     mounted in the app shell), so a Settings dialog toggle takes effect in the
+ *     composer's model popover immediately, no reload needed — both read the same store,
+ *     and both name the same harness for a workspace (Settings' scope selector and a new
+ *     draft resolve it the same way).
  *   - The SERVER's copy of session config (`PATCH /session/:id/config`) is a *write-only*
  *     projection for this spec's purposes: `context/local.tsx#syncSessionSelection`
  *     PATCHes it immediately whenever `local.model.set()`/`local.agent.set()` commits
@@ -93,7 +99,7 @@
  *      write path is independent of sending another prompt.
  *   4. A freshly picked model survives a full page reload of the same draft: the model
  *      trigger shows the picked model's name again with no user action, sourced from the
- *      catalog's global "recent" fallback (localStorage `opencode.global.dat:model`).
+ *      catalog's "recent" fallback in that (server, workspace)'s model bucket.
  *   5. With only a free (cost-0, `opencode`) provider connected, clicking the model
  *      control still opens the full model popover — no funnel dialog intercepts it.
  *   6. The plain agent `Select` renders once more than one agent profile is available,
@@ -492,12 +498,19 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     await pickModelFromPopover(page, "Big Pickle")
     await expect(modelTrigger(page)).toContainText("Big Pickle", { timeout: 10_000 })
 
-    // The pick is persisted into the catalog's global "recent" list — wait for the
-    // actual localStorage write (deterministic poll, not a sleep) before reloading.
+    // The pick is persisted into the model store's "recent" list. That store is
+    // per (server, workspace): `Persist.serverWorkspace(server, workspace,
+    // "model")` names the bucket
+    // `opencode.server.<…>.workspace.<…>.dat:workspace:model`. Wait for the
+    // actual localStorage write (deterministic poll, not a sleep) before
+    // reloading.
     await expect
       .poll(async () =>
         page.evaluate(() => {
-          const raw = localStorage.getItem("opencode.global.dat:model")
+          const name = Object.keys(localStorage).find(
+            (key) => key.startsWith("opencode.server.") && key.endsWith(":workspace:model"),
+          )
+          const raw = name ? localStorage.getItem(name) : null
           if (!raw) return null
           try {
             const parsed = JSON.parse(raw) as { recent?: Array<{ modelID?: string }> }
@@ -588,7 +601,14 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
       const response = await fetch(`/session/${sessionID}/config?directory=${encodeURIComponent(directory)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ harness: { type: "claude-acp" } }),
+        // The identity shape the app's own client sends on this route:
+        // `harness: sessionHarnessIdentity(type)` (`submit-transport.ts:322`,
+        // `harness-switcher.ts:173`) — a structured `{id, access}`. An open ACP
+        // connection's `acp:<slug>` presentation is only a STRING form; inside a
+        // structured identity the slug must arrive as `id` alongside
+        // `access: "acp"` (`normalizeHarnessIdentity`, harness-types.ts), or the
+        // whole harness key is silently dropped and the PATCH 200s unchanged.
+        body: JSON.stringify({ harness: { id: "claude", access: "acp" } }),
       })
       return { status: response.status, body: await response.json() }
     }, { directory: DIR, sessionID: SESSION_ID })

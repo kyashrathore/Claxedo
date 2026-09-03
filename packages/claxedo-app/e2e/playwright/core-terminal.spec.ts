@@ -183,15 +183,16 @@ function corsHeaders() {
   }
 }
 
-// ─── Claxedo event bus (route-level `/api/wr/events` SSE injection) ────────
+// ─── Claxedo event bus (route-level central-stream SSE injection) ──────────
 //
-// See the long comment on the `/api/wr/events` mount in `installAppBootMock`
+// See the long comment on the central-stream mounts in `installAppBootMock`
 // for why this exists instead of the `window.__claxedoEmitTestEvent` dev-only
 // hook. Broadcasts (fanout), NOT a single drain-once queue: on this route
 // shape (`/<slug>/session`) TWO independent readers open their own
-// long-lived reconnecting connection to `GET /api/wr/events` at once —
-// `ClaxedoEventsProvider`'s "central" target (src/providers/claxedo-
-// events.tsx) AND `global-sdk.tsx`'s `sseJsonStream`, which rewrites its
+// long-lived reconnecting connection to this bus at once —
+// `ClaxedoEventsProvider`'s "central" target on `/api/claxedo/events`
+// (src/app/integrations/claxedo-events.tsx) AND `global-sdk.tsx`'s
+// `sseJsonStream` on `/api/wr/events`, which rewrites its
 // usual `/global/event`/`/event` request to `/api/wr/events` for this route
 // shape (see `apiFetchUrl`, src/utils/api.ts:200-205, and the matching
 // comment on `installMockRuntime`'s `wrEventsHandler` in
@@ -221,8 +222,23 @@ type ClaxedoTestEvent = Record<string, unknown>
 
 type ClaxedoEventSlot = { pending: ClaxedoTestEvent[]; waiters: Array<() => void>; busy: boolean }
 
+const emptySlot = (): ClaxedoEventSlot => ({ pending: [], waiters: [], busy: false })
+
+/**
+ * One slot per reader that WILL connect, created up front rather than on that
+ * reader's first `drain()`.
+ *
+ * `emit()` fans out to the slots that exist at the moment it is called, so a
+ * slot created lazily has no backlog: an event emitted before a reader's first
+ * connection is invisible to it forever, with no replay to recover it. That is
+ * a real failure mode here, not a theoretical one — `emitClaxedoEvent` fires as
+ * soon as a terminal exists, which under load beats `ClaxedoEventsProvider`'s
+ * central connection, and the auto-rename frame was simply never delivered.
+ */
+const CLAXEDO_BUS_READERS = 2
+
 class ClaxedoEventBus {
-  private slots: ClaxedoEventSlot[] = []
+  private slots: ClaxedoEventSlot[] = Array.from({ length: CLAXEDO_BUS_READERS }, emptySlot)
   private terminalSessions = new Map<string, Record<string, unknown>>()
 
   emit(payload: ClaxedoTestEvent) {
@@ -252,7 +268,7 @@ class ClaxedoEventBus {
   /** One call = one HTTP connection: claims an idle slot (or makes a new one). */
   async drain(idleTimeoutMs: number) {
     const slot = this.slots.find((s) => !s.busy) ?? (() => {
-      const created: ClaxedoEventSlot = { pending: [], waiters: [], busy: false }
+      const created = emptySlot()
       this.slots.push(created)
       return created
     })()
@@ -404,11 +420,20 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
   await page.route("**/global/event?**", eventStreamHandler)
   await page.route("**/event?**", eventStreamHandler)
 
-  // `ClaxedoEventsProvider` (src/providers/claxedo-events.tsx) consumes
-  // agent.lifecycle/pty.exited/etc events over `GET /api/wr/events` (its
-  // "central" stream target, ALWAYS present — `claxedoEventStreamTargets`
-  // includes it unconditionally, workspace-signing only ever ADDS a second
-  // target) in both dev and production builds. That provider also exposes a
+  // `ClaxedoEventsProvider` (src/app/integrations/claxedo-events.tsx) consumes
+  // agent.lifecycle/pty.exited/etc events over its "central" stream target in
+  // both dev and production builds. That target is
+  // `controlPlaneEventsUrl` -> `GET /api/claxedo/events`; `/api/wr/events` is
+  // what a WORKSPACE-scoped target opens (and what global-sdk's compat loop is
+  // rewritten to). Both spellings are the SAME stream on both real servers —
+  // claxedo-local-server/src/opencode/compat-routes/index.ts and
+  // claxedo-server/src/routes/hosted/shell.ts each mount one handler on
+  // `/global/event`, `/api/wr/events` and `/api/claxedo/events` — so both are
+  // served by the one handler below. Mounting only `/api/wr/events` left the
+  // provider's central connection escaping to 127.0.0.1:3001 and NO reader on
+  // this bus, so every `emitClaxedoEvent` frame was dropped.
+  //
+  // That provider also exposes a
   // `window.__claxedoEmitTestEvent` direct-injection hook, but ONLY `if
   // (import.meta.env.DEV)` — false when this suite runs against a built app
   // served statically (`vite preview`/static server), which is this spec's
@@ -429,6 +454,7 @@ async function installAppBootMock(page: Page, dir: string, projectId = "proj_cor
     await route.fulfill({ status: 200, contentType: "text/event-stream", headers, body: claxedoSseBody(batch) }).catch(() => {})
   }
   await page.route("**/api/wr/events**", claxedoEventsHandler)
+  await page.route("**/api/claxedo/events**", claxedoEventsHandler)
 }
 
 async function seedProject(page: Page, dir: string) {
@@ -725,11 +751,12 @@ async function terminalPaintSummary(page: Page, ptyId: string) {
 }
 
 /**
- * Emits a Claxedo event onto the mocked `/api/wr/events` SSE stream that
- * `ClaxedoEventsProvider` always connects to (its "central" target) — see
- * the route registered in `installAppBootMock` and the `ClaxedoEventBus`
- * above for why this replaced the `window.__claxedoEmitTestEvent` dev-only
- * hook the app also exposes.
+ * Emits a Claxedo event onto the mocked central SSE stream that
+ * `ClaxedoEventsProvider` connects to — `/api/claxedo/events`, with
+ * `/api/wr/events` served by the same handler because both real servers mount
+ * one handler on both spellings. See the routes registered in
+ * `installAppBootMock` and the `ClaxedoEventBus` above for why this replaced
+ * the `window.__claxedoEmitTestEvent` dev-only hook the app also exposes.
  */
 async function emitClaxedoEvent(page: Page, event: Record<string, unknown>) {
   const bus = claxedoEventBuses.get(page)

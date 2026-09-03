@@ -98,6 +98,21 @@ export type ScriptedModelServer = {
    * 0 (or leave unset) to restore the default instant reply.
    */
   setReplyDelayMs(ms: number): void
+  /**
+   * Stream a text reply as several deltas instead of one, `delayMs` apart —
+   * OFF by default (one delta, written as fast as the socket takes it), so no
+   * existing spec's timing changes.
+   *
+   * This is what makes "the text grew on screen while the model was still
+   * talking" an assertable sequence rather than a single instant: a consumer
+   * can observe the partial reply between chunks. It applies to the CHAT
+   * dialect, the one emitter that writes its events incrementally; the
+   * Anthropic-Messages and OpenAI-Responses emitters build a whole event array
+   * and end in one write, and nothing needs paced deltas from them.
+   *
+   * Pass `undefined` to restore the single-delta default.
+   */
+  setTextStreamPacing(pacing: { chunks: number; delayMs: number } | undefined): void
   close(): Promise<void>
 }
 
@@ -143,6 +158,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   let goalEvaluationCount = 0
   let sequence = 0
   let replyDelayMs = 0
+  let textStreamPacing: { chunks: number; delayMs: number } | undefined
 
   const server = createServer(async (incoming, outgoing) => {
     if (incoming.method !== "POST") {
@@ -198,7 +214,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     // `claude`/session turn) in a "busy" state for an assertable window.
     if (replyDelayMs > 0) await new Promise((resolve) => setTimeout(resolve, replyDelayMs))
 
-    if (request.dialect === "chat") return respondChat(outgoing, sequence, reply)
+    if (request.dialect === "chat") return await respondChat(outgoing, sequence, reply, textStreamPacing)
     if (request.dialect === "responses") return respondResponses(outgoing, sequence, request.body, reply)
     return respondMessages(outgoing, sequence, request.body, reply)
   })
@@ -227,6 +243,9 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     },
     setReplyDelayMs: (ms) => {
       replyDelayMs = ms
+    },
+    setTextStreamPacing: (pacing) => {
+      textStreamPacing = pacing
     },
     close: () => closeAll(server),
   }
@@ -402,7 +421,24 @@ export function claudeScriptedEnv(url: string, configDir: string) {
 // Dialect emitters. Wire shapes are ports, not inventions — see file header.
 // ---------------------------------------------------------------------------
 
-function respondChat(outgoing: ServerResponse, sequence: number, reply: ScriptedModelRequest["reply"]) {
+/**
+ * Splits a reply into at most `chunks` pieces, never producing an empty one —
+ * a zero-length delta is not a partial reply, it is a frame that says nothing.
+ */
+function textDeltaChunks(text: string, chunks: number) {
+  const pieces = Math.max(1, Math.min(chunks, text.length))
+  const size = Math.ceil(text.length / pieces)
+  const out: string[] = []
+  for (let at = 0; at < text.length; at += size) out.push(text.slice(at, at + size))
+  return out.length ? out : [text]
+}
+
+async function respondChat(
+  outgoing: ServerResponse,
+  sequence: number,
+  reply: ScriptedModelRequest["reply"],
+  pacing?: { chunks: number; delayMs: number },
+) {
   const usage = { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 }
   const chunk = (choices: ChatCompletionChunk["choices"], includeUsage = false): ChatCompletionChunk => ({
     id: `chatcmpl_${sequence}`,
@@ -412,11 +448,14 @@ function respondChat(outgoing: ServerResponse, sequence: number, reply: Scripted
     object: "chat.completion.chunk",
     ...(includeUsage ? { usage } : {}),
   })
+  const textDeltas = reply.kind === "text"
+    ? (pacing ? textDeltaChunks(reply.text, pacing.chunks) : [reply.text])
+    : []
   const events: ChatCompletionChunk[] =
     reply.kind === "text"
       ? [
           chunk([{ delta: { role: "assistant" }, finish_reason: null, index: 0 }]),
-          chunk([{ delta: { content: reply.text }, finish_reason: null, index: 0 }]),
+          ...textDeltas.map((content) => chunk([{ delta: { content }, finish_reason: null, index: 0 }])),
           chunk([{ delta: {}, finish_reason: "stop", index: 0 }], true),
         ]
       : [
@@ -438,7 +477,15 @@ function respondChat(outgoing: ServerResponse, sequence: number, reply: Scripted
           chunk([{ delta: {}, finish_reason: "tool_calls", index: 0 }], true),
         ]
   outgoing.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" })
-  events.forEach((event) => outgoing.write(`data: ${JSON.stringify(event)}\n\n`))
+  for (const [index, event] of events.entries()) {
+    // Paced only BETWEEN text deltas: the role frame and the terminal
+    // finish frame carry no partial text, so delaying them would only add
+    // latency to the turn without making any intermediate state observable.
+    if (pacing && index > 1 && index <= textDeltas.length) {
+      await new Promise((resolve) => setTimeout(resolve, pacing.delayMs))
+    }
+    outgoing.write(`data: ${JSON.stringify(event)}\n\n`)
+  }
   outgoing.end("data: [DONE]\n\n")
 }
 

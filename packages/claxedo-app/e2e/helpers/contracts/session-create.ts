@@ -124,6 +124,16 @@ export const SESSION_CREATE_CONFIG_FIELDS = {
  * legacy path is not rejected here.
  */
 export const SESSION_CREATE_EXTRA_FIELDS: Readonly<Record<string, FieldSpec>> = {
+  id: {
+    check: (value) =>
+      value === undefined || (typeof value === "string" && value.length > 0)
+        ? undefined
+        : `id must be a non-empty string when present, got ${typeOf(value)}`,
+    consumedBy:
+      "the session is created UNDER this id — `createSession(c, directory, body.title, body.id)` "
+      + "(session-core.ts:1066), after `readSession(...body.id)` makes a repeat create idempotent. "
+      + "A managed runtime REFUSES a create without it: 400 session_reservation_required (:1041-1046).",
+  },
   title: {
     check: (value) =>
       value === undefined || typeof value === "string" ? undefined : `title must be a string, got ${typeOf(value)}`,

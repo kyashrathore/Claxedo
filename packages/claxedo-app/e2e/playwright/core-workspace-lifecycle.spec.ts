@@ -201,6 +201,7 @@
  *   itself (only its `validWorktree` boundary is pinned here).
  */
 import { sessionListRoute } from "../helpers/contracts/session-list"
+import { isOrgListPath, orgListResponse } from "../helpers/contracts/org-list"
 import { expect, test, type Page } from "@playwright/test"
 
 const DIR = "/tmp/e2e-core-lifecycle-main"
@@ -412,9 +413,25 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
     if (!api(route.request())) return route.continue()
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
   }
+  // One stream, three spellings. Both real servers mount a SINGLE handler on
+  // `/global/event`, `/api/wr/events` and `/api/claxedo/events`
+  // (claxedo-local-server src/opencode/compat-routes/index.ts, claxedo-server
+  // src/routes/hosted/shell.ts), so every spelling the app may connect on has
+  // to answer here or the central stream falls through to the real, unreachable
+  // 127.0.0.1:3001.
   await page.route("**/global/event?**", eventStreamHandler)
   await page.route("**/event?**", eventStreamHandler)
   await page.route("**/api/wr/events**", eventStreamHandler)
+  await page.route("**/api/claxedo/events**", eventStreamHandler)
+  // The rail's org/team switcher mounts with the header actions this spec
+  // drives, and its read was leaking onto the real (unreachable) backend as a
+  // vite proxy ECONNREFUSED. `[]` is the authority's own answer for a principal
+  // in no organization — see ../helpers/contracts/org-list.ts.
+  await page.route("**/api/control/orgs**", (r) => {
+    if (!api(r.request())) return r.continue()
+    if (!isOrgListPath(new URL(r.request().url()).pathname)) return r.fallback()
+    return json(r, orgListResponse())
+  })
   // Review/diff panel calls — benign-empty so the panel shows "no changes"
   // instead of leaking onto the real (unreachable) backend.
   await page.route("**/api/wr/diff/**", (r) => {
@@ -747,6 +764,7 @@ test.describe("core workspace lifecycle @core", () => {
             access: "cloud",
             backing: "cloud-vm",
             runtimeKind: "cloud",
+            sessionAuthority: "managed-private",
             workspaceId: "wsid_main_cloud",
             role: "owner",
             relayUrl: "https://relay.test",
@@ -837,15 +855,18 @@ test.describe("core workspace lifecycle @core", () => {
 
     // `createLocalWorkspace` (workspace-recovery.tsx) waits for a `worktree.ready`
     // event on the central Claxedo event stream. The documented injection point
-    // (`window.__claxedoEmitTestEvent`, `src/providers/claxedo-events.tsx`) is
-    // gated behind `import.meta.env.DEV` — confirmed live against THIS server
+    // (`window.__claxedoEmitTestEvent`, `src/app/integrations/claxedo-events.tsx`)
+    // is gated behind `import.meta.env.DEV` — confirmed live against THIS server
     // (not just this spec's mock) that the flag is false here: both
     // `__claxedoEmitTestEvent` and the sibling DEV-only
     // `__claxedoConnections.markReconnecting`/`markReconnected` are absent from
     // `window` after a full app boot, so the hook does not exist to call. This
     // spec instead drives the REAL delivery path: the central stream is a
-    // `GET /api/wr/events` SSE connection (`claxedoEventStreamTargets`,
-    // `src/providers/claxedo-events.tsx`) that reconnects on a steady ~2s cadence
+    // `GET /api/claxedo/events` SSE connection (`claxedoEventStreamTargets` ->
+    // `controlPlaneEventsUrl`, `src/app/integrations/claxedo-events.tsx`) — the
+    // same one handler both real servers also mount on `/global/event` and
+    // `/api/wr/events`, which is why every spelling is overridden below. It
+    // reconnects on a steady ~2s cadence
     // whenever each HTTP-level connect succeeds (`state.failures` resets to 0 on
     // every 200 OK before the delay is computed, so the backoff never actually
     // grows here — only a network/HTTP failure would escalate it). Flipping
@@ -865,6 +886,7 @@ test.describe("core workspace lifecycle @core", () => {
     await page.route("**/global/event?**", eventStreamOverride)
     await page.route("**/event?**", eventStreamOverride)
     await page.route("**/api/wr/events**", eventStreamOverride)
+    await page.route("**/api/claxedo/events**", eventStreamOverride)
 
     await openApp(page)
     await groupByWorkspace(page)

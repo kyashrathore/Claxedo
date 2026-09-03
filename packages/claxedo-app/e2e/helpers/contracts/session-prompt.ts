@@ -46,6 +46,7 @@
 // zod schema, because no such schema exists yet. If one is ever added server-side,
 // replace the validator body with `schema.parse()` and delete the hand-written
 // checks — the field table stays as the compile-time tripwire either way.
+import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import type { SessionPromptBody } from "@claxedo/workspace-runtime/routes"
 
 // ---------------------------------------------------------------------------
@@ -251,16 +252,15 @@ export function parseSessionPromptRequest(rawBody: unknown, url: string): Sessio
 export const SESSION_PROMPT_SUCCESS = { status: 204, body: "" } as const
 
 /**
- * `mkAssistantId` (workspace-runtime/src/session/service.ts:78-83): when the client
- * supplies a `messageID`, the assistant reply's id is EXACTLY `${messageID}_r`.
+ * When the client supplies a `messageID`, the assistant reply's id is the one
+ * the runtime's turn convention names for it.
  *
- * This is not type-bindable today — `mkAssistantId` is module-private and not
- * re-exported from `@claxedo/workspace-runtime/routes` — so it is pinned here as a
- * function plus this comment. The app's REST reconciliation
- * (`assistantMessageIdForUserMessage`) matches on this exact id; a synthetic id in
- * the mock silently disables that entire recovery path for every spec that relies on
- * it. If the convention ever changes server-side, this is the single place to fix.
+ * Bound to that convention's owner (`assistantMessageIdForTurn`,
+ * `@claxedo/agent-event-runtime/contracts`) — the same function
+ * `workspace-runtime`'s `mkAssistantId` mints with and the app's REST
+ * reconciliation (`assistantMessageIdForUserMessage`) matches on — so a mock
+ * cannot drift from the server it stands in for.
  */
 export function assistantIdForUserMessage(userMessageId: string) {
-  return `${userMessageId}_r`
+  return assistantMessageIdForTurn(userMessageId)
 }

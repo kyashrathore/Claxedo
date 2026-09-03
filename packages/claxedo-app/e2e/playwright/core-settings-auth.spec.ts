@@ -71,9 +71,12 @@
  *     through `PUT /api/claxedo/credentials` (`claxedoCredentialRequest`, see
  *     `src/utils/credential-request.ts`) for API-key and OAuth-callback via the
  *     SDK `provider.oauth.*` routes; disconnect issues `DELETE
- *     /api/claxedo/credentials/provider/:id` and (for the synthetic
- *     `opencode-go`-style non-key rows) a `disabled_providers` `PATCH /config`.
- *     Custom providers additionally write `provider.<id>` into global config.
+ *     /api/claxedo/credentials/provider/:id`. A CONFIG-declared row has no
+ *     credential behind it, so it disconnects through `PATCH
+ *     /api/wr/provider-config?harness=<h>&directory=<scope>` — the workspace
+ *     runtime's own `disabled_providers`, which the same scoped `GET /provider`
+ *     is then filtered by. Custom providers additionally write `provider.<id>`
+ *     into global config.
  *   Connections: `createConnectionsStore`/`createConnectFlow`
  *     (`src/components/settings-connections-core.ts`) own a small state
  *     machine (`"form" | "submitting" | "confirm-replace" | "oauth-waiting" |
@@ -738,7 +741,16 @@ type ProviderFixture = {
   models?: Record<string, unknown>
 }
 
-async function mockProviderCatalog(page: Page, input: { connected: ProviderFixture[]; popular: ProviderFixture[] }) {
+async function mockProviderCatalog(page: Page, input: {
+  connected: ProviderFixture[]
+  popular: ProviderFixture[]
+  /**
+   * The workspace runtime's own `disabled_providers`, when the test writes it.
+   * The engine filters its connected list by exactly this, so the catalog read
+   * below does too — that is how a scoped disconnect becomes visible.
+   */
+  disabled?: () => readonly string[]
+}) {
   const all = [...input.connected, ...input.popular]
   const fullCatalog = {
     all: all.map((p) => {
@@ -771,19 +783,14 @@ async function mockProviderCatalog(page: Page, input: { connected: ProviderFixtu
     connected: indexCatalog.connected,
     default: indexCatalog.default,
   }
-  // Bootstrap owns the initial provider index. Install this route after the shared
-  // runtime so the settings page starts from the same canonical catalog that a real
-  // control plane supplies. The /provider route below supplies detail metadata after
-  // the settings surface identifies which connected providers need it.
-  await page.route("**/api/claxedo/bootstrap**", (route) => json(route, {
-    healthy: true,
-    version: "1.0.0-test",
-    path: { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" },
-    project: [{ id: "proj_mock_runtime", worktree: DIR, name: "mock-runtime", time: { created: Date.now(), updated: Date.now() } }],
-    provider: listBody,
-    provider_auth: {},
-    config: {},
-  }))
+  // `GET /provider?harness=<harness>&directory=<scope>` is the ONLY route the
+  // catalog comes from: `providerListQuery` reads that scoped route, and
+  // `?provider=<id>` is its detail form. The index shape below is what the real
+  // route answers.
+  const connectedNow = () => {
+    const disabled = new Set(input.disabled?.() ?? [])
+    return fullCatalog.connected.filter((id) => !disabled.has(id))
+  }
   const fulfillProvider = (route: Parameters<Parameters<Page["route"]>[1]>[0]) => {
     if (route.request().method() !== "GET" && route.request().resourceType() !== "fetch" && route.request().resourceType() !== "xhr") {
       return route.continue()
@@ -793,10 +800,10 @@ async function mockProviderCatalog(page: Page, input: { connected: ProviderFixtu
     if (providerId) {
       const provider = fullCatalog.all.find((item) => item.id === providerId)
       return json(route, provider
-        ? { all: [provider], connected: fullCatalog.connected, default: fullCatalog.default }
-        : { all: [], connected: fullCatalog.connected, default: fullCatalog.default })
+        ? { all: [provider], connected: connectedNow(), default: fullCatalog.default }
+        : { all: [], connected: connectedNow(), default: fullCatalog.default })
     }
-    return json(route, listBody)
+    return json(route, { ...listBody, connected: connectedNow() })
   }
   // Register both shapes last so they beat mock-runtime's `/provider` stubs
   // (Playwright tries the most recently registered matching route first).
@@ -1448,9 +1455,9 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const openCodeSection = page.locator('[data-component="opencode-providers-section"]')
-      await expect(openCodeSection.getByText("Anthropic")).toBeVisible()
-      const row = openCodeSection.locator("div.border-b").filter({ hasText: "Anthropic" })
+      const harnessSection = page.locator('[data-component="harness-providers-section"]')
+      await expect(harnessSection.getByText("Anthropic")).toBeVisible()
+      const row = harnessSection.locator("div.border-b").filter({ hasText: "Anthropic" })
       await row.getByRole("button", { name: "Connect" }).click()
 
       await expect(row.getByLabel(/Anthropic API key/i)).toBeVisible()
@@ -1480,13 +1487,13 @@ test.describe("core settings + auth @core", () => {
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const openCodeSection = page.locator('[data-component="opencode-providers-section"]')
-      const envRow = openCodeSection.locator('[data-provider="anthropic"]')
+      const harnessSection = page.locator('[data-component="harness-providers-section"]')
+      const envRow = harnessSection.locator('[data-provider="anthropic"]')
       await expect(envRow).toHaveCount(1)
       await expect(envRow.getByText("Environment", { exact: true })).toBeVisible()
       await expect(envRow.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
 
-      const apiRow = openCodeSection.locator('[data-provider="openai"]')
+      const apiRow = harnessSection.locator('[data-provider="openai"]')
       await expect(apiRow).toHaveCount(1)
       await expect(apiRow.getByText("API key", { exact: true })).toBeVisible()
       await apiRow.getByRole("button", { name: "Disconnect" }).click()
@@ -1498,48 +1505,48 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("OpenAI disconnected")).toBeVisible()
     })
 
-    test("config custom provider Disconnect PATCHes disabled_providers instead of auth DELETE — Cline regression", async ({ page }) => {
-      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    test("config custom provider Disconnect disables it in the scoped provider config, not through auth or a central global — behavior 14b", async ({ page }) => {
+      const runtime = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockProviderCatalog(page, {
         connected: [{ id: "clinepass-2", name: "Cline pass 2", source: "config" }],
         popular: [],
+        // The scoped catalog read is derived from the scoped config write, the
+        // way the engine derives its connected list from `disabled_providers`.
+        disabled: () => runtime.providerConfig.disabled(),
       })
       const credHits = { put: [] as unknown[], delete: [] as string[] }
       await mockCredentialRoutes(page, credHits)
+      // Records any central `PATCH /global/config`; the assertion below expects none.
       const authHits = { authDelete: [] as string[], configPatch: [] as unknown[] }
       await mockAuthAndGlobalConfigRoutes(page, authHits)
-      await page.route("**/global/config**", (route) => {
-        const method = route.request().method()
-        if (method === "GET") {
-          return json(route, {
-            provider: {
-              "clinepass-2": {
-                name: "Cline pass 2",
-                npm: "@ai-sdk/openai-compatible",
-                models: { "cline-pass/kimi-k3": { name: "Kimi K3" } },
-              },
-            },
-            disabled_providers: [],
-          })
-        }
-        if (method === "PATCH") {
-          authHits.configPatch.push(route.request().postDataJSON())
-          return json(route, { disabled_providers: route.request().postDataJSON()?.config?.disabled_providers ?? [] })
-        }
-        return route.continue()
-      })
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "providers")
 
-      const row = page.locator('[data-component="opencode-providers-section"]').locator('[data-provider="clinepass-2"]')
+      const section = page.locator('[data-component="harness-providers-section"]')
+      const row = section.locator('[data-provider="clinepass-2"]')
+      await expect(row.getByText("Config", { exact: true })).toBeVisible()
       await row.getByRole("button", { name: "Disconnect" }).click()
 
-      await expect.poll(() => authHits.configPatch.length, { timeout: 10_000 }).toBe(1)
-      expect(authHits.configPatch[0]).toMatchObject({ config: { disabled_providers: ["clinepass-2"] } })
-      expect(authHits.authDelete.length).toBe(0)
+      await expect.poll(() => runtime.providerConfig.requests.length, { timeout: 10_000 }).toBe(1)
+      // The write names the (workspace, harness) the scope selector resolved —
+      // the same pair `GET /provider` is read for — and carries one provider.
+      expect(runtime.providerConfig.requests[0]).toMatchObject({
+        harness: "opencode",
+        directory: DIR,
+        body: { provider: "clinepass-2", disabled: true },
+      })
+      // ...and it landed in the scoped config the runtime owns.
+      expect(runtime.providerConfig.disabled()).toEqual(["clinepass-2"])
+      expect(authHits.configPatch).toEqual([])
+      expect(authHits.authDelete).toEqual([])
+      expect(credHits.delete).toEqual([])
       await expect(page.getByText("Cline pass 2 disconnected")).toBeVisible()
+      // The refetched scoped catalog no longer reports it connected, so the row
+      // offers Connect rather than Disconnect.
+      await expect(row.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
+      await expect(row.getByRole("button", { name: "Connect" })).toBeVisible()
     })
 
     test("custom provider: submitting with an empty Provider ID shows an inline error and sends nothing — behavior 15", async ({ page }) => {

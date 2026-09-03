@@ -234,13 +234,46 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     expect(url).toMatch(/^https?:\/\//)
   })
 
-  test("idle daemon follows packaged app background and focus lifecycle", async () => {
+  /**
+   * The local daemon's lifetime is the packaged PROCESS's, not the window's.
+   * `holdClaxedoDaemonLease` (claxedo-desktop's
+   * `src/main/server-daemon-lease.ts`) takes one lease during `initialize()`
+   * and renews it until the app exits, and the exit paths — quit, restart,
+   * update — are what release or hand it off (`daemon-exit-lifecycle.ts`).
+   * Backgrounding is none of those, so it must leave the daemon alone.
+   *
+   * NON-VACUITY — "the daemon is still reachable" is exactly the shape of
+   * assertion that passes while the mechanism is dead, so this reads the
+   * daemon's OWN lifecycle snapshot (`GET /api/claxedo/daemon/state`, keyed by
+   * the discovery token the daemon publishes) alongside it:
+   *
+   *   - the shortened grace really reached the daemon (1200ms here, 180s in
+   *     production), so a background that outlives it several times over is a
+   *     real test of the grace rather than of an unarmed timer;
+   *   - a lease is still held while backgrounded, i.e. the daemon is up
+   *     BECAUSE the main process pins it, not because nothing is watching;
+   *   - the pid and generation never change, so a reachable health endpoint
+   *     cannot be a replacement daemon that quietly took over.
+   *
+   * THE STIMULUS IS MINIMIZE, NOT BLUR. A Playwright-launched Electron app is
+   * never the frontmost macOS application — measured 2026-09-03 on this
+   * packaged binary, `BrowserWindow.getFocusedWindow()` stays `null` and
+   * `isFocused()` stays false through `win.focus()`, `win.show()`,
+   * `win.moveTop()`, `app.dock.show()` and `app.focus({steal: true})`, in that
+   * order. `blur()` on a window that was never focused changes nothing, so a
+   * blur-driven version of this test backgrounds nothing and proves nothing.
+   * Minimize is a real window-state transition the same environment DOES
+   * perform (`isMinimized` true, `isVisible` false, both read back below), and
+   * it is the same class of user gesture: the window leaves the foreground
+   * without any of the exit paths that own the lease.
+   */
+  test("the local daemon's lifetime follows the packaged process, not window state", async () => {
     test.setTimeout(90_000)
     packaged = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
       env: {
-        // Production remains 120 seconds. This real-process lane shortens only
-        // the daemon-owned grace so it can exercise every boundary promptly.
+        // Production remains 180 seconds. This real-process lane shortens only
+        // the daemon-owned grace so a background can outlive it in seconds.
         CLAXEDO_DAEMON_IDLE_GRACE_MS: "1200",
         CLAXEDO_DAEMON_POLL_INTERVAL_MS: "50",
       },
@@ -251,27 +284,77 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
       .then((response) => response.ok)
       .catch(() => false)
 
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
-    await expect.poll(() => mainBrowserWindow.evaluate((browserWindow) => browserWindow.isFocused())).toBe(true)
+    // `electron-app.ts` roots `CLAXEDO_DATA_DIR` at `<userDataDir>/server-data`,
+    // and the daemon publishes its port, token, pid and generation there
+    // (`claxedo-desktop`'s `server-daemon-discovery.ts`).
+    const discoveryFile = path.join(packaged.userDataDir, "server-data", "local-daemon.json")
+    type DaemonDiscovery = { token: string; port: number; pid: number; generation: string }
+    // The daemon child publishes this file itself, after its listener is up —
+    // reachable and published are two different instants in two processes.
+    const readDiscovery = async (): Promise<DaemonDiscovery> => {
+      const deadline = Date.now() + 15_000
+      for (;;) {
+        const record = await fs
+          .readFile(discoveryFile, "utf8")
+          .then((text) => JSON.parse(text) as DaemonDiscovery)
+          .catch(() => undefined)
+        if (record) return record
+        if (Date.now() >= deadline) throw new Error(`the daemon never published ${discoveryFile}`)
+        await new Promise((resolve) => setTimeout(resolve, 200))
+      }
+    }
+    const booted = await readDiscovery()
+    const daemonState = async () => {
+      const response = await fetch(`http://127.0.0.1:${String(booted.port)}/api/claxedo/daemon/state`, {
+        headers: { authorization: `Bearer ${booted.token}` },
+      })
+      expect(response.ok, "the daemon's own state endpoint refused its published discovery token").toBe(true)
+      return await response.json() as { state: string; leases: number; idleGraceMs: number; residencyPins: number }
+    }
 
-    // Backgrounding for less than the grace keeps the daemon alive, and focus
-    // cancels the pending shutdown even after the original grace would pass.
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.blur())
-    await packaged.page.waitForTimeout(400)
-    expect(await health()).toBe(true)
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
-    await packaged.page.waitForTimeout(1_300)
-    expect(await health()).toBe(true)
+    const windowState = () => mainBrowserWindow.evaluate((browserWindow) => ({
+      visible: browserWindow.isVisible(),
+      minimized: browserWindow.isMinimized(),
+    }))
+    await expect
+      .poll(windowState, { message: "the packaged app never showed its window, so nothing can be backgrounded" })
+      .toEqual({ visible: true, minimized: false })
+    expect(
+      (await daemonState()).idleGraceMs,
+      "the shortened idle grace never reached the daemon, so a surviving daemon would prove nothing",
+    ).toBe(1_200)
 
-    // A full background grace shuts down the idle daemon. Returning focus then
-    // starts/adopts a generation and makes the same public health entrypoint
-    // available again without relaunching Electron.
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.blur())
-    await expect.poll(health, {
-      timeout: 10_000,
-      message: "the idle local daemon stayed reachable after the background grace",
-    }).toBe(false)
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
+    // Background the window for several times the grace.
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.minimize())
+    await expect
+      .poll(windowState, { message: "minimize never took, so the app was never backgrounded" })
+      .toEqual({ visible: false, minimized: true })
+    await packaged.page.waitForTimeout(5_000)
+    expect(await health(), "backgrounding the packaged app took its local daemon down").toBe(true)
+    const backgrounded = await daemonState()
+    expect(
+      backgrounded.leases,
+      "the Electron main process released its daemon lease while the window was backgrounded",
+    ).toBeGreaterThan(0)
+    expect(backgrounded.state).toBe("running")
+
+    // Coming back to the foreground changes nothing either: the same daemon
+    // keeps serving, with no restart and no adoption of a new generation.
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.restore())
+    await expect
+      .poll(windowState, { message: "the window never came back, so the return leg tests nothing" })
+      .toEqual({ visible: true, minimized: false })
+    await packaged.page.waitForTimeout(2_000)
+    expect(await health()).toBe(true)
+    expect((await daemonState()).leases).toBeGreaterThan(0)
+    const settled = await readDiscovery()
+    expect(
+      { pid: settled.pid, generation: settled.generation },
+      "the daemon was replaced across the background/focus cycle instead of surviving it",
+    ).toEqual({ pid: booted.pid, generation: booted.generation })
+
+    // The renderer is still bound to that same daemon, through the same public
+    // entrypoint its boot resolved.
     await expect.poll(() => packaged!.page.evaluate(async () => {
       const desktopApi = (window as typeof window & {
         api: { awaitInitialization: (onStep: () => void) => Promise<{ url: string }> }
@@ -282,7 +365,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
         .catch(() => false)
     }), {
       timeout: 45_000,
-      message: "focus did not restart the daemon and reconnect the packaged renderer",
+      message: "the packaged renderer lost its connection to the daemon across the background/focus cycle",
     }).toBe(true)
   })
 
@@ -331,7 +414,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
 
     await trigger.click()
     await packaged.page.getByRole("menuitem", { name: "Diagnostics", exact: true }).click()
-    const diagnostics = packaged.page.getByRole("dialog", { name: "Local performance diagnostics" })
+    const diagnostics = packaged.page.getByRole("dialog", { name: "This device diagnostics" })
     await expect(diagnostics).toBeVisible({ timeout: 30_000 })
     await expect(diagnostics).toHaveClass(/workspace-page-dialog-shell/)
     await expect(diagnostics.getByRole("button", { name: "Activity" })).toHaveAttribute("aria-pressed", "true")
@@ -476,7 +559,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   /**
    * A scratch git worktree, isolated per scenario. `-b main` is not
    * decoration: the project header's "New session in <branch>" affordance
-   * (`rail-sidebar.tsx:1568`, `aria-label={New session in ${input.label}}`)
+   * (`rail-sidebar.tsx`'s `HeaderActions`, `aria-label={New session in ${input.label}}`)
    * embeds the CURRENT branch name, which without an explicit `-b` is
    * whatever `init.defaultBranch` resolves to on the machine running the
    * suite. Pinning it keeps that aria-label — and therefore every selector
@@ -636,12 +719,25 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     return page.locator('[role="textbox"][aria-label*="Ask anything"]:visible').last()
   }
 
-  /** Clicks the project header's "New session in main" affordance and returns the draft composer. */
+  /**
+   * Clicks the project header's "New session in main" affordance and returns
+   * the draft composer.
+   *
+   * The hover is required, not defensive: the header's action cluster
+   * (`rail-sidebar.tsx`'s `HeaderActions`) mounts on engagement — hover, focus
+   * or an explicit hold, see `rail-hover-engagement.ts` — so the button is
+   * absent from the DOM until the pointer reaches the header. Engaging it is
+   * the move a real user makes, and the one the web lane's rail specs make
+   * (`core-sidebar-tree.spec.ts`, `core-claude-native-sdk-rail.spec.ts`).
+   */
   async function openNewDraft(app: PackagedApp, projectGroup: Locator): Promise<Locator> {
+    const header = projectGroup.locator('[data-testid="project-header"]')
+    await expect(header, "the project header never rendered in the rail").toBeVisible({ timeout: 15_000 })
+    await header.hover()
     const newSessionBtn = projectGroup.locator('[aria-label="New session in main"]')
     await expect(
       newSessionBtn,
-      'the project header\'s "New session in main" affordance (rail-sidebar.tsx:1568) never became visible',
+      'the project header\'s "New session in main" affordance never mounted on hover (rail-sidebar.tsx HeaderActions)',
     ).toBeVisible({ timeout: 15_000 })
     await newSessionBtn.click()
     const input = composerInput(app.page)
@@ -734,9 +830,15 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const search = page.getByRole("textbox", { name: /Search models/i }).last()
     await expect(search).toBeVisible({ timeout: 10_000 })
     await search.fill("Sonnet")
+    // Match the row's NAME slot, not the row's whole text. A real catalog row
+    // renders its harness-supplied description under the name
+    // ("Sonnet" + "Sonnet 5 · Efficient for routine tasks"), so a `^Sonnet$`
+    // filter over the row text matches nothing here while still matching the
+    // Tier M rows — which is why only this lane saw it.
     const model = page
       .locator('[data-component="harness-model-picker"]')
-      .getByText(/Sonnet/i)
+      .locator('[data-slot="list-item"]')
+      .filter({ has: page.locator('[data-slot="list-item-name"]', { hasText: /^Sonnet$/ }) })
       .first()
     await expect(model, "the real Claude catalog did not expose an explicit Sonnet model").toBeVisible({
       timeout: 15_000,
@@ -1410,6 +1512,16 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
         ? "echo CLAXEDO_PORT_CHECK=%CLAXEDO_PORT%"
         : 'echo "CLAXEDO_PORT_CHECK=$CLAXEDO_PORT"'
     await packaged.page.keyboard.type(portEchoCommand, { delay: 15 })
+    // The shell must have taken the WHOLE command before it is submitted.
+    // Anything already reading this PTY when the keystrokes arrive (a shell rc
+    // prompt, a pager) consumes the leading characters, and the truncated
+    // command then fails the port assertion below while never having asked for
+    // the port at all — see `electron-app.ts`'s ZDOTDIR root for the case that
+    // produced this.
+    await expect(
+      xtermRows,
+      "the shell never echoed the typed command back, so the port assertion below would test nothing",
+    ).toContainText(portEchoCommand, { timeout: 10_000 })
     await packaged.page.keyboard.press("Enter")
     await expect(
       xtermRows,

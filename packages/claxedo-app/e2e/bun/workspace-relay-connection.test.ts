@@ -23,7 +23,9 @@ async function runtimeToken(input: {
   key: CryptoKey
 }) {
   return await mintRuntimeAccessToken({
-    subject: "user_1",
+    principalKind: "user",
+    actorId: "user_1",
+    actorKind: "human",
     orgId: "org_1",
     workspaceId: "ws_1",
     hostId: "host_1",
@@ -36,6 +38,7 @@ function connection(input: Partial<WorkspaceConnectionInfo> = {}): WorkspaceConn
   return {
     access: "cloud",
     backing: "cloud-vm",
+    sessionAuthority: "managed-private",
     workspaceId: "ws_1",
     role: "editor",
     relayUrl: "http://relay.test",

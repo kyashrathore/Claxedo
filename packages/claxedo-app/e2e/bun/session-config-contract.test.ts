@@ -8,11 +8,11 @@ describe("session config contract", () => {
   test("normalizes the accepted request identity into the canonical harness shape", () => {
     expect(
       parseSessionConfigPatch(
-        { harness: { type: "claude-acp" }, agent: "build" },
+        { harness: { type: "claude-sdk" }, agent: "build" },
         "http://localhost/session/session-1/config",
       ),
     ).toEqual({
-      harness: { id: "claude", access: "acp" },
+      harness: { id: "claude", access: "native" },
       agent: "build",
     })
   })
@@ -53,7 +53,7 @@ describe("session config contract", () => {
       assertSessionConfigPatchResponse(
         {
           harness: { id: "claude", access: "acp" },
-          model: { providerID: "claude-acp", modelID: "opus" },
+          model: { providerID: "acp:claude", modelID: "opus" },
           variant: "high",
           agent: "build",
         },
@@ -65,7 +65,7 @@ describe("session config contract", () => {
   test("rejects the retired harness response alias", () => {
     expect(() =>
       assertSessionConfigPatchResponse(
-        { harness: { type: "claude-acp" } },
+        { harness: { type: "acp:claude" } },
         "http://localhost/session/session-1/config",
       )
     ).toThrow("response.harness.id must be a string")

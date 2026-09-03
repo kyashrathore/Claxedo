@@ -34,7 +34,7 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
       sessionId,
       projectId: "northstar",
       projectName: "Northstar",
-      harness: "codex-acp",
+      harness: "acp:codex",
       replyText: () =>
         "Release verification is ready. The acceptance checks pass, the deployment notes are updated, and the review evidence is attached.",
     })

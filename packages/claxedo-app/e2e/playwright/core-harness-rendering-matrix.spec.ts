@@ -543,6 +543,32 @@ function nonBackgroundNoiseConsole(entries: string[]) {
  * (`${userMessageID}_r`, production convention) — pass it to
  * `loadTrace`/`loadFixtureFile` so fixture parts attach to that row.
  */
+/**
+ * Trace-fixture family -> the harness identity the app and the runtime speak.
+ *
+ * Two DIFFERENT vocabularies meet in this spec and must not be conflated:
+ *   - the fixture family name (`claude-acp`), which names a recorded trace under
+ *     `e2e/fixtures/harness-traces/` and is baked into that trace's `directory`
+ *     and `sessionID` strings — regenerating is the only way to change it, and
+ *     the committed traces are the frozen evidence these tests replay;
+ *   - the harness IDENTITY the mock runtime is installed with, which must be a
+ *     string `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts)
+ *     accepts, because the real server runs that same validator. Open ACP
+ *     connections are `acp:<slug>`.
+ *
+ * Only the identity moves here. Fixture names, directories, and session ids are
+ * unchanged, so every replayed trace and every assertion is the same one.
+ */
+const HARNESS_IDENTITY_BY_FIXTURE: Record<string, string> = {
+  "claude-acp": "acp:claude",
+  "codex-acp": "acp:codex",
+  "cursor-acp": "acp:cursor",
+}
+
+function harnessIdentityFor(fixture: string): string {
+  return HARNESS_IDENTITY_BY_FIXTURE[fixture] ?? fixture
+}
+
 async function primeHarness(
   page: Page,
   harness: string,
@@ -565,7 +591,7 @@ async function primeHarness(
     sessionId,
     projectId: PROJECT_ID,
     workspaceId: PROJECT_ID,
-    harness: harness as never,
+    harness: harnessIdentityFor(harness) as never,
     ...(subagents ? {
       subagents: { [`ses_harness_matrix_${harness}`]: subagents.rows },
       childSessions: subagents.children,

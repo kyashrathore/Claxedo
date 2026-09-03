@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { e2eAuthViteEnvironment, resolveE2EAuthMode } from "./auth-mode"
+import { e2eAppViteEnvironment, resolveE2EAuthMode } from "./auth-mode"
+import { resolveBrowserAuthBuildSelection } from "../vite.browser-auth"
 
 describe("E2E auth mode", () => {
   test("accepts each canonical mode", () => {
@@ -13,21 +14,31 @@ describe("E2E auth mode", () => {
     )
   })
 
-  test("owns the complete build-time auth environment", () => {
-    expect(e2eAuthViteEnvironment("test-user")).toEqual({
+  test("owns the complete build environment every e2e vite launcher passes", () => {
+    expect(e2eAppViteEnvironment("test-user")).toEqual({
       VITE_AUTH_ENABLED: "true",
       VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "0",
       VITE_SANDBOX_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true",
+      VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
+      VITE_CLAXEDO_E2E: "1",
     })
-    expect(e2eAuthViteEnvironment("local-unsigned")).toEqual({
+    expect(e2eAppViteEnvironment("local-unsigned")).toEqual({
       VITE_AUTH_ENABLED: "true",
       VITE_CLAXEDO_DISABLE_TEST_AUTH_BYPASS: "1",
       VITE_CLERK_PUBLISHABLE_KEY: "",
       VITE_SANDBOX_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED: "true",
       VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED: "true",
+      VITE_CLAXEDO_AUTH_ADAPTER: "clerk",
+      VITE_CLAXEDO_E2E: "1",
     })
+  })
+
+  test("names an adapter vite.cloud.config.ts will accept", () => {
+    // `resolveBrowserAuthBuildSelection` throws on anything else, and it throws
+    // while vite loads its config — i.e. before any launcher can listen.
+    expect(() => resolveBrowserAuthBuildSelection(e2eAppViteEnvironment().VITE_CLAXEDO_AUTH_ADAPTER)).not.toThrow()
   })
 })
