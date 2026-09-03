@@ -66,9 +66,9 @@ at-most-once where it matters.
                     │                │                   │
              STORE (port)      SINKS (by kind)     DRIVER (push, optional)
              where rows live   what firing does    who notices due wakes fast
-             ├ SqliteWakeStore ├ session_turn      └ Cloudflare: WakeLane
-             └ ConvexWakeStore └ anything you        Durable Object (alarms);
-               (claxedo-server)  register            Node relies on the 1s poll
+             └ SqliteWakeStore ├ session_turn      └ Cloudflare: WakeLane
+                               └ anything you        Durable Object (alarms);
+                                 register            Node relies on the 1s poll
         + SCHEDULER: the polling backstop (setInterval here; platform cron hosted)
         + TOOLS: agent-facing defs + dispatcher (schedule_followup, cancel_wake) —
           host wires them onto its tool surface; event/approval tools return with
@@ -118,29 +118,14 @@ the same role hosted. Slow, dumb, cannot miss.
   the process; rows wait safely on disk). "Fires while my laptop is closed"
   requires the hosted runner by definition.
 
-## How WorkGraph uses it (the first hosted consumer)
-
-WorkGraph settlement keeps its own truth (lease/epoch-fenced outbox rows in
-Convex) and uses wakes only as the **doorbell**: per command burst, one
-dirty-flag wake per tenant (`kind: workgraph_settle`, `serialKey` = tenant,
-`fireAt: now`, intent = the tenant identity). Firing runs the tenant-scoped
-reconcile; unsettled results (sandbox still provisioning) schedule a durable
-retry wake on the same lane. The `WakeLane` DO gives per-tenant serialization
-that is physically guaranteed by the platform; the 15-minute reconcile cron
-remains the universal backstop. See
-`packages/claxedo-server/src/hosts/wakes/`.
-
-Burst coalescing there is **state-aware** (skip creating when a *pending*
-settle wake already holds the lane — `createLaneWakeIfIdle` in
-`convex/wakes.ts`), NOT via engine idempotency keys — see shortcoming #1.
-
 ## Shortcomings and sharp edges (honest list, 2026-07-17)
 
 1. **Engine idempotency keys dedup forever, including against fired wakes.**
    They exist to make *retried creates* safe, not to coalesce recurring
    intent. A reused key like `settle:{tenant}` silently swallows every create
    after the first fire. For "at most one pending per lane," do a state-aware
-   check at create time (as WorkGraph does).
+   check at create time (skip creating when a pending wake already holds the
+   lane).
 2. **Cron expressions have no parser wired.** The engine delegates
    next-occurrence math to the injected `computeNextRun`; no deployment
    injects a real parser yet (tests use a stub). Timezones/DST are therefore
@@ -156,33 +141,27 @@ settle wake already holds the lane — `createLaneWakeIfIdle` in
    starve its pass until an operator intervenes — attempts are counted but
    there is no dead-letter state yet.
 5. **`gc()` must be called by the host or terminal rows accumulate forever.**
-   The bounded delete exists (`gcWakes` on Convex, `gc()` everywhere); wire it
-   to a periodic lane (not yet done on either deployment as of 2026-07-17).
-6. **SQLite store = one machine.** Multi-machine runners require the shared
-   store (Convex today; a Postgres adapter is a designed-but-unbuilt port
-   implementation, held to the same conformance expectations).
-7. **The Convex store's logic is proven by an in-memory mirror + the staging
-   smoke, not by an in-repo Convex runtime** (no convex-test harness in this
-   repo). The mirror in `convex-wake-store.test.ts` must be updated with
-   `convex/wakes.ts` — they drift silently otherwise.
-8. **Budgets protect against runaway agents, not system loops.** The hosted
-   settlement instance disables them wholesale; a buggy sink that reschedules
-   itself unboundedly is limited only by its backoff and the lane window.
-9. **No skip-to-latest for recurring catch-up** (see timing semantics) — a
+   The bounded delete exists (`gc()`); wire it to a periodic lane (not yet done
+   on either deployment as of 2026-07-17).
+6. **SQLite store = one machine.** Multi-machine runners require a shared
+   store; a Postgres adapter is a designed-but-unbuilt port implementation,
+   held to the same conformance expectations.
+7. **Budgets protect against runaway agents, not system loops.** A buggy sink
+   that reschedules itself unboundedly is limited only by its backoff and the
+   lane window.
+8. **No skip-to-latest for recurring catch-up** (see timing semantics) — a
    small engine option away if a consumer needs it.
-10. **Observability is thin.** No per-wake metrics or firing-latency
-    histograms; hosted settlement telemetry still tags wake-driven runs as
-    `trigger: "nudge"`. Errors surface via the host's `reportError`/`onError`
-    only.
+9. **Observability is thin.** No per-wake metrics or firing-latency
+   histograms. Errors surface via the host's `reportError`/`onError` only.
 
 ## Deployment cheat sheet
 
 | | Local / self-host Node | Hosted Cloudflare Worker |
 | --- | --- | --- |
-| Store | `@claxedo/wakes/sqlite` | `ConvexWakeStore` (claxedo-server) |
+| Store | `@claxedo/wakes/sqlite` | a shared store adapter (none shipped) |
 | Push | — (the 1s tick is prompt enough) | `WakeLane` Durable Object |
 | Backstop | `createScheduler` (1s tick) | Cron Trigger (15 min) |
-| Sinks | `session_turn` (agent tools) | `workgraph_settle` |
+| Sinks | `session_turn` (agent tools) | whatever the host registers |
 | Down = | fires on next boot (recover + catch-up) | platform alarms/cron; no process of ours needs to be alive |
 
 **Deep dive:** [`docs/architecture.md`](./docs/architecture.md) — the
@@ -191,8 +170,8 @@ implementing functions, the claim SQL, driver internals, consumers, test map,
 extension recipes).
 
 The original v1 design (durable rows, three trigger types, host seams) evolved
-into v2 (async port, sinks, lanes, drivers, Convex store, DO) as part of
-migrating WorkGraph settlement onto the shared wakes engine described above.
+into v2 (async port, sinks, lanes, drivers, DO) as part of moving a hosted
+settlement consumer onto the shared wakes engine described above.
 
 ## License
 

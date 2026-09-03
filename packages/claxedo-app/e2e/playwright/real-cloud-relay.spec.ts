@@ -12,7 +12,7 @@
  * with the same tier bargain as its sibling: the app, claxedo-server, the
  * relay, the tunnel, the workspace-runtime and the embedded OpenCode engine are
  * ALL real, and the ONLY fake is the model HTTP endpoint
- * (`e2e/helpers/scripted-model-server.ts`). No Cloudflare, no Convex, no Clerk
+ * (`e2e/helpers/scripted-model-server.ts`). No Cloudflare, no hosted identity
  * — the fixture stands in for the control plane with a SQLite store and a
  * stubbed authority/verifier, which is what makes the lane hermetic enough to
  * run on every PR (`e2e/INVARIANTS.md` rule 6).

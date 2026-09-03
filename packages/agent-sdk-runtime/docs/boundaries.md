@@ -37,8 +37,8 @@ for agent harnesses.
 - harness-specific permission/question/todo behavior
 - emitting canonical or compatibility event streams
 
-Concrete adapters should not know Convex schemas, Clerk orgs, share links,
-channel retry policy, or Claxedo route names.
+Concrete adapters should not know control-plane schemas, identity-provider
+orgs, share links, channel retry policy, or Claxedo route names.
 
 ## Session Environment Owns
 

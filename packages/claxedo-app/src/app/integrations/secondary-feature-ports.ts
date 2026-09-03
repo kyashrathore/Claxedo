@@ -20,7 +20,6 @@ import * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-reco
 import * as TerminalNew from "@/app/workbench/terminal/terminal-new-view"
 import * as SessionModels from "@/features/session/providers/models"
 import * as LinkModule from "@/app/controls/link"
-import * as SettingsSourceViews from "@/app/integrations/settings-source-views"
 import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
 import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
@@ -82,7 +81,6 @@ configureSettingsAppPorts({
   DialogConnectIntegration,
   ProviderConnectForm,
   Link: LinkModule.Link,
-  useSettingsSourceViews: SettingsSourceViews.useSettingsSourceViews,
   useSandboxOnboardingFunnel: useOnboardingFunnel,
   useSDK: SDK.useSDK,
   useEnabledAcpHarnesses: () => {

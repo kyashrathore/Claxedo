@@ -19,7 +19,7 @@ const surface = (id: string, type: string) => ({
 }) as ContentSurfaceContribution
 
 function descriptor(
-  serviceId: "workgraph" | "documents",
+  serviceId: "documents",
   state: "installed_disabled" | "enabled",
 ): BrowserServiceDescriptor {
   return {
@@ -31,14 +31,13 @@ function descriptor(
 }
 
 describe("first-party service contributions", () => {
-  test("an empty catalog loads neither WorkGraph nor Documents", async () => {
+  test("an empty catalog loads no service", async () => {
     const loaded: string[] = []
     const registered: string[] = []
     const contributions = createServiceContributions({
       local: [],
       signedIn: () => true,
       loaders: {
-        workgraph: async () => { loaded.push("workgraph"); return { contentSurfaces: [surface("wg", "workgraph")] } },
         documents: async () => { loaded.push("documents"); return { contentSurfaces: [surface("docs", "page")] } },
       },
       register: (item) => registered.push(item.id),
@@ -58,30 +57,28 @@ describe("first-party service contributions", () => {
       local: [],
       signedIn: () => true,
       loaders: {
-        workgraph: async () => { loaded.push("workgraph"); return { contentSurfaces: [surface("wg", "workgraph")] } },
         documents: async () => { loaded.push("documents"); return { contentSurfaces: [surface("docs", "page")] } },
       },
       register: (item) => registered.push(item.id),
       unregister: (item) => registered.splice(registered.indexOf(item.id), 1),
     })
 
-    await contributions.apply([descriptor("workgraph", "enabled")])
-    expect(loaded).toEqual(["workgraph"])
-    expect(registered).toEqual(["wg"])
-    await contributions.apply([descriptor("workgraph", "installed_disabled")])
+    await contributions.apply([descriptor("documents", "enabled")])
+    expect(loaded).toEqual(["documents"])
+    expect(registered).toEqual(["docs"])
+    await contributions.apply([descriptor("documents", "installed_disabled")])
     expect(registered).toEqual([])
     expect(contributions.availableContentTypes()).toEqual([])
     await contributions.apply([])
     expect(registered).toEqual([])
   })
 
-  test("rejects a surface id claimed by two independently loaded services", async () => {
+  test("rejects a surface id already claimed by a local contribution", async () => {
     const registered: string[] = []
     const contributions = createServiceContributions({
-      local: [],
+      local: [surface("shared", "session")],
       signedIn: () => true,
       loaders: {
-        workgraph: async () => ({ contentSurfaces: [surface("shared", "workgraph")] }),
         documents: async () => ({ contentSurfaces: [surface("shared", "page")] }),
       },
       register: (item) => registered.push(item.id),
@@ -89,7 +86,6 @@ describe("first-party service contributions", () => {
     })
 
     await expect(contributions.apply([
-      descriptor("workgraph", "enabled"),
       descriptor("documents", "enabled"),
     ])).rejects.toMatchObject({ code: "shadows_registered_contribution" } satisfies Partial<HostedContributionError>)
     expect(registered).toEqual([])
@@ -102,18 +98,17 @@ describe("first-party service contributions", () => {
     const contributions = configureServiceContributions({
       local: [],
       loaders: {
-        workgraph: async () => { loaded.push("workgraph"); return { contentSurfaces: [surface("wg", "workgraph")] } },
         documents: async () => { loaded.push("documents"); return { contentSurfaces: [surface("docs", "page")] } },
       },
       register: (item) => registered.push(item.id),
       unregister: (item) => registered.splice(registered.indexOf(item.id), 1),
     })
 
-    expect(await synchronizeServiceCatalogFromBootstrap({ authenticated: false, services: [descriptor("workgraph", "enabled")] })).toBe(true)
+    expect(await synchronizeServiceCatalogFromBootstrap({ authenticated: false, services: [descriptor("documents", "enabled")] })).toBe(true)
     expect(loaded).toEqual([])
-    expect(await synchronizeServiceCatalogFromBootstrap({ authenticated: true, services: [descriptor("workgraph", "enabled")] })).toBe(true)
-    expect(loaded).toEqual(["workgraph"])
-    expect(registered).toEqual(["wg"])
+    expect(await synchronizeServiceCatalogFromBootstrap({ authenticated: true, services: [descriptor("documents", "enabled")] })).toBe(true)
+    expect(loaded).toEqual(["documents"])
+    expect(registered).toEqual(["docs"])
     expect(await synchronizeServiceCatalogFromBootstrap({ authenticated: false, services: [] })).toBe(true)
     expect(registered).toEqual([])
     expect(contributions.catalog()).toEqual([])
@@ -135,9 +130,6 @@ describe("first-party service contributions", () => {
     expect(await activateServicesForLocalCentral()).toBe(true)
     expect(loaded).toEqual(["documents"])
     expect(registered).toEqual(["docs"])
-    // A service the composition ships no loader for stays absent — the build is
-    // the authority here, so it can admit nothing it cannot load.
-    expect(contributions.active("workgraph")).toBe(false)
     // Reported from the ports, not from a catalog this central never issued.
     expect(contributions.catalog()).toEqual([])
     expect(contributions.availableContentTypes()).toEqual(["page", "pages-index"])
@@ -168,9 +160,9 @@ describe("first-party service contributions", () => {
     configureServiceContributions({
       local: [],
       loaders: {
-        workgraph: async () => {
+        documents: async () => {
           await new Promise<void>((resolve) => { release = resolve })
-          return { contentSurfaces: [surface("wg", "workgraph")] }
+          return { contentSurfaces: [surface("docs", "page")] }
         },
       },
       register: (item) => registered.push(item.id),
@@ -179,7 +171,7 @@ describe("first-party service contributions", () => {
 
     const stale = synchronizeServiceCatalogFromBootstrap({
       authenticated: true,
-      services: [descriptor("workgraph", "enabled")],
+      services: [descriptor("documents", "enabled")],
     })
     await Promise.resolve()
     await synchronizeServiceCatalogFromBootstrap({ authenticated: false, services: [] })

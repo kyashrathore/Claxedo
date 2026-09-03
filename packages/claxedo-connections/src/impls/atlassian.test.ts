@@ -6,10 +6,10 @@ import { ATLASSIAN_SITE_URL_VECTORS } from "./atlassian-site-url-vectors.js"
 import { atlassianIntegration, normalizeSiteUrl } from "./atlassian.js"
 
 describe("atlassian site allowlist", () => {
-  // The shared vectors are the contract; `packages/workgraph`'s jira connector
-  // iterates this same array so the connect-time and request-time rules cannot
-  // drift apart. Keep the hand-written cases below too — they document intent
-  // in a way a table does not.
+  // The shared vectors are the contract: any request-time consumer iterates
+  // this same array so the connect-time and request-time rules cannot drift
+  // apart. Keep the hand-written cases below too — they document intent in a
+  // way a table does not.
   test.each(ATLASSIAN_SITE_URL_VECTORS.map((vector) => [vector.input, vector.expected, vector.reason] as const))(
     "normalizes %j to %j (%s)",
     (input, expected) => {

@@ -71,18 +71,18 @@ RUN cd /opt/workspace-runtime && \
     test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/workspace-runtime-version)" && \
     command -v opencode
 
-# Prove the exact production chain serves WorkGraph's durable Session V2
-# contract through workspace-runtime, including a compressed history page.
+# Prove the exact production chain serves the durable Session V2 contract
+# through workspace-runtime, including a compressed history page.
 RUN set -eu; \
     mkdir -p /tmp/opencode-session-v2-smoke; \
     cd /tmp/opencode-session-v2-smoke; \
-    # WorkGraph derives a Run's session id from a run id carrying the owner,
-    # operation, and work-item ids, so production ids run to ~250 characters.
+    # Production session ids are derived from run ids carrying owner,
+    # operation, and work-item ids, so they run to ~250 characters.
     # A short id here would pass against a router that silently refuses to match
     # path parameters over 100 chars — which is exactly how that bug reached
     # staging, creating Sessions that every later route reported as absent.
-    smoke_id="ses_workgraph_image_smoke_$(printf 'w%.0s' $(seq 1 200))"; \
-    failure_id="ses_workgraph_image_failure_$(printf 'f%.0s' $(seq 1 200))"; \
+    smoke_id="ses_image_smoke_$(printf 'w%.0s' $(seq 1 200))"; \
+    failure_id="ses_image_failure_$(printf 'f%.0s' $(seq 1 200))"; \
     export smoke_id failure_id; \
     setsid env OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true opencode serve --hostname=127.0.0.1 --port=4096 >/tmp/opencode-session-v2.log 2>&1 & \
     engine_pid=$!; \
@@ -102,7 +102,7 @@ RUN set -eu; \
     node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2.json','utf8'));const id=value.id||value.data?.id;if(id!==process.env.smoke_id)throw new Error('Session V2 create did not adopt the requested id')"; \
     for sequence in $(seq 1 20); do \
       curl -fsS -X POST -H 'content-type: application/json' \
-        -d "{\"id\":\"msg_workgraph_image_smoke_$sequence\",\"prompt\":{\"text\":\"Durable image smoke prompt $sequence with enough repeated content to force response compression through the proxy boundary.\"},\"resume\":false}" \
+        -d "{\"id\":\"msg_image_smoke_$sequence\",\"prompt\":{\"text\":\"Durable image smoke prompt $sequence with enough repeated content to force response compression through the proxy boundary.\"},\"resume\":false}" \
         "http://127.0.0.1:2593/api/session/$smoke_id/prompt" >/dev/null; \
     done; \
     curl -fsS -H 'accept-encoding: gzip' "http://127.0.0.1:2593/api/session/$smoke_id/history?limit=100&after=0" >/tmp/opencode-session-v2-history.json; \
@@ -111,7 +111,7 @@ RUN set -eu; \
       -d "{\"id\":\"$failure_id\",\"agent\":\"build\",\"model\":{\"providerID\":\"missing-provider\",\"id\":\"missing-model\",\"variant\":\"invalid\"},\"location\":{\"directory\":\"/tmp/opencode-session-v2-smoke\"}}" \
       http://127.0.0.1:2593/api/session >/dev/null; \
     curl -fsS -X POST -H 'content-type: application/json' \
-      -d '{"id":"msg_workgraph_image_failure","prompt":{"text":"Prove pre-provider failures are durable."},"resume":true}' \
+      -d '{"id":"msg_image_failure","prompt":{"text":"Prove pre-provider failures are durable."},"resume":true}' \
       "http://127.0.0.1:2593/api/session/$failure_id/prompt" >/dev/null; \
     failed=0; \
     for attempt in $(seq 1 40); do \

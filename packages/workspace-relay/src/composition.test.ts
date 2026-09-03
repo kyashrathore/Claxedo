@@ -30,7 +30,6 @@ const forbiddenPackages = [
   "control-plane",
   "workspace-store",
   "credentials",
-  "convex",
 ]
 
 function isForbiddenSpecifier(input: string) {

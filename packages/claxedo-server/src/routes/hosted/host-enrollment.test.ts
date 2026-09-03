@@ -9,7 +9,7 @@ import { HostEnrollmentRoutes } from "./host-enrollment"
  * The HTTP surface of machine-wide enrollment.
  *
  * The authority's own behaviour is pinned in
- * `authority/adapters/sqlite/host-enrollment.test.ts` and the Convex policy
+ * `authority/adapters/sqlite/host-enrollment.test.ts` and the authority policy
  * suite. What is only visible here: that these routes require a signed caller,
  * that they pass the client's signature through untouched rather than signing
  * anything themselves, that no path takes a workspace id, and that an authority
@@ -18,8 +18,8 @@ import { HostEnrollmentRoutes } from "./host-enrollment"
 
 const authConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 } as const
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({

@@ -6,7 +6,7 @@
  * `webhook-id` was read only as signature input (`standard-webhooks.ts`), never
  * as a delivery identity. Polar retries a delivery up to 10 times, so a
  * redelivery re-ran `applyPolarState`. The existing protection is the single
- * writer's `source_ts` guard (`convex/billing.ts`), which is a per-org
+ * writer's `source_ts` guard (`the billing authority`), which is a per-org
  * monotonic timestamp check — it no-ops a re-apply at an already-seen ts, but it
  * is an ORDERING invariant, not a delivery-identity one, and it cannot tell a
  * redelivery from a legitimately-concurrent event.
@@ -44,7 +44,7 @@ function fakeStore(): BillingStore & { applyPolarState: ReturnType<typeof vi.fn>
   } as never
 }
 
-/** Shared across "isolates", exactly as one Convex deployment is. */
+/** Shared across "isolates", exactly as one the authority deployment is. */
 function fakeIdempotencyStore(clock = { now: 1_000 }) {
   const rows = new Map<string, {
     fingerprint: string
@@ -164,11 +164,11 @@ describe("Polar webhook dedup on webhook-id", () => {
   })
 
   test("a failed apply releases the claim so Polar's retry can succeed", async () => {
-    // Convex was down, so nothing was mirrored. Deduping the retry against a
+    // the authority was down, so nothing was mirrored. Deduping the retry against a
     // delivery that never applied would lose the billing event permanently.
     const billing = fakeStore()
     billing.applyPolarState
-      .mockRejectedValueOnce(new Error("convex unreachable"))
+      .mockRejectedValueOnce(new Error("authority unreachable"))
       .mockResolvedValueOnce({ results: [{ org_id: "org_doc_1", applied: true }], unresolved: [] })
     const idempotency = fakeIdempotencyStore()
     const payload = eventPayload()

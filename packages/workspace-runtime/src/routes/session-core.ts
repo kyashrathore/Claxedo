@@ -957,7 +957,7 @@ export function createSessionRoutes(opts: Opts) {
   // This map only deduplicates prompt_async retries by message id. The
   // per-session concurrency lease is owned by AgentRuntime and is deliberately
   // separate. Production Claxedo-managed message routes resolve AgentRuntime;
-  // the Session V2 wildcard proxy, WorkGraph gateway, and vendored OpenCode
+  // the Session V2 wildcard proxy, hosted gateway, and vendored OpenCode
   // engine have independent admission semantics outside this lease boundary.
   // The server's checkpoint-freeze middleware runs before these routes, so a
   // 423 response may preempt lease acquisition entirely.

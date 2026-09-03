@@ -14,7 +14,7 @@ const events: OnboardingFunnelEvent[] = [
   { name: "first_cloud_turn_ok" },
   { name: "remote_access_enabled" },
   { name: "second_device_open" },
-  { name: "gofurther_card_clicked", card: "workgraph" },
+  { name: "gofurther_card_clicked", card: "harnesses" },
   { name: "gofurther_card_dismissed", card: "harnesses" },
 ]
 

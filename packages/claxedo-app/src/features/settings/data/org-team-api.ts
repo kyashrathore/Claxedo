@@ -3,7 +3,6 @@ import { hostedControlCall } from "@/platform/account/hosted-control-call"
 
 export type OrgListItem = {
   org_id: string
-  clerk_org_id?: string
   slug?: string
   name: string
   role: string
@@ -133,7 +132,7 @@ export async function listTeamMembers(teamId: string) {
 export async function addTeamMember(input: {
   teamId: string
   tokenIdentifier?: string
-  clerkSubject?: string
+  providerSubject?: string
   userPublicId?: string
   role?: "member" | "admin" | "owner"
 }) {
@@ -142,7 +141,7 @@ export async function addTeamMember(input: {
     {
       teamId: input.teamId,
       ...(input.tokenIdentifier ? { tokenIdentifier: input.tokenIdentifier } : {}),
-      ...(input.clerkSubject ? { clerkSubject: input.clerkSubject } : {}),
+      ...(input.providerSubject ? { providerSubject: input.providerSubject } : {}),
       ...(input.userPublicId ? { userPublicId: input.userPublicId } : {}),
       ...(input.role ? { role: input.role } : {}),
     },
@@ -151,7 +150,7 @@ export async function addTeamMember(input: {
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
         ...(input.tokenIdentifier ? { tokenIdentifier: input.tokenIdentifier } : {}),
-        ...(input.clerkSubject ? { clerkSubject: input.clerkSubject } : {}),
+        ...(input.providerSubject ? { providerSubject: input.providerSubject } : {}),
         ...(input.userPublicId ? { userPublicId: input.userPublicId } : {}),
         ...(input.role ? { role: input.role } : {}),
       }),

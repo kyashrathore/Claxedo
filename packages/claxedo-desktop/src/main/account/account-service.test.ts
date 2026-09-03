@@ -563,7 +563,7 @@ describe("bound desktop account lifecycle", () => {
   /**
    * `invalid_bearer_token` is what this control plane returns for ANY rejected
    * token — verified live against the deployment with a junk bearer. It was
-   * being read as a Clerk-era "wrong token shape, nothing to renew", which
+   * being read as the earlier "wrong token shape, nothing to renew", which
    * returned before the renewal path and left the desktop wedged: signed in
    * by appearance, 401 on every operation, remote access unable to start.
    */

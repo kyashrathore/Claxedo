@@ -9,7 +9,7 @@
  *   hit this?" are uncomputable in principle if a single call site is allowed
  *   to omit them, so the compiler is the enforcement point — a call site
  *   missing any of the four fails the build.
- * - **Ops plane** (`workgraph-host/operational-telemetry.ts` and the other
+ * - **Ops plane** (the host operational-telemetry modules and the other
  *   `distinct_id: "system"` monitors): bounded counts, durations, and status
  *   classes with NO org/user identifiers and no content. It keeps calling
  *   `ControlPlaneTelemetry.capture` directly and is exempt by construction.

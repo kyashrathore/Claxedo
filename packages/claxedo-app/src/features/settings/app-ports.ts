@@ -10,10 +10,8 @@ import type * as Command from "@/app/providers/command"
 import type * as ConnectIntegration from "@/app/dialogs/connect-integration"
 import type * as ProviderConnectFormModule from "@/app/dialogs/provider-connect-form"
 import type * as LinkModule from "@/app/controls/link"
-import type * as SettingsSourceViews from "@/app/integrations/settings-source-views"
 import type * as SDK from "@/app/providers/sdk/sdk"
 
-export type SourceViewProject = SettingsSourceViews.SourceViewProject
 
 export type SettingsAppPorts = {
   useProviders: typeof Providers.useProviders
@@ -30,7 +28,6 @@ export type SettingsAppPorts = {
   DialogConnectIntegration: typeof ConnectIntegration.DialogConnectIntegration
   ProviderConnectForm: typeof ProviderConnectFormModule.ProviderConnectForm
   Link: typeof LinkModule.Link
-  useSettingsSourceViews: typeof SettingsSourceViews.useSettingsSourceViews
   useSandboxOnboardingFunnel: () => {
     emit(event: { name: "sandbox_provider_configured"; provider: string }): void
   }
@@ -70,7 +67,6 @@ export const useCommand = bind("useCommand")
 export const DialogConnectIntegration = bind("DialogConnectIntegration")
 export const ProviderConnectForm = bind("ProviderConnectForm")
 export const Link = bind("Link")
-export const useSettingsSourceViews = bind("useSettingsSourceViews")
 export const useSandboxOnboardingFunnel = bind("useSandboxOnboardingFunnel")
 export const useSDK = bind("useSDK")
 export const useEnabledAcpHarnesses = bind("useEnabledAcpHarnesses")

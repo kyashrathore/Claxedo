@@ -36,12 +36,6 @@ jobs:
           registry-url: "https://registry.npmjs.org"
           scope: "@claxedo"
 
-      # workspace-runtime imports @claxedo/workgraph (pinned published dep), but
-      # tsc resolves the workspace copy whose dist is gitignored — build it first,
-      # same pattern as the wakes build in deploy-control-plane.yml.
-      - name: Build workspace prerequisites
-        run: bun run --cwd packages/workgraph build
-
       - name: Publish runtime packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

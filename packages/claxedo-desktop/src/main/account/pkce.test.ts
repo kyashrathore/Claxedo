@@ -78,8 +78,8 @@ describe("buildAuthorizeUrl", () => {
   })
 
   test("preserves query the authorization server already requires", () => {
-    // Clerk and others put the instance in the authorize URL itself. Rebuilding
-    // the URL from parts would silently drop it.
+    // Some authorization servers put the instance in the authorize URL itself.
+    // Rebuilding the URL from parts would silently drop it.
     const url = new URL(buildAuthorizeUrl({ ...request, authorizeUrl: `${request.authorizeUrl}?instance=abc` }))
 
     expect(url.searchParams.get("instance")).toBe("abc")

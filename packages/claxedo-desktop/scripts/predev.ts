@@ -231,7 +231,6 @@ if (fs.existsSync(serverSource) && outputIsStale(serverEntry, [
   path.resolve(PACKAGE_DIR, "../agent-event-runtime/src"),
   path.resolve(PACKAGE_DIR, "../agent-sdk-runtime/src"),
   path.resolve(PACKAGE_DIR, "../sdk-next/src"),
-  path.resolve(PACKAGE_DIR, "../workgraph/src"),
   path.resolve(PACKAGE_DIR, "../workspace-runtime/src"),
 ])) {
   console.log(`[predev] Compiling standalone claxedo-server...`)

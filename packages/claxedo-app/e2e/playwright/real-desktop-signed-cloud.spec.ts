@@ -30,7 +30,7 @@
  * real hosted fixture. `VITE_CLAXEDO_E2E=1` must be baked into the packaged
  * renderer so its supported test-auth bootstrap can identify the UI caller.
  *
- * OUT OF SCOPE — Third-party OAuth browser UI, Clerk-specific token shape, and
+ * OUT OF SCOPE — Third-party OAuth browser UI, provider-specific token shape, and
  * a physical second device. Those require credentialed live lanes.
  */
 import { expect, test, type BrowserContext } from "@playwright/test"

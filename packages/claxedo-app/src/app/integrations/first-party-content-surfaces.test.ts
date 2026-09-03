@@ -2,7 +2,6 @@ import { beforeAll, describe, expect, mock, test } from "bun:test"
 import type { ContentSurfaceContribution } from "./content-surface-contract"
 
 let mod: typeof import("./first-party-content-surfaces")
-let hosted: typeof import("./hosted-content-surfaces")
 let documents: typeof import("./documents-content-surfaces")
 
 beforeAll(async () => {
@@ -24,97 +23,15 @@ beforeAll(async () => {
   mock.module("@/features/extensions/marketplace", () => ({
     MarketplaceContent: () => null,
   }))
-  mock.module("../../features/workgraph", () => ({
-    WorkGraphContent: () => null,
-  }))
 
   mod = await import("./first-party-content-surfaces")
   // The hosted set is a SEPARATE module now — importing it here is exactly the
   // edge the local composition must not have, which is why the test has to
   // reach for it explicitly.
-  hosted = await import("./hosted-content-surfaces")
   documents = await import("./documents-content-surfaces")
 })
 
 describe("content surface contributions", () => {
-  test("opens a WorkGraph Session with its authoritative project and harness", async () => {
-    const open = mock(() => {})
-    const navigate = mock(() => {})
-    const request = mock(async () => new Response(undefined, { status: 500 }))
-
-    await hosted.openWorkGraphSession({
-      reference: {
-        sessionId: "ses_workgraph",
-        workspaceId: "envelope_reference",
-        harness: "acp:codex",
-        environment: { kind: "local_worktree", placement: "shared", directory: "/repo" },
-      },
-      request,
-      serverUrl: "http://claxedo.test",
-      projects: [],
-      inventory: {
-        loaded: true,
-        byWorkspace: {},
-        byProject: {
-          project_claxedo: [{
-            id: "ses_workgraph",
-            directory: "/repo/.worktrees/workgraph",
-            title: "Review WorkGraph",
-          }],
-        },
-      },
-      open,
-      navigate,
-    })
-
-    expect(request).not.toHaveBeenCalled()
-    expect(open).toHaveBeenCalledWith({
-      directory: "/repo/.worktrees/workgraph",
-      sessionId: "ses_workgraph",
-      title: "Review WorkGraph",
-      sessionRef: {
-        sessionId: "ses_workgraph",
-        host: "workspace",
-        cwd: "/repo/.worktrees/workgraph",
-        toolSandbox: { kind: "local", cwd: "/repo/.worktrees/workgraph" },
-        harness: { id: "acp:codex" },
-      },
-    })
-    expect(navigate).toHaveBeenCalledWith("/s/ses_workgraph")
-  })
-
-  test("does not open a placeholder when Session project metadata is unavailable", async () => {
-    const open = mock(() => {})
-    const navigate = mock(() => {})
-
-    await expect(hosted.openWorkGraphSession({
-      reference: { sessionId: "ses_missing", harness: "acp:codex" },
-      request: async () => new Response(undefined, { status: 404 }),
-      serverUrl: "http://claxedo.test",
-      projects: [],
-      open,
-      navigate,
-    })).rejects.toThrow("Session unavailable (404)")
-    expect(open).not.toHaveBeenCalled()
-    expect(navigate).not.toHaveBeenCalled()
-  })
-
-  test("task composer project selection carries its project id into surface state", () => {
-    expect(hosted.taskComposerProjectTarget({ id: "project_1", worktree: "/Users/person/private-repo" }))
-      .toEqual({ workspaceRouteId: "project_1", route: "/w/project_1/task/new" })
-  })
-
-  test("task composer nested workspace selection builds its first route from the workspace id", () => {
-    expect(hosted.taskComposerProjectTarget({
-      id: "project_1",
-      worktree: "/Users/person/private-repo",
-      workspaces: {
-        nested: { id: "workspace_2", directory: "/Users/person/private-repo/.worktrees/two" },
-      },
-    }, "/Users/person/private-repo/.worktrees/two"))
-      .toEqual({ workspaceRouteId: "workspace_2", route: "/w/workspace_2/task/new" })
-  })
-
   test("seeds built-in workbench renderers through the shared surface registry", () => {
     const registry = mod.createContentSurfaceRegistry()
 
@@ -124,20 +41,18 @@ describe("content surface contributions", () => {
   })
 
   test("the default registry renders no hosted surface until the hosted set is added", () => {
-    // The Unit 2 acceptance criterion on the app side. Not "WorkGraph is
-    // hidden" — WorkGraph has no renderer at all in a local composition.
+    // The Unit 2 acceptance criterion on the app side. Not "Documents is
+    // hidden" — Documents has no renderer at all in a local composition.
     const registry = mod.createContentSurfaceRegistry()
 
-    for (const type of ["workgraph", "workspace-workgraph", "task-composer", "page", "pages-index"]) {
+    for (const type of ["page", "pages-index"]) {
       expect(mod.contentSurface(type, {}, registry), type).toBeUndefined()
     }
 
     const withHosted = mod.createContentSurfaceRegistry([
       ...mod.localContentSurfaces,
-      ...hosted.workGraphContentSurfaces,
       ...documents.documentsContentSurfaces,
     ])
-    expect(mod.contentSurface("workgraph", {}, withHosted)?.id).toBe("surface.content.workgraph")
     expect(mod.contentSurface("page", {}, withHosted)?.id).toBe("surface.content.page")
   })
 
@@ -146,13 +61,13 @@ describe("content surface contributions", () => {
     // `unregisterContentSurface` both act on the ONE shared registry the
     // workbench resolves against, which is what makes a sign-out observable
     // without a reload.
-    const workgraph = hosted.workGraphContentSurfaces.find((surface) => surface.surface === "workgraph")!
+    const page = documents.documentsContentSurfaces.find((surface) => surface.surface === "page")!
 
-    mod.registerContentSurface(workgraph)
-    expect(mod.contentSurface("workgraph", {})?.id).toBe(workgraph.id)
+    mod.registerContentSurface(page)
+    expect(mod.contentSurface("page", {})?.id).toBe(page.id)
 
-    mod.unregisterContentSurface(workgraph)
-    expect(mod.contentSurface("workgraph", {})).toBeUndefined()
+    mod.unregisterContentSurface(page)
+    expect(mod.contentSurface("page", {})).toBeUndefined()
     // The local surfaces the same registry seeded are untouched.
     expect(mod.contentSurface("session", {})?.id).toBe("surface.content.session")
   })
@@ -184,5 +99,4 @@ describe("content surface contributions", () => {
       },
     }, registry)?.id).toBe("surface.content.agent-review")
   })
-
 })

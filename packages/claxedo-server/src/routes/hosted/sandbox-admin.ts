@@ -61,7 +61,7 @@ export function HostedSandboxAdminRoutes(options: HostedSandboxAdminOptions = {}
     //
     // These routes authenticate an OPERATOR bearer token, not a user, so no
     // signed tenant exists at this site by construction and the events go out
-    // on the ops plane. The authoritative duration is settled in Convex by the
+    // on the ops plane. The authoritative duration is settled in the authority by the
     // lease close path; `active_ms` is omitted here rather than guessed, since
     // a zero would average into the per-user answer as real data.
     const endedAt = Date.now()

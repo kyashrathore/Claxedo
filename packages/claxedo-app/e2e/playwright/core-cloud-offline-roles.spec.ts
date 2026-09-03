@@ -427,21 +427,12 @@ async function installWorkspaceHarness(page: Page): Promise<HarnessState> {
     const request = route.request()
     const url = new URL(request.url())
 
-    // Third-party auth/analytics (Clerk, PostHog) are NOT part of this spec's
-    // surface and must reach the real network unmodified — unlike
-    // `mock-runtime.ts`'s per-path `page.route()` calls (which simply never
-    // match these URLs, so they fall through to the network automatically),
-    // this file's single `page.route("**/*")` catch-all would otherwise fake
-    // a 598 for them too. A faked Clerk response breaks ClerkJS
-    // initialization ("Something went wrong initializing Clerk in
-    // development mode"), which in turn blocks every downstream app fetch
-    // (bootstrap/health never even fire) — the app never renders
-    // `[data-claxedo]` and every scenario in this file hangs on the
-    // "Could not reach 127.0.0.1:3001" screen. Discovered while remediating
-    // this spec under the pooled e2e run (2026-07-10): every test failed
-    // identically at `gotoDraft`'s `[data-claxedo]` wait until this bypass
-    // was added.
-    if (url.hostname.endsWith("clerk.accounts.dev") || url.hostname.endsWith("posthog.com")) {
+    // Third-party analytics (PostHog) is NOT part of this spec's surface and
+    // must reach the real network unmodified — unlike `mock-runtime.ts`'s
+    // per-path `page.route()` calls (which simply never match these URLs, so
+    // they fall through to the network automatically), this file's single
+    // `page.route("**/*")` catch-all would otherwise fake a 598 for it too.
+    if (url.hostname.endsWith("posthog.com")) {
       return route.continue()
     }
 

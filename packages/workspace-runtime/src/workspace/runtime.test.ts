@@ -1269,7 +1269,7 @@ describe("workspace runtime auth helpers", () => {
     // Regression: proxy-driven (Session V2) sessions keep messages in the
     // engine and get bound into the store message-less by discovery — an empty
     // store projection must never shadow the engine transcript (staging
-    // WorkGraph retention synced [] and settled runs without transcripts).
+    // Retention synced [] and settled runs without transcripts).
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-empty-bound-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
@@ -4161,7 +4161,7 @@ describe("scoped Session tool compatibility", () => {
       sessionId: "session-1",
       callbackUrl: "http://127.0.0.1:4567/callback/nonce",
       tools: [{
-        name: "workgraph_complete_task",
+        name: "generic_complete_task",
         description: "Complete the bound Task with evidence.",
         inputSchema: { type: "object", required: ["summary", "evidence"] },
       }],
@@ -4182,7 +4182,7 @@ describe("scoped Session tool compatibility", () => {
     const input = await prompted
     const context = JSON.stringify(input.parts.at(-1))
     expect(context).toContain("claxedo_scoped_session_tools")
-    expect(context).toContain("workgraph_complete_task")
+    expect(context).toContain("generic_complete_task")
     expect(context).toContain("http://127.0.0.1:4567/callback/nonce")
     expect(context).toContain("session-1")
     expect(context).not.toContain("runId")

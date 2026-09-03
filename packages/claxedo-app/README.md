@@ -72,7 +72,6 @@ literal value `true` to enable them:
 | Environment variable | Entry points |
 | --- | --- |
 | `VITE_CLAXEDO_DOCUMENT_NAVIGATION_ENABLED` | Documents in the main rail and the top-level New Document action |
-| `VITE_CLAXEDO_WORKGRAPH_NAVIGATION_ENABLED` | WorkGraph in the main rail and the top-level New task action |
 | `VITE_CLAXEDO_ACCOUNT_SIGN_IN_ENABLED` | Sign in in the bottom-left account menu |
 | `VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED` | Settings → Connections |
 | `VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED` | Settings → Sandbox Providers |
@@ -143,11 +142,9 @@ falling through to "run everything".
 | `marketing` | `@marketing` | Screenshot capture tool; writes PNGs into `claxedo-web/public/screenshots`. Never in CI. |
 | `all` | — | No filter, including lanes CI cannot run. |
 
-`@workgraph-real` and the `@documents-*-canary` tags are sub-selectors *within* a
-lane, not lanes: `test:e2e:core:base` carves `@workgraph-real` out of the sharded
-lane with `--grep-invert`. WorkGraph's dedicated browser and headless-journey CI
-jobs are temporarily paused; `test:e2e:workgraph` and `test:e2e:journey` remain
-available for explicit local or Crabbox runs.
+The `@tier-real` and `@documents-*-canary` tags are sub-selectors *within* a
+lane, not lanes: `test:e2e:core:base` carves `@tier-real` out of the sharded
+lane with `--grep-invert`.
 `src/architecture/e2e-suite-tags.guard.test.ts` fails if any spec carries no lane
 tag, or carries an unregistered one (a `@cores` typo).
 

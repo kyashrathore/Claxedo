@@ -16,8 +16,8 @@ const SRC = "packages/claxedo-local-server/src"
  * The forbidden list is the same one that test states, and for the same reason:
  * each entry is a hosted capability an unsigned desktop has no way to use and
  * no business carrying. When this measurement started, the desktop-local entry
- * reached 259 first-party modules and 42 packages — Convex, better-auth,
- * WorkGraph, channels, connections, wakes — from a build that never signs in.
+ * reached 259 first-party modules and 42 packages — better-auth, channels,
+ * connections, wakes — from a build that never signs in.
  */
 export const localServer: Policy = {
   id: "local-server",
@@ -29,24 +29,20 @@ export const localServer: Policy = {
   forbiddenPackages: [
     "@claxedo/sandbox-manager",
     "@claxedo/server",
-    "@claxedo/workgraph",
     "@claxedo/channels",
     "@claxedo/connections",
     "@claxedo/wakes",
-    "convex",
     "better-auth",
     "posthog-node",
     // Not in the package-wide list, and it belongs here: the desktop server is
     // a child process of Electron, not the renderer, and a UI package in this
     // graph would mean the split leaked in the other direction.
     "@claxedo/app",
-    "@clerk/clerk-js",
   ],
   forbiddenModules: [
     "packages/claxedo-server/src",
     "packages/claxedo-app/src",
     "packages/sandbox-manager/src",
-    "packages/workgraph/src",
     "packages/claxedo-channels/src",
     "packages/claxedo-connections/src",
     "packages/wakes/src",

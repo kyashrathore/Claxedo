@@ -155,7 +155,7 @@ each lane:
 4. Stateful browser E2E: inspect traces and the authoritative server log for
    missing UI state or a dead local server; do not treat a longer locator
    timeout as a diagnosis.
-5. Tier-real and WorkGraph: preserve harness settlement, connection ownership,
+5. Tier-real: preserve harness settlement, connection ownership,
    and multi-process state evidence when reproducing.
 
 ## Failure workflow

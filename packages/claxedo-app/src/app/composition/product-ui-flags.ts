@@ -8,8 +8,6 @@
 export type ProductUiFlagConfig = {
   /** Show Documents navigation entry points (default: false). */
   documentNavigationEnabled?: boolean
-  /** Show WorkGraph navigation entry points (default: false). */
-  workGraphNavigationEnabled?: boolean
   /** Show the unsigned account sign-in affordance (default: false). */
   accountSignInEnabled?: boolean
   /** Show the Connections settings section (default: false). */
@@ -20,7 +18,6 @@ export type ProductUiFlagConfig = {
 
 export type ProductUiFlags = {
   documentNavigation: boolean
-  workGraphNavigation: boolean
   accountSignIn: boolean
   settingsConnections: boolean
   settingsSandboxProviders: boolean
@@ -29,7 +26,6 @@ export type ProductUiFlags = {
 export function resolveProductUiFlags(config?: ProductUiFlagConfig): ProductUiFlags {
   return {
     documentNavigation: config?.documentNavigationEnabled === true,
-    workGraphNavigation: config?.workGraphNavigationEnabled === true,
     accountSignIn: config?.accountSignInEnabled === true,
     settingsConnections: config?.settingsConnectionsEnabled === true,
     settingsSandboxProviders: config?.settingsSandboxProvidersEnabled === true,
@@ -39,7 +35,6 @@ export function resolveProductUiFlags(config?: ProductUiFlagConfig): ProductUiFl
 export function productUiFlagConfigFromEnv(env: Readonly<Record<string, unknown>>): Required<ProductUiFlagConfig> {
   return {
     documentNavigationEnabled: env.VITE_CLAXEDO_DOCUMENT_NAVIGATION_ENABLED === "true",
-    workGraphNavigationEnabled: env.VITE_CLAXEDO_WORKGRAPH_NAVIGATION_ENABLED === "true",
     accountSignInEnabled: env.VITE_CLAXEDO_ACCOUNT_SIGN_IN_ENABLED === "true",
     settingsConnectionsEnabled: env.VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED === "true",
     settingsSandboxProvidersEnabled: env.VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED === "true",

@@ -2,7 +2,7 @@
   "name": "@claxedo/mcp",
   "version": "0.4.0",
   "type": "module",
-  "description": "MCP server and CLI for Claxedo documents, WorkGraph, processes, logs, sessions, and browser tools",
+  "description": "MCP server and CLI for Claxedo documents, processes, logs, sessions, and browser tools",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -24,11 +24,6 @@
       "development": "./src/documents-tools.ts",
       "default": "./dist/documents-tools.js"
     },
-    "./workgraph-tools": {
-      "types": "./src/workgraph-tools.ts",
-      "development": "./src/workgraph-tools.ts",
-      "default": "./dist/workgraph-tools.js"
-    },
     "./cloud-workspace-tools": {
       "types": "./src/cloud-workspace-tools.ts",
       "development": "./src/cloud-workspace-tools.ts",
@@ -46,14 +41,13 @@
     "access": "public"
   },
   "scripts": {
-    "build": "bun build src/server.ts src/documents-tools.ts src/workgraph-tools.ts src/cloud-workspace-tools.ts --outdir dist --target=node",
+    "build": "bun build src/server.ts src/documents-tools.ts src/cloud-workspace-tools.ts --outdir dist --target=node",
     "prepublishOnly": "bun run build",
     "start": "node --import tsx src/server.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "node ./node_modules/vitest/vitest.mjs run --reporter=default --reporter=junit --outputFile.junit=.artifacts/unit/junit.xml"
   },
   "dependencies": {
-    "@claxedo/workgraph": "0.4.0",
     "@modelcontextprotocol/sdk": "1.29.0",
     "ajv": "8.20.0",
     "ajv-formats": "3.0.1",

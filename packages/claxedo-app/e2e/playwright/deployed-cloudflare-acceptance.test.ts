@@ -12,7 +12,7 @@
  * Its value is the one failure it catches early and cheaply: a payload literal
  * drifting from the authority's verifier (`hostEnrollmentPayload` /
  * `hostEnrollmentHeartbeatPayloadV2`, duplicated in the D1 and SQLite adapters
- * and `convex/hostEnrollments.ts`). That drift would otherwise surface as an
+ * and the host-enrollment authority). That drift would otherwise surface as an
  * opaque `host_attestation_denied` from a live worker, at the slowest and most
  * expensive point in the loop.
  *

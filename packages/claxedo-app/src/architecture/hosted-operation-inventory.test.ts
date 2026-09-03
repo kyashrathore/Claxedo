@@ -30,7 +30,6 @@ const matrixPath = path.resolve(appRoot, "../../docs/tech-docs/desktop-hosted-op
 
 /** Hosted feature roots scanned for authenticated transport. */
 const HOSTED_CANDIDATE_ROOTS = [
-  "features/workgraph",
   "features/documents",
   "platform/runtime/cloud",
   "features/workspaces",
@@ -93,7 +92,7 @@ function canonicalRelativePath(value: string) {
  *
  * `authFetch` attaches the bearer; `getAuthToken` obtains it directly; the
  * `api` helper wraps `authFetch`. Injecting a transport (`request: authFetch`)
- * counts too — that is exactly how WorkGraph gets its credential today.
+ * counts too — that is exactly how a hosted feature gets its credential today.
  */
 function authenticatedMarkers(text: string) {
   const markers: string[] = []
@@ -126,7 +125,7 @@ describe("hosted operation matrix", () => {
   })
 
   test("names an owner module for at least every hosted capability group", () => {
-    for (const group of ["WorkGraph", "Documents", "Billing", "Connections", "Workspace authority", "Sessions"]) {
+    for (const group of ["Documents", "Billing", "Connections", "Workspace authority", "Sessions"]) {
       expect(matrix, `matrix must cover ${group}`).toContain(`### ${group}`)
     }
   })

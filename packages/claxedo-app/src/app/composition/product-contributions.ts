@@ -10,7 +10,7 @@ import type { ContentSurfaceContribution } from "../integrations/content-surface
  * The single product-contribution registry.
  *
  * Two products compose this renderer. The unsigned desktop registers local
- * capabilities only; the hosted product adds WorkGraph, Documents, and the
+ * capabilities only; the hosted product adds Documents and the
  * rest of its surfaces. Before this seam existed the difference was a set of
  * runtime flags scattered across feature ports, which could hide a capability
  * but never remove it from the build.
@@ -46,7 +46,7 @@ export type HostedContributionLoader = () => Promise<HostedContributionSet>
  * Product and fixed-service policies may each need an independently fenced
  * activation, but they must not bind the platform mechanism themselves. This
  * keeps the contribution vocabulary and registry ownership in one module while
- * allowing WorkGraph and Documents to have separate lifecycles.
+ * allowing each hosted service to have its own lifecycle.
  */
 export function createContentSurfaceActivation(
   input: HostedContributionInput<ContentSurfaceContribution>,
@@ -66,9 +66,6 @@ export function createContentSurfaceActivation(
 export const HOSTED_CONTENT_TYPES = [
   "page",
   "pages-index",
-  "workgraph",
-  "workspace-workgraph",
-  "task-composer",
 ] as const
 
 export type ProductContributionsInput = {
@@ -97,7 +94,7 @@ export type ProductContributions = {
    *
    * Separate from `activateHosted` because activation is asynchronous and
    * restored-state pruning is not. A hosted build that pruned against
-   * "registered right now" would delete every restored WorkGraph tab in the
+   * "registered right now" would delete every restored hosted tab in the
    * window before the dynamic import resolves.
    */
   expectHosted(): void
@@ -116,7 +113,7 @@ export type ProductContributions = {
    *
    * A hosted BUILD composes hosted surfaces whether or not a window holds an
    * account — that is what `initClaxedo` does at boot, and the loopback E2E
-   * lane depends on it (`core-workgraph.spec.ts` renders WorkGraph with no
+   * lane depends on it (a hosted surface renders with no
    * account). So "not signed" cannot mean "remove"; it would empty the
    * composition of every window that has not signed in yet.
    *

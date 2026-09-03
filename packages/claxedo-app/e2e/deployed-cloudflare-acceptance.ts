@@ -125,7 +125,7 @@ export function acceptanceConfig(
  *
  * Byte-identical to the authority's verifier (`hostEnrollmentPayload` in
  * claxedo-server's `workspace/local-host.ts`, the D1/SQLite adapters and
- * `convex/hostEnrollments.ts`). Rebuilt here rather than imported because this
+ * the host-enrollment authority). Rebuilt here rather than imported because this
  * harness drives a DEPLOYED control plane over HTTP and must not link server
  * code; the literal is the contract, so drift fails at the first enrollment.
  */

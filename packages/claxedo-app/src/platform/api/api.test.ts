@@ -286,7 +286,7 @@ describe("authFetch", () => {
   })
 
   test("force-refreshes the bearer once when the server rejects it as invalid", async () => {
-    // The retry that keeps a stale Clerk JWT from wedging every panel in
+    // The retry that keeps a stale JWT from wedging every panel in
     // "loading" forever. It is also the only caller that passes an option
     // through the bearer seam, so it is what proves the seam carries one.
     token = "tok_stale"
@@ -392,7 +392,7 @@ describe("authFetch", () => {
  *
  * `project-actions.tsx` (destroying a cloud sandbox) and
  * `agent-runtime-client.ts` (the signed control-plane init) used to import
- * `getAuthToken` for one call each, which is how Clerk reached the LOCAL
+ * `getAuthToken` for one call each, which is how the identity provider reached the LOCAL
  * bundle through two modules the local shell needs. They read this instead, so
  * "no build bound a source" has to be a first-class ANSWER here, not a throw.
  */

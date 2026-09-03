@@ -51,8 +51,8 @@ function hostedOptions(
     auth: {
       config: {
         enabled: true,
-        issuer: "https://clerk.example.test",
-        jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+        issuer: "https://issuer.example.test",
+        jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
       },
       verifier: vi.fn(),
     },
@@ -185,7 +185,7 @@ describe("control-plane services", () => {
     expect(services.authority).toBe(authority)
 
     // The hosted `requiredHostedDependency` path also returns it unchanged
-    // (the authority passes the "workspace authority" required-dependency
+    // (it passes the "workspace authority" required-dependency
     // check and lands on the composed services by identity).
     const hostedAuthority = hostedOptions().authority
     const hosted = createHostedControlPlaneServices(fakePorts(), hostedOptions({
@@ -348,7 +348,7 @@ describe("control-plane services", () => {
     // The generic services never construct an authority; the composition site
     // injects it. `null` explicitly leaves it unset even when env is present.
     const previous = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-    process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "https://example.convex.cloud"
+    process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "https://example.authority.test"
     try {
       const services = createControlPlaneServices(fakePorts(), {
         authority: null,
@@ -362,7 +362,7 @@ describe("control-plane services", () => {
 
   test("authority is only present when injected, never derived from env", () => {
     const previous = process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-    process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "https://ambient.convex.cloud"
+    process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL = "https://ambient.authority.test"
     try {
       // Ambient env no longer materializes an authority.
       expect(createControlPlaneServices(fakePorts()).authority).toBeUndefined()
@@ -457,7 +457,7 @@ describe("control-plane services", () => {
   })
 
   test("local composition ignores ambient signed-auth env without embedded auth", async () => {
-    // The retired Clerk + Convex hosted composition is gone: ambient signed
+    // The retired hosted composition is gone: ambient signed
     // env without CLAXEDO_EMBEDDED_AUTH no longer fails closed — the default
     // local composition boots local-only on SQLite. Only embedded Better Auth
     // selects signed mode.
@@ -781,7 +781,7 @@ describe("control-plane services", () => {
     // that is the one a POST consults — denying only the read check here would
     // pass while leaving the write path effectively ungated.
     authorizeSessionWrite.mockImplementationOnce(async () => {
-      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Convex denied session access")
+      throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "the authority denied session access")
     })
     const denied = await built.app.request(`https://control.example.test/api/control/session/${sessionId}/message`, {
       method: "POST",

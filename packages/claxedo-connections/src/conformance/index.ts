@@ -1,6 +1,6 @@
 // Runner-neutral store-port conformance. Each case is a plain async function,
-// so any host adapter — memory here, SQLite in claxedo-server, Convex in the
-// hosted control plane — registers the same cases with its own test runner.
+// so any host adapter — memory here, SQLite in claxedo-server — registers the
+// same cases with its own test runner.
 export {
   CONFORMANCE_OWNERS,
   CONNECTION_STORE_CONFORMANCE_SCOPE,

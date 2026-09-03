@@ -11,7 +11,7 @@ The package owns the generic pieces:
 - `SandboxDriver`
 - provider drivers for Cloudflare, Daytona, Docker, fetch bridge, Modal, and Vercel
 
-It deliberately does not own Claxedo product auth, billing, Convex schema, SQLite app storage, routes, or relay tokens. Applications provide those through adapters and call `createSandboxManager`.
+It deliberately does not own Claxedo product auth, billing, app storage schema, routes, or relay tokens. Applications provide those through adapters and call `createSandboxManager`.
 
 ## Install
 
@@ -59,8 +59,8 @@ Swap `createDockerSandboxDriver` for `createDaytonaSandboxDriver`,
 `@claxedo/sandbox-manager/drivers/*`) to place on a hosted provider instead —
 see [`docs/architecture.md`](docs/architecture.md) for the full driver
 comparison and each provider's required options. Swap `createMemoryLeaseStore`
-for a persisted `SandboxLeaseStore` implementation (e.g. backed by SQLite or
-Convex) to survive process restarts.
+for a persisted `SandboxLeaseStore` implementation (e.g. backed by SQLite) to
+survive process restarts.
 
 ## Credentials & secrets
 

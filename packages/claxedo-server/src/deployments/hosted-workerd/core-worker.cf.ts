@@ -8,10 +8,6 @@
  * service catalog consumed by `HostedCoreAppOptions`; their implementations,
  * storage, jobs, and Durable Objects never enter this graph.
  *
- * The historical `worker.ts` entry remains a legacy deployment target until
- * its WorkGraph/Wake namespaces have been archived and drained. Keeping that
- * entry separate is deliberate: rewriting its existing Wrangler migration
- * tags would corrupt Cloudflare's Durable Object migration history.
  */
 
 import type { ExecutionContext, Hono } from "hono"

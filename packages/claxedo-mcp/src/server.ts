@@ -29,7 +29,6 @@ import { formatSessionMessages, resolveResponseText, type SessionMessage } from 
 import { claxedoRequestScope } from "./request-scope"
 import { claxedoMcpReadOnly } from "./tool-policy"
 import { resolveTranscriptPath } from "./transcript-path"
-import { registerWorkGraphTools } from "./workgraph-tools"
 import { registerDocumentTools } from "./documents-tools"
 import { runDocumentsCli } from "./documents-cli"
 import { registerCloudWorkspaceTools } from "./cloud-workspace-tools"
@@ -47,7 +46,6 @@ const requestDirectory = (args: { directory?: string; workspace_id?: string }) =
 const ORIGIN = clean(process.env.CLAXEDO_SERVER_URL) || "http://127.0.0.1:3001"
 const DEFAULT_WORKSPACE_ID = clean(process.env.CLAXEDO_WORKSPACE_ID)
 const DEFAULT_DIR = clean(process.env.OPENCODE_API_DIR) || (DEFAULT_WORKSPACE_ID ? workspaceRef(DEFAULT_WORKSPACE_ID) : process.cwd())
-const DEFAULT_REPOSITORY_URL = clean(process.env.CLAXEDO_REPOSITORY_URL)
 const DEFAULT_SESSION_ID = clean(process.env.CLAXEDO_SESSION_ID)
 const TOKEN = clean(process.env.CLAXEDO_AUTH_TOKEN)
 const READ_ONLY = claxedoMcpReadOnly()
@@ -205,34 +203,6 @@ function registerTool<Shape extends Record<string, z.ZodTypeAny>>(
   // satisfy structurally but do not declare; only the return position needs bridging.
   server.registerTool(name, config, handler as Parameters<typeof server.registerTool>[2])
 }
-
-registerWorkGraphTools(
-  registerTool,
-  (path, init) => httpRequest(path, init, "json", undefined, "owner"),
-  READ_ONLY,
-  async () => {
-    if (!DEFAULT_WORKSPACE_ID) return {
-      execution: {
-        environment: { kind: "local_worktree", directory: DEFAULT_DIR },
-        repository: { baseRevision: "HEAD" },
-      },
-    }
-    const resolved = DEFAULT_REPOSITORY_URL
-      ? undefined
-      : await httpRequest<{
-          git?: { remote?: string | null }
-          backing?: { repoUrl?: string | null }
-        }>(`/api/workspace/resolve?workspaceId=${encodeURIComponent(DEFAULT_WORKSPACE_ID)}`, { method: "GET" }, "json", undefined, "owner")
-    const repositoryUrl = DEFAULT_REPOSITORY_URL || clean(resolved?.git?.remote) || clean(resolved?.backing?.repoUrl)
-    if (!repositoryUrl) throw new Error(`Workspace ${DEFAULT_WORKSPACE_ID} has no Git repository URL for the new Stream`)
-    return {
-      execution: {
-        environment: { kind: "hosted_workspace", repositoryUrl },
-        repository: { baseRevision: "HEAD" },
-      },
-    }
-  },
-)
 
 registerDocumentTools(registerTool, (path, init) => httpRequest(path, init, "json"), {
   directory: DEFAULT_DIR,

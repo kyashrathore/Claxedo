@@ -167,7 +167,7 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `session.create` | `platform/runtime/cloud/workspace-runtime-store.ts` | `POST /api/control/sessions` | unary | unsafe | A retried create is a duplicate session. Prompt admission is never repeated on transport loss. |
 | `session.messages` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/messages` | unary | safe | |
 | `session.gateway` | `platform/runtime/cloud/workspace-runtime-store.ts` | `GET /api/control/sessions/:sessionId/gateway` | unary | safe | |
-| `session.projection.register` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/register` | unary | unsafe | Sync-back into Convex; body carries `idempotencyKey`. |
+| `session.projection.register` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/register` | unary | unsafe | Sync-back into the control plane; body carries `idempotencyKey`. |
 | `session.projection.checkpoint` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/checkpoint` | unary | unsafe | |
 | `session.projection.repair` | `platform/runtime/agent/session-projection.ts` | `POST /api/control/workspaces/:workspaceId/sessions/:sessionId/repair` | unary | unsafe | |
 | `session.events` | `app/integrations/claxedo-events.tsx` | `GET /api/wr/events` | stream | safe | Central control-plane SSE (not workspace-scoped RAT traffic). Resumes via declared `Last-Event-ID` header param. Provisioning progress filters this same bus. |
@@ -176,21 +176,6 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `session.shares.grant` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/shares` | unary | unsafe | Grants private-session visibility to a person, team, or org. |
 | `session.shares.revoke` | `features/session/data/session-share-api.ts` | `DELETE /api/control/sessions/:sessionId/shares` | unary | unsafe | |
 | `session.participants.add` | `features/session/data/session-share-api.ts` | `POST /api/control/sessions/:sessionId/participants` | unary | unsafe | |
-
-### WorkGraph
-
-WorkGraph's client takes its transport by injection
-(`createWorkGraphClient({ request })`). Today `app/integrations/doc-workgraph.ts`
-injects `authFetch` directly. The injection seam is what lets a signed desktop
-rebind that client onto the Electron operation port without rewriting every
-WorkGraph call site.
-
-| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
-|---|---|---|---|---|---|
-| `workgraph.snapshot` | `features/workgraph/api.ts` | `GET /api/workgraph/snapshot` | unary | safe | Paged; the client aggregates pages. |
-| `workgraph.command` | `features/workgraph/api.ts` | `POST /api/workgraph/commands` | unary | idempotency-key | Carries a client-generated `operationId`; that key is the replay guard. |
-| `workgraph.read` | `features/workgraph/api.ts` | `GET /api/workgraph/*` | unary | safe | Attention, evidence, runs, activity, defaults, capabilities. |
-| `workgraph.write` | `features/workgraph/api.ts` | `POST /api/workgraph/*` | unary | idempotency-key | Same `operationId` contract as `workgraph.command`. PUT/DELETE selected via declared `httpMethod` parameter (POST\|PUT\|DELETE only). |
 
 ### Documents
 
@@ -267,7 +252,7 @@ which blocks Unit 9 until it gets a typed broker contract. One remains flagged:
 
 `hosted-operation-inventory.test.ts` asserts:
 
-1. Every module in `features/workgraph`, `features/documents`,
+1. Every module in `features/documents`,
    `platform/runtime/cloud`, and the hosted subsets of `features/workspaces`,
    `features/settings`, `features/onboarding`, and `app/routes` that reaches
    authenticated transport is named as an owner in this file.

@@ -60,14 +60,11 @@ update + fault-inject. `hosted-node.ts` is pinned by package.json
 `start:hosted` → update script. Registry `tests:` strings for
 `workspace/store/store.test.ts` → update.
 
-### W7.2 — thin out control-plane/ root (85 → ~44)
+### W7.2 — thin out control-plane/ root
 
-1. 32 `convex-*.test.ts` → `control-plane/convex-policy/`. They test repo-root
-   `convex/` functions (verified: import `../../../../convex/sessions`), so
-   only their own relative imports deepen by one. One registry string
-   (`convex-sandbox-leases-policy.test.ts`).
-2. 9 `http-*.ts` → `control-plane/http/` (`http.ts`→`http/index.ts`).
-   `http-protocol` is imported by 4 siblings; external fan-in small.
+Move the 9 `http-*.ts` files into `control-plane/http/`
+(`http.ts`→`http/index.ts`). `http-protocol` is imported by 4 siblings;
+external fan-in small.
 
 ### W7.3 — root-file homes (the "just not done" group)
 
@@ -89,24 +86,11 @@ commit. NOT included: `server-workspace-pty-proxy.ts`,
 `connections-cors.test.ts` (never imports cors-origins; it's a server
 integration test → integration home in W7.6).
 
-### W7.5 — deployment glue + workgraph composition layer
+### W7.5 — deployment glue
 
-1. → `deployments/local/`: `server-workspace-pty-proxy.ts`,
-   `server-usage-limits.ts`(+contract test), `remote-access-service.ts`(+test).
-   `server-usage-limits` is in FORBIDDEN_LOCAL (substring; keep basename).
-2. → `hosts/workgraph/composition/`: `server-workgraph.ts`(+test),
-   `workgraph-agent-tools.ts`(+test), `workgraph-session-gateway.ts`,
-   `workgraph-session-v2.test.ts`, `workgraph-process-restart.fixture.ts`(+integration test),
-   `workgraph-v2-reachability.test.ts`. Pins to update in lockstep:
-   architecture.test reads `../server-workgraph.ts` + asserts the literal
-   `import("../../workgraph-session-gateway")` string in server.ts (path
-   becomes `../../hosts/workgraph/composition/session-gateway` — keep names or
-   adjust assertion to match); `workgraph-v2-reachability.test.ts` self-reads
-   via dirname (root-relative → rewrite); FORBIDDEN_LOCAL `server-workgraph`
-   substring survives the move; restart-fixture pair: fix the
-   `cwd: path.join(import.meta.dirname, "..")` depth. Known pre-existing debt:
-   `hosts/workgraph/change-doorbell.test.ts` imports UP into server-workgraph —
-   becomes a shorter, saner path after this move.
+→ `deployments/local/`: `server-workspace-pty-proxy.ts`,
+`server-usage-limits.ts`(+contract test), `remote-access-service.ts`(+test).
+`server-usage-limits` is in FORBIDDEN_LOCAL (substring; keep basename).
 
 ### W7.6 — `src/integration/` + tunnel trio
 
@@ -122,9 +106,7 @@ NOT worth the churn. The four `.mjs` files stay at root permanently
 
 ### W7.7 — de-stutter pre-existing names
 
-`control-plane/adapters/convex/convex-*` (15): `convex-authority.ts`→`authority.ts`
-etc. — `convex-authority.ts` is a registry `module:`; `convex-authority.test.ts`
-in `tests:`. `billing/billing-*` (4): → `store.ts`, `routes.ts`,
+`billing/billing-*` (4): → `store.ts`, `routes.ts`,
 `architecture.test.ts` — keep inside `billing/` (name-pinned dir).
 `hosts/connections/connections-host.ts`→`index.ts`(+test).
 
@@ -141,12 +123,11 @@ package). Do LAST, alone, on a green tree.
 
 ### Deferred — feature excisability (owner decision, not cleanup)
 
-Documents/workgraph cannot be excluded today: `deployments/local/server.ts`
-statically imports both, unconditionally. Billing is the working counter-model
+Documents cannot be excluded today: `deployments/local/server.ts` statically
+imports it, unconditionally. Billing is the working counter-model
 (routes inside the feature + a confinement guard test). The fix is a design
-change: feature descriptors mounted via lazy `import()` behind flags,
-generalizing the existing one-off "WorkGraph out of Control Plane module load"
-guard, plus per-feature confinement tests. Needs an owner decision on whether
+change: feature descriptors mounted via lazy `import()` behind flags, plus
+per-feature confinement tests. Needs an owner decision on whether
 excisability is a goal; file as its own plan if so. (An exemplar
 `routes/documents.ts` → `documents/routes.ts` move is cheap but pointless
 without the seam — deferred with it.)

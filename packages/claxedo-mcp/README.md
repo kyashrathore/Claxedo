@@ -1,6 +1,6 @@
 # Claxedo MCP
 
-Give any MCP-capable agent direct access to a running Claxedo server's WorkGraph, documents, processes, logs, sessions, and browser tools over stdio.
+Give any MCP-capable agent direct access to a running Claxedo server's documents, processes, logs, sessions, and browser tools over stdio.
 
 ## Quickstart
 
@@ -32,14 +32,7 @@ Standalone MCP server for Claxedo runtime tools. Install it from the Claxedo mar
 
 The default marketplace config launches the published package with `npx -y @claxedo/mcp` and points it at the local Claxedo server with `CLAXEDO_SERVER_URL`.
 
-The standalone process is a northbound operator client, so every WorkGraph tool
-uses the authenticated WorkGraph HTTP contract. Local Claxedo agent Sessions use
-the same tool schemas through the embedded OpenCode application-tool registry;
-those calls stay inside Claxedo Server and invoke its WorkGraph service and
-query ports directly. The embedded registration is enabled for the local-only
-owner composition. Hosted in-process registration remains fail-closed until a
-durable Session supplies verified organization-and-user provenance. Signed
-remote stdio clients authenticate to the HTTP boundary with
+Signed remote stdio clients authenticate to the HTTP boundary with
 `CLAXEDO_AUTH_TOKEN`.
 
 ## Trust Model
@@ -79,18 +72,6 @@ Read-only mode registers:
 - `browser_list_tabs`
 - `browser_screenshot`
 - `browser_get_console_logs`
-- `workgraph_get_defaults`
-- `workgraph_execution_capabilities`
-- `workgraph_attention`
-- `workgraph_list`
-- `workgraph_get`
-- `workgraph_source_revision`
-- `workgraph_source_views` when the embedded/HTTP host supports it
-- `workgraph_intake` when the embedded/HTTP host supports it
-- `workgraph_get_candidate` when the embedded/HTTP host supports it
-- `workgraph_evidence` when the embedded/HTTP host supports it
-- `workgraph_runs` when the embedded/HTTP host supports it
-- `workgraph_recap`
 
 Read-only mode omits:
 
@@ -146,15 +127,6 @@ Current tool surface:
 - `browser_get_console_logs`
 - `browser_evaluate_js`
 - `browser_navigate`
-- owner-scoped `workgraph_*` inspection, source admission, organization,
-  live execution capability, Attention, execution, Decision, evidence, lifecycle,
-  Source View, candidate, and exact source-revision tools. WorkGraph
-  calls use authenticated owner scope independently of process workspace
-  selection. Local embedded tools receive that scope from the local composition;
-  standalone stdio tools receive it from the server's authenticated HTTP boundary.
-  Intake staging returns the immutable source and admission proposal
-  for review, and confirmation uses the same `workgraph_admit` command as the app. See
-  `skills/workgraph/SKILL.md` for the current vocabulary.
 
 ## Documents CLI and skill
 

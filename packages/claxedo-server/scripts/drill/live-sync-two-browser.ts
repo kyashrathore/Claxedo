@@ -25,14 +25,14 @@
  *   `connectLiveSyncRoom` directly skip it.
  * - **The real publishers' room derivation** — `liveSyncRoomNameForPrincipal`,
  *   the single derivation `hosted-app.ts` uses for both the documents sink
- *   (`:563`) and the WorkGraph `notifyChanged` nudge (`:335`).
+ *   (`:563`) and the owner-scoped `notifyChanged` nudge (`:335`).
  * - **The real client contract** — the viewer page replicates
  *   `claxedo-app/src/app/integrations/claxedo-events.tsx`'s fetch + manual
  *   reader loop and its `Last-Event-ID` handling line for line.
  *
  * ## What is NOT real, and why
  *
- * - **Clerk and Convex are replaced by an injected verifier + `resolveOrgId`.**
+ * - **the retired hosted identity and storage stack are replaced by an injected verifier + `resolveOrgId`.**
  *   This is not laziness, it is the only available seam: `createHostedApp`
  *   refuses to boot without both, in three independent fail-closed gates
  *   (`hosted-app.ts:216-238` `assertHostedAppBootConfig`,
@@ -46,7 +46,7 @@
  *   the subject, matching `hosted-app.test.ts`'s `fakePlane`.
  * - **The app-shell rendering layer is not in the loop.** The viewer renders
  *   received frames into the DOM; it is not `claxedo-app`. Standing up the real
- *   app additionally requires a Convex-backed documents backend and WorkGraph
+ *   app additionally requires a hosted documents backend
  *   store to have anything to publish FROM, plus pinned-port CORS and a
  *   dedicated vite — at which point most of "the CF composition" would be
  *   doubles. The gap this leaves is stated explicitly in the report: what
@@ -62,7 +62,7 @@
  * 3. **replay-gap** — B is dropped, the ring is overrun (>256 frames), B
  *    reconnects and gets the explicit `stream.replay-gap` notice instead of a
  *    hole-ridden partial log.
- * 4. **visibility** — `workgraph.changed` is subject-scoped: A's nudge must
+ * 4. **visibility** — `session.share.changed` is subject-scoped: A's nudge must
  *    reach A and NOT B, though both are held in the same org room.
  * 5. **positive control** — the publisher rings a WRONG room name. B must
  *    receive nothing. This is what proves scenarios 1-3 have teeth.
@@ -127,14 +127,14 @@ async function bundleWorker() {
         export { LiveSyncRoom }
 
         // The bearer token IS the subject. Same shape as hosted-app.test.ts's
-        // fakePlane verifier: it stands in for Clerk JWT verification, which
+        // fakePlane verifier: it stands in for the identity provider JWT verification, which
         // cannot run locally, and nothing else.
         const verifier = async (token) => ({
           mode: "signed",
           user: { subject: token, tokenIdentifier: token, issuer: "drill" },
         })
 
-        // Stands in for \`authority.resolveOrgId\` (Convex \`orgs._id\`). Both
+        // Stands in for \`authority.resolveOrgId\` (the authority \`orgs._id\`). Both
         // subjects resolve to the SAME authority-internal org, so both browsers
         // are held in one room and share one retention ring — which is the
         // multi-tenancy shape the visibility filter has to be correct for.
@@ -191,11 +191,13 @@ async function bundleWorker() {
 
               const results = []
               for (let i = 0; i < count; i += 1) {
-                const event = kind === "workgraph.changed"
+                const event = kind === "session.share.changed"
                   ? {
-                      type: "workgraph.changed",
+                      type: "session.share.changed",
+                      phase: "granted",
                       ownerUserId: owner,
-                      cursor: String(i + 1),
+                      sessionId: "ses_drill_" + (i + 1),
+                      workspaceId: "ws_drill",
                       ts: Date.now(),
                     }
                   : {
@@ -207,7 +209,7 @@ async function bundleWorker() {
                     }
                 // The publisher-side derivation under test. Never a
                 // hand-composed \`org:\${orgId}\` — that is the B3 problem-1 bug.
-                const roomName = kind === "workgraph.changed"
+                const roomName = kind === "session.share.changed"
                   ? liveSyncRoomNameForPrincipal({ ownerUserId: owner, orgId: org })
                   : liveSyncRoomNameForPrincipal({ orgId: org })
                 results.push(await nudgeLiveSyncRoom(env.LIVE_SYNC_ROOM, roomName, event))
@@ -410,16 +412,16 @@ async function main() {
     // ---------------------------------------------------------------- scenario 4
     // Run before the drop scenarios, while the ring is still small.
     console.log("\nscenario 4 — subject-scoped visibility inside a shared org room")
-    const bobWgBefore = countOf(await bob.frames(), "workgraph.changed")
-    await publish(`kind=workgraph.changed&owner=${ALICE}`)
-    const aliceSawWg = await alice.waitForType("workgraph.changed")
+    const bobWgBefore = countOf(await bob.frames(), "session.share.changed")
+    await publish(`kind=session.share.changed&owner=${ALICE}`)
+    const aliceSawWg = await alice.waitForType("session.share.changed")
     // Give a wrongly-delivered frame ample time to show up before declaring absence.
     await new Promise((resolve) => setTimeout(resolve, 2_000))
-    const bobWgAfter = countOf(await bob.frames(), "workgraph.changed")
+    const bobWgAfter = countOf(await bob.frames(), "session.share.changed")
     record(
-      "visibility filter (workgraph.changed reaches only its owner)",
+      "visibility filter (session.share.changed reaches only its owner)",
       aliceSawWg && bobWgAfter === bobWgBefore,
-      `A received it; B's workgraph.changed count stayed ${bobWgBefore} despite sharing the org room`,
+      `A received it; B's session.share.changed count stayed ${bobWgBefore} despite sharing the org room`,
     )
 
     // ---------------------------------------------------------------- scenario 2

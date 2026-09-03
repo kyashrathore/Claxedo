@@ -43,17 +43,17 @@
  *     NEVER `"local"` here (that branch requires `authEnabled === false`); it
  *     is `"signed"`/`"org-member"` when `auth.status() === "signed"`, else
  *     `"anonymous"`. `useAuthSession()` wraps `src/utils/auth-client.ts`'s
- *     `useAuth()`, whose `isSignedIn()` is true whenever a Clerk session, a
- *     Clerk user, OR the test-auth bypass (`testAuth()`) is present. The test
+ *     `useAuth()`, whose `isSignedIn()` is true whenever a provider session, a
+ *     provider user, OR the test-auth bypass (`testAuth()`) is present. The test
  *     suite runs in two explicit process-wide modes: `test-user` preserves the
  *     webdriver bypass, while `local-unsigned` disables it at the Vite boundary
- *     and supplies no Clerk key. Signed-only behaviors stamp the test principal
+ *     and supplies no provider key. Signed-only behaviors stamp the test principal
  *     explicitly; general behaviors inherit the current matrix mode.
  *     Capability policy (`src/shell/auth/role.tsx`): `PrincipalPolicy.anonymous`
  *     and `.signed`/`.org-member` all grant `"view.account"`; only `.local`
  *     (empty set) denies it — meaning `Can do="view.account"` around
  *     `AccountSettingsSection` is unconditionally true in this harness.
- *   Sign-out: `auth.signOut()` clears Clerk state + `clearPersistedAuthState()`
+ *   Sign-out: `auth.signOut()` clears provider state + `clearPersistedAuthState()`
  *     (every `opencode.*` / projection-cache localStorage key, preserving the
  *     dedicated `opencode.auth.lastUserId` key), then the caller navigates to
  *     `/login` with `{replace: true}`.
@@ -400,7 +400,7 @@
  *   assignment); harness/model/agent selection anywhere in the composer
  *   (`core-harness-ownership-local`, `core-model-effort-agent-controls`);
  *   marketplace/extensions install surfaces (`live-agent-extensions-
- *   materialization`); live Clerk/Convex auth end-to-end
+ *   materialization`); live hosted auth end-to-end
  *   (`live-user-hosted-*`); appearance
  *   font-field persistence and sound-effect playback wiring (owned by
  *   `src/context/settings.tsx`'s own tests, not a DOM contract this spec
@@ -486,45 +486,6 @@ async function seedProject(page: Page, dir: string, opts?: { serverUrl?: string 
 async function disableTestAuthBypass(page: Page) {
   await page.addInitScript(() => {
     ;(window as typeof window & { __CLAXEDO_DISABLE_TEST_AUTH_BYPASS__?: boolean }).__CLAXEDO_DISABLE_TEST_AUTH_BYPASS__ = true
-  })
-  // `initializeClerk()` runs at app boot whenever authEnabled is true (always,
-  // in this harness — see SPEC STATE MODEL) and only short-circuits via the
-  // test-auth bypass; with the bypass disabled it falls through to loading the
-  // REAL @clerk/clerk-js SDK against clerk.accounts.dev. Tier M must never make
-  // a real network call (INVARIANTS.md authoring rule #6), so intercept it.
-  // NOT the shared `corsHeaders()` helper here: Clerk's SDK issues these
-  // fetches with `credentials: "include"`, and the CORS spec forbids a
-  // literal `Access-Control-Allow-Origin: "*"` wildcard when credentials are
-  // included — the browser silently fails the request client-side (verified
-  // live: `ERR_FAILED` + a CORS console error on every retry) even though
-  // this route fulfills it, leaving `initializeClerk()`'s promise never
-  // resolved and the app boot permanently stuck behind the loading splash
-  // (`[data-claxedo]` never appears). Echo the request's actual Origin and
-  // add `Access-Control-Allow-Credentials` instead.
-  await page.route("**clerk.accounts.dev**", async (route) => {
-    // A small real delay (NOT a test-side `waitForTimeout` — this delays the
-    // MOCK RESPONSE itself, the same technique `mock-runtime.ts` uses for its
-    // busy→completed→idle staggering, INVARIANTS.md's "never instant" rule):
-    // with an instant 200, `redirectToSignIn()` resolves synchronously fast
-    // enough that Solid's batched reactivity never gets a chance to paint
-    // the intermediate "Redirecting..."/"Opening Claxedo sign-in..." busy
-    // state before `.finally()` reverts it — verified live (polled the
-    // button's text every 50ms for 500ms after a real click; it read
-    // "Continue" on every single tick, never once "Redirecting...", while
-    // the URL had already gained Clerk's redirect hash on the very first
-    // tick). This delay is what makes that real, observable gap exist.
-    await new Promise((resolve) => setTimeout(resolve, 300))
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      headers: {
-        "Access-Control-Allow-Origin": route.request().headers()["origin"] ?? "*",
-        "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Allow-Headers": "authorization,content-type,accept",
-        "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
-      },
-      body: "{}",
-    })
   })
 }
 
@@ -1127,8 +1088,8 @@ test.describe("core settings + auth @core", () => {
     //       `testAuth()` honours to report an anonymous principal — an e2e-only
     //       seam (dev/e2e builds only), NOT a production behavior change.
     //   (2) `signOut()` no-op'd under the bypass because the bypass branch of
-    //       `initializeClerk()` never assigns `clerkLoadPromise`, so the old
-    //       `if (!clerkLoadPromise) return` short-circuited before the purge.
+    //       the auth client never assigns its load promise, so the old
+    //       `if (!loadPromise) return` short-circuited before the purge.
     //       Fixed: the bypass path now clears state and purges persisted keys.
     test("Log out signs out, purges persisted auth state, and stays on /login — behavior 5", async ({ page }) => {
       await stampTestAuth(page.context())
@@ -2059,7 +2020,7 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByRole("link", { name: /Terms of Service/i })).toBeVisible()
 
       await continueButton.click()
-      // No Clerk key in this harness ⇒ the redirect is a no-op and the button's
+      // No provider key in this harness ⇒ the redirect is a no-op and the button's
       // "Redirecting..." state clears within a microtask — asserting that label
       // was racy by construction on starved runners. The race-free contract is
       // that the click INVOKED sign-in, recorded by the e2e seam in
@@ -2129,7 +2090,7 @@ test.describe("core settings + auth @core", () => {
           exchangeCalls += 1
           exchangeAuth = route.request().headers()["authorization"] ?? null
           // Real delay on the mock response (not a test-side wait — see the
-          // Clerk mock's identical fix above): an instant response lets the
+          // same fix the other mocked routes use): an instant response lets the
           // whole approving→exchange→auto-submit→navigate chain finish
           // before "Approving CLI sign-in..." ever paints (verified live —
           // the assertion's own call log showed the page had ALREADY

@@ -25,7 +25,6 @@ export type Surface =
   | "session"
   | "documents"
   | "processes"
-  | "workgraph"
   | "settings"
   | "workspaces"
   | "onboarding"
@@ -139,7 +138,7 @@ export function initPostHog() {
 /**
  * Resolve the deployment plane from the two signals the app already has.
  * `authEnabled` (VITE_AUTH_ENABLED) is the cloud discriminator — Claxedo Cloud
- * runs Clerk + Convex, a self-hosted build does not. Independent of the
+ * runs hosted identity and storage, a self-hosted build does not. Independent of the
  * onboarding `surface` derivation, which conflates desktop with hosted.
  */
 export function resolveDeploymentMode(input: {

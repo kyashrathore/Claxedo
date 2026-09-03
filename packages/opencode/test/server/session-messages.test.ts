@@ -328,7 +328,7 @@ describe("session messages endpoint", () => {
                 SessionMessage.AssistantTool.make({
                   type: "tool",
                   id: "call_v2_latest",
-                  name: "workgraph_complete_task",
+                  name: "application_complete_task",
                   state: SessionMessage.ToolStateCompleted.make({
                     status: "completed",
                     input: {},
@@ -354,7 +354,7 @@ describe("session messages endpoint", () => {
                 SessionMessage.AssistantText.make({
                   type: "text",
                   id: "text_v2_latest",
-                  text: "Completed the WorkGraph Task in the real project Session.",
+                  text: "Completed the application Task in the real project Session.",
                 }),
                 SessionMessage.AssistantReasoning.make({
                   type: "reasoning",
@@ -383,7 +383,7 @@ describe("session messages endpoint", () => {
         expect(body.at(-1)?.parts.map((part) => part.type)).toEqual(["text", "reasoning"])
         expect(body.at(-1)?.parts[0]).toMatchObject({
           type: "text",
-          text: "Completed the WorkGraph Task in the real project Session.",
+          text: "Completed the application Task in the real project Session.",
         })
 
         const cursor = latest.headers["x-next-cursor"]
@@ -458,7 +458,7 @@ describe("session messages endpoint", () => {
                 SessionMessage.User.make({
                   id: v2User,
                   type: "user",
-                  text: "WorkGraph prompt",
+                  text: "application prompt",
                   files: [],
                   agents: [],
                   time: { created: v2Time },

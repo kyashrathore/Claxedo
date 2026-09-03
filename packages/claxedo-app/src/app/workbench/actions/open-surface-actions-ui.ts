@@ -27,7 +27,7 @@ export function createOpenSurfaceActions(props: OpenSurfaceActionProps, nav: Nav
       focusedGroup: props.state.wb.state.focusedPaneId,
     })
 
-    if (tab.type === "marketplace" || tab.type === "workgraph") {
+    if (tab.type === "marketplace") {
       const route = surfaceRoute("", tab)
       if (route) nav(route, "tab-select", { surfaceId: tab.id, tabType: tab.type })
       return

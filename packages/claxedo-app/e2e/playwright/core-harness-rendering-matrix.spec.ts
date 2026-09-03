@@ -514,7 +514,7 @@ function sessionUrlPattern(sessionId: string) {
 /**
  * Filters `mock.requests.console` down to genuine page-level errors, matching the
  * convention already established by `core-boot-deep-links-home.spec.ts`'s
- * `nonClerkConsole`. This app runs an always-on, session-independent central-relay
+ * `nonProviderConsole`. This app runs an always-on, session-independent central-relay
  * connection (`src/context/global-sdk.tsx`'s "central" stream, `src/providers/
  * claxedo-events`) that defaults to `http://127.0.0.1:3001` (`src/index.tsx:96`) when
  * no real backend is present — `installMockRuntime`/`seedOneProject` mock only the

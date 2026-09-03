@@ -55,7 +55,7 @@ const server = startServer(port, {
   ...(runtimeEnvText(process.env, "OPENCODE_URL")
     ? { opencodeUrl: runtimeEnvText(process.env, "OPENCODE_URL") }
     : {}),
-  // The kit CLI mounts NO route contributions. WorkGraph's tool brokers are a
+  // The kit CLI mounts NO route contributions. Host-supplied tool brokers are a
   // hosted capability supplied by a host launcher
   // (`claxedoWorkspaceRuntimeBootFromEnv`), not something a generic runtime
   // process turns on from an environment variable.

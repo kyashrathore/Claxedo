@@ -16,22 +16,21 @@ const SRC = "packages/claxedo-app/src"
  * to over-read:
  *
  *  - It is a SOURCE walk. Rollup can put a module in a chunk with no import
- *    edge to follow — that is precisely how a `vendor-clerk` chunk reached a
- *    build whose whole purpose was to have no identity provider in it. The
- *    emitted half is `scripts/check-local-bundle-identity.ts`, which
+ *    edge to follow — that is precisely how a vendored identity-provider chunk
+ *    once reached a build whose whole purpose was to have no identity provider
+ *    in it. The emitted half is `scripts/check-local-bundle-identity.ts`, which
  *    `verify:closure` runs after a real `build:local`.
  *  - The hosted IMPLEMENTATION SET is forbidden and absent, including its
- *    WorkGraph/Documents renderer chunk. A small shared contract/data seam is
- *    still reachable today: two modules under `features/workgraph/`, seven
- *    under `features/documents/`, the unbound cloud workspace port module,
- *    anonymous auth-session abstraction, and login route. Those files stay
- *    co-located in this package; forbidding their whole roots here would fail
- *    on real code rather than gate anything. The exact ceiling keeps that
- *    seam shrinking.
+ *    Documents renderer chunk. A small shared contract/data seam is still
+ *    reachable today: seven modules under `features/documents/`, the unbound
+ *    cloud workspace port module, anonymous auth-session abstraction, and login
+ *    route. Those files stay co-located in this package; forbidding their whole
+ *    roots here would fail on real code rather than gate anything. The exact
+ *    ceiling keeps that seam shrinking.
  *
- * What IS enforced is the part that was actually finished: no identity
- * provider, no Convex, and no module route to `auth-client.ts` — the four
- * routes that existed on 2026-08-09 were each cut to a port.
+ * What IS enforced is the part that was actually finished: no module route to
+ * `auth-client.ts` — the four routes that existed on 2026-08-09 were each cut
+ * to a port.
  */
 export const appLocal: Policy = {
   id: "app-local",
@@ -41,16 +40,17 @@ export const appLocal: Policy = {
   roots: [SRC],
   aliases: APP_ALIASES,
 
-  forbiddenPackages: ["@clerk/clerk-js", "convex"],
+  forbiddenPackages: [],
   forbiddenModules: [
     // The module that MINTS a token. Every local module that needs one takes
     // it from `configureApiRuntime`/`configureAuthSession` instead.
     `${SRC}/platform/auth/auth-client.ts`,
-    // The hosted browser entry. A local build reaching it would start Clerk.
+    // The hosted browser entry. A local build reaching it would start the
+    // signed-identity composition.
     `${SRC}/app/entry/main.tsx`,
-    // The hosted implementation set. Its loader is injected by main.tsx, so a
-    // local build must not carry even its lazy chunk.
-    `${SRC}/app/integrations/hosted-content-surfaces.tsx`,
+    // The hosted implementation set. Its loaders are injected by main.tsx, so a
+    // local build must not carry even their lazy chunks.
+    `${SRC}/app/integrations/documents-content-surfaces.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
 
@@ -73,7 +73,7 @@ export const appLocal: Policy = {
       // module. Same reasoning, different resolver.
       `${SRC}/features/terminal/core/backend/xterm.ts`,
     ],
-    requiredPackages: ["solid-js", "@claxedo/workgraph"],
+    requiredPackages: ["solid-js"],
   },
 
   // Measured 2026-08-09 with `runtimeOnly`, after the hosted loader moved to
@@ -115,7 +115,8 @@ export const appLocal: Policy = {
   // Cloud workspace create routes through AccountPort via workspace-create-api:
   // 915 + 1 = 916. Shared AccountPort bridge (`hosted-control-call`) plus
   // connection mint/refresh and workspace.resolve: 916 + 1 = 917.
-  // Integrations, documents, and WorkGraph AccountPort adapters: 917 + 3 = 920.
+  // Integrations, documents, and optional-service AccountPort adapters:
+  // 917 + 3 = 920.
   // Control-plane AccountPort fetch adapter: 920 + 1 = 921.
   // AccountPort SSE stream adapter (`account-stream-fetch`): 921 + 1 = 922.
   // Agent-config extensions AccountPort adapter (marketplace): 922 + 1 = 923
@@ -184,8 +185,12 @@ export const appLocal: Policy = {
   // `features/session/conversation/opencode-conversation`, and the compat
   // projection the app already depends on mints and resolves ids through it.
   // Reviewed owner: the agent event contracts package, which this closure
-  // already carries; one module, no package edge; the measured closure is 967.
-  ceilings: { modules: 967, packages: 38 },
+  // already carries; one module, no package edge.
+  // -10 modules / -1 package: retiring the hosted work-ledger service took the
+  // hosted content-surface module, its app-ports seam, the shared rich-text
+  // editor (its only consumer), the document work-source action chain, and the
+  // service package itself out of this closure. Re-measured, no headroom.
+  ceilings: { modules: 957, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",
@@ -198,6 +203,6 @@ export const appLocal: Policy = {
       `${SRC}/app/entry/app.tsx`,
       `${SRC}/features/terminal/core/backend/xterm.ts`,
     ],
-    forbiddenChunkMarkers: ["clerk", "convex", "hosted-content-surfaces"],
+    forbiddenChunkMarkers: ["documents-content-surfaces"],
   },
 }

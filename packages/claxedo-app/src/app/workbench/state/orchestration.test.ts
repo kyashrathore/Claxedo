@@ -578,61 +578,9 @@ describe("state/orchestration", () => {
     expect(getState().contentIds).not.toContain(id)
   })
 
-  test("openWorkGraph reuses one global content", () => {
-    const { layout, meta } = makeFixture()
-    const id = layout.openWorkGraph()
-    const again = layout.openWorkGraph()
-    expect(again).toBe(id)
-    expect(meta.get(id)).toMatchObject({
-      scope: "global",
-      content: { type: "workgraph" },
-    })
-  })
 
-  test("opens one WorkGraph pane per project and one task composer per target", () => {
-    const { layout, meta } = makeFixture()
-    const project = layout.openWorkspaceWorkGraph("/work/foo")
-    const again = layout.openWorkspaceWorkGraph("/work/foo")
-    const task = layout.openTaskComposer("/work/foo", { workspaceRouteId: "ws_foo" })
 
-    expect(again).toBe(project)
-    expect(meta.get(project)).toMatchObject({
-      type: "workspace-workgraph",
-      scope: "directory",
-      directory: "/work/foo",
-      content: { type: "workspace-workgraph", directory: "/work/foo" },
-    })
-    expect(meta.get(task)).toMatchObject({
-      type: "task-composer",
-      scope: "directory",
-      directory: "/work/foo",
-      content: { type: "task-composer", directory: "/work/foo", workspaceRouteId: "ws_foo" },
-    })
-  })
 
-  test("openWorkspaceWorkGraph isolates workspaces that share a provider directory", () => {
-    const { layout, meta } = makeFixture()
-    const a = layout.openWorkspaceWorkGraph("/workspace", { workspaceRouteId: "ws_a" })
-    const again = layout.openWorkspaceWorkGraph("/workspace", { workspaceRouteId: "ws_a" })
-    const b = layout.openWorkspaceWorkGraph("/workspace", { workspaceRouteId: "ws_b" })
-
-    expect(again).toBe(a)
-    expect(b).not.toBe(a)
-    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
-    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
-  })
-
-  test("openTaskComposer isolates workspaces that share a provider directory", () => {
-    const { layout, meta } = makeFixture()
-    const a = layout.openTaskComposer("/workspace", { workspaceRouteId: "ws_a" })
-    const again = layout.openTaskComposer("/workspace", { workspaceRouteId: "ws_a" })
-    const b = layout.openTaskComposer("/workspace", { workspaceRouteId: "ws_b" })
-
-    expect(again).toBe(a)
-    expect(b).not.toBe(a)
-    expect(meta.get(a)?.content?.workspaceRouteId).toBe("ws_a")
-    expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
-  })
 
   test("closeContent removes meta + content + cleans terminal owner", () => {
     const { layout, meta, terminal, getState } = makeFixture()

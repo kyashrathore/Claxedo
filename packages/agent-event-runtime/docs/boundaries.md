@@ -45,5 +45,6 @@ canonical event metadata or diagnostics.
 - product-specific audit logs
 - gateway routing
 
-If an API needs Convex, Clerk, route guards, channel idempotency, workspace
-sharing, or billing policy, it does not belong in this package.
+If an API needs a control-plane database, an identity provider, route guards,
+channel idempotency, workspace sharing, or billing policy, it does not belong in
+this package.

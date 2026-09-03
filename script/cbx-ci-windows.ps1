@@ -52,7 +52,6 @@ bun turbo build `
   --filter=@claxedo/sandbox-contract `
   --filter=@claxedo/sandbox-manager `
   --filter=@claxedo/wakes `
-  --filter=@claxedo/workgraph `
   --filter=@claxedo/workspace-relay-protocol `
   --filter=@claxedo/workspace-relay `
   --filter=@claxedo/workspace-runtime

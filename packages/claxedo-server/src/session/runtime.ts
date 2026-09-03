@@ -49,7 +49,6 @@ import { piProviderCatalog, validatePiPromptModel } from "@claxedo/server-core/c
 import {
   emitLlmTurnCompleted,
   emitSessionStarted,
-  workGraphSessionAttribution,
   type UsageLedger,
 } from "../platform/telemetry/product/metering"
 import type { ProductDeploymentMode, ProductIdentity } from "../platform/telemetry/product/product"
@@ -426,9 +425,8 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     const usageKey = `${fact.sessionId}\u0000${fact.messageId}`
     const identity = usageIdentities.get(usageKey)
     const timing = usageTimings.get(usageKey)
-    const localAttribution = workGraphSessionAttribution(fact.sessionId)
-    const hostedAttribution = !localAttribution && identity
-      ? await options.usageLedger?.resolveWorkGraphAttribution?.({
+    const hostedAttribution = identity
+      ? await options.usageLedger?.resolveHostedAttribution?.({
         org_id: identity.org_id,
         user_id: identity.user_id,
         session_id: fact.sessionId,
@@ -462,12 +460,9 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       record: {
         message_id: fact.messageId,
         session_id: fact.sessionId,
-        ...(localAttribution?.streamId ? { stream_id: localAttribution.streamId } : {}),
-        ...(localAttribution?.runId ? { run_id: localAttribution.runId } : {}),
-        ...(localAttribution?.workItemId ? { work_item_id: localAttribution.workItemId } : {}),
-        ...(!localAttribution && hostedAttribution?.stream_id ? { stream_id: hostedAttribution.stream_id } : {}),
-        ...(!localAttribution && hostedAttribution?.run_id ? { run_id: hostedAttribution.run_id } : {}),
-        ...(!localAttribution && hostedAttribution?.work_item_id ? { work_item_id: hostedAttribution.work_item_id } : {}),
+        ...(hostedAttribution?.stream_id ? { stream_id: hostedAttribution.stream_id } : {}),
+        ...(hostedAttribution?.run_id ? { run_id: hostedAttribution.run_id } : {}),
+        ...(hostedAttribution?.work_item_id ? { work_item_id: hostedAttribution.work_item_id } : {}),
         harness: fact.harness,
         provider_id: fact.providerId,
         model_id: fact.modelId,

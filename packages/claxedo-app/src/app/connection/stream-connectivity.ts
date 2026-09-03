@@ -12,7 +12,7 @@ export type StreamKind = "central" | "workspace"
  * up", which is an OR across targets, and every consumer read it.
  *
  * That aggregate is unusable as a revalidation trigger. The doorbells that drive
- * WorkGraph and Documents (`workgraph.changed`, `document.changed`) ride the
+ * Documents (`document.changed`) rides the
  * CENTRAL stream only. If the central stream drops and reconnects while any
  * workspace stream stays up, the aggregate count goes 2 → 1 → 2: it never
  * reaches 0, `connected()` never goes false, and the `false → true` edge that

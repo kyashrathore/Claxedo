@@ -24,9 +24,6 @@ export const CONTENT_TYPES = [
   "pages-index",
   "page",
   "marketplace",
-  "workgraph",
-  "workspace-workgraph",
-  "task-composer",
 ] as const
 
 export type ContentType = typeof CONTENT_TYPES[number]
@@ -83,21 +80,6 @@ export type MarketplaceContentPayload = BaseContentPayload & {
   directory?: string
 }
 
-export type WorkGraphContentPayload = BaseContentPayload & {
-  type: "workgraph"
-  directory?: string
-}
-
-export type WorkspaceWorkGraphContentPayload = BaseContentPayload & {
-  type: "workspace-workgraph"
-  directory: WorkspaceDirectoryRef
-}
-
-export type TaskComposerContentPayload = BaseContentPayload & {
-  type: "task-composer"
-  directory?: WorkspaceDirectoryRef
-}
-
 export type DraftSessionContentPayload = BaseContentPayload & {
   type: "draft-session"
   draftId: string
@@ -112,7 +94,7 @@ export type SessionContentPayload = BaseContentPayload & {
 }
 
 export type ScopedContentPayload = BaseContentPayload & {
-  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace" | "workgraph" | "workspace-workgraph" | "task-composer">
+  type: Exclude<ContentType, "session" | "draft-session" | "page" | "pages-index" | "marketplace">
   directory: string
 }
 
@@ -120,9 +102,6 @@ export type ContentPayload =
   | PageContentPayload
   | PagesIndexContentPayload
   | MarketplaceContentPayload
-  | WorkGraphContentPayload
-  | WorkspaceWorkGraphContentPayload
-  | TaskComposerContentPayload
   | DraftSessionContentPayload
   | SessionContentPayload
   | ScopedContentPayload
@@ -153,8 +132,6 @@ const GLOBAL_CONTENT_TYPES: ReadonlySet<ContentType> = new Set<ContentType>([
   "page",
   "pages-index",
   "marketplace",
-  "workgraph",
-  "task-composer",
 ])
 
 export function isGlobalContent(content: Pick<ContentMeta, "type" | "scope" | "directory">) {

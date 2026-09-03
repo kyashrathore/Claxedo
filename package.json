@@ -116,7 +116,6 @@
     "@claxedo/server-core": "workspace:*",
     "@claxedo/service-contract": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
-    "@claxedo/workgraph": "workspace:*",
     "@opencode-ai/plugin": "workspace:*",
     "@opencode-ai/script": "workspace:*",
     "@opencode-ai/sdk": "workspace:*",

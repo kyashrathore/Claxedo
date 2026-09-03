@@ -51,7 +51,7 @@ A plugin-init budget does not reclaim the 350–400 ms a well-behaved plugin sti
 
 Idle cost was not one leak. It was product that did not belong on the unsigned desktop, caps that did not run, and caps on the wrong dimension.
 
-The single largest idle-memory move was compositional: WorkGraph and Documents default-off, lazy, and absent from the unsigned desktop. That dropped restored-state native footprint from about 643 MiB to 465 MiB. The local/hosted package split that followed is structural prevention for the same idea — unsigned startup cannot import hosted auth, sandboxes, Relay, or those two features — and it gets no inferred MiB credit as a package move. The measured saving was turning the features off, not relocating the folders.
+The single largest idle-memory move was compositional: the optional hosted features default-off, lazy, and absent from the unsigned desktop. That dropped restored-state native footprint from about 643 MiB to 465 MiB. The local/hosted package split that followed is structural prevention for the same idea — unsigned startup cannot import hosted auth, sandboxes, Relay, or those features — and it gets no inferred MiB credit as a package move. The measured saving was turning the features off, not relocating the folders.
 
 Around that:
 

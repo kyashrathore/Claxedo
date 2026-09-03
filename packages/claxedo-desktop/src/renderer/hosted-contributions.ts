@@ -16,6 +16,6 @@ export async function loadDesktopHostedContributions() {
   // server, which does not own these routes.
   configureDesktopMachineRemoteAccess()
   // Optional service renderers have independent catalog-driven loaders. Core
-  // account activation owns no WorkGraph or Documents surface.
+  // account activation owns no Documents surface.
   return { contentSurfaces: [] }
 }

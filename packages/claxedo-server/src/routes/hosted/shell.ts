@@ -13,7 +13,7 @@
  *                                 LiveSyncRoom is bound (see deployments/hosted-workerd/live-sync-room.cf.ts)
  *   GET /api/claxedo/services   — { authenticated, services } first-party catalog
  *   GET /global/health          — { healthy, version }
- *   GET /project                — signed → Convex workspace projects, else []
+ *   GET /project                — signed → the authority workspace projects, else []
  *   GET /project/current        — synthetic project derived from ?directory
  *   GET /path                   — synthetic path derived from ?directory
  *   GET /provider               — empty-but-valid provider catalog
@@ -60,7 +60,7 @@ export type HostedShellRouteOptions = {
   verifier?: ControlPlaneTokenVerifier
   /** Reported by /global/health and the bootstrap aggregate. */
   version?: string
-  /** Signed project inventory source (Convex workspaces.list). */
+  /** Signed project inventory source (the authority workspaces.list). */
   listWorkspaces?: (auth: SignedControlPlaneAuth) => Promise<unknown>
   /** Heartbeat cadence for the events stream (tests shrink this). */
   heartbeatMs?: number
@@ -74,7 +74,7 @@ export type HostedShellRouteOptions = {
    * Resolves the caller's AUTHORITY-INTERNAL org id (`authority.resolveOrgId`)
    * at connect time. Room names and the per-connection event visibility filter
    * live in this namespace — the SAME one document/provision events and
-   * WorkGraph runtime-token claims are stamped with — never the Clerk org
+   * runtime-token claims are stamped with — never the issuer org
    * claim. Absent → signed subscribers hold the subject-keyed owner room,
    * where org-scoped events stay invisible fail-closed.
    */
@@ -255,15 +255,6 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     const row = rec(workspace)
     const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
     if (!workspaceId) continue
-    // WorkGraph execution scopes (`workGraphWorkspaceId` in
-    // hosts/workgraph/hosted/runtime.ts mints `wg-<sha>` per stream) are
-    // managed-run internals, not user projects. Surfacing them here put one
-    // "WorkGraph · <charter title>" pseudo-project in the rail per smoke/run —
-    // each with no interactive sandbox behind it, so opening one hung on
-    // "Preparing workspace" and its documents fan-out 404'd. WorkGraph work is
-    // presented by the WorkGraph surface; the projects rail is for workspaces
-    // a user can actually open.
-    if (workspaceId.startsWith("wg-")) continue
     // A workspace served elsewhere is addressed by its id; the host's own path
     // is location metadata.
     const directory = `workspace:${workspaceId}`
@@ -644,7 +635,7 @@ const HEARTBEAT_MS = 30_000
 // passes no `liveSyncRoom`. That composition is documented as multi-instance by
 // design and single-instance in practice (`docs/plans/
 // 2026-07-18-001-cf-deployment-hardening.md` — per-instance live-sync via a
-// Convex subscription — is unbuilt), so even once it HAS a publisher, a
+// the authority subscription — is unbuilt), so even once it HAS a publisher, a
 // module-singleton ring would be the wrong shape for it: with N instances the
 // ring an isolate fills is not the ring the next reconnect reads. Its resumable
 // story arrives with the cross-instance fan-out, not before.

@@ -124,7 +124,7 @@ describe("relay wrangler config", () => {
  *
  * `DEFAULT_CLAXEDO_REGIONS` (claxedo-server/src/platform/runtime/region/index.ts) is the list a
  * workspace's `homeRegion` is validated against, mirrored as `KNOWN_HOME_REGIONS`
- * in convex/workspaces.ts and in the sqlite workspace authority. If someone adds
+ * in the sqlite workspace authority. If someone adds
  * a sixth region there and not here, workspaces in that region silently get the
  * deployment-wide default hint — permanently, since a Durable Object's location
  * is fixed at first creation. Parsed from source rather than imported: the relay

@@ -7,8 +7,8 @@ import { isLoopbackLocalRequest, peerAddressStamp, requestPeerAddress, stampRequ
 
 const signed = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 } as const
 
 const localOnly = {
@@ -34,30 +34,30 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
 
 function app(input: ControlPlaneAuthConfig = localOnly) {
   return new Hono()
-    .use("/api/workgraph", localOnlyProjection({
+    .use("/api/documents", localOnlyProjection({
       authConfig: input,
       verifier,
-      label: "WorkGraph",
+      label: "Documents",
     }))
-    .use("/api/workgraph/*", localOnlyProjection({
+    .use("/api/documents/*", localOnlyProjection({
       authConfig: input,
       verifier,
-      label: "WorkGraph",
+      label: "Documents",
     }))
-    .get("/api/workgraph", (c) => c.json({ ok: true, root: true }))
-    .get("/api/workgraph/runs", (c) => c.json({ ok: true }))
+    .get("/api/documents", (c) => c.json({ ok: true, root: true }))
+    .get("/api/documents/runs", (c) => c.json({ ok: true }))
 }
 
 describe("local-only projection middleware", () => {
   test("allows unsigned Local Personal Mode", async () => {
-    const res = await app().request("http://localhost/api/workgraph/runs")
+    const res = await app().request("http://localhost/api/documents/runs")
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ ok: true })
   })
 
   test("allows loopback local browser access even with bearer auth attached", async () => {
-    const res = await app(signed).request("http://127.0.0.1/api/workgraph/runs", {
+    const res = await app(signed).request("http://127.0.0.1/api/documents/runs", {
       headers: {
         Authorization: "Bearer user_1",
         Origin: "http://localhost:4444",
@@ -69,7 +69,7 @@ describe("local-only projection middleware", () => {
   })
 
   test("blocks non-loopback bearer access even when signed auth is disabled", async () => {
-    const res = await app().request("https://control.example.test/api/workgraph/runs", {
+    const res = await app().request("https://control.example.test/api/documents/runs", {
       headers: { Authorization: "Bearer user_1" },
     })
 
@@ -80,7 +80,7 @@ describe("local-only projection middleware", () => {
   })
 
   test("blocks non-loopback unsigned access", async () => {
-    const res = await app().request("https://control.example.test/api/workgraph/runs")
+    const res = await app().request("https://control.example.test/api/documents/runs")
 
     expect(res.status).toBe(403)
     await expect(res.json()).resolves.toMatchObject({
@@ -89,7 +89,7 @@ describe("local-only projection middleware", () => {
   })
 
   test("blocks exact projection roots as well as child routes", async () => {
-    const res = await app().request("https://control.example.test/api/workgraph", {
+    const res = await app().request("https://control.example.test/api/documents", {
       headers: { Authorization: "Bearer user_1" },
     })
 
@@ -100,14 +100,14 @@ describe("local-only projection middleware", () => {
   })
 
   test("signed mode still allows unsigned Local Personal Mode", async () => {
-    const res = await app(signed).request("http://localhost/api/workgraph/runs")
+    const res = await app(signed).request("http://localhost/api/documents/runs")
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ ok: true })
   })
 
   test("signed mode rejects verified users instead of returning local rows over non-loopback access", async () => {
-    const res = await app(signed).request("https://control.example.test/api/workgraph/runs", {
+    const res = await app(signed).request("https://control.example.test/api/documents/runs", {
       headers: { Authorization: "Bearer user_1" },
     })
 
@@ -118,7 +118,7 @@ describe("local-only projection middleware", () => {
   })
 
   test("signed auth misconfiguration still allows unsigned Local Personal Mode", async () => {
-    const res = await app(misconfigured).request("http://localhost/api/workgraph/runs")
+    const res = await app(misconfigured).request("http://localhost/api/documents/runs")
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toEqual({ ok: true })
@@ -127,33 +127,33 @@ describe("local-only projection middleware", () => {
   test("external-bind regression: Host: 127.0.0.1 from a non-loopback peer is not local", async () => {
     // With CLAXEDO_SERVER_HOST=0.0.0.0 a remote client controls the Host
     // header; only the transport peer address is trustworthy.
-    const request = new Request("http://127.0.0.1/api/workgraph/runs")
+    const request = new Request("http://127.0.0.1/api/documents/runs")
     stampRequestPeerAddress(request, { incoming: { socket: { remoteAddress: "203.0.113.7" } } })
     expect(isLoopbackLocalRequest(request)).toBe(false)
   })
 
   test("loopback peer with loopback Host stays local", async () => {
     for (const remoteAddress of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) {
-      const request = new Request("http://localhost/api/workgraph/runs")
+      const request = new Request("http://localhost/api/documents/runs")
       stampRequestPeerAddress(request, { incoming: { socket: { remoteAddress } } })
       expect(isLoopbackLocalRequest(request)).toBe(true)
     }
   })
 
   test("never treats forwarded traffic as unsigned local", async () => {
-    const request = new Request("http://127.0.0.1/api/workgraph/runs", {
+    const request = new Request("http://127.0.0.1/api/documents/runs", {
       headers: { "x-forwarded-for": "198.51.100.9, 127.0.0.1" },
     })
     stampRequestPeerAddress(request, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
     expect(isLoopbackLocalRequest(request)).toBe(false)
 
-    const localForward = new Request("http://127.0.0.1/api/workgraph/runs", {
+    const localForward = new Request("http://127.0.0.1/api/documents/runs", {
       headers: { "x-forwarded-for": "127.0.0.1" },
     })
     stampRequestPeerAddress(localForward, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
     expect(isLoopbackLocalRequest(localForward)).toBe(false)
 
-    const spoofedChain = new Request("http://127.0.0.1/api/workgraph/runs", {
+    const spoofedChain = new Request("http://127.0.0.1/api/documents/runs", {
       headers: { "x-forwarded-for": "127.0.0.2, 203.0.113.7" },
     })
     stampRequestPeerAddress(spoofedChain, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
@@ -167,7 +167,7 @@ describe("local-only projection middleware", () => {
       "cf-connecting-ip",
       "true-client-ip",
     ]) {
-      const forwarded = new Request("http://localhost/api/workgraph/runs", {
+      const forwarded = new Request("http://localhost/api/documents/runs", {
         headers: { [header]: "127.0.0.1" },
       })
       stampRequestPeerAddress(forwarded, { incoming: { socket: { remoteAddress: "127.0.0.1" } } })
@@ -178,18 +178,18 @@ describe("local-only projection middleware", () => {
   test("peerAddressStamp middleware records env.incoming for gates behind it", async () => {
     const app = new Hono()
       .use(peerAddressStamp())
-      .use("/api/workgraph/*", localOnlyProjection({ authConfig: localOnly, verifier, label: "WorkGraph" }))
-      .get("/api/workgraph/runs", (c) => c.json({ ok: true }))
+      .use("/api/documents/*", localOnlyProjection({ authConfig: localOnly, verifier, label: "Documents" }))
+      .get("/api/documents/runs", (c) => c.json({ ok: true }))
 
     const spoofed = await app.request(
-      "http://127.0.0.1/api/workgraph/runs",
+      "http://127.0.0.1/api/documents/runs",
       {},
       { incoming: { socket: { remoteAddress: "203.0.113.7" } } },
     )
     expect(spoofed.status).toBe(403)
 
     const local = await app.request(
-      "http://127.0.0.1/api/workgraph/runs",
+      "http://127.0.0.1/api/documents/runs",
       {},
       { incoming: { socket: { remoteAddress: "127.0.0.1" } } },
     )

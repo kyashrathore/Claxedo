@@ -27,7 +27,7 @@ export const CREDENTIAL_STORE_CONFORMANCE_SCOPE = {
   // `readSecret` status side effects differ between hosts (the SQLite adapter
   // restores an errored credential to `available` on re-verify read). The port
   // documents the return value only, so only the return value is pinned.
-  remaining: ["read_secret_status_side_effects", "convex_adapter", "webhook_signing_credential_lifecycle"],
+  remaining: ["read_secret_status_side_effects", "webhook_signing_credential_lifecycle"],
 } as const
 
 export type CredentialStoreConformanceFactory = () => Promise<

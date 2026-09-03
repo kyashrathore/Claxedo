@@ -15,8 +15,9 @@
  *   - `claxedo-desktop/src/renderer/renderer-entry-closure.guard.test.ts` — a
  *     fifth, which had to patch the app's resolver because `@claxedo/app/auth`
  *     maps to `src/app/entry/auth.ts` and NOT to `src/auth.ts`. That gap was
- *     the exact specifier by which the desktop renderer reached Clerk, so the
- *     unpatched walk reported a clean desktop closure and was wrong.
+ *     the exact specifier by which the desktop renderer reached the browser
+ *     identity SDK, so the unpatched walk reported a clean desktop closure and
+ *     was wrong.
  *
  * Four different answers to "what does this entry reach" is four places for the
  * boundary to be defined differently, and the fifth item above is what that
@@ -28,10 +29,9 @@
  * from it. What is added here is RESOLUTION: aliases and workspace `exports`
  * maps, the two things that made the other walks exist.
  *
- * Imported by relative path because the repository root has no
- * `node_modules/@claxedo/server-core` link (only `@claxedo/workgraph` is
- * linked at the root); a bare specifier here would resolve in a package and
- * fail from `script/`.
+ * Imported by relative path because a bare `@claxedo/server-core` specifier
+ * here would resolve against whichever package happens to link it and fail
+ * from `script/`.
  */
 
 import fs from "node:fs"

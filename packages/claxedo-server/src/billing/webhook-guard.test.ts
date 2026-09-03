@@ -41,7 +41,7 @@ function fakeStore(): BillingStore & { applyPolarState: ReturnType<typeof vi.fn>
     applyPolarState: vi.fn(async () => ({ results: [{ org_id: "org_doc_1", applied: true }], unresolved: [] })),
     checkoutContext: vi.fn(async () => ({
       org_id: "org_doc_1",
-      clerk_org_id: "org_a",
+      provider_org_id: "org_a",
       role: "owner",
       member_count: 1,
       plan: undefined,
@@ -103,7 +103,7 @@ describe("Polar webhook body cap", () => {
 
     expect(response.status).toBe(413)
     expect(await response.json()).toMatchObject({ error: { code: "billing_webhook_body_too_large" } })
-    // The cap is upstream of everything: no Convex write happened.
+    // The cap is upstream of everything: no authority write happened.
     expect(store.applyPolarState).not.toHaveBeenCalled()
   })
 
@@ -247,7 +247,7 @@ describe("Polar webhook rate limit", () => {
   test("the limiter runs BEFORE signature verification, so garbage is cheap to reject", async () => {
     // Ordering is the point. If verification came first, a flood of unsigned
     // bodies would each cost an HMAC over the whole payload — the limiter would
-    // protect Convex but not the CPU.
+    // protect the authority but not the CPU.
     const routes = app({ webhookRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 2, windowMs: 60_000 }) })
     const unsigned = () =>
       routes.fetch(

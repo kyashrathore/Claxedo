@@ -475,7 +475,7 @@ export function createDocumentsService<H extends DocumentHandle>(
         const entry = await requireEntry(scope, documentId)
         const handle = await backend.workspace.resolve(portEntry(entry))
         const snapshot = await backend.workspace.snapshot(handle, {
-          reason: "workgraph.ingest",
+          reason: "work.ingest",
           actor: scope.actor,
           ...(entry.session_id ? { sessionId: entry.session_id } : {}),
         })
@@ -518,7 +518,7 @@ export function createDocumentsService<H extends DocumentHandle>(
       const pinned = await backend.workspace.pinSnapshot(
         handle,
         snapshotId,
-        `workgraph:${input.workSourceId}:${input.revisionId}`,
+        `work:${input.workSourceId}:${input.revisionId}`,
       )
       return await pinned.pins
         .filter((pin) => pin.startsWith("lease:"))

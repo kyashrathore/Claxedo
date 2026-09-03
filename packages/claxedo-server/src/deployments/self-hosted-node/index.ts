@@ -45,9 +45,7 @@ const port = parseInt(process.env.CLAXEDO_SERVER_PORT ?? String(DEFAULT_CLAXEDO_
 const opencodeUrl = process.env.OPENCODE_URL?.trim() || undefined
 // The self-hosted single binary's one way in. It validates the self-hosted
 // posture — deployment mode, embedded auth, SQLite authority, local execution,
-// a static bundle if one is configured — before composing anything, and it
-// supplies the capability factory that keeps WorkGraph and Documents composed
-// after the desktop-local composition stopped contributing any.
+// a static bundle if one is configured — before composing anything.
 startSelfHostedServer({ port, ...(opencodeUrl ? { opencodeUrl } : {}) })
 
 console.log(

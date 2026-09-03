@@ -634,7 +634,7 @@ export function createControlPlaneChannels(input: {
       if (!channel) continue
       const admission = await access.gate({ channel, externalUserId: audit.externalUserId, chatType: "dm" })
       if (admission.admission !== "allow") continue
-      const deliveryKey = `workgraph:${request.idempotencyKey}`
+      const deliveryKey = `owner-notification:${request.idempotencyKey}`
       const claim = await input.services.projectionStore.claim_channel_delivery?.({
         channel,
         idempotencyKey: deliveryKey,
@@ -667,7 +667,7 @@ export function createControlPlaneChannels(input: {
       }
     }
     if (failure instanceof Error) throw failure
-    throw new Error("The WorkGraph owner has no eligible outbound channel thread")
+    throw new Error("The owner has no eligible outbound channel thread")
   }
 
   return {

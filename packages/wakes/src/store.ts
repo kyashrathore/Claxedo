@@ -1,9 +1,9 @@
 import type { SessionId, Token, Wake, WakeId, WakeState, WorkspaceId } from "./types"
 
 /**
- * The porting surface. An adapter (SQLite / Convex / Postgres) implements this;
- * the wakes engine talks only to it. Every method is async so a network-backed
- * adapter (Convex) fits the same port as an embedded one (SQLite). The three
+ * The porting surface. An adapter (SQLite / Postgres / a network store)
+ * implements this; the wakes engine talks only to it. Every method is async so
+ * a network-backed adapter fits the same port as an embedded one (SQLite). The three
  * atomicity-critical operations are `insert` (idempotency-keyed dedup),
  * `claimDue`/`cas` (the guarded transitions), and the effect-receipt pair.
  * Everything else is a plain read.

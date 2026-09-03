@@ -109,7 +109,6 @@ export type AppShellLayoutProps = ParentProps<{
   globalChatEnabled?: boolean
   canUseDocuments?: boolean
   documentNavigationEnabled?: boolean
-  workGraphNavigationEnabled?: boolean
 
   /**
    * Home directory for path shortening
@@ -146,8 +145,6 @@ export type AppShellLayoutProps = ParentProps<{
    * Callback to open the Marketplace as an in-workbench tab.
    */
   onOpenMarketplace?: () => void
-  /** Open the personal WorkGraph as a reusable global tab. */
-  onOpenWorkGraph?: () => void
 
   /**
    * Callback to create a new session. When no workspace is selected yet,
@@ -281,7 +278,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
     canUseDocuments: () => props.canUseDocuments === true,
     closeTerminal: (terminalId) => terminal?.close(terminalId),
     emptyDraftDirectory: emptyDraft.emptyDraftDirectory,
-    // On a global surface (WorkGraph, Marketplace, Global chat) nothing is
+    // On a global surface (Marketplace, Global chat) nothing is
     // focused on a workspace, so the terminal creator would have no directory to
     // open against. Seed it with the active one, else the first project — the
     // creator shows the choice as a chip and lets the user change it.
@@ -303,10 +300,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
   })
   const productNavigation = () => resolveAppShellNavigationActions({
     documentNavigationEnabled: props.documentNavigationEnabled,
-    workGraphNavigationEnabled: props.workGraphNavigationEnabled,
     onNewPage: props.onNewPage,
-    onNewTask: workbenchController.createHeaderTask,
-    onOpenWorkGraph: props.onOpenWorkGraph,
   })
   const layoutConfig = shellLayout.config
   const railRegion = () => layoutConfig().regions.rail
@@ -459,7 +453,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onNewSession={props.onNewSession}
           onNewTerminal={props.onNewTerminal}
           onOpenMarketplace={props.onOpenMarketplace}
-          onOpenWorkGraph={productNavigation().onOpenWorkGraph}
           onRemoveProject={props.onRemoveProject}
           onSettings={props.onSettings}
           onUsage={props.onUsage}
@@ -513,7 +506,6 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           onDiagnostics={openLocalDiagnostics}
           onNewSession={workbenchController.createHeaderSession}
           onNewTerminalDraft={workbenchController.createHeaderTerminalDraft}
-          onNewTask={productNavigation().onNewTask}
           onWorkspacePanelFloatingChromeRef={workbenchController.registerWorkspacePanelFloatingChrome}
           onWorkspacePanelShellRef={workbenchController.registerWorkspacePanelShell}
           onWorkspacePanelWorkbenchColumnRef={workbenchController.registerWorkspacePanelWorkbenchColumn}

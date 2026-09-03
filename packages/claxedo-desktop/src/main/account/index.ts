@@ -5,7 +5,7 @@
  * does is wiring; every decision lives in the module it belongs to.
  *
  * The environment selects only one exact HTTPS core origin. That core's live,
- * short-lived descriptor selects Better Auth or Clerk and supplies every
+ * short-lived descriptor selects the auth adapter and supplies every
  * public native-client value. When the origin is absent the account still
  * registers its refusing IPC service; the renderer never falls back to a
  * browser provider implementation.

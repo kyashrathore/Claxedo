@@ -7,7 +7,7 @@ planned-at: c97fe21
 priority: P2
 effort: L
 risk: MED
-depends-on: 2026-08-19-001, 2026-08-19-002 (and coordinate with 2026-07-22-001)
+depends-on: 2026-08-19-002 (and coordinate with 2026-07-22-001)
 ---
 
 # refactor(engine): embedded engine as an opencode-adapter implementation detail
@@ -19,11 +19,10 @@ depends-on: 2026-08-19-001, 2026-08-19-002 (and coordinate with 2026-07-22-001)
 > `docs/plans/2026-08-19-000-opencode-just-another-harness-index.md`.
 >
 > **Drift check (run first)**:
-> `git diff --stat c97fe21..HEAD -- packages/workspace-runtime/src/workspace/runtime.ts packages/claxedo-server-core/src/opencode packages/claxedo-server/src/deployments/self-hosted-node packages/claxedo-server/src/hosts/workgraph/local packages/claxedo-server/src/hosts/workgraph/composition/agent-tools.ts`
-> Plans 001 and 002 SHOULD have changed some of these files — read their
-> updated state rather than expecting the c97fe21 excerpts verbatim; the
-> excerpts below mark which plan moves each piece. On an unexplained mismatch,
-> STOP.
+> `git diff --stat c97fe21..HEAD -- packages/workspace-runtime/src/workspace/runtime.ts packages/claxedo-server-core/src/opencode packages/claxedo-server/src/deployments/self-hosted-node`
+> Plan 002 SHOULD have changed some of these files — read their updated state
+> rather than expecting the c97fe21 excerpts verbatim; the excerpts below mark
+> which pieces it moves. On an unexplained mismatch, STOP.
 
 ## Why this matters
 
@@ -53,11 +52,7 @@ at `c97fe21` (from `grep -rln "opencodeRequest\|OpenCodeRequestFn" packages/clax
 | Consumer | Role | Disposition |
 |---|---|---|
 | `claxedo-server-core/src/credentials/engine-bridge.ts` | auth sync | plan 002 moves + gates it |
-| `claxedo-server/src/hosts/workgraph/composition/session-gateway.ts` | V2 gateway for the opencode harness | KEEP (opencode-harness path), unification deferred (plan 001 maintenance note) |
-| `claxedo-server/src/hosts/workgraph/composition/agent-tools.ts` (`localSessionExecution/Context/OwnerDirected`, engine application tools) | WorkGraph tools inside interactive OpenCode engine sessions | KEEP as opencode-surface code; U3 documents ownership |
-| `claxedo-server/src/hosts/workgraph/local/execution-capabilities.ts` (`runtimeJson`) | opencode catalog entry (agents/models/tools) | U4 makes it non-booting |
-| `claxedo-server/src/hosts/workgraph/session-intake.ts` | engine-session intake reader | plan 001 keeps it as the engine-paired reader |
-| `claxedo-server/src/deployments/self-hosted-node/app.ts` | composition root (engine mode config, compat events, workgraph, runtime options) | U2 audits its boot triggers |
+| `claxedo-server/src/deployments/self-hosted-node/app.ts` | composition root (engine mode config, compat events, runtime options) | U2 audits its boot triggers |
 | `workspace-runtime/src/server.ts` + `src/workspace/runtime.ts` | `WorkspaceHostOptions.opencodeRequest` → OpenCode adapter + compat routes | KEEP — this IS the adapter path |
 
 ### The unknown-runner fallthrough (this plan's U1)
@@ -127,11 +122,7 @@ OpenCode session") is identical in both worlds.
   trigger audit fixes only)
 - `packages/claxedo-server/src/opencode/**` and
   `packages/claxedo-server-core/src/opencode/**` (lazy-start fixes surfaced by
-  U2, ownership comments)
-- `packages/claxedo-server/src/hosts/workgraph/local/execution-capabilities.ts`
-  (U4 non-booting catalog read)
-- `packages/claxedo-server/src/hosts/workgraph/composition/agent-tools.ts`
-  (ownership comment only)
+  U2)
 - New/updated tests beside each
 
 **Out of scope**:
@@ -142,7 +133,6 @@ OpenCode session") is identical in both worlds.
   `packages/claxedo-local-server/src/app/start-local-server.ts` stay — the
   engine remains SHIPPED, it just loads lazily).
 - The OpenCode-compat route surface itself (kept by design; see index doc).
-- `createSessionV2WorkGraphGateway` unification (deferred; plan 001 notes).
 
 ## Implementation units
 
@@ -189,51 +179,10 @@ Then fix whatever the test flags. Known candidates to check, in order:
    (app.ts:1362) — find who calls `.start()`; an SSE subscribe to
    `/global/event` compat routes starting the engine stream is an OpenCode
    surface (fine); a control-plane-internal eager start is not.
-3. The WorkGraph reconciler / projection refresh paths — they should touch
-   embedded workspace runtimes, not `opencodeRequest`, after plan 001.
-4. Anything plan 002 left: the boot credential reconcile must already be
+3. Anything plan 002 left: the boot credential reconcile must already be
    hook-based; assert, don't re-fix.
 
 **Verify**: the new startup test passes; full claxedo-server suite passes.
-
-### U3 — Ownership comments on the opencode-surface consumers that remain
-
-Add a short header comment to
-`hosts/workgraph/composition/agent-tools.ts` and the V2 gateway section of
-`session-gateway.ts` stating: "OpenCode-surface code: reached only for the
-opencode harness / embedded engine sessions; the engine transport is
-sanctioned here and nowhere outside `opencode/`-owned modules." Match the
-repo's existing comment register (see the header of
-`claxedo-server-core/src/opencode/engine.ts` for tone). No behavior change.
-
-**Verify**: `bun turbo typecheck` → exit 0.
-
-### U4 — Non-booting opencode catalog entry in the composer
-
-`hosts/workgraph/local/execution-capabilities.ts` `readRuntime` (lines 53-96)
-calls `runtimeJson` → engine `/agent`, `/api/model`,
-`/experimental/tool/ids` whenever the composer catalog is read — which boots
-the engine for a user browsing harness options who never selects OpenCode.
-Change the opencode entry to a two-state read:
-
-- If `opencodeEngineLoaded()` (exported by plan 002's U2) is true — or engine
-  mode is `external-url` — serve the live engine catalog exactly as today.
-- Otherwise serve a static fallback entry (agents: the existing
-  `defaultAgent("opencode")`; providers: the models.dev-backed static catalog
-  the server already owns for `/provider?harness=opencode` — locate it via
-  `packages/claxedo-server/src/agent-config/harness-provider-contract.ts`'s
-  pointer to `opencode-compat-provider-config.ts` (`providerBody`); tools:
-  `[]`), marked so the UI can refresh after first real OpenCode use if the
-  port supports refresh (`refreshExecutionCapabilities` exists — see
-  `agent-tools.ts:49-58`).
-
-This is a deliberate, user-visible trade-off (static catalog until first
-engine use) — record it in the commit message. If the static provider catalog
-cannot be served without importing engine code, STOP and report.
-
-**Verify**: targeted workgraph tests pass; new test: capabilities read with a
-cold engine issues no engine request and returns the static opencode entry;
-with a loaded engine returns the live entry.
 
 ## Test plan
 
@@ -246,7 +195,6 @@ with a loaded engine returns the live entry.
    never invoked, `opencodeEngineLoaded()` stays false. Then: hit one compat
    route (an OpenCode surface) → loader invoked exactly then. Model on
    `deployments/self-hosted-node/*.test.ts` composition tests.
-3. **U4**: two-state catalog tests as described above.
 
 ## Done criteria
 
@@ -256,19 +204,18 @@ with a loaded engine returns the live entry.
 - [ ] `grep -n "match: () => true" packages/workspace-runtime/src/workspace/runtime.ts` → no matches.
 - [ ] The U2 startup test exists and proves: cold boot + non-opencode session
       lifecycle → zero engine loads; first compat/opencode use → engine loads.
-- [ ] Consumer inventory holds: `grep -rln "opencodeRequest\|OpenCodeRequestFn" packages/claxedo-server/src --include=*.ts | grep -v test` lists only composition roots and `opencode`-surface modules documented in U3.
+- [ ] Consumer inventory holds: `grep -rln "opencodeRequest\|OpenCodeRequestFn" packages/claxedo-server/src --include=*.ts | grep -v test` lists only composition roots and `opencode`-surface modules.
 - [ ] `git status` clean outside the in-scope list; index status row updated.
 
 ## STOP conditions
 
-- Plans 001/002 have not landed (their dispositions are assumed throughout).
+- Plan 002 has not landed (its dispositions are assumed throughout).
 - U1's audit finds a live path that can produce a non-enum runner id (report
   the silent-OpenCode finding; do not paper over it).
 - U2's test cannot isolate engine loads because a module import (not a
   request) transitively pulls `opencode/node-embed` — that is an import-graph
   finding to report with the offending chain
   (`bun x madge` or manual trace), not something to fix ad hoc.
-- U4's static catalog requires engine imports.
 - The scriptable-ACP plan (2026-07-22-001) landed a different registry shape
   and U1's rebase is not mechanical.
 - A verification fails twice after a reasonable fix attempt.
@@ -281,10 +228,6 @@ with a loaded engine returns the live entry.
   (the repo already enforces import-direction rules there) restricting
   `@claxedo/server-core/opencode/engine` imports to an allowlist — a natural
   follow-up, deliberately not required here.
-- The deferred V2-gateway unification (plan 001 notes) becomes attractive
-  after this lands: with the engine adapter-scoped, WorkGraph's opencode rail
-  can move onto the harness gateway and `createSessionV2WorkGraphGateway` can
-  be deleted.
 - Watch `root package.json`'s `dev` script (`bun run --cwd packages/opencode
   ...`): it advertises the engine as "the" dev entrypoint. Renaming it (e.g.
   `dev:engine`) is a one-line DX follow-up once the server is the primary

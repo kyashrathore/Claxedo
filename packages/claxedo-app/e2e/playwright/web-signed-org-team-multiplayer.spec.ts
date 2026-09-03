@@ -6,7 +6,7 @@
  * auth, org/team/share/session HTTP, embedded workspace-runtime + relay, multi-browser
  * Playwright, People UI, composer drive path.
  *
- * FIXTURE / substitute: local JWKS teammate mint (not Clerk staging), page token seed
+ * FIXTURE / substitute: local JWKS teammate mint (not a hosted issuer), page token seed
  * (not OAuth redirect), scripted model server (not live Claude/Codex), collaborative
  * org bootstrap via CLAXEDO_E2E_COLLABORATIVE_ORG_NAME.
  *

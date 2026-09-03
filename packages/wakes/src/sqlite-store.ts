@@ -108,7 +108,7 @@ export type SqliteWakeStoreOptions = { path?: string; db?: Database.Database }
 export class SqliteWakeStore implements WakeStore {
   readonly db: Database.Database
 
-  // Create-only, like the WorkGraph schema: no ALTER upgrades. A wake DB file
+  // Create-only: no ALTER upgrades. A wake DB file
   // predating a schema change is deleted and recreated, never migrated.
   constructor(opts: SqliteWakeStoreOptions = {}) {
     this.db = opts.db ?? new Database(opts.path ?? ":memory:")

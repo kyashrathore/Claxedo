@@ -184,23 +184,8 @@ export const FORBIDDEN_DEPS: ForbiddenDep[] = [
     fixHint:
       "boot code must not import zod statically. Existing boundaries: " +
       "app/providers/global-sdk/provider.tsx uses the plain isAbortError() predicate (no schema); " +
-      "features/processes/data/client.ts lazy-loads ./process via loadProcessSchemas() on the first process API call; " +
-      "app/integrations/feature-ports.ts wires turnDocumentIntoWork as a dynamic import of doc-workgraph; " +
-      "app/integrations/settings-source-views.ts lazy-loads features/workgraph/api on first source-view call. " +
+      "features/processes/data/client.ts lazy-loads ./process via loadProcessSchemas() on the first process API call. " +
       "Route new boot-path validation through one of those seams or a plain predicate.",
-  },
-  {
-    label: "@claxedo/workgraph/contracts (zod-based WorkGraph DTO schemas)",
-    specifiers: ["@claxedo/workgraph/contracts"],
-    // First-party package; its runtime body is zod schema construction, which
-    // mangles like zod itself. Rely on the static check.
-    markers: [],
-    estGzip: "~15 KB gz (plus it drags zod in)",
-    scope: "boot-closure",
-    fixHint:
-      "value-imports of @claxedo/workgraph/contracts belong behind the same lazy seams as zod: " +
-      "features/workgraph/api.ts and app/integrations/doc-workgraph.ts are loaded via dynamic import " +
-      "(feature-ports turnDocumentIntoWork, settings-source-views client()). Type-only imports are fine — they erase.",
   },
   {
     label: "effect (Effect runtime — deferrable: only 3 trivial usages)",

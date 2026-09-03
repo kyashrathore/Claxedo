@@ -11,15 +11,15 @@ Make the tree state what the package **is**. `claxedo-server` is not a feature
 app — it is the composition point where many `@claxedo/*` packages become one
 running product. It plays three roles, and none of them is visible today:
 
-1. **Host** — of `workspace-runtime`, `workgraph`, `wakes`, `connections`,
+1. **Host** — of `workspace-runtime`, `wakes`, `connections`,
    `agent-extensions`
 2. **Adapter** — of storage, auth, credentials, sandbox, relay
-   (SQLite ↔ Convex ↔ Cloudflare KV)
+   (SQLite ↔ D1 ↔ Cloudflare KV)
 3. **Deployment-mode composer** — local ↔ hosted trust, Node ↔ workerd runtime
 
-Today's `src/` is ~23 sibling directories in which `workgraph-host/`,
+Today's `src/` is ~23 sibling directories in which
 `sandbox-manager-adapters/`, `workspace-runtime-integration/`, and
-`relay-provider/` are **four different names for the same architectural role**.
+`relay-provider/` are **three different names for the same architectural role**.
 A newcomer cannot infer the thesis from the tree.
 
 Nothing here changes runtime behavior. Every wave is a `git mv` + import
@@ -37,7 +37,7 @@ src/
   index.ts            ← PINNED (package.json exports ".")
   central-runtime.ts  ← PINNED (exports "./central-runtime")
 
-  hosts/         workgraph/ connections/ wakes/ agent-extensions/
+  hosts/         connections/ wakes/ agent-extensions/
                  workspace-runtime/
                  ← "we host these @claxedo packages"
   adapters/      storage/ auth/ credentials/ sandbox/ relay/
@@ -55,10 +55,10 @@ anchored. No build output committed; `.env`/`.env.local` gitignored with only
 `.github/workflows/deploy-control-plane.yml` and `deploy-worker-migration.yml`.
 
 The problem is `src/`: **152 loose files** at top level (80 source + 72 test),
-and flatness repeating one level down — `routes/` 100 files, `workgraph-host/`
-59, `documents/` 45, `credentials/` 37, all with zero subdirectories.
+and flatness repeating one level down — `routes/` 100 files, `documents/` 45,
+`credentials/` 37, all with zero subdirectories.
 `control-plane/` is the one area already shaped right (ports at top,
-`adapters/{convex,sqlite,worker}/`, `routes/`); its port layer imports **zero**
+`adapters/{d1,sqlite,worker}/`, `routes/`); its port layer imports **zero**
 adapter code **[verified by grep]**. It is the proof the pattern works here.
 
 ## Vocabulary — what the directory names mean
@@ -78,7 +78,8 @@ type Runtime = "node"  | "workerd"
   env var is absent; the OSS quickstart never sets it. *(Currently misnamed
   `self-host` in code — see 002.)*
 - **`hosted`** — signed multi-tenant. Fails **closed** at boot unless signed
-  auth, Clerk issuer, workspace authority, and service token are all configured:
+  auth, the token issuer, workspace authority, and service token are all
+  configured:
   "A hosted deployment that cannot authenticate must be DOWN, not open."
 
 **`hosted` ≠ Cloudflare, and `hosted` ≠ Claxedo-operated.** `hosted-node.ts:10`
@@ -147,10 +148,10 @@ prefixes, not file paths — move-safe) **[verified]**.
    *strings*, existence-checked by `architecture.test.ts` via
    `fs.existsSync(path.resolve(import.meta.dirname, entry.module))`.
 2. **`architecture.test.ts`** — 272 hardcoded path literals **[verified]**. Also
-   string-*content* asserts against exact files, e.g.
-   `expect(server).toContain('import("./workgraph-session-gateway")')` at
-   `:1261`; reads `server.ts`, `hosted-app.ts`, `routes/documents.ts`,
-   `server-workgraph.ts` by literal path at `:1057-1060`.
+   string-*content* asserts against exact files, e.g. asserting that `server.ts`
+   contains a specific lazy `import("./…")` literal at `:1261`; reads
+   `server.ts`, `hosted-app.ts`, and `routes/documents.ts` by literal path at
+   `:1057-1060`.
 3. **`worker.import-graph.test.ts`** — `SRC = path.resolve(import.meta.dirname)`
    and `ENTRYPOINTS = ["worker.ts","hosted-app.ts"]` at `:21-22`. **Fails
    silently-wrong** (walks a stale directory) rather than red.
@@ -179,7 +180,7 @@ not just the import path.
 | `src/text-imports.mjs` | consumers use `../workspace-runtime/src/text-imports.mjs` (package.json scripts + `Dockerfile:79`) |
 | `src/text-imports-loader.mjs` | only referenced by the above |
 | `src/public-api.d.ts` | zero references in the package |
-| `src/execution-reconciler.ts` + `.test.ts` | `reconcileWorkGraphRun` used only by its own test |
+| `src/execution-reconciler.ts` + `.test.ts` | its only exported reconciler is used solely by its own test |
 | `src/user-hosted-relay-fixture.ts` | dead twin; the spawned one is the `.mjs` |
 | `src/workspace-runtime-integration/index.ts` | 6-line barrel, zero importers |
 
@@ -215,8 +216,8 @@ TypeScript cannot express, where violation costs real money — a Worker
 importing `better-sqlite3` fails at *deploy time*, not compile time:
 
 - `:139` workspace-runtime must not import claxedo-server (circular package dep)
-- `:361` generic control-plane core stays Convex-free (what keeps self-host
-  working without Convex)
+- `:361` generic control-plane core stays free of hosted-only storage adapters
+  (what keeps self-host working on plain SQLite)
 - `billing-architecture.test.ts` Polar confinement to `src/billing/**`
 - the Worker-safety guards
 
@@ -233,7 +234,7 @@ violated — inject the violation and watch it go red; a green suite is not proo
 
 ## Wave 2 — mark the workerd-only tier
 
-Seven files. Both Durable Object classes defined in this package get `.cf.ts`
+Six files. Both Durable Object classes defined in this package get `.cf.ts`
 (`ClaxedoWakeLane` in `worker.ts:73` is a subclass of the local `WakeLane`,
 imported at `worker.ts:47` **[verified]**).
 
@@ -243,15 +244,13 @@ imported at `worker.ts:47` **[verified]**).
 | `live-sync-room.test.ts` | `deployments/hosted-workerd/live-sync-room.cf.test.ts` |
 | `live-sync-room.workerd.test.ts` | `deployments/hosted-workerd/live-sync-room.workerd.test.ts` |
 | `wakes-host/wake-lane.ts` | `deployments/hosted-workerd/wake-lane.cf.ts` |
-| `workgraph-host/cloudflare-settlement-dispatcher.ts` | `deployments/hosted-workerd/settlement-dispatcher.cf.ts` |
 | `control-plane/http-idempotency.ts` | *assess — CF types only; may not qualify* |
 | `documents/r2-conditional-object-store.miniflare.test.ts` | unchanged (already marked) |
 
 **`wrangler.toml` binds on `class_name`, not file path** **[verified — lines
-149/156/162 name `WorkGraphSettler`, `ClaxedoWakeLane`, `LiveSyncRoom`]**, so
-these renames touch only TypeScript imports. `live-sync-room.ts` has 4
-importers: `worker.ts`, `hosted-app.ts`, `workgraph-host/hosted.ts`,
-`routes/hosted-shell.ts`.
+156/162 name `ClaxedoWakeLane` and `LiveSyncRoom`]**, so these renames touch only
+TypeScript imports. `live-sync-room.ts` has 3 importers: `worker.ts`,
+`hosted-app.ts`, `routes/hosted-shell.ts`.
 
 Do **not** rename `worker.ts` or `hosted-app.ts` (gate 3). Do **not** mark the
 57 `hosted-*` files — they run on Node too.
@@ -302,7 +301,7 @@ Order, cheapest first, **one cluster per commit**: `channels/` → `worktree/` �
 config). Do `workspace-store.ts` **alone** — 47 importers, the largest diff in
 the package.
 
-**Stays at root deliberately:** `server-workgraph.ts`, `server-usage-limits.ts`,
+**Stays at root deliberately:** `server-usage-limits.ts`,
 `server-workspace-pty-proxy.ts` (existing `server-*` convention = "mounted into
 `server.ts`"); the four `*.integration.test.ts` files (they test the whole
 server, so root *is* their colocation); `sandbox-target-fetch.ts`
@@ -310,17 +309,11 @@ server, so root *is* their colocation); `sandbox-target-fetch.ts`
 owns it); `doorbell-event-contract.test.ts` and `frontend-api-contract.test.ts`
 (must sit where both `./bus` and the claxedo-app mirror are reachable).
 
-**Do not merge root `workgraph-*.ts` into the workgraph host.** They are the
-composition layer *above* it: `server-workgraph.ts` builds the Hono app and
-imports `workgraph-host/local-execution`. Only one edge runs the other way and
-it is a test (`workgraph-host/change-doorbell.test.ts:7`) — no production cycle.
-
 ## Wave 5 — the thesis regroup
 
-The payoff wave. Unify four naming conventions into one role-bearing tree.
+The payoff wave. Unify three naming conventions into one role-bearing tree.
 
 ```
-workgraph-host/                 → hosts/workgraph/
 connections-host/               → hosts/connections/
 wakes-host/                     → hosts/wakes/
 agent-extensions/               → hosts/agent-extensions/
@@ -363,23 +356,18 @@ feature, never one global bucket.
   `hosted/` (12), `workspace/` (14); ~19 true singles stay flat. Do **not**
   chase URL-hierarchy mirroring — one file often serves several prefixes and one
   prefix is served by several files. Prefix-by-filename-family is the stable axis.
-- **`hosts/workgraph/` (59 flat)** → `local/`, `hosted/`, `convex/`,
-  `connections/`, `settlement/`, `shared/`.
 - **`documents/` (45 flat)** → `core/`, `local/`, `hosted/`, `service/`, `legacy/`.
 - **`adapters/credentials/` (37 flat)** → `backend/`, `verify/`, `rotate/`,
   `sync/`; `registry.ts`, `types.ts`, `secret-scope.ts`, `migrate.ts`,
   `engine-bridge.ts` stay at that directory's root.
-- **`control-plane/adapters/convex/`** → fold the 11-file `convex-authority-*`
-  family into `convex-authority/`. Keep `convex-authority-cli-session-tokens.ts`
-  out — not part of the composed object, and it has external importers.
 - **`adapters/storage/`** → keep flat; only move the 3 `*.migration.test.ts`
   files next to the migrations they exercise.
 
 ## Out of scope — debt this relocates but does not fix
 
-- `server.ts` 1700 lines / 31 route mounts; `hosts/workgraph/hosted-runtime.ts`
-  1863 lines; `routes/hosted-workspace.ts` 826 lines mixing three sub-domains;
-  ~90 lines of business logic inline in `hosted-app.ts`.
+- `server.ts` 1700 lines / 31 route mounts; `routes/hosted-workspace.ts` 826
+  lines mixing three sub-domains; ~90 lines of business logic inline in
+  `hosted-app.ts`.
 - **Typed schema bypassed [verified]:** `channel-access-store.ts`,
   `channel-delivery.ts`, `channel-run-audit.ts` make 28 raw `prepare()` calls
   against tables that have typed drizzle schemas in `storage/channel-*.sql.ts`
@@ -392,8 +380,6 @@ feature, never one global bucket.
   `npm pack --dry-run` confirms 5 such files ship **[verified]**. **But
   `"private": true` blocks publishing entirely**, so this is a trap to fix
   before private is lifted, not a live leak. Invert to an allowlist.
-- Clerk session mint/revoke duplicated between `scripts/smoke/smoke-workgraph.ts`
-  and `smoke-interactive-session.ts`.
 
 ## Verification protocol
 

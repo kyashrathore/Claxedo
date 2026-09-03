@@ -16,8 +16,6 @@ const OPEN_CODE_GLYPHS = [
   "fork",
   "maximize",
   "marketplace",
-  "workgraph",
-  "bullet-list",
   "check-small",
   "chevron-down",
   "chevron-left",

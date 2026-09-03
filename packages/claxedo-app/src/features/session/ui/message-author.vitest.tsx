@@ -34,7 +34,7 @@ describe("message author lane", () => {
         avatarUrl: "https://example.invalid/avatar",
         kind: "human",
         actorId: "internal_actor_123",
-        subject: "clerk|secret",
+        subject: "issuer|secret",
       },
     })
     const view = render(() => (
@@ -54,7 +54,7 @@ describe("message author lane", () => {
       "https://example.invalid/avatar",
     )
     expect(view.container.textContent).not.toContain("internal_actor_123")
-    expect(view.container.textContent).not.toContain("clerk|secret")
+    expect(view.container.textContent).not.toContain("issuer|secret")
   })
 
   test("falls back from a missing or broken avatar to initials, then the generic icon", () => {

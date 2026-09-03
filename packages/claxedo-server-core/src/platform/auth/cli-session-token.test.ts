@@ -47,7 +47,7 @@ let registry: ReturnType<typeof createInMemoryCliSessionTokenRegistry>
 function auth(subject = "user_1"): SignedControlPlaneAuth {
   return {
     mode: "signed",
-    token: "clerk-token",
+    token: "provider-token",
     user: {
       subject,
       tokenIdentifier: `https://issuer.test|${subject}`,

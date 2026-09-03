@@ -95,8 +95,8 @@ const backend: DocumentsRouteBackend<Awaited<ReturnType<typeof workspace.resolve
 
 const authConfig: ControlPlaneAuthConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 }
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
@@ -494,7 +494,7 @@ describe("DocumentsRoutes", () => {
     expect(update.status).toBe(400)
   })
 
-  test("pins and returns the exact immutable snapshot used for WorkGraph intake", async () => {
+  test("pins and returns the exact immutable snapshot used for work intake", async () => {
     const pinSnapshot = vi.fn(backend.workspace.pinSnapshot)
     const unpinSnapshot = vi.fn(backend.workspace.unpinSnapshot)
     const app = new Hono().route(
@@ -555,7 +555,7 @@ describe("DocumentsRoutes", () => {
         body: JSON.stringify({ work_source_id: "source_1", revision_id: "revision_1" }),
       },
     )
-    await expect(pinned.json()).resolves.toMatchObject({ pins: ["workgraph:source_1:revision_1"] })
+    await expect(pinned.json()).resolves.toMatchObject({ pins: ["work:source_1:revision_1"] })
     expect(pinSnapshot).toHaveBeenCalledTimes(1)
     expect(unpinSnapshot).toHaveBeenCalledTimes(1)
     expect(pinSnapshot.mock.invocationCallOrder[0]).toBeLessThan(unpinSnapshot.mock.invocationCallOrder[0]!)

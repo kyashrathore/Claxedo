@@ -5,7 +5,7 @@ const card = (id: string) => onboardingGoFurtherCards.find((item) => item.id ===
 
 describe("go-further cards", () => {
   test("remote access is a setup step now, not a card", () => {
-    expect(onboardingGoFurtherCards.map((item) => item.id)).toEqual(["workgraph", "harnesses", "self-host"])
+    expect(onboardingGoFurtherCards.map((item) => item.id)).toEqual(["harnesses", "self-host"])
   })
 
   test("the harness card promises only what the check actually reports", () => {

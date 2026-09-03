@@ -450,28 +450,28 @@ if (access === "cloud") {
 //     HTTP JWKS endpoint backed by a REAL EdDSA keypair (`node:crypto`
 //     webcrypto via `jose`, already a dependency — no new one added).
 //   - `controlPlaneVerifier` below does REAL `jose.jwtVerify()` against that
-//     endpoint — the same shape `tokenVerifierAsClerk`/`betterAuthAdapter`
+//     endpoint — the same shape `tokenVerifier`/`betterAuthAdapter`
 //     use in production (`platform/auth/auth.ts`), just pointed at this
-//     issuer instead of Clerk.
+//     issuer instead of the identity provider.
 //   - `customVerifierAuthAdapter` (`platform/auth/auth.ts:179`) wires the two
 //     into `services.auth` — this is a documented, first-class adapter,
 //     not a test-only seam; it is how a self-hoster plugs in Auth0/Ory/any
-//     OIDC-shaped issuer instead of Clerk.
+//     OIDC-shaped issuer instead of the identity provider.
 //   - `createSqliteWorkspaceAuthority()` (`authority/adapters/sqlite/
 //     workspace-authority.ts`) is the SAME self-host `WorkspaceAuthority`
 //     `deployments/self-hosted-node/app.ts:948`'s `createDefaultLocalControlPlaneServices`
-//     composes when no `CLAXEDO_WORKSPACE_AUTHORITY_URL` (Convex) is set —
-//     full role/session/sharing model, mirrored 1:1 from the Convex backend,
+//     composes when no `CLAXEDO_WORKSPACE_AUTHORITY_URL` (the authority) is set —
+//     full role/session/sharing model, mirrored 1:1 from the hosted backend,
 //     backed by a real SQLite file under this fixture's own
 //     `CLAXEDO_DATA_DIR` (set above, so it lands in the same hermetic
 //     `mkdtemp` root as `createSqliteCentralStore` and is deleted with it).
 //
 // LIMIT, stated verbatim per the plan: a local JWKS issuer is a SUPPORTED
 // SELF-HOST MODE, not a stub — same middleware, same real crypto — but
-// Clerk-specific behaviour (its actual token shape, its JWKS rotation
+// provider-specific behaviour (its actual token shape, its JWKS rotation
 // cadence, its session-claim vocabulary) is covered only by the nightly
 // credentialed `live-*` lane (`e2e/INVARIANTS.md`), which runs against a real
-// Clerk test tenant. Nothing here proves this fixture matches Clerk's wire
+// the identity provider test tenant. Nothing here proves this fixture matches the identity provider's wire
 // format — only that the CONTROL PLANE's own auth/authority code, exercised
 // with a real signed token, behaves correctly.
 const jwksIssuer = await startLocalJwksIssuer()

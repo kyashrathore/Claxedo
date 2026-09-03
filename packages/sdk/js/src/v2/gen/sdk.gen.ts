@@ -197,6 +197,18 @@ import type {
   SessionForkResponses,
   SessionGetErrors,
   SessionGetResponses,
+  SessionGoalCapabilitiesErrors,
+  SessionGoalCapabilitiesResponses,
+  SessionGoalDeleteErrors,
+  SessionGoalDeleteResponses,
+  SessionGoalGetErrors,
+  SessionGoalGetResponses,
+  SessionGoalPauseErrors,
+  SessionGoalPauseResponses,
+  SessionGoalResumeErrors,
+  SessionGoalResumeResponses,
+  SessionGoalStartErrors,
+  SessionGoalStartResponses,
   SessionInitErrors,
   SessionInitResponses,
   SessionListErrors,
@@ -389,14 +401,6 @@ import type {
   V2SessionWaitResponses,
   V2SkillListErrors,
   V2SkillListResponses,
-  V2WorkgraphActivityErrors,
-  V2WorkgraphActivityResponses,
-  V2WorkgraphCommandErrors,
-  V2WorkgraphCommandResponses,
-  V2WorkgraphExecutionCapabilitiesErrors,
-  V2WorkgraphExecutionCapabilitiesResponses,
-  V2WorkgraphRefreshExecutionCapabilitiesErrors,
-  V2WorkgraphRefreshExecutionCapabilitiesResponses,
   VcsApplyErrors,
   VcsApplyResponses,
   VcsDiffErrors,
@@ -407,7 +411,6 @@ import type {
   VcsGetResponses,
   VcsStatusErrors,
   VcsStatusResponses,
-  WorkGraphCommandRequest,
   WorktreeCreateErrors,
   WorktreeCreateInput,
   WorktreeCreateResponses,
@@ -3372,6 +3375,205 @@ export class Provider extends HeyApiClient {
   }
 }
 
+export class Goal extends HeyApiClient {
+  /**
+   * Get Goal capabilities
+   *
+   * Get first-party OpenCode Goal actions and recovery behavior.
+   */
+  public capabilities<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<
+      SessionGoalCapabilitiesResponses,
+      SessionGoalCapabilitiesErrors,
+      ThrowOnError
+    >({
+      url: "/session/{sessionID}/goal/capabilities",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Delete Goal
+   */
+  public delete<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<SessionGoalDeleteResponses, SessionGoalDeleteErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Get Goal
+   *
+   * Read the durable session Goal snapshot.
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<SessionGoalGetResponses, SessionGoalGetErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Start Goal
+   *
+   * Start first-party autonomous Goal execution.
+   */
+  public start<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+      objective?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "objective" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionGoalStartResponses, SessionGoalStartErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Pause Goal
+   */
+  public pause<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionGoalPauseResponses, SessionGoalPauseErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/pause",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Resume Goal
+   */
+  public resume<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<SessionGoalResumeResponses, SessionGoalResumeErrors, ThrowOnError>({
+      url: "/session/{sessionID}/goal/resume",
+      ...options,
+      ...params,
+    })
+  }
+}
+
 export class Session2 extends HeyApiClient {
   /**
    * List sessions
@@ -4343,6 +4545,11 @@ export class Session2 extends HeyApiClient {
       ...options,
       ...params,
     })
+  }
+
+  private _goal?: Goal
+  get goal(): Goal {
+    return (this._goal ??= new Goal({ client: this.client }))
   }
 }
 
@@ -7010,119 +7217,6 @@ export class ProjectCopy2 extends HeyApiClient {
   }
 }
 
-export class Workgraph extends HeyApiClient {
-  /**
-   * Execute WorkGraph command
-   *
-   * Execute one idempotent, versioned WorkGraph command for the authenticated owner.
-   */
-  public command<ThrowOnError extends boolean = false>(
-    parameters: {
-      workGraphCommandRequest: WorkGraphCommandRequest
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ key: "workGraphCommandRequest", map: "body" }] }])
-    return (options?.client ?? this.client).post<V2WorkgraphCommandResponses, V2WorkgraphCommandErrors, ThrowOnError>({
-      url: "/api/workgraph/commands",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Get WorkGraph execution capabilities
-   *
-   * Read the current owner-bound, side-effect-free execution capability catalog.
-   */
-  public executionCapabilities<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "directory" }] }])
-    return (options?.client ?? this.client).get<
-      V2WorkgraphExecutionCapabilitiesResponses,
-      V2WorkgraphExecutionCapabilitiesErrors,
-      ThrowOnError
-    >({
-      url: "/api/workgraph/execution-capabilities",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Refresh WorkGraph execution capabilities
-   *
-   * Explicitly refresh the authenticated owner's execution capability catalog.
-   */
-  public refreshExecutionCapabilities<ThrowOnError extends boolean = false>(
-    parameters: {
-      body: {
-        [key: string]: unknown
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }])
-    return (options?.client ?? this.client).post<
-      V2WorkgraphRefreshExecutionCapabilitiesResponses,
-      V2WorkgraphRefreshExecutionCapabilitiesErrors,
-      ThrowOnError
-    >({
-      url: "/api/workgraph/execution-capabilities/refresh",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * List WorkGraph Task activity
-   *
-   * Read a bounded Task activity page at milestones, progress, or detailed granularity.
-   */
-  public activity<ThrowOnError extends boolean = false>(
-    parameters: {
-      workItemId: string
-      granularity?: "milestones" | "progress" | "detailed"
-      after?: string
-      limit?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "workItemId" },
-            { in: "query", key: "granularity" },
-            { in: "query", key: "after" },
-            { in: "query", key: "limit" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<V2WorkgraphActivityResponses, V2WorkgraphActivityErrors, ThrowOnError>({
-      url: "/api/workgraph/work-items/{workItemId}/activity",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
@@ -7207,11 +7301,6 @@ export class V2 extends HeyApiClient {
   private _projectCopy?: ProjectCopy2
   get projectCopy(): ProjectCopy2 {
     return (this._projectCopy ??= new ProjectCopy2({ client: this.client }))
-  }
-
-  private _workgraph?: Workgraph
-  get workgraph(): Workgraph {
-    return (this._workgraph ??= new Workgraph({ client: this.client }))
   }
 }
 

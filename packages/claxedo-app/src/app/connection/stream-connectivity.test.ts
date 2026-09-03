@@ -24,7 +24,7 @@ describe("createStreamConnectivity", () => {
   })
 
   /**
-   * THE BUG. `workgraph.changed` / `document.changed`
+   * THE BUG. `document.changed`
    * ride the CENTRAL stream only. When it flaps while a remote workspace relay
    * stream stays up, the aggregate count goes 2 → 1 → 2 and never reaches 0, so
    * consumers watching the aggregate never see a `false → true` edge and never

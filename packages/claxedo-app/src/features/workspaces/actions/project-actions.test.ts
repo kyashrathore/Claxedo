@@ -32,7 +32,7 @@ const toasts: Array<{ title?: string; description?: string }> = []
  *
  * Destroying a cloud sandbox builds its own `Authorization` header, and it used
  * to import `getAuthToken` from `@/platform/auth/auth-client` to do it — one
- * call site that put Clerk in the local product's bundle. It reads the bearer
+ * call site that put the identity provider in the local product's bundle. It reads the bearer
  * the build bound into `@/platform/api/api` instead, so this stands in for the
  * binding, and `null` is the local product's real state rather than a stub.
  */

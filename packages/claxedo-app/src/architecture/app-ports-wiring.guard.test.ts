@@ -6,10 +6,10 @@ import path from "node:path"
  * Every feature app-ports module must actually be configured — in production AND
  * in the test stub.
  *
- * WHY THIS GUARD EXISTS. `features/workgraph/app-ports.ts` shipped with a
- * `configureWorkGraphAppPorts` that NOTHING ever called. Its accessor is
+ * WHY THIS GUARD EXISTS. A feature's `app-ports.ts` shipped with a
+ * `configure*AppPorts` that NOTHING ever called. Its accessor is
  * deliberately tolerant — it returns `undefined` for an
- * unconfigured port instead of throwing — so the entire WorkGraph live-sync
+ * unconfigured port instead of throwing — so that feature's entire live-sync
  * doorbell degraded to "revalidate on activation only", silently, in production,
  * with every unit test green. Nothing in the type system or the test suite could
  * see it: the missing thing was a call site, not a type.

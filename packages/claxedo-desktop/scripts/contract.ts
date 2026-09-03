@@ -166,8 +166,6 @@ export function spec(root = ROOT): Spec {
     "../sdk-next/src",
     "../ui/package.json",
     "../ui/src",
-    "../workgraph/package.json",
-    "../workgraph/src",
     "../workspace-runtime/package.json",
     "../workspace-runtime/src",
     "../workspace-runtime/templates",

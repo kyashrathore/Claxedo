@@ -34,14 +34,11 @@ describe("generated Better Auth D1 locked Wrangler config", () => {
       "durable_objects",
       "[[migrations]]",
       "[triggers]",
-      "workgraph",
       "wake_lane",
       "live_sync_room",
       "claxedo_documents",
       "polar",
       "sandbox_driver",
-      "clerk",
-      "convex",
     ])
       expect(lowered, `unexpected ${forbidden} resource/config`).not.toContain(forbidden)
   })

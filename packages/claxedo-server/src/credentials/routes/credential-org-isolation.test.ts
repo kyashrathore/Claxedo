@@ -10,7 +10,7 @@
  * reachable.
  *
  * These run against the REAL registry, the REAL SQLite schema, and the REAL
- * per-request org resolution (a stub token verifier stands in for Clerk) —
+ * per-request org resolution (a stub token verifier stands in for the identity provider) —
  * a fake credentials port would prove nothing about the storage predicate.
  */
 
@@ -43,7 +43,7 @@ const ORG_B = "org_b"
 const ISSUER = "https://isolation.test"
 
 /**
- * Stand-in for Clerk. The bearer IS the org id, except `personal_*` bearers,
+ * Stand-in for the identity provider. The bearer IS the org id, except `personal_*` bearers,
  * which carry no `org_id` claim — the case that must fall back to the subject
  * rather than to a shared partition.
  */

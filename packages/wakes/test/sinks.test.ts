@@ -31,14 +31,14 @@ describe("sink registry", () => {
   it("fires a custom-kind wake through its registered sink with the wake and result", async () => {
     const settled: Array<{ wake: Wake; result: WakeResult }> = []
     const { clock, wakes, spawned } = harness({
-      sinks: { workgraph_settle: (wake, result) => void settled.push({ wake, result }) },
+      sinks: { custom_settle: (wake, result) => void settled.push({ wake, result }) },
     })
-    await wakes.schedule({ workspaceId: WS, kind: "workgraph_settle", at: clock.t, intent: { tenant: "org:me" } })
+    await wakes.schedule({ workspaceId: WS, kind: "custom_settle", at: clock.t, intent: { tenant: "org:me" } })
 
     expect((await wakes.runDue()).fired).toBe(1)
     expect(spawned).toHaveLength(0) // custom kind never routes to session_turn
     expect(settled).toHaveLength(1)
-    expect(settled[0]!.wake.kind).toBe("workgraph_settle")
+    expect(settled[0]!.wake.kind).toBe("custom_settle")
     expect(settled[0]!.wake.workspaceId).toBe(WS)
     expect(settled[0]!.result).toEqual({ trigger: "at", intent: { tenant: "org:me" } })
   })

@@ -98,10 +98,10 @@ export function peopleErrorResponse(c: Context, error: unknown): Response {
 }
 
 /**
- * Clerk token_identifier is `${issuer}|${subject}`. Some SQLite list APIs also
+ * A token_identifier is `${issuer}|${subject}`. Some SQLite list APIs also
  * alias `users.subject` as `token_identifier` — accept a bare `user_…` subject.
  */
-export function clerkSubjectFromIdentity(value: string | undefined): string | undefined {
+export function subjectFromIdentity(value: string | undefined): string | undefined {
   const raw = value?.trim()
   if (!raw) return
   const pipe = raw.lastIndexOf("|")
@@ -117,9 +117,9 @@ function memberSubjects(rows: unknown): string[] {
     if (!row || typeof row !== "object") continue
     const record = row as Record<string, unknown>
     const subject =
-      clerkSubjectFromIdentity(typeof record.clerk_subject === "string" ? record.clerk_subject : undefined)
-      ?? clerkSubjectFromIdentity(typeof record.token_identifier === "string" ? record.token_identifier : undefined)
-      ?? clerkSubjectFromIdentity(typeof record.subject === "string" ? record.subject : undefined)
+      subjectFromIdentity(typeof record.provider_subject === "string" ? record.provider_subject : undefined)
+      ?? subjectFromIdentity(typeof record.token_identifier === "string" ? record.token_identifier : undefined)
+      ?? subjectFromIdentity(typeof record.subject === "string" ? record.subject : undefined)
     if (subject) subjects.push(subject)
   }
   return subjects
@@ -142,7 +142,7 @@ function teamIds(rows: unknown): string[] {
 }
 
 /**
- * Expand a grant/revoke target into recipient Clerk subjects for doorbell fanout.
+ * Expand a grant/revoke target into recipient subjects for doorbell fanout.
  */
 export async function resolveSessionShareRecipientSubjects(input: {
   auth: SignedControlPlaneAuth
@@ -155,9 +155,9 @@ export async function resolveSessionShareRecipientSubjects(input: {
   const { target, authority, auth } = input
 
   const direct =
-    clerkSubjectFromIdentity(target.grantedToClerkSubject)
-    ?? clerkSubjectFromIdentity(target.grantedToTokenIdentifier)
-    ?? clerkSubjectFromIdentity(target.grantedToUserId)
+    subjectFromIdentity(target.grantedToSubject)
+    ?? subjectFromIdentity(target.grantedToTokenIdentifier)
+    ?? subjectFromIdentity(target.grantedToUserId)
   if (direct) subjects.add(direct)
 
   const teamId = target.grantedToTeamPublicId ?? target.grantedToTeamId
@@ -167,7 +167,7 @@ export async function resolveSessionShareRecipientSubjects(input: {
     }
   }
 
-  const orgId = target.grantedToOrgId ?? target.grantedToClerkOrgId
+  const orgId = target.grantedToOrgId
   if (orgId && authority.listTeams && authority.listTeamMembers) {
     // Best-effort: expand via team memberships in the org (collaborative orgs
     // place members on the default team). Full org_memberships listing is not

@@ -13,16 +13,16 @@ describe("captureProduct", () => {
     const sink = { capture: vi.fn() }
     captureProduct(
       sink,
-      "workgraph_task_created",
-      { org_id: "org_1", user_id: "user_1", surface: "workgraph", deployment_mode: "cloud" },
+      "task_created",
+      { org_id: "org_1", user_id: "user_1", surface: "documents", deployment_mode: "cloud" },
       { task_id: "task_9" },
     )
     expect(sink.capture).toHaveBeenCalledTimes(1)
-    expect(sink.capture).toHaveBeenCalledWith("user_1", "workgraph_task_created", {
+    expect(sink.capture).toHaveBeenCalledWith("user_1", "task_created", {
       task_id: "task_9",
       org_id: "org_1",
       user_id: "user_1",
-      surface: "workgraph",
+      surface: "documents",
       deployment_mode: "cloud",
       $groups: { org: "org_1" },
     })
@@ -76,12 +76,12 @@ describe("captureProduct", () => {
 describe("productIdentity", () => {
   test("resolves when the token names both a user and an org", () => {
     expect(
-      productIdentity({ user: { subject: "user_1", orgId: "org_1" } }, { surface: "workgraph", deployment_mode: "cloud" }),
-    ).toEqual({ org_id: "org_1", user_id: "user_1", surface: "workgraph", deployment_mode: "cloud" })
+      productIdentity({ user: { subject: "user_1", orgId: "org_1" } }, { surface: "documents", deployment_mode: "cloud" }),
+    ).toEqual({ org_id: "org_1", user_id: "user_1", surface: "documents", deployment_mode: "cloud" })
   })
 
   test("returns undefined rather than inventing an org id", () => {
-    const context = { surface: "workgraph", deployment_mode: "cloud" } as const
+    const context = { surface: "documents", deployment_mode: "cloud" } as const
     expect(productIdentity({ user: { subject: "user_1" } }, context)).toBeUndefined()
     expect(productIdentity({ user: { subject: "user_1", orgId: "  " } }, context)).toBeUndefined()
     expect(productIdentity({ user: { subject: "", orgId: "org_1" } }, context)).toBeUndefined()

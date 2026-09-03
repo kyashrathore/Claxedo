@@ -176,7 +176,7 @@ Claxedo principal remains inside trusted identity services.
    egress, browser, or data capability creates a reviewable release diff.
 8. **Provider contracts are semantic.** App code depends on transactions,
    objects, identity, jobs, and connector calls rather than Cloudflare, Vercel,
-   Clerk, Better Auth, or Turso APIs.
+   Better Auth, or Turso APIs.
 9. **The publisher owns code; the customer owns data and connections.** Support
    access requires an explicit, time-bounded customer grant and an audit trail.
 10. **Every request carries an accountable actor chain.** Agent work records the
@@ -374,7 +374,7 @@ and SolidJS components never cross it.
 ## 9. Control-plane model
 
 The following records describe the logical contract. Provider adapters may
-store them in Convex, SQLite, or another authority implementation.
+store them in D1, SQLite, or another authority implementation.
 
 ```text
 AppPublisher
@@ -1298,8 +1298,8 @@ packages/claxedo-app/src/app/workbench/review/review-workspace.tsx
 - Add R2 assets, Wakes jobs, and Connections connector adapters.
 - Add preview, canary, migration, rollout, and rollback flows.
 
-Hosted authority records will contend with the multiplayer plan in
-`convex/schema.ts`. B1, B2, B4, and B5 already share that file. Managed-app
+Hosted authority records will contend with the multiplayer plan in the hosted
+control-plane D1 schema. B1, B2, B4, and B5 already share it. Managed-app
 tables land only in a scheduled schema wave with one owner, preferably as an
 EXPAND migration after 2a's org/project identities are stable. The provider-
 neutral contracts and SQLite/self-host adapter can proceed independently.

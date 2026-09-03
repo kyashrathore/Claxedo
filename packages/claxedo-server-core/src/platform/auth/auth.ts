@@ -1,7 +1,7 @@
 export type EnabledConfig = {
   enabled: true
   /** Static composition identity. */
-  adapter?: "better-auth" | "custom"
+  adapter?: AuthAdapterId
   issuer: string
   jwksUrl: string
   audience?: string
@@ -139,7 +139,7 @@ export type BetterAuthSession = {
 export type BetterAuthVerifier = (token: string) => Promise<BetterAuthSession | null | undefined>
 
 function adapterConfig(input: {
-  adapter: "better-auth" | "custom"
+  adapter: AuthAdapterId
   issuer: string
   jwksUrl?: string
   audience?: string
@@ -172,7 +172,7 @@ export function devAuthAdapter(reason = "signed/cloud auth is disabled"): Contro
 }
 
 export function customVerifierAuthAdapter(input: {
-  adapter?: "better-auth" | "custom"
+  adapter?: AuthAdapterId
   issuer: string
   audience?: string
   jwksUrl?: string
@@ -221,10 +221,10 @@ export function betterAuthAdapter(input: {
 /**
  * Neutral default auth config. Signed deployments pass an explicit config
  * from their Better Auth composition; without one every request stays
- * unsigned-local (desktop loopback). No Clerk/Convex fallback exists.
+ * unsigned-local (desktop loopback). No hosted-provider fallback exists.
  */
 export function controlPlaneAuthConfig(): ControlPlaneAuthConfig {
-  return { enabled: false, mode: "local-only", reason: "signed/cloud auth is disabled" }
+  return localOnlyAuthAdapter().config
 }
 
 export function bearerToken(header: string | null) {
@@ -313,6 +313,7 @@ export function controlPlaneAuthErrorBody(err: ControlPlaneAuthError) {
 }
 import {
   AuthenticationError,
+  type AuthAdapterId,
   type ControlPlanePrincipal,
   type RequestAuthenticationAdapter,
 } from "./authentication"

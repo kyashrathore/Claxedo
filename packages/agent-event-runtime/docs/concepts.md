@@ -253,7 +253,7 @@ events the source of truth for a new system.
 | Translate ACP `session/update` frames | harness event adapter (`HarnessEventAdapter`) |
 | Convert canonical events to UI rows | projection or host projection |
 | Convert canonical events to OpenCode events | `opencode-compat` projection |
-| Store events in Postgres/Convex/Supabase | host |
+| Store events in Postgres/SQLite/Supabase | host |
 | Authorize users | host |
 | Start/stop agent processes | host or SDK runtime |
 | Manage sessions and prompts | `@claxedo/agent-sdk-runtime` |

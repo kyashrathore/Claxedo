@@ -114,11 +114,10 @@ export type WorkspaceRuntimeServerOptions = {
    * Host-supplied route groups mounted into this runtime.
    *
    * The runtime core owns local execution and nothing else. A host that wants
-   * WorkGraph's tool brokers passes
-   * `workGraphRuntimeRouteContributions()` from
-   * `@claxedo/workgraph/runtime-adapter`; the desktop-local runtime passes
-   * none, which is what makes WorkGraph's absence from an unsigned build a
-   * property of the composition rather than of a runtime flag.
+   * hosted tool brokers passes route contributions from its own adapter;
+   * the desktop-local runtime passes none, which is what makes a hosted
+   * capability's absence from an unsigned build a property of the composition
+   * rather than of a runtime flag.
    */
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   /** Process-retained authority. It is never projected into a Session or child environment. */

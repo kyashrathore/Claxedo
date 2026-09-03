@@ -31,9 +31,9 @@ describe("clearPersistedAuthState", () => {
 
   test("leaves unrelated third-party keys untouched", () => {
     localStorage.setItem("theme", "dark")
-    localStorage.setItem("clerk.session", "abc")
+    localStorage.setItem("provider.session", "abc")
     clearPersistedAuthState()
     expect(localStorage.getItem("theme")).toBe("dark")
-    expect(localStorage.getItem("clerk.session")).toBe("abc")
+    expect(localStorage.getItem("provider.session")).toBe("abc")
   })
 })

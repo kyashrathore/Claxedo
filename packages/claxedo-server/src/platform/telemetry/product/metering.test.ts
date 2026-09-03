@@ -272,12 +272,12 @@ describe("llm_turn_completed carries the provider's usage object verbatim", () =
     expect(recorded[0]).toMatchObject({ org_id: "org-scope", user_id: "user-scope", messageId: "msg-scope" })
   })
 
-  test("hosted WorkGraph turns derive attribution from the deterministic Session identity", async () => {
-    vi.stubEnv("CLAXEDO_WORKGRAPH_STREAM_ID", "wrong-cross-tenant-stream")
+  test("hosted turns derive attribution from the deterministic Session identity", async () => {
+    vi.stubEnv("CLAXEDO_STREAM_ID", "wrong-cross-tenant-stream")
     const captured = captureSink()
     const turnCredentials = createConnectionTurnCredentials()
     const recorded: Array<Record<string, unknown>> = []
-    const resolveWorkGraphAttribution = vi.fn(async () => ({
+    const resolveHostedAttribution = vi.fn(async () => ({
       stream_id: "stream_hosted",
       run_id: "run_hosted",
       work_item_id: "item_hosted",
@@ -285,7 +285,7 @@ describe("llm_turn_completed carries the provider's usage object verbatim", () =
     const runtime = createCentralSessionRuntime(services(captured.sink), {
       turnCredentials,
       usageLedger: {
-        resolveWorkGraphAttribution,
+        resolveHostedAttribution,
         recordLlmTurn: async (input) => {
           recorded.push(input)
           return { activated: false }
@@ -299,7 +299,7 @@ describe("llm_turn_completed carries the provider's usage object verbatim", () =
     turnCredentials.run(credential, () => publish(runtime, completedTurn({ sessionId })))
     await vi.waitFor(() => expect(recorded).toHaveLength(1))
 
-    expect(resolveWorkGraphAttribution).toHaveBeenCalledWith({
+    expect(resolveHostedAttribution).toHaveBeenCalledWith({
       org_id: "org_1",
       user_id: "user_sub_1",
       session_id: sessionId,
@@ -361,7 +361,7 @@ describe("user_activated fires exactly once", () => {
     const captured = captureSink()
     let activations = 0
     const ledger: UsageLedger = {
-      // Mirrors the Convex check-and-set: the first ok turn activates, and no
+      // Mirrors the authority check-and-set: the first ok turn activates, and no
       // later turn does.
       recordLlmTurn: async (input) => {
         if (input.turn_status !== "ok") return { activated: false }
@@ -421,7 +421,7 @@ describe("user_activated fires exactly once", () => {
     const result = await emitLlmTurnCompleted({
       identity: IDENTITY,
       sink: captured.sink,
-      ledger: { recordLlmTurn: async () => { throw new Error("convex unreachable") } },
+      ledger: { recordLlmTurn: async () => { throw new Error("authority unreachable") } },
       record: {
         message_id: "msg_1",
         session_id: "s_1",

@@ -6,9 +6,9 @@ import type { FindMyWay } from "effect/unstable/http"
  * 404 — no `Content-Type`, no body — issued before any handler runs, so it is
  * indistinguishable at a glance from a genuinely absent resource.
  *
- * Session ids are not bounded at 100 characters. WorkGraph derives a run's
- * session id from the run id, which itself embeds the owner id, operation id,
- * and work-item id (~250 characters). Such a session could be created via
+ * Session ids are not bounded at 100 characters. A caller may derive a session
+ * id from a composite run id that itself embeds an owner id, an operation id,
+ * and a work-item id (~250 characters). Such a session could be created via
  * `POST /api/session` — the id arrives in the body — and listed, but every
  * route that addressed it through `:sessionID` 404'd, which read as "the
  * session vanished" rather than "the router rejected the id".

@@ -43,7 +43,7 @@ export function isClaxedoError(error: unknown): error is ClaxedoError {
  * The HTTP status for ANY thrown value.
  *
  * Reads the structural shape rather than requiring `ClaxedoError`, because
- * errors cross package boundaries (`@claxedo/workgraph`, the SDK) where an
+ * errors cross package boundaries (capability packages, the SDK) where an
  * `instanceof` check fails against a different realm's class identity while the
  * fields are still there.
  */

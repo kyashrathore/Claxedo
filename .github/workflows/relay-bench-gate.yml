@@ -67,8 +67,8 @@ concurrency:
 jobs:
   gate:
     runs-on: ubuntu-latest
-    # The gate row itself takes seconds; the budget is for install + boot. Well
-    # under workgraph-stress's 30 because nothing here provisions cloud state.
+    # The gate row itself takes seconds; the budget is for install + boot.
+    # Deliberately small because nothing here provisions cloud state.
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

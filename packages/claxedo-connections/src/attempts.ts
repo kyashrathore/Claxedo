@@ -45,8 +45,8 @@ export type AttemptSummary = { status: AttemptStatus; integrationId: string; sco
  * creates an attempt and the request that polls it hold different Maps, so the
  * poll always missed and every hosted OAuth/device connect 404'd as
  * `attempt_not_found`. Widening to `MaybePromise` is what lets a durable store
- * (see the Convex-backed one in claxedo-server) satisfy the same contract;
- * the in-memory implementation is unchanged and still returns bare values.
+ * (see the persisted one in claxedo-server) satisfy the same contract; the
+ * in-memory implementation is unchanged and still returns bare values.
  */
 export type MaybePromise<T> = T | Promise<T>
 

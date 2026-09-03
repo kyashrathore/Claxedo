@@ -47,17 +47,16 @@ async function createInstallationStore() {
   return new D1ServiceInstallationStore(database)
 }
 
-function descriptor(serviceId: "workgraph" | "documents"): FirstPartyServiceDescriptor {
-  const base = {
+function descriptor(serviceId: "documents"): FirstPartyServiceDescriptor {
+  return {
     protocolVersion: SERVICE_PROTOCOL_VERSION,
     schemaVersion: 1,
     state: "installed_disabled" as const,
-    entrypoint: serviceId === "workgraph" ? "WorkGraphServiceV1" : "DocumentsServiceV1",
+    entrypoint: "DocumentsServiceV1",
     trust: { ...scope, bindingProvenance: `cloudflare-service:${serviceId}-staging` },
+    serviceId,
+    bindingName: SERVICE_BINDINGS.documents,
   }
-  return serviceId === "workgraph"
-    ? { ...base, serviceId, bindingName: SERVICE_BINDINGS.workgraph }
-    : { ...base, serviceId, bindingName: SERVICE_BINDINGS.documents }
 }
 
 class TestDeploymentLock implements ServiceDeploymentLock {
@@ -96,7 +95,7 @@ class TestDriver implements OptionalServiceDeploymentDriver {
   revision: number | undefined
 
   constructor(
-    readonly serviceId: "workgraph" | "documents",
+    readonly serviceId: "documents",
     private readonly serviceBuildId: string,
   ) {}
 
@@ -168,7 +167,7 @@ class TestDriver implements OptionalServiceDeploymentDriver {
   }
 }
 
-function input(serviceId: "workgraph" | "documents", operationId: string, driver: TestDriver) {
+function input(serviceId: "documents", operationId: string, driver: TestDriver) {
   return {
     identity: { ...scope, operationId, occurredAt: "2026-08-28T10:00:00Z" },
     descriptor: descriptor(serviceId),
@@ -183,83 +182,89 @@ describe("optional-service lifecycle coordinator", () => {
   test("only the operation that initialized a dark service may resume the pre-registration crash", async () => {
     const store = await createInstallationStore()
     const coordinator = new OptionalServiceLifecycleCoordinator(store, new TestDeploymentLock())
-    const driver = new TestDriver("workgraph", "sha256:workgraph-build")
+    const driver = new TestDriver("documents", "sha256:documents-build")
 
     driver.failAfterActions.add("initialize_disabled")
-    await expect(coordinator.install(input("workgraph", "install-owner", driver))).rejects.toThrow(
+    await expect(coordinator.install(input("documents", "install-owner", driver))).rejects.toThrow(
       /initialize_disabled/,
     )
-    expect(await store.get(scope, "workgraph")).toBeNull()
+    expect(await store.get(scope, "documents")).toBeNull()
 
-    await expect(coordinator.install(input("workgraph", "install-takeover", driver))).rejects.toThrow(
+    await expect(coordinator.install(input("documents", "install-takeover", driver))).rejects.toThrow(
       /initialize precondition/,
     )
-    expect(await store.get(scope, "workgraph")).toBeNull()
+    expect(await store.get(scope, "documents")).toBeNull()
 
-    await expect(coordinator.install(input("workgraph", "install-owner", driver))).resolves.toMatchObject({
+    await expect(coordinator.install(input("documents", "install-owner", driver))).resolves.toMatchObject({
       revision: 2,
     })
-    expect((await store.get(scope, "workgraph"))?.revision).toBe(2)
+    expect((await store.get(scope, "documents"))?.revision).toBe(2)
   })
 
   test("resumes every two-ledger mismatch with the exact operation and leaves revisions aligned", async () => {
     const store = await createInstallationStore()
     const lock = new TestDeploymentLock()
     const coordinator = new OptionalServiceLifecycleCoordinator(store, lock)
-    const driver = new TestDriver("workgraph", "sha256:workgraph-build")
+    const driver = new TestDriver("documents", "sha256:documents-build")
 
     driver.failAfterActions.add("record_probe")
-    await expect(coordinator.install(input("workgraph", "install-1", driver))).rejects.toThrow(/record_probe/)
-    expect((await store.get(scope, "workgraph"))?.revision).toBe(1)
+    await expect(coordinator.install(input("documents", "install-1", driver))).rejects.toThrow(/record_probe/)
+    expect((await store.get(scope, "documents"))?.revision).toBe(1)
     expect(driver.revision).toBe(2)
-    await expect(coordinator.install(input("workgraph", "install-1", driver))).resolves.toMatchObject({ revision: 2 })
+    await expect(coordinator.install(input("documents", "install-1", driver))).resolves.toMatchObject({ revision: 2 })
 
     driver.failAfterActions.add("prepare_enable")
-    await expect(coordinator.enable(input("workgraph", "enable-1", driver))).rejects.toThrow(/prepare_enable/)
-    expect((await store.get(scope, "workgraph"))?.revision).toBe(2)
+    await expect(coordinator.enable(input("documents", "enable-1", driver))).rejects.toThrow(/prepare_enable/)
+    expect((await store.get(scope, "documents"))?.revision).toBe(2)
     expect(driver.state).toBe("enabling")
-    await expect(coordinator.enable(input("workgraph", "enable-1", driver))).resolves.toMatchObject({ revision: 3 })
+    await expect(coordinator.enable(input("documents", "enable-1", driver))).resolves.toMatchObject({ revision: 3 })
     expect(driver.state).toBe("enabled")
 
     driver.failAfterSteps.add("drain_operations")
-    await expect(coordinator.disable(input("workgraph", "disable-1", driver))).rejects.toThrow(/drain_operations/)
-    expect((await store.get(scope, "workgraph"))?.revision).toBe(4)
+    await expect(coordinator.disable(input("documents", "disable-1", driver))).rejects.toThrow(/drain_operations/)
+    expect((await store.get(scope, "documents"))?.revision).toBe(4)
     expect(driver.revision).toBe(3)
-    await expect(coordinator.disable(input("workgraph", "disable-1", driver))).resolves.toMatchObject({ revision: 4 })
+    await expect(coordinator.disable(input("documents", "disable-1", driver))).resolves.toMatchObject({ revision: 4 })
     expect(driver.revision).toBe(4)
 
     driver.failAfterActions.add("uninstall")
-    await expect(coordinator.uninstall(input("workgraph", "uninstall-1", driver))).rejects.toThrow(/uninstall/)
-    expect(await store.get(scope, "workgraph")).not.toBeNull()
-    await expect(coordinator.uninstall(input("workgraph", "uninstall-1", driver))).resolves.toBeUndefined()
-    expect(await store.get(scope, "workgraph")).toBeNull()
+    await expect(coordinator.uninstall(input("documents", "uninstall-1", driver))).rejects.toThrow(/uninstall/)
+    expect(await store.get(scope, "documents")).not.toBeNull()
+    await expect(coordinator.uninstall(input("documents", "uninstall-1", driver))).resolves.toBeUndefined()
+    expect(await store.get(scope, "documents")).toBeNull()
     expect(driver.state).toBeUndefined()
   })
 
-  test("serializes both services on one deployment lock and never dispatches across service drivers", async () => {
+  test("serializes concurrent installs on one deployment lock and never dispatches across services", async () => {
     const store = await createInstallationStore()
     const lock = new TestDeploymentLock()
     const coordinator = new OptionalServiceLifecycleCoordinator(store, lock)
-    const workgraph = new TestDriver("workgraph", "sha256:workgraph-build")
     const documents = new TestDriver("documents", "sha256:documents-build")
 
     await Promise.all([
-      coordinator.install(input("workgraph", "install-workgraph", workgraph)),
+      coordinator.install(input("documents", "install-documents", documents)),
       coordinator.install(input("documents", "install-documents", documents)),
     ])
 
     expect(lock.maxActive).toBe(1)
-    expect([...workgraph.steps.values()].every((value) => value.includes('"serviceId":"workgraph"'))).toBe(true)
     expect([...documents.steps.values()].every((value) => value.includes('"serviceId":"documents"'))).toBe(true)
-    expect((await store.list(scope)).map((row) => row.descriptor.serviceId)).toEqual(["documents", "workgraph"])
+    expect((await store.list(scope)).map((row) => row.descriptor.serviceId)).toEqual(["documents"])
   })
 
-  test("rejects a driver or descriptor from another service before provisioning anything", async () => {
+  test("rejects a descriptor from another service before provisioning anything", async () => {
     const store = await createInstallationStore()
     const driver = new TestDriver("documents", "sha256:documents-build")
     const coordinator = new OptionalServiceLifecycleCoordinator(store, new TestDeploymentLock())
-    await expect(coordinator.install({ ...input("workgraph", "wrong-driver", driver), driver })).rejects.toMatchObject({
-      code: "driver_mismatch",
+    // The cast is the point: the union has one member today, so only a
+    // deliberately forged service id exercises the runtime refusal that keeps
+    // one service's driver off another's descriptor. The contract validator
+    // sees the forged id first, which is a stricter refusal than
+    // `driver_mismatch` and lands before anything is provisioned — the property
+    // this test exists for.
+    const foreign = { ...input("documents", "wrong-driver", driver), driver }
+    foreign.descriptor = { ...foreign.descriptor, serviceId: "other" as never }
+    await expect(coordinator.install(foreign)).rejects.toMatchObject({
+      code: "unknown_service",
     })
     expect(driver.steps.size).toBe(0)
     expect(await store.list(scope)).toEqual([])

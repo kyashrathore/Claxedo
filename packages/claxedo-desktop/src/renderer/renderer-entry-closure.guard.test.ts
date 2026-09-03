@@ -14,19 +14,19 @@ import { MAIN_RENDERER_DOCUMENT } from "../main/navigation-guard"
  * The desktop is a THIRD composition root beside `@claxedo/app`'s `main.tsx`
  * and `local.tsx`, and until this file existed nothing measured it. The app's
  * `src/architecture/local-entry-closure.guard.test.ts` proved the LOCAL BROWSER
- * entry never reaches Clerk and stayed green the entire time the desktop —
+ * entry never reaches the identity provider and stayed green the entire time the desktop —
  * the product users actually install — imported `@claxedo/app/auth` from its
  * only entry and shipped the identity provider to every unsigned launch.
  *
  * Two properties are measured here, and they are different kinds of claim:
  *
- *  - ABSOLUTE. The unsigned entry's closure reaches no `@claxedo/app/auth`, no
- *    `auth-client.ts`, no Clerk, no Convex. This is what Unit 11 changes, and
+ *  - ABSOLUTE. The unsigned entry's closure reaches no `@claxedo/app/auth` and
+ *    no `auth-client.ts`. This is what Unit 11 changes, and
  *    the companion assertions prove the signed entry DOES reach all of them —
  *    without that control, a walker that resolved nothing would report a
  *    finished migration.
  *
- *  - RELATIVE. WorkGraph, Documents, the Relay client, the cloud runtime store
+ *  - RELATIVE. Documents, the Relay client, the cloud runtime store
  *    and both account adapters are reachable from `@claxedo/app`'s SHARED
  *    shell (`app/entry/app.tsx` -> `app/integrations/feature-ports.ts`), so
  *    `src/app/entry/local.tsx` reaches every one of them too. Desktop cannot
@@ -54,7 +54,7 @@ const appSrc = path.join(appRoot, "src")
  * `@claxedo/app/<x>` onto `src/<x>` and therefore answers NULL for
  * `@claxedo/app/auth` — whose real target is `src/app/entry/auth.ts`. That is
  * not a hypothetical gap: it is precisely the specifier by which the desktop
- * renderer reached Clerk, so a walk built on the unpatched resolver reports a
+ * renderer reached the identity provider, so a walk built on the unpatched resolver reports a
  * clean desktop closure and is wrong.
  */
 const appExports = (
@@ -91,8 +91,9 @@ const label = (file: string) => path.relative(appSrc, file).split(path.sep).join
  *
  * Value imports only, matching the app's own walk: the bundler erases
  * `import type`, so a type edge to the identity provider puts nothing in the
- * bundle. Bare package specifiers are recorded but not followed — `@clerk/…` is
- * a breach wherever it appears and its internals are not this repo's graph.
+ * bundle. Bare package specifiers are recorded but not followed — an identity
+ * vendor package is a breach wherever it appears and its internals are not this
+ * repo's graph.
  */
 function closure(entryFile: string, options: { followDynamic?: boolean } = {}) {
   const edges: Edge[] = []
@@ -136,8 +137,6 @@ const APP_LOCAL = closure(path.join(appSrc, "app/entry/local.tsx"))
 const IDENTITY = {
   "the @claxedo/app/auth subpath": (edge: Edge) => edge.specifier === "@claxedo/app/auth",
   "platform/auth/auth-client.ts": (edge: Edge) => edge.module === "platform/auth/auth-client.ts",
-  "@clerk/*": (edge: Edge) => edge.specifier === "@clerk/clerk-js" || edge.specifier.startsWith("@clerk/"),
-  "convex": (edge: Edge) => edge.specifier === "convex" || edge.specifier.startsWith("convex/"),
 } satisfies Record<string, (edge: Edge) => boolean>
 
 /**
@@ -149,12 +148,11 @@ const IDENTITY = {
  */
 function hostedModules(modules: Set<string>) {
   const prefixes = [
-    "features/workgraph/",
     "features/documents/",
     "platform/runtime/cloud/",
     "platform/account/",
     "platform/auth/",
-    "app/integrations/hosted-content-surfaces",
+    "app/integrations/documents-content-surfaces",
   ]
   const exact = ["platform/runtime/agent/workspace-relay-connection.ts"]
   return [...modules]
@@ -194,7 +192,7 @@ describe("the unsigned desktop renderer entry", () => {
   })
 
   test("adds no hosted capability that the local browser product does not already have", () => {
-    // The RELATIVE claim. WorkGraph, Documents, the Relay client, the cloud
+    // The RELATIVE claim. Documents, the Relay client, the cloud
     // runtime store and both account adapters arrive through
     // `app/entry/app.tsx -> app/integrations/feature-ports.ts`, which BOTH local
     // products mount; removing them is app-owned work, not Unit 11's, and
@@ -245,11 +243,8 @@ describe("the optional signed activation", () => {
     expect(hostedModules(HOSTED_ACTIVATION.modules)).toEqual([])
   })
 
-  test("keeps WorkGraph and Documents in separate catalog-driven modules", () => {
-    const workgraph = stripComments(read("src/renderer/workgraph-contributions.ts"))
+  test("keeps Documents in its own catalog-driven module", () => {
     const documents = stripComments(read("src/renderer/documents-contributions.ts"))
-    expect(workgraph).toContain("hosted-content-surfaces")
-    expect(workgraph).not.toContain("documents-content-surfaces")
     expect(documents).toContain("documents-content-surfaces")
     expect(documents).not.toContain("hosted-content-surfaces")
   })

@@ -78,7 +78,7 @@ describe("sqlite Org→Team + session share", () => {
         expect.objectContaining({
           user_id: bob.user.tokenIdentifier,
           token_identifier: bob.user.tokenIdentifier,
-          clerk_subject: bob.user.subject,
+          provider_subject: bob.user.subject,
           role: "member",
         }),
       ]),

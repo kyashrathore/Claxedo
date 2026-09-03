@@ -42,7 +42,7 @@ describe("certified core resource ownership", () => {
       "CLAXEDO_REQUEST_LIMITER",
     ])
     expect(config).not.toMatch(
-      /WORKGRAPH|WAKE_LANE|DOCUMENTS|CLAXEDO_DOCUMENTS|LIVE_SYNC_ROOM|r2_buckets|durable_objects|crons|POLAR/i,
+      /WAKE_LANE|DOCUMENTS|CLAXEDO_DOCUMENTS|LIVE_SYNC_ROOM|r2_buckets|durable_objects|crons|POLAR/i,
     )
   })
 
@@ -63,7 +63,7 @@ describe("certified core resource ownership", () => {
     expect(config).toContain('name = "claxedo-user-deployed-locked"')
     expect(config).toContain('name = "LIVE_SYNC_ROOM"')
     expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
-    expect(config).not.toMatch(/WORKGRAPH|WAKE_LANE|DOCUMENTS|POLAR|BILLING/i)
+    expect(config).not.toMatch(/WAKE_LANE|DOCUMENTS|POLAR|BILLING/i)
   })
 
   test("the lifecycle bridge adds only LiveSyncRoom while retaining the fail-closed bootstrap handler", async () => {
@@ -77,17 +77,5 @@ describe("certified core resource ownership", () => {
     expect(source).toContain('export { LiveSyncRoom } from "./live-sync-room.cf"')
     expect(artifact.workerName).toBe("claxedo-user-deployed-locked")
     expect(artifact.resources).toMatchObject({ liveSyncRoom: true, optionalServices: false, billing: false })
-  })
-
-  test("does not rewrite or reuse the legacy WorkGraph/Wake DO migration history", async () => {
-    const legacy = await readFile(new URL("../../../wrangler.toml", import.meta.url), "utf8")
-
-    expect(legacy).toContain('name = "claxedo-control-plane"')
-    expect(legacy).toContain('name = "claxedo-control-plane-staging"')
-    expect(legacy).toContain('tag = "v1"\nnew_sqlite_classes = ["WorkGraphSettler"]')
-    expect(legacy).toContain('tag = "v2"\nnew_sqlite_classes = ["ClaxedoWakeLane"]')
-    expect(legacy).toContain('tag = "v3"\nnew_sqlite_classes = ["LiveSyncRoom"]')
-    expect(renderHostedCoreWranglerConfig(lockedCoreBoundary)).toContain('name = "claxedo-user-deployed-locked"')
-    expect(renderHostedCoreWranglerConfig(cutoverCoreBoundary)).toContain('name = "claxedo-user-deployed-locked"')
   })
 })

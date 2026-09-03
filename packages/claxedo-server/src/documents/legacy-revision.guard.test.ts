@@ -5,7 +5,7 @@ import path from "node:path"
 describe("legacy document revision retirement", () => {
   test("keeps active source free of the retired revision columns and tables", () => {
     const repository = path.resolve(import.meta.dirname, "../../../..")
-    const roots = ["packages/claxedo-server/src", "packages/claxedo-app/src", "packages/workgraph/src"]
+    const roots = ["packages/claxedo-server/src", "packages/claxedo-app/src"]
     const terms = [["document", "revision", "id"].join("_"), ["claxedo", "document", "revision"].join("_")]
     const offenders = roots
       .flatMap((root) => files(path.join(repository, root)))

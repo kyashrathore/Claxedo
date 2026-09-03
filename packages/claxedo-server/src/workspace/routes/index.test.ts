@@ -334,8 +334,8 @@ function readySandboxManager(hostId = "ws_1") {
 
 const authConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 } as const
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
@@ -388,7 +388,7 @@ describe("workspace routes signed control plane authority", () => {
     resetWorkspaceStoreMocks()
   })
 
-  test("signed cloud create records Convex workspace metadata before provisioning", async () => {
+  test("signed cloud create records the authority workspace metadata before provisioning", async () => {
     const svc = services()
     const sandbox = readySandboxManager()
     svc.sandbox.sandboxManager = sandbox.manager
@@ -421,7 +421,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(JSON.stringify(json)).not.toContain("/tmp/claxedo-workspace-route-test")
     expect(verify).toHaveBeenCalledWith("user_1", authConfig)
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "control_plane.auth.signed", {
-      issuer: "https://clerk.example.test",
+      issuer: "https://issuer.example.test",
     })
     expect(svc.authority?.usersMe).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "signed", token: "user_1" }),
@@ -784,7 +784,7 @@ describe("workspace routes signed control plane authority", () => {
     }))
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
     expect(capture).toHaveBeenCalledWith("user_1", "control_plane.auth.signed", {
-      issuer: "https://clerk.example.test",
+      issuer: "https://issuer.example.test",
     })
     expect(capture).toHaveBeenCalledWith(
       "user_1",
@@ -926,7 +926,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.credentials.putCredential).not.toHaveBeenCalled()
   })
 
-  test("unsigned local create does not require Convex authority", async () => {
+  test("unsigned local create does not require a workspace authority", async () => {
     const svc = services()
     const sandbox = readySandboxManager()
     svc.sandbox.sandboxManager = sandbox.manager
@@ -1167,7 +1167,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.ensureSupervisorSandbox).not.toHaveBeenCalled()
   })
 
-  test("unsigned local-worktree local access resolves directly without Convex or Workspace Relay", async () => {
+  test("unsigned local-worktree local access resolves directly without the authority or Workspace Relay", async () => {
     mocks.resolveWorkspace.mockResolvedValueOnce({
       id: "ws_local",
       project_id: "project_1",
@@ -1344,7 +1344,7 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
-  test("signed cloud resolve checks Convex workspace open authority", async () => {
+  test("signed cloud resolve checks the workspace-open authority", async () => {
     const svc = services()
     const verify = vi.fn(verifier)
     const app = WorkspaceRoutes(svc, { authConfig, verifier: verify })
@@ -1496,7 +1496,7 @@ describe("workspace routes signed control plane authority", () => {
     )
   })
 
-  test("signed workspace open is rate limited before Convex open authority", async () => {
+  test("signed workspace open is rate limited before the workspace-open authority", async () => {
     const svc = services()
     const app = WorkspaceRoutes(svc, {
       authConfig,
@@ -1538,7 +1538,7 @@ describe("workspace routes signed control plane authority", () => {
     )
   })
 
-  test("signed missing workspace ids resolve through Convex authority", async () => {
+  test("signed missing workspace ids resolve through the workspace authority", async () => {
     const svc = services()
     mocks.resolveWorkspace.mockResolvedValue(undefined)
     svc.authority!.openWorkspace = vi.fn(async () => ({
@@ -1696,7 +1696,7 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
-  test("signed cloud list reads Convex workspace discovery without changing local list default", async () => {
+  test("signed cloud list reads the authority workspace discovery without changing local list default", async () => {
     const svc = services()
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
@@ -1723,7 +1723,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.listProjects).toHaveBeenCalled()
   })
 
-  test("signed workspace list is rate limited before Convex list", async () => {
+  test("signed workspace list is rate limited before the authority list", async () => {
     const svc = services()
     const app = WorkspaceRoutes(svc, {
       authConfig,
@@ -1754,7 +1754,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(svc.authority?.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 
-  test("signed user-hosted list reads Convex shared workspaces instead of local projects", async () => {
+  test("signed user-hosted list reads the authority shared workspaces instead of local projects", async () => {
     const svc = services()
     svc.authority!.listWorkspaces = vi.fn(async () => [
       {
@@ -1932,7 +1932,7 @@ describe("workspace routes signed control plane authority", () => {
       },
     )
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "control_plane.auth.signed", {
-      issuer: "https://clerk.example.test",
+      issuer: "https://issuer.example.test",
     })
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "runtime_access_token.minted", {
       workspaceId: "ws_1",
@@ -2288,7 +2288,7 @@ describe("workspace routes signed control plane authority", () => {
     })
   })
 
-  test("signed user-hosted connection opens Convex-visible shared local workspace without local store row", async () => {
+  test("signed user-hosted connection opens the authority-visible shared local workspace without local store row", async () => {
     mocks.resolveWorkspace.mockResolvedValueOnce(undefined)
     const svc = services()
     const signer = vi.fn(async () => ({
@@ -3285,7 +3285,7 @@ describe("workspace routes signed control plane authority", () => {
     expect(mocks.deleteWorkspace).toHaveBeenCalledWith("ws_1")
   })
 
-  test("signed workspace share grant and revoke delegate to Convex authority", async () => {
+  test("signed workspace share grant and revoke delegate to the workspace authority", async () => {
     const svc = services()
     const app = WorkspaceRoutes(svc, { authConfig, verifier })
 
@@ -3340,7 +3340,7 @@ describe("workspace routes signed control plane authority", () => {
         "Content-Type": "application/json",
         "Content-Length": String(17 * 1024),
       },
-      body: JSON.stringify({ role: "viewer", grantedToClerkSubject: "x".repeat(17 * 1024) }),
+      body: JSON.stringify({ role: "viewer", grantedToSubject: "x".repeat(17 * 1024) }),
     })
 
     expect(response.status).toBe(413)

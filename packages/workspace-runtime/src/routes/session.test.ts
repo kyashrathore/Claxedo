@@ -1643,7 +1643,7 @@ describe("session prompt route", () => {
           "Content-Type": "application/json",
           ...(retry ? { "x-claxedo-idempotency-retry": "1" } : {}),
         },
-        body: JSON.stringify({ messageID: "msg-workgraph", parts: [{ type: "text", text: "hello" }] }),
+        body: JSON.stringify({ messageID: "msg-generic", parts: [{ type: "text", text: "hello" }] }),
       },
     )
 
@@ -1653,7 +1653,7 @@ describe("session prompt route", () => {
     await Bun.sleep(0)
     expect(executions).toBe(1)
 
-    const restored = make([{ info: { id: "msg-workgraph", role: "user" }, parts: [] }])
+    const restored = make([{ info: { id: "msg-generic", role: "user" }, parts: [] }])
     expect((await request(restored, true)).status).toBe(204)
     await Bun.sleep(0)
     expect(executions).toBe(1)

@@ -40,7 +40,7 @@ function bootChunkModulepreloadPlugin(): Plugin {
         const bundle = ctx.bundle
         if (!bundle) return
         // Vite already emits modulepreload links for the entry's static
-        // imports (vendor-solid, vendor-clerk); skip those and the entry.
+        // imports (vendor-solid, vendor-better-auth); skip those and the entry.
         const seen = new Set<string>()
         for (const output of Object.values(bundle)) {
           if (output.type === "chunk" && output.isEntry) {

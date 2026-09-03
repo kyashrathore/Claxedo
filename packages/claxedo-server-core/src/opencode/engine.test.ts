@@ -175,7 +175,7 @@ describe("opencode-engine embedded mode", () => {
     const disposeTools = vi.fn(async () => { order.push("dispose-tools") })
     const disposeInstances = vi.fn(async () => { order.push("dispose-instances") })
     configureOpenCodeApplicationTools(async () => ({
-      workgraph_create_stream: {
+      generic_create_stream: {
         description: "Create a Stream",
         inputSchema: { type: "object" },
         execute: async () => ({ ok: true }),
@@ -196,11 +196,11 @@ describe("opencode-engine embedded mode", () => {
     }) as never)
 
     await opencodeRequest(new Request(`${OPENCODE_INTERNAL_BASE}/session`))
-    expect(order).toEqual(["register:workgraph_create_stream", "request"])
+    expect(order).toEqual(["register:generic_create_stream", "request"])
 
     await drainOpenCodeEngine()
     expect(order).toEqual([
-      "register:workgraph_create_stream",
+      "register:generic_create_stream",
       "request",
       "dispose-tools",
       "dispose-instances",

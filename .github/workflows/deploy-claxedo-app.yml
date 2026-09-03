@@ -41,9 +41,10 @@ jobs:
           BASE="${BASE_URL%/}"
           curl -fsS --max-time 15 "$BASE/api/claxedo/health" | jq -e '.ok == true' > /dev/null
           curl -fsS --max-time 15 "$BASE/api/claxedo/mode" | jq -e '.signedAuth == true' > /dev/null
-
-      - name: Build WorkGraph dependency closure for app
-        run: bun turbo build --filter='@claxedo/workgraph...'
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 \
+            -H "Authorization: Bearer app-deploy-garbage-${GITHUB_RUN_ID}" \
+            "$BASE/api/claxedo/auth/profile")
+          [ "$code" = "401" ] || { echo "::error::target auth probe returned $code, expected 401"; exit 1; }
 
       - name: Build app for the verified control plane
         working-directory: packages/claxedo-app

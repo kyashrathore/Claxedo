@@ -20,7 +20,7 @@ beforeAll(async () => {
         // so a shared one would carry the previous test's held sockets and id
         // sequence into the next.
         // orgId is the AUTHORITY-INTERNAL org id resolved at connect — the
-        // namespace publishers stamp — not the Clerk claim on the auth.
+        // namespace publishers stamp — not the issuer claim on the auth.
         const subscriber = (subject, orgId) => ({
           auth: {
             mode: "signed",
@@ -39,8 +39,11 @@ beforeAll(async () => {
               return connectLiveSyncRoom(env.LIVE_SYNC_ROOM, subscriber(subject, org), 60000, undefined, lastEventId)
             }
             if (url.pathname === "/nudge") return nudgeLiveSyncRoom(env.LIVE_SYNC_ROOM, "org:" + org, {
-              type: "workgraph.changed",
+              type: "session.share.changed",
+              phase: "granted",
               ownerUserId: url.searchParams.get("owner") ?? "alice",
+              sessionId: "ses_1",
+              workspaceId: "ws_1",
               ts: Date.now(),
             }).then((result) => Response.json(result))
             return new Response("not found", { status: 404 })
@@ -156,7 +159,7 @@ describe("LiveSyncRoom workerd integration", () => {
 
     expect(await acme.nudge()).toEqual({ delivered: 1, held: 1 })
     const frames = await stream.until(2, "nudge never arrived")
-    expect(frames[1]).toMatchObject({ id: "1", data: { type: "workgraph.changed", ownerUserId: "alice" } })
+    expect(frames[1]).toMatchObject({ id: "1", data: { type: "session.share.changed", ownerUserId: "alice" } })
     await stream.cancel()
   })
 
@@ -188,7 +191,7 @@ describe("LiveSyncRoom workerd integration", () => {
     const second = await gapped.connect("alice", cursor)
     const frames = await second.until(2, "frame published while disconnected was lost")
     expect(frames[0]).toEqual({ id: cursor, data: { type: "heartbeat" } })
-    expect(frames[1]).toMatchObject({ id: "1", data: { type: "workgraph.changed", ownerUserId: "alice" } })
+    expect(frames[1]).toMatchObject({ id: "1", data: { type: "session.share.changed", ownerUserId: "alice" } })
     await second.cancel()
   })
 

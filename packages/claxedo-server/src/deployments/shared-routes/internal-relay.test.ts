@@ -42,7 +42,7 @@ describe("InternalRelayResolverRoutes /internal/relay/revocation", () => {
     })
   })
 
-  test("returns active=true when Convex says active", async () => {
+  test("returns active=true when the authority says active", async () => {
     let called = 0
     const app = buildApp({
       revocationLookup: async (args) => {
@@ -108,7 +108,7 @@ describe("InternalRelayResolverRoutes /internal/relay/revocation", () => {
     })
   })
 
-  test("passes through revoked response from Convex", async () => {
+  test("passes through revoked response from the authority", async () => {
     const app = buildApp({
       revocationLookup: async () => ({
         active: false,
@@ -126,7 +126,7 @@ describe("InternalRelayResolverRoutes /internal/relay/revocation", () => {
     })
   })
 
-  test("returns runtime_access_token_unknown when Convex reports unknown jti", async () => {
+  test("returns runtime_access_token_unknown when the authority reports unknown jti", async () => {
     const app = buildApp({
       revocationLookup: async () => ({
         active: false,

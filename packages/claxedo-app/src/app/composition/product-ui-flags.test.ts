@@ -5,7 +5,6 @@ describe("product UI flags", () => {
   test("defaults every gated entry point off", () => {
     expect(resolveProductUiFlags()).toEqual({
       documentNavigation: false,
-      workGraphNavigation: false,
       accountSignIn: false,
       settingsConnections: false,
       settingsSandboxProviders: false,
@@ -18,7 +17,6 @@ describe("product UI flags", () => {
       settingsConnectionsEnabled: true,
     })).toEqual({
       documentNavigation: true,
-      workGraphNavigation: false,
       accountSignIn: false,
       settingsConnections: true,
       settingsSandboxProviders: false,
@@ -28,7 +26,6 @@ describe("product UI flags", () => {
   test("maps build variables with strict default-off semantics", () => {
     expect(productUiFlagConfigFromEnv({})).toEqual({
       documentNavigationEnabled: false,
-      workGraphNavigationEnabled: false,
       accountSignInEnabled: false,
       settingsConnectionsEnabled: false,
       settingsSandboxProvidersEnabled: false,
@@ -36,7 +33,6 @@ describe("product UI flags", () => {
 
     const cases = [
       ["VITE_CLAXEDO_DOCUMENT_NAVIGATION_ENABLED", "documentNavigationEnabled"],
-      ["VITE_CLAXEDO_WORKGRAPH_NAVIGATION_ENABLED", "workGraphNavigationEnabled"],
       ["VITE_CLAXEDO_ACCOUNT_SIGN_IN_ENABLED", "accountSignInEnabled"],
       ["VITE_CLAXEDO_SETTINGS_CONNECTIONS_ENABLED", "settingsConnectionsEnabled"],
       ["VITE_CLAXEDO_SETTINGS_SANDBOX_PROVIDERS_ENABLED", "settingsSandboxProvidersEnabled"],
@@ -50,11 +46,9 @@ describe("product UI flags", () => {
 
     expect(productUiFlagConfigFromEnv({
       VITE_CLAXEDO_DOCUMENT_NAVIGATION_ENABLED: true,
-      VITE_CLAXEDO_WORKGRAPH_NAVIGATION_ENABLED: "false",
       VITE_CLAXEDO_ACCOUNT_SIGN_IN_ENABLED: "1",
     })).toEqual({
       documentNavigationEnabled: false,
-      workGraphNavigationEnabled: false,
       accountSignInEnabled: false,
       settingsConnectionsEnabled: false,
       settingsSandboxProvidersEnabled: false,

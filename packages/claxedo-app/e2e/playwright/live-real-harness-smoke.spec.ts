@@ -308,7 +308,7 @@ async function stopServer() {
   server = undefined
 }
 
-/** Harvested from e2e-legacy/real-clerk-convex-auth.spec.ts's realClaudeBinary(). */
+/** Harvested from the retired real-auth spec's realClaudeBinary(). */
 async function resolveBinary(name: string, envVar: string) {
   const override = process.env[envVar]?.trim()
   const binary = override || name

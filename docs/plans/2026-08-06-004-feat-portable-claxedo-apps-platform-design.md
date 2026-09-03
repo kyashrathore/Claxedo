@@ -1116,9 +1116,9 @@ The detailed vertical design is in
 - public static build/deploy adapters;
 - custom domains and public CSP manifests.
 
-### Convex contention
+### Shared schema contention
 
-`convex/schema.ts` is already shared by multiplayer B1, B2, B4, and B5. Hosted
+The control-plane schema is already shared by multiplayer B1, B2, B4, and B5. Hosted
 app/release/instance/share/customer rows land in scheduled EXPAND schema
 waves with one owner after 2a's identities stabilize. Provider-neutral contracts,
 local SQLite adapters, shell work, and runtime prototypes remain independent of

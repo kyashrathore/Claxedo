@@ -54,31 +54,30 @@ every PR.
 in-repo, so none of them get invented:
 
 1. OpenAI chat/completions SSE — for the opencode engine
-   (`@ai-sdk/openai-compatible`). Reference emitters:
-   `real-workgraph-harness.ts:1657-1686` (`sendProviderText` / `sendProviderTool`
-   / `sendProviderEvents`).
+   (`@ai-sdk/openai-compatible`). Reference emitter:
+   `packages/opencode/test/lib/llm-server.ts` (`TestLLMServer`).
 2. Anthropic Messages SSE + JSON — for claude. Reference:
    `enforcement-probe.ts:148-181` (`message_start` / `content_block_*` /
    `message_delta` / `message_stop`; the tool loop terminates once `"tool_result"`
    appears in messages).
 3. OpenAI Responses SSE — for codex (`wire_api="responses"`). Reference:
    `enforcement-probe.ts:97-124` (terminates on `"function_call_output"` in
-   input). Bonus reference: `packages/opencode/test/lib/llm-server.ts`
-   (`TestLLMServer`, chat+responses auto-translation, queue/matcher API).
+   input). `TestLLMServer` above also covers this dialect (chat+responses
+   auto-translation, queue/matcher API).
 
 **Hermeticity requirements** (each one already paid for in debugging hours):
 `OPENCODE_DISABLE_MODELS_FETCH=true` is mandatory; health probes must be bounded
-per-probe with `AbortSignal.timeout`; each WorkGraph Stream carries its execution
-repository target; `OPENCODE_AUTH_CONTENT` shadows the auth bridge, so
-never set it on the server; the provider cache needs `POST /global/dispose` after
-a live auth change; engine env flags are read at import time, so setting them in
-the spawn env is correct and mutating them later is not.
+per-probe with `AbortSignal.timeout`; `OPENCODE_AUTH_CONTENT` shadows the auth
+bridge, so never set it on the server; the provider cache needs
+`POST /global/dispose` after a live auth change; engine env flags are read at
+import time, so setting them in the spawn env is correct and mutating them later
+is not.
 
 **Suite mechanics**: the backend origin is BUILD-TIME
 (`VITE_CLAXEDO_SERVER_URL` is baked; `getClaxedoServerUrl()` at `api.ts:197-210`),
 so a new backend port means a new build, which means a new CI job (a clone of
-`e2e-workgraph`, `test.yml:417-492`) rather than another shard. A new tag must be
-registered in `src/architecture/e2e-suite-tags.guard.test.ts` AND added to
+the existing Playwright job in `test.yml`) rather than another shard. A new tag
+must be registered in `src/architecture/e2e-suite-tags.guard.test.ts` AND added to
 `test:e2e:core:base`'s `--grep-invert`. The oracle (`turn-oracle.ts`) is
 mandatory. `INVARIANTS.md` rule 6 defined only Tier M and Tier L, and the file is
 authoritative — so it is amended first, before any spec exists. Auth
@@ -87,8 +86,8 @@ auto-bypasses on `navigator.webdriver` under `VITE_CLAXEDO_E2E=1`.
 **Cloud lane**: `signed-browser-relay-fixture.mjs` already carries an untested
 cloud mode (`CLAXEDO_E2E_RELAY_FIXTURE_ACCESS=cloud`, lines 29 and 262): real
 relay process, real EdDSA JWTs, real host tunnel, real
-`createWorkspaceRuntimeApp`, a `kind:"cloud"` workspace, and zero
-Cloudflare/Convex/Clerk (SQLite store plus a stubbed authority and verifier).
+`createWorkspaceRuntimeApp`, a `kind:"cloud"` workspace, and zero hosted
+cloud services (SQLite store plus a stubbed authority and verifier).
 Setting `ANTHROPIC_BASE_URL` on the fixture process reaches the harness spawns.
 Two known blockers: the draft-composer workspace-target ambiguity (which is why
 `live-user-hosted-relay` behaviors 3–6 are `test.fixme`), and a stale
@@ -109,15 +108,14 @@ point at.
       app / server / engine / harness binaries / runtime, zero `page.route()`,
       the scripted model endpoint (plus its provider-config and env injection) as
       the single fake, loud `GATING:` failure on a missing binary or credential,
-      oracle mandatory — and names `core-workgraph.spec.ts` (`@workgraph-real`)
-      as the pre-existing member of the family. Progress:
+      oracle mandatory. Progress:
 - [ ] `@tier-real` is registered in `SUB_SELECTOR_TAGS`
       (`src/architecture/e2e-suite-tags.guard.test.ts`), and the canary tags
       orphaned by the `live-documents-core.spec.ts` deletion are removed — only
       genuinely orphaned ones, verified by grepping the remaining specs.
       Progress:
-- [ ] `test:e2e:core:base` inverts `"@workgraph-real|@tier-real"`, so a Tier R
-      spec is never selected by a core shard. Progress:
+- [ ] `test:e2e:core:base` inverts `"@tier-real"`, so a Tier R spec is never
+      selected by a core shard. Progress:
 - [ ] `bun run test:architecture` green. Progress:
 - [ ] The pending `live-documents-core.spec.ts` deletion and its package.json
       script collapse are committed by pathspec (never a bare `git commit` —
@@ -142,8 +140,7 @@ New `packages/claxedo-app/e2e/helpers/scripted-model-server.ts`: plain
       the spec, so supplement assertions can prove which endpoint was hit and how
       often. Progress:
 - [ ] Provider-config builders ship alongside: `opencodeProviderConfig(baseUrl)`
-      (the v1 shape from `real-workgraph-harness.ts:providerConfig`, minus mcp
-      and plugin) and `codexConfigJson(baseUrl)` (the `model_providers` block from
+      (the v1 provider-config shape, minus mcp and plugin) and `codexConfigJson(baseUrl)` (the `model_providers` block from
       `enforcement-probe.ts:225-234`, emitted as the `CODEX_CONFIG` JSON object).
       Progress:
 - [ ] W0 probe: `scripted-model-server.probe.ts` (runnable via bun, deliberately
@@ -192,14 +189,14 @@ Structure clones `live-real-harness-smoke.spec.ts`, whose `startServer`,
 
 ## Phase 3 — CI job `e2e-tier-real`
 
-- [ ] A new job clones `e2e-workgraph` in `.github/workflows/test.yml`: same
-      prologue (node 24.15, bun, playwright cache, the 12 turbo filters) plus
-      `npm i -g` of the pinned claude and codex CLIs. Progress:
+- [ ] A new job in `.github/workflows/test.yml` clones the existing Playwright
+      job: same prologue (node 24.15, bun, playwright cache, the 12 turbo
+      filters) plus `npm i -g` of the pinned claude and codex CLIs. Progress:
 - [ ] A new `test:e2e:real` script runs the spec with `CLAXEDO_E2E_SUITE=core`,
       `CLAXEDO_E2E_PREBUILT=1`, and a webServer prefix baking
-      `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:4317` — mirroring the
-      `workGraphReal` branch in `playwright.config.ts` behind a
-      `CLAXEDO_TIER_REAL_E2E=1` flag. Progress:
+      `VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:4317` — a dedicated
+      `playwright.config.ts` branch behind a `CLAXEDO_TIER_REAL_E2E=1` flag.
+      Progress:
 - [ ] The lying comment at `test.yml:379` is fixed: nightly Tier L does not
       exist. Replace it with a pointer to this job and a plain statement that
       Tier L remains local/manual. Progress:
@@ -229,8 +226,8 @@ never run in parallel.
       (real EdDSA JWT, real WS tunnel, real workspace-runtime): 2 turns + reload,
       via the oracle. Progress:
 - [ ] Assertions prove the relay actually carried the traffic (fixture request
-      log / relay-side counters) and that zero Cloudflare, Convex, or Clerk
-      dependency was touched. Progress:
+      log / relay-side counters) and that zero hosted cloud-service dependency
+      was touched. Progress:
 - [ ] The spec is added to the `e2e-tier-real` CI job (same build, second spec)
       and is green there. Progress:
 - [ ] Load-bearing proof: pausing the tunnel via the fixture's
@@ -245,8 +242,8 @@ injection does not exist today (`runtimeEnvForHost` has no passthrough, and
 runs real models against staging, pre-deploy.
 
 - [ ] `deploy-control-plane.yml`'s staging smoke gains an interactive-session
-      scenario: after the existing WorkGraph smoke, create a session against the
-      staging hosted runtime and complete one real turn. Progress:
+      scenario: create a session against the staging hosted runtime and complete
+      one real turn. Progress:
 - [ ] The deploy workflow FAILS when an interactive hosted session cannot
       complete a turn on staging. Progress:
 - [ ] Recorded as deferred follow-up, explicitly NOT in this plan's DoD: a

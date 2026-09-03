@@ -22,7 +22,7 @@ export const AccountPortProvider: Component<{ port: AccountPort; children: JSX.E
  * Throws when no provider is above.
  *
  * Deliberately not a tolerant accessor returning `undefined`: an unconfigured
- * ports seam that degrades quietly is exactly how the WorkGraph doorbell shipped
+ * ports seam that degrades quietly is exactly how the hosted doorbell shipped
  * inert with a green suite (`app-ports-wiring.guard.test.ts` documents that
  * failure). An account surface with no account port should be loud.
  */

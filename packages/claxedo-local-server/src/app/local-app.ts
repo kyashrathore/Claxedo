@@ -3,7 +3,7 @@
  *
  * Exactly the route families the split assigns to `local-server`. What it does
  * NOT mount is the point: no Documents, no Connections, no Channels, no
- * WorkGraph, no workspace authority, no cloud provisioning. Their absence from
+ * hosted capability, no workspace authority, no cloud provisioning. Their absence from
  * an unsigned desktop is a composition fact here, not a runtime flag elsewhere.
  *
  * ORDER IS LOAD-BEARING. Hono matches middleware and handlers in registration

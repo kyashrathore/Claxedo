@@ -15,7 +15,7 @@ import { RailAccountSubmenu } from "./rail-account-menu"
 
 /**
  * Active org/team picker in the rail account menu.
- * Selection is application-owned (localStorage); it does not depend on Clerk Organizations.
+ * Selection is application-owned (localStorage); it does not depend on the identity provider's organizations.
  */
 export const RailOrgTeamSwitcher: Component = () => {
   const [activeOrgId, setActiveOrgId] = createSignal(readActiveOrgId())

@@ -1,8 +1,8 @@
 /* Documents index.
  *
  * A single centred reading column with quiet project headers borrowed from the
- * WorkGraph home (`workgraph-project-row`), and each document rendered as a
- * card in the same quiet raised-plane language as the WorkGraph stream cards
+ * documents home, and each document rendered as a
+ * card in a quiet raised-plane language
  * and the Marketplace items: a translucent wash one step above the canvas,
  * ringed by the theme's hairline shadow, brightening on hover. Rows still hold
  * their status control back until you point at them. */
@@ -51,7 +51,7 @@
 }
 
 /* Ghost until it carries a value, then it reads as a set filter. The 28px box
-   and hover fill match `.workgraph-chip-trigger` so chips are one language
+   and hover fill are one language
    across the app. */
 .documents-chip {
   display: inline-flex;
@@ -172,7 +172,7 @@
 
 /* ---- project groups ----------------------------------------------------- */
 
-/* Deliberately the same quiet header as the WorkGraph home: a folder glyph, a
+/* Deliberately a quiet header: a folder glyph, a
    name, and the path only as supporting detail. No disclosure chevron and no
    count — a collapsible project title was rejected there and this surface is
    not the place to re-open it. */
@@ -208,7 +208,7 @@
 /* ---- rows --------------------------------------------------------------- */
 
 /* Each document is a card in the shared quiet raised-plane language: the same
-   20% wash and hairline shadow as the WorkGraph stream cards and Marketplace
+   20% wash and hairline shadow as the Marketplace
    items, brightening to 50% on hover. */
 .documents-row {
   display: flex;
@@ -318,7 +318,7 @@
 }
 
 /* The searchable project picker. Reuses the shared `List` (search box + keyed
-   rows) exactly as WorkGraph's revision picker does, so its chrome matches; only
+   rows) so its chrome matches; only
    the host sizing and the per-row layout are ours. */
 .documents-new-popover {
   width: 16rem;

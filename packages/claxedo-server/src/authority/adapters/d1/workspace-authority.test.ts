@@ -122,10 +122,10 @@ describe("D1 hosted workspace authority", () => {
     ).toBe(1)
 
     const alice = await signed(authority, aliceIdentity)
-    const clerkIdentity = identity("custom-alice", "custom")
-    await authority.linkApplicationIdentity(alice, { identity: clerkIdentity })
-    const clerkResolution = await authority.ensureApplicationIdentity(clerkIdentity)
-    expect(clerkResolution).toEqual({
+    const providerIdentity = identity("custom-alice", "custom")
+    await authority.linkApplicationIdentity(alice, { identity: providerIdentity })
+    const orgResolution = await authority.ensureApplicationIdentity(providerIdentity)
+    expect(orgResolution).toEqual({
       state: "active",
       userId: alice.principal!.userId,
       actorId: alice.principal!.actorId,
@@ -133,7 +133,7 @@ describe("D1 hosted workspace authority", () => {
     expect((await database.prepare("select count(*) as count from users").first<{ count: number }>())?.count).toBe(1)
 
     const bob = await signed(authority, identity("bob"))
-    await expect(authority.linkApplicationIdentity(bob, { identity: clerkIdentity })).rejects.toMatchObject({
+    await expect(authority.linkApplicationIdentity(bob, { identity: providerIdentity })).rejects.toMatchObject({
       code: "identity_conflict",
     })
 

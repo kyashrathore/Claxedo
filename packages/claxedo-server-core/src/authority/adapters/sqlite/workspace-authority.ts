@@ -13,6 +13,7 @@ import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth
 import type { SessionTurnAuthority } from "@claxedo/server-core/platform/auth/session-turn-authority"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import {
+  activeOrgById,
   authorizeProjectForUser,
   authorizeWorkspaceForUser,
   ensurePersonalOrg,
@@ -39,25 +40,25 @@ import {
 import { createSqlitePrivateSessionAuthority } from "./private-session-authority"
 
 // Claxedo's LOCAL workspace-authority adapter: the full `WorkspaceAuthority`
-// port backed by a local SQLite database instead of Convex. This is the
-// self-host enabler — a deployment with NO Convex/Clerk env composes this
+// port backed by a local SQLite database instead of the authority. This is the
+// self-host enabler — a deployment with no hosted authority or identity env composes this
 // authority so `requireAuthority` never fails 503 and workspace/session
-// features work out of the box. Per-method semantics mirror the Convex
-// backend functions (convex/workspaces.ts, convex/hostEnrollments.ts, ...).
+// features work out of the box. Per-method semantics mirror the hosted
+// backend functions (the workspace authority, the host-enrollment authority, ...).
 // Node-only (better-sqlite3 via the store): hosted/Worker compositions must
 // never import this module (worker.import-graph guard).
 
-// Mirrors convex/hostEnrollments.ts TTL policy.
+// Mirrors the host-enrollment authority TTL policy.
 const DEFAULT_TTL_MS = 60_000
 const MAX_TTL_MS = 5 * 60_000
 
 /**
  * Machine-enrollment retention policy — ONE canonical set of bounds, mirrored
- * verbatim in `convex/hostEnrollments.ts`.
+ * verbatim in `the host-enrollment authority`.
  *
  * The two authorities are two implementations of one contract, so the numbers
  * are not adapter defaults to be tuned independently: a self-hosted SQLite
- * deployment and Convex Cloud must retire the same row at the same age or
+ * deployment and the authority Cloud must retire the same row at the same age or
  * "same bounds" is a claim nobody checks. `host-enrollment-policy-drift.test.ts`
  * reads both source files and fails when a value moves on one side only.
  *
@@ -75,7 +76,7 @@ const MAX_TTL_MS = 5 * 60_000
  *   The evidence a future exact-retry answer would be reconstructed from, so
  *   the sweep must never collect a consumed row earlier than this. Implemented
  *   by pushing `expires_at` out at consumption (see `enrollHost`), which is the
- *   same device `convex/connectionAttempts.ts` uses for its retention window.
+ *   same device `the connection-attempts authority` uses for its retention window.
  *
  * ENROLLMENT_REQUEST_SWEEP_LIMIT — rows one prune may retire. Level-triggered:
  *   a saturated pass leaves the rest for the next writer, and nothing is
@@ -268,7 +269,7 @@ function refuseCloudWorkspace(workspace: { backing?: unknown; access?: unknown }
   }
 }
 
-// Mirrors `KNOWN_HOME_REGIONS` in convex/workspaces.ts: validate only, never default.
+// Mirrors `KNOWN_HOME_REGIONS` in the workspace authority: validate only, never default.
 const KNOWN_HOME_REGIONS = ["apac-south", "apac-east", "eu-west", "us-east", "us-west"]
 
 function validatedHomeRegion(input?: string) {
@@ -313,15 +314,15 @@ type ShareTarget = {
 
 function shareTarget(db: SqliteAuthorityDb, args: {
   grantedToTokenIdentifier?: string
-  grantedToClerkSubject?: string
-  grantedToClerkOrgId?: string
+  grantedToSubject?: string
+  grantedToOrgId?: string
   grantedToTeamId?: string
   grantedToTeamPublicId?: string
 }, options: { requireExisting: boolean }): ShareTarget {
   const selectors = [
     args.grantedToTokenIdentifier,
-    args.grantedToClerkSubject,
-    args.grantedToClerkOrgId,
+    args.grantedToSubject,
+    args.grantedToOrgId,
     args.grantedToTeamId,
     args.grantedToTeamPublicId,
   ].filter(Boolean)
@@ -341,21 +342,21 @@ function shareTarget(db: SqliteAuthorityDb, args: {
     }
   }
 
-  if (args.grantedToClerkSubject) {
-    const subjectUsers = usersBySubject(db, args.grantedToClerkSubject)
+  if (args.grantedToSubject) {
+    const subjectUsers = usersBySubject(db, args.grantedToSubject)
     if (subjectUsers.length > 1) denied()
     const target = subjectUsers[0]
     if (!target && options.requireExisting) throw new Error("Share target not found")
     return target
       ? {
           primaryKey: `token:${target.token_identifier}`,
-          activeKeys: [`token:${target.token_identifier}`, `subject:${args.grantedToClerkSubject}`],
-          subject: args.grantedToClerkSubject,
+          activeKeys: [`token:${target.token_identifier}`, `subject:${args.grantedToSubject}`],
+          subject: args.grantedToSubject,
         }
       : {
-          primaryKey: `subject:${args.grantedToClerkSubject}`,
-          activeKeys: [`subject:${args.grantedToClerkSubject}`],
-          subject: args.grantedToClerkSubject,
+          primaryKey: `subject:${args.grantedToSubject}`,
+          activeKeys: [`subject:${args.grantedToSubject}`],
+          subject: args.grantedToSubject,
         }
   }
 
@@ -374,13 +375,8 @@ function shareTarget(db: SqliteAuthorityDb, args: {
     }
   }
 
-  const orgSelector = args.grantedToClerkOrgId!
-  const org = db.prepare(`
-    SELECT org_id FROM orgs
-    WHERE deleted_at IS NULL AND (org_id = ? OR clerk_org_id = ?)
-    ORDER BY CASE WHEN org_id = ? THEN 0 ELSE 1 END
-    LIMIT 1
-  `).get(orgSelector, orgSelector, orgSelector) as { org_id: string } | undefined
+  const orgSelector = args.grantedToOrgId!
+  const org = activeOrgById(db, orgSelector)
   if (!org && options.requireExisting) throw new Error("Share target not found")
   const orgId = org?.org_id ?? orgSelector
   return {
@@ -401,7 +397,7 @@ function canonicalShareTarget(
   if (target.kind === "user") {
     return shareTarget(db, { grantedToTokenIdentifier: requiredText(target.userId, "userId") }, options)
   }
-  return shareTarget(db, { grantedToClerkOrgId: requiredText(target.orgId, "orgId") }, options)
+  return shareTarget(db, { grantedToOrgId: requiredText(target.orgId, "orgId") }, options)
 }
 
 function jsonText(input: unknown) {
@@ -670,7 +666,7 @@ export function createSqliteWorkspaceAuthority(
     return false
   }
 
-  // Mirror of convex/projects.ts `authResult`: role (optionally action-gated)
+  // Mirror of the project authority `authResult`: role (optionally action-gated)
   // + the org check; no role or no org → { ok: false }.
   const projectResultFor = (
     db: SqliteAuthorityDb,
@@ -712,7 +708,7 @@ export function createSqliteWorkspaceAuthority(
     close() {
       database.close()
     },
-    // --- identity (convex/users.ts, convex/orgs.ts, convex/projects.ts) ----
+    // --- identity (users, orgs, projects) ------------------------------------
     async usersMe(auth: SignedControlPlaneAuth) {
       const db = database()
       const who = user(auth)
@@ -734,7 +730,7 @@ export function createSqliteWorkspaceAuthority(
       const who = user(auth)
       ensurePersonalOrg(db, who)
       return db.prepare(`
-        SELECT o.org_id, o.clerk_org_id, o.name, m.role FROM org_memberships m
+        SELECT o.org_id, o.name, m.role FROM org_memberships m
         JOIN orgs o ON o.org_id = m.org_id
         WHERE m.token_identifier = ? AND o.deleted_at IS NULL
       `).all(who.token_identifier) as unknown[]
@@ -924,7 +920,7 @@ export function createSqliteWorkspaceAuthority(
     async addTeamMember(auth: SignedControlPlaneAuth, args: {
       teamId: string
       tokenIdentifier?: string
-      clerkSubject?: string
+      providerSubject?: string
       userPublicId?: string
       role?: "member" | "admin" | "owner"
     }) {
@@ -936,8 +932,8 @@ export function createSqliteWorkspaceAuthority(
       if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
       const target = args.tokenIdentifier
         ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier) as AuthorityUser | undefined
-        : args.clerkSubject
-          ? userBySubject(db, args.clerkSubject)
+        : args.providerSubject
+          ? userBySubject(db, args.providerSubject)
           : args.userPublicId
             ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId) as AuthorityUser | undefined
             : undefined
@@ -958,7 +954,7 @@ export function createSqliteWorkspaceAuthority(
     async removeTeamMember(auth: SignedControlPlaneAuth, args: {
       teamId: string
       tokenIdentifier?: string
-      clerkSubject?: string
+      providerSubject?: string
       userPublicId?: string
     }) {
       const db = database()
@@ -969,8 +965,8 @@ export function createSqliteWorkspaceAuthority(
       if (!orgAdminForUser(db, who, team.org_id)) throw new Error("org_admin_required")
       const target = args.tokenIdentifier
         ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.tokenIdentifier) as AuthorityUser | undefined
-        : args.clerkSubject
-          ? userBySubject(db, args.clerkSubject)
+        : args.providerSubject
+          ? userBySubject(db, args.providerSubject)
           : args.userPublicId
             ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ?`).get(args.userPublicId) as AuthorityUser | undefined
             : undefined
@@ -992,7 +988,7 @@ export function createSqliteWorkspaceAuthority(
       if (!membership && !orgAdminForUser(db, who, team.org_id)) return []
       return db.prepare(`
         SELECT m.user_token_identifier AS user_id, u.public_id, u.name AS display_name,
-          m.user_token_identifier AS token_identifier, u.subject AS clerk_subject, m.role
+          m.user_token_identifier AS token_identifier, u.subject AS provider_subject, m.role
         FROM team_memberships m
         LEFT JOIN users u ON u.token_identifier = m.user_token_identifier
         WHERE m.team_id = ?
@@ -1050,7 +1046,7 @@ export function createSqliteWorkspaceAuthority(
         const org = db.prepare(`
           SELECT o.org_id FROM orgs o
           JOIN org_memberships m ON m.org_id = o.org_id AND m.token_identifier = ?
-          WHERE o.clerk_org_id = ? AND o.deleted_at IS NULL
+          WHERE o.org_id = ? AND o.deleted_at IS NULL
         `).get(who.token_identifier, auth.user.orgId) as { org_id: string } | undefined
         if (org) return org.org_id as OrgId
       }
@@ -1152,7 +1148,7 @@ export function createSqliteWorkspaceAuthority(
       return { revoked: latest?.token_identifier === who.token_identifier }
     },
 
-    // --- workspaces (convex/workspaces.ts, convex/workspaceShares.ts) ------
+    // --- workspaces (workspaces, workspace shares) ---------------------------
     async authorizeWorkspaceCreate(auth: SignedControlPlaneAuth, args) {
       if (!args.orgId) return
       const db = database()
@@ -1442,7 +1438,7 @@ export function createSqliteWorkspaceAuthority(
       // Prune BEFORE inserting, on the one path that grows this table.
       //
       // This adapter has no scheduler — nothing here corresponds to
-      // `convex/crons.ts`, so a sweep has to ride a write or it never runs. The
+      // a cron surface, so a sweep has to ride a write or it never runs. The
       // request row is server-random-keyed and nothing else ever deletes it, so
       // without this the table grew monotonically for the life of the
       // deployment: every issued nonce, kept forever, whether it was ever used
@@ -1870,7 +1866,7 @@ export function createSqliteWorkspaceAuthority(
       return { recorded: result.changes > 0, second_device_open_at: now }
     },
 
-    // --- sessions (convex/sessions.ts) --------------------------------------
+    // --- sessions (the session authority) --------------------------------------
     async grantSessionShare(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
@@ -1885,9 +1881,8 @@ export function createSqliteWorkspaceAuthority(
       ) throw new Error("session_share_admin_required")
       const selectors = [
         args.grantedToTokenIdentifier,
-        args.grantedToClerkSubject,
+        args.grantedToSubject,
         args.grantedToUserId,
-        args.grantedToClerkOrgId,
         args.grantedToOrgId,
         args.grantedToTeamId,
         args.grantedToTeamPublicId,
@@ -1895,18 +1890,14 @@ export function createSqliteWorkspaceAuthority(
       if (selectors.length !== 1) throw new Error("session_share_target_required")
       const userTarget = args.grantedToTokenIdentifier
         ? db.prepare(`SELECT token_identifier FROM users WHERE token_identifier = ?`).get(args.grantedToTokenIdentifier) as AuthorityUser | undefined
-        : args.grantedToClerkSubject
-          ? userBySubject(db, args.grantedToClerkSubject)
+        : args.grantedToSubject
+          ? userBySubject(db, args.grantedToSubject)
           : args.grantedToUserId
             ? db.prepare(`SELECT token_identifier FROM users WHERE public_id = ? OR token_identifier = ?`)
               .get(args.grantedToUserId, args.grantedToUserId) as AuthorityUser | undefined
             : undefined
-      const orgSelector = args.grantedToOrgId ?? args.grantedToClerkOrgId
-      const org = orgSelector
-        ? db.prepare(`
-            SELECT org_id FROM orgs WHERE deleted_at IS NULL AND (org_id = ? OR clerk_org_id = ?) LIMIT 1
-          `).get(orgSelector, orgSelector) as { org_id: string } | undefined
-        : undefined
+      const orgSelector = args.grantedToOrgId
+      const org = orgSelector ? activeOrgById(db, orgSelector) : undefined
       const teamSelector = args.grantedToTeamId ?? args.grantedToTeamPublicId
       const team = teamSelector
         ? db.prepare(`SELECT team_id, org_id FROM teams WHERE team_id = ? AND deleted_at IS NULL`)
@@ -1984,9 +1975,8 @@ export function createSqliteWorkspaceAuthority(
       } else {
         const selectors = [
           args.grantedToTokenIdentifier,
-          args.grantedToClerkSubject,
+          args.grantedToSubject,
           args.grantedToUserId,
-          args.grantedToClerkOrgId,
           args.grantedToOrgId,
           args.grantedToTeamId,
           args.grantedToTeamPublicId,
@@ -1994,17 +1984,14 @@ export function createSqliteWorkspaceAuthority(
         if (selectors.length !== 1) throw new Error("session_share_target_required")
         const userTarget = args.grantedToTokenIdentifier
           ? args.grantedToTokenIdentifier
-          : args.grantedToClerkSubject
-            ? userBySubject(db, args.grantedToClerkSubject)?.token_identifier
+          : args.grantedToSubject
+            ? userBySubject(db, args.grantedToSubject)?.token_identifier
             : args.grantedToUserId
               ? (db.prepare(`SELECT token_identifier FROM users WHERE public_id = ? OR token_identifier = ?`)
                 .get(args.grantedToUserId, args.grantedToUserId) as { token_identifier: string } | undefined)?.token_identifier
               : undefined
-        const orgSelector = args.grantedToOrgId ?? args.grantedToClerkOrgId
-        const orgId = orgSelector
-          ? (db.prepare(`SELECT org_id FROM orgs WHERE deleted_at IS NULL AND (org_id = ? OR clerk_org_id = ?) LIMIT 1`)
-            .get(orgSelector, orgSelector) as { org_id: string } | undefined)?.org_id
-          : undefined
+        const orgSelector = args.grantedToOrgId
+        const orgId = orgSelector ? activeOrgById(db, orgSelector)?.org_id : undefined
         const teamId = args.grantedToTeamId ?? args.grantedToTeamPublicId
         grants = db.prepare(`
           SELECT grant_id, granted_to_user_token_identifier, granted_to_org_id, granted_to_team_id
@@ -2103,7 +2090,7 @@ export function createSqliteWorkspaceAuthority(
       }))
       return { can_manage_shares: true, grants, participants, teams }
     },
-    // --- runtime tokens (convex/runtimeAccessTokens.ts) ---------------------
+    // --- runtime tokens ------------------------------------------------------
     async recordRuntimeAccessToken(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
@@ -2231,7 +2218,7 @@ export function createSqliteWorkspaceAuthority(
       return { revoked: revokeRuntimeTokensForUsers(db, args.workspaceId, [who.token_identifier]) }
     },
 
-    // --- agent extensions (convex/agentExtensions.ts, ...Policies.ts) -------
+    // --- agent extensions (extensions + policies) ----------------------------
     async listWorkspaceAgentExtensions(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
@@ -2241,7 +2228,7 @@ export function createSqliteWorkspaceAuthority(
     },
     async listWorkspaceAgentExtensionsForRuntime(args) {
       // In-process trust boundary: the embedded runtime IS this server, so no
-      // service token exists to check (the Convex variant gates on one).
+      // service token exists to check (the hosted variant gates on one).
       return listAgentExtensions(database(), args.workspaceId)
     },
     async authorizeWorkspaceAgentExtensionsAdmin(auth: SignedControlPlaneAuth, args) {
@@ -2358,7 +2345,7 @@ export function createSqliteWorkspaceAuthority(
       return { ok: true }
     },
 
-    // --- audit (convex/auditEvents.ts) ---------------------------------------
+    // --- audit ---------------------------------------------------------------
     async auditDeny(auth, args) {
       const db = database()
       db.prepare(`

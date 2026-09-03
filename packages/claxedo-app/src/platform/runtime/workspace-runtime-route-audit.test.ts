@@ -61,7 +61,6 @@ const runtimeGatewayBoundary = new Set([
   // AccountPort fetch adapters are transport boundaries: they parse legacy
   // browser URLs and translate them into named desktop operations.
   "platform/account/control-plane-account-fetch.ts",
-  "platform/account/documents-account-fetch.ts",
 ])
 
 const workspaceRuntimeIdentityBoundary = new Set([
@@ -2146,7 +2145,7 @@ describe("workspace runtime route audit", () => {
       const file = canonicalRelativePath(discovered)
       if (file.endsWith(".test.ts") || file.endsWith(".test.tsx") || file.endsWith(".vitest.tsx")) continue
       const text = await Bun.file(path.join(root, file)).text()
-      for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute|WorkGraphRoute)|canonicalWorkspaceRoute|newTaskRoute|surfaceRoute)\(\s*([^,\)\n]+)/g)) {
+      for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute)|canonicalWorkspaceRoute|surfaceRoute)\(\s*([^,\)\n]+)/g)) {
         const argument = match[1]?.trim() ?? ""
         if (argument === '""') continue
         if (/workspace.*id|routeId/i.test(argument)) continue

@@ -6,7 +6,7 @@ import { configureAuthSession, useAuthSession, type ExternalAuthSource } from ".
  *
  * This file used to `mock.module("@/platform/auth/auth-client")`, which only
  * worked because `auth-session.ts` imported that module for real — the same
- * static edge that put Clerk in the local bundle. The seam is now a binder, so
+ * static edge that put the identity provider in the local bundle. The seam is now a binder, so
  * the test supplies a provider the same way `app/entry/main.tsx` does, and the
  * UNBOUND case (what `app/entry/local.tsx` produces) is reachable at all.
  */
@@ -27,7 +27,7 @@ let signInCalls: ({ redirectUrl?: string } | undefined)[] = []
  */
 const provider = {
   descriptor: () => null,
-  methods: () => ["clerk"] as const,
+  methods: () => ["email-password"] as const,
   session: () => null,
   user: () => user,
   loading: () => loading,
@@ -129,7 +129,7 @@ describe("useAuthSession with an identity provider bound", () => {
     expect(session.status()).toBe("signed")
     expect(session.user()).toEqual({ id: "usr_1" })
     expect(session.organization()).toEqual({ id: "org_1" })
-    expect(session.methods()).toEqual(["clerk"])
+    expect(session.methods()).toEqual(["email-password"])
     await expect(session.getToken()).resolves.toBe("token")
     // Forwarded by reference, not re-wrapped: the accessor callers read IS the
     // provider's, so a Solid effect over it tracks the provider's own signal.

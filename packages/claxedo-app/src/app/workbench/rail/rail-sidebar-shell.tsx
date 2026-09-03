@@ -30,7 +30,6 @@ export type RailSidebarShellProps = {
   onNewSession?: (workspaceDir?: string, paneId?: string, workspaceRouteId?: string) => void
   onNewTerminal?: (workspaceDir: string, command?: string, title?: string, paneId?: string, workspaceRouteId?: string) => void
   onOpenMarketplace?: () => void
-  onOpenWorkGraph?: () => void
   onRailCancelCollapse: () => void
   onRailLockChange: (locked: boolean) => void
   onRemoveProject?: (project: ProjectItem) => void
@@ -227,14 +226,6 @@ export function RailSidebarShell(props: RailSidebarShellProps) {
               props.onOpenMarketplace
                 ? () => {
                     props.onOpenMarketplace?.()
-                    props.closeMobileSidebar()
-                  }
-                : undefined
-            }
-            onOpenWorkGraph={
-              props.onOpenWorkGraph
-                ? () => {
-                    props.onOpenWorkGraph?.()
                     props.closeMobileSidebar()
                   }
                 : undefined

@@ -69,11 +69,6 @@ claxedo-connections tsconfig/IntegrationFetch cleanup is the one FIXED item.
   since snapshot schema v8 the image build derives its version from
   `workspace-runtime/package.json`; the pin's only production consumer is the
   Vercel npm install. Last OBSERVED live image was built at runtime 0.5.1.
-- This branch's new `convex-unbounded-read-guard.test.ts` does NOT cover
-  `sessions.list`: its `isBounded` predicate is satisfied by any `.withIndex(`,
-  including unbounded index ranges.
-- Convex wakes hosted path: budget counts and insert are three separate Convex
-  transactions — the check-then-act window is WIDER than SQLite.
 - `createTokenService` IS documented (`docs/architecture.md`), just not in README.
 
 ## Wave 1 (launched 2026-07-30, parallel agents, no owner decision pending)
@@ -106,9 +101,6 @@ claxedo-connections tsconfig/IntegrationFetch cleanup is the one FIXED item.
 ### W2 — claxedo-mcp hardening
 - `browser-tools.ts:300` scheme refine (http/https only) + one pass over the other
   browser tool schemas for doc/validator mismatch.
-- `workgraph-tools.ts` tenant guard: add assertion that input keys ⊆ the tool's
-  declared schema keys (the property actually wanted); keep the denylist as a
-  second line, extended with the impersonation-shaped names.
 - `server.ts:475` transcript read: resolve and prefix-check the path against the
   workspace directory before `readFile`.
 - Remove tsconfig test exclusion; fix the 44 revealed errors (loose test doubles —
@@ -145,27 +137,24 @@ claxedo-connections tsconfig/IntegrationFetch cleanup is the one FIXED item.
 
 ### W5 — Atlassian site_url coordinated fix (added 2026-07-30 after W3)
 - The strict connect-time validator (`impls/atlassian.ts:49` normalizeSiteUrl:
-  https-only, `<site>.atlassian.net`, no port) validates but never persists; the
-  weaker request-time validator (`workgraph/src/connectors/jira/source-view.ts:81-89`:
-  allows http and any host except bare `atlassian.net`) is what gates where Basic
-  credentials are sent. Fix in one coordinated pass:
-  1. connections: `verify()` returns the normalized origin; the service persists
-     the VALIDATED origin, not the raw caller field (VerifyResult contract change,
-     all impls + service updated together).
-  2. workgraph: jira source-view re-validates with the SAME strict rule
-     (normalize + `<site>.atlassian.net` https-only) as defense for rows persisted
-     before this fix; invalid stored values are refused with a clear error, never
-     silently used.
+  https-only, `<site>.atlassian.net`, no port) validates but never persists, so
+  the raw caller field is what gets stored and later gates where Basic
+  credentials are sent. Fix: `verify()` returns the normalized origin and the
+  connections service persists the VALIDATED origin, not the raw caller field
+  (VerifyResult contract change, all impls + service updated together). Any
+  consumer reading a stored `site_url` re-validates with the SAME strict rule as
+  defense for rows persisted before this fix; invalid stored values are refused
+  with a clear error, never silently used.
 - DoD: probe test showing a raw `"  https://acme.atlassian.net/wiki/home/  "`
-  connect persists `https://acme.atlassian.net`; workgraph test showing an http
-  or non-atlassian stored value is refused.
+  connect persists `https://acme.atlassian.net`, and a test showing an http or
+  non-atlassian stored value is refused.
 
 ## Deferred to design/spec (not this wave)
 
 - **Session pagination contract** (decision 7): keyset pagination on
   `WorkspaceAuthority`, defining storage-applied filters, cursor + total-count
-  semantics; also fix `convex-unbounded-read-guard.test.ts` so bounded means
-  bounded. Spec doc for owner review before code.
+  semantics, and a bounded-read guard test where bounded actually means bounded.
+  Spec doc for owner review before code.
 - **Process stop cannot fail**: typed outcome from `stop`/`stopAll`/`startAll`
   (pattern: `restart()`'s `LaunchResult`), threaded through routes and MCP —
   3-package contract change, own PR.

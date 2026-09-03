@@ -37,7 +37,7 @@ import type { ClaxedoEvent } from "@claxedo/server-core/platform/runtime/lib/bus
  *    chatty competes there; on the compat central stream it competes with the
  *    native engine's token-level deltas, which is exactly what the second ring
  *    is for.
- *  - `workgraph.changed` / `document.changed` — coalesced doorbells. A lost
+ *  - `document.changed` — a coalesced doorbell. A lost
  *    doorbell is not self-healing by construction: the client only re-reads
  *    when nudged, so live sync stalls until the next unrelated mutation.
  */
@@ -49,7 +49,6 @@ export function isTerminalClaxedoEvent(event: ClaxedoEvent): boolean {
     case "process.crashed":
     case "worktree.ready":
     case "worktree.failed":
-    case "workgraph.changed":
     case "document.changed":
       return true
     case "pty.stream":

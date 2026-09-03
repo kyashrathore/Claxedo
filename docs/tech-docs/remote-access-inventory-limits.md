@@ -119,7 +119,6 @@ Crossing a bound is a **product state**, not an error toast:
 
 | Measurement | Status | How to produce |
 |---|---|---|
-| Convex reconcile transaction at 256 entries | **not measured** | `convex/host-enrollments.policy.test.ts` (Unit 6) with a 256-entry fixture; record document reads/writes and bandwidth. |
 | SQLite reconcile transaction at 256 entries | **not measured** | `packages/claxedo-server/src/authority/adapters/sqlite/workspace-authority.test.ts` (Unit 6). |
 | Bun registration replacement at 256 IDs | **not measured** | A machine-tunnel e2e suite in `packages/claxedo-host-connector` against the Bun Relay fixture. No such suite exists; the package's only suites are `connector.test.ts` and `connector-closure.test.ts`. |
 | Cloudflare room recovery at concurrency 1 / 4 / 8 / 16 | **not measured** | Same suite against the Durable Object fixture; the concurrency cap is what this drill validates or moves. |

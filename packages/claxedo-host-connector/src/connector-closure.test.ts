@@ -63,7 +63,7 @@ describe("Host Connector's dependency closure", () => {
     // A connector that imported a server framework is one refactor away from
     // listening, and a laptop that listens is the attack surface this design
     // avoids by making the connector a pure client.
-    const forbidden = ["hono", "express", "convex", "better-auth", "better-sqlite3", "drizzle-orm", "@clerk/"]
+    const forbidden = ["hono", "express", "better-auth", "better-sqlite3", "drizzle-orm"]
     const offenders = externalImports().filter((entry) =>
       forbidden.some((name) => entry.specifier === name || entry.specifier.startsWith(name)),
     )

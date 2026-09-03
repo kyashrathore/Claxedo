@@ -28,7 +28,7 @@ describe("accountConfigEnvironment", () => {
       "CLAXEDO_RELEASE_VALIDATION_OPERATION",
       "CLAXEDO_RELEASE_CANARY_JOURNEY_ID",
     ])
-    expect(JSON.stringify(value)).not.toMatch(/AUTHORIZE|TOKEN_URL|CLIENT_ID|SCOPE|SECRET|CLERK|BETTER_AUTH/)
+    expect(JSON.stringify(value)).not.toMatch(/AUTHORIZE|TOKEN_URL|CLIENT_ID|SCOPE|SECRET|BETTER_AUTH/)
   })
 })
 

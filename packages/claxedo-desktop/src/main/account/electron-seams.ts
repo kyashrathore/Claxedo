@@ -146,8 +146,8 @@ type TokenPayload = {
 }
 
 /**
- * Compact JWTs have three base64url segments. Clerk can still issue opaque
- * OAuth access tokens; those fail control-plane JWKS verification.
+ * Compact JWTs have three base64url segments. An authorization server can still
+ * issue opaque OAuth access tokens; those fail control-plane JWKS verification.
  */
 export function isJwtShaped(token: string) {
   const parts = token.split(".")
@@ -155,13 +155,13 @@ export function isJwtShaped(token: string) {
 }
 
 /**
- * Bearer the hosted control plane can verify with `CLERK_JWKS_URL`.
+ * Bearer the hosted control plane can verify against the issuer's JWKS.
  *
  * Prefer a JWT `access_token`. When the OAuth app still issues opaque access
  * tokens, fall back to the OIDC `id_token` (always a JWT when `openid` was
  * granted). Opaque-only responses keep the access token so userinfo/sign-in
  * still work, but People/hosted ops will 401 until JWT access tokens are
- * enabled on the Clerk OAuth app.
+ * enabled on the OAuth app.
  */
 export function controlPlaneBearerFromTokenPayload(payload: {
   access_token?: string

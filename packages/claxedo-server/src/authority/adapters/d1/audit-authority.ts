@@ -86,7 +86,7 @@ export class D1AuditAuthority implements D1AuditAuthorityPort {
         metadata: safeMetadata(args.metadata),
       })
     } catch {
-      // Deliberately total; see the retained Convex auditEvents.record contract.
+      // Deliberately total; see the retained the authority auditEvents.record contract.
     }
   }
 

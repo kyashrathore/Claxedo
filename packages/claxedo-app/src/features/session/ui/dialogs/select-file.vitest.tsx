@@ -21,7 +21,7 @@ vi.mock("@/ui/controls/claxedo-icon", () => ({ ClaxedoIcon: () => null }))
 vi.mock("@opencode-ai/ui/list", () => ({
   List: (props: { items: (query: string) => Promise<Array<{ title: string }>> }) => {
     const [items] = createResource(
-      () => props.items("docs/workgraph"),
+      () => props.items("docs/notes"),
       (pending) => pending,
     )
     return (
@@ -67,7 +67,7 @@ vi.mock("@/features/session/app-ports", () => ({
   }),
   useFile: () => ({
     pathFromTab: () => undefined,
-    searchFiles: async () => ["docs/workgraph-primer.md"],
+    searchFiles: async () => ["docs/notes-primer.md"],
     tree: {
       children: () => [],
       state: () => ({ loaded: true }),
@@ -91,7 +91,7 @@ describe("DialogSelectFile", () => {
   test("shows a file match without waiting for cross-workspace session search", async () => {
     const view = render(() => <DialogSelectFile directory="/repo" />)
 
-    await waitFor(() => expect(view.getByText("docs/workgraph-primer.md")).toBeTruthy())
+    await waitFor(() => expect(view.getByText("docs/notes-primer.md")).toBeTruthy())
     expect(state.resolveSessions).toBeTypeOf("function")
   })
 })

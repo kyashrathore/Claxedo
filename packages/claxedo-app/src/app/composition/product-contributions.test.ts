@@ -36,7 +36,7 @@ function composition(options: {
       return {
         contentSurfaces: options.hosted
           ? await options.hosted()
-          : [surface("surface.content.workgraph", "workgraph")],
+          : [surface("surface.content.page", "page")],
       }
     },
     hostedComposition: () => hostedComposition,
@@ -57,7 +57,7 @@ describe("product contributions", () => {
   test("expecting hosted widens the available types before anything loads", () => {
     // The whole reason `expectHosted` is separate from `activateHosted`.
     // Restored-state pruning runs synchronously; if it asked "is hosted
-    // registered yet" it would delete every WorkGraph tab in the window before
+    // registered yet" it would delete every hosted tab in the window before
     // the dynamic import resolves.
     const app = composition({ local: [surface("surface.content.session", "session")] })
 
@@ -65,7 +65,6 @@ describe("product contributions", () => {
 
     expect(app.contributions.hostedExpected()).toBe(true)
     expect(app.contributions.hostedActive()).toBe(false)
-    expect(app.contributions.availableContentTypes()).toContain("workgraph")
     expect(app.contributions.availableContentTypes()).toContain("page")
   })
 
@@ -82,7 +81,7 @@ describe("product contributions", () => {
     ])
 
     expect(app.loads()).toBe(1)
-    expect(app.registered).toEqual(["surface.content.session", "surface.content.workgraph"])
+    expect(app.registered).toEqual(["surface.content.session", "surface.content.page"])
     expect(app.contributions.hostedActive()).toBe(true)
   })
 
@@ -95,7 +94,7 @@ describe("product contributions", () => {
     await app.contributions.activateHosted()
 
     expect(app.contributions.hostedExpected()).toBe(true)
-    expect(app.contributions.availableContentTypes()).toContain("workgraph")
+    expect(app.contributions.availableContentTypes()).toContain("page")
   })
 
   test("rejects a hosted contribution that would shadow a local one", async () => {
@@ -121,7 +120,7 @@ describe("product contributions", () => {
     const app = composition({
       local: [surface("surface.content.session", "session")],
       hosted: async () => [
-        surface("surface.content.workgraph", "workgraph"),
+        surface("surface.content.page", "page"),
         surface("surface.content.session", "session"),
       ],
     })
@@ -142,7 +141,7 @@ describe("hosted activation failure and duplicate handling", () => {
       hosted: async () => {
         attempts++
         if (attempts === 1) throw new Error("chunk load failed")
-        return [surface("surface.content.workgraph", "workgraph")]
+        return [surface("surface.content.page", "page")]
       },
     })
 
@@ -151,7 +150,7 @@ describe("hosted activation failure and duplicate handling", () => {
     await app.contributions.activateHosted()
 
     expect(attempts).toBe(2)
-    expect(app.registered).toEqual(["surface.content.workgraph"])
+    expect(app.registered).toEqual(["surface.content.page"])
   })
 
   test("two hosted contributions sharing an id are rejected, and nothing registers", async () => {
@@ -180,12 +179,12 @@ describe("hosted contributions follow the account", () => {
   test("signing out removes the hosted surfaces, leaving the local ones", async () => {
     // The defect: before deactivation existed, hosted surfaces stayed
     // registered for the life of the window, so a signed-out app kept
-    // rendering WorkGraph and Documents until the page reloaded.
+    // rendering hosted surfaces until the page reloaded.
     const app = composition({ local: [surface("surface.content.session", "session")] })
 
     await app.contributions.activateHosted()
     app.contributions.followAccount(SIGNED)
-    expect(app.registered).toEqual(["surface.content.session", "surface.content.workgraph"])
+    expect(app.registered).toEqual(["surface.content.session", "surface.content.page"])
 
     app.contributions.followAccount(UNSIGNED)
 
@@ -203,7 +202,7 @@ describe("hosted contributions follow the account", () => {
     await app.contributions.activateHosted()
 
     expect(app.loads()).toBe(1)
-    expect(app.registered).toEqual(["surface.content.workgraph"])
+    expect(app.registered).toEqual(["surface.content.page"])
   })
 
   test("a window that never signed in keeps the surfaces its BUILD composed", async () => {
@@ -217,7 +216,7 @@ describe("hosted contributions follow the account", () => {
     app.contributions.followAccount(UNSIGNED)
     app.contributions.followAccount(UNSIGNED)
 
-    expect(app.registered).toEqual(["surface.content.session", "surface.content.workgraph"])
+    expect(app.registered).toEqual(["surface.content.session", "surface.content.page"])
     expect(app.contributions.hostedActive()).toBe(true)
   })
 

@@ -93,14 +93,6 @@ export const claims = [
     verifiedAt: "2026-07-21",
   },
   {
-    id: "workgraph-local",
-    publicWording: "WorkGraph organizes durable Streams, Tasks, Attempts, decisions, and evidence.",
-    owner: "WorkGraph",
-    evidence: ["packages/workgraph/README.md", "packages/claxedo-app/src/features/workgraph/index.ts"],
-    status: "verified",
-    verifiedAt: "2026-07-21",
-  },
-  {
     id: "opencode-lineage",
     publicWording: "Claxedo is built on the OpenCode engine.",
     owner: "Claxedo maintainers",
@@ -110,7 +102,7 @@ export const claims = [
   },
   {
     id: "public-source",
-    publicWording: "Claxedo's clients, server, relay, protocol, WorkGraph, and workspace runtime are developed in the public repository.",
+    publicWording: "Claxedo's clients, server, relay, protocol, and workspace runtime are developed in the public repository.",
     owner: "Claxedo maintainers",
     evidence: [
       "packages/claxedo-app/package.json",
@@ -118,14 +110,14 @@ export const claims = [
       "packages/claxedo-server/package.json",
       "packages/workspace-relay/package.json",
       "packages/workspace-relay-protocol/package.json",
-      "packages/workgraph/package.json",
+      "packages/workspace-runtime/package.json",
     ],
     status: "verified",
     verifiedAt: "2026-07-21",
   },
   {
     id: "mit-platform",
-    publicWording: "Claxedo's clients, control plane, relay, workspace runtime, WorkGraph, agent runtimes, extension system, and sandbox integration packages are MIT licensed.",
+    publicWording: "Claxedo's clients, control plane, relay, workspace runtime, agent runtimes, extension system, and sandbox integration packages are MIT licensed.",
     owner: "Claxedo maintainers",
     evidence: [
       "LICENSE",
@@ -135,7 +127,6 @@ export const claims = [
       "packages/workspace-relay/package.json",
       "packages/workspace-relay-protocol/package.json",
       "packages/workspace-runtime/package.json",
-      "packages/workgraph/package.json",
       "packages/agent-sdk-runtime/package.json",
       "packages/agent-event-runtime/package.json",
       "packages/agent-extensions/package.json",

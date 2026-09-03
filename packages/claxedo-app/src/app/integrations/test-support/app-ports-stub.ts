@@ -23,7 +23,6 @@ import { configureSettingsAppPorts, type SettingsAppPorts } from "@/features/set
 import { configureDocumentsAppPorts, type DocumentsAppPorts } from "@/features/documents/app-ports"
 import { configureReviewAppPorts, type ReviewAppPorts } from "@/features/review/app-ports"
 import { configureWorkspacesAppPorts, type WorkspacesAppPorts } from "@/features/workspaces/app-ports"
-import { configureWorkGraphAppPorts, type WorkGraphAppPorts } from "@/features/workgraph/app-ports"
 import { configureOnboardingAppPorts, type OnboardingAppPorts } from "@/features/onboarding/app-ports"
 
 export type AppPortsTestOverrides = {
@@ -33,7 +32,6 @@ export type AppPortsTestOverrides = {
   documents?: Partial<DocumentsAppPorts>
   review?: Partial<ReviewAppPorts>
   workspaces?: Partial<WorkspacesAppPorts>
-  workgraph?: Partial<WorkGraphAppPorts>
   onboarding?: Partial<OnboardingAppPorts>
 }
 
@@ -146,7 +144,6 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   DialogConnectIntegration: lazy("@/app/dialogs/connect-integration", "DialogConnectIntegration"),
   ProviderConnectForm: lazy("@/app/dialogs/provider-connect-form", "ProviderConnectForm"),
   Link: lazy("@/app/controls/link", "Link"),
-  useSettingsSourceViews: lazy("@/app/integrations/settings-source-views", "useSettingsSourceViews"),
   useSandboxOnboardingFunnel: () => () => ({ emit: () => {} }),
   useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
   useEnabledAcpHarnesses: () => () => () => [],
@@ -162,7 +159,6 @@ const documentsThunks: Thunks<DocumentsAppPorts> = {
   ensureLocalProject: lazy("@/features/workspaces/data/query/project-ensure", "ensureLocalProject"),
   surfaceRoute: lazy("@/app/workbench/state/surface-route", "surfaceRoute"),
   SessionPaneScope: lazy("@/features/session/ui/components/session-pane-scope", "SessionPaneScope"),
-  turnDocumentIntoWork: lazy("@/app/integrations/doc-workgraph", "turnDocumentIntoWork"),
 }
 
 const reviewThunks: Thunks<ReviewAppPorts> = {
@@ -206,10 +202,6 @@ const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   isForbiddenConnectionError: lazy("@/features/session/ui/components/cloud-startup-view", "isForbiddenConnectionError"),
 }
 
-const workgraphThunks: Thunks<WorkGraphAppPorts> = {
-  useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),
-}
-
 const onboardingThunks: Thunks<OnboardingAppPorts> = {
   ProviderList: lazy("@/app/dialogs/provider-list", "ProviderList"),
   ProviderConnectForm: lazy("@/app/dialogs/provider-connect-form", "ProviderConnectForm"),
@@ -229,6 +221,5 @@ export function configureAppPortsForTest(overrides: AppPortsTestOverrides = {}) 
   configureDocumentsAppPorts(portsFromThunks(documentsThunks, overrides.documents ?? {}))
   configureReviewAppPorts(portsFromThunks(reviewThunks, overrides.review ?? {}))
   configureWorkspacesAppPorts(portsFromThunks(workspacesThunks, overrides.workspaces ?? {}))
-  configureWorkGraphAppPorts(portsFromThunks(workgraphThunks, overrides.workgraph ?? {}))
   configureOnboardingAppPorts(portsFromThunks(onboardingThunks, overrides.onboarding ?? {}))
 }

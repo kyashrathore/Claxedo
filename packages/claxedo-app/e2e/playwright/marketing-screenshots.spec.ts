@@ -22,9 +22,8 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
   // 1728x1000 is a plain "more room for a marketing shot" bump. Note it does NOT by
   // itself fix either layout problem the captures hit: the workspace panel takes a
   // PERCENTAGE of the width, so widening the window scales both columns and leaves
-  // the composer's container query exactly as tripped, and the WorkGraph tile has a
-  // FIXED height, so extra width changes nothing about what its list clips. Both are
-  // fixed where they are caused — the panel resize below, and the fixture titles.
+  // the composer's container query exactly as tripped. That is fixed where it is
+  // caused — the panel resize below.
   test.use({ viewport: { width: 1728, height: 1000 }, deviceScaleFactor: 3, colorScheme: "dark" })
 
   test("captures a seeded agent session and a chat-terminal split", async ({ page }) => {
@@ -133,42 +132,6 @@ test.describe.serial("@marketing deterministic public-site captures", () => {
     })
   })
 
-  test("captures a populated WorkGraph with work and a pending decision", async ({ page }) => {
-    await seedProject(page)
-    await installMockRuntime(page, { dir: directory, projectId: "northstar", projectName: "Northstar" })
-    await installWorkGraphApi(page)
-
-    await page.goto("/workgraph")
-    await expect(page.getByRole("main", { name: "WorkGraph" })).toBeVisible({ timeout: 30_000 })
-    await expectDefaultTheme(page)
-    await expect(page.getByRole("article", { name: "Stream Ship Claxedo Cloud" })).toBeVisible()
-    await expect(page.getByRole("article", { name: "Stream Prepare desktop release" })).toBeVisible()
-    await expect(page.getByRole("article", { name: "Stream Polish launch story" })).toBeVisible()
-    // What actually ruins this capture is a row SLICED by the tile's clip edge (the
-    // previous one shipped "checksums" cut through the middle). Assert that directly:
-    // every task row must be wholly inside the clipping container or wholly outside
-    // it. `toBeVisible` cannot express this — the tile clips with `overflow: hidden`,
-    // and a row cut in half is still "visible" to Playwright, so asserting on the
-    // last row's text passes while the picture is broken.
-    const slicedRows = await page.evaluate(() => {
-      const list = document.querySelector(".workgraph-streamcard-tasks")
-      if (!list) return ["no task list"]
-      const clip = list.getBoundingClientRect()
-      return Array.from(list.querySelectorAll(".workgraph-leaf"))
-        .map((row) => ({ text: row.textContent?.trim() ?? "", box: row.getBoundingClientRect() }))
-        .filter(({ box }) => box.top < clip.bottom - 1 && box.bottom > clip.bottom + 1)
-        .map(({ text }) => text)
-    })
-    expect(slicedRows, "task rows sliced by the stream card's clip edge").toEqual([])
-    await expect(page.getByRole("complementary", { name: "Workspace panel" })).toBeHidden()
-    await page.getByRole("button", { name: "Collapse Needs you" }).click()
-    await expect(page.getByRole("button", { name: "Expand Needs you" })).toBeVisible()
-
-    await page.getByRole("article", { name: "Stream Ship Claxedo Cloud" }).screenshot({
-      path: path.join(screenshots, "marketing-workgraph.png"),
-      animations: "disabled",
-    })
-  })
 })
 
 function slug(value: string) {
@@ -388,128 +351,3 @@ async function installMarketingSessionList(page: Page) {
   await page.route("**/api/claxedo/session-list**", handler)
 }
 
-async function installWorkGraphApi(page: Page) {
-  const provenance = { actor: { type: "user", id: "local" } }
-  const owner = {
-    schemaVersion: 1,
-    ownerUserId: "local",
-    version: 1,
-    createdAt: 1_784_638_000_000,
-    updatedAt: 1_784_638_400_000,
-    provenance,
-  }
-  const contract = {
-    version: 1,
-    mode: "all",
-    requirements: [{ id: "release-review", kind: "owner_confirmation", description: "Release evidence is reviewed" }],
-  }
-  const task = (id: string, streamId: string, title: string, state: string, dependencyIds: string[] = []) => ({
-    recordType: "work_item",
-    ...owner,
-    id,
-    streamId,
-    title,
-    state,
-    priority: 1,
-    dependencyIds,
-    sourceRevisionRefs: [],
-    completionContract: contract,
-    evidenceIds: [],
-  })
-  const stream = (id: string, title: string, description: string, lifecycleState = "paused", pinned = false) => ({
-    recordType: "stream",
-    ...owner,
-    id,
-    title,
-    description,
-    lifecycleState,
-    visibility: "visible",
-    pinned,
-    executionDefaults: {},
-    activity: { lastActivityAt: 1_784_638_400_000 },
-    durableEffectCount: 2,
-    sourceRevisionRefs: [],
-  })
-  const reviewTask = task("task_review", "stream_cloud", "Review deployment evidence", "review_needed")
-  const records = [
-    stream("stream_cloud", "Ship Claxedo Cloud", "Verify the product, publish the release, and preserve the evidence.", "paused", true),
-    reviewTask,
-    // This stream deliberately carries FEWER tasks than the card previews.
-    // `STREAM_CARD_TASK_PREVIEW` is 4, but the card is a fixed 17.5rem tile
-    // (workgraph.css `.workgraph-streamcard`) that clips its list, and the
-    // compiled-settings chip row above it now wraps to two lines. A 4th row no longer
-    // fits: it lands ON the clip edge and ships a word sliced through the middle,
-    // which is what the previous capture did with "checksums". Shortening titles only
-    // moves the slice around — the row count is the real constraint. Three rows plus
-    // "Show N more" reads as a populated stream anyway. The clip-edge assertion in
-    // the test enforces this, so adding a task here will fail the capture, not
-    // silently spoil it.
-    // Keep at least one `completed` task: the card footer shows a done/total
-    // fraction, and an all-pending stream renders "0/3", which reads as a stream
-    // where nothing has happened yet — not the picture the site wants.
-    task("task_continuity", "stream_cloud", "Verify continuity", "completed"),
-    task("task_announce", "stream_cloud", "Draft the announcement", "pending_approval"),
-    stream("stream_desktop", "Prepare desktop release", "Package, sign, and verify the next desktop build.", "active"),
-    task("task_package", "stream_desktop", "Package macOS and Linux builds", "active"),
-    task("task_smoke", "stream_desktop", "Run installer smoke tests", "pending", ["task_package"]),
-    stream("stream_launch", "Polish launch story", "Make the product's differentiated story clear at a glance.", "active"),
-    task("task_guides", "stream_launch", "Review the product narrative", "completed"),
-    task("task_examples", "stream_launch", "Verify the interactive hero", "active"),
-    stream("stream_protocol", "Harden ACP support", "Test more agents against the shared chat surface."),
-    task("task_acp", "stream_protocol", "Run ACP compatibility checks", "pending"),
-  ]
-  const decision = {
-    recordType: "decision",
-    ...owner,
-    id: "decision_ship",
-    streamId: "stream_cloud",
-    state: "pending",
-    question: "Is the release evidence sufficient to ship?",
-    options: [
-      { id: "ship", label: "Ship the release", description: "Continue with the verified release candidate." },
-      { id: "hold", label: "Hold for review", description: "Collect another verification pass." },
-    ],
-    recommendationOptionId: "ship",
-    rationale: "Desktop, browser, and self-hosted verification are complete.",
-    affectedWorkItemIds: ["task_review"],
-    sourceRevisionRefs: [],
-  }
-
-  await page.route("**/api/workgraph/**", async (route: Route) => {
-    const url = new URL(route.request().url())
-    if (url.pathname.includes("/attention")) {
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({
-          items: [
-            { ownerUserId: "local", id: decision.id, updatedAt: owner.updatedAt, kind: "decision", record: decision },
-            { ownerUserId: "local", id: "task_review", updatedAt: owner.updatedAt, kind: "work_item", record: reviewTask },
-          ],
-          total: 2,
-          hasMore: false,
-        }),
-      })
-    }
-    if (url.pathname.includes("/execution-capabilities")) {
-      return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ error: { code: "execution_capabilities_unavailable", message: "Capture fixture", retryable: false, capability: "runtime", reason: "runtime_unavailable" } }) })
-    }
-    if (url.pathname.includes("/decisions/")) {
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(decision) })
-    }
-    if (url.pathname.endsWith("/defaults")) {
-      return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ recordType: "workgraph", ...owner, id: "workgraph_default", defaults: { execution: {} } }) })
-    }
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        snapshotCursor: "marketing_capture_1",
-        records,
-        references: records.map((record, index) => ({ sequence: index + 1, resource: { type: record.recordType, id: record.id }, version: record.version })),
-        hasMore: false,
-        capturedAt: owner.updatedAt,
-      }),
-    })
-  })
-}

@@ -12,7 +12,7 @@ seams supplied by the caller:
   `workspaceId`. `acquire` / `update` / `recordFailure` / `release` / `get` /
   `list`. The package ships one implementation,
   `createMemoryLeaseStore` (`@claxedo/sandbox-manager/stores/memory`), for
-  tests and local use; applications supply their own (SQLite, Convex, …) for
+  tests and local use; applications supply their own (SQLite, …) for
   anything that needs to survive a process restart.
 - **`SandboxDriver`** — how a sandbox actually gets placed. `id`,
   `metadata` (see the [driver comparison](#driver-comparison) below),

@@ -3,7 +3,7 @@
  *
  * These let a headless box (`claxedo login`) obtain a signed user credential
  * without a browser. The Worker only brokers the device-code exchange; the
- * configured issuer must still mint credentials that Convex trusts.
+ * configured issuer must still mint credentials that the authority trusts.
  *
  * Until a device-login issuer is configured, these routes FAIL CLOSED with
  * `501 device_login_unconfigured` rather than pretending to issue credentials.
@@ -50,7 +50,7 @@ function unconfigured() {
     error: {
       code: "device_login_unconfigured",
       message:
-        "Device login is not configured. It is gated on signed-mode Phase A and a Convex-trusted CLI-login issuer.",
+        "Device login is not configured. It is gated on signed-mode Phase A and a trusted CLI-login issuer.",
     },
   }
 }

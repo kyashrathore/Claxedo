@@ -11,7 +11,7 @@ import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-e
 
 /**
  * Embedded Better Auth for self-host boxes (part of the self-host/hosted-parity
- * plan): real signup/login (signed mode) with NO Convex/Clerk.
+ * plan): real signup/login (signed mode) with no hosted identity provider.
  *
  * - Users/sessions live in a dedicated SQLite file under `dataDir()`
  *   (`better-sqlite3` — already a real dependency; the central store's

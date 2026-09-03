@@ -243,7 +243,7 @@ The `TokenVerifier` interface intentionally contains only `verify(token)`.
 JWKS fetching, audience binding, and replay caches belong to the
 implementation. Two reference implementations ship in the protocol
 package: `createHttpTokenVerifier` for remote verifiers
-(Clerk-style introspection, custom OIDC), and `createStaticTokenVerifier`
+(token introspection, custom OIDC), and `createStaticTokenVerifier`
 for tests and self-hosted single-tenant setups.
 
 `createHttpTokenVerifier` is a reference implementation. Its HTTPS endpoint is
@@ -328,11 +328,11 @@ checks that gate it.
 | Layer | Control-plane auth | Tunnel transport |
 | Trust | Authenticates the relay process itself (loopback or bearer) | Authenticates the user's runtime-access token |
 | Routes | `GET /internal/relay/target`, `GET /internal/relay/revocation` | WS upgrade + tunnel framing |
-| Owners | `claxedo-server` (depends on Convex authority, Clerk, audit log) | `workspace-relay` (no Convex/Clerk dependency) |
+| Owners | `claxedo-server` (depends on the workspace authority, the identity provider, audit log) | `workspace-relay` (no authority or identity-provider dependency) |
 | Lives in | `packages/claxedo-server/` (server-side only) | `packages/workspace-relay/` (own process) |
 
-This split is deliberate: the relay never reads Convex or Clerk
-directly. It calls back to `claxedo-server` over HTTP for resolver
+This split is deliberate: the relay never reads the workspace authority or the
+identity provider directly. It calls back to `claxedo-server` over HTTP for resolver
 decisions. The decision data crosses the seam as
 `RuntimeAccessTokenActiveResult` (defined in `server.ts`).
 

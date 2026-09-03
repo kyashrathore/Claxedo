@@ -6,7 +6,7 @@
 #   fly deploy -c packages/claxedo-server/fly.toml
 #
 # Unsigned single-user mode needs NO extra secrets (SQLite authority is the
-# default). For signed/hosted mode, set the Clerk/Convex/relay secrets via
+# default). For signed/hosted mode, set the auth/relay secrets via
 # `fly secrets set` — see packages/claxedo-server/.env.example.
 
 app = "claxedo-control-plane"

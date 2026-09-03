@@ -191,6 +191,6 @@ describe("onboarding Home view", () => {
     })
     expect(view.mode).toBe("go-further")
     // Remote access graduated to a setup step, so it is no longer a card.
-    expect(view.goFurtherCards.map((card) => card.id)).toEqual(["workgraph", "self-host"])
+    expect(view.goFurtherCards.map((card) => card.id)).toEqual(["self-host"])
   })
 })

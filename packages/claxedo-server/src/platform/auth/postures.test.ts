@@ -26,8 +26,8 @@ function remoteRequest(headers: Record<string, string> = {}) {
 
 const SIGNED_CONFIG = {
   enabled: true as const,
-  issuer: "https://clerk.test",
-  jwksUrl: "https://clerk.test/jwks",
+  issuer: "https://issuer.test",
+  jwksUrl: "https://issuer.test/jwks",
 }
 
 const LOCAL_CONFIG = { enabled: false as const, mode: "local-only" as const, reason: "disabled" }
@@ -35,7 +35,7 @@ const LOCAL_CONFIG = { enabled: false as const, mode: "local-only" as const, rea
 function verifierFor(subject: string) {
   return vi.fn(async () => ({
     mode: "signed" as const,
-    user: { subject, tokenIdentifier: `t_${subject}`, issuer: "https://clerk.test" },
+    user: { subject, tokenIdentifier: `t_${subject}`, issuer: "https://issuer.test" },
   }))
 }
 

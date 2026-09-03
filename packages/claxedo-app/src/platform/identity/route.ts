@@ -5,18 +5,15 @@ import { opaqueWorkspaceRouteId } from "./workspace-route"
 export type ShellRoute =
   | { kind: "home" }
   | { kind: "marketplace" }
-  | { kind: "workgraph" }
-  | { kind: "newTask"; workspaceId?: string }
   | { kind: "session"; sessionId: string }
   | { kind: "workspace"; workspaceId: string }
-  | { kind: "workspaceWorkGraph"; workspaceId: string }
   | { kind: "workspace-session"; workspaceId: string; sessionId?: string }
   | { kind: "workspace-page"; workspaceId: string; pageId: string }
   | { kind: "workspace-terminal"; workspaceId: string; terminalId: string }
   | { kind: "legacy-directory"; directory: DirectoryRef; sessionId?: string; pageId?: string; terminalId?: string }
   | { kind: "unknown" }
 
-const RESERVED_ROOTS = new Set(["config", "login", "marketplace", "task", "workgraph", "permissions", "s", "w"])
+const RESERVED_ROOTS = new Set(["config", "login", "marketplace", "permissions", "s", "w"])
 
 function segment(input: string) {
   try {
@@ -57,18 +54,6 @@ export function marketplaceRoute() {
   return "/marketplace"
 }
 
-export function workGraphRoute() {
-  return "/workgraph"
-}
-
-export function newTaskRoute(workspaceId?: string) {
-  return workspaceId ? `${workspaceRoute(workspaceId)}/task/new` : "/task/new"
-}
-
-export function workspaceWorkGraphRoute(workspaceId: string) {
-  return `${workspaceRoute(workspaceId)}/workgraph`
-}
-
 export function workspaceSessionRoute(workspaceId: string, sessionId?: string) {
   const base = `${workspaceRoute(workspaceId)}/session`
   return sessionId ? `${base}/${encodeURIComponent(sessionId)}` : base
@@ -84,8 +69,6 @@ export function workspaceTerminalRoute(workspaceId: string, terminalId: string) 
 
 export function workspaceRouteWithId(route: ShellRoute, workspaceId: string) {
   if (route.kind === "workspace") return workspaceRoute(workspaceId)
-  if (route.kind === "workspaceWorkGraph") return workspaceWorkGraphRoute(workspaceId)
-  if (route.kind === "newTask") return newTaskRoute(workspaceId)
   if (route.kind === "workspace-session") return workspaceSessionRoute(workspaceId, route.sessionId)
   if (route.kind === "workspace-page") return workspacePageRoute(workspaceId, route.pageId)
   if (route.kind === "workspace-terminal") return workspaceTerminalRoute(workspaceId, route.terminalId)
@@ -118,17 +101,9 @@ export function parseShellRoute(pathname: string): ShellRoute {
   const parts = pathSegments(pathname)
   if (parts.length === 0) return { kind: "home" }
   if (parts.length === 1 && parts[0] === "marketplace") return { kind: "marketplace" }
-  if (parts.length === 1 && parts[0] === "workgraph") return { kind: "workgraph" }
-  if (parts.length === 2 && parts[0] === "task" && parts[1] === "new") return { kind: "newTask" }
   if (parts[0] === "s" && parts[1]) return { kind: "session", sessionId: segment(parts[1]) }
   if (parts[0] === "w" && parts[1]) {
     if (parts.length === 2) return { kind: "workspace", workspaceId: segment(parts[1]) }
-    if (parts.length === 3 && parts[2] === "workgraph") {
-      return { kind: "workspaceWorkGraph", workspaceId: segment(parts[1]) }
-    }
-    if (parts.length === 4 && parts[2] === "task" && parts[3] === "new") {
-      return { kind: "newTask", workspaceId: segment(parts[1]) }
-    }
     if ((parts.length === 3 || parts.length === 4) && parts[2] === "session") {
       return {
         kind: "workspace-session",
@@ -179,13 +154,10 @@ export function parseShellRoute(pathname: string): ShellRoute {
 export function shellRouteDirectory(route: ShellRoute): DirectoryRef | undefined {
   switch (route.kind) {
     case "workspace":
-    case "workspaceWorkGraph":
     case "workspace-session":
     case "workspace-page":
     case "workspace-terminal":
       return asDirectoryRef(route.workspaceId)
-    case "newTask":
-      return route.workspaceId ? asDirectoryRef(route.workspaceId) : undefined
     case "legacy-directory":
       return asDirectoryRef(route.directory)
     default:

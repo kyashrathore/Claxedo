@@ -17,7 +17,7 @@
  *
  * Seat over-capacity: even an otherwise-entitling subscription does NOT
  * grant hosted access to an org that has MORE members than it has licensed
- * seats. The Clerk webhook mirror no longer hard-blocks a join (that 500'd the
+ * seats. The provider webhook mirror no longer hard-blocks a join (that 500'd the
  * whole Svix mirror), so this is where the seat ceiling is enforced: an
  * over-seat org is denied with the typed `seat_over_capacity` error carrying
  * the counts, and the owner is told to buy seats or remove members. A personal

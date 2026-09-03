@@ -10,10 +10,10 @@
  *
  * Customer linkage (ADR addendum): NO customer pre-creation — Polar
  * creates the customer lazily at first checkout with `external_customer_id` =
- * a STABLE ORG-scoped id (`org_{orgId}`), NOT the purchasing admin's Clerk
+ * a STABLE ORG-scoped id (`org_{orgId}`), NOT the purchasing admin's the identity provider
  * subject. Keying on the org (not the human) means any admin of the org reaches
  * the same Polar customer/portal, and a second admin cannot mint a second
- * customer for the same org. `metadata.org_id` (the Convex org doc id) still
+ * customer for the same org. `metadata.org_id` (the authority's org id) still
  * rides the checkout onto the subscription and is how webhook state re-attaches
  * to the org.
  *
@@ -57,7 +57,7 @@ export type BillingEnv = Record<string, string | undefined>
  * `@polar-sh/sdk` 0.48.1 takes `{ timeoutMs }` as each method's second argument
  * and turns it into a real `AbortSignal.timeout` on the underlying fetch
  * (`lib/sdks.js`: `if (!fetchOptions?.signal && conf.timeoutMs > 0)`). So unlike
- * the Convex `withTimeout` wrapper — which bounds only the caller's wait — this
+ * the generic `withTimeout` wrapper — which bounds only the caller's wait — this
  * genuinely CANCELS the request. That distinction is why the SDK's own option is
  * used here instead of wrapping the promise: a cancelled Polar call cannot land
  * later, so nothing downstream has to be idempotent against it.
@@ -130,7 +130,7 @@ function webhookClientKey(request: Request) {
 
 /**
  * The stable, org-scoped Polar `external_customer_id`. Both checkout and
- * portal derive the customer from the org (never the purchasing admin's Clerk
+ * portal derive the customer from the org (never the purchasing admin's the identity provider
  * subject), so every admin of the org resolves the SAME Polar customer.
  */
 function orgExternalCustomerId(orgId: string) {
@@ -165,7 +165,7 @@ export type BillingRouteOptions = {
   authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
-  /** Test seams. Defaults: Convex-backed store; SDK client from env. */
+  /** Test seams. Defaults: the authority-backed store; SDK client from env. */
   store: BillingStore
   polar?: PolarClientLike
   rateLimiter?: ConnectionRateLimiter
@@ -305,7 +305,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
   const polar = () => options.polar ?? polarClientFromEnv(env)
   const products = polarProductConfig(env)
   // Same fixed-window pattern the workspace routes use (control-plane class):
-  // Checkout/portal mint external requests; keep floods off Polar and Convex.
+  // Checkout/portal mint external requests; keep floods off Polar and the authority.
   // Keys on auth.user.subject, so it reaches ONLY /checkout and /portal — the
   // webhook has no principal and gets its own IP-keyed limiter below.
   const rateLimiter = options.rateLimiter ?? createFixedWindowConnectionRateLimiter({ limit: 20, windowMs: 60_000 })
@@ -330,7 +330,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
    * Run `apply` at most once per Polar delivery id.
    *
    * Rides the SAME durable store as control-route idempotency
-   * (`convex/idempotency.ts`) under a `polar-webhook:` key prefix, rather than a
+   * (`the idempotency authority`) under a `polar-webhook:` key prefix, rather than a
    * second near-copy of that table: one TTL story, one sweep, one place where
    * lease-expiry-and-takeover is reasoned about.
    *
@@ -542,7 +542,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
           // Dedup on `webhook-id`. Until now that header was read only as
           // signature input (`standard-webhooks.ts`), so a redelivery of the same
           // event re-applied it. The existing protection is the single writer's
-          // `source_ts` guard (convex/billing.ts), which is last-write-wins on a
+          // `source_ts` guard (the billing authority), which is last-write-wins on a
           // TIMESTAMP: it correctly no-ops a re-apply at an already-seen ts, but
           // it is a per-org monotonic check, not a delivery-level one, and Polar
           // retries up to 10 times.
@@ -561,7 +561,7 @@ export function BillingRoutes(options: BillingRouteOptions) {
           }
           return c.json({ received: true, ...result })
         } catch (err) {
-          // Mirror write failed (Convex unreachable): 500 so Polar RETRIES —
+          // Mirror write failed (the authority unreachable): 500 so Polar RETRIES —
           // the delivery is good, we were not.
           reportPaymentError(err, { tags: { source: "billing_webhook", reason: "apply_failed" } })
           return c.json(unavailable("Failed to apply billing state"), 500)

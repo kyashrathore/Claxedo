@@ -105,7 +105,7 @@ explicitly in its own SPEC block's INVARIANTS section, with a reason.
    assert readiness via a fixed `waitForTimeout` sleep — poll the control's actual state.
 6. **Test User has an unsigned-local twin.** Every watched browser flow runs under both
    `CLAXEDO_E2E_AUTH_MODE=test-user` and `CLAXEDO_E2E_AUTH_MODE=local-unsigned`.
-   The unsigned mode keeps the auth UI mounted but supplies no Clerk key and disables
+   The unsigned mode keeps the auth UI mounted but supplies no provider key and disables
    the Playwright webdriver bypass, so it has no synthetic user and makes no external
    identity-provider request. A behavior whose subject is specifically a signed user
    must call `stampTestAuth()` explicitly; no spec may depend silently on
@@ -177,14 +177,9 @@ no test, fails review.
      provider-config/env injection that points the engine and harnesses at it
      (`OPENCODE_CONFIG_CONTENT`, `ANTHROPIC_BASE_URL`, `CODEX_CONFIG`). Faking anything
      else — a route, a runtime event, a session payload — moves the spec to Tier M. It
-     runs hermetically with no credentials, so it belongs in every-PR CI; a missing
-     binary or credential **fails** with a clear `GATING:` message, same loud-skip
-     doctrine as Tier L. The oracle is mandatory. `core-workgraph.spec.ts`
-     (`@workgraph-real`) is the pre-existing member of this tier family and is carved
-     out of the sharded core lane the same way `@tier-real` is — via
-     `test:e2e:core:base`'s `--grep-invert`. Its dedicated CI job is temporarily
-     paused while WorkGraph is not an active product focus; the explicit test command
-     remains available for local and manual remote runs.
+   runs hermetically with no credentials, so it belongs in every-PR CI; a missing
+   binary or credential **fails** with a clear `GATING:` message, same loud-skip
+   doctrine as Tier L. The oracle is mandatory.
    - **Tier L** (`e2e/playwright/live-*.spec.ts`) makes zero `page.route()` calls and
      fakes nothing at all — real models, real credentials. A missing credential/binary
      **fails** the test with a clear setup message (loud-skip) — silent `test.skip()` is

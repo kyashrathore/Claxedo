@@ -12,13 +12,6 @@
       "import": "./src/index.ts",
       "default": "./src/index.ts"
     },
-    "./workgraph": {
-      "types": "./src/workgraph.ts",
-      "bun": "./src/workgraph.ts",
-      "development": "./src/workgraph.ts",
-      "import": "./src/workgraph.ts",
-      "default": "./src/workgraph.ts"
-    },
     "./documents": {
       "types": "./src/documents.ts",
       "bun": "./src/documents.ts",

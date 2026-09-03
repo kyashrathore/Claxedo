@@ -68,12 +68,8 @@ describe("route-owned initial state", () => {
     ["legacy terminal", `/${legacyDirectory}/terminal/pty_1`, true],
     ["home", "/", false],
     ["workspace root", "/w/ws_1", false],
-    ["workspace workgraph", "/w/ws_1/workgraph", false],
-    ["workspace new task", "/w/ws_1/task/new", false],
     ["legacy directory root", `/${legacyDirectory}`, false],
-    ["global new task", "/task/new", false],
     ["marketplace", "/marketplace", false],
-    ["global workgraph", "/workgraph", false],
     ["unknown root", "/login", false],
   ] as const)("classifies the %s route", (_label, pathname, expected) => {
     expect(routeOwnsInitialSurface(pathname)).toBe(expected)
@@ -86,7 +82,6 @@ describe("route-owned initial state", () => {
     ["legacy directory root", `/${legacyDirectory}`, true],
     ["legacy new session", `/${legacyDirectory}/session`, true],
     ["marketplace", "/marketplace", true],
-    ["global WorkGraph", "/workgraph", true],
     ["home", "/", false],
     ["unknown route", "/login", false],
   ] as const)("%s controls automatic draft creation independently", (_label, pathname, expected) => {

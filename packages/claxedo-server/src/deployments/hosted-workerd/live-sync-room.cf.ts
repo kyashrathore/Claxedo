@@ -106,7 +106,7 @@ const HEARTBEAT: { type: "heartbeat" } = { type: "heartbeat" }
 // apply `eventVisibleTo` per held connection without re-verifying the bearer.
 // NAMESPACE: `x-livesync-org` carries the AUTHORITY-INTERNAL org id resolved
 // at connect (`authority.resolveOrgId`), matching the namespace events are
-// stamped with — NEVER the raw Clerk org claim (see `EventScopePrincipal`).
+// stamped with — NEVER the raw the identity provider org claim (see `EventScopePrincipal`).
 const HEADER_MODE = "x-livesync-mode"
 const HEADER_SUBJECT = "x-livesync-subject"
 const HEADER_ORG = "x-livesync-org"
@@ -224,7 +224,7 @@ type LiveSyncSocketAttachment = {
 
 /**
  * The resolved subscriber a live-sync connection is held for. `auth` is the
- * verified control-plane context (Clerk claims — used only for heartbeat
+ * verified control-plane context (the identity provider claims — used only for heartbeat
  * reauthorization comparisons); `orgId` is the AUTHORITY-INTERNAL org id
  * resolved via `authority.resolveOrgId(auth)` at connect time, the identity
  * rooms are named with and `eventVisibleTo` scopes on. Absent `orgId` (no
@@ -258,7 +258,7 @@ function replayPrincipalKey(principal: EventScopePrincipal) {
  * (document.changed, provision) fan to every member of an org, so a subscriber
  * joins the room of their ACTIVE org — named by the authority-internal org id
  * resolved at connect — and one POST reaches all members; owner-scoped events
- * (workgraph.changed) are still narrowed to the right subject by the
+ * (session.share.changed) are still narrowed to the right subject by the
  * per-connection `eventVisibleTo` filter inside the room. Signed callers with
  * no resolved org, and unsigned-local/loopback, key by subject.
  */
@@ -279,13 +279,13 @@ export function liveSyncRoomName(subscriber: LiveSyncSubscriber): string {
  * strand in a room nobody is held in.
  *
  * NAMESPACE CONTRACT: room names live in the AUTHORITY-INTERNAL namespace —
- * `orgId` must be the internal org id (Convex `orgs._id`, SQLite `org_id`,
- * i.e. `authority.resolveOrgId` output, which is also what WorkGraph tenancy,
- * runtime-token claims, and document/provision event stamps carry) and
- * `ownerUserId` the Clerk subject, because that is the material
- * `connectLiveSyncRoom` keys the subscriber's room with. Clerk org claims
- * (`org_...`, `ControlPlaneAuthContext.user.orgId`) are a DIFFERENT namespace:
- * passing one as `orgId` names a room no subscriber ever joins.
+ * `orgId` must be the internal org id (SQLite `org_id`, i.e.
+ * `authority.resolveOrgId` output, which is also what runtime-token claims and
+ * document/provision event stamps carry) and `ownerUserId` the auth subject,
+ * because that is the material `connectLiveSyncRoom` keys the subscriber's room
+ * with. Issuer org claims (`org_...`,
+ * `ControlPlaneAuthContext.user.orgId`) are a DIFFERENT namespace: passing one
+ * as `orgId` names a room no subscriber ever joins.
  *
  * Throws when the material cannot name a real room (absent, empty, or a
  * literal "undefined"/"null" from stringifying a missing field), so a broken
@@ -328,9 +328,13 @@ function liveSyncEvent(input: unknown): ClaxedoEvent | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) return
   const row = input as Record<string, unknown>
   if (typeof row.ts !== "number" || !Number.isFinite(row.ts)) return
-  if (row.type === "workgraph.changed" && typeof row.ownerUserId === "string" && row.ownerUserId) {
-    return row as ClaxedoEvent
-  }
+  if (
+    row.type === "session.share.changed"
+    && typeof row.ownerUserId === "string" && row.ownerUserId
+    && typeof row.sessionId === "string"
+    && typeof row.workspaceId === "string"
+    && (row.phase === "granted" || row.phase === "revoked")
+  ) return row as ClaxedoEvent
   if (
     row.type === "document.changed"
     && typeof row.documentId === "string"
@@ -398,7 +402,7 @@ export class LiveSyncRoom {
    * per-process anything to hang it on.
    *
    * Retention is the shared 256 + 64 the sibling streams use. `liveSyncEvent`
-   * admits only `workgraph.changed`, `document.changed`, and `provision`, so
+   * admits only `session.share.changed`, `document.changed`, and `provision`, so
    * this ring holds coalesced doorbells and provision progress and nothing
    * chatty — 256 is far more than the worst client gap (claxedo-app's 45s
    * heartbeat watchdog plus its 2s reconnect floor) can span. The terminal ring
@@ -412,7 +416,7 @@ export class LiveSyncRoom {
    * eviction. It is deliberately not used:
    *
    *  - Every nudge would become a storage write on the mutation hot path —
-   *    every WorkGraph command, every document mutation — to durably preserve
+   *    every share change, every document mutation — to durably preserve
    *    frames whose entire payload is "something changed".
    *  - The recovery those frames drive is a refetch. A ring that loses its
    *    contents on eviction degrades to a replay-gap notice, and a gap notice
@@ -604,7 +608,7 @@ export class LiveSyncRoom {
   }
 
   /**
-   * Fan a nudge (a `ClaxedoEvent`, typically `{type:"workgraph.changed",...}`)
+   * Fan a nudge (a `ClaxedoEvent`, typically `{type:"document.changed",...}`)
    * to every held connection the event is visible to. Returns
    * `{ delivered, held }` for the caller's diagnostics.
    */
@@ -756,7 +760,7 @@ export class LiveSyncRoom {
  * Route a resolved subscriber's client connection to their room. Production
  * rooms return a hibernatable WebSocket; this function bridges it back to the
  * browser's existing SSE response and owns heartbeat reauthorization
- * (comparing fresh Clerk claims against `subscriber.auth` — a claims change
+ * (comparing fresh the identity provider claims against `subscriber.auth` — a claims change
  * closes the stream so the client reconnects and re-resolves its org).
  */
 export function connectLiveSyncRoom(

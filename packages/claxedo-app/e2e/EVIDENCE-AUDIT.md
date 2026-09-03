@@ -113,7 +113,7 @@ screenshot alone.
 turns — this is the expected marker for a deliberately-interrupted turn in
 that spec, not an error.
 
-### Everything else in `evidence/` (190 files across 32 directories) — clean
+### Everything else in `evidence/` (187 files across 31 directories) — clean
 
 `core-boot-deep-links-home` (14), `core-busy-abort-errors` (6, incl.
 `error-card-json-envelope-unwrapped.png` and
@@ -127,7 +127,7 @@ pre-toast frame — see note below), `core-panes-split-tabs` (10),
 `core-permission-ruleset-delivery` (5), `core-processes` (1),
 `core-session-actions` (23), `core-sidebar-tree` (1), `core-terminal` (1),
 `core-timeline-rendering-scroll` (15), `core-turns-reload-recovery` (7),
-`core-user-hosted-workspace` (1), `core-workgraph` (3),
+`core-user-hosted-workspace` (1),
 `core-workspace-lifecycle` (3), `a11y-sweep` (1), `marketing-screenshots`
 (1), `mobile-smoke` (3), `grip` (1), `panedrag` (1), `probe` (1),
 `zz-debug-docks2` (1), `zz-debug-history` (1), `zz-debug-todo` (1), `zz-diag`

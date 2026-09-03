@@ -57,10 +57,10 @@ let configuredPiModelBackend: PiModelBackendResolver | undefined
 /**
  * Host-supplied route groups for every embedded runtime this process creates.
  *
- * Was a `workgraphRunBroker` option, which named a hosted capability inside the
- * desktop-local composition. Now it is a neutral list: the desktop passes
- * nothing and the self-hosted composition passes `self-hosted-capabilities.ts`,
- * so a build that contains no WorkGraph contains no path to it.
+ * A neutral list rather than a named capability option: naming a hosted
+ * capability here would put it inside the desktop-local composition. The
+ * desktop passes nothing, so a build that contains no hosted capability
+ * contains no path to one.
  */
 let configuredRouteContributions: readonly WorkspaceRuntimeRouteContribution[] = []
 let configuredProcessObserver: ProcessObserver | undefined

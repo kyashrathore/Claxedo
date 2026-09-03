@@ -19,21 +19,15 @@ class RecordingRunner implements WranglerCommandRunner {
   }
 }
 
-function release(runner: RecordingRunner, retirement = true) {
-  let exists = true
+function release(runner: RecordingRunner) {
+  const exists = true
   return new WranglerOptionalServiceRelease({
     serviceWorkingDirectory: import.meta.dirname,
     coreWorkingDirectory: import.meta.dirname,
     runner,
-    databaseBinding: "WORKGRAPH_DB",
+    databaseBinding: "DOCUMENTS_DB",
     workerExists: async () => exists,
     renderServiceConfig: (input) => `name = ${JSON.stringify(input.workerName)}\ndatabase_id = ${JSON.stringify(input.databaseId)}\n`,
-    ...(retirement
-      ? {
-          renderRetirementConfig: (input: { workerName: string }) =>
-            `name = ${JSON.stringify(input.workerName)}\ndeleted_classes = ["WorkGraphSettler", "WorkGraphWakeLane"]\n`,
-        }
-      : {}),
     renderCoreConfig: (input) => `name = "core"\npresent = ${String(input.present)}\n`,
   })
 }
@@ -43,13 +37,13 @@ describe("Wrangler optional-service release driver", () => {
     const runner = new RecordingRunner()
     const driver = release(runner)
     await driver.deployDark({
-      serviceId: "workgraph",
-      workerName: "claxedo-workgraph-production",
+      serviceId: "documents",
+      workerName: "claxedo-documents-production",
       databaseId: "11111111-1111-1111-1111-111111111111",
     })
     await driver.deployCoreBinding({
-      serviceId: "workgraph",
-      workerName: "claxedo-workgraph-production",
+      serviceId: "documents",
+      workerName: "claxedo-documents-production",
       descriptor: {} as never,
       present: true,
     })
@@ -58,33 +52,33 @@ describe("Wrangler optional-service release driver", () => {
       ["deploy", "--config"],
       ["deploy", "--config"],
     ])
-    expect(runner.commands[0]?.config).toContain('name = "claxedo-workgraph-production"')
+    expect(runner.commands[0]?.config).toContain('name = "claxedo-documents-production"')
     expect(runner.commands[2]?.config).toContain("present = true")
   })
 
-  test("lands WorkGraph deleted_classes before deleting its Worker", async () => {
+  test("deletes the service Worker under an explicit retirement authorization", async () => {
     const runner = new RecordingRunner()
     await release(runner).deleteServiceWorker({
-      serviceId: "workgraph",
-      workerName: "claxedo-workgraph-production",
+      serviceId: "documents",
+      workerName: "claxedo-documents-production",
       databaseId: "11111111-1111-1111-1111-111111111111",
       retirementAuthorization: "archive:evidence-1",
     })
-    expect(runner.commands).toHaveLength(2)
-    expect(runner.commands[0]?.config).toContain("deleted_classes")
-    expect(runner.commands[1]?.command.args).toEqual(["delete", "claxedo-workgraph-production"])
+    expect(runner.commands.map((item) => item.command.args)).toEqual([
+      ["delete", "claxedo-documents-production"],
+    ])
   })
 
-  test("refuses WorkGraph deletion when no DO retirement artifact is wired", async () => {
+  test("refuses deletion without a retirement authorization", async () => {
     const runner = new RecordingRunner()
     await expect(
-      release(runner, false).deleteServiceWorker({
-        serviceId: "workgraph",
-        workerName: "claxedo-workgraph-production",
+      release(runner).deleteServiceWorker({
+        serviceId: "documents",
+        workerName: "claxedo-documents-production",
         databaseId: "11111111-1111-1111-1111-111111111111",
-        retirementAuthorization: "archive:evidence-1",
+        retirementAuthorization: "   ",
       }),
-    ).rejects.toThrow(/deleted_classes/)
+    ).rejects.toThrow(/retirementAuthorization/)
     expect(runner.commands).toEqual([])
   })
 })

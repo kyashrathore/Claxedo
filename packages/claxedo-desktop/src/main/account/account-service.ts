@@ -603,7 +603,7 @@ export function createAccountService(options: AccountServiceOptions) {
         // not a statement about the session, so it must not wipe it.
         //
         // `invalid_bearer_token` used to be treated the same way, on the
-        // Clerk-era assumption that it only ever meant a wrong-SHAPED token
+        // earlier assumption that it only ever meant a wrong-SHAPED token
         // (JWKS refusing an opaque one) and therefore a misconfiguration no
         // amount of renewing could fix. This deployment returns that exact
         // code for an ordinary rejected token — expired, retired, unknown —

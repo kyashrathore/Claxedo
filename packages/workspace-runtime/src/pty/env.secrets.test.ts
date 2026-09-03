@@ -29,7 +29,7 @@ function sourceFiles(dir: string, out: string[] = []): string[] {
 
 function secretNamesInRepo(): string[] {
   const names = new Set<string>()
-  for (const dir of ["packages", "convex"]) {
+  for (const dir of ["packages"]) {
     const root = path.join(repoRoot, dir)
     if (!fs.existsSync(root)) continue
     for (const file of sourceFiles(root)) {
@@ -56,7 +56,7 @@ describe("agent-facing env never carries prefixed secrets", () => {
       "CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", // mints Runtime Access Tokens
       "CLAXEDO_CLI_TOKEN_PRIVATE_KEY_PEM",
       "CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM", // mints Relay Host Tokens
-      "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", // Convex machine principal
+      "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", // control-plane machine principal
       "CLAXEDO_CREDENTIALS_TOKEN",
       "CLAXEDO_RELAY_RESOLVER_TOKEN",
       "CLAXEDO_EMBEDDED_AUTH_SECRET",

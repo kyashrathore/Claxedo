@@ -52,7 +52,7 @@ const cmd = extra.length
 // One retry: electron-builder's bun "file traversal" node-module collector
 // intermittently fails to resolve a workspace package's dependency across the
 // .bun-store symlinks ("Production dependency better-sqlite3 not found for
-// package @claxedo/workgraph") — observed on different release legs in
+// package @claxedo/<name>") — observed on different release legs in
 // different runs with an identical tree that packaged fine elsewhere. The
 // step is idempotent; a deterministic failure fails twice.
 let code = 1

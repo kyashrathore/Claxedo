@@ -106,7 +106,7 @@ export type WorkspacePanelSliceApi = {
   /**
    * Open the panel to a global-navigation mode that is NOT bound to any
    * workspace. Clears every workspace binding (dir/pane/navigator/focus) so the
-   * active global surface owns the panel content. Used by WorkGraph.
+   * active global surface owns the panel content.
    */
   openGlobal(mode: WorkspacePanelMode): void
   /** Toggle a global-navigation mode: closes if that exact mode is open, else opens it. */

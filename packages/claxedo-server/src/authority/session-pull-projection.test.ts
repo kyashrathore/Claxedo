@@ -70,7 +70,7 @@ const signedAuth = {
   user: { subject: "user_1", tokenIdentifier: "issuer|user_1", issuer: "issuer" },
 }
 
-// A fully-present Convex authority so the hosted (signed-only) pull flow never
+// A fully-present workspace authority so the hosted (signed-only) pull flow never
 // touches its unavailable path; the tests assert on projection effects, not codes.
 function presentAuthority() {
   return {

@@ -179,13 +179,13 @@ describe("Better Auth + D1 user-deployed composition", () => {
         environment_id, deployment_id, service_id, protocol_version, schema_version,
         lifecycle_state, binding_name, entrypoint, binding_provenance,
         probe_status, probe_checked_at, service_build_id, revision, last_operation_id, updated_at
-      ) values (?, ?, 'workgraph', 'claxedo.service.v1', 1, 'enabled', 'WORKGRAPH_SERVICE',
-        'WorkGraphServiceV1', 'cloudflare-service:test', 'ready', ?, 'build-1', 2, 'op-enable', ?)`,
+      ) values (?, ?, 'documents', 'claxedo.service.v1', 1, 'enabled', 'DOCUMENTS_SERVICE',
+        'DocumentsServiceV1', 'cloudflare-service:test', 'ready', ?, 'build-1', 2, 'op-enable', ?)`,
       )
       .bind("production", "deployment-1", "2026-08-28T00:00:00Z", "2026-08-28T00:00:00Z")
       .run()
     await expect(composed.options.serviceCatalog({} as never)).rejects.toThrow(
-      "enabled service installation(s) without bindings: workgraph",
+      "enabled service installation(s) without bindings: documents",
     )
     expect(composed.billing).toBe("absent")
     expect(composed.product).toMatchObject({
@@ -265,7 +265,7 @@ describe("Better Auth + D1 user-deployed composition", () => {
     ).toThrow("AUTH_DB and CONTROL_PLANE_DB must be distinct D1 bindings")
   })
 
-  test("has no Clerk, Convex, billing, optional-service, or sandbox-driver value edge", async () => {
+  test("has no third-party identity, hosted-storage, billing, optional-service, or sandbox-driver value edge", async () => {
     const entry = path.join(ROOT, "src/authority/adapters/worker/better-auth-d1-compose.ts")
     const closure = sourceClosure({ entry, root: ROOT, runtimeOnly: true })
     expect(closure.unresolved).toEqual([])
@@ -274,13 +274,12 @@ describe("Better Auth + D1 user-deployed composition", () => {
     expect(
       modules.filter((file) =>
         [
-          "/authority/adapters/convex/",
+          "/authority/adapters/hosted/",
           "/authority/adapters/worker/hosted-compose",
           "/authority/adapters/worker/retained-sandbox-driver",
-          "/sandbox/stores/convex",
-          "/platform/auth/clerk-adapter",
+          "/sandbox/stores/hosted",
+          "/platform/auth/hosted-adapter",
           "/billing/",
-          "/hosts/workgraph/",
           "/documents/",
         ].some((part) => `/${file}`.includes(part)),
       ),
@@ -302,18 +301,15 @@ describe("Better Auth + D1 user-deployed composition", () => {
     expect(
       inputs.filter((file) =>
         [
-          "/authority/adapters/convex/",
-          "/sandbox/stores/convex",
-          "/platform/auth/clerk-adapter",
+          "/authority/adapters/hosted/",
+          "/sandbox/stores/hosted",
+          "/platform/auth/hosted-adapter",
           "/sandbox-manager/src/drivers/",
           "/billing/",
-          "/hosts/workgraph/",
           "/documents/",
         ].some((part) => file.includes(part)),
       ),
     ).toEqual([])
-    expect(bundled.outputFiles.map((file) => file.text).join("\n")).not.toMatch(
-      /CLERK_(?:PUBLISHABLE|SECRET)_KEY|CONVEX_(?:URL|DEPLOY_KEY)|POLAR_ACCESS_TOKEN/,
-    )
+    expect(bundled.outputFiles.map((file) => file.text).join("\n")).not.toMatch(/POLAR_ACCESS_TOKEN/)
   })
 })

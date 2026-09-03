@@ -844,7 +844,7 @@ export function recoverCandidateVersion(input: {
   if (!bindings.some((binding) => binding.type === "version_metadata" && binding.name === "CF_VERSION_METADATA")) {
     throw new Error("tagged candidate version is missing Cloudflare version metadata")
   }
-  if (bindings.some((binding) => /workgraph|document/i.test(String(binding.name)))) {
+  if (bindings.some((binding) => /document/i.test(String(binding.name)))) {
     throw new Error("tagged candidate version contains an optional-service binding")
   }
   return version.id

@@ -252,8 +252,7 @@ describe("architecture boundaries", () => {
       "../../sandbox-manager/src/stores/memory.ts",
     ]
     const forbiddenTerms = [
-      "ConvexHttpClient",
-      "convex/server",
+      "HostedAuthorityClient",
       "service_token",
       "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN",
       "storage/workspace-lease.sql",
@@ -262,7 +261,7 @@ describe("architecture boundaries", () => {
       "workspaceStore",
       "process.env",
       "Bun.file",
-      "Clerk",
+      "ControlPlaneAuthAdapter",
       "billing",
       "usersMe",
     ]
@@ -273,34 +272,6 @@ describe("architecture boundaries", () => {
         .filter((term) => text.includes(term))
         .map((term) => `${file}:${term}`)
     })
-
-    expect(offenders).toEqual([])
-  })
-
-
-  test("keeps generic control-plane core free of Convex tokens", () => {
-    // Ownership-first: Convex is Claxedo's storage *decision*; only the Convex
-    // (and the Worker composition) adapters under authority/adapters/* may
-    // name it. Every other control-plane source file — imports, error codes,
-    // field names, env names, comments — must be storage-agnostic. This is the
-    // mechanical mirror of the kit's opencode.ai ban. Test files are excluded.
-    // (Even the legacy backend-URL env aliases live in the Convex adapter now:
-    // `convexAuthorityUrlFromEnv` — so this scan needs no carve-outs.)
-    // Both halves of the control plane: the auth/identity machinery that moved
-    // to platform/, and what is still in authority/ (services, projection-store,
-    // the hosted-* composition). Scanning only one would quietly shrink this
-    // guard's footprint to whichever half happened to move.
-    const roots = [
-      path.resolve(import.meta.dirname, "../../platform/auth"),
-      path.resolve(import.meta.dirname, "../../authority"),
-    ]
-    const offenders = roots.flatMap((root) => walk(root)
-      .filter((file) => file.endsWith(".ts"))
-      .filter((file) => !file.endsWith(".test.ts"))
-      .filter((file) => !file.includes(`${path.sep}adapters${path.sep}`))
-      .filter((file) => /convex/i.test(fs.readFileSync(file, "utf8")))
-      .map((file) => path.relative(path.dirname(root), file)))
-      .sort()
 
     expect(offenders).toEqual([])
   })
@@ -342,7 +313,7 @@ describe("architecture boundaries", () => {
       "storage.ts",
       "workspace.ts",
     ]
-    const forbidden = ["../paths", "agent-config/fanout", "workspace/supervisor", "ControlPlane", "Convex", "Hono"]
+    const forbidden = ["../paths", "agent-config/fanout", "workspace/supervisor", "ControlPlane", "WorkspaceAuthority", "Hono"]
     const leaks = lifecycleFiles.flatMap((file) => {
       const text = fs.readFileSync(path.join(root, file), "utf-8")
       return forbidden.flatMap((term) => (text.includes(term) ? [`${file}:${term}`] : []))
@@ -351,18 +322,6 @@ describe("architecture boundaries", () => {
     expect(leaks).toEqual([])
   })
 
-
-  test("keeps WorkGraph out of Control Plane module load", () => {
-    const server = fs.readFileSync(path.resolve(import.meta.dirname, "../../deployments/self-hosted-node/app.ts"), "utf-8")
-    const serverWorkgraph = fs.readFileSync(path.resolve(import.meta.dirname, "../../hosts/workgraph/composition/server-workgraph.ts"), "utf-8")
-
-    expect(server).not.toMatch(/from ["']@claxedo\/workgraph["']/)
-    expect(server).not.toMatch(/from ["']\.\/workgraph-execution["']/)
-    expect(serverWorkgraph).not.toMatch(/^import (?!type\b).*from ["']@claxedo\/workgraph["']/m)
-    expect(serverWorkgraph).not.toMatch(/from ["']\.\/workgraph-execution["']/)
-    expect(serverWorkgraph).toContain('import("@claxedo/workgraph")')
-    expect(server).toContain('import("../../hosts/workgraph/composition/session-gateway")')
-  })
 
   test("keeps test-support/ out of production modules", () => {
     // test-support/ is the ONE home for test-only in-process helpers. A

@@ -6,8 +6,8 @@
  * provider. That is a real property and it is not this one. A bundle is not its
  * source graph: chunk configuration, package re-exports, and plugin transforms
  * all add to the artifact without adding an import edge anyone wrote, so a
- * clean source closure and a bundle containing Clerk are perfectly compatible
- * states. Only reading the emitted files tells them apart.
+ * clean source closure and a bundle containing the identity provider are
+ * perfectly compatible states. Only reading the emitted files tells them apart.
  *
  * This module is the reading. It is pure — it takes files that were already
  * read and returns findings — so the rules can be exercised against fixtures
@@ -20,29 +20,26 @@
 export type EmittedFile = { name: string; text: string }
 
 /**
- * Strings that appear only when Clerk's runtime body is in a chunk.
+ * Strings that appear only when the identity provider's body is in a chunk.
  *
- * Chosen by MEASUREMENT, not by guessing at the library's vocabulary. Each was
- * confirmed to appear in the hosted artifact (`vite.cloud.config.ts`, which
- * genuinely bundles `@clerk/clerk-js/headless` into a 259 KB `vendor-clerk`
- * chunk) and to appear in no file of the local artifact. A marker that fires in
- * neither build proves nothing and would quietly pad this list with checks that
- * cannot fail — so the hosted build is the control, and
- * `verifyMarkersAreDetectable` below is how a caller re-runs it.
+ * The first is the marker the app's OWN adapter emits
+ * (`better-auth-browser-auth.ts`'s `implementationMarker`), which is why it is
+ * satisfiable by nothing else and needs no guessing at library vocabulary. The
+ * rest are Better Auth's own client body. A marker that fires in NEITHER build
+ * proves nothing and would quietly pad this list with checks that cannot fail —
+ * so the hosted build is the control, and `verifyMarkersAreDetectable` below is
+ * how a caller re-runs it.
  *
- * Deliberately NOT the bare word "clerk": every chunk that imported the
- * inherited `vendor-clerk` chunk carried that filename as an import specifier,
- * so a substring that loose reports 61 hits on a bundle holding no Clerk code
- * at all. Markers must be satisfiable only by the library's own body.
+ * Deliberately NOT the bare word "better-auth": every chunk that imported an
+ * inherited `vendor-better-auth` chunk would carry that filename as an import
+ * specifier, so a substring that loose reports hits on a bundle holding no
+ * provider code at all. Markers must be satisfiable only by the provider's own
+ * body, or by a marker this repository emits on purpose.
  */
 export const IDENTITY_PROVIDER_MARKERS: readonly string[] = [
-  "clerk.com",
-  "__clerk",
-  "@clerk/clerk-js",
-  "ClerkJS",
-  "publishableKey",
-  "frontendApi",
-  "clerk_db_jwt",
+  "claxedo-browser-auth:better-auth",
+  "createAuthClient",
+  "better-auth/client",
 ]
 
 /**
@@ -61,15 +58,14 @@ export const APP_PRESENCE_MARKERS: readonly string[] = ["claxedo", "workspace"]
  *
  * A separate rule from the content scan, catching a separate defect. The local
  * config inherits the hosted config's Rollup options, so a `manualChunks` entry
- * naming `@clerk/clerk-js/headless` was carried into a build that must not
- * contain it. Rollup tree-shook the library away and emitted a 116-byte chunk
- * still called `vendor-clerk`, so the content scan — correctly — found nothing.
- * The name was the surviving evidence that the local build was still
- * configured around a dependency it must never hold, and it is the part that
- * would have turned into a real leak the moment the package gained a retained
- * side effect.
+ * naming the identity provider would be carried into a build that must not
+ * contain it. Rollup tree-shakes the library away and still emits a small chunk
+ * under that name, so the content scan — correctly — finds nothing. The name is
+ * the surviving evidence that the local build is configured around a dependency
+ * it must never hold, and it is the part that turns into a real leak the moment
+ * the package gains a retained side effect.
  */
-export const FORBIDDEN_CHUNK_NAME_FRAGMENTS: readonly string[] = ["clerk", "convex"]
+export const FORBIDDEN_CHUNK_NAME_FRAGMENTS: readonly string[] = ["better-auth"]
 
 export type BundleReport = {
   scannedFiles: number

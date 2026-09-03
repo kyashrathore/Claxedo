@@ -55,7 +55,6 @@ export const CODEX_ICON_ALIASES = {
   brain: "codex-20-113",
   branch: "codex-20-037",
   "bubble-5": "codex-20-153",
-  "bullet-list": "codex-20-097",
   // The extracted sprite has NO plain checkmark — codex-20-139 is a
   // circle-based checklist glyph shared with `checklist`/`task`. A tick is
   // two line segments and is drawn locally instead.
@@ -147,8 +146,8 @@ export const CODEX_ICON_ALIASES = {
   marketplace: "codex-custom-marketplace",
   maximize: "codex-custom-panel-expand",
   // The sprite has no MCP mark, so this pointed at codex-20-129 — the same
-  // node-graph glyph as `workgraph`/`link`, which is why MCP tool rows read as
-  // WorkGraph nodes. Drawn locally instead, like the other vendor marks.
+  // node-graph glyph as `link`, which is why MCP tool rows read as graph
+  // nodes. Drawn locally instead, like the other vendor marks.
   mcp: "codex-custom-mcp",
   menu: "codex-20-097",
   models: "codex-custom-models",
@@ -219,7 +218,6 @@ export const CODEX_ICON_ALIASES = {
   unified: "codex-custom-diff-unified",
   warning: "codex-20-082",
   "window-cursor": "codex-20-109",
-  workgraph: "codex-20-129",
   workspace: "codex-20-032",
   "workspace-isolated": "codex-20-140",
   "workspace-new": "codex-20-032",

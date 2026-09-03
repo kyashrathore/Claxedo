@@ -15,7 +15,7 @@ execution: code
 ## Goal Capsule
 
 - **Objective:** Ship one production public site on `claxedo.com` that presents Claxedo as the open cloud workspace for coding agents, converts visitors through exactly two marketing actions—**Open Claxedo** and **Deploy to Cloudflare**—and consolidates product marketing, open architecture, comparisons, framework documentation, and machine-readable discovery under one canonical origin.
-- **Primary implementation target:** `packages/claxedo-web`, the existing Astro application. Framework content migrates from `packages/claxedo-docs`; product and technical evidence comes from the relevant Claxedo and WorkGraph packages rather than being redefined by the website.
+- **Primary implementation target:** `packages/claxedo-web`, the existing Astro application. Framework content migrates from `packages/claxedo-docs`; product and technical evidence comes from the relevant Claxedo packages rather than being redefined by the website.
 - **Product authority:** This document owns public information architecture, technical delivery, migration, positioning and competitor research, homepage content governance, claim governance, and release acceptance. Shipped code and active product contracts remain the authority for capability claims.
 - **Execution profile:** Implement Units 1–8 in dependency order, keeping every page server-rendered or statically rendered, every public claim evidence-gated, every marketing conversion on one of the two canonical CTA paths, and the existing documentation deployment available until cutover acceptance passes.
 - **Stop conditions:** Stop a publication or cutover when a claim lacks reproducible evidence, a release artifact is missing, a legacy route lacks a verified destination, hosted and self-hosted source parity cannot be substantiated, or active hosting ownership is unknown. Omit or narrow the affected claim while implementation continues elsewhere.
@@ -28,7 +28,7 @@ execution: code
 | Public web application | `packages/claxedo-web` with Astro 5 | One production build owns product, download, pricing, comparisons, `/framework`, sitemap, and agent-discovery routes. |
 | Framework documentation | `packages/claxedo-docs` with the current Mintlify IA | Content migrates beneath `/framework` in the Astro application; the old deployment remains only for verified one-hop redirects. |
 | Homepage content | This plan's Content Strategy section | Its settled section sequence, evidence-reviewed working copy, proof direction, and publication checks are implemented without introducing another marketing CTA. |
-| Product evidence | `packages/claxedo-app`, `packages/claxedo-desktop`, `packages/claxedo-server`, `packages/workgraph`, public packages, release artifacts, and deployment records | Every material claim points to a current reproducible artifact and carries verification status. |
+| Product evidence | `packages/claxedo-app`, `packages/claxedo-desktop`, `packages/claxedo-server`, public packages, release artifacts, and deployment records | Every material claim points to a current reproducible artifact and carries verification status. |
 | Framework examples | `claxedo-cookbook` and public package documentation | Runnable examples and API claims are rendered from maintained sources or checked against them. |
 | Canonical public origin | Split between `claxedo.com` and `docs.claxedo.com` | All indexable public content resolves canonically on `claxedo.com`; `app.claxedo.com` remains the authenticated application. |
 
@@ -215,7 +215,7 @@ The resulting landing-page sequence is:
 4. One architecture explorer with Platform, Deployment, and Inside a workspace views.
 5. Connected continuity across desktop, browser, and mobile web.
 6. Harness neutrality, followed by chat UI and terminal as first-class interaction modes.
-7. WorkGraph and Agent Extensions as focused, contextual product chapters.
+7. Agent Extensions as a focused, contextual product chapter.
 8. The open-interface thesis and a quiet closing band repeating Open Claxedo and the deployment copy button.
 
 This page feels edited and intentional. Each section answers a distinct buying question; product proof replaces decorative dashboards, maintained evidence replaces duplicated claims, earned trust replaces placeholder social proof, and the two approved CTAs close the composition.
@@ -346,7 +346,7 @@ Each step appears only when the corresponding product behavior can be demonstrat
 - **R20. Lineage and license transparency:** Public content credits the OpenCode engine and substantiates MIT, source-history, package-publication, synchronization, deployment, and placement claims before publishing them.
 - **R21. Original inspiration synthesis:** The commercial landing page combines Matrix OS's editorial rhythm, Ona's proof hierarchy, and Codex's product-image clarity through original Claxedo typography, color, motion, composition, copy, and evidence.
 - **R22. Flue-led framework model:** `/framework` closely follows Flue's developer information architecture, page density, navigation model, and content progression, with every content role translated into an original, repository-backed Claxedo workspace-layer equivalent.
-- **R23. Homepage implementation contract:** The homepage implements the settled proof sequence: open cloud workspace hero; unified Platform/Deployment/Workspace architecture explorer; desktop/browser/mobile continuity; harness neutrality with recognizable marks; chat UI and terminal as two first-class modes; WorkGraph; Agent Extensions; principles; and the closing two-action conversion. Deploy controls directly copy the complete Cloudflare agent prompt. Each product-led section uses a current deterministic capture or repository-backed evidence, mobile product images open at full resolution, and no third marketing conversion is introduced.
+- **R23. Homepage implementation contract:** The homepage implements the settled proof sequence: open cloud workspace hero; unified Platform/Deployment/Workspace architecture explorer; desktop/browser/mobile continuity; harness neutrality with recognizable marks; chat UI and terminal as two first-class modes; Agent Extensions; principles; and the closing two-action conversion. Deploy controls directly copy the complete Cloudflare agent prompt. Each product-led section uses a current deterministic capture or repository-backed evidence, mobile product images open at full resolution, and no third marketing conversion is introduced.
 
 ## Scope Boundaries
 
@@ -415,7 +415,6 @@ Commercial navigation:
 
 - Product
 - Architecture
-- WorkGraph
 - Pricing
 - Open-source framework
 - Download app
@@ -448,15 +447,13 @@ The homepage is a product-led conversion narrative:
 3. **Continuity:** Desktop, browser, and mobile web reopen the same work while files, tools, and execution remain on the user's infrastructure.
 4. **Harness neutrality:** Claude Code, Codex, Gemini CLI, OpenCode, and any agent CLI are shown with recognizable visual marks and accurate mode support.
 5. **Chat UI and terminal:** A contextual feature block shows a normal Codex chat Session and a functioning Codex terminal side by side.
-6. **WorkGraph:** A close capture of one populated Stream card proves durable work, its Tasks, and their states without repeating the complete board.
-7. **Agent Extensions:** Skills, instructions, MCP servers, plugins, hooks, and supporting files materialize into a workspace or sandbox for compatible harnesses.
-8. **Principles and final conversion:** The open-interface thesis is followed by Open Claxedo and the Deploy to Cloudflare copy button.
+6. **Agent Extensions:** Skills, instructions, MCP servers, plugins, hooks, and supporting files materialize into a workspace or sandbox for compatible harnesses.
+7. **Principles and final conversion:** The open-interface thesis is followed by Open Claxedo and the Deploy to Cloudflare copy button.
 
-Product captures are generated by `packages/claxedo-app/e2e/playwright/marketing-screenshots.spec.ts` into three canonical assets:
+Product captures are generated by `packages/claxedo-app/e2e/playwright/marketing-screenshots.spec.ts` into two canonical assets:
 
 - `marketing-workspace.png` — neutral `Northstar` project, completed release-verification conversation, and seeded changed-file evidence.
 - `marketing-session-terminal.png` — the real split workbench with a structured Codex chat Session, its Environment context collapsed, and a Codex terminal beside it.
-- `marketing-workgraph.png` — one populated `Ship Claxedo Cloud` Stream card with enough Tasks and state variation to explain the primitive at a glance.
 
 The capture spec owns the fixture data and screenshot dimensions so public images can be regenerated after product UI changes. Captures render at 3× device density and are presented as focused product moments inside contextual feature blocks. Personal workspaces and old manually captured screenshots are not valid homepage inputs.
 
@@ -507,7 +504,7 @@ The framework landing page follows this Flue-derived content sequence:
 5. **Foundation and lineage:** Flue's “Powered by Pi” architecture chapter maps to a factual “Built on the OpenCode engine” chapter, followed by the Claxedo-owned workspace, backend, relay, runtime, protocol, and package layers.
 6. **Continuity proof:** Flue's durability/recovery chapter maps to Claxedo's verified session continuity, reconnect, resume, placement, and safe-boundary behavior. Interactive failure or reconnect demonstrations appear only for shipped behavior.
 7. **Bring your existing stack:** a visual ecosystem section for Claude Code, Codex, Gemini CLI, OpenCode, ACP clients, MCP servers, skills, sandboxes, providers, and supported deployment targets.
-8. **Framework capabilities:** a linked capability grid for workspace runtime, normalized agent events, extensions, connections, relay, sandbox management, channels, MCP, workgraph, deployment, and observability where publicly supported.
+8. **Framework capabilities:** a linked capability grid for workspace runtime, normalized agent events, extensions, connections, relay, sandbox management, channels, MCP, deployment, and observability where publicly supported.
 9. **Architecture and placement:** an original Claxedo diagram explains Local, Cloud, and Split placement plus the boundary between product composition and reusable framework packages.
 10. **Documentation handoff:** Guide, Reference, CLI, SDK/Packages, Cookbook, and Ecosystem entry points close the landing page, followed by Open Claxedo as the commercial return path.
 
@@ -675,7 +672,7 @@ The commercial pages continue to use custom Astro layouts. Starlight is added to
 - **What happens to `docs.claxedo.com`?** Every path permanently redirects to its canonical `/framework` equivalent after parity verification.
 - **What category does Claxedo claim?** Open cloud workspace for coding agents.
 - **What is the homepage heading?** “The open cloud workspace for coding agents.”
-- **What features carry the homepage proof?** One open architecture, hosted or Cloudflare deployment, structured chat and terminals, WorkGraph, cross-surface continuity, and Agent Extensions.
+- **What features carry the homepage proof?** One open architecture, hosted or Cloudflare deployment, structured chat and terminals, cross-surface continuity, and Agent Extensions.
 - **What is the differentiated story?** Use the hosted product now or give a coding agent one complete prompt to deploy the open control plane to Cloudflare; keep existing harnesses, providers, and execution infrastructure.
 - **Which comparisons launch first?** Matrix OS, Omnigent, Paseo, OpenHands, T3 Code, and Hermes Agent.
 - **How is OpenCode lineage handled?** Prominent engine credit, factual architectural-delta copy, and links to public provenance rather than defensive or ambiguous fork language.
@@ -813,9 +810,8 @@ The release record must identify one commit SHA and retain reproducible artifact
 **Approach:**
 
 - Implement this plan's Content Strategy section as the homepage content contract. Preserve its chapter order unless a browser-tested composition requires merging adjacent proof, and preserve every claim's publication gate.
-- Lead with “The open cloud workspace for coding agents.” Follow it with the unified architecture explorer, cross-surface continuity, harness neutrality, chat UI and terminal, WorkGraph, Agent Extensions, the principles thesis, and the closing conversion. Deploy controls copy the complete prompt directly.
+- Lead with “The open cloud workspace for coding agents.” Follow it with the unified architecture explorer, cross-surface continuity, harness neutrality, chat UI and terminal, Agent Extensions, the principles thesis, and the closing conversion. Deploy controls copy the complete prompt directly.
 - Demonstrate terminal tabs as the immediate compatibility path for any coding-agent CLI while describing supported harnesses in user-facing terms as a chat UI or terminal. Protocol detail belongs in `/framework` rather than a standalone homepage chapter.
-- Give WorkGraph a full product chapter showing Streams, dependent Tasks, execution progress, evidence, and **Needs you**. Use the verified local composition until deployed Cloud acceptance supports hosted proof.
 - Explain deployment through a complete copyable agent brief. Keep the Cloudflare control-plane boundary, companion runtime, and relay explicit; name only layers whose public source and deployment evidence passes Unit 1's claim contract.
 - Make Open Claxedo the only primary button treatment in the commercial hero, header, pricing, and closing conversion band.
 - Make Deploy to Cloudflare the only secondary conversion treatment. The hero architecture link is a tertiary scroll control.
@@ -837,7 +833,6 @@ The release record must identify one commit SHA and retain reproducible artifact
 - Existing application URL override behavior in `packages/claxedo-web/src/config.ts`.
 - Subscription launch posture: launch free, per the cloud subscription launch plan.
 - Homepage section order, working copy, proof direction, and publication checks in this plan's Content Strategy section.
-- WorkGraph behavior and proof boundaries in `packages/workgraph/README.md`, `packages/workgraph/PRD.md`, and `packages/claxedo-app/src/features/workgraph/`.
 - Evidence and comparison-page priorities in this plan's Competitive Positioning section, re-verified against first-party sources before publication.
 
 **Test scenarios:**
@@ -846,14 +841,14 @@ The release record must identify one commit SHA and retain reproducible artifact
 - **Happy path:** `/pricing` states the active free-beta offer and BYO obligations without presenting inactive checkout terms.
 - **Happy path:** `/download` lists every configured platform artifact and states that unsigned local mode needs no account.
 - **Happy path:** The homepage identifies Claxedo as the open cloud workspace and presents the compound proof in the approved order without turning commodity features into unsupported headline claims.
-- **Happy path:** The homepage contains the complete approved chapter sequence and renders the open architecture, WorkGraph, sessions, and terminals as substantive evidence-backed sections. Cloudflare prerequisites and deployment boundaries are contained in the copied agent prompt.
+- **Happy path:** The homepage contains the complete approved chapter sequence and renders the open architecture, sessions, and terminals as substantive evidence-backed sections. Cloudflare prerequisites and deployment boundaries are contained in the copied agent prompt.
 - **Happy path:** A visitor can distinguish an integrated harness Session from a terminal tab and understands that any coding-agent CLI can run through the latter.
 - **Edge case:** A development app URL override can change the Open Claxedo destination without changing canonical public-site URLs or the deployment anchor.
 - **Edge case:** Mobile navigation preserves Open Claxedo and Deploy to Cloudflare without horizontal overflow; architecture diagrams use a dedicated vertical layout.
 - **Edge case:** Keyboard, screen-reader, high-zoom, and reduced-motion users receive the same content hierarchy and working CTA destinations; motion-led product proof has an informative static fallback.
 - **Error path:** A missing release artifact or version cannot silently render a broken empty download action.
 - **Error path:** Missing public fork-history evidence removes the fork-point/history wording while preserving accurate OpenCode engine credit.
-- **Error path:** Missing WorkGraph Cloud acceptance, hosted/self-hosted parity evidence, or public MIT evidence suppresses the affected hosted or same-source wording without removing the narrower verified product section.
+- **Error path:** Missing hosted/self-hosted parity evidence or public MIT evidence suppresses the affected hosted or same-source wording without removing the narrower verified product section.
 - **Integration:** Header, hero, pricing, footer, and closing CTA use the same product and URL contracts.
 - **Integration:** Hero film, harness strip, proof chapters, local-to-connected section, open-foundation band, and closing conversion form one continuous narrative at desktop and mobile widths.
 
@@ -1158,7 +1153,7 @@ The release record must identify one commit SHA and retain reproducible artifact
 - Review desktop and mobile captures against the documented inspiration synthesis: Matrix OS contributes rhythm, Ona contributes proof hierarchy, and Codex contributes product-image staging. Verification evaluates principles and originality rather than pixel similarity.
 - Audit `/framework` side by side with Flue for the planned navigation model, page density, chapter order, content roles, runnable-proof placement, capability discovery, and documentation handoff. Verify that each mapped Claxedo chapter uses original expression and shipped evidence.
 - Verify claims against current product behavior and active plans before launch.
-- Audit the implemented homepage against this plan's Content Strategy section: section order, copy intent, adjacent evidence, WorkGraph behavior, Session-versus-terminal distinction, same-source boundary, and exactly two marketing CTA classes must agree.
+- Audit the implemented homepage against this plan's Content Strategy section: section order, copy intent, adjacent evidence, Session-versus-terminal distinction, same-source boundary, and exactly two marketing CTA classes must agree.
 - Re-verify every published competitor claim against first-party sources, record the review date and owner, and confirm that stale-page expiry works in the production build.
 - Verify OpenCode engine credit, fork provenance links, current MIT coverage, package publication state, and every claim about synchronization, deployment, or placement against public artifacts.
 - Run a link and asset crawl across the built site.
@@ -1173,7 +1168,7 @@ The release record must identify one commit SHA and retain reproducible artifact
 - **Happy path:** The framework landing preserves the complete Flue-derived content progression and every chapter links to the intended Claxedo guide, reference, package, ecosystem, or download destination.
 - **Happy path:** All six launch comparison pages have current first-party sources, review metadata, accurate category boundaries, and the same two conversion types as the rest of the site.
 - **Happy path:** The landing page presents one legible product idea per chapter, places evidence beside its claim, and preserves an original Claxedo visual identity across hero, proof, framework handoff, and closing conversion.
-- **Happy path:** The homepage acceptance journey sees a chat Session and a functioning agent terminal as first-class tabs, opens WorkGraph evidence from a seeded Stream, switches among all architecture views, copies the deployment prompt, and reaches Open Claxedo and Deploy to Cloudflare from header, hero, and closing conversion.
+- **Happy path:** The homepage acceptance journey sees a chat Session and a functioning agent terminal as first-class tabs, switches among all architecture views, copies the deployment prompt, and reaches Open Claxedo and Deploy to Cloudflare from header, hero, and closing conversion.
 - **Edge case:** The site remains navigable at narrow widths, high zoom, keyboard-only input, dark/light preferences, and reduced-motion preferences.
 - **Error path:** Broken images, missing alternative text, console errors, inaccessible controls, or nonfunctional no-JavaScript links fail the release check.
 - **Error path:** Unsupported superlatives, stale competitive claims, unverified license claims, missing lineage evidence, and capability claims without a reproducible artifact fail the release check.
@@ -1190,12 +1185,12 @@ The release record must identify one commit SHA and retain reproducible artifact
 ## Definition of Done
 
 - `packages/claxedo-web` produces one successful production build containing the commercial routes, `/download`, `/pricing`, current comparisons, `/framework` and its documentation tree, canonical metadata, structured data, sitemap, `robots.txt`, `start.md`, and `llms.txt`.
-- The homepage implements this plan's Content Strategy section: “The open cloud workspace for coding agents” leads the page; the unified architecture explorer explains platform, deployment, and workspace boundaries; chat Sessions and agent terminals are first-class; WorkGraph receives a substantive evidence-backed section; and the Cloudflare prompt is complete and copyable.
+- The homepage implements this plan's Content Strategy section: “The open cloud workspace for coding agents” leads the page; the unified architecture explorer explains platform, deployment, and workspace boundaries; chat Sessions and agent terminals are first-class; and the Cloudflare prompt is complete and copyable.
 - **Open Claxedo** is the sole primary marketing conversion and targets `app.claxedo.com`. **Deploy to Cloudflare** is the sole secondary marketing conversion and copies the complete agent prompt. Framework, download, architecture, documentation, GitHub, comparison, legal, and release-artifact links remain supporting navigation.
 - `/download` represents every advertised platform with a verified current artifact, explains unsigned local mode and account requirements accurately, and does not imply bundled models, tokens, compute, or sandboxes.
 - `/framework` follows the planned Flue-derived navigation and content progression through original Claxedo copy, examples, diagrams, and components. Guides, reference, packages, cookbook, ecosystem, search, sidebars, page outlines, code blocks, and the copy-prompt fallback all work in the production build.
 - The six priority comparison pages are registry-generated, current, factual, first-party sourced, owner-assigned, date-bounded, canonically linked, and governed by automatic expiry behavior. Draft and expired content cannot leak into discovery surfaces.
-- Every public claim about harness integration, WorkGraph, cross-surface continuity, setup sharing, placement, hosted operation, self-hosting, source parity, MIT coverage, releases, pricing, or OpenCode lineage is within the evidence recorded by the claim contract.
+- Every public claim about harness integration, cross-surface continuity, setup sharing, placement, hosted operation, self-hosting, source parity, MIT coverage, releases, pricing, or OpenCode lineage is within the evidence recorded by the claim contract.
 - Every mapped `docs.claxedo.com` URL and `/app` reaches its built canonical destination through exactly one permanent production redirect. Canonical source ownership moves only after this report passes, and the old documentation deployment remains available until then.
 - Package-scoped contract tests, the Astro type/build gate, browser acceptance, link and asset crawling, accessibility checks, responsive and reduced-motion review, and `git diff --check` pass for the release SHA.
 - Production smoke confirms both CTA journeys, representative framework navigation/search, release downloads, redirect behavior, canonicals, crawler access, structured data, and machine-readable entry routes.

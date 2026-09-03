@@ -32,8 +32,6 @@ const LIBRARY_EXTERNALS = [
   "@claxedo/agent-sdk-runtime/*",
   "@claxedo/agent-event-runtime",
   "@claxedo/agent-event-runtime/*",
-  "@claxedo/workgraph",
-  "@claxedo/workgraph/*",
 ]
 
 const EXTERNALS = [

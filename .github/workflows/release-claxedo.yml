@@ -102,7 +102,6 @@ jobs:
           --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
           --filter=@claxedo/workspace-relay-protocol
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
@@ -252,7 +251,6 @@ jobs:
           --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
           --filter=@claxedo/workspace-relay-protocol
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
@@ -284,8 +282,8 @@ jobs:
           # renderer's base document and account boundary local/tokenless.
           VITE_AUTH_ENABLED: "true"
           # The selected core origin is the only baked authentication trust
-          # anchor. Its live descriptor selects Better Auth or Clerk and owns
-          # all public-client endpoints, ids, resources and scopes.
+          # anchor. Its live descriptor owns all public-client endpoints, ids,
+          # resources and scopes.
           CLAXEDO_CORE_ORIGIN: ${{ vars.CLAXEDO_CONTROL_PLANE_URL }}
           # Telemetry has to be BAKED here, in both halves of the app, because
           # a packaged build runs on a user's machine where none of these

@@ -78,8 +78,8 @@ describe("hosted deployment profile", () => {
     expect(() => resolveDeploymentProfile(input)).toThrowError(DeploymentProfileError)
   })
 
-  test("does not accept mixed auth and storage pairs as production profiles", () => {
-    for (const adapterProfile of ["clerk-convex", "clerk-d1", "better-auth-convex"]) {
+  test("does not accept an unknown auth and storage pair as a production profile", () => {
+    for (const adapterProfile of ["better-auth-kv", "session-cookie-d1", "oidc-d1"]) {
       expect(() =>
         resolveDeploymentProfile({
           adapterProfile,
@@ -121,8 +121,7 @@ describe("hosted deployment profile", () => {
   test("reads only explicit deployment axes and never infers them from credentials", () => {
     expect(() =>
       resolveDeploymentProfileFromEnv({
-        CLERK_SECRET_KEY: "clerk-secret",
-        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+        CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://authority.test",
         CLOUDFLARE_API_TOKEN: "cloudflare-secret",
       }),
     ).toThrowError(/adapter profile must be "better-auth-d1"/)
@@ -132,7 +131,6 @@ describe("hosted deployment profile", () => {
         CLAXEDO_ADAPTER_PROFILE: "better-auth-d1",
         CLAXEDO_PRODUCT_POSTURE: "user-deployed",
         CLAXEDO_SANDBOX_POSTURE: "control-plane-only",
-        CLERK_SECRET_KEY: "ignored-for-selection",
         CLAXEDO_WORKSPACE_AUTHORITY_URL: "ignored-for-selection",
       }),
     ).toEqual(resolveDeploymentProfile(userDeployed))

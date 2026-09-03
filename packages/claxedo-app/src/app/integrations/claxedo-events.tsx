@@ -15,7 +15,6 @@ import {
 import { createStreamConnectivity } from "../connection/stream-connectivity"
 import type { AccountState } from "@/platform/account/account-port"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
-import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
 import {
   claxedoEventRouteSessionID,
@@ -108,7 +107,6 @@ export type ClaxedoEvent =
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
   | SessionLifecycleEvent
-  | WorkgraphChangedEvent
   | DocumentChangedEvent
   | SessionShareChangedEvent
   | ClaxedoDirectoryEvent
@@ -242,7 +240,7 @@ type ClaxedoEventsContextValue = {
   connected: () => boolean
   /**
    * The CENTRAL control-plane stream is up. This is the stream that carries
-   * `workgraph.changed` / `document.changed` / `session.lifecycle` /
+   * `document.changed` / `session.lifecycle` /
    * `session.share.changed`, so its
    * `false → true` edge is the revalidation trigger for every consumer of those
    * doorbells. Distinct from `connected` on purpose: with a remote workspace

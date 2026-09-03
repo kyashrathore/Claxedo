@@ -1,11 +1,11 @@
 /**
- * Publisher for the 13 public `@claxedo/*` packages.
+ * Publisher for the 12 public `@claxedo/*` packages.
  *
  * Why this exists alongside `publish-runtime-packages.ts`: that script only
  * knows the six-package runtime family, and it takes the release version as a
  * CLI argument and stamps it into every package.json as a side effect of
- * publishing. The other seven (channels, connections, mcp, sandbox-contract,
- * sandbox-manager, wakes, workgraph) had no automation at all — they were published by a human
+ * publishing. The other six (channels, connections, mcp, sandbox-contract,
+ * sandbox-manager, wakes) had no automation at all — they were published by a human
  * typing `npm publish` out of `script/PUBLISH-ORDER.md`, with no dry run and
  * no idempotency check.
  *
@@ -72,12 +72,7 @@ export const claxedoPackages: readonly ClaxedoPackage[] = [
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay", track: "runtime", runtimeFamily: true },
   // Tier 2
   { name: "@claxedo/workspace-runtime", dir: "packages/workspace-runtime", track: "runtime", runtimeFamily: true },
-  // Tier 3 — WorkGraph moved down from Tier 0 when its Workspace Runtime
-  // adapter arrived. It now depends on the runtime it contributes routes to,
-  // which is the correct direction (product capability above execution core)
-  // but reverses their publish order.
-  { name: "@claxedo/workgraph", dir: "packages/workgraph", track: "apps", runtimeFamily: false },
-  // Tier 4 — depends on WorkGraph, so it follows.
+  // Tier 3
   { name: "@claxedo/mcp", dir: "packages/claxedo-mcp", track: "apps", runtimeFamily: false },
 ]
 
@@ -144,8 +139,8 @@ export function protocolSpecifiers(pkg: PackageJson) {
 /**
  * Every `@claxedo/*` dependency of a public package must be an exact pin equal
  * to that package's in-repo version. This is the check that would have caught
- * "workspace-runtime shipped pinned to @claxedo/workgraph 0.3.0 while the repo
- * moved workgraph to 0.4.0".
+ * "workspace-runtime shipped pinned to @claxedo/agent-sdk-runtime 0.3.0 while
+ * the repo moved agent-sdk-runtime to 0.4.0".
  */
 export function crossPinViolations(pkg: PackageJson, versions: ReadonlyMap<string, string>) {
   const bad: string[] = []
@@ -275,7 +270,7 @@ export async function publishClaxedoPackages(options: PublishOptions): Promise<P
 
   // Cross-pins are validated against every public package's version, not just
   // the selected subset — publishing `mcp` alone must still prove its
-  // `@claxedo/workgraph` pin matches the repo.
+  // `@claxedo/*` pins match the repo.
   const versions = repoVersions(root)
 
   const workDir = options.workDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-publish-"))

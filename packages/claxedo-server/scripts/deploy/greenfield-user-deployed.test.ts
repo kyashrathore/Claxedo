@@ -75,16 +75,12 @@ describe("greenfield user-deployed Cloudflare preflight", () => {
     expect(preflight.terminalPhase).toBe("locked")
 
     for (const forbidden of [
-      "WORKGRAPH_SERVICE",
-      "WORKGRAPH_DB",
       "DOCUMENTS_SERVICE",
       "DOCUMENTS_DB",
       "DOCUMENTS_BUCKET",
       "CLAXEDO_DOCUMENTS",
       "POLAR",
       "BILLING",
-      "CONVEX",
-      "CLERK",
       "GOOGLE_CLIENT",
       "r2_buckets",
       "durable_objects",
@@ -127,8 +123,6 @@ describe("greenfield user-deployed Cloudflare preflight", () => {
       expect(guide).toContain(`\`${unavailable}\``)
     }
     for (const forbiddenResource of [
-      "WORKGRAPH_DB",
-      "WORKGRAPH_SERVICE",
       "DOCUMENTS_DB",
       "DOCUMENTS_BUCKET",
       "DOCUMENTS_SERVICE",

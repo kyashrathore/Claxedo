@@ -39,7 +39,7 @@ type OperatorRelease = {
   browserBuildId: string
   relayBuildId: string
   authConfigurationId: string
-  adapterProfile: "better-auth-d1" | "clerk-convex"
+  adapterProfile: "better-auth-d1"
   productPosture: "claxedo-hosted" | "user-deployed"
   sandboxPosture: "control-plane-only" | "full-hosted"
   serviceManifestId: string

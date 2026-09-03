@@ -54,7 +54,7 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
   if (!ws?.id) return
   const incoming = ids(rows.flatMap((item) => item?.session_ref ? [item.session_ref] : []))
   // `host` is the authoritative discriminator, not the ref prefix or the null
-  // directory: `session/runtime.ts` writes central/hybrid Pi and WorkGraph
+  // directory: `session/runtime.ts` writes central/hybrid Pi and hosted
   // sessions with `host: "central"`, and `storedSessionRef` *derives* the
   // `central:<id>` ref from that column while `directory: null` is a consequence
   // of the same placement. Those sessions are not engine sessions, never appear
@@ -146,7 +146,7 @@ export async function putSessionMeta(
     const directory = input.directory ?? input.ws?.directory ?? prevByID?.directory ?? null
     // `Workspace.kind` is the authority, but most writers legitimately have no
     // workspace to hand: `session/runtime.ts` puts central sessions by
-    // id/host/directory, and every tag- or title-only put (tab-workgraph, the
+    // id/host/directory, and every tag- or title-only put (tab-sync, the
     // HTTP tap, channel ingress) passes neither `ws` nor `workspaceID`. With no
     // authority in the call, the stored ref *is* the record of the kind that
     // produced it, so read the shape back rather than silently re-deriving a

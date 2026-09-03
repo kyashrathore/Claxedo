@@ -12,9 +12,9 @@ export type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./
  * LOCAL content surfaces.
  *
  * Sessions, terminals, drafts, context, and the marketplace — everything the
- * unsigned desktop renders. WorkGraph and Documents used to live here too,
- * which made `@claxedo/workgraph` a static import of the app's only entry.
- * They now live in `hosted-content-surfaces.tsx` and reach the registry through
+ * unsigned desktop renders. Documents used to live here too, which made its
+ * implementation a static import of the app's only entry. It now lives in
+ * `documents-content-surfaces.tsx` and reaches the registry through
  * `app/composition/product-contributions.ts` after an account adapter reports
  * signed state.
  *

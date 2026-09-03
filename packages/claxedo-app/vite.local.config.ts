@@ -9,10 +9,10 @@ import { productBoundaryBuildManifestPlugin } from "../../script/product-boundar
  *
  * The same list `src/architecture/local-entry-closure.guard.test.ts` walks the
  * source graph for, applied here to the CHUNK table instead. Kept as package
- * prefixes rather than exact ids so a subpath (`@clerk/clerk-js/headless`) is
+ * prefixes rather than exact ids so a subpath (`better-auth/client`) is
  * matched by its package.
  */
-const FORBIDDEN_LOCAL_PACKAGES = ["@clerk/clerk-js", "better-auth", "convex"]
+const FORBIDDEN_LOCAL_PACKAGES = ["better-auth"]
 
 const namesForbiddenPackage = (ids: readonly unknown[]) =>
   ids.some(
@@ -36,21 +36,18 @@ const namesForbiddenPackage = (ids: readonly unknown[]) =>
  *      last is the kind of thing nobody notices until a deploy serves the
  *      wrong product.
  *   3. No manual chunk named for a package this product must not contain. The
- *      hosted config declares a `vendor-clerk` chunk; spreading its Rollup
- *      options carried that declaration into a build whose whole purpose is to
- *      have no identity provider in it.
+ *      hosted config declares a `vendor-better-auth` chunk; spreading its
+ *      Rollup options would carry that declaration into a build whose whole
+ *      purpose is to have no identity provider in it.
  *
- *      Measured, not assumed: a local build that KEPT the entry emitted a
- *      116-byte `vendor-clerk-*.js` holding one CommonJS interop helper and no
- *      Clerk code, because nothing in the local entry's graph imports Clerk and
- *      Rollup tree-shook it away. So the inherited entry was not shipping
- *      hosted identity code — but it was naming a chunk after a dependency this
- *      build must never contain, and that name is load-bearing in the wrong
- *      direction: it made "is Clerk in the local artifact?" answerable only by
- *      opening the file, and it would have become true rather than misleading
- *      the moment Clerk grew a retained top-level side effect. The emitted
- *      artifact is checked directly by `scripts/check-local-bundle-identity.ts`,
- *      because the source-graph guard cannot see either case.
+ *      The name is load-bearing even when the chunk is empty. Rollup
+ *      tree-shakes an unimported library away and still emits a small chunk
+ *      under the configured name, so a content scan — correctly — finds
+ *      nothing while the build stays configured around a dependency it must
+ *      never hold. That would become a real leak the moment the package
+ *      gained a retained top-level side effect. The emitted artifact is
+ *      checked directly by `scripts/check-local-bundle-identity.ts`, because
+ *      the source-graph guard cannot see either case.
  *
  * The default `dev`/`build` scripts still point at the hosted config. Pages
  * and the self-hosted Docker static build invoke them, so switching the
@@ -81,7 +78,7 @@ export default defineConfig((env) => {
         apply: "serve",
         transformIndexHtml(html) {
           // `build.rollupOptions.input` only affects production. Dev still
-          // serves `index.html` → `main.tsx` (Clerk). Unsigned local needs
+          // serves `index.html` → `main.tsx` (the identity provider). Unsigned
           // `local.tsx` or every authFetch waits on a bearer that never comes.
           return html.replace("/src/app/entry/main.tsx", "/src/app/entry/local.tsx")
         },
@@ -102,7 +99,7 @@ export default defineConfig((env) => {
         output: {
           ...output,
           // Filtered by what a chunk CONTAINS, not by its name. Dropping a
-          // hard-coded "vendor-clerk" key would go stale the day the hosted
+          // hard-coded "vendor-better-auth" key would go stale the day the hosted
           // config renamed the chunk, and go stale silently — the local build
           // would inherit the renamed entry and nothing here would say so.
           manualChunks: Object.fromEntries(

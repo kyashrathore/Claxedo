@@ -63,13 +63,12 @@ catalogue derived from the actual defects rather than from the code's shape.
   occurrences of `rail-sidebar-session-row`, `data-sidebar-status`,
   `session-navigation-title`, `rail-sidebar-terminal-row`.
 - **No packaged-app lane exists.** No `packages/claxedo-desktop/e2e`; no spec
-  references Electron. `playwright.deployed.config.ts` is WorkGraph-only.
+  references Electron.
 - `packages/claxedo-server/src/deployments/hosted-node/index.ts` composes the
-  **real** control plane on `createSqliteCentralStore` — no Convex required.
+  **real** control plane on `createSqliteCentralStore` — no hosted D1 required.
 - `packages/claxedo-server/src/platform/auth/auth.ts:179`
-  `customVerifierAuthAdapter({issuer, audience, jwksUrl, verifier})` sits beside
-  `clerkAuthAdapter` (`authority/hosted-services.ts:364`), so a lane can run real
-  JWT mint + real verification against a local JWKS issuer.
+  `customVerifierAuthAdapter({issuer, audience, jwksUrl, verifier})` lets a lane
+  run real JWT mint + real verification against a local JWKS issuer.
 - `packages/claxedo-server/src/signed-browser-relay-fixture.mjs` and
   `user-hosted-relay-fixture.mjs` already spawn a real `@claxedo/workspace-relay`
   (real EdDSA), a real host tunnel, and a real `createWorkspaceRuntimeApp` on a
@@ -239,8 +238,8 @@ Adopting **B6** converts #14 from tolerated to blocking: the current
 ## Phase 3 — Real control plane in the relay fixtures
 
 - [ ] `signed-browser-relay-fixture.mjs` and `user-hosted-relay-fixture.mjs` no longer hand-roll a control-plane `createServer`; both compose the real `hosted-node` control plane on `createSqliteCentralStore`. Progress:
-- [ ] A local JWKS issuer mints real JWTs; the plane verifies them via `customVerifierAuthAdapter`. No Clerk, no Convex, no Cloudflare in the PR loop. Progress:
-- [ ] The limit is documented in both fixtures: a local issuer is a **supported self-host mode, not a stub**, but Clerk-specific behaviour (token shape, JWKS rotation, session claims) is covered only by the nightly credentialed lane. Progress:
+- [ ] A local JWKS issuer mints real JWTs; the plane verifies them via `customVerifierAuthAdapter`. No hosted identity service, no hosted D1, no Cloudflare in the PR loop. Progress:
+- [ ] The limit is documented in both fixtures: a local issuer is a **supported self-host mode, not a stub**, but hosted-issuer-specific behaviour (token shape, JWKS rotation, session claims) is covered only by the nightly credentialed lane. Progress:
 - [ ] "Shared/teammate" for user-hosted is a second identity minted by the same issuer. Progress:
 - [ ] `real-cloud-relay.spec.ts` still green after the substitution. Progress:
 

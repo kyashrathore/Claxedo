@@ -94,9 +94,8 @@ export type WorkspaceShareTarget =
  */
 export type SessionShareFanoutTarget = {
   grantedToTokenIdentifier?: string
-  grantedToClerkSubject?: string
+  grantedToSubject?: string
   grantedToUserId?: string
-  grantedToClerkOrgId?: string
   grantedToOrgId?: string
   grantedToTeamId?: string
   grantedToTeamPublicId?: string
@@ -377,9 +376,8 @@ export type WorkspaceAuthority = {
       sessionId: string
       workspaceId: string
       grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
+      grantedToSubject?: string
       grantedToUserId?: string
-      grantedToClerkOrgId?: string
       grantedToOrgId?: string
       grantedToTeamId?: string
       grantedToTeamPublicId?: string
@@ -392,9 +390,8 @@ export type WorkspaceAuthority = {
       workspaceId: string
       grantId?: string
       grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
+      grantedToSubject?: string
       grantedToUserId?: string
-      grantedToClerkOrgId?: string
       grantedToOrgId?: string
       grantedToTeamId?: string
       grantedToTeamPublicId?: string
@@ -412,7 +409,7 @@ export type WorkspaceAuthority = {
     args: {
       teamId: string
       tokenIdentifier?: string
-      clerkSubject?: string
+      providerSubject?: string
       userPublicId?: string
       role?: "member" | "admin" | "owner"
     },
@@ -422,7 +419,7 @@ export type WorkspaceAuthority = {
     args: {
       teamId: string
       tokenIdentifier?: string
-      clerkSubject?: string
+      providerSubject?: string
       userPublicId?: string
     },
   ) => Promise<unknown>

@@ -111,7 +111,7 @@ describe("static hosted product roots", () => {
     })
   })
 
-  test("proves billing is a static hosted-only edge and no longer selects Convex inside routes", () => {
+  test("proves billing is a static hosted-only edge and is never selected inside routes", () => {
     const user = sourceClosure({
       entry: path.join(ROOT, "src/deployments/hosted-shared/user-deployed-product-app.ts"),
       root: ROOT,
@@ -134,7 +134,7 @@ describe("static hosted product roots", () => {
     expect(hosted.packages).toContain("@polar-sh/sdk")
   })
 
-  test("emits a user-deployed core bundle without Clerk, Convex, Polar, WorkGraph, or Documents implementation code", async () => {
+  test("emits a user-deployed core bundle without Polar or Documents implementation code", async () => {
     const result = await build({
       entryPoints: [path.join(ROOT, "src/deployments/hosted-shared/user-deployed-product-app.ts")],
       bundle: true,
@@ -148,16 +148,10 @@ describe("static hosted product roots", () => {
       logLevel: "silent",
     })
     const implementationInputs = Object.keys(result.metafile.inputs).filter((file) =>
-      [
-        "/hosts/workgraph/",
-        "/documents/",
-        "/billing/",
-        "/authority/adapters/convex/",
-        "/platform/auth/clerk-adapter",
-      ].some((part) => file.replaceAll("\\", "/").includes(part)),
+      ["/documents/", "/billing/"].some((part) => file.replaceAll("\\", "/").includes(part)),
     )
     expect(implementationInputs).toEqual([])
     const emitted = result.outputFiles.map((file) => file.text).join("\n")
-    expect(emitted).not.toMatch(/CLERK_(?:PUBLISHABLE|SECRET)_KEY|CONVEX_(?:URL|DEPLOY_KEY)|POLAR_ACCESS_TOKEN/)
+    expect(emitted).not.toMatch(/POLAR_ACCESS_TOKEN/)
   })
 })

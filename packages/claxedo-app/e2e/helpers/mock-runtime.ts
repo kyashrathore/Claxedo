@@ -295,7 +295,7 @@ export type MockRuntimeRequests = {
    * FORMAT is `"<METHOD> <origin><pathname>"`. The query string is dropped so the list
    * is stable across runs (directories, session ids and cache-busters all live there);
    * the ORIGIN is kept, deliberately, because a request that escapes to a third party
-   * (Clerk, a CDN) is a different finding from one that escapes to the app's own
+   * (an identity provider, a CDN) is a different finding from one that escapes to the app's own
    * origin, and a pathname-only record cannot tell a filter which is which.
    *
    * NOT recorded: documents, scripts, stylesheets, images and fonts. The SPA's own

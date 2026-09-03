@@ -26,8 +26,8 @@ ClaxedoDB.Drizzle()
 
 const authConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 } as const
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
@@ -403,7 +403,7 @@ describe("session metadata routes", () => {
     }
   })
 
-  test("signed reads require Convex session visibility", async () => {
+  test("signed reads require authority session visibility", async () => {
     await putSessionMeta("sess_read", {
       ws: {
         id: "ws_1",
@@ -468,7 +468,7 @@ describe("session metadata routes", () => {
     expect(body.directory).toBeUndefined()
   })
 
-  test("signed writes resolve directory and authorize workspace through Convex", async () => {
+  test("signed writes resolve directory and authorize workspace through the authority", async () => {
     const dir = path.join(root, "repo")
     await fs.mkdir(dir, { recursive: true })
     await ensureWorkspace({

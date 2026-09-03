@@ -58,31 +58,6 @@ export type SessionLifecycleEvent = {
   ts: number
 }
 
-// Doorbell nudge for WorkGraph live sync.
-//
-// Publisher: the claxedo-server WorkGraph host, post-commit — after appended
-// `wg_v2_changes` rows become readable — coalesced (~100ms trailing) so a burst
-// of mutations emits one nudge.
-// Consumer: claxedo-app `features/workgraph`, via the central events stream, which
-// debounce-reloads the snapshot + attention. It replaces the deleted
-// `GET /api/workgraph/changes` long-poll.
-//
-// This remains a doorbell, not a change envelope. The optional post-commit
-// cursor lets an already-current client skip a redundant read.
-//
-// `ownerUserId` scopes the nudge (WorkGraph is owner-scoped). It is set from
-// the authenticated `auth.user.subject` at publish ("local" in unsigned-local
-// mode) and `routes/events.ts` enforces it server-side: signed subscribers
-// only receive events whose ownerUserId matches their own subject. The reload
-// it triggers is additionally authorized per-request by the snapshot endpoint.
-export type WorkgraphChangedEvent = {
-  type: "workgraph.changed"
-  ownerUserId: string
-  cursor?: string
-  streamId?: string
-  ts: number
-}
-
 // Doorbell nudge for Documents live sync.
 //
 // Publisher: the claxedo-server documents backend, from its save paths (see
@@ -100,7 +75,7 @@ export type WorkgraphChangedEvent = {
 //
 // `orgId`/`projectId` are required so a consumer can filter to its own project.
 // `orgId` is the AUTHORITY-INTERNAL org id (`authority.resolveOrgId` at the
-// documents routes — Convex `orgs._id` / SQLite `org_id`, NEVER the Clerk org
+// documents routes — the authority's internal org id (SQLite `org_id`), NEVER the issuer org
 // claim) and is enforced server-side (`routes/event-visibility.ts`: signed
 // subscribers resolve the same internal id at connect and only see their own
 // org's events); `projectId` remains a client-side routing hint.
@@ -117,17 +92,18 @@ export type DocumentChangedEvent = {
 // Doorbell nudge for session-share live sync.
 //
 // Publisher: control-plane share grant/revoke HTTP handlers, after the
-// authority write succeeds. One event per recipient Clerk subject.
+// authority write succeeds. One event per recipient subject.
 // Consumer: claxedo-app session rail/inventory via the central events stream —
 // invalidate and refetch (list APIs already include shares).
 //
 // This remains a doorbell, not a change envelope. `ownerUserId` is the
-// *recipient* subject (not the granter), matching workgraph.changed subject
-// scoping so Bob receives Alice's grant without Alice seeing Bob's doorbell.
+// *recipient* subject, NOT the granter — which is the whole reason this event
+// is owner-scoped rather than org-scoped: Bob receives Alice's grant without
+// Alice seeing Bob's doorbell. `eventVisibleTo` enforces that per connection.
 export type SessionShareChangedEvent = {
   type: "session.share.changed"
   phase: "granted" | "revoked"
-  /** Recipient Clerk subject — visibility matches workgraph.changed. */
+  /** Recipient's auth subject — visibility matches session-share scoping. */
   ownerUserId: string
   sessionId: string
   workspaceId: string
@@ -156,7 +132,6 @@ type ControlEvent =
   | { type: "worktree.ready"; directory: string; name: string; branch: string }
   | { type: "worktree.failed"; directory: string; message: string }
   | SessionLifecycleEvent
-  | WorkgraphChangedEvent
   | DocumentChangedEvent
   | SessionShareChangedEvent
 

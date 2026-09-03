@@ -1,8 +1,8 @@
 // The desktop-local product, not the mixed self-hosted composition. This is
 // the line that keeps an unsigned desktop from closing over the hosted control
 // plane: `@claxedo/local-server` cannot reach Documents, Connections, Channels,
-// WorkGraph, a workspace authority, or cloud provisioning, and its own closure
-// test asserts so.
+// a workspace authority, or cloud provisioning, and its own closure test
+// asserts so.
 import { createLocalDaemonLifecycle, startLocalServer } from "@claxedo/local-server/self-hosted-execution"
 import type { DiagnosticsBinding } from "../src/shared/diagnostics-transport"
 import { claxedoServerStartup } from "./claxedo-server-startup"

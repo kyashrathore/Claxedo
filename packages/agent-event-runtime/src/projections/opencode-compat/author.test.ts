@@ -19,7 +19,7 @@ describe("OpenCode-compatible message attribution", () => {
       avatarUrl: "https://example.invalid/avatar",
       kind: "human",
       actorId: "internal_actor_123",
-      subject: "clerk|secret",
+      subject: "idp|secret",
     } as Parameters<typeof withClaxedoMessageAuthor>[1] & { actorId: string; subject: string })
 
     expect(projected).toEqual({

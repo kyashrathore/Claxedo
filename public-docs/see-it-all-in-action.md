@@ -17,7 +17,7 @@ workspace, deployment, and extension backends underneath.
 | Let others reach a local worktree through Relay | A workspace can be backed by a local worktree on a user's machine and still be accessed by teammates through [Workspace Relay](./relay-and-deployment.md), when your control plane authorizes and routes that access. |
 | Support local, container, and cloud VM workspaces | The runtime only needs to run next to the project directory. That directory can live on a laptop, inside Docker/a container, or on a real cloud VM. |
 | Keep long-running services close to the agent | Managed process APIs let the agent or UI add/start/stop/restart dev servers, watchers, tests, and other long-running workspace processes, then read logs and port mappings. |
-| Add an MCP orchestration layer | [Claxedo MCP](./mcp.md) exposes runtime tools to any MCP client. Current tools cover processes, logs, session messages, documents, spawning background sessions, log summaries, WorkGraph, and browser panes. The same pattern can be extended with more MCP tools that call the Claxedo HTTP API stack, such as comparing session outputs or building consensus workflows. |
+| Add an MCP orchestration layer | [Claxedo MCP](./mcp.md) exposes runtime tools to any MCP client. Current tools cover processes, logs, session messages, documents, spawning background sessions, log summaries, and browser panes. The same pattern can be extended with more MCP tools that call the Claxedo HTTP API stack, such as comparing session outputs or building consensus workflows. |
 
 ## One Stack, Different Workspace Backings
 

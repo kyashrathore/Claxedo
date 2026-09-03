@@ -118,9 +118,8 @@ First-party stores are explicit subpath exports:
 
 - `@claxedo/agent-sdk-runtime/stores/memory`
 - `@claxedo/agent-sdk-runtime/stores/sqlite`
-- `@claxedo/agent-sdk-runtime/stores/convex`
 
-The root import does not load SQLite or Convex.
+The root import does not load SQLite.
 
 ## Event Delivery
 

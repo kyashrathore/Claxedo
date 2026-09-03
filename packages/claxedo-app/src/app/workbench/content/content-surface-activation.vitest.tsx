@@ -39,15 +39,15 @@ vi.mock("../state/index", async (importOriginal) => ({
 
 const { ContentRenderer } = await import("./index")
 
-const HOSTED_SURFACE_ID = "surface.content.test-hosted-workgraph"
+const HOSTED_SURFACE_ID = "surface.content.test-hosted-page"
 
 function hostedContribution(): ContentSurfaceContribution {
   return {
     id: HOSTED_SURFACE_ID,
     tier: "claxedo-first-party",
-    surface: "workgraph",
+    surface: "page",
     slot: "workbench",
-    renderer: () => (<div data-testid="hosted-surface">hosted workgraph</div>) as JSX.Element,
+    renderer: () => (<div data-testid="hosted-surface">hosted page</div>) as JSX.Element,
   }
 }
 
@@ -83,37 +83,37 @@ afterEach(() => {
 
 describe("ContentRenderer follows the content-surface registry", () => {
   test("hosted content resolved before activation renders once the hosted set registers", async () => {
-    const utils = mountRenderer({ id: "content-workgraph", type: "workgraph", scope: "global" })
+    const utils = mountRenderer({ id: "content-page", type: "page", scope: "global" })
 
     // Pre-condition: the local build cannot render this type yet.
-    expect(surfaceIdsFor("workgraph")).toEqual([])
+    expect(surfaceIdsFor("page")).toEqual([])
     expect(screen.queryByTestId("hosted-surface")).toBeNull()
-    expect(utils.container.textContent).toBe("Unknown content type: workgraph")
+    expect(utils.container.textContent).toBe("Unknown content type: page")
 
     registerContentSurface(hostedContribution())
     await tick()
 
     // Positive control: the registry really does hold the hosted surface now,
     // so anything still missing from the DOM is a reactivity failure.
-    expect(surfaceIdsFor("workgraph")).toEqual([HOSTED_SURFACE_ID])
+    expect(surfaceIdsFor("page")).toEqual([HOSTED_SURFACE_ID])
     expect(screen.queryByTestId("hosted-surface")).not.toBeNull()
-    expect(utils.container.textContent).not.toBe("Unknown content type: workgraph")
+    expect(utils.container.textContent).not.toBe("Unknown content type: page")
   })
 
   test("mounted hosted content stops rendering once the hosted set is unregistered", async () => {
     registerContentSurface(hostedContribution())
-    const utils = mountRenderer({ id: "content-workgraph", type: "workgraph", scope: "global" })
+    const utils = mountRenderer({ id: "content-page", type: "page", scope: "global" })
 
-    expect(surfaceIdsFor("workgraph")).toEqual([HOSTED_SURFACE_ID])
+    expect(surfaceIdsFor("page")).toEqual([HOSTED_SURFACE_ID])
     expect(screen.queryByTestId("hosted-surface")).not.toBeNull()
 
     unregisterContentSurface(hostedContribution())
     await tick()
 
-    // Positive control: the registry no longer offers a workgraph surface.
-    expect(surfaceIdsFor("workgraph")).toEqual([])
+    // Positive control: the registry no longer offers a page surface.
+    expect(surfaceIdsFor("page")).toEqual([])
     expect(screen.queryByTestId("hosted-surface")).toBeNull()
-    expect(utils.container.textContent).toBe("Unknown content type: workgraph")
+    expect(utils.container.textContent).toBe("Unknown content type: page")
   })
 
   // Reactivity must not be bought with re-mounts: long-lived per-content state
@@ -125,11 +125,11 @@ describe("ContentRenderer follows the content-surface registry", () => {
       ...hostedContribution(),
       renderer: () => {
         renders += 1
-        return (<div data-testid="hosted-surface">hosted workgraph</div>) as JSX.Element
+        return (<div data-testid="hosted-surface">hosted page</div>) as JSX.Element
       },
     }
     registerContentSurface(counted)
-    mountRenderer({ id: "content-workgraph", type: "workgraph", scope: "global" })
+    mountRenderer({ id: "content-page", type: "page", scope: "global" })
     expect(renders).toBe(1)
 
     const unrelated: ContentSurfaceContribution = {

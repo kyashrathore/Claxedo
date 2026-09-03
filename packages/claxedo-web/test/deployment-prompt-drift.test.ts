@@ -7,8 +7,7 @@ import { claxedoRepositoryUrl, cloudflareDeploymentPrompt as prompt } from "../s
 // asserts — guide path, release script names, D1 bindings, adapter profile —
 // must still be true of the configuration it claims to describe. This test
 // re-derives those facts from the real files and fails when the two drift apart
-// in either direction. The retired Clerk + Convex hosted prompt was removed
-// with that product; the re-add path lives in the `clerk-convex-cp` skill.
+// in either direction.
 
 const repository = new URL("../../../", import.meta.url)
 
@@ -60,13 +59,6 @@ describe("cloudflare deploy prompt: canonical guide and release path", () => {
     )
     expect(locked).toContain("AUTH_DB")
     expect(locked).toContain("CONTROL_PLANE_DB")
-  })
-
-  test("contains no Clerk or Convex deployment surface", () => {
-    for (const token of ["CLERK_", "CONVEX_", "VITE_CLERK", "VITE_CONVEX", "convex deploy", "bunx convex"]) {
-      expect(prompt.includes(token), `retired token ${token} must not appear in prompt`).toBe(false)
-    }
-    promptMentions("clerk-convex-cp", "archived re-add skill")
   })
 
   test("prescribes bunx over npx", () => {

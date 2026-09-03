@@ -128,24 +128,27 @@ function createHibernatingNamespace() {
   }
 }
 
-const signedAuth = (subject: string, clerkOrgId?: string): ControlPlaneAuthContext => ({
+const signedAuth = (subject: string, providerOrgId?: string): ControlPlaneAuthContext => ({
   mode: "signed",
   token: "t",
-  user: { subject, tokenIdentifier: subject, issuer: "iss", ...(clerkOrgId ? { orgId: clerkOrgId } : {}) },
+  user: { subject, tokenIdentifier: subject, issuer: "iss", ...(providerOrgId ? { orgId: providerOrgId } : {}) },
 })
 
 // A resolved subscriber: `orgId` is the AUTHORITY-INTERNAL org id
 // (`authority.resolveOrgId` output), the namespace rooms are keyed with —
-// deliberately DIFFERENT-looking from any Clerk `org_...` claim in these tests
+// deliberately DIFFERENT-looking from any issuer `org_...` claim in these tests
 // so a regression back to the claims namespace cannot pass by coincidence.
 const subscriber = (subject: string, internalOrgId?: string): LiveSyncSubscriber => ({
   auth: signedAuth(subject),
   ...(internalOrgId ? { orgId: internalOrgId } : {}),
 })
 
-const workgraphChanged = (ownerUserId: string): ClaxedoEvent => ({
-  type: "workgraph.changed",
+const sessionShareChanged = (ownerUserId: string): ClaxedoEvent => ({
+  type: "session.share.changed",
+  phase: "granted",
   ownerUserId,
+  sessionId: "ses_1",
+  workspaceId: "ws_1",
   ts: Date.now(),
 })
 
@@ -258,7 +261,7 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(1)
 
     const reconstructed = namespace.evict("org:org_internal_acme")
-    const event = workgraphChanged("alice")
+    const event = sessionShareChanged("alice")
     expect(await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", event)).toEqual({ delivered: 1, held: 1 })
     expect(await readFrame(reader)).toEqual(event)
     expect(reconstructed.size).toBe(1)
@@ -316,7 +319,7 @@ describe("LiveSyncRoom — fan-out core", () => {
     const response = await connectLiveSyncRoom(namespace, subscriber("alice", "org_internal_acme"), 60_000)
     const reader = response.body!.getReader()
     for (const _ of Array.from({ length: 40 })) {
-      await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", workgraphChanged("alice"))
+      await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", sessionShareChanged("alice"))
     }
     await expect(reader.read()).rejects.toThrow("too slow")
     expect(namespace.instances.get("org:org_internal_acme")!.size).toBe(0)
@@ -351,7 +354,7 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(await readFrame(bobReader)).toEqual({ type: "heartbeat" })
 
     // Nudge Alice's room. All 3 of Alice's connections get it.
-    const event = workgraphChanged("alice")
+    const event = sessionShareChanged("alice")
     const result = await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", event)
     expect(result).toEqual({ delivered: 3, held: 3 })
     for (const reader of aliceReaders) {
@@ -359,8 +362,8 @@ describe("LiveSyncRoom — fan-out core", () => {
     }
 
     // Bob's room is untouched by Alice's nudge: nudging org:org_internal_beta
-    // with a workgraph event for bob delivers to bob only, never to Alice.
-    const bobEvent = workgraphChanged("bob")
+    // with an owner-scoped event for bob delivers to bob only, never to Alice.
+    const bobEvent = sessionShareChanged("bob")
     const bobResult = await nudgeLiveSyncRoom(namespace, "org:org_internal_beta", bobEvent)
     expect(bobResult).toEqual({ delivered: 1, held: 1 })
     expect(await readFrame(bobReader)).toEqual(bobEvent)
@@ -381,9 +384,9 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(await readFrame(aliceReader)).toEqual({ type: "heartbeat" })
     expect(await readFrame(carolReader)).toEqual({ type: "heartbeat" })
 
-    // A workgraph.changed for alice is owner-scoped: only alice's connection
+    // A session.share.changed for alice is owner-scoped: only alice's connection
     // receives it even though both share the org room.
-    const event = workgraphChanged("alice")
+    const event = sessionShareChanged("alice")
     const result = await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", event)
     expect(result).toEqual({ delivered: 1, held: 2 })
     expect(await readFrame(aliceReader)).toEqual(event)
@@ -431,8 +434,8 @@ describe("LiveSyncRoom — fan-out core", () => {
     const reader = response.body!.getReader()
     expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
 
-    await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", workgraphChanged("alice"))
-    expect(await readSseFrame(reader)).toMatchObject({ id: "1", data: { type: "workgraph.changed" } })
+    await nudgeLiveSyncRoom(namespace, "org:org_internal_acme", sessionShareChanged("alice"))
+    expect(await readSseFrame(reader)).toMatchObject({ id: "1", data: { type: "session.share.changed" } })
     await reader.cancel()
   })
 
@@ -452,20 +455,20 @@ describe("LiveSyncRoom — fan-out core", () => {
     expect(localPrincipal).toEqual({ mode: "unsigned-local" })
   })
 
-  test("the subscriber's room is keyed by the RESOLVED internal org id, never the Clerk claim", () => {
-    // The regression this pins: the auth context carries the Clerk `org_...`
+  test("the subscriber's room is keyed by the RESOLVED internal org id, never the issuer claim", () => {
+    // The regression this pins: the auth context carries the issuer `org_...`
     // claim, a DISJOINT namespace from the internal org id every publisher
-    // stamps. The room name must come from the resolved internal id; a Clerk
+    // stamps. The room name must come from the resolved internal id; an issuer
     // claim on the auth must not leak into the derivation.
-    const withClerkClaim: LiveSyncSubscriber = {
-      auth: signedAuth("alice", "org_2clerkabc"),
+    const withOrgClaim: LiveSyncSubscriber = {
+      auth: signedAuth("alice", "org_2orgabc"),
       orgId: "org_internal_acme",
     }
-    expect(liveSyncRoomName(withClerkClaim)).toBe("org:org_internal_acme")
+    expect(liveSyncRoomName(withOrgClaim)).toBe("org:org_internal_acme")
 
     // No resolved internal id (no authority composed) → subject-keyed owner
-    // room, even when the Clerk claim is present.
-    expect(liveSyncRoomName({ auth: signedAuth("alice", "org_2clerkabc") })).toBe("owner:alice")
+    // room, even when the issuer claim is present.
+    expect(liveSyncRoomName({ auth: signedAuth("alice", "org_2orgabc") })).toBe("owner:alice")
   })
 })
 
@@ -497,7 +500,7 @@ describe("live-sync room-name derivation — publisher/subscriber agreement", ()
     const reader = response.body!.getReader()
     expect(await readFrame(reader)).toEqual({ type: "heartbeat" })
 
-    const event = workgraphChanged("dave")
+    const event = sessionShareChanged("dave")
     const result = await nudgeLiveSyncRoom(namespace, liveSyncRoomNameForPrincipal({ ownerUserId: "dave" }), event)
     expect(result).toEqual({ delivered: 1, held: 1 })
     expect(await readFrame(reader)).toEqual(event)
@@ -522,14 +525,14 @@ describe("live-sync room-name derivation — publisher/subscriber agreement", ()
       },
     }
     for (const roomName of ["org:undefined", "org:null", "org:", "org: ", "owner:", "workspace:w1", ""]) {
-      await expect(nudgeLiveSyncRoom(namespace, roomName, workgraphChanged("dave"))).rejects.toThrow(
+      await expect(nudgeLiveSyncRoom(namespace, roomName, sessionShareChanged("dave"))).rejects.toThrow(
         "live-sync room name is invalid",
       )
     }
     expect(gets).toEqual([])
 
     // Well-formed names still pass through to the namespace untouched.
-    await expect(nudgeLiveSyncRoom(namespace, "owner:dave", workgraphChanged("dave"))).resolves.toEqual({
+    await expect(nudgeLiveSyncRoom(namespace, "owner:dave", sessionShareChanged("dave"))).resolves.toEqual({
       delivered: 0,
       held: 0,
     })
@@ -548,8 +551,8 @@ describe("live-sync room-name derivation — publisher/subscriber agreement", ()
 describe("LiveSyncRoom — Last-Event-ID replay", () => {
   test("opens with a heartbeat carrying the cursor the connection resumes from", async () => {
     const room = new LiveSyncRoom({}, {})
-    await pushEvent(room, workgraphChanged("alice"))
-    await pushEvent(room, workgraphChanged("alice"))
+    await pushEvent(room, sessionShareChanged("alice"))
+    await pushEvent(room, sessionShareChanged("alice"))
 
     const opened = await openRoom(room)
     expect(opened.frames[0]).toEqual({ id: "2", data: { type: "heartbeat" } })
@@ -575,21 +578,21 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
 
   test("a cursor-less connection is NOT served the retained log", async () => {
     const room = new LiveSyncRoom({}, {})
-    await pushEvent(room, workgraphChanged("alice"))
+    await pushEvent(room, sessionShareChanged("alice"))
 
     const opened = await openRoom(room)
     expect(opened.frames).toHaveLength(1)
-    expect(JSON.stringify(opened.frames)).not.toContain("workgraph.changed")
+    expect(JSON.stringify(opened.frames)).not.toContain("session.share.changed")
   })
 
   test("a frame published while disconnected is delivered on the next Last-Event-ID connect", async () => {
     const room = new LiveSyncRoom({}, {})
     // Nothing is attached, so the ring is the only thing that can carry this.
-    await pushEvent(room, workgraphChanged("alice"))
+    await pushEvent(room, sessionShareChanged("alice"))
 
     const opened = await openRoom(room, { lastEventId: "0" })
     expect(opened.frames[0]).toEqual({ id: "0", data: { type: "heartbeat" } })
-    expect(opened.frames[1]).toMatchObject({ id: "1", data: { type: "workgraph.changed", ownerUserId: "alice" } })
+    expect(opened.frames[1]).toMatchObject({ id: "1", data: { type: "session.share.changed", ownerUserId: "alice" } })
   })
 
   test("resuming from a mid-log cursor replays only what follows it", async () => {
@@ -627,7 +630,7 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
     // room is rebuilt with an empty ring while the client still holds a cursor
     // from the sequence that died with it.
     const room = new LiveSyncRoom({}, {})
-    await pushEvent(room, workgraphChanged("alice"))
+    await pushEvent(room, sessionShareChanged("alice"))
 
     const opened = await openRoom(room, { lastEventId: "99" })
     expect(opened.frames[1]).toMatchObject({
@@ -641,8 +644,8 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
     // events on a Last-Event-ID reconnect is that `eventVisibleTo` runs on the
     // write path, which replayed frames traverse exactly like live ones.
     const room = new LiveSyncRoom({}, {})
-    await pushEvent(room, workgraphChanged("alice"))
-    await pushEvent(room, workgraphChanged("carol"))
+    await pushEvent(room, sessionShareChanged("alice"))
+    await pushEvent(room, sessionShareChanged("carol"))
 
     const opened = await openRoom(room, { subject: "carol", lastEventId: "0" })
     expect(JSON.stringify(opened.frames)).not.toContain("alice")
@@ -657,9 +660,9 @@ describe("LiveSyncRoom — Last-Event-ID replay", () => {
     expect(initial.frames).toEqual([{ id: "0", data: { type: "heartbeat" } }])
 
     for (let index = 0; index < 300; index += 1) {
-      await pushEvent(room, workgraphChanged("alice"))
+      await pushEvent(room, sessionShareChanged("alice"))
     }
-    await pushEvent(room, workgraphChanged("carol"))
+    await pushEvent(room, sessionShareChanged("carol"))
 
     const reconnected = await openRoom(room, { subject: "carol", lastEventId: "0" })
     expect(JSON.stringify(reconnected.frames)).not.toContain("stream.replay-gap")

@@ -145,17 +145,7 @@ authority — commit it like any other file. Identity, history, and deep links
 survive the move. A separate **Export snapshot** produces an unlinked copy
 and never creates a sync relationship.
 
-### 8. Feed documents into WorkGraph through the agent
-
-Same pattern, no special UI: select a document with `/docs` and ask the agent
-to turn it into work. The agent reads the document and uses Claxedo's
-WorkGraph MCP tools to create the stream and work proposals. Because
-WorkGraph requires **exact** inputs, the ingest tool itself records an
-immutable content-hash snapshot of the document at the moment of ingestion —
-later edits can't retroactively change what a Task was based on, and the user
-never had to think about it.
-
-### 9. Same model everywhere: local, hosted, and cloud agents
+### 8. Same model everywhere: local, hosted, and cloud agents
 
 - **Unsigned local:** documents live on the user's machine under Claxedo's
   app data; everything above works with no account. A local agent edits the
@@ -199,7 +189,7 @@ flowchart LR
 
   subgraph Agent [agent session — any harness]
     FS[Ordinary file tools] --> DOC[the document file]
-    MCP[claxedo-mcp: documents_list / documents_open\nworkgraph ingest] --> RT
+    MCP[claxedo-mcp: documents_list / documents_open] --> RT
   end
 
   DOC -. same file .- LM
@@ -257,8 +247,8 @@ case-insensitive filesystem collisions, and macOS Unicode-normalization bugs.
 History lives *outside* the documents directory so an agent editing the
 document can never edit history. Snapshots are automatic and bounded — taken
 around service writes and when an external change is detected — and they are
-what power "Restore version", the changed-on-disk diff, and WorkGraph's exact
-ingestion. They are never a second editable head.
+what power "Restore version" and the changed-on-disk diff. They are never a
+second editable head.
 
 Repository documents have no copies at all: the canonical file is
 `<workspace-checkout>/<repository-relative-path>`, resolved through the
@@ -354,9 +344,7 @@ then get out of the way.**
 - **MCP tools** (agent-driven): `documents_list` returns index metadata;
   `documents_open(id|name)` resolves — and on hosted, hydrates — the
   document and returns its path. The agent can then read/edit it with normal
-  file tools. WorkGraph ingestion is the existing WorkGraph MCP surface; its
-  ingest call snapshots the document content-hash server-side so work
-  sources are exact at the moment of ingestion.
+  file tools.
 
 ### Hosted mode: how hydration and write-back actually work
 
@@ -473,7 +461,6 @@ cover all of it.
 | Get an earlier version back | Git (repository docs); automatic bounded snapshots + Restore (managed docs) |
 | Agent finds and edits docs itself | `documents_list` / `documents_open` MCP tools returning real paths |
 | `/docs` mention in any session | Composer picker over index metadata; injects path + id; triggers hydration when remote |
-| Exact WorkGraph ingestion | Ingest MCP call snapshots content-hash server-side; snapshot pinned against GC |
 | Hosted doc survives VM loss | Blob object is authoritative; VM copy is a manifest-tracked hydration |
 | No wholesale clone to VMs | Discovery via index API; per-document hydrate on demand; conditional ETag write-back |
 | Cloud agent, local files stay local | Relay-tunneled per-document hydrate + write-back through the local app's CAS |

@@ -32,7 +32,7 @@ Inherited operating principles (inlined; `docs/plans/goal.md` does not exist on 
 | Plane | What | Identity | Contract |
 |---|---|---|---|
 | **Product plane** | feature events, funnel, `$exception`, metering events | `distinct_id = user_id`, `$groups.org = org_id` | required properties `org_id`, `user_id`, `surface`, `deployment_mode` enforced at the wrapper type (spec §4.1) |
-| **Ops plane** | WorkGraph operational monitors (`workgraph-host/operational-telemetry.ts`, `distinct_id: "system"`) | none, by design | content-free boundary of `deploy-runbook.md:258` — bounded counts, durations, status classes; **no org/user identifiers, no content** |
+| **Ops plane** | operational monitors (`distinct_id: "system"`) | none, by design | content-free boundary of `deploy-runbook.md:258` — bounded counts, durations, status classes; **no org/user identifiers, no content** |
 
 Per-runtime transport (the Worker constraint is documented law — `posthog-node` is on the Worker's forbidden-import list, `public-docs/hosted-control-plane-worker.md:214`):
 
@@ -59,9 +59,8 @@ Per-runtime transport (the Worker constraint is documented law — `posthog-node
 ## 3. Scope decisions (out of scope, tracked separately)
 
 - **Native crash minidumps** (Electron main-process native crashes, renderer OOM). JS-level fatals in the main process are in scope (W2e); minidump collection is not. **Revisit trigger:** any sustained report of desktop crashes/blank screens with no corresponding `$exception` issue.
-- **Convex function exception forwarding.** No first-party PostHog integration exists. Launch posture: Convex dashboard function logs + failure metrics, plus the Convex policy-guard test suite already in `control-plane/convex-*-policy.test.ts`. Post-launch option (owner decision D4): Convex log-stream webhook → Worker → `$exception`.
 - **Tracing/APM.** The `tracesSampleRate: 0` posture carries over: no transaction/span product at launch. LLM analytics is a separate later evaluation.
-- **Backfilling the ~45 existing dead events.** They begin working when keys land (W4); new engineering goes only to genuine gaps (spec §4.4's five events, W6).
+- **Backfilling the ~45 existing dead events.** They begin working when keys land (W4); new engineering goes only to genuine gaps (the W6 taxonomy, spec §4.4).
 - **The external uptime check stays vendor-neutral and external** — error tracking cannot detect its own absence. It ships in W4 as a checklist item, not a PostHog feature.
 
 ## 4. Workstreams
@@ -143,18 +142,18 @@ Tasks:
 
 Tasks (spec §4.2, §4.3, §4.5 are normative; summarized):
 - `sandbox.lease_opened` / `sandbox.lease_closed` (+ `active_ms`, `reason`) from the lease create/close paths; lease rows gain `org_id`+`user_id`; `sandbox_usage_daily` rollup table + cron.
-- `llm_turn_completed` at message completion in `central-session-runtime.ts` (~:338-353) with the full token property set; **dual-write** to PostHog and a new Convex `llm_usage_events` table (PostHog capture is best-effort by design; the table is the billing-grade record — owner decision D1). `credential_source` (`platform`|`user_byok`) is a follow-up at the `loadApiKey` seam (`central-session-runtime.ts:204-210`), not v1.
+- `llm_turn_completed` at message completion in `central-session-runtime.ts` (~:338-353) with the full token property set; **dual-write** to PostHog and a new `llm_usage_events` table in the control-plane database (PostHog capture is best-effort by design; the table is the billing-grade record — owner decision D1). `credential_source` (`platform`|`user_byok`) is a follow-up at the `loadApiKey` seam (`central-session-runtime.ts:204-210`), not v1.
 - `session_started` (server-emitted), `user_activated` (idempotent first-`llm_turn_completed`-ok check-and-set).
-- Every new Convex function is `internalMutation`/authed builder — the security review's guard (`2026-07-27-003` §5) flags any new `publicMutation`. Each new table ships with ≥1 reader query and a retention cron (owner decision D3).
+- Every new control-plane write goes through an internal/authed builder — the security review's guard (`2026-07-27-003` §5) flags any new publicly callable mutation. Each new table ships with ≥1 reader query and a retention cron (owner decision D3).
 
 **DoD (spec-inherited, verbatim):** synthetic lease under a fake clock asserts `active_ms` within ±5s; staging lease then **query the table** for that `sandbox_id` and match wall-clock. Fake-provider integration test asserts emitted token fields equal the provider's usage object; staging turn then query `llm_usage_events` by `session_id` for plausible non-zero counts. `user_activated`: error turn then ok turn fires exactly once; third turn does not re-fire.
 
 **Depends on:** W1 (identity), W4 (keys, for the PostHog half). Post-launch by design.
 
 #### W6 — Feature-usage taxonomy — **S**
-**Why:** WorkGraph, permission decisions, harness and model selection have zero instrumentation; settings toggles have eleven events (spec §3).
+**Why:** permission decisions, harness and model selection have zero instrumentation; settings toggles have eleven events (spec §3).
 
-Tasks (spec §4.4 verbatim): `workgraph_task_created`/`workgraph_task_completed` (ids only, no titles/content), `permission_decided` (`decision`, `mode`, generic `tool_kind` — never the literal command or path), `model_selected`, `harness_selected`.
+Tasks (spec §4.4): `permission_decided` (`decision`, `mode`, generic `tool_kind` — never the literal command or path), `model_selected`, `harness_selected`.
 
 **DoD:** each event has a unit test asserting its property allowlist (tripwire: add a forbidden property, watch the test fail); events visible in staging PostHog after one scripted session.
 
@@ -173,10 +172,9 @@ Tasks: rewrite `packages/claxedo-web/src/pages/privacy.md` telemetry section —
 
 ## 5. Owner decisions
 
-- **D1 — source of truth for money-grade numbers.** Proposed: Convex tables authoritative (`llm_usage_events`, `sandbox_usage_daily`); PostHog is the analytics view. (Spec §5.1; dual-write is deliberate because PostHog capture is best-effort.)
+- **D1 — source of truth for money-grade numbers.** Proposed: control-plane database tables authoritative (`llm_usage_events`, `sandbox_usage_daily`); PostHog is the analytics view. (Spec §5.1; dual-write is deliberate because PostHog capture is best-effort.)
 - **D2 — desktop telemetry posture.** Proposed: `deployment_mode: "desktop-local"`, telemetry **on** in Claxedo-distributed builds with a visible settings opt-out plus `privacy.md` disclosure; self-built desktops inherit self-host default-off. Resolves the desktop/hosted conflation before the field ships (spec §5.2).
 - **D3 — retention.** Proposed: raw fact rows 400 days via cron, daily rollups kept; PostHog project retention per plan default. (Spec §5.3 — unbounded growth otherwise.)
-- **D4 — Convex exception forwarding.** Proposed: accept the dashboard-logs gap at launch; revisit log-stream → Worker → `$exception` post-launch.
 - **D5 — the named analytics owner** (launch-plan §7.2's remaining half): a human who watches Error Tracking and the alerts channel. F6's "configured *and watched*" is not satisfiable by configuration alone.
 
 ## 6. Parallelization map (normative)

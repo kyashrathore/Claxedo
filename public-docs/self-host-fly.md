@@ -5,7 +5,7 @@ account, end to end. It asks the few real questions (harness, tool placement,
 platform), derives everything else, drives `flyctl` for you, and is only "done"
 once the deployed machine answers its health check.
 
-The default is a **zero-Convex, zero-Clerk, unsigned single-user** instance: the
+The default is an **unsigned single-user** instance: the
 SQLite workspace authority is the built-in default, so no external accounts or
 extra secrets are required to bring one up. Signed/hosted mode is a later,
 opt-in layer (see below).
@@ -154,7 +154,7 @@ The retired value `self-host` is rejected at boot with an error naming `local`.
 ## The default: unsigned, single-user
 
 Out of the box the instance is unsigned and single-user. The SQLite workspace
-authority is the default backend, so there is **no Convex and no Clerk** and no
+authority is the default backend, so there are **no external accounts** and no
 extra secrets to provision. `CLAXEDO_DEPLOYMENT_MODE` is deliberately left
 unset — absent mode means `local` by design. Set it to `hosted` only once signed
 auth is fully configured.

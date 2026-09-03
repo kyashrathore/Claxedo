@@ -12,7 +12,6 @@ import {
 import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import { isCliAccessTokenCandidate } from "@claxedo/server-core/platform/auth/cli-session-token"
 import {
-  assertHostedBootRequirements,
   deploymentMode,
   unsignedLocalRequestGuard,
 } from "@claxedo/server-core/authority/deployment-mode"
@@ -301,23 +300,11 @@ describe("control plane auth", () => {
   })
 })
 
-// Hosted deployment mode must be fail-closed at boot (every missing piece
-// named); absent mode must keep the
-// self-host zero-config posture byte-for-byte; and the global unsigned-local
-// guard is the PRIMARY gate over the per-route loopback checks.
+// Absent mode must keep the self-host zero-config posture byte-for-byte, and
+// the global unsigned-local guard is the PRIMARY gate over the per-route
+// loopback checks.
 describe("deployment mode matrix", () => {
-  const hostedEnv = {
-    CLAXEDO_DEPLOYMENT_MODE: "hosted",
-    CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-    CONTROL_PLANE_JWT_ISSUER: "https://idp.example.test",
-    CONTROL_PLANE_JWKS_URL: "https://idp.example.test/.well-known/jwks.json",
-    CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-token",
-    CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "private-key",
-    CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: "public-key",
-  }
-
-  test("hosted + complete config boots with signed auth enabled and unsigned-local unreachable", async () => {
-    expect(() => assertHostedBootRequirements(hostedEnv, { authorityConfigured: true })).not.toThrow()
+  test("an enabled signed config makes unsigned-local unreachable", async () => {
     // Signed deployments compose an explicit adapter; the neutral default
     // stays local-only. With an enabled config, a bearer-less request can
     // NEVER be served as unsigned-local — it is a 401, not a pass-through.
@@ -326,25 +313,6 @@ describe("deployment mode matrix", () => {
       status: 401,
       code: "missing_bearer_token",
     } satisfies Partial<ControlPlaneAuthError>)
-  })
-
-  test.each([
-    ["CLAXEDO_SIGNED_CLOUD_AUTH", /CLAXEDO_SIGNED_CLOUD_AUTH=true/],
-    ["CONTROL_PLANE_JWT_ISSUER", /CONTROL_PLANE_JWT_ISSUER/],
-    ["CONTROL_PLANE_JWKS_URL", /CONTROL_PLANE_JWKS_URL/],
-    ["CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", /CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN/],
-    ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", /CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM/],
-    ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM", /CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM/],
-  ] as const)("hosted missing %s refuses to boot naming the piece", (key, named) => {
-    expect(() =>
-      assertHostedBootRequirements({ ...hostedEnv, [key]: undefined }, { authorityConfigured: true }),
-    ).toThrowError(named)
-  })
-
-  test("hosted without a workspace authority refuses to boot naming the piece", () => {
-    expect(() => assertHostedBootRequirements(hostedEnv, { authorityConfigured: false })).toThrowError(
-      /CLAXEDO_WORKSPACE_AUTHORITY_URL/,
-    )
   })
 
   test("absent mode = self-host: auth config resolution is byte-for-byte today's behavior", async () => {

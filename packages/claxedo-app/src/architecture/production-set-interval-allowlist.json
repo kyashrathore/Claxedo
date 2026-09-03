@@ -18,12 +18,6 @@
     "reason": "MSW demo SSE heartbeat timers; demo fate is Phase 6."
   },
   {
-    "file": "features/workgraph/sync-lifecycle.ts",
-    "count": 1,
-    "owner": "WorkGraph live sync",
-    "reason": "Visible live-Stream fallback poll bounds staleness after a missed central doorbell."
-  },
-  {
     "file": "app/workbench/workbench/mount-idle-governor.ts",
     "count": 3,
     "owner": "workbench mount idle governor",

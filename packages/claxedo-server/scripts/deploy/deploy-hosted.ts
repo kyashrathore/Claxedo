@@ -155,11 +155,7 @@ function printSandboxBuildInfo() {
 
 async function main() {
   const dryRun = !process.argv.includes("--deploy")
-  const profile = resolveDeploymentProfileFromEnv(process.env)
-  const requestedTargets = targets(
-    process.argv,
-    profile.adapterProfile === "better-auth-d1" ? "central" : "central,app",
-  )
+  const requestedTargets = targets(process.argv)
   const commands = hostedDeployCommands({
     staging: process.argv.includes("--staging"),
     dryRun,

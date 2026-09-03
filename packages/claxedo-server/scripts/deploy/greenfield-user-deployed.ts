@@ -82,12 +82,9 @@ export function requireGreenfieldUserDeployedResourceClosure(config: string) {
     "[[services]]",
     "[[migrations]]",
     "[triggers]",
-    "workgraph",
     "document",
     "polar",
     "billing",
-    "convex",
-    "clerk",
     "sandbox_driver",
   ]
   const lowered = config.toLowerCase()
@@ -359,8 +356,8 @@ bun run scripts/deploy/release-better-auth-d1.ts --cutover${stagingFlag}
 bun run scripts/deploy/release-better-auth-d1.ts --deploy --cutover${stagingFlag}
 \`\`\`
 
-The first command builds the production Better Auth browser with the exact API origin, validates that Clerk and the test
-bypass are absent, derives a deterministic path-and-byte SHA-256 identity, and dry-runs the phase-gated Worker bundle.
+The first command builds the production Better Auth browser with the exact API origin, validates that the test
+bypass is absent, derives a deterministic path-and-byte SHA-256 identity, and dry-runs the phase-gated Worker bundle.
 Cloudflare requires an initial Durable Object lifecycle migration to use a full deployment rather than a version upload.
 When the release train does not yet own \`LiveSyncRoom\`, the deploy command first atomically installs v1 through a
 separately certified bridge whose request handler is only the fail-closed bootstrap gate. It verifies that gate and the

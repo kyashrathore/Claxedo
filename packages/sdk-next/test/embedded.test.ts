@@ -51,7 +51,7 @@ describe("SDK-next embedded OpenCode host", () => {
           InstanceRuntime: { disposeAllInstances },
         }) as EmbeddedModule,
       applicationTools: async () => ({
-        workgraph_create_stream: {
+        app_create_stream: {
           description: "Create a stream",
           inputSchema: { type: "object" },
           execute: async () => ({ ok: true }),
@@ -64,7 +64,7 @@ describe("SDK-next embedded OpenCode host", () => {
     await host.dispose()
 
     expect(order).toEqual([
-      "register:workgraph_create_stream",
+      "register:app_create_stream",
       "request",
       "dispose-tools",
       "dispose-engine",

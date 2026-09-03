@@ -2,13 +2,11 @@ import { describe, expect, test } from "bun:test"
 import { focusedSurfaceRouteTarget, routeMatchesSurface, surfaceRoute } from "./surface-route"
 import {
   marketplaceRoute,
-  newTaskRoute,
   sessionRoute as canonicalSessionRoute,
   workspacePageRoute,
   workspaceRoute as canonicalWorkspaceRoute,
   workspaceSessionRoute,
   workspaceTerminalRoute,
-  workspaceWorkGraphRoute,
 } from "@/platform/identity/route"
 import type { ContentMeta } from "./types"
 
@@ -18,18 +16,6 @@ const route = (dir: string, extra?: { id?: string; pageId?: string; terminalId?:
 })
 
 describe("surface route mirroring", () => {
-  test("builds workspace WorkGraph and task-composer routes from the supplied route id", () => {
-    expect(surfaceRoute("ws_main", {
-      id: "surface_workgraph",
-      type: "workspace-workgraph",
-      directory: "/Users/person/private-repo",
-    })).toBe(workspaceWorkGraphRoute("ws_main"))
-    expect(surfaceRoute("ws_main", {
-      id: "surface_task",
-      type: "task-composer",
-      directory: "/Users/person/private-repo",
-    })).toBe(newTaskRoute("ws_main"))
-  })
 
   test("uses a producer-carried route id when directory lookup is unavailable", () => {
     expect(surfaceRoute(undefined, {
@@ -45,22 +31,6 @@ describe("surface route mirroring", () => {
     })).toBe(workspaceTerminalRoute("project_selected", "new"))
   })
 
-  test("keeps a task composer on its producer-selected workspace when directories are shared", () => {
-    const surface: ContentMeta = {
-      id: "surface_task",
-      type: "task-composer",
-      scope: "directory",
-      directory: "/workspace",
-      content: {
-        type: "task-composer",
-        directory: "/workspace",
-        workspaceRouteId: "ws_selected",
-      },
-    }
-
-    expect(surfaceRoute(undefined, surface)).toBe(newTaskRoute("ws_selected"))
-    expect(routeMatchesSurface({ newTask: true }, "ws_selected", surface, "ws_selected")).toBe(true)
-  })
 
   test("does not navigate when the focused surface already matches the route", () => {
     expect(

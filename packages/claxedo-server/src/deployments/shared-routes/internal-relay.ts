@@ -63,7 +63,7 @@ export type InternalRelayResolverOptions = {
    * Resolve the relay target for a `(workspaceId, hostId)` pair. Injected so the
    * route stays free of any local disk store: the Node/local server injects a
    * `workspace-store`-backed lookup, the hosted Worker injects a hosted-state
-   * (Convex) lookup. When omitted the `/internal/relay/target` route fails
+   * (the authority) lookup. When omitted the `/internal/relay/target` route fails
    * closed.
    */
   targetLookup?: RelayTargetLookup

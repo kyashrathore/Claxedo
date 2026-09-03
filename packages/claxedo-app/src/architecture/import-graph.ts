@@ -21,7 +21,6 @@ const typeContractCandidates = new Set([
   // Doorbell event mirrors: the feature owns the event
   // type, the shell folds it into `ClaxedoEvent` with a TYPE-ONLY import — same
   // shape as `session-lifecycle.ts` above, so the graph sees no value edge.
-  "features/workgraph/workgraph-changed-event.ts",
   "features/documents/data/document-changed-event.ts",
   "features/session/data/backend/types.ts",
   "features/session/data/query/types.ts",
@@ -76,7 +75,7 @@ export type ProductBoundaryBreach = {
  * a twelve-hop path through unrelated modules. Breadth-first makes the reported
  * chain the actual tightest coupling, which is the one a reader has to break.
  *
- * Bare package specifiers are CHECKED but never followed — `@clerk/clerk-js`
+ * Bare package specifiers are CHECKED but never followed — `better-auth`
  * is a boundary breach wherever it appears, and its own internals are not this
  * package's graph. Type-only imports are excluded because the bundler erases
  * them; an emitted-artifact gate (Unit 12) covers what source scanning cannot.

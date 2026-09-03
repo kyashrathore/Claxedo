@@ -4,31 +4,18 @@ import {
   DEPLOYMENT_MODE_ENV,
   DeploymentModeError,
   UNSIGNED_NONLOOPBACK_ALLOWLIST,
-  assertHostedBootRequirements,
   deploymentMode,
-  hostedBootRequirementFailures,
   unsignedLocalRequestGuard,
 } from "@claxedo/server-core/authority/deployment-mode"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
 /**
  * Deployment mode and the global unsigned-local gate.
- * These tests cover mode parsing, hosted fail-closed boot requirements, and the
- * guard's request-time policy. In-process Requests carry no transport peer,
+ * These tests cover mode parsing and the guard's request-time policy. In-process Requests carry no transport peer,
  * so `isLoopbackLocalRequest` falls back to the Host/Origin classification:
  * `http://127.0.0.1/...` = loopback, `http://cp.example.test/...` = remote —
  * the same fallback every other in-process test in this package relies on.
  */
-
-const hostedCompleteEnv = {
-  CLAXEDO_DEPLOYMENT_MODE: "hosted",
-  CLAXEDO_SIGNED_CLOUD_AUTH: "true",
-  CONTROL_PLANE_JWT_ISSUER: "https://idp.example.test",
-  CONTROL_PLANE_JWKS_URL: "https://idp.example.test/.well-known/jwks.json",
-  CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN: "service-token",
-  CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: "private-key",
-  CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: "public-key",
-}
 
 const unsignedLocalConfig: ControlPlaneAuthConfig = {
   enabled: false,
@@ -73,105 +60,6 @@ describe("deploymentMode", () => {
     expect(() => deploymentMode({ [DEPLOYMENT_MODE_ENV]: "production" })).toThrowError(
       /must be "local" or "hosted"; got "production"/,
     )
-  })
-})
-
-describe("hosted boot requirements (fail-closed boot)", () => {
-  test("hosted + complete config boots (no failures, no throw)", () => {
-    expect(hostedBootRequirementFailures(hostedCompleteEnv, { authorityConfigured: true })).toEqual([])
-    expect(() => assertHostedBootRequirements(hostedCompleteEnv, { authorityConfigured: true })).not.toThrow()
-  })
-
-  test.each([
-    ["CLAXEDO_SIGNED_CLOUD_AUTH", /signed cloud auth is not enabled \(set CLAXEDO_SIGNED_CLOUD_AUTH=true\)/],
-    ["CONTROL_PLANE_JWT_ISSUER", /no signed-auth token issuer \(set CONTROL_PLANE_JWT_ISSUER\)/],
-    ["CONTROL_PLANE_JWKS_URL", /no signed-auth JWKS URL \(set CONTROL_PLANE_JWKS_URL\)/],
-    ["CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN", /no Control Plane service token \(set CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN\)/],
-    ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM", /no Runtime Access Token signing private key/],
-    ["CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM", /no Runtime Access Token verification public key/],
-  ] as const)("hosted missing %s refuses to start naming the piece", (key, message) => {
-    const env = { ...hostedCompleteEnv, [key]: undefined }
-    expect(() => assertHostedBootRequirements(env, { authorityConfigured: true })).toThrowError(message)
-  })
-
-  test("hosted without a composed workspace authority refuses to start naming the piece", () => {
-    expect(() => assertHostedBootRequirements(hostedCompleteEnv, { authorityConfigured: false })).toThrowError(
-      /no workspace authority \(set CLAXEDO_WORKSPACE_AUTHORITY_URL\)/,
-    )
-  })
-
-  test("hosted + embedded self-host auth is a hard conflict", () => {
-    const env = { ...hostedCompleteEnv, CLAXEDO_EMBEDDED_AUTH: "1" }
-    expect(() => assertHostedBootRequirements(env, { authorityConfigured: true })).toThrowError(
-      /unset CLAXEDO_EMBEDDED_AUTH/,
-    )
-  })
-
-  test("hosted rejects unsupported Runtime Access Token algorithms", () => {
-    expect(() => assertHostedBootRequirements({
-      ...hostedCompleteEnv,
-      CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM: "RS256",
-    }, { authorityConfigured: true })).toThrowError(/must be EdDSA/)
-  })
-
-  test("ONE error names EVERY missing piece (no one-piece-per-restart loops)", () => {
-    let thrown: DeploymentModeError | undefined
-    try {
-      assertHostedBootRequirements({ CLAXEDO_DEPLOYMENT_MODE: "hosted" }, { authorityConfigured: false })
-    } catch (err) {
-      thrown = err as DeploymentModeError
-    }
-    expect(thrown).toBeInstanceOf(DeploymentModeError)
-    expect(thrown?.code).toBe("hosted_boot_requirements_missing")
-    expect(thrown?.message).toMatch(/CLAXEDO_SIGNED_CLOUD_AUTH=true/)
-    expect(thrown?.message).toMatch(/CONTROL_PLANE_JWT_ISSUER/)
-    expect(thrown?.message).toMatch(/CONTROL_PLANE_JWKS_URL/)
-    expect(thrown?.message).toMatch(/CLAXEDO_WORKSPACE_AUTHORITY_URL/)
-    expect(thrown?.message).toMatch(/CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN/)
-    expect(thrown?.message).toMatch(/CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM/)
-    expect(thrown?.message).toMatch(/CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM/)
-  })
-
-  describe("hosted credential backend", () => {
-    const withCreds = {
-      ...hostedCompleteEnv,
-      CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1",
-      CLAXEDO_CF_KV_URL: "https://kv.example.test/ns",
-      CLAXEDO_CF_KV_TOKEN: "kv_token",
-      CLAXEDO_CREDENTIALS_KEK: "a".repeat(44),
-    }
-
-    test("does not require the credential backend when hosted credentials are disabled", () => {
-      expect(hostedBootRequirementFailures(hostedCompleteEnv, { authorityConfigured: true })).toEqual([])
-    })
-
-    test("flag ON + complete encrypted-KV config boots", () => {
-      expect(hostedBootRequirementFailures(withCreds, { authorityConfigured: true })).toEqual([])
-      expect(() => assertHostedBootRequirements(withCreds, { authorityConfigured: true })).not.toThrow()
-    })
-
-    test.each([
-      ["CLAXEDO_CF_KV_URL", /no encrypted-KV backend \(set CLAXEDO_CF_KV_URL/],
-      ["CLAXEDO_CF_KV_TOKEN", /KV byte store has no token \(set CLAXEDO_CF_KV_TOKEN\)/],
-      ["CLAXEDO_CREDENTIALS_KEK", /envelope encryption key is absent \(set CLAXEDO_CREDENTIALS_KEK/],
-    ] as const)("flag ON but missing %s refuses to start (else it silently uses the local file store)", (key, message) => {
-      const env = { ...withCreds, [key]: undefined }
-      expect(() => assertHostedBootRequirements(env, { authorityConfigured: true })).toThrowError(message)
-    })
-
-    test("flag ON with no credential backend at all names all three pieces at once", () => {
-      const env = { ...hostedCompleteEnv, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "true" }
-      let thrown: DeploymentModeError | undefined
-      try {
-        assertHostedBootRequirements(env, { authorityConfigured: true })
-      } catch (err) {
-        thrown = err as DeploymentModeError
-      }
-      expect(thrown).toBeInstanceOf(DeploymentModeError)
-      expect(thrown?.message).toMatch(/CLAXEDO_CF_KV_URL/)
-      expect(thrown?.message).toMatch(/CLAXEDO_CF_KV_TOKEN/)
-      expect(thrown?.message).toMatch(/CLAXEDO_CREDENTIALS_KEK/)
-    })
   })
 })
 
@@ -283,8 +171,6 @@ describe("Node composition boot wiring (createDefaultLocalControlPlaneServices)"
   const KEYS = [
     "CLAXEDO_DEPLOYMENT_MODE",
     "CLAXEDO_SIGNED_CLOUD_AUTH",
-    "CONTROL_PLANE_JWT_ISSUER",
-    "CONTROL_PLANE_JWKS_URL",
     "CLAXEDO_WORKSPACE_AUTHORITY_URL",
     "CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN",
     "CLAXEDO_EMBEDDED_AUTH",

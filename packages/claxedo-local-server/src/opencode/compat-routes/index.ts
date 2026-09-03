@@ -180,7 +180,7 @@ function compatRoutes(options: OpenCodeCompatRouteOptions) {
     // central target (matching the hosted deployments, which serve the same
     // path), so the local product must answer here too — without this mount
     // every unsigned desktop build's central stream 404s and retries forever,
-    // and the doorbell consumers (workgraph/document/session lifecycle) never
+    // and the doorbell consumers (document/session lifecycle) never
     // hear anything. Same handler and auth gate as the two aliases above.
     .get("/api/claxedo/events", (c) => streamGlobalEvents(c))
     .get("/path", async (c) => {

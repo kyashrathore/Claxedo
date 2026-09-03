@@ -22,8 +22,8 @@ afterEach(() => {
 
 const signedAuthConfig: ControlPlaneAuthConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 }
 
 function services(input: {

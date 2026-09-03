@@ -230,7 +230,7 @@ layer in between.
 Team connections with the `work-source` capability can carry an independent
 webhook-signing credential (`connectionWebhookSigningProviderId`, stored and
 rotated only through `PUT /connections/:id/webhook-secret`, which never
-echoes the value back — see the [README](../README.md#signed-workgraph-webhooks)).
+echoes the value back — see the [README](../README.md#signed-connection-webhooks)).
 Verification of an inbound delivery is a separate concern, implemented in
 `src/webhooks.ts` and composed with `createConnectionWebhookVerifier`:
 

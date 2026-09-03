@@ -206,7 +206,7 @@ describe("entitlement gate composition (choke-point adapter)", () => {
       env: ENFORCED,
       store: {
         entitlementState: async () => {
-          throw new Error("convex down")
+          throw new Error("authority down")
         },
         applyPolarState: async () => ({ results: [], unresolved: [] }),
         checkoutContext: async () => ({ org_id: "x", member_count: 1 }),

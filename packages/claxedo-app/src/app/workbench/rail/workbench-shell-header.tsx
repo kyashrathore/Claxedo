@@ -163,7 +163,6 @@ export function WorkbenchShellHeader(props: {
           canCreateTerminal={props.canCreateTerminal()}
           onNewSession={props.onNewSession}
           onNewTerminalDraft={props.onNewTerminalDraft}
-          onNewTask={props.onNewTask}
           canUseDocuments={props.canUseDocuments === true}
           onNewPage={props.onNewPage}
           onSettings={props.onSettings}

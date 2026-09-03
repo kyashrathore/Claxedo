@@ -1,7 +1,6 @@
 import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
 import { configureSessionAppPorts } from "@/features/session/app-ports"
 import { configureDocumentsAppPorts } from "@/features/documents/app-ports"
-import { configureWorkGraphAppPorts } from "@/features/workgraph/app-ports"
 import { configureWorkspacesAppPorts } from "@/features/workspaces/app-ports"
 import * as SDK from "@/app/providers/sdk/sdk"
 import * as GlobalSDK from "@/app/providers/global-sdk/provider"
@@ -41,7 +40,6 @@ import * as TerminalFit from "@/features/terminal/workbench/terminal-fit"
 import * as SessionQueries from "@/features/session/data/sync/queries"
 import * as SessionCache from "@/features/session/data/sync/directory-session-cache"
 import * as CloudStartup from "@/features/session/ui/components/cloud-startup-view"
-import type * as DocWorkGraph from "@/app/integrations/doc-workgraph"
 import * as DocumentMentions from "@/app/integrations/document-mentions"
 import * as RailGitRemote from "@/app/workbench/rail/rail-git-remote"
 import { openSettingsProviders as showProvidersSettings } from "@/features/settings/open-settings-providers"
@@ -69,9 +67,6 @@ const DialogSettings = lazyDialog(() =>
 const DialogSelectDirectory = lazyDialog(() =>
   import("@/app/dialogs/select-directory").then((module) => ({ default: module.DialogSelectDirectory })),
 )
-
-const turnDocumentIntoWorkLazily: typeof DocWorkGraph.turnDocumentIntoWork = (request) =>
-  import("@/app/integrations/doc-workgraph").then((module) => module.turnDocumentIntoWork(request))
 
 export function useOnboardingFunnel() {
   const platform = usePlatform()
@@ -147,17 +142,6 @@ configureDocumentsAppPorts({
   ensureLocalProject: ProjectEnsure.ensureLocalProject,
   surfaceRoute: SurfaceRoute.surfaceRoute,
   SessionPaneScope: SessionScope.SessionPaneScope,
-  // Lazy boundary: doc-workgraph statically imports @claxedo/workgraph/contracts
-  // (zod-based schemas) plus the documents action schemas, which would ride the
-  // boot-path feature-ports chunk. The port only needs the FUNCTION when a user
-  // actually turns a document into work, and it is already async — so the
-  // zod-heavy module graph loads on first invocation instead of at boot.
-  // Guarded by scripts/forbidden-eager-deps.config.ts (zod + workgraph/contracts).
-  turnDocumentIntoWork: turnDocumentIntoWorkLazily,
-})
-
-configureWorkGraphAppPorts({
-  useClaxedoEventsOptional: Events.useClaxedoEventsOptional,
 })
 
 configureWorkspacesAppPorts({

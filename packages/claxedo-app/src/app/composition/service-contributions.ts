@@ -7,12 +7,15 @@ import {
 import type { ContentSurfaceContribution } from "../integrations/content-surface-contract"
 import {
   createContentSurfaceActivation,
+  HOSTED_CONTENT_TYPES,
   type HostedContributionLoader,
 } from "./product-contributions"
 
+// `documents` is the hosted set's only first-party service today, so its
+// content types are exactly `HOSTED_CONTENT_TYPES`. Derived rather than
+// restated so the two lists cannot drift apart.
 export const SERVICE_CONTENT_TYPES = {
-  workgraph: ["workgraph", "workspace-workgraph", "task-composer"],
-  documents: ["page", "pages-index"],
+  documents: HOSTED_CONTENT_TYPES,
 } as const satisfies Record<FirstPartyServiceId, readonly string[]>
 
 export type ServiceContributionLoaders = Partial<Record<FirstPartyServiceId, HostedContributionLoader>>
@@ -190,7 +193,7 @@ export async function synchronizeServiceCatalogFromBootstrap(value: unknown) {
  * A loopback central is a single-user local daemon. It serves no
  * `GET /api/claxedo/services` and its boot aggregate carries no `services`
  * field, so `synchronizeServiceCatalogFromBootstrap` can only ever ignore it —
- * which left `page`, `pages-index` and the WorkGraph content types with no
+ * which left `page` and `pages-index` with no
  * registered surface at all in every composition whose central is loopback
  * (the desktop's own sidecar, and the browser lane's Tier M harness), even
  * though `documentsAccess` reports that transport as full access.

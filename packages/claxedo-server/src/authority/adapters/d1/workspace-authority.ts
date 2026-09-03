@@ -1,6 +1,10 @@
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { ApplicationIdentityResolution, AuthIdentity } from "@claxedo/server-core/platform/auth/authentication"
+import {
+  AUTH_ADAPTERS,
+  type ApplicationIdentityResolution,
+  type AuthIdentity,
+} from "@claxedo/server-core/platform/auth/authentication"
 import type {
   OrgId,
   ProjectAction,
@@ -852,7 +856,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     args: {
       teamId: string
       tokenIdentifier?: string
-      clerkSubject?: string
+      providerSubject?: string
       userPublicId?: string
       role?: "member" | "admin" | "owner"
     },
@@ -895,7 +899,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   async removeTeamMember(
     auth: SignedControlPlaneAuth,
-    args: { teamId: string; tokenIdentifier?: string; clerkSubject?: string; userPublicId?: string },
+    args: { teamId: string; tokenIdentifier?: string; providerSubject?: string; userPublicId?: string },
   ) {
     const who = await this.requirePrincipal(auth)
     const teamId = requireText(args.teamId, "teamId")
@@ -932,7 +936,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           order by ai.linked_at, ai.adapter, ai.issuer, ai.subject limit 1) as token_identifier,
         (select ai.subject from auth_identities ai
           where ai.user_id = tm.user_id and ai.unlinked_at is null
-          order by ai.linked_at, ai.adapter, ai.issuer, ai.subject limit 1) as clerk_subject
+          order by ai.linked_at, ai.adapter, ai.issuer, ai.subject limit 1) as provider_subject
       from team_memberships tm
       join users u on u.user_id = tm.user_id and u.state = 'active'
       join org_memberships om on om.user_id = tm.user_id and om.org_id = ? and om.revoked_at is null
@@ -1459,10 +1463,10 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
 
   private async resolveTeamUser(args: {
     tokenIdentifier?: string
-    clerkSubject?: string
+    providerSubject?: string
     userPublicId?: string
   }) {
-    const selectors = [args.tokenIdentifier, args.clerkSubject, args.userPublicId].filter(
+    const selectors = [args.tokenIdentifier, args.providerSubject, args.userPublicId].filter(
       (value): value is string => typeof value === "string" && !!value.trim(),
     )
     if (selectors.length !== 1) throw teamAuthorityError("team_member_target_required")
@@ -1492,7 +1496,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       order by ai.linked_at, ai.adapter, ai.issuer limit 1
     `,
       )
-      .bind(requireText(args.clerkSubject!, "clerkSubject"))
+      .bind(requireText(args.providerSubject!, "providerSubject"))
       .first<{ user_id: string }>()
   }
 
@@ -1638,7 +1642,7 @@ function requireActor(row: IdentityRow) {
 }
 
 function validateIdentity(identity: AuthIdentity) {
-  if (identity.adapter !== "better-auth" && identity.adapter !== "custom") {
+  if (!AUTH_ADAPTERS.includes(identity.adapter)) {
     throw new D1WorkspaceAuthorityError("invalid_input", "Unknown authentication adapter")
   }
   requireText(identity.issuer, "identity.issuer")

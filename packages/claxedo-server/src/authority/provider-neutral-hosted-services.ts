@@ -94,7 +94,7 @@ function safetyLimits(env: HostedWorkerEnv): HostedSafetyLimits {
     connectionRateLimitWindowMs: positiveInteger(env, "CLAXEDO_CONNECTION_RATE_LIMIT_WINDOW_MS", 60_000),
     controlPlaneRateLimit: positiveInteger(env, "CLAXEDO_CONTROL_PLANE_RATE_LIMIT", 120),
     controlPlaneRateLimitWindowMs: positiveInteger(env, "CLAXEDO_CONTROL_PLANE_RATE_LIMIT_WINDOW_MS", 60_000),
-    // 600/min: the app shell's boot burst (bootstrap + workspaces + workgraph
+    // 600/min: the app shell's boot burst (bootstrap + workspaces
     // reads + documents index) is tens of requests, so this leaves an order of
     // magnitude of headroom for a normal session while still bounding a flood.
     // The window MUST stay 60s to match the CF binding's period (`simple.period`
@@ -120,13 +120,13 @@ function safetyLimits(env: HostedWorkerEnv): HostedSafetyLimits {
  *
  * So the event also becomes a queryable ops fact. Deliberately NOT a hard
  * `HostedWorkerCompositionError`: refusing composition would take the entire
- * control plane down — auth, relay, WorkGraph, every workspace already running
+ * control plane down — auth, relay, every workspace already running
  * — over a provisioning-time capability. The failure this reports is real but
  * partial, and the response to it is an operator changing a driver, not an
  * outage.
  *
  * Ops plane, so `distinct_id: "system"` and no org/user identifiers — same
- * contract as `sandbox.touch` and the WorkGraph monitors. `egressControl` rides
+ * contract as `sandbox.touch` and the product monitors. `egressControl` rides
  * along even though it is always `"none"` today, so a query can group on the
  * capability rather than re-deriving it from a driver-id allowlist that would
  * go stale the moment the catalog changes.
@@ -245,7 +245,7 @@ export type HostedControlPlaneAdapterBindings = {
   auth: ControlPlaneAuthAdapter
   authority: WorkspaceAuthority
   userHostedResolver: UserHostedTargetResolver
-  /** Retained Clerk native sessions own this registry; Better Auth owns OAuth state in AUTH_DB. */
+  /** Adapter-owned native sessions own this registry; Better Auth owns OAuth state in AUTH_DB. */
   cliSessionTokenRegistry?: CliSessionTokenRegistry
   /** Required only when the static sandbox posture selects a driver. */
   sandbox?: { driver: SandboxDriver; leaseStore: SandboxLeaseStore }

@@ -13,7 +13,7 @@ import {
 /**
  * Binds PostHog identity to the resolved principal. Mounted inside
  * PrincipalProvider, which is the only place the user id and the active org id
- * are composed; reading Clerk directly would miss the anonymous/local kinds.
+ * are composed; reading the auth client directly would miss the anonymous/local kinds.
  */
 export const TelemetryIdentityRecorder: Component = () => {
   const platform = usePlatform()

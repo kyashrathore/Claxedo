@@ -4,7 +4,7 @@
  *
  * Local route producers — credentials, session metadata, agent configuration —
  * take a `services` argument and pass it through. Typing that argument against
- * the hosted `ControlPlaneServices` made every one of them reach the Convex
+ * the hosted `ControlPlaneServices` made every one of them reach the hosted authority
  * authority, the relay adapter, and channel delivery at COMPILE time, even
  * though nothing executable crossed. This is the surface they actually use.
  *

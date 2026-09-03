@@ -8,14 +8,15 @@
     ],
     "split": {
       "direction": "h",
-      "sizes": [1],
+      "sizes": [
+        1
+      ],
       "root": {
         "t": "leaf",
         "id": "memory-pane"
       }
     },
     "contentIds": [
-      "memory-workgraph",
       "memory-marketplace",
       "memory-pages",
       "memory-session-1",
@@ -28,7 +29,6 @@
     ],
     "contentRecency": [
       "memory-session-1",
-      "memory-workgraph",
       "memory-marketplace",
       "memory-pages",
       "memory-session-2",
@@ -42,15 +42,6 @@
     "layoutSnapshots": {}
   },
   "meta": {
-    "memory-workgraph": {
-      "id": "memory-workgraph",
-      "type": "workgraph",
-      "scope": "global",
-      "content": {
-        "type": "workgraph",
-        "title": "WorkGraph"
-      }
-    },
     "memory-marketplace": {
       "id": "memory-marketplace",
       "type": "marketplace",

@@ -4,21 +4,20 @@ import type { Hono } from "hono"
  * The one seam through which a HOST adds routes to a Workspace Runtime.
  *
  * Workspace Runtime is the local execution core: files, diffs, PTYs, processes,
- * sessions, events, harness dispatch. WorkGraph is not any of those — it is a
- * hosted product capability that happens to want two tool-broker route groups
- * mounted inside the runtime that executes its work.
+ * sessions, events, harness dispatch. Hosted product capabilities are not any
+ * of those — they are capabilities that happen to want tool-broker route groups
+ * mounted inside the runtime that executes their work.
  *
- * Today that relationship is inverted: the runtime imports
- * `@claxedo/workgraph/contracts` unconditionally and mounts its routes on every
- * instance, including the desktop-local one that has no WorkGraph and never
- * will. The cost is not a couple of unused route handlers. It is that
- * `@claxedo/workgraph` sits in the runtime's dependency closure, so a desktop
- * build cannot be shown to exclude WorkGraph even after the UI is gone — the
- * lower layer drags it back in.
+ * The runtime never imports a hosted capability unconditionally and never
+ * mounts its routes on every instance, including the desktop-local one that
+ * has none and never will. The cost of doing so would not be a couple of
+ * unused route handlers. It would be that the hosted capability sits in the
+ * runtime's dependency closure, so a desktop build could not be shown to
+ * exclude it even after the UI is gone — the lower layer would drag it back in.
  *
  * This contract inverts the direction. The runtime knows only that a host may
  * hand it named route groups with a lifetime; it learns nothing about what they
- * are for. `@claxedo/workgraph/runtime-adapter` supplies the WorkGraph groups,
+ * are for. A host-supplied adapter supplies the hosted groups,
  * the hosted launcher passes them, and the desktop-local runtime passes none.
  *
  * Deliberately not a plugin system. There is no discovery, no registry file, no

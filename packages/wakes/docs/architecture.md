@@ -110,8 +110,8 @@ occurrences one by one.
 
 ## The store port (`store.ts`)
 
-All methods async so a network adapter (Convex) fits the same contract as an
-embedded one (SQLite). Three operations carry the correctness burden:
+All methods async so a network adapter fits the same contract as an embedded
+one (SQLite). Three operations carry the correctness burden:
 
 - `insert` — idempotency-keyed dedup must be atomic.
 - `cas(id, from, to, patch)` — the single serialization point per wake.
@@ -154,16 +154,6 @@ WHERE id IN (
 `PARTITION BY COALESCE(serial_key, id)` puts every null-key wake in its own
 partition (no lane); `lane_rank = 1` enforces one-per-key-per-batch; the
 `NOT IN` subselect blocks a lane whose previous fire is still running.
-
-### Convex adapter (out-of-package, listed for the map)
-
-`convex/wakes.ts` (repo root) implements every port op as a
-service-token-guarded Convex function with the same lane semantics inside one
-Convex transaction, plus two extras the port doesn't have: `createWakeInTx`
-(create a wake atomically inside another mutation's transaction) and
-`createLaneWakeIfIdle` (state-aware "skip if a pending wake of this kind
-already holds the lane"). The thin client is
-`packages/claxedo-server/src/hosts/wakes/convex-wake-store.ts`.
 
 ## Drivers — the push path (`types.ts` `WakeDriver`)
 
@@ -236,16 +226,6 @@ on by default under `bun run dev` via `CLAXEDO_WAKES`): SQLite store,
 the four tools exposed per-turn, `wakes` returned for the channels/webhook
 layer (`deliverEvent`/`resolve`).
 
-**Hosted WorkGraph settlement** (`packages/claxedo-server/src/hosts/wakes/`,
-staging-only via `CLAXEDO_WAKES_SETTLEMENT=1`): wakes is the *doorbell*, the
-lease/epoch-fenced outbox in Convex stays the truth. Per command burst, one
-dirty-flag wake per tenant (`kind: workgraph_settle`, `serialKey` = tenant,
-`fireAt: now`; created via the state-aware `createLaneWakeIfIdle`, NOT an
-idempotency key — see sharp edges). The sink (`hosted-wakes.ts`) runs the
-tenant-scoped reconcile and converts "still provisioning, retry in Nms"
-results into durable retry wakes on the same lane. Staging latency proof:
-release run 29559022315 (placement <10s, deletion <20s through this path).
-
 ## Guarantees and failure semantics
 
 - **Never early; close-to-on-time normally; late-but-never-lost worst case.**
@@ -257,13 +237,13 @@ release run 29559022315 (placement <10s, deletion <20s through this path).
   storage/config; nothing in-memory is load-bearing.
 - Multi-machine/multi-region → safe because ALL coordination is the store's
   atomic claim + CAS and the DO's single-location guarantee; runners can race
-  freely. Multi-machine requires a shared store (Convex; SQLite is one box).
+  freely. Multi-machine requires a shared store (SQLite is one box).
 
 ## Sharp edges (the load-bearing ones; full list in the README)
 
 1. **Idempotency keys dedup forever** — including against `fired` rows. They
    protect retried creates; they cannot express "at most one pending per
-   lane." Use a state-aware create (as settlement does) for that.
+   lane." Use a state-aware create for that.
 2. **Lanes bind time-triggered claims only** — `deliverEvent`/`resolve` fire
    through the CAS without lane queuing.
 3. **A throwing wake aborts the rest of its `runDue` pass** — by design
@@ -274,9 +254,6 @@ release run 29559022315 (placement <10s, deletion <20s through this path).
    today.
 5. **`gc()` has no caller yet** on either deployment; terminal rows
    accumulate until it's wired to a periodic lane.
-6. **The Convex adapter is proven by an in-memory mirror**
-   (`convex-wake-store.test.ts`) plus the staging smoke — the mirror and
-   `convex/wakes.ts` must be changed together or they drift silently.
 
 ## Extension recipes
 

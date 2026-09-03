@@ -107,7 +107,7 @@ export type WorkspaceRelayAuthOptions = {
    * raw JWT codepath.
    *
    * This is the seam downstream users plug their own auth backend
-   * through (Clerk-issued tokens, OIDC introspection, custom keys, etc.).
+   * through (issuer-signed tokens, OIDC introspection, custom keys, etc.).
    * See `@claxedo/workspace-relay-protocol/token-verifier` for the
    * `HttpTokenVerifier` and `StaticTokenVerifier` reference impls.
    */

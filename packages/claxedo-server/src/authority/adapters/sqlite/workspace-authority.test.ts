@@ -357,8 +357,8 @@ describe("sqlite workspace authority", () => {
     const now = Date.now()
     database().prepare(`
       INSERT INTO orgs (
-        org_id, name, kind, owner_token_identifier, clerk_org_id, created_at, updated_at
-      ) VALUES ('org_team', 'Team', 'team', ?, 'org_provider_team', ?, ?)
+        org_id, name, kind, owner_token_identifier, created_at, updated_at
+      ) VALUES ('org_team', 'Team', 'team', ?, ?, ?)
     `).run(owner.user.tokenIdentifier, now, now)
     database().prepare(`
       INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
@@ -894,7 +894,7 @@ describe("sqlite workspace authority store transactions", () => {
 })
 
 describe("default local composition", () => {
-  test("local mode uses SQLite even when an ambient Convex URL is configured", async () => {
+  test("local mode uses SQLite even when an ambient the authority URL is configured", async () => {
     const previous = {
       dataDir: process.env.CLAXEDO_DATA_DIR,
       deploymentMode: process.env.CLAXEDO_DEPLOYMENT_MODE,
@@ -911,7 +911,7 @@ describe("default local composition", () => {
       const services = createDefaultLocalControlPlaneServices()
       try {
         // Local trust owns local storage. A stale hosted-development URL must not
-        // turn the offline desktop/server into a Convex client.
+        // turn the offline desktop/server into an authority client.
         expect(services.authority).toBeDefined()
         await expect(services.authority!.listWorkspaces(localControlPlaneAuth())).resolves.toEqual([])
       } finally {

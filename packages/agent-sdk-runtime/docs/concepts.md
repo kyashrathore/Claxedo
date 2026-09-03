@@ -309,8 +309,8 @@ const events = runtime.events.subscribe({ sessionId })
 await runtime.turns.start({ sessionId, text: "review this repo" })
 ```
 
-The host can expose that subscription over SSE, WebSocket, Convex, or another
-realtime system. The turn-start call is not the client-facing response stream.
+The host can expose that subscription over SSE, WebSocket, or another realtime
+system. The turn-start call is not the client-facing response stream.
 
 `AgentRuntimeEvent` is the canonical event model from
 `@claxedo/agent-event-runtime`.

@@ -3,7 +3,7 @@
 `@claxedo/mcp` is a bridge between an MCP client and a Claxedo runtime/server.
 It lets an agent running inside any MCP-compatible client call Claxedo runtime
 and control-plane APIs as tools: managed processes, logs, session messages,
-background session dispatch, documents, WorkGraph, and — when hosted inside the
+background session dispatch, documents, and — when hosted inside the
 Claxedo desktop app — browser panes.
 
 It does not run the workspace, start the agent harness, or replace
@@ -98,10 +98,10 @@ Tools use one of two request scopes:
   tools resolve a project directory (from `directory`/`workspace_id` args, or the
   `OPENCODE_API_DIR` / `CLAXEDO_WORKSPACE_ID` defaults) and pass it to the server
   as an `x-opencode-directory` header plus query string.
-- **Owner scope** — `workgraph_*` tools call the authenticated northbound
-  WorkGraph HTTP contract with no directory selector. The server derives the
+- **Owner scope** — `cloud_workspace_*` tools address a cloud workspace by
+  `workspace_id` and send no project directory. The server derives the
   organization and user from trusted request context; the MCP never sends a
-  tenant selector, and the WorkGraph tools reject any `owner`/`org`/`user`-style
+  tenant selector, and these tools accept no `owner`/`org`/`user`-style
   argument.
 
 ## Environment Variables
@@ -116,7 +116,7 @@ workspaces, signed remote servers, and desktop-hosted browser tools.
 | `CLAXEDO_AUTH_TOKEN` | Optional bearer token sent as `Authorization: Bearer …` on every server request. Set only when pointing the MCP at a signed remote Claxedo server. |
 | `OPENCODE_API_DIR` | Default local project directory for workspace-scoped requests. |
 | `CLAXEDO_WORKSPACE_ID` | Default workspace id for Docker/cloud workspace requests. |
-| `CLAXEDO_REPOSITORY_URL` | Optional repository URL override used when `spawn_session`/WorkGraph creation resolves a hosted workspace's Git remote. |
+| `CLAXEDO_REPOSITORY_URL` | Optional repository URL override used when `spawn_session` resolves a hosted workspace's Git remote. |
 | `CLAXEDO_SESSION_ID` | Optional current session id used by `documents_open` and the documents CLI for the per-project local file grant. |
 | `CLAXEDO_TERMINAL_ID` | Default terminal id for `get_logs`, `session_messages`, and `summarize_logs` when no id is passed. Set automatically inside a Claxedo terminal. |
 | `CLAXEDO_TAB_ID` | Fallback tab id for `session_messages` when a terminal id is unavailable. |
@@ -128,7 +128,7 @@ Local Claxedo usage relies on the app's loopback trust boundary. The curated
 marketplace install does not receive a Claxedo user token, JIT token, or broker
 token. Set `CLAXEDO_AUTH_TOKEN` only when intentionally pointing the MCP server
 at a signed remote Claxedo server, and treat remote `CLAXEDO_SERVER_URL` values
-as privileged: the MCP sends log, process, session, document, WorkGraph, and
+as privileged: the MCP sends log, process, session, document, and
 browser-control requests to that origin, plus any configured bearer token.
 
 ### Browser tools require the desktop app
@@ -154,7 +154,7 @@ always report the desktop bridge as unavailable.
 
 Full-control mode is the default. It registers every tool, including process
 mutation, background session dispatch, log summarization through a temporary
-agent session, WorkGraph mutations, browser navigation, and browser JavaScript
+agent session, browser navigation, and browser JavaScript
 evaluation.
 
 Read-only mode is selected with either of:
@@ -173,9 +173,6 @@ Read-only mode omits every mutating tool:
 - `summarize_logs`
 - `browser_evaluate_js`
 - `browser_navigate`
-- every mutating `workgraph_*` tool (creation, execution, admission, decision,
-  lifecycle, source-view configuration, intake staging, session binding, and so
-  on)
 
 Read-only mode keeps the non-mutating surface:
 
@@ -186,16 +183,10 @@ Read-only mode keeps the non-mutating surface:
 - `browser_list_tabs`
 - `browser_screenshot`
 - `browser_get_console_logs`
-- the read-only `workgraph_*` tools: `workgraph_get_defaults`,
-  `workgraph_execution_capabilities`, `workgraph_attention`, `workgraph_list`,
-  `workgraph_get`, `workgraph_source_revision`, `workgraph_source_views`,
-  `workgraph_intake`, `workgraph_get_candidate`, `workgraph_evidence`,
-  `workgraph_attempts`, and `workgraph_activity`
 
-Note that `documents_open` and the WorkGraph read tools stay available in
-read-only mode even though they perform a single side effect on the server
-(granting a session-scoped file path, or reading owner-scoped records); they are
-observation tools, not workspace or WorkGraph mutations.
+Note that `documents_open` stays available in read-only mode even though it
+performs a single side effect on the server (granting a session-scoped file
+path); it is an observation tool, not a workspace mutation.
 
 ## Tool Surface
 
@@ -222,38 +213,6 @@ mode, browser tools functional only under the desktop app).
 `documents_open` requires a session id — from the `session_id` argument or the
 `CLAXEDO_SESSION_ID` default — because it grants a session-owned path.
 
-### WorkGraph tools
-
-The `workgraph_*` family is the owner-scoped surface for organizing and
-executing the authenticated user's AI work: personal defaults, live execution
-capabilities, Attention, Streams/Outcomes/Work Items/Attempts, Work Sources and
-exact revisions, admission proposals, Decisions, evidence, issue Source Views,
-and intake candidates. WorkGraph calls use authenticated owner scope
-independently of the process workspace selection.
-
-Read tools map to dedicated GET routes; most mutations post to the single
-WorkGraph command bus:
-
-| Kind | MCP tools | Routes they call |
-| --- | --- | --- |
-| Read defaults / capabilities | `workgraph_get_defaults`, `workgraph_execution_capabilities` | `GET /api/workgraph/defaults`, `GET /api/workgraph/execution-capabilities` |
-| Read work | `workgraph_attention`, `workgraph_list`, `workgraph_get`, `workgraph_source_revision`, `workgraph_attempts`, `workgraph_activity`, `workgraph_evidence` | `GET /api/workgraph/attention`, `GET /api/workgraph/snapshot`, `GET /api/workgraph/sources[/{id}[/revisions/{rev}]]`, `GET /api/workgraph/streams|work-items|attempts|proposals|decisions/{id}`, `GET /api/workgraph/work-items/{id}/{attempts,activity}`, `GET /api/workgraph/evidence[/{id}]` |
-| Issue Source Views | `workgraph_source_views`, `workgraph_configure_source_view`, `workgraph_update_source_view`, `workgraph_delete_source_view`, `workgraph_refresh_source_view` | `GET/POST/PUT/DELETE /api/workgraph/source-views[/{id}[/refresh]]` |
-| Intake candidates | `workgraph_intake`, `workgraph_get_candidate`, `workgraph_stage_candidate`, `workgraph_update_candidate`, `workgraph_sync_candidate` | `GET /api/workgraph/intake[/{id}]`, `POST /api/workgraph/intake/{id}/{stage,dismiss,restore,sync}` |
-| Refresh capabilities | `workgraph_refresh_execution_capabilities` | `POST /api/workgraph/execution-capabilities/refresh` |
-| Everything else (create, update, execute, admit, retry, cancel, lifecycle, findings, decisions, evidence, close, delete, update defaults) | `workgraph_create_*`, `workgraph_update`, `workgraph_execute`, `workgraph_admit`, `workgraph_propose_admission`, `workgraph_review_proposal`, `workgraph_retry`, `workgraph_cancel_work`, `workgraph_cancel`, `workgraph_pause`, `workgraph_stream_lifecycle`, `workgraph_record_finding`, `workgraph_record_evidence`, `workgraph_decision`, `workgraph_close`, `workgraph_delete`, `workgraph_update_defaults`, `workgraph_update_execution`, `workgraph_create_followup`, `workgraph_source` | `POST /api/workgraph/commands` |
-
-Session-context tools — `workgraph_bind_session`, `workgraph_current_work`,
-`workgraph_select_work`, `workgraph_record_progress`,
-`workgraph_refresh_context`, `workgraph_complete_current_work`, and
-`workgraph_release_session` — require a trusted embedded Session context. A
-standalone stdio client has no such context, so these tools return a
-`session_attachment_denied` error there; they are exercised by local Claxedo
-agent Sessions that register the same schemas through the embedded application-
-tool registry. Never supply an owner identity, workspace selector, or
-credentials to any WorkGraph tool. See `skills/workgraph/SKILL.md` for the
-current vocabulary.
-
 ### Browser tools (desktop-hosted only)
 
 All five route through the desktop bridge (see
@@ -274,8 +233,8 @@ Bridge paths are relative to `CLAXEDO_DESKTOP_URL`.
 start, stop, restart, or bulk-control long-running commands. `spawn_session`
 creates a background control-plane session and can dispatch an initial prompt.
 `summarize_logs` creates a temporary Claxedo session and sends log text to the
-configured runtime/model — logs can contain secrets or customer data. WorkGraph
-mutations reorganize and execute the owner's work. `browser_navigate` changes
+configured runtime/model — logs can contain secrets or customer data.
+`browser_navigate` changes
 the page in a browser pane, and `browser_evaluate_js` runs arbitrary JS in a
 pane the user explicitly opted in. Treat all of these as active permissions:
 prefer an MCP client that shows tool calls before execution, and pair
@@ -293,10 +252,9 @@ claxedo-mcp documents open 'claxedo://document/<id>' --session '<session-id>'
 
 `OPENCODE_API_DIR` and `CLAXEDO_SESSION_ID` (or `--directory`/`--project` and
 `--session`) provide the default project and session. The published package
-includes `skills/claxedo-documents/SKILL.md` and `skills/workgraph/SKILL.md` so
-agent-extension installation can teach supported harnesses to resolve compact
-document references and use the WorkGraph vocabulary instead of copying absolute
-paths or inventing owner identities.
+includes `skills/claxedo-documents/SKILL.md` so agent-extension installation can
+teach supported harnesses to resolve compact document references instead of
+copying absolute paths.
 
 ## Example Payloads
 
@@ -351,26 +309,11 @@ Tail process logs:
 }
 ```
 
-Read work needing owner attention:
-
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 4,
-  "method": "tools/call",
-  "params": {
-    "name": "workgraph_attention",
-    "arguments": { "limit": 20 }
-  }
-}
-```
-
 ## Grounding
 
 Implemented in:
 
 - `packages/claxedo-mcp/src/server.ts`
-- `packages/claxedo-mcp/src/workgraph-tools.ts`
 - `packages/claxedo-mcp/src/documents-tools.ts`
 - `packages/claxedo-mcp/src/documents-cli.ts`
 - `packages/claxedo-mcp/src/desktop-request.ts`

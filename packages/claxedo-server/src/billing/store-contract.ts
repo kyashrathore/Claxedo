@@ -20,7 +20,7 @@ export type ApplyPolarStateResult = {
   unresolved: string[]
 }
 
-export type EntitlementStateRef = { orgId?: string; clerkOrgId?: string }
+export type EntitlementStateRef = { orgId?: string; providerOrgId?: string }
 
 export type EntitlementState =
   | { found: false }
@@ -39,7 +39,7 @@ export type EntitlementState =
 
 export type CheckoutContext = {
   org_id: string
-  clerk_org_id?: string
+  provider_org_id?: string
   role?: string
   member_count: number
   plan?: "free" | "pro"
@@ -51,7 +51,7 @@ export type CheckoutContext = {
 export type BillingStore = {
   entitlementState(ref: EntitlementStateRef): Promise<EntitlementState>
   applyPolarState(args: ApplyPolarStateArgs): Promise<ApplyPolarStateResult>
-  checkoutContext(userToken: string, clerkOrgId?: string): Promise<CheckoutContext>
+  checkoutContext(userToken: string, providerOrgId?: string): Promise<CheckoutContext>
   listReconcileFlagged(): Promise<Array<{ org_id: string; polar_customer_id: string }>>
   listDeletedWithSubscription(): Promise<
     Array<{ org_id: string; polar_customer_id: string; polar_subscription_id: string }>

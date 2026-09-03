@@ -21,7 +21,6 @@ function posture(overrides: Partial<SelfHostedPosture> = {}): SelfHostedPosture 
     deploymentMode: "local",
     embeddedAuth: true,
     authority: true,
-    sqliteAuthority: true,
     localExecution: true,
     ...overrides,
   }
@@ -41,14 +40,9 @@ describe("assertSelfHostedPosture", () => {
     expect(() => assertSelfHostedPosture(posture({ deploymentMode: "hosted" }))).toThrow(SelfHostedCompositionError)
   })
 
-  test("rejects a remote workspace authority", () => {
-    // A single-tenant deployment writing into someone else's control plane.
-    expect(() => assertSelfHostedPosture(posture({ sqliteAuthority: false }))).toThrow(/not the local SQLite one/)
-  })
-
-  test("distinguishes no authority from the wrong authority", () => {
-    // Different fixes: one is a missing composition, the other is a wrong URL.
-    expect(() => assertSelfHostedPosture(posture({ authority: false, sqliteAuthority: false }))).toThrow(
+  test("rejects a missing workspace authority", () => {
+    // A composition that built no authority at all.
+    expect(() => assertSelfHostedPosture(posture({ authority: false }))).toThrow(
       /no workspace authority is composed/,
     )
   })
@@ -86,7 +80,6 @@ describe("assertSelfHostedPosture", () => {
         deploymentMode: "hosted",
         embeddedAuth: false,
         authority: false,
-        sqliteAuthority: false,
         localExecution: false,
       })
     } catch (error) {

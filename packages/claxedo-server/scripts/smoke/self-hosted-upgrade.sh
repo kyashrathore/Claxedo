@@ -85,7 +85,7 @@ materialize_old_tree() {
   # them through package exports, so a missing dist is a boot-time
   # ERR_MODULE_NOT_FOUND rather than a type error. workspace-runtime is last
   # because its declaration emit reads the others' dist/*.d.ts.
-  for pkg in agent-extensions agent-event-runtime agent-sdk-runtime workgraph \
+  for pkg in agent-extensions agent-event-runtime agent-sdk-runtime \
              workspace-relay-protocol workspace-relay sandbox-manager wakes \
              claxedo-connections claxedo-channels claxedo-mcp workspace-runtime; do
     (cd "$OLD_TREE/packages/$pkg" && bun run build) >/dev/null 2>&1 \
@@ -226,7 +226,7 @@ step "third-party dependency drift between $OLD_REF and HEAD"
 # adds packages — so only non-workspace lockfile lines are compared.
 drift="$(git -C "$repo" diff "$OLD_REF..HEAD" -- bun.lock \
   | grep -E '^[+-]' | grep -v '^[+-][+-]' \
-  | grep -E '^\-' | grep -vE 'claxedo|workgraph|workspace-runtime|workspace-relay|agent-|opencode|wakes|sandbox-manager' || true)"
+  | grep -E '^\-' | grep -vE 'claxedo|workspace-runtime|workspace-relay|agent-|opencode|wakes|sandbox-manager' || true)"
 [ -z "$drift" ] || skip "third-party dependencies changed between $OLD_REF and HEAD, so the old tree cannot share this tree's" \
                         "package store; re-run after a real install in the old worktree. Cross-version upgrade is UNVERIFIED."
 echo "  ok  no third-party version drift; the old tree may share this tree's package store"

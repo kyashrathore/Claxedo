@@ -110,7 +110,7 @@ export type BetterAuthD1UserDeployedComposition = {
 }
 
 /**
- * Certified user-deployed Better Auth + D1 selection. No Clerk/Convex fallback
+ * Certified user-deployed Better Auth + D1 selection. No hosted-provider fallback
  * exists. Full-hosted remains unavailable until D1 has a durable sandbox lease
  * store; the supported control-plane-only path contains no sandbox provider.
  */

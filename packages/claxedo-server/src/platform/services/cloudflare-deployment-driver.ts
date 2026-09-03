@@ -119,14 +119,11 @@ function requireResources(
   if (serviceId === "documents" && (typeof bucketName !== "string" || !bucketName)) {
     throw new Error("Documents provisioning did not persist its R2 bucket")
   }
-  if (serviceId === "workgraph" && bucketName !== undefined) {
-    throw new Error("WorkGraph provisioning unexpectedly owns an R2 bucket")
-  }
   return Object.freeze({ databaseId, ...(typeof bucketName === "string" ? { bucketName } : {}) })
 }
 
 /**
- * Production lifecycle driver shared by the two first-party Cloudflare
+ * Production lifecycle driver for the first-party Cloudflare optional
  * services. Resource/release/safety ports are deliberately capability split:
  * the install identity cannot be replaced with a user or service credential.
  */
@@ -138,9 +135,6 @@ export class CloudflareOptionalServiceDeploymentDriver implements OptionalServic
     required(input.workerName, "workerName")
     required(input.databaseName, "databaseName")
     if (input.serviceId === "documents") required(input.bucketName ?? "", "bucketName")
-    if (input.serviceId === "workgraph" && input.bucketName !== undefined) {
-      throw new Error("WorkGraph driver cannot own a Documents bucket")
-    }
   }
 
   applyLifecycle(request: ServiceLifecycleMutationRequest): Promise<ServiceLifecycleMutationResponse> {

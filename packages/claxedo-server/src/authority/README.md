@@ -2,15 +2,16 @@
 
 The Control Plane is `claxedo-server`'s authority layer. It owns:
 
-- `@claxedo/server-core/platform/auth/auth` — Clerk JWT verification through
-  `@claxedo/workspace-relay-protocol/createClerkTokenVerifier`,
-  `controlPlaneAuthContext()`, `tokenVerifierAsClerk()` adapter (P-shared.2)
+- `@claxedo/server-core/platform/auth/auth` — issuer JWT verification through
+  `@claxedo/workspace-relay-protocol/createTokenVerifier`,
+  `controlPlaneAuthContext()`, and the `tokenVerifier()` adapter (P-shared.2)
 - `@claxedo/server-core/platform/auth/authority` — the neutral `WorkspaceAuthority` port (typed capability for
   workspace, project, session, and org operations) plus `requireAuthority()`
-- `adapters/convex/*` — Claxedo's Convex-backed implementation of the authority
+- `adapters/d1/*` — Claxedo's D1-backed implementation of the authority
   port; the only control-plane files permitted to name the storage backend
-- `adapters/worker/hosted-compose.ts` — Worker-side authority/lease composition
-  adapter (the single hosted composition module allowed to reach Convex)
+- `adapters/worker/better-auth-d1-compose.ts` — Worker-side authority/lease
+  composition adapter (the single hosted composition module allowed to reach
+  the storage backend)
 - ``@claxedo/server-core/platform/auth/runtime-access-token`` — RAT minting / verification
 - `services.ts` — composition bag for projection and durable storage, the auth
   adapter, credentials, extension policy, relay, sandbox management, telemetry,
@@ -20,16 +21,16 @@ The Control Plane is `claxedo-server`'s authority layer. It owns:
 
 ## Plugging in a custom token verifier (P-shared.2)
 
-The Clerk-backed default works for hosted Claxedo deployments. Self-
+The Better Auth default works for hosted Claxedo deployments. Self-
 hosted setups can swap it out via the unified
 [`TokenVerifier`](../../../workspace-relay-protocol/src/token-verifier.ts)
-interface and the `tokenVerifierAsClerk()` adapter:
+interface and the `tokenVerifier()` adapter:
 
 ```ts
 import { createStaticTokenVerifier } from "@claxedo/workspace-relay-protocol"
 import {
   controlPlaneAuthContext,
-  tokenVerifierAsClerk,
+  tokenVerifier,
 } from "./auth"
 
 const myVerifier = createStaticTokenVerifier({
@@ -52,13 +53,13 @@ const myVerifier = createStaticTokenVerifier({
 })
 
 const ctx = await controlPlaneAuthContext(req, {
-  verifier: tokenVerifierAsClerk(myVerifier),
+  verifier: tokenVerifier(myVerifier),
 })
 ```
 
 The adapter trusts your verifier to enforce issuer / audience / expiry
 itself; it carries through `sub`, `iss`, `aud`, `azp`, and `org_id`
-onto the existing `VerifiedClerkAuth` shape so downstream
+onto the existing `Verifiedthe identity providerAuth` shape so downstream
 `projection-store` / authority readers are unchanged.
 
 ## Seam vs `workspace-relay`

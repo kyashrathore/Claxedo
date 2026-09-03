@@ -138,7 +138,6 @@ build_dist_packages() {
     --filter=@claxedo/sandbox-contract \
     --filter=@claxedo/sandbox-manager \
     --filter=@claxedo/wakes \
-    --filter=@claxedo/workgraph \
     --filter=@claxedo/workspace-relay-protocol \
     --filter=@claxedo/workspace-relay \
     --filter=@claxedo/workspace-runtime
@@ -306,10 +305,10 @@ run_e2e_core() {
   local shard=${1:?e2e-core requires a shard number}
   local total=${2:?e2e-core requires a shard count}
   prepare_e2e
-  # Core discovery imports the shared real-WorkGraph harness even when its
-  # tagged tests are excluded. Materialize the app/server native dependency
-  # graph before Playwright loads those modules; a root-only Bun install does
-  # not expose better-sqlite3 from a fresh generic AWS image.
+  # Core discovery imports server-side harness modules even when their tagged
+  # tests are excluded. Materialize the app/server native dependency graph
+  # before Playwright loads those modules; a root-only Bun install does not
+  # expose better-sqlite3 from a fresh generic AWS image.
   install_app_server_native_dependencies
   (
     cd packages/claxedo-app
@@ -322,12 +321,11 @@ run_e2e_core() {
   )
 }
 
-run_e2e_workgraph() {
+run_e2e_onboarding() {
   prepare_e2e
   install_app_server_native_dependencies
   (
     cd packages/claxedo-app
-    CLAXEDO_E2E_SERVE_MODE=build-preview bun run test:e2e:workgraph
     CLAXEDO_E2E_SERVE_MODE=build-preview \
     PLAYWRIGHT_VIDEO=0 \
     VITE_AUTH_ENABLED=true \
@@ -418,12 +416,6 @@ run_e2e_tier_real() {
   )
 }
 
-run_e2e_workgraph_journey() {
-  install_root
-  build_dist_packages
-  (cd packages/claxedo-app && bun run test:e2e:journey)
-}
-
 run_packages_dry_run() {
   install_root
   (
@@ -459,12 +451,11 @@ case "$LANE" in
   unit-linux) run_unit ;;
   typecheck-linux) run_typecheck ;;
   e2e-core) run_e2e_core "$@" ;;
-  e2e-workgraph) run_e2e_workgraph ;;
+  e2e-onboarding) run_e2e_onboarding ;;
   e2e-tier-real) run_e2e_tier_real ;;
   e2e-tier-real-scenario) run_e2e_tier_real_scenario "$@" ;;
   e2e-tier-real-web) run_e2e_tier_real_web ;;
   e2e-tier-real-web-target) run_e2e_tier_real_web_target "$@" ;;
-  e2e-workgraph-journey) run_e2e_workgraph_journey ;;
   packages-dry-run) run_packages_dry_run ;;
   relay-bench) run_relay_bench ;;
   storybook) run_storybook ;;

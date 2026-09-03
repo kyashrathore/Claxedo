@@ -109,7 +109,7 @@ export function initClaxedo(config: ClaxedoConfig): void {
 
   // Starting the identity provider is NOT this function's job.
   //
-  // It used to be, and that put Clerk in the import graph of every build that
+  // It used to be, and that put the identity provider in the import graph of every build that
   // calls `initClaxedo` — including the local one, which can never sign in.
   // Guarding it behind `config.authEnabled` did not help: the branch not
   // running does not remove the module from the bundle. Making it a dynamic
@@ -121,13 +121,13 @@ export function initClaxedo(config: ClaxedoConfig): void {
   if (config.loadHostedContributions) contributions.expectHosted()
 
   if (config.authEnabled && config.loadHostedContributions) {
-    // Hosted composition: WorkGraph and Documents arrive as one lazily
+    // Hosted composition: Documents arrives as one lazily
     // imported contribution set rather than as static imports of this entry.
     //
     // `expectHosted()` runs synchronously and `activateHosted` resolves later,
-    // and the split matters: restored-state pruning must know that WorkGraph
+    // and the split matters: restored-state pruning must know that a hosted
     // tabs are legal in this build BEFORE the dynamic import lands, or a hosted
-    // reload would drop every restored WorkGraph tab in the gap.
+    // reload would drop every restored hosted tab in the gap.
     void contributions.activateHosted().catch(() => {})
   }
 }

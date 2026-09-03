@@ -628,8 +628,8 @@ describe("control plane HTTP protocol", () => {
     } as never
     const authConfig = {
       enabled: true,
-      issuer: "https://clerk.test",
-      jwksUrl: "https://clerk.test/jwks",
+      issuer: "https://issuer.test",
+      jwksUrl: "https://issuer.test/jwks",
     } as const
     const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
       mode: "signed",

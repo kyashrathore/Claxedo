@@ -177,7 +177,6 @@ jobs:
           --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
           --filter=@claxedo/workspace-relay-protocol
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
@@ -222,8 +221,7 @@ jobs:
       # app suite runs beside it. Turbo defaults to 10 parallel tasks; several
       # newly-wired suites assert on wall-clock behaviour (wakes' timer coalescing and
       # workspace-runtime's PTY byte forwarding) and fail their 5s timeouts
-      # when starved of CPU. WorkGraph's tests are temporarily filtered while
-      # that product area is paused.
+      # when starved of CPU.
       # Measured: at 21-way parallelism on a fast many-core dev machine those
       # three went red; serialized on the same machine, all three pass. A
       # 2-core runner at concurrency 10 is strictly worse. Serial Windows adds
@@ -236,9 +234,9 @@ jobs:
             concurrency=1
           fi
           if [[ "${{ needs.changes.outputs.full }}" == "true" ]]; then
-            bun turbo test --concurrency="$concurrency" --filter='!@claxedo/workgraph'
+            bun turbo test --concurrency="$concurrency"
           else
-            bun turbo test --affected --concurrency="$concurrency" --filter='!@claxedo/workgraph'
+            bun turbo test --affected --concurrency="$concurrency"
           fi
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
@@ -311,7 +309,6 @@ jobs:
           --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
           --filter=@claxedo/workspace-relay-protocol
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
@@ -330,7 +327,6 @@ jobs:
             packages/sandbox-contract/dist
             packages/sandbox-manager/dist
             packages/wakes/dist
-            packages/workgraph/dist
             packages/workspace-relay-protocol/dist
             packages/workspace-relay/dist
             packages/workspace-runtime/dist
@@ -532,7 +528,6 @@ jobs:
           --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
           --filter=@claxedo/workspace-relay-protocol
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
@@ -627,7 +622,6 @@ jobs:
           --filter=@claxedo/sandbox-contract
           --filter=@claxedo/sandbox-manager
           --filter=@claxedo/wakes
-          --filter=@claxedo/workgraph
           --filter=@claxedo/workspace-relay-protocol
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime

@@ -368,12 +368,12 @@ Primary files:
 - `packages/sandbox-manager/src/lease-types.ts`
 - `packages/sandbox-manager/src/checkpoint-manager.ts`
 - `packages/claxedo-server/src/sandbox-manager-adapters/stores/sqlite.ts`
-- `packages/claxedo-server/src/sandbox-manager-adapters/stores/convex.ts`
-- `convex/schema.ts`, `convex/sandboxLeases.ts`
+- `packages/claxedo-server/src/sandbox-manager-adapters/stores/d1.ts`, plus the
+  lease tables in the hosted control-plane D1 schema
 
 Tests: retention expiry deletes provider-side and lease-side together; deletion
 is idempotent; a checkpoint referenced by an in-flight restore is never reaped;
-lease-store equivalence across memory, SQLite, and Convex.
+lease-store equivalence across memory, SQLite, and D1.
 
 **Acceptance:** no code path can create a provider snapshot that nothing points
 at. A capture followed by expiry leaves zero provider-side residue, asserted
@@ -518,7 +518,7 @@ run as concurrent agents:
 |---|---|---|
 | portable-capture | `workspace-runtime/src/routes/checkpoint.ts`, `worktree.ts` | `drivers/*` |
 | resource-identity | `drivers/cloudflare.ts`, sandbox worker | `lease-types.ts` |
-| retention | lease stores, `convex/` | `workspace-runtime/*` |
+| retention | lease stores, control-plane schema | `workspace-runtime/*` |
 | scrub | `workspace/runtime.ts`, harness auth paths | `checkpoint-manager.ts` |
 | durability | `checkpoint-manager.ts` | everything else |
 

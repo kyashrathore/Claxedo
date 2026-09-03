@@ -285,7 +285,7 @@ export const HOSTED_OPERATIONS = {
   "team.members.add": {
     method: "POST",
     path: "/api/control/teams/:teamId/members",
-    body: ["tokenIdentifier", "clerkSubject", "userPublicId", "role"],
+    body: ["tokenIdentifier", "providerSubject", "userPublicId", "role"],
   },
   "team.members.remove": {
     method: "DELETE",
@@ -363,24 +363,6 @@ export const HOSTED_OPERATIONS = {
     method: "GET",
     path: "/documents/statuses",
     optionalQuery: ["project_id", "document_id", "directory", "archived"],
-  },
-  "workgraph.snapshot": {
-    method: "GET",
-    path: "/api/workgraph/snapshot",
-    optionalQuery: ["limit", "after"],
-  },
-  "workgraph.command": {
-    method: "POST",
-    path: "/api/workgraph/commands",
-    body: ["operationId", "command"],
-  },
-  // Wildcard suffix: caller passes `subpath` (no scheme, no `..`); see resolveHostedOperation.
-  "workgraph.read": { method: "GET", path: "/api/workgraph/*" },
-  // `httpMethod` selects POST|PUT|DELETE; `payload` is the JSON body object.
-  "workgraph.write": {
-    method: "POST",
-    path: "/api/workgraph/*",
-    body: ["payload"],
   },
   "session.create": {
     method: "POST",
@@ -508,7 +490,7 @@ export function resolveHostedOperation(
   if (!operation) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
 
   let method = operation.method
-  if (name === "workgraph.write" || name === "agentConfig.extensions.write") {
+  if (name === "agentConfig.extensions.write") {
     const requested = String(input.httpMethod ?? "POST").toUpperCase()
     if (requested !== "POST" && requested !== "PUT" && requested !== "DELETE") {
       throw new MissingOperationParameter(`operation "${name}" requires httpMethod POST|PUT|DELETE`)
@@ -524,7 +506,7 @@ export function resolveHostedOperation(
     }
     const suffix = subpath.replace(/^\//, "")
     // Empty subpath means the collection root (no trailing slash), used by
-    // agent-config extensions list/install. WorkGraph callers always pass a
+    // agent-config extensions list/install. Owner-scoped callers always pass a
     // non-empty relative path.
     path = suffix ? `${path.slice(0, -1)}${suffix}` : path.slice(0, -2)
   } else {
@@ -582,8 +564,8 @@ export function resolveHostedOperation(
     body.repo = { fullName: body.repoFullName }
     delete body.repoFullName
   }
-  // WorkGraph / agent-config writes pass an opaque JSON object as `payload`.
-  if (name === "workgraph.write" || name === "agentConfig.extensions.write") {
+  // agent-config writes pass an opaque JSON object as `payload`.
+  if (name === "agentConfig.extensions.write") {
     const payload = body.payload
     if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
       return Object.keys(headers).length > 0

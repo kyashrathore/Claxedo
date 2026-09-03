@@ -38,7 +38,6 @@ type WorkspaceScopeButtonsProps = {
   onNewSession?: () => void
   /** Opens the terminal creator; the header has no directory worth guessing. */
   onNewTerminalDraft?: () => void
-  onNewTask?: () => void
   onNewPage?: () => void
   canUseDocuments?: boolean
   onSettings?: () => void
@@ -55,7 +54,7 @@ function workspaceScopeCommands() {
 }
 
 export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
-  // Shown on global surfaces (WorkGraph, Marketplace, Global chat) too: there
+  // Shown on global surfaces (Marketplace, Global chat) too: there
   // is no workspace there, and asking for one is exactly what the creator does.
   const canCreateTerminal = () => props.canCreateTerminal !== false
   return (
@@ -70,20 +69,6 @@ export function WorkspaceScopeButtons(props: WorkspaceScopeButtonsProps) {
           <Icon name="plus-small" size="small" />
         </button>
       </Tooltip>
-
-      <Show when={props.onNewTask}>
-        <Tooltip value="New task">
-          <button
-            type="button"
-            class="flex size-6 shrink-0 items-center justify-center rounded-sm text-text-weak transition-colors hover:bg-surface-base-hover hover:text-text-base"
-            onClick={() => props.onNewTask?.()}
-            aria-label="New task"
-            data-testid="workspace-scope-new-task"
-          >
-            <Icon name="checklist" size="small" />
-          </button>
-        </Tooltip>
-      </Show>
 
       {/* One terminal button, and it asks before it starts anything. The
           header's directory is a fallback chain (`sidebarDir() ??

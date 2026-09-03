@@ -8,7 +8,7 @@ import type { RelayRole } from "@claxedo/workspace-relay"
  * A local route producer forwards a relay provider when the composition has
  * one; it never constructs one. Naming the type from the adapter module made
  * that forwarding reach the hosted internal-relay route and, through it, the
- * Convex authority — at compile time, for a field it only passes along.
+ * the hosted authority — at compile time, for a field it only passes along.
  *
  * The factory and its options stay in `@claxedo/server`, which is where the
  * hosted wiring lives.
@@ -74,7 +74,7 @@ export type RelayTarget = {
  * How a composition answers "where does this workspace's runtime live".
  *
  * The Node/local server injects a workspace-store-backed lookup; the hosted
- * Worker injects a Convex-backed one. The TYPE belongs here so that naming it
+ * Worker injects an authority-backed one. The TYPE belongs here so that naming it
  * — as the relay provider's options do — does not reach either implementation.
  */
 export type RelayTargetResult =

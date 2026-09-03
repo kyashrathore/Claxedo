@@ -43,8 +43,8 @@ afterAll(() => {
 
 const signedConfig: ControlPlaneAuthConfig = {
   enabled: true,
-  issuer: "https://example.clerk.dev",
-  jwksUrl: "https://example.clerk.dev/.well-known/jwks.json",
+  issuer: "https://example.issuer.dev",
+  jwksUrl: "https://example.issuer.dev/.well-known/jwks.json",
   audience: "claxedo-server",
 }
 
@@ -62,7 +62,7 @@ const verifier = async (token: string) => {
     user: {
       subject: owner.subject,
       tokenIdentifier: `${signedConfig.enabled ? signedConfig.issuer : ""}|${owner.subject}`,
-      issuer: "https://example.clerk.dev",
+      issuer: "https://example.issuer.dev",
       orgId: owner.orgId,
     },
   }

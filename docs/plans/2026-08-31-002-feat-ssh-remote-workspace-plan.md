@@ -22,7 +22,7 @@ The repository already represents “central brain, remote hands,” but only pa
 - `packages/claxedo-server/src/session/runtime.ts` persists that placement and binds the Pi harness to it.
 - `packages/claxedo-server/src/hosts/workspace-runtime/session-env.ts` maps tool operations to `/api/wr/session-env/*`.
 - Workspace Relay already routes user-hosted runtime traffic over an outbound host tunnel.
-- Hosted composition currently rejects every workspace-backed central session in `packages/claxedo-server/src/deployments/hosted-node/index.ts` because the session-env factory expects a concrete SQLite `Workspace` while hosted workspace authority lives in Convex.
+- Hosted composition currently rejects every workspace-backed central session in `packages/claxedo-server/src/deployments/hosted-node/index.ts` because the session-env factory expects a concrete SQLite `Workspace` while hosted workspace authority lives in the D1-backed control plane.
 - Existing `claxedo up` registration requires account-mediated calls on the serving machine and does not provide an SSH-first installation lifecycle.
 
 The feature therefore is not “run `ssh host command` for every tool.” It is to close the existing hosted hybrid-session seam and add a secure SSH bootstrapper for the already-defined user-hosted runtime architecture.
@@ -171,9 +171,8 @@ Runtime loss transitions `ready -> reconnecting -> offline`; enrollment revocati
 - Modify: `packages/claxedo-server/src/hosts/workspace-runtime/session-env.ts`
 - Create: `packages/claxedo-server/src/authority/session-env-runtime-requester.ts`
 - Modify: `packages/claxedo-server-core/src/platform/auth/authority.ts`
-- Modify: `packages/claxedo-server/src/authority/adapters/convex/workspace-authority/workspaces.ts`
+- Modify: `packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts`
 - Modify: `packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts`
-- Modify: `convex/workspaces.ts`
 - Modify: `packages/claxedo-server/src/deployments/hosted-node/index.ts`
 - Modify: `packages/claxedo-server/src/authority/http/runtime-transport.ts`
 - Test: `packages/claxedo-server/src/hosts/workspace-runtime/session-env.test.ts`
@@ -218,13 +217,11 @@ Runtime loss transitions `ready -> reconnecting -> offline`; enrollment revocati
 **Files:**
 - Modify: `packages/claxedo-server-core/src/platform/auth/authority.ts`
 - Modify: `packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts`
-- Modify: `packages/claxedo-server/src/authority/adapters/convex/workspace-authority/host-enrollment.ts`
-- Modify: `packages/claxedo-server/src/authority/adapters/convex/workspace-authority/api.ts`
-- Modify: `convex/hostEnrollments.ts`
+- Modify: `packages/claxedo-server/src/authority/adapters/d1/host-access-authority.ts`
 - Modify: `packages/claxedo-server/src/routes/hosted/host-enrollment.ts`
 - Modify: `packages/claxedo-server/src/deployments/hosted-shared/hosted-product-contract.test.ts`
 - Test: `packages/claxedo-server/src/routes/hosted/host-enrollment.parity.test.ts`
-- Test: `packages/claxedo-server/src/authority/adapters/convex/workspace-authority/host-enrollment.test.ts`
+- Test: `packages/claxedo-server/src/authority/adapters/d1/host-access-authority.test.ts`
 - Test: `packages/claxedo-server/src/authority/adapters/sqlite/host-enrollment.test.ts`
 
 **Approach:**
@@ -247,7 +244,7 @@ Runtime loss transitions `ready -> reconnecting -> offline`; enrollment revocati
 - **Error path:** Replayed, expired, wrong-host, wrong-key, malformed, and already-consumed challenges fail without minting a token.
 - **Error path:** A paused/revoked/expired enrollment cannot renew.
 - **Security:** A signed request that includes or implies a third workspace cannot expand the server-derived set.
-- **Integration:** Convex and SQLite routes return equivalent status and response shapes for every case.
+- **Integration:** The D1 and SQLite routes return equivalent status and response shapes for every case.
 
 **Verification:**
 - A headless host can maintain Relay liveness with only its private machine key; account credentials are absent from request bodies, runner state, and logs.
@@ -417,9 +414,8 @@ Runtime loss transitions `ready -> reconnecting -> offline`; enrollment revocati
 - Modify: `packages/claxedo-server/src/session/runtime.ts`
 - Modify: `packages/claxedo-server/src/central-runtime.ts`
 - Modify: `packages/claxedo-server-core/src/platform/auth/authority.ts`
-- Modify: `packages/claxedo-server/src/authority/adapters/convex/workspace-authority/sessions.ts`
+- Modify: `packages/claxedo-server/src/authority/adapters/d1/session-authority.ts`
 - Modify: `packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts`
-- Modify: `convex/sessions.ts`
 - Modify: `packages/claxedo-app/src/platform/runtime/agent/workspace-control-routes.ts`
 - Modify: `packages/claxedo-app/src/features/session/harness/harness-runtime-session-actions.ts`
 - Modify: `packages/claxedo-app/src/features/session/harness/harness-config-store.ts`
@@ -501,7 +497,7 @@ Runtime loss transitions `ready -> reconnecting -> offline`; enrollment revocati
 - **Interaction graph:** Project action -> app remote-host port -> desktop closed IPC -> OpenSSH/bootstrap protocol -> account-auth enrollment/workspace link -> remote machine-key lease -> Relay host tunnel -> Workspace Connection -> signed hybrid session creation -> central Pi -> SessionEnv -> remote Workspace Runtime.
 - **Error propagation:** Bootstrap errors return finite setup stages; steady-state runner/Relay errors flow through existing workspace connection status; tool-operation errors flow through SessionEnv into the active turn. No layer converts an unavailable remote workspace into successful virtual execution.
 - **State lifecycle risks:** Partial install, enrollment without link, link without activation, stale config revision, duplicate retries, token expiry during reconnect, central restart, and revoke racing renewal must all have explicit idempotent transitions. The control plane owns workspace/link/enrollment truth; desktop owns SSH profiles; remote runner owns machine key/runtime process state; the app owns only presentation and connection projection.
-- **API surface parity:** Convex and SQLite authority adapters must remain behaviorally identical. Desktop gets the SSH bootstrap port; web intentionally has no equivalent. Existing self-hosted HTTP machine-publication behavior remains unchanged.
+- **API surface parity:** The D1 and SQLite authority adapters must remain behaviorally identical. Desktop gets the SSH bootstrap port; web intentionally has no equivalent. Existing self-hosted HTTP machine-publication behavior remains unchanged.
 - **Integration coverage:** Unit tests cannot prove artifact upload, OS service survival, Relay routing, or central-to-remote filesystem mutation; Unit 7 owns these public-boundary proofs.
 - **Unchanged invariants:** `SessionEnv` remains the only agent tool-placement contract; Workspace Runtime remains the command/file authority; Relay remains outbound-only for user-hosted machines; `user-hosted` remains the inventory kind; SSH private keys remain owned by OpenSSH; `workspace-connection.ts` remains the sole liveness writer.
 

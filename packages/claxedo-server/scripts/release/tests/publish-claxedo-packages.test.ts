@@ -18,8 +18,8 @@ import { runtimePackages } from "../publish-runtime-packages"
 const repoRoot = path.resolve(import.meta.dirname, "../../../../..")
 
 describe("publish-claxedo-packages", () => {
-  test("covers exactly the 13 public packages, and `others` is the set the runtime script misses", () => {
-    expect(claxedoPackages).toHaveLength(13)
+  test("covers exactly the 12 public packages, and `others` is the set the runtime script misses", () => {
+    expect(claxedoPackages).toHaveLength(12)
     const runtimeNames = new Set(runtimePackages.map((item) => item.name))
     expect(selectPackages("runtime-family").map((item) => item.name).sort())
       .toEqual([...runtimeNames].sort())
@@ -30,7 +30,6 @@ describe("publish-claxedo-packages", () => {
       "@claxedo/sandbox-contract",
       "@claxedo/sandbox-manager",
       "@claxedo/wakes",
-      "@claxedo/workgraph",
     ])
   })
 
@@ -65,18 +64,18 @@ describe("publish-claxedo-packages", () => {
   })
 
   test("flags a stale cross-pin", () => {
-    const versions = new Map([["@claxedo/workgraph", "0.4.0"]])
-    expect(crossPinViolations({ dependencies: { "@claxedo/workgraph": "0.3.0", hono: "4.12.32" } }, versions))
-      .toEqual(["dependencies.@claxedo/workgraph=0.3.0 (expected 0.4.0)"])
-    expect(crossPinViolations({ dependencies: { "@claxedo/workgraph": "0.4.0" } }, versions)).toEqual([])
+    const versions = new Map([["@claxedo/wakes", "0.4.0"]])
+    expect(crossPinViolations({ dependencies: { "@claxedo/wakes": "0.3.0", hono: "4.12.32" } }, versions))
+      .toEqual(["dependencies.@claxedo/wakes=0.3.0 (expected 0.4.0)"])
+    expect(crossPinViolations({ dependencies: { "@claxedo/wakes": "0.4.0" } }, versions)).toEqual([])
   })
 
   test("separates breaking protocol specifiers from cosmetic devDependency ones", () => {
     expect(protocolSpecifiers({
-      dependencies: { "@claxedo/workgraph": "workspace:0.1.0" },
+      dependencies: { "@claxedo/wakes": "workspace:0.1.0" },
       devDependencies: { typescript: "catalog:" },
     })).toEqual({
-      breaking: ["dependencies.@claxedo/workgraph=workspace:0.1.0"],
+      breaking: ["dependencies.@claxedo/wakes=workspace:0.1.0"],
       cosmetic: ["devDependencies.typescript=catalog:"],
     })
   })
@@ -114,7 +113,7 @@ describe("publish-claxedo-packages", () => {
       }, null, 2))
     }
 
-    const alreadyPublished = new Set(["@claxedo/workgraph@9.9.9"])
+    const alreadyPublished = new Set(["@claxedo/wakes@9.9.9"])
     const makeRunner = (calls: string[][]) => (cmd: string, args: string[], cwd?: string) => {
       calls.push([cmd, ...args])
       // `tar` is exercised for real so the extraction path is covered.
@@ -152,14 +151,14 @@ describe("publish-claxedo-packages", () => {
     })
     expect(dryCalls.filter((call) => call[1] === "publish")).toHaveLength(0)
     expect(dryRun.filter((item) => item.action === "would-publish")).toHaveLength(targets.length - 1)
-    expect(dryRun.find((item) => item.name === "@claxedo/workgraph")?.action).toBe("skipped-already-published")
+    expect(dryRun.find((item) => item.name === "@claxedo/wakes")?.action).toBe("skipped-already-published")
 
     const calls: string[][] = []
     const result = await publishClaxedoPackages({ root, selector: "others", run: makeRunner(calls), log: () => {} })
     expect(result.map((item) => item.name).sort()).toEqual(targets.map((item) => item.name).sort())
     expect(calls.filter((call) => call[1] === "publish")).toHaveLength(targets.length - 1)
     expect(calls).not.toContainEqual([
-      "npm", "publish", "--workspace", "@claxedo/workgraph",
+      "npm", "publish", "--workspace", "@claxedo/wakes",
       "--access", "public", "--provenance", "--tag", "latest",
     ])
     expect(calls.filter((call) => call[1] === "run" && call[2] === "build")).toHaveLength(targets.length)
@@ -173,7 +172,7 @@ describe("publish-claxedo-packages", () => {
       fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({
         name: item.name,
         version: "9.9.9",
-        ...(item.name === "@claxedo/mcp" ? { dependencies: { "@claxedo/workgraph": "0.3.0" } } : {}),
+        ...(item.name === "@claxedo/mcp" ? { dependencies: { "@claxedo/wakes": "0.3.0" } } : {}),
       }, null, 2))
     }
     await expect(publishClaxedoPackages({

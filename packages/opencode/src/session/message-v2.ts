@@ -915,7 +915,7 @@ function hydrateSessionV2SurfaceCompatibilityRows(
 
 /**
  * The OpenCode compatibility API has two persisted message epochs:
- * legacy MessageV2 rows first, then Session V2 rows produced after a WorkGraph
+ * legacy MessageV2 rows first, then Session V2 rows produced after its
  * adoption. Every list shape uses this one read model. The opaque cursor records
  * both the epoch and its native position, so pagination cannot change stores
  * based on whether one query happened to be empty.

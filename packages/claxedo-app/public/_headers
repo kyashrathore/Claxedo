@@ -57,7 +57,7 @@
   # same-origin privileges).
   #
   # VALIDATED so far, by loading the production build in a real browser with
-  # exactly these headers applied: the SPA boots and renders, Clerk's bundled
+  # exactly these headers applied: the SPA boots and renders, the auth client's bundled
   # SDK loads and reaches its frontend API, WASM compiles on the main thread,
   # same-origin module workers and blob workers construct, and both inline
   # style attributes and runtime <style> injection work. Zero script-src
@@ -75,8 +75,8 @@
   #
   # PROMOTION CHECKLIST, in order: (1) point a report collector at this policy,
   # (2) run real traffic incl. sign-up (Turnstile), a workspace session, the
-  # terminal, and file review, (3) fold in whatever reports show — the Clerk
-  # avatar host and Clerk's frontend API are the two known unknowns, (4) narrow
+  # terminal, and file review, (3) fold in whatever reports show — the identity
+  # avatar host and the auth API are the two known unknowns, (4) narrow
   # connect-src/img-src off `https:`, (5) rename this header to
   # `Content-Security-Policy` in one deliberate, reviewable diff.
   Content-Security-Policy-Report-Only: default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; frame-ancestors 'self' https://claxedo.com https://www.claxedo.com; script-src 'self' 'wasm-unsafe-eval' https://*.i.posthog.com https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self'; media-src 'self' data: blob: https:; worker-src 'self' blob:; connect-src 'self' https: wss:; frame-src https:

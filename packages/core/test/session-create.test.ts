@@ -86,14 +86,14 @@ describe("SessionV2.create", () => {
       expect(
         yield* session.create({
           location: Location.Ref.make({ directory: location.directory, workspaceID }),
-          title: "Review the WorkGraph implementation",
+          title: "Review the router implementation",
           agent: AgentV2.ID.make("build"),
           model,
           tools: ["terminal", "browser"],
         }),
       ).toMatchObject({
         location: { directory: location.directory, workspaceID },
-        title: "Review the WorkGraph implementation",
+        title: "Review the router implementation",
         agent: "build",
         model,
         tools: ["terminal", "browser"],

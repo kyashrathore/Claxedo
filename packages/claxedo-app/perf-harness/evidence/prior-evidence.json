@@ -784,7 +784,7 @@
     {
       "id": "14",
       "action": "Split the desktop-local server from hosted server deployments and add the local renderer composition",
-      "reportedResult": "Landed on `dev`: Electron boots `@claxedo/local-server`; `@claxedo/server` retains hosted and self-hosted deployments; `app/entry/local.tsx` has a clean Clerk/Convex value-import closure; hosted content surfaces activate through a contribution seam",
+      "reportedResult": "Landed on `dev`: Electron boots `@claxedo/local-server`; `@claxedo/server` retains hosted and self-hosted deployments; `app/entry/local.tsx` has a clean identity-provider/backing-store value-import closure; hosted content surfaces activate through a contribution seam",
       "reportedIncrementalEffect": "No fresh native-footprint pair on the rebased candidate",
       "reportedContribution": "Establishes product-owned server closures and a measurable local renderer entry. The remaining renderer closure and packaged-resource gates are recorded below.",
       "classification": "accepted-foundation",

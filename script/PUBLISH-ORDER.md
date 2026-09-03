@@ -1,6 +1,6 @@
 # Publish order
 
-Dependency-ordered publish sequence for the 13 public `@claxedo/*` packages,
+Dependency-ordered publish sequence for the 12 public `@claxedo/*` packages,
 derived from the actual `dependencies` in each `packages/*/package.json`.
 
 - **Re-derived:** 2026-07-28
@@ -21,7 +21,7 @@ mistake that has actually bitten this repo.
 | Track | Packages | Previous | This release |
 |---|---|---|---|
 | runtime | `agent-event-runtime`, `agent-extensions`, `agent-sdk-runtime`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.6.0 | **0.7.0** |
-| apps | `channels`, `connections`, `mcp`, `workgraph` | 0.3.0 | **0.4.0** |
+| apps | `channels`, `connections`, `mcp` | 0.3.0 | **0.4.0** |
 | wakes | `wakes` | 0.2.0 | **0.3.0** |
 
 Each track moved a **minor** because at least one package on it added public
@@ -34,9 +34,7 @@ API since the previous publish:
   `workspaceStorageRoot` and eleven types (`docs/api-manifest.json` moved with
   it); `sandbox-manager` added the `./checkpoint-manager` and `./drivers/exe`
   export subpaths.
-- apps — `workgraph` added `drainReadyStreams` to the SQLite store and service
-  results and moved `better-sqlite3` 12.10.0 → 13.0.1 (a native-ABI major);
-  `mcp` registered a new cloud-workspace tool set.
+- apps — `mcp` registered a new cloud-workspace tool set.
 - wakes — `better-sqlite3` 12.10.0 → 13.0.1.
 
 Riding their track with no shipped-content change of their own:
@@ -55,8 +53,8 @@ Tier 0 — no @claxedo/* dependencies
   sandbox-contract
   channels
   connections
-  workgraph
   wakes
+  mcp
 
 Tier 1
   sandbox-manager    -> sandbox-contract
@@ -68,11 +66,6 @@ Tier 2
                         agent-event-runtime, workspace-relay,
                         workspace-relay-protocol
 
-Tier 3
-  workgraph          -> workspace-runtime
-
-Tier 4
-  mcp                -> workgraph
 ```
 
 `sandbox-manager` depends on the dependency-neutral `sandbox-contract`, while
@@ -91,7 +84,7 @@ Do not run `npm publish` by hand. Both paths below build, pack, inspect the
 real tarball, and skip any package whose exact version is already on the
 registry, so they are safe to re-run after a partial failure.
 
-### One command for all 13
+### One command for all 12
 
 ```bash
 # from the repo root
@@ -102,7 +95,7 @@ bun run --cwd packages/claxedo-server release:packages --track all
 `release:packages` reads each version from its `package.json` — there is no
 `--version` argument, because the bump is meant to be a reviewed commit rather
 than a number typed at release time. `--track` accepts `all`, `others`
-(the seven the runtime workflow does not cover), `runtime-family`, or a version
+(the six the runtime workflow does not cover), `runtime-family`, or a version
 track name (`runtime`, `apps`, `wakes`). `--packages a,b` selects by name or
 directory. `--tag` sets the dist-tag (default `latest`); `--no-provenance`
 disables provenance.
@@ -134,14 +127,14 @@ It refuses to publish when any of these is true, per package:
 ### Pre-publish gate
 
 ```bash
-script/publish-preflight.sh            # all 13
-script/publish-preflight.sh workgraph  # a subset, by packages/<dir> name
+script/publish-preflight.sh            # all 12
+script/publish-preflight.sh wakes      # a subset, by packages/<dir> name
 ```
 
 `publish-preflight.sh` is the **pre-publish** gate: on top of the checks above
 it fails when a package's local version already exists on npm (i.e. the bump is
 missing). That makes it wrong to run *after* a publish — the publisher's own
-npm-view check is the idempotent one. Expect 13/13 PASS immediately before a
+npm-view check is the idempotent one. Expect 12/12 PASS immediately before a
 release.
 
 ## Post-publish verification
@@ -160,7 +153,6 @@ for name in \
   @claxedo/channels \
   @claxedo/connections \
   @claxedo/wakes \
-  @claxedo/workgraph \
 ; do
   echo "$name -> $(npm view "$name" version 2>/dev/null || echo 'NOT FOUND')"
 done
@@ -178,7 +170,7 @@ not need to be invoked separately.
 
 ## Known issues, deliberately not fixed here
 
-- All 13 `LICENSE` files still read `Copyright (c) 2025 opencode`. Cosmetic,
+- All 12 `LICENSE` files still read `Copyright (c) 2025 opencode`. Cosmetic,
   and a call for the owner rather than the release tooling.
 - `packages/sandbox-manager/src/runtime-version.ts` pins
   `DEFAULT_WORKSPACE_RUNTIME_VERSION = "0.5.2"`, which is a **sandbox image

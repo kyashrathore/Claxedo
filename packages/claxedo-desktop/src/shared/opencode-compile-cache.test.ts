@@ -32,6 +32,10 @@ describe("compile cache key derivation", () => {
    *
    * The build regenerates this agreement on every run and fails loudly if node
    * changes the scheme; see scripts/build-opencode-compile-cache.ts.
+   *
+   * The `name` strings are VERBATIM recorded paths and are hashed as-is —
+   * including the historical worktree directory names in them. Editing one
+   * (to tidy a name, say) invalidates its recorded `entry` and fails here.
    */
   const recorded = [
     {

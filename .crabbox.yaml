@@ -172,13 +172,13 @@ jobs:
     command: bash script/cbx-ci-remote.sh e2e-core 12 12
     stop: auto
 
-  pr-e2e-workgraph-linux:
+  pr-e2e-onboarding-linux:
     provider: hetzner
     target: linux
     architecture: amd64
     serverType: cpx42
     shell: true
-    command: bash script/cbx-ci-remote.sh e2e-workgraph
+    command: bash script/cbx-ci-remote.sh e2e-onboarding
     stop: auto
 
   pr-e2e-tier-real-linux:
@@ -188,15 +188,6 @@ jobs:
     serverType: cpx42
     shell: true
     command: bash script/cbx-ci-remote.sh e2e-tier-real
-    stop: auto
-
-  pr-e2e-workgraph-journey-linux:
-    provider: hetzner
-    target: linux
-    architecture: amd64
-    serverType: cpx42
-    shell: true
-    command: bash script/cbx-ci-remote.sh e2e-workgraph-journey
     stop: auto
 
   pr-docs-links-linux:
@@ -296,9 +287,9 @@ jobs:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-core 12 12
 
-  pr-e2e-workgraph-linux-aws:
+  pr-e2e-onboarding-linux-aws:
     <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-workgraph
+    command: bash script/cbx-ci-remote.sh e2e-onboarding
   pr-e2e-tier-real-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-tier-real
@@ -314,9 +305,6 @@ jobs:
   focus-e2e-tier-real-web-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh e2e-tier-real-web
-  pr-e2e-workgraph-journey-linux-aws:
-    <<: *aws_linux_job
-    command: bash script/cbx-ci-remote.sh e2e-workgraph-journey
   pr-docs-links-linux-aws:
     <<: *aws_linux_job
     command: bash script/cbx-ci-remote.sh docs-links

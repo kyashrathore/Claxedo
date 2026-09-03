@@ -44,8 +44,8 @@ afterAll(async () => {
 
 const signedConfig: ControlPlaneAuthConfig = {
   enabled: true,
-  issuer: "https://example.clerk.dev",
-  jwksUrl: "https://example.clerk.dev/.well-known/jwks.json",
+  issuer: "https://example.issuer.dev",
+  jwksUrl: "https://example.issuer.dev/.well-known/jwks.json",
   audience: "claxedo-server",
 }
 
@@ -58,7 +58,7 @@ const unsignedLocalConfig: ControlPlaneAuthConfig = {
 const misconfiguredConfig: ControlPlaneAuthConfig = {
   enabled: false,
   mode: "misconfigured",
-  reason: "CLERK_JWT_ISSUER, CLERK_JWKS_URL, and CLAXEDO_WORKSPACE_AUTHORITY_URL are required for signed/cloud auth",
+  reason: "an issuer, a JWKS URL, and CLAXEDO_WORKSPACE_AUTHORITY_URL are required for signed/cloud auth",
 }
 
 describe("provider-auth gate (signed mode)", () => {
@@ -167,7 +167,7 @@ describe("provider-auth gate (unsigned local)", () => {
 
   test.each([
     ["the app's synthetic e2e token", "test-bypass-token"],
-    ["a stale Clerk session token", "eyJhbGciOiJSUzI1NiJ9.stale.signature"],
+    ["a stale session token", "eyJhbGciOiJSUzI1NiJ9.stale.signature"],
     ["an opaque garbage token", "not-a-real-jwt"],
   ])("a request carrying %s is served identically", async (_label, token) => {
     const app = mountProvider(unsignedLocalConfig)

@@ -13,16 +13,13 @@ The organizing decision, and the reason this plan is tractable:
 > request verifies, dedups, enqueues, and returns. A wake fires later and does
 > the provisioning, prompting, and replying.
 
-Everything below follows from that split. It is not a new pattern: hosted
-WorkGraph already runs this shape (`WakeLane` DO →
-`hosts/workgraph/hosted/runtime.ts` → sandbox + relay + prompt). This plan
-attaches channels to that seam rather than inventing a second one.
+Everything below follows from that split. It is not a new pattern: the hosted
+wake substrate already runs this shape (`WakeLane` DO → hosted runtime → sandbox
++ relay + prompt). This plan attaches channels to that seam rather than
+inventing a second one.
 
 Related: [`2026-07-07-002`](./2026-07-07-002-feat-self-host-hosted-parity-and-channel-loop.md)
-(self-host channel loop, the working reference implementation),
-[`2026-08-05-001`](./2026-08-05-001-feat-durable-agents-layer-plan.md) (durable
-agents; a channel turn is a turn, and Phase 3 here should not fork its wake-budget
-work).
+(self-host channel loop, the working reference implementation).
 
 ---
 
@@ -45,12 +42,12 @@ and the hosted Worker's `projectionStore` is
 Those entries are **the gate, not the obstacle**. They stay until the thing they
 describe is no longer true. `@claxedo/channels` core is Hono + pure logic and
 comes off `FORBIDDEN_BARE` only once nothing beneath it touches SQLite. The
-local `channels/*` entries stay forbidden **permanently** and gain Convex-backed
-siblings beside them.
+local `channels/*` entries stay forbidden **permanently** and gain
+control-plane-database-backed siblings beside them.
 
 ### Hosted execution is already real, sandboxed, and Worker-driven
 
-`hosts/workgraph/hosted/runtime.ts:380-500` provisions a cloud sandbox from
+The hosted runtime provisions a cloud sandbox from
 inside the Worker and prompts it over the relay: `manager` /
 `provider.mintRuntimeAccessToken` / `provider.getRelayEndpoint`, then
 `POST /api/session` with `location: { directory: "/workspace" }` (`:406-418`)
@@ -60,29 +57,28 @@ reuses this path with a channel trigger.
 The `central_hybrid_virtual_tools_only` throw in
 `deployments/hosted-node/index.ts:71-80` is scoped to a different composition —
 the `createEnv`/`SessionEnv` seam of the **in-process central runtime**, which
-has no signed-auth context and so cannot resolve a Convex workspace. The Worker
+has no signed-auth context and so cannot resolve a hosted workspace. The Worker
 path never reaches that seam, and this plan is not constrained by it.
 
 ### Already built, reusable as-is
 
-- **Hosted channel *authorization*.** `convex/channelIdentities.ts` +
-  `convex/schema.ts:260` (`channel_identities`), reached through
-  `adapters/convex/workspace-authority/identity.ts:50-80`
+- **Hosted channel *authorization*.** The `channel_identities` table, reached
+  through the workspace-authority identity adapter
   (`authorizeChannelProject` / `authorizeChannelWorkspace`). Done.
 - **The dedup-store seam.** `channels/dedup.ts:27-32` already degrades to memory
   when the optional `ProjectionStore` methods are absent — designed for a second
   backend.
-- **A declared, unimplemented hosted outbound seam.** `hosted-app.ts:318`
-  threads `workGraphNotifyOwner`; `worker.ts` never passes it;
-  `hosts/workgraph/hosted/run-operation.ts:65` throws
-  `"Hosted owner channel notification is unavailable"`. Phase 4 lights this up.
-- **The wake substrate.** `WakeLane` / `WorkGraphSettler` / `LiveSyncRoom` DOs
+- **A declared, unimplemented hosted outbound seam.** `hosted-app.ts` threads an
+  owner-notification hook; `worker.ts` never passes it, and the hosted operation
+  throws `"Hosted owner channel notification is unavailable"`. Phase 4 lights
+  this up.
+- **The wake substrate.** `WakeLane` / `LiveSyncRoom` DOs
   are deployed (`wrangler.toml`, `worker.ts:44-50`); sinks register in
   `hosts/wakes/hosted-wakes.ts:207+`.
 
 ### Genuinely missing
 
-1. Convex implementations of the optional `ProjectionStore` channel methods
+1. D1 implementations of the optional `ProjectionStore` channel methods
    (`authority/projection-store.ts:45-53`) + the access/pairing/binding stores.
 2. A channel wake kind and its sink.
 3. Durable approvals — `createMemoryApprovalBridge`
@@ -170,7 +166,7 @@ What this removes from the channel layer outright:
 
 Sandbox lifetime still gets decided; it is decided per-request by the agent,
 with intent in hand, through `spawn_session`'s existing path. Background
-sessions provision through `hosts/workgraph/hosted/runtime.ts` exactly as today,
+sessions provision through the hosted runtime exactly as today,
 including the hosted `autoStopMinutes` of 30 min (`hosted-services.ts:167`,
 `CLAXEDO_SANDBOX_AUTO_STOP_MS`).
 
@@ -193,10 +189,8 @@ call, deliberately fail-closed ("not part of the hosted Worker surface"). A
 central agent session is a session: it has meta, messages, and a durable log.
 Hosted currently has nowhere to put any of it.
 
-[`2026-08-05-001`](./2026-08-05-001-feat-durable-agents-layer-plan.md) records
-the same constraint from the other side: the agent-as-pi-central-session shape,
-"which makes channel-triggering free", is blocked hosted until
-`projectionStore`/`durableSessionLog` get Convex adapters.
+The agent-as-pi-central-session shape, which makes channel-triggering free, is
+blocked hosted until `projectionStore`/`durableSessionLog` get D1 adapters.
 
 **This is the same seam Phase 1 already opens**, at larger surface. Phase 1 does
 the four channel-specific `ProjectionStore` methods; the central agent
@@ -204,10 +198,9 @@ additionally needs the session-meta/message surface and `durableSessionLog`.
 One dependency, two consumers — so the sequencing is Phase 1 first, and the
 central agent lands on top of it rather than beside it.
 
-The hosted execution precedent, once storage exists, is the **WorkGraph master**
-(`hosted/runtime.ts:850-880`): the Worker mints a RAT, opens a relay session,
-and prompts it — Worker orchestrates, harness runs in a sandbox over the relay.
-Hosted agent turns already work this way.
+The hosted execution precedent, once storage exists, is the hosted agent turn:
+the Worker mints a RAT, opens a relay session, and prompts it — Worker
+orchestrates, harness runs in a sandbox over the relay.
 
 Note that pi is no longer the stub `2026-07-07-002:123` describes —
 `harnesses/pi/index.ts` imports real `@mariozechner/pi-agent-core` and
@@ -217,7 +210,7 @@ is missing.
 ### The tenant rule rides along
 
 An inbound channel message needs an `(organizationId, ownerUserId)` tenant to
-key wakes and Convex writes. `channel_identities` resolves sender→user, and
+key wakes and control-plane writes. `channel_identities` resolves sender→user, and
 `notifyOwner` (`channels/control-plane.ts:597-660`) already walks
 account→bound-recipients. The reverse direction (sender → org for an *unpaired*
 sender in a repo-linked thread) needs an explicit rule. Proposal, to confirm in
@@ -247,31 +240,31 @@ Small, correct regardless of everything downstream.
       (`@claxedo/channels`, pending Phase 1). Progress:
 - [ ] `bun run typecheck` + `claxedo-server` suite green. Progress:
 
-## Phase 1 — Convex-backed channel stores (the mechanical half)
+## Phase 1 — D1-backed channel stores (the mechanical half)
 
 No behavior change on any existing deployment. Self-host keeps SQLite.
 
-- [ ] Convex functions + schema for channel delivery, run audit, and
+- [ ] D1 schema and queries for channel delivery, run audit, and
       thread→session binding, mirroring `channels/delivery.sql.ts` /
       `run-audit.sql.ts`. Progress:
-- [ ] Convex implementations of the optional `ProjectionStore` methods:
+- [ ] D1 implementations of the optional `ProjectionStore` methods:
       `claim_channel_delivery`, `remember_channel_delivery_session`,
       `release_channel_delivery`, `count_channel_deliveries_by_user_day`,
       `record_channel_run_audit`, `channel_run_audit`, `channel_run_audits`,
       `channel_thread_session`, `clear_channel_thread_session`. Progress:
 - [ ] **The claim is atomic in ONE mutation.** `claimChannelDelivery`
       (`channels/delivery.ts:57`) is a SQLite transaction doing
-      read-check-insert; splitting it across Convex calls double-spends the daily
+      read-check-insert; splitting it across separate statements double-spends the daily
       ceiling under concurrent provider retries. A test fires N concurrent
       identical deliveries and asserts exactly one non-duplicate. Progress:
 - [ ] **`initialized_at` semantics preserved.** `delivery.ts:38-45` seeds
       `now - 24h` and rejects older `receivedAt` as `stale_delivery`. Test: a
       fresh store refuses a stale replay, an established store accepts a normal
       retry. Progress:
-- [ ] Convex-backed `ChannelAccessStore` + `ChannelIdentityBindingStore`
+- [ ] D1-backed `ChannelAccessStore` + `ChannelIdentityBindingStore`
       (pairing requests, approved-sender allowlist, identity bindings), matching
       `channels/access-store.ts` including lazy expired-pairing pruning. Progress:
-- [ ] **One conformance suite runs against both backends** (SQLite + Convex) and
+- [ ] **One conformance suite runs against both backends** (SQLite + D1) and
       passes identically. This is the phase's real deliverable — not two
       implementations, one contract. Progress:
 - [ ] Negative proof: a store missing one method degrades exactly as
@@ -318,7 +311,7 @@ central session, driven by the Worker, spawning workers via `spawn_session`),
 and what is missing is hosted session storage.
 
 - [ ] `projectionStore`'s session surface (meta + messages) and
-      `durableSessionLog` have Convex adapters, replacing the fail-closed
+      `durableSessionLog` have D1 adapters, replacing the fail-closed
       `unusedStore` stubs at `hosted-services.ts:442-443`. Extends Phase 1's
       work on the same port rather than duplicating it. Progress:
 - [ ] A hosted central agent session can be created and prompted **with no
@@ -327,19 +320,17 @@ and what is missing is hosted session storage.
       finding, and this checkbox records it rather than papering over it. Progress:
 - [ ] `spawn_session` is reachable from the hosted central agent. The in-process
       tool (`session/runtime.ts:825`) is Node-only, so hosted uses the
-      claxedo-mcp path per
-      [`2026-08-05-001`](./2026-08-05-001-feat-durable-agents-layer-plan.md);
-      the chosen mechanism is named here once real. Progress:
-- [ ] A spawned worker session provisions a sandbox through the existing
-      `hosts/workgraph/hosted/runtime.ts` path, unchanged by this plan. Progress:
+      claxedo-mcp path; the chosen mechanism is named here once real. Progress:
+- [ ] A spawned worker session provisions a sandbox through the existing hosted
+      runtime path, unchanged by this plan. Progress:
 - [ ] `central-runtime` and `session/runtime` stay in `FORBIDDEN_LOCAL` — the
       hosted central agent is a relay-hosted session the Worker drives, never a
       port of the Node in-process runtime. Import-graph test still green. Progress:
 
 ### Phase 3.1 — The split itself
 
-- [ ] A `channel_turn` wake kind + intent parser beside `WORKGRAPH_MASTER_KIND`
-      in `hosts/wakes/hosted-wakes.ts`, with its sink registered in the same
+- [ ] A `channel_turn` wake kind + intent parser in
+      `hosts/wakes/hosted-wakes.ts`, with its sink registered in the same
       `sinks:` map (`:207+`). Progress:
 - [ ] **Lane key = `(channel, threadKey)`**, so two messages in one thread
       serialize and never race a central session into existence twice. Test: two
@@ -365,9 +356,7 @@ and what is missing is hosted session storage.
       because settle wakes are infra bookkeeping — **channel turns are
       attacker-reachable and must not inherit that**. A channel message must not
       be able to fan out unbounded `spawn_session` calls; `maxDepth` is the
-      relevant bound and it currently bounds nothing hosted. Coordinate with
-      [`2026-08-05-001`](./2026-08-05-001-feat-durable-agents-layer-plan.md)
-      Phase 0; do not fork it. Progress:
+      relevant bound and it currently bounds nothing hosted. Progress:
 - [ ] `@claxedo/channels` core comes off `FORBIDDEN_BARE` **only** if nothing it
       pulls touches SQLite/node — verified by the import-graph walk, not by
       inspection. Local `channels/*` stay forbidden. Progress:
@@ -383,11 +372,10 @@ outcome has to reach the thread from a different invocation.
       (`channels/control-plane.ts:597-660`) — it already does channel selection,
       dedup-claim, rate-limit, post, and release-on-failure. Generalize it; do not
       write a second one. Progress:
-- [ ] `worker.ts` passes `workGraphNotifyOwner` into `createHostedApp`
-      (`hosted-app.ts:318`), and `run-operation.ts:65`'s `"Hosted owner channel
-      notification is unavailable"` throw becomes unreachable on a configured
-      deployment. Test asserts the WorkGraph `notify_owner` operation succeeds
-      hosted. Progress:
+- [ ] `worker.ts` passes the owner-notification hook into `createHostedApp`, and
+      the `"Hosted owner channel notification is unavailable"` throw becomes
+      unreachable on a configured deployment. Test asserts the `notify_owner`
+      operation succeeds hosted. Progress:
 - [ ] Reply posting is idempotent under wake re-drive: a wake that fires twice
       (lease lapse, crash recovery) does **not** double-post. The delivery claim
       is the mechanism; the test must exercise an actual re-drive. Progress:
@@ -431,7 +419,7 @@ Repository-green is not evidence for this one. Per
       every such decision is the agent's, via `spawn_session`. Progress:
 - [ ] Provider webhooks are acked in milliseconds; no turn executes inside a
       `fetch` handler. Progress:
-- [ ] Every channel store the hosted path touches is Convex-backed; one
+- [ ] Every channel store the hosted path touches is D1-backed; one
       conformance suite passes against both backends. Progress:
 - [ ] No approval, dedup claim, or thread binding lives in process memory on the
       hosted path. Progress:
@@ -454,8 +442,8 @@ principles below are carried from the surviving plan corpus and this repo's
 enforced gates. If goal.md is restored, re-derive this section from it verbatim.
 
 - **Strangler/additive.** Every addition attaches to a named existing seam
-  (`ProjectionStore` optional methods, the `sinks:` map, `workGraphNotifyOwner`,
-  `ApprovalBridge`). Nothing is rebuilt; the self-host path is not disturbed.
+  (`ProjectionStore` optional methods, the `sinks:` map, the owner-notification
+  hook, `ApprovalBridge`). Nothing is rebuilt; the self-host path is not disturbed.
 - **TDD, behavior-asserting.** Each phase names a negative proof — the test that
   must go red when the fix is reverted. A test whose assertions cannot fail is
   not evidence ([[reference-includes-assertions-dont-bite]]).
@@ -474,24 +462,22 @@ Disjoint file ownership, so agents do not collide:
 - **Phase 0** is a single small agent — it touches
   `.github/workflows/deploy-control-plane.yml` and composition guards only, and
   should land first because everything else assumes the path filter works.
-- **Phases 1 and 2 run fully in parallel.** Phase 1 owns `convex/**` +
-  `authority/adapters/convex/**`; Phase 2 owns `channels/approval-*` +
+- **Phases 1 and 2 run fully in parallel.** Phase 1 owns
+  `authority/adapters/d1/**`; Phase 2 owns `channels/approval-*` +
   `claxedo-channels/src/core/approval-bridge.ts`. No shared files.
-- **Phase 3.0 is the critical path.** It extends Phase 1's Convex port to the
+- **Phase 3.0 is the critical path.** It extends Phase 1's D1 port to the
   session surface, so it cannot start clean-room — but its *design* work
   (session-meta/message adapter shape, `durableSessionLog` semantics) can run
   concurrently with Phase 1 and land immediately after.
 - **Phase 3.1 is the join** and must be one agent — the ack/execute split is a
   single coherent change across ingress and the wakes sink.
 - **Phase 4** can start against a stubbed turn result while Phase 3.1 finishes.
-- **Research in parallel, always:** the `durableSessionLog` Convex shape, the
-  Convex-transaction shape for the atomic claim, and the streaming posture are
+- **Research in parallel, always:** the `durableSessionLog` D1 shape, the
+  transaction shape for the atomic claim, and the streaming posture are
   three independent investigations that should run concurrently.
 
-Cross-plan coordination: Phase 3.0 and
-[`2026-08-05-001`](./2026-08-05-001-feat-durable-agents-layer-plan.md) want the
-same hosted session storage. Whichever starts first owns the port; the other
-consumes it. Do not build two Convex session adapters.
+Cross-plan coordination: Phase 3.0 opens the hosted session-storage port. Build
+exactly one D1 session adapter; later consumers reuse it.
 
 Two standing hazards for parallel agents in this repo: **never `git stash`** on a
 shared worktree ([[feedback-no-stash-shared-worktree]]), and `git commit --only`

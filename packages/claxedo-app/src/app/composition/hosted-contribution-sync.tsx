@@ -14,7 +14,7 @@ import { configuredServiceContributions } from "./service-contributions"
  *
  * It renders nothing. `productContributions()` throws when the entry never
  * configured it, deliberately: a contribution seam that degrades quietly is how
- * the WorkGraph doorbell shipped inert with a green suite.
+ * the hosted doorbell shipped inert with a green suite.
  *
  * The asymmetry between activating and removing lives in `followAccount`, which
  * is where it can be read next to the composition it applies to.

@@ -6,10 +6,10 @@
   (real app UI → real claxedo-server → real stores → provider), with the provider
   side served by [vercel-labs/emulate](https://github.com/vercel-labs/emulate)
   instead of real GitHub/Google, and the UI driven by browser-use automation.
-- **Current grounding**: `@claxedo/connections`, `connections-host`,
-  settings connection UI, and the WorkGraph `forCapability` consumer still
-  exist. Emulator endpoint override seams are not implemented yet, so P0-P2
-  remain active prerequisites before the browser E2E.
+- **Current grounding**: `@claxedo/connections`, `connections-host`, the
+  settings connection UI, and the `forCapability` capability-handle contract
+  still exist. Emulator endpoint override seams are not implemented yet, so
+  P0-P2 remain active prerequisites before the browser E2E.
 
 ## Why
 
@@ -50,11 +50,11 @@ network, `npx emulate --service github,google` (ports from 4000).
   (public URL defaults to `http://127.0.0.1:3001`).
 - App: `settings-connections.tsx` calls `/api/claxedo/integrations` on the server;
   OAuth popup uses `window.open` (injectable in core, real in component).
-- WorkGraph's target consumer contract resolves a team-scoped
+- The capability-consumer contract (`forCapability`) resolves a team-scoped
   `CapabilityHandle` from a personal source view, applies the owner's provider
   identity and filters, obtains a live token per request, and reports
-  authentication rejection through `reportAuthFailure`. The current
-  `server-workgraph.ts` resolver is migration input, not the completed contract.
+  authentication rejection through `reportAuthFailure`. It has no in-repo
+  consumer today, so this plan exercises it directly.
 - **Do not regress**: the CORS fix (`isConnectionsCredentialPath` in `server.ts:130-165`,
   commit 02ef828225) — credential routes must never reflect `Access-Control-Allow-Origin`.
 
@@ -184,16 +184,17 @@ Acceptance:
       (video or screenshot sequence + curl transcript) recorded here. Progress:
 - [ ] Watched/reviewed the recording and noted what it shows. Progress:
 
-### P5 — Consumer verification (WorkGraph)
+### P5 — Consumer verification (`forCapability` capability handle)
 
 Tasks:
-1. With the GitHub connection from P4 live, import a provider item through the
-   WorkGraph surface. Assert the team capability handle is resolved for the
-   personal source view, the emulator receives the filtered GitHub request with
-   the live PAT, and WorkGraph persistence contains only the connection reference.
-2. Return an authentication rejection from the emulator and assert WorkGraph
-   calls `reportAuthFailure`, Connections becomes degraded, and the provider
-   secret does not appear in WorkGraph events, logs, or responses.
+1. With the GitHub connection from P4 live, resolve a team-scoped
+   `CapabilityHandle` from the personal source view via `forCapability` and
+   issue a provider request through it. Assert the owner's provider identity
+   and filters are applied, the emulator receives the filtered GitHub request
+   with the live PAT, and the caller only ever holds a connection reference.
+2. Return an authentication rejection from the emulator and assert the handle
+   reports it through `reportAuthFailure`, Connections becomes degraded, and the
+   provider secret does not appear in events, logs, or responses.
 
 Acceptance:
 - [ ] Connector request and auth-failure round trip pass through
@@ -217,7 +218,7 @@ gate for this plan; open a follow-up if deferred.
 - [ ] Recorded browser-use E2E covering: key connect (GitHub), full OAuth connect
       (Google), token route + header gate, refresh-after-expiry, auth-failure —
       evidence paths written into this doc.
-- [ ] Workgraph `forCapability` consumer verified against the live connection.
+- [ ] The `forCapability` capability handle verified against the live connection.
 - [ ] No real provider credentials required anywhere in the loop.
 - [ ] `bun run typecheck` green across touched packages; no new deps in
       `@claxedo/connections` (emulate is a dev harness dependency of the repo,

@@ -16,9 +16,13 @@ describe("hosted-core-app mounts the middleware outermost", () => {
     // the guarantee is "no hosted route can miss these", which only holds if
     // the middleware is composed once, at the top, ahead of CORS.
     const source = fs.readFileSync(path.resolve(import.meta.dirname, "../../deployments/hosted-shared/hosted-core-app.ts"), "utf-8")
+    // Anchor every offset on the `app.use(` that MOUNTS the middleware. Matching
+    // a bare `corsMiddleware(` found the module's own FUNCTION DEFINITION, which
+    // sits above every mount, so this read `170 < 117` — permanently false
+    // regardless of the real order. A mount-order guard has to look at mounts.
     const securityMount = source.indexOf("app.use(securityHeaders())")
-    const corsMount = source.indexOf("corsMiddleware(")
-    const browserAuthMount = source.indexOf("browserAuthHttpSecurity(")
+    const corsMount = source.search(/app\.use\(\s*\n\s*corsMiddleware\(/)
+    const browserAuthMount = source.indexOf("app.use(browserAuthHttpSecurity(")
 
     expect(securityMount).toBeGreaterThan(-1)
     expect(corsMount).toBeGreaterThan(-1)

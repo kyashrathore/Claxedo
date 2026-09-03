@@ -571,7 +571,7 @@ test.describe("live agent extensions materialization @live", () => {
     expect(claxedoPkg?.status).not.toBe("applied")
     // `type: "mcp"` is load-bearing, not decoration: `claxedo-mcp` is NOT an
     // MCP-only package — it also ships `skills/claxedo-documents` and
-    // `skills/workgraph`, and `materializePackage` emits one component per
+    // `skills/<name>`, and `materializePackage` emits one component per
     // (target × discovered component) with skills FIRST
     // (`discovery.ts`'s `discoverAgentExtensionComponents` orders skills
     // before mcp). The claude runner therefore contributes THREE components

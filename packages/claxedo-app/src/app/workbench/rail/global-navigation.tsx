@@ -7,7 +7,6 @@ export function GlobalNavigation(props: {
   onNewProject?: () => void
   onOpenPages?: () => void
   onOpenMarketplace?: () => void
-  onOpenWorkGraph?: () => void
 }) {
   // Derive the active surface from the route so the matching nav item shows a
   // selected state (bg + strong text + brighter icon), mirroring the selected
@@ -15,7 +14,6 @@ export function GlobalNavigation(props: {
   // with no selected state.
   const location = useLocation()
   const path = () => location.pathname
-  const isWorkGraph = () => path().startsWith("/workgraph")
   const isMarketplace = () => path().startsWith("/marketplace")
   const isDocuments = () => path().includes("/page/")
 
@@ -28,12 +26,11 @@ export function GlobalNavigation(props: {
       <NavigationRow icon="plus-small" label={props.newProjectLabel} onClick={props.onNewProject} />
       <Show when={props.onOpenPages}><NavigationRow icon="page" label="Documents" onClick={props.onOpenPages} active={isDocuments()} testId="sidebar-documents-entry" ariaLabel="Open Documents" /></Show>
       <Show when={props.onOpenMarketplace}><NavigationRow icon="marketplace" label="Marketplace" onClick={props.onOpenMarketplace} active={isMarketplace()} testId="sidebar-marketplace-entry" ariaLabel="Open Marketplace" /></Show>
-      <Show when={props.onOpenWorkGraph}><NavigationRow icon="workgraph" label="WorkGraph" onClick={props.onOpenWorkGraph} active={isWorkGraph()} testId="sidebar-workgraph-entry" ariaLabel="Open WorkGraph" /></Show>
     </div>
   )
 }
 
-function NavigationRow(props: { icon: "plus-small" | "page" | "dot-grid" | "marketplace" | "workgraph"; label: string; onClick?: () => void; active?: boolean; testId?: string; ariaLabel?: string }) {
+function NavigationRow(props: { icon: "plus-small" | "page" | "dot-grid" | "marketplace"; label: string; onClick?: () => void; active?: boolean; testId?: string; ariaLabel?: string }) {
   return (
     <button
       type="button"

@@ -345,7 +345,7 @@ flowchart LR
     CMD["Workspace Runtime HTTP routes\n+ AgentRuntime typed commands"]
     INPUT["AgentRuntime input inbox"]
     TS["AgentRuntime BackgroundTask service"]
-    STORE[("AgentRuntime store\nSQLite / Convex / memory tests")]
+    STORE[("AgentRuntime store\nSQLite / D1 / memory tests")]
     EXEC["AgentRuntime session scheduler"]
     CAPS["Harness capability resolver"]
     PROJ["Event projection + live updates"]
@@ -868,7 +868,7 @@ available.”
 - `packages/agent-sdk-runtime/src/index.ts`
 - `packages/agent-sdk-runtime/src/harnesses/shared/runtime-store.ts`
 - `packages/agent-sdk-runtime/src/stores/sqlite.ts`
-- `packages/agent-sdk-runtime/src/stores/convex.ts`
+- `packages/agent-sdk-runtime/src/stores/d1.ts` (new)
 - `packages/agent-sdk-runtime/src/stores/memory.ts`
 - `packages/agent-sdk-runtime/src/harnesses/shared/store-lifecycle.test.ts`
 - `packages/agent-sdk-runtime/src/background-task.test.ts` (new)
@@ -887,7 +887,7 @@ available.”
 
 **Acceptance**
 
-- SQLite recreation and Convex projection reconstruct every task and pending
+- SQLite recreation and D1 projection reconstruct every task and pending
   input without browser state.
 - Duplicate native events produce one logical transition.
 - Completion versus cancellation resolves to one terminal state.
@@ -986,7 +986,7 @@ available.”
 - Create a host-owned child through AgentRuntime with inherited placement,
   configuration, tools, and permission boundary.
 - Compose SQLite-backed AgentRuntime stores for local/embedded sessions and the
-  Convex-backed store for hosted sessions; the memory store remains a test
+  D1-backed store for hosted sessions; the memory store remains a test
   implementation.
 - Bind native IDs and forward normalized lifecycle events.
 - Implement typed cancel, cancel-all, and direct-input commands.
@@ -1216,8 +1216,8 @@ expectations:
   uses reattach or resume only when the harness provides it.
 - Cross-project task migration is outside this release. A task stays in the
   parent session's workspace and permission boundary.
-- Arbitrary task graphs and dependency scheduling remain WorkGraph concerns.
-  This design covers parent/child execution and completion delivery.
+- Arbitrary task graphs and dependency scheduling are out of scope. This design
+  covers parent/child execution and completion delivery.
 - Automatic backgrounding based only on elapsed time is outside the initial
   behavior. Background execution is an explicit task mode.
 

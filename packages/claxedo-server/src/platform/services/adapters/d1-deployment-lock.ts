@@ -37,7 +37,7 @@ function required(value: string, field: string) {
 
 /**
  * A lease-backed, deployment-wide lock. The key deliberately excludes the
- * service id, so WorkGraph and Documents cannot race a core binding deploy.
+ * service id, so two optional services cannot race a core binding deploy.
  * The retained fencing token prevents an expired runner from releasing or
  * renewing the lock after a successor has acquired it.
  */

@@ -512,40 +512,6 @@ describe("embedded workspace runtime", () => {
     }
   })
 
-  test("serves no WorkGraph route when the host contributes no capability", async () => {
-    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-no-workgraph-")
-    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "pi"
-
-    try {
-      configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: async () => new Response(null, { status: 404 }),
-        // No host contributions at all — the shape a desktop-local build has.
-        routeContributions: [],
-      })
-      const ws = workspace("ws_no_workgraph", project)
-      const runtime = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
-      const query = `directory=${encodeURIComponent(project)}&runner=pi`
-
-      for (const path of [
-        "/api/workgraph/run-binding",
-        "/api/workgraph/run-tools",
-        "/api/workgraph/connection-binding",
-        "/api/workgraph/tools",
-      ]) {
-        const response = await runtime.app.request(`http://localhost${path}?${query}`, {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: "{}",
-        })
-        expect(response.status, path).toBe(404)
-      }
-    } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownTestRuntimes()
-      await removeWorkspaceRoot(root)
-    }
-  })
 
   // ── Regression: a harness session's async auto-title (e.g. an ACP
   //    harness's post-turn `maybeEmitTitle`, or opencode's own LLM-driven

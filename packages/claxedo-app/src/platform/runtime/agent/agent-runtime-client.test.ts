@@ -1027,7 +1027,7 @@ describe("AgentRuntimeClient", () => {
    * Where the signed control plane's bearer comes from.
    *
    * This client used to import `getAuthToken` from `@/platform/auth/auth-client`
-   * for this one header, which put Clerk in the local product's bundle for a
+   * for this one header, which put the identity provider in the local product's bundle for a
    * code path a local build never reaches. It now reads whatever the build
    * bound through `configureApiRuntime({ bearerToken })` — the same source
    * `authFetch` uses — so the two cases below are "hosted" and "local", not

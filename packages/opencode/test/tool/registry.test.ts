@@ -105,8 +105,8 @@ describe("tool.registry", () => {
     Effect.gen(function* () {
       const applications = yield* ApplicationTools.Service
       yield* applications.register({
-        workgraph_create_stream: CoreTool.makeDynamic({
-          description: "Create a WorkGraph Stream",
+        application_create_stream: CoreTool.makeDynamic({
+          description: "Create an application Stream",
           inputSchema: { type: "object", properties: { title: { type: "string" } }, required: ["title"] },
           outputSchema: { type: "object" },
           execute: (input, context) => Effect.succeed({ input, sessionID: context.sessionID }),
@@ -120,9 +120,9 @@ describe("tool.registry", () => {
       })
       const registry = yield* ToolRegistry.Service
       const all = yield* registry.all()
-      const applicationTool = all.find((tool) => tool.id === "workgraph_create_stream")
+      const applicationTool = all.find((tool) => tool.id === "application_create_stream")
 
-      expect(applicationTool?.description).toBe("Create a WorkGraph Stream")
+      expect(applicationTool?.description).toBe("Create an application Stream")
       expect(all.filter((tool) => tool.id === "read")).toHaveLength(1)
       expect(all.find((tool) => tool.id === "read")?.description).toBe("Process-owned read override")
       expect(applicationTool?.jsonSchema).toMatchObject({

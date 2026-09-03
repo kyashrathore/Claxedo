@@ -3,7 +3,7 @@
  *
  * An entry in this table is stronger than "a TypeScript file exists": it says
  * the file has a default Worker export, its resource closure is known, and its
- * Worker name cannot collide with the historical Clerk+Convex deployment.
+ * Worker name cannot collide with a retired deployment's Worker name.
  * Adding an artifact therefore requires updating the renderer, closure tests,
  * and a real Wrangler dry run in the same change.
  */
@@ -18,8 +18,13 @@ export type CertifiedHostedWorkerArtifactId = (typeof CERTIFIED_HOSTED_WORKER_AR
 export type CertifiedHostedWorkerEnvironment = "production" | "staging"
 
 /**
- * These names own the append-only Durable Object migration history in the
- * package-root wrangler.toml. A generated deployment must never reuse them.
+ * Worker names retired from this repository.
+ *
+ * Cloudflare keys a Worker's append-only Durable Object migration history by
+ * Worker NAME, and that history outlives the config that declared it — this
+ * repo no longer carries one for these. Reusing a name would inherit a
+ * migration ladder nothing here can express, so a generated deployment must
+ * never take one.
  */
 export const RESERVED_LEGACY_WORKER_NAMES = Object.freeze([
   "claxedo-control-plane",

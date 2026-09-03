@@ -42,9 +42,8 @@ the claim cannot be made true, the name is wrong.
 > "errors, rate limit, retries, telemetry ... should be some top level concern"
 
 Measured: **12 auth combinations across 26 route files** from 10 entry points;
-**7 hand-rolled retry loops** with no shared helper; **68 error classes, 61
-extending raw `Error`**; `workGraphWorkspaceId` exported twice with
-incompatible outputs.
+**4 hand-rolled retry loops** with no shared helper; and **68 error classes, 61
+extending raw `Error`**.
 
 Rule: a cross-cutting concern has exactly one implementation and one import
 path. Verified negatives worth keeping: DB access already satisfies this
@@ -101,7 +100,7 @@ must gate something.
 
 ### T7 — Verify before asserting
 
-> "can you search convex's official docs around this" · "why not use
+> "can you search the official docs around this" · "why not use
 > edge-runtime?" · "i don't think so? relay and workspace connect directly to
 > sandbox from client" · "how is proxy used? i don't think we forward requests"
 
@@ -149,9 +148,8 @@ a guard. Two were found silently disarmed during the W10 moves.
 > "i mean src/ dir not root sorry, and that is huge" · "still src/ has huge
 > number for files in root. why, categorized every file"
 
-`src/` root went 152 -> 10 loose files across W10. Remaining offenders:
-`documents/` (47 flat files, the only domain never subdivided),
-`hosts/workgraph/` (60+ files, one inconsistent `composition/` subdir).
+`src/` root went 152 -> 10 loose files across W10. Remaining offender:
+`documents/` (47 flat files, the only domain never subdivided).
 
 Rule: a directory whose file count exceeds roughly 20 must justify itself or
 subdivide. Size is not cosmetic — it is the first thing a newcomer sees, and it
@@ -167,11 +165,12 @@ execution model below.
 
 ### T12 — Research the source before choosing
 
-> "can you search convex's official docs around this" · "why not use
+> "can you search the official docs around this" · "why not use
 > edge-runtime?"
 
 Both corrected an approach I had already justified. The first replaced 33
-hand-written `db` doubles with `convex-test`; the second replaced "node
+hand-written `db` doubles with the database's own official test harness; the
+second replaced "node
 environment, edge-runtime is not installed" with installing it — "not
 installed" being a reason to install, not a reason to avoid.
 
@@ -209,7 +208,7 @@ as belonging at top level rather than inside domains. Measured:
 
 | concern | state | verdict |
 |---|---|---|
-| **retries** | **7 hand-rolled loops**, no shared helper: `workspace/supervisor/sandbox.ts`, 3× `adapters/sandbox/stores/*`, 2× `hosts/workgraph/*`, `authority/adapters/convex/retry.ts` | **Same class as auth.** A backoff-policy change has 7 landing sites. → `platform/runtime/retry.ts` |
+| **retries** | **4 hand-rolled loops**, no shared helper: `workspace/supervisor/sandbox.ts`, 3× `adapters/sandbox/stores/*` | **Same class as auth.** A backoff-policy change has 4 landing sites. → `platform/runtime/retry.ts` |
 | **errors** | 68 custom classes; **61 extend raw `Error`** with no shared base. Only `DocumentWorkspaceError` has descendants (11) | No common shape for status / code / retryability. → `platform/errors/` with one base |
 | **rate limit** | 10 files, but already centred on `platform/auth/rate-limit.ts` | Mostly fine; the 4 in `workspace/routes` are call sites, not reimplementations |
 | **telemetry** | already `platform/telemetry/{errors,product}/` | Fine — except `worker-telemetry.ts` sits in `platform/auth/` (W11.4) |
@@ -413,7 +412,7 @@ the lead. Therefore:
   1. fan out reviewers for the wave's area
   2. verify their claims (`git show <sha>:<path>`, not working-tree state)
   3. move serially
-  4. typecheck -> 4 sweeps -> full suite -> convex suite
+  4. typecheck -> 4 sweeps -> full suite
   5. fault-inject every guard added or edited; confirm RED, then revert
   6. commit
 
@@ -429,21 +428,6 @@ always confirm the injection applied before trusting the result. Two guards
 were silently disarmed by moves in the W10 waves; both only failed loudly
 because they asserted a positive.
 
-## W11.0 — Delete the guard evasion (do this first)  · T1, T7
-
-`platform/auth/request-timeout.ts:20` is `["C","ONVEX"].join("")` with a comment
-saying it exists "so this file carries no adapter token for the R8 guard to
-flag." **Verified:** written plainly, R8 fails with
-`expected ['auth/request-timeout.ts'] to deeply equal []`.
-
-Move it to `authority/adapters/convex/timeout-config.ts` (its only callers are
-`authority/sandbox-relay-target.ts` and `authority/adapters/convex/timeout.ts`),
-write the constant plainly, confirm R8 green because the file is now legitimately
-in the adapter.
-
-Smallest wave here and the highest priority: a codebase that teaches people to
-route around its own lints will not hold any boundary this reorg built.
-
 ## W11.1 — One auth seam (the wave that matters)  · T2
 
 Today: 10 entry points, 12 combinations, 26 route files. Target: **five named
@@ -452,7 +436,7 @@ postures, one place each.**
 ```
 platform/auth/postures.ts
   localOnly()      — loopback, unsigned, single-tenant
-  signedUser()     — Clerk-verified user + org resolution
+  signedUser()     — Better Auth-verified user + org resolution
   serviceToken()   — machine-to-machine
   internalAdmin()  — operator surface
   publicRoute()    — deliberately unauthenticated (must be named to be allowed)
@@ -473,10 +457,10 @@ Do NOT touch the DB layer in this wave. It is already correct.
 
 Same shape as W11.1, smaller and lower risk. Do it in the same stretch.
 
-- **Retries.** 7 hand-rolled loops → `platform/runtime/retry.ts` exposing one
+- **Retries.** 4 hand-rolled loops → `platform/runtime/retry.ts` exposing one
   `withRetry(fn, policy)`. Convert call sites one commit at a time; each keeps
-  its own policy VALUES (a Convex mutation and a sandbox boot should not share
-  a backoff curve) but stops re-implementing the loop.
+  its own policy VALUES (a control-plane database write and a sandbox boot
+  should not share a backoff curve) but stops re-implementing the loop.
 - **Errors.** 61 classes extend raw `Error` → one `platform/errors/base.ts`
   carrying `code`, `status`, `retryable`. Migrate by domain. This is what lets
   `errorBody` stop guessing at status codes per route.
@@ -584,8 +568,6 @@ tests on exactly this basis.
 give the split: 6 `hosted-*`, 3 `local-*`, 3 `repository-*` ->
 `backends/{hosted,local}/` and `repository/`.
 
-`hosts/workgraph/` is 60+ files with one inconsistent `composition/` subdir.
-
 Budget: roughly 20 files per directory before it must justify itself. This is
 where the thread started ("root dir has 100s of files") and it is still the
 most visible defect to a newcomer.
@@ -606,10 +588,9 @@ most visible defect to a newcomer.
 
 ## W11.5 — `hosts/` boundary guard + drift  · T3
 
-Verified: exactly **3 production violations** of hosts→deployments
-(`wakes/wake-settlement-dispatcher.ts`, `workgraph/hosted.ts`,
-`workspace-runtime/session-env.ts`). Small enough to fix now, and the guard would
-have caught all three.
+Verified: exactly **2 production violations** of hosts→deployments
+(`wakes/wake-settlement-dispatcher.ts`, `workspace-runtime/session-env.ts`).
+Small enough to fix now, and the guard would have caught both.
 
 Also move the 3 drifted files with zero external-package imports:
 `agent-extensions/{catalog,scan,machine-scan}.ts` → `agent-config/` (their real
@@ -703,17 +684,9 @@ this codebase has hit repeatedly during the moves (three directory-path
 corruptions, two disarmed guards). Hence the review prompt's rule — evidence is
 an import list, an export list, a caller count, or a quoted header. Never a name.
 
-## Known landmine, not scheduled
-
-`workGraphWorkspaceId` is exported twice with different signatures and
-incompatible outputs — `workspace/worktree.ts:23` (directory → `workgraph_<hex>`)
-and `hosts/workgraph/hosted-runtime.ts:1644` ((org,owner,scope) → `wg-<hex>`).
-Both live, imported from separate paths, so **no active bug**. Rename the local
-one `localWorktreeWorkGraphId` during W11.6 rather than as its own wave.
-
 ## Cost
 
-W11.0 is minutes. W11.1 is the largest by risk (it touches every route's auth)
+W11.1 is the largest by risk (it touches every route's auth)
 and should not be rushed or parallelized. W11.2–W11.5 are mechanical and gated.
 W11.6 is the largest by file count. W11.7 is the widest diff and the safest.
 

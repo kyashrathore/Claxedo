@@ -6,7 +6,7 @@
  * (workspace/runtime.ts → applyRuntimeAgentExtensions → materialize). The gap
  * this test pins down is the CONTROL-PLANE half: the snapshot pushed at
  * sandbox provisioning (`markSandboxReady` → `pushRuntimeConfig(state)`)
- * hydrated workspace installs through a hardcoded Convex authority, so on a
+ * hydrated workspace installs through a hardcoded hosted authority, so on a
  * self-host deploy (SQLite authority) or an authority-less mount (local
  * mirror) the sandbox received snapshot metadata with an EMPTY install set —
  * and nothing ever materialized inside the sandbox.
@@ -148,7 +148,7 @@ describe("sandbox provisioning pushes workspace agent-extensions into the sandbo
   beforeAll(async () => {
     dataRoot = await fs.promises.mkdtemp(path.join(os.tmpdir(), "claxedo-w4-data-"))
     process.env.CLAXEDO_DATA_DIR = dataRoot
-    // Self-host shape: NO Convex authority URL → the runtime snapshot must
+    // Self-host shape: no workspace authority URL → the runtime snapshot must
     // hydrate from the local SQLite authority instead.
     delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
     const keyPair = await generateKeyPair("EdDSA", { extractable: true })

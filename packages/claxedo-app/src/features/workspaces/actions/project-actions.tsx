@@ -408,7 +408,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
   const deleteCloudMainWorkspace = async (dir: string) => {
     // The bearer comes from whatever the build bound through
     // `configureApiRuntime({ bearerToken })`, not from the identity provider
-    // directly — importing `getAuthToken` here put Clerk in the local bundle
+    // directly — importing `getAuthToken` here put the identity provider in the local bundle
     // for one cloud-only action. A local build binds no source and gets `null`,
     // which this already handled: the header is simply omitted, and only a
     // cloud workspace reaches here at all.

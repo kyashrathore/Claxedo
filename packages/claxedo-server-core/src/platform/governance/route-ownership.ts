@@ -80,7 +80,6 @@ const ROUTE_RULES = [
   prefix(["/api/channels"], RouteDomain.Channels, central),
   exact(["/.well-known/jwks.json"], RouteDomain.ClaxedoControlPlane, central),
   prefix(["/internal/relay"], RouteDomain.WorkspaceRelay, central),
-  prefix(["/internal/workgraph"], RouteDomain.ClaxedoControlPlane, central),
   exact(
     [
       "/global/health",
@@ -141,7 +140,6 @@ const ROUTE_RULES = [
       "/api/runtime-authority",
       "/api/claxedo/network-policy",
       "/documents",
-      "/api/workgraph",
     ],
     RouteDomain.ClaxedoControlPlane,
     central,

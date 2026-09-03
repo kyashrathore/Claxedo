@@ -7,7 +7,7 @@ the shared setup surfaces that render those contracts.
 {
   "owns": "Onboarding derivation, registry, dismissals, setup shell, and setup UI",
   "writerOf": [],
-  "mustNotImport": ["@/app/*", "@/features/browser/*", "@/features/documents/*", "@/features/extensions/*", "@/features/processes/*", "@/features/review/*", "@/features/session/*", "@/features/settings/*", "@/features/terminal/*", "@/features/workgraph/*", "@/features/workspaces/*", "@/shell/*", "@/context/*", "@/components/*", "@/pages/*", "@/claxedo-ui/*", "@/pane/*", "@/shared/*"]
+  "mustNotImport": ["@/app/*", "@/features/browser/*", "@/features/documents/*", "@/features/extensions/*", "@/features/processes/*", "@/features/review/*", "@/features/session/*", "@/features/settings/*", "@/features/terminal/*", "@/features/workspaces/*", "@/shell/*", "@/context/*", "@/components/*", "@/pages/*", "@/claxedo-ui/*", "@/pane/*", "@/shared/*"]
 }
 ```
 
@@ -32,7 +32,7 @@ isn't lost:
 - **The Ramp-2 pull-not-push strategy.** Ramp 2 (graduating to cloud/detached
   sessions) is the product's real differentiator, but it sells itself best
   right after the user has felt Ramp 1 (first local turn) rather than being
-  pushed in front of it — its education cards ("Go further": WorkGraph, any
+  pushed in front of it — its education cards ("Go further": any
   harness, deploy on your own infra) appear only after the first successful
   turn, and land better there than any pre-first-turn tutorial could.
 - **Self-host signed-in trust motivation.** Today's `claxedo deploy` ends

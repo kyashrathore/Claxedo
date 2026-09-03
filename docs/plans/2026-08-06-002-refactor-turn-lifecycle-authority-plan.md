@@ -19,7 +19,7 @@ execution: code
 | Authority order | Matching durable `turn.finish` outcome; matching normalized live terminal event; current-turn snapshot; optimistic local admission. Transcript content is not lifecycle authority. |
 | Execution profile | Cross-package code refactor across runtime persistence, lifecycle event projection, client state, recovery, composer, timeline, rail, and E2E fixtures. |
 | Stop conditions | Stop if a harness cannot expose or correlate a current turn identity, if a legacy terminal event cannot be ordered against a newer admission, or if reload recovery cannot distinguish active from unknown without transcript inference. Resolve the contract before switching UI consumers. |
-| Tail ownership | The final unit removes inference-based settlement and duplicate status writers only after the lifecycle matrix is green across OpenCode, ACP, native SDK, and WorkGraph paths. |
+| Tail ownership | The final unit removes inference-based settlement and duplicate status writers only after the lifecycle matrix is green across OpenCode, ACP, and native SDK paths. |
 
 ---
 
@@ -134,7 +134,7 @@ sequenceDiagram
 
 **Compatibility and observability**
 
-- R17. OpenCode HTTP proxy, ACP, Claude SDK, Codex SDK, Cursor, Pi, and WorkGraph Session V2 keep their native event vocabulary inside their adapters.
+- R17. OpenCode HTTP proxy, ACP, Claude SDK, Codex SDK, Cursor, and Pi keep their native event vocabulary inside their adapters.
 - R18. Lifecycle observations retain origin and ordering metadata so telemetry can distinguish optimistic admission, live runtime evidence, durable snapshot recovery, and watchdog state.
 - R19. The legacy `SessionStatus` query remains a derived compatibility projection during migration and is no longer independently writable after consumers move.
 - R20. Telemetry records event/snapshot disagreement and recovery latency without changing lifecycle state as a side effect.
@@ -540,7 +540,6 @@ The runtime contract must land before the current UI fallback is removed. The cl
   - `packages/claxedo-app/e2e/playwright/core-docks.spec.ts`
   - `packages/claxedo-app/e2e/playwright/core-harness-rendering-matrix.spec.ts`
   - `packages/claxedo-app/e2e/playwright/core-claude-native-sdk-rail.spec.ts`
-  - `packages/claxedo-app/e2e/playwright/core-workgraph.spec.ts`
   - `packages/claxedo-app/e2e/playwright/live-real-harness-smoke.spec.ts`
   - `packages/claxedo-app/e2e/playwright/real-harness-local.spec.ts`
 - **Approach:**
@@ -549,7 +548,7 @@ The runtime contract must land before the current UI fallback is removed. The cl
   - Add deterministic hold points after commentary/reasoning and during tool work.
   - Preserve the stale-busy scenario where a matching terminal outcome repairs a missed idle event; change its fixture and documentation so content alone does not settle.
   - Add stale-terminal, empty-status, reconnect/replay, and reload-mid-turn scenarios.
-  - Cover OpenCode, Claude ACP, Claude SDK, Codex ACP, Codex SDK, Cursor fixture paths, Pi fixture paths, and WorkGraph Session V2.
+  - Cover OpenCode, Claude ACP, Claude SDK, Codex ACP, Codex SDK, Cursor fixture paths, and Pi fixture paths.
 - **Test Scenarios:**
   - Admitted before first SSE.
   - Exact-ID commentary/text without terminal.
@@ -561,7 +560,7 @@ The runtime contract must land before the current UI fallback is removed. The cl
   - Reload mid-turn.
   - Failure, cancellation, retry, permission, and question.
   - Background rail and compact-switcher parity.
-- **Verification:** Run focused core specs first, then WorkGraph, Tier R real harnesses, and the live lane. Capture evidence during the held in-flight phase and after terminal settlement.
+- **Verification:** Run focused core specs first, then the Tier R real harnesses and the live lane. Capture evidence during the held in-flight phase and after terminal settlement.
 - **Dependencies:** U2, U5.
 
 ### U7. Remove legacy lifecycle inference and duplicate clocks
@@ -621,7 +620,6 @@ Run `bun typecheck` separately from:
 | Focused lifecycle | `CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-busy-abort-errors.spec.ts e2e/playwright/core-first-prompt-local.spec.ts e2e/playwright/core-turns-reload-recovery.spec.ts` | Exact-ID partial content remains active; terminal outcome settles. |
 | Navigation parity | `CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-sidebar-tree.spec.ts e2e/playwright/core-claude-native-sdk-rail.spec.ts e2e/playwright/core-docks.spec.ts` | Foreground, rail, switcher, and docks agree. |
 | Harness matrix | `CLAXEDO_E2E_SUITE=core npx playwright test --config playwright.config.ts e2e/playwright/core-harness-rendering-matrix.spec.ts` | Adapter vocabulary does not leak into lifecycle semantics. |
-| WorkGraph | `bun run test:e2e:workgraph` | Multi-round tools never settle at an intermediate step. |
 | Real harness | `bun run test:e2e:real` | OpenCode/ACP/native turn continuity with real runtime timing. |
 | Live harness | `bun run test:e2e:live -- e2e/playwright/live-real-harness-smoke.spec.ts` | End-to-end active continuity and reload recovery. |
 
@@ -630,7 +628,7 @@ Run `bun typecheck` separately from:
 - Make exact-ID commentary call the terminal reducer: the in-flight regression test must fail.
 - Treat missing REST status as terminal: the native SDK empty-status test must fail.
 - Remove assistant-ID matching from terminal handling: the stale-terminal test must fail.
-- Let a tool-step completion settle the turn: the WorkGraph and tool-hold tests must fail.
+- Let a tool-step completion settle the turn: the multi-round tool-hold tests must fail.
 - Give the rail a separate raw-status input: the foreground/background parity test must fail.
 
 ---
@@ -645,7 +643,7 @@ Run `bun typecheck` separately from:
 - Missing REST status and fetch failure have no terminal side effect.
 - Thinking, progress, tools, Stop/Send, rail, switcher, and docks consume shared selectors.
 - Reload and reconnect restore active, blocked, reconnecting, or terminal state without false idle.
-- OpenCode, ACP, native SDK, and WorkGraph lifecycle tests pass through nonterminal holds and terminal release.
+- OpenCode, ACP, and native SDK lifecycle tests pass through nonterminal holds and terminal release.
 - Old inference helpers, synthetic server idle dispatches, duplicate status writers, and abandoned migration code are removed.
 - Comments and tests describe the final authority model rather than the prior workaround.
 
@@ -656,7 +654,7 @@ Run `bun typecheck` separately from:
 - U3 is done when the pure reducer rejects every stale, unscoped, or nonterminal settlement attempt.
 - U4 is done when all live and recovery inputs are evidence-only and content hydration cannot settle lifecycle.
 - U5 is done when every in-scope surface agrees in unit and integration tests.
-- U6 is done when mock, WorkGraph, real, and live lanes prove active continuity before terminal completion.
+- U6 is done when the mock, real, and live lanes prove active continuity before terminal completion.
 - U7 is done when the old authority paths are deleted and the full verification matrix remains green.
 
 ---
@@ -677,7 +675,6 @@ Run `bun typecheck` separately from:
 | `core-first-prompt-local.spec.ts` | Normal final assertions remain; intermediate timing may expose hidden false idle. | First prompt stays active from admission to matching terminal outcome. |
 | `core-turns-reload-recovery.spec.ts` | Request ceilings may change if lifecycle snapshot hydration is added. | Reload mid-turn restores current identity with bounded recovery requests. |
 | `core-harness-rendering-matrix.spec.ts` | Existing tool renderer tests remain green but are insufficient alone. | Tool activity is paired with active lifecycle assertions. |
-| `core-workgraph.spec.ts` | Intermediate tool-step inference fails intentionally once held. | Multi-round WorkGraph stays active through every tool round. |
 | `real-harness-local.spec.ts` and `live-real-harness-smoke.spec.ts` | Final-oracle-only scenarios remain but gain controlled mid-turn assertions. | Real commentary/reasoning/tools cannot clear Stop before terminal completion. |
 
 ### Files Whose Current Contracts Intentionally Change

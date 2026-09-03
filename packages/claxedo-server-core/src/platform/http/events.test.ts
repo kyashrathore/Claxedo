@@ -16,8 +16,8 @@ import { claxedoBus, createBus, type ClaxedoEvent } from "@claxedo/server-core/p
 
 const baseConfig: ControlPlaneAuthConfig = {
   enabled: true,
-  issuer: "https://example.clerk.dev",
-  jwksUrl: "https://example.clerk.dev/.well-known/jwks.json",
+  issuer: "https://example.issuer.dev",
+  jwksUrl: "https://example.issuer.dev/.well-known/jwks.json",
   audience: "claxedo-server",
 }
 
@@ -111,7 +111,7 @@ describe("eventsHandler — auth gate", () => {
 
 // Subscriber principals carry the AUTHORITY-INTERNAL org id resolved at
 // connect (`authority.resolveOrgId`), matching the namespace events are
-// stamped with — never the Clerk org claim.
+// stamped with — never the issuer org claim.
 const signedAs = (subject: string, internalOrgId?: string): EventScopePrincipal => ({
   mode: "signed",
   subject,
@@ -121,12 +121,6 @@ const signedAs = (subject: string, internalOrgId?: string): EventScopePrincipal 
 const unsignedLocal: EventScopePrincipal = { mode: "unsigned-local" }
 
 describe("eventVisibleTo — per-event authorization", () => {
-  test("workgraph.changed is visible only to its owner", () => {
-    const event = { type: "workgraph.changed", ownerUserId: "user_a", ts: 1 } as const
-    expect(eventVisibleTo(signedAs("user_a"), event)).toBe(true)
-    expect(eventVisibleTo(signedAs("user_b"), event)).toBe(false)
-  })
-
   test("session.share.changed is visible only to its recipient subject", () => {
     const event = {
       type: "session.share.changed",
@@ -165,9 +159,9 @@ describe("eventVisibleTo — per-event authorization", () => {
     expect(eventVisibleTo(unsignedLocal, orgless)).toBe(true)
   })
 
-  test("eventScopePrincipal never leaks the Clerk org claim into the org identity", () => {
+  test("eventScopePrincipal never leaks the issuer org claim into the org identity", () => {
     // The namespace-split regression this pins: the auth context's `orgId` is
-    // the Clerk `org_...` claim — a DISJOINT namespace from the internal org
+    // the issuer `org_...` claim — a DISJOINT namespace from the internal org
     // id events are stamped with. The principal constructor must only carry an
     // org identity that was explicitly resolved through the authority.
     const auth: ControlPlaneAuthContext = {
@@ -175,12 +169,12 @@ describe("eventVisibleTo — per-event authorization", () => {
       token: "test-token",
       user: {
         subject: "user_a",
-        tokenIdentifier: "https://example.clerk.dev|user_a",
-        issuer: "https://example.clerk.dev",
-        orgId: "org_2clerkclaim",
+        tokenIdentifier: "https://example.issuer.dev|user_a",
+        issuer: "https://example.issuer.dev",
+        orgId: "org_2orgclaim",
       },
     }
-    // No resolved org → NO org identity, even though the Clerk claim is set.
+    // No resolved org → NO org identity, even though the issuer claim is set.
     expect(eventScopePrincipal(auth)).toEqual({ mode: "signed", subject: "user_a" })
     // The resolved internal id — not the claim — becomes the org identity.
     expect(eventScopePrincipal(auth, "org_internal_x")).toEqual({
@@ -213,21 +207,21 @@ describe("eventVisibleTo — per-event authorization", () => {
   })
 
   test("unsigned-local sees everything (single-user mode)", () => {
-    expect(eventVisibleTo(unsignedLocal, { type: "workgraph.changed", ownerUserId: "anyone", ts: 1 })).toBe(true)
+    expect(eventVisibleTo(unsignedLocal, { type: "session.share.changed", phase: "granted", ownerUserId: "anyone", sessionId: "ses_1", workspaceId: "ws_1", ts: 1 })).toBe(true)
     expect(eventVisibleTo(unsignedLocal, { type: "pty.stream", id: "p1", kind: "data", tail: "output" })).toBe(true)
   })
 })
 
 describe("eventsHandler — signed stream is filtered per-event", () => {
-  test("a signed subscriber receives their own workgraph.changed but not another user's", async () => {
+  test("a signed subscriber receives their own session.share.changed but not another user's", async () => {
     const app = mountHandler({
       authConfig: baseConfig,
       verifier: async () => ({
         mode: "signed",
         user: {
           subject: "user_a",
-          tokenIdentifier: "https://example.clerk.dev|user_a",
-          issuer: "https://example.clerk.dev",
+          tokenIdentifier: "https://example.issuer.dev|user_a",
+          issuer: "https://example.issuer.dev",
         },
       }),
     })
@@ -245,8 +239,8 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
 
     // user_b's event first: if the filter were missing it would arrive
     // before user_a's own event in the stream below.
-    claxedoBus.publish({ type: "workgraph.changed", ownerUserId: "user_b", ts: 1 })
-    claxedoBus.publish({ type: "workgraph.changed", ownerUserId: "user_a", ts: 2 })
+    claxedoBus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_b", sessionId: "ses_1", workspaceId: "ws_1", ts: 1 })
+    claxedoBus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_a", sessionId: "ses_1", workspaceId: "ws_1", ts: 2 })
 
     const decoder = new TextDecoder()
     let received = ""
@@ -264,7 +258,7 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
   test("a signed subscriber receives document.changed for the org resolved at connect", async () => {
     // Regression for the org-identity namespace split: document.changed frames
     // are stamped with the AUTHORITY-INTERNAL org id, so the subscriber's org
-    // identity must come from `resolveOrgId` at connect — with only the Clerk
+    // identity must come from `resolveOrgId` at connect — with only the issuer
     // claim these frames were invisible to every signed subscriber.
     const app = mountHandler({
       authConfig: baseConfig,
@@ -272,10 +266,10 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
         mode: "signed",
         user: {
           subject: "user_a",
-          tokenIdentifier: "https://example.clerk.dev|user_a",
-          issuer: "https://example.clerk.dev",
-          // The Clerk claim (disjoint namespace) must play no part in scoping.
-          orgId: "org_2clerkclaim",
+          tokenIdentifier: "https://example.issuer.dev|user_a",
+          issuer: "https://example.issuer.dev",
+          // The issuer claim (disjoint namespace) must play no part in scoping.
+          orgId: "org_2orgclaim",
         },
       }),
       resolveOrgId: async () => "org_internal_x",
@@ -330,8 +324,8 @@ describe("eventsHandler — signed stream is filtered per-event", () => {
         mode: "signed",
         user: {
           subject: "user_a",
-          tokenIdentifier: "https://example.clerk.dev|user_a",
-          issuer: "https://example.clerk.dev",
+          tokenIdentifier: "https://example.issuer.dev|user_a",
+          issuer: "https://example.issuer.dev",
         },
       }),
       resolveOrgId: async () => currentOrgId,
@@ -454,8 +448,8 @@ function mountSignedAs(bus: ReturnType<typeof createBus<ClaxedoEvent>>, subject:
         mode: "signed",
         user: {
           subject,
-          tokenIdentifier: `https://example.clerk.dev|${subject}`,
-          issuer: "https://example.clerk.dev",
+          tokenIdentifier: `https://example.issuer.dev|${subject}`,
+          issuer: "https://example.issuer.dev",
         },
       }),
     }),
@@ -475,8 +469,8 @@ function mountSignedByBearer(bus: ReturnType<typeof createBus<ClaxedoEvent>>) {
         mode: "signed",
         user: {
           subject: token,
-          tokenIdentifier: `https://example.clerk.dev|${token}`,
-          issuer: "https://example.clerk.dev",
+          tokenIdentifier: `https://example.issuer.dev|${token}`,
+          issuer: "https://example.issuer.dev",
         },
       }),
     }),
@@ -502,8 +496,8 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
       bob.until((seen) => seen.includes("heartbeat"), "Bob did not connect"),
     ])
 
-    bus.publish({ type: "workgraph.changed", ownerUserId: "user_alice", ts: 1 })
-    bus.publish({ type: "workgraph.changed", ownerUserId: "user_bob", ts: 2 })
+    bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_alice", sessionId: "ses_1", workspaceId: "ws_1", ts: 1 })
+    bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_bob", sessionId: "ses_1", workspaceId: "ws_1", ts: 2 })
     const [aliceText, bobText] = await Promise.all([
       alice.until((seen) => seen.includes("user_alice"), "Alice did not receive her frame"),
       bob.until((seen) => seen.includes("user_bob"), "Bob did not receive his frame"),
@@ -578,13 +572,13 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
     first.close()
 
     // The frame-loss window: published with no connection attached.
-    bus.publish({ type: "workgraph.changed", ownerUserId: "local", ts: 1 })
+    bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "local", sessionId: "ses_1", workspaceId: "ws_1", ts: 1 })
 
     const second = await connect(app, { lastEventId: cursor })
-    const text = await second.until((seen) => seen.includes("workgraph.changed"), "gap frame was lost")
+    const text = await second.until((seen) => seen.includes("session.share.changed"), "gap frame was lost")
     second.close()
 
-    const recovered = frames(text).find((frame) => frame.data?.includes("workgraph.changed"))
+    const recovered = frames(text).find((frame) => frame.data?.includes("session.share.changed"))
     expect(recovered?.id).toBe("1")
     expect(recovered?.data).toContain("\"ownerUserId\":\"local\"")
   })
@@ -646,8 +640,8 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
 
     // Both published with no connection attached, so both are in the ring and
     // only the ring can deliver them.
-    bus.publish({ type: "workgraph.changed", ownerUserId: "user_a", ts: 1 })
-    bus.publish({ type: "workgraph.changed", ownerUserId: "user_b", ts: 2 })
+    bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_a", sessionId: "ses_1", workspaceId: "ws_1", ts: 1 })
+    bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_b", sessionId: "ses_1", workspaceId: "ws_1", ts: 2 })
 
     const stream = await connect(app, { lastEventId: "0", bearer: "valid-token" })
     const text = await stream.until((seen) => seen.includes("user_b"), "own frame was not replayed")
@@ -669,9 +663,9 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
     first.close()
 
     for (let i = 1; i <= 300; i += 1) {
-      bus.publish({ type: "workgraph.changed", ownerUserId: "user_a", ts: i })
+      bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_a", sessionId: "ses_a", workspaceId: "ws_1", ts: i })
     }
-    bus.publish({ type: "workgraph.changed", ownerUserId: "user_b", ts: 301 })
+    bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_b", sessionId: "ses_1", workspaceId: "ws_1", ts: 301 })
 
     const second = await connect(app, { lastEventId: "0", bearer: "valid-token" })
     const text = await second.until((seen) => seen.includes("user_b"), "own replay frame never arrived")
@@ -688,8 +682,8 @@ describe("eventsHandler — /api/claxedo/events replay", () => {
 
     const stream = await connect(app, { bearer: "valid-token" })
     await stream.until((seen) => seen.includes("heartbeat"), "no cursor bootstrap frame")
-    bus.publish({ type: "workgraph.changed", ownerUserId: "user_a", ts: 1 })
-    bus.publish({ type: "workgraph.changed", ownerUserId: "user_b", ts: 2 })
+    bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_a", sessionId: "ses_1", workspaceId: "ws_1", ts: 1 })
+    bus.publish({ type: "session.share.changed", phase: "granted", ownerUserId: "user_b", sessionId: "ses_1", workspaceId: "ws_1", ts: 2 })
     const text = await stream.until((seen) => seen.includes("user_b"), "own live frame never arrived")
     stream.close()
 

@@ -11,22 +11,20 @@ binding = "AUTH_DB"
 database_id = "auth-id"
 `
 
-function descriptor(serviceId: "workgraph" | "documents") {
-  const common = {
+function descriptor(serviceId: "documents") {
+  return {
     serviceId,
     protocolVersion: SERVICE_PROTOCOL_VERSION,
     schemaVersion: 1,
     state: "installed_disabled" as const,
-    entrypoint: serviceId === "workgraph" ? "WorkGraphServiceV1" : "DocumentsServiceV1",
+    entrypoint: "DocumentsServiceV1",
+    bindingName: SERVICE_BINDINGS.documents,
     trust: {
       environmentId: "production",
       deploymentId: "deployment-1",
       bindingProvenance: `cloudflare-service:${serviceId}`,
     },
   }
-  return serviceId === "workgraph"
-    ? { ...common, serviceId, bindingName: SERVICE_BINDINGS.workgraph }
-    : { ...common, serviceId, bindingName: SERVICE_BINDINGS.documents }
 }
 
 describe("generated core optional-service bindings", () => {
@@ -38,7 +36,7 @@ describe("generated core optional-service bindings", () => {
     expect(installed).toContain('binding = "DOCUMENTS_SERVICE"')
     expect(installed).toContain('service = "claxedo-documents-production"')
     expect(installed).toContain('entrypoint = "DocumentsServiceV1"')
-    expect(installed).not.toMatch(/WORKGRAPH|DOCUMENTS_DB|DOCUMENTS_BUCKET|r2_buckets|durable_objects|crons/)
+    expect(installed).not.toMatch(/DOCUMENTS_DB|DOCUMENTS_BUCKET|r2_buckets|durable_objects|crons/)
   })
 
   test("rejects mutation of a config that already owns optional bindings", () => {

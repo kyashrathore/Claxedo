@@ -18,8 +18,6 @@ cites signed-mode Phase A from it.
   `packages/claxedo-server/src/routes/hosted/device-auth.ts`
 - Hosted workspace authorization:
   `packages/claxedo-server/src/routes/hosted/workspace.ts`
-- Convex policy coverage: the `*.policy.test.ts` suites in the repo-root
-  `convex/` directory
 - App auth bootstrap:
   `packages/claxedo-app/src/app/entry/main.tsx`
 - App signed runtime access:
@@ -28,7 +26,7 @@ cites signed-mode Phase A from it.
 ## Current Signed-Mode Rules
 
 - `CLAXEDO_SIGNED_CLOUD_AUTH` enables signed/cloud auth.
-- Clerk issuer and JWKS settings are read by the control-plane auth adapter.
+- Issuer and JWKS settings are read by the control-plane auth adapter.
 - Signed auth can carry `org_id`/`orgId` claims when the issuer provides them.
 - Hosted control-plane composition fails closed when required signed/hosted
   configuration is missing.
@@ -37,17 +35,10 @@ cites signed-mode Phase A from it.
 
 ## Current Role/Identity Grounding
 
-Current authorization behavior is covered by authority and Convex policy tests
-rather than by this document. Before changing identity behavior, read the
-authority suites under `packages/claxedo-server/src/authority` and the Convex
-policy tests in the repo-root `convex/` directory, especially:
-
-- `convex/orgs.policy.test.ts`
-- `convex/users.policy.test.ts`
-- `convex/sessions.policy.test.ts`
-- `convex/workspace-region.policy.test.ts`
-- `convex/host-enrollments.policy.test.ts`
-- `convex/share-revoke.policy.test.ts`
+Current authorization behavior is covered by the authority policy tests rather
+than by this document. Before changing identity behavior, read the authority
+suites under `packages/claxedo-server/src/authority`, especially the D1 and
+SQLite adapter suites for core, session, host-access, and workspace authority.
 
 ## Maintenance Rule
 

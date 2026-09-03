@@ -52,7 +52,7 @@ describe("D1 optional-service deployment lock", () => {
     const finish = deferred()
     const first = lock.withDeploymentLock(
       { environmentId: "production", deploymentId: "deployment-1" },
-      "install-workgraph",
+      "install-documents",
       async () => {
         entered.resolve()
         await finish.promise

@@ -30,9 +30,6 @@ type OpenCall =
   | { name: "openPage"; pageId: string; title?: string; directory?: string; workspaceRouteId?: string }
   | { name: "openPagesIndex"; directory?: string; workspaceRouteId?: string }
   | { name: "openMarketplace" }
-  | { name: "openWorkGraph" }
-  | { name: "openWorkspaceWorkGraph"; directory: string; workspaceRouteId?: string }
-  | { name: "openTaskComposer"; directory?: string; workspaceRouteId?: string }
 
 type PatchCall = {
   id: string
@@ -368,29 +365,6 @@ function createHarness(input: {
         focused = id
         return id
       },
-      openWorkGraph() {
-        opened.push({ name: "openWorkGraph" })
-        focused = "workgraph"
-        return "workgraph"
-      },
-      openWorkspaceWorkGraph(directory: string, opts?: { workspaceRouteId?: string }) {
-        opened.push({
-          name: "openWorkspaceWorkGraph",
-          directory,
-          ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
-        })
-        focused = `workspace-workgraph:${directory}`
-        return focused
-      },
-      openTaskComposer(directory?: string, opts?: { workspaceRouteId?: string }) {
-        opened.push({
-          name: "openTaskComposer",
-          directory,
-          ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
-        })
-        focused = `task-composer:${directory ?? "global"}`
-        return focused
-      },
     },
     // as-any: test double implements only the API surface exercised by this test.
   } as unknown as ClaxedoStateApi
@@ -575,23 +549,6 @@ describe("state route intent", () => {
     expect(harness.workspacePanelCalls).toEqual([])
   })
 
-  test("routes project WorkGraph and task composer intents to their owned surfaces", () => {
-    const project = createHarness()
-    project.receive({ workspaceId: "/repo/main", workspaceWorkGraph: true })
-    expect(project.opened).toEqual([{
-      name: "openWorkspaceWorkGraph",
-      directory: "/repo/main",
-      workspaceRouteId: "ws_main",
-    }])
-
-    const composer = createHarness()
-    composer.receive({ workspaceId: "/repo/main", workspaceRouteId: "ws_main", newTask: true })
-    expect(composer.opened).toEqual([{
-      name: "openTaskComposer",
-      directory: "/repo/main",
-      workspaceRouteId: "ws_main",
-    }])
-  })
 
   test("workspace browse route opens the workspace panel without creating a session surface", () => {
     const harness = createHarness({ focused: "existing-session" })

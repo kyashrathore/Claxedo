@@ -36,7 +36,7 @@ describe("legacy public event schemas", () => {
         author: {
           ...signed.claxedo.author,
           actorId: "internal_actor_123",
-          subject: "clerk|secret",
+          subject: "idp|secret",
         },
       },
     } as unknown) as unknown).toEqual(signed)

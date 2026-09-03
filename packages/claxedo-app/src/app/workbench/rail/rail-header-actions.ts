@@ -12,8 +12,7 @@ export function createRailHeaderActions(input: {
    * same guess the rail's project headers used to make.
    */
   onNewTerminalDraft?: (workspaceDir: string, paneId?: string) => void
-  onNewTask?: (workspaceDir?: string, paneId?: string) => void
-  /** Seeds the creator when no workspace is focused (WorkGraph, Marketplace, …). */
+  /** Seeds the creator when no workspace is focused (Marketplace, …). */
   fallbackWorkspaceDir?: () => string | undefined
   sidebarDir: () => string | undefined
 }) {
@@ -36,16 +35,12 @@ export function createRailHeaderActions(input: {
     createTerminalDraft: () => {
       // No `focusedSurfaceWorkspaceToolsBlocked()` guard, unlike `createTerminal`
       // above. That guard means the focused surface has no workspace — true on
-      // WorkGraph, Marketplace and Global chat — and refusing there would hide
+      // Marketplace and Global chat — and refusing there would hide
       // the one control whose entire job is to ask which workspace to use.
       const paneId = input.focusedSplitPaneId()
       const workspaceDir = headerWorkspaceDir(paneId) ?? input.fallbackWorkspaceDir?.()
       if (!workspaceDir) return
       input.onNewTerminalDraft?.(workspaceDir, paneId)
-    },
-    createTask: () => {
-      const paneId = input.focusedSplitPaneId()
-      input.onNewTask?.(headerWorkspaceDir(paneId), paneId)
     },
   }
 }

@@ -113,8 +113,6 @@ describe("resource-closed hosted core app", () => {
       expect(paths).toContain(expected)
     }
     expect(paths.filter((route) =>
-      route.startsWith("/api/workgraph") ||
-      route.startsWith("/internal/workgraph") ||
       route.startsWith("/documents") ||
       route.startsWith("/api/billing")
     )).toEqual([])
@@ -165,18 +163,16 @@ describe("resource-closed hosted core app", () => {
     )
   })
 
-  test("has no static WorkGraph, wakes, Documents, billing, or Polar implementation edge", () => {
+  test("has no static wakes, Documents, billing, or Polar implementation edge", () => {
     const entry = "src/deployments/hosted-shared/hosted-core-app.ts"
     const closure = sourceClosure({ entry: path.join(ROOT, entry), root: ROOT, runtimeOnly: true })
     expect(closure.unresolved).toEqual([])
     expect(closure.opaque).toEqual([])
     const files = closure.modules.map((module) => module.relative.toLowerCase())
-    expect(files.filter((file) => ["hosts/workgraph", "hosts/wakes", "documents/", "billing/"].some((part) => file.includes(part)))).toEqual([])
+    expect(files.filter((file) => ["hosts/wakes", "documents/", "billing/"].some((part) => file.includes(part)))).toEqual([])
     expect(
       closure.packages.filter((name) =>
         [
-          "@claxedo/workgraph",
-          "@claxedo/workgraph-service",
           "@claxedo/documents-service",
           "@claxedo/wakes",
           "@polar-sh/sdk",
@@ -315,11 +311,11 @@ describe("resource-closed hosted core app", () => {
     const app = createHostedCoreApp(plane(), {
       ...options,
       serviceCatalog: async () => [{
-        serviceId: "workgraph",
+        serviceId: "documents",
         protocolVersion: "claxedo.service.v1",
         schemaVersion: 1,
         state: "installed_disabled",
-        bindingName: "WORKGRAPH_SERVICE",
+        bindingName: "DOCUMENTS_SERVICE",
         entrypoint: "https://operator-only.internal",
         trust: {
           environmentId: "environment-secret",
@@ -339,7 +335,7 @@ describe("resource-closed hosted core app", () => {
     const body = await response.text()
     expect(JSON.parse(body)).toMatchObject({
       services: [{
-        serviceId: "workgraph",
+        serviceId: "documents",
         protocolVersion: "claxedo.service.v1",
         schemaVersion: 1,
         state: "installed_disabled",

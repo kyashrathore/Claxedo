@@ -12,13 +12,13 @@ order that removes real ceilings first, and end with the system's scale limits
 
 The review's own scale claim is the target to beat: "with the fundamentals done,
 tens of thousands of active tenants is a defensible target." Getting there is
-mostly mechanical — the sharding design is already right. What is missing is
-index discipline, a shared rate limit, one DO shard key, and proof.
+mostly mechanical — the sharding design is already right. What is missing is a
+shared rate limit, a measured live-sync ceiling, relay hardening, and proof.
 
 ## Non-goals
 
 - **Not** the "millions of users" rework. That needs a different per-command
-  Convex write pattern, a binary relay frame format, and multi-region placement.
+  control-plane write pattern, a binary relay frame format, and multi-region placement.
   Do not start those until the benches in `W7` pass.
 - **Not** re-litigating the sharding shape. Per-workspace relay DOs and
   per-(org, owner) keys are correct and reviewed. See Part C of the review.
@@ -58,13 +58,9 @@ Fixed and verified on `dev` as of 2026-07-30 — **do not re-report**:
 | Finding | Closed by |
 |---|---|
 | A1 sweep wall | Index-backed dirty/stale queries + `createSweepSubrequestBudget` (`hosted-runtime.ts:213-242`), self-rotating so no cursor is needed |
-| A2 identity round-trips | Per-isolate `identityCache` (`workgraph-host/hosted.ts:283-303`) |
-| A5 write serialization + stampede | `workgraph_change_cursors` deleted; doorbell carries a cursor (`sync-lifecycle.ts:134-141`) |
 | B2 dead minute-cron | Both crons registered; `worker-cron-drift.test.ts` guards drift |
 | B3 live-sync drops | Namespace unified 2026-07-28; `id:` lines + replay ring + gap event |
-| B4 503→401 | `isExplicitHttpError` propagates status (`packages/workgraph/src/http/router.ts:98-111`) |
 | A6(1) relay prod config | Top-level `[vars]`, cap 256, explicit hint; `relay-config-drift.test.ts` |
-| B5 timeouts (half) | `adapters/convex/timeout.ts`, 5 s reads / 10 s writes |
 | B1 auto-delete (half) | `lifecycleMinutes()` floors at 1 min; Daytona now gets auto-stop/auto-delete |
 
 **Two corrections carried forward from the re-verification**, because they change
@@ -92,7 +88,7 @@ Three facts shape every workstream below.
 
 **Workers are stateless and plural.** One deployment, many isolates, no shared
 memory. Anything in a JS `Map` is per-isolate. This is why `W3`'s limiter must
-move to a shared store and why `W4`'s idempotency cannot stay in-process.
+move to a shared store rather than staying in-process.
 
 **Durable Objects are the coordination primitive, and their key is their shard.**
 `idFromName(name)` always reaches one instance. The relay is keyed
@@ -100,7 +96,7 @@ move to a shared store and why `W4`'s idempotency cannot stay in-process.
 Live-sync is keyed `org:<orgId>` (`live-sync-room.ts:244-249`) — one instance per
 org, which is `W2`'s ceiling.
 
-**Convex rows are truth; DOs are accelerators.** A wake is written before a DO is
+**Control-plane rows are truth; DOs are accelerators.** A wake is written before a DO is
 nudged, and a sweep catches what the nudge lost. Preserve that ordering in every
 change here.
 
@@ -109,7 +105,7 @@ change here.
 ## Implementation
 
 Workstreams are ordered by ceiling removed per unit of effort. `W1`–`W3` are
-independent and should run in parallel; `W4`–`W6` are independent of each other;
+independent and should run in parallel; `W6` is independent of them;
 `W7` gates the release claim.
 
 ### W1 — Make the sandbox GC able to see (finding B1 remainder)
@@ -214,11 +210,6 @@ nothing can answer "what is running that shouldn't be?"
       autoStop/autoDelete) and a GC that can now see. A third never-executed
       safety layer would be trusted the first time it fired having never run.
       Its test was removed with it; a rationale comment holds the spot.
-      **Still open, not mine to delete:** `listNeedingDriverReconciliation`
-      (`convex/sandboxLeases.ts:592`) is likewise unreferenced by production code
-      (only `convex-lease-reaper-policy.test.ts`) and does an unbounded
-      `.collect()`. It lives in `convex/`, owned by the `convex-index` agent
-      (`W5`) — that agent should delete it or wire it, not leave it dormant.
 
 **Acceptance:** MET 2026-07-30. Positive controls, each shown FAILING against
 pre-fix code before the fix landed:
@@ -251,7 +242,7 @@ design as written:
 1. **The plan listed only publishers.** The site that decides which shard a
    connection lands in is the subscriber path — `connectLiveSyncRoom`
    (`live-sync-room.ts:663`, reached from `routes/hosted-shell.ts:344`) — and
-   there is a **third** publisher (`workgraph-host/hosted.ts:232`). Also
+   there is a **third** publisher in the hosted app. Also
    `liveSyncRoomName` (`:214-220`) short-circuits to a hand-composed
    `"owner:local"` at `:215`, so "derived in exactly one function" was already
    false.
@@ -265,7 +256,7 @@ design as written:
    hazard; sharding makes it routine.
 4. **`assertLiveSyncRoomName`'s regex goes dead** under a `:<shard>` suffix
    (`org:undefined:3` passes), and fan-out is wrong as a blanket rule anyway:
-   `workgraph.changed` is subject-scoped (`event-visibility.ts:66-69`) — ringing
+   `session.share.changed` is subject-scoped (`event-visibility.ts:66-69`) — ringing
    N shards on the hot command path buys zero delivery.
 
 Also note: the WS path counts `state.getWebSockets().length` (`:461`) while SSE
@@ -306,13 +297,12 @@ measurement-backed value or sharding lands with the four hazards tested. A
 `createFixedWindowConnectionRateLimiter` (`control-plane/rate-limit.ts:31-35`,
 `Map` at `:36`) stores buckets in a per-isolate `Map`, so the effective limit is
 `configured × live isolates` — it loosens exactly under load. Worse, most of the
-surface has no limiter at all: the `/api/workgraph/*` routes
-(`hosted-app.ts:506-507`), the documents routes (`:508-531`), and
+surface has no limiter at all: the documents routes (`:508-531`) and
 checkpoint/lifecycle routes (`:502-504`, including destroy) have none.
 **Corrected 2026-07-30:** the limiter has *nine* consumers, not one
 (`hosted-app.ts:436-443`, `routes/hosted-workspace.ts:259-271`,
 `workspace-connection-routes.ts:28`, `hosted-device-auth.ts:160`,
-`billing-routes.ts:148`, `hosted-workgraph-admin.ts:28`,
+`billing-routes.ts:148`,
 `workspace-signed-access.ts:68`, `workspace-local-host-link-routes.ts:142`,
 `routes/workspace.ts:143-266`), and a **second limiter implementation** exists —
 `createSlidingWindowRateLimiter` (`claxedo-channels/src/core/rate-limit.ts:32`,
@@ -350,261 +340,7 @@ limit enforced, not 2×. Every mounted route inherits a body cap unless
 explicitly exempted, asserted by a route-inventory test that fails when a new
 route is added without either.
 
-### W4 — Finish the failure semantics (finding B5 remainder)
-
-Timeouts landed; the rest did not. Note the sharp edge: `withTimeout`
-(`adapters/convex/timeout.ts:25-28`) bounds **caller wait** and does *not* cancel
-the underlying fetch, so a timed-out mutation may still land. That makes durable
-idempotency more urgent than before the timeout fix, not less.
-
-- [ ] `W4.1` Retries with jitter on timeouts/5xx for **idempotent** operations
-      only. Reads always; writes only where an `operationId` makes replay safe.
-- [ ] `W4.2` Move control-route idempotency keys into Convex. Today
-      `control-plane/http-idempotency.ts` is two per-isolate `Map`s (`:1`,
-      `:2-6`), so two isolates both execute the "idempotent" operation. It
-      already has TTL + max-entries sweeping (`:7-8`, `:95-109`) — the work is
-      cross-isolate scope only. Affected routes: register/checkpoint/repair
-      (`routes/hosted-control.ts:113,140,172`; `control-plane/http.ts:41,65,93`).
-      `operationId` in WorkGraph and ETag CAS in documents are the in-repo
-      templates. **Latent bug found 2026-07-30, fix in passing:** in-flight
-      entries have no `expiresAt`, so they are neither swept nor evictable —
-      hung requests wedge the cache into permanent 503s; and `pullLocks` leaks
-      if `run` never settles.
-- [ ] `W4.3` Dedup the Polar webhook on `webhook-id`, which is currently read for
-      signature verification only (`billing-routes.ts:220`;
-      `standard-webhooks.ts:72,95`). Existing protection is only a last-write-wins
-      `source_ts` guard.
-- [ ] `W4.4` Land W4's fenced cron lease. `skipOverlappingReconcile`
-      (`workgraph-host/reconcile-serialize.ts:15` — closure-local, per-isolate
-      via the memoized `buildApp` at `worker.ts:130,136`) and a second
-      independent per-isolate guard at `hosted-workgraph-admin.ts:65-71`. Its
-      own comment records that overlapping reconciles once *hung the Workers
-      runtime* (staging run 29514161976). Two isolates can still overlap; fence
-      both guards behind one Convex lease.
-- [ ] `W4.5` Timeouts on Polar. **Corrected 2026-07-30 — Daytona was wrong:**
-      the driver's lifecycle calls carry `DEFAULT_OPERATION_TIMEOUT_S = 60`
-      (`daytona.ts:114`); only read/preview/secret calls are untimed — cover
-      those, but the genuine gap is **Polar**: untimed calls at
-      `billing-routes.ts:346` (user-facing checkout) and `billing/reconcile.ts:47,
-      :110` — the latter two inside **serial for-loops on the cron path**, so one
-      hung call stalls the whole sweep. `drivers/cloudflare.ts:127`'s real
-      `AbortSignal.timeout` is the template; sibling `billing-store.ts` already
-      wraps everything in `withTimeout`. For `W4.1`'s jitter there is no in-repo
-      server-side template; the closest reusable shape is
-      `claxedo-app/src/platform/sync/global-sdk/reconnect-backoff.ts:7-9`.
-
-**Acceptance:** a fault-injection test with a hanging Convex stub fails fast with
-503 instead of holding the request. A duplicate register/checkpoint across two
-simulated isolates executes **once**. Two concurrent `scheduled()` invocations
-run the reconcile body once.
-
-### W5 — Convex index pass (finding A3)
-
-119 `.collect()` calls across `convex/`. The discipline exists — `workgraphChanges.ts`
-names a "no-unbounded-read" invariant and `workgraphCommands.ts` uses
-`.withIndex(...).unique()` correctly. It simply was not applied everywhere.
-Convex caps documents read per transaction, so these do not degrade — they
-**throw**.
-
-Hot-path sites, highest value first:
-
-- [x] `W5.1` `orgs.ts:106` (`setActive`) reads **every org** then does a JS
-      `.find()` — on every org switch — while `by_clerk_org_id`
-      (`schema.ts:119`) already exists and is unused here (`model.ts:315-320
-      orgByClerkOrgId` is the existing indexed helper; reuse it). **Added
-      2026-07-30:** `workspaceShares.ts:24` is a byte-for-byte duplicate of this
-      bug — convert it in the same pass. Note `setActive` has zero test
-      coverage repo-wide; its "results unchanged" test is its first test.
-- [x] `W5.2` `sandboxLeases.ts:490` (`countActiveForOrg`) scans **all**
-      `runtime_leases` on **every hosted workspace create**. Its own comment
-      predicts this: "if this table ever grows past the point where a scan is
-      cheap, that index is the fix." Add `by_org`. Note the read-set is the whole
-      table, so any lease heartbeat OCC-conflicts with any create.
-- [x] `W5.3` Membership authz in `orgs.ts` reads every member of an org to find
-      one row, despite `by_org_user` (`schema.ts:181`) existing. **Corrected
-      2026-07-30 — five sites, not one:** `:87-90` (`resolveForMe`), `:110-113`
-      (`setActive`), `:201-204` (`upsertClerkMembership`), `:243-246`
-      (`deleteClerkMembership`), `:316-319` (`membershipByClerkIds`). All use
-      the compound index prefix-only then JS-`.find()`; add the second `.eq()`
-      + `.unique()` (shape at `workgraphCommands.ts:91-93`). Leave
-      `workspaceShares.ts:45-49` — it legitimately wants all members.
-- [x] `W5.4` `billing.ts:379, 394, 418` — three separate full `orgs` scans, on a
-      6 h cron and twice per 15-min sweep.
-- [x] `W5.5` Remaining lease scans (`sandboxLeases.ts:421, 543, 595, 613`),
-      `orgs.ts:920` purge, `usageMetering.ts`, `workspaceShares.ts`.
-- [x] `W5.6` Make it a standing guard: a test or lint that fails on a new
-      `.collect()` without an index predicate, allowlisted exceptions only.
-      Model it on `worker-cron-drift.test.ts` and `relay-config-drift.test.ts` —
-      both parse config/source and assert an invariant.
-
-**Acceptance:** each converted site has a test asserting results are unchanged,
-**and** the source guard holds — measured 2026-07-30: result-equality tests
-alone cannot catch a revert to a scan (identical rows, different read-set), so
-the guard is the durable half of this acceptance, the behavior tests the
-trustworthy half. The guard test fails on a newly introduced unbounded
-`.collect()`.
-
-**DONE 2026-07-30.** All 14 unindexed reads in `convex/` converted or bounded;
-the tree-wide scan is clean and the guard holds it there.
-
-Schema indexes added (all additive; none removed). `orgs`:
-`by_billing_reconcile_flagged_at`, `by_polar_subscription_id`,
-`by_purge_requested_at`. `runtime_leases`: `by_org_status`,
-`by_owner_subject_status` (compound on `status` so terminal leases — the
-unbounded side of that table — stay out of the read-set). `sandbox_lease_events`:
-`by_rolled_up_at`.
-
-Two corrections to the plan text above, both verified against Convex's docs and
-types rather than assumed:
-
-1. **`W5.4` cannot use a compound index.** Convex requires `.eq` on every
-   leading index field before ranging a later one, and `flagStaleBillingSync`
-   has no single customer id to pin — so a `[polar_customer_id,
-   billing_synced_at]` index is unusable for it. It ranges the existing
-   `by_polar_customer_id` above `undefined` instead (candidates bounded by
-   *paying* orgs, not signups) and keeps the staleness cutoff as a JS filter.
-2. **`W5.2` needed two indexes, not `by_org`.** The count has two scopes by
-   design (`org_id`, and `owner_subject` for personal accounts carrying no org
-   claim), the ranges overlap, and the pre-index handler counted an overlapping
-   row **once**. The conversion therefore deduplicates by document id; counting
-   twice would over-report usage and deny a tenant capacity it holds.
-
-The load-bearing Convex semantics, since three conversions depend on it: a
-document **missing** an indexed field is still in the index and sorts below every
-value, so `.eq(field, undefined)` means "field absent" and `.gt(field,
-undefined)` means "has this field at all". That is what makes an optional-field
-marker (`purge_requested_at`, `rolled_up_at`, `polar_subscription_id`) an exact
-index range rather than a scan-and-filter.
-
-Where a read is a genuine enumeration with no scoping predicate, it is bounded by
-a named constant instead: `LEASE_LIST_LIMIT`, `LEASE_RECONCILIATION_LIMIT`,
-`LEASE_BACKFILL_BATCH`, `BILLING_SWEEP_SCAN_LIMIT`, `ORG_PURGE_QUEUE_SCAN_LIMIT`,
-`USAGE_ROLLUP_ROW_LIMIT`. Each of those sweeps is level-triggered and drains its
-own range, so a saturated tick continues next tick rather than skipping rows.
-**The guard's allowlist is empty** — no site needed an exception.
-
-One deliberate behavior change, asserted in tests: `sweepStaleLeases`'s `scanned`
-now counts live **candidates examined**, not table size. Terminal leases are no
-longer merely skipped, they never enter the transaction — which is the point, and
-it makes the reaper's idempotence structural (a settled lease leaves the range).
-
-**`sandboxLeases.list` throws rather than truncating, and that is deliberate.**
-The plan's `W5.5` framing ("bound the remaining lease scans") is a trap on this
-one query. `list` is not an operator-only debug surface — it is the GARBAGE
-COLLECTOR's view of lease truth, reached through `SandboxLeaseStore.list()`
-(`stores/convex.ts:153`) and consumed by `sandboxManager.garbageCollect()`, which
-builds a workspace→lease Map from the result (`sandbox-manager/src/index.ts:1048`)
-and **destroys any provisioned sandbox with no matching entry**. A silent
-`.take(N)` there would delete a live customer's running sandbox the moment the
-table exceeded N — the same fleet-destroying shape GC already refuses to risk for
-a listing-incapable driver. So it reads `LIMIT + 1`, detects overflow, and refuses
-to answer. Between a cost bug (orphans unreclaimed until someone paginates it) and
-a data-loss bug, it fails toward cost. *An earlier revision of this work shipped
-the silent `.take()`; it was caught while verifying the deletion handoff below.*
-
-**`W1.4` / `W5.5` — `listNeedingDriverReconciliation` DELETED.** Its comment
-claimed it was "consumed by `sandboxManager.garbageCollect()`". It was not: GC
-reads leases only through `SandboxLeaseStore.list()`, and there was no call path
-to this function at all — the comment described an intention, never a wiring.
-Zero production callers repo-wide; the only references were its own tests, whose
-`describe` block is removed with it (the file's `sweepStaleLeases` and cron
-coverage stays). Deleted rather than wired, per the plan's rule against a third
-dormant safety layer, which also closes it as a `W5.5` scan target. Its constants
-(`RECLAIMABLE_LEASE_STATUSES`, `LEASE_RECONCILIATION_LIMIT`) went with it.
-
-**`setActive` now has its first-ever tests** —
-`control-plane/convex-org-switch-policy.test.ts`, 11 tests covering `setActive`,
-`membershipByClerkIds`, and `resolveForMe`. One result is worth recording because
-it bounds what "results unchanged" testing can prove: **those tests do NOT detect
-a revert to the table scan.** Verified by reverting `setActive` to
-`query("orgs").collect().find(...)` — all 11 still passed, because a scan and an
-indexed read return identical rows; the difference is read-set size, which no
-result assertion can observe. The guard caught it (`convex/orgs.ts:103
-(setActive)`). The plan's acceptance criterion ("each converted site has a test
-asserting results are unchanged") is therefore necessary but **not sufficient** on
-its own — the guard is what makes the conversions durable, and the fixture is
-what makes the guard trustworthy.
-
-The suite also pins two things the scan-era code got right and the conversion had
-to preserve: a co-member's role must never be returned for the caller (`mem_2`
-holds `owner` in the same org — returning it would be privilege escalation), and
-the missing-org and non-member cases must share one "Org not found" message, since
-distinguishing them would confirm an org's existence to an outsider. One
-intentional difference: `.unique()` replaces JS `.find()`, so duplicate
-membership rows now raise instead of arbitrarily picking a winner.
-
-**Verification.** `convex` typechecks clean (`tsc -p convex/tsconfig.json`).
-153/153 across ten Convex-touching suites (the eight below plus the new org-switch
-suite and `lease-store-equivalence`). Guard positive controls, each shown FAILING
-first:
-
-| Control | Guard output |
-|---|---|
-| Unbounded `.collect()` added to `convex/projects.ts` | `convex/projects.ts:44 (guardPositiveControl): return await ctx.db.query("orgs").collect()` |
-| `setActive`'s conversion reverted to the original scan | `convex/orgs.ts:103 (setActive): const orgs = await ctx.db.query("orgs").collect()` |
-| A real conversion reverted (`workspaceShares.grantedOrg`) | `convex/workspaceShares.ts:29 (grantedOrg): return (await ctx.db.query("orgs").collect())...` |
-| Allowlist entry left behind after the site is fixed | `no allowlist entry is stale` → `convex/projects.ts: guardPositiveControl` |
-
-Plus six fixture tests proving the parser's teeth: a `.filter()` chain is
-reported (Convex's `.filter()` reads the whole table — the entire bug class), and
-`.collect()` named only in a comment or string is not.
-
-**`W5.6` needed a second guard the plan did not anticipate.** Every converted
-site is exercised through a hand-rolled `db` double, and *all six* of them
-ignored the index **name** — `withIndex("by_anything", …)` behaved as a plain
-field filter. A double that accepts any index name cannot verify a scan→index
-conversion at all. `src/test-helpers/convex-index-harness.ts` resolves index
-names against the real `convex/schema.ts` and enforces Convex's index-order
-stepping and value ordering; all six doubles now use it.
-
-**That immediately surfaced a pre-existing tenant-deletion defect — now FIXED
-(2026-07-30).** The WorkGraph owner-deletion cascade queried every table in
-`WORKGRAPH_OWNER_TABLES` through `by_tenant`
-(`convex/workgraphOwnerDeletion.ts`), and three of those tables never declare it:
-`workgraph_dirty_events` (has `by_token`/`by_dirty`/`by_drained`),
-`workgraph_agent_checkpoints`, and `workgraph_session_bindings` (both
-`by_tenant_id` and friends). Against the real Convex runtime the cascade **threw**
-on those tables, so an owner deletion could not run to completion and rows it was
-meant to erase stayed — a data-retention defect, security-adjacent. It survived
-review because every hand-rolled `db` double ignored the index name.
-
-**No schema change was needed.** All three already carry an index whose first two
-fields are exactly `["organization_id", "owner_user_id"]`, and Convex returns
-every row matching an `eq` prefix regardless of the trailing field, so a two-`eq`
-range over `by_token` / `by_tenant_id` enumerates the tenant completely. Both
-trailing fields (`dirty_token`, `id`) are non-optional, so no row can fall
-outside the range. The inline `table === quarantine ? … : "by_tenant"` ternary is
-replaced by an explicit `WORKGRAPH_OWNER_DELETION_INDEXES` map plus an
-`ownerDeletionIndex(table)` resolver; a missing entry means `by_tenant`, and that
-assumption is now **asserted** rather than assumed.
-
-**Emptying the ratchet exposed a FOURTH instance of the same bug**, which is the
-argument for ratchets that must reach zero rather than merely not grow: the ORG
-deletion cascade (`convex/orgs.ts:392` `ORG_DIRECT_TABLES`) built its plan with a
-hardcoded `index: "by_tenant"` over the same imported table list, carrying the
-same false comment ("every one of those tables carries `organization_id` as the
-first column of its `by_tenant` index"). It threw on the same three tables. Both
-cascades now resolve through the one shared function, so they cannot disagree
-again.
-
-Guarded by four new assertions in
-`control-plane/convex-unbounded-read-guard.test.ts`: every cascade table declares
-the index resolved for it; each resolved index is tenant-**scoped** (leads with
-the tenancy prefix — an index that merely *mentions* those fields could match
-another tenant's rows and delete them, which is worse than throwing); no trailing
-field can exclude a tenant's row; and the map carries no entry for a table the
-cascade does not enumerate. Positive control: reverting the `dirty_events`
-mapping fails three of them, including `convex/schema.ts declares no index
-"by_tenant" on "workgraph_dirty_events"`. `knownMissingIndexes()` is now empty and
-asserted empty.
-
-Pre-existing baseline, verified by re-running with all W5 changes stashed: the
-two `architecture.test.ts` R8 failures (`sandbox-relay-target.ts`,
-`request-guard.ts`) are identical without this work and belong to other
-workstreams. Also note `personalOrgForUser` (`orgs.ts:19`) was already
-index-bounded by `by_owner` and needed no change.
-
-### W6 — Slower-burning correctness (findings B6, B7, B8)
+### W6 — Slower-burning correctness (findings B6, B8)
 
 - [ ] `W6.1` **The Blob hazard is a landmine.** `socketFrame`/`socketPayload`
       (`workspace-relay/src/cloudflare.ts:402-421` / `:423-430` — corrected
@@ -638,23 +374,6 @@ index-bounded by `by_owner` and needed no change.
       worse than "can hang": `rebuildHibernatedSockets:761-806` resets
       `pending: new Map()` (`:772`) and the pre-hibernation isolate's 30 s
       timeout died with it, so an in-flight request's promise **never settles**.
-- [ ] `W6.3` **Clerk membership drift.** Memberships come from webhooks only,
-      with no reconciliation sweep — billing has `flagStaleBillingSync` for
-      exactly this reason and Clerk has no equivalent. A missed
-      `organizationMembership.deleted` means a removed employee keeps org-admin
-      access **indefinitely**. Add a daily read-mostly sweep, rate-limit-aware
-      (Clerk's limits are tight, which is why the runtime path correctly never
-      calls it). Treat as security-adjacent. Two gaps folded in from
-      verification (2026-07-30): (a) `deleteClerkMembership`
-      (`convex/orgs.ts:233-250`) writes **no audit event**, so instrument the
-      delete path as part of the DoD's "with an audit event"; (b) it also has
-      **no ordering guard** — `upsertClerkMembership:206` guards replay via
-      `clerk_updated_at` but a delayed `.created` redelivery arriving after
-      `.deleted` re-inserts the membership; the sweep must be the corrective
-      writer for that route too, or the delete path gains its own guard
-      (tombstone). Note Convex holds **no Clerk credential today** — the sweep
-      needs the Clerk Backend API wired in (an action with a secret), which is
-      new surface, not just a new cron.
 - [ ] `W6.4` R2 documents: listing is 1 LIST + 2 GETs **per listed object**
       (`documents/hosted-index.ts:31-63`; orphaned/archived entries still pay
       their GETs before being discarded), `findRepository` (`:78-82`, with
@@ -672,8 +391,7 @@ index-bounded by `by_owner` and needed no change.
 
 **Acceptance:** a fault-injection suite covers resolver-down, token-expiry,
 stalled-client, and DO-restart, each asserting an explicit client experience —
-no silent hangs, no silent drops. A seeded Clerk divergence is corrected within
-one cycle with an audit event. Listing a 1,000-doc project costs O(1) R2
+no silent hangs, no silent drops. Listing a 1,000-doc project costs O(1) R2
 operations in a counting test.
 
 ### W6b — Relay frame-path cost and region placement (finding A6, items 1, 2, 4)
@@ -1193,7 +911,7 @@ tests are claims. Several items above are currently asserted by unit tests only.
       `claxedo-workspace-relay-staging` remains. No `.dev.vars`. The scratch
       workerd dial-in harness written for this investigation was deleted.
 - [x] `W7.2` **DONE 2026-07-30** — credential-free half wired and enforced.
-      `.github/workflows/relay-bench-gate.yml` (modeled on `workgraph-stress.yml`)
+      `.github/workflows/relay-bench-gate.yml` (modeled on the existing stress workflow)
       runs three steps on any `packages/workspace-relay/**` change: bench
       typecheck, unit tests, then the gate. New scripts in the relay
       package.json, appended: `bench:gate` (→ `local-dry-run.ts`, the
@@ -1266,30 +984,30 @@ tests are claims. Several items above are currently asserted by unit tests only.
       (problem 1) — the existing workerd test calls `connectLiveSyncRoom`
       directly and skips it. Publishers go through
       `liveSyncRoomNameForPrincipal`, the same single derivation `hosted-app.ts`
-      uses for the documents sink and the WorkGraph nudge. The viewer replicates
+      uses for the documents sink and the owner-scoped session nudge. The viewer replicates
       `claxedo-app/src/app/integrations/claxedo-events.tsx`'s fetch + manual
       reader loop and its `Last-Event-ID` handling line for line — deliberately
       NOT `EventSource`, which cannot attach `Authorization` and would only ever
       exercise the 401 branch.
 
       **Why not the full app UI.** `createHostedApp` cannot boot without real
-      Clerk + real Convex, behind three independent fail-closed gates
-      (`hosted-app.ts:216-238`, `hosted-services.ts:364-374`,
+      hosted auth and a real control-plane database, behind three independent
+      fail-closed gates (`hosted-app.ts:216-238`, `hosted-services.ts:364-374`,
       `deployment-mode.ts:236-247` — the last 503s *every* request when hosted
-      mode sees auth disabled). No env var relaxes any of them. Clerk/Convex are
+      mode sees auth disabled). No env var relaxes any of them. Both are
       therefore replaced via the injection points the route already exposes
       (`HostedShellRouteOptions.verifier` / `.resolveOrgId`, the
       `customVerifierAuthAdapter` seam) — the bearer token is the subject, as in
       `hosted-app.test.ts`'s `fakePlane`. Going further would also require a
-      Convex-backed documents backend and WorkGraph store just to have something
-      to publish *from*, plus pinned-port CORS and a dedicated vite, at which
-      point most of "the CF composition" is doubles.
+      database-backed documents backend just to have something to publish
+      *from*, plus pinned-port CORS and a dedicated vite, at which point most of
+      "the CF composition" is doubles.
 
       | Scenario | Verdict |
       |---|---|
       | live delivery — B receives A's `document.changed`, zero interaction | PASS |
       | `id:` line advances the client cursor | PASS |
-      | subject-scoped visibility — `workgraph.changed` reaches only its owner, though both share the org room | PASS |
+      | subject-scoped visibility — `session.share.changed` reaches only its owner, though both share the org room | PASS |
       | reconnect replay — nudge published while B is disconnected is recovered from `Last-Event-ID` | PASS |
       | replay-gap — evicted cursor yields an explicit `stream.replay-gap`, not a silent hole | PASS |
       | positive control — wrong-room publish reaches nobody | PASS |
@@ -1332,11 +1050,11 @@ tests are claims. Several items above are currently asserted by unit tests only.
       **What remains for a full-app version:** nothing in the transport is
       unproven, but the app-shell projection is not in this loop — what
       `document-index.tsx:365` and `sync-lifecycle.ts:134` *do* with a delivered
-      nudge is covered only by app-level tests. Note if that is ever built:
-      WorkGraph has a ~30 s poll fallback (`sync-lifecycle.ts:163`) that makes
-      rows refresh even with the doorbell fully broken, so a WorkGraph-based UI
-      assertion must be time-boxed under the poll interval or it proves nothing.
-      The Documents index has no such fallback and is the sound target.
+      nudge is covered only by app-level tests. Note if that is ever built: any
+      surface with a poll fallback (`sync-lifecycle.ts:163`) refreshes rows even
+      with the doorbell fully broken, so such an assertion must be time-boxed
+      under the poll interval or it proves nothing. The Documents index has no
+      such fallback and is the sound target.
 - [ ] `W7.4` Re-measure the ceilings and update the review's scale claim with
       **measured** numbers.
 
@@ -1367,7 +1085,7 @@ Carried from the repo's standing rules and the review's own method.
 - **Drift guards over vigilance.** Three config bugs in this review
   (`B2` cron, `A6` channel cap, `A6` location hint) were all "a value nobody
   noticed was missing." Each fix ships a test that parses the config and asserts
-  the invariant. `W5.6` extends the pattern to Convex reads.
+  the invariant.
 - **Cite file:line and verify before asserting.** Line numbers in the source
   review had already drifted by two days.
 
@@ -1393,8 +1111,6 @@ Carried from the repo's standing rules and the review's own method.
 - [x] The dead idle policy is wired or deleted — not left dormant. Progress:
       **DELETED 2026-07-30** — `decideSandboxIdle` removed with its test after
       grep-confirming zero production callers; rationale in `lease-policy.ts`.
-      `convex/sandboxLeases.ts:592`'s `listNeedingDriverReconciliation` is the
-      same shape and still dormant — flagged for the `convex-index` (`W5`) owner.
 - [x] The live-sync connection ceiling is a **measured** number, not an asserted
       one: a 1,000-connection org connects fully, via a raised measured cap or
       (only if measurement fails) sharding with the four named hazards tested.
@@ -1423,30 +1139,6 @@ Carried from the repo's standing rules and the review's own method.
       fails on any new route without a cap or named exemption; documents'
       hand-rolled 2 MiB cap exempted by name; Polar webhook body capped before
       buffering + IP-keyed limiter.
-- [x] A duplicate register/checkpoint across two isolates executes once.
-      Progress: **DONE 2026-07-30** — durable idempotency in Convex
-      (`convex/idempotency.ts`, leased in-flight claims + completed receipts,
-      TTL'd), in-memory map demoted to per-isolate fast path; two-isolate test
-      proves single execution; dead-holder takeover after lease expiry; the
-      latent unsweepable-in-flight-entry bug fixed in passing.
-- [x] Two concurrent `scheduled()` invocations run the reconcile body once.
-      Progress: **DONE 2026-07-30** — fenced Convex cron lease
-      (`convex/cronLease.ts`: TTL + monotonic fence + heartbeat + takeover;
-      motivating hang documented in the header), covering both formerly
-      per-isolate guards (`reconcile-serialize`, `hosted-workgraph-admin`).
-- [x] No unbounded `.collect()` on a hot path; a guard test fails on new ones.
-      Progress: **DONE 2026-07-30** — all 14 sites converted or bounded,
-      allowlist ships EMPTY; `convex-unbounded-read-guard.test.ts` parses
-      source (`.filter()` chains included) with declaration-anchored allowlist
-      entries requiring written reasons. Measured: behavior tests alone cannot
-      catch a scan revert; the guard is the durable half. Bonus: destroy-input
-      reads THROW on overflow rather than truncate (a silent `.take(1000)` on
-      GC's lease-truth input would have destroyed live sandboxes).
-- [x] Org switch and workspace create no longer scan a whole table. Progress:
-      **DONE 2026-07-30** — `setActive`/`grantedOrg` via `by_clerk_org_id`;
-      `countActiveForOrg` via two new status-scoped indexes with `_id` dedup
-      (overlapping org/owner scopes); five membership-authz sites through one
-      indexed `orgMembership()` helper with `.unique()`.
 - [x] `socketFrame`/`socketPayload` handle `Blob`, proven by a **real workerd**
       binary round-trip test, before any `compatibility_date` bump. Progress:
       **DONE 2026-07-30** — both handle Blob + DataView symmetrically;
@@ -1464,14 +1156,6 @@ Carried from the repo's standing rules and the review's own method.
       hibernation rebuild errors out discarded pendings — probe disproved the
       "never settles" prediction (guarded once-per-isolate rebuild → 503), and
       the invariant is now enforced rather than accidental.
-- [x] A removed Clerk member loses access within one reconciliation cycle, with
-      an audit event. Progress: **DONE in code 2026-07-30** —
-      `convex/clerkReconcile.ts` daily cursor-paged sweep (429-aware, per-org
-      completeness before any delete — no partial-diff deletions), audit events
-      on webhook deletes AND sweep corrections, tombstones block delayed
-      `.created` resurrection (with reaper cron), `flagStaleClerkWebhooks`
-      liveness lane. 41 policy tests. **Operator step:** set the Clerk secret
-      env var on the Convex deployment.
 - [x] Listing a 1,000-doc project is O(1) R2 operations; a >10k-object project
       paginates instead of throwing. Progress: **DONE 2026-07-30** — verified
       per-project roll-up object (ETag-checked, self-healing rebuild, orphan
@@ -1519,9 +1203,10 @@ Carried from the repo's standing rules and the review's own method.
       passes on broken code — replay tests must also assert nothing redundant
       arrived). Repro: `node --import tsx
       scripts/drill/live-sync-two-browser.ts` in claxedo-server. Full-app UI
-      variant remains blocked on real Clerk+Convex (three fail-closed gates);
-      if built later, assert on the documents index, NOT WorkGraph — its ~30 s
-      poll fallback refreshes rows even with the doorbell dead. Side finding:
+      variant remains blocked on real hosted auth and a real control-plane
+      database (three fail-closed gates); if built later, assert on the
+      documents index, whose rows have no poll fallback to mask a dead
+      doorbell. Side finding:
       the sequence-reset comment at `live-sync-room.ts:432` overstates scope
       (gap notice only on reconnect, not held connections) — measured fail-safe
       both paths, comment should say "on reconnect".
@@ -1540,12 +1225,10 @@ The workstreams were scoped for disjoint file ownership. Run them concurrently.
 | `sandbox-gc` | `W1` | `packages/sandbox-manager/src/drivers/*`, `packages/sandbox-manager/src/index.ts` |
 | `livesync-shard` | `W2` | `packages/claxedo-server/src/live-sync-room.ts` + the 3 named call sites |
 | `rate-limit` | `W3` | `control-plane/rate-limit.ts`, `hosted-app.ts` middleware block, `billing-routes.ts` |
-| `convex-index` | `W5` | `convex/*.ts`, `convex/schema.ts` |
 | `relay-blob` | `W6.1`+`W6.2` | `packages/workspace-relay/src/cloudflare.ts` |
 | `relay-frame` | `W6b` | same file — **sequence with `relay-blob`, do not run concurrently** |
 
-**Contention to manage:** `W3` and `W4.4` both touch `hosted-app.ts`; sequence
-them or split by line range. `W2` and `W3` both touch `hosted-app.ts` route
+**Contention to manage:** `W2` and `W3` both touch `hosted-app.ts` route
 mounting — `W2` only at the two publish sites (`:321`, `:527`), `W3` only at the
 middleware block (`:364`). Assign explicitly.
 
@@ -1567,7 +1250,7 @@ shipping.
 
 **Suggested wave order:**
 
-1. **Wave 1 (parallel):** `W1`, `W2`, `W3`, `W5` — four agents, disjoint trees.
-2. **Wave 2 (parallel):** `W4`, `W6` — after Wave 1 settles `hosted-app.ts`.
+1. **Wave 1 (parallel):** `W1`, `W2`, `W3` — three agents, disjoint trees.
+2. **Wave 2:** `W6` — after Wave 1 settles `hosted-app.ts`.
 3. **Wave 3 (barrier):** `W7` — benches and the two-browser drill against the
    composed result.

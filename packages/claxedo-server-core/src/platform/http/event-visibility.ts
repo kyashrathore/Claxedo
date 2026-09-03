@@ -13,17 +13,17 @@ import type { ControlPlaneAuthContext } from "@claxedo/server-core/platform/auth
  * The subscriber identity the event plane scopes on.
  *
  * NAMESPACE CONTRACT — the event plane's org identity is the
- * AUTHORITY-INTERNAL org id (Convex `orgs._id`, SQLite `org_id`), NEVER the
- * Clerk `org_...` claim. Events are stamped with internal ids at publish
+ * AUTHORITY-INTERNAL org id (the authority `orgs._id`, SQLite `org_id`), NEVER the
+ * the identity provider `org_...` claim. Events are stamped with internal ids at publish
  * (documents routes scope via `authority.resolveOrgId`, provision via
- * `Workspace.org_id`, WorkGraph runtime tokens carry the launch tenant's
+ * `Workspace.org_id`, hosted runtime tokens carry the launch tenant's
  * internal org id), so the subscriber side must present the SAME namespace:
  * `orgId` here is resolved via `authority.resolveOrgId(auth)` at subscribe
- * time. Passing the raw Clerk claim compares disjoint namespaces and silently
- * blinds the subscriber to every org-scoped event. `subject` is the Clerk
+ * time. Passing the raw the identity provider claim compares disjoint namespaces and silently
+ * blinds the subscriber to every org-scoped event. `subject` is the issuer
  * subject (`user_...`) — subjects are shared across both namespaces.
  *
- * `orgId` is the caller's ACTIVE org: the org matching their Clerk org claim
+ * `orgId` is the caller's ACTIVE org: the org matching their the identity provider org claim
  * when they are a member, else their personal org (`resolveOrgId` is total for
  * signed callers). Absent only when no authority is composed to resolve it —
  * then org-scoped events are invisible, fail-closed.
@@ -35,7 +35,7 @@ export type EventScopePrincipal =
 /**
  * The ONE constructor of a signed subscriber principal from a resolved auth
  * context. `resolvedOrgId` MUST come from `authority.resolveOrgId(auth)` —
- * this helper deliberately never reads `auth.user.orgId` (the Clerk claim),
+ * this helper deliberately never reads `auth.user.orgId` (the issuer claim),
  * so a caller cannot smuggle the wrong namespace in by omission.
  */
 export function eventScopePrincipal(
@@ -63,12 +63,8 @@ export function eventVisibleTo(principal: EventScopePrincipal, event: ClaxedoEve
   if (principal.mode === "unsigned-local") return true
 
   switch (event.type) {
-    case "workgraph.changed":
-      // ownerUserId is stamped from auth.user.subject at publish
-      // (server-workgraph.ts); "local" marks unsigned-local publishes.
-      return event.ownerUserId === principal.subject
     case "session.share.changed":
-      // ownerUserId is the *recipient* Clerk subject stamped at grant/revoke
+      // ownerUserId is the *recipient* the identity provider subject stamped at grant/revoke
       // publish (session share fanout), not the granter.
       return event.ownerUserId === principal.subject
     case "document.changed":

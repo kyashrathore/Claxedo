@@ -259,7 +259,7 @@ specific. Suspicious on a FRESH boot with no sessions — may be a runaway
 
 ## Workstreams
 
-### W1 — Embedded auth (the reframe's core): signed mode without Convex/Clerk
+### W1 — Embedded auth (the reframe's core): signed mode without a third-party identity provider
 **[UNIT] — backend landed 2026-07-07 (commit 4a29685acf), 7/7 tests; NO login UI
 so no real login flow ever exercised end-to-end** — better-auth@1.6.23 embedded:
 - [x] `embedded-auth.ts`: email+password + bearer() plugin; users/sessions in
@@ -322,7 +322,7 @@ without it the prebuilt-image model and per-deploy auth are incompatible.
 
 Phase 1 — backend (no deps; do first):
 - [ ] `GET /api/claxedo/auth-config` (PUBLIC, no auth) → `{ mode:
-      "better-auth"|"clerk"|"unsigned", emailPassword, social:[...],
+      "better-auth"|"unsigned", emailPassword, social:[...],
       passwordReset, emailVerification }`, derived from env at boot. Everything
       else reads this.
 - [ ] Extend embedded-auth.ts (embedded-auth.ts:96-111), all ENV-GATED so the
@@ -341,10 +341,11 @@ Phase 1 — backend (no deps; do first):
 
 Phase 2 — frontend (depends on Phase 1a; THE critical-path item):
 CORRECTION (login.tsx read 2026-07-08): the login screen EXISTS but is a
-CLERK-REDIRECT SHELL — a single "Continue" button → `auth.signIn()` →
-clerk.redirectToSignIn (login.tsx:45-46). Clerk hosts the actual form/social/
-reset. For embedded Better Auth there is NO hosted page to redirect to, so the
-form must live IN-APP. This is a SWAP of the button for a form, NOT a new screen.
+HOSTED-REDIRECT SHELL — a single "Continue" button → `auth.signIn()` → a
+redirect to the identity provider's own hosted sign-in page (login.tsx:45-46),
+which hosts the actual form/social/reset. For embedded Better Auth there is NO
+hosted page to redirect to, so the form must live IN-APP. This is a SWAP of the
+button for a form, NOT a new screen.
 - [ ] KEEP: the page shell, branding, terms/privacy footer, `useAuthSession`
       abstraction, post-login redirect (login.tsx). Reusable as-is.
 - [ ] Runtime bootstrap: on start, fetch `/api/claxedo/auth-config`; stop
@@ -352,9 +353,9 @@ form must live IN-APP. This is a SWAP of the button for a form, NOT a new screen
       Dockerfile's `VITE_AUTH_ENABLED=false` build flag; auth-enabled comes from
       the endpoint. (This is the real work — it touches app bootstrap.)
 - [ ] Better-Auth client impl in the auth-session layer (`createAuthClient` from
-      `better-auth/client`, baseURL=origin) ALONGSIDE the Clerk one; select by
-      `mode` from the endpoint.
-- [ ] Replace the "Continue→Clerk" button (login.tsx:45-70) with an
+      `better-auth/client`, baseURL=origin) ALONGSIDE the hosted-provider one;
+      select by `mode` from the endpoint.
+- [ ] Replace the "Continue→hosted sign-in" button (login.tsx:45-70) with an
       email+password form; GitHub/Google buttons rendered IFF `social` non-empty;
       "forgot password" link IFF `passwordReset`. All conditional on the endpoint.
 - [ ] Bearer wiring: Better Auth issues its token via the `set-auth-token`
@@ -377,18 +378,19 @@ rendering; `deploy --dev` vs default env; end-to-end default-tier deploy →
 signup → login → use, entirely email+password, zero third-party.
 
 Dependency chain (one line): **auth-config endpoint → frontend form (swap the
-Clerk button) → flip deploy to signed-default**; social/email/reset are
+hosted-redirect button) → flip deploy to signed-default**; social/email/reset are
 independent env-gated add-ons hanging off the auth-config endpoint.
 - [x] INVESTIGATION DONE (parity scout, 2026-07-07): `betterAuthAdapter`
       (control-plane/auth.ts:216-246) wraps ANY `BetterAuthVerifier`
       `(token) => Promise<BetterAuthSession|null>` — no JWKS/issuer config at
       the adapter level; the verifier owns token verification and returns
       {subject|userId|user.id, tokenIdentifier?, issuer?, orgId?}. `better-auth`
-      is NOT yet a monorepo dep (only @clerk/clerk-js + @openauthjs/openauth).
+      is NOT yet a monorepo dep (only the hosted provider's browser SDK and
+      @openauthjs/openauth).
       Boot fail-closed = server.ts:408-420 (`CLAXEDO_SIGNED_CLOUD_AUTH` set
       AND no `CLAXEDO_WORKSPACE_AUTHORITY_URL` → throw); downstream
-      controlPlaneAuthConfig also wants CLERK_JWT_ISSUER/CLERK_JWKS_URL else
-      "misconfigured". SQLite authority keys on arbitrary subject strings
+      controlPlaneAuthConfig also wants the hosted provider's JWT issuer and
+      JWKS URL else "misconfigured". SQLite authority keys on arbitrary subject strings
       (upsertUser w/ token_identifier/subject/issuer); synthetic "local"
       identity only injected by unsigned boot (workspace-authority.ts:43-53) —
       real subjects need no schema change.
@@ -403,9 +405,9 @@ functional check was LOCAL and auth was OFF in that build.**
       time via VITE_CLAXEDO_SERVER_URL / VITE_AUTH_ENABLED (index.tsx:82-98) —
       not runtime-configurable; simplest fix = build with relative URLs
       (VITE_CLAXEDO_SERVER_URL="") or a served /config.js window-config shim.
-      Clerk sign-in seam is a single point: login.tsx:43-46 `auth.signIn()` →
-      clerk.redirectToSignIn (auth-client.ts:218) — one-callback replacement
-      for a Better-Auth flow.
+      The hosted sign-in seam is a single point: login.tsx:43-46
+      `auth.signIn()` → the provider's hosted-redirect call
+      (auth-client.ts:218) — one-callback replacement for a Better-Auth flow.
 - [x] DONE (2026-07-07): static mount in createApp (CLAXEDO_APP_DIST_DIR;
       mounted LAST so API routes win; SPA index fallback for html GETs) +
       in-image vite build (`dist-selfhost`, EMPTY VITE_* URLs → the app calls
@@ -413,7 +415,8 @@ functional check was LOCAL and auth was OFF in that build.**
       relative) + ENV in the runtime stage. VERIFIED locally: one process
       serves /, /s/:id fallback, hashed assets, and all APIs.
 - [ ] Frontend Better-Auth login flow: seam identified (login.tsx:43-46
-      `auth.signIn()` → clerk.redirectToSignIn; single-callback replacement) —
+      `auth.signIn()` → the hosted sign-in redirect; single-callback
+      replacement) —
       implementation rides W1.
 
 ### W3 — Real pi central harness on the Codex subscription (REFRAMED 2026-07-07)
@@ -481,7 +484,8 @@ Do not rebuild it. What's there:
   Parses the Codex OAuth bundle.
 - Store/sync: `POST /api/claxedo/credentials/sync-local` (credential.ts:79) +
   `PUT /` with `{provider_id, kind, source, secret, ...}`. Works on SQLite
-  unsigned (no Convex). Metadata in SQLite, secret in a separate backend ref.
+  unsigned (no remote authority). Metadata in SQLite, secret in a separate
+  backend ref.
 - Fanout: registry.ts:277-285 — kinds {api_key, oauth_token,
   subscription_session} with a BARE provider_id (no colon) fan out to sandboxes.
   `codex-acp` is eligible.
@@ -573,11 +577,12 @@ half wrong: the IN-SANDBOX apply path already existed (every sandbox runs
 workspace-runtime; POST /api/wr/config → applyAgentExtensionsSnapshot →
 materialize into the sandbox's own FS, tested at runtime.test.ts:1417). The
 actual gap: control-plane hydration (`runtimeWorkspaceAgentExtensions`,
-agent-config.ts) HARDCODED `createConvexAuthority()` — on self-host (SQLite
-authority) it threw, was swallowed with a warn, and every sandbox received an
-EMPTY install set. Hosted-with-Convex was the only working mode.
+agent-config.ts) HARDCODED the hosted-authority constructor — on self-host
+(SQLite authority) it threw, was swallowed with a warn, and every sandbox
+received an EMPTY install set. The hosted authority was the only working mode.
 - [x] Fixed: `defaultRuntimeWorkspaceAuthority()` mirrors server composition
-      (Convex iff CLAXEDO_WORKSPACE_AUTHORITY_URL, else SQLite, memoized);
+      (the remote authority iff CLAXEDO_WORKSPACE_AUTHORITY_URL, else SQLite,
+      memoized);
       mirror-only workspace records merged in (authority wins on id conflict)
       and used as fallback when the authority is down.
 - [x] Test (sandbox-provisioning.integration.test.ts, red/green verified):

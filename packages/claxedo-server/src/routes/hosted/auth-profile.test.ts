@@ -56,7 +56,7 @@ describe("hosted canonical auth profile", () => {
       name: "Canonical organization",
       kind: "team",
       role: "owner",
-      clerk_org_id: "provider-org-secret",
+      provider_org_id: "provider-org-secret",
       client_secret: "must-not-leak",
     }])
     const app = HostedAuthProfileRoutes({ authentication: authentication(), listOrgs })
@@ -156,7 +156,7 @@ describe("hosted canonical auth profile", () => {
   })
 
   test.each([
-    ["provider alias only", [{ clerk_org_id: "org-provider", name: "Provider organization" }]],
+    ["provider alias only", [{ provider_org_id: "org-provider", name: "Provider organization" }]],
     ["duplicate canonical id", [
       { org_id: "org_canonical", name: "First" },
       { org_id: "org_canonical", name: "Second" },

@@ -35,8 +35,8 @@ declares `managed-private`.
 
 **A.3 Control plane** — `packages/claxedo-server/src/routes/hosted/host-enrollment.ts`
 records the beat through `WorkspaceAuthority.heartbeatHostEnrollment`. Each
-authority adapter (`authority/adapters/d1`, `claxedo-server-core/.../sqlite`,
-`convex/hostEnrollments.ts`) stores `session_authority` on the host enrollment
+authority adapter (`authority/adapters/d1`, `claxedo-server-core/.../sqlite`)
+stores `session_authority` on the host enrollment
 row; `activeWorkspaceHost` returns it. The latest beat assigns the value: a host
 that stops declaring is undeclared again. The control plane never guesses a
 runtime's composition; `hostSessionAuthority()` in

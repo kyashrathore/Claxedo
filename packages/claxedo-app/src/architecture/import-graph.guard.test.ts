@@ -11,7 +11,6 @@ const liveTypeContracts = [
   // `session-lifecycle.ts` above: the feature owns the event type, the shell
   // folds it into the `ClaxedoEvent` union with a TYPE-ONLY import, so the
   // import graph sees no value edge into them.
-  "features/workgraph/workgraph-changed-event.ts",
   "features/documents/data/document-changed-event.ts",
   "features/session/data/backend/types.ts",
   "features/session/data/query/types.ts",

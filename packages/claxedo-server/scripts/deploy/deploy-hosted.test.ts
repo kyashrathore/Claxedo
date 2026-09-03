@@ -56,8 +56,7 @@ describe("hosted deploy command selection", () => {
         dryRun: true,
         targets: ["central"],
         env: {
-          CLERK_SECRET_KEY: "clerk-secret",
-          CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
+          CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://authority.test",
         },
       }),
     ).toThrowError(/adapter profile must be/)
@@ -105,10 +104,7 @@ describe("hosted deploy command selection", () => {
     })
     const all = JSON.stringify(commands)
     expect(all).not.toContain("d1 create")
-    expect(all.toLowerCase()).not.toContain("workgraph")
     expect(all.toLowerCase()).not.toContain("documents")
-    expect(all.toLowerCase()).not.toContain("clerk")
-    expect(all.toLowerCase()).not.toContain("convex")
   })
 
   test("keeps a Better Auth D1 dry-run mutation-free and requires build-bound inputs", () => {

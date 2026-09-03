@@ -493,8 +493,7 @@ U1 → U2 → U3 establish characterization, the delivery contract, and runtime-
 When the session is busy only because of background work, a future follow-on may send immediately instead of holding. "Background agent" is not represented anywhere today. Status is `idle | busy | retry` ([claxedo-session-retry.tsx:6](../../packages/claxedo-app/src/features/session/ui/components/claxedo-session-retry.tsx:6)) plus a claxedo-only `recovering`. The owner must first choose which signal is meant:
 
 1. a subagent/task tool running inside the foreground turn,
-2. a separate WorkGraph agent attached to the same session,
-3. a cloud/hosted session running while the user watches.
+2. a cloud/hosted session running while the user watches.
 
 Once defined, add the distinguishing field to the status contract at its source, surface it through the same lifecycle projection, and make the outbox's busy predicate read it.
 

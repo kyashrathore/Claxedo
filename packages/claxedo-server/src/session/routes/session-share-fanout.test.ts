@@ -2,7 +2,7 @@ import { describe, expect, test } from "vitest"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { OrgId } from "@claxedo/server-core/platform/auth/authority"
 import {
-  clerkSubjectFromIdentity,
+  subjectFromIdentity,
   notifySessionShareChanged,
   resolveSessionShareRecipientSubjects,
   type SessionShareChangedSink,
@@ -18,19 +18,19 @@ const aliceAuth = {
   },
 } as SignedControlPlaneAuth
 
-describe("clerkSubjectFromIdentity", () => {
-  test("extracts Clerk subject from issuer|subject token identifiers", () => {
-    expect(clerkSubjectFromIdentity("https://issuer.test|user_bob")).toBe("user_bob")
+describe("subjectFromIdentity", () => {
+  test("extracts the subject from issuer|subject token identifiers", () => {
+    expect(subjectFromIdentity("https://issuer.test|user_bob")).toBe("user_bob")
   })
 
   test("accepts bare user_ subjects (SQLite list alias)", () => {
-    expect(clerkSubjectFromIdentity("user_bob")).toBe("user_bob")
+    expect(subjectFromIdentity("user_bob")).toBe("user_bob")
   })
 
   test("rejects empty and non-subject values", () => {
-    expect(clerkSubjectFromIdentity(undefined)).toBeUndefined()
-    expect(clerkSubjectFromIdentity("")).toBeUndefined()
-    expect(clerkSubjectFromIdentity("not-a-subject")).toBeUndefined()
+    expect(subjectFromIdentity(undefined)).toBeUndefined()
+    expect(subjectFromIdentity("")).toBeUndefined()
+    expect(subjectFromIdentity("not-a-subject")).toBeUndefined()
   })
 })
 
@@ -43,7 +43,7 @@ describe("resolveSessionShareRecipientSubjects", () => {
         listTeamMembers: async () => [
           { token_identifier: "https://issuer.test|user_alice" },
           { token_identifier: "https://issuer.test|user_bob" },
-          { clerk_subject: "user_casey" },
+          { provider_subject: "user_casey" },
         ],
         listTeams: async () => [],
       },
@@ -53,7 +53,7 @@ describe("resolveSessionShareRecipientSubjects", () => {
     expect(subjects.sort()).toEqual(["user_bob", "user_casey"])
   })
 
-  test("uses a direct clerk subject for user-targeted grants", async () => {
+  test("uses a direct provider subject for user-targeted grants", async () => {
     const subjects = await resolveSessionShareRecipientSubjects({
       auth: aliceAuth,
       authority: {
@@ -61,7 +61,7 @@ describe("resolveSessionShareRecipientSubjects", () => {
         listTeamMembers: async () => [],
         listTeams: async () => [],
       },
-      target: { grantedToClerkSubject: "user_bob" },
+      target: { grantedToSubject: "user_bob" },
       excludeSubject: "user_alice",
     })
     expect(subjects).toEqual(["user_bob"])
@@ -125,7 +125,7 @@ describe("notifySessionShareChanged", () => {
       phase: "revoked",
       sessionId: "ses_1",
       workspaceId: "ws_1",
-      target: { grantedToTokenIdentifier: "not-a-clerk-subject" },
+      target: { grantedToTokenIdentifier: "not-a-subject" },
       sink: async (event) => {
         published.push(event.ownerUserId)
       },

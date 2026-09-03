@@ -93,22 +93,6 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.opencodeCompat).toBe(false)
   })
 
-  test("wires the trusted WorkGraph broker origin from host composition", async () => {
-    const boot = await claxedoWorkspaceRuntimeBootFromEnv({
-      WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
-      WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
-      WORKSPACE_RUNTIME_WORKGRAPH_BROKER_ORIGIN: "https://central.example",
-    })
-    // WorkGraph reaches the hosted runtime as a route CONTRIBUTION now, not as
-    // two broker-origin options on the runtime core. The launcher still decodes
-    // the same env var; what changed is that the runtime no longer has a
-    // WorkGraph-shaped option to decode it into.
-    expect(boot.options.routeContributions?.map((contribution) => contribution.id)).toEqual([
-      "workgraph.connection-tools",
-      "workgraph.run-tools",
-    ])
-  })
-
   test("runner parsing: acp alias, named harness, acp binary connection", () => {
     expect(claxedoRuntimeRunnerFromEnv({ WORKSPACE_RUNTIME_RUNNER: "acp" })).toEqual({ id: "claude", access: "acp" })
     expect(claxedoRuntimeRunnerFromEnv({ WORKSPACE_RUNTIME_RUNNER: "codex" })).toMatchObject({ id: "codex" })

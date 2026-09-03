@@ -158,7 +158,7 @@ describe("session meta", () => {
       toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_B" },
     })
 
-    // A real writer (e.g. tab-workgraph) rewrites tags with delete-all-reinsert
+    // A real writer rewrites tags with delete-all-reinsert
     // semantics — this must NOT wipe the placement.
     await putSessionMeta("placed", { tags: ["planner"] })
 

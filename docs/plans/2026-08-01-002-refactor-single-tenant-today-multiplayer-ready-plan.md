@@ -54,17 +54,17 @@ These are decisions, not design proposals — do not silently re-litigate them.
    `packages/claxedo-app/src/platform/i18n/`).
 6. **No backward compatibility for Claxedo's internal shapes**: no aliases, no
    dual-read paths, no deprecation windows. Legacy dev/staging rows may be
-   deleted. The only surviving constraint is mechanical: a Convex schema push
-   validates existing rows, so any column drop/tighten must backfill-or-delete
-   in the same push. "Behavior pinned by test" pins single-player *correctness*,
-   not byte-identical legacy shapes. (The OpenCode client contract in Product
+   deleted. The only surviving constraint is mechanical: a schema migration
+   must leave every existing row valid, so any column drop/tighten must
+   backfill-or-delete in the same migration. "Behavior pinned by test" pins
+   single-player *correctness*, not byte-identical legacy shapes. (The OpenCode client contract in Product
    constraints is a *separate* external boundary that IS preserved.)
 7. **Creating a project or workspace in a team org requires workspace
    `editor`-or-above** (org owner/admin map to workspace admin; an explicit
    editor grant qualifies). A plain org `member` (→ workspace `viewer`) cannot
    create tenant infrastructure. Note the two role vocabularies are different
-   tables: `orgRole` = owner|admin|member (`convex/schema.ts:4`);
-   `workspaceRole` = viewer|editor|admin|owner (`:5`).
+   tables: `orgRole` = owner|admin|member; `workspaceRole` =
+   viewer|editor|admin|owner.
 8. **Participant management is a creator-or-org-admin operation**: the session
    creator, or an org admin, may add/remove participants. A plain participant
    cannot add further participants.
@@ -107,7 +107,7 @@ that enforces nothing.
 No backward compatibility for old internal schemas, legacy rows, token claims,
 route composition, or storage shapes (owner decision 6). Dev/staging
 tenancy/project/session rows may be discarded. Required columns/indexes install
-directly, ordered to satisfy Convex row validation on push. **Open question for
+directly, ordered to keep existing rows valid at every step. **Open question for
 owner: does production data exist** (launch appears to have shipped ~2026-07-20
 via `deploy-control-plane.yml`)? If so, B-items marked "delete & install" become
 "install with a migration."
@@ -135,9 +135,9 @@ Two axes meet at authorization:
   as the fine-grained knob, wired but unexposed).
 
 Every workspace belongs to exactly one org and one project. A personal org
-(`kind:"personal"`, no `clerk_org_id`) is the default tenant for solo use
-without a Clerk org — deliberate: uniform tenancy invariant + no Clerk per-org
-billing for solo users.
+(`kind:"personal"`, no linked team org) is the default tenant for solo use
+outside a team — deliberate: uniform tenancy invariant + no per-org billing for
+solo users.
 
 ### Resource identities
 
@@ -148,14 +148,13 @@ billing for solo users.
   typed↔string reconciliation, not a nullability flip.
 - `(org_id, repo_key)` identifies repo reuse within a team. **`repo_key` exists
   in neither authority schema today** (only the local workspace store,
-  `workspace-store.ts:26`), and **Convex has no unique-constraint primitive** —
-  so uniqueness is a mutation-level invariant + test, NOT "the database
-  enforces" (prior wording was wrong).
+  `workspace-store.ts:26`), and **neither authority declares a unique constraint
+  for it** — so uniqueness is a mutation-level invariant + test, NOT "the
+  database enforces" (prior wording was wrong).
 - `workspace_id` remains the execution/relay-routing identity.
 - `actor_id` identifies a row in the existing `users` registry;
-  `users.kind` (`human`|`agent`) **already exists in both stores** (Convex
-  `schema.ts:42` optional; SQLite `workspace-authority-store.ts:28`
-  NOT NULL) — only Convex needs optional→required tightening.
+  `users.kind` (`human`|`agent`) **already exists in the authority store**
+  (`workspace-authority-store.ts:28`, NOT NULL).
 
 ### Access model
 
@@ -232,9 +231,8 @@ Additional facts the inventory must absorb: `permissionMode` has **no field** in
 harness state *before* admission (`session-core.ts:669,884`); `prompt_async` has
 a *second* admission-shaped gate, `promptAdmissions` (`session-core.ts:481`),
 idempotency-keyed by `messageID` (returns 204) — distinct from concurrency;
-three managed prompt paths sit outside AgentRuntime — WorkGraph gateway
-(`workgraph-session-gateway.ts:321`), the Session V2 wildcard proxy
-(`workspace/runtime.ts:1739-1741`), and the vendored engine
+two managed prompt paths sit outside AgentRuntime — the Session V2 wildcard
+proxy (`workspace/runtime.ts:1739-1741`) and the vendored engine
 (`packages/opencode/.../handlers/session.ts:365`).
 
 - [ ] A single per-session admission lease (acquire → run → release) is the sole
@@ -308,21 +306,20 @@ Invisible to users; the prerequisite everything else needs.
 ### B1. Make tenancy explicit at every creation boundary + build team creation
 
 **There is no first-party "create team" mutation today.** Personal-org creation
-is *triplicated* — `convex/orgs.ts:20` (`personalOrgForUser`), `workspaces.ts:29`
-(`ensureOwnerOrg`), `billing.ts:276` (`ensurePersonalOrg`, deliberately
-duplicated to dodge an orgs↔billing import cycle) — plus the Clerk webhook
-(`orgs.ts:178`). None set seats. So "team creation verifies membership" is
-net-new, not a check added to existing code.
+is *triplicated* — `personalOrgForUser`, `ensureOwnerOrg` (`workspaces.ts:29`),
+and `ensurePersonalOrg` (`billing.ts:276`, deliberately duplicated to dodge an
+orgs↔billing import cycle). None set seats. So "team creation verifies
+membership" is net-new, not a check added to existing code.
 
-Workspace-insert inventory: `convex/workspaces.ts` (`createCloud:242`,
-`registerLocalForSharing:394`, `ensureWorkGraph:321`); `convex/localHostLinks.ts`
-`register`/`registerForService` (the challenge-verified path inserts an
-**org-less** workspace, `:186-194` — the exact shape B1 forbids); SQLite
+Workspace-insert inventory: the control-plane workspace mutations
+(`createCloud`, `registerLocalForSharing`); the local-host-link
+`register`/`registerForService` pair (the challenge-verified path inserts an
+**org-less** workspace — the exact shape B1 forbids); SQLite
 `registerLocalHostLink` (`workspace-authority.ts:688-691`, also org-less); the
 local workspace store.
 
-- [ ] A first-party team-creation mutation exists (creates a `kind:"clerk"` or
-      team org + owner membership). **Open question for owner: does it become
+- [ ] A first-party team-creation mutation exists (creates a team org + owner
+      membership). **Open question for owner: does it become
       the add-time seat choke point** `enforceSeatCapacity` (`billing.ts:367`,
       comment `:355`) was written for, and does it populate `seats_licensed`?
       (Launch-free posture likely: populate, don't enforce.) Progress:
@@ -332,10 +329,10 @@ local workspace store.
       sites); the three org-creation copies are named fixtures so a fourth turns
       it red. Progress:
 - [ ] `org_id` and `project_id` are assigned at first write; local-host
-      registration (Convex + SQLite) has no intermediate org-less row. A
+      registration (both authority adapters) has no intermediate org-less row. A
       one-shot backfill adopts existing org-less rows into their owner's
-      personal org; then `org_id` becomes required (backfill in the same push
-      per owner decision 6). Progress:
+      personal org; then `org_id` becomes required (backfill in the same
+      migration per owner decision 6). Progress:
 - [ ] Solo creation resolves to the caller's personal org, implicitly (no
       signup branch, owner decision 2). Team creation verifies membership and
       requires **workspace editor-or-above** (owner decision 7): org member →
@@ -350,13 +347,14 @@ local workspace store.
       across all tables (the string/`v.id`/bare-string split above). Progress:
 - [ ] Projects require `org_id` and a canonical `repo_key`; `(org_id, repo_key)`
       uniqueness is a mutation-level invariant + test (NOT a DB constraint —
-      Convex can't express it, SQLite has zero unique indexes today). Progress:
+      neither authority declares one; SQLite has zero unique indexes today).
+      Progress:
 - [ ] Opening a second workspace for the same repo in one org reuses the
       project; the same repo in two orgs creates two isolated projects (test
       both). Progress:
-- [ ] Every `projectByPublicId`/`by_project_id` consumer (7 files, incl.
-      `convex/model.ts:340`, `sessions.ts:123`, both SQLite authority files) uses
-      tenant context where lookup/authorization needs it. Progress:
+- [ ] Every `projectByPublicId`/`by_project_id` consumer (7 files, incl. both
+      SQLite authority files) uses tenant context where lookup/authorization
+      needs it. Progress:
 - [ ] `repo_key` derivation is deterministic, with the four cases as separate
       assertions: normal clone, worktree, no-remote repo, distinct orgs. Progress:
 
@@ -380,9 +378,8 @@ host-scoped and does not.
       mint-with → require. `actor_id`/`actor_kind` join `relayHostTokenCacheKey`
       (`server.ts:537-553`) or a cached claim serves one user's actor on
       another's request (test the cache-key isolation). Progress:
-- [ ] Interactive, channel-originated (`channel_identities`), WorkGraph, and
-      service paths each resolve an explicit human/agent actor before minting.
-      Progress:
+- [ ] Interactive, channel-originated (`channel_identities`), and service paths
+      each resolve an explicit human/agent actor before minting. Progress:
 - [ ] Runtime session routes read verified actor claims and pass them to
       `turns.start`. Unsigned/local stays anonymous *in the UI projection only*.
       Progress:
@@ -394,8 +391,8 @@ host-scoped and does not.
       string→`v.id("orgs")` conversion needing per-row org resolution — **not** a
       rename), `name`, `repoUrl`, `createdAt`, `updatedAt` (`schema.ts:236-241`).
       Backfill-or-delete in the same push. Progress:
-- [ ] Convex and SQLite express the same required tenancy identities/indexes.
-      Progress:
+- [ ] The D1 and SQLite authority adapters express the same required tenancy
+      identities/indexes. Progress:
 
 ## Milestone 2b — attribution
 
@@ -414,7 +411,8 @@ exists but is **written and never read** (`sessions.ts:111,191`) and is
       (runtime, central, channel-originated), and add the index it lacks.
       Progress:
 - [ ] Mirror/storage paths validate the actor belongs to the authority serving
-      the workspace; attribution preserved in Convex and SQLite. Progress:
+      the workspace; attribution preserved in both authority adapters.
+      Progress:
 - [ ] OpenCode event names/fields unchanged; a signed-in user message may carry
       an optional namespaced projection:
 
@@ -481,8 +479,8 @@ middleware (`server.ts:474-497`), one role check in the whole surface
       `workspace_share_grants`, `schema.ts:281-292`), pure EXPAND, with the index
       creator/participant checks require. Progress:
 - [ ] The creator/participant predicate lives inside `authorizeReadSession` in
-      **both** authorities (`convex/sessions.ts:405`, `sqlite/workspace-authority.ts:816`)
-      and its new write counterpart — so an app/CLI path hitting the data layer
+      **both** authority adapters (`sqlite/workspace-authority.ts:816` and its
+      D1 counterpart) and its new write counterpart — so an app/CLI path hitting the data layer
       directly cannot bypass it. Progress:
 - [ ] **Unsigned/loopback is a policy decision, not a skip.** Define the
       no-actor case on a signed deployment (deny), enforced where auth is
@@ -560,7 +558,7 @@ filters replay per-principal, live fan-out at `:602/:612`, tests at
 
 ### B8-remainder + B9 (two-user proof)
 
-- [ ] Convex and SQLite express the same required session identities/indexes;
+- [ ] Both authority adapters express the same required session identities/indexes;
       installation ordering documented and verified against a named disposable
       environment. **"Parity" means ENFORCEMENT parity** — both authorities stop
       at workspace `read` today (equally coarse), so participant columns alone
@@ -568,9 +566,8 @@ filters replay per-principal, live fan-out at `:602/:612`, tests at
 - [ ] **B9 two-user proof** (direct product APIs + real signed tokens; no invite
       UI). Prerequisites, now named on the critical path: the
       `session_participants` table + write verb (B5), the team-creation mutation
-      (B1), and test infra that does not exist — `convex-test`'s `withIdentity`
-      is used nowhere; no test drives two real signed users through the auth
-      stack. Steps: two users in one org + a workspace; prove editor-or-above
+      (B1), and test infra that does not exist — no test drives two real signed
+      users through the auth stack. Steps: two users in one org + a workspace; prove editor-or-above
       can create it and a plain member cannot; create a private session as A,
       add B as participant (as creator), prove both read/send and a third
       workspace-authorized non-participant is denied metadata/transcript/
@@ -645,8 +642,9 @@ ownership; sequence the shared-file pairs.
 - **M1**: lane A1+A2 (share `session-core.ts` + `agent-sdk-runtime/src/runtime.ts`
   + `stores/memory.ts` — sequence, don't split), lane A3 (reproduce-first,
   read-only until a gap is confirmed).
-- **M2a**: B1 (`convex/workspaces.ts`, `localHostLinks.ts`, SQLite authority),
-  B2 (project identity — shares Convex schema with B1, sequence), B3 (token
+- **M2a**: B1 (control-plane workspace + local-host-link mutations, SQLite
+  authority), B2 (project identity — shares the authority schema with B1,
+  sequence), B3 (token
   layer: `workspace-relay/src/auth.ts`, `runtime-access-token.ts`,
   `workspace-host-service-auth.ts`, relay cache).
 - **M2b**: B4 (identity thread + `session_messages`/`session_history` schema +
@@ -654,8 +652,8 @@ ownership; sequence the shared-file pairs.
 - **M2c**: B5 (policy object + `session_participants` + both authorities), B6
   (revocation wiring + relay teardown), B7 (the eight replay buffers — port
   `live-sync-room.ts`), B9 (two-user harness — new infra).
-- **Known traps:** B1/B2/B4/B5 all touch `convex/schema.ts` — one agent owns the
-  schema file per wave, or land EXPAND migrations first. A1/A2 and B5 all touch
+- **Known traps:** B1/B2/B4/B5 all touch the authority schema — one agent owns
+  the schema file per wave, or land EXPAND migrations first. A1/A2 and B5 all touch
   `session-core.ts`. No `git stash` with parallel agents on a shared worktree;
   disjoint ownership or isolated worktrees.
 - Adversarially verify the authz slices (B4 attribution-spoofing, B5/B6/B7) with

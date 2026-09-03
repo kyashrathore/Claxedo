@@ -126,13 +126,15 @@ githubIntegration({ timeoutMs: 3_000 })      // also notion / linear / atlassian
 the deadline is applied around whatever fetch you supply, so a substituted
 fetch cannot lose it.
 
-## Signed WorkGraph webhooks
+## Signed connection webhooks
 
 Team Connections with the `work-source` capability can own an independent
-webhook signing credential. The provider callback URL is:
+webhook signing credential. The host mounts the provider callback route and
+passes each delivery to `createConnectionWebhookVerifier`; the callback URL
+identifies the provider and the Connection, for example:
 
 ```text
-https://<claxedo-host>/api/workgraph/webhooks/<provider>/<connection-id>
+https://<claxedo-host>/<host-webhook-prefix>/<provider>/<connection-id>
 ```
 
 Store or rotate the signing value through the authenticated team-Connection
@@ -162,8 +164,8 @@ Provider setup:
   `X-Atlassian-Webhook-Identifier`.
 
 Webhook bodies and signing credentials stay within the Connection verifier.
-WorkGraph receives a normalized delivery identity and routing attributes, and
-refreshes only active personal Source Views bound to that team Connection.
+The consuming feature receives only a normalized delivery identity and routing
+attributes, scoped to that team Connection.
 
 ## Reference integrations & extension policy
 

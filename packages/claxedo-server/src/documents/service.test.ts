@@ -287,19 +287,19 @@ describe("Documents service", () => {
     error.mockRestore()
   })
 
-  test("pins a WorkGraph revision once before removing leases sequentially", async () => {
+  test("pins a work revision once before removing leases sequentially", async () => {
     const value = fixture()
     const order: string[] = []
     value.workspace.pinSnapshot.mockImplementationOnce(async () => {
       order.push("pin")
-      return snapshot(["lease:10:first", "lease:20:second", "workgraph:source_1:revision_1"])
+      return snapshot(["lease:10:first", "lease:20:second", "work:source_1:revision_1"])
     })
     value.workspace.unpinSnapshot.mockImplementation(async (_handle, _snapshotId, pin) => {
       order.push(`unpin:${pin}`)
       return snapshot(
         pin.includes("first")
-          ? ["lease:20:second", "workgraph:source_1:revision_1"]
-          : ["workgraph:source_1:revision_1"],
+          ? ["lease:20:second", "work:source_1:revision_1"]
+          : ["work:source_1:revision_1"],
       )
     })
 
@@ -308,7 +308,7 @@ describe("Documents service", () => {
         workSourceId: "source_1",
         revisionId: "revision_1",
       }),
-    ).resolves.toMatchObject({ pins: ["workgraph:source_1:revision_1"] })
+    ).resolves.toMatchObject({ pins: ["work:source_1:revision_1"] })
 
     expect(value.workspace.pinSnapshot).toHaveBeenCalledTimes(1)
     expect(order).toEqual(["pin", "unpin:lease:10:first", "unpin:lease:20:second"])

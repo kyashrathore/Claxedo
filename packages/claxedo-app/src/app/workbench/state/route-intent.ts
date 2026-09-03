@@ -52,9 +52,6 @@ type Badge = {
 export type RouteIntent = {
   ready: boolean
   marketplace: boolean
-  workgraph?: boolean
-  workspaceWorkGraph?: boolean
-  newTask?: boolean
   workspaceId: string | undefined
   workspaceRouteId?: string
   workspaceBacking?: WorkspaceSessionBacking
@@ -424,18 +421,6 @@ export function createRouteIntentAdapter(input: {
     if (suppressedByFastSessionSwitch(intent)) return
     if (intent.marketplace) {
       state.layout.openMarketplace()
-      return
-    }
-    if (intent.workgraph) {
-      state.layout.openWorkGraph()
-      return
-    }
-    if (intent.newTask) {
-      state.layout.openTaskComposer(intent.workspaceId, { workspaceRouteId: intent.workspaceRouteId })
-      return
-    }
-    if (intent.workspaceWorkGraph && intent.workspaceId) {
-      state.layout.openWorkspaceWorkGraph(intent.workspaceId, { workspaceRouteId: intent.workspaceRouteId })
       return
     }
     const workspaceId = intent.workspaceId

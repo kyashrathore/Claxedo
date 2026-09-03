@@ -23,7 +23,7 @@ function harness(options: {
       options.load ??
       (async () => {
         loads += 1
-        return [{ id: "hosted.workgraph" }, { id: "hosted.documents" }]
+        return [{ id: "hosted.pages" }, { id: "hosted.documents" }]
       }),
     register: (contribution) => {
       registered.push(contribution.id)
@@ -58,7 +58,7 @@ describe("the account gate", () => {
       signedIn: false,
       load: async () => {
         loads += 1
-        return [{ id: "hosted.workgraph" }]
+        return [{ id: "hosted.pages" }]
       },
     })
 
@@ -91,7 +91,7 @@ describe("the account gate", () => {
         await new Promise<void>((resolve) => {
           release = resolve
         })
-        return [{ id: "hosted.workgraph" }]
+        return [{ id: "hosted.pages" }]
       },
     })
 
@@ -115,7 +115,7 @@ describe("the account gate", () => {
         await new Promise<void>((resolve) => {
           release = resolve
         })
-        return [{ id: "hosted.workgraph" }]
+        return [{ id: "hosted.pages" }]
       },
     })
 
@@ -142,7 +142,7 @@ describe("activation happens at most once", () => {
     await Promise.all([app.port.activate(), app.port.activate(), app.port.activate()])
 
     expect(app.loads()).toBe(1)
-    expect(app.registered).toEqual(["hosted.workgraph", "hosted.documents"])
+    expect(app.registered).toEqual(["hosted.pages", "hosted.documents"])
   })
 
   test("an already-active port short-circuits without re-reading the account", async () => {
@@ -156,7 +156,7 @@ describe("activation happens at most once", () => {
       },
       load: async () => {
         loads += 1
-        return [{ id: "hosted.workgraph" }]
+        return [{ id: "hosted.pages" }]
       },
       register: (contribution) => registered.push(contribution.id),
       unregister: () => {},
@@ -169,7 +169,7 @@ describe("activation happens at most once", () => {
 
     expect(loads).toBe(1)
     expect(reads).toBe(readsAfterFirst)
-    expect(registered).toEqual(["hosted.workgraph"])
+    expect(registered).toEqual(["hosted.pages"])
   })
 })
 
@@ -185,7 +185,7 @@ describe("failure is not cached, the loaded bundle is", () => {
       load: async () => {
         attempts += 1
         if (attempts === 1) throw new Error("chunk load failed")
-        return [{ id: "hosted.workgraph" }]
+        return [{ id: "hosted.pages" }]
       },
       register: (contribution) => registered.push(contribution.id),
       unregister: () => {},
@@ -198,7 +198,7 @@ describe("failure is not cached, the loaded bundle is", () => {
     await port.activate()
 
     expect(attempts).toBe(2)
-    expect(registered).toEqual(["hosted.workgraph"])
+    expect(registered).toEqual(["hosted.pages"])
   })
 
   test("sign-out then sign-in re-registers from the cached bundle, without loading again", async () => {
@@ -211,7 +211,7 @@ describe("failure is not cached, the loaded bundle is", () => {
     await app.port.activate()
 
     expect(app.loads()).toBe(1)
-    expect(app.registered).toEqual(["hosted.workgraph", "hosted.documents"])
+    expect(app.registered).toEqual(["hosted.pages", "hosted.documents"])
   })
 
   test("an activation abandoned mid-load keeps the bundle it already loaded", async () => {
@@ -225,7 +225,7 @@ describe("failure is not cached, the loaded bundle is", () => {
         await new Promise<void>((resolve) => {
           release = resolve
         })
-        return [{ id: "hosted.workgraph" }]
+        return [{ id: "hosted.pages" }]
       },
     })
 
@@ -238,7 +238,7 @@ describe("failure is not cached, the loaded bundle is", () => {
     await app.port.activate()
 
     expect(loads).toBe(1)
-    expect(app.registered).toEqual(["hosted.workgraph"])
+    expect(app.registered).toEqual(["hosted.pages"])
   })
 })
 
@@ -270,7 +270,7 @@ describe("deactivation", () => {
     expect(app.registered).toEqual([
       "local.session",
       "local.terminal",
-      "hosted.workgraph",
+      "hosted.pages",
       "hosted.documents",
     ])
 
@@ -290,13 +290,13 @@ describe("deactivation", () => {
   })
 
   test("does not unregister the same contribution twice", async () => {
-    const app = harness({ load: async () => [{ id: "hosted.workgraph" }] })
+    const app = harness({ load: async () => [{ id: "hosted.pages" }] })
 
     await app.port.activate()
     app.port.deactivate()
     app.port.deactivate()
 
-    expect(app.events).toEqual(["register:hosted.workgraph", "unregister:hosted.workgraph"])
+    expect(app.events).toEqual(["register:hosted.pages", "unregister:hosted.pages"])
   })
 })
 
@@ -304,7 +304,7 @@ describe("duplicate ids are refused, all or nothing", () => {
   test("a hosted contribution that would shadow a registered one is refused", async () => {
     const app = harness({
       registered: ["local.session"],
-      load: async () => [{ id: "hosted.workgraph" }, { id: "local.session" }],
+      load: async () => [{ id: "hosted.pages" }, { id: "local.session" }],
     })
 
     const error = await app.port.activate().then(
@@ -313,7 +313,7 @@ describe("duplicate ids are refused, all or nothing", () => {
     )
 
     expect(error.code).toBe("shadows_registered_contribution")
-    // Nothing registered: a partial set would leave `hosted.workgraph`
+    // Nothing registered: a partial set would leave `hosted.pages`
     // installed with no way to remove it, because the port never took
     // ownership of it.
     expect(app.registered).toEqual(["local.session"])

@@ -108,7 +108,7 @@ const DENY_LIST = new Set([
  * own secrets. Under a prefix passthrough that meant a prompt-injected agent
  * could read them with `env`: JWT signing keys
  * (`CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM`,
- * `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM`), the Convex machine principal
+ * `CLAXEDO_RELAY_HOST_SIGNING_KEY_PEM`), the control-plane machine principal
  * (`CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN`), the credential-store bearer, and
  * more. `CLAXEDO_LOCAL_DOCUMENT_BROKER_TOKEN` was deny-listed individually,
  * which fixed one instance of the class rather than the class.

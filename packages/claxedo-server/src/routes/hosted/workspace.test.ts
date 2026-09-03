@@ -18,7 +18,7 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
  *
  * The signature-verification and routing policy behind assignment lives in
  * the authorities (`authority/adapters/d1/host-access-authority.test.ts`, the
- * Convex policy suite, `routes/hosted/host-enrollment.parity.test.ts`); here
+ * the authority policy suite, `routes/hosted/host-enrollment.parity.test.ts`); here
  * we assert the request *behaviour* of the routes. The "no local-only"
  * guarantee at the import-graph level is enforced separately by
  * `worker.import-graph.test.ts`.
@@ -26,8 +26,8 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
 
 const authConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 } as const
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
@@ -39,7 +39,7 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
   },
 })
 
-function fakeConvexAuthority(overrides: Record<string, unknown> = {}) {
+function fakeAuthority(overrides: Record<string, unknown> = {}) {
   return {
     usersMe: vi.fn(async () => ({ subject: "user_1", user_id: "user_1", actor_id: "user_1", actor_kind: "human", actor_public_id: "user_pub_1", actor_name: "User One" })),
     openWorkspace: vi.fn(async () => ({
@@ -75,7 +75,7 @@ function fakeConvexAuthority(overrides: Record<string, unknown> = {}) {
   }
 }
 
-function fakeServices(authority: ReturnType<typeof fakeConvexAuthority> | undefined) {
+function fakeServices(authority: ReturnType<typeof fakeAuthority> | undefined) {
   const capture = vi.fn()
   return {
     services: {
@@ -100,12 +100,12 @@ const httSigner: HostTunnelTokenSigner = vi.fn(async (input) => ({
 }))
 
 function buildApp(opts: {
-  authority?: ReturnType<typeof fakeConvexAuthority>
+  authority?: ReturnType<typeof fakeAuthority>
   options?: Partial<HostedWorkspaceRouteOptions>
   sandboxManager?: SandboxManager
 }) {
-  const convex = "authority" in opts ? opts.authority : fakeConvexAuthority()
-  const { services, capture } = fakeServices(convex)
+  const authority = "authority" in opts ? opts.authority : fakeAuthority()
+  const { services, capture } = fakeServices(authority)
   services.sandbox.sandboxManager = opts.sandboxManager
   const app = HostedWorkspaceRoutes(services, {
     authConfig,
@@ -115,7 +115,7 @@ function buildApp(opts: {
     hostTunnelTokenSigner: httSigner,
     ...opts.options,
   })
-  return { app, convex, capture }
+  return { app, authority, capture }
 }
 
 // HostedWorkspaceRoutes mounts routes at the root of its own Hono (the hosted
@@ -143,7 +143,7 @@ function del(path: string, token = "user_1") {
 
 describe("host assignment (POST /:id/host-assignment)", () => {
   test("records the owner assignment and mints a host tunnel token, without starting a tunnel", async () => {
-    const { app, convex, capture } = buildApp({
+    const { app, authority, capture } = buildApp({
       options: {
         defaultHomeRegion: "eu-west",
         relayUrls: {
@@ -164,7 +164,7 @@ describe("host assignment (POST /:id/host-assignment)", () => {
     // No challenge and no machine signature here: liveness is the enrollment
     // lease and machine consent is the heartbeat-acked served set. The route
     // only records the OWNER's intent.
-    expect(convex!.assignWorkspaceHost).toHaveBeenCalledWith(
+    expect(authority!.assignWorkspaceHost).toHaveBeenCalledWith(
       expect.anything(),
       {
         workspaceId: "ws_1",
@@ -174,7 +174,7 @@ describe("host assignment (POST /:id/host-assignment)", () => {
         gitBranch: "main",
       },
     )
-    expect(convex!.auditAllow).toHaveBeenCalledWith(
+    expect(authority!.auditAllow).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         action: "host_workspace_assignment.assigned",
@@ -197,18 +197,18 @@ describe("host assignment (POST /:id/host-assignment)", () => {
   })
 
   test("rejects a body with no host id (schema fail-closed, stable 400)", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(post("/ws_1/host-assignment", { displayName: "demo" }))
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: { code: "invalid_request_body" } })
-    expect(convex!.assignWorkspaceHost).not.toHaveBeenCalled()
+    expect(authority!.assignWorkspaceHost).not.toHaveBeenCalled()
   })
 
   test("refuses the retired per-workspace registration shape rather than ignoring it", async () => {
     // `.strict()`. A caller still sending publicKey/challengeId/signature is
     // using the old per-workspace flow, and silently dropping those fields
     // would look like the old security property still held.
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(
       post("/ws_1/host-assignment", {
         hostId: "host_1",
@@ -218,20 +218,20 @@ describe("host assignment (POST /:id/host-assignment)", () => {
       }),
     )
     expect(res.status).toBe(400)
-    expect(convex!.assignWorkspaceHost).not.toHaveBeenCalled()
+    expect(authority!.assignWorkspaceHost).not.toHaveBeenCalled()
   })
 
   test("assigning a cloud-backed workspace returns a 409 conflict", async () => {
-    const convex = fakeConvexAuthority({
+    const authority = fakeAuthority({
       assignWorkspaceHost: vi.fn(async () => {
         throw new Error("workspace_backing_conflict: cannot assign a host to a cloud workspace")
       }),
     })
-    const { app } = buildApp({ authority: convex })
+    const { app } = buildApp({ authority: authority })
     const res = await app.fetch(post("/ws_1/host-assignment", { hostId: "host_1" }))
     expect(res.status).toBe(409)
     expect(await res.json()).toMatchObject({ error: { code: "workspace_backing_conflict" } })
-    expect(convex.auditAllow).not.toHaveBeenCalled()
+    expect(authority.auditAllow).not.toHaveBeenCalled()
   })
 
   test("fails closed (503) when no authority is configured", async () => {
@@ -242,7 +242,7 @@ describe("host assignment (POST /:id/host-assignment)", () => {
   })
 
   test("requires a signed bearer token", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(
       new Request("http://cp.test/ws_1/host-assignment", {
         method: "POST",
@@ -251,11 +251,11 @@ describe("host assignment (POST /:id/host-assignment)", () => {
       }),
     )
     expect(res.status).toBe(401)
-    expect(convex!.assignWorkspaceHost).not.toHaveBeenCalled()
+    expect(authority!.assignWorkspaceHost).not.toHaveBeenCalled()
   })
 
   test("is rate limited per caller+workspace before any authority call", async () => {
-    const { app, convex } = buildApp({
+    const { app, authority } = buildApp({
       options: {
         controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 2, windowMs: 60_000 }),
       },
@@ -269,29 +269,29 @@ describe("host assignment (POST /:id/host-assignment)", () => {
     expect(limited.status).toBe(429)
     expect(await limited.json()).toMatchObject({ error: { code: "control_plane_rate_limited" } })
     // The denied request was rejected BEFORE reaching authority resolution.
-    expect(convex!.usersMe).toHaveBeenCalledTimes(2)
-    expect(convex!.assignWorkspaceHost).toHaveBeenCalledTimes(2)
+    expect(authority!.usersMe).toHaveBeenCalledTimes(2)
+    expect(authority!.assignWorkspaceHost).toHaveBeenCalledTimes(2)
   })
 })
 
 describe("host unassignment (DELETE /:id/host-assignment)", () => {
   test("removes the assignment and audits it", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(del("/ws_1/host-assignment"))
     expect(res.status).toBe(200)
     expect(await res.json()).toMatchObject({ unassigned: true })
-    expect(convex!.unassignWorkspaceHost).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_1" })
-    expect(convex!.auditAllow).toHaveBeenCalledWith(
+    expect(authority!.unassignWorkspaceHost).toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_1" })
+    expect(authority!.auditAllow).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ action: "host_workspace_assignment.unassigned", workspaceId: "ws_1" }),
     )
   })
 
   test("requires a signed bearer token", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(new Request("http://cp.test/ws_1/host-assignment", { method: "DELETE" }))
     expect(res.status).toBe(401)
-    expect(convex!.unassignWorkspaceHost).not.toHaveBeenCalled()
+    expect(authority!.unassignWorkspaceHost).not.toHaveBeenCalled()
   })
 })
 
@@ -300,22 +300,22 @@ describe("the retired per-workspace user-hosted routes are gone", () => {
     // NO backward compatibility: a 400/401/409 here would mean a handler is
     // still mounted behind the path. Machine enrollment + owner assignment
     // replaced the whole quartet.
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     for (const retired of ["challenge", "register", "heartbeat", "pause"]) {
       const res = await app.fetch(post(`/ws_1/user-hosted/${retired}`, { hostId: "host_1" }))
       expect(res.status, `POST /ws_1/user-hosted/${retired}`).toBe(404)
     }
-    expect(convex!.assignWorkspaceHost).not.toHaveBeenCalled()
-    expect(convex!.usersMe).not.toHaveBeenCalled()
+    expect(authority!.assignWorkspaceHost).not.toHaveBeenCalled()
+    expect(authority!.usersMe).not.toHaveBeenCalled()
   })
 })
 
 describe("hosted connection", () => {
   test("mints a Runtime Access Token for a user-hosted workspace", async () => {
-    const { app, convex, capture } = buildApp({})
+    const { app, authority, capture } = buildApp({})
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(200)
-    expect(convex!.recordRuntimeAccessToken).toHaveBeenCalled()
+    expect(authority!.recordRuntimeAccessToken).toHaveBeenCalled()
     expect(await res.json()).toMatchObject({
       access: "user-hosted",
       backing: "local-worktree",
@@ -351,7 +351,7 @@ describe("hosted connection", () => {
   })
 
   test("uses the workspace home_region to choose the regional relay endpoint", async () => {
-    const convex = fakeConvexAuthority({
+    const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
@@ -364,7 +364,7 @@ describe("hosted connection", () => {
       })),
     })
     const { app } = buildApp({
-      authority: convex,
+      authority: authority,
       options: {
         relayUrls: {
           "us-east": "https://relay.us.test",
@@ -383,10 +383,10 @@ describe("hosted connection", () => {
   })
 
   test("supports the provider-neutral POST connection route", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(post("/ws_1/connection", {}))
     expect(res.status).toBe(200)
-    expect(convex!.recordRuntimeAccessToken).toHaveBeenCalled()
+    expect(authority!.recordRuntimeAccessToken).toHaveBeenCalled()
     expect(await res.json()).toMatchObject({
       access: "user-hosted",
       backing: "local-worktree",
@@ -397,7 +397,7 @@ describe("hosted connection", () => {
   })
 
   test("returns provisioning metadata for a cloud workspace while ensure is still acquiring", async () => {
-    const convex = fakeConvexAuthority({
+    const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
@@ -407,7 +407,7 @@ describe("hosted connection", () => {
     const sandboxManager = {
       ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 3, homeRegion: "apac-south" })),
     } as unknown as SandboxManager
-    const { app, capture } = buildApp({ authority: convex, sandboxManager })
+    const { app, capture } = buildApp({ authority: authority, sandboxManager })
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(200)
     expect(sandboxManager.ensure).toHaveBeenCalledWith("ws_1", { homeRegion: "apac-south" })
@@ -437,7 +437,7 @@ describe("hosted connection", () => {
   })
 
   test("mints a Runtime Access Token for a ready cloud workspace without driver internals", async () => {
-    const convex = fakeConvexAuthority({
+    const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "editor",
@@ -455,14 +455,14 @@ describe("hosted connection", () => {
         homeRegion: "eu-west",
       })),
     } as unknown as SandboxManager
-    const { app, capture } = buildApp({ authority: convex, sandboxManager })
+    const { app, capture } = buildApp({ authority: authority, sandboxManager })
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(200)
-    expect(convex.recordRuntimeAccessToken).toHaveBeenCalledWith(
+    expect(authority.recordRuntimeAccessToken).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({ workspaceId: "ws_1", hostId: "host_cloud_1" }),
     )
-    expect(convex.auditAllow).toHaveBeenCalledWith(
+    expect(authority.auditAllow).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         action: "runtime_access_token.minted",
@@ -520,7 +520,7 @@ describe("hosted connection", () => {
   })
 
   test("emits structured telemetry when a cloud runtime is unavailable", async () => {
-    const convex = fakeConvexAuthority({
+    const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
@@ -536,7 +536,7 @@ describe("hosted connection", () => {
         homeRegion: "eu-west",
       })),
     } as unknown as SandboxManager
-    const { app, capture } = buildApp({ authority: convex, sandboxManager })
+    const { app, capture } = buildApp({ authority: authority, sandboxManager })
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(409)
     expect(await res.json()).toMatchObject({
@@ -562,14 +562,14 @@ describe("hosted connection", () => {
   })
 
   test("fails closed when a cloud workspace has no sandbox", async () => {
-    const convex = fakeConvexAuthority({
+    const authority = fakeAuthority({
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
         workspace: { workspace_id: "ws_1", access: "cloud", backing: "cloud-vm" },
       })),
     })
-    const { app } = buildApp({ authority: convex })
+    const { app } = buildApp({ authority: authority })
     const res = await app.fetch(get("/ws_1/connection"))
     expect(res.status).toBe(503)
     expect(await res.json()).toMatchObject({ error: { code: "sandbox_unavailable" } })
@@ -590,17 +590,17 @@ describe("hosted connection", () => {
   })
 
   test("rejects a malformed refresh body with a stable 400 instead of a 500", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(post("/ws_1/connection/refresh", { previousJti: 42 }))
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({ error: { code: "invalid_request_body" } })
-    expect(convex!.usersMe).not.toHaveBeenCalled()
+    expect(authority!.usersMe).not.toHaveBeenCalled()
   })
 })
 
 describe("hosted connection rate limiting (mint-only)", () => {
-  function cloudWorkspaceConvex() {
-    return fakeConvexAuthority({
+  function cloudWorkspaceAuthority() {
+    return fakeAuthority({
       openWorkspace: vi.fn(async () => ({
         allowed: true,
         role: "owner",
@@ -613,7 +613,7 @@ describe("hosted connection rate limiting (mint-only)", () => {
     const sandboxManager = {
       ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" })),
     } as unknown as SandboxManager
-    const { app } = buildApp({ authority: cloudWorkspaceConvex(), sandboxManager })
+    const { app } = buildApp({ authority: cloudWorkspaceAuthority(), sandboxManager })
 
     // Default mint limit is 6/min; a 2s-poll cold start must survive far past it.
     for (let i = 0; i < 10; i++) {
@@ -638,8 +638,8 @@ describe("hosted connection rate limiting (mint-only)", () => {
       .mockResolvedValueOnce({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" } as never)
       .mockResolvedValueOnce({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" } as never)
     const sandboxManager = { ensure } as unknown as SandboxManager
-    const { app, convex } = buildApp({
-      authority: cloudWorkspaceConvex(),
+    const { app, authority } = buildApp({
+      authority: cloudWorkspaceAuthority(),
       sandboxManager,
       options: {
         connectionRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 2, windowMs: 60_000 }),
@@ -653,19 +653,19 @@ describe("hosted connection rate limiting (mint-only)", () => {
     // Two real mints consume the budget…
     expect((await app.fetch(get("/ws_1/connection"))).status).toBe(200)
     expect((await app.fetch(get("/ws_1/connection"))).status).toBe(200)
-    expect(convex!.recordRuntimeAccessToken).toHaveBeenCalledTimes(2)
+    expect(authority!.recordRuntimeAccessToken).toHaveBeenCalledTimes(2)
     // …and the third mint attempt is rejected at the cap.
     const limited = await app.fetch(get("/ws_1/connection"))
     expect(limited.status).toBe(429)
     expect(await limited.json()).toMatchObject({ error: { code: "runtime_access_token_rate_limited" } })
   })
 
-  test("provisioning polls beyond the control-plane request cap get 429 before any Convex read", async () => {
+  test("provisioning polls beyond the control-plane request cap get 429 before any the authority read", async () => {
     const sandboxManager = {
       ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" })),
     } as unknown as SandboxManager
-    const { app, convex } = buildApp({
-      authority: cloudWorkspaceConvex(),
+    const { app, authority } = buildApp({
+      authority: cloudWorkspaceAuthority(),
       sandboxManager,
       options: {
         controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 3, windowMs: 60_000 }),
@@ -679,24 +679,24 @@ describe("hosted connection rate limiting (mint-only)", () => {
       expect(res.status, `poll ${i + 1} within the cap must pass`).toBe(200)
       expect(await res.json()).toMatchObject({ status: "provisioning" })
     }
-    const convexReadsAtCap = convex!.usersMe.mock.calls.length
+    const authorityReadsAtCap = authority!.usersMe.mock.calls.length
 
     for (let i = 0; i < 4; i++) {
       const limited = await app.fetch(get("/ws_1/connection"))
       expect(limited.status, `poll ${i + 4} past the cap must be rejected`).toBe(429)
       expect(await limited.json()).toMatchObject({ error: { code: "control_plane_rate_limited" } })
     }
-    // Rejected polls never reached Convex reads.
-    expect(convex!.usersMe.mock.calls.length).toBe(convexReadsAtCap)
+    // Rejected polls never reached the authority reads.
+    expect(authority!.usersMe.mock.calls.length).toBe(authorityReadsAtCap)
     expect(sandboxManager.ensure).toHaveBeenCalledTimes(3)
   })
 
-  test("repeated rate-limit rejections in one window audit to Convex exactly once", async () => {
+  test("repeated rate-limit rejections in one window audit to the authority exactly once", async () => {
     const sandboxManager = {
       ensure: vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" })),
     } as unknown as SandboxManager
-    const { app, convex } = buildApp({
-      authority: cloudWorkspaceConvex(),
+    const { app, authority } = buildApp({
+      authority: cloudWorkspaceAuthority(),
       sandboxManager,
       options: {
         controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 1, windowMs: 60_000 }),
@@ -708,8 +708,8 @@ describe("hosted connection rate limiting (mint-only)", () => {
       expect((await app.fetch(get("/ws_1/connection"))).status).toBe(429)
     }
     // A sustained flood produces ONE audit write per window, not one per request.
-    expect(convex!.auditDeny).toHaveBeenCalledTimes(1)
-    expect(convex!.auditDeny).toHaveBeenCalledWith(
+    expect(authority!.auditDeny).toHaveBeenCalledTimes(1)
+    expect(authority!.auditDeny).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         action: "workspace.connection.denied",
@@ -722,17 +722,17 @@ describe("hosted connection rate limiting (mint-only)", () => {
 
 describe("hosted workspace list (GET /api/workspace)", () => {
   test("signed access=user-hosted returns only the caller's user-hosted workspaces", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(get("/?access=user-hosted"))
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
     expect(json.workspaces).toEqual([{ workspace_id: "ws_user", access: "user-hosted" }])
-    expect(convex!.usersMe).toHaveBeenCalledTimes(1)
-    expect(convex!.listWorkspaces).toHaveBeenCalledTimes(1)
+    expect(authority!.usersMe).toHaveBeenCalledTimes(1)
+    expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 
   test("signed access=cloud returns the full list (no user-hosted filter)", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(get("/?access=cloud"))
     expect(res.status).toBe(200)
     const json = (await res.json()) as { workspaces: Array<{ workspace_id: string }> }
@@ -740,28 +740,28 @@ describe("hosted workspace list (GET /api/workspace)", () => {
       { workspace_id: "ws_user", access: "user-hosted" },
       { workspace_id: "ws_cloud", access: "cloud" },
     ])
-    expect(convex!.listWorkspaces).toHaveBeenCalledTimes(1)
+    expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 
-  test("unsigned (no access query) returns an empty list and never touches Convex", async () => {
-    const { app, convex } = buildApp({})
+  test("unsigned (no access query) returns an empty list and never touches the authority", async () => {
+    const { app, authority } = buildApp({})
     const res = await app.fetch(new Request("http://cp.test/"))
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ workspaces: [] })
-    // Hosted has no local projects list — no Convex read on the unsigned path.
-    expect(convex!.usersMe).not.toHaveBeenCalled()
-    expect(convex!.listWorkspaces).not.toHaveBeenCalled()
+    // Hosted has no local projects list — no authority read on the unsigned path.
+    expect(authority!.usersMe).not.toHaveBeenCalled()
+    expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
 
   test("access=user-hosted with no bearer token fails closed (signed required)", async () => {
-    const { app, convex } = buildApp({})
+    const { app, authority } = buildApp({})
     const res = await app.fetch(new Request("http://cp.test/?access=user-hosted"))
     expect(res.status).toBe(401)
-    expect(convex!.listWorkspaces).not.toHaveBeenCalled()
+    expect(authority!.listWorkspaces).not.toHaveBeenCalled()
   })
 
   test("honors the control-plane rate limiter", async () => {
-    const { app, convex } = buildApp({
+    const { app, authority } = buildApp({
       options: {
         controlPlaneRateLimiter: createFixedWindowConnectionRateLimiter({ limit: 1, windowMs: 60_000 }),
       },
@@ -771,14 +771,14 @@ describe("hosted workspace list (GET /api/workspace)", () => {
     expect(limited.status).toBe(429)
     expect(await limited.json()).toMatchObject({ error: { code: "control_plane_rate_limited" } })
     // The rate-limited request did not reach the workspace listing.
-    expect(convex!.listWorkspaces).toHaveBeenCalledTimes(1)
+    expect(authority!.listWorkspaces).toHaveBeenCalledTimes(1)
   })
 })
 
 describe("hosted cloud workspace create (POST /create)", () => {
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {
-    const convex = fakeConvexAuthority()
-    const { app } = buildApp({ authority: convex })
+    const authority = fakeAuthority()
+    const { app } = buildApp({ authority: authority })
     const res = await app.fetch(post("/create", { projectId: "proj_1" }))
     expect(res.status).toBe(503)
     expect(await res.json()).toMatchObject({ error: { code: "sandbox_driver_unavailable" } })
@@ -786,10 +786,10 @@ describe("hosted cloud workspace create (POST /create)", () => {
 
   test("creates the cloud workspace doc and kicks off provisioning", async () => {
     const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
-    const convex = fakeConvexAuthority({ createCloudWorkspace })
+    const authority = fakeAuthority({ createCloudWorkspace })
     const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
     const sandboxManager = { ensure } as unknown as SandboxManager
-    const { app } = buildApp({ authority: convex, sandboxManager })
+    const { app } = buildApp({ authority: authority, sandboxManager })
 
     const res = await app.fetch(
       post("/create", { projectId: "proj_1", workspaceName: "Feature X", repoUrl: "https://github.com/a/b" }),
@@ -835,10 +835,10 @@ describe("hosted cloud workspace create (POST /create)", () => {
 
   test("rejects hosted cloud create without a clone source", async () => {
     const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
-    const convex = fakeConvexAuthority({ createCloudWorkspace })
+    const authority = fakeAuthority({ createCloudWorkspace })
     const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
     const { app } = buildApp({
-      authority: convex,
+      authority: authority,
       sandboxManager: { ensure } as unknown as SandboxManager,
     })
 
@@ -853,10 +853,10 @@ describe("hosted cloud workspace create (POST /create)", () => {
   })
 
   test("requires a signed bearer token", async () => {
-    const convex = fakeConvexAuthority({ createCloudWorkspace: vi.fn(async () => ({})) })
+    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({})) })
     const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
     const { app } = buildApp({
-      authority: convex,
+      authority: authority,
       sandboxManager: { ensure } as unknown as SandboxManager,
     })
     const res = await app.fetch(
@@ -873,7 +873,7 @@ describe("hosted cloud workspace create (POST /create)", () => {
 describe("workspace shares (POST/DELETE /:id/shares)", () => {
   test("grants a share through the authority for a signed caller", async () => {
     const grantWorkspaceShare = vi.fn(async () => ({ granted: true, grant_id: "grant_1" }))
-    const { app } = buildApp({ authority: fakeConvexAuthority({ grantWorkspaceShare }) })
+    const { app } = buildApp({ authority: fakeAuthority({ grantWorkspaceShare }) })
     const res = await app.request(post("/ws_user/shares", {
       role: "viewer",
       target: { kind: "user", userId: "user_2" },
@@ -889,7 +889,7 @@ describe("workspace shares (POST/DELETE /:id/shares)", () => {
 
   test("refuses an anonymous caller and a share with no target", async () => {
     const grantWorkspaceShare = vi.fn(async () => ({ granted: true }))
-    const { app } = buildApp({ authority: fakeConvexAuthority({ grantWorkspaceShare }) })
+    const { app } = buildApp({ authority: fakeAuthority({ grantWorkspaceShare }) })
     const anonymous = await app.request(new Request("http://cp.test/ws_user/shares", {
       method: "POST",
       headers: { "content-type": "application/json" },

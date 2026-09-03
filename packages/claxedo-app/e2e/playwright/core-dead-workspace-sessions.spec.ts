@@ -2,7 +2,7 @@
  * SPEC: Dead-workspace session history (control-plane authoritative)
  *
  * PURPOSE — a cloud project's sessions sync back to the central bus and are
- * stored in Convex (`session_history` / `session_messages`, convex/schema.ts:
+ * stored in the control plane (`session_history` / `session_messages`:
  * 333-360). Because that copy is central, it must remain readable when the
  * backing sandbox is stopped, destroyed, or otherwise dead: the user opens a
  * project they created days ago, its VM is long gone, and they still expect the

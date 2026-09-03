@@ -25,8 +25,7 @@
     "!src/**/node_modules",
     "!src/**/node_modules/**",
     "tsconfig.json",
-    "vitest.config.ts",
-    "wrangler.toml"
+    "vitest.config.ts"
   ],
   "exports": {
     ".": {
@@ -57,7 +56,6 @@
     "deploy:user-cloudflare:cutover": "bun run scripts/deploy/cutover-better-auth-d1.ts",
     "deploy:user-cloudflare:prove-greenfield": "bun run scripts/deploy/prove-greenfield-target-absence.ts",
     "deploy:user-cloudflare:verify-paired-backup": "bun run scripts/deploy/verify-paired-d1-backup.ts",
-    "deploy:user-cloudflare:verify-migration": "bun run scripts/deploy/verify-migration-evidence.ts",
     "deploy:user-cloudflare:owner-claim": "bun run scripts/deploy/provision-user-deployed-owner-claim.ts",
     "docs:user-cloudflare:check": "bun run scripts/deploy/greenfield-user-deployed.ts --check-guide",
     "docs:user-cloudflare:print": "bun run scripts/deploy/greenfield-user-deployed.ts --print-guide",
@@ -67,7 +65,6 @@
     "typecheck:services": "tsc --noEmit -p tsconfig.services.json",
     "build:self-hosted-boundary": "bun run scripts/boundary/build-self-hosted.ts",
     "smoke:self-hosted-boundary": "node scripts/boundary/smoke-self-hosted.mjs",
-    "check:worker-safe": "bun run scripts/deploy/check-worker-safe.ts",
     "smoke:central": "bun run scripts/smoke/smoke-central.ts",
     "smoke:documents-r2": "wrangler dev --remote --port 8799 --config scripts/smoke/wrangler.documents-r2.toml",
     "smoke:documents-relay-harness": "bun run scripts/smoke/documents-relay-live-harness.ts",

@@ -93,9 +93,8 @@
  * BEHAVIORS —
  *   1. A completely fresh browser context boots the shell (`[data-claxedo]` visible)
  *      with zero console errors/exceptions and zero failed/bad network requests.
- *      TWO origin exclusions apply, and ONLY two: Clerk's dev-key CORS noise (an
- *      always-on side effect of `VITE_AUTH_ENABLED=true`, unrelated to this app's own
- *      code paths) and the unmockable central-server origin `127.0.0.1:3001` (see the
+ *      ONE origin exclusion applies, and only one: the unmockable central-server
+ *      origin `127.0.0.1:3001` (see the
  *      `fromUnmockedCentralOrigin` FINDING). The console list additionally drops
  *      Chromium's own *mirror* lines for network failures ("Failed to load resource"),
  *      which carry no URL in `message.text()` and therefore cannot be origin-attributed
@@ -362,7 +361,7 @@ async function readPersistedLayout(page: Page) {
 // genuinely reach 127.0.0.1:3001 and fail to connect (no real claxedo-server runs there
 // in this mocked test). This is an environment/architecture gap, not app misbehavior
 // under real conditions (a real dev environment DOES run claxedo-server on :3001) —
-// filtered by origin here the same way Clerk's noise is, pending either an app fix
+// filtered by origin here, pending either an app fix
 // (respect a test-injected central server URL) or a mock-runtime.ts default-backend-
 // origin route.
 function fromUnmockedCentralOrigin(item: string) {
@@ -373,7 +372,7 @@ function fromUnmockedCentralOrigin(item: string) {
  * `mock-runtime.ts` records only `message.text()`, which for these lines carries no URL
  * (the origin lives in `message.location()`, which the shared helper does not capture),
  * so they cannot be origin-attributed from the console list alone. Dropping them from
- * `nonClerkConsole` is a DE-DUPLICATION, not a silent hole: a resource that fails to
+ * `nonProviderConsole` is a DE-DUPLICATION, not a silent hole: a resource that fails to
  * load always also produces either a `requestfailed` (`requests.failed`) or a >=400
  * `response` (`requests.badResponses`) entry WITH its full URL, and those two lists are
  * asserted below with only the two documented origin exclusions. `expectConsoleMirrors
@@ -385,14 +384,8 @@ function isNetworkMirrorConsole(item: string) {
   return item.includes("Failed to load resource")
 }
 
-function nonClerkConsole(entries: string[]) {
-  return entries.filter(
-    (item) =>
-      !item.includes("clerk.accounts.dev") &&
-      !item.includes("Clerk:") &&
-      !isNetworkMirrorConsole(item) &&
-      !fromUnmockedCentralOrigin(item),
-  )
+function nonProviderConsole(entries: string[]) {
+  return entries.filter((item) => !isNetworkMirrorConsole(item) && !fromUnmockedCentralOrigin(item))
 }
 
 /** Every dropped network-mirror console line must have a real network record behind it.
@@ -404,19 +397,19 @@ function expectConsoleMirrorsAreAccountedFor(requests: { console: string[]; fail
   expect(mirrors.length).toBeLessThanOrEqual(requests.failed.length + requests.badResponses.length)
 }
 
-function nonClerkFailed(entries: string[]) {
-  return entries.filter((item) => !item.includes(".clerk.accounts.dev") && !fromUnmockedCentralOrigin(item))
+function nonProviderFailed(entries: string[]) {
+  return entries.filter((item) => !fromUnmockedCentralOrigin(item))
 }
 
-function nonClerkBadResponses(entries: string[]) {
-  return entries.filter((item) => !item.includes(".clerk.accounts.dev") && !fromUnmockedCentralOrigin(item))
+function nonProviderBadResponses(entries: string[]) {
+  return entries.filter((item) => !fromUnmockedCentralOrigin(item))
 }
 
 test.describe("core boot, deep links, and home @core", () => {
   test("cold boot with zero projects paints a clean shell and the Home empty state — behaviors 1,2", async ({ page }) => {
     const mock = await installMockRuntime(page, { dir: DIR, projectId: PROJECT_ID, sessionId: SESSION_ID })
     // NOTE: the global SDK's central event-stream connection (zero-workspace context)
-    // is NOT interceptable from here — see the `nonClerkConsole` FINDING comment below
+    // is NOT interceptable from here — see the `nonProviderConsole` FINDING comment below
     // for the full citation (it targets a hardcoded default origin the app resolves
     // independently of any test-injected server URL, and same-origin page.route
     // patterns — tried with and without a query string — do not catch it).
@@ -481,9 +474,9 @@ test.describe("core boot, deep links, and home @core", () => {
     // arbitrary magic ceiling — it neither named a key that must not be written nor
     // could fail for any behavior this spec owns — so it is gone rather than restated.
     // The real boot-hygiene oracles are the four network/console lists below.)
-    expect(nonClerkConsole(mock.requests.console)).toEqual([])
-    expect(nonClerkFailed(mock.requests.failed)).toEqual([])
-    expect(nonClerkBadResponses(mock.requests.badResponses)).toEqual([])
+    expect(nonProviderConsole(mock.requests.console)).toEqual([])
+    expect(nonProviderFailed(mock.requests.failed)).toEqual([])
+    expect(nonProviderBadResponses(mock.requests.badResponses)).toEqual([])
     // `requests.unhandled` is now a REAL list — every fetch/xhr that reached the end of
     // the route chain without a handler. Verified live while it was being built: a
     // deliberately-unmocked `fetch("/tripwire-scaffold-probe")` was recorded as exactly

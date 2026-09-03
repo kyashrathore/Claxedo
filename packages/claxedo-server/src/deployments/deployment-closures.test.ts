@@ -7,9 +7,7 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
  *
  * This package ships one Node entry — the single-binary
  * (`self-hosted-node`) that runs local workspaces — plus the Better Auth +
- * D1 worker compositions. The retired Clerk + Convex cloud entries
- * (`hosted-node`, `hosted-workerd/worker.ts`) were removed; the re-add path
- * lives in the `clerk-convex-cp` skill. Entries share `src/`, so the only
+ * D1 worker compositions. Entries share `src/`, so the only
  * thing keeping them apart is which modules each entry can REACH — and
  * reachability is not visible in a composition file, which lists what a
  * deployment mounts rather than what its graph drags along.
@@ -43,12 +41,6 @@ const ROOT = path.resolve(import.meta.dirname, "../..")
  * it gets read when it changes. Growth is a deliberate one-line bump; a fall
  * should lower the number with it.
  */
-// +1 module on EVERY entry on 2026-08-09:
-// `authority/adapters/convex/workspace-authority/host-enrollment.ts`, the
-// Convex half of machine enrollment. It moves all three because every entry
-// composes `createConvexAuthority`, and it is one module rather than three:
-// the five methods live in one file, importing only what the adapter's other
-// modules already do (`./api`, `./executor`, the auth types). No new package.
 // +1 package on hosted-node and self-hosted-node on 2026-08-09:
 // `@claxedo/sandbox-contract`, the dependency-neutral driver identity and
 // credential schema those compositions already used from sandbox-manager.
@@ -60,7 +52,7 @@ const ENTRIES = [
   // the composition guard the self-hosted app now installs alongside the
   // hosted core. One dependency-free module, no new package.
   // +12 modules (141 -> 153) for the same canonical usage path plus the
-  // self-host-only history/provenance adapters, durable outbox, and Convex
+  // self-host-only history/provenance adapters, durable outbox, and the
   // ledger adapter. The one package edge is the pinned, read-only
   // `tokentracker-cli` scanner/pricing library. Combined with dev's
   // sandbox-contract split, then runtime authority reaches the canonical
@@ -78,7 +70,7 @@ const ENTRIES = [
   // hosted-shared's `hosted-remote-access-service.ts` nor its
   // `hosted-usage-ledger.ts` are reached here: self-hosted-node keeps its own
   // full `RemoteAccessService` (`self-hosted-node/remote-access-service.ts`,
-  // which also enrolls this machine) and its own Convex-free usage ledger.
+  // which also enrolls this machine) and its own usage ledger.
   // No new package.
   // +4 modules (151 -> 155): the same workspace SessionEnv split into focused
   // factory, protocol, runtime-env, and admission owners. No new package.
@@ -107,7 +99,6 @@ describe("server deployment entry closures", () => {
 
     const forbiddenFiles = files.filter((file) =>
       [
-        "src/hosts/workgraph/",
         "src/hosts/wakes/",
         "src/documents/",
         "src/billing/",
@@ -119,8 +110,6 @@ describe("server deployment entry closures", () => {
     expect(
       result.packages.filter((name) =>
         [
-          "@claxedo/workgraph",
-          "@claxedo/workgraph-service",
           "@claxedo/documents-service",
           "@claxedo/wakes",
           "@polar-sh/sdk",
@@ -155,22 +144,15 @@ describe("server deployment entry closures", () => {
         "authority/hosted-services",
         "core-worker.cf",
         "deployments/hosted-shared/hosted-app",
-        "hosts/workgraph",
         "documents/",
         "billing/",
         "sandbox",
-        "convex",
-        "clerk",
       ].some((value) => file.toLowerCase().includes(value)),
     )
     expect(forbiddenFiles).toEqual([])
     expect(
       result.packages.filter((name) =>
         [
-          "convex",
-          "@clerk/backend",
-          "@claxedo/workgraph",
-          "@claxedo/workgraph-service",
           "@claxedo/documents-service",
           "@claxedo/wakes",
           "@claxedo/sandbox-manager",
@@ -192,12 +174,9 @@ describe("server deployment entry closures", () => {
       files.filter((file) =>
         [
           "better-auth-d1-locked-worker",
-          "authority/adapters/convex/",
           "authority/adapters/worker/hosted-compose",
           "authority/adapters/worker/retained-sandbox-driver",
-          "platform/auth/clerk-adapter",
           "billing/",
-          "hosts/workgraph/",
           "documents/",
         ].some((value) => file.toLowerCase().includes(value)),
       ),
@@ -205,10 +184,6 @@ describe("server deployment entry closures", () => {
     expect(
       result.packages.filter((name) =>
         [
-          "convex",
-          "@clerk/backend",
-          "@claxedo/workgraph",
-          "@claxedo/workgraph-service",
           "@claxedo/documents-service",
           "@claxedo/wakes",
           "@polar-sh/sdk",

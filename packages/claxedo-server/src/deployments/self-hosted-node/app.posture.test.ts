@@ -24,7 +24,6 @@ const VALID = {
   deploymentMode: "local",
   embeddedAuth: false,
   authority: true,
-  sqliteAuthority: true,
   localExecution: true,
 } as const
 
@@ -35,10 +34,10 @@ describe("createSelfHostedApp's posture gate", () => {
     )
   })
 
-  test("refuses a remote authority", () => {
-    // A single-tenant deploy writing into someone else's control plane.
-    expect(() => createSelfHostedApp(services, { posture: { ...VALID, sqliteAuthority: false } })).toThrow(
-      /not the local SQLite one/,
+  test("refuses a missing workspace authority", () => {
+    // A composition that built no authority at all.
+    expect(() => createSelfHostedApp(services, { posture: { ...VALID, authority: false } })).toThrow(
+      /no workspace authority is composed/,
     )
   })
 

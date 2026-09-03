@@ -29,7 +29,6 @@ export type RailWorkbenchShellProps = {
   onNewProject?: () => void
   onNewSession: () => void
   onNewTerminalDraft: () => void
-  onNewTask?: () => void
   onWorkspacePanelFloatingChromeRef: (element: HTMLElement | undefined) => void
   onWorkspacePanelShellRef: (element: HTMLElement | undefined) => void
   onWorkspacePanelWorkbenchColumnRef: (element: HTMLElement | undefined) => void
@@ -115,7 +114,6 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
             onNewPage={props.onNewPage}
             onNewSession={props.onNewSession}
             onNewTerminalDraft={props.onNewTerminalDraft}
-            onNewTask={props.onNewTask}
             onSettings={props.onSettings}
             onSelectSurface={props.onSelectSurface}
             onShowSidebar={props.onShowSidebar}

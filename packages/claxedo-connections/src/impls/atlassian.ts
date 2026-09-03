@@ -22,9 +22,9 @@ function normalizeSiteUrl(input: string): string | undefined {
   // fragment. `url.origin` below would strip them, so accepting such a value
   // would quietly connect to a DIFFERENT place than the operator typed — and a
   // `user:pass@` prefix is the classic way to make a hostile URL read as a
-  // trusted one. The consumer side applies the same rule
-  // (`packages/workgraph/src/connectors/jira/source-view.ts` requireBaseUrl);
-  // the shared vectors in ./atlassian-site-url-vectors.ts pin the two together.
+  // trusted one. Any consumer that sends the stored credentials must apply the
+  // same rule; the shared vectors in ./atlassian-site-url-vectors.ts are what
+  // pin a second implementation to this one.
   if (url.username || url.password || url.search || url.hash) return undefined
   const host = url.hostname
   if (!host.endsWith(ATLASSIAN_HOST_SUFFIX)) return undefined

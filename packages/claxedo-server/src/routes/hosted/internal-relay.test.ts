@@ -123,7 +123,7 @@ describe("hosted /internal/relay/revocation", () => {
   test("fails closed when the revocation lookup throws", async () => {
     const app = buildHostedApp({
       revocationLookup: async () => {
-        throw new Error("convex unreachable")
+        throw new Error("authority unreachable")
       },
     })
     const res = await app.fetch(authed("/internal/relay/revocation?jti=j1&workspaceId=ws_1&hostId=host_1"))

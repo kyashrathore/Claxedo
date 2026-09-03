@@ -28,7 +28,7 @@ const plugin = createSolidTransformPlugin()
 // Upstream bundled `packages/app` into a generated `opencode-web-ui.gen.ts`
 // module and served it from `/`. That package does not exist here — the hard
 // fork replaced it with `packages/claxedo-app`, which is a different product:
-// it bakes its Clerk keys and `VITE_CLAXEDO_SERVER_URL` in at build time and
+// it bakes its auth keys and `VITE_CLAXEDO_SERVER_URL` in at build time and
 // ships as its own site (.github/workflows/deploy-claxedo-app.yml), so it is
 // not a drop-in for the binary's UI route.
 //

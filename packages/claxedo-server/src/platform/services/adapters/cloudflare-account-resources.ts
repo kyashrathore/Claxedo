@@ -51,7 +51,7 @@ export class CloudflareAccountOptionalServiceResources implements CloudflareOpti
   }
 
   async provision(input: {
-    serviceId: "workgraph" | "documents"
+    serviceId: "documents"
     workerName: string
     databaseName: string
     bucketName?: string
@@ -59,23 +59,17 @@ export class CloudflareAccountOptionalServiceResources implements CloudflareOpti
     const database = await this.findD1(input.databaseName)
     const databaseId = database?.uuid ?? (await this.createD1(input.databaseName)).uuid
     if (!databaseId) throw new CloudflareOptionalServiceResourceError("api_failure", "D1 create omitted its UUID")
-    if (input.serviceId === "documents") {
-      const bucketName = required(input.bucketName ?? "", "bucketName")
-      if (!(await this.bucketExists(bucketName))) {
-        await this.request(`/accounts/${encodeURIComponent(this.accountId)}/r2/buckets/${encodeURIComponent(bucketName)}`, {
-          method: "PUT",
-        })
-      }
-      return Object.freeze({ databaseId, bucketName })
+    const bucketName = required(input.bucketName ?? "", "bucketName")
+    if (!(await this.bucketExists(bucketName))) {
+      await this.request(`/accounts/${encodeURIComponent(this.accountId)}/r2/buckets/${encodeURIComponent(bucketName)}`, {
+        method: "PUT",
+      })
     }
-    if (input.bucketName !== undefined) {
-      throw new CloudflareOptionalServiceResourceError("resource_mismatch", "WorkGraph cannot provision an R2 bucket")
-    }
-    return Object.freeze({ databaseId })
+    return Object.freeze({ databaseId, bucketName })
   }
 
   async inspect(input: {
-    serviceId: "workgraph" | "documents"
+    serviceId: "documents"
     workerName: string
     databaseName: string
     bucketName?: string
@@ -84,18 +78,15 @@ export class CloudflareAccountOptionalServiceResources implements CloudflareOpti
     if (!database?.uuid) {
       throw new CloudflareOptionalServiceResourceError("resource_missing", `${input.databaseName} D1 does not exist`)
     }
-    if (input.serviceId === "documents") {
-      const bucketName = required(input.bucketName ?? "", "bucketName")
-      if (!(await this.bucketExists(bucketName))) {
-        throw new CloudflareOptionalServiceResourceError("resource_missing", `${bucketName} R2 bucket does not exist`)
-      }
-      return Object.freeze({ databaseId: database.uuid, bucketName })
+    const bucketName = required(input.bucketName ?? "", "bucketName")
+    if (!(await this.bucketExists(bucketName))) {
+      throw new CloudflareOptionalServiceResourceError("resource_missing", `${bucketName} R2 bucket does not exist`)
     }
-    return Object.freeze({ databaseId: database.uuid })
+    return Object.freeze({ databaseId: database.uuid, bucketName })
   }
 
   async retire(input: {
-    serviceId: "workgraph" | "documents"
+    serviceId: "documents"
     workerName: string
     databaseName: string
     databaseId: string
@@ -110,13 +101,11 @@ export class CloudflareAccountOptionalServiceResources implements CloudflareOpti
         "refusing to retire a D1 database whose immutable UUID changed",
       )
     }
-    if (input.serviceId === "documents") {
-      const bucketName = required(input.bucketName ?? "", "bucketName")
-      if (await this.bucketExists(bucketName)) {
-        await this.request(`/accounts/${encodeURIComponent(this.accountId)}/r2/buckets/${encodeURIComponent(bucketName)}`, {
-          method: "DELETE",
-        })
-      }
+    const bucketName = required(input.bucketName ?? "", "bucketName")
+    if (await this.bucketExists(bucketName)) {
+      await this.request(`/accounts/${encodeURIComponent(this.accountId)}/r2/buckets/${encodeURIComponent(bucketName)}`, {
+        method: "DELETE",
+      })
     }
     if (current) {
       await this.request(

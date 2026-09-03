@@ -34,10 +34,6 @@ const loadHostedContributions = __CLAXEDO_HOSTED_ACTIVATION_ENABLED__
 
 const serviceContributionLoaders = __CLAXEDO_HOSTED_ACTIVATION_ENABLED__
   ? {
-      workgraph: async () => {
-        const activation = await import("./workgraph-contributions")
-        return activation.loadDesktopWorkGraphContributions()
-      },
       documents: async () => {
         const activation = await import("./documents-contributions")
         return activation.loadDesktopDocumentsContributions()

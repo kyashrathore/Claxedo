@@ -25,7 +25,7 @@ import { sandboxLeaseUrl } from "./sandbox/stores/sqlite-supervisor-state.ts"
 //
 // Documented here too, verbatim, per the plan's requirement that both
 // fixtures carry this note: a local JWKS issuer is a SUPPORTED SELF-HOST
-// MODE, not a stub — same middleware, real crypto — but Clerk-specific
+// MODE, not a stub — same middleware, real crypto — but provider-specific
 // behaviour (token shape, JWKS rotation, session claims) is covered only by
 // the nightly credentialed lane.
 

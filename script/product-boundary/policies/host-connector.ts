@@ -34,11 +34,9 @@ export const hostConnector: Policy = {
     "@claxedo/sandbox-manager",
     "hono",
     "express",
-    "convex",
     "better-auth",
     "better-sqlite3",
     "drizzle-orm",
-    "@clerk/clerk-js",
     // The connector runs under Node, Bun and Electron. `crypto.subtle` is the
     // one implementation all three share; a `node:crypto` import works in
     // development and fails wherever the runtime differs.

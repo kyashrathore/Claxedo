@@ -150,13 +150,13 @@ describe("bootstrapGlobal", () => {
     configureServiceContributions({
       local: [],
       loaders: {
-        workgraph: async () => {
-          loaded.push("workgraph")
+        documents: async () => {
+          loaded.push("documents")
           return {
             contentSurfaces: [{
-              id: "workgraph",
+              id: "documents",
               tier: "claxedo-first-party",
-              surface: "workgraph",
+              surface: "page",
               slot: "workbench",
               renderer: () => null,
             } as ContentSurfaceContribution],
@@ -170,7 +170,7 @@ describe("bootstrapGlobal", () => {
     const authenticated = {
       authenticated: true,
       services: [{
-        serviceId: "workgraph",
+        serviceId: "documents",
         protocolVersion: SERVICE_PROTOCOL_VERSION,
         schemaVersion: 1,
         state: "enabled",
@@ -197,8 +197,8 @@ describe("bootstrapGlobal", () => {
     await run()
     expect(requests[0]?.url).toBe("https://api.example.test/api/claxedo/services")
     expect(requests[0]?.credentials).toBe("include")
-    expect(loaded).toEqual(["workgraph"])
-    expect(registered).toEqual(["workgraph"])
+    expect(loaded).toEqual(["documents"])
+    expect(registered).toEqual(["documents"])
 
     payload = { ...authenticated, authenticated: false, services: [] }
     await run()

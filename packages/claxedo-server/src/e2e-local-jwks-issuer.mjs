@@ -5,17 +5,17 @@ import { SignJWT, exportJWK, generateKeyPair } from "jose"
 // A REAL local JWKS issuer for e2e control-plane fixtures.
 //
 // This is a SUPPORTED SELF-HOST MODE, not a stub: a request bearing a token
-// minted here is verified through the exact same code path as a Clerk token —
+// minted here is verified through the exact same code path as a provider-issued token —
 // `controlPlaneAuthContext` (platform/auth/auth.ts:298) calls the injected
 // `verifier`, which does real `jose.jwtVerify()` against a real HTTP JWKS
 // endpoint and a real EdDSA/ES256 keypair (see `customVerifierAuthAdapter`,
 // platform/auth/auth.ts:179 — the same adapter shape self-hosters use to wire
 // Auth0/Ory/anything OIDC-shaped, documented as a first-class alternative to
-// `clerkAuthAdapter`). What it does NOT cover: Clerk-specific behaviour —
-// Clerk's actual token shape, its JWKS rotation cadence, its session-claim
+// the signed auth adapter). What it does NOT cover: provider-specific behaviour —
+// a real provider's actual token shape, its JWKS rotation cadence, its session-claim
 // vocabulary (org role names, template claims). That gap is intentional and
 // is covered only by the nightly credentialed `live-*` lane, which runs
-// against a real Clerk test tenant (see `e2e/INVARIANTS.md`).
+// against a real provider test tenant (see `e2e/INVARIANTS.md`).
 //
 // Shared module so the mint/verify pair is written once. `signed-browser-
 // relay-fixture.mjs` is the first consumer (2026-08-06,

@@ -27,13 +27,6 @@ export type ArchitectureOwnershipEntry = {
 export const ARCHITECTURE_OWNERSHIP = [
   {
     area: "authority",
-    module: "authority/adapters/convex/workspace-authority/index.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "control-plane Convex authority adapter (removed; D1 is canonical)",
-    canonicalReplacement: "authority/adapters/d1/workspace-authority.ts",
-  },
-  {
-    area: "authority",
     module: "../../claxedo-server-core/src/platform/auth/authority.ts",
     status: OwnershipStatus.Canonical,
     owner: "control-plane authority port",
@@ -75,13 +68,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "SandboxLeaseStore local durable driver",
     tests: ["workspace/supervisor/cloud.test.ts"],
-  },
-  {
-    area: "lease",
-    module: "sandbox/stores/convex.ts",
-    status: OwnershipStatus.Deleted,
-    owner: "SandboxLeaseStore hosted durable driver (removed with the Convex backend)",
-    canonicalReplacement: "sandbox/stores/sqlite.ts",
   },
   {
     area: "lease",
@@ -297,7 +283,6 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "local-only route guard",
     tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
-    routeSamples: ["/api/workgraph"],
   },
   {
     area: "route",
@@ -339,7 +324,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Compatibility,
     owner: "local-only projection route compatibility",
     canonicalReplacement: "ControlPlaneAuthAdapter-gated route factories",
-    reason: "Local server still exposes loopback-only projections for WorkGraph and related local surfaces.",
+    reason: "Local server still exposes loopback-only projections for local surfaces.",
     removalCondition: "Local-only route surfaces are either removed or compose the same route factories with explicit auth policies.",
     tests: ["../../claxedo-server-core/src/platform/http/local-only-projection.test.ts"],
   },

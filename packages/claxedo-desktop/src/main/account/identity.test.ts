@@ -2,9 +2,9 @@ import { describe, expect, test } from "bun:test"
 import { createIdentityResolver, identityFromUserInfo, userInfoUrlFromTokenUrl } from "./identity"
 
 describe("userInfoUrlFromTokenUrl", () => {
-  test("maps Clerk token endpoint to userinfo", () => {
-    expect(userInfoUrlFromTokenUrl("https://suitable-elf-22.clerk.accounts.dev/oauth/token")).toBe(
-      "https://suitable-elf-22.clerk.accounts.dev/oauth/userinfo",
+  test("maps an OAuth token endpoint to userinfo", () => {
+    expect(userInfoUrlFromTokenUrl("https://suitable-elf-22.issuer.example.com/oauth/token")).toBe(
+      "https://suitable-elf-22.issuer.example.com/oauth/userinfo",
     )
   })
 

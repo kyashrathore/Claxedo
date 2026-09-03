@@ -30,7 +30,7 @@ export type UsageRevisionResult = {
 
 /** One authority contract shared by metering, sync, and dashboard reads. */
 export type UsageLedger = {
-  resolveWorkGraphAttribution?: (input: {
+  resolveHostedAttribution?: (input: {
     org_id: string
     user_id: string
     session_id: string

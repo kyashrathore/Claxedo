@@ -63,8 +63,6 @@ describe("route ownership", () => {
       "/documents/some-document",
       "/documents",
       "/documents/document_1/content",
-      "/api/workgraph",
-      "/api/workgraph/runs",
     ]
 
     for (const path of paths) {

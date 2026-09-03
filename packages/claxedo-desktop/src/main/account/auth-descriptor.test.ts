@@ -37,20 +37,20 @@ function betterAuthDescriptor() {
   }
 }
 
-function clerkDescriptor() {
+function providerDescriptor() {
   return {
     ...betterAuthDescriptor(),
-    adapter: "clerk",
-    issuer: "https://clerk.example.com",
+    adapter: "third-party-idp",
+    issuer: "https://idp.example.com",
     native: {
       cli: {},
       desktop: {
         ...betterAuthDescriptor().native.desktop,
         flow: "adapter-native",
-        tokenEndpointOrigin: "https://clerk.example.com",
+        tokenEndpointOrigin: "https://idp.example.com",
         revocation: {
           protocol: "adapter-native",
-          endpoint: "https://clerk.example.com/native/revoke",
+          endpoint: "https://idp.example.com/native/revoke",
         },
       },
     },
@@ -80,9 +80,9 @@ describe("desktop authentication descriptor", () => {
     })
   })
 
-  test("rejects the removed Clerk adapter-native descriptor", () => {
+  test("rejects an unknown adapter's adapter-native descriptor", () => {
     try {
-      parseDesktopAuthDescriptor(clerkDescriptor(), CORE, NOW)
+      parseDesktopAuthDescriptor(providerDescriptor(), CORE, NOW)
       throw new Error("expected rejection")
     } catch (error) {
       expect(error).toBeInstanceOf(DesktopAuthDescriptorError)

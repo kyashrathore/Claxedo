@@ -154,22 +154,6 @@ describe("signed shell projects", () => {
     updated_at: 2_000,
   })
 
-  test("WorkGraph execution scopes (wg-*) never surface as projects", async () => {
-    const { signedShellProjects } = await import("./shell")
-    const projects = signedShellProjects(
-      [
-        cloudRow("ws_real_1", "My repo"),
-        // The `wg-<sha>` shape workGraphWorkspaceId mints per stream — a
-        // managed-run internal with no interactive sandbox. Surfacing it gave
-        // the rail a "WorkGraph · …" pseudo-project that hung on "Preparing
-        // workspace" and 404'd the documents fan-out.
-        cloudRow("wg-0973c9dc90d8abeb2d860ebd", "WorkGraph · Confirm the hosted no-op path"),
-      ],
-      3_000,
-    )
-    expect(projects.map((project) => project.id)).toEqual(["ws_real_1"])
-  })
-
   // The composer's project chip showed "workspace" for every hosted cloud
   // project: `display_name` is the WORKSPACE name and the hosted create dialog
   // posts `workspaceName: "main"`, so preferring it named the PROJECT "main";

@@ -41,7 +41,7 @@ export type WorkspacePanelProps = {
    */
   openMotion?: () => ShellSettleMotion | undefined
   // Resting width used before the user has dragged the resize handle. Lets a
-  // compact global surface (e.g. WorkGraph) open narrower than the workspace
+  // compact global surface open narrower than the workspace
   // review default without a second panel shell. Falls back to the 70% default.
   preferredWidth?: () => number | undefined
   /**

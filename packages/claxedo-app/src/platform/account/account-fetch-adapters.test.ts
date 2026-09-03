@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import { createAgentConfigAccountFetch } from "./agent-config-account-fetch"
 import { createControlPlaneAccountFetch } from "./control-plane-account-fetch"
-import { createDocumentsAccountFetch } from "./documents-account-fetch"
 import { createIntegrationsRequest } from "./integrations-request"
 
 const originalApi = (globalThis as { api?: unknown }).api
@@ -64,12 +63,6 @@ describe("AccountPort fetch adapters", () => {
     await expectBridgeUnavailable(await createControlPlaneAccountFetch(
       async () => new Response("fallback"),
     )("https://control.example.test/api/control/sessions"))
-
-    bridgeThatDisappearsAfterAvailabilityCheck()
-    await expectBridgeUnavailable(await createDocumentsAccountFetch("https://control.example.test")(
-      "https://control.example.test/documents/doc_1/work-source",
-      { method: "POST", body: "{}" },
-    ))
   })
 
   test("keeps the integrations adapter's distinct error envelope", async () => {

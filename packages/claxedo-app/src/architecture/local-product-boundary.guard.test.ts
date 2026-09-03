@@ -10,7 +10,7 @@ const appRoot = path.resolve(import.meta.dir, "../..")
  * Local product boundary.
  *
  * `@claxedo/app`'s production entry must not close over hosted identity,
- * WorkGraph, Documents, cloud runtime, or hosted API clients. Type-only
+ * Documents, cloud runtime, or hosted API clients. Type-only
  * imports are excluded: the bundler erases them. The emitted-artifact gate
  * covers what source scanning cannot see.
  *
@@ -30,10 +30,7 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 
 /** Bare packages that only the hosted product may depend on. */
 const HOSTED_PACKAGES = [
-  "@clerk/clerk-js",
-  "@claxedo/workgraph",
-  "convex",
-  "convex/browser",
+  "better-auth",
 ]
 
 /** In-package source roots that own hosted implementations, not local ones. */
@@ -41,7 +38,6 @@ const HOSTED_SOURCE_ROOTS = [
   "platform/auth/auth-client",
   "platform/auth/auth-session",
   "platform/runtime/cloud/",
-  "features/workgraph/",
   "features/documents/",
   "app/routes/login",
   "app/routes/cli-login",
@@ -71,18 +67,18 @@ describe("local product boundary", () => {
       "entry.ts": `import "./shell"\nimport "./settings"\n`,
       "shell.ts": `import "./deep-a"\n`,
       "deep-a.ts": `import "./deep-b"\n`,
-      "deep-b.ts": `import { Clerk } from "@clerk/clerk-js"\nexport const c = Clerk\n`,
+      "deep-b.ts": `import { createAuthClient } from "better-auth/client"\nexport const c = createAuthClient\n`,
       // The SHORT path to the same breach. Breadth-first must prefer it, so the
       // reader is pointed at the tightest coupling instead of whichever branch
       // a depth-first walk happened to descend into first.
-      "settings.ts": `import { Clerk } from "@clerk/clerk-js"\nexport const s = Clerk\n`,
+      "settings.ts": `import { createAuthClient } from "better-auth/client"\nexport const s = createAuthClient\n`,
     })
     try {
       expect(
         shortestForbiddenImportChain({ appRoot: root, entry: "entry.ts", isForbidden: isHostedCapability }),
       ).toEqual({
         chain: ["entry.ts", "settings.ts"],
-        specifier: "@clerk/clerk-js",
+        specifier: "better-auth/client",
         module: null,
       })
     } finally {
@@ -93,16 +89,16 @@ describe("local product boundary", () => {
   test("reports the chain to an injected hosted source-root edge", () => {
     const root = fixtureApp({
       "entry.ts": `import "./shell"\n`,
-      "shell.ts": `import "./features/workgraph/index"\n`,
-      "features/workgraph/index.ts": `export const workgraph = true\n`,
+      "shell.ts": `import "./features/documents/index"\n`,
+      "features/documents/index.ts": `export const documents = true\n`,
     })
     try {
       expect(
         shortestForbiddenImportChain({ appRoot: root, entry: "entry.ts", isForbidden: isHostedCapability }),
       ).toEqual({
         chain: ["entry.ts", "shell.ts"],
-        specifier: "./features/workgraph/index",
-        module: "features/workgraph/index.ts",
+        specifier: "./features/documents/index",
+        module: "features/documents/index.ts",
       })
     } finally {
       rmSync(root, { recursive: true, force: true })

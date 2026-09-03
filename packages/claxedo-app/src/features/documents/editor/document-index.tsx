@@ -631,7 +631,7 @@ export function PageIndex(props: PageIndexProps) {
 
 /** "New document" is a searchable project picker, not a dialog: click it, filter
  *  to a project, pick it, and the document is created there and opened. Reuses
- *  the same shared `List` (fuzzy search box + keyed items) as WorkGraph's base
+ *  the same shared `List` (fuzzy search box + keyed items) as the base
  *  revision picker, so the styling and typeahead match exactly. Disabled (and
  *  non-opening) when there is no project to create in — never a faked
  *  destination. */

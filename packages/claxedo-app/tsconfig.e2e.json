@@ -6,7 +6,7 @@
     "skipLibCheck": true,
     "moduleResolution": "bundler",
     // "bun": several e2e helpers import claxedo-server source directly
-    // (workgraph-connection-browser-use-server.ts → src/server-workgraph, …), which
+    // (an e2e helper server reaching into src/, …), which
     // transitively reaches `src/storage/db.ts`'s `typeof import("bun:sqlite")`.
     // claxedo-server's own tsconfig declares `types: ["bun", "node"]` for exactly
     // this reason; the e2e project needs it too or that import cannot resolve.

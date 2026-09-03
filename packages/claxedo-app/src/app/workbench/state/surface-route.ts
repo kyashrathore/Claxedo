@@ -1,14 +1,11 @@
 import type { ContentMeta } from "./types"
 import {
   marketplaceRoute,
-  newTaskRoute,
-  workGraphRoute,
   sessionRoute as canonicalSessionRoute,
   workspacePageRoute,
   workspaceRoute as canonicalWorkspaceRoute,
   workspaceSessionRoute,
   workspaceTerminalRoute,
-  workspaceWorkGraphRoute,
 } from "@/platform/identity/route"
 import { PENDING_TERMINAL_PREFIX } from "@/features/terminal/core/terminal-surface-id"
 import { workspaceKey } from "@/platform/identity/session-ref"
@@ -61,9 +58,6 @@ export function surfaceWorkspaceRouteKey(content: RouteContent, fallback: string
 export function surfaceRoute(workspaceId: string | undefined, content: RouteContent) {
   const routeId = surfaceWorkspaceRouteKey(content, workspaceId)
   if (content.type === "marketplace") return marketplaceRoute()
-  if (content.type === "workgraph") return workGraphRoute()
-  if (content.type === "workspace-workgraph") return routeId ? workspaceWorkGraphRoute(routeId) : undefined
-  if (content.type === "task-composer") return newTaskRoute(content.directory ? routeId : undefined)
   if (content.type === "session") {
     const sessionRef = routeSessionRef(content)
     if (sessionRef?.sessionId && sessionRef.sessionId !== "new") {
@@ -99,9 +93,6 @@ export function routeMatchesSurface(
   route: {
     id?: string
     marketplace?: boolean
-    newTask?: boolean
-    workgraph?: boolean
-    workspaceWorkGraph?: boolean
     pageId?: string
     terminalId?: string
   },
@@ -110,16 +101,6 @@ export function routeMatchesSurface(
   routeWorkspaceKey?: string,
 ) {
   if (content.type === "marketplace") return route.marketplace === true
-  if (content.type === "workgraph") return route.workgraph === true
-  if (content.type === "task-composer") {
-    if (route.newTask !== true) return false
-    return content.directory
-      ? routeWorkspaceKey === surfaceWorkspaceRouteKey(content, workspaceId)
-      : !routeWorkspaceKey
-  }
-  if (content.type === "workspace-workgraph") {
-    return route.workspaceWorkGraph === true && routeWorkspaceKey === workspaceId
-  }
   if (routeWorkspaceKey !== surfaceWorkspaceRouteKey(content, workspaceId)) return false
 
   if (content.type === "session") {
@@ -141,9 +122,6 @@ export function focusedSurfaceRouteTarget(input: {
     dir?: string
     id?: string
     marketplace?: boolean
-    newTask?: boolean
-    workgraph?: boolean
-    workspaceWorkGraph?: boolean
     pageId?: string
     terminalId?: string
   }
@@ -151,28 +129,17 @@ export function focusedSurfaceRouteTarget(input: {
   routeWorkspaceKey?: string
   activeRouteId?: string
 }) {
-  const hasConcreteRoute = !!(input.route.id || input.route.pageId || input.route.terminalId || input.route.newTask || input.route.workspaceWorkGraph)
+  const hasConcreteRoute = !!(input.route.id || input.route.pageId || input.route.terminalId)
   const pendingTerminalRoute = input.route.terminalId?.startsWith("pending-") === true
   if (input.route.terminalId && (!input.surface || input.surface.type !== "terminal")) return
   if (pendingTerminalRoute && (!input.surface || input.surface.type !== "terminal" || routeTerminalId(input.surface) !== input.route.terminalId)) return
   if (!input.surface) {
     if (input.route.marketplace) return
-    if (input.route.workgraph) return
-    if (input.route.newTask) return
-    if (input.route.workspaceWorkGraph) return
     if (!hasConcreteRoute || !input.activeRouteId) return
     return workspaceBrowseRoute(input.activeRouteId)
   }
 
   if (input.surface.type === "marketplace") {
-    if (routeMatchesSurface(input.route, "", input.surface, input.routeWorkspaceKey)) return
-    return surfaceRoute("", input.surface)
-  }
-  if (input.surface.type === "workgraph") {
-    if (routeMatchesSurface(input.route, "", input.surface, input.routeWorkspaceKey)) return
-    return surfaceRoute("", input.surface)
-  }
-  if (input.surface.type === "task-composer" && !input.surface.directory) {
     if (routeMatchesSurface(input.route, "", input.surface, input.routeWorkspaceKey)) return
     return surfaceRoute("", input.surface)
   }

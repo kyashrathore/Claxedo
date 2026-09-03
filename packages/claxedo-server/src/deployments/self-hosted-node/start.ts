@@ -25,7 +25,6 @@ import fs from "node:fs"
 import path from "node:path"
 import { deploymentMode } from "@claxedo/server-core/authority/deployment-mode"
 import { embeddedAuthEnabled } from "./embedded-auth"
-import { selfHostedCapabilities } from "./capabilities"
 import { startServer } from "./app"
 import { assertSelfHostedPosture } from "./posture"
 
@@ -52,17 +51,6 @@ export function staticAppPosture(staticDir: string | undefined) {
 }
 
 /**
- * Which workspace authority this environment will actually compose.
- *
- * Self-host always composes SQLite. Hosted trust is rejected outright: that
- * environment wants the Better Auth + D1 worker composition.
- */
-export function selectedWorkspaceAuthority(env: NodeJS.ProcessEnv): "sqlite" {
-  void env
-  return "sqlite"
-}
-
-/**
  * The posture this process is actually in, read from its environment.
  *
  * Separate from the assertion so a test can inspect what was measured without
@@ -70,19 +58,13 @@ export function selectedWorkspaceAuthority(env: NodeJS.ProcessEnv): "sqlite" {
  * end up in one function that is hard to exercise.
  */
 export function selfHostedPosture(env: NodeJS.ProcessEnv) {
-  // Read ONCE and used for both authority fields, so they cannot disagree
-  // about the same composition.
-  const workspaceAuthority = selectedWorkspaceAuthority(env)
   return {
     deploymentMode: deploymentMode(env),
     embeddedAuth: embeddedAuthEnabled(env),
-    // Both arms of that branch return an authority, so this composition always
-    // has one — it chooses WHICH, never whether. The field stays so a future
-    // composition that builds none cannot pass by omission.
+    // Self-host always composes a workspace authority (the local SQLite one);
+    // hosted trust is rejected before anything is built. The field stays so a
+    // future composition that builds none cannot pass by omission.
     authority: true,
-    // The data-residency claim. Self-host always composes SQLite; hosted
-    // trust is rejected before anything is built.
-    sqliteAuthority: workspaceAuthority === "sqlite",
     // The product IS local execution; `createDefaultLocalControlPlaneServices`
     // composes it, and `createSelfHostedApp` refuses outright without it.
     localExecution: true,
@@ -105,5 +87,5 @@ export function startSelfHostedServer(options: SelfHostedStartOptions) {
   // where a refusal costs nothing. The one inside the composition catches a
   // caller that reaches it another way.
   assertSelfHostedPosture(selfHostedPosture(env))
-  return startServer(options.port, options.opencodeUrl, undefined, { capabilities: selfHostedCapabilities })
+  return startServer(options.port, options.opencodeUrl)
 }

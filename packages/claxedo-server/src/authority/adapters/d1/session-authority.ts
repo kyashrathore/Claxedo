@@ -641,9 +641,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       sessionId: string
       workspaceId: string
       grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
+      grantedToSubject?: string
       grantedToUserId?: string
-      grantedToClerkOrgId?: string
       grantedToOrgId?: string
       grantedToTeamId?: string
       grantedToTeamPublicId?: string
@@ -765,9 +764,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       workspaceId: string
       grantId?: string
       grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
+      grantedToSubject?: string
       grantedToUserId?: string
-      grantedToClerkOrgId?: string
       grantedToOrgId?: string
       grantedToTeamId?: string
       grantedToTeamPublicId?: string
@@ -1531,9 +1529,8 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   private async resolveShareTarget(
     args: {
       grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
+      grantedToSubject?: string
       grantedToUserId?: string
-      grantedToClerkOrgId?: string
       grantedToOrgId?: string
       grantedToTeamId?: string
       grantedToTeamPublicId?: string
@@ -1541,7 +1538,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
     allowMissing = false,
   ): Promise<SessionShareTarget | undefined> {
     if (shareSelectorCount(args) !== 1) throw sessionShareError("session_share_target_required")
-    const userSelector = args.grantedToTokenIdentifier ?? args.grantedToClerkSubject ?? args.grantedToUserId
+    const userSelector = args.grantedToTokenIdentifier ?? args.grantedToSubject ?? args.grantedToUserId
     if (userSelector) {
       const value = requireText(userSelector, "share user target")
       const user = args.grantedToUserId
@@ -1577,7 +1574,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       }
       return { kind: "user", id: user.user_id }
     }
-    const orgSelector = args.grantedToOrgId ?? args.grantedToClerkOrgId
+    const orgSelector = args.grantedToOrgId
     if (orgSelector) {
       const orgId = requireText(orgSelector, "share organization target")
       const org = await this.database
@@ -1961,18 +1958,16 @@ function organizationAdministratorSql(actorExpression: string, orgExpression: st
 
 function shareSelectorCount(args: {
   grantedToTokenIdentifier?: string
-  grantedToClerkSubject?: string
+  grantedToSubject?: string
   grantedToUserId?: string
-  grantedToClerkOrgId?: string
   grantedToOrgId?: string
   grantedToTeamId?: string
   grantedToTeamPublicId?: string
 }) {
   return [
     args.grantedToTokenIdentifier,
-    args.grantedToClerkSubject,
+    args.grantedToSubject,
     args.grantedToUserId,
-    args.grantedToClerkOrgId,
     args.grantedToOrgId,
     args.grantedToTeamId,
     args.grantedToTeamPublicId,

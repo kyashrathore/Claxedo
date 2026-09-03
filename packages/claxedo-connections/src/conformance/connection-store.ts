@@ -4,8 +4,8 @@
 // owner is the team partition, a string owner is that opaque subject's
 // partition, and `list({owner})` is the only three-way selector. The
 // `ownerlessRows: "refuse"` route invariant and `connectionScopeOf` both
-// assume those semantics exactly. Every host adapter (memory, SQLite,
-// Convex) must agree or connections silently leak across partitions or
+// assume those semantics exactly. Every host adapter (memory, SQLite) must
+// agree or connections silently leak across partitions or
 // vanish, so the cases below are stated once and registered by each adapter's
 // own test runner.
 import type { ConnectionRow, ConnectionStorePort } from "../types.js"
@@ -45,7 +45,7 @@ export const CONNECTION_STORE_CONFORMANCE_SCOPE = {
   //
   //   `list_ordering` — no adapter promises an order; every case here compares
   //   row-id sets, never sequences.
-  remaining: ["convex_adapter", "concurrent_upsert_arbitration", "upsert_rekeying", "list_ordering"],
+  remaining: ["concurrent_upsert_arbitration", "upsert_rekeying", "list_ordering"],
 } as const
 
 /** Opaque owner keys used by the cases. Values are meaningless to the port. */

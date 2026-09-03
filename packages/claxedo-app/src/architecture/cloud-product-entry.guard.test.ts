@@ -9,7 +9,7 @@ const appRoot = path.resolve(import.meta.dir, "../..")
 /**
  * Cloud product entry boundary — the mirror image of the local guard.
  *
- * The hosted browser entry may reach hosted identity, WorkGraph, Documents, and
+ * The hosted browser entry may reach hosted identity, Documents, and
  * hosted API clients freely; those are its own capabilities. What it must never
  * reach is the DESKTOP half: Electron main/preload APIs, the desktop package,
  * and the local server implementation. A browser bundle that imports `electron`
@@ -97,8 +97,8 @@ describe("cloud product entry boundary", () => {
 
   test("allows hosted capabilities, which are this entry's own closure", () => {
     const root = fixtureApp({
-      "entry.ts": `import "./platform/auth/auth-client"\nimport "@clerk/clerk-js"\n`,
-      "platform/auth/auth-client.ts": `export const clerk = true\n`,
+      "entry.ts": `import "./platform/auth/auth-client"\nimport "better-auth/client"\n`,
+      "platform/auth/auth-client.ts": `export const authClient = true\n`,
     })
     try {
       expect(

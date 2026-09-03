@@ -2,9 +2,9 @@ import { describe, expect, it } from "vitest"
 import { claxedoRequestScope } from "./request-scope"
 
 describe("Claxedo request scope", () => {
-  it("keeps personal WorkGraph requests free of workspace selectors", () => {
-    expect(claxedoRequestScope("https://claxedo.test", "/api/workgraph/execution-capabilities", { type: "owner" })).toEqual({
-      url: "https://claxedo.test/api/workgraph/execution-capabilities",
+  it("keeps personal owner-scoped requests free of workspace selectors", () => {
+    expect(claxedoRequestScope("https://claxedo.test", "/api/control/sessions", { type: "owner" })).toEqual({
+      url: "https://claxedo.test/api/control/sessions",
       headers: {},
     })
   })

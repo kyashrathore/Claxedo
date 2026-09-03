@@ -3,7 +3,7 @@
   "compilerOptions": {
     // No outDir: typecheck is `tsc --noEmit` and the real build is esbuild, so
     // outDir only served to make TS7 enforce rootDir — which then rejected the
-    // legitimate cross-package `../../convex/*` imports the policy/integration
+    // legitimate cross-package imports the policy/integration
     // tests use. Dropping it removes the spurious TS6059 without affecting any
     // emit (there is none from tsc).
     "noEmit": true,

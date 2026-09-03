@@ -12,7 +12,7 @@
  *   1. PROJECT — hosted cloud workspaces are created with `remote_directory:
  *      "/workspace"` (routes/hosted/workspace.ts), and the chip's last-resort label is
  *      the directory BASENAME, so the chip read the literal word "workspace". The
- *      project's real identity is its repo; `convex/workspaces.ts`'s `list` did not
+ *      project's real identity is its repo; the workspace authority's `list` did not
  *      return `repo_url`/`repo_name`/`project_id` at all, so nothing better ever
  *      reached the client.
  *   2. ENVIRONMENT — the chip hardcoded `["local", "cloud"]`. On web there is no local

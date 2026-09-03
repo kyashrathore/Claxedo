@@ -11,7 +11,7 @@ planned-at: c97fe21
 ## Strategic goal
 
 Claxedo's product bet is the **backend**: the control plane, workspace runtime,
-relay, sandbox management, normalized agent events, WorkGraph, and Agent
+relay, sandbox management, normalized agent events, and Agent
 Extensions — with every coding agent (Claude, Codex, Cursor, OpenCode, Pi, and
 any future ACP-speaking agent) attaching as **one harness among peers**. Today
 OpenCode is not a peer: it is a hard fork vendored in-repo AND the privileged
@@ -29,16 +29,6 @@ These are observed facts at commit `c97fe21`, not aspirations:
 - The workspace runtime dispatches adapters through an ordered
   `WorkspaceHarnessRegistry` (`packages/workspace-runtime/src/workspace/runtime.ts:720-817`);
   hosts may supply their own registry.
-- WorkGraph already has a harness-aware execution path:
-  `createHarnessWorkGraphGateway`
-  (`packages/claxedo-server/src/hosts/workgraph/composition/session-gateway.ts:198`)
-  drives non-OpenCode harnesses through embedded workspace-runtime session
-  routes, and Run tools reach harness sessions through the harness-neutral
-  `workGraphRuntimeRouteContributions`
-  (`packages/workgraph/src/runtime-adapter/index.ts:101`).
-- The hosted (cloud) WorkGraph execution-capabilities port
-  (`packages/claxedo-server/src/hosts/workgraph/hosted/execution-capabilities.ts`)
-  is engine-free: sandbox manager + relay + signed auth.
 
 ## Where OpenCode is still privileged
 
@@ -47,13 +37,10 @@ These are observed facts at commit `c97fe21`, not aspirations:
    (`config` defaults to `{ mode: "embedded" }`, line 50), and the default
    harness is `{ id: "opencode", access: "native" }`
    (`packages/claxedo-server-core/src/agent-config/index.ts:360`).
-2. **WorkGraph local execution rides the engine.** Session V2 admission,
-   connection-bound Runs, session intake, and the local execution-capabilities
-   catalog all call `opencodeRequest` directly (see plan 001).
-3. **Credentials engine-bridge.** `packages/claxedo-server-core/src/credentials/engine-bridge.ts`
+2. **Credentials engine-bridge.** `packages/claxedo-server-core/src/credentials/engine-bridge.ts`
    writes registry credentials into the engine's own auth store, and boots the
    engine as a side effect of a credential write (see plan 002).
-4. **Unknown-harness fallthrough.** The default workspace harness registry's
+3. **Unknown-harness fallthrough.** The default workspace harness registry's
    catch-all entry maps ANY unmatched runner to the OpenCode adapter
    (`packages/workspace-runtime/src/workspace/runtime.ts:802-815`), and the
    closed `AGENT_HARNESS_IDS` union blocks new agents entirely
@@ -64,22 +51,19 @@ These are observed facts at commit `c97fe21`, not aspirations:
 | # | Workstream | Plan | Status |
 |---|-----------|------|--------|
 | W1 | Open the harness surface: any operator-configured stdio ACP agent becomes a selectable harness; first-party ACP duplicates removed | [2026-07-22-001-refactor-scriptable-acp-connections-plan.md](./2026-07-22-001-refactor-scriptable-acp-connections-plan.md) (pre-existing, `status: active`) | Units 1–4 landed 2026-08-19 (open identity, trusted-config registry + mutation API, runtime enforcement, discovery-driven app picker); Unit 5's executable parts landed the same day (operator-connection integration contract suite + operator docs at `public-docs/acp-connections.md`). Remaining: Unit 5's independent interop pin (blocked on choosing/pinning a non-first-party ACP implementation and its test credentials), Unit 6 first-party ACP artifact removal (gated on the Native Readiness Gate incl. native Cursor live coverage). |
-| W2 | WorkGraph local execution harness-neutral: connection tools, session intake, and capabilities catalog stop requiring the OpenCode engine | [2026-08-19-001-refactor-workgraph-harness-neutral-execution-plan.md](./2026-08-19-001-refactor-workgraph-harness-neutral-execution-plan.md) | DONE (2026-08-19; full claxedo-server suite green except the pre-existing `tokentracker-cli` baseline failure in `src/usage/adapters/token-tracker-local-history.test.ts`, present on a clean tree) |
 | W3 | Credentials engine-bridge scoped to the OpenCode domain: a credential write never boots the engine | [2026-08-19-002-refactor-opencode-engine-auth-bridge-scoping-plan.md](./2026-08-19-002-refactor-opencode-engine-auth-bridge-scoping-plan.md) | DONE (2026-08-19) |
 | W4 | Embedded engine becomes an opencode-adapter implementation detail: no engine load unless an OpenCode surface is used; unknown runners no longer fall through to OpenCode | [2026-08-19-003-refactor-opencode-engine-as-adapter-detail-plan.md](./2026-08-19-003-refactor-opencode-engine-as-adapter-detail-plan.md) | DONE (2026-08-19; see note below) |
 
 ### Recommended order and dependencies
 
-1. **W2 (WorkGraph)** first — it removes the largest engine consumer and is
-   independently shippable in three units.
-2. **W3 (credentials)** second — small, independent of W2, but its "no boot on
+1. **W3 (credentials)** first — small and self-contained, and its "no boot on
    credential write" acceptance is a prerequisite for W4's end-state check.
-3. **W1 (scriptable ACP)** can proceed in parallel; it touches
+2. **W1 (scriptable ACP)** can proceed in parallel; it touches
    `agent-sdk-runtime`/`workspace-runtime` registry surfaces that W4 also
    touches, so land W1's accepted-registry before W4's catch-all removal, or
    coordinate the two changes in one series.
-4. **W4 (engine scoping)** last — it is the capstone whose done-criteria only
-   hold once W2/W3 have removed the ambient engine consumers.
+3. **W4 (engine scoping)** last — it is the capstone whose done-criteria only
+   hold once W3 has removed the ambient engine consumers.
 
 ### W4 execution note (2026-08-19)
 

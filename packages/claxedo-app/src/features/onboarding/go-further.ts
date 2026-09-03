@@ -1,6 +1,6 @@
 import type { OnboardingSurface } from "./state"
 
-export type OnboardingGoFurtherCardId = "workgraph" | "harnesses" | "self-host"
+export type OnboardingGoFurtherCardId = "harnesses" | "self-host"
 
 export type OnboardingGoFurtherCard = {
   id: OnboardingGoFurtherCardId
@@ -15,13 +15,6 @@ export type OnboardingGoFurtherCard = {
  * setup step, offered and skippable in the flow rather than waiting on a card.
  */
 export const onboardingGoFurtherCards: readonly OnboardingGoFurtherCard[] = [
-  {
-    id: "workgraph",
-    title: "Organize work with WorkGraph",
-    education: "Turn a large outcome into streams agents can execute and verify.",
-    action: "Open WorkGraph",
-    appliesTo: () => true,
-  },
   {
     id: "harnesses",
     title: "Check Claude Code, Codex, and Cursor",

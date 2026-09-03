@@ -21,7 +21,7 @@ describe("Documents deploy configuration", () => {
     expect(config).toContain('CLAXEDO_DOCUMENTS_INITIAL_STATE = "installed_disabled"')
     expect(config).toContain('binding = "DOCUMENTS_DB"')
     expect(config).toContain('binding = "DOCUMENTS_BUCKET"')
-    expect(config).not.toMatch(/AUTH_DB|CONTROL_PLANE_DB|WORKGRAPH|CLERK|CONVEX|BETTER_AUTH|\[\[services\]\]/)
+    expect(config).not.toMatch(/AUTH_DB|CONTROL_PLANE_DB|BETTER_AUTH|\[\[services\]\]/)
   })
 
   test("refuses an incomplete or non-production environment instead of inventing deployment identity", () => {

@@ -26,7 +26,7 @@ guard), so the rule cannot rot the way the current implicit one did.
 
 | question | answer |
 |---|---|
-| domains flat at root, or under `domains/`? | **flat** — `src/documents/`, `src/workgraph/` |
+| domains flat at root, or under `domains/`? | **flat** — `src/documents/`, `src/connections/` |
 | shared bucket name | **`platform/`** |
 | scope | **full re-cut**, planned then executed in gated waves |
 
@@ -34,8 +34,8 @@ guard), so the rule cannot rot the way the current implicit one did.
 
 Every item below was verified against the tree, not asserted:
 
-- **`connections` lives in 4 places**: `hosts/connections` (5 files),
-  `hosts/workgraph` (5), `routes/workspace` (4), `adapters/storage` (1).
+- **`connections` lives in 3 places**: `hosts/connections` (5 files),
+  `routes/workspace` (4), `adapters/storage` (1).
 - **`store` means 4 things across 11 directories**: `adapters/credentials/store.ts`
   (backend selector), `hosts/connections/store-adapter.ts` (port impl),
   `documents/index-store.ts` (domain persistence), `channels/access-store.ts`
@@ -78,7 +78,6 @@ src/
   documents/     port routes service store  backends/{local,hosted}
   credentials/   port routes service store  backends/{local,cloudflare,envelope}
   connections/   port routes service store
-  workgraph/     port routes service store  backends/{sqlite,convex}
   channels/      port routes service store
   billing/       port routes service store
   sandbox/       drivers, leases, network policy + CIDR resolution
@@ -95,7 +94,7 @@ src/
 machinery; org/tenancy resolution is a domain. Today they are one directory,
 which is why "is this a layer or a feature" has no answer there.
 
-`hosts/` DISSOLVES. `connections`, `workgraph`, `wakes`, `agent-extensions`
+`hosts/` DISSOLVES. `connections`, `wakes`, `agent-extensions`
 become domains; that they wrap a `@claxedo/*` package stops being a directory
 and becomes what it is — an implementation detail of that domain.
 `workspace-runtime` folds into `workspace/`.
@@ -108,9 +107,6 @@ and becomes what it is — an implementation detail of that domain.
 Each wave: typecheck → three sweeps (vi.mock, dirname/join/URL, stale-basename)
 → full suite → commit. Guards edited in a wave get fault-injected. See
 `2026-08-02-001` for the nine string-path forms that bite on every move.
-
-**W10.0 — finish and commit the convex-test migration.** In flight (27/33).
-Nothing else starts until the tree is green and committed.
 
 **W10.1 — build `platform/`, leave domains alone.** Prove the boundary on the
 shared layer first:
@@ -130,8 +126,8 @@ wave is checked as it goes.
 
 **W10.3 — domains, one per commit**, cheapest first: `channels`, `billing`,
 `connections`, `agent-config`, `documents`, `credentials`, `sandbox`,
-`session`, `workspace`, `workgraph`. Each pulls in its routes from `routes/`,
-its store, and its backends.
+`session`, `workspace`. Each pulls in its routes from `routes/`, its store, and
+its backends.
 
 **W10.4 — `authority/` split** into `platform/auth/` + `tenancy/`. Left late:
 highest registry-pin density.
@@ -142,13 +138,6 @@ to `platform/http/routes/` or a deployment.
 
 **W10.6 — README + registry sweep.** `src/README.md` states the rule; every
 `architecture-ownership.ts` path updated; final full gate.
-
-## Open question, not decided
-
-`convex/` now has its own config, runner, and README. That argues it is a peer
-of `packages/*` rather than a repo-root directory reached into from `src/`.
-Moving it to `packages/convex/` is a REPO-level change (CI workflows, deploy
-config, `convex.json`), out of scope here. Flagged for a separate decision.
 
 ## Cost, stated honestly
 

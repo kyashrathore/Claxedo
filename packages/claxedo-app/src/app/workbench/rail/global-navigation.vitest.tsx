@@ -15,7 +15,6 @@ function renderAt(path: string) {
             newProjectLabel="New project"
             onOpenPages={() => undefined}
             onOpenMarketplace={() => undefined}
-            onOpenWorkGraph={() => undefined}
           />
         )}
       />
@@ -24,24 +23,23 @@ function renderAt(path: string) {
 }
 
 describe("GlobalNavigation", () => {
-  test("renders WorkGraph immediately after Marketplace for the shared desktop/mobile rail", () => {
+  test("renders Documents then Marketplace for the shared desktop/mobile rail", () => {
     renderAt("/")
     expect(screen.getAllByRole("button").map((button) => button.textContent)).toEqual([
       "New project",
       "Documents",
       "Marketplace",
-      "WorkGraph",
     ])
   })
 
   test("marks the nav item matching the current route as the current page", () => {
-    renderAt("/workgraph")
-    const workgraph = screen.getByRole("button", { name: "Open WorkGraph" })
+    renderAt("/marketplace")
     const marketplace = screen.getByRole("button", { name: "Open Marketplace" })
+    const documents = screen.getByRole("button", { name: "Open Documents" })
 
-    expect(workgraph).toHaveAttribute("aria-current", "page")
-    expect(workgraph.querySelector("[data-icon-interaction]")).toHaveAttribute("data-icon-interaction", "persistent")
-    expect(marketplace).not.toHaveAttribute("aria-current")
-    expect(marketplace.querySelector("[data-icon-interaction]")).toHaveAttribute("data-icon-interaction", "passive")
+    expect(marketplace).toHaveAttribute("aria-current", "page")
+    expect(marketplace.querySelector("[data-icon-interaction]")).toHaveAttribute("data-icon-interaction", "persistent")
+    expect(documents).not.toHaveAttribute("aria-current")
+    expect(documents.querySelector("[data-icon-interaction]")).toHaveAttribute("data-icon-interaction", "passive")
   })
 })

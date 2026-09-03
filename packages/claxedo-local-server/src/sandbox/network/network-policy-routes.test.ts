@@ -19,8 +19,8 @@ const { NetworkPolicyRoutes } = await import("./network-policy-routes")
 
 const authConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 } as const
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
@@ -131,7 +131,7 @@ describe("network policy routes", () => {
     }
   })
 
-  test("signed workspace reads authorize through Convex", async () => {
+  test("signed workspace reads authorize through the authority", async () => {
     const svc = services()
     const res = await app({ services: svc }).request("http://localhost/api/claxedo/network-policy?workspace_id=ws_1", {
       headers: { Authorization: "Bearer user_1" },

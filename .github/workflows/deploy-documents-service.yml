@@ -81,7 +81,7 @@ jobs:
           set -euo pipefail
           bun run render:wrangler > .wrangler.deploy.toml
           bun x wrangler deploy --dry-run --config .wrangler.deploy.toml --outdir .wrangler-dry-run
-          ! grep -E 'AUTH_DB|CONTROL_PLANE_DB|WORKGRAPH|CLERK|CONVEX|BETTER_AUTH|\[\[services\]\]' .wrangler.deploy.toml
+          ! grep -E 'AUTH_DB|CONTROL_PLANE_DB|BETTER_AUTH|\[\[services\]\]' .wrangler.deploy.toml
 
       - name: Verify the operator-provisioned Documents bucket
         run: bun x wrangler r2 bucket info "$CLAXEDO_DOCUMENTS_BUCKET_NAME"

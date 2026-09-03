@@ -8,8 +8,8 @@
 #      optionalDependencies still contain a `workspace:` or `catalog:`
 #      specifier. `npm pack`/`npm publish` do NOT rewrite these (only
 #      `bun publish` does) — this is exactly what broke @claxedo/mcp's
-#      unrewritten `"@claxedo/workgraph": "workspace:0.1.0"` dependency:
-#      it packed fine, then downstream `npm install` failed with
+#      unrewritten `"workspace:0.1.0"` first-party dependency: it packed
+#      fine, then downstream `npm install` failed with
 #      EUNSUPPORTEDPROTOCOL.
 #   2. The local version is already the version live on npm (`npm view
 #      <name> version`) — meaning this package's version bump is missing.
@@ -19,8 +19,8 @@
 #   3. The tarball is missing README.md or LICENSE.
 #
 # Usage:
-#   script/publish-preflight.sh                  # check the 13 release packages
-#   script/publish-preflight.sh workgraph mcp     # check a subset (packages/<dir> names)
+#   script/publish-preflight.sh                  # check the 12 release packages
+#   script/publish-preflight.sh wakes mcp         # check a subset (packages/<dir> names)
 
 set -uo pipefail
 
@@ -40,7 +40,6 @@ DEFAULT_PACKAGES=(
   claxedo-channels
   claxedo-connections
   wakes
-  workgraph
 )
 
 if [ "$#" -gt 0 ]; then

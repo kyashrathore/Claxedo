@@ -3,12 +3,12 @@ name: claxedo-packages-release
 # Publishes the public `@claxedo/*` packages at the versions the repo declares.
 #
 # `claxedo-runtime-release.yml` covers the six-package runtime family and takes
-# the version as an input. This workflow covers everything (default: the seven
+# the version as an input. This workflow covers everything (default: the six
 # that family misses — channels, connections, mcp, sandbox-contract,
-# sandbox-manager, wakes, workgraph) and reads each version from its package.json, so a release is a
+# sandbox-manager, wakes) and reads each version from its package.json, so a release is a
 # reviewed version-bump commit rather than a number typed into a form.
 #
-# On every push to `dev` that touches one of those seven package dirs, the
+# On every push to `dev` that touches one of those six package dirs, the
 # dry-run job builds, packs and inspects each tarball — the same gates
 # `script/publish-preflight.sh` encodes — without publishing anything.
 
@@ -23,7 +23,6 @@ on:
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/wakes/**"
-      - "packages/workgraph/**"
       - "packages/claxedo-server/scripts/release/**"
       - ".github/workflows/claxedo-packages-release.yml"
   pull_request:
@@ -34,7 +33,6 @@ on:
       - "packages/sandbox-contract/**"
       - "packages/sandbox-manager/**"
       - "packages/wakes/**"
-      - "packages/workgraph/**"
       - "packages/claxedo-server/scripts/release/**"
       - ".github/workflows/claxedo-packages-release.yml"
   workflow_dispatch:
@@ -45,7 +43,7 @@ on:
         default: others
         type: choice
         options:
-          - others # channels, connections, mcp, sandbox-contract, sandbox-manager, wakes, workgraph
+          - others # channels, connections, mcp, sandbox-contract, sandbox-manager, wakes
           - all # every public @claxedo/* package
           - runtime-family # the six claxedo-runtime-release.yml also covers
           - runtime

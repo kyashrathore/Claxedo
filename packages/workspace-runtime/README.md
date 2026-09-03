@@ -449,8 +449,8 @@ crash-handling.
 
 Relay-host auth can use the built-in JWT key path or a custom
 [`TokenVerifier`](../workspace-relay-protocol/src/token-verifier.ts).
-Use this to back the runtime's relay boundary with a custom IdP (Clerk,
-OIDC, hosted control plane, or a self-managed key-table).
+Use this to back the runtime's relay boundary with a custom IdP (OIDC, a
+hosted control plane, or a self-managed key-table).
 
 ```ts
 import { createStaticTokenVerifier, type RelayHostVerifierClaims } from "@claxedo/workspace-relay-protocol"
@@ -537,7 +537,7 @@ The runnable example lives in the repo-root [`claxedo-cookbook`](../../claxedo-c
 not inside this package. Recipe 05 boots a loopback Workspace Host
 (`createWorkspaceRuntimeApp`) over a sandboxed temp directory and tours the
 file, git/diff, managed-process, and event-stream route families over plain
-`fetch` — no `claxedo-app`, `claxedo-server`, Clerk, Convex, agent CLI, or
+`fetch` — no `claxedo-app`, `claxedo-server`, identity provider, agent CLI, or
 control plane involved:
 
 ```sh

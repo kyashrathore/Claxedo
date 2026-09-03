@@ -4,10 +4,9 @@ const SRC = "packages/claxedo-server/src"
 
 /**
  * `@claxedo/server` ships one Node production entry: the single binary
- * (`self-hosted-node`), which genuinely runs workspaces. The retired Clerk +
- * Convex cloud compositions (`hosted-node`, `hosted-workerd/worker.ts`) were
- * removed; the Better Auth + D1 worker compositions verify their own closures
- * in-package, and the re-add path lives in the `clerk-convex-cp` skill.
+ * (`self-hosted-node`), which genuinely runs workspaces. The retired cloud
+ * compositions (`hosted-node`, `hosted-workerd/worker.ts`) were removed; the
+ * Better Auth + D1 worker compositions verify their own closures in-package.
  */
 
 export const serverSelfHosted: Policy = {
@@ -51,9 +50,12 @@ export const serverSelfHosted: Policy = {
   // compositions, adds one source module. Package reach includes `posthog-node`
   // via platform telemetry (`platform/telemetry/errors/posthog.ts`). The
   // workspace SessionEnv split keeps transport/protocol/admission policy in
-  // focused, already-reachable owners and adds four source modules, so the
-  // exact measured graph is 155 modules and 35 packages.
-  ceilings: { modules: 155, packages: 35 },
+  // focused, already-reachable owners and adds four source modules.
+  // -32 modules / -3 packages: retiring the hosted work-ledger service took its
+  // host composition, the self-hosted capability seam, and the service package
+  // with its transitive pins out of the single binary. Re-measured, no
+  // headroom: 123 modules and 32 packages.
+  ceilings: { modules: 123, packages: 32 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -83,7 +85,6 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/claxedo-channels" },
       { packageDir: "packages/wakes" },
       { packageDir: "packages/workspace-runtime" },
-      { packageDir: "packages/workgraph" },
       { packageDir: "packages/claxedo-mcp" },
       { packageDir: "packages/claxedo-local-server" },
       {

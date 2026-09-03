@@ -47,8 +47,8 @@ function route() {
 
 const authConfig = {
   enabled: true,
-  issuer: "https://clerk.example.test",
-  jwksUrl: "https://clerk.example.test/.well-known/jwks.json",
+  issuer: "https://issuer.example.test",
+  jwksUrl: "https://issuer.example.test/.well-known/jwks.json",
 } as const
 
 const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
@@ -598,7 +598,7 @@ describe("Agent Config Agent Extensions routes", () => {
   })
 
   test("workspace scope stores desired installs through the Control Plane boundary without depending on telemetry", async () => {
-    const convex = {
+    const authority = {
       usersMe: async () => ({}),
       listOrgs: async () => [],
       resolveOrgId: async () => "org_1" as never,
@@ -672,7 +672,7 @@ describe("Agent Config Agent Extensions routes", () => {
       auditDeny: async () => {},
       auditAllow: async () => {},
     } satisfies NonNullable<ControlPlaneServicesContract["authority"]>
-    const svc = services(convex)
+    const svc = services(authority)
     svc.telemetry = {
       capture: vi.fn(() => {
         throw new Error("telemetry down")
@@ -721,14 +721,14 @@ describe("Agent Config Agent Extensions routes", () => {
       desired: { id: "review", scope: "workspace", enabled: true },
       lock: { resolved_sha: "abcdef1234567890" },
     })
-    expect(convex.upsertWorkspaceAgentExtension).toHaveBeenCalledWith(expect.anything(), {
+    expect(authority.upsertWorkspaceAgentExtension).toHaveBeenCalledWith(expect.anything(), {
       workspaceId: "ws_1",
       extensionId: "review",
       packageName: "review",
       desired: expect.objectContaining({ id: "review", scope: "workspace" }),
       lock: expect.objectContaining({ resolved_sha: "abcdef1234567890" }),
     })
-    expect(convex.authorizeWorkspaceAgentExtensionsAdmin).toHaveBeenCalledWith(expect.anything(), {
+    expect(authority.authorizeWorkspaceAgentExtensionsAdmin).toHaveBeenCalledWith(expect.anything(), {
       workspaceId: "ws_1",
     })
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "agent_extension.install", {
@@ -753,7 +753,7 @@ describe("Agent Config Agent Extensions routes", () => {
       headers: { Authorization: "Bearer user_1" },
     })
     expect(disable.status).toBe(200)
-    expect(convex.setWorkspaceAgentExtensionEnabled).toHaveBeenCalledWith(expect.anything(), {
+    expect(authority.setWorkspaceAgentExtensionEnabled).toHaveBeenCalledWith(expect.anything(), {
       workspaceId: "ws_1",
       extensionId: "review",
       enabled: false,
@@ -1161,7 +1161,7 @@ describe("Agent Config Agent Extensions routes", () => {
           },
         }]),
         listAgentExtensionPolicyOverrides: vi.fn(async () => {
-          throw new Error("Could not find public function for 'agentExtensionPolicies:list'. Did you forget to run `npx convex dev`?")
+          throw new Error("Could not find public function for 'agentExtensionPolicies:list'.")
         }),
       } as unknown as NonNullable<ControlPlaneServicesContract["authority"]>),
       authConfig,

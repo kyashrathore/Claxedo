@@ -136,8 +136,8 @@ back to stale data from another transport.
 
 ## Installation order
 
-Convex installs the target model through expand–migrate–contract releases so a
-schema push never requires a value before the resumable migration can populate
+The control plane installs the target model through expand–migrate–contract
+releases so a schema push never requires a value before the resumable migration can populate
 it. The migration envelope is operational and is removed by the contract
 release; it is not an internal API compatibility promise.
 
@@ -156,9 +156,7 @@ release; it is not an internal API compatibility promise.
 
 SQLite performs the corresponding legacy backfill, validation, table rebuild,
 and constraint installation atomically, with a WAL-checkpointed pre-upgrade
-snapshot. No migration step reassigns a personal workspace to a team. Exact
-preflight, migration, verification, contract, and rollback commands live in
-`docs/tech-docs/tenant-identity-schema-rollout.md`.
+snapshot. No migration step reassigns a personal workspace to a team.
 
 ## Scope boundaries
 

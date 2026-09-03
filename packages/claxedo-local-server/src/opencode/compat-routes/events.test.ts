@@ -126,13 +126,19 @@ describe("signed global event visibility", () => {
 
   test("uses canonical subject and organization scoping for sessionless events", async () => {
     await expect(signedGlobalEventVisibleTo({
-      type: "workgraph.changed",
+      type: "session.share.changed",
+      phase: "granted",
       ownerUserId: "user_1",
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
       ts: 1,
     }, principal)).resolves.toBe(true)
     await expect(signedGlobalEventVisibleTo({
-      type: "workgraph.changed",
+      type: "session.share.changed",
+      phase: "granted",
       ownerUserId: "user_2",
+      sessionId: "ses_1",
+      workspaceId: "ws_1",
       ts: 1,
     }, principal)).resolves.toBe(false)
     await expect(signedGlobalEventVisibleTo({

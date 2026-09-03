@@ -9,11 +9,11 @@
  * The contract is deliberately narrow and product-neutral. It provides embedded
  * Workspace Runtime lifecycle, the local route mounters, the compatibility event
  * stream, and the local port constant. It names nothing about Electron, nothing
- * about WorkGraph, and nothing about who is signed in: a host that wants
- * WorkGraph routes inside a local runtime passes them as generic route
- * contributions to `configureEmbeddedWorkspaceRuntime`, which is what keeps
- * WorkGraph's absence from an unsigned desktop a composition fact rather than a
- * runtime flag.
+ * about any hosted capability, and nothing about who is signed in: a host that
+ * wants extra routes inside a local runtime passes them as generic route
+ * contributions to `configureEmbeddedWorkspaceRuntime`, which is what keeps a
+ * hosted capability's absence from an unsigned desktop a composition fact
+ * rather than a runtime flag.
  */
 
 // ── Embedded Workspace Runtime lifecycle ────────────────────────────────────
@@ -58,7 +58,6 @@ export {
 export {
   provisionRegisteredWorktree,
   releaseRegisteredWorktree,
-  localWorktreeWorkGraphId,
 } from "./workspace/worktree"
 export { DEFAULT_CLAXEDO_SERVER_PORT } from "./deployments/local/port"
 

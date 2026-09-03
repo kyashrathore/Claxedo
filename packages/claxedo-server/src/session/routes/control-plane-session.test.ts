@@ -296,10 +296,10 @@ describe("control plane session routes", () => {
 
   test("serves loopback session gateway metadata from the local projection", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       authorizeSessionRead: vi.fn(async () => {}),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.session_meta = vi.fn(async () => ({
       sessionID: "session-1",
       workspaceID: "ws_1",
@@ -328,7 +328,7 @@ describe("control plane session routes", () => {
       harnessHost: "workspace",
     })
     expect(svc.projectionStore.session_meta).toHaveBeenCalledWith("session-1")
-    expect(convex.authorizeSessionRead).not.toHaveBeenCalled()
+    expect(authority.authorizeSessionRead).not.toHaveBeenCalled()
   })
 
   test("serves loopback central session placement without deriving from workspace", async () => {
@@ -743,7 +743,7 @@ describe("control plane session routes", () => {
 
   test("routes loopback bearer inventory and replay through signed authority without browser-only headers", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       openWorkspace: cloudWorkspaceOpen(),
 
       listSessions: vi.fn(async () => [
@@ -764,7 +764,7 @@ describe("control plane session routes", () => {
       })),
       authorizeSessionRead: vi.fn(async () => {}),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.list_session_metas = vi.fn(async () => {
       throw new Error("signed inventory must not read the unfiltered local projection")
     })
@@ -812,14 +812,14 @@ describe("control plane session routes", () => {
       transport: "opencode",
       replay: true,
     })
-    expect(convex.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
+    expect(authority.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
       workspaceId: "ws_1",
     })
-    expect(convex.readSessionMessages).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
+    expect(authority.readSessionMessages).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
       sessionId: "session-1",
       workspaceId: "ws_1",
     })
-    expect(convex.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
+    expect(authority.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
       sessionId: "session-1",
       workspaceId: "ws_1",
     })
@@ -1104,7 +1104,7 @@ describe("control plane session routes", () => {
 
   test("serves signed session-list through the same logical response shape", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       openWorkspace: cloudWorkspaceOpen(),
 
       listSessions: vi.fn(async () => [
@@ -1117,7 +1117,7 @@ describe("control plane session routes", () => {
         },
       ]),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
       "https://control.example.test/session-list?workspaceId=ws_1&limit=5",
@@ -1139,14 +1139,14 @@ describe("control plane session routes", () => {
         },
       ],
     })
-    expect(convex.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+    expect(authority.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
       workspaceId: "ws_1",
     })
   })
 
   test("serves signed project-scoped workspace session-list through workspace authority", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       openWorkspace: cloudWorkspaceOpen(),
 
       listSessions: vi.fn(async () => [
@@ -1159,7 +1159,7 @@ describe("control plane session routes", () => {
         },
       ]),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
       "http://127.0.0.1/session-list?scope=project&projectId=ws_1&limit=5",
@@ -1177,14 +1177,14 @@ describe("control plane session routes", () => {
       view: { scope: "workspace", groupBy: "none", sort: "updated_desc", limit: 5 },
       items: [{ sessionId: "session-1", workspaceId: "ws_1" }],
     })
-    expect(convex.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+    expect(authority.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
       workspaceId: "ws_1",
     })
   })
 
   test("resolves a non-ws_ project id to its workspaces instead of rejecting", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       listWorkspaces: vi.fn(async () => [
         { workspace_id: "ws_a", project_id: "proj_alpha" },
         { workspace_id: "ws_b", project_id: "proj_alpha" },
@@ -1200,7 +1200,7 @@ describe("control plane session routes", () => {
             : [{ session_id: "ses_other", title: "Other project", created_at: 1, updated_at: 9 }],
       ),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
       "https://control.example.test/session-list?scope=project&projectId=proj_alpha&limit=5",
@@ -1222,18 +1222,18 @@ describe("control plane session routes", () => {
       "workspace:ws_b:session:ses_b",
       "workspace:ws_a:session:ses_a",
     ])
-    expect(convex.listSessions).not.toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_other" })
+    expect(authority.listSessions).not.toHaveBeenCalledWith(expect.anything(), { workspaceId: "ws_other" })
   })
 
   test("returns an empty project session-list when the project has no workspaces", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       listWorkspaces: vi.fn(async () => [{ workspace_id: "ws_a", project_id: "proj_other" }]),
       openWorkspace: cloudWorkspaceOpen(),
 
       listSessions: vi.fn(async () => []),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
       "https://control.example.test/session-list?scope=project&projectId=proj_missing&limit=5",
@@ -1242,12 +1242,12 @@ describe("control plane session routes", () => {
 
     expect(res.status).toBe(200)
     await expect(res.json()).resolves.toMatchObject({ view: { scope: "project" }, items: [], totalKnown: 0 })
-    expect(convex.listSessions).not.toHaveBeenCalled()
+    expect(authority.listSessions).not.toHaveBeenCalled()
   })
 
   test("session-list matches prefixed environment and git filter values", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       openWorkspace: cloudWorkspaceOpen(),
 
       listSessions: vi.fn(async () => [
@@ -1271,7 +1271,7 @@ describe("control plane session routes", () => {
         },
       ]),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
       "https://control.example.test/session-list?workspaceId=ws_1&environment=driver:daytona&git=branch:main&limit=10",
@@ -1291,7 +1291,7 @@ describe("control plane session routes", () => {
 
   test("session-list does not accept legacy provider environment filters", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       openWorkspace: cloudWorkspaceOpen(),
 
       listSessions: vi.fn(async () => [
@@ -1305,7 +1305,7 @@ describe("control plane session routes", () => {
         },
       ]),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
 
     const res = await ControlPlaneSessionRoutes(svc, signedOptions).request(
       "https://control.example.test/session-list?workspaceId=ws_1&environment=provider:daytona&limit=10",
@@ -1323,11 +1323,11 @@ describe("control plane session routes", () => {
 
   test("serves signed central session replay after workspace authority approval", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       readSessionMessages: vi.fn(async () => ({ messages: [] })),
       authorizeSessionRead: vi.fn(async () => {}),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.session_meta = vi.fn(async () => ({
       sessionID: "session-central",
       workspaceID: "ws_1",
@@ -1362,8 +1362,8 @@ describe("control plane session routes", () => {
       ],
       maxEventOrdinal: 11,
     })
-    expect(convex.readSessionMessages).not.toHaveBeenCalled()
-    expect(convex.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+    expect(authority.readSessionMessages).not.toHaveBeenCalled()
+    expect(authority.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
       sessionId: "session-central",
       workspaceId: "ws_1",
     })
@@ -1371,11 +1371,11 @@ describe("control plane session routes", () => {
 
   test("uses central session metadata instead of client workspace query for signed replay scope", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       authorizeSessionRead: vi.fn(async () => {}),
       readSessionMessages: vi.fn(async () => ({ allowed: true, messages: [] })),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.session_meta = vi.fn(async () => ({
       sessionID: "session-central",
       workspaceID: "ws_real",
@@ -1395,7 +1395,7 @@ describe("control plane session routes", () => {
     )
 
     expect(messages.status).toBe(200)
-    expect(convex.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+    expect(authority.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
       sessionId: "session-central",
       workspaceId: "ws_real",
     })
@@ -1403,10 +1403,10 @@ describe("control plane session routes", () => {
 
   test("rejects signed central session replay when no workspace scope exists", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       authorizeSessionRead: vi.fn(async () => {}),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.session_meta = vi.fn(async () => ({
       sessionID: "session-central",
       host: "central" as const,
@@ -1430,15 +1430,15 @@ describe("control plane session routes", () => {
         message: "Signed central session access requires workspace scope",
       },
     })
-    expect(convex.authorizeSessionRead).not.toHaveBeenCalled()
+    expect(authority.authorizeSessionRead).not.toHaveBeenCalled()
   })
 
   test("serves signed central session capabilities after workspace authority approval", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       authorizeSessionRead: vi.fn(async () => {}),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.session_meta = vi.fn(async () => ({
       sessionID: "session-central",
       workspaceID: "ws_1",
@@ -1463,7 +1463,7 @@ describe("control plane session routes", () => {
       reconnect: true,
       permissions: false,
     })
-    expect(convex.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
+    expect(authority.authorizeSessionRead).toHaveBeenCalledWith(expect.objectContaining({ token: "signed-token" }), {
       sessionId: "session-central",
       workspaceId: "ws_1",
     })
@@ -1471,10 +1471,10 @@ describe("control plane session routes", () => {
 
   test("rejects signed central session capabilities when no workspace scope exists", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       authorizeSessionRead: vi.fn(async () => {}),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.session_meta = vi.fn(async () => ({
       sessionID: "session-central",
       host: "central" as const,
@@ -1498,17 +1498,17 @@ describe("control plane session routes", () => {
         message: "Signed central session access requires workspace scope",
       },
     })
-    expect(convex.authorizeSessionRead).not.toHaveBeenCalled()
+    expect(authority.authorizeSessionRead).not.toHaveBeenCalled()
   })
 
   test("rejects signed central replay and capabilities when workspace authority denies", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       authorizeSessionRead: vi.fn(async () => {
-        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "Convex denied workspace access")
+        throw new ControlPlaneAuthError(403, "workspace_authorization_denied", "the authority denied workspace access")
       }),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.session_meta = vi.fn(async () => ({
       sessionID: "session-central",
       workspaceID: "ws_1",
@@ -1538,17 +1538,17 @@ describe("control plane session routes", () => {
     await expect(messages.json()).resolves.toEqual({
       error: {
         code: "workspace_authorization_denied",
-        message: "Convex denied workspace access",
+        message: "the authority denied workspace access",
       },
     })
     await expect(capabilities.json()).resolves.toEqual({
       error: {
         code: "workspace_authorization_denied",
-        message: "Convex denied workspace access",
+        message: "the authority denied workspace access",
       },
     })
     expect(svc.projectionStore.read_session_messages).not.toHaveBeenCalled()
-    expect(convex.authorizeSessionRead).toHaveBeenCalledTimes(2)
+    expect(authority.authorizeSessionRead).toHaveBeenCalledTimes(2)
   })
 
   test("returns unavailable for workspace-scoped signed central reads without authority", async () => {
@@ -1589,10 +1589,10 @@ describe("control plane session routes", () => {
 
   test("serves loopback session messages from the local projection", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       readSessionMessages: vi.fn(async () => ({ messages: [] })),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.read_session_messages = vi.fn(() => [
       {
         info: { id: "msg_local", sessionID: "session-1", role: "user" },
@@ -1621,12 +1621,12 @@ describe("control plane session routes", () => {
       maxEventOrdinal: 9,
     })
     expect(svc.projectionStore.read_session_messages).toHaveBeenCalledWith("session-1")
-    expect(convex.readSessionMessages).not.toHaveBeenCalled()
+    expect(authority.readSessionMessages).not.toHaveBeenCalled()
   })
 
   test("loopback workspace session messages fall back to authority when projection is empty", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       readSessionMessages: vi.fn(async () => ({
         allowed: true,
         messages: [
@@ -1637,7 +1637,7 @@ describe("control plane session routes", () => {
         ],
       })),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.read_session_messages = vi.fn(() => [])
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 0)
 
@@ -1662,7 +1662,7 @@ describe("control plane session routes", () => {
       ],
       maxEventOrdinal: 0,
     })
-    expect(convex.readSessionMessages).toHaveBeenCalledWith(expect.objectContaining({ token: "local-test-token" }), {
+    expect(authority.readSessionMessages).toHaveBeenCalledWith(expect.objectContaining({ token: "local-test-token" }), {
       sessionId: "session-1",
       workspaceId: "ws_1",
     })
@@ -1670,7 +1670,7 @@ describe("control plane session routes", () => {
 
   test("signed hosted browser loopback session messages use the authority path", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       readSessionMessages: vi.fn(async () => ({
         messages: [
           {
@@ -1680,7 +1680,7 @@ describe("control plane session routes", () => {
         ],
       })),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.read_session_messages = vi.fn(() => [])
     svc.projectionStore.read_session_max_event_ordinal = vi.fn(() => 0)
 
@@ -1705,7 +1705,7 @@ describe("control plane session routes", () => {
       ],
       maxEventOrdinal: 0,
     })
-    expect(convex.readSessionMessages).toHaveBeenCalledWith(expect.objectContaining({ token: "hosted-test-token" }), {
+    expect(authority.readSessionMessages).toHaveBeenCalledWith(expect.objectContaining({ token: "hosted-test-token" }), {
       sessionId: "session-1",
       workspaceId: "ws_1",
     })
@@ -1713,10 +1713,10 @@ describe("control plane session routes", () => {
 
   test("signed messages prefer durable projection replay when available", async () => {
     const svc = services()
-    const convex = {
+    const authority = {
       readSessionMessages: vi.fn(async () => ({ messages: [] })),
     }
-    svc.authority = convex as never
+    svc.authority = authority as never
     svc.projectionStore.read_session_messages = vi.fn(() => [
       {
         info: { id: "msg_replay", sessionID: "session-1", role: "user" },
@@ -1754,6 +1754,6 @@ describe("control plane session routes", () => {
       ],
       maxEventOrdinal: 2,
     })
-    expect(convex.readSessionMessages).toHaveBeenCalled()
+    expect(authority.readSessionMessages).toHaveBeenCalled()
   })
 })

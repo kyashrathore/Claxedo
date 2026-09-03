@@ -84,9 +84,9 @@ export const UI_CODEX_ICON_ALIASES = {
   marketplace: "codex-custom-marketplace",
   maximize: "codex-custom-panel-expand",
   // The extracted sprite carries no MCP mark, so this pointed at codex-20-129 —
-  // the same node-graph glyph as `workgraph` and `link`, which is why MCP tool
-  // rows read as WorkGraph nodes. Drawn locally instead, same as `marketplace`
-  // and `models` above; see `CODEX_CUSTOM_GLYPHS` in ./icon.tsx.
+  // the same node-graph glyph as `link`, which is why MCP tool rows read as
+  // graph nodes. Drawn locally instead, same as `marketplace` and `models`
+  // above; see `CODEX_CUSTOM_GLYPHS` in ./icon.tsx.
   mcp: "codex-custom-mcp",
   menu: "codex-20-097",
   models: "codex-custom-models",
@@ -129,7 +129,6 @@ export const UI_CODEX_ICON_ALIASES = {
   trash: "codex-20-080",
   warning: "codex-20-082",
   "window-cursor": "codex-20-109",
-  workgraph: "codex-20-129",
   wrench: "codex-20-014",
 } as const
 

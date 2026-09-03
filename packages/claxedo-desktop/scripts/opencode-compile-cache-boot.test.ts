@@ -514,8 +514,15 @@ describe("the server bundle's own static closure", () => {
 
     // Sizes, so a regression that smuggled the product back across the boundary
     // one chunk at a time is caught before it is complete.
+    //
+    // The deferred floor moved 8 MB -> 5.5 MB when the hosted work-ledger
+    // service was retired: its host composition, its session gateway, and its
+    // package all left the server product's closure. Re-measured at 5,917,488
+    // bytes and pinned just under it — the floor's job is to catch the product
+    // migrating BACK to the eager side, so it tracks the real closure rather
+    // than an inherited number.
     expect(eager.bytes).toBeLessThan(256 * 1024)
-    expect(deferred.bytes).toBeGreaterThan(8 * 1024 * 1024)
+    expect(deferred.bytes).toBeGreaterThan(5.5 * 1024 * 1024)
     expect(path.dirname(deferredEntry)).toBe(path.join(buildDir, "chunks"))
   }, 600_000)
 })

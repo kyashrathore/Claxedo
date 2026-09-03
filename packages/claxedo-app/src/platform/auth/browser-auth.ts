@@ -234,7 +234,6 @@ function parseDescriptor(
   const methods = browserAuthMethods(descriptor?.methods)
   const trustedOrigins = stringArray(browser?.trustedOrigins)
   const scopes = stringArray(browser?.scopes)
-  const allowedMethods = new Set<unknown>(["google", "github", "email-password"])
   const expectedTransport = "cookie"
   const expectedPolicy = "reject-cookie-and-authorization"
 
@@ -254,7 +253,6 @@ function parseDescriptor(
     !present(descriptor.issuer) ||
     !exactUrl(descriptor.issuer) ||
     !methods?.length ||
-    methods.some((method) => !allowedMethods.has(method)) ||
     browser?.transport !== expectedTransport ||
     browser.credentialPolicy !== expectedPolicy ||
     !trustedOrigins?.includes(input.appOrigin) ||

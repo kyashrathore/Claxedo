@@ -276,8 +276,9 @@ limitation.
 
 ## Where this sits relative to `claxedo-server`
 
-The relay has no `/w/{workspaceId}/*` gateway prefix of its own and does not
-read Convex or Clerk. See [README § Routing](../README.md#routing) and
+The relay has no `/w/{workspaceId}/*` gateway prefix of its own and reads
+neither the workspace authority nor the identity provider. See
+[README § Routing](../README.md#routing) and
 [README § Seam: `internal-relay` vs `workspace-relay`](../README.md#seam-internal-relay-vs-workspace-relay)
 for how `claxedo-server`'s `workspaceRuntimeProxy` middleware and
 `internal-relay.ts` compose with this package.

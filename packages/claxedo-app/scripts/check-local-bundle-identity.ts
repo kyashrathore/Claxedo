@@ -2,17 +2,17 @@
  * GUARDRAIL: the LOCAL build's EMITTED artifact carries no identity provider.
  *
  * The check that was missing. `src/architecture/local-entry-closure.guard.test.ts`
- * proves the local entry's SOURCE closure never reaches Clerk, and that guard is
+ * proves the local entry's SOURCE closure never reaches the identity provider, and that guard is
  * sound — but a source graph is not a bundle. Chunk configuration in particular
  * puts modules into the artifact without any import edge to walk: the local
  * config derives from the hosted one, so the hosted `manualChunks` entry naming
- * `@clerk/clerk-js/headless` was inherited by a build whose entire purpose is to
+ * the identity provider would be inherited by a build whose entire purpose is to
  * have no identity provider in it. The source guard was green throughout and
  * could not have said otherwise, because it does not read files that only exist
  * after `vite build`.
  *
  * So this reads them. It scans every emitted `.js` file in `dist-local` for
- * Clerk's runtime internals, and separately refuses any emitted asset NAMED
+ * the identity provider's runtime internals, and separately refuses any emitted asset NAMED
  * after a package this product must not contain.
  *
  * The rules live in `src/architecture/local-bundle-identity.ts`, beside the
@@ -34,14 +34,12 @@
  * Use `bun run build:marker-control` (./dist-marker-control) for that control,
  * NOT the hosted `./dist`, which this comment used to recommend and which is
  * wrong anywhere the auth env is unset — i.e. on every CI runner.
- * `auth-client.ts` reaches `import("@clerk/clerk-js/headless")` only past an
- * early return on an empty publishable key, so a hosted build without
- * `VITE_CLERK_PUBLISHABLE_KEY` emits no Clerk at all and the control fails all
- * seven markers. That failure is honest — the control is doing its job — but it
- * reads as a broken gate rather than a missing key, which is how a correct
- * check gets deleted. `build:marker-control` supplies `VITE_AUTH_ENABLED=true`
- * and a syntactically-shaped fake key (never used at build time) purely to keep
- * the provider in the graph.
+ * `auth-client.ts` reaches the provider only past an early return on disabled
+ * auth, so a hosted build without `VITE_AUTH_ENABLED` emits no provider at all
+ * and the control fails every marker. That failure is honest — the control is
+ * doing its job — but it reads as a broken gate rather than a missing env var,
+ * which is how a correct check gets deleted. `build:marker-control` supplies
+ * `VITE_AUTH_ENABLED=true` purely to keep the provider in the graph.
  */
 
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs"

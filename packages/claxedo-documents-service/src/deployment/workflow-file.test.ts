@@ -14,6 +14,6 @@ describe("Documents independent release workflow", () => {
     expect(workflow).toContain('r2 bucket info "$CLAXEDO_DOCUMENTS_BUCKET_NAME"')
     expect(workflow).toContain("refusing dark deploy while Documents lifecycle is")
     expect(workflow).toContain("Deploy Documents Worker dark")
-    expect(workflow).not.toMatch(/deploy-control-plane|claxedo-server\/wrangler|claxedo-workgraph-service/)
+    expect(workflow).not.toMatch(/deploy-control-plane|claxedo-server\/wrangler/)
   })
 })

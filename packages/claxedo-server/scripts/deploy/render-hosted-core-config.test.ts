@@ -43,12 +43,9 @@ describe("certified hosted Worker renderer", () => {
     }
     for (const forbidden of [
       "LIVE_SYNC_ROOM",
-      "WORKGRAPH_SERVICE",
-      "WORKGRAPH_DB",
       "DOCUMENTS_SERVICE",
       "DOCUMENTS_DB",
       "DOCUMENTS_BUCKET",
-      "WORKGRAPH_SETTLER",
       "WAKE_LANE",
       "CLAXEDO_DOCUMENTS",
       "r2_buckets",
@@ -90,7 +87,7 @@ describe("certified hosted Worker renderer", () => {
     expect(config).toContain('main = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"')
     expect(config).toContain('name = "LIVE_SYNC_ROOM"')
     expect(config).toContain('tag = "v1"\nnew_sqlite_classes = ["LiveSyncRoom"]')
-    expect(config).not.toMatch(/WORKGRAPH|WAKE_LANE|DOCUMENTS|POLAR|BILLING/i)
+    expect(config).not.toMatch(/WAKE_LANE|DOCUMENTS|POLAR|BILLING/i)
   })
 
   test("rejects unknown artifacts instead of accepting a free-form main", () => {
@@ -125,11 +122,31 @@ describe("certified hosted Worker renderer", () => {
     expect(requireNonLegacyWorkerName("claxedo-user-deployed-locked")).toBe("claxedo-user-deployed-locked")
   })
 
+  test("pins the shared rate-limit window and ceiling to the local fuse", () => {
+    // Recovered from the retired package-root wrangler.toml guard. Cloudflare
+    // accepts only 10 or 60 for `period`, and 60 is not a preference: the
+    // hosted app's own limiter runs on `defaultRequestRateLimitWindowMs`
+    // (60_000ms), so a `period` of 10 would make the SHARED ceiling six times
+    // tighter than the configured `limit` implies — a throttle nobody
+    // configured and no test would have caught.
+    for (const input of [
+      base,
+      {
+        ...base,
+        artifactId: "user-deployed-better-auth-d1-candidate" as const,
+        userDeployedOrganization: { id: "org_deployment", name: "My deployment" },
+      },
+    ]) {
+      expect(renderHostedCoreWranglerConfig(input))
+        .toContain('[ratelimits.simple]\nlimit = 600\nperiod = 60')
+    }
+  })
+
   test("rejects namespace reuse across products and environments", () => {
     expect(() =>
       requireUniqueRateLimitNamespaces([
         { owner: "core", environment: "production", namespaceId: "3001" },
-        { owner: "workgraph", environment: "staging", namespaceId: "3001" },
+        { owner: "documents", environment: "staging", namespaceId: "3001" },
       ]),
     ).toThrow(/reused/)
   })

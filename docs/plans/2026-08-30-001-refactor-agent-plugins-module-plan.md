@@ -60,7 +60,7 @@ The catalog is a discovery input, not a runtime authority. Enable/Update is the 
 | Component-specific merging into user MCP/skills files | Delete. The canonical unit written to runtime storage is the whole plugin directory. Harness projection adapters generate isolated views without editing user-owned configuration. |
 | Extension-specific types in core control-plane, supervisor, and workspace-runtime contracts | Delete. Generic route/provisioning contributions remain in core; plugin types stay inside the optional module. |
 | Root runtime-config `agent_extensions` field and replay implementation | Delete. Plugin projection is a provisioning/reconciliation contribution owned by the module. |
-| `agent_extension_installs` and `agent_extension_policy_overrides` authorities | Delete their contents and remove the tables/functions. Convex deletion follows the required expand-migrate-contract mechanics; local schema migration drops the obsolete SQLite tables. Nothing translates their records. |
+| `agent_extension_installs` and `agent_extension_policy_overrides` authorities | Delete their contents and remove the tables. Hosted D1 deletion follows the required expand-migrate-contract mechanics; local schema migration drops the obsolete SQLite tables. Nothing translates their records. |
 | Legacy extension HTTP surface under `/api/claxedo/agent-config/extensions` | Delete without aliases. Disabled builds return ordinary `404`; enabled builds expose the new plugin metadata API. |
 | Install-oriented Marketplace UI and MCP picker actions | Replace with catalog availability, effective state, enable/disable, project selection, and authentication status. |
 | Agent Extensions package publishing, package smoke script, and sandbox dependency pin | Delete from release/build scripts and package manifests. |
@@ -71,7 +71,7 @@ The catalog is a discovery input, not a runtime authority. Enable/Update is the 
 | New capability | Responsibility |
 |---|---|
 | Optional `agent-plugins` server domain | Owns catalog reads through an injected source port, artifact acquisition, defaults, activation metadata, effective resolution, dynamic MCP integration descriptions/readiness, provisioning, and reconciliation. Connections remains the owner of connection/auth state. |
-| Build-selected feature composition | Includes the module only in Agent Plugins-enabled server, frontend, Convex, and VM artifacts. |
+| Build-selected feature composition | Includes the module only in Agent Plugins-enabled server, frontend, database-schema, and VM artifacts. |
 | Agent Plugins v1 validator and indexer | Validates root `plugin.json`, fixed component locations, schemas, names, paths, and independent failure boundaries. |
 | Catalog source port | The containing product supplies readable Claxedo and optional personal/organization sources. The module validates their immediate-child plugin directories but exposes no source-management API. |
 | Durable artifact store and pins | On Enable/Update, retains validated plugin bytes by digest and binds the enabling authority to that digest. Artifact storage outlives the catalog source. |
@@ -156,16 +156,15 @@ The refactor must finish the migration to one clear path rather than layering th
 - `packages/claxedo-server-core/src/agent-config/index.ts` always resolves extension state into runtime config.
 - `packages/workspace-runtime/src/workspace/runtime.ts` statically imports `applyRuntimeAgentExtensions`, which pulls the feature into every runtime bundle.
 - `packages/claxedo-server-core/src/authority/control-plane-contract.ts`, `packages/claxedo-server-core/src/platform/auth/authority.ts`, and `packages/claxedo-server-core/src/workspace/supervisor-port.ts` expose extension-specific types and methods from generic contracts.
-- `convex/agentExtensions.ts`, `convex/agentExtensionPolicies.ts`, and `convex/schema.ts` persist workspace installs and multi-scope policy overrides.
+- The control-plane database persists workspace installs and multi-scope policy overrides in the legacy `agent_extension_installs` and `agent_extension_policy_overrides` tables.
 - `packages/claxedo-connections/` is the canonical connection mechanism: separate `ConnectionStorePort`/`CredentialStorePort`, OAuth Attempts, callback consumption, live-token refresh, personal-over-team resolution, and runtime token gating. MCP extends this mechanism instead of creating feature-owned connection tables.
 - `packages/claxedo-server/src/connections/store-adapter.ts` already adapts Connections to `ControlPlaneCredentials`; local secret bytes therefore stay in the current credential authority.
-- `packages/claxedo-server/src/hosts/workgraph/hosted/connections-setup.ts` already composes hosted Connections with durable Convex attempts and encrypted org credentials, but currently maps every row to the team partition. Personal MCP requires completing this existing hosted partition support.
+- `packages/claxedo-server/src/connections/index.ts` already composes hosted Connections over the control-plane database with durable attempts and encrypted org credentials, but currently maps every row to the owner-absent team partition. Personal MCP requires completing this existing hosted partition support.
 - `packages/sandbox-manager/src/index.ts` already defines the unreadable `SandboxBrokeredSecret` contract. Daytona and Vercel declare native brokering, Cloudflare declares proxy brokering, and Modal/Box/Docker/Exe declare none.
 - `packages/opencode/src/mcp/index.ts` and `packages/opencode/src/mcp/oauth-provider.ts` already implement harness-owned MCP OAuth, but that state is local to one harness. The new module must move the shared connection authority above harnesses rather than synchronize each harness's credential files.
 - `packages/claxedo-app/src/app/composition/product-contributions.ts` already demonstrates the required optional-build property: a loader/contribution boundary keeps hosted implementations outside a local static import graph.
 - `packages/claxedo-server/src/deployments/deployment-closures.test.ts` and product route inventories already enforce bundle reachability separately from mounted routes.
-- `convex/convex.config.ts` already uses a Convex Component for migrations; a feature-owned component can isolate Agent Plugins tables/functions from the root schema.
-- `docs/tech-docs/convex-schema-evolution.md` requires expand-migrate-contract and `@convex-dev/migrations` for removing the legacy Convex documents.
+- `packages/claxedo-server/src/platform/db/schema.ts` already aggregates feature-owned `*.sql.ts` table modules; a feature-owned schema module can isolate Agent Plugins tables from the base schema.
 
 ### Institutional learnings
 
@@ -178,7 +177,6 @@ The refactor must finish the migration to one clear path rather than layering th
 - Agent Plugins v1.0.0 defines a directory-root package, required root `plugin.json`, fixed `skills/` and `mcp.json`, client-extension namespaces, path containment, `PLUGIN_ROOT`/`PLUGIN_DATA`, and independent component failure boundaries. It explicitly leaves OAuth discovery, user interaction, and credential storage to clients: https://agent-plugins.org/specification
 - MCP 2026-07-28 defines HTTP authorization as an OAuth 2.1 client responsibility: Protected Resource Metadata and authorization-server discovery, per-issuer client registration, PKCE, issuer validation, resource indicators, bearer headers, refresh-token confidentiality, and step-up handling: https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization
 - Executor's implemented model separates an integration's authentication template from a born-wired, owner-scoped connection; credential values are resolved from a provider at call time and attached behind an MCP proxy so agents and sandboxes never receive them: https://executor.sh/docs/concepts/connections and https://executor.sh/docs/mcp-proxy
-- Convex Components isolate a feature's functions, schema, and data behind a component API. The feature-enabled deployment must explicitly mount the component; the disabled deployment must not: https://docs.convex.dev/components/using
 
 ## Key Technical Decisions
 
@@ -288,7 +286,7 @@ There is no `plugin_mcp_connections` table, plugin credential store, plugin OAut
 
 - `@claxedo/connections` already splits non-secret `ConnectionRow` metadata from `CredentialStorePort` secret bytes.
 - It already implements connect, one-time OAuth attempts, PKCE verifier/state, callback handling, token envelopes, refresh-before-expiry, single-flight refresh, status degradation, disconnect, and personal-over-team resolution.
-- Local composition already adapts Connections to `ControlPlaneCredentials`; hosted composition already uses durable Convex attempts plus encrypted per-org credentials.
+- Local composition already adapts Connections to `ControlPlaneCredentials`; hosted composition already uses durable control-plane attempts plus encrypted per-org credentials.
 - The existing token route and `ConnectionTurnCredentials` already prove that runtime callers do not need direct credential-store access.
 
 The refactor extends those owners instead of copying them:
@@ -332,7 +330,7 @@ Use the MCP priority unchanged: configured pre-registration for the exact issuer
 
 1. Agent Plugins validates the retained plugin/server identity and asks the dynamic Connections integration to probe/discover it.
 2. The Connections route derives `personal`, `organization`, or unsigned-local ownership as described above.
-3. `ConnectionsService.connectOAuth()` creates an attempt in the existing Attempts port. The extended payload binds owner, integration ID, canonical resource, exact issuer, scopes, callback profile, state, verifier, and expiry. Hosted keeps using its durable Convex Attempts adapter; local keeps the existing short-lived in-memory adapter.
+3. `ConnectionsService.connectOAuth()` creates an attempt in the existing Attempts port. The extended payload binds owner, integration ID, canonical resource, exact issuer, scopes, callback profile, state, verifier, and expiry. Hosted keeps using its durable D1 Attempts adapter; local keeps the existing short-lived in-memory adapter.
 4. The integration opens the authorization URL with PKCE S256, state, least required scopes, and the canonical MCP URI in `resource` on both authorization and token requests.
 5. The existing callback consumes the attempt once, validates the returned issuer/state, exchanges the code, and stores the token envelope through `CredentialStorePort` using the normal Connection provider ID.
 6. The Connections row becomes `connected`; Agent Plugins reads that summary to report MCP readiness. It stores no duplicate pointer or token.
@@ -394,7 +392,7 @@ This split is required by the live graph: desktop imports `@claxedo/local-server
 |---|---|---|
 | Server | No import of `agent-plugins` domain | Imports and mounts module contribution |
 | Routes | `/api/claxedo/plugins...` is absent | Module owns complete route family |
-| Convex | Agent Plugins component not installed/deployed | Component installed in feature-enabled backend composition |
+| Database schema | Agent Plugins tables absent from the deployed D1 schema | Feature-owned schema module included in the feature-enabled backend composition |
 | Frontend | No catalog surface/API bundle | Loads Agent Plugins contribution |
 | Workspace/VM artifact | No materializer or adapter | Includes module runtime projection contribution |
 | Package/release graph | No `@claxedo/agent-extensions` | Still no public package; code remains inside server feature artifact |
@@ -407,7 +405,7 @@ The implementation changes from old to new in one cutover:
 
 - Discard all legacy desired, lock, policy, trust, cache, and install records; do not translate them.
 - Before deleting the legacy ownership code in the same implementation branch, use it only to identify and remove files it proves were generated by the old system. This cleanup is a migration step, never a runtime fallback, and is absent from the final build.
-- Delete legacy Convex documents with a resumable destructive migration, verify completion on every deployment, then contract the old schema/functions.
+- Delete legacy hosted rows with a resumable destructive migration, verify completion on every deployment, then contract the old schema.
 - Drop the obsolete SQLite tables through the local schema migration.
 - Delete the old package, routes, state readers, package exports, dependencies, and tests before shipping the replacement.
 
@@ -670,7 +668,7 @@ Unsigned mode cannot configure personal/org collections or hosted organization c
 - Make desktop's generated local-server entrypoint select the local module at build time. The ordinary `createLocalApp` base accepts only generic contributions and does not statically import the feature.
 - Keep the route family absent when no contribution is supplied; do not mount an empty handler.
 - Use the existing product-contribution loader pattern for the frontend so disabled products do not statically reach the catalog implementation.
-- Plan the hosted metadata store as a feature-owned Convex Component mounted only by the enabled backend deployment composition.
+- Plan the hosted metadata store as a feature-owned D1 schema/migration module included only by the enabled backend deployment composition.
 
 **Patterns to follow:**
 - `packages/claxedo-app/src/app/composition/product-contributions.ts` for implementation absence from a static graph.
@@ -683,7 +681,7 @@ Unsigned mode cannot configure personal/org collections or hosted organization c
 - Disabled build: generated VM artifact dependency list contains no plugin materializer.
 - Enabled build: exactly one module owns and mounts the complete route family.
 - Enabled frontend: the catalog contribution is available; disabled frontend: it is absent from the emitted artifact and navigation.
-- Hosted deployment: disabled profile does not install the Agent Plugins Convex Component; enabled profile does.
+- Hosted deployment: disabled profile does not include the Agent Plugins D1 schema module; enabled profile does.
 
 **Verification:**
 - Product closure, emitted artifact, route inventory, and dependency-list tests independently prove “not mounted” and “not bundled/deployed.”
@@ -756,16 +754,14 @@ Unsigned mode cannot configure personal/org collections or hosted organization c
 - Create: `packages/claxedo-local-server/src/agent-plugins/activation/routes.ts`
 - Create: `packages/claxedo-local-server/src/agent-plugins/activation/sqlite-store.ts`
 - Create: `packages/claxedo-server/src/agent-plugins/activation/routes.ts`
-- Create: `convex/components/agentPlugins/convex.config.ts`
-- Create: `convex/components/agentPlugins/schema.ts`
-- Create: `convex/components/agentPlugins/collections.ts`
-- Create: `convex/components/agentPlugins/activations.ts`
-- Modify: `convex/convex.config.ts` and feature-enabled deployment composition
+- Create: `packages/claxedo-server/src/agent-plugins/activation/activation.sql.ts`
+- Create: `packages/claxedo-server/src/agent-plugins/activation/d1-store.ts`
+- Modify: `packages/claxedo-server/src/platform/db/schema.ts` and feature-enabled deployment composition
 - Test: `packages/claxedo-server-core/src/agent-plugins/activation/effective.test.ts`
 - Test: `packages/claxedo-local-server/src/agent-plugins/activation/routes.test.ts`
 - Test: `packages/claxedo-local-server/src/agent-plugins/activation/sqlite-store.test.ts`
 - Test: `packages/claxedo-server/src/agent-plugins/activation/routes.test.ts`
-- Test: `convex/agent-plugins-v2.policy.test.ts`
+- Test: `packages/claxedo-server/src/agent-plugins/activation/d1-store.test.ts`
 
 **Approach:**
 - Keep module-owned tables out of generic workspace authority interfaces.
@@ -868,9 +864,7 @@ Unsigned mode cannot configure personal/org collections or hosted organization c
 - Create: `packages/claxedo-server/src/agent-plugins/mcp/routes.ts`
 - Modify: `packages/claxedo-server/src/connections/index.ts`
 - Modify: `packages/claxedo-server/src/connections/store-adapter.ts`
-- Modify: `packages/claxedo-server/src/hosts/workgraph/hosted/connections-setup.ts`
-- Modify: `packages/claxedo-server/src/authority/adapters/convex/connection-attempts.ts`
-- Modify: `convex/workgraphConnections.ts`, `convex/connectionAttempts.ts`, and their schema definitions or their generalized Connections replacements
+- Modify: `packages/claxedo-server/src/connections/connection.sql.ts` and the hosted connection/attempt tables exported from `packages/claxedo-server/src/platform/db/schema.ts`
 - Test: discovery/integration/gateway tests beside the files above
 - Test: existing Connections service, route, hosted-partition, token-refresh, attempt, and tenant-isolation suites
 - Test: `packages/claxedo-server/src/agent-plugins/mcp/inspector.e2e.test.ts` using a pinned `@modelcontextprotocol/inspector` CLI on Node 22.19+
@@ -1009,7 +1003,7 @@ Passing end-to-end tests is necessary but does not establish that the replacemen
 ### One owner and one direction
 
 - Each concept has one canonical owner: collection indexing, retained artifacts, activation persistence, effective resolution, materialization, harness projection, and MCP connection/gateway integration. No second helper may independently implement the same rule for local, hosted, UI, or runtime code.
-- `claxedo-server-core` owns dependency-free contracts and deterministic domain behavior only. Local SQLite/filesystem and hosted Convex/object-store implementations depend inward on those contracts. Core never imports either adapter.
+- `claxedo-server-core` owns dependency-free contracts and deterministic domain behavior only. Local SQLite/filesystem and hosted D1/object-store implementations depend inward on those contracts. Core never imports either adapter.
 - Agent Plugins may consume the public Connections API and generic provisioning/composition ports. Generic Connections, workspace, supervisor, and runtime packages do not gain Agent-Plugin-specific tables, methods, fields, or fallback branches.
 - The dependency chain remains source -> validated candidate -> immutable retained artifact -> activation pin -> effective snapshot -> atomic runtime generation -> harness projection. Runtime code cannot walk backward to a collection or repository.
 - Shared code is extracted only when it expresses one of these real concepts. Similar-looking local and hosted orchestration remains separate when their transaction, authorization, or failure semantics differ.
@@ -1030,8 +1024,8 @@ Tests assert these invariants directly, including concurrency and fault injectio
 
 ### Narrow and testable APIs
 
-- Domain operations accept the smallest value objects they require, not application service bags, Hono/Convex request objects, sandbox handles, or broad environment objects.
-- Adapters translate at their boundary and return domain results. They do not leak SQLite rows, Convex document shapes, HTTP responses, GitHub payloads, or sandbox-provider SDK types into core behavior.
+- Domain operations accept the smallest value objects they require, not application service bags, Hono request objects, sandbox handles, or broad environment objects.
+- Adapters translate at their boundary and return domain results. They do not leak SQLite rows, D1 row shapes, HTTP responses, GitHub payloads, or sandbox-provider SDK types into core behavior.
 - Public exports are allowlisted. Internal files are not re-exported for test convenience, and tests do not make production internals public.
 - Harness adapters receive only a verified plugin root, plugin-data root, and explicit harness capabilities. They cannot fetch sources, choose activation, resolve credentials, or merge arbitrary user configuration.
 - Errors carry stable codes and safe context; secret values and provider payloads are retained only at the existing Connections authority.
@@ -1071,7 +1065,7 @@ Each public operation gets contract tests at its owner. Local and hosted adapter
 - Delete: `packages/claxedo-local-server/src/agent-config/extensions/`
 - Delete: `packages/claxedo-server-core/src/hosts/agent-extensions/`
 - Delete: `packages/claxedo-server-core/src/agent-config/extensions/catalog.ts`
-- Delete/replace: `convex/agentExtensions.ts`, `convex/agentExtensionPolicies.ts`, and legacy schema tables
+- Delete/replace: the legacy `agent_extension_installs` and `agent_extension_policy_overrides` schema tables and their accessors
 - Modify: `packages/claxedo-server-core/src/agent-config/index.ts`
 - Modify: `packages/workspace-runtime/src/routes/config.ts`
 - Modify: `packages/workspace-runtime/src/workspace/runtime.ts`
@@ -1082,16 +1076,16 @@ Each public operation gets contract tests at its owner. Local and hosted adapter
 - Modify: root/package release and sandbox scripts that publish, smoke, or pin `@claxedo/agent-extensions`
 - Modify: route/product inventories, architecture ownership maps, docs, and generated API types
 - Create: cutover-only owned-artifact cleanup and its tests; remove that cleanup implementation before the final production artifact is built
-- Modify: `convex/migrations.ts` for resumable legacy document deletion before schema contraction
+- Create: a resumable legacy-row deletion migration that runs before schema contraction
 - Test: `packages/claxedo-server/src/deployments/deployment-closures.test.ts`
 - Test: `packages/claxedo-server/src/tests/governance/codebase-shape.test.ts`
 - Create: `packages/claxedo-server/src/tests/governance/agent-extensions-retirement.test.ts`
-- Test: `convex/migrations-discipline.policy.test.ts`
+- Test: migration-discipline coverage beside the legacy-row deletion migration
 
 **Approach:**
 - Use the existing legacy ownership record during the cutover branch to remove only paths marked as applied and owned; never broadly delete user directories or harness configuration.
 - Do not translate legacy desired/lock rows into new activations.
-- Use expand-migrate-contract for Convex schema safety, but treat the operation as destructive replacement: resumably delete every legacy document, verify completion everywhere, then remove old functions/schema. No code reads both models.
+- Use expand-migrate-contract for hosted schema safety, but treat the operation as destructive replacement: resumably delete every legacy row, verify completion everywhere, then remove the old accessors and schema. No code reads both models.
 - Drop obsolete local SQLite tables; do not leave them as dormant compatibility storage.
 - Remove extension-specific methods/types from generic authorities and supervisor ports rather than leaving optional no-op members.
 - Remove `agent_extensions` from generic runtime config validation and persistence.
@@ -1109,14 +1103,14 @@ Each public operation gets contract tests at its owner. Local and hosted adapter
 - Legacy cleanup removes a symlink/config entry only when the ledger proves ownership.
 - Legacy cleanup preserves unmanaged conflicting user files and reports them.
 - Cleanup is idempotent across restart/retry.
-- Legacy Convex deletion migration is resumable and verified before table contraction.
+- The legacy-row deletion migration is resumable and verified before table contraction.
 - Existing SQLite database upgrades by dropping the old extension tables and starts with only the new module-owned schema when the feature is enabled.
 - Repository search finds no production import of `@claxedo/agent-extensions`, old route prefix, old state files, or legacy policy types.
 - Repository-wide retirement ratchet finds no old package dependency/script/bin, source or test module, runtime-config key, route, schema/function/table, state filename, telemetry event, environment flag, UI vocabulary, generated API symbol, emitted chunk, source-map reference, or copied package artifact.
 - Positive controls prove each retirement detector fails on a synthetic reintroduced file, dependency, import, route, runtime key, schema key, and state path; scan-health assertions prove all required roots and real entry graphs were inspected.
 - Poison-state tests start the final local/server/runtime entrypoints with legacy `.agent-extensions`, `installed.json`, `lock.json`, `materialized.json`, legacy SQLite rows, and a legacy runtime payload containing a sentinel plugin. The final system rejects or ignores the input as specified, never reads plugin payload bytes, never executes/copies the sentinel, never creates replacement activation, and leaves no legacy table after the destructive upgrade.
 - Closed route inventories contain only the new module routes in enabled builds and no plugin routes in disabled builds. Behavioral route-posture tests make requests to both the old prefix and the new routes so a renamed or accidentally remounted handler cannot hide behind a string scan.
-- Closed Convex/local schema and generated-API inventories contain only the new module stores/functions. No legacy migration, dual reader, table alias, fallback decoder, or cleanup function is present in the final build.
+- Closed hosted/local schema and generated-API inventories contain only the new module stores and accessors. No legacy migration, dual reader, table alias, fallback decoder, or cleanup function is present in the final build.
 - Source-closure tests prove the runtime materializer cannot reach catalog/source/Git/credential-store code; exact module and package ceilings are lowered to the measured post-cutover values with no headroom.
 - Enabled and disabled production builds are scanned after emission. The disabled artifact contains no Agent Plugins route, frontend chunk, backend component, materializer, dependency, or token; the enabled artifact contains exactly one route owner and one materializer path.
 - Every disabled production entry's source and emitted package closure excludes the new module.
@@ -1200,8 +1194,7 @@ The final gate runs focused package tests first, then repository-wide checks: `b
 | Connection credential write partially succeeds | Preserve the existing Connections write ordering and idempotent owner/integration upsert; test recovery so a row never reports connected unless its `connectionProviderId` credential resolves. |
 | Failed reconcile disables everything | Build beside active and atomically swap only on success; unavailable authority preserves last applied revision. |
 | Legacy generated artifacts remain loaded after package deletion | During the cutover branch, use the old ownership ledger once to remove proven generated paths; delete that migration code before building the final artifact and report unproven leftovers instead of loading them. |
-| Convex schema contraction loses data or blocks deploy | Follow expand-migrate-contract and verify the migration ledger on every deployment before deleting old tables/functions. |
-| Convex Components are a beta API | Keep the component boundary narrow, pin the current Convex version, and enforce enabled/disabled deployment integration tests. If the component cannot be build-selected reliably, treat that as a blocker rather than silently deploying feature code in the disabled profile. |
+| Hosted D1 schema contraction loses data or blocks deploy | Follow expand-migrate-contract and verify the migration ledger on every deployment before deleting old tables. |
 | Optional feature leaks through a type-only or dynamic import | Source-closure, emitted-artifact, route-inventory, dependency-list, and frontend chunk tests cover different leakage classes. |
 | Per-harness projection grows back into the old materializer | Adapters may only consume a standard plugin root and emit an isolated view; no adapter may own source fetching, activation, durable policy, or user-config merging. |
 
@@ -1216,7 +1209,7 @@ The final gate runs focused package tests first, then repository-wide checks: `b
 - Refresh with newer candidate bytes only shows Update. Only an explicit authorized Update replaces the authority pin and reconciles affected runtimes.
 - A user- or org-owned OAuth-protected MCP server uses the same Connections authority in signed local and supported cloud drivers through the hosted gateway; unsigned OAuth uses local Connections and the local gateway. No upstream token enters Git, Agent Plugins metadata, harness config, VM files, or persisted snapshots; a `secretBrokering: none` cloud driver reports only that protected server unsupported.
 - A runtime materialization failure preserves the last working generation.
-- The Agent Plugins-disabled build contains no server routes, Convex component, frontend catalog surface, VM materializer, or legacy/new package dependency.
+- The Agent Plugins-disabled build contains no server routes, database schema module, frontend catalog surface, VM materializer, or legacy/new package dependency.
 - `packages/agent-extensions`, old route/state/policy code, public package release entries, and install vocabulary are absent from production code.
 - Architecture ratchets pass with exact new closure measurements.
 
@@ -1234,7 +1227,7 @@ The final gate runs focused package tests first, then repository-wide checks: `b
 - Static API-key/header auth and authenticated stdio may be reconsidered only after the standard defines a portable secret reference or a separate product requirement justifies a Claxedo client extension. They are not part of this refactor.
 - MCP Enterprise-Managed Authorization is a separate future capability for per-member enterprise identities and centrally managed IdP policy. This plan's organization connection is deliberately one shared upstream account, not an EMA approximation.
 - The exact VM readiness classification for a plugin whose skills are valid but one MCP server cannot authenticate should follow the standard's independent failure boundary: the VM may become ready with the server reported failed, while unsafe/unavailable plugin roots remain provisioning failures.
-- The enabled Convex deployment assembly mechanism should be selected during Unit 1 based on reproducible generated-artifact inspection. The acceptance criterion is fixed: disabled deployment does not contain the component.
+- The enabled backend's schema-assembly mechanism should be selected during Unit 1 based on reproducible generated-artifact inspection. The acceptance criterion is fixed: the disabled deployment does not contain the feature's schema module.
 
 ## Sources and References
 
@@ -1253,17 +1246,15 @@ The final gate runs focused package tests first, then repository-wide checks: `b
 - Executor connection model source (researched at `fff7ed6`): https://github.com/UsefulSoftwareCo/executor/blob/fff7ed68553c9d249966103b74c7ed4218fe45b1/packages/core/sdk/src/connection.ts
 - Executor credential resolution/refresh source (researched at `fff7ed6`): https://github.com/UsefulSoftwareCo/executor/blob/fff7ed68553c9d249966103b74c7ed4218fe45b1/packages/core/sdk/src/executor.ts
 - Executor MCP connection source (researched at `fff7ed6`): https://github.com/UsefulSoftwareCo/executor/blob/fff7ed68553c9d249966103b74c7ed4218fe45b1/packages/plugins/mcp/src/sdk/connection.ts
-- Convex Components: https://docs.convex.dev/components/using
 - `packages/agent-extensions/docs/architecture.md`
 - `packages/agent-extensions/src/index.ts`
 - `packages/claxedo-local-server/src/agent-config/routes/extension-routes.ts`
 - `packages/claxedo-server-core/src/agent-config/index.ts`
 - `packages/workspace-runtime/src/workspace/runtime.ts`
-- `packages/claxedo-server/src/hosts/workgraph/hosted/connections-setup.ts`
+- `packages/claxedo-server/src/connections/index.ts`
 - `packages/claxedo-server/src/workspace/repository-clone.ts`
 - `packages/claxedo-server-core/src/credentials/types.ts`
 - `packages/claxedo-app/src/app/composition/product-contributions.ts`
 - `packages/claxedo-server/src/deployments/deployment-closures.test.ts`
-- `docs/tech-docs/convex-schema-evolution.md`
 - `docs/plans/2026-07-09-001-refactor-host-owned-runtime-state-plan.md`
 - `docs/plans/2026-08-02-004-refactor-platform-and-domains-plan.md`

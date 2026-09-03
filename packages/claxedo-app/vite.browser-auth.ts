@@ -7,7 +7,7 @@ export type BrowserAuthBuildSelection = {
 }
 
 export function resolveBrowserAuthBuildSelection(value: string | undefined): BrowserAuthBuildSelection {
-  if (value === "better-auth" || value === undefined) {
+  if (value === "better-auth") {
     return {
       adapter: "better-auth",
       module: "./src/platform/auth/better-auth-browser-auth.ts",
@@ -15,6 +15,6 @@ export function resolveBrowserAuthBuildSelection(value: string | undefined): Bro
     }
   }
   throw new Error(
-    "VITE_CLAXEDO_AUTH_ADAPTER must select better-auth; the Clerk browser build was removed",
+    "VITE_CLAXEDO_AUTH_ADAPTER must explicitly select better-auth; there is no browser auth fallback",
   )
 }

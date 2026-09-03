@@ -8,7 +8,7 @@ const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
 // Browser specs run in two explicit identity modes. `test-user` preserves the
 // historical webdriver-authenticated lane. `local-unsigned` is the real
 // loopback/no-user composition: auth surfaces stay mounted, but there is no
-// Clerk key and both the webdriver and stored test-auth bypasses are disabled.
+// provider key and both the webdriver and stored test-auth bypasses are disabled.
 // Keeping this at the Vite process boundary makes every spec in a run exercise
 // the same app composition; individual specs cannot accidentally drift back to
 // Test User because of Playwright's `navigator.webdriver` value.

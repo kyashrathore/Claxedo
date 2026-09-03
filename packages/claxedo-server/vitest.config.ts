@@ -14,9 +14,9 @@ export default defineConfig({
         "../workspace-runtime/src/session-env-contract.ts",
       ),
       // Aliased alongside the rest so a test exercises the runtime SOURCE, not
-      // a dist that may lag it. Both are reached from `@claxedo/workgraph`'s
-      // runtime adapter, which resolves through its own dist and would
-      // otherwise pull a second copy of the runtime into the module graph.
+      // a dist that may lag it. Without the alias a consumer resolving through
+      // its own dist would pull a second copy of the runtime into the module
+      // graph.
       "@claxedo/workspace-runtime/http": path.resolve(import.meta.dirname, "../workspace-runtime/src/http.ts"),
       "@claxedo/workspace-runtime/route-contribution": path.resolve(
         import.meta.dirname,

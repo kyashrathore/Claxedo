@@ -1,13 +1,21 @@
--- Retire the 'clerk' adapter value: the Clerk identity provider was removed
--- from the main codebase and the union is now ('better-auth', 'custom').
--- SQLite cannot ALTER a CHECK constraint, so both tables carrying the old
--- union are rebuilt. Existing 'clerk' rows keep their meaning as historical
--- linked-identity evidence; no live deployment writes new ones.
+-- Retire the previous identity-provider adapter value; rows written under it
+-- are removed, not migrated. SQLite cannot ALTER a CHECK constraint, so both
+-- tables carrying the old union are rebuilt against ('better-auth', 'custom').
 --
---   auth_identities (from 0002): adapter check + primary key preserved.
+--   auth_identities (from 0002): adapter check and primary key preserved; the
+--     by-user index and the user-immutability trigger are re-created.
 --   user_deployed_owner_bootstrap_claims (from 0008): consumed_adapter check
 --     plus the consumption-consistency check and the immutability trigger
---     re-created unchanged apart from the widened union.
+--     re-created unchanged apart from the narrowed union.
+--
+-- No table references auth_identities or the claims table by foreign key, so
+-- the deletes below have no dependents to cascade.
+
+-- Retired identity-provider value: drop the rows before the rebuild copies them
+-- into a table whose CHECK no longer admits it.
+delete from auth_identities where adapter = 'clerk';
+
+delete from user_deployed_owner_bootstrap_claims where consumed_adapter = 'clerk';
 
 create table auth_identities_next (
   adapter text not null check (adapter in ('better-auth', 'custom')),
@@ -22,12 +30,21 @@ create table auth_identities_next (
 insert into auth_identities_next (adapter, issuer, subject, user_id, linked_at, unlinked_at)
   select adapter, issuer, subject, user_id, linked_at, unlinked_at from auth_identities;
 
+drop trigger if exists auth_identities_user_immutable;
+
 drop table auth_identities;
 
 alter table auth_identities_next rename to auth_identities;
 
 create index auth_identities_by_user
   on auth_identities (user_id, unlinked_at);
+
+create trigger auth_identities_user_immutable
+before update of user_id on auth_identities
+when new.user_id != old.user_id
+BEGIN
+  select raise(abort, 'auth identity user is immutable');
+end;
 
 create table user_deployed_owner_bootstrap_claims_next (
   deployment_id text primary key,

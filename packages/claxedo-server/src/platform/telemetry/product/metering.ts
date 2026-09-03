@@ -50,26 +50,6 @@ export const USER_ACTIVATED = "user_activated"
 
 export type SandboxCloseReason = "idle_timeout" | "explicit_release" | "gc"
 
-const workGraphAttribution = new Map<
-  string,
-  Readonly<{ streamId?: string; runId?: string; workItemId?: string }>
->()
-
-export function registerWorkGraphSessionAttribution(
-  sessionId: string,
-  attribution: Readonly<{ streamId?: string; runId?: string; workItemId?: string }>,
-) {
-  workGraphAttribution.set(sessionId, attribution)
-}
-
-export function unregisterWorkGraphSessionAttribution(sessionId: string) {
-  workGraphAttribution.delete(sessionId)
-}
-
-export function workGraphSessionAttribution(sessionId: string) {
-  return workGraphAttribution.get(sessionId)
-}
-
 /** The token block `compat-events.ts` populates on a completed assistant message. */
 export type CompatTokens = {
   input?: number

@@ -9,7 +9,7 @@ const ROOT = path.resolve(import.meta.dirname, "../..")
  * What the desktop-local server closes over.
  *
  * When this measurement started, the desktop-local entry reached 259 first-party
- * modules and 42 packages — Convex, better-auth, WorkGraph, channels,
+ * modules and 42 packages — better-auth, channels,
  * connections, wakes — from a build that never signs in. Most of that came from
  * sharing one package with the hosted product. The manifest now states
  * ownership directly, and this file is the check that the source agrees with the
@@ -47,7 +47,7 @@ function filesUnder(dir: string): string[] {
  *
  * This used to be a hand-written list of thirteen route and composition files,
  * and that made the gate silent for everything written after it: a new producer
- * that imported Convex was simply not walked, and every assertion below stayed
+ * that imported the authority was simply not walked, and every assertion below stayed
  * green about it. The manifest is the only statement of what a consumer can
  * import, so the manifest is what the measurement reads.
  *
@@ -97,11 +97,9 @@ function producers(): string[] {
 const FORBIDDEN_PACKAGES = [
   "@claxedo/sandbox-manager",
   "@claxedo/server",
-  "@claxedo/workgraph",
   "@claxedo/channels",
   "@claxedo/connections",
   "@claxedo/wakes",
-  "convex",
   "better-auth",
   "posthog-node",
 ]

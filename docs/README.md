@@ -27,5 +27,4 @@ it to an index.
 - [Tech Docs](./tech-docs/)
   Current architecture, public-doc support material, and docs used by tests.
 
-Operational runbooks for the deployed control plane, relay, and Convex
-deployment live in [`public-docs/`](../public-docs/README.md), not here.
+Operational runbooks for the deployed control plane and relay live in [`public-docs/`](../public-docs/README.md), not here.

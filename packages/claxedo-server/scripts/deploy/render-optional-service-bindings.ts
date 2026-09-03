@@ -15,7 +15,7 @@ export function renderHostedCoreOptionalServiceBindings(
   coreOnlyConfig: string,
   rawTargets: readonly OptionalServiceBindingTarget[],
 ) {
-  if (/\[\[services\]\]/.test(coreOnlyConfig) || /WORKGRAPH_SERVICE|DOCUMENTS_SERVICE/.test(coreOnlyConfig)) {
+  if (/\[\[services\]\]/.test(coreOnlyConfig) || /DOCUMENTS_SERVICE/.test(coreOnlyConfig)) {
     throw new Error("coreOnlyConfig must not already contain optional-service bindings")
   }
   const descriptors = requireServiceCatalog(rawTargets.map((target) => target.descriptor))

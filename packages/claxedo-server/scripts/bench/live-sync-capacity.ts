@@ -67,7 +67,7 @@ async function bundleWorker() {
         import { LiveSyncRoom, connectLiveSyncRoom, nudgeLiveSyncRoom } from ${JSON.stringify(roomModule)}
         export { LiveSyncRoom }
 
-        // One subject per connection. workgraph.changed is subject-scoped, so a
+        // One subject per connection. The doorbell is subject-scoped, so a
         // nudge for owner "*" would reach nobody; the bench instead publishes
         // document.changed, which is ORG-scoped and therefore visible to every
         // connection in the room. That is deliberately the widest fan-out the

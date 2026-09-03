@@ -1,6 +1,5 @@
 import type { D1Database } from "@cloudflare/workers-types"
 import type { DocumentsServiceRpc } from "@claxedo/service-contract/documents"
-import type { WorkGraphServiceRpc } from "@claxedo/service-contract/workgraph"
 
 import type { LiveSyncRoomNamespace } from "./live-sync-room.cf"
 import type { CloudflareRateLimitBinding } from "../../platform/auth/rate-limit"
@@ -25,12 +24,6 @@ export type BetterAuthD1CoreEnv = HostedCoreCommonEnv & {
 
 export type HostedCoreProductEnv = BetterAuthD1CoreEnv
 
-export type WorkGraphInstalledCoreEnv = HostedCoreProductEnv & {
-  WORKGRAPH_SERVICE: WorkGraphServiceRpc
-}
-
 export type DocumentsInstalledCoreEnv = HostedCoreProductEnv & {
   DOCUMENTS_SERVICE: DocumentsServiceRpc
 }
-
-export type BothServicesInstalledCoreEnv = WorkGraphInstalledCoreEnv & DocumentsInstalledCoreEnv

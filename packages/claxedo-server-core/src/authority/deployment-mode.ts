@@ -13,20 +13,22 @@
  * `public-docs` had to warn operators away from the word "hosted" while
  * documenting a hosted remote deployment on Fly.
  *
- * Today "hosted" is otherwise an emergent property of which env vars happen to
- * be set: a hosted deployment that LOSES `CLAXEDO_SIGNED_CLOUD_AUTH` boots
- * green and serves every request as the trusted unsigned-local owner. This
- * module makes the deployment's identity an explicit fact the system knows:
+ * Without an explicit posture, "hosted" would be an emergent property of which
+ * env vars happen to be set. This module makes the deployment's trust posture
+ * an explicit fact the system knows:
  *
  * - `CLAXEDO_DEPLOYMENT_MODE=local` (default when absent) keeps today's
  *   behavior bit-for-bit: zero-config boot, unsigned, loopback-guarded.
  *   The OSS quickstart never sets the flag.
- * - `CLAXEDO_DEPLOYMENT_MODE=hosted` fails CLOSED at boot: the composition
- *   refuses to start unless signed auth is fully configured and a workspace
- *   authority is resolved (see `assertHostedBootRequirements`). A hosted
- *   deployment that cannot authenticate must be DOWN, not open — ordinary
- *   uptime monitoring then converts a lost env var into a visible outage
- *   instead of a silent breach.
+ * - `CLAXEDO_DEPLOYMENT_MODE=hosted` declares the signed multi-tenant posture.
+ *
+ * This module owns PARSING that posture and the request-time guard below —
+ * nothing else. Hosted BOOT prerequisites belong to each composition root,
+ * which is the only layer that knows its own dependencies: the self-hosted
+ * Node app refuses `hosted` outright (`hosted_composition_removed`), and the
+ * certified Better Auth + D1 worker validates its own bindings in
+ * `better-auth-d1-compose.ts`. A generic boot assertion here could only
+ * restate env names no composition reads.
  *
  * NO BACKWARD COMPATIBILITY: the former `self-host` value is invalid and throws
  * at boot naming `local`. An accepted-but-deprecated alias would reintroduce
@@ -66,15 +68,11 @@ export type DeploymentEnv = Record<string, string | undefined>
 
 export class DeploymentModeError extends Error {
   constructor(
-    public readonly code: "deployment_mode_invalid" | "hosted_boot_requirements_missing",
+    public readonly code: "deployment_mode_invalid",
     message: string,
   ) {
     super(message)
   }
-}
-
-function flagEnabled(input?: string) {
-  return ["1", "true", "yes"].includes((input ?? "").trim().toLowerCase())
 }
 
 function clean(input?: string) {
@@ -107,103 +105,6 @@ export function deploymentMode(env: DeploymentEnv = process.env): Trust {
     "deployment_mode_invalid",
     `${DEPLOYMENT_MODE_ENV} must be "local" or "hosted"; got "${raw}". ` +
       "Unset it (or set local) for the zero-config unsigned posture; set hosted only in hosted deploy manifests.",
-  )
-}
-
-/**
- * Enumerate every hosted boot requirement that is not met. Empty array =
- * hosted mode may boot. Each entry is a human-actionable sentence naming the
- * missing piece, so the composed boot error names ALL problems at once
- * instead of one per restart.
- */
-export function hostedBootRequirementFailures(
-  env: DeploymentEnv,
-  input: {
-    /**
-     * Whether the composition root resolved a workspace authority backend.
-     * This module deliberately knows no backend URL env names — the
-     * composition passes the resolved presence in (same seam as
-     * `controlPlaneAuthConfig`).
-     */
-    authorityConfigured: boolean
-  },
-): string[] {
-  const failures: string[] = []
-  if (!flagEnabled(env.CLAXEDO_SIGNED_CLOUD_AUTH)) {
-    failures.push("signed cloud auth is not enabled (set CLAXEDO_SIGNED_CLOUD_AUTH=true)")
-  }
-  if (!clean(env.CONTROL_PLANE_JWT_ISSUER)) {
-    failures.push("no signed-auth token issuer (set CONTROL_PLANE_JWT_ISSUER)")
-  }
-  if (!clean(env.CONTROL_PLANE_JWKS_URL)) {
-    failures.push("no signed-auth JWKS URL (set CONTROL_PLANE_JWKS_URL)")
-  }
-  if (!input.authorityConfigured) {
-    failures.push("no workspace authority (set CLAXEDO_WORKSPACE_AUTHORITY_URL)")
-  }
-  if (!clean(env.CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)) {
-    failures.push("no Control Plane service token (set CLAXEDO_CONTROL_PLANE_SERVICE_TOKEN)")
-  }
-  if (!clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)) {
-    failures.push("no Runtime Access Token signing private key (set CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM)")
-  }
-  if (!clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)) {
-    failures.push("no Runtime Access Token verification public key (set CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM)")
-  }
-  const signingAlgorithm = clean(env.CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM)
-  if (signingAlgorithm && signingAlgorithm !== "EdDSA") {
-    failures.push(
-      `unsupported Runtime Access Token algorithm "${signingAlgorithm}" (CLAXEDO_RUNTIME_ACCESS_TOKEN_ALGORITHM must be EdDSA)`,
-    )
-  }
-  if (flagEnabled(env.CLAXEDO_EMBEDDED_AUTH)) {
-    // The embedded Better Auth issuer is a LOCAL-trust affordance (signed mode
-    // with no hosted storage backend or IdP). In hosted mode it would silently
-    // displace the hosted issuer (the composition prefers it): hard conflict.
-    failures.push("embedded local auth is enabled (unset CLAXEDO_EMBEDDED_AUTH; hosted mode requires the hosted issuer)")
-  }
-  // When hosted credential storage is turned on, the credential backend must resolve to
-  // the envelope-encrypted Cloudflare KV path — the store selects KV only when
-  // CLAXEDO_CF_KV_URL is set (credentials/backend-registry.ts isHosted), and the encrypted
-  // KV backend refuses to construct without the KV token and the envelope KEK
-  // (credentials/cloudflare.ts + envelope.ts). If the flag is on but any piece
-  // is missing, the store silently falls back to the LOCAL FILE backend —
-  // writing hosted org credentials to disk and bypassing envelope
-  // encryption. Fail CLOSED at boot naming every missing piece, so hosted +
-  // flag-on can never serve credentials from the unencrypted local store.
-  if (flagEnabled(env.CLAXEDO_HOSTED_CREDENTIALS_ENABLED)) {
-    if (!clean(env.CLAXEDO_CF_KV_URL)) {
-      failures.push(
-        "hosted credentials are enabled but no encrypted-KV backend (set CLAXEDO_CF_KV_URL; without it the credential store falls back to the local file store, bypassing envelope encryption)",
-      )
-    }
-    if (!clean(env.CLAXEDO_CF_KV_TOKEN)) {
-      failures.push("hosted credentials are enabled but the KV byte store has no token (set CLAXEDO_CF_KV_TOKEN)")
-    }
-    if (!clean(env.CLAXEDO_CREDENTIALS_KEK)) {
-      failures.push(
-        "hosted credentials are enabled but the envelope encryption key is absent (set CLAXEDO_CREDENTIALS_KEK; the encrypted KV store refuses to operate without it)",
-      )
-    }
-  }
-  return failures
-}
-
-/**
- * Hosted fail-closed boot assertion: throws a single error naming EVERY
- * missing piece when `CLAXEDO_DEPLOYMENT_MODE=hosted` cannot run signed-only.
- * With these requirements met, `controlPlaneAuthConfig` resolves enabled and
- * `unsigned-local` contexts are unreachable.
- */
-export function assertHostedBootRequirements(
-  env: DeploymentEnv,
-  input: { authorityConfigured: boolean },
-): void {
-  const failures = hostedBootRequirementFailures(env, input)
-  if (failures.length === 0) return
-  throw new DeploymentModeError(
-    "hosted_boot_requirements_missing",
-    `${DEPLOYMENT_MODE_ENV}=hosted refuses to start: ${failures.join("; ")}`,
   )
 }
 
@@ -262,10 +163,11 @@ function guardBody(code: string, message: string) {
  *
  * - Signed deployment (`authConfig.enabled`): pass through — per-route bearer
  *   verification (`controlPlaneAuthContext`) is the gate, exactly as today.
- * - Hosted + not signed: 503 for EVERYTHING (loopback included). The boot
- *   assertion makes this unreachable in a correctly started hosted
- *   deployment; if a composition somehow reaches serving without signed
- *   auth, the deployment is down, not open.
+ * - Hosted + not signed: 503 for EVERYTHING (loopback included). Nothing in
+ *   this module rules that state out — hosted prerequisites are each
+ *   composition root's own business — so this branch is the real last line
+ *   of defense: a hosted deployment that reaches serving without signed auth
+ *   is DOWN, not open.
  * - Self-host unsigned: loopback requests pass (today's behavior,
  *   bit-for-bit); non-loopback requests are DENIED unless explicitly
  *   allowlisted above. `misconfigured` (signed requested but broken) answers
@@ -278,7 +180,7 @@ export function unsignedLocalRequestGuard(options: UnsignedLocalGuardOptions): M
       return c.json(
         guardBody(
           "hosted_unsigned_rejected",
-          "hosted deployment refuses unsigned requests: signed auth is not configured (boot assertion should have prevented serving)",
+          "hosted deployment refuses unsigned requests: signed auth is not configured",
         ),
         503,
       )
@@ -291,7 +193,7 @@ export function unsignedLocalRequestGuard(options: UnsignedLocalGuardOptions): M
     return c.json(
       guardBody(
         "unsigned_local_loopback_required",
-        "unsigned-local access is loopback-only; configure signed auth (CLAXEDO_SIGNED_CLOUD_AUTH or CLAXEDO_EMBEDDED_AUTH=1) for remote access",
+        "unsigned-local access is loopback-only; set CLAXEDO_EMBEDDED_AUTH=1 to configure signed auth for remote access",
       ),
       403,
     )

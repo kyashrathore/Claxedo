@@ -65,7 +65,7 @@
  * owns the surrounding shell/session APIs; `DocumentRuntime` owns only `/documents/**`.
  * There is no document event stream any more (removed with external-change);
  * external writes only mutate durable state. “agent edit”, “restart”, “checkout loss”, and “VM loss” here validate
- * browser and wire behavior, not operating-system or deployment durability. WorkGraph
+ * browser and wire behavior, not operating-system or deployment durability. Work
  * exact fetch/pin is companion D10 server contract evidence rather than a browser success
  * behavior because no browser UI owns that direct route. A D14 release verdict must pair
  * this file with claxedo-server conformance, the real local-session transcript (including
@@ -524,7 +524,7 @@ class DocumentRuntime {
       return json(route, this.content(document))
     }
     if (request.method() === "POST" && parts[2] === "work-source") {
-      const snapshot = this.snapshot(document, "workgraph.ingest")
+      const snapshot = this.snapshot(document, "work.ingest")
       const input = body as { target_stream_id?: string; directory?: string; repository_url?: string }
       return json(route, {
         locator: {
@@ -547,7 +547,7 @@ class DocumentRuntime {
       const selected = document.snapshots.find((snapshot) => snapshot.id === parts[3])
       if (!selected) return error(route, 404, "document_snapshot_not_found", "Snapshot not found")
       const input = body as { work_source_id: string; revision_id: string }
-      selected.pins.push(`workgraph:${input.work_source_id}:${input.revision_id}`)
+      selected.pins.push(`work:${input.work_source_id}:${input.revision_id}`)
       return json(route, this.publicSnapshot(selected))
     }
     return error(route, 404, "document_route_not_found", "Document route not found")
@@ -705,7 +705,7 @@ function unexpectedCanaryConsoleErrors(messages: string[]) {
   // (src/app/integrations/claxedo-events.tsx) — two independently-escalating
   // event-stream consumers, not one. Filtered the same way this identical
   // unmocked-central-origin noise is filtered in
-  // core-boot-deep-links-home.spec.ts's `nonClerkConsole`.
+  // core-boot-deep-links-home.spec.ts's `nonProviderConsole`.
   return messages.filter(
     (message) =>
       !message.includes("Failed to load resource") &&

@@ -674,8 +674,8 @@ describe("pause", () => {
 
 /**
  * Retention bounds for `host_enrollment_requests` — the SQLite half of one
- * policy. `convex/host-enrollments.policy.test.ts` makes the same claims
- * against the Convex authority, and `host-enrollment-policy-drift.policy.test.ts`
+ * policy. The hosted host-enrollment policy test makes the same claims
+ * against the workspace authority, and `host-enrollment-policy-drift.policy.test.ts`
  * fails if the two files stop agreeing on the numbers.
  *
  * These read the TABLE, not the API. Nothing this authority returns is a

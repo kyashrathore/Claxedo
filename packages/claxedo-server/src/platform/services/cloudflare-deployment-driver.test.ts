@@ -44,8 +44,8 @@ async function receipts() {
   return new D1ServiceDeploymentStepStore(database)
 }
 
-function descriptor(serviceId: "workgraph" | "documents"): FirstPartyServiceDescriptor {
-  const common = {
+function descriptor(serviceId: "documents"): FirstPartyServiceDescriptor {
+  return {
     protocolVersion: SERVICE_PROTOCOL_VERSION,
     schemaVersion: 1,
     state: "installed_disabled" as const,
@@ -54,13 +54,13 @@ function descriptor(serviceId: "workgraph" | "documents"): FirstPartyServiceDesc
       deploymentId: "deployment-1",
       bindingProvenance: `cloudflare-service:claxedo-${serviceId}-production`,
     },
+    serviceId,
+    bindingName: SERVICE_BINDINGS.documents,
+    entrypoint: "DocumentsServiceV1",
   }
-  return serviceId === "workgraph"
-    ? { ...common, serviceId, bindingName: SERVICE_BINDINGS.workgraph, entrypoint: "WorkGraphServiceV1" }
-    : { ...common, serviceId, bindingName: SERVICE_BINDINGS.documents, entrypoint: "DocumentsServiceV1" }
 }
 
-function step(serviceId: "workgraph" | "documents", value: ServiceDeploymentStep): ServiceDeploymentStepIdentity {
+function step(serviceId: "documents", value: ServiceDeploymentStep): ServiceDeploymentStepIdentity {
   const root = {
     environmentId: "production",
     deploymentId: "deployment-1",
@@ -82,7 +82,7 @@ function step(serviceId: "workgraph" | "documents", value: ServiceDeploymentStep
 
 afterEach(async () => Promise.all(active.splice(0).map((instance) => instance.dispose())))
 
-describe.each(["workgraph", "documents"] as const)("%s Cloudflare production deployment driver", (serviceId) => {
+describe.each(["documents"] as const)("%s Cloudflare production deployment driver", (serviceId) => {
   test("persists exact step receipts and drives the complete resource/binding safety lifecycle", async () => {
     const calls: string[] = []
     const bucketName = serviceId === "documents" ? "claxedo-documents-production" : undefined

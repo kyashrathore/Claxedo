@@ -140,11 +140,6 @@ import {
   createClaxedoSessionEnvFactory,
   prepareWorkspaceRuntimeSession,
 } from "../../hosts/workspace-runtime/session-env"
-import {
-  createLocalEmbeddedWorkGraph,
-  mountLazyEmbeddedWorkGraph,
-  recordLocalWorkGraphLlmUsage,
-} from "../../hosts/workgraph/composition/server-workgraph"
 import { getLocalUsageLimits } from "@claxedo/local-server/self-hosted-execution"
 import { centralModelBackend } from "../../session/runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
@@ -152,18 +147,8 @@ import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/
 import { createLocalDocumentsBackend } from "../../documents/backends/local/backend"
 import { setDocumentChangedSink } from "../../documents/backend"
 import { LocalInstallationDocumentBroker } from "../../documents/backends/local/installation-broker"
-import { createLocalWorkspaceExecution, type WorkGraphSessionGateway } from "../../hosts/workgraph/local/execution"
-import { createLocalExecutionCapabilities } from "../../hosts/workgraph/local/execution-capabilities"
-import { noSelfHostedCapabilities, type SelfHostedCapabilities } from "./capabilities"
-import type { WorkGraphConnectionOperationBroker, WorkGraphRunOperationBroker } from "@claxedo/workgraph/runtime-adapter"
-import type { WorkGraphConnectionRunBinding } from "../../hosts/workgraph/composition/session-gateway"
-import { createSqlitePullRequestEffects } from "../../hosts/workgraph/sqlite-pull-request-effects"
-import { createLocalWorkGraphAgentTools, localSessionContext, localSessionExecution, localSessionOwnerDirected } from "../../hosts/workgraph/composition/agent-tools"
-import { provisionRegisteredWorktree, releaseRegisteredWorktree, localWorktreeWorkGraphId } from "@claxedo/local-server/self-hosted-execution"
-import { StreamIDSchema, masterRunId, masterSessionId } from "@claxedo/workgraph/contracts"
-import type { CommandResult, WorkGraphRunOperationRequest, WorkGraphContext } from "@claxedo/workgraph/contracts"
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
-import { llmTurnRecord, workGraphSessionAttribution } from "../../platform/telemetry/product/metering"
+import { llmTurnRecord } from "../../platform/telemetry/product/metering"
 import { ClaxedoDB } from "../../platform/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
@@ -964,7 +949,7 @@ export function createSelfHostedApp(
     }),
   )
   if (embeddedAuthEnabled(process.env)) {
-    // Embedded Better Auth issuer (self-host signed mode, no Convex/Clerk).
+    // Embedded Better Auth issuer (self-host signed mode, no hosted identity provider).
     // Better-auth's default basePath is exactly /api/auth; the same instance
     // backs the control-plane bearer verifier (see
     // createDefaultLocalControlPlaneServices), so tokens minted here are the
@@ -1172,7 +1157,7 @@ export function createSelfHostedApp(
       // Public/deployed boxes MUST set CLAXEDO_CREDENTIALS_TOKEN (see
       // CredentialRoutesOptions.token). Local loopback dev may leave it unset.
       ...(process.env.CLAXEDO_CREDENTIALS_TOKEN?.trim() ? { token: process.env.CLAXEDO_CREDENTIALS_TOKEN.trim() } : {}),
-      ...((embeddedAuthEnabled(process.env) || deploymentMode(process.env) === "hosted") ? {
+      ...(embeddedAuthEnabled(process.env) ? {
         authenticate: async (request: Request) => {
           const auth = await controlPlaneAuthContext(request, {
             config: services.auth.config,
@@ -1296,7 +1281,7 @@ export function createSelfHostedApp(
      */
     routeOwnership,
     /** @claxedo/connections service — the one connections layer. Thread this
-     * Into consumers that need capability-handle token resolution (workgraph). */
+     * into consumers that need capability-handle token resolution. */
     connections: connectionsHost.service,
   }
 }
@@ -1309,30 +1294,7 @@ export type ControlPlaneStackOptions = {
   opencodeEmbedPath?: string
   opencodeWorkerPath?: string
   processObserver?: ProcessObserver
-  /**
-   * Hosted capabilities this deployment contributes.
-   *
-   * This composition root serves two products. The desktop sidecar omits it and
-   * gets a runtime with no WorkGraph route, tool, timer, or subscription; the
-   * self-hosted single binary passes `selfHostedCapabilities(...)` and keeps
-   * everything it ships today.
-   *
-   * An explicit input rather than a runtime flag on purpose: a flag leaves the
-   * hosted implementation in the desktop's dependency closure and only declines
-   * to call it, which is exactly the thing the package split has to disprove.
-   *
-   * A factory rather than a value because the WorkGraph Run broker is owned by
-   * this composition's own run bookkeeping and cannot exist before it. The
-   * caller decides WHETHER hosted capabilities are composed; the composition
-   * supplies what they need to run.
-   */
-  capabilities?: SelfHostedCapabilitiesFactory
 }
-
-export type SelfHostedCapabilitiesFactory = (input: {
-  workGraphRunBroker: WorkGraphRunOperationBroker
-  workGraphConnectionBroker: WorkGraphConnectionOperationBroker
-}) => SelfHostedCapabilities
 
 export function captureControlPlaneStartupTelemetry(
   services: ControlPlaneServices,
@@ -1520,113 +1482,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     onDegraded: (error) => reportError(error, { tags: { source: "local_usage_metering" } }),
   })
   void localTurnMeter.start()
-  let executeWorkGraphRun:
-    | ((context: WorkGraphContext, request: WorkGraphRunOperationRequest) => Promise<CommandResult>)
-    | undefined
-  let recordWorkGraphPullRequest:
-    | ((context: WorkGraphContext, input: Readonly<{
-        streamId: string
-        runId: string
-        idempotencyKey: string
-        pullRequestId: string
-        url: string
-        draft: boolean
-      }>) => Promise<Readonly<{ durableEffectReceiptId: string; evidenceId?: string }>>)
-    | undefined
-  let authorizeWorkGraphPullRequest:
-    | ((context: WorkGraphContext, input: Readonly<{
-        streamId: string
-        repository: string
-        title: string
-        draft: boolean
-        publicRepository: boolean
-      }>) => Promise<boolean>)
-    | undefined
-  const localWorkGraphRuns = new Map<
-    string,
-    Readonly<{
-      identity: WorkGraphRunOperationRequest["identity"]
-      context: WorkGraphContext
-    }>
-  >()
-  // Server-authored Connection bindings for harness Sessions, keyed by the
-  // runtime Session id. Written only by the harness gateway's admission;
-  // resolved by the shared Connection broker. Mirrors `localWorkGraphRuns`.
-  const localWorkGraphConnections = new Map<string, WorkGraphConnectionRunBinding>()
-  // Late-bound like `executeWorkGraphRun`: the real broker is composed once the
-  // WorkGraph session-gateway module loads, below.
-  let localWorkGraphConnectionBroker: WorkGraphConnectionOperationBroker | undefined
-  const workgraphDatabase = new Database(path.join(dataDir(), "workgraph-v2.db"))
-  const sameRunIdentity = (
-    left: WorkGraphRunOperationRequest["identity"],
-    right: WorkGraphRunOperationRequest["identity"],
-  ) =>
-    left.runId === right.runId &&
-    left.sessionId === right.sessionId &&
-    left.workspaceId === right.workspaceId &&
-    left.generation === right.generation
-  /**
-   * Hosted capabilities for THIS deployment.
-   *
-   * Absent factory means the desktop-local product: no WorkGraph route
-   * contribution reaches the embedded runtime, so the tools are not merely
-   * disabled, they are not composed.
-   */
-  const capabilities = options.capabilities
-    ? options.capabilities({
-      workGraphRunBroker: async (request, signal) => {
-        if (signal.aborted) throw signal.reason ?? new Error("WorkGraph Run operation was cancelled")
-        const binding = localWorkGraphRuns.get(request.identity.sessionId)
-        if (!binding || !sameRunIdentity(binding.identity, request.identity)) {
-          throw new Error("WorkGraph Run operation identity is not bound to this runtime")
-        }
-        if (!executeWorkGraphRun) throw new Error("WorkGraph Run command broker is not ready")
-        return executeWorkGraphRun(binding.context, request)
-      },
-      workGraphConnectionBroker: async (request, signal) => {
-        if (signal.aborted) throw signal.reason ?? new Error("WorkGraph Connection operation was cancelled")
-        if (!localWorkGraphConnectionBroker) throw new Error("WorkGraph Connection broker is not ready")
-        return localWorkGraphConnectionBroker(request, signal)
-      },
-    })
-    : noSelfHostedCapabilities()
-  const recordLocalWorkGraphUsage = (event: OpencodeEvent) => {
-    if (event.payload.type !== "message.updated") return
-    const info = event.payload.properties?.info
-    const record = llmTurnRecord({ message: info, harness: "workgraph" })
-    if (!record) return
-    const binding = localWorkGraphRuns.get(record.session_id)
-    if (!binding) return
-    const completedAt =
-      info &&
-      typeof info === "object" &&
-      "time" in info &&
-      info.time &&
-      typeof info.time === "object" &&
-      "completed" in info.time &&
-      typeof info.time.completed === "number"
-        ? info.time.completed
-        : undefined
-    if (completedAt === undefined) return
-    const attribution = workGraphSessionAttribution(record.session_id)
-    void recordLocalWorkGraphLlmUsage(workgraphDatabase, binding.context, {
-      id: `llm_turn:${record.session_id}:${record.message_id}`,
-      sessionId: record.session_id,
-      streamId: attribution?.streamId ?? binding.identity.streamId,
-      runId: attribution?.runId ?? binding.identity.runId,
-      workItemId: attribution?.workItemId,
-      providerId: record.provider_id,
-      modelId: record.model_id,
-      inputTokens: record.input_tokens,
-      outputTokens: record.output_tokens,
-      reasoningTokens: record.reasoning_tokens,
-      cacheReadTokens: record.cache_read_tokens,
-      cacheWriteTokens: record.cache_write_tokens,
-      createdAt: completedAt,
-    }).catch((error) => {
-      reportError(error, { tags: { source: "workgraph_llm_usage" } })
-    })
-  }
   configureOpenCodeAuth(options.opencodePassword)
   configureOpenCodeEmbedPath(options.opencodeEmbedPath)
   configureOpenCodeWorkerPath(options.opencodeWorkerPath)
@@ -1645,25 +1500,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       .catch(() => {})
   }
   configureOpenCodeApplicationTools(undefined)
-  // Compat events from EVERY embedded-runtime harness session (Claude, Codex,
-  // Cursor, Pi, and adapter-hosted OpenCode alike), fanned out from the
-  // `onSessionMetaEvent` tap below. The engine's own bus (`globalBus`) only
-  // carries engine sessions; consumers that must see harness sessions — e.g.
-  // WorkGraph session intake — subscribe here.
-  const embeddedRuntimeSessionEvents = (() => {
-    const listeners = new Set<(event: OpencodeEvent) => void>()
-    return {
-      publish(event: OpencodeEvent) {
-        for (const listener of listeners) listener(event)
-      },
-      subscribe(listener: (event: OpencodeEvent) => void) {
-        listeners.add(listener)
-        return () => {
-          listeners.delete(listener)
-        }
-      },
-    }
-  })()
   initPostHog()
   // Error tracking rides the client initPostHog just built — no-op unless a
   // PostHog key is configured (release = git SHA via CLAXEDO_RELEASE/GIT_SHA;
@@ -1679,7 +1515,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority) }
       : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-    routeContributions: capabilities.runtimeRouteContributions,
     // See `projectLocalSessionMetaFromEvent` above: a harness session's
     // async auto-title (opencode's own LLM rename, or an ACP harness's
     // post-turn `maybeEmitTitle`) is published only over that workspace's
@@ -1692,8 +1527,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       }
       const compat = toCompatEvent({ type: event.payload.type, properties: event.payload.properties })
       if (compat) void localTurnMeter.consume({ directory: event.directory ?? "", payload: compat })
-      recordLocalWorkGraphUsage(event)
-      embeddedRuntimeSessionEvents.publish(event)
     },
     onTurnOutcome: ({ sessionId, assistantMessageId, outcome }) => {
       if (outcome.status !== "cancelled" || !assistantMessageId) return
@@ -1777,485 +1610,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       })
     },
   })
-  const workgraphRuntimes = new Map<
-    string,
-    Promise<{
-      workspaceId: string
-      runtime: Awaited<ReturnType<typeof ensureEmbeddedWorkspaceRuntime>>
-    }>
-  >()
-  const workgraphRuntime = (directory: string) => {
-    const hit = workgraphRuntimes.get(directory)
-    if (hit) return hit
-    const loading = (async () => {
-      const workspace = await ensureWorkspace({
-        workspaceId: localWorktreeWorkGraphId(directory),
-        workspace_name: "WorkGraph stream",
-        directory,
-      })
-      if (!workspace) throw new Error(`WorkGraph workspace could not be registered: ${directory}`)
-      return {
-        workspaceId: workspace.id,
-        runtime: await ensureEmbeddedWorkspaceRuntime(workspace),
-      }
-    })().catch((error) => {
-      workgraphRuntimes.delete(directory)
-      throw error
-    })
-    workgraphRuntimes.set(directory, loading)
-    return loading
-  }
-  const workgraphSessionModule = import("../../hosts/workgraph/composition/session-gateway")
-  const workgraphBindings = workgraphSessionModule.then((gateway) =>
-    gateway.createFileWorkGraphSessionBindingStore(path.join(dataDir(), "workgraph-session-bindings.json")),
-  )
-  const workgraphResolveTeamOwner = () => undefined
-  const workgraphRecordPullRequest = async (
-    context: WorkGraphContext,
-    input: Parameters<NonNullable<typeof recordWorkGraphPullRequest>>[1],
-  ) => {
-    if (!recordWorkGraphPullRequest) throw new Error("WorkGraph pull request receipt broker is not ready")
-    return recordWorkGraphPullRequest(context, input)
-  }
-  const workgraphAuthorizePullRequest = async (
-    context: WorkGraphContext,
-    input: Parameters<NonNullable<typeof authorizeWorkGraphPullRequest>>[1],
-  ) => {
-    if (!authorizeWorkGraphPullRequest) throw new Error("WorkGraph pull request authorization broker is not ready")
-    return authorizeWorkGraphPullRequest(context, input)
-  }
-  const workgraphPullRequestEffects = createSqlitePullRequestEffects(workgraphDatabase)
-  const workgraphSessions = Promise.all([workgraphSessionModule, workgraphBindings]).then(([gateway, bindings]) => {
-    // The shared Connection broker for harness Sessions: resolves the
-    // server-authored binding the gateway registered at admission. The V2
-    // (engine) rail builds the same broker per-session inside the gateway.
-    localWorkGraphConnectionBroker = gateway.createLocalWorkGraphConnectionBroker({
-      connections: built.connections,
-      resolveTeamOwner: workgraphResolveTeamOwner,
-      authorizePullRequest: workgraphAuthorizePullRequest,
-      recordPullRequest: workgraphRecordPullRequest,
-      pullRequestEffects: workgraphPullRequestEffects,
-      resolveBinding: async (sessionId) => localWorkGraphConnections.get(sessionId),
-    })
-    return gateway.createHarnessWorkGraphGateway(opencodeRequest, {
-      connections: built.connections,
-      resolveTeamOwner: workgraphResolveTeamOwner,
-      executeRun: async (context, request, signal) => {
-        if (signal.aborted) throw signal.reason
-        if (!executeWorkGraphRun) throw new Error("WorkGraph Run command broker is not ready")
-        return executeWorkGraphRun(context, request)
-      },
-      recordPullRequest: workgraphRecordPullRequest,
-      authorizePullRequest: workgraphAuthorizePullRequest,
-      pullRequestEffects: workgraphPullRequestEffects,
-      connectionBindings: {
-        bind: async (binding) => {
-          const existing = localWorkGraphConnections.get(binding.sessionId)
-          if (
-            existing &&
-            (existing.runId !== binding.runId ||
-              existing.workspaceId !== binding.workspaceId ||
-              existing.context.organizationId !== binding.context.organizationId ||
-              existing.context.ownerUserId !== binding.context.ownerUserId)
-          )
-            throw new Error("WorkGraph Session is already bound to another Connection owner")
-          localWorkGraphConnections.set(binding.sessionId, binding)
-        },
-        release: async (sessionId) => {
-          localWorkGraphConnections.delete(sessionId)
-        },
-      },
-      runContexts: {
-        bind: async (input) => {
-          const existing = localWorkGraphRuns.get(input.identity.sessionId)
-          if (
-            existing &&
-            (!sameRunIdentity(existing.identity, input.identity) ||
-              existing.context.organizationId !== input.context.organizationId ||
-              existing.context.ownerUserId !== input.context.ownerUserId)
-          )
-            throw new Error("WorkGraph Session is already bound to another Run owner")
-          localWorkGraphRuns.set(input.identity.sessionId, input)
-        },
-        release: async (sessionId) => {
-          localWorkGraphRuns.delete(sessionId)
-        },
-      },
-      bindings,
-      sessionRequest: async (directory, request) => {
-        return (await workgraphRuntime(directory)).runtime.app.fetch(request)
-      },
-      releaseSessionRuntime: async (directory) => {
-        const pending = workgraphRuntimes.get(directory)
-        if (!pending) return
-        workgraphRuntimes.delete(directory)
-        releaseEmbeddedWorkspaceRuntime((await pending).workspaceId)
-      },
-    })
-  })
-  void workgraphBindings
-    .then((store) => store.all())
-    .then((bindings) => Promise.allSettled(bindings.map((binding) => workgraphRuntime(binding.directory))))
-  const workgraphSessionGateway = {
-    supportsConnections: !!built.connections,
-    classifyAdmissionError: (error: unknown) => {
-      if (!error || typeof error !== "object" || !("status" in error) || typeof error.status !== "number")
-        return "indeterminate" as const
-      if (error.status === 404 || error.status === 501 || error.status === 503) return "unavailable" as const
-      if (
-        error.status >= 400 &&
-        error.status < 500 &&
-        error.status !== 408 &&
-        error.status !== 425 &&
-        error.status !== 429
-      )
-        return "rejected" as const
-      return "indeterminate" as const
-    },
-    admit: (input: Parameters<WorkGraphSessionGateway["admit"]>[0]) =>
-      workgraphSessions.then((sessions) => sessions.admit(input)),
-    cancel: (sessionId: string, reason: string) =>
-      workgraphSessions.then((sessions) => sessions.cancel(sessionId, reason)),
-    result: (sessionId: string) => workgraphSessions.then((sessions) => sessions.result(sessionId)),
-    releaseDirectory: (directory: string) =>
-      workgraphSessions.then((sessions) => sessions.releaseDirectory?.(directory) ?? Promise.resolve()),
-  }
-  const workgraphWorktreeRoot = path.join(dataDir(), "workgraph-worktrees")
-  const workgraphExecution = createLocalWorkspaceExecution({
-    worktreeRoot: workgraphWorktreeRoot,
-    worktrees: {
-      provision: async (input) => {
-        const workspace = await provisionRegisteredWorktree({
-          repositoryDirectory: input.repositoryDirectory,
-          directory: input.directory,
-          workspaceId: localWorktreeWorkGraphId(input.directory),
-          workspaceName: `WorkGraph ${input.streamId}`,
-          checkout: { kind: "detached", revision: input.baseRevision },
-        })
-        return { directory: workspace.directory, workspaceId: workspace.id }
-      },
-      release: releaseRegisteredWorktree,
-    },
-    sessions: workgraphSessionGateway,
-  })
-  const workgraph = createLocalEmbeddedWorkGraph({
-    database: workgraphDatabase,
-    auth: {
-      ...authRouteOptions(services),
-      ...(services.authority ? { authority: services.authority } : {}),
-    },
-    execution: workgraphExecution,
-    executionCapabilities: createLocalExecutionCapabilities({
-      opencodeRequest,
-      harness: async () => meteringHarnessId(defaultHarness(await loadUserConfig())),
-      connections: built.connections,
-      resolveTeamOwner: () => undefined,
-      // Validate a New-stream directory selector against the authoritative local
-      // workspace catalog (the same registry that backs /project). Only a known
-      // local (non-cloud) project directory is honored; everything else fails
-      // closed so git never runs against an arbitrary user-supplied path.
-      resolveRepositoryDirectory: async (directory) => {
-        const workspace = await getWorkspaceByDirectory(directory).catch(() => undefined)
-        if (!workspace || workspace.kind === "cloud") return undefined
-        return workspace.directory
-      },
-      // Live SDK-harness model lists for the workgraph catalog, served by the
-      // embedded workspace runtime (in-process for local workspaces). Failure
-      // falls back to the static catalog inside sdkProviders.
-      harnessConfigOptions: async (directory, harness) => {
-        const workspace = await getWorkspaceByDirectory(directory).catch(() => undefined)
-        if (!workspace || workspace.kind === "cloud") return undefined
-        const search = new URLSearchParams({ directory: workspace.directory, harness })
-        const response = await sandboxFetch(workspace, `/api/wr/harness-config-options?${search}`)
-        if (!response.ok) return undefined
-        return response.json()
-      },
-    }),
-    sourcePlanning: {
-      sessions: workgraphSessionGateway,
-      resolveDirectory: async (_context, execution) => {
-        if (execution.environment?.kind !== "local_worktree" || !execution.environment.directory?.trim()) {
-          throw new Error("Local source planning requires the target Stream's project directory")
-        }
-        const workspace = await getWorkspaceByDirectory(execution.environment.directory).catch(() => undefined)
-        if (!workspace || workspace.kind === "cloud") {
-          throw new Error("Local source planning requires a known local project directory")
-        }
-        return workspace.directory
-      },
-    },
-    master: {
-      sessions: workgraphSessionGateway,
-      directory: (context, streamId) => path.join(
-        workgraphWorktreeRoot,
-        Buffer.from(context.organizationId).toString("base64url"),
-        Buffer.from(context.ownerUserId).toString("base64url"),
-        Buffer.from(streamId).toString("base64url"),
-        "envelope",
-      ),
-    },
-    connections: built.connections,
-    resolveTeamOwner: () => undefined,
-    telemetry: services.telemetry,
-  })
-  void workgraph.then((embedded) => {
-    // Master identity must resolve to the server-authored master session
-    // binding — self-consistent strings alone are forgeable by any local
-    // caller of the run-tools route.
-    const requireLocalMasterIdentity = async (
-      context: Parameters<NonNullable<typeof executeWorkGraphRun>>[0],
-      identity: Readonly<{ streamId?: string; sessionId: string; runId: string }>,
-      label: string,
-    ) => {
-      const streamId = identity.streamId
-      if (!streamId || identity.sessionId !== masterSessionId(streamId) || identity.runId !== masterRunId(streamId)) {
-        throw new Error(`${label} requires an exact master identity`)
-      }
-      const binding = await embedded.sessionBindings.readForSession(context, identity.sessionId)
-      if (binding?.streamId !== streamId) {
-        throw new Error(`${label} is not bound to the Stream master session`)
-      }
-      return StreamIDSchema.parse(streamId)
-    }
-    executeWorkGraphRun = async (context, request) => {
-      if (request.operation.type === "update_stream_notes") {
-        const streamId = await requireLocalMasterIdentity(context, request.identity, "Stream notes")
-        const masterContext = { ...context, actor: { type: "agent" as const, id: request.identity.sessionId as never } }
-        const stream = await embedded.service.queries.streams.read(masterContext, { streamId })
-        if (!stream) throw new Error("Stream notes master could not resolve its Stream")
-        return embedded.service.execute(masterContext, {
-          operationId: request.operation.operationId,
-          command: {
-            version: 1,
-            type: "update_stream_notes",
-            streamId: stream.id,
-            expectedVersion: stream.version,
-            status: request.operation.status,
-            learnings: request.operation.learnings,
-            externalReferences: request.operation.externalReferences,
-          },
-        })
-      }
-      if (request.operation.type === "notify_owner") {
-        const streamId = await requireLocalMasterIdentity(context, request.identity, "Owner notification")
-        const delivery = await built.channels.notifyOwner({
-          ownerUserId: context.ownerUserId,
-          idempotencyKey: request.operation.operationId,
-          text: request.operation.message,
-        })
-        return embedded.service.execute({
-          ...context,
-          actor: { type: "agent", id: request.identity.sessionId as never },
-        }, {
-          operationId: request.operation.operationId,
-          command: {
-            version: 1,
-            type: "record_evidence",
-            subject: { type: "stream", streamId },
-            evidence: {
-              kind: "integration",
-              summary: `Notified the Stream owner through ${delivery.channel}`,
-              effect: "published",
-              reference: delivery.reference,
-            },
-          },
-        })
-      }
-      return embedded.service.execute(context, {
-        operationId: request.operation.operationId,
-        command:
-          request.operation.type === "record_checkpoint"
-            ? {
-                version: 1,
-                type: "record_run_checkpoint",
-                runId: request.identity.runId,
-                sessionId: request.identity.sessionId,
-                workspaceId: request.identity.workspaceId,
-                generation: request.identity.generation,
-                level: request.operation.level,
-                summary: request.operation.summary,
-                evidenceIds: request.operation.evidenceIds,
-              }
-            : {
-                version: 1,
-                type: "complete_run",
-                runId: request.identity.runId,
-                sessionId: request.identity.sessionId,
-                workspaceId: request.identity.workspaceId,
-                generation: request.identity.generation,
-                summary: request.operation.summary,
-                artifacts: request.operation.artifacts,
-                evidence: request.operation.evidence,
-              },
-      })
-    }
-    recordWorkGraphPullRequest = async (context, input) => {
-      const result = await embedded.service.execute(context, {
-        operationId: `pull_request_${input.idempotencyKey}` as never,
-        command: {
-          version: 1,
-          type: "record_evidence",
-          subject: { type: "stream", streamId: input.streamId as never },
-          evidence: {
-            kind: "integration",
-            summary: `Opened ${input.draft ? "draft " : ""}pull request ${input.pullRequestId}`,
-            effect: "published",
-            reference: input.url,
-          },
-        },
-      })
-      if (!result.ok) throw new Error(result.error.message)
-      const value = result.value as { durableEffectReceiptId?: string; evidenceId?: string }
-      if (!value.durableEffectReceiptId) throw new Error("Pull request durable effect receipt is missing")
-      return {
-        durableEffectReceiptId: value.durableEffectReceiptId,
-        ...(value.evidenceId ? { evidenceId: value.evidenceId } : {}),
-      }
-    }
-    authorizeWorkGraphPullRequest = async (context, input) => {
-      if (input.draft || !input.publicRepository) return true
-      const stream = await embedded.service.queries.streams.read(context, { streamId: input.streamId as never })
-      if (!stream) throw new Error("Pull request Stream is unavailable")
-      if (stream.publicPrConfirmedAt !== undefined) return true
-      // The request command is idempotent-by-design (an already-pending
-      // confirmation is a success no-op), so every call gets a fresh
-      // operation id — a fixed id plus a version-varying payload would turn
-      // retries into idempotency conflicts. Any command failure denies:
-      // An unconfirmed public PR never proceeds on an error path.
-      const result = await embedded.service.execute(context, {
-        operationId: `public_pr_confirmation_${input.streamId}_${crypto.randomUUID()}` as never,
-        command: {
-          version: 1,
-          type: "request_public_pr_confirmation",
-          streamId: input.streamId as never,
-          expectedVersion: stream.version,
-          repository: input.repository,
-          title: input.title,
-        },
-      })
-      if (!result.ok) {
-        console.error("[claxedo-server] WARN  public PR confirmation request failed:", result.error.message)
-      }
-      return false
-    }
-  })
-  if (!services.auth.config.enabled && services.auth.config.mode === "local-only" && !options.opencodeUrl) {
-    configureOpenCodeApplicationTools(() =>
-      workgraph.then((embedded) =>
-        createLocalWorkGraphAgentTools(embedded, {
-          organizationId: "local",
-          ownerUserId: "local",
-          sessionExecution: (sessionId) => localSessionExecution(opencodeRequest, sessionId),
-          sessionContext: (sessionId) => localSessionContext(opencodeRequest, sessionId),
-          sessionOwnerDirected: (sessionId) => localSessionOwnerDirected(opencodeRequest, sessionId),
-          notifyOwner: (input) => built.channels.notifyOwner({ ownerUserId: "local", ...input }),
-        }),
-      ),
-    )
-  }
-  let unsubscribeWorkGraphSessionIntake = () => {}
-  if (!services.auth.config.enabled && services.auth.config.mode === "local-only") {
-    void Promise.all([workgraph, import("../../hosts/workgraph/session-intake")]).then(([embedded, intake]) => {
-      const intakeContext = () => ({
-        organizationId: "local" as never,
-        ownerUserId: "local" as never,
-        actor: { type: "system" as const, id: "session_intake" as never },
-        requestId: `session_intake_${crypto.randomUUID()}` as never,
-        access: { mode: "owner" as const },
-      })
-      const onIntakeError = (error: unknown) =>
-        console.error("[claxedo-server] WARN WorkGraph Session intake failed:", error)
-      // Two source/reader pairs, no fallback between them: the engine bus reads
-      // back over the engine transport, the embedded-runtime tap reads back
-      // through the Session's own workspace runtime. An OpenCode session that
-      // surfaces on both projects once — the intake port's idempotency key is
-      // the session id.
-      const unsubscribeEngineIntake = intake.subscribeSessionIntake({
-        events: globalBus,
-        readSession: intake.engineIdleSessionReader(opencodeRequest),
-        port: embedded.sessionIntake,
-        resolveContext: intakeContext,
-        onError: onIntakeError,
-      })
-      const unsubscribeRuntimeIntake = intake.subscribeSessionIntake({
-        events: {
-          subscribe: (listener) =>
-            embeddedRuntimeSessionEvents.subscribe((event) => {
-              if (!event.payload.type) return
-              listener({
-                ...(event.directory ? { directory: event.directory } : {}),
-                payload: {
-                  type: event.payload.type,
-                  ...(event.payload.properties ? { properties: event.payload.properties } : {}),
-                },
-              })
-            }),
-        },
-        readSession: intake.runtimeIdleSessionReader(async (directory, request) => {
-          const workspace = await getWorkspaceByDirectory(directory).catch(() => undefined)
-          if (!workspace || workspace.kind === "cloud") {
-            throw new Error(`WorkGraph Session intake has no local workspace runtime for ${directory}`)
-          }
-          const runtime = await ensureEmbeddedWorkspaceRuntime(workspace, { config: "skip" })
-          return runtime.app.fetch(request)
-        }),
-        port: embedded.sessionIntake,
-        resolveContext: intakeContext,
-        onError: onIntakeError,
-      })
-      unsubscribeWorkGraphSessionIntake = () => {
-        unsubscribeEngineIntake()
-        unsubscribeRuntimeIntake()
-      }
-    })
-  }
-  let reconcilingWorkGraph = false
-  const workgraphReconciler = setInterval(() => {
-    if (reconcilingWorkGraph || !workgraphDatabase.open) return
-    reconcilingWorkGraph = true
-    void workgraph
-      .then(async (embedded) => {
-        const owners = workgraphDatabase
-          .prepare(
-            `
-        SELECT organization_id, owner_user_id FROM wg_v2_streams
-        UNION
-        SELECT organization_id, owner_user_id FROM wg_v2_runs WHERE lifecycle = 'running' AND session_id IS NOT NULL
-        UNION
-        SELECT organization_id, owner_user_id FROM wg_v2_due_jobs WHERE job_type = 'source_plan' AND status IN ('pending', 'failed', 'running')
-      `,
-          )
-          .all() as Array<{ organization_id: string; owner_user_id: string }>
-        await Promise.all(
-          owners.map(async (owner) => {
-            const context = {
-              organizationId: owner.organization_id as never,
-              ownerUserId: owner.owner_user_id as never,
-              actor: { type: "system" as const, id: "workgraph_reconciler" as never },
-              requestId: `reconcile_${crypto.randomUUID()}` as never,
-              access: { mode: "owner" as const },
-            }
-            await embedded.reconcile(context)
-            await embedded.sourcePlanning.runDue(context)
-            // Doorbell safety net: nudge clients when this
-            // owner's change log advanced by any path that does not run through
-            // `service.execute` (run settlement, source planning,
-            // activity, intake). Tip-conditional, so an idle owner emits nothing.
-            embedded.observeChanges(context)
-          }),
-        )
-      })
-      .catch((error) => {
-        console.error("[claxedo-server] WARN  workgraph reconciliation failed:", error)
-      })
-      .finally(() => {
-        reconcilingWorkGraph = false
-      })
-  }, 1_000)
-  workgraphReconciler.unref()
-
-  mountLazyEmbeddedWorkGraph(built.app, async () => workgraph)
-
   // Loopback by default (safe for local dev); containers/self-host set
   // CLAXEDO_SERVER_HOST=0.0.0.0 to accept external traffic.
   const server = serve({
@@ -2276,9 +1630,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     process.off("SIGINT", stopServer)
     process.off("exit", releaseDataDirOwner)
     releaseDataDirOwner()
-    clearInterval(workgraphReconciler)
-    unsubscribeWorkGraphSessionIntake()
-    if (workgraphDatabase.open) workgraphDatabase.close()
     services.close?.()
     void drainOpenCodeEngine()
   })
@@ -2302,16 +1653,6 @@ export function startServer(
     processObserver?: ProcessObserver
     opencodeEmbedPath?: string
     opencodeWorkerPath?: string
-    /**
-     * Hosted capabilities for this process.
-     *
-     * Two callers reach this function: the desktop server child, which passes
-     * nothing, and the self-hosted entry, which passes
-     * `selfHostedCapabilities`. That single argument is the whole difference
-     * between the two products at this layer, which is exactly where the
-     * difference should be visible.
-     */
-    capabilities?: SelfHostedCapabilitiesFactory
   } = {},
 ) {
   // `undefined` opencodeUrl => embedded engine (the default local composition).
@@ -2324,6 +1665,5 @@ export function startServer(
     ...(options.opencodeEmbedPath ? { opencodeEmbedPath: options.opencodeEmbedPath } : {}),
     ...(options.opencodeWorkerPath ? { opencodeWorkerPath: options.opencodeWorkerPath } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-    ...(options.capabilities ? { capabilities: options.capabilities } : {}),
   })
 }

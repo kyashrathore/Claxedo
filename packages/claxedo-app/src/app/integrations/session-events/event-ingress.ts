@@ -278,7 +278,7 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     if (!lifecycleEvent) return
     // A lifecycle event proves the bus is live again — replay any sync-back
     // that previously exhausted its retries so a missed session still reaches
-    // Convex (and therefore the sidebar) instead of being lost until reload.
+    // the control plane (and therefore the sidebar) instead of being lost until reload.
     void retryUnsettledSessionProjectionPulls()
     applyClaxedoSessionLifecycleToSync(input, lifecycleEvent)
   })

@@ -1912,9 +1912,6 @@ const main = Effect.gen(function* () {
   yield* Effect.addFinalizer(() => Effect.promise(() => disposeApps()).pipe(Effect.andThen(cleanupExercisePaths)))
   const options = parseOptions(Bun.argv.slice(2))
   const modules = yield* Effect.promise(() => runtime())
-  // PublicApi also documents Claxedo's compositional WorkGraph surface. Those
-  // handlers belong to claxedo-server and are exercised there; this process
-  // can only execute the OpenCode route layers assembled by HttpApiApp.
   const effectRoutes = routeKeys(OpenApi.fromApi(modules.OpenCodeHttpApi))
   const selected = selectedScenarios(options, scenarios)
   const missing = effectRoutes.filter((route) => !scenarios.some((scenario) => route === routeKey(scenario)))

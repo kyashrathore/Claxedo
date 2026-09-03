@@ -29,7 +29,7 @@
         overflow-wrap: anywhere;
       }
       li[data-type="document.changed"] { border-left-color: #4ade80 }
-      li[data-type="workgraph.changed"] { border-left-color: #a78bfa }
+      li[data-type="session.share.changed"] { border-left-color: #a78bfa }
       li[data-type="stream.replay-gap"] { border-left-color: #f87171; background: #241417 }
       li[data-type="heartbeat"] { border-left-color: #334155; color: #64748b }
       .id { color: #fbbf24; margin-right: 8px }
@@ -109,7 +109,7 @@
 
       const summarize = (payload) => {
         if (payload?.type === "document.changed") return `${payload.documentId} · org=${payload.orgId}`
-        if (payload?.type === "workgraph.changed") return `owner=${payload.ownerUserId}`
+        if (payload?.type === "session.share.changed") return `owner=${payload.ownerUserId}`
         if (payload?.type === "stream.replay-gap") return `from=${payload.lastEventId} through=${payload.throughId}`
         return ""
       }

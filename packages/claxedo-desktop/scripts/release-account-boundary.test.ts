@@ -48,8 +48,6 @@ describe("desktop release account boundary", () => {
       ])
         expect(step).not.toContain(name)
 
-      expect(step).not.toContain("VITE_CLERK_PUBLISHABLE_KEY")
-      expect(step).not.toContain("VITE_CONVEX_URL")
       expect(step).not.toContain("VITE_CLAXEDO_SERVER_URL")
     })
   }

@@ -37,13 +37,13 @@ afterEach(async () => {
 const scope = { environmentId: "production", deploymentId: "deployment-1" }
 const identity = (operationId: string, occurredAt: string) => ({ ...scope, operationId, occurredAt })
 const descriptor = {
-  serviceId: "workgraph",
+  serviceId: "documents",
   protocolVersion: SERVICE_PROTOCOL_VERSION,
   schemaVersion: 1,
   state: "installed_disabled",
-  bindingName: SERVICE_BINDINGS.workgraph,
-  entrypoint: "WorkGraphServiceV1",
-  trust: { ...scope, bindingProvenance: "cloudflare-service:workgraph-prod" },
+  bindingName: SERVICE_BINDINGS.documents,
+  entrypoint: "DocumentsServiceV1",
+  trust: { ...scope, bindingProvenance: "cloudflare-service:documents-prod" },
 } satisfies FirstPartyServiceDescriptor
 
 describe("D1 service installation ledger", () => {
@@ -54,40 +54,40 @@ describe("D1 service installation ledger", () => {
     const registered = await store.registerDisabled(identity("op-register", "2026-08-28T01:00:00Z"), descriptor)
     expect(registered).toEqual({ descriptor, revision: 1 })
     await expect(
-      store.transition(identity("op-enable-too-soon", "2026-08-28T01:01:00Z"), "workgraph", 1, "enabled"),
+      store.transition(identity("op-enable-too-soon", "2026-08-28T01:01:00Z"), "documents", 1, "enabled"),
     ).rejects.toMatchObject({ code: "probe_required" })
 
-    const unhealthy = await store.recordProbe(identity("op-unhealthy", "2026-08-28T01:01:30Z"), "workgraph", 1, {
+    const unhealthy = await store.recordProbe(identity("op-unhealthy", "2026-08-28T01:01:30Z"), "documents", 1, {
       status: "unhealthy",
       checkedAt: "2026-08-28T01:01:29Z",
       serviceBuildId: "sha256:unhealthy-build",
     })
     await expect(
-      store.transition(identity("op-enable-unhealthy", "2026-08-28T01:01:31Z"), "workgraph", unhealthy.revision, "enabled"),
+      store.transition(identity("op-enable-unhealthy", "2026-08-28T01:01:31Z"), "documents", unhealthy.revision, "enabled"),
     ).rejects.toMatchObject({ code: "probe_required" })
 
-    const probed = await store.recordProbe(identity("op-probe", "2026-08-28T01:02:00Z"), "workgraph", 2, {
+    const probed = await store.recordProbe(identity("op-probe", "2026-08-28T01:02:00Z"), "documents", 2, {
       status: "ready",
       checkedAt: "2026-08-28T01:01:59Z",
       serviceBuildId: "sha256:service-build",
     })
     expect(probed).toMatchObject({ revision: 3, descriptor: { state: "installed_disabled" } })
 
-    const enabled = await store.transition(identity("op-enable", "2026-08-28T01:03:00Z"), "workgraph", 3, "enabled")
+    const enabled = await store.transition(identity("op-enable", "2026-08-28T01:03:00Z"), "documents", 3, "enabled")
     expect(enabled).toMatchObject({ revision: 4, descriptor: { state: "enabled" } })
     await expect(
-      store.transition(identity("op-stale-disable", "2026-08-28T01:04:00Z"), "workgraph", 3, "installed_disabled"),
+      store.transition(identity("op-stale-disable", "2026-08-28T01:04:00Z"), "documents", 3, "installed_disabled"),
     ).rejects.toMatchObject({ code: "revision_conflict" })
 
     const disabled = await store.transition(
       identity("op-disable", "2026-08-28T01:05:00Z"),
-      "workgraph",
+      "documents",
       4,
       "installed_disabled",
     )
     expect(disabled.revision).toBe(5)
-    await store.uninstall(identity("op-uninstall", "2026-08-28T01:06:00Z"), "workgraph", 5)
-    expect(await store.get(scope, "workgraph")).toBeNull()
+    await store.uninstall(identity("op-uninstall", "2026-08-28T01:06:00Z"), "documents", 5)
+    expect(await store.get(scope, "documents")).toBeNull()
     expect((await store.audit(scope)).map((event) => event.action)).toEqual([
       "register_disabled",
       "record_probe",
@@ -98,12 +98,40 @@ describe("D1 service installation ledger", () => {
     ])
   })
 
+  test("skips a retired service's row instead of failing the whole catalog read", async () => {
+    // `service_installations`'s CHECK constraint is part of an append-only
+    // migration ledger, so it still admits `workgraph` — a service this build
+    // no longer implements. `list()` is read on EVERY signed request through
+    // `serviceCatalog()`, so validating the whole set would turn one orphaned
+    // row from a retired install into a 500 on the app shell for that entire
+    // deployment. Residue must not be able to take down a deployment that never
+    // used it.
+    const { database, store } = await createStore()
+    const registered = await store.registerDisabled(identity("op-register", "2026-08-28T01:00:00Z"), descriptor)
+    await database
+      .prepare(
+        `insert into service_installations (
+          environment_id, deployment_id, service_id, protocol_version, schema_version,
+          lifecycle_state, binding_name, entrypoint, binding_provenance, revision,
+          last_operation_id, updated_at
+        ) values (?, ?, 'workgraph', 'claxedo.service.v1', 1, 'installed_disabled', 'WORKGRAPH_SERVICE',
+          'WorkGraphServiceV1', 'cloudflare-service:retired', 1, 'op-retired', ?)`,
+      )
+      .bind(scope.environmentId, scope.deploymentId, "2026-08-28T00:00:00Z")
+      .run()
+
+    const listed = await store.list(scope)
+    expect(listed).toEqual([registered])
+    // The surviving row is still validated in full — the filter is not a bypass.
+    expect(listed[0]?.descriptor.serviceId).toBe("documents")
+  })
+
   test("makes exact workflow retries idempotent and rejects operation reuse", async () => {
     const { store } = await createStore()
     const first = await store.registerDisabled(identity("op-register", "2026-08-28T01:00:00Z"), descriptor)
     expect(await store.registerDisabled(identity("op-register", "2026-08-28T01:00:00Z"), descriptor)).toEqual(first)
     await expect(
-      store.recordProbe(identity("op-register", "2026-08-28T01:01:00Z"), "workgraph", 1, {
+      store.recordProbe(identity("op-register", "2026-08-28T01:01:00Z"), "documents", 1, {
         status: "ready",
         checkedAt: "2026-08-28T01:01:00Z",
         serviceBuildId: "build",
@@ -116,23 +144,23 @@ describe("D1 service installation ledger", () => {
       checkedAt: "2026-08-28T01:01:59Z",
       serviceBuildId: "build-a",
     }
-    const probed = await store.recordProbe(probeIdentity, "workgraph", 1, probe)
-    expect(await store.recordProbe(probeIdentity, "workgraph", 1, probe)).toEqual(probed)
+    const probed = await store.recordProbe(probeIdentity, "documents", 1, probe)
+    expect(await store.recordProbe(probeIdentity, "documents", 1, probe)).toEqual(probed)
     await expect(
-      store.recordProbe(probeIdentity, "workgraph", 1, { ...probe, serviceBuildId: "build-b" }),
+      store.recordProbe(probeIdentity, "documents", 1, { ...probe, serviceBuildId: "build-b" }),
     ).rejects.toMatchObject({ code: "operation_conflict" })
 
-    const enabled = await store.transition(identity("op-enable", "2026-08-28T01:03:00Z"), "workgraph", 2, "enabled")
+    const enabled = await store.transition(identity("op-enable", "2026-08-28T01:03:00Z"), "documents", 2, "enabled")
     const disabled = await store.transition(
       identity("op-disable", "2026-08-28T01:04:00Z"),
-      "workgraph",
+      "documents",
       enabled.revision,
       "installed_disabled",
     )
     const uninstallIdentity = identity("op-uninstall", "2026-08-28T01:05:00Z")
-    await store.uninstall(uninstallIdentity, "workgraph", disabled.revision)
-    await expect(store.uninstall(uninstallIdentity, "workgraph", disabled.revision)).resolves.toBeUndefined()
-    await expect(store.uninstall(uninstallIdentity, "workgraph", disabled.revision + 1)).rejects.toMatchObject({
+    await store.uninstall(uninstallIdentity, "documents", disabled.revision)
+    await expect(store.uninstall(uninstallIdentity, "documents", disabled.revision)).resolves.toBeUndefined()
+    await expect(store.uninstall(uninstallIdentity, "documents", disabled.revision + 1)).rejects.toMatchObject({
       code: "operation_conflict",
     })
   })

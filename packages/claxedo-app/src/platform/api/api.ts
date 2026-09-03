@@ -563,8 +563,8 @@ export async function authFetch(input: string | URL | Request, init?: RequestIni
     : await throttledFetch(() => fetch(retried.request as string | URL, retried.init), throttleInit(retried.init, retried.request), retried.request)
   apiFetchDebug("retried-response", retriedResponse)
 
-  // If the force-refreshed token is STILL rejected (Clerk
-  // session is dead, JWKS rotated mid-flight, or the user's Clerk
+  // If the force-refreshed token is STILL rejected (the auth
+  // session is dead, JWKS rotated mid-flight, or the user's
   // instance and the server's are out of sync — common in local dev
   // when env vars drift), drop the Authorization header entirely and
   // try once more. claxedo-server's unsigned-local path serves the

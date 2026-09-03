@@ -175,7 +175,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         return c.json(await add(auth, {
           teamId: c.req.param("teamId"),
           ...(typeof body.tokenIdentifier === "string" ? { tokenIdentifier: body.tokenIdentifier } : {}),
-          ...(typeof body.clerkSubject === "string" ? { clerkSubject: body.clerkSubject } : {}),
+          ...(typeof body.providerSubject === "string" ? { providerSubject: body.providerSubject } : {}),
           ...(typeof body.userPublicId === "string" ? { userPublicId: body.userPublicId } : {}),
           ...(body.role === "member" || body.role === "admin" || body.role === "owner" ? { role: body.role } : {}),
         }))
@@ -192,7 +192,7 @@ export function OrgTeamControlRoutes(services: ControlPlaneServices, options: Op
         return c.json(await remove(auth, {
           teamId: c.req.param("teamId"),
           ...(typeof body.tokenIdentifier === "string" ? { tokenIdentifier: body.tokenIdentifier } : {}),
-          ...(typeof body.clerkSubject === "string" ? { clerkSubject: body.clerkSubject } : {}),
+          ...(typeof body.providerSubject === "string" ? { providerSubject: body.providerSubject } : {}),
           ...(typeof body.userPublicId === "string" ? { userPublicId: body.userPublicId } : {}),
         }))
       } catch (err) {

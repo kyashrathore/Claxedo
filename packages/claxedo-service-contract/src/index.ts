@@ -3,7 +3,7 @@
  * union: installing first-party Workers must not turn core into a remote-code
  * plugin host.
  */
-export const FIRST_PARTY_SERVICE_IDS = ["workgraph", "documents"] as const
+export const FIRST_PARTY_SERVICE_IDS = ["documents"] as const
 
 export type FirstPartyServiceId = (typeof FIRST_PARTY_SERVICE_IDS)[number]
 export type InstalledServiceState = "installed_disabled" | "enabled"
@@ -12,7 +12,6 @@ export type ServiceHealth = "ready" | "unhealthy"
 export const SERVICE_PROTOCOL_VERSION = "claxedo.service.v1" as const
 
 export const SERVICE_BINDINGS = {
-  workgraph: "WORKGRAPH_SERVICE",
   documents: "DOCUMENTS_SERVICE",
 } as const satisfies Record<FirstPartyServiceId, string>
 
@@ -105,19 +104,13 @@ type ServiceDescriptorBase = Readonly<{
   lastHealthProbe?: ServiceHealthProbe
 }>
 
-export type WorkGraphServiceDescriptor = ServiceDescriptorBase &
-  Readonly<{
-    serviceId: "workgraph"
-    bindingName: typeof SERVICE_BINDINGS.workgraph
-  }>
-
 export type DocumentsServiceDescriptor = ServiceDescriptorBase &
   Readonly<{
     serviceId: "documents"
     bindingName: typeof SERVICE_BINDINGS.documents
   }>
 
-export type FirstPartyServiceDescriptor = WorkGraphServiceDescriptor | DocumentsServiceDescriptor
+export type FirstPartyServiceDescriptor = DocumentsServiceDescriptor
 export type FirstPartyServiceCatalog = readonly FirstPartyServiceDescriptor[]
 
 /** Safe, data-only service availability advertised to signed application UIs. */
@@ -167,7 +160,7 @@ export function requireServiceDescriptor(value: unknown): FirstPartyServiceDescr
   }
   const descriptor = value as Record<string, unknown>
   if (!isFirstPartyServiceId(descriptor.serviceId)) {
-    throw new ServiceContractError("unknown_service", "serviceId must be workgraph or documents")
+    throw new ServiceContractError("unknown_service", "serviceId must be documents")
   }
   const serviceId = descriptor.serviceId
   if (descriptor.bindingName !== SERVICE_BINDINGS[serviceId]) {
@@ -271,7 +264,7 @@ export function requireServiceLifecycleMutationRequest(value: unknown): ServiceL
     throw new ServiceContractError("invalid_descriptor", "unknown service lifecycle mutation action")
   }
   if (!isFirstPartyServiceId(request.serviceId)) {
-    throw new ServiceContractError("unknown_service", "serviceId must be workgraph or documents")
+    throw new ServiceContractError("unknown_service", "serviceId must be documents")
   }
   const action = request.action as ServiceLifecycleMutationAction
   const serviceId = request.serviceId
@@ -337,7 +330,7 @@ export function serializeServiceInstallationOperationIntent(value: ServiceInstal
     })
   }
   if (!isFirstPartyServiceId(value.serviceId)) {
-    throw new ServiceContractError("unknown_service", "serviceId must be workgraph or documents")
+    throw new ServiceContractError("unknown_service", "serviceId must be documents")
   }
   const common = {
     version: 1,
@@ -374,7 +367,7 @@ export function requireBrowserServiceDescriptor(value: unknown): BrowserServiceD
     throw new ServiceContractError("invalid_descriptor", "browser service descriptor contains operator-only fields")
   }
   if (!isFirstPartyServiceId(descriptor.serviceId)) {
-    throw new ServiceContractError("unknown_service", "serviceId must be workgraph or documents")
+    throw new ServiceContractError("unknown_service", "serviceId must be documents")
   }
   if (descriptor.protocolVersion !== SERVICE_PROTOCOL_VERSION) {
     throw new ServiceContractError("invalid_protocol", `protocolVersion must be ${SERVICE_PROTOCOL_VERSION}`)

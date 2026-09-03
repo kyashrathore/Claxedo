@@ -28,10 +28,7 @@ export const desktopMainComposition: Policy = {
   entry: `${DESKTOP}/main/index.ts`,
   roots: [DESKTOP],
   forbiddenPackages: [
-    "@clerk/clerk-js",
-    "convex",
     "@claxedo/server",
-    "@claxedo/workgraph",
     "@claxedo/local-server",
     "@claxedo/host-connector",
   ],
@@ -95,14 +92,11 @@ export const desktopAccountComposition: Policy = {
   roots: [DESKTOP],
 
   forbiddenPackages: [
-    // The browser identity SDK. Main authenticates through its own OAuth/PKCE
-    // flow in `src/main/account/oauth-flow.ts`, which speaks HTTP.
-    "@clerk/clerk-js",
-    "convex",
     // The hosted control plane. Main starts a LOCAL server child process; a
     // hosted server package in this graph is the split leaking backwards.
+    // Main authenticates through its own OAuth/PKCE flow in
+    // `src/main/account/oauth-flow.ts`, which speaks HTTP.
     "@claxedo/server",
-    "@claxedo/workgraph",
     // Main composes the local server as a separate child process
     // (`scripts/claxedo-server-entry.ts`), never in-process.
     "@claxedo/local-server",
@@ -157,11 +151,11 @@ export const desktopAccountComposition: Policy = {
  * `@claxedo/app/auth`, resolves through the app's `exports` map to
  * `src/app/entry/auth.ts` rather than to `src/auth.ts`. A walk that cannot make
  * that hop reports a clean desktop closure and is wrong; it is exactly how the
- * desktop shipped Clerk to every unsigned launch while the app's own local
- * guard stayed green.
+ * desktop once shipped a browser identity SDK to every unsigned launch while
+ * the app's own local guard stayed green.
  *
  * The source closure deliberately includes the dynamic hosted contribution so
- * it can reject a Clerk/Convex leak anywhere in the shipped renderer graph.
+ * it can reject a hosted-identity leak anywhere in the shipped renderer graph.
  * The emitted manifest is the narrower unsigned-startup proof: it cuts at the
  * optional chunk while retaining the dynamic edge as build metadata.
  */
@@ -174,7 +168,7 @@ export const desktopRendererUnsigned: Policy = {
   aliases: APP_ALIASES,
   followed: [{ name: "@claxedo/app", dir: "packages/claxedo-app" }],
 
-  forbiddenPackages: ["@clerk/clerk-js", "convex", "@claxedo/host-connector", "electron"],
+  forbiddenPackages: ["better-auth", "@claxedo/host-connector", "electron"],
   forbiddenModules: [
     // The app's authenticated-identity module and the subpath that reaches it.
     `${APP}/platform/auth/auth-client.ts`,
@@ -198,13 +192,13 @@ export const desktopRendererUnsigned: Policy = {
       `${DESKTOP}/renderer/shell.tsx`,
       // Reached only by crossing the package boundary. Its absence means the
       // walk never left `claxedo-desktop` — which is the state in which every
-      // "no Clerk" answer below is worthless.
+      // "no hosted identity" answer below is worthless.
       `${APP}/app/entry/app.tsx`,
       // Reached only through the `@/` alias from a DESKTOP file
       // (`renderer/shell.tsx` imports `@/platform/api/api`).
       `${APP}/platform/api/api.ts`,
     ],
-    requiredPackages: ["solid-js", "@claxedo/workgraph"],
+    requiredPackages: ["solid-js"],
   },
 
   // The session-switch architecture splits twenty-five narrow owners out of
@@ -234,11 +228,11 @@ export const desktopRendererUnsigned: Policy = {
   // the same six local app owners as app-local: 993 + 6 = 999.
   // Cloud workspace create / AccountPort bridge / adapters follow app-local:
   // 999 + 1 (workspace-create-api) + 1 (hosted-control-call) + 3 (integrations/
-  // documents/WorkGraph) + 1 (control-plane fetch) + 1 (SSE stream) + 1
+  // documents/optional service) + 1 (control-plane fetch) + 1 (SSE stream) + 1
   // (agent-config extensions) = 1007. The 16 lazy provider-settings locale
   // dictionaries shared with app-local bring this to 1023. The reviewed
-  // deployable-service split adds the service contribution catalog, Documents
-  // and WorkGraph contribution roots, bootstrap-owner route, and canonical
+  // deployable-service split adds the service contribution catalog, the
+  // optional-service contribution roots, bootstrap-owner route, and canonical
   // private-session reservation client while retiring the monolithic hosted
   // contribution loader: net +5 modules. `@claxedo/service-contract` is the
   // one dependency-neutral package addition.
@@ -292,8 +286,11 @@ export const desktopRendererUnsigned: Policy = {
   // the one owner of the runtime's turn message-id convention, which the
   // session transcript reads to place a reply under the message it answers.
   // Reviewed owner: the agent event contracts package, already in this
-  // closure; one module, no package edge; the measured closure is 1053.
-  ceilings: { modules: 1053, packages: 59 },
+  // closure; one module, no package edge.
+  // -46 modules / -3 packages: retiring the hosted work-ledger service took its
+  // renderer contribution loader and the whole app-side surface graph out of
+  // the unsigned renderer. Re-measured, no headroom.
+  ceilings: { modules: 1007, packages: 56 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -322,7 +319,7 @@ export const desktopHostedContribution: Policy = {
   roots: [DESKTOP, APP],
   aliases: APP_ALIASES,
   followed: [{ name: "@claxedo/app", dir: "packages/claxedo-app" }],
-  forbiddenPackages: ["@clerk/clerk-js", "convex", "@claxedo/host-connector", "electron"],
+  forbiddenPackages: ["better-auth", "@claxedo/host-connector", "electron"],
   forbiddenModules: [
     `${APP}/platform/auth/auth-client.ts`,
     `${APP}/app/entry/auth.ts`,

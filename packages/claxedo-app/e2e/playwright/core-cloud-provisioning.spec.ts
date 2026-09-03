@@ -882,7 +882,7 @@ test.describe("core cloud provisioning @core", () => {
  *   3. Hosted device/OAuth connect could not complete server-side: the hosted
  *      connections service is built PER REQUEST with no shared attempt store, so
  *      `GET /attempts/:state` always answered `attempt_not_found` (fixed by
- *      `convex/connectionAttempts.ts`; the mock below stands in for that route's
+ *      the connection-attempts authority; the mock below stands in for that route's
  *      now-durable behavior).
  *   4. The device `userCode` was dropped by the connect flow, leaving the user on
  *      github.com/login/device with no code to type.

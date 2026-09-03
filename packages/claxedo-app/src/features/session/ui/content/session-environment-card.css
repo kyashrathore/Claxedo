@@ -7,7 +7,7 @@
    reserves a right gutter via padding while the card is mounted; the card sits
    absolutely INSIDE that gutter. Inline — never floating over content, never a
    full-height rail. Class namespace is `session-envcard-*` — never reuse
-   `workgraph-card*` or generic names. */
+   generic names. */
 
 .session-envcard-shell {
   position: relative;
@@ -148,7 +148,7 @@
 
 /* This card sits over the live timeline, so it reads a touch brighter than the
    shared shell's quiet defaults. Everything below is scoped to .session-envcard
-   so the shared ContextCard (WorkGraph "Needs you") keeps its quieter look. */
+   so the shared ContextCard keeps its quieter look. */
 
 /* Surface lift: a translucent white layered over the opaque raised surface.
    In dark themes this nudges #1c1c1c up to ~#242424; over the light theme's

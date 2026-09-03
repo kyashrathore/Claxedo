@@ -5,7 +5,7 @@ import "./context-card.css"
 
 /**
  * Codex/Cursor-style contextual card — the shared shell for quiet, glanceable
- * side context (WorkGraph's "Needs you", the session's Environment card).
+ * side context (the session's Environment card).
  * Placement copies Codex's pinned summary: the card sits INLINE in a right
  * gutter its surface reserves inside the scroll container (content squeezes
  * left, the scrollbar stays on the pane edge, the card is bounded — never a
@@ -155,7 +155,7 @@ export function ContextCardSection(props: { label: string; children: JSX.Element
 }
 
 /** A generic card row: glyph + label + trailing meta, with the standard hover
- *  wash when selectable. Consumers with richer rows (WorkGraph's WaitingRow)
+ *  wash when selectable. Consumers with richer rows
  *  can keep their own row component — the shell doesn't care. */
 export function ContextCardRow(props: {
   glyph?: JSX.Element

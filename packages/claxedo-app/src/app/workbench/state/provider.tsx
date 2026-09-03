@@ -112,7 +112,7 @@ export function routeOwnsInitialSurface(pathname: string) {
  * This is deliberately broader than `routeOwnsInitialSurface`: that predicate
  * decides whether persisted panes must be discarded, while this one only
  * prevents a competing draft from being opened during route reconciliation.
- * A legacy `/<directory>/session` route, WorkGraph, and Marketplace all keep
+ * A legacy `/<directory>/session` route and Marketplace both keep
  * persisted panes, but each still owns what should become visible on boot.
  */
 export function routeSuppressesEmptyDraftSession(pathname: string) {

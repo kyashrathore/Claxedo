@@ -125,7 +125,7 @@ describe("global sync inventory source", () => {
 
   test("uses local inventory for signed-in loopback global workspace lists (Local Personal Mode)", () => {
     // Loopback global queries (no directory) must stay on the unsigned local
-    // path so Local Personal Mode does not bounce against an empty Convex
+    // path so Local Personal Mode does not bounce against an empty control-plane
     // workspace list and lose the local session inventory.
     expect(shouldUseSignedControlPlaneInventory({
       hasSignedAccess: true,

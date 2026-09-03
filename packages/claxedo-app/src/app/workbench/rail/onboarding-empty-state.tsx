@@ -261,10 +261,6 @@ export function OnboardingEmptyState(props: {
   }
 
   function runCardAction(id: OnboardingGoFurtherCardId) {
-    if (id === "workgraph") {
-      navigate("/workgraph")
-      return
-    }
     if (id === "harnesses") {
       // The AI step's own check is the only surface that reports per-harness
       // readiness. Opening it on the check itself, rather than on the method

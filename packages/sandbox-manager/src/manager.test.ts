@@ -1123,7 +1123,7 @@ describe("sandbox garbage collection visibility (W1)", () => {
       destroy: vi.fn(async () => {}),
     })
     const manager = createSandboxManager({
-      // Empty lease store: nothing in Convex ever knew about this sandbox.
+      // Empty lease store: nothing in the lease store ever knew about this sandbox.
       leaseStore: createMemoryLeaseStore(),
       driver,
     })

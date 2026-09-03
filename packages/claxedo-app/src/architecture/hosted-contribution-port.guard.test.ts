@@ -11,7 +11,7 @@ import { prodSourcePaths } from "./scanners"
  *
  * `platform/account/hosted-contribution-port.ts` can remove a hosted
  * contribution set. That is only worth anything if something CALLS it, and this
- * is precisely the failure class the repository has shipped before: WorkGraph's
+ * is precisely the failure class the repository has shipped before: a hosted feature's
  * live-sync doorbell declared a ports seam that nothing ever configured, and
  * the whole feature ran inert with a green suite
  * (`app-ports-wiring.guard.test.ts` records it). A deactivation seam nobody

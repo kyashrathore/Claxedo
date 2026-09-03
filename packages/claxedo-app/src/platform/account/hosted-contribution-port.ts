@@ -3,7 +3,7 @@
  *
  * `app/composition/product-contributions.ts` owned activation and had no way
  * back: once the hosted set was registered it stayed registered for the life of
- * the window, so signing out left WorkGraph, Documents, and every other hosted
+ * the window, so signing out left Documents and every other hosted
  * surface installed until a reload. The missing half is not a line in that
  * module — it is a lifecycle, and a lifecycle needs an owner.
  *

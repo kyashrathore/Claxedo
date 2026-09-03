@@ -29,13 +29,10 @@ for box in "${BOXES[@]}"; do
 
       # ---- 2. A REAL GIT REPOSITORY AT THE WORKDIR ----------------------------
       # crabbox syncs FILES, not the repository: the box workdir has no `.git`
-      # at all. CI never notices because actions/checkout leaves one. Two lanes
-      # do notice, because they shell out to git against the repo root:
-      #   @workgraph-real -> claxedo-server/src/hosts/workgraph/local/execution.ts
-      #     runs `git -C <repo> rev-parse --show-toplevel` and then
-      #     `git worktree add --detach <dir> HEAD` to provision every Stream
-      #     envelope. Without a repo, every Stream parks immediately with
-      #     `fatal: not a git repository (or any of the parent directories)`.
+      # at all. CI never notices because actions/checkout leaves one. Lanes that
+      # shell out to git against the repo root do notice: without a repo they
+      # fail immediately with `fatal: not a git repository (or any of the parent
+      # directories)`.
       # `git init` + one commit here, rather than shipping the real `.git`:
       #   * The local checkout is a git WORKTREE (.claude/worktrees/<name>), so
       #     its `.git` is a FILE holding `gitdir: /Users/...` — an absolute path
@@ -45,9 +42,7 @@ for box in "${BOXES[@]}"; do
       #     directory.
       #   * The full object store is GBs on every prepare, over the wire, to
       #     satisfy exactly two git calls.
-      #   * Neither lane reads history. `baseRevisions` are supplied by the e2e
-      #     fixture (`real-workgraph-harness.ts` -> ["HEAD", "dev"]) and every
-      #     spec fills "HEAD"; Tier R makes its own scratch repos with
+      #   * No lane reads history. Tier R makes its own scratch repos with
       #     `git init` already (`makeWorkspace`). A single commit whose tree IS
       #     the synced working tree is therefore a truer fixture than real
       #     history: `rev-parse --show-toplevel` resolves to the workdir and
@@ -94,7 +89,6 @@ for box in "${BOXES[@]}"; do
         --filter=@claxedo/sandbox-contract \
         --filter=@claxedo/sandbox-manager \
         --filter=@claxedo/wakes \
-        --filter=@claxedo/workgraph \
         --filter=@claxedo/workspace-relay-protocol \
         --filter=@claxedo/workspace-relay \
         --filter=@claxedo/workspace-runtime

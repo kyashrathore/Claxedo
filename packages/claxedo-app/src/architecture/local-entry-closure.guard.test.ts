@@ -12,7 +12,7 @@ const srcRoot = path.join(appRoot, "src")
  * The local product exists so an unsigned desktop does not ship an identity
  * provider it can never use. A separate entry file was the necessary first step
  * and — measured here — not a sufficient one: `app/entry/local.tsx` imported no
- * auth module directly, yet Clerk reached its bundle anyway through four other
+ * auth module directly, yet the identity provider reached its bundle anyway through four other
  * modules. All four are cut; this file now asserts that rather than recording
  * it.
  *
@@ -34,7 +34,7 @@ const srcRoot = path.join(appRoot, "src")
  */
 
 /** Packages a local build has no way to use. */
-const FORBIDDEN = ["@clerk/clerk-js", "@clerk/clerk-js/headless", "better-auth", "convex", "convex/browser"]
+const FORBIDDEN = ["better-auth", "better-auth/client"]
 
 function chainTo(entry: string) {
   return shortestForbiddenImportChain({
@@ -53,7 +53,7 @@ function chainTo(entry: string) {
  * while the others sit untouched.
  *
  * Value imports only, matching the walk above: the bundler erases `import
- * type`, and a type edge to the identity provider does not put Clerk in the
+ * type`, and a type edge to the identity provider does not put it in the
  * bundle.
  */
 function importersOf(entry: string, target: string) {
@@ -83,7 +83,7 @@ function importersOf(entry: string, target: string) {
 }
 
 /**
- * The local closure's remaining routes to Clerk, by the module that owns each.
+ * The local closure's remaining routes to the identity provider, by the module that owns each.
  *
  * EMPTY, as of 2026-08-09. It was four, and each was cut separately:
  * `platform/api/api.ts` (the authenticated transport),
@@ -95,7 +95,7 @@ function importersOf(entry: string, target: string) {
  * MINTS one, and every one was fixed the same way — name the capability, let a
  * composition root bind it. The hosted entry and the desktop renderer bind
  * both ports; `local.tsx` deliberately binds neither, so the token source and
- * the identity provider are simply absent from the local bundle rather than
+ * the identity provider is simply absent from the local bundle rather than
  * present-but-unused.
  *
  * This list is not a baseline any more, it is an invariant. A module appearing
@@ -125,7 +125,7 @@ describe("the local entry", () => {
     const source = readFileSync(path.join(appRoot, "src/app/entry/local.tsx"), "utf8")
     const specifiers = [...source.matchAll(/from\s*["']([^"']+)["']/g)].map((match) => match[1]!)
 
-    for (const forbidden of ["auth-client", "@clerk/", "platform/api/api"]) {
+    for (const forbidden of ["auth-client", "better-auth", "platform/api/api"]) {
       expect(
         specifiers.filter((specifier) => specifier.includes(forbidden)),
         `the local entry must not import ${forbidden}`,
@@ -133,14 +133,14 @@ describe("the local entry", () => {
     }
   })
 
-  test("does not reach Clerk or Convex at all", () => {
+  test("does not reach the identity provider at all", () => {
     // The goal state, reached 2026-08-09. This assertion used to be its
     // inverse — `.not.toBeNull()` against a recorded baseline — because the
     // chain was real and pretending otherwise would have been the lie. The
     // history is worth keeping, because each hop was cut for a different
     // reason and the shape of the last one is the shape of the next such fix:
     //
-    //  1. `app/entry/index.tsx` re-exported the auth surface and started Clerk
+    //  1. `app/entry/index.tsx` re-exported the auth surface and started the provider
     //     inside the shared `initClaxedo`. The surface moved to
     //     `@claxedo/app/auth`, and starting the identity provider became the
     //     hosted entry's job.
@@ -149,7 +149,7 @@ describe("the local entry", () => {
     //     `configureApiRuntime({ bearerToken })` — only a build that HAS an
     //     identity provider binds one.
     //  3. `platform/auth/auth-session.ts` was reached from `app/entry/app.tsx`,
-    //     so the shared shell's provider tree pulled Clerk into every build.
+    //     so the shared shell's provider tree pulled it into every build.
     //     It now imports `useAuth` as a TYPE and takes the real one through
     //     `configureAuthSession`; unbound, it returns an anonymous session,
     //     which is what a local build genuinely is.
@@ -194,7 +194,7 @@ describe("the local entry", () => {
     // protect it. Delete it and `app/entry/main.tsx` still compiles, still
     // renders, and sends every hosted request with no Authorization header.
     // `app-ports-wiring.guard.test.ts` records the same failure shape costing
-    // WorkGraph its entire live-sync doorbell with a green suite.
+    // a hosted feature its entire live-sync doorbell with a green suite.
     const hosted = readFileSync(path.join(appRoot, "src/app/entry/main.tsx"), "utf8")
 
     expect(hosted).toMatch(/bearerToken:\s*browserAuthAdapter\.transport === "bearer"/)
@@ -264,7 +264,6 @@ describe("the local entry", () => {
     const selection = readFileSync(path.join(appRoot, "vite.browser-auth.ts"), "utf8")
     expect(importSpecifiers(hosted)).toContain("#browser-auth-adapter")
     expect(selection).toContain("better-auth-browser-auth.ts")
-    expect(selection).not.toContain("clerk-browser-auth.ts")
   })
 
   test("the local vite config builds the local html, not the hosted one", () => {

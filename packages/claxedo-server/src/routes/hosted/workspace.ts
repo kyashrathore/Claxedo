@@ -41,7 +41,7 @@ import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/
 export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
   /**
    * Rate limiter for `POST /create` SPECIFICALLY. Deliberately not the shared
-   * 120/min control-plane limiter: a heartbeat is a Convex patch, a create is a
+   * 120/min control-plane limiter: a heartbeat is an authority patch, a create is a
    * VM. See `DEFAULT_CREATE_LIMIT` for the number.
    */
   createWorkspaceRateLimiter?: ConnectionRateLimiter
@@ -50,7 +50,7 @@ export type HostedWorkspaceRouteOptions = WorkspaceRouteOptions & {
    * token carries one, and always the caller themselves. `0` disables the cap.
    */
   sandboxLeaseCap?: number
-  /** Injection seam for the cap's Convex read (tests, alternative authorities). */
+  /** Injection seam for the cap's the authority read (tests, alternative authorities). */
   countActiveOrgSandboxLeases?: ActiveSandboxLeaseCounter
   /** Product-owned usage side effects; absent in user-deployed core. */
   sandboxUsage?: {
@@ -164,7 +164,7 @@ function missingBearer() {
   )
 }
 
-// Convex throws typed-message errors; `workspace_backing_conflict` means the
+// the authority throws typed-message errors; `workspace_backing_conflict` means the
 // caller tried to register a cloud workspace as user-hosted local → 409.
 function isWorkspaceBackingConflict(err: unknown) {
   return err instanceof Error && err.message.includes("workspace_backing_conflict")
@@ -226,12 +226,12 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
     const auth = authResult.auth
     if (!auth) return c.json(missingBearer(), 401)
     try {
-      // Both checks happen up front (before any Convex call) so a flood is
+      // Both checks happen up front (before any the authority call) so a flood is
       // rejected cheaply. The control-plane limiter (the same 120/min class
       // heartbeats use) caps TOTAL connection requests: the mint budget below
       // is REFUNDED for provisioning responses (a provisioning poll never
       // mints; cold starts poll every ~2s), so without this outer cap a
-      // flooding client could drive unbounded Convex reads.
+      // flooding client could drive unbounded the authority reads.
       const controlPlaneLimit = await controlPlaneRateLimitError(services, controlPlaneRateLimiter, auth, {
         key: `connection:${workspaceId}`,
         action: "workspace.connection.denied",
@@ -305,8 +305,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       // creation. This route exists so the call stays on the WORKER (never Pages)
       // and resolves cheaply. It deliberately returns `null` — the app's documented
       // "no central runtime snapshot" signal — rather than synthesizing one from
-      // Convex per request: the workspace kind/directory the app needs already
-      // comes from the signed inventory (workspaces.list), and a per-request Convex
+      // the authority per request: the workspace kind/directory the app needs already
+      // comes from the signed inventory (workspaces.list), and a per-request the authority
       // round-trip here turned the app's resolve polling into a request storm. Fast
       // + side-effect-free keeps the resolve loop quiet and lets the session create
       // proceed over the relay using the inventory-known workspace.
@@ -314,7 +314,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       // Cloud workspace creation on the HOSTED control plane. The local Node
       // server's `routes/workspace.ts` `/create` is fat (filesystem config,
       // credential registry, telemetry) and Node-only; the hosted path is thin:
-      // record the cloud workspace in Convex and kick off provisioning through
+      // record the cloud workspace in the authority and kick off provisioning through
       // the composed SandboxManager (which drives the native edge
       // SandboxDriver, e.g. Cloudflare). Provisioning progress is observed via
       // `/:id/connection` polling, so this returns as soon as the doc exists.
@@ -324,7 +324,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         const auth = authResult.auth
         if (!auth) return c.json(missingBearer(), 401)
 
-        // FIRST, before the body is even read, and long before the Convex
+        // FIRST, before the body is even read, and long before the authority
         // round-trip or `sandboxManager.ensure` — same reasoning as the
         // connection handler above: a flood must be rejected while it is still
         // cheap to reject. This route is the only one in the file that
@@ -379,7 +379,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // Same resolution the local create route performs: the connection
           // proves the caller can read the repository and mints the clone
           // token, which rides to the sandbox as a brokered secret — never in
-          // the workspace row or the clone URL Convex stores.
+          // the workspace row or the clone URL the authority stores.
           if (!options.connections) {
             return c.json(
               { error: apiError("repository_connections_unavailable", "Repository connections are unavailable") },
@@ -421,14 +421,14 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
 
         try {
           const authority = requireAuthority(services)
-          // Per-tenant CONCURRENT sandbox cap, read from durable Convex state.
+          // Per-tenant CONCURRENT sandbox cap, read from durable the authority state.
           // The rate limiter above bounds requests per minute inside ONE
           // isolate; this bounds how many sandboxes the caller can have running
           // at once, and it is the only one of the two that survives an isolate
           // boundary (§6.7 — the limiters are per-isolate in-memory Maps). A
           // slow drip that never trips a rate limit still stops here.
           //
-          // Keyed on `auth.user.orgId` — the Clerk org claim — because that is
+          // Keyed on `auth.user.orgId` — the issuer org claim — because that is
           // the id space `sandboxLeases.recordTenant` stamps onto the lease row
           // below (and the same one the metering events key on). Using the
           // authority's internally-resolved org id here would compare two
@@ -546,7 +546,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // carries a workspace and a driver but no org, and this is the nearest
           // point that holds both the verified tenant and a lease to attach it
           // to. Metering attribution never gates provisioning, so a deployment
-          // with no Convex authority configured simply records nothing.
+          // with no workspace authority configured simply records nothing.
           .then((result) => {
             // Since the 2026-07-28 inversion the only refusal that can land here
             // is `sandbox_egress_policy_unenforceable`: a driver that DOES

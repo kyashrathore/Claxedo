@@ -64,7 +64,6 @@ export const MEMORY_RUNTIME_REQUIRED_PACKAGES = {
   "@opencode-ai/sdk": "packages/sdk/js",
   "@claxedo/agent-event-runtime": "packages/agent-event-runtime",
   "@claxedo/usage-contract": "packages/usage-contract",
-  "@claxedo/workgraph": "packages/workgraph",
 } as const
 
 const MEMORY_RUNTIME_ENTRY_PACKAGES = ["@claxedo/app", "@opencode-ai/session-ui"] as const

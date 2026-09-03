@@ -13,7 +13,7 @@ import {
 import { betterAuthAdapter, controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth"
 
 // Self-host/hosted parity: embedded Better Auth gives a self-host box
-// real signup/login (signed mode) with NO Convex/Clerk. These tests exercise
+// real signup/login (signed mode) with no hosted identity provider. These tests exercise
 // the full loop against a real better-auth instance on a temp SQLite file:
 // sign-up over the mounted /api/auth/* handler -> bearer session token ->
 // in-process verifier -> signed control-plane auth context.
@@ -135,8 +135,6 @@ describe("signed-mode boot composition with embedded auth", () => {
     process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
     process.env.CLAXEDO_EMBEDDED_AUTH = "1"
     delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-    delete process.env.CONVEX_URL
-    delete process.env.VITE_CONVEX_URL
     try {
       const { createDefaultLocalControlPlaneServices } = await import("./app")
       const services = createDefaultLocalControlPlaneServices()
@@ -156,15 +154,30 @@ describe("signed-mode boot composition with embedded auth", () => {
     }
   })
 
-  test("signed mode WITHOUT embedded auth and WITHOUT an authority URL still fails closed", async () => {
+  test("signed mode WITHOUT embedded auth composes UNSIGNED rather than claiming signed", async () => {
+    // The failure this replaces asked the composition to throw when no
+    // authority URL was set. That was the retired hosted-storage adapter's
+    // gate; the self-hosted composition now always composes the local SQLite
+    // authority, so there is no missing-authority failure left to assert.
+    //
+    // The property that still matters — and the one an operator is hurt by if
+    // it breaks — is that asking for signed mode WITHOUT an auth adapter must
+    // not silently produce an "enabled" auth config. It must fail closed into
+    // local-only, and say why.
     process.env.CLAXEDO_SIGNED_CLOUD_AUTH = "1"
     delete process.env.CLAXEDO_EMBEDDED_AUTH
     delete process.env.CLAXEDO_WORKSPACE_AUTHORITY_URL
-    delete process.env.CONVEX_URL
-    delete process.env.VITE_CONVEX_URL
     try {
       const { createDefaultLocalControlPlaneServices } = await import("./app")
-      expect(() => createDefaultLocalControlPlaneServices()).toThrowError(/workspace authority/i)
+      const services = createDefaultLocalControlPlaneServices()
+      try {
+        expect(services.auth.config.enabled).toBe(false)
+        if (services.auth.config.enabled) throw new Error("expected a disabled auth config")
+        expect(services.auth.config.mode).toBe("local-only")
+        expect(services.auth.config.reason).toMatch(/no auth adapter configured/i)
+      } finally {
+        services.close()
+      }
     } finally {
       delete process.env.CLAXEDO_SIGNED_CLOUD_AUTH
     }

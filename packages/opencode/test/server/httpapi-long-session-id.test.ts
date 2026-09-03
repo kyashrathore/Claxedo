@@ -23,14 +23,14 @@ afterEach(async () => {
 })
 
 describe("long session ids", () => {
-  // WorkGraph derives a run's session id from a run id that embeds the owner,
+  // A run's session id is derived from a run id that embeds the owner,
   // operation, and work-item ids, so real ids run to ~250 characters. The
   // router's default `maxParamLength` of 100 used to drop those on the floor
   // with a bare 404 — after a `POST /api/session` that had happily returned
   // 200 — which read as a vanished session rather than a rejected URL.
   test("route to their session instead of a router 404", async () => {
     await using tmp = await tmpdir({ git: true })
-    const id = `ses_wgrun_run_${"w".repeat(200)}_task`
+    const id = `ses_run_${"w".repeat(200)}_task`
     expect(id.length).toBeGreaterThan(100)
 
     const created = await call("POST", "/api/session", tmp.path, { id, title: "long id" })

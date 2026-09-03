@@ -109,7 +109,7 @@ export function WorkspaceOfflineView(props: {
  * being viewed lives centrally rather than on the runtime?
  *
  * True only for an EXISTING cloud session. Those sync back to the central
- * control plane (Convex `session_history`/`session_messages`), so a stopped or
+ * control plane (`session_history`/`session_messages`), so a stopped or
  * destroyed sandbox does not take the transcript with it — the reads route to
  * the control plane. Blocking the surface hid history the server was still
  * serving, which is the bug this branch fixes.

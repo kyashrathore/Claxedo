@@ -76,7 +76,6 @@ export const DEFAULT_ALLOWLIST: Record<string, string[]> = {
   // Dev platforms
   vercel: ["vercel.com", "*.vercel.com", "*.vercel.app"],
   supabase: ["supabase.com", "*.supabase.com", "supabase.co", "*.supabase.co"],
-  convex: ["convex.dev", "*.convex.dev", "*.convex.cloud"],
   railway: ["railway.app", "*.railway.app"],
   // Observability
   posthog: ["posthog.com", "*.posthog.com"],

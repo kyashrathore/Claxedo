@@ -7,7 +7,7 @@ import { signStandardWebhook } from "./standard-webhooks"
  * Worker billing routes (ADR 014 addendum — Option B):
  * Webhook signature accept/reject, checkout auth + seat floor + lazy customer
  * linkage, portal. Polar is a structural fake (no live Polar);
- * the Convex store is a fake of the billing-store port.
+ * the store here is a fake of the billing-store port.
  */
 
 const SECRET = "polar-test-secret"
@@ -20,15 +20,15 @@ const ENV = {
 
 // Bearer convention: "subject@org/role" — the fake verifier parses it, the
 // fake store reports the role.
-const authConfig = { enabled: true as const, issuer: "https://clerk.test", jwksUrl: "https://clerk.test/jwks" }
+const authConfig = { enabled: true as const, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" }
 const verifier = async (token: string) => {
   const [subject, org] = token.split("@")
   return {
     mode: "signed" as const,
     user: {
       subject: subject!,
-      tokenIdentifier: `https://clerk.test|${subject}`,
-      issuer: "https://clerk.test",
+      tokenIdentifier: `https://issuer.test|${subject}`,
+      issuer: "https://issuer.test",
       ...(org ? { orgId: org.split("/")[0]! } : {}),
     },
   }
@@ -40,7 +40,7 @@ function fakeStore(overrides: Partial<BillingStore> = {}): BillingStore & { appl
     applyPolarState: vi.fn(async () => ({ results: [{ org_id: "org_doc_1", applied: true }], unresolved: [] })),
     checkoutContext: vi.fn(async (token: string) => ({
       org_id: "org_doc_1",
-      clerk_org_id: "org_a",
+      provider_org_id: "org_a",
       role: token.includes("/member") ? "member" : "owner",
       member_count: 3,
       plan: undefined,
@@ -180,7 +180,7 @@ describe("POST /polar/webhook", () => {
   test("mirror write failure → 500 so Polar retries the delivery", async () => {
     const store = fakeStore({
       applyPolarState: vi.fn(async () => {
-        throw new Error("convex down")
+        throw new Error("authority down")
       }),
     })
     const res = await app({ store }).request(await webhookRequest(stateChangedPayload))
@@ -243,7 +243,7 @@ describe("POST /checkout", () => {
       const store = fakeStore({
         checkoutContext: vi.fn(async () => ({
           org_id: "org_doc_1",
-          clerk_org_id: "org_a",
+          provider_org_id: "org_a",
           role: "owner",
           member_count: 3,
           plan: "pro" as const,
@@ -262,7 +262,7 @@ describe("POST /checkout", () => {
     const store = fakeStore({
       checkoutContext: vi.fn(async () => ({
         org_id: "org_doc_1",
-        clerk_org_id: "org_a",
+        provider_org_id: "org_a",
         role: "owner",
         member_count: 3,
         plan: "free" as const,

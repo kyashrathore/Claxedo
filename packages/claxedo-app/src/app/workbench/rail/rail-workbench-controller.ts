@@ -83,13 +83,8 @@ export function useRailWorkbenchController(input: {
         ...(sessionId ? { sessionId } : {}),
       })
     },
-    onNewTask: (workspaceDir) => {
-      input.state.layout.openTaskComposer(workspaceDir, {
-        workspaceRouteId: workspaceDir === input.activeDirectory() ? input.activeWorkspaceRouteId() : undefined,
-      })
-    },
     // Only used when nothing is focused on a workspace at all (a global surface
-    // such as WorkGraph or Marketplace). It seeds the creator's project chip;
+    // such as Marketplace). It seeds the creator's project chip;
     // the user re-points it from there, which is the whole point of the surface.
     fallbackWorkspaceDir: input.fallbackWorkspaceDir,
     sidebarDir: input.sidebarDir,
@@ -111,7 +106,7 @@ export function useRailWorkbenchController(input: {
      *
      * Deliberately not `!terminalBlocked()`: that also folds in
      * `focusedSurfaceWorkspaceToolsBlocked()`, which means "the surface you are
-     * looking at has no workspace" (WorkGraph, Marketplace, Global chat). That
+     * looking at has no workspace" (Marketplace, Global chat). That
      * is the question the creator exists to answer, so it is a reason to open
      * the creator, not a reason to hide the button that opens it.
      */
@@ -120,7 +115,6 @@ export function useRailWorkbenchController(input: {
     createHeaderSession: headerActions.createSession,
     createHeaderTerminal: headerActions.createTerminal,
     createHeaderTerminalDraft: headerActions.createTerminalDraft,
-    createHeaderTask: headerActions.createTask,
     focusedPanelTarget: panelVisual.focusedPanelTarget,
     hasWorkspacePanelTarget: panelVisual.hasWorkspacePanelTarget,
     registerWorkspacePanelFloatingChrome: panelVisual.registerWorkspacePanelFloatingChrome,

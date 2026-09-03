@@ -36,14 +36,14 @@ describe("hosted onboarding dismissals", () => {
     }
 
     const first = createHostedOnboardingDismissals("user-a", kv)
-    await first.dismiss("gofurther:workgraph")
+    await first.dismiss("gofurther:harnesses")
 
     const reloaded = createHostedOnboardingDismissals("user-a", kv)
     const otherUser = createHostedOnboardingDismissals("user-b", kv)
     await Promise.all([reloaded.loaded, otherUser.loaded])
 
-    expect(reloaded.isDismissed("gofurther:workgraph")).toBe(true)
-    expect(otherUser.isDismissed("gofurther:workgraph")).toBe(false)
+    expect(reloaded.isDismissed("gofurther:harnesses")).toBe(true)
+    expect(otherUser.isDismissed("gofurther:harnesses")).toBe(false)
   })
 
   test("does not claim a failed hosted write and can retry it", async () => {

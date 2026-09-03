@@ -84,23 +84,15 @@ const readPackageJsonFromDisk = (dir: string): PackageJson =>
 /**
  * Roots of the host-bundle package closure.
  *
- * Was just workspace-runtime, on the assumption that everything the sandbox
- * host bundle imports is reachable from it. That stopped being true when the
- * WorkGraph tool routes moved OUT of workspace-runtime and into
- * `@claxedo/workgraph/runtime-adapter`: the hosted launcher now imports the
- * adapter directly, so WorkGraph is a sibling of workspace-runtime in the
- * bundle rather than a dependency of it.
- *
- * Seeding the walk from workspace-runtime alone would leave `packages/workgraph`
- * out of the build order, and since every `dist/` here is gitignored, a fresh
- * checkout would bundle against a missing or stale WorkGraph dist. That failure
- * is silent in the worst way — esbuild resolves whatever happens to be on disk.
- *
- * Order matters and is handled by the post-order DFS below: WorkGraph depends
- * on workspace-runtime, so workspace-runtime is still built first.
+ * Everything the sandbox host bundle imports is reachable from
+ * workspace-runtime, so it is the single seed of the walk. A root that is
+ * missed here would be left out of the build order, and since every `dist/`
+ * here is gitignored, a fresh checkout would bundle against a missing or stale
+ * dist. That failure is silent in the worst way — esbuild resolves whatever
+ * happens to be on disk.
  */
 function hostBundlePackageRoots() {
-  return [workspaceRuntimeRoot(), path.join(packagesRoot(), "workgraph")]
+  return [workspaceRuntimeRoot()]
 }
 
 /**
@@ -170,10 +162,10 @@ export function writeWorkspaceRuntimeVersion(outDir: string) {
 /**
  * Build the exact OpenCode server used by hosted workspaces.
  *
- * WorkGraph depends on the checkout's durable Session V2 `/api/session`
- * contract. The public `opencode-ai` package in the image is useful as a
- * terminal CLI, but it can lag that contract and fall through to its HTML app
- * shell. Shipping this checkout's compiled server binary keeps the workspace
+ * The hosted workspace depends on the checkout's durable Session V2
+ * `/api/session` contract. The public `opencode-ai` package in the image is
+ * useful as a terminal CLI, but it can lag that contract and fall through to
+ * its HTML app shell. Shipping this checkout's compiled server binary keeps the workspace
  * runtime and its proxied Session API on one content-addressed build.
  *
  * This build used to pass `--skip-embed-web-ui`. That flag did more than keep

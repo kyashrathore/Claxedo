@@ -1,3 +1,5 @@
+import { columnInfo, hasColumn, hasTable, type SqliteSchemaReader } from "./schema-introspection"
+
 /**
  * Bump when repair() learns a new fix. The boot gate in db.ts hashes this
  * constant into the persisted schema fingerprint, so a bump invalidates every
@@ -6,17 +8,8 @@
  */
 export const REPAIR_VERSION = 1
 
-type SqliteInstance = {
+type SqliteInstance = SqliteSchemaReader & {
   exec(sql: string): unknown
-  prepare(sql: string): {
-    get(...params: unknown[]): unknown
-    all(...params: unknown[]): unknown[]
-  }
-}
-
-type ColumnInfo = {
-  name: string
-  notnull?: number
 }
 
 const sqls = [
@@ -149,20 +142,6 @@ const tabs = [
   "claxedo_usage_outbox",
   "claxedo_usage_source_coverage",
 ] as const
-
-function hasTable(db: SqliteInstance, name: string) {
-  return !!db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(name)
-}
-
-function hasColumn(db: SqliteInstance, table: string, name: string) {
-  const rows = db.prepare(`PRAGMA table_info(\`${table}\`)`).all() as ColumnInfo[]
-  return rows.some((row) => row.name === name)
-}
-
-function column(db: SqliteInstance, table: string, name: string) {
-  const rows = db.prepare(`PRAGMA table_info(\`${table}\`)`).all() as ColumnInfo[]
-  return rows.find((row) => row.name === name)
-}
 
 function rebuildSessionMeta(
   db: SqliteInstance,
@@ -424,7 +403,7 @@ export function repair(db: SqliteInstance) {
     && hasColumn(db, "claxedo_session_meta", "model_id")
   const sessionMetaHasRef = hasTable(db, "claxedo_session_meta") && hasColumn(db, "claxedo_session_meta", "session_ref")
   const sessionMetaNeedsPlacement = hasTable(db, "claxedo_session_meta")
-    && (!sessionMetaHasHost || !sessionMetaHasDirectory || !sessionMetaHasRef || column(db, "claxedo_session_meta", "directory")?.notnull === 1)
+    && (!sessionMetaHasHost || !sessionMetaHasDirectory || !sessionMetaHasRef || columnInfo(db, "claxedo_session_meta", "directory")?.notnull === 1)
 
   sqls.forEach((sql) => db.exec(sql))
 

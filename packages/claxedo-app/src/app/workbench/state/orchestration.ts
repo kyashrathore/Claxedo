@@ -48,9 +48,6 @@ export type LayoutOrchestrationApi = {
   openPage(pageId: string, title?: string, directory?: string, filePath?: string, opts?: { workspaceRouteId?: string }): string
   openPagesIndex(directory?: string, opts?: { workspaceRouteId?: string }): string
   openMarketplace(): string
-  openWorkGraph(): string
-  openWorkspaceWorkGraph(directory: WorkspaceDirectoryRef, opts?: { workspaceRouteId?: string }): string
-  openTaskComposer(directory?: WorkspaceDirectoryRef, opts?: { workspaceRouteId?: string }): string
   /**
    * Close a content fully — drop the meta entry, remove from workbench, run
    * cleanup hooks (e.g. terminal owner/lifecycle teardown).
@@ -74,14 +71,7 @@ export type LayoutOrchestrationApi = {
 const PINNED_TYPES = PINNED_CONTENT_TYPES
 
 const newId = (type: ContentType) => {
-  const prefix =
-    type === "marketplace"
-      ? "mkt"
-      : type === "workgraph" || type === "workspace-workgraph"
-        ? "wg"
-        : type === "task-composer"
-          ? "task"
-          : type
+  const prefix = type === "marketplace" ? "mkt" : type
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`
 }
 
@@ -575,68 +565,6 @@ export function createLayoutOrchestration(input: {
           },
         }
       })
-    },
-
-    openWorkGraph() {
-      const existing = meta.find((m) => m.type === "workgraph")
-      if (existing) {
-        meta.patch(existing.id, { content: { type: "workgraph", title: "WorkGraph" } })
-        wb.navigation.show(existing.id)
-        return existing.id
-      }
-      const id = newId("workgraph")
-      meta.upsert({ id, type: "workgraph", scope: "global", content: { type: "workgraph", title: "WorkGraph" } })
-      addContent(id)
-      return id
-    },
-
-    openWorkspaceWorkGraph(directory, opts) {
-      return showOrCreate(
-        meta.find((item) =>
-          item.type === "workspace-workgraph" &&
-          item.directory === directory &&
-          (!opts?.workspaceRouteId || item.content?.workspaceRouteId === opts.workspaceRouteId)
-        ),
-        () => {
-          const id = newId("workspace-workgraph")
-          return {
-            meta: { id, type: "workspace-workgraph", scope: "directory", directory },
-            payload: {
-              type: "workspace-workgraph",
-              directory,
-              ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
-              title: "Project WorkGraph",
-            },
-          }
-        },
-      )
-    },
-
-    openTaskComposer(directory, opts) {
-      return showOrCreate(
-        meta.find((item) =>
-          item.type === "task-composer" &&
-          item.directory === directory &&
-          (!opts?.workspaceRouteId || item.content?.workspaceRouteId === opts.workspaceRouteId)
-        ),
-        () => {
-          const id = newId("task-composer")
-          return {
-            meta: {
-              id,
-              type: "task-composer",
-              scope: directory ? "directory" : "global",
-              ...(directory ? { directory } : {}),
-            },
-            payload: {
-              type: "task-composer",
-              ...(directory ? { directory } : {}),
-              ...(opts?.workspaceRouteId ? { workspaceRouteId: opts.workspaceRouteId } : {}),
-              title: "New task",
-            },
-          }
-        },
-      )
     },
 
     closeContent(id, reason = "user") {

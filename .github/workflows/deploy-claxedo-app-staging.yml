@@ -1,6 +1,11 @@
 name: deploy-claxedo-app-staging
 
-# App-only staging releases enter through this lock-owning workflow.
+# App-only staging releases enter through this lock-owning workflow. There is
+# no ordered control-plane workflow to defer to anymore: the control plane
+# (Better Auth + D1) is released separately, by hand, via
+# packages/claxedo-server/scripts/deploy/release-better-auth-d1.ts. So the app
+# deploys whenever its own watched paths change, with no change-detection
+# gate on unrelated server packages.
 on:
   push:
     branches: [dev]
@@ -18,41 +23,7 @@ permissions:
   contents: read
 
 jobs:
-  route:
-    runs-on: ubuntu-latest
-    outputs:
-      deploy: ${{ steps.decision.outputs.deploy }}
-    steps:
-      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          fetch-depth: 2
-
-      - id: decision
-        env:
-          BEFORE_SHA: ${{ github.event.before }}
-          AFTER_SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          if [[ "$BEFORE_SHA" =~ ^0+$ ]]; then
-            changed=$(git diff-tree --no-commit-id --name-only -r "$AFTER_SHA")
-          else
-            if ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
-              git fetch --no-tags --depth=1 origin "$BEFORE_SHA"
-            fi
-            changed=$(git diff --name-only "$BEFORE_SHA" "$AFTER_SHA")
-          fi
-          ordered=$(printf '%s\n' "$changed" | awk '/^(packages\/(claxedo-server|claxedo-connections|workgraph|agent-sdk-runtime|channels|sandbox-manager|wakes|workspace-relay|workspace-relay-protocol)\/|\.github\/actions\/setup-bun\/action\.yml$|\.github\/workflows\/(deploy-claxedo-app|deploy-claxedo-app-staging)\.yml$)/')
-          if [ -n "$ordered" ]; then
-            echo "App deployment is deferred because this commit changes the server deployment unit:"
-            printf '%s\n' "$ordered"
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "deploy=true" >> "$GITHUB_OUTPUT"
-
   deploy:
-    needs: route
-    if: needs.route.outputs.deploy == 'true'
     uses: ./.github/workflows/deploy-claxedo-app.yml
     with:
       target_environment: staging

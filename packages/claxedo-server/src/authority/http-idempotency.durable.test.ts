@@ -8,7 +8,7 @@
  * isolate's identity IS that module instance. Two isolates are therefore two
  * independent `import()`s of the module under `vi.resetModules()` — not two
  * objects from one factory, which would share the maps and prove nothing. Both
- * are handed the SAME fake Convex store, which is what one Convex deployment is
+ * are handed the SAME fake the authority store, which is what one the authority deployment is
  * across isolates.
  *
  * This mirrors the two-isolate construction `rate-limit.shared-store.test.ts`
@@ -35,12 +35,12 @@ async function isolate(store?: DurableIdempotencyStore): Promise<IdempotencyModu
 }
 
 /**
- * An in-memory stand-in for `convex/idempotency.ts`, implementing the same
+ * An in-memory stand-in for `the idempotency authority`, implementing the same
  * begin/complete/release contract: one row per cache key, shared by every
  * isolate holding a reference. Clock-driven so lease expiry is testable without
  * sleeping.
  */
-function fakeConvexStore(clock = { now: 1_000 }) {
+function fakeAuthorityStore(clock = { now: 1_000 }) {
   const rows = new Map<string, {
     fingerprint: string
     state: "in_flight" | "completed"
@@ -112,7 +112,7 @@ describe("Durable idempotency across isolates", () => {
   })
 
   test("a duplicate register across two isolates executes ONCE", async () => {
-    const store = fakeConvexStore()
+    const store = fakeAuthorityStore()
     const run = vi.fn(async () => ({ ok: true, session: "s_1" }))
 
     const first = await isolate(store)
@@ -140,7 +140,7 @@ describe("Durable idempotency across isolates", () => {
   })
 
   test("a duplicate checkpoint across two isolates executes ONCE", async () => {
-    const store = fakeConvexStore()
+    const store = fakeAuthorityStore()
     const run = vi.fn(async () => ({ ok: true, maxEventOrdinal: 7 }))
 
     const first = await isolate(store)
@@ -167,7 +167,7 @@ describe("Durable idempotency across isolates", () => {
   test("a second isolate arriving mid-operation gets 409 rather than re-executing", async () => {
     // The dangerous window: isolate A is still running (or timed out without
     // being cancelled) when the client's retry lands on isolate B.
-    const store = fakeConvexStore()
+    const store = fakeAuthorityStore()
     const deferred = Promise.withResolvers<{ ok: true }>()
     const run = vi.fn(() => deferred.promise)
 
@@ -192,7 +192,7 @@ describe("Durable idempotency across isolates", () => {
     // A lease that never expired would turn one crashed isolate into a key that
     // can never be run again — strictly worse than the duplicate it prevents.
     const clock = { now: 1_000 }
-    const store = fakeConvexStore(clock)
+    const store = fakeAuthorityStore(clock)
     const first = await isolate(store)
     const key = registerKey(first, "request_4")
 
@@ -214,7 +214,7 @@ describe("Durable idempotency across isolates", () => {
   })
 
   test("the same key with a different payload conflicts across isolates", async () => {
-    const store = fakeConvexStore()
+    const store = fakeAuthorityStore()
     const first = await isolate(store)
     const second = await isolate(store)
     const key = registerKey(first, "request_5")
@@ -227,7 +227,7 @@ describe("Durable idempotency across isolates", () => {
   })
 
   test("a failed operation releases its claim so a retry can execute", async () => {
-    const store = fakeConvexStore()
+    const store = fakeAuthorityStore()
     const first = await isolate(store)
     const key = registerKey(first, "request_6")
 
@@ -248,7 +248,7 @@ describe("Durable idempotency across isolates", () => {
 
   test("a store outage fails the request instead of executing unguarded", async () => {
     // Degrading to "run it anyway" would restore the duplicate-execution bug
-    // exactly when Convex is unhealthy — which is when client retries, and so
+    // exactly when the authority is unhealthy — which is when client retries, and so
     // duplicate deliveries, are most likely.
     const first = await isolate({
       begin: async () => {

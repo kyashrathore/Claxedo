@@ -27,8 +27,8 @@ import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/auth
 
 const signedConfig: ControlPlaneAuthConfig = {
   enabled: true,
-  issuer: "https://example.clerk.dev",
-  jwksUrl: "https://example.clerk.dev/.well-known/jwks.json",
+  issuer: "https://example.issuer.dev",
+  jwksUrl: "https://example.issuer.dev/.well-known/jwks.json",
   audience: "claxedo-server",
 }
 

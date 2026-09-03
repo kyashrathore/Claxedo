@@ -36,10 +36,8 @@ export type WranglerOptionalServiceReleaseInput = Readonly<{
   serviceWorkingDirectory: string
   coreWorkingDirectory: string
   runner?: WranglerCommandRunner
-  databaseBinding: "WORKGRAPH_DB" | "DOCUMENTS_DB"
+  databaseBinding: "DOCUMENTS_DB"
   renderServiceConfig(input: ServiceConfigInput): string
-  /** WorkGraph uses this to land deleted_classes before deleting its Worker. */
-  renderRetirementConfig?(input: ServiceConfigInput): string
   workerExists(workerName: string): Promise<boolean>
   renderCoreConfig(input: Readonly<{
     serviceId: FirstPartyServiceId
@@ -97,18 +95,6 @@ export class WranglerOptionalServiceRelease implements CloudflareOptionalService
   }) {
     if (!input.retirementAuthorization.trim()) throw new Error("retirementAuthorization is required")
     if (!(await this.input.workerExists(input.workerName))) return
-    if (input.serviceId === "workgraph") {
-      if (!this.input.renderRetirementConfig) {
-        throw new Error("WorkGraph retirement requires an explicit deleted_classes deployment")
-      }
-      await this.withConfig(
-        this.input.renderRetirementConfig(input),
-        "service",
-        this.input.serviceWorkingDirectory,
-        (config) =>
-          this.runner.run({ cwd: this.input.serviceWorkingDirectory, args: ["deploy", "--config", config] }),
-      )
-    }
     try {
       await this.runner.run({
         cwd: this.input.serviceWorkingDirectory,

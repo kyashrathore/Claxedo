@@ -73,25 +73,6 @@ describe("createRailHeaderActions", () => {
     expect(calls).toEqual(["/repo/focused"])
   })
 
-  test("task creation carries the visible workspace but remains available globally", () => {
-    const calls: Array<[string | undefined, string | undefined]> = []
-    const task = (sidebarDir: string | undefined) => createRailHeaderActions({
-      focusedPaneWorkspaceDir: () => undefined,
-      focusedSplitPaneId: () => "pane-task",
-      focusedSurfaceWorkspaceToolsBlocked: () => true,
-      workspaceRouteId: () => undefined,
-      onNewTask: (workspaceDir, paneId) => calls.push([workspaceDir, paneId]),
-      sidebarDir: () => sidebarDir,
-    }).createTask()
-
-    task("/repo/main")
-    task(undefined)
-
-    expect(calls).toEqual([
-      ["/repo/main", "pane-task"],
-      [undefined, "pane-task"],
-    ])
-  })
 
   test("missing callbacks do not throw", () => {
     const actions = createRailHeaderActions({
@@ -104,6 +85,5 @@ describe("createRailHeaderActions", () => {
 
     expect(() => actions.createSession()).not.toThrow()
     expect(() => actions.createTerminal()).not.toThrow()
-    expect(() => actions.createTask()).not.toThrow()
   })
 })

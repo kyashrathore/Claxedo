@@ -196,7 +196,7 @@ for (const viewport of viewports) {
     if (snapshot.visibleEmptyStateText) {
       failures.push(`${viewport.name}: rendered empty/loading state instead of composer (${snapshot.visibleEmptyStateText})`)
     }
-    if (consoleMessages.some((item) => !/Clerk has been loaded with development keys/.test(item))) {
+    if (consoleMessages.length > 0) {
       failures.push(`${viewport.name}: console errors: ${consoleMessages.join(" | ")}`)
     }
     if (badResponses.length) failures.push(`${viewport.name}: 5xx responses: ${badResponses.join(" | ")}`)

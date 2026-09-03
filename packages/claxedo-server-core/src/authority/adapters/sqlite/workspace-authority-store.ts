@@ -5,11 +5,12 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { lazy } from "@claxedo/server-core/platform/runtime/lib/lazy"
 import { randomToken } from "@claxedo/server-core/platform/auth/web-crypto"
 import { canonicalRepositoryKey } from "@claxedo/server-core/authority/repository-key"
+import { columnInfo, hasColumn, hasTable } from "@claxedo/server-core/platform/db/schema-introspection"
 
 // Claxedo's LOCAL workspace-authority storage: the SQLite tables and the
 // user/org/project/role model behind `createSqliteWorkspaceAuthority`. The
-// schema and role-precedence rules mirror the Convex authority backend
-// (`convex/schema.ts` + `convex/model.ts`) so both adapters answer the
+// schema and role-precedence rules mirror the hosted authority backend
+// (`the authority schema` + `the authority model`) so both adapters answer the
 // `WorkspaceAuthority` port with the same semantics; only the storage differs.
 // Node-only (better-sqlite3): hosted/Worker compositions must never import
 // this module (worker.import-graph guard).
@@ -141,7 +142,6 @@ CREATE TABLE IF NOT EXISTS orgs (
   name TEXT NOT NULL,
   kind TEXT NOT NULL,
   owner_token_identifier TEXT,
-  clerk_org_id TEXT,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
   deleted_at INTEGER
@@ -361,7 +361,7 @@ CREATE TABLE IF NOT EXISTS session_participants (
 );
 CREATE INDEX IF NOT EXISTS session_participants_by_actor ON session_participants (actor_token_identifier);
 -- Nested teams under an org (D17) and private-session share grants (D18).
--- Evaluate-time membership joins mirror Convex; methods land with authority ports.
+-- Evaluate-time membership joins mirror the authority; methods land with authority ports.
 CREATE TABLE IF NOT EXISTS teams (
   team_id TEXT PRIMARY KEY,
   org_id TEXT NOT NULL,
@@ -419,14 +419,13 @@ CREATE TABLE IF NOT EXISTS audit_events (
 ${CANONICAL_CHANNEL_IDENTITIES_SCHEMA.replace("CREATE TABLE ", "CREATE TABLE IF NOT EXISTS ")}
 `
 
-const SQLITE_TENANCY_SCHEMA_VERSION = 4
+const SQLITE_TENANCY_SCHEMA_VERSION = 5
 
 function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
-  const columns = db.prepare("PRAGMA table_info(session_history)").all() as Array<{ name: string }>
-  const canonical = columns.some((column) => column.name === "creator_actor_id")
-    && columns.some((column) => column.name === "operation_id")
+  const canonical = hasColumn(db, "session_history", "creator_actor_id")
+    && hasColumn(db, "session_history", "operation_id")
   if (canonical) {
-    if (!tableExists(db, "session_registration_operations")) {
+    if (!hasTable(db, "session_registration_operations")) {
       throw new Error("private_session_registration_schema_missing")
     }
     ensureSessionTurnSchema(db)
@@ -438,7 +437,7 @@ function migratePrivateSessionSchema(db: SqliteAuthorityDb) {
     "legacy_session_messages_pre_private_sessions",
     "legacy_session_participants_pre_private_sessions",
   ]) {
-    if (tableExists(db, archive)) throw new Error(`private_session_archive_collision:${archive}`)
+    if (hasTable(db, archive)) throw new Error(`private_session_archive_collision:${archive}`)
   }
 
   // Legacy workspace-visible rows have no canonical registration operation or
@@ -486,12 +485,11 @@ function ensureSessionTurnSchema(db: SqliteAuthorityDb) {
 }
 
 function migrateRuntimeAccessTokenSchema(db: SqliteAuthorityDb) {
-  const columns = db.prepare("PRAGMA table_info(runtime_access_tokens)").all() as Array<{ name: string }>
-  if (["principal_kind", "actor_id", "actor_kind", "role"].every((name) => columns.some((column) => column.name === name))) {
+  if (["principal_kind", "actor_id", "actor_kind", "role"].every((name) => hasColumn(db, "runtime_access_tokens", name))) {
     return
   }
   const archive = "legacy_runtime_access_tokens_pre_canonical_actor"
-  if (tableExists(db, archive)) throw new Error(`runtime_access_token_archive_collision:${archive}`)
+  if (hasTable(db, archive)) throw new Error(`runtime_access_token_archive_collision:${archive}`)
   // A legacy row cannot prove canonical actor kind and role. Archiving it
   // revokes it at the schema boundary instead of fabricating those claims.
   db.exec(`
@@ -501,10 +499,9 @@ function migrateRuntimeAccessTokenSchema(db: SqliteAuthorityDb) {
 }
 
 function migrateChannelIdentitySchema(db: SqliteAuthorityDb) {
-  const columns = db.prepare("PRAGMA table_info(channel_identities)").all() as Array<{ name: string }>
-  if (columns.some((column) => column.name === "binding_id")) return
+  if (hasColumn(db, "channel_identities", "binding_id")) return
   const archive = "legacy_channel_identities_pre_canonical_actor"
-  if (tableExists(db, archive)) throw new Error(`channel_identity_archive_collision:${archive}`)
+  if (hasTable(db, archive)) throw new Error(`channel_identity_archive_collision:${archive}`)
   // Legacy token-identifier bindings have no stable binding identity. Archive
   // them so reopening the authority cannot silently treat them as canonical.
   db.exec(`
@@ -578,8 +575,12 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
     // Team target column first; CHECK rebuild waits until target_key is backfilled below.
     addColumn(db, "workspace_share_grants", "granted_to_team_id", "TEXT")
 
-    if (tableExists(db, "workspace_share_grants")) {
-      if (tableExists(db, "orgs")) {
+    if (hasTable(db, "workspace_share_grants")) {
+      // One-time remap of grants still keyed by the retired identity provider's
+      // org alias. Guarded on the column because `dropRetiredProviderOrgAlias`
+      // below removes it once this has run — a database opened a second time
+      // has no alias left to remap, which is the point.
+      if (hasColumn(db, "orgs", "clerk_org_id")) {
         db.exec(`
           UPDATE workspace_share_grants AS share
           SET granted_to_org_id = (
@@ -594,7 +595,7 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
             );
         `)
       }
-      const subjectTargetSql = tableExists(db, "users")
+      const subjectTargetSql = hasTable(db, "users")
         ? `WHEN granted_to_subject IS NOT NULL AND (
             SELECT COUNT(*) FROM users WHERE subject = granted_to_subject
           ) = 1 THEN 'token:' || (
@@ -795,6 +796,7 @@ CREATE INDEX IF NOT EXISTS session_share_grants_by_team ON session_share_grants 
     migratePrivateSessionSchema(db)
     migrateRuntimeAccessTokenSchema(db)
     migrateChannelIdentitySchema(db)
+    dropRetiredProviderOrgAlias(db)
     db.exec(`
       CREATE INDEX IF NOT EXISTS users_by_subject ON users (subject);
       CREATE UNIQUE INDEX IF NOT EXISTS users_by_public_id ON users (public_id);
@@ -848,15 +850,35 @@ type LegacyProjectRow = {
   updated_at: number
 }
 
-function addColumn(db: SqliteAuthorityDb, table: string, column: string, definition: string) {
-  if (!tableExists(db, table)) return
-  const columns = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>
-  if (columns.some((item) => item.name === column)) return
-  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
+/**
+ * Drops `orgs.clerk_org_id`, the retired identity-provider org alias.
+ *
+ * The column name is spelled out because it names a real column in existing
+ * databases; nothing has written it since that provider was removed, and every
+ * read that consulted it was a provider-compat fallback beside the canonical
+ * `org_id`.
+ * Dropping the column is what makes "no provider alias survives" a schema fact
+ * rather than a convention — a reader cannot resolve an org by an alias that no
+ * longer exists.
+ *
+ * Guarded by the column check rather than the schema version so a database that
+ * skipped a version still converges, and tolerant of the DROP COLUMN refusal an
+ * older SQLite would raise: the column is inert either way, so failing the whole
+ * open over it would be worse than leaving it.
+ */
+function dropRetiredProviderOrgAlias(db: SqliteAuthorityDb) {
+  if (!hasColumn(db, "orgs", "clerk_org_id")) return
+  try {
+    db.exec("ALTER TABLE orgs DROP COLUMN clerk_org_id")
+  } catch {
+    // Older SQLite without DROP COLUMN. The column stays, unread and unwritten.
+  }
 }
 
-function tableExists(db: SqliteAuthorityDb, table: string) {
-  return !!db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?").get(table)
+function addColumn(db: SqliteAuthorityDb, table: string, column: string, definition: string) {
+  if (!hasTable(db, table)) return
+  if (hasColumn(db, table, column)) return
+  db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`)
 }
 
 function userOrganizationIds(db: SqliteAuthorityDb, tokenIdentifier: string) {
@@ -892,9 +914,7 @@ function requireUnique(db: SqliteAuthorityDb, table: string, columns: string[]) 
 }
 
 function columnRequired(db: SqliteAuthorityDb, table: string, column: string) {
-  const row = (db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string; notnull: number }>)
-    .find((item) => item.name === column)
-  return row?.notnull === 1
+  return columnInfo(db, table, column)?.notnull === 1
 }
 
 function rebuildUsersIfNeeded(db: SqliteAuthorityDb) {
@@ -1008,10 +1028,7 @@ export function openAuthorityDb(options: SqliteWorkspaceAuthorityOptions = {}) {
         // composition: same reason, same in-place add.
         addColumn(db, "host_enrollments", "session_authority", "TEXT")
         migrateAuthorityTenancySchema(db)
-        const messageColumns = db.prepare("PRAGMA table_info(session_messages)").all() as Array<{ name: string }>
-        if (!messageColumns.some((column) => column.name === "author_actor_id")) {
-          db.exec("ALTER TABLE session_messages ADD COLUMN author_actor_id TEXT")
-        }
+        addColumn(db, "session_messages", "author_actor_id", "TEXT")
       } catch (error) {
         db.close()
         throw error
@@ -1064,7 +1081,7 @@ export function closeAuthorityDatabases() {
   tracked.clear()
 }
 
-// --- identity + role model (mirror of convex/model.ts) ---------------------
+// --- identity + role model (mirror of the authority model) ---------------------
 
 export type AuthorityUser = {
   token_identifier: string
@@ -1182,12 +1199,23 @@ export function usersBySubject(db: SqliteAuthorityDb, subject: string) {
     .all(subject) as AuthorityUser[]
 }
 
+/**
+ * Resolves an org id to a live org, or `undefined` when it is unknown or
+ * soft-deleted. The single owner of "is this share target a real org?" — every
+ * share path resolves org targets through here so none of them can drift into
+ * accepting a deleted org.
+ */
+export function activeOrgById(db: SqliteAuthorityDb, orgId: string) {
+  return db.prepare(`SELECT org_id FROM orgs WHERE deleted_at IS NULL AND org_id = ? LIMIT 1`)
+    .get(orgId) as { org_id: string } | undefined
+}
+
 /** The user's personal org, created on first touch (mirror of `personalOrgForUser`). */
 export function ensurePersonalOrg(db: SqliteAuthorityDb, user: AuthorityUser) {
   return db.transaction(() => {
     const existing = db.prepare(`
       SELECT org_id FROM orgs
-      WHERE owner_token_identifier = ? AND kind = 'personal' AND clerk_org_id IS NULL AND deleted_at IS NULL
+      WHERE owner_token_identifier = ? AND kind = 'personal' AND deleted_at IS NULL
     `).get(user.token_identifier) as { org_id: string } | undefined
     if (existing) return existing.org_id
     const now = Date.now()
@@ -1334,7 +1362,7 @@ function teamProjectRole(db: SqliteAuthorityDb, user: AuthorityUser, projectId: 
   return maxRole(roles)
 }
 
-/** Role precedence mirror of `combineRolePrecedence` in convex/model.ts. */
+/** Role precedence mirror of `combineRolePrecedence` in the authority model. */
 export function workspaceRoleForUser(db: SqliteAuthorityDb, workspace: WorkspaceRow, user: AuthorityUser) {
   if (workspace.deleted_at) return
   if (workspace.owner_token_identifier === user.token_identifier) return "owner" as const

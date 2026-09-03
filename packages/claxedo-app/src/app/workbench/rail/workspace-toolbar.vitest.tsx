@@ -20,7 +20,7 @@ describe("WorkspaceScopeButtons", () => {
 
   /**
    * Regression: the control used to be gated on the focused surface having a
-   * workspace, which hid it on WorkGraph, Marketplace and Global chat — the
+   * workspace, which hid it on Marketplace and Global chat — the
    * surfaces where "which workspace?" is most worth asking. Having no workspace
    * is what the creator is for, not a reason to withhold the way to open it.
    */
@@ -53,21 +53,8 @@ describe("WorkspaceScopeButtons", () => {
     expect(onNewTerminalDraft).toHaveBeenCalledTimes(1)
   })
 
-  test("offers a task composer on workspace and global surfaces", () => {
-    const onNewTask = vi.fn()
-    render(() => (
-      <WorkspaceScopeButtons
-        global
-        onNewSession={() => undefined}
-        onNewTask={onNewTask}
-      />
-    ))
 
-    fireEvent.click(screen.getByRole("button", { name: "New task" }))
-    expect(onNewTask).toHaveBeenCalledTimes(1)
-  })
-
-  test("hides task and document actions when the shell withholds their callbacks", async () => {
+  test("hides document actions when the shell withholds their callbacks", async () => {
     render(() => (
       <WorkspaceScopeButtons
         canUseDocuments
@@ -75,19 +62,6 @@ describe("WorkspaceScopeButtons", () => {
       />
     ))
 
-    expect(screen.queryByRole("button", { name: "New task" })).toBeNull()
-    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "ArrowDown" })
-    expect(screen.queryByRole("menuitem", { name: "New Document" })).toBeNull()
-
-    cleanup()
-    render(() => (
-      <WorkspaceScopeButtons
-        onNewSession={() => undefined}
-        onNewTask={() => undefined}
-      />
-    ))
-
-    expect(screen.getByRole("button", { name: "New task" })).toBeInTheDocument()
     fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "ArrowDown" })
     expect(screen.queryByRole("menuitem", { name: "New Document" })).toBeNull()
 
@@ -100,7 +74,6 @@ describe("WorkspaceScopeButtons", () => {
       />
     ))
 
-    expect(screen.queryByRole("button", { name: "New task" })).toBeNull()
     fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "ArrowDown" })
     expect(await screen.findByRole("menuitem", { name: "New Document" })).toBeInTheDocument()
   })

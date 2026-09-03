@@ -229,7 +229,7 @@ describe("Cloudflare Pages headers for the SPA", () => {
     expect(reportOnly).toContain("style-src 'self' 'unsafe-inline'")
     // posthog-js lazy-loads recorder/exception-autocapture from the assets host.
     expect(reportOnly).toContain("https://*.i.posthog.com")
-    // Clerk renders Cloudflare Turnstile in an iframe from this origin.
+    // the identity provider renders Cloudflare Turnstile in an iframe from this origin.
     expect(reportOnly).toContain("https://challenges.cloudflare.com")
     // The relay origin arrives at runtime in an API response body, so it
     // cannot be pinned from a static file. This is the single reason the

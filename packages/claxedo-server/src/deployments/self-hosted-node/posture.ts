@@ -8,10 +8,10 @@
  *   | | cloud-hosted | self-hosted |
  *   |---|---|---|
  *   | trust posture | `hosted` | `local` |
- *   | auth | signed Clerk issuer + JWKS | unsigned-local, or embedded auth |
+ *   | auth | signed issuer + JWKS | unsigned-local, or embedded auth |
  *   | authority | remote workspace authority URL | local SQLite |
  *
- * A single assertion covering both would have to accept "either a Clerk issuer
+ * A single assertion covering both would have to accept "either a provider issuer
  * or embedded auth" and "either a remote authority or SQLite" — which is no
  * longer a check that a cloud deployment is configured as a cloud deployment.
  * A misconfigured hosted build would sail through it by looking self-hosted.
@@ -45,8 +45,6 @@ export type SelfHostedPosture = {
   embeddedAuth: boolean
   /** Whether a workspace authority is composed at all. */
   authority: boolean
-  /** True when the composed authority is the local SQLite one. */
-  sqliteAuthority: boolean
   /** Whether the local-execution adapter is composed. */
   localExecution: boolean
   /** Set when static SPA serving is configured; its absence is not an error. */
@@ -84,11 +82,6 @@ export function assertSelfHostedPosture(posture: SelfHostedPosture) {
   // reason to care.
   if (!posture.authority) {
     failures.push("no workspace authority is composed")
-  } else if (!posture.sqliteAuthority) {
-    // Specifically rejected, not merely unexpected. A self-hosted binary
-    // pointed at a remote authority would be a single-tenant deployment
-    // writing into someone else's control plane.
-    failures.push("the composed workspace authority is not the local SQLite one")
   }
   if (!posture.localExecution) {
     // The product IS local execution. Without the adapter it boots and serves

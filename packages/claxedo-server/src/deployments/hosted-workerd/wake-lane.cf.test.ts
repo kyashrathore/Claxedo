@@ -146,7 +146,7 @@ describe("WakeLane alarm", () => {
     const { storage, lane } = laneHarness({
       now: () => clock.t,
       runDue: async () => {
-        throw new Error("convex down")
+        throw new Error("authority down")
       },
       report: (e) => void reported.push(e),
     })

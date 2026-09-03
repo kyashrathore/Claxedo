@@ -8,8 +8,8 @@
  *
  *   POST …/chat/completions  — OpenAI chat-completions SSE. The embedded
  *     engine's `@ai-sdk/openai-compatible` provider speaks this. Wire shape
- *     ported from `real-workgraph-harness.ts` (sendProviderText/Tool/Events),
- *     which has driven the real engine in the @workgraph-real lane for months.
+ *     ported from the retired real-harness helper (sendProviderText/Tool/Events),
+ *     which drove the real engine in Tier R for months.
  *   POST …/messages — Anthropic Messages, streaming SSE and non-stream JSON.
  *     The claude CLI (both ACP and native SDK modes) speaks this when
  *     ANTHROPIC_BASE_URL points here. Shape ported from
@@ -254,7 +254,7 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
 /**
  * Provider block the embedded OpenCode engine consumes via
  * OPENCODE_CONFIG_CONTENT (v1 config schema, auto-migrated by the engine —
- * same shape the @workgraph-real lane has always used). `options.baseURL` and
+ * same shape Tier R has always used). `options.baseURL` and
  * `options.apiKey` are exactly the two keys the engine's provider layer reads.
  *
  * NOTE FOR ANY FUTURE SCRIPTED MODEL: the composer's model picker HIDES models

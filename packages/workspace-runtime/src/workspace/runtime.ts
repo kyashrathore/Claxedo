@@ -2400,7 +2400,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       // Session V2 and its model catalog are the durable agent-control
-      // contracts used by hosted WorkGraph. Keep them on the authenticated
+      // contracts used by hosted compositions. Keep them on the authenticated
       // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
       const forwardSessionV2 = async (c: Context) => {
         const adapter = await ensureSessionAdapter(runner)

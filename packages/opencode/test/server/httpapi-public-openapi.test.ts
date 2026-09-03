@@ -181,24 +181,6 @@ describe("PublicApi OpenAPI v2 errors", () => {
     }
   })
 
-  test("documents the composite WorkGraph command, capability, and activity routes", () => {
-    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
-
-    for (const [method, path] of [
-      ["post", "/api/workgraph/commands"],
-      ["get", "/api/workgraph/execution-capabilities"],
-      ["post", "/api/workgraph/execution-capabilities/refresh"],
-      ["get", "/api/workgraph/work-items/{workItemId}/activity"],
-    ] as const) {
-      expect(spec.paths[path]?.[method], `${method.toUpperCase()} ${path}`).toBeDefined()
-    }
-    expect(spec.paths["/api/workgraph/work-items/{workItemId}/activity"]?.get?.parameters).toContainEqual(
-      expect.objectContaining({ name: "limit", in: "query", schema: { type: "integer", minimum: 1, maximum: 100 } }),
-    )
-    expect(spec.components.schemas.WorkGraphActivityPage).toBeDefined()
-    expect(spec.components.schemas.WorkGraphExecutionCapabilities).toBeDefined()
-  })
-
   test("does not rewrite /api endpoint errors to legacy error components", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
     const refs = v2Operations(spec)

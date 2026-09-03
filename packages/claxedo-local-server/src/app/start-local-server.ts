@@ -12,8 +12,8 @@
  *     sandboxes, and this product has none. Runtime dispatch already reaches it
  *     through a port that correctly no-ops, so leaving it unconfigured is the
  *     composition stating "no cloud provisioning here" rather than a gap.
- *   - **No control-plane authority, relay, Documents, Connections, Channels or
- *     WorkGraph.** Those are the hosted product.
+ *   - **No control-plane authority, relay, Documents, Connections or
+ *     Channels.** Those are the hosted product.
  *
  * Both omissions are asserted rather than assumed — see
  * `start-local-server.test.ts`.
@@ -143,8 +143,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     providerCatalog: ({ harnessId, providerId }) =>
       providerBody(harnessId, { env: process.env, services }, providerId),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
-    // No route contributions: WorkGraph is a hosted capability, and its absence
-    // from an unsigned desktop is this line rather than a runtime flag.
+    // No route contributions: hosted capabilities contribute routes, and their
+    // absence from an unsigned desktop is this line rather than a runtime flag.
     routeContributions: [],
     // Both halves of session-metadata recording. The tap in `createLocalApp`
     // sees HTTP mutations; this sees a harness's ASYNC auto-title, which is

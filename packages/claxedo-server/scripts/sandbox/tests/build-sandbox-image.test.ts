@@ -131,7 +131,7 @@ describe("build-sandbox-image", () => {
       expect(dockerfile).toContain("http://127.0.0.1:2593/api/session")
       expect(dockerfile).toContain("Session V2 create did not adopt the requested id")
       expect(dockerfile).toContain("Session V2 history was truncated across workspace-runtime")
-      expect(dockerfile).toContain("ses_workgraph_image_failure")
+      expect(dockerfile).toContain("ses_image_failure")
       expect(dockerfile).toContain("session.next.step.failed")
       expect(dockerfile).toContain("accept-encoding: gzip")
       expect(dockerfile).toContain("setsid env OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true opencode serve")
@@ -172,13 +172,6 @@ describe("build-sandbox-image", () => {
         dependencies: { "@claxedo/workspace-relay-protocol": "0.5.1" },
       },
       "workspace-relay-protocol": { name: "@claxedo/workspace-relay-protocol", dependencies: {} },
-      // The second host-bundle root. It depends on workspace-runtime, so the
-      // post-order walk must place it AFTER — the reverse of the old
-      // "workspace-runtime is last" invariant.
-      workgraph: {
-        name: "@claxedo/workgraph",
-        dependencies: { "@claxedo/workspace-runtime": "0.5.1" },
-      },
     }
     const dirKey = (dir: string) => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))
@@ -194,10 +187,8 @@ describe("build-sandbox-image", () => {
     expect(before("@claxedo/agent-sdk-runtime", "@claxedo/workspace-runtime")).toBe(true)
     expect(before("@claxedo/workspace-relay-protocol", "@claxedo/workspace-relay")).toBe(true)
     expect(before("@claxedo/workspace-relay", "@claxedo/workspace-runtime")).toBe(true)
-    // WorkGraph's runtime adapter depends on workspace-runtime, so the runtime
-    // builds first and WorkGraph closes the order. No duplicates.
-    expect(before("@claxedo/workspace-runtime", "@claxedo/workgraph")).toBe(true)
-    expect(names.at(-1)).toBe("@claxedo/workgraph")
+    // workspace-runtime is the single host-bundle root, so it closes the order.
+    expect(names.at(-1)).toBe("@claxedo/workspace-runtime")
     expect(new Set(names).size).toBe(names.length)
   })
 
@@ -211,7 +202,6 @@ describe("build-sandbox-image", () => {
       "agent-sdk-runtime": { name: "@claxedo/agent-sdk-runtime", dependencies: { "@claxedo/shared": "0.5.1" } },
       "workspace-relay": { name: "@claxedo/workspace-relay", dependencies: { "@claxedo/shared": "0.5.1" } },
       shared: { name: "@claxedo/shared", dependencies: {} },
-      workgraph: { name: "@claxedo/workgraph", dependencies: { "@claxedo/workspace-runtime": "0.5.1" } },
     }
     const order = workspacePackageBuildOrder((dir) => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))
@@ -230,7 +220,6 @@ describe("build-sandbox-image", () => {
     const packages: Record<string, { name: string; dependencies: Record<string, string> }> = {
       "workspace-runtime": { name: "@claxedo/workspace-runtime", dependencies: { "@claxedo/a": "0.5.1" } },
       a: { name: "@claxedo/a", dependencies: { "@claxedo/workspace-runtime": "0.5.1" } },
-      workgraph: { name: "@claxedo/workgraph", dependencies: {} },
     }
     expect(() =>
       workspacePackageBuildOrder((dir) => {
@@ -241,20 +230,15 @@ describe("build-sandbox-image", () => {
     ).toThrow("cycle")
   })
 
-  test("real workspace graph build order covers both host-bundle roots with no duplicates", () => {
+  test("real workspace graph build order covers the host-bundle root with no duplicates", () => {
     const order = workspacePackageBuildOrder()
     expect(new Set(order).size).toBe(order.length)
 
     const index = (name: string) => order.findIndex((dir) => path.basename(dir) === name)
 
-    // Both host-bundle roots are present. WorkGraph joined the closure when its
-    // runtime adapter moved out of workspace-runtime; without it the sandbox
-    // image would bundle against a missing or stale WorkGraph dist, and every
-    // dist here is gitignored so a fresh checkout would hit exactly that.
+    // The host-bundle root is present. Every dist here is gitignored, so a
+    // missing root would leave a fresh checkout bundling against a stale dist.
     expect(index("workspace-runtime")).toBeGreaterThanOrEqual(0)
-    expect(index("workgraph")).toBeGreaterThanOrEqual(0)
-    // WorkGraph depends on the runtime, so the runtime is built first.
-    expect(index("workspace-runtime")).toBeLessThan(index("workgraph"))
 
     // workspace-runtime's known @claxedo deps are all present and precede it.
     for (const dep of ["agent-event-runtime", "agent-sdk-runtime", "workspace-relay-protocol", "workspace-relay", "agent-extensions"]) {

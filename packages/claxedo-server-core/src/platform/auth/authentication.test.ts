@@ -237,7 +237,7 @@ describe("provider-neutral control-plane authentication", () => {
 
   test("rejects output from a different adapter, issuer, or browser origin", async () => {
     for (const verified of [
-      browserSession({ adapter: "clerk" }),
+      browserSession({ adapter: "third-party-idp" }),
       browserSession({ issuer: "https://other-issuer.example.test" }),
       browserSession({
         client: {
@@ -269,7 +269,7 @@ describe("provider-neutral control-plane authentication", () => {
 
   test.each([
     ["deploymentId", "deployment_2"],
-    ["adapter", "clerk"],
+    ["adapter", "third-party-idp"],
     ["issuer", "https://other-auth.example.test"],
     ["tokenEndpointOrigin", "https://other-auth.example.test"],
     ["controlPlaneOrigin", "https://other-api.example.test"],
@@ -426,7 +426,7 @@ describe("provider-neutral control-plane authentication", () => {
   })
 
   test("rejects missing or unknown native revocation contracts at the runtime descriptor boundary", () => {
-    const clerkDescriptor = {
+    const providerDescriptor = {
       ...betterAuthDescriptor,
       adapter: "custom",
       issuer: "https://custom.example.test",
@@ -463,34 +463,34 @@ describe("provider-neutral control-plane authentication", () => {
 
     const invalidDescriptors = [
       {
-        ...clerkDescriptor,
+        ...providerDescriptor,
         native: {
-          ...clerkDescriptor.native,
-          cli: { ...clerkDescriptor.native.cli, revocation: undefined },
+          ...providerDescriptor.native,
+          cli: { ...providerDescriptor.native.cli, revocation: undefined },
         },
       },
       {
-        ...clerkDescriptor,
+        ...providerDescriptor,
         native: {
-          ...clerkDescriptor.native,
+          ...providerDescriptor.native,
           cli: {
-            ...clerkDescriptor.native.cli,
+            ...providerDescriptor.native.cli,
             revocation: {
               protocol: "unknown",
-              endpoint: clerkDescriptor.native.cli.revocation.endpoint,
+              endpoint: providerDescriptor.native.cli.revocation.endpoint,
             },
           },
         },
       },
       {
-        ...clerkDescriptor,
+        ...providerDescriptor,
         native: {
-          ...clerkDescriptor.native,
+          ...providerDescriptor.native,
           cli: {
-            ...clerkDescriptor.native.cli,
+            ...providerDescriptor.native.cli,
             revocation: {
               protocol: "rfc7009",
-              endpoint: clerkDescriptor.native.cli.revocation.endpoint,
+              endpoint: providerDescriptor.native.cli.revocation.endpoint,
             },
           },
         },
@@ -503,7 +503,7 @@ describe("provider-neutral control-plane authentication", () => {
   })
 
   test("Custom and Better Auth execute through the same neutral principal boundary", async () => {
-    const clerkDescriptor = {
+    const providerDescriptor = {
       ...betterAuthDescriptor,
       adapter: "custom",
       issuer: "https://custom.example.test",
@@ -539,7 +539,7 @@ describe("provider-neutral control-plane authentication", () => {
     } as const satisfies AuthAdapterDescriptor
 
     const selected = adapter({
-      descriptor: clerkDescriptor,
+      descriptor: providerDescriptor,
       verify: async () => ({
         ...(browserSession() as Record<string, unknown>),
         adapter: "custom",

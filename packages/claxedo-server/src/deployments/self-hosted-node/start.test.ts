@@ -128,17 +128,15 @@ describe("the reported authority is the one the composition builds", () => {
     const { composed, posture } = await compose(undefined)
 
     expect(composed).toEqual(["sqlite"])
-    expect(posture.sqliteAuthority).toBe(true)
     expect(() => assertSelfHostedPosture(posture)).not.toThrow()
   })
 
   test("local trust ignores a stale authority URL in both composition and posture", async () => {
     // A developer may have a hosted URL in an ambient env file, but local
     // trust must neither move self-hosted data remotely nor refuse to boot.
-    const { composed, posture } = await compose("https://authority.example.convex.cloud")
+    const { composed, posture } = await compose("https://authority.example.test")
 
     expect(composed).toEqual(["sqlite"])
-    expect(posture.sqliteAuthority).toBe(true)
     expect(() => assertSelfHostedPosture(posture)).not.toThrow()
   })
 
@@ -148,7 +146,6 @@ describe("the reported authority is the one the composition builds", () => {
     const { composed, posture } = await compose("   ")
 
     expect(composed).toEqual(["sqlite"])
-    expect(posture.sqliteAuthority).toBe(true)
   })
 })
 
@@ -180,12 +177,5 @@ describe("the self-hosted entry wiring", () => {
     // entry. Calling it directly would skip the gate entirely.
     expect(entry).toContain("startSelfHostedServer({")
     expect(entry).not.toContain("startServer(")
-  })
-
-  test("passes the self-hosted capability factory", () => {
-    // The single argument that keeps WorkGraph and Documents composed after the
-    // desktop-local composition stopped contributing any. Dropping it would
-    // silently remove two features from the self-hosted product.
-    expect(start).toContain("capabilities: selfHostedCapabilities")
   })
 })

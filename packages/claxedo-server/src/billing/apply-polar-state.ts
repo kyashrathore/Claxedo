@@ -1,7 +1,7 @@
 /**
  * applyPolarState — the single translation module (ADR 014 §3 + addendum):
  * turns a Polar payload (webhook event or reconciliation fetch) into org-field writes through the ONE builder-gated
- * Convex service mutation (convex/billing.ts `applyPolarState`). Nothing else
+ * the authority service mutation (the billing authority `applyPolarState`). Nothing else
  * anywhere writes the mirrored billing fields — enforced grep-style by
  * billing-architecture.test.ts.
  *
@@ -10,7 +10,7 @@
  *   the customer's full current state and is the canonical source; the
  *   granular `subscription.*` events are triggers for the same recompute;
  * - idempotent under duplicates and reordering via the source-timestamp guard
- *   in the Convex mutation (older-than-last-applied → no-op);
+ *   in the authority mutation (older-than-last-applied → no-op);
  * - fail-closed: anything unattributable or non-entitling resolves toward the
  *   free tier; only FRESH state ever downgrades (the reconciliation sweep
  *   reports and leaves state on fetch failure — see reconcile.ts).
@@ -173,7 +173,7 @@ export function customerStateToApplyArgs(
     source_ts: sourceTs,
     source,
     // Orgs previously mirrored to this customer but absent here are downgraded
-    // by the Convex mutation (full-state semantics, past_due carve-out inside).
+    // by the authority mutation (full-state semantics, past_due carve-out inside).
     org_states: [...byOrg.entries()].map(([org_id, state]) => ({ org_id, state })),
   }
 }
@@ -228,7 +228,7 @@ export function webhookEventToApplyArgs(event: PolarWebhookEvent, config: PolarP
   return undefined
 }
 
-/** Apply a normalized snapshot through the single Convex writer. */
+/** Apply a normalized snapshot through the single the authority writer. */
 export async function applyPolarState(store: BillingStore, args: ApplyPolarStateArgs): Promise<ApplyPolarStateResult> {
   return await store.applyPolarState(args)
 }

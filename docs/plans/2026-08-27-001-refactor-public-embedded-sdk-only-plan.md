@@ -32,8 +32,8 @@ changes the user action that starts OpenCode as follows:
    the SDK client.
 4. One retained SDK event pump projects OpenCode events once into Claxedo's
    canonical runtime event model.
-5. The UI, session projection, usage meter, subagent admission, and WorkGraph
-   consume that one projection.
+5. The UI, session projection, usage meter, and subagent admission consume that
+   one projection.
 6. Process shutdown closes the SDK host exactly once after ingress and event
    queues drain.
 
@@ -57,8 +57,8 @@ The repository currently has several mutually incompatible meanings of
   explicitly runs `opencode serve` and passes `OPENCODE_URL`; deployed runtimes
   omit that URL, so `OpenCodeHarnessAdapter` instead spawns the installed binary
   on first use. Both the build-time sidecar and deployed on-demand spawn must go.
-- Local compatibility routes, WorkGraph, credentials, MCP, and event bridges
-  call the raw engine transport directly.
+- Local compatibility routes, credentials, MCP, and event bridges call the raw
+  engine transport directly.
 - Desktop builds and ships a separate engine artifact, worker, and V8 compile
   cache.
 
@@ -99,12 +99,12 @@ currently owns `@opencode-ai/sdk`.
   archive mutation, Claxedo's session projection remains authoritative for
   archive state while SDK `session.remove` remains authoritative for deletion.
 - **R6. One event authority:** one SDK event pump emits each OpenCode fact once
-  into Claxedo's event model. Metadata projection, usage metering, WorkGraph
-  intake, session waiters, and UI streaming must not maintain separate engine
-  readers or duplicate suppression paths.
+  into Claxedo's event model. Metadata projection, usage metering, session
+  waiters, and UI streaming must not maintain separate engine readers or
+  duplicate suppression paths.
 - **R7. Integration parity:** Claxedo's credential registry, Agent Config/MCP
-  authority, WorkGraph tools, connection tools, provider/model catalog, and
-  session intake continue working without raw engine control routes.
+  authority, connection tools, provider/model catalog, and session intake
+  continue working without raw engine control routes.
 - **R8. Outer contract clarity:** retain compatibility HTTP routes that have a
   current Claxedo consumer or a documented/published external support contract.
   Implement each as an explicit typed translation or Claxedo-owned operation;
@@ -135,8 +135,8 @@ currently owns `@opencode-ai/sdk`.
 - Every desktop, local server, self-hosted, hosted relay, and sandbox OpenCode
   execution and packaging path.
 - The OpenCode adapter, workspace-runtime composition, retained compatibility
-  routes, WorkGraph OpenCode paths, credentials, MCP, event projection,
-  persistence, lifecycle, and shutdown.
+  routes, credentials, MCP, event projection, persistence, lifecycle, and
+  shutdown.
 - Removing vendored packages that can execute or expose the old OpenCode
   runtime, plus severing shared UI code from those packages before deletion.
 - Updating outer Claxedo contracts where V2 semantics are richer, notably
@@ -176,8 +176,6 @@ currently owns `@opencode-ai/sdk`.
   raw proxy routes, provider/config projections, and MCP sync.
 - `packages/claxedo-server-core/src/opencode/engine-auth-bridge.ts` reconciles
   Claxedo credentials through raw `/auth` and `/global/dispose` calls.
-- `packages/claxedo-server/src/hosts/workgraph/**` contains direct raw Session
-  V2, catalog, session-intake, context, and application-tool consumers.
 - `packages/claxedo-desktop/**` builds, ships, locates, compile-caches, and
   supervises the node-embed artifact and its worker.
 - `packages/claxedo-server/scripts/sandbox/**` installs the OpenCode binary.
@@ -263,7 +261,7 @@ event-authority, and SQLite lessons once the cutover is proven.
    reconnects and reconciles from typed session/message/permission/form
    snapshots; it never synthesizes a successful terminal event.
 6. **Keep Claxedo outer APIs only as named translations.** The browser and
-   WorkGraph need not import the SDK. Each retained path has an explicit owner,
+   relay need not import the SDK. Each retained path has an explicit owner,
    typed SDK operation, authorization rule, error mapping, and contract test.
    The generic arbitrary proxy and the `http-proxy` adapter capability are
    deleted.
@@ -276,7 +274,7 @@ event-authority, and SQLite lessons once the cutover is proven.
    backs any retained tool catalog.
 8. **Use a V2 plugin for product integrations.** Static config enters through
    explicit SDK config content. MCP and credentials reconcile through public
-   typed APIs. WorkGraph and connection tools register through one plugin whose
+   typed APIs. Connection tools register through one plugin whose
    session/location registry resolves current bindings at execution time.
    Use the Effect plugin entrypoint, or another demonstrably cancellable owned
    mechanism, for tools that must stop with session interruption; a
@@ -327,7 +325,7 @@ event-authority, and SQLite lessons once the cutover is proven.
     revalidated against that scope on every operation, including after a
     symlink or workspace move.
 14. **Authorize model-invoked tools at execution time.** Visibility is not
-    authority. Each WorkGraph/connection invocation resolves an unexpired
+    authority. Each connection-tool invocation resolves an unexpired
     capability binding actor, workspace, session, allowed action, and resource;
     validates inputs; fails closed after revoke/cancel/release; preserves
     existing confirmation policy for high-impact actions; and emits a redacted
@@ -407,7 +405,7 @@ event-authority, and SQLite lessons once the cutover is proven.
 
 ```mermaid
 flowchart LR
-  UI[Claxedo UI / WorkGraph / relay] --> WR[WorkspaceRuntime routes]
+  UI[Claxedo UI / relay] --> WR[WorkspaceRuntime routes]
   WR --> AD[OpenCodeHarnessAdapter]
   AD --> PORT[Claxedo OpenCode runtime port]
   PORT --> HOST[@claxedo/opencode-runtime]
@@ -415,13 +413,12 @@ flowchart LR
   HOST --> PLUGIN[Claxedo SDK plugin]
   PLUGIN --> CREDS[Credential registry]
   PLUGIN --> MCP[Agent Config / MCP]
-  PLUGIN --> WG[WorkGraph + connection registries]
+  PLUGIN --> CONN[Connection registries]
   SDK --> PUMP[Single SDK event pump]
   PUMP --> HUB[Canonical RuntimeEventHub]
   HUB --> UI
   HUB --> META[Session projection]
   HUB --> USAGE[Usage meter]
-  HUB --> INTAKE[WorkGraph intake]
   HOST --> DB[(Explicit process-owned SQLite)]
 ```
 
@@ -449,8 +446,8 @@ the runtime, using the exact selected beta and real current entrypoints.
 - Create: `docs/architecture/opencode-embedded-sdk-contract.md`
 - Create: public-SDK contract fixtures/tests beside the future
   `packages/opencode-runtime`
-- Modify: existing OpenCode adapter, workspace-runtime, WorkGraph, desktop, and
-  sandbox contract test manifests only as needed to record expected behavior
+- Modify: existing OpenCode adapter, workspace-runtime, desktop, and sandbox
+  contract test manifests only as needed to record expected behavior
 
 **Approach:**
 
@@ -628,8 +625,8 @@ persistence, plugins, readiness, events, and `close()`.
   downstream of the Claxedo hub.
 - On stream loss, mark OpenCode event health degraded, reconnect the same SDK
   stream, and reconcile typed canonical snapshots. Reuse existing RuntimeStore
-  journals, projection idempotency, usage fact keys/outboxes, and WorkGraph
-  intake keys first. Add only the smallest missing per-location checkpoint or
+  journals, projection idempotency, and usage fact keys/outboxes first. Add
+  only the smallest missing per-location checkpoint or
   deterministic snapshot key proven necessary by Unit 1. Consumers commit
   effects and keys transactionally where existing stores support it; otherwise
   reuse deterministic domain/outbox keys rather than create a new generic
@@ -730,10 +727,10 @@ session and UI behavior through explicit projections.
 **Verification:** Every retained route has a named typed implementation and
 contract test; raw request/proxy/spawn classes and fallback responses are gone.
 
-- [ ] **Unit 5: Move credentials, MCP, WorkGraph, and connection tools onto SDK APIs/plugins**
+- [ ] **Unit 5: Move credentials, MCP, and connection tools onto SDK APIs/plugins**
 
 **Goal:** Eliminate the remaining direct engine consumers while preserving
-Claxedo's configuration and WorkGraph authorities.
+Claxedo's configuration and connection authorities.
 
 **Requirements:** R5, R7, R8, R10
 
@@ -744,11 +741,6 @@ Claxedo's configuration and WorkGraph authorities.
 - Replace/remove: `packages/claxedo-server-core/src/opencode/engine-auth-bridge.ts`
 - Replace/remove: `packages/claxedo-local-server/src/opencode/mcp-sync.ts` and
   provider/config raw consumers
-- Modify: `packages/claxedo-server/src/hosts/workgraph/composition/session-gateway.ts`
-- Modify: `packages/claxedo-server/src/hosts/workgraph/composition/agent-tools.ts`
-- Modify: `packages/claxedo-server/src/hosts/workgraph/local/execution-capabilities.ts`
-- Modify: `packages/claxedo-server/src/hosts/workgraph/session-intake.ts` and
-  corresponding local/hosted tests
 - Modify: composition roots that build the SDK plugin/config snapshot
 
 **Approach:**
@@ -770,41 +762,38 @@ Claxedo's configuration and WorkGraph authorities.
   Implement update as drained `remove -> add` with restoration of the previous
   config if add fails; implement restart as `disconnect -> connect`. Serialize
   these non-atomic composites around active turns.
-- Register stable WorkGraph/connection dispatcher tools at host startup. Resolve
+- Register stable connection dispatcher tools at host startup. Resolve
   session-bound visibility and callbacks through the existing registries; clean
   bindings on cancel, delete, release, and shutdown.
 - At invocation, re-resolve an authenticated, unexpired capability for actor,
   workspace, session, action, and resource. Validate tool inputs, preserve
   existing confirmation policy for high-impact effects, fail closed on stale or
   revoked bindings, and emit redacted audit records.
-- Route both local and hosted WorkGraph Session V2 through workspace-runtime's
-  typed OpenCode path. Delete the separate raw gateway, dynamic callback route,
-  engine intake reader, and direct catalog calls.
 - Derive tool and provider/model catalogs from public typed APIs plus the
   Claxedo-owned plugin manifest; never inspect internal router state.
 
 **Test scenarios:**
 
 - **Happy path:** a stored credential and MCP snapshot power the first OpenCode
-  turn; WorkGraph local and hosted sessions execute registered tools and expose
-  paged history.
+  turn; local and hosted sessions execute registered tools and expose paged
+  history.
 - **Edge case:** canonical credential aliases preserve precedence, unmanaged
   SDK credentials survive reconciliation, and removed Claxedo-owned MCP entries
   disappear.
 - **Error path:** plugin/tool registration failure compensates a newly admitted
-  WorkGraph session; an interrupted turn cancels its tool execution and does
-  not leave a binding.
+  session; an interrupted turn cancels its tool execution and does not leave a
+  binding.
 - **Security error:** prompt-injected calls, cross-session IDs, stale/revoked
   bindings, cancellation races, and unauthorized connection resources fail
   before side effects.
-- **Integration:** credential update/delete, MCP add/update/remove, WorkGraph
-  active polling, explicit completion retry, cancellation, crash recovery, and
-  intake all operate through the same workspace runtime.
+- **Integration:** credential update/delete, MCP add/update/remove, active
+  polling, explicit completion retry, cancellation, crash recovery, and intake
+  all operate through the same workspace runtime.
 - **Composite failure:** MCP remove/add failure restores the previous owned
   configuration and reports degraded state; disconnect/connect failure remains
   visible and never reports a successful restart.
 
-**Verification:** No credential, MCP, provider, WorkGraph, or composition module
+**Verification:** No credential, MCP, provider, or composition module
 imports/calls the old raw transport, and integration tests prove authority and
 cleanup semantics.
 
@@ -1042,9 +1031,9 @@ new solution note captures the migration's durable lessons.
 ## System-Wide Impact
 
 - **Interaction graph:** OpenCode requests move from control-plane/global raw
-  engine composition into the workspace runtime's typed adapter. Local and
-  hosted WorkGraph converge on that same route. Browser streams stay connected
-  to Claxedo's hub and no longer own upstream engine streams.
+  engine composition into the workspace runtime's typed adapter. Browser
+  streams stay connected to Claxedo's hub and no longer own upstream engine
+  streams.
 - **Error propagation:** typed SDK errors are projected once into stable
   Claxedo route/harness errors. Host boot/migration errors affect OpenCode
   readiness only. Prompt admission ambiguity is handled by rereading canonical
@@ -1059,8 +1048,8 @@ new solution note captures the migration's durable lessons.
   relay auth remain enforced at Claxedo boundaries. Secrets must not appear in
   SDK logs, config snapshots, migration artifacts, or bundle inventories.
 - **API surface parity:** browser routes, relay routes, Session V2, harness
-  adapter methods, provider/model catalogs, WorkGraph, permissions/forms,
-  todos, and events all need explicit typed mappings. Removing raw proxying
+  adapter methods, provider/model catalogs, permissions/forms, todos, and
+  events all need explicit typed mappings. Removing raw proxying
   means an unlisted endpoint is intentionally absent.
 - **Persistence:** the existing local database is process-global across local
   workspaces; hosted sandboxes use process/workspace-scoped storage. A location
@@ -1075,7 +1064,7 @@ new solution note captures the migration's durable lessons.
   packaging, and artifact gates.
 - **Unchanged invariants:** Claxedo remains authoritative for workspace
   identity, route authorization, session projection, usage accounting,
-  credentials, Agent Config, terminal execution, relay routing, and WorkGraph.
+  credentials, Agent Config, terminal execution, and relay routing.
   Non-OpenCode harnesses keep their current adapters and do not depend on SDK
   readiness.
 
@@ -1103,7 +1092,7 @@ new solution note captures the migration's durable lessons.
 | V2 beta contract changes during implementation | High | High | Pin `0.0.0-beta-18314`; frozen lockfile; treat any upgrade as a separate reviewed migration. |
 | Existing V1 database is incompatible | Medium | Critical | Treat the published Node V1 migrator as a known no-op; ship the legacy export checkpoint first, import into fresh V2 storage through the public typed API, validate semantics, and never let the new runtime open the V1 database. |
 | Event projection loses or duplicates facts | Medium | High | One retained at-least-once pump; durable checkpoints where events expose ordering; deterministic reconciliation keys elsewhere; repair usage from paged assistant-message token snapshots, compare `session.get` totals, and keep `session.stats` as aggregate audit rather than accumulating event deltas. |
-| WorkGraph Promise tools ignore interruption | High if Promise API is used | High | Use a cancellable Effect plugin/owned cancellation path and make interruption a release gate. |
+| Plugin Promise tools ignore interruption | High if Promise API is used | High | Use a cancellable Effect plugin/owned cancellation path and make interruption a release gate. |
 | Package name collision resolves old/local code | High before Unit 2 | High | Isolate and contract-test the exact public family in checkpoint 2a, migrate DTO consumers in 2b, then vacate legacy names last and enforce the one-family dependency/bundle gate in 2c. |
 | Native SDK closure fails in packaged Electron/sandbox | Medium | High | Cross-platform artifact smokes outside monorepo; verify export conditions/native modules before deletion release. |
 | Removal of worker regresses memory/startup | Medium | Medium | Preserve lazy host creation; measure packaged baselines; establish explicit go/no-go thresholds. |
@@ -1132,8 +1121,8 @@ new solution note captures the migration's durable lessons.
 ### Phase 2: Build the sole path behind all product contracts
 
 - Complete Units 3-5 and checkpoint 6b on a non-released cutover branch.
-- Run the typed SDK host, adapter, events, integrations, WorkGraph, and data
-  migration through runtime-boundary integration fixtures. Real packaged
+- Run the typed SDK host, adapter, events, integrations, and data migration
+  through runtime-boundary integration fixtures. Real packaged
   desktop/self-hosted/sandbox entrypoints are reserved for Phase 3 after Unit 7
   composes them.
 - No request-level or runtime-selection feature flag is introduced.
@@ -1160,7 +1149,7 @@ new solution note captures the migration's durable lessons.
   `session.get` totals, and uses `session.stats` only for aggregate audit.
 - Credential and MCP add/update/remove behavior affects the next eligible turn
   and preserves unmanaged entries.
-- WorkGraph local and hosted sessions use the same workspace-runtime typed path.
+- Local and hosted sessions use the same workspace-runtime typed path.
 - Production source, dependency graphs, bundles, images, and process
   inventories contain one exact public SDK family and none of the removed path.
 - SDK failure is observable and never results in an external URL, spawned

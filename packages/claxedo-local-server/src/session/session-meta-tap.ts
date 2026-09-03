@@ -47,7 +47,7 @@ export function sessionMetaProjectionTap(
       const workspaceId =
         c.req.query("workspaceId") || c.req.query("workspace") || c.req.header("x-workspace-id") || undefined
       const ws = await resolveWorkspace({ workspaceId, directory }).catch(() => undefined)
-      // Cloud sessions are owned by the Convex control plane.
+      // Cloud sessions are owned by the hosted control plane.
       if (ws?.kind === "cloud") return
       if (isDelete) {
         const sessionId = sessionMatch?.[1]

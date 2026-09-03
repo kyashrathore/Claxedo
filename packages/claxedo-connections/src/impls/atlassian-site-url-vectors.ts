@@ -1,23 +1,18 @@
 /**
  * The single source of truth for what an Atlassian `site_url` may be.
  *
- * Two places enforce this rule and they must not drift:
- *   1. connect time — `normalizeSiteUrl` in `./atlassian.ts`, which decides
- *      where `verify()` sends `Basic base64(email:token)` and what gets stored.
- *   2. request time — `requireBaseUrl` in
- *      `packages/workgraph/src/connectors/jira/source-view.ts`, which decides
- *      where a STORED value may send those same credentials.
- *
- * The rule lives in two implementations because workgraph does not depend on
- * this package at runtime. That duplication is only safe if a divergence fails
- * a test, so both suites iterate this array. It is not hypothetical: when these
- * vectors were first run against both implementations they disagreed on three
+ * `normalizeSiteUrl` in `./atlassian.ts` enforces this rule at connect time —
+ * it decides where `verify()` sends `Basic base64(email:token)` and what gets
+ * stored. Any consumer that later sends those stored credentials must apply the
+ * same rule, and the only safe way to keep a second implementation honest is to
+ * iterate this array from its own suite. That is not hypothetical: when these
+ * vectors were first run against two implementations they disagreed on three
  * inputs — embedded credentials, a query string, and a fragment — which connect
  * time accepted and request time refused.
  *
  * `expected` is the canonical origin an accepted input normalizes to, or
- * `undefined` for an input that must be refused. Both implementations return
- * a bare origin, so a stored path can never corrupt an appended REST path.
+ * `undefined` for an input that must be refused. Normalization returns a bare
+ * origin, so a stored path can never corrupt an appended REST path.
  */
 export type AtlassianSiteUrlVector = Readonly<{
   input: string

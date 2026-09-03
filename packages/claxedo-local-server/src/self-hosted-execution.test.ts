@@ -32,10 +32,10 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
     expect(offenders).toEqual([])
   })
 
-  it("names nothing about Electron, WorkGraph, or who is signed in", () => {
-    // The subpath is product-neutral on purpose: a host that wants WorkGraph
+  it("names nothing about Electron, a hosted capability, or who is signed in", () => {
+    // The subpath is product-neutral on purpose: a host that wants a hosted capability
     // routes inside a local runtime passes them as generic route contributions,
-    // which is what keeps WorkGraph's absence from an unsigned desktop a
+    // which is what keeps a hosted capability's absence from an unsigned desktop a
     // composition fact rather than a runtime flag.
     const source = fs.readFileSync(path.join(ROOT, "src/self-hosted-execution.ts"), "utf8")
     const exported = source
@@ -43,7 +43,7 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
       .filter((line) => line.trimStart().startsWith("export"))
       .join("\n")
 
-    for (const banned of ["Electron", "electron", "WorkGraph", "workgraph", "signedIn", "account"]) {
+    for (const banned of ["Electron", "electron", "signedIn", "account"]) {
       expect(exported).not.toContain(banned)
     }
   })
@@ -54,7 +54,7 @@ describe("@claxedo/local-server/self-hosted-execution", () => {
       root: ROOT,
     })
     expect(
-      ["@claxedo/server", "@claxedo/workgraph", "@claxedo/channels", "@claxedo/connections", "convex"]
+      ["@claxedo/server", "@claxedo/channels", "@claxedo/connections"]
         .filter((name) => closure.packages.includes(name)),
     ).toEqual([])
   })

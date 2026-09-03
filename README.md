@@ -5,7 +5,7 @@
 
 **[claxedo.com](https://claxedo.com) · [npm: @claxedo/*](https://www.npmjs.com/search?q=%40claxedo)**
 
-Claxedo is an open-source coding-agent workspace for running OpenCode, Claude, Codex, Cursor, Pi, and other coding agents against your own projects. It combines first-class chat and terminal sessions, remote workspace access, sandbox management, WorkGraph, MCP tooling, and portable Agent Extensions.
+Claxedo is an open-source coding-agent workspace for running OpenCode, Claude, Codex, Cursor, Pi, and other coding agents against your own projects. It combines first-class chat and terminal sessions, remote workspace access, sandbox management, MCP tooling, and portable Agent Extensions.
 
 ## Quickstart
 
@@ -30,7 +30,7 @@ Most full products start with `@claxedo/workspace-runtime`; the package table be
 
 ## Packages
 
-All 12 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=%40claxedo):
+All 11 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=%40claxedo):
 
 
 | Package                                                                                                | Description                                                                                                                             |
@@ -44,8 +44,7 @@ All 12 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 | [`@claxedo/sandbox-manager`](https://www.npmjs.com/package/@claxedo/sandbox-manager)                   | Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker |
 | [`@claxedo/channels`](https://www.npmjs.com/package/@claxedo/channels)                                 | Channel ingress routing GitHub, Slack, Telegram, Discord, and WhatsApp messages into Claxedo runtimes                                   |
 | [`@claxedo/connections`](https://www.npmjs.com/package/@claxedo/connections)                           | Integration registry, credential store ports, OAuth attempt machine, and token service for linking external accounts                    |
-| [`@claxedo/mcp`](https://www.npmjs.com/package/@claxedo/mcp)                                           | MCP server and CLI for Claxedo documents, WorkGraph, processes, logs, sessions, and browser tools                                       |
-| [`@claxedo/workgraph`](https://www.npmjs.com/package/@claxedo/workgraph)                               | A personal operating system for organizing, executing, and remembering AI-assisted work                                                 |
+| [`@claxedo/mcp`](https://www.npmjs.com/package/@claxedo/mcp)                                           | MCP server and CLI for Claxedo documents, processes, logs, sessions, and browser tools                                                  |
 | [`@claxedo/wakes`](https://www.npmjs.com/package/@claxedo/wakes)                                       | Resume an idle agent session from an out-of-band trigger — a durable wake fired by time, an external event, or an authorized approval   |
 
 
@@ -54,13 +53,13 @@ All 12 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 - `packages/claxedo-server` — control plane (embeds the OpenCode engine, runs local/cloud/hybrid sessions)
 - `packages/claxedo-app` — web app (Solid); `packages/claxedo-desktop` — Electron shell
 - `packages/workspace-runtime`, `workspace-relay*`, `sandbox-manager` — session execution + routing
-- `packages/{channels,connections,workgraph,wakes,mcp,agent-*}` — first-party `@claxedo/*` capabilities
+- `packages/{channels,connections,wakes,mcp,agent-*}` — first-party `@claxedo/*` capabilities
 - `packages/{opencode,core,server,protocol,schema,plugin,llm,codemode,tui,ui,session-ui,sdk,http-recorder}` — vendored OpenCode engine + shared UI (load-bearing dependencies)
 - `packages/cli` — the `claxedo deploy` CLI (`lildax`)
 
 ## OpenCode heritage
 
-Claxedo is a hard fork of [OpenCode](https://github.com/anomalyco/opencode) — the engine and shared UI packages are vendored in-repo as first-party source; everything else (control plane, workspace runtime, relay, channels, connections, workgraph, web/desktop apps) is Claxedo's own.
+Claxedo is a hard fork of [OpenCode](https://github.com/anomalyco/opencode) — the engine and shared UI packages are vendored in-repo as first-party source; everything else (control plane, workspace runtime, relay, channels, connections, web/desktop apps) is Claxedo's own.
 
 ## Contributing
 

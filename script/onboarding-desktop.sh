@@ -8,7 +8,7 @@
 #     (all `opencode.*` persisted UI state, incl. onboarding dismissals),
 #     window state, caches.
 #   CLAXEDO_DATA_DIR              -> embedded claxedo-server state: claxedo.db,
-#     authority.db, workgraph-v2.db, credentials/, workspaces.json,
+#     authority.db, credentials/, workspaces.json,
 #     opencode-engine/, agent-core/, opencode-config/, and the engine's
 #     redirected XDG dirs (opencode-xdg-{data,config,cache}).
 #

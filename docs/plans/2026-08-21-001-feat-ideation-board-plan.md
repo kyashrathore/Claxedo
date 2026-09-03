@@ -16,8 +16,8 @@ execution: code
 |---|---|
 | Objective | Give every raw idea a living **document** as its base artifact, an async engine that reads/produces into it, and transient **branch** discussions (workspace-tab rich cards, infinitely nestable) that fold conclusions back into the doc with nested provenance. Sessions become secondary machinery; the doc is what survives. |
 | Primary invariant | The doc is the only durable knowledge surface. Every folded element carries provenance resolving to user queries, answers, and transcript spans. Discarding a branch loses nothing that was folded; folding a branch removes its need to exist. |
-| Authority order | The ideation store owns docs/branches/folds (one command door, idempotent operationIds — workgraph's discipline). The engine session owns production. The client owns rendering. The transcript is append-only evidence, never the store. |
-| Execution profile | Cross-package: new `packages/ideation` domain service (workgraph-shaped), one new dep (`@openuidev/lang-core`), one new content surface + workspace-panel mode in claxedo-app, Solid generative renderer, SSE reuse, workgraph handoff reuse. |
+| Authority order | The ideation store owns docs/branches/folds (one command door, idempotent operationIds). The engine session owns production. The client owns rendering. The transcript is append-only evidence, never the store. |
+| Execution profile | Cross-package: new `packages/ideation` domain service, one new dep (`@openuidev/lang-core`), one new content surface + workspace-panel mode in claxedo-app, Solid generative renderer, SSE reuse. |
 | Stop conditions | Stop if branch context cannot be bounded to doc-region + local thread (unbounded replay kills the economics); stop if lang-core cannot drive a Solid renderer without forking it; stop if fold conflicts (two branches editing one block) cannot resolve with last-write+provenance. |
 | Tail ownership | Tier-2 AI-authored sandboxed component plugins mount/keep/unmount only after Tier-1 composed cards and the fold/provenance spine are green. |
 
@@ -27,7 +27,7 @@ execution: code
 
 ### Summary
 
-From the rail's **Ideas** list the user creates an idea; its empty **doc** opens as the primary content surface. An engine (one opencode session per idea) reads sources and streams structured output — parsed with `@openuidev/lang-core` and rendered by our Solid card renderer — directly into the doc. The user selects any line or hits ＋ on any section to **fire a branch**: instead of a side-chat, this opens in the existing workspace panel under a **Branches** tab as a rich card (explainer, clarification, diagram, question). Cards nest (select-to-fork children) and **fold upward**: conclusions commit into the parent card or the doc as new blocks carrying provenance chips (query → answer → transcript span → reads). Parked questions resurface per-idea. When the doc is ready, **Turn into work** reuses the existing document→WorkGraph handoff (`turnDocumentIntoWork`) to freeze the doc as an immutable revision and draft an admission plan.
+From the rail's **Ideas** list the user creates an idea; its empty **doc** opens as the primary content surface. An engine (one opencode session per idea) reads sources and streams structured output — parsed with `@openuidev/lang-core` and rendered by our Solid card renderer — directly into the doc. The user selects any line or hits ＋ on any section to **fire a branch**: instead of a side-chat, this opens in the existing workspace panel under a **Branches** tab as a rich card (explainer, clarification, diagram, question). Cards nest (select-to-fork children) and **fold upward**: conclusions commit into the parent card or the doc as new blocks carrying provenance chips (query → answer → transcript span → reads). Parked questions resurface per-idea.
 
 ### The five settled design decisions (from design sessions 2026-08)
 
@@ -47,13 +47,9 @@ From the rail's **Ideas** list the user creates an idea; its empty **doc** opens
 | Rail list (ideas list mirrors session list) | `src/app/workbench/rail/rail-sidebar.tsx` (~line 1570 new-session), `rail-header-actions.ts createSession()`, draft-session meta via `draftSessionMeta()` | Ideas get their own rail section; creation mints an `ideation` ContentMeta analog to draft-session. |
 | Side panel modes (Branches tab lives here) | `src/features/workspaces/ui/panel/workspace-panel-state.ts` — `WorkspacePanelMode` union; rendered by `src/app/workbench/rail/workspace-panel-body.tsx` | Add `"branches"` mode + body section. Files/Browser/Process precedent. |
 | Message part dispatch (if ever surfacing genui in transcripts) | `packages/session-ui/src/components/message-part.tsx` — `PART_MAPPING` registry, `registerPartComponent(type, comp)` (line 1000) | Not needed for v1 (ideation renders its own parts); noted as the seam for later. |
-| Server command door pattern | `packages/workgraph/src/http/router.ts` (Hono) mounted at `/api/workgraph` via `claxedo-server/src/hosts/workgraph/composition/server-workgraph.ts:364`; Zod contracts in `http/contracts.ts` | `packages/ideation` clones this shape: contracts → router → hosts composition. |
 | SSE fanout | `packages/workspace-runtime/src/routes/events.ts` (`streamSSE` + replay buffer); client loop `claxedo-app/src/app/integrations/claxedo-events.tsx` | Ideation events ride the same bus; no new transport. |
-| Doc→WorkGraph handoff (already exists) | `packages/claxedo-app/src/app/integrations/doc-workgraph.ts` — `turnDocumentIntoWork`: snapshot → content-hash revision → pin → `propose_admission` | Turn-into-work calls this with the ideation doc snapshot. |
 | Theme tokens | `packages/ui/src/theme/themes/codex.json` + `html[data-theme="codex"]` overrides | All ideation UI consumes semantic vars only. |
 | Generative UI dep | none anywhere (verified repo-wide) | `@openuidev/lang-core` is a brand-new, MIT, framework-agnostic dependency. |
-
-Related prior art in-repo: `docs/workgraph-primer.md` (domain vocabulary), mockups `mockups/workgraph-ideation.html` + `workgraph-ui-vision.html` (interaction spec, iterated with product owner), `convex/workgraph*.ts` (dual-backend reference).
 
 ---
 
@@ -68,7 +64,7 @@ flowchart LR
     PV[Provenance popovers] --> DOC
   end
   subgraph Server [packages/ideation · Hono /api/ideation]
-    CMD[commands\ncreate_idea · fire_branch ·\nfold · park · discard] --> STORE[(SQLite store\nv1 · Convex later)]
+    CMD[commands\ncreate_idea · fire_branch ·\nfold · park · discard] --> STORE[(SQLite store\nv1 · D1 later)]
     BUS[event bus → SSE]
   end
   subgraph Engine [opencode session · one per idea]
@@ -78,13 +74,12 @@ flowchart LR
   CMD -->|append turn| P
   P -->|OpenUI Lang stream| R
   STORE <--> BUS --> DOC
-  DOC -->|Turn into work| WG[doc-workgraph.ts\nfrozen revision → admission]
 ```
 
 ### Data model (store contract, both backends eventually)
 
 ```
-ideas        id · title · status(open|settled|archived) · sessionId · cursor        (tenant-scoped org+user like workgraph)
+ideas        id · title · status(open|settled|archived) · sessionId · cursor        (tenant-scoped org+user)
 doc_blocks   id · ideaId · order · kind(title|para|bullets|artifact|section) ·      ← the base artifact
              contentJson · version · foldedFrom? (branchId) · provenanceId?
 branches     id · ideaId · parentId? · blockAnchor? · kind(question|dig|clarify) ·
@@ -110,7 +105,7 @@ Model requests off-vocabulary component via structured `request_component` call 
 
 ### Phase 0 — Foundations (scaffold, no behavior)
 - Add `@openuidev/lang-core` dependency (root catalog).
-- `packages/claxedo-app/src/features/ideation/` with AGENTS.md ownership block (mustNotImport: session/*, terminal/*, browser/* — mirror workgraph's constraints).
+- `packages/claxedo-app/src/features/ideation/` with AGENTS.md ownership block (mustNotImport: session/*, terminal/*, browser/* — keep the surface self-contained).
 - `"ideation"` in CONTENT_TYPES + first-party content surface rendering an empty shell; rail **Ideas** section listing from store; new-idea action mints ContentMeta + opens surface (clone draft-session flow).
 - Accept: idea appears in rail, opens empty doc surface, survives reload (store round-trip).
 
@@ -127,7 +122,7 @@ Model requests off-vocabulary component via structured `request_component` call 
 
 ### Phase 3 — Branches panel
 - `"branches"` WorkspacePanelMode + body section; grouped vertical list; rich card view with breadcrumb; fire composer (direct, unanchored, folds to *From branches* section); select-to-fork child branches; park/reopen.
-- Accept: full loop of the final mock (`mockups/workgraph-ideation.html`) against real store: fire → working → needs-you → answer → fold.
+- Accept: full loop against the real store: fire → working → needs-you → answer → fold.
 
 ### Phase 4 — Fold + provenance
 - `fold` command with reason settle|correct|clarify; chain closure (ancestor walk, single decision entry per fold into seed log); provenance rows joining queries/answers/transcript spans; pv chips + nested-chain popover in doc.
@@ -138,16 +133,15 @@ Model requests off-vocabulary component via structured `request_component` call 
 - Engine continues with open questions while user away; needs-you surfaces integrate the existing attention patterns; parked resurfaces on idea open; rail badges.
 - Accept: question answered while away appears folded-ready on return; nothing silently dropped.
 
-### Phase 6 — WorkGraph handoff + Tier-2 tail
-- Turn into work → `turnDocumentIntoWork` with ideation doc snapshot; Keep/Replace/Fork flows inherit.
-- Then Tier-2 generated-component plugins (mount/quarantine/keep/unmount with disposers) behind a flag.
-- Accept: ideation doc becomes a stream with goals/tasks tracing to doc revision; a kept generated component composes in Tier-1 thereafter.
+### Phase 6 — Tier-2 tail
+- Tier-2 generated-component plugins (mount/quarantine/keep/unmount with disposers) behind a flag.
+- Accept: a kept generated component composes in Tier-1 thereafter.
 
 ---
 
 ## File Map
 
-**New:** `packages/ideation/**` (contracts, http, adapters/sqlite, application — workgraph-shaped) · `features/ideation/**` (surface, doc/, branches/, cards/, renderer, api client, stores) · panel section `workspace-panel/branches-panel.tsx`.
+**New:** `packages/ideation/**` (contracts, http, adapters/sqlite, application) · `features/ideation/**` (surface, doc/, branches/, cards/, renderer, api client, stores) · panel section `workspace-panel/branches-panel.tsx`.
 **Touched:** `workbench/state/types.ts` (+CONTENT_TYPES) · `first-party-content-surfaces.tsx` · `rail-sidebar.tsx` (+Ideas section) · `workspace-panel-state.ts` (+mode) · `workspace-panel-body.tsx` · `claxedo-server` host composition (+mount) · root `package.json` catalog (+lang-core).
 
 ## Risks & Open Questions
@@ -156,6 +150,6 @@ Model requests off-vocabulary component via structured `request_component` call 
 |---|---|---|
 | 1 | lang-core API drift / Solid fit | Pin version; parser is isolated behind `features/ideation/renderer/`; escape hatch = vendor the ~1k-line parser. |
 | 2 | Mermaid rendering dep | Defer: ship mermaid *source* + mono pre-render v1 (matches mocks); add renderer when justified. |
-| 3 | Hosted backend (Convex) parity | Deliberately v2; SQLite personal-first matches workgraph history. |
+| 3 | Hosted backend (D1) parity | Deliberately v2; SQLite personal-first. |
 | 4 | Naming ("Ideas/Ideation", fold/park verbs) | Product-voice decision, flagged not blocked. |
 | 5 | Multi-cursor fold conflicts | Rule set in Phase 4 acceptance; revisit CRDT only if real contention appears. |

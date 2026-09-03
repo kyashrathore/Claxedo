@@ -5,10 +5,10 @@ become one running product. Three roles, three directories:
 
 | dir | role | contents |
 | --- | --- | --- |
-| `hosts/` | we **host** these packages | `workgraph/`, `wakes/`, `agent-extensions/`, `workspace-runtime/` — one dir per `@claxedo/<pkg>` |
+| `hosts/` | we **host** these packages | `wakes/`, `agent-extensions/`, `workspace-runtime/` — one dir per `@claxedo/<pkg>` |
 | `adapters/` | we **adapt** these backends | `central-store/` — each adapts exactly one external thing. The Relay adapter moved to `@claxedo/server-core/adapters/relay`, which both products use. |
 | `platform/` | layer-organized shared machinery | `auth/`, `db/`, `http/`, `runtime/`, `telemetry/`, `governance/` |
-| `deployments/` | we **compose** these modes | `self-hosted-node/`, `hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |
+| `deployments/` | we **compose** these modes | `self-hosted-node/`, `hosted-shared/`, `hosted-workerd/`, `shared-routes/` |
 
 Everything else is a feature domain, flat at `src/` root — `documents/`,
 `billing/`, `channels/`, `session/`, `workspace/`, `credentials/`, `sandbox/`,
@@ -26,7 +26,6 @@ public domain with signed auth is `trust=hosted, runtime=node`. See
 
 **`.cf.ts` means workerd-only.** A file that cannot run outside the Cloudflare
 runtime (Durable Object classes, `cloudflare:workers`, KV/R2 bindings). `hosted-*` files are NOT marked, because hosted runs on Node too.
-Enforced in both directions by `deployments/hosted-workerd/worker.import-graph.test.ts`.
 
 **`authority/` is the identity/authorization/tenancy layer**, not "the control
 plane" (that is the whole package). `authority/http/` is that layer's wire
@@ -36,8 +35,7 @@ product HTTP surface.
 
 ## Rules with teeth
 
-These are enforced by tests, not convention — see `tests/governance/codebase-shape.test.ts`
-and `deployments/hosted-workerd/worker.import-graph.test.ts`:
+These are enforced by tests, not convention — see `tests/governance/codebase-shape.test.ts`:
 
 - **All SQL goes through drizzle tables.** Each domain owns its own
   `*.sql.ts` table definitions; `platform/db/schema.ts` barrels them for the
@@ -48,8 +46,8 @@ and `deployments/hosted-workerd/worker.import-graph.test.ts`:
   hand-rolled schema, deliberately kept out of the Worker bundle.
 - **`test-support/` may not be imported by production modules.**
 - **No Node-only module or package may enter the Worker import graph.**
-- **The generic control-plane core stays Convex-free** — that is what keeps
-  `trust=local` working with no Convex and no Clerk.
+- **The generic control-plane core stays storage-agnostic** — that is what keeps
+  `trust=local` working with no hosted authority and no hosted identity provider.
 - **Polar stays inside `billing/`**, and never reaches the local entrypoints.
 
 ## Test kinds

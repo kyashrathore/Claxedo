@@ -67,8 +67,7 @@ import type { AgentHarnessAccess, SessionHarnessId } from "../../../../agent-sdk
 // Type-only, so the bare specifier is safe here — it erases before run time.
 import type { SessionHarness } from "@claxedo/agent-sdk-runtime"
 // Type-only reach into claxedo-server source. `e2e/` already imports that package by
-// relative path in several helpers (`e2e/helpers/real-workgraph-harness.ts:25`,
-// `e2e/helpers/workgraph-connection-browser-use-server.ts:7`), and `tsconfig.e2e.json`
+// relative path in several helpers, and `tsconfig.e2e.json`
 // carries the `types: ["bun", …]` entry that exists specifically so those imports
 // resolve — so this costs nothing at runtime and adds no new build surface.
 import type { harnessFromRequest } from "../../../../claxedo-local-server/src/agent-config/harness"

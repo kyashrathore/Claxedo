@@ -23,7 +23,6 @@
 // row (verified):
 //   - packages/claxedo-server/src/authority/adapters/d1/workspace-authority.ts
 //   - packages/claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts
-//   - convex/workspaces.ts (`listWorkspacesForUser`)
 // D1 is the one whose method carries an INFERRED return type (`WorkspaceAuthority`
 // declares `listWorkspaces` as `Promise<unknown>`, so going through the port or
 // through the sqlite factory's explicit annotation would bind to nothing).

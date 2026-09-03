@@ -58,7 +58,7 @@ export type EventsHandlerOptions = {
   /**
    * Resolves the caller's AUTHORITY-INTERNAL org id (`authority.resolveOrgId`)
    * at connect time — the namespace `document.changed`/`provision` events are
-   * stamped with, so signed subscribers can receive them. The Clerk org claim
+   * stamped with, so signed subscribers can receive them. The issuer org claim
    * is deliberately never used here (disjoint namespace). Absent (no authority
    * composed) → signed subscribers see subject-keyed events only, fail-closed.
    */
@@ -134,7 +134,7 @@ export function eventsHandler(options: EventsHandlerOptions = {}) {
   // Retention matches the workspace fix (256 frames + a 64-frame terminal ring)
   // because it is literally the same bus — `claxedoBus` is `workspaceRuntimeBus`
   // — carrying control frames only, plus the handful of control-plane events
-  // (`provision`, `workgraph.changed`, `document.changed`, `worktree.*`). No
+  // (`provision`, `document.changed`, `worktree.*`). No
   // token-level deltas ride here; those are on the runtime event hub. 256
   // control frames is far more than the worst client gap (45s heartbeat
   // watchdog + 2s reconnect floor) can span.

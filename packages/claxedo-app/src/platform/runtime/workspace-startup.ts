@@ -24,7 +24,7 @@ export function configureWorkspaceStartup(port: WorkspaceStartupPort) {
  * Throws when this build bound no implementation.
  *
  * Deliberately not a tolerant accessor returning `undefined`. A ports seam that
- * degrades quietly is how the WorkGraph doorbell shipped inert with a green
+ * degrades quietly is how the hosted doorbell shipped inert with a green
  * suite (`architecture/app-ports-wiring.guard.test.ts` records that failure),
  * and the equivalent here would be a cloud submit that silently reports success
  * against a runtime nobody woke. Reaching this in a local build means a hosted

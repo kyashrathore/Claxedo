@@ -239,7 +239,6 @@ export type RailSidebarProps = {
   onUsage?: () => void
   onHelp?: () => void
   onOpenMarketplace?: () => void
-  onOpenWorkGraph?: () => void
   onOpenPages?: () => void
   onRailCancelCollapse: () => void
   onRailLockChange: (locked: boolean) => void
@@ -2405,7 +2404,6 @@ export function RailSidebar(props: RailSidebarProps) {
           onNewProject={props.onNewProject}
           onOpenPages={props.onOpenPages}
           onOpenMarketplace={props.onOpenMarketplace}
-          onOpenWorkGraph={props.onOpenWorkGraph}
         />
 
         {/* Projects list */}

@@ -40,15 +40,15 @@ describe("what gets scanned", () => {
   test("a map holding the library's body is ignored, the chunk beside it is not", () => {
     const withMap = inspectEmittedBundle([
       ...cleanBundle(),
-      { name: "assets/index-aaaa.js.map", text: '{"sourcesContent":["import ClerkJS from \'@clerk/clerk-js\'"]}' },
+      { name: "assets/index-aaaa.js.map", text: '{"sourcesContent":["import { createAuthClient } from \'better-auth/client\'"]}' },
     ])
     expect(withMap.identityLeaks).toEqual([])
 
     const withChunk = inspectEmittedBundle([
       ...cleanBundle(),
-      { name: "assets/index-aaaa.js", text: "const c=new ClerkJS()" },
+      { name: "assets/index-aaaa.js", text: "const c=createAuthClient()" },
     ])
-    expect(withChunk.identityLeaks).toEqual([{ marker: "ClerkJS", file: "assets/index-aaaa.js" }])
+    expect(withChunk.identityLeaks).toEqual([{ marker: "createAuthClient", file: "assets/index-aaaa.js" }])
   })
 })
 
@@ -76,16 +76,17 @@ describe("identity-provider content", () => {
   })
 
   test("no marker is satisfied by an asset FILENAME appearing in another chunk", () => {
-    // The measured false positive. When the local build inherited the hosted
-    // `vendor-clerk` manual chunk, Rollup emitted a 116-byte chunk under that
-    // name holding one CommonJS interop helper and zero Clerk code — and 61
-    // other chunks imported it, carrying the string "vendor-clerk-CqkleIqs.js"
-    // in their import specifiers. A looser marker set (the bare word "clerk")
-    // reports 61 leaks on a bundle containing none.
+    // The measured false positive. When a local build inherits the hosted
+    // `vendor-better-auth` manual chunk, Rollup emits a tiny chunk under that
+    // name holding one CommonJS interop helper and zero provider code — and
+    // every chunk that imports it carries the string
+    // "vendor-better-auth-CqkleIqs.js" in its import specifiers. A looser
+    // marker set (the bare words "better-auth") reports a leak per importer on
+    // a bundle containing none.
     const report = inspectEmittedBundle([
       ...cleanBundle(),
-      { name: "assets/mermaid-dddd.js", text: 'import"./vendor-clerk-CqkleIqs.js";' },
-      { name: "assets/vendor-clerk-CqkleIqs.js", text: "function e(t){return t}export{e as g};" },
+      { name: "assets/mermaid-dddd.js", text: 'import"./vendor-better-auth-CqkleIqs.js";' },
+      { name: "assets/vendor-better-auth-CqkleIqs.js", text: "function e(t){return t}export{e as g};" },
     ])
 
     expect(report.identityLeaks).toEqual([])
@@ -95,15 +96,15 @@ describe("identity-provider content", () => {
 describe("assets named for a forbidden package", () => {
   test("are refused even when they contain none of its code", () => {
     // The defect the content scan cannot see, and the one that was actually
-    // there: an empty chunk still called `vendor-clerk`.
+    // there: an empty chunk still called `vendor-better-auth`.
     const report = inspectEmittedBundle([
       ...cleanBundle(),
-      { name: "assets/vendor-clerk-CqkleIqs.js", text: "function e(t){return t}export{e as g};" },
+      { name: "assets/vendor-better-auth-CqkleIqs.js", text: "function e(t){return t}export{e as g};" },
     ])
 
     expect(report.identityLeaks).toEqual([])
-    expect(report.forbiddenChunkNames).toEqual(["assets/vendor-clerk-CqkleIqs.js"])
-    expect(bundleFailures(report).join("\n")).toContain("vendor-clerk")
+    expect(report.forbiddenChunkNames).toEqual(["assets/vendor-better-auth-CqkleIqs.js"])
+    expect(bundleFailures(report).join("\n")).toContain("vendor-better-auth")
   })
 
   test("a bundle with no such asset reports none", () => {
@@ -136,10 +137,10 @@ describe("marker detectability", () => {
     // Handed a bundle that contains ONE marker, the control must report the
     // rest as undetected — that is how a marker list that has stopped matching
     // the library gets found, instead of quietly passing forever.
-    const control = verifyMarkersAreDetectable([{ name: "assets/vendor-eeee.js", text: "clerk.com" }])
+    const control = verifyMarkersAreDetectable([{ name: "assets/vendor-eeee.js", text: "createAuthClient" }])
 
     expect(control.checked).toBe(IDENTITY_PROVIDER_MARKERS.length)
-    expect(control.undetected).toEqual(IDENTITY_PROVIDER_MARKERS.filter((m) => m !== "clerk.com"))
+    expect(control.undetected).toEqual(IDENTITY_PROVIDER_MARKERS.filter((m) => m !== "createAuthClient"))
   })
 
   test("reports nothing undetected when every marker is present", () => {

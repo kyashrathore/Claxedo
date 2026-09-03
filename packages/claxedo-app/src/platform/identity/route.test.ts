@@ -4,7 +4,6 @@ import {
   legacyDirectoryFromRouteKey,
   legacyDirectoryRouteKey,
   marketplaceRoute,
-  newTaskRoute,
   parseShellRoute,
   nonCanonicalWorkspaceRouteRedirect,
   resolveLegacyRedirect,
@@ -16,7 +15,6 @@ import {
   workspaceRouteWithId,
   workspaceSessionRoute,
   workspaceTerminalRoute,
-  workspaceWorkGraphRoute,
 } from "./route"
 
 describe("shell route identity", () => {
@@ -24,10 +22,7 @@ describe("shell route identity", () => {
     expect(sessionRoute("ses_1")).toBe("/s/ses_1")
     expect(sessionRoute("session/with slash")).toBe("/s/session%2Fwith%20slash")
     expect(marketplaceRoute()).toBe("/marketplace")
-    expect(newTaskRoute()).toBe("/task/new")
     expect(workspaceRoute("ws_1")).toBe("/w/ws_1")
-    expect(newTaskRoute("ws_1")).toBe("/w/ws_1/task/new")
-    expect(workspaceWorkGraphRoute("ws_1")).toBe("/w/ws_1/workgraph")
     expect(workspaceSessionRoute("ws_1")).toBe("/w/ws_1/session")
     expect(workspaceSessionRoute("ws_1", "ses/with slash")).toBe("/w/ws_1/session/ses%2Fwith%20slash")
     expect(workspacePageRoute("ws_1", "page/with slash")).toBe("/w/ws_1/page/page%2Fwith%20slash")
@@ -62,21 +57,12 @@ describe("shell route identity", () => {
     expect(parseShellRoute("/marketplace")).toEqual({
       kind: "marketplace",
     })
-    expect(parseShellRoute("/task/new")).toEqual({ kind: "newTask" })
     expect(parseShellRoute("/w/ws_cloud_1")).toEqual({
       kind: "workspace",
       workspaceId: "ws_cloud_1",
     })
     expect(parseShellRoute("/w/%2Frepo%2Fmain/session")).toEqual({
       kind: "workspace-session",
-      workspaceId: "/repo/main",
-    })
-    expect(parseShellRoute("/w/%2Frepo%2Fmain/workgraph")).toEqual({
-      kind: "workspaceWorkGraph",
-      workspaceId: "/repo/main",
-    })
-    expect(parseShellRoute("/w/%2Frepo%2Fmain/task/new")).toEqual({
-      kind: "newTask",
       workspaceId: "/repo/main",
     })
     expect(parseShellRoute("/w/%2Frepo%2Fmain/session/ses%2Fwith%20slash")).toEqual({
@@ -98,10 +84,6 @@ describe("shell route identity", () => {
 
   test("rewrites directory-shaped workspace routes with an opaque workspace id", () => {
     expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain"), "ws_local")).toBe("/w/ws_local")
-    expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/workgraph"), "ws_local"))
-      .toBe("/w/ws_local/workgraph")
-    expect(workspaceRouteWithId(parseShellRoute("/task/new"), "ws_local"))
-      .toBe("/w/ws_local/task/new")
     expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/session/ses_1"), "ws_local"))
       .toBe("/w/ws_local/session/ses_1")
     expect(workspaceRouteWithId(parseShellRoute("/w/%2Frepo%2Fmain/page/page_1"), "ws_local"))
@@ -128,8 +110,6 @@ describe("shell route identity", () => {
     const directory = "%2Fprivate%2Ftmp%2Fworkspace"
     for (const pathname of [
       `/w/${directory}`,
-      `/w/${directory}/workgraph`,
-      `/w/${directory}/task/new`,
       `/w/${directory}/session`,
       `/w/${directory}/session/new`,
       `/w/${directory}/page/page_1`,
@@ -160,8 +140,6 @@ describe("shell route identity", () => {
   test("keeps route workspace key extraction inside the shell route boundary", () => {
     expect(shellRouteDirectory(parseShellRoute("/s/ses_1"))).toBeUndefined()
     expect(shellRouteDirectory(parseShellRoute("/w/ws_cloud_1/session"))).toBe("ws_cloud_1")
-    expect(shellRouteDirectory(parseShellRoute("/w/ws_cloud_1/workgraph"))).toBe("ws_cloud_1")
-    expect(shellRouteDirectory(parseShellRoute("/task/new"))).toBeUndefined()
     expect(shellRouteDirectory(parseShellRoute(`/${base64Encode("/repo/main")}/page/page_1`))).toBe("/repo/main")
   })
 

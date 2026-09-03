@@ -61,7 +61,7 @@ export function requireDeploymentStepIdentity(identity: ServiceDeploymentStepIde
   if (!steps.has(identity.step)) {
     throw new ServiceDeploymentStepError("invalid_identity", "unknown optional-service deployment step")
   }
-  if (identity.serviceId !== "workgraph" && identity.serviceId !== "documents") {
+  if (identity.serviceId !== "documents") {
     throw new ServiceDeploymentStepError("invalid_identity", "unknown optional service")
   }
   return identity

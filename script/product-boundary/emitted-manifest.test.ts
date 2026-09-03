@@ -28,7 +28,7 @@ function fixture(manifest?: BuildManifest) {
     packageDir: "packages/app",
     entry: "packages/app/src/index.ts",
     roots: ["packages/app/src"],
-    forbiddenPackages: ["@clerk/clerk-js"],
+    forbiddenPackages: ["forbidden-sdk"],
     forbiddenModules: ["packages/app/src/hosted"],
     control: { minModules: 1, requiredModules: [] },
     emitted: {
@@ -36,7 +36,7 @@ function fixture(manifest?: BuildManifest) {
       minModules: 2,
       minChunks: 1,
       requiredModules: ["packages/app/src/index.ts"],
-      forbiddenChunkMarkers: ["clerk"],
+      forbiddenChunkMarkers: ["forbidden-sdk"],
     },
   }
   return { root, policy }
@@ -74,15 +74,15 @@ describe("emitted manifest boundary", () => {
       modules: [
         "packages/app/src/index.ts",
         "packages/app/src/hosted/private.ts",
-        "@clerk/clerk-js/dist/index.js",
+        "forbidden-sdk/dist/index.js",
       ],
-      chunks: ["assets/vendor-clerk.js"],
+      chunks: ["assets/vendor-forbidden-sdk.js"],
       edges: { static: [], dynamic: [] },
     })
     expect(emittedManifestFindings(policy, root)).toEqual([
       "forbidden emitted module packages/app/src/hosted: packages/app/src/hosted/private.ts",
-      "forbidden emitted package @clerk/clerk-js: @clerk/clerk-js/dist/index.js",
-      "forbidden emitted chunk marker clerk: assets/vendor-clerk.js",
+      "forbidden emitted package forbidden-sdk: forbidden-sdk/dist/index.js",
+      "forbidden emitted chunk marker forbidden-sdk: assets/vendor-forbidden-sdk.js",
     ])
   })
 
