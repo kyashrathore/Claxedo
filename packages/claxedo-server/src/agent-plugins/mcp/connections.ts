@@ -10,7 +10,7 @@ import {
   mcpOAuthDeclaration,
 } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import type { AgentPluginHttpServer } from "@claxedo/server-core/agent-plugins/catalog/types"
-import type { HostedDynamicConnectionIntegrations } from "../../hosts/workgraph/hosted/connections-setup"
+import type { HostedDynamicConnectionIntegrations } from "../../connections/hosted-d1/types"
 import { hostedMcpCatalogAuthentication } from "./catalog-auth"
 
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>
