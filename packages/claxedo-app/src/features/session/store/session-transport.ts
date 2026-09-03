@@ -4,7 +4,7 @@ import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runti
 import { usesScopedSessionTransport } from "@/platform/identity/legacy-resolver"
 import { suppressedByFastSessionSwitch } from "@/platform/runtime/session-switch"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import type { SessionMessagePageRequest } from "@/platform/runtime/session"
+import type { SessionBackend, SessionMessagePageRequest } from "@/platform/runtime/session"
 import type { AgentRuntimeGoalMutationResult } from "@/platform/runtime/agent/agent-runtime-client"
 import type { AgentRuntimeGoalState } from "@/platform/runtime/agent/agent-runtime-goal-client"
 
@@ -83,6 +83,25 @@ export async function fetchSessionByTransport(input: {
     workspaceKind: input.workspaceKind,
     sessionRef: input.sessionRef,
   }).getSession(input)
+}
+
+/**
+ * Builds the deferred session-info reader used by the pane cache owner.
+ *
+ * Session metadata must follow the same SessionRef-selected route as history:
+ * a central child is not an upstream workspace session even when its pane has
+ * a filesystem directory for tool execution.
+ */
+export function createSessionInfoHydrationGetter(input: {
+  client: SessionClient
+  claxedoServerUrl?: string
+  signedControlPlane?: boolean
+  workspaceId?: string
+  workspaceKind?: "cloud" | "user-hosted"
+  sessionRef?: SessionRef
+}) {
+  return async (session: Parameters<SessionBackend["getSession"]>[0]) =>
+    (await fetchSessionByTransport({ ...input, ...session })).data
 }
 
 export async function fetchSessionMessagesByTransport(input: {

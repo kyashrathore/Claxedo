@@ -1,8 +1,6 @@
 import {
-  type Config,
   type Path,
   type Project,
-  type ProviderAuthResponse,
   type ProviderListResponse,
   createOpencodeClient,
 } from "@opencode-ai/sdk/v2/client"
@@ -14,14 +12,7 @@ import { formatServerError } from "@/lib/server-errors"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { setProviderQueryData } from "@/platform/query/provider-cache"
-import {
-  normalizeProjectList,
-  projectCatalogMissingWorkspace,
-  providerAuthQuery,
-  providerCacheHarness,
-  projectListQuery,
-  providerListQuery,
-} from "@/platform/query/control-plane"
+import { projectCatalogMissingWorkspace } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
 import { agentListQuery, configQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
@@ -34,9 +25,11 @@ import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { accountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { centralTransportForServer } from "@/platform/runtime/transport"
+import {
+  activateServicesForLocalCentral,
+  synchronizeServiceCatalogFromBootstrap,
+} from "@/app/composition/service-contributions"
 
 type OpencodeClient = ReturnType<typeof createOpencodeClient>
 export type GlobalBootstrapSdk = Pick<OpencodeClient, "global" | "path" | "project" | "provider">
@@ -46,21 +39,15 @@ type BootstrapDirectory = string
 export type GlobalBootstrapState = {
   ready: boolean
   path: Path
-  project: Project[]
-  provider: NormalizedProviderListResponse
-  provider_auth: ProviderAuthResponse
-  config: Config
   reload: undefined | "pending" | "complete"
 }
 
 type Boot = {
   healthy?: boolean
+  authenticated?: boolean
+  services?: unknown
   version?: string
   path?: Path
-  project?: Project[]
-  provider?: ProviderListResponse
-  provider_auth?: ProviderAuthResponse
-  config?: Config
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {
@@ -121,17 +108,13 @@ function opencodeProviderUrl(input: { serverUrl?: string; harnessType?: string; 
 
 async function bootstrapData(baseUrl: string, fetchFn: typeof globalThis.fetch, harnessType?: string): Promise<Boot | undefined> {
   try {
-    const run = accountRun()
-    // Desktop signed mode: renderer has no bearer — bootstrap is account.get.
-    if (run) {
-      const data = decodeHostedResult<unknown>(
-        "account.get",
-        await run("account.get", harnessType ? { harness: harnessType } : {}),
-      )
-      return isBoot(data) ? data : undefined
-    }
     const res = await fetchFn(claxedoBootstrapUrl({ serverUrl: baseUrl, harnessType }), {
       headers: { Accept: "application/json" },
+      // Cookies exist only on the hosted cookie product. The loopback daemon
+      // authenticates locally, and its CORS deliberately never grants
+      // credentialed cross-origin access — an `include` fetch from the dev
+      // renderer origin (http://localhost:517x) is rejected outright there.
+      credentials: isLoopbackServer(baseUrl) ? "omit" : "include",
     })
     if (!res.ok) return undefined
     const data: unknown = await res.json().catch(() => undefined)
@@ -163,7 +146,17 @@ function postPaint(task: () => void) {
   setTimeout(task, 0)
 }
 
-function runIdleWarmup(task: () => Promise<void>) {
+/**
+ * Runs `task` off the render-blocking path: on the browser's idle callback
+ * where available, otherwise a macrotask tick. This module's own directory
+ * warmup (provider/vcs prefetch, below) uses it for exactly the same reason
+ * any other post-boot write should: the result was already applied locally,
+ * so the network call is bookkeeping, not something the first paint needs.
+ * Exported so other boot-adjacent callers (e.g. `layout.tsx`'s cold-boot
+ * project-color persistence) share the one scheduling policy instead of
+ * each re-implementing `requestIdleCallback` with its own fallback.
+ */
+export function runIdleWarmup(task: () => Promise<void>) {
   const run = () => {
     void task().catch(() => {})
   }
@@ -197,44 +190,30 @@ function setDirectoryProjectQuery(baseUrl: string | undefined, directory: Bootst
   queryClient.setQueryData(queryKeys.directory.project(baseUrl, directory), project)
 }
 
-/**
- * The harness a provider/auth cache entry belongs to.
- *
- * OpenCode keeps its own key (see `providerCacheHarness`): an unqualified
- * `/provider` request is no longer guaranteed to be the OpenCode catalog.
- */
-const providerQueryHarness = providerCacheHarness
+const EMPTY_PATH: Path = { state: "", config: "", worktree: "", directory: "", home: "" }
 
-/**
- * Publishes a bootstrapped catalog under the key its harness owns.
- *
- * OpenCode is the product catalog the settings page and harness-less pickers
- * read — publish it both under its own key and as the global bootstrap state.
- * Every other harness is cached for that harness only.
- */
-function setBootstrapProviderQueries(input: {
-  baseUrl?: string
-  harnessType?: string
-  providers: NormalizedProviderListResponse
-  setGlobalState: (patch: Partial<GlobalBootstrapState>) => void
-}) {
-  const harness = providerQueryHarness(input.harnessType)
-  setProviderQueryData(queryKeys.controlPlane.providers(input.baseUrl, undefined, harness), input.providers)
-  if (!harness || harness === "opencode") input.setGlobalState({ provider: input.providers })
+function serviceCatalogUrl(serverUrl: string | undefined) {
+  return new URL("/api/claxedo/services", normalizedServerUrl(serverUrl))
 }
 
-/** `setBootstrapProviderQueries`, for the provider auth-method map. */
-function setBootstrapProviderAuthQuery(input: {
-  baseUrl?: string
-  harnessType?: string
-  auth: ProviderAuthResponse
-  setGlobalState: (patch: Partial<GlobalBootstrapState>) => void
-}) {
-  const harness = providerQueryHarness(input.harnessType)
-  queryClient.setQueryData(queryKeys.controlPlane.providerAuth(input.baseUrl, harness), input.auth)
-  if (!harness || harness === "opencode") input.setGlobalState({ provider_auth: input.auth })
+/**
+ * The first-party service catalog for a hosted central.
+ *
+ * Only a hosted central issues one, and it has no aggregate to ride on, so the
+ * catalog is its own small read. The payload is the `{ authenticated, services }`
+ * pair `synchronizeServiceCatalogFromBootstrap` consumes —
+ * `authenticated: false` is authoritative sign-out and must deactivate
+ * already-loaded services. A loopback daemon mounts no such route and its
+ * aggregate carries no `services`; see `activateServicesForLocalCentral`.
+ */
+async function fetchServiceCatalog(baseUrl: string, fetchFn: typeof globalThis.fetch) {
+  const res = await fetchFn(serviceCatalogUrl(baseUrl), {
+    headers: { Accept: "application/json" },
+    credentials: "include",
+  })
+  if (!res.ok) throw new Error(`service catalog fetch failed: ${res.status}`)
+  return await res.json() as unknown
 }
-
 
 export async function bootstrapGlobal(input: {
   baseUrl: string
@@ -248,36 +227,44 @@ export async function bootstrapGlobal(input: {
   setGlobalState: (patch: Partial<GlobalBootstrapState>) => void
   harnessType?: string
 }) {
-  const boot = await bootstrapData(input.baseUrl, input.fetch, input.harnessType)
-  if (boot?.healthy) {
-    const projects = normalizeProjectList(boot.project)
-    input.setGlobalState({ path: boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" } })
-    queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), boot.path ?? { state: "", config: "", worktree: "", directory: "", home: "" })
-    input.setGlobalState({ project: projects })
-    queryClient.setQueryData(queryKeys.controlPlane.projects(input.baseUrl), projects)
-    if (isProviderListResponse(boot.provider)) {
-      const providers = normalizeProviderList(boot.provider)
-      // A harness-qualified bootstrap fetched a harness-qualified catalog, so
-      // it belongs under that harness's key. An unavailable/error payload must
-      // not be normalized into an empty successful catalog: leaving the query
-      // unset lets its canonical route load or expose the real error.
-      setBootstrapProviderQueries({
-        baseUrl: input.baseUrl,
-        harnessType: input.harnessType,
-        providers,
-        setGlobalState: input.setGlobalState,
+  // Off loopback there is no aggregate to read: the browser has already
+  // resolved the auth descriptor and its session, the workspace catalog is its
+  // own query (`features/workspaces/data/workspace-catalog.ts`), and every
+  // other former bootstrap field is per-workspace, per-harness, or a stub.
+  if (!isLoopbackServer(input.baseUrl)) {
+    try {
+      await synchronizeServiceCatalogFromBootstrap(await fetchServiceCatalog(input.baseUrl, input.fetch))
+    } catch (error) {
+      showToast({
+        variant: "error",
+        title: input.requestFailedTitle,
+        description: formatServerError(error, input.translate),
       })
     }
-    // Same rule for the auth-method map, which the bootstrap payload also
-    // qualifies by harness: a harness's methods are not the global ones.
-    setBootstrapProviderAuthQuery({
-      baseUrl: input.baseUrl,
-      harnessType: input.harnessType,
-      auth: boot.provider_auth ?? {},
-      setGlobalState: input.setGlobalState,
+    input.setGlobalState({ ready: true })
+    return
+  }
+
+  // A loopback central issues no catalog, in the aggregate or anywhere else, so
+  // the build's loaders are the authority for what it may render — the same
+  // answer `documentsAccess` already gives for this transport. Resolved before
+  // the aggregate and independently of it: service availability is a property
+  // of the central, not of whether the daemon answered a boot payload.
+  try {
+    await activateServicesForLocalCentral()
+  } catch (error) {
+    showToast({
+      variant: "error",
+      title: input.requestFailedTitle,
+      description: formatServerError(error, input.translate),
     })
-    input.setGlobalState({ config: boot.config ?? {} })
-    queryClient.setQueryData(["global", input.baseUrl ?? "", "config"], boot.config ?? {})
+  }
+
+  const boot = await bootstrapData(input.baseUrl, input.fetch, input.harnessType)
+  if (boot?.healthy) {
+    const path = boot.path ?? EMPTY_PATH
+    input.setGlobalState({ path })
+    queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), path)
     input.setGlobalState({ ready: true })
     return
   }
@@ -296,84 +283,18 @@ export async function bootstrapGlobal(input: {
     return
   }
 
-  const tasks = [
-    retry(() =>
-      input.globalSDK.path.get().then((x) => {
-        input.setGlobalState({ path: x.data! })
-        queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), x.data!)
-      }),
-    ),
-    retry(() =>
-      input.globalSDK.global.config.get().then((x) => {
-        input.setGlobalState({ config: x.data! })
-        queryClient.setQueryData(["global", input.baseUrl ?? "", "config"], x.data!)
-      }),
-    ),
-    retry(() =>
-      queryClient.fetchQuery(projectListQuery({
-        baseUrl: input.baseUrl,
-        client: input.globalSDK,
-      })).then((projects) => {
-        input.setGlobalState({ project: projects })
-      }),
-    ),
-    retry(() =>
-      queryClient.fetchQuery(providerListQuery({
-        baseUrl: providerBaseUrl({
-          serverUrl: input.baseUrl,
-          harnessType: input.harnessType,
-        }),
-        client: input.harnessType && input.harnessType !== "opencode"
-          ? createOpencodeClient({
-              baseUrl: providerBaseUrl({
-                serverUrl: input.baseUrl,
-                harnessType: input.harnessType,
-              })!,
-              fetch: harnessQueryFetch({
-                request: input.fetch,
-                harnessType: input.harnessType,
-                baseUrl: normalizedServerUrl(getClaxedoServerUrl()),
-              }),
-              throwOnError: true,
-            })
-          : input.globalSDK,
-        // Qualifying the query is what keys the CACHE ENTRY by harness;
-        // `fetchQuery` writes under whatever key the options compute, so
-        // without this a pi bootstrap landed on the unqualified catalog key.
-        // Pass the real harness id (not the collapsed cache identity) so the
-        // queryFn can put `?harness=opencode` on the wire.
-        harnessType: input.harnessType,
-        request: input.fetch,
-      })).then((providers) => {
-        setBootstrapProviderQueries({
-          baseUrl: input.baseUrl,
-          harnessType: input.harnessType,
-          providers,
-          setGlobalState: input.setGlobalState,
-        })
-      }),
-    ),
-    retry(() =>
-      queryClient.fetchQuery(providerAuthQuery({
-        baseUrl: input.baseUrl,
-        client: input.globalSDK,
-      })).then((auth) => {
-        input.setGlobalState({ provider_auth: auth })
-      }),
-    ),
-  ]
-
-  const results = await Promise.allSettled(tasks)
-  const errors = results.filter((r): r is PromiseRejectedResult => r.status === "rejected").map((r) => r.reason)
-  if (errors.length) {
-    const message = formatServerError(errors[0], input.translate)
-    const more = errors.length > 1 ? input.formatMoreCount(errors.length - 1) : ""
+  await retry(() =>
+    input.globalSDK.path.get().then((x) => {
+      input.setGlobalState({ path: x.data! })
+      queryClient.setQueryData(queryKeys.directory.path(input.baseUrl, ""), x.data!)
+    }),
+  ).catch((error: unknown) => {
     showToast({
       variant: "error",
       title: input.requestFailedTitle,
-      description: message + more,
+      description: formatServerError(error, input.translate),
     })
-  }
+  })
   input.setGlobalState({ ready: true })
 }
 
@@ -448,18 +369,13 @@ export async function bootstrapDirectory(input: {
   }
 
   const fetchProvider = (workspace?: WorkspaceRuntimeSnapshot | null) => {
-    const harness = providerQueryHarness(providerHarnessType)
     const runtimeRef = sessionWorkspaceRuntimeRef({ directory: input.directory })
     const scope = isRemoteWorkspace(workspace)
       ? `workspace:${workspace.workspaceId}`
       : runtimeRef
         ? `workspace:${runtimeRef.workspaceId}`
         : input.directory
-    const providerQueryKey = queryKeys.controlPlane.providers(
-      input.baseUrl,
-      scope,
-      harness,
-    )
+    const providerQueryKey = queryKeys.controlPlane.providers(input.baseUrl, scope, providerHarnessType)
     const setProviderQuery = (data: NormalizedProviderListResponse) => {
       const empty = !data.all || data.all.size === 0
       if (empty) {
@@ -474,7 +390,7 @@ export async function bootstrapDirectory(input: {
       const url = opencodeProviderUrl({
         serverUrl: baseUrl,
         harnessType: providerHarnessType,
-        directory: harness ? scope : undefined,
+        directory: scope,
       })
       return runtime.fetch(`${url.pathname}${url.search}`).then(async (r) => {
         if (!r.ok) throw new Error(await providerFetchError(r))
@@ -487,7 +403,7 @@ export async function bootstrapDirectory(input: {
       return (input.fetch ?? globalThis.fetch)(opencodeProviderUrl({
         serverUrl: input.baseUrl,
         harnessType: providerHarnessType,
-        directory: harness ? scope : undefined,
+        directory: scope,
       })).then(async (r) => {
         if (!r.ok) throw new Error(await providerFetchError(r))
         return requireProviderListForRunner(await providerListResponse(r), providerHarnessType)

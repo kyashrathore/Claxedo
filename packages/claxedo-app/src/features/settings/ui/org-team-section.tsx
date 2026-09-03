@@ -1,6 +1,7 @@
-import { For, Show, createResource, createSignal, type Component } from "solid-js"
+import { ErrorBoundary, For, Show, createMemo, createResource, createSignal, type Component } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { showToast } from "@opencode-ai/ui/toast"
+import { useAccountPort } from "@/platform/account/account-provider"
 import {
   addTeamMember,
   createOrg,
@@ -19,23 +20,36 @@ import {
 } from "@/features/settings/data/org-team-api"
 
 export const OrgTeamSettingsSection: Component = () => {
+  const account = useAccountPort()
   const [orgName, setOrgName] = createSignal("")
   const [teamName, setTeamName] = createSignal("")
   const [memberToken, setMemberToken] = createSignal("")
   const [selectedOrgId, setSelectedOrgId] = createSignal(readActiveOrgId())
   const [selectedTeamId, setSelectedTeamId] = createSignal(readActiveTeamId())
-  const [orgs, { refetch: refetchOrgs }] = createResource(listOrgs)
+  const signedAccountKey = createMemo(() => {
+    const state = account.state()
+    if (state.status !== "signed") return
+    return state.identity.userId || "signed-account"
+  })
+  const [orgs, { refetch: refetchOrgs }] = createResource(signedAccountKey, () => listOrgs())
   const [teams, { refetch: refetchTeams }] = createResource(
-    () => selectedOrgId(),
-    async (orgId) => {
-      if (!orgId) return [] as TeamListItem[]
+    () => {
+      const accountKey = signedAccountKey()
+      const orgId = selectedOrgId()
+      return accountKey && orgId ? { accountKey, orgId } : undefined
+    },
+    async ({ orgId }) => {
       await ensureDefaultTeam(orgId).catch(() => undefined)
       return listTeams(orgId)
     },
   )
   const [members, { refetch: refetchMembers }] = createResource(
-    () => selectedTeamId(),
-    async (teamId) => teamId ? listTeamMembers(teamId) : [],
+    () => {
+      const accountKey = signedAccountKey()
+      const teamId = selectedTeamId()
+      return accountKey && teamId ? { accountKey, teamId } : undefined
+    },
+    async ({ teamId }) => listTeamMembers(teamId),
   )
 
   const selectOrg = (org: OrgListItem) => {
@@ -53,7 +67,47 @@ export const OrgTeamSettingsSection: Component = () => {
   }
 
   return (
-    <div class="flex flex-col gap-6">
+    <Show
+      when={signedAccountKey()}
+      fallback={
+        <section class="flex flex-col gap-3">
+          <h3 class="text-14-medium text-text-strong">Organizations & teams</h3>
+          <p class="text-12-regular text-text-weak">
+            {account.state().status === "pending"
+              ? "Checking account…"
+              : "Sign in to manage organizations and teams."}
+          </p>
+          <Show when={account.state().status === "unsigned"}>
+            <div>
+              <Button
+                size="small"
+                onClick={() => {
+                  void account.signIn().catch((error) => {
+                    showToast({
+                      title: "Could not sign in",
+                      description: error instanceof Error ? error.message : String(error),
+                    })
+                  })
+                }}
+              >
+                Sign in
+              </Button>
+            </div>
+          </Show>
+        </section>
+      }
+    >
+      <ErrorBoundary
+        fallback={(error) => (
+          <section class="flex flex-col gap-3">
+            <h3 class="text-14-medium text-text-strong">Could not load organizations</h3>
+            <p class="text-12-regular text-text-weak">
+              {error instanceof Error ? error.message : String(error)}
+            </p>
+          </section>
+        )}
+      >
+      <div class="flex flex-col gap-6">
       <section class="flex flex-col gap-3">
         <h3 class="text-14-medium text-text-strong">Organizations</h3>
         <p class="text-12-regular text-text-weak">
@@ -230,6 +284,8 @@ export const OrgTeamSettingsSection: Component = () => {
           </div>
         </section>
       </Show>
-    </div>
+      </div>
+      </ErrorBoundary>
+    </Show>
   )
 }

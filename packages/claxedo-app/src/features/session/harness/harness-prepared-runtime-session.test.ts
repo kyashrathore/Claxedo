@@ -101,6 +101,18 @@ describe("prepared runtime session store", () => {
     expect(removed).toEqual([preparedSession("ses_late")])
   })
 
+  test("claim explains why no harness session could be started instead of returning nothing", async () => {
+    const disabled = storeFor({ canUseRuntimeSession: () => false })
+    await expect(disabled.claim(scope, { directory: "/repo" })).rejects.toThrow("cannot start a harness session")
+    const failing = storeFor({
+      create: async () => {
+        throw new Error("boom")
+      },
+      setPrepareError: () => {},
+    })
+    await expect(failing.claim(scope, { directory: "/repo" })).rejects.toThrow("could not be started")
+  })
+
   test("reports create failure only while the sequence is current", async () => {
     const errors: unknown[] = []
     const current = storeFor({
@@ -135,9 +147,10 @@ function storeFor(input: {
   create?: (params: { directory: string; harness: HarnessType }) => Promise<string | undefined>
   remove?: (item: PreparedRuntimeSession) => Promise<void>
   setPrepareError?: (scope: string, err: unknown) => void
+  canUseRuntimeSession?: (params?: { directory?: string }) => boolean
 } = {}) {
   return createPreparedRuntimeSessionStore<{ directory?: string }>({
-    canUseRuntimeSession: (params) => !!params?.directory,
+    canUseRuntimeSession: (params) => input.canUseRuntimeSession?.(params) ?? !!params?.directory,
     state: () => input.state ?? { harness: "claude-acp", selectedModel: "sonnet" },
     create: (params) => input.create?.(params) ?? Promise.resolve("ses_created"),
     remove: (item) => input.remove?.(item) ?? Promise.resolve(),

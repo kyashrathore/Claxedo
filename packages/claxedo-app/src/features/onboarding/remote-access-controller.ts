@@ -1,12 +1,16 @@
 import { createEffect, createMemo, createResource, onCleanup } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { usePlatform } from "@/platform/runtime/platform-provider"
+import { useAccountPort } from "@/platform/account/account-provider"
 import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import type { OnboardingFunnelEvent } from "./funnel"
 import {
   remoteAccessAvailability,
   remoteAccessClientId,
-  remoteAccessWorkspaceLink,
+  remoteAccessDeviceLink,
+  remoteAccessAppOrigin,
+  remoteAccessResumeDecision,
+  type RemoteAccessIdentity,
 } from "./remote-access-state"
 
 /**
@@ -26,26 +30,56 @@ import {
  */
 export function useRemoteAccessController(input: {
   serverUrl: string
+  /** A hosted account can be entered even before its connector adapter loads. */
+  signInAvailable?: () => boolean
   emit?: (event: Extract<OnboardingFunnelEvent, { name: "remote_access_enabled" | "second_device_open" }>) => void
+  /**
+   * This machine started or stopped publishing.
+   *
+   * Injected rather than done here, for the same reason `emit` is: what has to
+   * be re-read when the machine's publication state changes is the CALLER's
+   * knowledge, not this controller's. The workspaces domain owns "which
+   * workspaces are published" and onboarding may not import it.
+   *
+   * It is not optional in practice on any product without a pushing port: the
+   * HTTP implementation has no `subscribe`, so without this the published set
+   * sits on its stale window and nothing publishes for up to 30 seconds after
+   * the user presses Enable.
+   */
+  onMachineChanged?: () => void
 }) {
   const platform = usePlatform()
+  const account = useAccountPort()
   // Read per-call rather than captured: a composition root binds at boot, and a
   // module-scope read here would freeze whatever was bound when this module
   // first loaded.
   const port = () => machineRemoteAccess()
   const status = useQuery(() => ({
-    queryKey: ["claxedo", "remote-access", "status", input.serverUrl] as const,
-    // Absent port = this build cannot publish a machine. Reported as the
-    // "nothing is configured" status, which `remoteAccessAvailability` already
-    // renders as a locked panel with a reason — not swallowed, and not an
-    // error state that would read as "something went wrong".
-    queryFn: async () => await port()?.status() ?? {
-      deviceLoginConfigured: false,
-      relayConfigured: false,
-      hostedSignedIn: false,
-      enabled: false,
-      enrolled: false,
-      secondDeviceOpen: false,
+    queryKey: [
+      "claxedo",
+      "remote-access",
+      "status",
+      input.serverUrl,
+      input.signInAvailable?.() === true,
+    ] as const,
+    // The port loads only after desktop account activation. The build's sign-in
+    // capability distinguishes that pre-auth state from a product that truly
+    // has no remote-access implementation.
+    queryFn: async () => {
+      const remote = port()
+      if (remote) return await remote.status()
+      const signInAvailable = input.signInAvailable?.() === true
+      return {
+        // A signed-capable desktop deliberately loads the connector adapter only
+        // after account activation. Before sign-in, the missing port therefore
+        // means "authenticate first", not "this feature was not built".
+        deviceLoginConfigured: signInAvailable,
+        relayConfigured: signInAvailable,
+        hostedSignedIn: false,
+        enabled: false,
+        enrolled: false,
+        secondDeviceOpen: false,
+      }
     },
     retry: false,
   }))
@@ -68,19 +102,40 @@ export function useRemoteAccessController(input: {
     enabled: status.data?.enabled === true,
     secondDeviceOpen: status.data?.secondDeviceOpen === true,
   }))
-  const workspaceLink = createMemo(() => {
-    const workspaceId = devices.data?.flatMap((device) => device.workspaceIds)[0]
-    if (!workspaceId || typeof window === "undefined") return
-    const origin = /^https?:$/.test(window.location.protocol) && !["localhost", "127.0.0.1"].includes(window.location.hostname)
-      ? window.location.origin
-      : "https://app.claxedo.com"
-    return remoteAccessWorkspaceLink({
-      appOrigin: origin,
-      workspaceId,
-      sourceClientId: remoteAccessClientId(),
-    })
+  // Whose machine this is, for the panel's identity row. Derived here rather
+  // than at each mount so both surfaces answer identically, and so the
+  // "signed but not enriched yet" case has exactly one definition.
+  const identity = createMemo<RemoteAccessIdentity>(() => {
+    const state = account.state()
+    if (state.status === "pending") return { state: "pending" }
+    if (state.status !== "signed") return { state: "signed-out" }
+    const label = state.identity.displayName ?? state.identity.email
+    // Signed with an empty identity means the userinfo enrichment is still in
+    // flight. Keep saying "pending" — never the generic word "Account", which
+    // reads as "the lookup worked and your name is Account".
+    return label ? { state: "named", label } : { state: "pending" }
   })
-  let resumed = false
+  // The address a second device opens. A pure function of a baked deployment
+  // origin plus this client's own id, so the surface can draw its QR with no
+  // round trip — and so the device that follows it can prove it was a second
+  // one.
+  const deviceLink = createMemo(() => remoteAccessDeviceLink({
+    appOrigin: remoteAccessAppOrigin(),
+    sourceClientId: remoteAccessClientId(),
+  }))
+  /**
+   * Whether the ACCOUNT LAYER has a usable credential right now.
+   *
+   * Deliberately not `status.hostedSignedIn`. That is the connector's own
+   * view — "an account client is configured" — and at boot it goes true before
+   * the account session has finished restoring. Auto-resume believed it, called
+   * start(), and the connector child's first account operation came back "not
+   * signed in", which surfaced as `child-start: Error: connector closed` about
+   * half a minute into launch. The account port is the layer that actually
+   * holds the credential (main, on the desktop), so it is the only honest
+   * answer to "could a signed operation succeed now".
+   */
+  const accountSigned = createMemo(() => account.state().status === "signed")
 
   async function enable() {
     const remote = port()
@@ -90,15 +145,37 @@ export function useRemoteAccessController(input: {
       startAtLogin: startAtLogin() ?? false,
     })
     input.emit?.({ name: "remote_access_enabled" })
+    input.onMachineChanged?.()
     await Promise.all([status.refetch(), devices.refetch()])
   }
 
+  // Dispatch only: the rule itself is `remoteAccessResumeDecision`, so the
+  // boot-order behaviour can be exercised without standing up a shell.
+  let attempted = false
   createEffect(() => {
-    if (resumed || platform.platform !== "desktop" || startAtLogin() !== true) return
-    if (status.data?.hostedSignedIn !== true || status.data?.enrolled !== true || status.data?.enabled === true) return
-    resumed = true
-    void enable()
+    const decision = remoteAccessResumeDecision({
+      accountSigned: accountSigned(),
+      desktop: platform.platform === "desktop",
+      startAtLogin: startAtLogin() === true,
+      enabled: status.data?.enabled === true,
+      attempted,
+    })
+    attempted = decision.attempted
+    if (decision.resume) void resume()
   })
+
+  async function resume() {
+    try {
+      await enable()
+    } catch {
+      // The resume can still race the connector's own restart (a revoke lands
+      // elsewhere, the child bounces) and start() then reports "connector
+      // closed". That is not a crash to surface as an unhandled rejection: the
+      // panel keeps its explicit Enable button and the status refetch shows the
+      // truth.
+      void status.refetch()
+    }
+  }
 
   // A machine can stop being published without anyone here asking: a heartbeat
   // is rejected, an enrollment expires, the owner revokes it elsewhere. Where a
@@ -107,6 +184,7 @@ export function useRemoteAccessController(input: {
   createEffect(() => {
     const unsubscribe = port()?.subscribe?.(() => {
       void status.refetch()
+      input.onMachineChanged?.()
     })
     if (unsubscribe) onCleanup(unsubscribe)
   })
@@ -115,17 +193,37 @@ export function useRemoteAccessController(input: {
     status,
     devices,
     availability,
-    workspaceLink,
+    identity,
+    deviceLink,
     startAtLogin: () => startAtLogin() ?? false,
     async setStartAtLogin(enabled: boolean) {
       startAtLoginActions.mutate(enabled)
       await platform.setStartAtLogin?.(enabled)
     },
     enable,
+    /**
+     * Whether this product can pause at all.
+     *
+     * Read reactively rather than captured: the desktop binds its port only
+     * after account activation, so a capability answered once at mount would
+     * be answering for a port that did not exist yet. The surface renders the
+     * action only when this is true — a stubbed pause that resolved to nothing
+     * would look exactly like a pause that worked.
+     */
+    canPause: () => port()?.pause !== undefined,
+    /** Stop publishing, keeping the machine's identity for a later Enable. */
+    async pause() {
+      const remote = port()
+      if (!remote?.pause) throw new Error("This build cannot pause remote access")
+      await remote.pause()
+      input.onMachineChanged?.()
+      await status.refetch()
+    },
     async revoke(hostId: string) {
       const remote = port()
       if (!remote) throw new Error("This build cannot publish a machine for remote access")
       await remote.revoke(hostId)
+      input.onMachineChanged?.()
       await Promise.all([status.refetch(), devices.refetch()])
     },
   }

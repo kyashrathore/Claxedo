@@ -10,13 +10,13 @@ const emptyClient = {
   provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
 }
 
-const readerKey = (scope: string | null, harness?: string) =>
+const readerKey = (scope: string | null, harness: string) =>
   providerListQuery({ baseUrl, client: emptyClient, directory: scope, harnessType: harness }).queryKey
 
 describe("provider catalog cache ownership", () => {
-  test("the default OpenCode catalog remains server-wide", () => {
-    expect(readerKey(null)).toEqual(queryKeys.controlPlane.providers(baseUrl))
-    expect(readerKey("workspace:ws_1")).toEqual(readerKey("/Users/me/project"))
+  test("the central runtime's own catalog is one scope among many", () => {
+    expect(readerKey(null, "opencode")).toEqual(queryKeys.controlPlane.providers(baseUrl, undefined, "opencode"))
+    expect(readerKey(null, "opencode")).not.toEqual(readerKey("/Users/me/project", "opencode"))
   })
 
   test("two panes for one harness runtime share one catalog", () => {

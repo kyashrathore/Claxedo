@@ -68,6 +68,16 @@ export function workspaceRuntimeRef(directory: SubmitDirectory | undefined) {
   return sessionWorkspaceRuntimeRef({ directory, projects })
 }
 
+/**
+ * The workspace a signed submit reserves against. The composer's accessor names
+ * it when the route did; a session created in a workspace the route has not
+ * named yet (a fresh cloud workspace, a `ws_…` directory) takes it from the
+ * directory's runtime ref — the same owner finalize and the transport read.
+ */
+export function signedSubmitWorkspaceId(explicit: string | undefined, directory: SubmitDirectory | undefined) {
+  return explicit ?? workspaceRuntimeRef(directory)?.workspaceId
+}
+
 export function submitWorkspaceBacking(input: {
   sessionRef?: SessionRef
   workspaceId?: string

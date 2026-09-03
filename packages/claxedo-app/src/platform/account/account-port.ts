@@ -20,6 +20,7 @@
  * Neither implementation hands a token, a cookie, a URL, or a method back to
  * the renderer.
  */
+import type { BrowserAuthSignInOptions } from "../auth/browser-auth"
 
 /** Sanitized identity. Deliberately the same shape a `Principal` may hold. */
 export type AccountIdentity = {
@@ -40,10 +41,16 @@ export type AccountIdentity = {
 }
 
 export type AccountState =
-  | { status: "unsigned" }
+  | { status: "unsigned"; remoteRevocation?: "confirmed" | "uncertain"; detail?: string }
   /** Sign-in is in flight — the system browser is open, or IPC is awaiting it. */
   | { status: "pending" }
-  | { status: "signed"; identity: AccountIdentity }
+  /**
+   * Signed. `identity` is empty until the profile lookup answers; when that
+   * lookup fails the account is still signed — the credential is what signs
+   * you in, the profile only names you — and `identityLookup: "failed"` says
+   * so, so the rail can stop spinning instead of waiting forever.
+   */
+  | { status: "signed"; identity: AccountIdentity; identityLookup?: "failed" }
   /**
    * Signed mode cannot work on this machine, with a reason to show.
    *
@@ -68,7 +75,6 @@ export type AccountState =
  * something absent fails to compile rather than at runtime.
  */
 export type HostedOperationName =
-  | "account.get"
   | "account.mode"
   | "account.compatibility"
   | "account.cliExchange"
@@ -88,6 +94,8 @@ export type HostedOperationName =
   | "host.enrollCurrentMachine"
   | "host.enrollmentNonce"
   | "host.enrollmentHeartbeat"
+  | "workspace.assignHost"
+  | "workspace.unassignHost"
   | "session.list"
   | "session.navigationList"
   | "session.projection.register"
@@ -141,7 +149,6 @@ export type HostedOperationName =
   | "session.gateway"
   | "billing.checkout"
   | "billing.portal"
-  | "hostLink.register"
   | "usage.get"
   | "usage.sync"
 
@@ -153,7 +160,7 @@ export type AccountPort = {
    * `redirectUrl` is where the browser flow lands after the provider returns;
    * the desktop port ignores it — main owns that flow end to end.
    */
-  signIn: (options?: { redirectUrl?: string }) => Promise<void>
+  signIn: (options?: BrowserAuthSignInOptions) => Promise<void>
   signOut: () => Promise<void>
   /**
    * Runs one named hosted operation and returns its decoded result.

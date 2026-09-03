@@ -1,4 +1,4 @@
-import { For, type JSX, lazy, Show, Suspense } from "solid-js"
+import { For, Show } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { useQuery } from "@tanstack/solid-query"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
@@ -25,12 +25,11 @@ import { routeBridgeClaxedoSessionMetaUrl, routeSessionWorkspaceBacking } from "
 import { sessionInventoryTarget, type RouteIntentInventory } from "@/app/workbench/state/route-intent"
 import { sessionInventoryQueryOptions } from "@/features/session/data/sync/queries"
 import type { SessionInventoryRow } from "@/features/session/data/query/types"
-import { SurfaceFallback } from "./surface-fallback"
 import type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./content-surface-contract"
 import { workspaceRouteId, type WorkspaceRouteProject } from "@/platform/identity/workspace-route"
 
 /**
- * Hosted content surfaces: WorkGraph and Documents.
+ * WorkGraph service content surfaces.
  *
  * These used to sit beside the local surfaces in
  * `first-party-content-surfaces.tsx`, which made `WorkGraphContent` a static
@@ -44,9 +43,6 @@ import { workspaceRouteId, type WorkspaceRouteProject } from "@/platform/identit
  * account adapter reports signed state. WorkGraph and Documents then become a
  * property of which build you are running rather than of a feature flag.
  */
-
-const PageContent = lazy(() => import("../../features/documents/ui/content/page-content").then((m) => ({ default: m.PageContent })))
-const PagesIndexContent = lazy(() => import("../../features/documents/ui/content/pages-index-content").then((m) => ({ default: m.PagesIndexContent })))
 
 type WorkGraphSessionTarget = {
   directory: NonNullable<SessionRef["cwd"]>
@@ -303,48 +299,14 @@ function string(input: unknown) {
   return typeof input === "string" && input.length > 0 ? input : undefined
 }
 
-// Neutral placeholder while non-session surface chunks load — matches the
-const HiddenDocumentsSurface = () => <div class="flex size-full items-center justify-center bg-background-base text-text-weak">Documents are not available for this identity.</div>
-
-function DocumentsSurface(props: { canUseDocuments?: boolean; children: JSX.Element }) {
-  if (props.canUseDocuments === false) return <HiddenDocumentsSurface />
-  return props.children
-}
-
 /**
- * Every hosted content surface, registered as one set.
+ * Every WorkGraph content surface, registered as one service-owned set.
  *
  * Contribution IDs and surface names are unchanged from when these lived in the
  * local list. Persisted workbench state references surfaces by those strings,
  * so renaming one would orphan every restored tab pointing at it.
  */
-export const hostedContentSurfaces: ContentSurfaceContribution[] = [
-  {
-    id: "surface.content.page",
-    tier: "claxedo-first-party",
-    surface: "page",
-    slot: "workbench",
-    renderer: (context) => (
-      <DocumentsSurface canUseDocuments={context.canUseDocuments}>
-        <Suspense fallback={<SurfaceFallback />}>
-          <PageContent meta={context.meta} ctx={context.ctx} />
-        </Suspense>
-      </DocumentsSurface>
-    ),
-  },
-  {
-    id: "surface.content.pages-index",
-    tier: "claxedo-first-party",
-    surface: "pages-index",
-    slot: "workbench",
-    renderer: (context) => (
-      <DocumentsSurface canUseDocuments={context.canUseDocuments}>
-        <Suspense fallback={<SurfaceFallback />}>
-          <PagesIndexContent meta={context.meta} ctx={context.ctx} />
-        </Suspense>
-      </DocumentsSurface>
-    ),
-  },
+export const workGraphContentSurfaces: ContentSurfaceContribution[] = [
   {
     id: "surface.content.workgraph",
     tier: "claxedo-first-party",

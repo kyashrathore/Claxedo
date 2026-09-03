@@ -1,4 +1,5 @@
 import { collapse, clip } from "@/lib/text"
+import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import { resolveRecovery, rememberRecovery } from "../workbench/pane-terminal-recovery"
 import { createTransport } from "@/platform/runtime/transport"
 import type { WorkspaceRuntimeRequestOptions } from "@/platform/runtime/transport"
@@ -69,14 +70,16 @@ const logsPath = (terminalId: string, dir: string) => {
   return `${url.pathname}${url.search}`
 }
 
+
 const logTransport = (
   site: string,
   dir: string,
   request: typeof fetch,
   opts: TerminalLogSummaryOptions,
   workspace?: Awaited<ReturnType<NonNullable<TerminalLogSummaryOptions["resolveWorkspaceRuntime"]>>>,
+  signedWorkspace?: ReturnType<typeof cachedSignedWorkspace>,
 ) => createTransport({
-  placement: terminalScopedPlacement(site, workspace),
+  placement: terminalScopedPlacement(site, workspace, signedWorkspace),
   serverUrl: site,
   directory: dir,
   request,
@@ -114,8 +117,13 @@ export const loadTerminalLogSummary = (
     ttl: SUMMARY_TTL,
     run: () =>
       (async () => {
-        const workspace = await opts.resolveWorkspaceRuntime?.({ directory: nextTarget.directory }).catch(() => null)
-        return await logTransport(nextTarget.site, nextTarget.directory, request, opts, workspace)
+        const signedWorkspace = cachedSignedWorkspace(sdkUrl, nextTarget.directory)
+        // A signed inventory match is canonical placement authority — it wins
+        // over (and skips) the liveness read, same precedent as
+        // `terminalScopedPlacement`'s own precedence between the two.
+        const workspace = signedWorkspace ??
+          await opts.resolveWorkspaceRuntime?.({ directory: nextTarget.directory }).catch(() => null)
+        return await logTransport(nextTarget.site, nextTarget.directory, request, opts, workspace, signedWorkspace)
           .fetch(logsPath(nextTarget.id, nextTarget.directory))
       })()
         .then((res) => (res.ok ? res.text() : ""))

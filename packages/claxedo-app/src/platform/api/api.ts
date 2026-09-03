@@ -31,10 +31,34 @@ import { isDemoMode } from "@/lib/runtime-mode"
  */
 export type BearerTokenSource = (options?: { skipCache?: boolean }) => Promise<string | null>
 
+export const releaseValidationOperations = [
+  "private_session",
+  "stream",
+  "revocation",
+  "wrong_org",
+  "replay",
+  "outage",
+] as const
+
+export type ReleaseValidationOperation = (typeof releaseValidationOperations)[number]
+
+export function releaseValidationOperation(value: unknown): ReleaseValidationOperation | undefined {
+  return typeof value === "string"
+    ? releaseValidationOperations.find((operation) => operation === value)
+    : undefined
+}
+
+type ReleaseValidationBinding = {
+  coreOrigin: string
+  operation: ReleaseValidationOperation
+}
+
 const cfg = {
   base: undefined as string | undefined,
   password: "",
   bearerToken: undefined as BearerTokenSource | undefined,
+  browserCredentials: undefined as RequestCredentials | undefined,
+  releaseValidation: undefined as ReleaseValidationBinding | undefined,
 }
 
 function envString(input: unknown) {
@@ -47,6 +71,8 @@ export function configureApiRuntime(input: {
   baseUrl?: string | null
   password?: string | null
   bearerToken?: BearerTokenSource | null
+  browserCredentials?: RequestCredentials | null
+  releaseValidation?: ReleaseValidationBinding | null
 }) {
   if ("baseUrl" in input) {
     cfg.base = normalized(input.baseUrl ?? undefined)
@@ -57,12 +83,27 @@ export function configureApiRuntime(input: {
   if ("bearerToken" in input) {
     cfg.bearerToken = input.bearerToken ?? undefined
   }
+  if ("browserCredentials" in input) {
+    cfg.browserCredentials = input.browserCredentials ?? undefined
+  }
+  if ("releaseValidation" in input) {
+    const binding = input.releaseValidation ?? undefined
+    if (binding) {
+      const origin = new URL(binding.coreOrigin)
+      if (origin.origin !== binding.coreOrigin || !/^https?:$/.test(origin.protocol)) {
+        throw new Error("release validation coreOrigin must be an exact HTTP(S) origin")
+      }
+    }
+    cfg.releaseValidation = binding
+  }
 }
 
 export function resetApiRuntime() {
   cfg.base = undefined
   cfg.password = ""
   cfg.bearerToken = undefined
+  cfg.browserCredentials = undefined
+  cfg.releaseValidation = undefined
 }
 
 /**
@@ -175,7 +216,12 @@ function errorCode(input: unknown): string | undefined {
 }
 
 async function responseErrorCode(response: Response) {
-  return errorCode(await response.clone().json().catch(() => undefined))
+  return errorCode(
+    await response
+      .clone()
+      .json()
+      .catch(() => undefined),
+  )
 }
 
 const apiFetchDebugCounts = new Map<string, number>()
@@ -183,16 +229,61 @@ let apiFetchDebugSequence = 0
 
 function apiFetchDebugEnabled(route: string) {
   if (typeof window === "undefined") return false
-  if (
-    route !== "/question" &&
-    route !== "/permission" &&
-    route !== "/session/status"
-  ) {
+  if (route !== "/question" && route !== "/permission" && route !== "/session/status") {
     return localStorage.getItem("claxedo.debug.api-fetch") === "1"
   }
-  return import.meta.env.DEV ||
+  return (
+    import.meta.env.DEV ||
     localStorage.getItem("claxedo.debug.request-loop") === "1" ||
     localStorage.getItem("claxedo.debug.api-fetch") === "1"
+  )
+}
+
+/**
+ * Whether this request may carry the control plane's session cookie.
+ *
+ * `browserCredentials` is `"include"` whenever the control plane authenticates
+ * the browser with a cookie — but `authFetch` is also the egress for the RELAY,
+ * a different origin that authenticates with a Runtime Access Token in the
+ * `Authorization` header and has no session cookie of ours at all. Sending
+ * credentials there is wrong twice over: it offers the control plane's cookie
+ * to another host, and — because a credentialed cross-origin request requires
+ * `Access-Control-Allow-Credentials: true` in the preflight response, which a
+ * bearer service correctly does not send — the browser refuses to make the
+ * request at all.
+ *
+ * That refusal is what the hosted app reported as "Workspace host is offline":
+ *
+ *   Response to preflight request doesn't pass access control check: The value
+ *   of the 'Access-Control-Allow-Credentials' header in the response is ''
+ *   which must be 'true' when the request's credentials mode is 'include'.
+ *
+ * — while the relay was up, the host tunnel was connected, and the laptop was
+ * answering every request that actually reached it.
+ *
+ * So the cookie goes to the control plane and to loopback, and nowhere else.
+ * Other origins keep whatever the caller asked for, which defaults to
+ * `same-origin`.
+ */
+function credentialsFor(url: string, requested: RequestCredentials | undefined): RequestCredentials | undefined {
+  if (!cfg.browserCredentials) return requested
+  if (localUrl(url)) return cfg.browserCredentials
+  try {
+    const target = new URL(url, typeof window === "undefined" ? undefined : window.location.origin)
+    // `getClaxedoServerUrl()`, NOT the page's own origin. On a hosted
+    // deployment the app and the control plane are DIFFERENT hosts
+    // (`app-…` and `cf-…`), and `configureApiRuntime` is not called with a
+    // `baseUrl` there — so treating the page origin as the control plane
+    // would withhold the cookie from the very service that needs it and every
+    // request would 401.
+    for (const origin of [getClaxedoServerUrl(), cfg.base, cfg.releaseValidation?.coreOrigin]) {
+      if (!origin) continue
+      if (target.origin === new URL(origin, target.origin).origin) return cfg.browserCredentials
+    }
+  } catch {
+    // An unparseable target is not the control plane.
+  }
+  return requested
 }
 
 function apiFetchUrl(input: string | URL | Request) {
@@ -228,9 +319,11 @@ function beginApiFetchDebug(input: string | URL | Request) {
   apiFetchDebugCounts.set(route, count)
 
   const debug = (phase: string, response?: Response) => {
-    const throttle = (window as typeof window & {
-      __fetchThrottle?: { inFlight: number; queued: number; cap: number }
-    }).__fetchThrottle
+    const throttle = (
+      window as typeof window & {
+        __fetchThrottle?: { inFlight: number; queued: number; cap: number }
+      }
+    ).__fetchThrottle
     console.debug("[claxedo:api-fetch]", phase, {
       id,
       route,
@@ -367,16 +460,16 @@ export function getDefaultBaseUrl(): string {
  * avoids the "everything stuck in loading" mode where a stale token
  * causes every request to silently 401 and the panels never recover.
  */
-export async function authFetch(
-  input: string | URL | Request,
-  init?: RequestInit
-): Promise<Response> {
+export async function authFetch(input: string | URL | Request, init?: RequestInit): Promise<Response> {
   const eventInput = signedRuntimeEventInput(input, init)
   input = eventInput.input
   init = eventInput.init
   const apiFetchDebug = beginApiFetchDebug(input)
-  const cache = localUrl(apiFetchUrl(input)) ? "no-store" as const : init?.cache
-  const buildRequest = async (forceRefreshToken: boolean): Promise<{ request: Request | string | URL; init?: RequestInit; token: string | null }> => {
+  const cache = localUrl(apiFetchUrl(input)) ? ("no-store" as const) : init?.cache
+  const credentials = credentialsFor(apiFetchUrl(input), init?.credentials)
+  const buildRequest = async (
+    forceRefreshToken: boolean,
+  ): Promise<{ request: Request | string | URL; init?: RequestInit; token: string | null }> => {
     const token = await apiBearerToken(forceRefreshToken ? { skipCache: true } : undefined)
 
     const setAuth = (headers: Headers) => {
@@ -389,34 +482,49 @@ export async function authFetch(
       headers.set("Authorization", `Basic ${btoa(`opencode:${cfg.password}`)}`)
     }
 
+    const setReleaseValidation = (headers: Headers) => {
+      const binding = cfg.releaseValidation
+      if (!binding || headers.has("x-claxedo-multiplayer-validation-operation")) return
+      let target: URL
+      try {
+        target = new URL(apiFetchUrl(input), cfg.base ?? (typeof window === "undefined" ? undefined : window.location.origin))
+      } catch {
+        return
+      }
+      if (target.origin !== binding.coreOrigin) return
+      headers.set("x-claxedo-multiplayer-validation-operation", binding.operation)
+    }
+
     if (input instanceof Request) {
       const existingHeaders = new Headers(input.headers)
       if (forceRefreshToken) existingHeaders.delete("Authorization")
       setAuth(existingHeaders)
-      return { request: new Request(input, { ...init, cache, headers: existingHeaders }), token }
+      setReleaseValidation(existingHeaders)
+      return { request: new Request(input, { ...init, cache, credentials, headers: existingHeaders }), token }
     }
 
     const headers = new Headers(init?.headers)
     if (forceRefreshToken) headers.delete("Authorization")
     setAuth(headers)
+    setReleaseValidation(headers)
     if (init?.body && typeof init.body === "string" && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json")
     }
-    return { request: input, init: { ...init, cache, headers }, token }
+    return { request: input, init: { ...init, cache, credentials, headers }, token }
   }
 
   const withoutAuthorization = async () => {
     if (input instanceof Request) {
       const headers = new Headers(input.headers)
       headers.delete("Authorization")
-      return fetch(new Request(input, { ...init, cache, headers }))
+      return fetch(new Request(input, { ...init, cache, credentials, headers }))
     }
     const headers = new Headers(init?.headers)
     headers.delete("Authorization")
     if (init?.body && typeof init.body === "string" && !headers.has("Content-Type")) {
       headers.set("Content-Type", "application/json")
     }
-    return fetch(input, { ...init, cache, headers })
+    return fetch(input, { ...init, cache, credentials, headers })
   }
 
   // Every authed fetch flows through a global concurrency limiter so a
@@ -431,7 +539,7 @@ export async function authFetch(
   apiFetchDebug("first-response", firstResponse)
 
   if (firstResponse.status === 403 && first.token) {
-    if (await responseErrorCode(firstResponse) === "signed_cloud_auth_disabled") {
+    if ((await responseErrorCode(firstResponse)) === "signed_cloud_auth_disabled") {
       const stripped = await withoutAuthorization()
       apiFetchDebug("stripped-response", stripped)
       if (stripped.status === 403) return firstResponse
@@ -465,7 +573,7 @@ export async function authFetch(
   // without forcing a re-login dance.
   if (retriedResponse.status !== 401 && retriedResponse.status !== 403) return retriedResponse
   if (retriedResponse.status === 403) {
-    if (await responseErrorCode(retriedResponse) !== "signed_cloud_auth_disabled") return retriedResponse
+    if ((await responseErrorCode(retriedResponse)) !== "signed_cloud_auth_disabled") return retriedResponse
   }
 
   const stripped = await withoutAuthorization()

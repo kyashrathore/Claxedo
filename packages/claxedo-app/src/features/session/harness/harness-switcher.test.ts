@@ -9,7 +9,6 @@ const scope = "draft:/repo:route"
 
 let pending: Record<string, Promise<void> | undefined>
 let patches: HarnessStorePatch[]
-let saved: { key: "harness" | "model"; value: string }[]
 let refreshes: { directory?: string; type?: string; draft?: boolean }[]
 let optionFetches: { scope: string; type: HarnessType; directory?: string; sessionId?: string }[]
 let posts: { url: string; body: unknown }[]
@@ -27,7 +26,6 @@ let publishedConfigs: Array<{ sessionId?: string; directory?: string; config: un
 beforeEach(() => {
   pending = {}
   patches = []
-  saved = []
   refreshes = []
   optionFetches = []
   posts = []
@@ -96,9 +94,6 @@ describe("harness switcher", () => {
 
     expect(dropped).toEqual([scope])
     expect(clearedTries).toEqual([scope])
-    expect(saved).toEqual([
-      { key: "harness", value: "acp:claude" },
-    ])
     expect(patches[0]).toMatchObject({
       harness: "acp:claude",
       optionsLoading: true,
@@ -289,8 +284,6 @@ function switcherFor(input?: {
     seed: () => {},
     dropPrepared: (scope) => dropped.push(scope),
     applyPatch: (_scope, patch) => patches.push(patch),
-    saveHarness: (_scope, type) => saved.push({ key: "harness", value: type }),
-    saveModel: (_scope, model) => saved.push({ key: "model", value: model }),
     rememberDraftHarness: (scope, type, params) => remembered.push({
       scope,
       type,

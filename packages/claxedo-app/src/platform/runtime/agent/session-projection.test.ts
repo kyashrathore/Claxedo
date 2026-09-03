@@ -5,6 +5,7 @@ import {
   resetSessionProjectionRetries,
   retryUnsettledSessionProjectionPulls,
   scheduleSessionProjectionPull,
+  sessionProjectionBacking,
   sessionProjectionWorkspaceBacking,
 } from "./session-projection"
 
@@ -45,8 +46,22 @@ describe("session projection sync-back", () => {
     expect(sessionProjectionWorkspaceBacking({
       signedControlPlane: true,
       workspaceId: "ws_signed",
+      workspaceKind: "cloud",
+    })).toEqual({ workspaceId: "ws_signed", kind: "cloud" })
+  })
+
+  test("projects only a cloud runtime's sessions from a resolved workspace runtime ref", () => {
+    expect(sessionProjectionBacking({ workspaceId: "ws_cloud", kind: "cloud" })).toEqual({ workspaceId: "ws_cloud", kind: "cloud" })
+    expect(sessionProjectionBacking({ workspaceId: "ws_machine", kind: "user-hosted" })).toBeUndefined()
+    expect(sessionProjectionBacking(undefined)).toBeUndefined()
+  })
+
+  test("never projects a user-hosted workspace's sessions: the machine serving it is their authority", () => {
+    expect(sessionProjectionWorkspaceBacking({
+      signedControlPlane: true,
+      workspaceId: "ws_machine",
       workspaceKind: "user-hosted",
-    })).toEqual({ workspaceId: "ws_signed", kind: "user-hosted" })
+    })).toBeUndefined()
   })
 
   test("does not infer workspace authority for local or incomplete projection refreshes", () => {

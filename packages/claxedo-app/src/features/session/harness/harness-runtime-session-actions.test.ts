@@ -1,3 +1,4 @@
+import { harnessWorkspaceRuntimeRef } from "./store-policy"
 import { describe, expect, test } from "bun:test"
 import { createHarnessRuntimeSessionActions } from "./harness-runtime-session-actions"
 import type { HarnessScopeInput } from "./store-policy"
@@ -151,5 +152,6 @@ function runtime(input: {
     useLocalHarnessConfig: (params?: HarnessScopeInput) =>
       typeof input.useLocal === "function" ? input.useLocal(params) : input.useLocal ?? true,
     harnessSessionFetch: () => input.sessionFetch ?? fetch,
+    workspaceRef: (params?: HarnessScopeInput) => harnessWorkspaceRuntimeRef(params),
   }
 }

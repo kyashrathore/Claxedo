@@ -4,9 +4,9 @@ import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { accountStreamUsable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"
-
-const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
+import { accountStreamAvailable, openAccountStreamResponse } from "@/platform/account/account-stream-fetch"
+import type { AccountState } from "@/platform/account/account-port"
+import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type LiveSession = {
   sessionID: string
@@ -31,8 +31,9 @@ export async function openCentralRuntimeEventResponse(input: {
   lastEventId?: string
   init: RequestInit
   signal: AbortSignal
+  accountState: AccountState
 }) {
-  if (!(await accountStreamUsable())) {
+  if (!accountStreamAvailable(input.accountState)) {
     return input.request(
       new URL(
         `/api/control/session/${encodeURIComponent(input.sessionId)}/runtime-events?parentSessionId=${encodeURIComponent(input.sessionId)}`,
@@ -52,17 +53,13 @@ export async function openCentralRuntimeEventResponse(input: {
   })
 }
 
-function runtimeWorkspaceKind(input: unknown) {
-  if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
-}
-
 export function workspaceEventTransport(input: {
   serverUrl: string
   signedControlPlane: boolean
   workspaceId?: string
   workspaceKind?: string
 }) {
-  const kind = runtimeWorkspaceKind(input.workspaceKind)
+  const kind = workspaceKind(input.workspaceKind)
   return input.workspaceId && kind !== "local" && (
     input.signedControlPlane || centralTransportForServer(input.serverUrl) !== "loopback"
   ) ? "workspace-relay" as const : "loopback" as const
@@ -129,21 +126,46 @@ export function createControlPlaneEventFetch(input: ControlPlaneEventFetchInput)
           ...(resolvedWorkspace.kind ? { workspaceKind: resolvedWorkspace.kind } : {}),
         })
       }
-      const resolvedWorkspaceKind = runtimeWorkspaceKind(resolvedWorkspace?.kind)
-      const sessionWorkspaceKind = runtimeWorkspaceKind(session?.workspaceKind)
+      const resolvedWorkspaceKind = workspaceKind(resolvedWorkspace?.kind)
+      const sessionWorkspaceKind = workspaceKind(session?.workspaceKind)
       const workspaceId = resolvedWorkspace?.kind === "local"
         ? undefined
         : resolvedWorkspace?.workspaceId ?? (sessionWorkspaceKind === "local" ? undefined : session?.workspaceId)
+      const transport = workspaceEventTransport({
+        serverUrl: url.origin,
+        signedControlPlane: input.signedControlPlane(),
+        workspaceId,
+        workspaceKind: resolvedWorkspaceKind ?? sessionWorkspaceKind,
+      })
+      if (transport === "workspace-relay") {
+        const sessionID = session?.sessionID.trim()
+        if (sessionID && sessionID !== "route") {
+          // The session controller is the canonical producer of LiveSession.
+          // Stamp its current value on every attempt so initial connect,
+          // reconnect, and Last-Event-ID replay all traverse the same managed
+          // private-session authorization boundary. Never infer it from the
+          // workspace or directory.
+          url.searchParams.set("sessionID", sessionID)
+        } else {
+          // A caller URL is transport input, not session authority. In
+          // particular, a reconnect racing a route transition may still carry
+          // the previous session's query. Remove it unless LiveSession names a
+          // real current session; otherwise the stale caller scope could be
+          // relayed under fresh actor credentials.
+          url.searchParams.delete("sessionID")
+          // A workspace route/sentinel is not session authority. Keep the
+          // signed control-plane lifecycle stream alive until a real session
+          // becomes active instead of opening an unscoped managed stream.
+          if (input.signedControlPlane()) {
+            return input.fetch(new Request(new URL("/api/wr/events", request.url), request))
+          }
+        }
+      }
       return await createTransport({
         placement: {
           ...(workspaceId ? { workspaceId } : {}),
           hosting: "workspace",
-          transport: workspaceEventTransport({
-            serverUrl: url.origin,
-            signedControlPlane: input.signedControlPlane(),
-            workspaceId,
-            workspaceKind: resolvedWorkspaceKind ?? sessionWorkspaceKind,
-          }),
+          transport,
         },
         serverUrl: url.origin,
         directory: session?.directory,

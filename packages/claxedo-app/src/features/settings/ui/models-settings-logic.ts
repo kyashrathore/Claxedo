@@ -6,20 +6,39 @@ export type ModelListItem = {
 /** How many popular disconnected providers to hydrate for preview rows. */
 export const MODELS_PREVIEW_DISCONNECTED_PROVIDERS = 4
 
-export function modelsSettingsHydrationTargets(input: {
-  connectedIds: string[]
+/**
+ * Above this size a harness catalog is the models.dev registry (~179 entries)
+ * rather than a harness's own binding set. A catalog small enough to read is
+ * shown whole; only the registry needs the connected-plus-popular preview.
+ */
+export const MODELS_FULL_CATALOG_LIMIT = 24
+
+/**
+ * Which providers Settings → Models shows for one (workspace, harness).
+ *
+ * Connected providers always; a small catalog contributes the rest of itself,
+ * so a harness whose providers are not "popular" is not rendered as an empty
+ * page.
+ */
+export function settingsModelCatalogProviders<T extends { id: string }>(input: {
+  all: readonly T[]
+  connectedIds: readonly string[]
   popularProviders: readonly string[]
   previewDisconnectedCount?: number
-}) {
+  fullCatalogLimit?: number
+}): T[] {
+  const connected = new Set(input.connectedIds)
+  const limit = input.fullCatalogLimit ?? MODELS_FULL_CATALOG_LIMIT
   const previewCount = input.previewDisconnectedCount ?? MODELS_PREVIEW_DISCONNECTED_PROVIDERS
-  const connectedIds = [...input.connectedIds].sort()
-  const preview = input.popularProviders
-    .filter((id) => !connectedIds.includes(id))
-    .slice(0, previewCount)
-  return {
-    key: `${connectedIds.join(",")}|${preview.join(",")}`,
-    providerIds: [...connectedIds, ...preview],
+  const known = input.all.filter((provider) => connected.has(provider.id))
+  if (input.all.length <= limit) {
+    return [...known, ...input.all.filter((provider) => !connected.has(provider.id))]
   }
+  const preview = input.popularProviders
+    .filter((id) => !connected.has(id))
+    .slice(0, previewCount)
+    .flatMap((id) => input.all.filter((provider) => provider.id === id))
+  return [...known, ...preview]
 }
 
 /** Preview count when a provider has many models (search finds the rest). */

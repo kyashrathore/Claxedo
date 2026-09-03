@@ -10,10 +10,12 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useModels, useProviders } from "@/features/settings/app-ports"
 import { popularProviders } from "@/platform/query/provider-list"
 import { SettingsList } from "./list"
+import { SettingsScopeSelector } from "@/features/settings/ui/scope-selector"
+import { useSettingsScope } from "@/features/settings/scope/settings-scope"
 import {
   MODELS_PREVIEW_COUNT,
-  modelsSettingsHydrationTargets,
   providerUsesInlineSearch,
+  settingsModelCatalogProviders,
   visibleModelsForProvider,
 } from "./models-settings-logic"
 
@@ -23,9 +25,6 @@ type ModelItem = {
   provider: { id: string; name: string }
   connected: boolean
 }
-
-/** How many popular disconnected providers to include alongside connected ones. */
-const PREVIEW_DISCONNECTED_PROVIDERS = 4
 
 const ListLoadingState: Component<{ label: string }> = (props) => {
   return (
@@ -148,21 +147,27 @@ const ProviderModelGroup: Component<{
 export const SettingsModels: Component = () => {
   const language = useLanguage()
   const models = useModels()
-  // Same hook instance the catalog reads — hydrate must write into THIS cache.
-  // ModelsProvider.hydrate() can race an empty connected list at mount and/or
-  // target a different directory key, leaving index-only (1 model) rows.
-  const providers = useProviders("opencode")
+  // The catalog of the (workspace, harness) this page is showing, read through
+  // the same hook instance the hydration below writes into.
+  const scope = useSettingsScope()
+  const providers = useProviders(scope.harness, scope.scopeRef)
   const [hydrating, setHydrating] = createSignal(true)
   const [hydrateKey, setHydrateKey] = createSignal("")
 
-  createEffect(() => {
-    const connectedIds = providers.connected().map((item) => item.id)
-    const { key, providerIds } = modelsSettingsHydrationTargets({
-      connectedIds,
+  // The rows this page is about, named before their model sets exist: the boot
+  // catalog is an index, so a disconnected provider carries no models until the
+  // hydration below fetches its detail.
+  const catalogProviders = createMemo(() =>
+    settingsModelCatalogProviders({
+      all: [...providers.all().values()],
+      connectedIds: providers.connected().map((item) => item.id),
       popularProviders,
-      previewDisconnectedCount: PREVIEW_DISCONNECTED_PROVIDERS,
-    })
-    if (!key || key === "|") {
+    }))
+
+  createEffect(() => {
+    const providerIds = catalogProviders().map((provider) => provider.id)
+    const key = providerIds.join(",")
+    if (!key) {
       // Provider index still loading.
       if (!providers.loading()) setHydrating(false)
       return
@@ -181,17 +186,7 @@ export const SettingsModels: Component = () => {
 
   const catalog = createMemo(() => {
     const connectedIds = new Set(providers.connected().map((item) => item.id))
-    const connected = providers.connected()
-    const extras = popularProviders
-      .filter((id) => !connectedIds.has(id))
-      .slice(0, PREVIEW_DISCONNECTED_PROVIDERS)
-      .flatMap((id) => {
-        const provider = providers.all().get(id)
-        if (!provider || Object.keys(provider.models).length === 0) return []
-        return [provider]
-      })
-
-    return [...connected, ...extras].flatMap((provider) =>
+    return catalogProviders().filter((provider) => Object.keys(provider.models).length > 0).flatMap((provider) =>
       Object.values(provider.models).map((model) => ({
         id: model.id,
         name: model.name.replace("(latest)", "").trim(),
@@ -228,6 +223,9 @@ export const SettingsModels: Component = () => {
     },
   })
 
+  const harnessLabel = () =>
+    scope.harnesses().find((item) => item.id === scope.harness())?.label ?? scope.harness()
+
   // useFilteredList's resource can settle on the boot index (one model per
   // connected provider) before detail hydration merges the full catalogs.
   const catalogModelCount = createMemo(() => catalog().length)
@@ -243,6 +241,7 @@ export const SettingsModels: Component = () => {
             <h2 class="text-18-medium text-text-strong">{language.t("settings.models.title")}</h2>
             <p class="text-12-regular text-text-weak">{language.t("settings.models.description")}</p>
           </div>
+          <SettingsScopeSelector />
           <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">
             <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
             <TextField
@@ -273,7 +272,17 @@ export const SettingsModels: Component = () => {
         >
           <Show
             when={list.flat().length > 0}
-            fallback={<ListEmptyState message={language.t("dialog.model.empty")} filter={list.filter()} />}
+            fallback={(
+              <ListEmptyState
+                message={providers.all().size === 0
+                  ? language.t("settings.providers.catalog.empty", {
+                    harness: harnessLabel(),
+                    workspace: scope.workspace()?.label ?? "",
+                  })
+                  : language.t("dialog.model.empty")}
+                filter={list.filter()}
+              />
+            )}
           >
             <For each={list.grouped.latest}>
               {(group) => (

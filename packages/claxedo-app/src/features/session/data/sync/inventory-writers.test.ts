@@ -6,7 +6,6 @@ import {
   createSessionInventorySnapshotValue,
   mergeSessionInventoryProjectPage,
   mergeSessionInventoryWorkspaceGroups,
-  mergeSessionInventoryWorkspacePage,
   readSessionInventoryQueryData,
   removeSessionInventoryQueryData,
   replaceSessionInventoryWorkspaceGroups,
@@ -535,46 +534,6 @@ describe("session inventory writers", () => {
     expect(inventory.byWorkspace["/repo/a"].hasMore).toBe(true)
     expect(inventory.workspaceState["/repo/a"]).toEqual({ hasMore: true, loading: false, cursor: 4 })
     expect(inventory.projectState.project_a).toEqual({ hasMore: false, loading: false, cursor: undefined })
-  })
-
-  test("workspace page merge preserves total and computes fallback cursor", () => {
-    setSessionInventoryQueryData({
-      baseUrl: "http://test",
-      value: {
-        ...emptySessionInventory<SessionInventoryRow>(),
-        sessions: [session("ses_old", 5)],
-        workspaceMeta: {
-          "/repo/a": {
-            key: "/repo/a",
-            directory: "/repo/a",
-            projectID: "project_a",
-            hasMore: true,
-            total: 3,
-            nextCursor: 5,
-          },
-        },
-        workspaceOrder: ["/repo/a"],
-        loaded: true,
-      },
-    })
-
-    updateSessionInventoryQueryData<SessionInventoryRow>({
-      baseUrl: "http://test",
-      mutate: (draft) => {
-        mergeSessionInventoryWorkspacePage(draft, {
-          workspaceKey: "/repo/a",
-          directory: "/repo/a",
-          rows: [session("ses_new", 2)],
-          cursor: null,
-        })
-      },
-    })
-
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
-    expect(inventory.byWorkspace["/repo/a"].sessions.map((item) => item.id)).toEqual(["ses_old", "ses_new"])
-    expect(inventory.byWorkspace["/repo/a"].hasMore).toBe(true)
-    expect(inventory.byWorkspace["/repo/a"].nextCursor).toBe(2)
-    expect(inventory.workspaceState["/repo/a"].cursor).toBe(2)
   })
 
   test("runtime workspace replacement replaces only the matching workspace rows", () => {

@@ -3,7 +3,6 @@ import { createHarnessOptionsLoader, type HarnessOptionsLoaderCache } from "./ha
 import type { HarnessOptionsStatePatch } from "./options-state"
 import type { HarnessType, OptionsResponse } from "./profile"
 import type { DraftDefaultApplication, ResolveDraftDefaultInput } from "./draft-default-policy"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
 
 const scope = "draft:/repo:route"
 
@@ -12,7 +11,6 @@ let tries: Record<string, number | undefined>
 let harness: HarnessType
 let selectedModel: string | undefined
 let patches: HarnessOptionsStatePatch[]
-let savedModels: string[]
 let loading: boolean[]
 
 beforeEach(() => {
@@ -21,7 +19,6 @@ beforeEach(() => {
   harness = "claude-acp"
   selectedModel = "sonnet"
   patches = []
-  savedModels = []
   loading = []
 })
 
@@ -51,7 +48,6 @@ describe("harness options loader", () => {
       selectedModel: "sonnet",
       optionsLoading: false,
     })
-    expect(savedModels).toEqual(["sonnet"])
   })
 
   test("keeps stale options loading and schedules bounded retry", async () => {
@@ -201,7 +197,6 @@ describe("harness options loader", () => {
       application: DraftDefaultApplication
       input: Omit<ResolveDraftDefaultInput, "saved">
     }> = []
-    const completed: Array<ModelKey | undefined> = []
     const loader = loaderFor({
       fetch: async () => optionsResponse({
         source: "harness",
@@ -220,10 +215,6 @@ describe("harness options loader", () => {
         resolutions.push({ application, input })
         return true
       },
-      completeRememberedHarness: (_scope, _type, model) => {
-        completed.push(model)
-        return true
-      },
     })
 
     await loader.load(scope, "claude-acp")
@@ -235,7 +226,6 @@ describe("harness options loader", () => {
       optionsLoading: false,
       dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
     })
-    expect(savedModels).toEqual([])
     expect(resolutions).toEqual([{
       application: captured,
       input: {
@@ -244,7 +234,6 @@ describe("harness options loader", () => {
         declaredDefaultModel: { providerID: "claude-acp", modelID: "sonnet" },
       },
     }])
-    expect(completed).toEqual([{ providerID: "claude-acp", modelID: "sonnet" }])
   })
 
   test("keeps a captured default unresolved while options are stale", async () => {
@@ -422,7 +411,6 @@ function loaderFor(input: {
     application: DraftDefaultApplication,
     input: Omit<ResolveDraftDefaultInput, "saved">,
   ) => boolean
-  completeRememberedHarness?: (scope: string, type: HarnessType, model?: ModelKey) => boolean
   readState?: () => { readiness?: string; configError?: string } | undefined
 }) {
   return createHarnessOptionsLoader<{ name?: string }>({
@@ -431,10 +419,8 @@ function loaderFor(input: {
     selectedModel: () => selectedModel,
     seed: () => {},
     applyPatch: (_scope, patch) => patches.push(patch),
-    saveModel: (_scope, model) => savedModels.push(model),
     draftDefaultApplication: input.draftDefaultApplication,
     resolveDraftDefault: input.resolveDraftDefault,
-    completeRememberedHarness: input.completeRememberedHarness,
     setOptionsLoading: (_scope, value) => loading.push(value),
     readState: input.readState,
     errorMessage: input.errorMessage ?? (async (_res, fallback) => fallback),

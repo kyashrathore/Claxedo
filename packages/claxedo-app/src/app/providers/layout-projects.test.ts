@@ -526,3 +526,56 @@ describe("planProjectColorAssignment", () => {
     expect(plan.metaUpserts).toEqual([])
   })
 })
+
+describe("the rail is the catalog, the store is intent", () => {
+  const hosted = project({
+    id: "proj_hosted",
+    name: "claxedo/opencode",
+    worktree: "workspace:ws_shared",
+    sandboxes: ["workspace:ws_shared"],
+  })
+
+  test("a catalog row with no persisted intent still renders", () => {
+    const catalog = projectCatalog({
+      api: [hosted],
+      current: [],
+      closed: () => false,
+      valid: validProjectRef,
+    })
+
+    expect(catalog.list.map((entry) => entry.worktree)).toEqual(["workspace:ws_shared"])
+    expect(catalog.list[0]?.expanded).toBe(true)
+  })
+
+  test("persisted intent orders and collapses catalog rows without adding any", () => {
+    const other = project({ id: "proj_local", worktree: "/Users/me/repo" })
+    const catalog = projectCatalog({
+      api: [other, hosted],
+      current: [
+        { worktree: "workspace:ws_shared", expanded: false },
+        { worktree: "/Users/me/repo", expanded: true },
+        // Intent for a workspace the catalog no longer carries is intent about
+        // nothing: the store is not a data source, so it renders no row.
+        { worktree: "workspace:ws_revoked", expanded: true },
+      ],
+      closed: () => false,
+      valid: validProjectRef,
+    })
+
+    expect(catalog.list).toEqual([
+      { worktree: "workspace:ws_shared", expanded: false },
+      { worktree: "/Users/me/repo", expanded: true },
+    ])
+  })
+
+  test("closed is intent too: a catalog row the user closed stays hidden", () => {
+    const catalog = projectCatalog({
+      api: [hosted],
+      current: [],
+      closed: (directory) => directory === "workspace:ws_shared",
+      valid: validProjectRef,
+    })
+
+    expect(catalog.list).toEqual([])
+  })
+})

@@ -221,6 +221,70 @@ describe("SessionNavigation", () => {
     expect(view.queryByRole("button", { name: "Archive Build sidebar" })).toBeNull()
   })
 
+  test("keeps a hovered row's archive control when activation moves focus away", () => {
+    const view = render(() => (
+      <SessionNavigation
+        rows={[row()]}
+        onActivate={() => {}}
+        onArchive={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+    const activate = view.getByRole("button", { name: "Build sidebar" })
+
+    // Clicking a row leaves the pointer resting on it AND focuses its own
+    // activate button, so both engagement sources are raised.
+    engageRow(rowElement)
+    fireEvent.focusIn(activate)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBeTruthy()
+
+    // The session that opens then takes focus (blur to `<body>`: no
+    // `relatedTarget`). The pointer has not moved, so nothing will fire a
+    // second `pointerenter` — withdrawing the control here would strand it
+    // until the user moved the mouse.
+    fireEvent.focusOut(activate, { relatedTarget: null })
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBeTruthy()
+
+    // Leaving with the pointer, nothing focused, still withdraws it.
+    fireEvent.pointerLeave(rowElement)
+    expect(view.queryByRole("button", { name: "Archive Build sidebar" })).toBeNull()
+
+    // The mirror case: the pointer wandering off must not withdraw a control
+    // the keyboard is still inside.
+    fireEvent.focusIn(activate)
+    engageRow(rowElement)
+    fireEvent.pointerLeave(rowElement)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBeTruthy()
+  })
+
+  test("keeps a hovered row's archive control across a sessionRef respelling", async () => {
+    // The same session is spelled differently by different sources
+    // (`local:<dir>:session:<id>` from a lifecycle event, `workspace:<id>:...`
+    // from a workspace runtime). The rendered row is keyed by SESSION ID, so a
+    // respelling updates the row rather than disposing and re-creating it —
+    // a re-created row would drop the engagement its stationary pointer raised
+    // and never get a second `pointerenter` to raise it again.
+    const [sessionRef, setSessionRef] = createSignal("local:/repo:session:ses_1")
+    const view = render(() => (
+      <SessionNavigation
+        rows={[row({ source: { ...row().source, sessionRef: sessionRef() } })]}
+        onActivate={() => {}}
+        onArchive={() => {}}
+        onPrepareDrag={() => undefined}
+      />
+    ))
+    const rowElement = view.getByTestId("rail-sidebar-session-row")
+    engageRow(rowElement)
+    const archive = view.getByRole("button", { name: "Archive Build sidebar" })
+
+    setSessionRef("workspace:ws_1:session:ses_1")
+    await Promise.resolve()
+
+    expect(view.getByTestId("rail-sidebar-session-row")).toBe(rowElement)
+    expect(view.getByRole("button", { name: "Archive Build sidebar" })).toBe(archive)
+  })
+
   test("keeps the archive control stable while the archive request is pending", async () => {
     let resolveArchive!: () => void
     const onArchive = vi.fn(() => new Promise<void>((resolve) => {

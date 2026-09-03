@@ -10,6 +10,10 @@ import { serverExtensions } from "../../features/extensions/index"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "@/platform/api/local-server"
 import { configureProductContributions, type HostedContributionLoader } from "@/app/composition/product-contributions"
 import {
+  configureServiceContributions,
+  type ServiceContributionLoaders,
+} from "@/app/composition/service-contributions"
+import {
   localContentSurfaces,
   registerContentSurface,
   unregisterContentSurface,
@@ -48,6 +52,8 @@ export interface ClaxedoConfig extends ProductUiFlagConfig {
   claxedoServerUrl?: string
   /** Hosted product-owned implementation; absent from an unsigned artifact. */
   loadHostedContributions?: HostedContributionLoader
+  /** Independently loaded fixed services, activated only by signed bootstrap. */
+  serviceContributionLoaders?: ServiceContributionLoaders
 }
 
 /**
@@ -92,8 +98,17 @@ export function initClaxedo(config: ClaxedoConfig): void {
     register: registerContentSurface,
     unregister: unregisterContentSurface,
     loadHosted: config.loadHostedContributions,
-    hostedComposition: () => config.authEnabled === true || config.loadHostedContributions !== undefined,
+    hostedComposition: () => config.loadHostedContributions !== undefined,
   })
+
+  if (config.serviceContributionLoaders) {
+    configureServiceContributions({
+      local: localContentSurfaces,
+      loaders: config.serviceContributionLoaders,
+      register: registerContentSurface,
+      unregister: unregisterContentSurface,
+    })
+  }
 
   // Starting the identity provider is NOT this function's job.
   //
@@ -108,7 +123,7 @@ export function initClaxedo(config: ClaxedoConfig): void {
   // keeps only the parts both products share.
   if (config.loadHostedContributions) contributions.expectHosted()
 
-  if (config.authEnabled) {
+  if (config.authEnabled && config.loadHostedContributions) {
     // Hosted composition: WorkGraph and Documents arrive as one lazily
     // imported contribution set rather than as static imports of this entry.
     //

@@ -21,7 +21,8 @@ vi.mock("@/features/session/app-ports", () => ({
   useServer: () => ({ projects: { touch: () => {} } }),
 }))
 
-vi.mock("@tanstack/solid-query", () => ({
+vi.mock("@tanstack/solid-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/solid-query")>()),
   useQuery: () => ({ get data() { return state.projects } }),
 }))
 

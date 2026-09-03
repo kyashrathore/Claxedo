@@ -35,7 +35,6 @@ import { promptPlaceholder } from "@/features/session/composer/ui/placeholder"
 import { harnessModesUnavailable, promptDesignPlaceholder } from "@/features/session/composer/role-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { promptHarnessDirectory } from "@/features/session/composer/ui/harness-directory"
-import { createPanePreferences } from "@/features/session/preferences/pane"
 import { queryClient } from "@/platform/query/query-client"
 import { commandListQuery } from "../data/query/shell"
 import { createDeferredDirectoryResourceGate } from "../data/query/deferred-directory-resource"
@@ -55,6 +54,7 @@ import { createSignedWorkspaceRuntimeFallback } from "./runtime-fallback"
 import { createPromptToolbarState } from "./toolbar-state"
 import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
+import { firstConnectedModel } from "./model-strategy"
 import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
 import { createComposerEngine } from "./v2/engine"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
@@ -72,7 +72,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const comments = useComments()
   const sessionParams = useSessionParams()
   const dialog = useDialog()
-  const providers = useProviders()
+  const providers = useProviders("opencode")
   const command = useCommand()
   const permission = usePermission()
   const language = useLanguage()
@@ -156,23 +156,28 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }),
     hydrate: () => { void local.model.hydrate() },
   }))
+  // The model OpenCode itself would run: the default of the highest-ranked
+  // connected provider. A draft in a workspace that remembers nothing opens on
+  // it, so a fresh profile reads a concrete model instead of "Select model".
+  const openCodeResolvedDefault = createMemo(() =>
+    firstConnectedModel({ connected: providers.connected(), defaults: providers.default() }))
   createEffect(() => restoreOpenCodeDraftDefault({
     controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
-    newSession: isNewSessionVariant(), ready: local.model.ready(), models: local.model.list(), write: local.model.set, writeVariant: local.model.variant.set,
+    newSession: isNewSessionVariant(), ready: local.model.ready(), models: local.model.list(),
+    resolvedDefault: openCodeResolvedDefault(), write: local.model.set, writeVariant: local.model.variant.set,
   }))
   const harnessPending = createMemo(() => {
     const nextScope = scope()
     const next = isHarnessMode(nextScope) && harnessReadiness(nextScope) === "polling"
     return next
   })
-  const panePreferences = createMemo(() => createPanePreferences(localStorage))
   const sessionKey = () => modeSnapshot().sessionKey
   const tabs = createMemo(() => layout.tabs(sessionKey))
   const view = createMemo(() => layout.view(sessionKey))
   const commandDirectory = createMemo(() => resolvedSessionDirectory() ?? sdk.directory)
   const newSession = isNewSessionVariant
   const hydrateDirectoryCommands = createDeferredDirectoryResourceGate({
-    scope: () => `${sdk.url ?? ""}:${commandDirectory()}:commands`,
+    scope: () => `${sdk.url ?? ""}:${commandDirectory()}:${currentHarnessType(scope())}:commands`,
     active: () => sessionParams.active?.() ?? true,
   })
   const customCommandsQuery = useWorkspaceQuery(() => {
@@ -181,6 +186,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       ...commandListQuery({
         baseUrl: sdk.url,
         directory,
+        // The command set is the HARNESS's, for this worktree: OpenCode's slash
+        // commands are not the ones a Codex or Claude pane can run.
+        harnessType: currentHarnessType(scope()),
         request: platform.fetch ?? fetch,
         workspace: sdk.workspace(directory),
         client: sdk.createClient({ directory }),
@@ -419,11 +427,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setPlaceholder: (next) => setPlaceholderIndex(next),
   })
 
-  const selectedVariant = createMemo<string | null | undefined>(() => {
-    const value = panePreferences().get("variant", scope())
-    if (value) return value
-    return local.model.variant.selected()
-  })
+  const selectedVariant = createMemo<string | null | undefined>(() => local.model.variant.selected())
   const toolbarState = createPromptToolbarState({
     agentList: local.agent.list,
     currentAgent: local.agent.current,
@@ -472,7 +476,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
     newSession: isNewSessionVariant(), variant: value, model: selectedModelKey(),
     labels: openCodeDraftLabels(selectedModelKey(), local.model.list()),
-    write: () => { panePreferences().set("variant", scope(), value); local.model.variant.set(value) },
+    write: () => local.model.variant.set(value),
   })
   const composerBootScope = createMemo(() => [
     props.variant ?? "dock",

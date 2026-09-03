@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, test } from "bun:test"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import {
   createDraftDefaultPreferences,
-  decodeDraftDefault,
+  decodeDraftDefaultRecord,
   draftDefaultStorageKey,
 } from "./draft-defaults"
 
@@ -26,7 +26,7 @@ describe("workspace draft defaults", () => {
       expect(createDraftDefaultPreferences(storage).read({
         serverUrl: "http://localhost:4096",
         workspaceKey: `/repo/${value.harness}`,
-      })).toEqual({ version: 1, ...value })
+      })).toEqual(value)
     }
   })
 
@@ -38,7 +38,6 @@ describe("workspace draft defaults", () => {
     )).toBe(true)
 
     expect(preferences.read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })).toEqual({
-      version: 1,
       harness: "pi",
       labels: { provider: "OpenAI Codex", model: "GPT-5.5" },
     })
@@ -117,29 +116,76 @@ describe("workspace draft defaults", () => {
     const invalid = [
       "{",
       "[]",
-      JSON.stringify({ version: 2, harness: "pi" }),
+      JSON.stringify({ version: 3, byHarness: {}, lastHarness: "pi" }),
+      JSON.stringify({ version: 2, byHarness: {}, lastHarness: "unknown" }),
       JSON.stringify({ version: 1, harness: "unknown" }),
       JSON.stringify({ version: 1, harness: "pi", model: { providerID: "openai" } }),
       JSON.stringify({ version: 1, harness: "pi", model: { providerID: " ", modelID: "gpt" } }),
       JSON.stringify({ version: 1, harness: "pi", model: { providerID: " openai", modelID: "gpt" } }),
-      JSON.stringify({ version: 1, harness: "codex-acp", model: { providerID: "openai", modelID: "gpt" } }),
+      JSON.stringify({ version: 1, harness: "codex-app-server", model: { providerID: "openai", modelID: "gpt" } }),
       JSON.stringify({ version: 1, harness: "pi", labels: { model: "x".repeat(121) } }),
     ]
 
-    for (const value of invalid) expect(decodeDraftDefault(value)).toBeUndefined()
+    for (const value of invalid) expect(decodeDraftDefaultRecord(value)).toBeUndefined()
   })
 
-  test("replaces the atomic pair instead of retaining the previous harness model", () => {
+  // The whole point of D1: two harnesses in one workspace do not share a slot.
+  test("keeps each harness's own model and opens on the one last used", () => {
     const preferences = createDraftDefaultPreferences(storage)
     const scope = { serverUrl: "http://localhost:4096", workspaceKey: "/repo" }
     preferences.save(scope, { harness: "pi", model: { providerID: "openai", modelID: "gpt-5.5" } })
     preferences.save(scope, { harness: "acp:claude", model: { providerID: "acp:claude", modelID: "opus" } })
 
     expect(preferences.read(scope)).toEqual({
-      version: 1,
       harness: "acp:claude",
       model: { providerID: "acp:claude", modelID: "opus" },
     })
+    expect(preferences.readHarness(scope, "pi")).toEqual({ model: { providerID: "openai", modelID: "gpt-5.5" } })
+    expect(preferences.readHarness(scope, "acp:claude")).toEqual({ model: { providerID: "acp:claude", modelID: "opus" } })
+    expect(preferences.readHarness(scope, "opencode")).toBeUndefined()
+
+    // Switching back does not disturb the harness left behind.
+    preferences.save(scope, { harness: "pi", model: { providerID: "openai", modelID: "gpt-5.5" } })
+    expect(preferences.read(scope)?.harness).toBe("pi")
+    expect(preferences.readHarness(scope, "acp:claude")?.model?.modelID).toBe("opus")
+  })
+
+  test("upgrades a v1 single-slot record once, in the read path, and writes it back", () => {
+    const key = draftDefaultStorageKey({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })
+    storage.setItem(key, JSON.stringify({
+      version: 1,
+      harness: "acp:codex",
+      model: { providerID: "acp:codex", modelID: "gpt-5.5" },
+      labels: { provider: "Codex", model: "GPT-5.5" },
+    }))
+
+    const preferences = createDraftDefaultPreferences(storage)
+    expect(preferences.read({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" })).toEqual({
+      harness: "acp:codex",
+      model: { providerID: "acp:codex", modelID: "gpt-5.5" },
+      labels: { provider: "Codex", model: "GPT-5.5" },
+    })
+
+    // The upgrade is persisted, so no reader below `decodeDraftDefaultRecord`
+    // ever meets v1 again.
+    expect(JSON.parse(storage.getItem(key)!)).toEqual({
+      version: 2,
+      byHarness: {
+        "acp:codex": {
+          model: { providerID: "acp:codex", modelID: "gpt-5.5" },
+          labels: { provider: "Codex", model: "GPT-5.5" },
+        },
+      },
+      lastHarness: "acp:codex",
+    })
+
+    // ...and the upgraded record keeps room for the other harnesses.
+    preferences.save({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" }, {
+      harness: "opencode",
+      model: { providerID: "anthropic", modelID: "opus" },
+    })
+    expect(preferences.readHarness({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" }, "acp:codex")?.model?.modelID)
+      .toBe("gpt-5.5")
   })
 
   test("swallows storage failures", () => {

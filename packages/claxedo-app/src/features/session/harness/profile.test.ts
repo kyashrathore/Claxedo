@@ -16,28 +16,32 @@ import {
 } from "./profile"
 
 describe("harness profile", () => {
-  // ACP operator connections are fully generic: a binary name never selects a
-  // harness identity — only the explicit type/access pair does.
-  test("never infers a harness from binary names", () => {
-    expect(pickHarness(undefined, "/tmp/codex-acp")).toBeUndefined()
-    expect(pickHarness(undefined, "/tmp/claude-agent-acp")).toBeUndefined()
-    expect(pickHarness(undefined, "C:\\agents\\codex-acp.exe")).toBeUndefined()
-    // The binary does not override an explicit identity either.
-    expect(pickHarness("claude-sdk", "/tmp/codex-acp")).toBe("claude-sdk")
-    expect(pickHarness("acp:codex", "/tmp/claude-agent-acp")).toBe("acp:codex")
-  })
-
-  test("resolves structured identities from type and access", () => {
+  test("infers harness from native access + type pairs", () => {
     expect(pickHarness("claude", null, "native")).toBe("claude-sdk")
     expect(pickHarness("codex", null, "native")).toBe("codex-app-server")
     expect(pickHarness("cursor", null, "native")).toBe("cursor-sdk")
     expect(pickHarness("opencode", null, "native")).toBe("opencode")
     expect(pickHarness("pi", null, "native")).toBe("pi")
-    expect(pickHarness("claude", null, "acp")).toBe("acp:claude")
-    expect(pickHarness("my-agent", null, "acp")).toBe("acp:my-agent")
   })
 
-  test("covers display names for every harness id", () => {
+  test("infers open acp:<slug> ids from acp access + type, and passes through an already-qualified id", () => {
+    expect(pickHarness("claude", null, "acp")).toBe("acp:claude")
+    expect(pickHarness("codex", null, "acp")).toBe("acp:codex")
+    expect(pickHarness("acp:claude")).toBe("acp:claude")
+    // access "acp" with a type that doesn't form a valid slug is rejected, not coerced.
+    expect(pickHarness("Not Valid", null, "acp")).toBeUndefined()
+  })
+
+  test("ignores the binary argument entirely — selection flows through type + access only", () => {
+    expect(pickHarness(undefined, "/tmp/codex-acp")).toBeUndefined()
+    expect(pickHarness("opencode", "/tmp/some/unrelated/binary-path.exe", "native")).toBe("opencode")
+    expect(pickHarness(undefined, "C:\\agents\\codex-acp.exe")).toBeUndefined()
+    // An explicit identity is honored regardless of what the binary looks like.
+    expect(pickHarness("claude-sdk", "/tmp/codex-acp")).toBe("claude-sdk")
+    expect(pickHarness("acp:codex", "/tmp/claude-agent-acp")).toBe("acp:codex")
+  })
+
+  test("covers display names for every builtin harness id", () => {
     const types: HarnessType[] = [
       "claude-sdk",
       "codex-app-server",
@@ -126,6 +130,12 @@ describe("harness profile", () => {
   test("decodes harness id session config", () => {
     expect(decodeSessionConfig({
       harness: {
+        id: "claude-sdk",
+      },
+    }).harness?.type).toBe("claude-sdk")
+
+    expect(decodeSessionConfig({
+      harness: {
         id: "acp:claude",
       },
     }).harness?.type).toBe("acp:claude")
@@ -208,6 +218,66 @@ describe("harness profile", () => {
         },
       ],
     })
+  })
+
+  // `/api/wr/harness-config-options` answers the adapter contract's
+  // `AgentConfigOptions` verbatim: the options the harness published plus the
+  // model it resolved for itself, and NO freshness bookkeeping of its own.
+  test("reads the workspace runtime's bare config-options answer as a live harness answer", () => {
+    expect(optionsResponse({
+      options: [{
+        id: "thought_level",
+        name: "Thought level",
+        category: "thought_level",
+        type: "select",
+        currentValue: "adaptive",
+        options: [{ value: "adaptive", name: "Adaptive" }],
+      }],
+      resolvedModel: { id: "claude-opus-4-6", name: "Opus 4.6" },
+    })).toEqual({
+      source: "harness",
+      stale: false,
+      resolvedModel: { id: "claude-opus-4-6", name: "Opus 4.6" },
+      options: [{
+        id: "thought_level",
+        name: "Thought level",
+        category: "thought_level",
+        type: "select",
+        currentValue: "adaptive",
+        options: [{ value: "adaptive", name: "Adaptive" }],
+      }],
+    })
+  })
+
+  // A harness that named no current model yields no field — the client is told
+  // nothing was reported rather than handed a guess.
+  test("carries no resolved model when the runtime reported none", () => {
+    expect(optionsResponse({ options: [] })).toEqual({
+      source: "harness",
+      stale: false,
+      options: [],
+    })
+  })
+
+  // The daemon route wraps the same payload in its own freshness bookkeeping;
+  // its `resolvedModel` rides through unchanged.
+  test("keeps the daemon's own source and staleness while carrying its resolved model", () => {
+    expect(optionsResponse({
+      source: "catalog",
+      stale: true,
+      options: [],
+      resolvedModel: { id: "gpt-5.5-codex", name: "GPT-5.5 Codex" },
+    })).toEqual({
+      source: "catalog",
+      stale: true,
+      resolvedModel: { id: "gpt-5.5-codex", name: "GPT-5.5 Codex" },
+      options: [],
+    })
+  })
+
+  test("drops a resolved model the producer did not label", () => {
+    expect(optionsResponse({ source: "harness", stale: false, options: [], resolvedModel: { id: "opus" } }))
+      .toEqual({ source: "harness", stale: false, options: [] })
   })
 
   test("profiles Pi as a catalog-backed harness", () => {

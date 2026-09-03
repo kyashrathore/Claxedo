@@ -114,12 +114,13 @@ vi.mock("../../../features/session/data/sync/session-inventory", () => ({
   }),
 }))
 
-vi.mock("../../../features/session/data/query/session-list", () => ({
-  sessionListQueryOptions: (input: { query: { scope: string; groupBy?: string; limit?: number } }) => ({
-    queryKey: ["test-session-list", JSON.stringify(input.query)],
-    queryFn: () => sessionListMocks.request(input.query),
-  }),
-  appendSessionListPageQueryData: (input: { page: unknown }) => input.page,
+// Only the central server's PAGE is stubbed; the cache key, the fold into the
+// section's `shell.sessionList` entry and the source dispatch above it stay
+// real, so the section is exercised through the same path production takes.
+vi.mock("../../../features/session/data/query/session-list", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../../features/session/data/query/session-list")>()),
+  fetchSessionListPage: (input: { query: { scope: string; groupBy?: string; limit?: number } }) =>
+    sessionListMocks.request(input.query),
 }))
 
 afterEach(() => {
@@ -465,10 +466,9 @@ describe("RailSidebar disclosure controls", () => {
       "data-session-statuses",
       "local-session:working",
     ))
-    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({
-      directory: "/repo/main",
-      workspaceId: "local-association",
-    })
+    // A local row's poll goes to its directory authority alone: the inventory
+    // association is how the sidebar groups the row, never a routing input.
+    expect(railRuntimeMocks.createClient).toHaveBeenCalledWith({ directory: "/repo/main" })
   })
 
   test("an ambiguous id event never projects one placement into another when a refetch fails", async () => {

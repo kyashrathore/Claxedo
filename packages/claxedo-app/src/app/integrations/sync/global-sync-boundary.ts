@@ -46,6 +46,13 @@ export function useGlobalSessionAccessRevocations(
  */
 export function clearPrincipalData() {
   clearRegisteredConversationMemory()
+  // `clear()` destroys queries outright, and destroying one whose fetch is
+  // still in flight rejects that fetch with a CancelledError nothing awaits —
+  // an unhandledrejection overlay on every sign-in/out with a fetch open.
+  // `cancelQueries()` marks every in-flight retryer cancelled synchronously
+  // and OBSERVES the rejections; the clear on the same tick then destroys
+  // already-settled queries, so the isolation timing is unchanged.
+  queryClient.cancelQueries().catch(() => undefined)
   queryClient.clear()
 }
 

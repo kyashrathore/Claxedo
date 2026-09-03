@@ -20,6 +20,23 @@ describe("AgentRuntimeClient", () => {
     }).__claxedoFastSessionSwitch
   })
 
+  it("keeps canonical session scope on both managed event URL shapes", () => {
+    const client = createAgentRuntimeClient({ serverUrl: "https://control.example/" })
+
+    expect(client.subscribeToEvents({ sessionID: "session-central" }).toString()).toBe(
+      "https://control.example/api/wr/events?sessionID=session-central",
+    )
+    expect(client.subscribeToEvents({ workspaceId: "ws_one", sessionID: "session-workspace" }).toString()).toBe(
+      "https://control.example/workspaces/ws_one/global/event?sessionID=session-workspace",
+    )
+  })
+
+  it("leaves unmanaged event URLs unchanged when no session scope is supplied", () => {
+    const client = createAgentRuntimeClient({ serverUrl: "http://127.0.0.1:3001/" })
+
+    expect(client.subscribeToEvents({}).toString()).toBe("http://127.0.0.1:3001/api/wr/events")
+  })
+
   it("constructs scoped local message requests through the session resource route", async () => {
     const seen: string[] = []
     const client = createAgentRuntimeClient({
@@ -702,11 +719,12 @@ describe("AgentRuntimeClient", () => {
     ])
   })
 
-  // Regression: a signed USER-HOSTED workspace whose `directory` is the runtime
-  // filesystem path (the registration-stored remote_directory) must divert
-  // session reads to the relay runtime. Before the `workspaceKind` threading,
-  // this shape (workspaceId set, kind unresolved, non-ws_ directory) fell into
-  // the signed-cloud contract and 404'd on `/api/control/sessions/:id/messages`.
+  // A signed USER-HOSTED workspace whose `directory` is the runtime filesystem
+  // path (the registration-stored remote_directory) must divert session reads
+  // to the relay runtime: this shape (workspaceId set, kind unresolved, non-ws_
+  // directory) is exactly the case `workspaceKind` threading exists to steer
+  // away from the signed-cloud contract, which 404s on
+  // `/api/control/sessions/:id/messages` for it.
   it("diverts signed user-hosted message reads with a filesystem directory to the relay runtime", async () => {
     const calls: string[] = []
     const client = createAgentRuntimeClient({
@@ -831,6 +849,50 @@ describe("AgentRuntimeClient", () => {
       workspaceKind: "user-hosted",
       request: async (input, init) => {
         calls.push(`${init?.method ?? "GET"} ${String(input)}`)
+        if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
+          return ok({
+            access: "user-hosted",
+            backing: "local-worktree",
+            workspaceId: "ws_cleantest1",
+            relayUrl: "https://relay.example",
+            runtimeAccessToken: "runtime-token",
+            role: "owner",
+            tokenExpiresAt: Date.now() + 120_000,
+          })
+        }
+        return ok([{ id: "runtime-session-1", title: "Existing session" }])
+      },
+    })
+
+    const result = await client.listSessions({
+      directory: "/tmp/claxedo-portability/ws_cleantest1-dir",
+      roots: true,
+      limit: 20,
+    })
+
+    expect(result.sessions?.map((session) => session.id)).toEqual(["runtime-session-1"])
+    expect(calls.some((call) => call.includes("/api/control/sessions"))).toBe(false)
+    expect(calls.at(-1)).toContain("/workspaces/ws_cleantest1/session?roots=true&limit=20")
+  })
+
+  // When the client is not told the workspace id up front, `listSessions`
+  // resolves it live via `/api/workspace/resolve` — but that read confirms only a
+  // `workspaceId` for a user-hosted workspace addressed by its filesystem-path
+  // directory, never a `kind` (the hosted control plane does not track kind for a
+  // directory it does not own). The caller-confirmed `workspaceKind` (threaded down
+  // from the signed inventory) must still steer `listSessions` to the relay runtime
+  // instead of the central sessions list, which holds nothing for user-hosted.
+  it("signed user-hosted session lists use the caller-confirmed kind when the live resolve confirms only an id", async () => {
+    const calls: string[] = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "https://control.example/",
+      signedControlPlane: true,
+      workspaceKind: "user-hosted",
+      request: async (input, init) => {
+        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
+        if (String(input).includes("/api/workspace/resolve")) {
+          return ok({ workspaceId: "ws_cleantest1" })
+        }
         if (String(input).includes("/api/workspace/ws_cleantest1/connection")) {
           return ok({
             access: "user-hosted",

@@ -128,6 +128,7 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
   })
   const openWorkspaceIds = createMemo(() =>
     openWorkspaceScopeIds({
+      canonicalRouteId: activeWorkspaceRouteId(),
       activeDirectory: activeDirectory(),
       visiblePanes: state.wb.selectors.visiblePanes(),
       meta: (id) => state.meta.get(id),

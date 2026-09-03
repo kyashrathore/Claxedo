@@ -5,6 +5,7 @@ import type { ClaxedoStateApi } from "../state/provider"
 import type { RailWorktreeInfo } from "./rail-project-session-info"
 import { createRailHeaderActions } from "./rail-header-actions"
 import { NEW_TERMINAL_ID } from "@/features/terminal/core/terminal-surface-id"
+import { terminalSessionIdForWorkspace } from "@/features/terminal/core/terminal-session-context"
 import { useRailHeaderSurfaces } from "./rail-header-surfaces"
 import { useRailWorkspacePanelTarget } from "./rail-workspace-panel-target"
 import { useWorkspacePanelVisualState } from "./workspace-panel-visual-state"
@@ -60,8 +61,26 @@ export function useRailWorkbenchController(input: {
     // just a surface open, and the controller already holds the state that does
     // it. Nothing about it needs the pty plumbing `onNewTerminal` carries.
     onNewTerminalDraft: (workspaceDir) => {
+      const workspaceRouteId = workspaceDir === input.activeDirectory() ? input.activeWorkspaceRouteId() : undefined
+      // The creator carries the session the user opened it from, when that
+      // surface authoritatively belongs to the workspace the terminal will run
+      // in — `terminalSessionIdForWorkspace` is the one owner of that judgement
+      // and `terminal-actions.ts`'s direct open already asks it the same
+      // question. `terminal-content.tsx`'s launch reads the answer off this
+      // surface's own meta, and a managed workspace runtime REQUIRES it: its
+      // PTY route refuses an unscoped create (400 `pty_session_id_required`,
+      // `workspace-runtime/src/routes/pty.ts`) because a session is what it can
+      // authorize the caller against. A loopback runtime composes no such
+      // authority, so the scope is what a relay-backed workspace adds.
+      const focusedContentId = input.state.wb.selectors.focusedContent()
+      const focused = focusedContentId ? input.state.meta.get(focusedContentId) : undefined
+      const sessionId = terminalSessionIdForWorkspace(focused, {
+        directory: workspaceDir,
+        ...(workspaceRouteId ? { workspaceRouteId } : {}),
+      })
       input.state.layout.openTerminal(workspaceDir, NEW_TERMINAL_ID, "New Terminal", {
-        workspaceRouteId: workspaceDir === input.activeDirectory() ? input.activeWorkspaceRouteId() : undefined,
+        workspaceRouteId,
+        ...(sessionId ? { sessionId } : {}),
       })
     },
     onNewTask: (workspaceDir) => {

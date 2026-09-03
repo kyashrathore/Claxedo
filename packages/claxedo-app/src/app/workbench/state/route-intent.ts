@@ -35,6 +35,7 @@ import type { ContentMeta } from "./types"
 import { routeSessionHarness } from "./route-session-harness"
 import { isNarrowViewport } from "../workbench/index"
 import { isRouteIntentClosed, markRouteIntentClosed } from "./route-bridge-resolution"
+import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 export {
   CLOSED_ROUTE_MAX,
   isRouteIntentClosed,
@@ -111,10 +112,11 @@ type SessionRouteResolution =
 export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout" | "workspacePanel" | "terminal">
 
 function workspaceBacking(input: { workspaceId?: string; kind?: string }): WorkspaceSessionBacking | undefined {
-  if (!input.workspaceId || (input.kind !== "cloud" && input.kind !== "user-hosted")) return
+  const kind = workspaceKind(input.kind)
+  if (!input.workspaceId || !isRelayBackedWorkspaceKind(kind)) return
   return {
     workspaceId: input.workspaceId,
-    kind: input.kind,
+    kind,
   }
 }
 

@@ -6,8 +6,8 @@
  * reassembles them into a `Response` the existing SSE readers already consume.
  */
 
-import { signedAccountRun } from "./hosted-control-call"
-import type { HostedOperationName } from "./account-port"
+import { accountRunBridge } from "./hosted-control-call"
+import type { AccountState, HostedOperationName } from "./account-port"
 
 type StreamBridge = {
   streamOpen: (operation: string, input?: Record<string, unknown>) => Promise<{ streamId: string }>
@@ -44,18 +44,18 @@ function streamBridge(): StreamBridge | undefined {
 }
 
 /**
- * True when the Electron account bridge exposes stream IPC AND the account is
- * actually signed (`signedAccountRun`). Bridge presence alone is not enough:
- * the preload exposes `api.account` in every desktop build, including
- * unsigned or unconfigured ones (no `CLAXEDO_ACCOUNT_*` baked at package
- * time) where every account operation can only throw "this build has no
- * account client configured". Routing a stream through the bridge in that
- * state yields an endless connect → throw → retry loop and the central
- * events never arrive; unsigned builds must keep the plain `authFetch` path
- * against the local server, which serves `/api/claxedo/events` itself.
+ * Present only when the authoritative account state is signed and Electron
+ * exposes the complete stream IPC bridge. Bridge presence is a capability,
+ * not evidence of a usable account: preload installs it before sign-in, keeps
+ * it installed after sign-out, and installs it in unconfigured builds (no
+ * `CLAXEDO_ACCOUNT_*` baked) whose every account operation refuses. Routing a
+ * stream through the bridge in any of those states would loop on connect →
+ * refuse → retry and no central event would ever arrive; those builds keep
+ * the plain `authFetch` path against the local server, which serves
+ * `/api/claxedo/events` itself.
  */
-export async function accountStreamUsable(): Promise<boolean> {
-  return Boolean((await signedAccountRun()) && streamBridge())
+export function accountStreamAvailable(accountState: AccountState) {
+  return accountState.status === "signed" && Boolean(accountRunBridge() && streamBridge())
 }
 
 export async function openAccountStreamResponse(input: {

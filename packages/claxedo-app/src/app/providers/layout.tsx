@@ -8,7 +8,7 @@ import { Project } from "@opencode-ai/sdk/v2"
 import { Persist, persisted, removePersisted } from "@/platform/persistence/persist"
 import { same } from "@/lib/same"
 import { createScrollPersistence, type SessionScroll } from "@/app/providers/layout-scroll"
-import { validProjectRef, validWorktree } from "@/platform/sync/worktree"
+import { validProjectRef } from "@/platform/sync/worktree"
 import {
   planProjectColorAssignment,
   projectCatalog,
@@ -26,6 +26,7 @@ import { useDirectorySessionCacheActions } from "../../features/session/data/syn
 import { useSessionInventoryActions } from "../../features/session/data/sync/session-inventory"
 import { useGlobalShellReady } from "../integrations/sync/global-sync-boundary"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
+import { runIdleWarmup } from "@/app/boot/data/bootstrap"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 export type AvatarColorKey = (typeof AVATAR_COLOR_KEYS)[number]
@@ -353,7 +354,7 @@ function createLayoutContextValue() {
       const actions = resolveSandboxRootActions({
         projects: sidebarProjects(),
         rootFor,
-        valid: validWorktree,
+        valid: validProjectRef,
       })
       batch(() => {
         for (const worktree of actions.removals) server.projects.remove(worktree)
@@ -427,11 +428,11 @@ function createLayoutContextValue() {
       for (const { worktree, color } of plan.assignments) setColors(worktree, color)
       for (const { worktree, color } of plan.metaUpserts) upsertProjectMeta(worktree, { icon: { color } })
       for (const { worktree, id, color } of plan.remoteUpdates) {
-        void globalSdk.client.project
+        runIdleWarmup(() => globalSdk.client.project
           .update({ projectID: id, directory: worktree, icon: { color } })
           .catch(() => {
             if (colorRequested.get(worktree) === color) colorRequested.delete(worktree)
-          })
+          }).then(() => undefined))
       }
     })
 
@@ -450,7 +451,7 @@ function createLayoutContextValue() {
         api: apiProjects,
         sidebar: sidebarProjects().map((p) => p.worktree),
         isClosed: server.projects.isClosed,
-        valid: validWorktree,
+        valid: validProjectRef,
       })
       if (!next) return
 
@@ -474,9 +475,9 @@ function createLayoutContextValue() {
         list,
         open(directory: string) {
           const root = rootFor(directory)
-          if (!validWorktree(root)) return
+          if (!validProjectRef(root)) return
           ensureDirectorySessionCache(root)
-          if (!shouldStoreOpenedProject({ root, sidebar: sidebarProjects(), isLocal: server.isLocal(), valid: validWorktree })) return
+          if (!shouldStoreOpenedProject({ root, sidebar: sidebarProjects(), isLocal: server.isLocal(), valid: validProjectRef })) return
           server.projects.open(root)
         },
         close(directory: string) {

@@ -8,6 +8,7 @@ import {
 import type { SessionNavigationRow } from "../../ui/navigation/session-navigation"
 import { queryKeys } from "@/platform/query/keys"
 import { queryClient } from "@/platform/query/query-client"
+import { sessionPerf } from "@/platform/performance/session-perf"
 
 export type SessionListQuery = ControlSessionNavigationListQuery
 
@@ -30,13 +31,26 @@ export type SessionListResponse = {
   totalKnown?: number
 }
 
+/** The cache entry one rail section's list lives in. */
+export function sessionListQueryKey(baseUrl: string | undefined, query: SessionListQuery) {
+  return queryKeys.shell.sessionList(baseUrl, query)
+}
+
 function sessionListBaseQuery(query: SessionListQuery): SessionListQuery {
   if (!query.cursor) return query
   const { cursor: _cursor, ...base } = query
   return base
 }
 
-function mergeSessionListItems(primary: readonly SessionNavigationRow[], tail: readonly SessionNavigationRow[]) {
+/**
+ * One session, once — whichever producer named it.
+ *
+ * The rule is shared with the composed source in `session-source.ts`: a
+ * project's list can hold the same session from the central server AND from
+ * the workspace runtime that owns it, exactly as a cached page can hold it
+ * beside a fresh one.
+ */
+export function mergeSessionListItems(primary: readonly SessionNavigationRow[], tail: readonly SessionNavigationRow[]) {
   // Prefer primary's row when the same session arrives under both
   // `local:<dir>:session:<id>` and `workspace:<uuid>:session:<id>` (local
   // association ids stamped as workspaceID — open issue #14 / tier-real
@@ -140,29 +154,76 @@ export function sessionListQueryOptions(input: {
 }) {
   return queryOptions({
     queryKey: queryKeys.shell.sessionList(input.baseUrl, input.query),
-    queryFn: async () => {
-      const res = await sessionListRequest(input)(sessionNavigationListUrl({
-        baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
-        ...input.query,
-      }), {
-        headers: {
-          Accept: "application/json",
-          ...(input.query.directory || input.query.workspaceId || input.query.projectId ? {
-            "x-opencode-directory": input.query.directory ?? `workspace:${input.query.workspaceId ?? input.query.projectId}`,
-          } : {}),
-        },
-      })
-      if (!res.ok) throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
-      const page = await res.json() as SessionListResponse
-      if (input.query.cursor) return page
-      return mergeSessionListResponses({
-        current: queryClient.getQueryData<SessionListResponse>(
-          queryKeys.shell.sessionList(input.baseUrl, sessionListBaseQuery(input.query)),
-        ),
-        page,
-        append: false,
-      })
-    },
+    queryFn: async () => applyFetchedSessionListPage({
+      baseUrl: input.baseUrl,
+      query: input.query,
+      page: await fetchSessionListPage(input),
+    }),
+  })
+}
+
+/**
+ * One page from the app's own central server, exactly as it answered.
+ *
+ * Separate from the cache folding above because a section whose workspaces
+ * answer from more than one server (`session-source.ts`'s composed source)
+ * needs the central server's PAGE, and folds the composition — not this page
+ * alone — into the section's `shell.sessionList` entry.
+ */
+export async function fetchSessionListPage(input: {
+  baseUrl?: string
+  query: SessionListQuery
+  request?: typeof fetch
+}): Promise<SessionListResponse> {
+  const span = sessionPerf.span("session.list", {
+    scope: input.query.scope,
+    ...(input.query.workspaceId ? { workspaceId: input.query.workspaceId } : {}),
+    ...(input.query.projectId ? { projectId: input.query.projectId } : {}),
+    paged: !!input.query.cursor,
+  })
+  const res = await sessionListRequest(input)(sessionNavigationListUrl({
+    baseUrl: normalizeUrl(input.baseUrl) ?? getClaxedoServerUrl(),
+    ...input.query,
+  }), {
+    // Scope travels in the QUERY STRING only — `sessionNavigationListUrl`
+    // already carries directory / workspaceId / projectId, and every
+    // server parses those, never a header. Adding an `x-opencode-directory`
+    // header here would be redundant against the loopback server and fatal
+    // against the hosted control plane: a header the cross-origin preflight
+    // does not name is not "ignored", the browser refuses to send the
+    // request at all.
+    headers: { Accept: "application/json" },
+  })
+  if (!res.ok) {
+    span.end({ status: res.status, ok: false })
+    throw new Error((await res.text()) || `Session list request failed: ${res.status}`)
+  }
+  const page = await res.json() as SessionListResponse
+  span.end({ status: res.status, ok: true, rows: page.items?.length ?? page.groups?.reduce((n, g) => n + g.items.length, 0) ?? 0 })
+  return page
+}
+
+/**
+ * Fold a freshly fetched page into the list cached for its query.
+ *
+ * The shaping is the list's, not any one source's: whichever server answered —
+ * the daemon, the control-plane registry, or a user-hosted workspace's own
+ * runtime over the relay — the cached entry keeps the same merge, ordering and
+ * pagination contract, so every reader and every event applier below sees one
+ * shape.
+ */
+export function applyFetchedSessionListPage(input: {
+  baseUrl?: string
+  query: SessionListQuery
+  page: SessionListResponse
+}): SessionListResponse {
+  if (input.query.cursor) return input.page
+  return mergeSessionListResponses({
+    current: queryClient.getQueryData<SessionListResponse>(
+      sessionListQueryKey(input.baseUrl, sessionListBaseQuery(input.query)),
+    ),
+    page: input.page,
+    append: false,
   })
 }
 
@@ -280,6 +341,22 @@ function sessionListQueryFromKey(key: readonly unknown[]): SessionListQuery | un
 }
 
 /**
+ * The order a cached list is held in.
+ *
+ * The SECTION decides it, and the key the entry is cached under carries the
+ * view that section asked for — so an applier rewriting a row places it in the
+ * order the reader will render, whichever server answered and whatever `view`
+ * that server chose to echo. The response's own `view` is the fallback for an
+ * entry bootstrapped before any page landed.
+ */
+function sessionListQuerySort(
+  key: readonly unknown[],
+  response: SessionListResponse | undefined,
+): NonNullable<SessionListQuery["sort"]> {
+  return sessionListQueryFromKey(key)?.sort ?? response?.view?.sort ?? "updated_desc"
+}
+
+/**
  * Create-time optimistic rows often know `workspaceId` before `projectId`.
  * Project-scoped rail queries require the project id; when this workspace
  * already has a sibling in that section (the signed fixture seed session),
@@ -371,10 +448,10 @@ export function reconcileUpdatedSessionListQueryData(input: SessionListUpdate) {
       // claiming a brand-new timestamp: observed live as a 30-second-old
       // "Greeting" sitting at position 6, below rows 12-29 minutes older than it.
       //
-      // Guarded on the view's own sort so a list ordered by `created_desc`
-      // (stable on visit) is left exactly as the server sent it. Also skip
-      // reordering when the update did not actually change `updatedAt`.
-      const sort = response.view?.sort
+      // Guarded on the order this entry is held in so a list ordered by
+      // `created_desc` (stable on visit) is left exactly as the server sent
+      // it. Also skip reordering when the update did not change `updatedAt`.
+      const sort = sessionListQuerySort(query.queryKey, response)
       const shouldReorder = sort === "updated_desc"
       const nextItems = response.items
         ? reconcileUpdatedSessionListRows(response.items, input)

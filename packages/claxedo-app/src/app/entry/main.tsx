@@ -7,11 +7,17 @@
 
 // @refresh reload
 import { render } from "solid-js/web"
+import { lazy, Suspense } from "solid-js"
 import { AppBaseProviders, AppInterface } from "@/app/entry/app"
 import { PlatformProvider, type Platform } from "@claxedo/app"
 import { initClaxedo, getDefaultConfig } from "./index"
-import { getAuthToken, initializeClerk, useAuth } from "@/platform/auth/auth-client"
-import { authFetch, configureApiRuntime, getClaxedoServerUrl } from "@/platform/api/api"
+import { browserAuthAdapter } from "#browser-auth-adapter"
+import {
+  authFetch,
+  configureApiRuntime,
+  getClaxedoServerUrl,
+  releaseValidationOperation,
+} from "@/platform/api/api"
 import { configureAuthSession } from "@/platform/auth/auth-session"
 import {
   initPostHog,
@@ -27,7 +33,15 @@ import { Persist, resetDemoPersisted, setPersisted } from "@/platform/persistenc
 import { configureWorkspaceStartup } from "@/platform/runtime/workspace-startup"
 import { cloudWorkspaceStartup } from "@/platform/runtime/cloud/workspace-runtime-store"
 import { configureHttpMachineRemoteAccess } from "@/platform/remote-access/http-machine-remote-access-binding"
-import { hostedContributionLoader } from "@/app/composition/hosted-contribution-loader"
+import { hostedServiceContributionLoaders } from "@/app/composition/hosted-contribution-loader"
+import { startBrowserAuth } from "./browser-auth-startup"
+
+const OAuthConsentPage = lazy(() => import("@/app/routes/oauth-consent"))
+const HostedOAuthConsentRoute = () => (
+  <Suspense>
+    <OAuthConsentPage request={authFetch} apiOrigin={getClaxedoServerUrl()} />
+  </Suspense>
+)
 
 /**
  * Bind the hosted workspace-startup implementation.
@@ -60,16 +74,30 @@ configureHttpMachineRemoteAccess((path, init) => authFetch(new URL(path, getClax
 /**
  * Bind the identity provider to the authenticated transport.
  *
- * `platform/api/api.ts` used to import `getAuthToken` itself, which is how
- * `local.tsx` reached Clerk through `app.tsx`. The transport now names a
- * bearer source and this entry supplies one; `local.tsx` supplies none, so an
- * unsigned build talks to its loopback server with no Authorization header.
+ * `platform/api/api.ts` stays free of any concrete auth provider import — it
+ * lives in `@claxedo/app` while provider implementations belong to hosted
+ * composition. The transport binds either a bearer source or cookie
+ * credentials from the statically selected adapter; `local.tsx` supplies
+ * neither.
  *
  * At module scope, not inside a component: `authFetch` is called from plain
  * modules during bootstrap, and a binding installed during render would leave
  * the earliest calls unauthenticated.
  */
-configureApiRuntime({ bearerToken: getAuthToken })
+const selectedReleaseValidationOperation = releaseValidationOperation(
+  import.meta.env.VITE_CLAXEDO_RELEASE_VALIDATION_OPERATION,
+)
+
+configureApiRuntime({
+  bearerToken: browserAuthAdapter.transport === "bearer" ? browserAuthAdapter.getToken : null,
+  browserCredentials: browserAuthAdapter.transport === "cookie" ? "include" : null,
+  releaseValidation: selectedReleaseValidationOperation
+    ? {
+        coreOrigin: getClaxedoServerUrl(),
+        operation: selectedReleaseValidationOperation,
+      }
+    : null,
+})
 
 /**
  * Bind the identity provider to the app's canonical auth-session abstraction.
@@ -79,8 +107,8 @@ configureApiRuntime({ bearerToken: getAuthToken })
  * mounts it, and BOTH products render that shell), so that one import was the
  * remaining chain by which `local.tsx` reached Clerk:
  * `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts ->
- * auth-client.ts`. It now keeps only an `import type` edge for the shape, which
- * the bundler erases.
+ * a provider implementation`. It now keeps only an `import type` edge to the
+ * neutral browser-auth contract, which the bundler erases.
  *
  * `local.tsx` supplies nothing on purpose. Unbound, `useAuthSession()` returns
  * a stable anonymous session rather than throwing — an unsigned local build
@@ -93,7 +121,7 @@ configureApiRuntime({ bearerToken: getAuthToken })
  * on its first render, and a binding installed during render would leave that
  * read anonymous in a hosted build.
  */
-configureAuthSession(useAuth)
+configureAuthSession(browserAuthAdapter.useAuth)
 
 // Initialize cloud extensions before rendering
 const config = {
@@ -101,30 +129,22 @@ const config = {
   // The hosted entry owns the only value edge to the hosted implementations.
   // Supplying the loader here lets Rollup remove the dynamic chunk entirely
   // from local.tsx instead of merely leaving it dormant at runtime.
-  loadHostedContributions: hostedContributionLoader(),
+  serviceContributionLoaders: hostedServiceContributionLoaders,
 }
 initClaxedo(config)
 
-// The hosted entry starts the identity provider. `initClaxedo` deliberately
-// does not — see the note there; a shared init that imports Clerk puts it in
-// the local build too.
-//
-// Playwright preview builds bake `VITE_CLAXEDO_E2E=1` and inject
-// `__CLAXEDO_TEST_AUTH_*` (see auth-client testAuth). Without initializeClerk()
-// the user signal stays null and the rail shows "Account". Only hydrate that
-// path when the e2e flag is set AND a test principal is actually present —
-// never on a real ship artifact that accidentally inherits the flag alone.
-const e2eTestPrincipal = (() => {
-  if (import.meta.env.VITE_CLAXEDO_E2E !== "1" || typeof window === "undefined") return false
-  const w = window as typeof window & {
-    __CLAXEDO_TEST_AUTH_TOKEN__?: string
-    __CLAXEDO_TEST_AUTH_USER__?: unknown
-  }
-  return !!(w.__CLAXEDO_TEST_AUTH_TOKEN__ || w.__CLAXEDO_TEST_AUTH_USER__)
-})()
-if (config.authEnabled || e2eTestPrincipal) {
-  initializeClerk().catch(() => {})
-}
+/**
+ * Start signing in, beside the other module-scope bindings and before render.
+ *
+ * See `browser-auth-startup.ts`: nothing here waits for it, and nothing here
+ * can fail because of it.
+ */
+startBrowserAuth({
+  authEnabled: config.authEnabled === true,
+  adapter: browserAuthAdapter,
+  apiOrigin: getClaxedoServerUrl(),
+  appOrigin: window.location.origin,
+})
 
 // Initialize PostHog analytics (no-ops if VITE_POSTHOG_KEY not set)
 if (!isDemoMode()) {
@@ -142,9 +162,7 @@ if (!isDemoMode()) {
 
 const root = document.getElementById("root")
 if (import.meta.env.DEV && !(root instanceof HTMLElement)) {
-  throw new Error(
-    "Root element not found. Make sure there is an element with id='root' in your index.html",
-  )
+  throw new Error("Root element not found. Make sure there is an element with id='root' in your index.html")
 }
 
 /**
@@ -154,7 +172,7 @@ const platform: Platform = {
   platform: "web",
   version: "cloud",
   fetch: authFetch,
-  getAuthToken,
+  getAuthToken: browserAuthAdapter.getToken,
   openLink(url: string) {
     window.open(url, "_blank")
   },
@@ -294,18 +312,18 @@ async function startApp() {
               },
             }
           : {
-                id: item.id,
+              id: item.id,
+              type: "session",
+              scope: "directory",
+              directory: item.directory,
+              sessionId: item.sessionId,
+              content: {
                 type: "session",
-                scope: "directory",
                 directory: item.directory,
                 sessionId: item.sessionId,
-                content: {
-                  type: "session",
-                  directory: item.directory,
-                  sessionId: item.sessionId,
-                  title: item.title,
-                },
+                title: item.title,
               },
+            },
       ]),
     )
 
@@ -362,18 +380,28 @@ async function startApp() {
       <ConfigProvider config={config}>
         <PlatformProvider value={platform}>
           <AppBaseProviders>
-            <AppInterface />
+            <AppInterface oauthConsent={HostedOAuthConsentRoute} />
           </AppBaseProviders>
         </PlatformProvider>
       </ConfigProvider>
     ),
     root!,
   )
-  if (import.meta.env.DEV) console.log("[claxedo:boot]", "after-render", {
-    rootChildren: root?.childElementCount ?? null,
-  })
+  if (import.meta.env.DEV)
+    console.log("[claxedo:boot]", "after-render", {
+      rootChildren: root?.childElementCount ?? null,
+    })
 }
 
+/**
+ * The last resort, for a state in which no shell can exist at all — the demo
+ * fixtures could not be written, or `render()` itself threw.
+ *
+ * Reserved for exactly that. Anything the app can honestly represent as state
+ * belongs in the shell instead: "nobody is signed in" is a session status, not
+ * a startup failure, and painting this panel for it hides `/login` behind an
+ * error box the user cannot act on.
+ */
 function renderStartupFailure(error: unknown) {
   if (!(root instanceof HTMLElement)) return
   const message = error instanceof Error && error.message ? error.message : "Unknown startup failure"
@@ -403,7 +431,20 @@ function renderStartupFailure(error: unknown) {
   body.style.color = "var(--text-weak)"
   body.style.fontSize = "var(--font-size-small)"
 
-  panel.append(title, body)
+  // Without this the only way out of the panel is knowing to reload by hand.
+  const retry = document.createElement("button")
+  retry.textContent = "Try again"
+  retry.style.marginTop = "16px"
+  retry.style.padding = "6px 14px"
+  retry.style.borderRadius = "var(--radius-sm)"
+  retry.style.border = "1px solid var(--border-base)"
+  retry.style.background = "var(--background-element)"
+  retry.style.color = "var(--text-base)"
+  retry.style.font = "inherit"
+  retry.style.cursor = "pointer"
+  retry.addEventListener("click", () => window.location.reload())
+
+  panel.append(title, body, retry)
   root.append(panel)
 }
 

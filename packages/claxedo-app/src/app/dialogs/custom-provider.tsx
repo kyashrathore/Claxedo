@@ -1,11 +1,9 @@
-// Claxedo saves custom providers through global config queries instead of the legacy global-sync compatibility store.
-import type { Config } from "@opencode-ai/sdk/v2/client"
 import { Button } from "@opencode-ai/ui/button"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
-import { useMutation, useQuery } from "@tanstack/solid-query"
+import { useMutation } from "@tanstack/solid-query"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
 import { batch, For } from "solid-js"
@@ -21,14 +19,17 @@ import { queryClient } from "@/platform/query/query-client"
 
 type Props = {
   back?: "providers" | "close"
+  /** The workspace-or-directory scope whose OpenCode catalog this writes into. */
+  scope?: string
 }
 
 export function DialogCustomProvider(props: Props) {
   const dialog = useDialog()
   const globalSDK = useGlobalSDK()
   const queryOptions = useQueryOptions()
-  const configQuery = useQuery(() => queryOptions.globalConfig())
-  const providers = useProviders()
+  // Custom providers are OpenCode config entries, so the id-collision check
+  // reads the OpenCode catalog.
+  const providers = useProviders("opencode", () => props.scope)
   const language = useLanguage()
 
   const [form, setForm] = createStore<FormState>({
@@ -107,7 +108,6 @@ export function DialogCustomProvider(props: Props) {
     const output = validateCustomProvider({
       form,
       t: language.t,
-      disabledProviders: configQuery.data?.disabled_providers ?? [],
       existingProviderIDs: new Set(providers.all().keys()),
     })
     batch(() => {
@@ -120,9 +120,6 @@ export function DialogCustomProvider(props: Props) {
 
   const saveMutation = useMutation(() => ({
     mutationFn: async (result: NonNullable<ReturnType<typeof validate>>) => {
-      const disabledProviders = configQuery.data?.disabled_providers ?? []
-      const nextDisabled = disabledProviders.filter((id) => id !== result.providerID)
-
       if (result.key) {
         await claxedoCredentialRequest(undefined, {
           method: "PUT",
@@ -137,24 +134,12 @@ export function DialogCustomProvider(props: Props) {
       }
 
       await globalSDK.client.global.config.update({
-        config: {
-          provider: { [result.providerID]: result.config },
-          disabled_providers: nextDisabled,
-        },
+        config: { provider: { [result.providerID]: result.config } },
       })
       return result
     },
     onSuccess: (result) => {
-      queryClient.setQueryData<Config>(queryOptions.globalConfig().queryKey, {
-        ...(configQuery.data ?? {}),
-        provider: {
-          ...(configQuery.data?.provider ?? {}),
-          [result.providerID]: result.config,
-        },
-        disabled_providers: (configQuery.data?.disabled_providers ?? []).filter((id) => id !== result.providerID),
-      })
-      void queryClient.invalidateQueries({ queryKey: queryOptions.globalConfig().queryKey })
-      void queryClient.invalidateQueries({ queryKey: queryOptions.providers(null).queryKey })
+      void queryClient.invalidateQueries({ queryKey: queryOptions.providers(props.scope ?? null, "opencode").queryKey })
       dialog.close()
       showToast({
         variant: "success",

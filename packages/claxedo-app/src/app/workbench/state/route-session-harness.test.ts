@@ -19,6 +19,23 @@ describe("route session harness", () => {
     })).toEqual({ id: "acp:codex", binary: "/opt/bin/codex" })
 
     expect(routeSessionHarness({
+      config: {
+        harness: {
+          type: "claude-sdk",
+        },
+      },
+    })).toEqual({ id: "claude-sdk" })
+
+    expect(routeSessionHarness({
+      runner: {
+        type: "codex-app-server",
+        binary: "/opt/bin/codex",
+      },
+    })).toEqual({ id: "codex-app-server", binary: "/opt/bin/codex" })
+
+    // An operator-configured ACP connection: `{id, access: "acp"}` recovers to
+    // the open `acp:<slug>` key, the same translation `pickHarness` performs.
+    expect(routeSessionHarness({
       harness: {
         id: "claude",
         access: "acp",

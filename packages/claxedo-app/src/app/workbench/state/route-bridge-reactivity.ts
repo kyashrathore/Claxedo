@@ -11,6 +11,13 @@ export function directSessionResolutionDependencies<T extends readonly unknown[]
   return [sessionId, ...dependencies()]
 }
 
+export function activeSurfaceIsDirectSessionChild(
+  routeSessionId: string,
+  surface: { sessionId?: string; returnFocus?: { parentSessionId?: string } } | undefined,
+) {
+  return surface?.sessionId !== routeSessionId && surface?.returnFocus?.parentSessionId === routeSessionId
+}
+
 export function collectRouteResolutionDirectories(
   projectDirectories: readonly (string | undefined)[],
   metadataDirectories: readonly (string | undefined)[],

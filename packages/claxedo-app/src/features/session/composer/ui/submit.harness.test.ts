@@ -197,7 +197,7 @@ export const state: {
   demoMode: true,
   harnessMode: false,
   harnessClaimSession: { id: "session-1" },
-  harnessSubmitModel: { key: { providerID: "claude-acp", modelID: "opus" }, name: "Opus" },
+  harnessSubmitModel: { key: { providerID: "claude-sdk", modelID: "opus" }, name: "Opus" },
   transportGetSession: true,
   transportPromptAsyncError: undefined,
   shellError: undefined,
@@ -271,12 +271,13 @@ export function localSessionRef(sessionID: string) {
 
 export function testHarnessController(): HarnessSubmitController {
   return {
-    // `claude-acp` was a bundled vendor ACP identity; `refactor(acp): make
-    // operator connections fully generic` deleted that whole class. The only
-    // ACP harness identity the app still has is an operator connection key,
-    // `acp:<slug>` (`isAcpConnectionHarnessId`), which is what a real picker
-    // hands submit — and the only form `normalizeHarnessIdentity` accepts.
-    harness: () => (state.harnessMode ? "acp:claude" : "opencode"),
+    // `claude-acp` was a bundled vendor ACP identity and that whole class is
+    // gone: a harness key is now either a built-in id or an operator
+    // connection key (`acp:<slug>`, `isAcpConnectionHarnessId`). This suite's
+    // harness mode drives the native `claude-sdk` path; the ACP connection
+    // key is exercised through the session-config fixtures in
+    // `submit.upstream-contract.test.ts`.
+    harness: () => (state.harnessMode ? "claude-sdk" : "opencode"),
     isHarnessMode: () => state.harnessMode,
     readiness: () => "ready",
     readyForSubmit: () => !state.harnessMode || !!state.harnessSubmitModel,
@@ -307,7 +308,13 @@ export const defaultComposerMode = () => ({
 
 export async function seedCommandList(directory: string) {
   const testQueryClient = (await import("@/platform/query/query-client")).queryClient
-  testQueryClient.setQueryData(["shell", "http://localhost:4096", "commands", directory], state.commandListResponse)
+  const { queryKeys } = await import("@/platform/query/keys")
+  // Built through the canonical key so the seed cannot drift from what submit
+  // reads: the OpenCode slash-command channel, no resolved workspace.
+  testQueryClient.setQueryData(
+    queryKeys.shell.commands("http://localhost:4096", directory, "opencode", ""),
+    state.commandListResponse,
+  )
 }
 
 let rawCreatePromptSubmit: typeof import("./submit").createPromptSubmit
@@ -564,6 +571,17 @@ export async function installSubmitMocks(mock: ModuleMocker) {
       method: request.method,
       body: init?.body ? String(init.body) : null,
     })
+    // The control plane's reservation answers with the exact immutable intent
+    // it was asked to reserve, which the caller verifies before creating.
+    if (new URL(request.url).pathname === "/api/control/session-registrations/reserve") {
+      const intent = JSON.parse(init?.body ? String(init.body) : "{}") as Record<string, unknown>
+      return new Response(JSON.stringify({
+        operationId: intent.operationId,
+        sessionId: intent.sessionId,
+        workspaceId: intent.workspaceId,
+        state: "reserved",
+      }), { status: 201, headers: { "Content-Type": "application/json" } })
+    }
     if (new URL(request.url).pathname === "/api/workspace/create") {
       return new Response(JSON.stringify({ workspaceId: "ws_1", directory: "/workspace" }), {
         status: 200,
@@ -805,6 +823,9 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     useSDK: () => ({
       directory: "/repo/main",
       url: "http://localhost:4096",
+      // The real scope resolves a workspace per call directory; these tests run
+      // local directories, which resolve to none.
+      workspace: () => undefined,
       client: {
         worktree: {
           create: async (input: { directory?: string; worktreeCreateInput?: { baseRef?: string } }) => {
@@ -1047,7 +1068,7 @@ export function resetSubmitHarness() {
   state.harnessMode = false
   state.harnessClaimSession = { id: "session-1" }
   state.harnessSubmitModel = {
-    key: { providerID: "claude-acp", modelID: "opus" },
+    key: { providerID: "claude-sdk", modelID: "opus" },
     name: "Opus",
   }
   state.transportGetSession = true

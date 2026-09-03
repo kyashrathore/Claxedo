@@ -3,6 +3,8 @@ import { authFetch, unsignedLocalFetch } from "@/platform/api/api"
 import { hasBacking, type SessionRef } from "@/platform/identity/session-ref"
 import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
+import { workspaceKind, type SignedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import {
   isLocalPersonalScope,
   isLoopbackHttpUrl,
@@ -16,20 +18,20 @@ export {
 export { unsignedLocalFetch } from "@/platform/api/api"
 
 export type WorkspaceRuntimeSnapshotLike = {
-  kind?: "local" | "cloud" | "user-hosted" | null
+  kind?: WorkspaceKind | null
   workspaceId?: string | null
 } | null
 
 export type WorkspaceRuntimeTarget =
   | { kind: "local" }
-  | { kind: "cloud" | "user-hosted"; workspaceId: string }
+  | { kind: SignedWorkspaceKind; workspaceId: string }
 
 export type WorkspaceRuntimeRequestOptions = {
   serverUrl: string
   sessionRef?: SessionRef
   directory?: string
   workspaceId?: string
-  workspaceKind?: "local" | "cloud" | "user-hosted" | null
+  workspaceKind?: WorkspaceKind | null
   workspace?: WorkspaceRuntimeSnapshotLike
   request?: typeof fetch
   relayRequest?: typeof fetch
@@ -135,12 +137,8 @@ function controlPlaneHeaders(init?: RequestInit): HeadersInit | undefined {
   return { Authorization: authorization }
 }
 
-function normalizeRuntimeKind(input: unknown): WorkspaceRuntimeTarget["kind"] | undefined {
-  return input === "local" || input === "cloud" || input === "user-hosted" ? input : undefined
-}
-
 function workspaceRuntimeTarget(input: WorkspaceRuntimeSnapshotLike | undefined): WorkspaceRuntimeTarget | undefined {
-  const kind = normalizeRuntimeKind(input?.kind)
+  const kind = workspaceKind(input?.kind)
   if (!kind) return
   if (kind === "local") return { kind }
   if (!input?.workspaceId) return
@@ -169,7 +167,7 @@ export async function resolveRuntimeTarget(options: WorkspaceRuntimeRequestOptio
     // the caller is otherwise in a signed control-plane flow. A confirmed cloud
     // workspace remains central; unresolved `ws_`/`workspace:ws_` refs use the
     // relay because the control plane may not have the user-hosted session rows.
-    const sessionResourceKind = normalizeRuntimeKind(options.workspaceKind)
+    const sessionResourceKind = workspaceKind(options.workspaceKind)
     if (sessionResourceKind === "cloud") return { kind: "cloud", workspaceId: options.workspaceId }
     if ((sessionResourceKind && sessionResourceKind !== "local") || directoryWorkspaceId) {
       return { kind: "user-hosted", workspaceId: options.workspaceId }
@@ -185,7 +183,18 @@ export async function resolveRuntimeTarget(options: WorkspaceRuntimeRequestOptio
     : undefined
   const resolvedTarget = workspaceRuntimeTarget(resolved)
   if (resolvedTarget) return resolvedTarget
-  if (directoryWorkspaceId) return { kind: "cloud" as const, workspaceId: directoryWorkspaceId }
+  if (directoryWorkspaceId) {
+    // `resolveWorkspaceRuntime` answered `null` (no record) rather than a real
+    // snapshot — the resolve endpoint 404s for a user-hosted workspace but
+    // answers a confirmed record for cloud, so a `ws_`/`workspace:` ref that is
+    // STILL unresolved here is never guessed as cloud. `sessionWorkspaceRuntimeRef`
+    // is the one owner of that "unresolved relay-backed ref" default (see
+    // session-workspace.ts): it resolves the same directory against the signed
+    // inventory and otherwise defaults to `user-hosted`.
+    const ref = sessionWorkspaceRuntimeRef({ directory: options.directory! })
+    if (ref) return { kind: ref.kind, workspaceId: ref.workspaceId }
+    return undefined
+  }
   return undefined
 }
 
@@ -195,7 +204,12 @@ export function createWorkspaceRuntimeRequest(options: WorkspaceRuntimeRequestOp
 
   const runtimeFetch = async (path: string, init?: RequestInit) => {
     const runtime = await resolveRuntimeTarget(options)
-    if ((runtime?.kind === "cloud" || runtime?.kind === "user-hosted") && runtime.workspaceId) {
+    // `runtime.kind` narrows this discriminated union itself only via a direct
+    // literal comparison (not `isRelayBackedWorkspaceKind`, which narrows just
+    // the `kind` field) — TS ties discriminant narrowing to the union's own
+    // literal checks, so this stays inline rather than routed through the
+    // shared predicate.
+    if (runtime && (runtime.kind === "cloud" || runtime.kind === "user-hosted") && runtime.workspaceId) {
       if (isLoopbackHttpUrl(serverUrl) && !options.preferRelayOnLoopback) {
         return await unsignedFetchWith(
           request,

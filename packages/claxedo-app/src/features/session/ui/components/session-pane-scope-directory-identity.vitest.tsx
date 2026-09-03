@@ -59,7 +59,8 @@ vi.mock("@/platform/runtime/platform-provider", () => ({
   usePlatform: () => ({ fetch }),
 }))
 
-vi.mock("@tanstack/solid-query", () => ({
+vi.mock("@tanstack/solid-query", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@tanstack/solid-query")>()),
   useQuery: () => ({ data: [] }),
 }))
 

@@ -8,10 +8,10 @@ import {
   sessionResourceAuthorityScope,
   type SessionResourceAuthorityScope,
 } from "@/features/session/store/session-resource-authority"
-import { USER_HOSTED_WORKSPACE_KIND } from "./live-session"
+import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 function goalWorkspaceKind(input: unknown) {
-  const kind = input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND ? input : undefined
+  const kind = workspaceKind(input)
   return kind === "local" ? undefined : kind
 }
 

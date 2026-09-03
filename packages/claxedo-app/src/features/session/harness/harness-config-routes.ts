@@ -5,11 +5,14 @@ type HarnessSessionResource = "session" | "messages" | "todo" | "capabilities" |
 function harnessConfigPath(input: {
   resource?: HarnessConfigResource
   directory?: HarnessDirectory
+  /** The workspace's identity; `directory` alone is only what a client shows for it. */
+  workspaceId?: string
   sessionId?: string
   harnessType?: string
 }) {
   const url = new URL(`/api/claxedo/agent-config/${input.resource ?? "harness"}`, "http://claxedo.local")
   if (input.directory) url.searchParams.set("directory", input.directory)
+  if (input.workspaceId) url.searchParams.set("workspaceId", input.workspaceId)
   if (input.sessionId && input.sessionId !== "new") url.searchParams.set("sessionId", input.sessionId)
   if (input.harnessType) url.searchParams.set("type", input.harnessType)
   return `${url.pathname}${url.search}`

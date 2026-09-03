@@ -52,49 +52,49 @@ export function syncHarnessSessionModel(input: {
   })
 }
 
-export function createPreparedRuntimeSessionQueryCache(): PreparedRuntimeSessionCache {
+export function createPreparedRuntimeSessionQueryCache(serverUrl: string): PreparedRuntimeSessionCache {
   return {
-    getSeq: (scope) => queryClient.getQueryData<number>(harnessPreparedSessionSeqKey(scope)),
-    setSeq: (scope, value) => queryClient.setQueryData(harnessPreparedSessionSeqKey(scope), value),
-    getPrepared: (scope) => queryClient.getQueryData<PreparedRuntimeSession>(harnessPreparedSessionKey(scope)),
-    setPrepared: (scope, value) => queryClient.setQueryData(harnessPreparedSessionKey(scope), value),
-    removePrepared: (scope) => removeExactQuery(harnessPreparedSessionKey(scope)),
-    getPreparing: (scope) => queryClient.getQueryData<PreparedRuntimeSessionPending>(harnessPreparingSessionKey(scope)),
-    setPreparing: (scope, value) => queryClient.setQueryData(harnessPreparingSessionKey(scope), value),
-    removePreparing: (scope) => removeExactQuery(harnessPreparingSessionKey(scope)),
+    getSeq: (scope) => queryClient.getQueryData<number>(harnessPreparedSessionSeqKey(serverUrl, scope)),
+    setSeq: (scope, value) => queryClient.setQueryData(harnessPreparedSessionSeqKey(serverUrl, scope), value),
+    getPrepared: (scope) => queryClient.getQueryData<PreparedRuntimeSession>(harnessPreparedSessionKey(serverUrl, scope)),
+    setPrepared: (scope, value) => queryClient.setQueryData(harnessPreparedSessionKey(serverUrl, scope), value),
+    removePrepared: (scope) => removeExactQuery(harnessPreparedSessionKey(serverUrl, scope)),
+    getPreparing: (scope) => queryClient.getQueryData<PreparedRuntimeSessionPending>(harnessPreparingSessionKey(serverUrl, scope)),
+    setPreparing: (scope, value) => queryClient.setQueryData(harnessPreparingSessionKey(serverUrl, scope), value),
+    removePreparing: (scope) => removeExactQuery(harnessPreparingSessionKey(serverUrl, scope)),
   }
 }
 
-export function createHarnessOptionsQueryCache(): HarnessOptionsLoaderCache {
+export function createHarnessOptionsQueryCache(serverUrl: string): HarnessOptionsLoaderCache {
   return {
     nextSeq: (scope) => {
-      const next = (queryClient.getQueryData<number>(harnessOptionsSeqKey(scope)) ?? 0) + 1
-      queryClient.setQueryData(harnessOptionsSeqKey(scope), next)
+      const next = (queryClient.getQueryData<number>(harnessOptionsSeqKey(serverUrl, scope)) ?? 0) + 1
+      queryClient.setQueryData(harnessOptionsSeqKey(serverUrl, scope), next)
       return next
     },
-    getSeq: (scope) => queryClient.getQueryData<number>(harnessOptionsSeqKey(scope)),
-    getTries: (scope) => queryClient.getQueryData<number>(harnessOptionsTriesKey(scope)),
-    setTries: (scope, value) => queryClient.setQueryData(harnessOptionsTriesKey(scope), value),
-    clearTries: clearHarnessOptionsTries,
+    getSeq: (scope) => queryClient.getQueryData<number>(harnessOptionsSeqKey(serverUrl, scope)),
+    getTries: (scope) => queryClient.getQueryData<number>(harnessOptionsTriesKey(serverUrl, scope)),
+    setTries: (scope, value) => queryClient.setQueryData(harnessOptionsTriesKey(serverUrl, scope), value),
+    clearTries: (scope) => clearHarnessOptionsTries(serverUrl, scope),
   }
 }
 
-export function clearHarnessOptionsTries(scope: string) {
-  removeExactQuery(harnessOptionsTriesKey(scope))
+export function clearHarnessOptionsTries(serverUrl: string, scope: string) {
+  removeExactQuery(harnessOptionsTriesKey(serverUrl, scope))
 }
 
 export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeInput>(
   serverUrl: string,
 ): HarnessHydratorCache<ScopeInput> {
   return {
-    getSeen: (scope) => queryClient.getQueryData<string>(harnessHydrateSeenKey(scope)),
-    setSeen: (scope, key) => queryClient.setQueryData(harnessHydrateSeenKey(scope), key),
-    clearSeen: (scope) => removeExactQuery(harnessHydrateSeenKey(scope)),
-    getPending: (scope) => queryClient.getQueryData<Promise<void>>(harnessHydrateRequestKey(scope)),
-    setPending: (scope, value) => queryClient.setQueryData(harnessHydrateRequestKey(scope), value),
+    getSeen: (scope) => queryClient.getQueryData<string>(harnessHydrateSeenKey(serverUrl, scope)),
+    setSeen: (scope, key) => queryClient.setQueryData(harnessHydrateSeenKey(serverUrl, scope), key),
+    clearSeen: (scope) => removeExactQuery(harnessHydrateSeenKey(serverUrl, scope)),
+    getPending: (scope) => queryClient.getQueryData<Promise<void>>(harnessHydrateRequestKey(serverUrl, scope)),
+    setPending: (scope, value) => queryClient.setQueryData(harnessHydrateRequestKey(serverUrl, scope), value),
     removePending: (scope, value) => {
-      if (queryClient.getQueryData(harnessHydrateRequestKey(scope)) === value) {
-        removeExactQuery(harnessHydrateRequestKey(scope))
+      if (queryClient.getQueryData(harnessHydrateRequestKey(serverUrl, scope)) === value) {
+        removeExactQuery(harnessHydrateRequestKey(serverUrl, scope))
       }
     },
     fetchSessionConfig: async (input, run) => await queryClient.fetchQuery({
@@ -110,7 +110,7 @@ export function createHarnessHydratorQueryCache<ScopeInput extends HarnessScopeI
   }
 }
 
-export function createHarnessSwitcherQueryCache(): HarnessSwitcherCache {
+export function createHarnessSwitcherQueryCache(serverUrl: string): HarnessSwitcherCache {
   return {
     getPending: (key) => queryClient.getQueryData<Promise<void>>(harnessChangeRequestKey(key)),
     setPending: (key, value) => queryClient.setQueryData(harnessChangeRequestKey(key), value),
@@ -119,6 +119,6 @@ export function createHarnessSwitcherQueryCache(): HarnessSwitcherCache {
         removeExactQuery(harnessChangeRequestKey(key))
       }
     },
-    clearOptionsTries: clearHarnessOptionsTries,
+    clearOptionsTries: (scope) => clearHarnessOptionsTries(serverUrl, scope),
   }
 }

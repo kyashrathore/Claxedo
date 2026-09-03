@@ -1,50 +1,55 @@
-import { describe, expect, test, mock } from "bun:test"
-import { hydrateConnectedProviderDetails, resolveModelVisibility } from "./models"
+import { describe, expect, test } from "bun:test"
+import { decodeModelStoreRecord, resolveModelVisibility } from "./models"
 
-const defaults = {
-  anthropic: "sonnet",
-  openai: "gpt-5.3-chat",
-}
-
-describe("model visibility", () => {
-  test("shows the configured provider default without storing a user override", () => {
-    expect(resolveModelVisibility({
-      model: { providerID: "anthropic", modelID: "sonnet" },
-      defaults,
-    })).toBe(true)
+describe("decodeModelStoreRecord", () => {
+  test("re-homes the replaced global store under the harness it belonged to", () => {
+    expect(decodeModelStoreRecord({
+      user: [{ providerID: "anthropic", modelID: "opus", visibility: "hide" }],
+      recent: [{ providerID: "anthropic", modelID: "opus" }],
+      variant: { "anthropic/opus": "thinking" },
+    }, "opencode")).toEqual({
+      user: { opencode: [{ providerID: "anthropic", modelID: "opus", visibility: "hide" }] },
+      recent: [{ providerID: "anthropic", modelID: "opus", harness: "opencode" }],
+      variant: { opencode: { "anthropic/opus": "thinking" } },
+    })
   })
 
-  test("keeps newly loaded catalog models hidden until the user enables them", () => {
-    expect(resolveModelVisibility({
-      model: { providerID: "anthropic", modelID: "opus" },
-      defaults,
-    })).toBe(false)
+  test("reads the harness-keyed shape back unchanged, so the upgrade runs once", () => {
+    const record = {
+      user: { "claude-sdk": [{ providerID: "anthropic", modelID: "opus", visibility: "show" as const }] },
+      recent: [{ providerID: "anthropic", modelID: "opus", harness: "claude-sdk" }],
+      variant: { "claude-sdk": { "anthropic/opus": "max" } },
+    }
+    expect(decodeModelStoreRecord(record, "opencode")).toEqual(record)
+    expect(decodeModelStoreRecord(decodeModelStoreRecord(record, "opencode"), "opencode")).toEqual(record)
   })
 
-  test("user visibility overrides take precedence over provider defaults", () => {
-    expect(resolveModelVisibility({
-      model: { providerID: "anthropic", modelID: "opus" },
-      defaults,
-      user: "show",
-    })).toBe(true)
-    expect(resolveModelVisibility({
-      model: { providerID: "anthropic", modelID: "sonnet" },
-      defaults,
-      user: "hide",
-    })).toBe(false)
+  test("a recent entry with no harness names no harness, so it is dropped", () => {
+    expect(decodeModelStoreRecord({
+      user: {},
+      recent: [{ providerID: "anthropic", modelID: "opus" }],
+      variant: {},
+    }, "opencode").recent).toEqual([])
+  })
+
+  test("malformed payloads decode to an empty record rather than throwing", () => {
+    expect(decodeModelStoreRecord(undefined, "opencode")).toEqual({ user: {}, recent: [], variant: {} })
+    expect(decodeModelStoreRecord([1, 2], "opencode")).toEqual({ user: {}, recent: [], variant: {} })
+    expect(decodeModelStoreRecord({ user: [{ providerID: 1 }] }, "opencode")).toEqual({
+      user: { opencode: [] },
+      recent: [],
+      variant: { opencode: {} },
+    })
   })
 })
 
-describe("hydrateConnectedProviderDetails", () => {
-  test("loads every connected provider and tolerates per-provider failures", async () => {
-    const load = mock(async (providerId: string) => {
-      if (providerId === "broken") throw new Error("offline")
-    })
-    const connected = () => [{ id: "anthropic" }, { id: "openai" }, { id: "broken" }]
-
-    const results = await hydrateConnectedProviderDetails({ connected, load })
-
-    expect(load).toHaveBeenCalledTimes(3)
-    expect(results.map((result) => result.status)).toEqual(["fulfilled", "fulfilled", "rejected"])
+describe("resolveModelVisibility", () => {
+  test("an explicit user choice wins over the provider default", () => {
+    const model = { providerID: "anthropic", modelID: "opus" }
+    const defaults = { anthropic: "opus" }
+    expect(resolveModelVisibility({ model, defaults, user: "hide" })).toBe(false)
+    expect(resolveModelVisibility({ model, defaults: {}, user: "show" })).toBe(true)
+    expect(resolveModelVisibility({ model, defaults })).toBe(true)
+    expect(resolveModelVisibility({ model, defaults: {} })).toBe(false)
   })
 })

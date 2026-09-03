@@ -60,6 +60,8 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Onboarding sandbox read path is local-sidecar drivers; credentials never leave the laptop via AccountPort.",
   "features/onboarding/sandbox-provider-api.ts":
     "Onboarding sandbox write path is local-sidecar drivers; Hosted Server does not own these credentials.",
+  "features/workspaces/data/share-workspace.ts":
+    "Desktop sharing goes through the machine remote-access port (Host Connector owns the machine key — the `workspace.assignHost` row in the matrix). The remaining authFetch is the self-hosted server's own local host-assignment route, which performs that flow server-side.",
 }
 
 function sourceFiles(root: string) {

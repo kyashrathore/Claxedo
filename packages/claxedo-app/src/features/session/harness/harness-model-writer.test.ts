@@ -13,8 +13,6 @@ let state: Record<string, SessionModelSyncState | undefined>
 let pending: Record<string, Promise<void> | undefined>
 let seeds: string[]
 let selectedModels: Array<{ providerID: string; modelID: string }>
-let selectedAgents: string[]
-let saved: { key: "model" | "agent"; value: string }[]
 let dropped: string[]
 let posts: { url: string; body: unknown }[]
 let remembered: Array<{ scope: string; model: { providerID: string; modelID: string }; directory?: string }>
@@ -26,8 +24,6 @@ beforeEach(() => {
   pending = {}
   seeds = []
   selectedModels = []
-  selectedAgents = []
-  saved = []
   dropped = []
   posts = []
   remembered = []
@@ -150,7 +146,6 @@ describe("harness model writer", () => {
 
     expect(seeds).toEqual([scope])
     expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
-    expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(dropped).toEqual([scope])
     expect(posts).toEqual([])
     expect(remembered).toEqual([{
@@ -165,14 +160,13 @@ describe("harness model writer", () => {
 
     expect(seeds).toEqual(["session:ses_1"])
     expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
-    expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(dropped).toEqual([])
     expect(posts).toEqual([{
       url: sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" }),
       body: { model: { providerID: "anthropic", modelID: "opus" } },
     }])
     expect(remembered).toEqual([])
-    expect(state["http://server\nses_1"]).toEqual({ desired: "anthropic/opus", synced: "anthropic/opus" })
+    expect(Object.values(state)).toEqual([{ desired: "anthropic/opus", synced: "anthropic/opus" }])
     expect(publishedConfigs).toEqual([{
       harness: { id: "claude", access: "native" },
       model: { providerID: "anthropic", modelID: "opus" },
@@ -184,21 +178,10 @@ describe("harness model writer", () => {
     await writerFor().setModel("session:ses_1", { providerID: "anthropic", modelID: "opus" }, { directory: "/repo", sessionId: "ses_1" })
 
     expect(selectedModels).toEqual([{ providerID: "anthropic", modelID: "opus" }])
-    expect(saved).toEqual([{ key: "model", value: '{"providerID":"anthropic","modelID":"opus"}' }])
     expect(posts).toEqual([{
       url: sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" }),
       body: { model: { providerID: "anthropic", modelID: "opus" } },
     }])
-  })
-
-  test("updates agent locally without dropping prepared sessions or syncing model", () => {
-    writerFor().setAgent(scope, "build")
-
-    expect(seeds).toEqual([scope])
-    expect(selectedAgents).toEqual(["build"])
-    expect(saved).toEqual([{ key: "agent", value: "build" }])
-    expect(dropped).toEqual([])
-    expect(posts).toEqual([])
   })
 
 })
@@ -209,9 +192,6 @@ function writerFor() {
     seed: (scope) => seeds.push(scope),
     acceptsDraftModel: () => true,
     setSelectedModel: (_scope, model) => selectedModels.push(model),
-    setSelectedAgent: (_scope, name) => selectedAgents.push(name),
-    saveModel: (_scope, model) => saved.push({ key: "model", value: model }),
-    saveAgent: (_scope, name) => saved.push({ key: "agent", value: name }),
     dropPrepared: (scope) => dropped.push(scope),
     rememberDraftModel: (scope, model, input) => remembered.push({
       scope,

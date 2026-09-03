@@ -23,7 +23,8 @@ import { prodSourcePaths } from "./scanners"
  *  1. The port stays a MECHANISM. It is import-free, so it cannot grow an edge
  *     into app code and cannot stop being movable.
  *  2. Exactly one module BINDS it, at the one place that owns both the
- *     contribution vocabulary and the registry.
+ *     contribution vocabulary and the registry. Product and fixed-service
+ *     policies may ask that owner for distinct activation instances.
  *  3. The composition DRIVES it — the account-following component is mounted,
  *     and the entry hands in the `unregister` half without which deactivation
  *     removes nothing.
@@ -147,8 +148,8 @@ describe("the port is bound in exactly one place", () => {
       .filter((module) => /\bcreateHostedContributionPort\s*[(<]/.test(code(module)))
       .toSorted()
 
-    // A second creator is a build whose hosted set has two owners, and whose
-    // "at most once" is only true per owner.
+    // A second creator would give the platform mechanism two app-layer owners.
+    // Multiple product/service instances still originate through this binding.
     expect(creators).toEqual([BINDING])
   })
 
@@ -170,7 +171,9 @@ describe("the composition drives it", () => {
     const specifiers = importSpecifiers(source(DRIVER))
 
     expect(specifiers).toContain("@/platform/account/account-provider")
-    expect(code(DRIVER)).toMatch(/followAccount\(\s*account\.state\(\)\s*\)/)
+    expect(code(DRIVER)).toMatch(
+      /const\s+state\s*=\s*account\.state\(\)[\s\S]*followAccount\(\s*state\s*\)/,
+    )
   })
 
   test("the entry binds the removal half, not only the registration half", () => {

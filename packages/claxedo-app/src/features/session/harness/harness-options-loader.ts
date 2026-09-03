@@ -1,8 +1,6 @@
 import { applyHarnessOptionsResponse, type HarnessOptionsStatePatch } from "./options-state"
 import { optionsResponse, type HarnessType, type OptionsResponse } from "./profile"
-import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { DraftDefaultApplication, ResolveDraftDefaultInput } from "./draft-default-policy"
-import type { DraftDefaultLabels } from "./draft-defaults"
 
 export type HarnessOptionsLoaderCache = {
   nextSeq(scope: string): number
@@ -21,13 +19,11 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
   preserveSelectedModel?(scope: string): boolean
   seed(scope: string): void
   applyPatch(scope: string, patch: HarnessOptionsStatePatch): void
-  saveModel(scope: string, model: string): void
   draftDefaultApplication?(scope: string, type: HarnessType): DraftDefaultApplication | undefined
   resolveDraftDefault?(
     application: DraftDefaultApplication,
     input: Omit<ResolveDraftDefaultInput, "saved">,
   ): boolean
-  completeRememberedHarness?(scope: string, type: HarnessType, model?: ModelKey, labels?: DraftDefaultLabels): boolean
   setOptionsLoading(scope: string, value: boolean): void
   readState?(scope: string): { readiness?: string; configError?: string } | undefined
   errorMessage(res: Response, fallback: string): Promise<string>
@@ -108,7 +104,6 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
       input.applyPatch(scope, resolvingDefault && !decision.managedDefault
         ? withoutSelection(decision.patch, payload.stale)
         : decision.patch)
-      if (!resolvingDefault && decision.saveModel) input.saveModel(scope, decision.saveModel)
       if (resolvingDefault && !payload.stale) {
         const eligibleModels = (decision.patch.dynamicModels ?? []).map((model) => ({
           providerID: type,
@@ -124,20 +119,6 @@ export function createHarnessOptionsLoader<ScopeInput>(input: {
             ? { declaredDefaultModel: { providerID: type, modelID: decision.patch.selectedModel } }
             : {}),
         })
-      }
-      if (!payload.stale) {
-        const resolvedModel = decision.patch.selectedModel &&
-          (decision.managedDefault || decision.patch.dynamicModels?.some((model) => model.id === decision.patch.selectedModel))
-          ? { providerID: type, modelID: decision.patch.selectedModel }
-          : undefined
-        input.completeRememberedHarness?.(
-          scope,
-          type,
-          resolvedModel,
-          resolvedModel
-            ? { provider: type, model: decision.patch.dynamicModels?.find((item) => item.id === resolvedModel.modelID)?.name ?? resolvedModel.modelID }
-            : undefined,
-        )
       }
       if (decision.retry) {
         input.cache.setTries(scope, tries + 1)

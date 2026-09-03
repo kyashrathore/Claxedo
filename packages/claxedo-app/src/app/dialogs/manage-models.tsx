@@ -6,19 +6,20 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { Button } from "@opencode-ai/ui/button"
 import { onMount, type Component } from "solid-js"
 import { useLocal } from "@/features/session/providers/session-selection"
-import { popularProviders, useProviders } from "@/app/providers/use-providers"
+import { popularProviders } from "@/app/providers/use-providers"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { openSettingsProviders } from "@/features/settings/open-settings-providers"
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()
-  const providers = useProviders()
   const language = useLanguage()
   const dialog = useDialog()
 
+  // The pane's model store already owns the catalog of the (workspace, harness)
+  // it is mounted for; hydrating through it is what fills these rows.
   onMount(() => {
-    void Promise.allSettled(providers.connected().map((provider) => providers.load(provider.id)))
+    void local.model.hydrate()
   })
 
   const handleConnectProvider = () => {

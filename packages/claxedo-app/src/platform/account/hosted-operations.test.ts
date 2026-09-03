@@ -137,7 +137,7 @@ describe("decodeHostedResult", () => {
   })
 
   test("rejects a list where an object is required, and the reverse", () => {
-    expect(() => decodeHostedResult("account.get", [])).toThrow(/expected an object/)
+    expect(() => decodeHostedResult("account.mode", [])).toThrow(/expected an object/)
     expect(() => decodeHostedResult("workspace.list.cloud", [])).toThrow(/expected an object/)
     expect(() => decodeHostedResult("workspace.list.cloud", {})).toThrow(/expected an array "workspaces"/)
     expect(() => decodeHostedResult("workspace.list.userHosted", {})).toThrow(/expected an array "workspaces"/)
@@ -189,7 +189,7 @@ describe("decodeHostedResult", () => {
   test("rejects null, which is an object to typeof", () => {
     // The classic. `typeof null === "object"`, so a decoder written the obvious
     // way accepts it and the caller reads a field off nothing.
-    expect(() => decodeHostedResult("account.get", null)).toThrow(/expected an object/)
+    expect(() => decodeHostedResult("account.mode", null)).toThrow(/expected an object/)
   })
 
   test("accepts null only where a route answers it deliberately", () => {
@@ -220,7 +220,7 @@ describe("isSafeOperation", () => {
 
   test("marks plain reads as safe", () => {
     for (const safe of [
-      "account.get",
+      "account.mode",
       "workspace.list.cloud",
       "workspace.list.userHosted",
       "workspace.checkpoints.list",

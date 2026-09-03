@@ -95,12 +95,29 @@ export type ResolvedWorkspaceRuntime = {
  * Transport placement for a terminal-scoped fetch: route non-local workspaces
  * that carry a workspaceId through the relay (loopback when the server itself
  * is loopback); everything else uses the server's default central transport.
+ *
+ * `workspace` is the caller's liveness read (`resolveWorkspaceRuntime`), which
+ * hits the control plane's `/api/workspace/resolve` and — for a user-hosted
+ * workspace addressed by its filesystem-path directory — never confirms a
+ * kind there. `signedWorkspace` is that same directory's match in the signed
+ * workspace inventory (the canonical resolver in
+ * `platform/runtime/agent/signed-workspace.ts`, e.g.
+ * `signedWorkspaceFromProjects`), passed by the caller when it has one. It is
+ * consulted first so a confirmed signed match always wins the relay
+ * placement even when the liveness read came back empty.
  */
-export const terminalScopedPlacement = (site: string, workspace: ResolvedWorkspaceRuntime): Placement => {
+export const terminalScopedPlacement = (
+  site: string,
+  workspace: ResolvedWorkspaceRuntime,
+  signedWorkspace?: ResolvedWorkspaceRuntime,
+): Placement => {
   const central = centralTransportForServer(site)
-  if (workspace?.kind && workspace.kind !== "local" && workspace.workspaceId) {
+  const resolved = signedWorkspace?.kind && signedWorkspace.kind !== "local" && signedWorkspace.workspaceId
+    ? signedWorkspace
+    : workspace
+  if (resolved?.kind && resolved.kind !== "local" && resolved.workspaceId) {
     return {
-      workspaceId: workspace.workspaceId,
+      workspaceId: resolved.workspaceId,
       hosting: "workspace",
       transport: central === "loopback" ? "loopback" : "workspace-relay",
     }

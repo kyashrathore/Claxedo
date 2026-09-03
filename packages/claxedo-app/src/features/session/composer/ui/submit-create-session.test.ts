@@ -11,6 +11,13 @@ import {
   type SubmitSessionCreateClient,
   type SubmitProjectionScheduler,
 } from "./submit-create-session"
+import {
+  registerSessionEventStreamLane,
+  reportSessionEventStreamOpen,
+  resetSessionEventScope,
+  sessionEventScopeId,
+  whenSessionEventStreamsOpen,
+} from "@/platform/runtime/session-event-scope"
 
 describe("createCloudStartupController", () => {
   test("ignores startup updates when cloud startup is disabled", () => {
@@ -106,7 +113,7 @@ describe("acquireSubmitSessionTarget", () => {
     expect(createClients).toEqual([])
   })
 
-  test("harness claim failure does not fall back to OpenCode create", async () => {
+  test("harness claim failure is reported and does not fall back to OpenCode create", async () => {
     const booted: string[] = []
     const errors: unknown[] = []
     const createClients: string[] = []
@@ -124,7 +131,7 @@ describe("acquireSubmitSessionTarget", () => {
         createClients.push(input.harnessType)
         return submitSessionClient()
       },
-      onOpencodeCreateError: (err) => errors.push(err),
+      onCreateError: (err) => errors.push(err),
     })
 
     expect(target).toEqual({
@@ -133,7 +140,7 @@ describe("acquireSubmitSessionTarget", () => {
       created: false,
     })
     expect(booted).toEqual([])
-    expect(errors).toEqual([])
+    expect(errors.map((err) => (err as Error).message)).toEqual(["claim failed"])
     expect(createClients).toEqual([])
   })
 
@@ -185,6 +192,67 @@ describe("acquireSubmitSessionTarget", () => {
     ])
   })
 
+  test("publishes the created session to the event-stream scope, after create and before any prompt", async () => {
+    resetSessionEventScope()
+    const scopeDuringCreate: Array<string | undefined> = []
+    try {
+      const target = await acquireSessionTarget({
+        replaceSession: true,
+        createSessionClient: () => submitSessionClient({
+          create: async () => {
+            // The session does not exist yet, so nothing may claim its scope.
+            scopeDuringCreate.push(sessionEventScopeId(undefined))
+            return { data: { id: "created-1" } }
+          },
+        }),
+      })
+
+      expect(target.session).toEqual({ id: "created-1" })
+      expect(scopeDuringCreate).toEqual([undefined])
+      // The draft route still names no session; the scope owner does.
+      expect(sessionEventScopeId(undefined)).toBe("created-1")
+    } finally {
+      resetSessionEventScope()
+    }
+  })
+
+  test("the created session's streams are not open yet when the caller returns, so the prompt waits", async () => {
+    resetSessionEventScope()
+    registerSessionEventStreamLane("runtime-events")
+    try {
+      const target = await acquireSessionTarget({ replaceSession: true })
+      expect(target.session).toEqual({ id: "created-1" })
+
+      let dispatched = false
+      const prompt = whenSessionEventStreamsOpen(sessionEventScopeId(undefined)).then(() => {
+        dispatched = true
+      })
+      await Promise.resolve()
+      await Promise.resolve()
+      expect(dispatched).toBe(false)
+
+      reportSessionEventStreamOpen("runtime-events", "created-1")
+      await prompt
+      expect(dispatched).toBe(true)
+    } finally {
+      resetSessionEventScope()
+    }
+  })
+
+  test("a harness claim publishes its session to the event-stream scope too", async () => {
+    resetSessionEventScope()
+    try {
+      await acquireSessionTarget({
+        replaceSession: true,
+        harnessMode: true,
+        claimHarnessSession: async () => ({ id: "claimed-1" }),
+      })
+      expect(sessionEventScopeId(undefined)).toBe("claimed-1")
+    } finally {
+      resetSessionEventScope()
+    }
+  })
+
   test("reports OpenCode create errors through the call-site error callback", async () => {
     const errors: unknown[] = []
 
@@ -195,7 +263,7 @@ describe("acquireSubmitSessionTarget", () => {
           throw new Error("create failed")
         },
       }),
-      onOpencodeCreateError: (err) => errors.push(err),
+      onCreateError: (err) => errors.push(err),
     })
 
     expect(target).toEqual({
@@ -205,6 +273,55 @@ describe("acquireSubmitSessionTarget", () => {
     })
     expect(errors).toHaveLength(1)
     expect(errors[0]).toBeInstanceOf(Error)
+  })
+
+  test("reserves a signed remote session before create and forwards the exact immutable ids", async () => {
+    const order: string[] = []
+    const creates: Array<{ input: Record<string, unknown>; headers?: Record<string, string> }> = []
+    const target = await acquireSessionTarget({
+      replaceSession: true,
+      signedControlPlane: true,
+      workspaceId: "ws_1",
+      reserveManagedSession: async (input) => {
+        order.push("reserve")
+        expect(input).toMatchObject({ workspaceId: "ws_1", kind: "create" })
+        return { operationId: "op_fixed", sessionId: "ses_fixed", workspaceId: "ws_1" }
+      },
+      createSessionClient: () => submitSessionClient({
+        create: async (input, init) => {
+          order.push("create")
+          creates.push({ input, headers: init?.headers })
+          return { data: { id: "ses_fixed" } }
+        },
+      }),
+    })
+
+    expect(target.session).toEqual({ id: "ses_fixed" })
+    expect(order).toEqual(["reserve", "create"])
+    expect(creates).toEqual([{
+      input: {
+        id: "ses_fixed",
+        directory: "/repo/main",
+        agent: "build",
+        model: { providerID: "test", id: "fixture" },
+      },
+      headers: { "x-claxedo-session-registration-operation": "op_fixed" },
+    }])
+  })
+
+  test("fails signed creation before runtime mutation when workspace scope is absent", async () => {
+    let creates = 0
+    await expect(acquireSessionTarget({
+      replaceSession: true,
+      signedControlPlane: true,
+      createSessionClient: () => submitSessionClient({
+        create: async () => {
+          creates += 1
+          return { data: { id: "unexpected" } }
+        },
+      }),
+    })).rejects.toThrow("authoritative workspace id")
+    expect(creates).toBe(0)
   })
 
   test("preserves signed existing-session fallback without creating", async () => {
@@ -288,6 +405,27 @@ describe("finalizeSubmitSessionTarget", () => {
     expect(typeof result.handoffCreatedSession).toBe("function")
     expect(tabs).toEqual([])
     expect(navigations).toEqual([])
+  })
+
+  test("never projects a session created in a user-hosted workspace: the machine serving it is its authority", () => {
+    const scheduled: Parameters<SubmitProjectionScheduler>[0][] = []
+
+    const result = finalizeSessionTarget({
+      target: { created: true },
+      draftId: "draft-1",
+      runtimeWorkspaceRef: { workspaceId: "ws_machine", kind: "user-hosted" },
+      harness: { id: "opencode" },
+      promoteSession: () => {},
+      scheduleProjectionPull: (input) => {
+        scheduled.push(input)
+        return undefined
+      },
+      setLayoutTabs: () => {},
+      navigate: () => {},
+    })
+
+    expect(scheduled).toEqual([])
+    expect(typeof result.handoffCreatedSession).toBe("function")
   })
 
   test("does not upsert into the rail list during finalize (handoff owns the optimistic row)", () => {
@@ -426,7 +564,7 @@ function acquireSessionTarget(overrides: Partial<AcquireSessionTargetInput>) {
     boot: () => {},
     createSessionClient: () => submitSessionClient(),
     claimHarnessSession: async () => undefined,
-    onOpencodeCreateError: () => {},
+    onCreateError: () => {},
     ...overrides,
   })
 }

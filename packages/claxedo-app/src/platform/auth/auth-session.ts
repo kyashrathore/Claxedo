@@ -1,21 +1,25 @@
-// target layer: auth — the ONLY module allowed to consume platform/auth/auth-client's useAuth
-// (composition roots may name it to BIND it here; nothing else may call it)
 import type { Accessor } from "solid-js"
-import type { useAuth } from "@/platform/auth/auth-client"
+import type {
+  BrowserAuthDescriptor,
+  BrowserAuthMethod,
+  BrowserAuthSignInOptions,
+  BrowserAuthSignUpOptions,
+  BrowserAuthState,
+} from "./browser-auth"
 
 export type AuthSessionStatus = "loading" | "anonymous" | "signed"
 
-type ExternalAuth = ReturnType<typeof useAuth>
-
 export type AuthSession = {
   status: Accessor<AuthSessionStatus>
-  session: ExternalAuth["session"]
-  user: ExternalAuth["user"]
-  signIn: ExternalAuth["signIn"]
-  signOut: ExternalAuth["signOut"]
-  signUp: ExternalAuth["signUp"]
-  getToken: ExternalAuth["getToken"]
-  refreshSession: ExternalAuth["refreshSession"]
+  descriptor: Accessor<BrowserAuthDescriptor | null>
+  methods: Accessor<readonly BrowserAuthMethod[]>
+  session: BrowserAuthState["session"]
+  user: BrowserAuthState["user"]
+  signIn: (options?: BrowserAuthSignInOptions) => Promise<void>
+  signOut: BrowserAuthState["signOut"]
+  signUp: (options?: BrowserAuthSignUpOptions) => Promise<void>
+  getToken: BrowserAuthState["getToken"]
+  refreshSession: BrowserAuthState["refreshSession"]
   organization: Accessor<{ id?: string } | null | undefined>
 }
 
@@ -23,11 +27,9 @@ export type AuthSession = {
  * How a build hands this module an identity provider, without this module
  * importing one.
  *
- * The import above is `import type`. This file is still the ONLY module allowed
- * to reach `auth-client`'s `useAuth` — that invariant is unchanged — but it now
- * reaches it for its SHAPE only. The bundler erases type-only imports, so
- * `ExternalAuth` costs nothing at runtime and `@clerk/clerk-js` is no longer in
- * the import graph of anything that renders the shell.
+ * The import above is `import type`. The bundler erases it, so this shared
+ * session facade depends on the provider-neutral browser contract without
+ * pulling either provider implementation into the shell.
  *
  * That matters because the shell's provider tree (`app/entry/app.tsx`) calls
  * `useAuthSession()` unconditionally, and BOTH products render that shell. A
@@ -46,25 +48,10 @@ export type AuthSession = {
  *
  * Spelled out member by member rather than as `() => ExternalAuth`, because
  * this names exactly what this module CONSUMES — the correct direction for a
- * port. `useAuth` satisfies it structurally, so the hosted binding is still
- * compiler-checked against the real provider, while `clerk` narrows to the one
- * member actually read off the Clerk instance (which also retires the `as` cast
- * `organization()` used to need). Everything else keeps its `ExternalAuth[...]`
- * type, because those types ARE the public `AuthSession` shape callers compile
- * against.
+ * port. Each selected adapter satisfies it structurally, so the hosted binding
+ * is compiler-checked against the real provider while the shell stays neutral.
  */
-export type ExternalAuthSource = () => {
-  session: ExternalAuth["session"]
-  user: ExternalAuth["user"]
-  loading: Accessor<boolean>
-  isSignedIn: Accessor<boolean>
-  signIn: ExternalAuth["signIn"]
-  signOut: ExternalAuth["signOut"]
-  signUp: ExternalAuth["signUp"]
-  getToken: ExternalAuth["getToken"]
-  refreshSession: ExternalAuth["refreshSession"]
-  clerk: { organization: { id?: string } | null | undefined }
-}
+export type ExternalAuthSource = () => BrowserAuthState
 
 let externalAuth: ExternalAuthSource | undefined
 
@@ -117,6 +104,8 @@ const NO_IDENTITY_PROVIDER =
 
 const anonymousSession: AuthSession = {
   status: () => "anonymous",
+  descriptor: () => null,
+  methods: () => [],
   session: () => null,
   user: () => null,
   signIn: async () => {
@@ -135,7 +124,9 @@ export function useAuthSession(): AuthSession {
   if (!externalAuth) return anonymousSession
   const auth = externalAuth()
   return {
-    status: () => auth.loading() ? "loading" : auth.isSignedIn() ? "signed" : "anonymous",
+    status: () => (auth.loading() ? "loading" : auth.isSignedIn() ? "signed" : "anonymous"),
+    descriptor: auth.descriptor,
+    methods: auth.methods,
     session: auth.session,
     user: auth.user,
     signIn: auth.signIn,
@@ -143,6 +134,6 @@ export function useAuthSession(): AuthSession {
     signUp: auth.signUp,
     getToken: auth.getToken,
     refreshSession: auth.refreshSession,
-    organization: () => auth.clerk.organization,
+    organization: auth.organization,
   }
 }

@@ -160,6 +160,10 @@ vi.mock("@/features/session/providers/session-selection", () => ({
   LocalProvider: (props: any) => <>{props.children}</>,
 }))
 
+vi.mock("@/features/session/providers/models", () => ({
+  ModelsProvider: (props: any) => <>{props.children}</>,
+}))
+
 vi.mock("@/features/terminal/providers/provider", () => ({
   TerminalProvider: (props: any) => <>{props.children}</>,
 }))
@@ -795,9 +799,13 @@ describe("DirectoryScope bootstrap gating", () => {
       workspace,
     })
 
+    // The pane's harness arrives as a PROP: SessionPaneScope resolves it (from
+    // the session's ref, or from the harness store for a draft) and
+    // DirectoryScope spends it verbatim in the agent query key.
     render(() => (
       <DirectoryScope {...directoryScopeProps}
         directory={directory}
+        harnessType={() => "opencode"}
         workspaceId={() => workspace.workspaceId}
         workspaceKind={() => workspace.kind}
         sessionId={() => "ses_cloud"}

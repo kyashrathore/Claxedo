@@ -17,7 +17,8 @@ export function DeferredSessionSecondaryStatus(props: {
   firstFoldReady: Accessor<boolean>
   directory: Accessor<string | undefined>
   sessionId: Accessor<string | undefined>
-  workspaceId: Accessor<string | undefined>
+  /** Workspace whose event stream carries this session, including local workspaces. */
+  eventWorkspaceId: Accessor<string | undefined>
   delayMs?: number
 }) {
   const [mounted, setMounted] = createSignal(false)
@@ -37,7 +38,7 @@ export function DeferredSessionSecondaryStatus(props: {
         directory={props.directory}
         sessionId={props.sessionId}
       />
-      <SessionConnectionLine workspaceId={props.workspaceId} />
+      <SessionConnectionLine workspaceId={props.eventWorkspaceId} />
     </Show>
   )
 }

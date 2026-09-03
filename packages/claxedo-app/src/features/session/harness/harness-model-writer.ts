@@ -59,9 +59,6 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   seed(scope: string): void
   acceptsDraftModel(scope: string, model: ModelKey): boolean
   setSelectedModel(scope: string, model: ModelKey): void
-  setSelectedAgent(scope: string, name: string): void
-  saveModel(scope: string, model: string): void
-  saveAgent(scope: string, name: string): void
   rememberDraftModel(scope: string, model: ModelKey, input?: ScopeInput, labels?: DraftDefaultLabels): void
   publishSessionConfig(input: ScopeInput, config: unknown): void
   dropPrepared(scope: string): void
@@ -71,7 +68,7 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
   cache: HarnessSessionModelSyncCache
 }) {
   const syncSessionModel = async (params: ScopeInput | undefined, model: ModelKey) => {
-    const key = sessionModelSyncKey(input.base, params)
+    const key = sessionModelSyncKey({ serverUrl: input.base, ...params })
     if (!key) return
     const syncValue = `${model.providerID}/${model.modelID}`
     return syncHarnessSessionModel({
@@ -100,7 +97,6 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
     input.seed(scope)
     if ((!params?.sessionId || params.sessionId === "new") && !input.acceptsDraftModel(scope, model)) return
     input.setSelectedModel(scope, model)
-    input.saveModel(scope, JSON.stringify(model))
     if (!params?.sessionId || params.sessionId === "new") {
       input.rememberDraftModel(scope, model, params, labels)
       input.dropPrepared(scope)
@@ -109,14 +105,7 @@ export function createHarnessModelWriter<ScopeInput extends HarnessScopeInput>(i
     await syncSessionModel(params, model)
   }
 
-  const setAgent = (scope: string, name: string) => {
-    input.seed(scope)
-    input.setSelectedAgent(scope, name)
-    input.saveAgent(scope, name)
-  }
-
   return {
-    setAgent,
     setModel,
     syncSessionModel,
   }

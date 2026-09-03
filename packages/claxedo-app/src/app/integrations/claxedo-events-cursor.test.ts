@@ -58,6 +58,10 @@ test("the event stream resumes from Last-Event-ID on reconnect instead of replay
         children: undefined,
         pathname: () => "/",
         serverUrl: () => "http://127.0.0.1:3001",
+        // `authFetch` is mocked below regardless of `accountStreamAvailable`,
+        // whose hosted bridge is absent in this test environment; a signed
+        // account is what routes the central target through it.
+        accountState: () => ({ status: "signed", identity: { userId: "user_cursor_test" } }),
       })
     } catch (error) {
       // This package has no Solid JSX transform under `bun test` (it has no

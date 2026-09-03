@@ -1,5 +1,5 @@
 import type { Command } from "@opencode-ai/sdk/v2/client"
-import { queryKeys } from "@/platform/query/keys"
+import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
 import { cmp } from "@/platform/query/sort"
@@ -34,6 +34,7 @@ function commandListFromUnknown(data: unknown) {
 export function commandListQuery(input: {
   baseUrl?: string
   directory: string
+  harnessType?: string
   request?: typeof fetch
   workspace?: WorkspaceRuntimeSnapshot | null
   client: CommandClient
@@ -42,7 +43,12 @@ export function commandListQuery(input: {
     client: input.client,
   })
   return {
-    queryKey: queryKeys.shell.commands(input.baseUrl, input.directory),
+    queryKey: queryKeys.shell.commands(
+      input.baseUrl,
+      input.directory,
+      input.harnessType,
+      workspaceQueryKey(input.workspace),
+    ),
     staleTime: 30 * 1000,
     queryFn: async () => {
       if (input.request && input.baseUrl) {

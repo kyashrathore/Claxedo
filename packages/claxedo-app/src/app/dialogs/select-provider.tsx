@@ -10,7 +10,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { DialogCustomProvider } from "@/app/dialogs/custom-provider"
 import { CUSTOM_PROVIDER_ID, ProviderList } from "./provider-list"
 
-export const DialogSelectProvider: Component<{ harness?: string }> = (props) => {
+export const DialogSelectProvider: Component<{ harness: string; scope?: string }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
 
@@ -18,12 +18,15 @@ export const DialogSelectProvider: Component<{ harness?: string }> = (props) => 
     <Dialog title={language.t("command.provider.connect")} transition>
       <ProviderList
         harness={props.harness}
+        scope={props.scope}
         onSelect={(providerId) => {
           if (providerId === CUSTOM_PROVIDER_ID) {
-            dialog.show(() => <DialogCustomProvider back="providers" />)
+            dialog.show(() => <DialogCustomProvider back="providers" scope={props.scope} />)
             return
           }
-          dialog.show(() => <DialogConnectProvider provider={providerId} harness={props.harness} />)
+          dialog.show(() => (
+            <DialogConnectProvider provider={providerId} harness={props.harness} scope={props.scope} />
+          ))
         }}
       />
     </Dialog>

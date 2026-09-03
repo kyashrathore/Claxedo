@@ -1,7 +1,7 @@
 import { workspaceRoute } from "@/platform/identity/route"
+import { machineRemoteAccess } from "@/platform/remote-access/machine-remote-access"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { hostedControlCall } from "@/platform/account/hosted-control-call"
 
 type ProjectWorkspace = {
   id?: string
@@ -33,7 +33,10 @@ export function localWorkspaceShareTarget(input: {
   const directory = row?.directory ?? (input.directory === input.project.worktree ? input.project.worktree : undefined)
   const workspaceId = row?.id ?? row?.workspace_id ?? (input.directory === input.project.worktree ? input.project.id : undefined)
   if (!workspaceId || !directory || !isFilesystemDirectory(directory)) return
-  if (row?.kind === "cloud") return
+  // Anything the engine marks non-local (cloud OR user-hosted) is a remote
+  // representation — including the control plane's echo of this machine's own
+  // registration — never a directory this machine can publish.
+  if (row?.kind && row.kind !== "local") return
   return { workspaceId, directory }
 }
 
@@ -55,43 +58,74 @@ export function workspaceShareUrl(input: { origin?: string; workspaceId: string 
   return new URL(workspaceRoute(input.workspaceId), origin).toString()
 }
 
-function workspaceUserHostedRegisterUrl(input: { serverUrl?: string; workspaceId: string }) {
+function workspaceHostAssignmentUrl(input: { serverUrl?: string; workspaceId: string }) {
   return new URL(
-    `/api/workspace/${encodeURIComponent(input.workspaceId)}/user-hosted/register`,
+    `/api/workspace/${encodeURIComponent(input.workspaceId)}/host-assignment`,
     normalizeUrl(input.serverUrl) ?? getClaxedoServerUrl(),
   )
 }
 
+/**
+ * Sharing assigns the workspace to an ENROLLED machine, and the renderer
+ * cannot name that machine: the host id belongs to whoever holds the machine
+ * key, which on desktop is Electron main's Host Connector and never this
+ * process. So the port is the only path when one is bound; the self-hosted
+ * server has no port and performs the same assignment server-side from its own
+ * local route below.
+ */
 export async function registerUserHostedWorkspace(input: {
   workspaceId: string
   displayName?: string
   serverUrl?: string
   request?: typeof fetch
 }) {
-  const fallback = async () => {
-    const response = await (input.request ?? authFetch)(workspaceUserHostedRegisterUrl({
-      serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+  // The desktop: the Host Connector owns the machine key, so the port is the
+  // only path that can produce the signed challenge. The self-hosted server:
+  // no port is bound, and its own local route below performs the same flow
+  // server-side.
+  const port = input.request ? undefined : machineRemoteAccess()
+  if (port?.shareWorkspace) {
+    await port.shareWorkspace({
       workspaceId: input.workspaceId,
-    }), {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        ...(input.displayName ? { displayName: input.displayName } : {}),
-      }),
-    })
-    if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
-    return await responseJson(response)
-  }
-  if (input.request) return fallback()
-  return hostedControlCall(
-    "hostLink.register",
-    {
-      id: input.workspaceId,
       ...(input.displayName ? { displayName: input.displayName } : {}),
+    })
+    return
+  }
+  const response = await (input.request ?? authFetch)(workspaceHostAssignmentUrl({
+    serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+    workspaceId: input.workspaceId,
+  }), {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
     },
-    fallback,
-  )
+    body: JSON.stringify({
+      ...(input.displayName ? { displayName: input.displayName } : {}),
+    }),
+  })
+  if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
+  return await responseJson(response)
+}
+
+/** Withdraw one workspace this machine publishes. Mirrors the register above. */
+export async function unregisterUserHostedWorkspace(input: {
+  workspaceId: string
+  serverUrl?: string
+  request?: typeof fetch
+}) {
+  const port = input.request ? undefined : machineRemoteAccess()
+  if (port?.unshareWorkspace) {
+    await port.unshareWorkspace(input.workspaceId)
+    return
+  }
+  const response = await (input.request ?? authFetch)(workspaceHostAssignmentUrl({
+    serverUrl: input.serverUrl ?? getClaxedoServerUrl(),
+    workspaceId: input.workspaceId,
+  }), {
+    method: "DELETE",
+    headers: { Accept: "application/json" },
+  })
+  if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Unshare workspace failed: ${response.status}`))
+  return await responseJson(response)
 }

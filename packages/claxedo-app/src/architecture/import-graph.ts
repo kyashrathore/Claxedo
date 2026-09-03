@@ -186,7 +186,22 @@ function rootFiles(appRoot: string) {
   const pkg = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
     exports?: Record<string, string>
   }
-  return [...new Set([...roots, ...Object.values(pkg.exports ?? {}).flatMap((target) => exportRoots(appRoot, target))])]
+  return [
+    ...new Set([
+      ...roots,
+      ...browserAuthBuildRoots(appRoot),
+      ...Object.values(pkg.exports ?? {}).flatMap((target) => exportRoots(appRoot, target)),
+    ]),
+  ]
+}
+
+function browserAuthBuildRoots(appRoot: string) {
+  const selectionFile = path.join(appRoot, "vite.browser-auth.ts")
+  if (!existsSync(selectionFile)) return []
+  const selection = readFileSync(selectionFile, "utf8")
+  return ["platform/auth/better-auth-browser-auth.ts", "platform/auth/clerk-browser-auth.ts"].filter((file) =>
+    selection.includes(`./src/${file}`),
+  )
 }
 
 function exportRoots(appRoot: string, target: string) {

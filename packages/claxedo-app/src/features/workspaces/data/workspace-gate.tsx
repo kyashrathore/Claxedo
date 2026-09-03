@@ -16,6 +16,7 @@ import {
   type WorkspaceConnectionKind,
   type WorkspaceOfflineReason,
 } from "./workspace-connection"
+import { useWorkspaceScopeRegistryOptional } from "./workspace-scope"
 
 // ONE component at the workspace-scope boundary. It wraps the WHOLE workspace
 // surface (session pane(s), Review panel, composer/model picker, terminal), not
@@ -150,13 +151,16 @@ export function WorkspaceGate(
   }>,
 ) {
   const events = useClaxedoEventsOptional()
+  const workspaceScopes = useWorkspaceScopeRegistryOptional()
 
-  // Acquire (ref-counted) for as long as this gate is mounted. A gate with no
-  // workspaceId has nothing to connect to and renders its children directly
-  // (central/no-backing surface) — same as a local workspace.
+  // The app-level WorkspaceScopeHost owns the lease for as long as the
+  // workspace is open, so changing sessions cannot tear it down, re-run the
+  // workspace check, or flash a connecting/offline screen over warm content.
+  // Standalone gates (tests/embedded surfaces without a host) retain the old
+  // component-scoped, ref-counted fallback.
   createEffect(() => {
     if (!props.workspaceId) return
-    const handle = acquireWorkspaceConnection({
+    const input = {
       workspaceId: props.workspaceId,
       kind: props.kind,
       ...(props.directory ? { directory: props.directory } : {}),
@@ -164,7 +168,9 @@ export function WorkspaceGate(
       ...(props.request ? { request: props.request } : {}),
       ...(props.relayRequest ? { relayRequest: props.relayRequest } : {}),
       ...(events ? { events } : {}),
-    })
+    }
+    if (workspaceScopes?.retainConnection(input)) return
+    const handle = acquireWorkspaceConnection(input)
     onCleanup(() => handle.release())
   })
 

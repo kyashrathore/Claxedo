@@ -54,6 +54,19 @@ export type MachineRemoteAccessStatus = {
   /** Enrolled and actively reachable — the heartbeat is beating. */
   enabled: boolean
   secondDeviceOpen: boolean
+  /**
+   * Workspaces THIS machine currently publishes.
+   *
+   * A capability, not a convenience (see the header): present where the
+   * product's own status can answer it — the desktop's connector snapshot
+   * already carries `sharedWorkspaceIds`, so no new IPC exists for this — and
+   * ABSENT on the HTTP product, whose status route says nothing about
+   * workspaces and whose account-wide `devices` list is the authority instead.
+   * Reporting `[]` there would make "this product cannot say" look identical to
+   * "this machine publishes nothing", which is the exact confusion the header
+   * forbids.
+   */
+  sharedWorkspaceIds?: readonly string[]
 }
 
 /** One enrolled machine, as the account sees it. */
@@ -83,6 +96,17 @@ export type MachineRemoteAccessPort = {
   enable: (input: { displayName: string; startAtLogin: boolean }) => Promise<void>
   /** Stop publishing a machine for good. */
   revoke: (hostId: string) => Promise<{ revoked: boolean }>
+  /**
+   * Publish one workspace from this machine.
+   *
+   * Absent on the HTTP product, where sharing goes through the self-hosted
+   * server's own `/api/workspace/:id/user-hosted/register` route. Present on
+   * the desktop, where the Host Connector holds the machine key and the
+   * account credential and no such local route exists.
+   */
+  shareWorkspace?: (input: { workspaceId: string; displayName?: string }) => Promise<void>
+  /** Withdraw one workspace this machine publishes. Paired with shareWorkspace. */
+  unshareWorkspace?: (workspaceId: string) => Promise<void>
   /**
    * Every machine on the account.
    *

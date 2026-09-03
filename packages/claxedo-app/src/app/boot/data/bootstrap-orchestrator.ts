@@ -6,11 +6,13 @@ import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime
 import { authFetch } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
+import { isCancelledError } from "@tanstack/solid-query"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { agentListQuery, pathQuery } from "../../../features/session/data/query/directory"
-import { projectListQuery, providerAuthQuery, providerListQuery } from "@/platform/query/control-plane"
+import { providerAuthQuery, providerListQuery } from "@/platform/query/control-plane"
+import { workspaceCatalogQuery } from "@/features/workspaces/data/workspace-catalog"
 import { mapInventoryToSessions } from "../../../features/session/data/query/inventory"
 import { cleanupDroppedSessionCaches } from "../../../features/session/data/sync/session-cache-cleanup"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "@/platform/sync/session-load"
@@ -33,7 +35,7 @@ type DirectoryRef = string
 type SessionRow = SessionCacheValue["session"][number]
 type GlobalConfig = Config
 type QueryOptionsClient =
-  Parameters<typeof projectListQuery>[0]["client"] &
+  Parameters<typeof workspaceCatalogQuery>[0]["client"] &
   Parameters<typeof providerListQuery>[0]["client"] &
   Parameters<typeof providerAuthQuery>[0]["client"] &
   Parameters<typeof pathQuery>[0]["client"] &
@@ -55,6 +57,33 @@ type DirectoryChildren = {
 type WorkspaceInfo = SignedWorkspaceInfo
 type RuntimeRef = { workspaceId: string }
 type Translate = (key: string, vars?: Record<string, string | number>) => string
+
+/**
+ * Remove a request-tracking query without leaking a CancelledError.
+ *
+ * `removeQueries` destroys the query outright; when a CONCURRENT bootstrap is
+ * mid-fetch on the same key (sign-in remounts overlap these), destruction
+ * rejects that fetch with a CancelledError nothing awaits — an
+ * unhandledrejection overlay in dev. `cancelQueries` settles the in-flight
+ * fetch first and swallows the cancellation, making the removal inert.
+ */
+/**
+ * A bootstrap's fetchQuery rejecting with a CancelledError is a principal
+ * change (sign-in/out clears the query client) or a concurrent removal — not
+ * a failure to report. Callers fire bootstraps with `void`, so an unswallowed
+ * cancellation surfaces as an unhandledrejection overlay in dev.
+ */
+function swallowCancellation(error: unknown): null {
+  if (isCancelledError(error)) return null
+  throw error
+}
+
+function dropRequestQuery(filter: { queryKey: readonly unknown[]; exact?: boolean }) {
+  void queryClient
+    .cancelQueries(filter)
+    .catch(() => undefined)
+    .then(() => queryClient.removeQueries(filter))
+}
 
 export function bootstrapSessionRuntimeTarget(input: {
   workspace?: WorkspaceSessionBacking
@@ -138,19 +167,19 @@ export function sessionLoadRequestKey(directory: DirectoryRef) {
 export function createQueryOptionsApi(input: {
   globalSDK: () => QueryOptionsClient
   sdkFor: (directory: DirectoryRef) => QueryOptionsClient
+  hasSignedAccess: () => boolean
   baseUrl?: string
   request?: typeof fetch
   harnessType?: string
 }) {
   return {
-    globalConfig: () =>
-      queryOptions({
-        queryKey: ["global", input.baseUrl ?? "", "config"],
-        staleTime: 5 * 60 * 1000,
-        queryFn: async () => (await input.globalSDK().global.config.get()).data ?? ({} as GlobalConfig),
-      }),
-    projects: () => projectListQuery({ baseUrl: input.baseUrl, client: input.globalSDK() }),
-    providers: (directory: DirectoryRef | null, harnessType?: string) =>
+    projects: () => workspaceCatalogQuery({
+      baseUrl: input.baseUrl,
+      client: input.globalSDK(),
+      request: input.request,
+      signedAccess: input.hasSignedAccess(),
+    }),
+    providers: (directory: DirectoryRef | null, harnessType: string) =>
       providerListQuery({
         baseUrl: input.baseUrl,
         client: directory === null ? input.globalSDK() : input.sdkFor(directory),
@@ -158,7 +187,7 @@ export function createQueryOptionsApi(input: {
         harnessType,
         request: input.request,
       }),
-    providerAuth: (harnessType?: string) => providerAuthQuery({
+    providerAuth: (harnessType: string) => providerAuthQuery({
       baseUrl: input.baseUrl,
       client: input.globalSDK(),
       harnessType,
@@ -271,7 +300,7 @@ export function createBootstrapOrchestrator(input: {
     const requestKey = sessionLoadRequestKey(directory)
     const pending = queryClient.getQueryState(requestKey)?.fetchStatus === "fetching"
     if (pending && !opts.force) {
-      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null })
+      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null }).catch(swallowCancellation)
       const settledMeta = queryClient.getQueryData<DirectorySessionLoadMeta>(sessionLoadMetaKey(directory))
       if (sessionLoadMetaMatchesWorkspace(settledMeta, requestedWorkspace)) return
     }
@@ -428,8 +457,8 @@ export function createBootstrapOrchestrator(input: {
           })
         return null
       },
-    }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey })
+    }).catch(swallowCancellation).finally(() => {
+      dropRequestQuery({ queryKey: requestKey })
       input.children.unpin(directory)
     })
   }
@@ -460,8 +489,8 @@ export function createBootstrapOrchestrator(input: {
         })
         return null
       },
-    }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey })
+    }).catch(swallowCancellation).finally(() => {
+      dropRequestQuery({ queryKey: requestKey })
       input.children.unpin(directory)
     })
   }
@@ -471,7 +500,7 @@ export function createBootstrapOrchestrator(input: {
     const freshKey = globalBootstrapFreshKey(input.baseUrl(), harnessType)
     const pending = queryClient.getQueryState(requestKey)?.fetchStatus === "fetching"
     if (pending) {
-      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null })
+      await queryClient.fetchQuery({ queryKey: requestKey, queryFn: async () => null }).catch(swallowCancellation)
       return
     }
     const updatedAt = queryClient.getQueryState(freshKey)?.dataUpdatedAt ?? 0
@@ -505,8 +534,8 @@ export function createBootstrapOrchestrator(input: {
         })
         return null
       },
-    }).finally(() => {
-      queryClient.removeQueries({ queryKey: requestKey, exact: true })
+    }).catch(swallowCancellation).finally(() => {
+      dropRequestQuery({ queryKey: requestKey, exact: true })
       input.markGlobalBootstrapFresh(input.baseUrl(), harnessType)
     })
   }
@@ -518,6 +547,7 @@ export function createBootstrapOrchestrator(input: {
     queryOptionsApi: createQueryOptionsApi({
       globalSDK: input.globalSDK,
       sdkFor: input.sdkFor,
+      hasSignedAccess: input.hasSignedAccess,
       baseUrl: input.baseUrl(),
       request: input.platformFetch() ?? authFetch,
     }),

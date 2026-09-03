@@ -77,7 +77,7 @@ describe("session list query cache", () => {
     expect(sessionListRequest({ baseUrl: "http://127.0.0.1:3001", request })).toBe(request)
   })
 
-  test("marks scoped session-list requests with the workspace directory header", async () => {
+  test("carries scope in the query string and adds no custom header", async () => {
     const calls: Array<{ url: string; headers: Headers }> = []
     await queryClient.fetchQuery(sessionListQueryOptions({
       baseUrl: "http://test.local",
@@ -95,7 +95,13 @@ describe("session list query cache", () => {
 
     expect(calls[0]?.url).toBe("http://test.local/api/control/session-list?scope=workspace&limit=2&workspaceId=ws_1&directory=%2Frepo")
     expect(calls[0]?.headers.get("accept")).toBe("application/json")
-    expect(calls[0]?.headers.get("x-opencode-directory")).toBe("/repo")
+    // A custom header the control plane's cross-origin preflight does not name
+    // is not ignored — the browser refuses to send the request. Scope is in
+    // the URL above; nothing else may ride on this request.
+    // Lower-cased: the spec normalizes header names but Bun's Headers keeps
+    // the casing the caller used, and this is about which headers are sent,
+    // not how a runtime spells them.
+    expect([...calls[0]!.headers.keys()].map((name) => name.toLowerCase())).toEqual(["accept"])
   })
 
   test("uses the local product session-list route for loopback rail queries", async () => {
@@ -145,8 +151,8 @@ describe("session list query cache", () => {
     expect(calls[0]).toBe("http://test.local/api/control/session-list?scope=global&limit=50&projectId=proj_1&workspaceId=ws_1&directory=%2Frepo&groupBy=workspace&archived=archived&status=running%2Cidle&environment=prod&git=dirty%2Cclean&search=hello+world&cursor=cursor%3A1")
   })
 
-  test("marks project-scoped workspace projects with a workspace directory header", async () => {
-    const calls: Array<{ headers: Headers }> = []
+  test("scopes a project list by projectId in the query, not a header", async () => {
+    const calls: Array<{ url: string; headers: Headers }> = []
     await queryClient.fetchQuery(sessionListQueryOptions({
       baseUrl: "http://test.local",
       query: {
@@ -154,13 +160,14 @@ describe("session list query cache", () => {
         projectId: "ws_1",
         limit: 2,
       },
-      request: async (_input, init) => {
-        calls.push({ headers: new Headers(init?.headers) })
+      request: async (input, init) => {
+        calls.push({ url: String(input), headers: new Headers(init?.headers) })
         return new Response(JSON.stringify(response()))
       },
     }))
 
-    expect(calls[0]?.headers.get("x-opencode-directory")).toBe("workspace:ws_1")
+    expect(calls[0]?.url).toBe("http://test.local/api/control/session-list?scope=project&limit=2&projectId=ws_1")
+    expect(calls[0]?.headers.get("x-opencode-directory")).toBeNull()
   })
 
   test("removes archived rows from active pages without resetting cursor state", () => {
@@ -582,6 +589,34 @@ describe("reconcileUpdatedSessionListQueryData", () => {
     const items = queryClient.getQueryData<SessionListResponse>(key)?.items
     expect(items?.map((item) => item.sessionId)).toEqual(["ses_1", "ses_2"])
     expect(items?.[1]?.title).toBe("Two renamed")
+  })
+
+  test("the section's own view decides the order, not the view the server echoed", () => {
+    // A page can come back with a `view` the section never asked for — a
+    // server default, a bootstrapped entry, a source that shapes its own page.
+    // The key the entry is cached under is what the reader renders in, so an
+    // applier that placed the row by the echoed view would leave a bumped row
+    // stranded exactly where the rail showed it before.
+    const key = queryKeys.shell.sessionList(undefined, {
+      scope: "project",
+      projectId: "prj_1",
+      limit: 2,
+      sort: "updated_desc",
+    })
+    queryClient.setQueryData(key, {
+      ...response(),
+      view: { ...response().view, sort: "created_desc" },
+      items: [row("ses_1", 3), row("ses_2", 2)],
+    })
+
+    reconcileUpdatedSessionListQueryData({
+      sessionId: "ses_2",
+      directory: "/repo",
+      updatedAt: 10,
+    })
+
+    expect(queryClient.getQueryData<SessionListResponse>(key)?.items?.map((item) => item.sessionId))
+      .toEqual(["ses_2", "ses_1"])
   })
 
   test("created_desc keeps visit/update from reshuffling list order", () => {

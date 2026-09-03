@@ -2,6 +2,7 @@ import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type UserCo
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
+import { resolveBrowserAuthBuildSelection } from "./vite.browser-auth"
 
 /**
  * The chunks the authenticated app awaits BEFORE first paint. app/entry/app.tsx's
@@ -74,9 +75,11 @@ function bootChunkModulepreloadPlugin(): Plugin {
 }
 
 const normalizePath = (p: string) => p.replace(/\\/g, "/")
-const shikiThemesDist = normalizePath(fileURLToPath(
-  new URL("../../node_modules/.bun/@shikijs+themes@4.2.0/node_modules/@shikijs/themes/dist/", import.meta.url),
-))
+const shikiThemesDist = normalizePath(
+  fileURLToPath(
+    new URL("../../node_modules/.bun/@shikijs+themes@4.2.0/node_modules/@shikijs/themes/dist/", import.meta.url),
+  ),
+)
 
 const isDemoBuild = process.env.CLAXEDO_BUILD_TARGET === "demo"
 
@@ -85,6 +88,9 @@ const isDemoBuild = process.env.CLAXEDO_BUILD_TARGET === "demo"
  */
 function cloudConfig({ mode }: { mode: string }): UserConfig {
   const env = loadEnv(mode, process.cwd(), "VITE_")
+  const browserAuth = resolveBrowserAuthBuildSelection(
+    env.VITE_CLAXEDO_AUTH_ADAPTER || process.env.VITE_CLAXEDO_AUTH_ADAPTER,
+  )
   // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-server (see
   // src/deployments/local/port.ts) — the port `claxedo-server dev` listens on.
   const backendTarget = env.VITE_CLAXEDO_SERVER_URL || env.VITE_OPENCODE_BACKEND_URL || "http://127.0.0.1:2593"
@@ -155,25 +161,35 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
         output: {
           manualChunks: {
             "vendor-solid": ["solid-js", "solid-js/web", "solid-js/store"],
-            "vendor-clerk": ["@clerk/clerk-js/headless"],
+            ...browserAuth.manualChunks,
           },
         },
       },
     },
     resolve: {
       alias: [
+        {
+          find: "#browser-auth-adapter",
+          replacement: normalizePath(fileURLToPath(new URL(browserAuth.module, import.meta.url))),
+        },
         // Keep the terminal backend lazy-loaded without making it configurable.
         {
           find: "#terminal-backend",
-          replacement: normalizePath(fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url))),
+          replacement: normalizePath(
+            fileURLToPath(new URL("./src/features/terminal/core/backend/xterm.ts", import.meta.url)),
+          ),
         },
         {
           find: "@claxedo/agent-event-runtime/contracts",
-          replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url))),
+          replacement: normalizePath(
+            fileURLToPath(new URL("../agent-event-runtime/src/contracts/index.ts", import.meta.url)),
+          ),
         },
         {
           find: "@claxedo/agent-event-runtime/opencode-compat",
-          replacement: normalizePath(fileURLToPath(new URL("../agent-event-runtime/src/projections/opencode-compat/index.ts", import.meta.url))),
+          replacement: normalizePath(
+            fileURLToPath(new URL("../agent-event-runtime/src/projections/opencode-compat/index.ts", import.meta.url)),
+          ),
         },
         {
           find: "@claxedo/agent-event-runtime",

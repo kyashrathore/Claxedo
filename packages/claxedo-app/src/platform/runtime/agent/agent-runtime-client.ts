@@ -1,13 +1,4 @@
-import type {
-  Message,
-  OutputFormat,
-  Part,
-  SessionPromptResponse,
-  TextPartInput,
-  FilePartInput,
-  AgentPartInput,
-  Todo,
-} from "@opencode-ai/sdk/v2/client"
+import type { SessionPromptResponse, Todo } from "@opencode-ai/sdk/v2/client"
 import { apiBearerToken, authFetch } from "@/platform/api/api"
 import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
 import { runtimeRequestError } from "./agent-runtime-request-error"
@@ -16,7 +7,15 @@ import { supportsSessionDirectory, type SessionRef } from "@/platform/identity/s
 import { usesScopedSessionTransport, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { queryClient } from "@/platform/query/query-client"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
-import type { RuntimeSession, SessionMessagePageRequest } from "@/platform/runtime/session"
+import type {
+  AgentRuntimeMessageRow,
+  AgentRuntimeMessagesPage,
+  AgentRuntimePermissionMode,
+  AgentRuntimePermissionModeState,
+  AgentRuntimePromptPayload,
+  RuntimeSession,
+  SessionMessagePageRequest,
+} from "@/platform/runtime/session"
 import {
   controlSessionListUrl,
   workspaceResolveUrl,
@@ -41,6 +40,7 @@ import {
   type AgentRuntimeDirectory,
   type AgentRuntimeSessionResource,
 } from "./agent-runtime-urls"
+import { requestName, sessionPerf } from "@/platform/performance/session-perf"
 export { centralRuntimePath } from "./central-runtime-path"
 export type { AgentRuntimeDirectory } from "./agent-runtime-urls"
 export type {
@@ -49,71 +49,13 @@ export type {
   AgentRuntimeGoalMutationResult,
   AgentRuntimeGoalOptionalField,
 } from "./agent-runtime-goal-client"
-/**
- * One permission mode as the harness describes it.
- *
- * Declared here rather than imported from `@claxedo/agent-sdk-runtime` because
- * this is a WIRE shape — what the route actually serialises — and the app must
- * keep parsing it even when the runtime package moves ahead of the client.
- * `packages/claxedo-app/src/features/session/permission/modes.test.ts` pins it
- * against the runtime's own declaration so the two cannot drift unnoticed.
- */
-export type AgentRuntimePermissionMode = {
-  id: string
-  name: string
-  description?: string
-  level?: "ask" | "auto" | "full"
-}
-export type AgentRuntimePermissionModeState = {
-  modes: AgentRuntimePermissionMode[]
-  currentModeId?: string
-  unsupported?: string
-  appliesFrom: "next-turn" | "next-session"
-}
-
-export type AgentRuntimeMessageRow = {
-  info: Message
-  parts?: Part[]
-}
-
-export type AgentRuntimeMessagesPage = {
-  data?: AgentRuntimeMessageRow[]
-  maxEventOrdinal: number
-  response: Response
-}
-
-/**
- * A workspace directory as the runtime transport addresses it.
- * Exported so callers can name the concept instead of writing a bare string
- * parameter. Directory-string-shape routing is this codebase's largest single
- * piece of debt, and the architecture ratchet counts every new raw string
- * directory parameter; naming the type is the direction out of that debt, not a
- * way around the count.
- * (Written without the raw declaration spelled out, because the ratchet matches
- * on text and would count this comment as another offender.)
- */
-export type AgentRuntimePromptPayload = {
-  sessionID: string
-  directory: AgentRuntimeDirectory
-  agent: string
-  model: { providerID: string; modelID: string }
-  messageID: string
-  parts: Array<(TextPartInput | FilePartInput | AgentPartInput) & { id: string }>
-  variant?: string
-  system?: string
-  format?: OutputFormat
-  /**
-   * The permission mode this turn should run under, applied by the runtime
-   * BEFORE the prompt reaches the harness.
-   *
-   * On the prompt rather than a separate call because of the FIRST turn: the
-   * session is created by this very message, so a mode chosen in the composer
-   * beforehand has no session to be written to yet. Sending it here is the only
-   * way a user's choice can govern the opening turn instead of arriving after
-   * the agent has already acted.
-   */
-  permissionMode?: string
-}
+export type {
+  AgentRuntimeMessageRow,
+  AgentRuntimeMessagesPage,
+  AgentRuntimePermissionMode,
+  AgentRuntimePermissionModeState,
+  AgentRuntimePromptPayload,
+} from "@/platform/runtime/session"
 
 type ControlSessionRow = RuntimeSession & {
   session_id?: string
@@ -333,6 +275,22 @@ export function createAgentRuntimeClient(options: {
       loopback: centralTransportForServer(agentRuntimeBaseUrl(serverUrl())) === "loopback",
       targetReachable: options.workspaceReachable,
     })
+    const span = sessionPerf.span("request.session", {
+      via: route.via,
+      resource: input.resource ?? "session",
+      sessionId: input.sessionID,
+      method: init?.method?.toUpperCase() ?? "GET",
+      url: requestName(runtimeUrl),
+    })
+    try {
+      const response = await sessionResourceResponse()
+      span.end({ status: response.status, ok: response.ok })
+      return response
+    } catch (error) {
+      span.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
+    async function sessionResourceResponse() {
     switch (route.via) {
       case "runtime-session-ref":
         return await runtimeTransport({
@@ -357,6 +315,7 @@ export function createAgentRuntimeClient(options: {
         }), init)
       case "direct":
         return await request(runtimeUrl, init)
+    }
     }
   }
 
@@ -383,12 +342,25 @@ export function createAgentRuntimeClient(options: {
       ? await workspaceTarget(input.directory, { forceResolve: method !== "GET" && method !== "HEAD" })
       : undefined
     const sessionRef = signed && target?.workspaceId ? undefined : options.sessionRef
-    return await runtimeTransport({
-      directory: input.directory,
-      sessionRef,
-      workspaceId: target?.workspaceId,
-      preferRelayOnLoopback: signed,
-    }).fetch(centralRuntimePath(input.path, sessionRef), init)
+    const span = sessionPerf.span("request.runtime", {
+      method,
+      path: input.path.split("?")[0] ?? input.path,
+      ...(target?.workspaceId ? { workspaceId: target.workspaceId } : {}),
+      ...(target?.workspace?.kind ? { workspaceKind: String(target.workspace.kind) } : {}),
+    })
+    try {
+      const response = await runtimeTransport({
+        directory: input.directory,
+        sessionRef,
+        workspaceId: target?.workspaceId,
+        preferRelayOnLoopback: signed,
+      }).fetch(centralRuntimePath(input.path, sessionRef), init)
+      span.end({ status: response.status, ok: response.ok, url: requestName(response.url || input.path) })
+      return response
+    } catch (error) {
+      span.end({ ok: false, error: error instanceof Error ? error.message : String(error) })
+      throw error
+    }
   }
 
   async function fetchRuntimeSession(input: {
@@ -417,7 +389,17 @@ export function createAgentRuntimeClient(options: {
   const listSessions = async (input: { directory: AgentRuntimeDirectory; roots?: boolean; limit?: number }) => {
     if (signed) {
       const target = await workspaceTarget(input.directory)
-      if (target.workspace?.kind === "user-hosted") {
+      // `target.workspace?.kind` is `workspaceTarget()`'s own derivation, which
+      // only confirms a kind from an id already in hand (session ref, explicit
+      // option, or a `ws_`/`workspace:` directory ref) or from the resolve
+      // response's `kind` field. A user-hosted workspace addressed by its
+      // filesystem-path directory can still resolve a `workspaceId` there
+      // without a `kind` — the hosted control plane does not track kind for a
+      // directory it does not itself own — so fall back to `options.workspaceKind`,
+      // the caller-confirmed kind threaded down from the signed inventory (see
+      // its declaration above). Without this, that case fell through to the
+      // central sessions list, which holds nothing for user-hosted workspaces.
+      if ((target.workspace?.kind ?? options.workspaceKind) === "user-hosted") {
         const url = sessionListUrl({
           serverUrl: serverUrl(),
           scope: input.directory,
@@ -714,7 +696,12 @@ export function createAgentRuntimeClient(options: {
       })
     },
     subscribeToEvents(input: { serverUrl?: string; sessionID?: string; workspaceId?: string }) {
-      if (!input.workspaceId) return claxedoEventsUrl({ serverUrl: input.serverUrl ?? serverUrl() })
+      if (!input.workspaceId) {
+        return claxedoEventsUrl({
+          serverUrl: input.serverUrl ?? serverUrl(),
+          ...(input.sessionID ? { sessionID: input.sessionID } : {}),
+        })
+      }
       const url = new URL(`/workspaces/${encodeURIComponent(input.workspaceId)}/global/event`, input.serverUrl ?? serverUrl())
       if (input.sessionID) url.searchParams.set("sessionID", input.sessionID)
       return url

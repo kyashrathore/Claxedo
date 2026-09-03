@@ -8,6 +8,8 @@ const calls = vi.hoisted(() => ({
   offline: vi.fn(),
   acquire: vi.fn(() => ({ release: vi.fn() })),
   retry: vi.fn(),
+  retainConnection: vi.fn(),
+  workspaceRegistry: undefined as undefined | { retainConnection: (input: unknown) => boolean },
 }))
 
 vi.mock("../../../app/integrations/claxedo-events", () => ({
@@ -49,6 +51,10 @@ vi.mock("./workspace-connection", () => ({
   workspaceOffline: calls.offline,
 }))
 
+vi.mock("./workspace-scope", () => ({
+  useWorkspaceScopeRegistryOptional: () => calls.workspaceRegistry,
+}))
+
 afterEach(cleanup)
 
 beforeEach(() => {
@@ -56,6 +62,8 @@ beforeEach(() => {
   calls.offline.mockReset()
   calls.acquire.mockClear()
   calls.retry.mockReset()
+  calls.retainConnection.mockReset()
+  calls.workspaceRegistry = undefined
   calls.acquire.mockReturnValue({ release: vi.fn() })
 })
 
@@ -164,7 +172,7 @@ describe("WorkspaceGate", () => {
     expect(screen.getByTestId("workspace-offline")).toBeTruthy()
   })
 
-  test("each mounted gate over the same workspace acquires its own ref-counted handle", () => {
+  test("standalone gates acquire their own ref-counted handles without a workspace host", () => {
     calls.connection.mockReturnValue({ status: "ready" })
     calls.offline.mockReturnValue(undefined)
 
@@ -182,6 +190,27 @@ describe("WorkspaceGate", () => {
     // second surface.
     const acquiredIds = calls.acquire.mock.calls.map(([input]) => input.workspaceId)
     expect(acquiredIds.filter((id) => id === "ws_split")).toHaveLength(2)
+  })
+
+  test("delegates the connection lease to the workspace host", () => {
+    calls.retainConnection.mockReturnValue(true)
+    calls.workspaceRegistry = { retainConnection: calls.retainConnection }
+    calls.connection.mockReturnValue({ status: "ready" })
+    calls.offline.mockReturnValue(undefined)
+
+    render(() => (
+      <WorkspaceGate workspaceId="ws_owned" kind="cloud" directory="/workspace">
+        <div data-testid="ready-session" />
+      </WorkspaceGate>
+    ))
+
+    expect(calls.retainConnection).toHaveBeenCalledOnce()
+    expect(calls.retainConnection).toHaveBeenCalledWith({
+      workspaceId: "ws_owned",
+      kind: "cloud",
+      directory: "/workspace",
+    })
+    expect(calls.acquire).not.toHaveBeenCalled()
   })
 
   // RESOLVED 2026-07-11 (WP-B5): the "second pane refs stuck at 1" symptom (e2e

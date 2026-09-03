@@ -6,6 +6,9 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { shellDataKeys } from "@/platform/sync/keys"
 import { setSessionStatusQueryData } from "@/features/session/data/sync/queries"
+import { configureServiceContributions } from "@/app/composition/service-contributions"
+import type { ContentSurfaceContribution } from "@/app/integrations/content-surface-contract"
+import { SERVICE_PROTOCOL_VERSION } from "@claxedo/service-contract"
 
 type GlobalSdk = Parameters<typeof bootstrapGlobal>[0]["globalSDK"]
 type DirectorySdk = Parameters<typeof bootstrapDirectory>[0]["sdk"]
@@ -141,14 +144,71 @@ function harnessProviderUrl(harness = "claude-acp", base = "http://localhost:409
 }
 
 describe("bootstrapGlobal", () => {
-  test("hydrates global state from healthy bootstrap payload", async () => {
+  test("sends browser credentials and atomically follows the authenticated service catalog", async () => {
+    const registered: string[] = []
+    const loaded: string[] = []
+    configureServiceContributions({
+      local: [],
+      loaders: {
+        workgraph: async () => {
+          loaded.push("workgraph")
+          return {
+            contentSurfaces: [{
+              id: "workgraph",
+              tier: "claxedo-first-party",
+              surface: "workgraph",
+              slot: "workbench",
+              renderer: () => null,
+            } as ContentSurfaceContribution],
+          }
+        },
+      },
+      register: (surface) => registered.push(surface.id),
+      unregister: (surface) => registered.splice(registered.indexOf(surface.id), 1),
+    })
+
+    const authenticated = {
+      authenticated: true,
+      services: [{
+        serviceId: "workgraph",
+        protocolVersion: SERVICE_PROTOCOL_VERSION,
+        schemaVersion: 1,
+        state: "enabled",
+      }],
+    }
+    const requests: Request[] = []
+    let payload: unknown = authenticated
+    const fetch = async (input: URL | RequestInfo, init?: RequestInit) => {
+      requests.push(input instanceof Request ? input : new Request(input, init))
+      return Response.json(payload)
+    }
+    const run = () => bootstrapGlobal({
+      baseUrl: "https://api.example.test",
+      globalSDK: globalSdk(),
+      fetch: fetch as typeof globalThis.fetch,
+      connectErrorTitle: "",
+      connectErrorDescription: "",
+      requestFailedTitle: "",
+      translate: (key: string) => key,
+      formatMoreCount: String,
+      setGlobalState: () => undefined,
+    })
+
+    await run()
+    expect(requests[0]?.url).toBe("https://api.example.test/api/claxedo/services")
+    expect(requests[0]?.credentials).toBe("include")
+    expect(loaded).toEqual(["workgraph"])
+    expect(registered).toEqual(["workgraph"])
+
+    payload = { ...authenticated, authenticated: false, services: [] }
+    await run()
+    expect(registered).toEqual([])
+  })
+
+  test("a loopback boot seeds only the path from the daemon aggregate", async () => {
     const globalState: Partial<GlobalBootstrapState> = {
       ready: false,
       path: { state: "", config: "", worktree: "", directory: "", home: "" },
-      project: [],
-      provider: { all: [], connected: [], default: {} },
-      provider_auth: {},
-      config: {},
       reload: undefined,
     }
     const setGlobalState = (patch: Partial<GlobalBootstrapState>) => Object.assign(globalState, patch)
@@ -186,105 +246,34 @@ describe("bootstrapGlobal", () => {
     expect(urls).toEqual(["http://localhost:4096/api/claxedo/bootstrap?harness=claude-acp application/json"])
     expect(globalState.ready).toBe(true)
     expect(globalState.path?.directory).toBe("/tmp/ws")
-    expect(globalState.project?.map((item) => item.id)).toEqual(["proj_1"])
-    expect(queryClient.getQueryData(queryKeys.controlPlane.projects("http://localhost:4096"))).toEqual(globalState.project)
-    expect(globalState.config).toEqual({ theme: "system" })
+    expect(queryClient.getQueryData(queryKeys.directory.path("http://localhost:4096", ""))?.home).toBe("/home/test")
 
-    // A HARNESS-qualified bootstrap fetched a harness-qualified catalog, so it
-    // lands under that harness's key and NOT the global one. It previously did
-    // both, which published claude-acp's five-provider catalog as the app-wide
-    // provider list: the settings provider page and every harness-less picker
-    // then rendered that harness's catalog. `GlobalBootstrapState.provider`
-    // is the global catalog, so a harness bootstrap must leave it untouched.
+    // The workspace catalog has ONE owner (features/workspaces/data/workspace-catalog.ts)
+    // and boot is not it: a payload carrying projects must not seed the rail.
+    expect(queryClient.getQueryData(queryKeys.controlPlane.projects("http://localhost:4096"))).toBeUndefined()
+    // Provider catalogs and auth are per-workspace, per-harness reads that
+    // `bootstrapDirectory` owns; global config is no longer a client key at all.
     expect(
-      queryClient.getQueryData<NormalizedProviderListResponse>(
-        queryKeys.controlPlane.providers("http://localhost:4096", undefined, "claude-acp"),
-      )?.connected,
-    ).toEqual(["claude-acp"])
-    expect(queryClient.getQueryData(queryKeys.controlPlane.providers("http://localhost:4096"))).toBeUndefined()
-    expect(globalState.provider?.connected).toEqual([])
-
-    expect(queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4096", "claude-acp"))).toEqual({
-      "claude-acp": { type: "api", authenticated: true },
-    })
-    expect(queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4096"))).toBeUndefined()
-    expect(globalState.provider_auth).toEqual({})
+      queryClient.getQueryData(queryKeys.controlPlane.providers("http://localhost:4096", undefined, "claude-acp")),
+    ).toBeUndefined()
+    expect(
+      queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4096", undefined, "claude-acp")),
+    ).toBeUndefined()
+    expect(queryClient.getQueryData(["global", "http://localhost:4096", "config"])).toBeUndefined()
   })
 
-  // OpenCode owns its own cache key; an opencode bootstrap must land there
-  // (and still publish global state) so settings/pickers read the right catalog.
-  test("an opencode bootstrap still publishes the global catalog", async () => {
-    const globalState: Partial<GlobalBootstrapState> = {
-      ready: false,
-      path: { state: "", config: "", worktree: "", directory: "", home: "" },
-      project: [],
-      provider: { all: [], connected: [], default: {} },
-      provider_auth: {},
-      config: {},
-      reload: undefined,
-    }
-    const setGlobalState = (patch: Partial<GlobalBootstrapState>) => Object.assign(globalState, patch)
-    const fetch = async () =>
-      new Response(JSON.stringify({
-        healthy: true,
-        path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
-        project: [],
-        provider: {
-          all: [{ id: "anthropic", name: "Anthropic", env: [], models: { opus: { id: "opus", name: "Opus" } } }],
-          connected: ["anthropic"],
-          default: { anthropic: "opus" },
-        },
-        provider_auth: { anthropic: { type: "api", authenticated: true } },
-        config: {},
-      }), { status: 200 })
+  test("a non-loopback boot never requests the aggregate", async () => {
+    const urls: string[] = []
+    const globalState: Partial<GlobalBootstrapState> = { ready: false }
 
     await bootstrapGlobal({
-      baseUrl: "http://localhost:4097",
+      baseUrl: "https://api.example.test",
       globalSDK: globalSdk(),
-      fetch: fetch as typeof globalThis.fetch,
-      connectErrorTitle: "",
-      connectErrorDescription: "",
-      requestFailedTitle: "",
-      translate: (key: string) => key,
-      formatMoreCount: (count: number) => String(count),
-      setGlobalState,
-      harnessType: "opencode",
-    })
-
-    expect(globalState.provider?.connected).toEqual(["anthropic"])
-    expect(
-      queryClient.getQueryData<NormalizedProviderListResponse>(
-        queryKeys.controlPlane.providers("http://localhost:4097", undefined, "opencode"),
-      )?.connected,
-    ).toEqual(["anthropic"])
-    expect(queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4097", "opencode"))).toEqual({
-      anthropic: { type: "api", authenticated: true },
-    })
-  })
-
-  test("a provider error in an otherwise healthy bootstrap never becomes an empty cached catalog", async () => {
-    const baseUrl = "http://localhost:4197"
-    const globalState: Partial<GlobalBootstrapState> = {
-      ready: false,
-      provider: normalizeProviderList(providers({
-        all: [provider({ id: "existing", name: "Existing" })],
-      })),
-    }
-
-    await bootstrapGlobal({
-      baseUrl,
-      globalSDK: globalSdk(),
-      fetch: async () => Response.json({
-        healthy: true,
-        path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
-        project: [],
-        provider: {
-          ok: false,
-          error: { code: "provider_models_unavailable", message: "engine is still starting" },
-        },
-        provider_auth: {},
-        config: {},
-      }),
+      fetch: (async (input: URL | RequestInfo, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init)
+        urls.push(req.url)
+        return Response.json({ authenticated: false, services: [] })
+      }) as typeof globalThis.fetch,
       connectErrorTitle: "",
       connectErrorDescription: "",
       requestFailedTitle: "",
@@ -294,88 +283,24 @@ describe("bootstrapGlobal", () => {
       harnessType: "opencode",
     })
 
-    expect(queryClient.getQueryData(queryKeys.controlPlane.providers(baseUrl))).toBeUndefined()
-    expect([...globalState.provider!.all.keys()]).toEqual(["existing"])
+    expect(urls.some((url) => url.includes("/api/claxedo/bootstrap"))).toBe(false)
+    expect(urls).toEqual(["https://api.example.test/api/claxedo/services"])
     expect(globalState.ready).toBe(true)
   })
 
-  test("a compact opencode bootstrap preserves provider details loaded on demand", async () => {
-    const baseUrl = "http://localhost:4098"
-    queryClient.setQueryData(
-      queryKeys.controlPlane.providers(baseUrl),
-      normalizeProviderList(providers({
-        all: [provider({
-          id: "anthropic",
-          name: "Anthropic",
-          env: ["ANTHROPIC_API_KEY"],
-          models: {
-            sonnet: { id: "sonnet", name: "Sonnet" },
-            opus: { id: "opus", name: "Opus" },
-          },
-        })],
-        connected: ["anthropic"],
-        default: { anthropic: "sonnet" },
-      })),
-    )
-
-    await bootstrapGlobal({
-      baseUrl,
-      globalSDK: globalSdk(),
-      fetch: async () => new Response(JSON.stringify({
-        healthy: true,
-        path: { state: "", config: "", worktree: "/tmp/ws", directory: "/tmp/ws", home: "" },
-        project: [],
-        provider: {
-          all: [{
-            id: "anthropic",
-            name: "Anthropic",
-            env: [],
-            models: { sonnet: { id: "sonnet", name: "Sonnet" } },
-          }],
-          connected: ["anthropic"],
-          default: { anthropic: "sonnet" },
-        },
-        provider_auth: {},
-        config: {},
-      }), { status: 200 }),
-      connectErrorTitle: "",
-      connectErrorDescription: "",
-      requestFailedTitle: "",
-      translate: (key: string) => key,
-      formatMoreCount: (count: number) => String(count),
-      setGlobalState: () => undefined,
-      harnessType: "opencode",
-    })
-
-    const cached = queryClient.getQueryData<NormalizedProviderListResponse>(
-      queryKeys.controlPlane.providers(baseUrl),
-    )
-    expect(Object.keys(cached?.all.get("anthropic")?.models ?? {})).toEqual(["sonnet", "opus"])
-    expect(cached?.all.get("anthropic")?.env).toEqual(["ANTHROPIC_API_KEY"])
-  })
-
-  test("hydrates provider auth through the non-persisted control-plane query bucket on fallback boot", async () => {
+  test("a loopback boot without the aggregate falls back to the daemon's own path route", async () => {
     const globalState: Partial<GlobalBootstrapState> = {
       ready: false,
       path: { state: "", config: "", worktree: "", directory: "", home: "" },
-      project: [],
-      provider: { all: [], connected: [], default: {} },
-      provider_auth: {},
-      config: {},
       reload: undefined,
     }
-    const setGlobalState = (patch: Partial<GlobalBootstrapState>) => Object.assign(globalState, patch)
     let authCalls = 0
 
     await bootstrapGlobal({
       baseUrl: "http://localhost:4096",
       globalSDK: globalSdk({
         provider: {
-          list: async () => ({
-            data: providers({
-              all: [provider({ id: "anthropic", name: "Anthropic" })],
-            }),
-          }),
+          list: async () => ({ data: providers({ all: [provider({ id: "anthropic", name: "Anthropic" })] }) }),
           auth: async () => {
             authCalls++
             return { data: { anthropic: [{ type: "api", authenticated: true }] } }
@@ -388,15 +313,14 @@ describe("bootstrapGlobal", () => {
       requestFailedTitle: "",
       translate: (key: string) => key,
       formatMoreCount: (count: number) => String(count),
-      setGlobalState,
+      setGlobalState: (patch) => Object.assign(globalState, patch),
     })
 
-    expect(authCalls).toBe(1)
     expect(globalState.ready).toBe(true)
-    expect(globalState.provider_auth?.anthropic?.[0]?.authenticated).toBe(true)
-    expect(queryClient.getQueryData(queryKeys.controlPlane.providerAuth("http://localhost:4096"))).toEqual({
-      anthropic: [{ type: "api", authenticated: true }],
-    })
+    expect(globalState.path?.worktree).toBe("/tmp/ws")
+    // Boot asks the daemon for nothing else: no provider auth, no catalog.
+    expect(authCalls).toBe(0)
+    expect(queryClient.getQueryData(queryKeys.controlPlane.projects("http://localhost:4096"))).toBeUndefined()
   })
 })
 
@@ -839,7 +763,9 @@ describe("override bootstrapDirectory", () => {
     expect(urls).toContain("http://relay.test/workspaces/ws_cloud/command")
     expect(directoryProviders("https://app.claxedo.test", "opencode", "workspace:ws_cloud")?.default.opencode).toBe("big-pickle")
     expect(
-      queryClient.getQueryData<Command[]>(queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud"))
+      queryClient.getQueryData<Command[]>(
+        queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud", undefined, "cloud:ws_cloud"),
+      )
         ?.map((item) => item.name),
     ).toEqual(["build"])
     expect(directoryPath("https://app.claxedo.test", "workspace:ws_cloud")?.directory).toBe("workspace:ws_cloud")

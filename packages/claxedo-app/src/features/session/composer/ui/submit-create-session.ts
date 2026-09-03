@@ -1,7 +1,7 @@
 import type { CloudLog } from "@/features/session/ui/components/cloud-startup-view"
 import { appendWorkspaceRuntimeLog } from "@/platform/runtime/workspace-log"
 import type { useClaxedoState } from "@/features/session/app-ports"
-import { scheduleSessionProjectionPull } from "@/platform/runtime/agent/session-projection"
+import { scheduleSessionProjectionPull, sessionProjectionBacking } from "@/platform/runtime/agent/session-projection"
 import { invalidateSessionListQueries } from "@/features/session/data/query/session-list"
 import type {
   HarnessConfigPromoter,
@@ -20,6 +20,11 @@ import {
   type ProjectCatalogItem,
   type RuntimeWorkspaceRef,
 } from "../workspace-resolver"
+import {
+  reservePrivateSession,
+  type PrivateSessionReservation,
+} from "@/platform/runtime/private-session-reservation"
+import { holdSessionEventScope } from "@/platform/runtime/session-event-scope"
 
 export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull
 
@@ -27,6 +32,7 @@ export type SubmitSessionCreateClient = {
   readonly session: SubmitSessionGetClient["session"] & {
     create(
       input: {
+        readonly id?: string
         readonly directory: SubmitDirectory
         readonly agent: string
         readonly model: { readonly providerID: string; readonly id: string; readonly variant?: string }
@@ -43,6 +49,10 @@ export type SubmitSessionTargetAcquisitionInput = {
   readonly replaceSession: boolean
   readonly harnessMode: boolean
   readonly signedControlPlane: boolean
+  readonly workspaceId?: string
+  readonly serverUrl?: string
+  readonly request?: typeof fetch
+  readonly reserveManagedSession?: typeof reservePrivateSession
   readonly sessionDirectory: SubmitDirectory
   readonly client: SubmitSessionGetClient
   readonly sessionClient: () => SubmitSessionGetClient
@@ -66,7 +76,8 @@ export type SubmitSessionTargetAcquisitionInput = {
     readonly sessionID: string | undefined
     readonly sessionConfig: SubmitSessionTargetAcquisitionInput["sessionConfig"]
   }) => Promise<SubmitSessionTarget | undefined>
-  readonly onOpencodeCreateError: (err: unknown) => void
+  /** Reports a session that could not be created, for either harness mode. */
+  readonly onCreateError: (err: unknown) => void
 }
 
 export type CloudStartupState = {
@@ -143,26 +154,68 @@ export async function acquireSubmitSessionTarget(
 }
 
 async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionInput) {
+  const reservation = input.signedControlPlane
+    ? await (input.reserveManagedSession ?? reservePrivateSession)({
+        workspaceId: requiredWorkspaceId(input.workspaceId),
+        kind: "create",
+        ...(input.explicitSessionID && input.explicitSessionID !== "new"
+          ? { sessionId: input.explicitSessionID }
+          : {}),
+        ...(input.serverUrl ? { serverUrl: input.serverUrl } : {}),
+        ...(input.request ? { request: input.request } : {}),
+      })
+    : undefined
   if (input.harnessMode) {
     const session = await input.claimHarnessSession({
       scope: input.scope,
       directory: input.sessionDirectory,
-      sessionID: input.explicitSessionID,
+      sessionID: reservation?.sessionId ?? input.explicitSessionID,
       sessionConfig: input.sessionConfig,
-    }).catch(() => undefined)
-    if (session) input.boot(session.id)
+    }).catch((err) => {
+      input.onCreateError(err)
+      return undefined
+    })
+    if (session) {
+      input.boot(session.id)
+      openSessionEventStreams(session.id)
+    }
     return session
   }
 
-  return await createOpencodeSession(input).catch((err) => {
-    input.onOpencodeCreateError(err)
+  const session = await createOpencodeSession(input, reservation).catch((err) => {
+    input.onCreateError(err)
     return undefined
   })
+  if (session) openSessionEventStreams(session.id)
+  return session
 }
 
-async function createOpencodeSession(input: SubmitSessionTargetAcquisitionInput) {
+/**
+ * Publishes the created session to `session-event-scope`, the owner of which
+ * session's scoped streams must be open.
+ *
+ * A relay-backed runtime serves SESSION-scoped event streams, so until some
+ * owner names the session there is no stream to receive it on. This is the
+ * first moment the session id is authoritative and the last moment before the
+ * caller dispatches its first prompt, so publishing here is what lets both
+ * lanes open BEFORE that turn's frames exist — the shell route still points at
+ * the draft at this point and only navigates afterwards.
+ *
+ * A local (loopback) runtime is unmanaged: its workspace stream already carries
+ * every session, so the published scope changes nothing there and needs no
+ * branch of its own.
+ */
+function openSessionEventStreams(sessionID: string) {
+  holdSessionEventScope(sessionID)
+}
+
+async function createOpencodeSession(
+  input: SubmitSessionTargetAcquisitionInput,
+  reservation?: PrivateSessionReservation,
+) {
   const headers: Record<string, string> = {}
   if (input.draftId) headers["x-claxedo-draft-id"] = input.draftId
+  if (reservation) headers["x-claxedo-session-registration-operation"] = reservation.operationId
   const client = input.createSessionClient({
     directory: input.sessionDirectory,
     harnessType: input.sessionHarnessType,
@@ -171,6 +224,7 @@ async function createOpencodeSession(input: SubmitSessionTargetAcquisitionInput)
     perform: async () => {
       const res = await client.session.create(
         {
+          ...(reservation ? { id: reservation.sessionId } : {}),
           directory: input.sessionDirectory,
           agent: input.sessionConfig.agent,
           model: {
@@ -187,6 +241,12 @@ async function createOpencodeSession(input: SubmitSessionTargetAcquisitionInput)
     ...(input.draftId === undefined ? {} : { draftId: input.draftId }),
     ...(input.events === undefined ? {} : { events: input.events }),
   })
+}
+
+function requiredWorkspaceId(value: string | undefined) {
+  const workspaceId = value?.trim()
+  if (!workspaceId) throw new Error("Signed session creation requires an authoritative workspace id")
+  return workspaceId
 }
 
 export function finalizeSubmitSessionTarget(input: {
@@ -238,16 +298,16 @@ export function finalizeSubmitSessionTarget(input: {
       model: input.model,
       variant: input.variant ?? null,
     })
-    const runtimeRef = sessionWorkspaceRuntimeRef({
+    const backing = sessionProjectionBacking(sessionWorkspaceRuntimeRef({
       directory: input.sessionDirectory,
       ...(sessionRef === undefined ? {} : { sessionRef }),
-    })
-    const projection = (input.scheduleProjectionPull ?? scheduleSessionProjectionPull)({
+    }))
+    const projection = backing && (input.scheduleProjectionPull ?? scheduleSessionProjectionPull)({
       action: "register",
       reason: "session-created",
-      workspaceId: runtimeRef?.workspaceId,
+      workspaceId: backing.workspaceId,
       sessionId: input.session.id,
-      idempotencyKey: `session-created:${runtimeRef?.workspaceId ?? ""}:${input.session.id}:${input.draftId ?? ""}`,
+      idempotencyKey: `session-created:${backing.workspaceId}:${input.session.id}:${input.draftId ?? ""}`,
     })
     if (projection) {
       void projection.then((registered) => {

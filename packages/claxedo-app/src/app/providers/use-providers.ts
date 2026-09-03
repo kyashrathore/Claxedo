@@ -6,7 +6,7 @@ import type { NormalizedProviderListResponse } from "@/platform/query/provider-l
 import { popularProviders } from "@/platform/query/provider-list"
 import { loadProviderDetailsOnce, updateProviderQueryData } from "@/platform/query/provider-cache"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { providerDetailsQuery } from "@/platform/query/control-plane"
+import { providerAuthQuery, providerDetailsQuery } from "@/platform/query/control-plane"
 
 export { popularProviders } from "@/platform/query/provider-list"
 
@@ -14,7 +14,7 @@ type ProviderList = NormalizedProviderListResponse
 type ProviderMap = ProviderList["all"]
 type Provider = ProviderMap extends Map<string, infer T> ? T : never
 
-export function mergeProviderQuery(input: {
+function mergeProviderQuery(input: {
   queryKey: readonly unknown[]
   current: NormalizedProviderListResponse
   providerId: string
@@ -64,32 +64,59 @@ function connectedIds(input: unknown) {
 
 const popularProviderSet = new Set(popularProviders)
 
-export function useProviders(harnessType?: string | (() => string | undefined)) {
-  const queryOptions = useQueryOptions()
+type HarnessInput = string | (() => string)
+type ScopeInput = string | undefined | (() => string | undefined)
+
+/**
+ * The (workspace-or-directory scope, harness) a catalog read is about.
+ *
+ * Inside a workspace SDK scope the scope is that pane's STABLE workspace
+ * identity: when it resolves a workspaceId, the `workspace:<id>` ref form, so
+ * the query routes through the relay regardless of whether `sdk.directory` is
+ * the workspace-ref or the runtime's filesystem path (the latter flickered the
+ * provider list to the empty central catalog → "Select model"). Outside one,
+ * the scope is whatever the caller names; `undefined` names the CENTRAL
+ * server's own runtime, which is a real scope — the catalog of the harness
+ * installed on the machine the app is talking to, belonging to no workspace.
+ */
+function useProviderScope(harnessType: HarnessInput, scope?: ScopeInput) {
   let sdk: ReturnType<typeof useSDK> | undefined
   try {
     sdk = useSDK()
   } catch {
     /* optional outside workspace sdk scope */
   }
-  // Route the provider list by the scope's STABLE workspace identity. When the
-  // scope resolves a workspaceId, use the `workspace:<id>` ref form so the query
-  // routes through the relay regardless of whether `sdk.directory` is the
-  // workspace-ref or the runtime's filesystem path (the latter flickers the
-  // provider list to the empty central → "Select model"). Local and central
-  // scopes use their directory string as the stable identity.
   const dir = createMemo(() => {
     const workspaceId = sdk?.workspaceId
     if (workspaceId) return `workspace:${workspaceId}`
-    return sdk?.directory || ""
+    if (sdk?.directory) return sdk.directory
+    return (typeof scope === "function" ? scope() : scope) ?? ""
   })
-  // Unqualified `/provider` follows the workspace default harness (often agents),
-  // not OpenCode. Callers that omit a harness historically expect the OpenCode
-  // catalog — default to it so settings popular rows and model pickers stay filled.
-  const harness = createMemo(() => {
-    const value = typeof harnessType === "function" ? harnessType() : harnessType
-    return value || "opencode"
-  })
+  const harness = createMemo(() => (typeof harnessType === "function" ? harnessType() : harnessType))
+  return { sdk, dir, harness }
+}
+
+/**
+ * The provider AUTHENTICATION the machine serving this scope holds for this
+ * harness. Same triple as the catalog: two machines answering the same harness
+ * name hold different credentials for it.
+ */
+export function useProviderAuth(harnessType: HarnessInput, scope?: ScopeInput) {
+  const { sdk, dir, harness } = useProviderScope(harnessType, scope)
+  return useWorkspaceQuery(() => ({
+    ...providerAuthQuery({
+      baseUrl: getClaxedoServerUrl(),
+      directory: dir() || null,
+      harnessType: harness(),
+      request: sdk ? (url, init) => sdk.request(`${url.pathname}${url.search}`, init) : authFetch,
+    }),
+    workspaceId: sdk?.workspaceId,
+  }))
+}
+
+export function useProviders(harnessType: HarnessInput, scope?: ScopeInput) {
+  const queryOptions = useQueryOptions()
+  const { sdk, dir, harness } = useProviderScope(harnessType, scope)
   // The provider/model catalog routes through the relay for a workspace-backed
   // scope (`workspace:<id>` ref above) — gate it on the WorkspaceConnection
   // authority so the model picker cannot fire-and-fail against an offline

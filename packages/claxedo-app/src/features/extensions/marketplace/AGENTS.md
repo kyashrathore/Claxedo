@@ -7,6 +7,12 @@ networking helpers (`install-flow.ts`) and the themed confirm dialog
 tested directly (`install-flow.test.ts`); keep new parsing/networking logic
 there, not inline in the Solid components.
 
+`transport.ts` owns the one question the panel must not answer itself: WHICH
+MACHINE serves an extensions request. It resolves the focused workspace's
+record and takes the same placement branch `platform/runtime/http-backend.ts`
+takes — central for a local workspace, that workspace's runtime transport for a
+cloud or user-hosted one. No component may build an extensions base URL.
+
 ```json
 {
   "owns": "Marketplace panel UI + catalog/install data layer + confirm dialog",

@@ -1,4 +1,6 @@
 import { legacyDirectoryFromRouteKey } from "@/platform/identity/route"
+import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { resolveRecovery, rememberRecovery } from "../workbench/pane-terminal-recovery"
 import { createTransport } from "@/platform/runtime/transport"
 import {
@@ -15,6 +17,7 @@ export type TerminalSessionPreview = {
   tabId?: string
   workspaceId?: string
   provider?: string
+  providerSessionId?: string | null
   sessionId?: string | null
   transcriptPath?: string | null
   refName?: string
@@ -125,6 +128,7 @@ const parse = (value: unknown): TerminalSessionPreview | null => {
     tabId: optional(session.tabId),
     workspaceId: workspace(session.workspaceId),
     provider: optional(session.provider),
+    providerSessionId: nullable(session.providerSessionId),
     sessionId: nullable(session.sessionId),
     transcriptPath: nullable(session.transcriptPath),
     refName: optional(session.refName),
@@ -157,8 +161,9 @@ const previewTransport = (
   dir: string,
   request: typeof fetch,
   workspace?: Awaited<ReturnType<NonNullable<TerminalSessionPreviewOptions["resolveWorkspaceRuntime"]>>>,
+  signedWorkspace?: ReturnType<typeof cachedSignedWorkspace>,
 ) => createTransport({
-  placement: terminalScopedPlacement(site, workspace),
+  placement: terminalScopedPlacement(site, workspace, signedWorkspace),
   serverUrl: site,
   directory: dir,
   request,
@@ -197,17 +202,22 @@ export const loadTerminalSessionPreview = (
     requestKey: previewRequestKey(nextTarget.cacheKey),
     ttl: PREVIEW_TTL,
     run: async () => {
-      if (opts.directory && opts.resolveWorkspaceRuntime) {
-        const resolved = await opts.resolveWorkspaceRuntime({ directory: opts.directory }).catch(() => null)
-        if ((resolved?.kind === "cloud" || resolved?.kind === "user-hosted") && resolved.workspaceId) {
+      const signedWorkspace = cachedSignedWorkspace(sdkUrl, opts.directory)
+      if (opts.directory && (signedWorkspace || opts.resolveWorkspaceRuntime)) {
+        // A signed inventory match is canonical placement authority — it wins
+        // over (and skips) the liveness read, same precedent as
+        // `terminalScopedPlacement`'s own precedence between the two.
+        const resolved = signedWorkspace ??
+          await opts.resolveWorkspaceRuntime?.({ directory: opts.directory }).catch(() => null)
+        if (resolved && isRelayBackedWorkspaceKind(resolved.kind) && resolved.workspaceId) {
           return fetchPreviewBody(
             previewPath(nextTarget.id),
-            previewTransport(nextTarget.site, opts.directory, request, resolved).fetch,
+            previewTransport(nextTarget.site, opts.directory, request, resolved, signedWorkspace).fetch,
           )
         }
         return fetchPreviewBody(
           previewPath(nextTarget.id, opts.directory),
-          previewTransport(nextTarget.site, opts.directory, request, resolved).fetch,
+          previewTransport(nextTarget.site, opts.directory, request, resolved, signedWorkspace).fetch,
         )
       }
       return fetchPreviewBody(

@@ -72,6 +72,9 @@ export type ApiModuleShape = {
   isDemoMode: () => boolean
   isEmbedMode: () => boolean
   isHostedAppHostname: (hostname: string | undefined) => boolean
+  isLoopbackHttpUrl: (input: string | undefined) => boolean
+  usesUnsignedLocalTransport: (input: string | undefined) => boolean
+  unsignedLocalFetch: typeof fetch
   fixDir: (input: string | undefined) => string | undefined
   normalizeUrl: (url: string | undefined) => string | undefined
   getClaxedoServerUrl: () => string
@@ -126,6 +129,17 @@ function isDemoMode(): boolean {
 function isEmbedMode(): boolean {
   if (typeof window === "undefined") return false
   return new URLSearchParams(window.location.search).has("embed")
+}
+
+function isLoopbackHttpUrl(input: string | undefined): boolean {
+  if (!input) return false
+  try {
+    const url = new URL(input)
+    return (url.protocol === "http:" || url.protocol === "https:")
+      && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]")
+  } catch {
+    return false
+  }
 }
 
 function isHostedAppHostname(hostname: string | undefined): boolean {
@@ -224,6 +238,9 @@ export function createMockApi(overrides: MockApiOverrides = {}): MockApiFixture 
     isDemoMode: overrides.isDemoMode ?? isDemoMode,
     isEmbedMode: overrides.isEmbedMode ?? isEmbedMode,
     isHostedAppHostname: overrides.isHostedAppHostname ?? isHostedAppHostname,
+    isLoopbackHttpUrl,
+    usesUnsignedLocalTransport: isLoopbackHttpUrl,
+    unsignedLocalFetch: authFetch,
     fixDir: overrides.fixDir ?? fixDir,
     normalizeUrl: overrides.normalizeUrl ?? normalizeUrl,
     getClaxedoServerUrl,
