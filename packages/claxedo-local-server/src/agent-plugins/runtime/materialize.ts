@@ -92,7 +92,14 @@ export async function readMaterializedAgentPluginGeneration(
         throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection root is invalid`)
       }
       const entry = item
-      const materializedRoot = typeof entry.root === "string" ? contained(root, entry.root) : undefined
+      // A harness-owned root (see `external` on the projection type) was
+      // recorded absolute; every other root must sit inside this generation.
+      const external = entry.external === true
+      const materializedRoot = typeof entry.root !== "string"
+        ? undefined
+        : external
+          ? (path.isAbsolute(entry.root) ? entry.root : undefined)
+          : contained(root, entry.root)
       if (typeof entry.pluginInstanceId !== "string" || !materializedRoot) {
         throw new AgentPluginMaterializationError("artifact-unavailable", `Active ${harnessId} projection root escapes its generation`)
       }
@@ -100,6 +107,7 @@ export async function readMaterializedAgentPluginGeneration(
         pluginInstanceId: entry.pluginInstanceId,
         root: materializedRoot,
         dataRoot: pluginDataDirectory(runtimeRoot, entry.pluginInstanceId),
+        ...(external ? { external: true as const } : {}),
       }
     })
     const configFile = row.configFile === undefined
@@ -283,7 +291,9 @@ export async function materializeAgentPluginGeneration(input: {
           ...(projection.configFile ? { configFile: path.relative(finalRoot, projection.configFile) } : {}),
           pluginRoots: projection.pluginRoots.map((plugin) => ({
             pluginInstanceId: plugin.pluginInstanceId,
-            root: path.relative(finalRoot, plugin.root),
+            ...(plugin.external
+              ? { root: plugin.root, external: true }
+              : { root: path.relative(finalRoot, plugin.root) }),
           })),
         },
       ])),

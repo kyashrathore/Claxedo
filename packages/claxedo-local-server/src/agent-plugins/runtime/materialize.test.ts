@@ -5,6 +5,7 @@ import { afterEach, describe, expect, test } from "vitest"
 import { inspectPluginDirectory } from "@claxedo/server-core/agent-plugins/artifacts/node-tree"
 import { LocalAgentPluginArtifactStore } from "../artifacts/local-store"
 import { nativeAgentPluginAdapter } from "./adapters/native"
+import { cursorAgentPluginAdapter } from "./adapters/cursor"
 import { openCodeAgentPluginAdapter } from "./adapters/opencode"
 import { readActiveGeneration } from "./generation"
 import { pluginDataDirectory } from "./plugin-data"
@@ -190,6 +191,34 @@ describe("materializeAgentPluginGeneration", () => {
     const restored = await readMaterializedAgentPluginGeneration(runtimeRoot)
     expect(restored?.revision).toBe(1)
     expect(restored?.projections.opencode?.configFile).toBe(configFile)
+    expect(restored?.projections.opencode?.pluginRoots[0]?.root).toContain(restored!.root)
+  })
+
+  test("restores a generation whose Cursor projection lives in the harness-owned local plugins directory", async () => {
+    // Regression: the daemon died at startup after any restart following a
+    // Cursor activation, because the re-read required every projection root
+    // to sit inside the generation while Cursor's contract is
+    // ~/.cursor/plugins/local/<name>.
+    const dataRoot = await temporary("claxedo-plugin-artifacts-")
+    const runtimeRoot = await temporary("claxedo-plugin-runtime-")
+    const home = await temporary("claxedo-plugin-home-")
+    const artifacts = new LocalAgentPluginArtifactStore(dataRoot)
+    const source = await plugin("review", "one")
+    const retained = await artifacts.put(await inspectPluginDirectory(source))
+
+    const materialized = await materializeAgentPluginGeneration({
+      runtimeRoot,
+      identity: { mode: "unsigned", machineId: "machine-1" },
+      revision: 1,
+      selections: [{ pluginInstanceId: "review", artifactDigest: retained.digest, harnessIds: ["cursor", "opencode"] }],
+      artifacts,
+      adapters: [openCodeAgentPluginAdapter(), cursorAgentPluginAdapter({ userHomeDirectory: home })],
+    })
+    const cursorRoot = materialized.projections.cursor!.pluginRoots[0]!.root
+    expect(cursorRoot.startsWith(path.join(home, ".cursor", "plugins", "local"))).toBe(true)
+
+    const restored = await readMaterializedAgentPluginGeneration(runtimeRoot)
+    expect(restored?.projections.cursor?.pluginRoots[0]).toMatchObject({ pluginInstanceId: "review", root: cursorRoot, external: true })
     expect(restored?.projections.opencode?.pluginRoots[0]?.root).toContain(restored!.root)
   })
 })

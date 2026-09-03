@@ -30,6 +30,13 @@ export type HarnessPluginProjection = {
     pluginInstanceId: string
     root: string
     dataRoot: string
+    /**
+     * The harness owns this root's location outside the generation (Cursor
+     * reads one plugin per child of `~/.cursor/plugins/local`), so a restart
+     * re-read accepts the recorded absolute path instead of requiring it to
+     * sit inside the generation directory.
+     */
+    external?: true
   }>
   diagnostics: Array<{
     pluginInstanceId: string

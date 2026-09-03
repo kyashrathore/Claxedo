@@ -110,6 +110,7 @@ export function cursorAgentPluginAdapter(input: { userHomeDirectory?: string } =
           pluginInstanceId: plugin.pluginInstanceId,
           root: path.join(localRoot, name),
           dataRoot: plugin.dataRoot,
+          external: true as const,
         })),
         diagnostics: [],
       }
