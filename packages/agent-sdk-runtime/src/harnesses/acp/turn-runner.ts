@@ -13,6 +13,7 @@ import {
   type CompatEvent,
 } from "../../compat-events"
 import type { AgentRuntimeStreamEvent, PromptInput } from "../../index"
+import { turnWriteFence, type AgentTurnWriteContext } from "../../adapter-contract"
 import { firstTurnErrorData } from "../../first-turn-error"
 import { Log } from "../../log"
 import { recovering } from "../../status"
@@ -253,7 +254,12 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     return projection
   }
 
-  async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
+  async *sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
     const t0 = Date.now()
     log.info("sendMessage: start", { id, directory, partCount: input.parts.length })
 
@@ -266,14 +272,21 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     const leaveActivePrompt = enterActivePrompt(this.harnessId())
 
     try {
-      yield* this._sendMessage(id, input, directory, t0)
+      yield* this._sendMessage(id, input, directory, t0, writeContext)
     } finally {
       leaveActivePrompt()
       leaveBusy()
     }
   }
 
-  async *_sendMessage(id: string, input: PromptInput, directory: string, t0: number): AsyncIterable<AgentRuntimeStreamEvent> {
+  async *_sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    t0: number,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
+    const fenced = turnWriteFence(writeContext)
     const current = this.store.getAgentSessionId(id)
     if (!current) {
       log.error("sendMessage: session not found in DB", { id })
@@ -319,7 +332,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     })
 
     const recover = this.store.consumeRecoveryError(id)
-    const queue = this.startTurnEvents(id, agentSessionId, directory, created, input, recover)
+    const queue = this.startTurnEvents(id, agentSessionId, directory, created, input, recover, fenced)
     let promptDone = false
     let promptError: string | null = null
     let promptPromise: Promise<void> = Promise.resolve()
@@ -361,6 +374,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       for (const r of resolvers.splice(0)) r()
     }
     const parentProjector = createTurnEventProjector({
+      ...fenced,
       store: this.store,
       owner: {
         sessionId: id,
@@ -376,6 +390,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     const router = createChildEventRouter({
       parent: parentProjector,
       createChildProjector: (target) => createTurnEventProjector({
+        ...fenced,
         store: this.store,
         owner: {
           sessionId: target.sessionId,
@@ -492,6 +507,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
             acpPermissionRequest({ permId, sessionId: id, tool, kind, paths }),
           )
           this.store.appendEvent({
+            ...fenced,
             sessionId: id,
             agentSessionId,
             payload: event,
@@ -562,6 +578,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
               tokens: messageUsage(result.usage),
             })
             this.store.appendEvent({
+              ...fenced,
               sessionId: id,
               agentSessionId,
               payload: event,
@@ -654,6 +671,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
         variant: input.variant,
       }))
       this.store.appendEvent({
+        ...fenced,
         sessionId: id,
         agentSessionId,
         payload: updated,
@@ -666,6 +684,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       yield updated
       const event = sessionError(promptError, id)
       this.store.appendEvent({
+        ...fenced,
         sessionId: id,
         agentSessionId,
         payload: event,
@@ -689,6 +708,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     created: number,
     input: PromptInput,
     recoveryMessage: string | null | undefined,
+    fenced: { fencingToken?: number },
   ): CompatEvent[] {
     const start: CompatEvent[] = [
       sessionStatus(sessionId, recoveryMessage ? recovering(recoveryMessage) : { type: "busy" }),
@@ -713,6 +733,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       })),
     ]
     const committed = this.store.startTurn({
+      ...fenced,
       sessionId,
       agentSessionId,
       userMessageId: input.userMessageId,

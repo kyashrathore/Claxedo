@@ -438,7 +438,7 @@ describe("CodexHarnessAdapter", () => {
     })
     adapter.setModel("gpt-5.5")
 
-    expect(await adapter.probeConfigOptions(fake.dir)).toContainEqual({
+    expect((await adapter.probeConfigOptions(fake.dir)).options).toContainEqual({
       id: "effort",
       name: "Effort",
       description: "How much reasoning effort the model should use",

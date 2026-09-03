@@ -28,19 +28,27 @@ const source = readFileSync(new URL("./index.ts", import.meta.url), "utf8")
   .replace(/(^|[^:])\/\/.*$/gm, "$1")
 
 describe("setupAccount", () => {
-  test("supplies a refresh-token exchange", () => {
+  test("supplies refresh to the descriptor-selected native adapter", () => {
     expect(source).toContain("refreshExchange")
-    expect(source).toMatch(/refresh:\s*\(refreshToken\) =>/)
+    expect(source).toMatch(/createDesktopNativeAuth\(\{[\s\S]*refresh: refreshExchange\(controlPlaneFetch\)/)
   })
 
-  test("binds the refresh exchange to the configured client and token endpoint", () => {
-    // A refresh posted to anything but the token endpoint the sign-in used, or
-    // under a different client id, is rejected — and rejection on this path is
-    // what signs the user out.
-    expect(source).toMatch(/refresh\(\{\s*tokenUrl: config\.tokenUrl,\s*clientId: config\.clientId,\s*refreshToken\s*\}\)/)
+  test("passes only the selected core origin, never baked provider details", () => {
+    expect(source).toContain("coreOrigin: config.coreOrigin")
+    expect(source).not.toMatch(/config\.(authorizeUrl|tokenUrl|clientId|scope)/)
   })
 
-  test("restores only after Electron secure storage is ready and before renderer initialization", () => {
+  test("identifies release-validation requests only at the selected core origin", () => {
+    expect(source).toContain('new URL(next.url).origin !== config.coreOrigin')
+    expect(source).toContain('headers.set("x-claxedo-multiplayer-validation-operation"')
+    expect(source).toContain("fetch: controlPlaneFetch")
+    expect(source).toContain("exchange: tokenExchange(controlPlaneFetch)")
+    expect(source).toContain("refresh: refreshExchange(controlPlaneFetch)")
+    expect(source).not.toContain("exchange: tokenExchange()")
+    expect(source).not.toContain("refresh: refreshExchange()")
+  })
+
+  test("starts restore after Electron secure storage is ready without blocking renderer initialization", () => {
     const entry = readFileSync(new URL("../index.ts", import.meta.url), "utf8")
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/.*$/gm, "$1")
@@ -48,7 +56,7 @@ describe("setupAccount", () => {
       .replace(/\/\*[\s\S]*?\*\//g, "")
       .replace(/(^|[^:])\/\/.*$/gm, "$1")
     const ready = entry.indexOf("app.whenReady().then")
-    const restore = entry.indexOf("await account.ready")
+    const restore = entry.indexOf("void account.ready.catch")
     const initialize = entry.indexOf("await initialize()")
 
     expect(entry).toContain("adapterReady: app.whenReady()")
@@ -56,5 +64,6 @@ describe("setupAccount", () => {
     expect(ready).toBeGreaterThan(-1)
     expect(restore).toBeGreaterThan(ready)
     expect(restore).toBeLessThan(initialize)
+    expect(entry).not.toContain("await account.ready")
   })
 })

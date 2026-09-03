@@ -21,7 +21,7 @@ export type UserCode = Schema.Schema.Type<typeof UserCode>
 
 export class Info extends Schema.Class<Info>("Account")({
   id: AccountID,
-  email: Schema.String,
+  user_id: Schema.String,
   url: Schema.String,
   active_org_id: Schema.NullOr(OrgID),
 }) {}
@@ -70,6 +70,21 @@ export class AccountTransportError extends Schema.TaggedErrorClass<AccountTransp
 
 export type AccountError = AccountRepoError | AccountServiceError | AccountTransportError
 
+export class NativeLoginBinding extends Schema.Class<NativeLoginBinding>("NativeLoginBinding")({
+  adapter: Schema.Literals(["better-auth", "clerk"]),
+  deploymentId: Schema.String,
+  configurationVersion: Schema.String,
+  descriptorExpiresAt: Schema.Number,
+  issuer: Schema.String,
+  flow: Schema.Literals(["device-authorization", "adapter-native"]),
+  tokenEndpointOrigin: Schema.String,
+  controlPlaneOrigin: Schema.String,
+  clientId: Schema.String,
+  resource: Schema.String,
+  scopes: Schema.Array(Schema.String),
+  tokenKind: Schema.Literal("access-token"),
+}) {}
+
 export class Login extends Schema.Class<Login>("Login")({
   code: DeviceCode,
   user: UserCode,
@@ -77,10 +92,11 @@ export class Login extends Schema.Class<Login>("Login")({
   server: Schema.String,
   expiry: Schema.Duration,
   interval: Schema.Duration,
+  binding: NativeLoginBinding,
 }) {}
 
 export class PollSuccess extends Schema.TaggedClass<PollSuccess>()("PollSuccess", {
-  email: Schema.String,
+  userId: Schema.String,
 }) {}
 
 export class PollPending extends Schema.TaggedClass<PollPending>()("PollPending", {}) {}

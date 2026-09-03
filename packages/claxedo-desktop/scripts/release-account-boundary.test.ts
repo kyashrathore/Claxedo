@@ -21,31 +21,32 @@ describe("desktop release account boundary", () => {
     expect(workflow).toMatch(/create-release:\n\s+needs: \[prepare, build-desktop, qualify-u8-release\]/)
   })
 
-  test("electron-vite bakes the same public-client names the account adapter reads", () => {
+  test("electron-vite bakes only the selected core origin", () => {
     const config = readFileSync(resolve(root, "packages/claxedo-desktop/electron.vite.config.ts"), "utf8")
+    expect(config).toContain('"CLAXEDO_CORE_ORIGIN"')
     for (const name of [
       "CLAXEDO_ACCOUNT_AUTHORIZE_URL",
       "CLAXEDO_ACCOUNT_TOKEN_URL",
       "CLAXEDO_ACCOUNT_CLIENT_ID",
       "CLAXEDO_ACCOUNT_SCOPE",
       "CLAXEDO_SERVER_ORIGIN",
-    ]) expect(config).toContain(`"${name}"`)
-    expect(config).not.toContain("CLAXEDO_ACCOUNT_SERVER_ORIGIN")
+    ])
+      expect(config).not.toContain(`"${name}"`)
     expect(config).not.toContain("CLIENT_SECRET")
   })
 
-  for (const workflow of [
-    ".github/workflows/release-claxedo.yml",
-    ".github/workflows/release-gates.yml",
-  ]) {
-    test(`${workflow} bakes only the Electron public-client registration`, () => {
+  for (const workflow of [".github/workflows/release-claxedo.yml", ".github/workflows/release-gates.yml"]) {
+    test(`${workflow} bakes only the selected core origin`, () => {
       const step = desktopBuildStep(workflow)
+      expect(step).toContain("CLAXEDO_CORE_ORIGIN")
       for (const name of [
         "CLAXEDO_ACCOUNT_AUTHORIZE_URL",
         "CLAXEDO_ACCOUNT_TOKEN_URL",
         "CLAXEDO_ACCOUNT_CLIENT_ID",
+        "CLAXEDO_ACCOUNT_SCOPE",
         "CLAXEDO_SERVER_ORIGIN",
-      ]) expect(step).toContain(name)
+      ])
+        expect(step).not.toContain(name)
 
       expect(step).not.toContain("VITE_CLERK_PUBLISHABLE_KEY")
       expect(step).not.toContain("VITE_CONVEX_URL")

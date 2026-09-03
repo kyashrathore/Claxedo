@@ -27,6 +27,7 @@ import {
   sandboxSessionExists,
   type HarnessConfigOption,
   type OptionsResponse,
+  isRuntimeHarnessConfigOptions,
   liveHarnessOptionsResponse,
   type SandboxHealth,
   workspaceRuntimeHealthPath,
@@ -340,7 +341,7 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
   url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
   url.searchParams.set("harness", harnessKey(harness) ?? harness.id)
   if (harnessBinary(harness)) url.searchParams.set("binary", harnessBinary(harness)!)
-  const live = await sandboxJson<unknown[]>(
+  const live = await sandboxJson<unknown>(
     ws,
     `${url.pathname}${url.search}`,
     undefined,
@@ -352,8 +353,8 @@ async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptio
   if (live && typeof live === "object" && !Array.isArray(live) && (("ok" in live && live.ok === false) || "error" in live)) {
     return catalogFallback() ?? c.json(live, 502)
   }
-  if (Array.isArray(live) && live.length > 0) {
-    return c.json(liveHarnessOptionsResponse(live as HarnessConfigOption[]))
+  if (isRuntimeHarnessConfigOptions(live) && live.options.length > 0) {
+    return c.json(liveHarnessOptionsResponse(live))
   }
   return catalogFallback() ?? c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 502)
 }

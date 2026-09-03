@@ -91,6 +91,28 @@ describe("streamGlobalEvents", () => {
   })
 })
 
+describe("globalEventSessionId", () => {
+  // `session.deleted` carries the id the same place `session.updated` does
+  // (`properties.info.id`, never `properties.sessionID`). A signed
+  // principal's per-session visibility check keys on this resolving, so a
+  // delete notice with an unresolvable id would silently deny every signed
+  // subscriber — the opposite of a private frame leaking, but still a
+  // consumer never seeing a deletion it is entitled to.
+  test("resolves the id from properties.info for session.deleted, like session.updated", () => {
+    expect(globalEventSessionId({
+      directory: "/tmp/central",
+      payload: { id: "evt_1", type: "session.deleted", properties: { info: { id: "ses_1" } } },
+    })).toBe("ses_1")
+  })
+
+  test("does not resolve an id from an unrelated event's info field", () => {
+    expect(globalEventSessionId({
+      directory: "/tmp/central",
+      payload: { id: "evt_2", type: "message.updated", properties: { info: { id: "msg_1" } } },
+    })).toBeUndefined()
+  })
+})
+
 describe("signed global event visibility", () => {
   const principal = eventScopePrincipal({
     mode: "signed",

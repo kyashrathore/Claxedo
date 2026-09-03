@@ -89,7 +89,7 @@ describe("AcpHarnessAdapter.probeConfigOptions", () => {
     }
 
     try {
-      await expect(out.probeConfigOptions(path.resolve("/work"))).resolves.toEqual([{ id: "model" }])
+      await expect(out.probeConfigOptions(path.resolve("/work"))).resolves.toEqual({ options: [{ id: "model" }] })
     } finally {}
   })
 })

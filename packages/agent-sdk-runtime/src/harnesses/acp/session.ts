@@ -11,7 +11,7 @@ import type {
 } from "@agentclientprotocol/sdk"
 import { methods } from "@agentclientprotocol/sdk"
 import type { PromptInput } from "../../index"
-import type { AgentPermissionMode, AgentPermissionModeState } from "../../adapter-contract"
+import type { AgentPermissionMode, AgentPermissionModeState, ResolvedHarnessModel } from "../../adapter-contract"
 import { GOAL_OPTIONAL_FIELDS, type GoalAction, type GoalCapabilities, type GoalOptionalField } from "../../capabilities"
 
 export const ACP_GOAL_METHODS = {
@@ -34,6 +34,12 @@ type Caps = InitializeResponse["agentCapabilities"] | null | undefined
 type Meta = {
   configOptions?: SessionConfigOption[] | null
   modes?: unknown
+  /**
+   * The agent's model state, as `session/new`, `session/load` and
+   * `session/resume` report it. Read untyped because the model channel is an
+   * agent-side extension rather than a field of the negotiated response type.
+   */
+  models?: unknown
 }
 
 function rec(input: unknown): Record<string, unknown> | null {
@@ -139,6 +145,15 @@ export type ACPState = {
    * clamp the selection when its available modes change.
    */
   currentModeId?: string
+  /**
+   * The model the agent named as current, from its model channel.
+   *
+   * Absent when the agent named none, or named one it gave no label for. An
+   * agent that publishes a `model` config option instead is served from that
+   * option by {@link resolvedModel}, so this holds only what the model channel
+   * itself reported.
+   */
+  model?: ResolvedHarnessModel
 }
 
 export type ACPConn = ClientContext
@@ -183,6 +198,24 @@ function extractCurrentModeId(modes: unknown): string | undefined {
   return obj ? str(obj.currentModeId) : undefined
 }
 
+/**
+ * The current model from the agent's model state.
+ *
+ * `currentModelId` names it and the matching entry of `availableModels` labels
+ * it. An id the agent listed no entry for yields nothing: the agent named a
+ * model it never described, and inventing a label for it would put a Claxedo
+ * string where the agent's own word belongs.
+ */
+function extractResolvedModel(models: unknown): ResolvedHarnessModel | undefined {
+  const state = rec(models)
+  const id = str(state?.currentModelId)
+  if (!id) return undefined
+  const available = Array.isArray(state?.availableModels) ? state.availableModels : []
+  const info = available.map((entry) => rec(entry)).find((entry) => str(entry?.modelId) === id)
+  const name = str(info?.name)
+  return name ? { id, name } : undefined
+}
+
 export function merge(state: ACPState, meta: Meta): ACPState {
   const next: ACPState = {
     caps: state.caps,
@@ -196,7 +229,31 @@ export function merge(state: ACPState, meta: Meta): ACPState {
         ? extractCurrentModeId(meta.modes)
         : undefined
       : state.currentModeId
-  return currentModeId ? { ...next, currentModeId } : next
+  const model = meta.models !== undefined
+    ? (meta.models !== null ? extractResolvedModel(meta.models) : undefined)
+    : state.model
+  return {
+    ...next,
+    ...(currentModeId ? { currentModeId } : {}),
+    ...(model ? { model } : {}),
+  }
+}
+
+/**
+ * The model this agent will use, from whichever channel it speaks.
+ *
+ * The model channel is authoritative when the agent has one; otherwise the
+ * `model` config option's current value carries the same answer. An agent with
+ * neither resolves to nothing, which is the truthful report that it named no
+ * model at all.
+ */
+export function resolvedModel(state: ACPState): ResolvedHarnessModel | undefined {
+  if (state.model) return state.model
+  const cfg = pick(state.cfg, "model")
+  const id = currentValue(cfg)
+  if (!cfg || cfg.type !== "select" || !id) return undefined
+  const name = flat(cfg.options ?? []).find((item) => String(item.value) === id)?.name
+  return name ? { id, name } : undefined
 }
 
 const withLevel = (mode: { id: string; name: string; description?: string }): AgentPermissionMode => {

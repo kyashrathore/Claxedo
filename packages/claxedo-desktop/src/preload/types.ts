@@ -227,6 +227,10 @@ export type ElectronAPI = {
     start: () => Promise<unknown>
     pause: () => Promise<unknown>
     revoke: () => Promise<unknown>
+    /** Publish one workspace from this machine (main + child own the proof). */
+    share: (input: { workspaceId: string; displayName?: string }) => Promise<unknown>
+    /** Withdraw one workspace from this machine. */
+    unshare: (input: { workspaceId: string }) => Promise<unknown>
     /** Push, for the transitions the user did not cause. Returns an unsubscribe. */
     onStatus: (listener: (status: unknown) => void) => () => void
   }

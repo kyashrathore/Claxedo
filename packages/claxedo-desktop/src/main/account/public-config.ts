@@ -1,31 +1,28 @@
 import type { AccountConfigEnv } from "./account-config"
 
-/** Public OAuth values baked into an official desktop artifact. */
+/** A deployment origin is public; provider/client configuration is descriptor-owned. */
 export type BakedAccountConfig = {
-  CLAXEDO_ACCOUNT_AUTHORIZE_URL?: string
-  CLAXEDO_ACCOUNT_TOKEN_URL?: string
-  CLAXEDO_ACCOUNT_CLIENT_ID?: string
-  CLAXEDO_ACCOUNT_SCOPE?: string
-  CLAXEDO_SERVER_ORIGIN?: string
+  CLAXEDO_CORE_ORIGIN?: string
+  CLAXEDO_RELEASE_VALIDATION_OPERATION?: string
+  CLAXEDO_RELEASE_CANARY_JOURNEY_ID?: string
 }
 
 /**
- * Resolve the desktop public-client configuration.
- *
- * A self-built app may override the baked public values at launch. Secrets are
- * intentionally absent: PKCE desktop clients are public clients and must not
- * carry a client secret in either source or the artifact.
+ * This composer is an ALLOWLIST: whatever it does not name never reaches the
+ * account config, no matter what the process environment holds. A release
+ * phase input added to `AccountConfigEnv` must be added here too, or it is
+ * silently dropped and the build behaves as if the phase were unset.
  */
-export function accountConfigEnvironment(
-  runtime: AccountConfigEnv,
-  baked: BakedAccountConfig,
-): AccountConfigEnv {
-  const value = (name: keyof AccountConfigEnv) => runtime[name]?.trim() || baked[name]?.trim() || undefined
+export function accountConfigEnvironment(runtime: AccountConfigEnv, baked: BakedAccountConfig): AccountConfigEnv {
   return {
-    CLAXEDO_ACCOUNT_AUTHORIZE_URL: value("CLAXEDO_ACCOUNT_AUTHORIZE_URL"),
-    CLAXEDO_ACCOUNT_TOKEN_URL: value("CLAXEDO_ACCOUNT_TOKEN_URL"),
-    CLAXEDO_ACCOUNT_CLIENT_ID: value("CLAXEDO_ACCOUNT_CLIENT_ID"),
-    CLAXEDO_ACCOUNT_SCOPE: value("CLAXEDO_ACCOUNT_SCOPE"),
-    CLAXEDO_SERVER_ORIGIN: value("CLAXEDO_SERVER_ORIGIN"),
+    CLAXEDO_CORE_ORIGIN: runtime.CLAXEDO_CORE_ORIGIN?.trim() || baked.CLAXEDO_CORE_ORIGIN?.trim() || undefined,
+    CLAXEDO_RELEASE_VALIDATION_OPERATION:
+      runtime.CLAXEDO_RELEASE_VALIDATION_OPERATION?.trim()
+      || baked.CLAXEDO_RELEASE_VALIDATION_OPERATION?.trim()
+      || undefined,
+    CLAXEDO_RELEASE_CANARY_JOURNEY_ID:
+      runtime.CLAXEDO_RELEASE_CANARY_JOURNEY_ID?.trim()
+      || baked.CLAXEDO_RELEASE_CANARY_JOURNEY_ID?.trim()
+      || undefined,
   }
 }

@@ -117,7 +117,10 @@ export function globalEventSessionId(frame: CentralFrame) {
     const info = properties.info && typeof properties.info === "object" && !Array.isArray(properties.info)
       ? properties.info as Record<string, unknown>
       : undefined
-    if (frame.payload.type === "session.updated" && typeof info?.id === "string") return info.id
+    if (
+      (frame.payload.type === "session.updated" || frame.payload.type === "session.deleted")
+      && typeof info?.id === "string"
+    ) return info.id
     if (typeof info?.sessionID === "string") return info.sessionID
     const part = properties.part && typeof properties.part === "object" && !Array.isArray(properties.part)
       ? properties.part as Record<string, unknown>

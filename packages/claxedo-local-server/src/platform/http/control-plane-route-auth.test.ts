@@ -67,9 +67,15 @@ describe("provider-auth gate (signed mode)", () => {
   // could replace a box's provider credentials with their own.
   const credentialsStub = { credentials: {} } as never
 
-  function mountProvider(config: ControlPlaneAuthConfig) {
+  // Signed mode always composes a verifier; these tests use one that refuses
+  // every token, which is what a malformed bearer meets in production.
+  const refusingVerifier = async () => {
+    throw Object.assign(new Error("Bearer token is invalid"), { status: 401 })
+  }
+
+  function mountProvider(config: ControlPlaneAuthConfig, verifier: typeof refusingVerifier | null = refusingVerifier) {
     const app = new Hono()
-    app.route("/", ProviderAuthRoutes(credentialsStub, { authConfig: config }))
+    app.route("/", ProviderAuthRoutes(credentialsStub, { authConfig: config, ...(verifier ? { verifier: verifier as never } : {}) }))
     return app
   }
 
@@ -119,6 +125,14 @@ describe("provider-auth gate (signed mode)", () => {
     expect(await missing.json()).toMatchObject({ error: { code: "missing_bearer_token" } })
     const invalid = await app.request("/provider/auth", { headers: { authorization: "Bearer nope" } })
     expect(await invalid.json()).toMatchObject({ error: { code: "invalid_bearer_token" } })
+  })
+
+  test("a signed composition without a verifier fails closed and says so", async () => {
+    const res = await mountProvider(signedConfig, null).request("/provider/auth", {
+      headers: { authorization: "Bearer nope" },
+    })
+    expect(res.status).toBe(503)
+    expect(await res.json()).toMatchObject({ error: { code: "auth_verifier_unavailable" } })
   })
 })
 

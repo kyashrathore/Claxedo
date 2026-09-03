@@ -1,4 +1,5 @@
 import type { AgentRuntimeEvent, ToolDisplay } from "../../contracts/agent-runtime-event"
+import { userMessageIdForAssistantReply } from "../../contracts/turn-message-ids"
 import type { RuntimeProjection } from "../../core/projection"
 import type { ProjectionSnapshot } from "../../core/state"
 import { projectionSnapshot } from "../../core/state"
@@ -6,6 +7,7 @@ import { normalizeCompatEventWithDiagnostics, type CompatEnvelope, withDir } fro
 import { createOpencodeCompatProjectionState, type OpencodeCompatProjectionState } from "./state"
 import type {
   EventMessageCompleted,
+  EventMessageUpdated,
   EventMessagePartDelta,
   EventMessagePartUpdated,
   EventPermissionAsked,
@@ -41,6 +43,21 @@ export type OpencodeCompatProjectionOptions = {
   sessionId: string
   directory: string
   assistantMessageId: string
+  /**
+   * Whether this projection is the turn's ONLY producer of OpenCode-shaped
+   * events, and so owes its consumers the assistant message row its parts hang
+   * from.
+   *
+   * The OpenCode consumers file a part against an EXISTING message, so a turn's
+   * row has to precede its first part. On the host, the runtime composes this
+   * projection with its own compat producer, which already opens every turn
+   * with that row and knows the agent and model this lane never carries — so
+   * announcing here would only overwrite a complete row with a thinner one, and
+   * those callers leave this off. A consumer reading a workspace's
+   * runtime-events stream has the lane and nothing else: it is the whole
+   * producer for that turn, and turns this on.
+   */
+  announcesAssistantMessage?: boolean
   clock?: () => number
   initialSnapshot?: ProjectionSnapshot<OpencodeCompatProjectionState>
 }
@@ -49,6 +66,12 @@ type CompatContext = OpencodeCompatProjectionState & {
   sessionId: string
   directory: string
   assistantMsgId: string
+  /**
+   * The reply id the TURN was opened with. `assistantMsgId` follows the engine
+   * as a turn steps onto new messages; this one does not, so the user message
+   * the turn answers stays recoverable from it for every step.
+   */
+  turnAssistantMsgId: string
 }
 
 type ToolPart = Extract<OpenCodeCompatPart, { type: "tool" }>
@@ -180,6 +203,109 @@ function sessionAgent(sessionID: string, agentId: string): EventSessionAgent {
   }
 }
 
+function messageUpdated(info: EventMessageUpdated["properties"]["info"]): EventMessageUpdated {
+  return {
+    id: `message.updated:${info.id}`,
+    type: "message.updated",
+    properties: { sessionID: info.sessionID, info },
+  }
+}
+
+/**
+ * The assistant row a turn's parts hang from.
+ *
+ * The OpenCode compat consumers file a part against an EXISTING message: the
+ * transcript store's `upsertPart` / `appendPartDelta` drop a part whose message
+ * row it has never seen. The runtime's own compat producer opens every turn
+ * with this row (`sdk-runtime-adapter`'s `start`: busy, the user row, then the
+ * assistant row) before a single part, and this projection stands in for that
+ * producer on the runtime-events lane, so it owes its consumers the same row.
+ *
+ * `parentID` is the turn's user message, recovered from the reply id by the
+ * runtime's own convention (`userMessageIdForAssistantReply`): an
+ * `AgentRuntimeEvent` names the reply and nothing else, and a consumer's
+ * timeline hangs every row off the user message a reply answers.
+ *
+ * Only the identity fields are knowable here — an `AgentRuntimeEvent` names no
+ * model or provider — so those stay empty and the session's own settled
+ * transcript remains authoritative for them.
+ */
+function announcedAssistantMessage(
+  ctx: CompatContext,
+  now: number,
+  parentID: string,
+): EventMessageUpdated["properties"]["info"] {
+  return {
+    id: ctx.assistantMsgId,
+    sessionID: ctx.sessionId,
+    role: "assistant",
+    time: { created: now },
+    parentID,
+    modelID: "",
+    providerID: "",
+    mode: "auto",
+    agent: ctx.agentId,
+    path: { cwd: ctx.directory, root: ctx.directory },
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+  }
+}
+
+const PART_BEARING_COMPAT_EVENTS = new Set([
+  "message.part.updated",
+  "message.part.delta",
+  "message.completed",
+])
+
+/** The message a part-bearing compat event files against, if it is one. */
+function partBearingMessageId(event: CompatEnvelope): string | undefined {
+  if (!PART_BEARING_COMPAT_EVENTS.has(event.payload.type)) return undefined
+  const properties = event.payload.properties as { messageID?: string; part?: { messageID?: string } }
+  return properties.part?.messageID ?? properties.messageID
+}
+
+/**
+ * Prepends the turn's assistant row the first time this projection emits
+ * anything that hangs off it. Announcing on the first PART rather than on turn
+ * start keeps a session that only ever reports status/diagnostics free of an
+ * empty reply row.
+ *
+ * A reply id outside the runtime's turn convention names no user message, so
+ * there is no row to announce: the frame's producer broke the contract this
+ * lane carries, and the projection says so once per turn instead of parenting
+ * the reply on something it invented.
+ */
+function withAnnouncedAssistantMessage(
+  ctx: CompatContext,
+  events: CompatEnvelope[],
+  now: () => number,
+  announces: boolean,
+) {
+  if (!announces) return events
+  if (ctx.announcedAssistantMsgId === ctx.assistantMsgId) return events
+  // The turn's PROMPT parts hang off their own row, which the lane opens
+  // itself; only a part filed against the reply needs the reply's row first.
+  if (!events.some((event) => partBearingMessageId(event) === ctx.assistantMsgId)) return events
+  ctx.announcedAssistantMsgId = ctx.assistantMsgId
+  const parentID = userMessageIdForAssistantReply(ctx.turnAssistantMsgId)
+  if (!parentID) {
+    return [
+      withDir(ctx.directory, projectionDiagnostic({
+        sessionID: ctx.sessionId,
+        phase: "ingest",
+        code: "projection.opencode_compat.reply_id_outside_turn_convention",
+        message:
+          "OpenCode compatibility projection cannot announce a reply whose id names no user message; " +
+          "the runtime names a turn's reply after the message it answers",
+        severity: "error",
+        raw: ctx.turnAssistantMsgId,
+      })),
+      ...events,
+    ]
+  }
+  return [withDir(ctx.directory, messageUpdated(announcedAssistantMessage(ctx, now(), parentID))), ...events]
+}
+
 function sessionConfig(properties: EventSessionConfig["properties"]): EventSessionConfig {
   return {
     type: "session.config",
@@ -236,12 +362,26 @@ function lossyCompatDiagnostic(ctx: CompatContext, eventType: string, message: s
   }))
 }
 
-function buildSession(input: { id: string; directory: string; title: string; created: number; updated: number }) {
+function buildSession(input: {
+  id: string
+  directory: string
+  title: string
+  created: number
+  updated: number
+  parentID?: string
+  sessionRef?: string
+  host?: "central" | "workspace"
+  workspaceID?: string
+}) {
   return {
     id: input.id,
     slug: input.id,
     projectID: input.directory,
     directory: input.directory,
+    ...(input.parentID ? { parentID: input.parentID } : {}),
+    ...(input.sessionRef ? { sessionRef: input.sessionRef } : {}),
+    ...(input.host ? { host: input.host } : {}),
+    ...(input.workspaceID ? { workspaceID: input.workspaceID } : {}),
     title: input.title,
     version: "local",
     time: { created: input.created, updated: input.updated },
@@ -652,6 +792,59 @@ function snapshotFileDiff(chunk: Extract<AgentRuntimeEvent, { type: "file-diff" 
   }
 }
 
+/**
+ * The turn's PROMPT: its row, and the text arriving on it.
+ *
+ * A viewer attached to someone else's turn has this lane and nothing else, and
+ * a turn is two messages — the reply hangs off the prompt, so a consumer that
+ * never receives the prompt row has nowhere to put the reply. The lane names
+ * the prompt on every `user-message-delta`, so the first chunk opens the row
+ * and each chunk extends its text, exactly as the reply's own parts are built.
+ *
+ * Only what the lane carries is written: no model, and the agent it last
+ * reported. The session's settled transcript stays authoritative for the rest.
+ */
+function userMessageText(
+  ctx: CompatContext,
+  messageId: string,
+  delta: string,
+  now: () => number,
+): CompatEnvelope[] {
+  const events: CompatEnvelope[] = []
+  const eventTime = now()
+  if (ctx.announcedUserMsgId !== messageId) {
+    ctx.announcedUserMsgId = messageId
+    events.push(withDir(ctx.directory, messageUpdated({
+      id: messageId,
+      sessionID: ctx.sessionId,
+      role: "user",
+      time: { created: eventTime },
+      agent: ctx.agentId,
+      model: { providerID: "", modelID: "" },
+    })))
+  }
+  const key = `${messageId}-text`
+  const fresh = !seen(ctx, key)
+  const id = seqId(ctx, key)
+  if (fresh) {
+    events.push(partEvent(ctx.directory, {
+      id,
+      sessionID: ctx.sessionId,
+      messageID: messageId,
+      type: "text",
+      text: "",
+    }, eventTime))
+  }
+  events.push(withDir(ctx.directory, messagePartDelta({
+    sessionID: ctx.sessionId,
+    messageID: messageId,
+    partID: id,
+    field: "text",
+    delta,
+  })))
+  return events
+}
+
 function deltaText(
   ctx: CompatContext,
   type: "text" | "reasoning",
@@ -899,8 +1092,13 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     case "thinking-delta":
       return deltaText(ctx, "reasoning", chunk.delta, now)
 
-    case "user-message-delta":
-      return [lossyCompatDiagnostic(ctx, chunk.type, "OpenCode compatibility projection cannot represent streamed user message chunks", chunk)]
+    case "user-message-delta": {
+      const content = chunk.content
+      if (!chunk.messageId || content.type !== "text") {
+        return [lossyCompatDiagnostic(ctx, chunk.type, "OpenCode compatibility projection cannot represent streamed user message chunks", chunk)]
+      }
+      return userMessageText(ctx, chunk.messageId, content.text, now)
+    }
 
     case "proposed-plan-delta": {
       ctx.proposedPlanText += chunk.delta
@@ -1268,6 +1466,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
     }
 
     case "session-agent":
+      ctx.agentId = chunk.agentId
       return [withDir(ctx.directory, sessionAgent(ctx.sessionId, chunk.agentId))]
 
     case "config-update":
@@ -1288,6 +1487,9 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
         created: time,
         updated: time,
         ...(chunk.parentID ? { parentID: chunk.parentID } : {}),
+        ...(chunk.sessionRef ? { sessionRef: chunk.sessionRef } : {}),
+        ...(chunk.host ? { host: chunk.host } : {}),
+        ...(chunk.workspaceID ? { workspaceID: chunk.workspaceID } : {}),
       })))]
     }
 
@@ -1338,6 +1540,9 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
 
 function syncState(ctx: CompatContext, state: OpencodeCompatProjectionState) {
   state.assistantMsgId = ctx.assistantMsgId
+  state.announcedAssistantMsgId = ctx.announcedAssistantMsgId
+  state.announcedUserMsgId = ctx.announcedUserMsgId
+  state.agentId = ctx.agentId
   state.accumulatedText = ctx.accumulatedText
   state.accumulatedThinkingText = ctx.accumulatedThinkingText
   state.proposedPlanText = ctx.proposedPlanText
@@ -1356,6 +1561,7 @@ function createContext(
     sessionId: options.sessionId,
     directory: options.directory,
     assistantMsgId: state.assistantMsgId ?? options.assistantMessageId,
+    turnAssistantMsgId: options.assistantMessageId,
   }
 }
 
@@ -1415,7 +1621,12 @@ export function createOpencodeCompatProjection(options: OpencodeCompatProjection
     const next = createOpencodeCompatProjectionState(state)
     const ctx = createContext(options, next)
     try {
-      const events = normalizeProjectionEvents(ctx, phase, eventType, project(ctx))
+      const events = normalizeProjectionEvents(
+        ctx,
+        phase,
+        eventType,
+        withAnnouncedAssistantMessage(ctx, project(ctx), now, options.announcesAssistantMessage === true),
+      )
       syncState(ctx, next)
       state = next
       return events

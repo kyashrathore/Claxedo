@@ -91,6 +91,8 @@ import { setupLazyAccount } from "./account/lazy-account"
 import { ACCOUNT_STATE_CHANGED_CHANNEL } from "./account/account-ipc"
 import { accountConfigEnvironment } from "./account/public-config"
 import { machineDisplayName, setupElectronHostConnector } from "./host-connector/electron-child"
+import { remoteAccessFollow } from "./host-connector/account-follow"
+import { describeLocalWorkspace } from "./host-connector/local-workspace-description"
 import { registerHostConnectorIpc } from "./host-connector/ipc"
 import { publishHostConnectorStatus } from "./host-connector/status-channel"
 import { initLogging } from "./logging"
@@ -253,7 +255,15 @@ function setupApp() {
     app.setAsDefaultProtocolClient("claxedo")
     setDockIcon()
     setupAutoUpdater()
-    await account.ready
+    // Account restoration is an optional hosted capability. In particular, a
+    // persisted revocation intent may need a slow or unavailable network before
+    // it can settle. That work must never sit in front of the local daemon or
+    // the first desktop window: the renderer's AccountPort already starts in
+    // `pending` and adopts the authoritative pushed state when restoration
+    // finishes. Keep the rejection observed without making local startup wait.
+    void account.ready.catch((error) => {
+      logger.warn("account restore failed", { error: String(error) })
+    })
     await initialize()
   })
 }
@@ -710,7 +720,43 @@ const account = setupLazyAccount({
   onError: (stage, error) => logger.warn(`[account] ${stage}: ${String(error)}`),
   onStateChange: (next, previous) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(ACCOUNT_STATE_CHANGED_CHANNEL, next)
-    if (previous.status === "signed" && next.status !== "signed") hostConnector?.stop()
+    // Remote access follows the account, in BOTH directions.
+    //
+    // Stopping on auth loss is the fail-closed half and stays exactly as
+    // strict: the moment the account is not signed, this machine stops
+    // beating with a credential the deployment may have revoked.
+    //
+    // The other half is what a two-second control-plane blip cost. A descriptor
+    // 503 puts the account in `unavailable`, the connector stopped, the 60s
+    // enrollment lease expired, and every client was told this machine was
+    // offline — with nothing in `main.log`, nothing in the panel, and no way
+    // back short of the user finding the toggle. `suspendForAuthLapse` records
+    // that the stop was not a decision so the return trip can undo it, and only
+    // it: a user pause or revoke clears that flag inside the supervisor, so
+    // "the user turned it off" is never auto-undone by a later sign-in.
+    const follow = remoteAccessFollow(previous, next)
+    if (follow === "suspend") {
+      if (hostConnector?.suspendForAuthLapse()) {
+        logger.warn(
+          `[host-connector] auth-lapse-suspend: account left "signed" (now "${next.status}") — remote access stopped; it will resume if the account returns`,
+        )
+      }
+      return
+    }
+    if (follow === "resume") {
+      void hostConnector
+        ?.resumeAfterAuthLapse()
+        .then((resumed) => {
+          // `undefined` means the last stop was not a lapse — most often that
+          // the connector was never running. Nothing happened, so nothing is
+          // claimed.
+          if (!resumed) return
+          logger.log(
+            `[host-connector] auth-lapse-resume: account is signed again — remote access restarted, state "${resumed.status}"`,
+          )
+        })
+        .catch((error) => logger.warn(`[host-connector] auth-lapse-resume: ${String(error)}`))
+    }
   },
 })
 
@@ -735,8 +781,39 @@ const account = setupLazyAccount({
  * identity on its network and `identity-store.ts` explains at length why that
  * must not travel to the control plane.
  */
+/**
+ * Push the serving credential from each heartbeat ack to the daemon, which
+ * owns the workspace runtimes and therefore the relay connection. The last
+ * credential is retained so a daemon that becomes ready AFTER the first ack
+ * still starts serving immediately.
+ */
+let lastServingCredential: Record<string, unknown> | null = null
+const pushServing = async (tunnel: Record<string, unknown> | null) => {
+  lastServingCredential = tunnel
+  try {
+    const server = await serverReady.promise
+    const response = await fetch(new URL("/api/claxedo/host-serving", server.url), {
+      method: "PUT",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ credential: tunnel }),
+    })
+    const body = await response.text()
+    // The daemon rejecting the credential (or the ack carrying none) must be
+    // visible: this hop failing silently cost a full acceptance run to find.
+    logger.info(
+      `[host-serving] pushed credential=${tunnel ? "present" : "null"} -> ${response.status} ${body.slice(0, 200)}`,
+    )
+  } catch (error) {
+    logger.warn(`[host-serving] push failed: ${String(error)}`)
+  }
+}
+void serverReady.promise.then(() => {
+  if (lastServingCredential) void pushServing(lastServingCredential)
+})
+
 hostConnector = setupElectronHostConnector({
   runAccountOperation: (name, params) => account.run(name as never, params),
+  describeWorkspace: async (workspaceId) => describeLocalWorkspace((await serverReady.promise).url, workspaceId),
   safeStorage,
   userDataDir: app.getPath("userData"),
   fork: utilityProcess.fork,
@@ -755,6 +832,21 @@ hostConnector = setupElectronHostConnector({
   // because this fires from a heartbeat timer.
   onStatusChange: (state) =>
     publishHostConnectorStatus(mainWindow ?? undefined, state, hostConnectorContext()),
+  onServing: (tunnel) => void pushServing(tunnel),
+  // The daemon composed this machine's workspace runtimes, so the daemon is
+  // the only process that knows how they answer session streams. Read it from
+  // the same loopback surface the serving credential is pushed to, and let the
+  // connector declare it on every heartbeat: the control plane mints each
+  // client's event-stream scope from that declaration and never infers one.
+  sessionAuthority: async () => {
+    const server = await serverReady.promise
+    const response = await fetch(new URL("/api/claxedo/host-serving", server.url))
+    if (!response.ok) throw new Error(`HOSTED_HTTP ${String(response.status)} ${(await response.text()).slice(0, 200)}`)
+    const body = await response.json() as { sessionAuthority?: unknown }
+    return body.sessionAuthority === "local" || body.sessionAuthority === "managed-private"
+      ? body.sessionAuthority
+      : undefined
+  },
 })
 
 /** The two facts the connector's own state cannot carry. See `status-channel.ts`. */

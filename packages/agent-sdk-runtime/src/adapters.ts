@@ -12,9 +12,12 @@ export type {
   AgentMessagePage,
   AgentMessagePageInput,
   AgentHarnessAdapterProcessOptions,
+  AgentTurnWriteContext,
+  AgentConfigOptions,
   AgentHandoffSessionOptions,
   AgentPreparedHandoffSession,
   PermissionDecision,
+  ResolvedHarnessModel,
   SupportsAbort,
   SupportsAgents,
   SupportsCommands,
@@ -26,10 +29,14 @@ export type {
   SupportsQuestions,
   SupportsRevert,
   SupportsRuntimeConfig,
+  SupportsShell,
+  SupportsSummarize,
   SupportsTodos,
   SupportsUnrevert,
+  ShellCommandInput,
+  SummarizeSessionInput,
 } from "./adapter-contract"
-export { requireGoalResource } from "./adapter-contract"
+export { requireGoalResource, resolvedModelFromConfigOptions } from "./adapter-contract"
 export { AgentMessagePageError } from "./message-page"
 export {
   GOAL_ACTIONS,
@@ -108,4 +115,5 @@ export { localPiCredentialProviders, localPiModelBackendResolver } from "./harne
 export type { LocalPiAuthOptions } from "./harnesses/pi/local-auth"
 export { codexBundlePiBackendResolver, codexBundleToOAuth, firstPiModelBackend } from "./harnesses/pi/bundle-auth"
 export type { CodexBundleBackendOptions } from "./harnesses/pi/bundle-auth"
+export { AgentRuntimeStaleTurnError } from "./harnesses/shared/runtime-store"
 export type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"

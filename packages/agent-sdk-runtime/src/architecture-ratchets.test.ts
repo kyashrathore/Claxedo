@@ -11,11 +11,27 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       // runtime Goal surface (mutations, publication, provider-turn projection)
       // on top of the decomposed process/turn helpers reviewed before it.
       // Further extraction (e.g. a PiGoalController) shrinks them; growth fails.
-      "runtime.ts": 970,
-      "harnesses/acp/index.ts": 835,
+      //
+      // Re-measured again where the Cloudflare multiplayer branch merged in.
+      // sdk-runtime-adapter.ts threads the host's durable turn admission fence
+      // through every producer write, and opencode/index.ts gained the session
+      // shell and summarize adapter methods. runtime.ts threads the same fence
+      // but stays below its previous ceiling because the durable turn record
+      // moved out to runtime/turn-record.ts.
+      //
+      // Re-measured again for the resolved-model contract: the ACP adapter and
+      // the native-SDK adapter each state their own config-options payload, so
+      // both gained the one small producer that names the model their harness
+      // reported. Moving either producer to a shared owner is not possible —
+      // ACP options keep the agent's protocol shape and the SDK's do not.
+      // Re-measured for the turn author travelling with its prompt and the
+      // turn message-id owner: the runtime hands the harness the turn's author
+      // and mints the reply id through agent-event-runtime's convention.
+      "runtime.ts": 992,
+      "harnesses/acp/index.ts": 844,
       "harnesses/codex/driver.ts": 755,
-      "harnesses/shared/sdk-runtime-adapter.ts": 853,
-      "harnesses/opencode/index.ts": 873,
+      "harnesses/shared/sdk-runtime-adapter.ts": 890,
+      "harnesses/opencode/index.ts": 906,
       "harnesses/pi/index.ts": 988,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {

@@ -50,11 +50,6 @@ export type HostedOperation = {
 }
 
 export const HOSTED_OPERATIONS = {
-  "account.get": {
-    method: "GET",
-    path: "/api/claxedo/bootstrap",
-    optionalQuery: ["harness", "scope"],
-  },
   "account.mode": { method: "GET", path: "/api/claxedo/mode" },
   "account.compatibility": { method: "GET", path: "/api/claxedo/compatibility" },
   // No idempotency key. The app registry says "the idempotency key for that
@@ -230,7 +225,7 @@ export const HOSTED_OPERATIONS = {
   "host.enrollmentHeartbeat": {
     method: "POST",
     path: "/api/claxedo/host/enrollments/heartbeat",
-    body: ["hostId", "signature", "ttlMs"],
+    body: ["hostId", "signature", "ttlMs", "workspaceIds", "sessionAuthority"],
   },
   // Session people (private share grants + participants). Hosted control plane
   // only — the desktop local sidecar deliberately does not mount these routes.
@@ -262,7 +257,7 @@ export const HOSTED_OPERATIONS = {
   "session.participants.add": {
     method: "POST",
     path: "/api/control/sessions/:sessionId/participants",
-    body: ["workspaceId", "participantTokenIdentifier"],
+    body: ["workspaceId", "participantActorId"],
   },
   "org.list": { method: "GET", path: "/api/control/orgs" },
   "org.create": {
@@ -404,10 +399,14 @@ export const HOSTED_OPERATIONS = {
   },
   "billing.checkout": { method: "POST", path: "/api/billing/checkout", body: ["plan"] },
   "billing.portal": { method: "POST", path: "/api/billing/portal" },
-  "hostLink.register": {
+  "workspace.assignHost": {
     method: "POST",
-    path: "/api/workspace/:id/user-hosted/register",
-    body: ["hostId", "publicKey", "challengeId", "signature", "displayName", "ttlMs"],
+    path: "/api/workspace/:id/host-assignment",
+    body: ["hostId", "displayName", "orgId", "projectId", "repoUrl", "repoName", "gitBranch", "remoteDirectory"],
+  },
+  "workspace.unassignHost": {
+    method: "DELETE",
+    path: "/api/workspace/:id/host-assignment",
   },
   "usage.get": {
     method: "GET",

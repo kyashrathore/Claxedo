@@ -1,55 +1,68 @@
-/**
- * Where the account credential actually lives.
- *
- * `secure-storage.ts` decides whether this machine may hold one; this writes
- * and reads it. The split is deliberate — the policy is the part worth reading
- * carefully, and mixing it with file I/O is how a refusal turns into a
- * "temporary" fallback that stores the token anyway.
- *
- * The stored record keeps the BACKEND that wrote it, not just the ciphertext.
- * Without that, a credential written under Electron's Linux `basic_text`
- * fallback would be silently promoted to trusted the moment a real keyring
- * appeared, having spent its life readable by any process running as the user.
- *
- * Electron is injected so this is testable in a plain Node process.
- */
+import { randomUUID } from "node:crypto"
 
+import type { BoundDesktopCredential } from "./auth-descriptor"
+import { parseBoundDesktopCredential } from "./auth-descriptor"
 import { secureStorageVerdict, storedCredentialDisposition, type StoredCredential } from "./secure-storage"
 
 export type SafeStorageApi = {
   isEncryptionAvailable: () => boolean
   encryptString: (plain: string) => Buffer
   decryptString: (encrypted: Buffer) => string
-  /** Linux only; Electron returns "unknown" elsewhere. */
   getSelectedStorageBackend?: () => string
 }
 
 export type CredentialFile = {
   read: () => string | undefined
-  write: (contents: string) => void
+  replace: (contents: string) => void
+  quarantine: (reason: string) => void
   clear: () => void
 }
 
-export type TokenSet = {
-  accessToken: string
-  refreshToken?: string
-  /** Seconds since the epoch. */
-  expiresAt: number
+export type StoredDesktopCredential = BoundDesktopCredential & {
+  revision: string
+  persistenceState: "active" | "revocation-pending"
+}
+
+type EncryptedDesktopCredential = StoredCredential & {
+  format: "claxedo-desktop-native-v2"
+  revision: string
+  state: "active" | "revocation-pending"
+}
+
+export class CredentialStoreConflict extends Error {
+  constructor() {
+    super("stored credential changed while it was being replaced")
+    this.name = "CredentialStoreConflict"
+  }
 }
 
 export type CredentialStore = {
-  /** The verdict for this machine, so callers can refuse before OAuth. */
   available: () => ReturnType<typeof secureStorageVerdict>
-  save: (tokens: TokenSet) => void
-  /**
-   * Undefined when absent, written by a different backend, undecryptable, or
-   * spent — where spent means the access token has expired AND there is no
-   * refresh token to renew it with. A record past `expiresAt` that still holds
-   * a refresh token comes back intact; deciding to renew it belongs to the
-   * account service, which is the only thing here that can.
-   */
-  load: (now: number) => TokenSet | undefined
+  save: (credential: BoundDesktopCredential, expectedRevision?: string | null) => StoredDesktopCredential
+  load: (now: number) => StoredDesktopCredential | undefined
+  beginRevocation: (expectedRevision: string) => string
+  completeRevocation: (expectedRevision: string) => boolean
+  reject: (expectedRevision: string, reason: string) => void
   clear: () => void
+}
+
+function parseEnvelope(contents: string): EncryptedDesktopCredential | undefined {
+  try {
+    const value = JSON.parse(contents) as Partial<EncryptedDesktopCredential>
+    if (
+      value.format !== "claxedo-desktop-native-v2" ||
+      typeof value.revision !== "string" ||
+      !value.revision ||
+      (value.state !== "active" && value.state !== "revocation-pending") ||
+      typeof value.ciphertext !== "string" ||
+      typeof value.backend !== "string" ||
+      typeof value.expiresAt !== "number"
+    )
+      return undefined
+    return value as EncryptedDesktopCredential
+  } catch {
+    return undefined
+  }
 }
 
 export function createCredentialStore(input: {
@@ -57,6 +70,7 @@ export function createCredentialStore(input: {
   file: CredentialFile
   platform: NodeJS.Platform
   onRejected?: (reason: string) => void
+  createRevision?: () => string
 }): CredentialStore {
   const backend = () => input.safeStorage.getSelectedStorageBackend?.() ?? "unknown"
   const storage = () => {
@@ -70,82 +84,111 @@ export function createCredentialStore(input: {
       }),
     }
   }
+  const rejected = (reason: string) => {
+    input.onRejected?.(reason)
+    input.file.quarantine(reason)
+  }
 
   return {
     available: () => storage().verdict,
 
-    save(tokens) {
+    save(credential, expectedRevision) {
       const secure = storage()
-      // Checked again at write time, not just before OAuth: the keyring can go
-      // away mid-session (a locked wallet, a logged-out session bus), and
-      // writing anyway is precisely the failure this module exists to prevent.
       if (!secure.verdict.usable) throw new Error(`refusing to store a credential: ${secure.verdict.detail}`)
-      const record: StoredCredential = {
-        ciphertext: input.safeStorage.encryptString(JSON.stringify(tokens)).toString("base64"),
-        backend: secure.backend,
-        expiresAt: tokens.expiresAt,
+
+      const currentContents = input.file.read()
+      const current = currentContents ? parseEnvelope(currentContents) : undefined
+      if (currentContents && !current) throw new CredentialStoreConflict()
+      if (expectedRevision === null && current) throw new CredentialStoreConflict()
+      if (typeof expectedRevision === "string" && current?.revision !== expectedRevision) {
+        throw new CredentialStoreConflict()
       }
-      input.file.write(JSON.stringify(record))
+
+      const revision = (input.createRevision ?? randomUUID)()
+      const record: EncryptedDesktopCredential = {
+        format: "claxedo-desktop-native-v2",
+        revision,
+        state: "active",
+        ciphertext: input.safeStorage.encryptString(JSON.stringify(credential)).toString("base64"),
+        backend: secure.backend,
+        expiresAt: credential.tokens.expiresAt,
+      }
+      input.file.replace(JSON.stringify(record))
+      return { ...credential, revision, persistenceState: "active" }
     },
 
     load(now) {
       const contents = input.file.read()
       if (!contents) return undefined
-      let record: StoredCredential
-      try {
-        record = JSON.parse(contents) as StoredCredential
-      } catch {
-        input.onRejected?.("stored credential could not be parsed")
-        input.file.clear()
+      const record = parseEnvelope(contents)
+      if (!record) {
+        rejected("stored credential is legacy, unbound, or malformed")
         return undefined
       }
 
       const secure = storage()
       if (!secure.verdict.usable) {
-        // `basic_text` is not a temporarily locked keyring. A record bearing
-        // that backend can only have been written by an old/broken producer,
-        // so it must never be decrypted and must not survive for a future
-        // reader to promote. Other unavailable backends are recoverable: keep
-        // their ciphertext intact until the OS store becomes usable again.
         if (input.platform === "linux" && secure.backend === "basic_text" && record.backend === "basic_text") {
-          input.onRejected?.("stored credential unusable: basic_text is not protected storage")
-          input.file.clear()
+          rejected("stored credential unusable: basic_text is not protected storage")
         }
         return undefined
       }
 
       const disposition = storedCredentialDisposition({ stored: record, currentBackend: secure.backend, now })
       if (disposition.state === "dead") {
-        input.onRejected?.(`stored credential unusable: ${disposition.reason}`)
-        // Cleared rather than left in place. A credential we will never use
-        // again is only a liability, and keeping it invites a future reader
-        // that skips this check.
-        input.file.clear()
+        rejected(`stored credential unusable: ${disposition.reason}`)
         return undefined
       }
 
-      let tokens: TokenSet
+      let credential: BoundDesktopCredential
       try {
-        tokens = JSON.parse(input.safeStorage.decryptString(Buffer.from(record.ciphertext, "base64"))) as TokenSet
+        credential = parseBoundDesktopCredential(
+          JSON.parse(input.safeStorage.decryptString(Buffer.from(record.ciphertext, "base64"))) as unknown,
+        )
       } catch {
-        // Decryption failing on a matching backend means the OS key changed
-        // under us — same disposition as dead.
-        input.onRejected?.("stored credential could not be decrypted")
-        input.file.clear()
+        rejected("stored credential could not be decrypted or is not completely bound")
         return undefined
       }
+      if (credential.tokens.expiresAt !== record.expiresAt) {
+        rejected("stored credential expiry does not match its encrypted payload")
+        return undefined
+      }
+      return { ...credential, revision: record.revision, persistenceState: record.state }
+    },
 
-      // The access token is spent. That is fatal only when there is nothing to
-      // renew it with: deleting a record that still holds a live refresh token
-      // signs the user out the first time they leave the app open past one
-      // access-token lifetime, and no restart can undo it because the refresh
-      // token went with it.
-      if (disposition.state === "access-expired" && !tokens.refreshToken) {
-        input.onRejected?.("stored credential unusable: expired with nothing to renew it")
-        input.file.clear()
-        return undefined
+    beginRevocation(expectedRevision) {
+      const contents = input.file.read()
+      if (!contents) throw new CredentialStoreConflict()
+      const current = parseEnvelope(contents)
+      if (current?.revision !== expectedRevision || current.state !== "active") {
+        throw new CredentialStoreConflict()
       }
-      return tokens
+      const revision = (input.createRevision ?? randomUUID)()
+      input.file.replace(
+        JSON.stringify({
+          ...current,
+          revision,
+          state: "revocation-pending",
+        } satisfies EncryptedDesktopCredential),
+      )
+      return revision
+    },
+
+    completeRevocation(expectedRevision) {
+      const contents = input.file.read()
+      if (!contents) return true
+      const current = parseEnvelope(contents)
+      if (current?.revision !== expectedRevision) return false
+      input.file.clear()
+      return true
+    },
+
+    reject(expectedRevision, reason) {
+      const contents = input.file.read()
+      if (!contents) return
+      const current = parseEnvelope(contents)
+      if (current?.revision !== expectedRevision) return
+      rejected(reason)
     },
 
     clear: () => input.file.clear(),

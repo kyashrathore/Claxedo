@@ -1,3 +1,5 @@
+import { readFileSync, writeFileSync, mkdirSync, rmSync } from "node:fs"
+import { dirname, join } from "node:path"
 import type { SafeStorageApi } from "../account/credential-store"
 import { hostConnectorChildResourceDir, verifyHostConnectorChildArtifact } from "./child-artifact"
 import {
@@ -17,6 +19,45 @@ export type HostConnectorUtilityFork = (
   options: { stdio: "inherit"; serviceName: string },
 ) => HostConnectorChildProcess
 
+/**
+ * Shares this machine should re-establish after a restart.
+ *
+ * Plain JSON on purpose: the file holds workspace ids and labels only — the
+ * proof of the share is re-signed by the connector child at every
+ * registration and heartbeat, so there is nothing here worth encrypting and
+ * nothing an editor of this file could forge.
+ */
+function sharedWorkspacesFile(userDataDir: string) {
+  const file = join(userDataDir, "host-connector-shared-workspaces.json")
+  return {
+    load(): Array<{ workspaceId: string; displayName?: string }> {
+      try {
+        const parsed = JSON.parse(readFileSync(file, "utf8")) as unknown
+        if (!Array.isArray(parsed)) return []
+        return parsed.flatMap((entry) => {
+          if (typeof entry !== "object" || entry === null) return []
+          const share = entry as { workspaceId?: unknown; displayName?: unknown }
+          if (typeof share.workspaceId !== "string" || !share.workspaceId) return []
+          return [{
+            workspaceId: share.workspaceId,
+            ...(typeof share.displayName === "string" ? { displayName: share.displayName } : {}),
+          }]
+        })
+      } catch {
+        return []
+      }
+    },
+    store(shares: readonly { workspaceId: string; displayName?: string }[]) {
+      if (shares.length === 0) {
+        rmSync(file, { force: true })
+        return
+      }
+      mkdirSync(dirname(file), { recursive: true })
+      writeFileSync(file, `${JSON.stringify(shares, null, 2)}\n`)
+    },
+  }
+}
+
 export function machineDisplayName(platform: NodeJS.Platform): string {
   if (platform === "darwin") return "macOS"
   if (platform === "win32") return "Windows"
@@ -27,6 +68,7 @@ export function machineDisplayName(platform: NodeJS.Platform): string {
 /** Production adapter from Electron primitives to the dependency-light supervisor. */
 export function setupElectronHostConnector(input: {
   runAccountOperation: AccountOperationRunner
+  describeWorkspace?: Parameters<typeof setupHostConnectorChild>[0]["describeWorkspace"]
   safeStorage: SafeStorageApi
   userDataDir: string
   fork: HostConnectorUtilityFork
@@ -38,6 +80,8 @@ export function setupElectronHostConnector(input: {
   heartbeatIntervalMs?: number
   onError?: (stage: string, error: unknown) => void
   onStatusChange?: Parameters<typeof setupHostConnectorChild>[0]["onStatusChange"]
+  onServing?: Parameters<typeof setupHostConnectorChild>[0]["onServing"]
+  sessionAuthority?: Parameters<typeof setupHostConnectorChild>[0]["sessionAuthority"]
 }) {
   const file = machineIdentityFile(input.userDataDir)
   const platform = input.platform ?? process.platform
@@ -47,8 +91,13 @@ export function setupElectronHostConnector(input: {
     resourcesPath: input.resourcesPath,
   })
 
+  const shares = sharedWorkspacesFile(input.userDataDir)
+
   return setupHostConnectorChild({
     runAccountOperation: input.runAccountOperation,
+    ...(input.describeWorkspace ? { describeWorkspace: input.describeWorkspace } : {}),
+    loadSharedWorkspaces: () => shares.load(),
+    storeSharedWorkspaces: (next) => shares.store(next),
     spawn: () => {
       const entry = verifyHostConnectorChildArtifact(resourceDir)
       return input.fork(entry, [], { stdio: "inherit", serviceName: "Claxedo Host Connector" })
@@ -74,5 +123,7 @@ export function setupElectronHostConnector(input: {
     ...(input.heartbeatIntervalMs ? { heartbeatIntervalMs: input.heartbeatIntervalMs } : {}),
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStatusChange ? { onStatusChange: input.onStatusChange } : {}),
+    ...(input.onServing ? { onServing: input.onServing } : {}),
+    ...(input.sessionAuthority ? { sessionAuthority: input.sessionAuthority } : {}),
   })
 }

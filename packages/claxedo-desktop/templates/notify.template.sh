@@ -127,6 +127,7 @@ curl -s "$HOOK_URL" \
   --request POST \
   --connect-timeout 1 \
   --max-time 2 \
+  --header "Authorization: Bearer $CLAXEDO_AGENT_HOOK_TOKEN" \
   --data-urlencode "tabId=$CLAXEDO_TAB_ID" \
   --data-urlencode "terminalId=$CLAXEDO_TERMINAL_ID" \
   --data-urlencode "workspaceId=$CLAXEDO_WORKSPACE_ID" \

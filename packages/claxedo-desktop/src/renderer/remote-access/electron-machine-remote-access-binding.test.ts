@@ -19,6 +19,8 @@ describe("desktop machine remote-access binding", () => {
       },
       pause: async () => snapshot,
       revoke: async () => snapshot,
+      share: async () => snapshot,
+      unshare: async () => snapshot,
       onStatus: () => () => {},
     }
 
@@ -26,6 +28,9 @@ describe("desktop machine remote-access binding", () => {
     await machineRemoteAccess()?.enable({ displayName: "Mac", startAtLogin: false })
 
     expect(calls).toEqual(["start"])
+    // The account-wide device list is not one of the closed operations, so the
+    // bound port leaves it absent rather than synthesizing a row for the one
+    // machine it does know about.
     expect(machineRemoteAccess()?.devices).toBeUndefined()
   })
 

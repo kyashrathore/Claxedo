@@ -176,7 +176,16 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
   | { type: "available-commands-update"; commands: AcpAvailableCommand[] }
   | { type: "session-agent"; agentId: string }
   | { type: "config-update"; options: Array<{ id: string; name: string; category?: string; type: "select" | "boolean"; currentValue: string | boolean; selectOptions?: Array<{ id: string; name: string }> }> }
-  | { type: "session-info"; title?: string | null; updatedAt?: string | null; parentID?: string }
+  | {
+      type: "session-info"
+      title?: string | null
+      updatedAt?: string | null
+      parentID?: string
+      /** Authoritative placement identity for non-workspace session hosts. */
+      sessionRef?: string
+      host?: "central" | "workspace"
+      workspaceID?: string
+    }
   | { type: "session-title"; title: string }
   | {
       type: "usage"

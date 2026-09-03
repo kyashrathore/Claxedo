@@ -51,6 +51,8 @@ export type {
 } from "./capabilities"
 export { requireGoalResource } from "./adapter-contract"
 export type {
+  AgentConfigOptions,
+  ResolvedHarnessModel,
   AgentGoalMutationFailure,
   AgentGoalMutationResult,
   AgentGoalResource,
@@ -243,6 +245,9 @@ export type AgentSession = {
   version?: string
   directory?: string
   parentID?: string
+  sessionRef?: string
+  host?: "central" | "workspace"
+  workspaceID?: string
   rootID?: string
   projectID?: string
   tags?: unknown[]

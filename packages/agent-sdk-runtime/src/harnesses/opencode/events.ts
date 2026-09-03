@@ -1,3 +1,4 @@
+import { userMessageIdForAssistantReply, type AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import {
   legacyRuntimeEventFromOpencodeCompat,
   opencodeLegacyOwnsCompatProjection,
@@ -27,6 +28,29 @@ export type OpenCodeEventStreamHandle = {
   err?: string
 }
 
+/**
+ * Publishes one turn's engine feed onto the runtime-events lane.
+ *
+ * The lane's envelope names the turn's REPLY, and only the reply: a consumer
+ * that never saw this turn start recovers the message it answers from that id
+ * through the runtime's own convention (`userMessageIdForAssistantReply`). Two
+ * things follow, and both are this publisher's job because it is the only
+ * place that knows the turn's own ids.
+ *
+ * The engine names each step's message with an id of its own; the turn's
+ * stable reply id is the one this runtime persists and the one the convention
+ * can resolve, so every frame of the turn is stamped with it — the same alias
+ * `runRuntimeTurn` applies to the compat lane.
+ *
+ * A frame that belongs to the turn's USER message is not the reply: the
+ * prompt's own text part translates to a text delta like any other part, and
+ * publishing it as one would file the user's words as the assistant's. It is
+ * carried as the prompt it is (`user-message-delta`, naming the message), so a
+ * viewer attached to someone else's turn receives BOTH halves of that turn —
+ * the reply hangs off the prompt, so a lane that carried only the reply left
+ * its consumer with nowhere to put it. The convention names the prompt from
+ * the reply id, so that id is all this publisher needs to tell the two apart.
+ */
 export function createLegacyOpenCodeRuntimePublisher(input: {
   directory: string
   sessionId: string
@@ -34,18 +58,56 @@ export function createLegacyOpenCodeRuntimePublisher(input: {
   eventHub?: RuntimeEventHub
 }) {
   const content = new Map<string, string>()
+  const userMessageId = userMessageIdForAssistantReply(input.assistantMessageId)
+  let closed = false
 
-  return (event: CompatEvent) => {
-    if (!opencodeLegacyOwnsCompatProjection(input)) return
-    const next = legacyRuntimeEventFromOpencodeCompat(event, content)
-    if (!next) return
+  const publish = (payload: AgentRuntimeEvent) => {
+    if (payload.type === "finish" || payload.type === "error") closed = true
     input.eventHub?.publishRuntime({
       directory: input.directory,
       sessionId: input.sessionId,
-      assistantMessageId: next.assistantMessageId ?? input.assistantMessageId,
-      payload: next.payload,
+      assistantMessageId: input.assistantMessageId,
+      payload,
     })
   }
+
+  const publisher = (event: CompatEvent) => {
+    if (!opencodeLegacyOwnsCompatProjection(input)) return
+    const next = legacyRuntimeEventFromOpencodeCompat(event, content)
+    if (!next) return
+    const payload = userMessageId && next.assistantMessageId === userMessageId
+      ? promptChunk(userMessageId, next.payload)
+      : next.payload
+    if (payload) publish(payload)
+  }
+
+  /**
+   * Ends the turn on the lane.
+   *
+   * The turn opens here with `busy`, so it owes a close. The engine's own idle
+   * frame is the close whenever it reaches this publisher, but the turn's
+   * boundary can be the reply's final `message.updated` — the drain stops
+   * there, and the idle behind it never arrives. A consumer whose only carrier
+   * is this lane (anyone attached to the turn from elsewhere) would then sit on
+   * `busy` forever, so the adapter closes the turn itself when nothing already
+   * has.
+   */
+  publisher.close = () => {
+    if (closed) return
+    publish({ type: "session-status", status: "idle" })
+  }
+
+  return publisher
+}
+
+/**
+ * One chunk of the turn's prompt, as the lane names it. Only text is carried:
+ * a prompt's non-text parts have no `user-message-delta` shape, and inventing
+ * one would put content on the lane the engine never described that way.
+ */
+function promptChunk(userMessageId: string, payload: AgentRuntimeEvent): AgentRuntimeEvent | undefined {
+  if (payload.type !== "text-delta") return undefined
+  return { type: "user-message-delta", messageId: userMessageId, content: { type: "text", text: payload.delta } }
 }
 
 export function openEventStream(request: OpenCodeRequestFn, baseHeaders: Headers): OpenCodeEventStreamHandle {

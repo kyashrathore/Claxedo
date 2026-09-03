@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto"
-import { agentRuntimeEvent, type AgentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import { agentRuntimeEvent, assistantMessageIdForTurn, type AgentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type {
   AgentMessage,
   AgentPermission,
@@ -28,6 +28,7 @@ import { deriveSessionTitle, extractPromptTitleText, hasConcreteSessionTitle } f
 import { resolveSessionModel } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
+import { turnStartRecord } from "./runtime/turn-record"
 
 export {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
@@ -90,31 +91,6 @@ function runtimeDirectory(directory: RuntimeDirectory) {
 
 function isProjectableRuntimeEvent(payload: AgentRuntimeStreamEvent): payload is AgentRuntimeEvent {
   return !toCompatEvent(payload) && payload.type !== "server.heartbeat"
-}
-
-/** The durable record for one admitted turn, actor identity included. */
-function turnStartRecord(
-  turn: AgentRuntimeTurnStartInput,
-  prompt: PromptInput,
-  userMessageId: string,
-  assistantMessageId: string,
-  agentSessionId: string | undefined,
-) {
-  return {
-    sessionId: turn.sessionId,
-    ...(agentSessionId ? { agentSessionId } : {}),
-    userMessageId,
-    assistantMessageId,
-    agent: prompt.agent,
-    model: prompt.model,
-    parts: prompt.parts,
-    ...(turn.tools ? { tools: turn.tools } : {}),
-    ...(turn.format ? { format: turn.format } : {}),
-    ...(turn.system ? { system: turn.system } : {}),
-    ...(prompt.variant ? { variant: prompt.variant } : {}),
-    ...(turn.actorId && turn.actorKind ? { actorId: turn.actorId, actorKind: turn.actorKind } : {}),
-    ...(turn.author ? { author: turn.author } : {}),
-  }
 }
 
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
@@ -239,7 +215,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     directory: RuntimeDirectory,
     payload: AgentRuntimeStreamEvent,
     source: { dir: "in" | "out"; method: string },
+    fence?: AgentRuntimeTurnStartInput["admission"],
   ) => {
+    if (fence && !fence.valid()) throw new Error("Durable session turn admission is no longer valid")
     const compat = toCompatEvent(payload)
     if (!compat) {
       publish({ sessionId, directory, payload })
@@ -251,6 +229,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       ...(agentSessionId ? { agentSessionId } : {}),
       payload: compat,
       source,
+      ...(fence ? { fencingToken: fence.fencingToken() } : {}),
     }).payload
     publish({ sessionId, directory, payload: committed })
     return committed
@@ -264,15 +243,22 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     admission: object,
     clearsHandoff = false,
     openingUserPublished = false,
+    fence?: AgentRuntimeTurnStartInput["admission"],
   ) => {
     const ownsAdmission = () => activeTurnAdmissions.get(sessionId) === admission
+    // Two fences guard every producer write for this turn. `ownsAdmission`
+    // rejects a superseded in-process generation; `fence` is the host's
+    // durable admission, which a takeover elsewhere can invalidate while this
+    // instance still owns the in-memory slot.
+    const admitted = () => ownsAdmission() && (fence?.valid() ?? true)
+    if (!admitted()) return
     // The store already published the opening user message with the turn
     // record; the adapter's own echo of it would fan a duplicate to every
     // subscriber, so exactly one echo is dropped.
     let openingUserAlreadyPublished = openingUserPublished
     let outcome: AgentTurnOutcome | undefined
     let titleEmitted = false
-    const stableAssistantMessageId = prompt.assistantMessageId ?? `${prompt.userMessageId}_r`
+    const stableAssistantMessageId = prompt.assistantMessageId
     const assistantAliases = new Map<string, string>()
     const normalizeCompatEvent = (event: CompatEvent): CompatEvent => {
       if (event.type === "message.updated" && event.properties.info.role === "assistant") {
@@ -356,9 +342,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       input: prompt,
       assistantMessageId: stableAssistantMessageId,
       created: Date.now(),
+      ...(fence ? { fencingToken: fence.fencingToken() } : {}),
       onEvent: () => {},
       onRuntimeEvent: (event) => {
-        if (!ownsAdmission()) return
+        if (!admitted()) return
         publish({
           sessionId: event.sessionId,
           directory: event.directory,
@@ -378,9 +365,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         input: target.input,
         assistantMessageId: target.assistantMessageId,
         created: target.created,
+        ...(fence ? { fencingToken: fence.fencingToken() } : {}),
         onEvent: () => {},
         onRuntimeEvent: (event) => {
-          if (!ownsAdmission()) return
+          if (!admitted()) return
           publish({
             sessionId: event.sessionId,
             directory: event.directory,
@@ -389,11 +377,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         },
       }),
       onDiagnostic: (payload) => {
-        if (ownsAdmission()) publish({ sessionId, directory, payload })
+        if (admitted()) publish({ sessionId, directory, payload })
       },
     })
     const maybeEmitTitle = async () => {
-      if (!ownsAdmission()) return
+      if (!admitted()) return
       if (titleEmitted) return
       titleEmitted = true
       const session = store.getSession(sessionId) as { title?: string | null; time?: { created?: number } } | null
@@ -402,22 +390,27 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       if (!text) return
       const title = deriveSessionTitle(text)
       await adapter.updateSession(sessionId, { title }, directory)
-      if (!ownsAdmission()) return
+      if (!admitted()) return
       commitAndPublish(sessionId, directory, sessionUpdated(buildSession({
         id: sessionId,
         directory: runtimeDirectory(directory),
         title,
         created: session?.time?.created,
         updated: Date.now(),
-      })), { dir: "in", method: "auto-title" })
+      })), { dir: "in", method: "auto-title" }, fence)
     }
     try {
       let terminal = false
-      for await (const payload of adapter.sendMessage(sessionId, prompt, directory)) {
+      for await (const payload of adapter.sendMessage(
+        sessionId,
+        prompt,
+        directory,
+        fence ? { fencingToken: fence.fencingToken() } : undefined,
+      )) {
         // An acknowledged abort may release this session for a replacement
         // turn before a misbehaving adapter closes its old iterator. Fence all
         // late events from that superseded generation.
-        if (!ownsAdmission()) return
+        if (!admitted()) return
         terminal ||= isTerminalRuntimePayload(payload)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
         // A failed turn has one authoritative terminal publication path below.
@@ -439,7 +432,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           if (adapter.commitsStreamEvents) {
             publish({ sessionId, directory, payload: normalizeCompatEvent(compat) })
           } else {
-            commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" })
+            commitAndPublish(sessionId, directory, normalizeCompatEvent(compat), { dir: "in", method: "sendMessage" }, fence)
           }
           continue
         }
@@ -449,13 +442,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         publish({ sessionId, directory, payload })
       }
-      if (!ownsAdmission()) return
+      if (!admitted()) return
       await maybeEmitTitle()
-      if (!ownsAdmission()) return
+      if (!admitted()) return
       if (!terminal) {
         const payload = sessionIdle(sessionId)
         outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
-        commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" })
+        commitAndPublish(sessionId, directory, payload, { dir: "out", method: "runtime.finish" }, fence)
       }
       // Terminal compat events and the durable turn outcome are separate
       // contracts. A committing adapter may already have journaled
@@ -466,16 +459,18 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         sessionId,
         assistantMessageId: prompt.assistantMessageId,
         outcome: outcome ?? { status: "completed", completedAt: Date.now() },
+        ...(fence ? { fencingToken: fence.fencingToken() } : {}),
       })
       for (const payload of finished.events) publish({ sessionId, directory, payload })
       if (clearsHandoff && outcome?.status === "completed") store.updateSessionConfig(sessionId, { handoff: null })
     } catch (err) {
-      if (!ownsAdmission()) return
+      if (!admitted()) return
       const message = err instanceof Error ? err.message : "turn failed"
       const finished = store.finishTurn({
         sessionId,
         assistantMessageId: prompt.assistantMessageId,
         outcome: { status: "failed", completedAt: Date.now(), error: message },
+        ...(fence ? { fencingToken: fence.fencingToken() } : {}),
       })
       for (const payload of finished.events) publish({ sessionId, directory, payload })
     } finally {
@@ -751,10 +746,13 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         const session = store.getSession(turn.sessionId) as { directory?: string } | null
         if (!session) throw new Error(`Session ${turn.sessionId} not found`)
+        if (turn.admission && !turn.admission.valid()) {
+          throw new Error("Durable session turn admission is no longer valid")
+        }
         const { adapter, config } = await runtimeForSession(turn.sessionId)
         const directory = session.directory ?? undefined
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
-        const assistantMessageId = turn.assistantMessageId ?? `${userMessageId}_r`
+        const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
         const handoff = config?.handoff?.pending ? config.handoff.transcript : undefined
         const prompt: PromptInput = {
           parts: turn.parts ?? (turn.text ? [{ type: "text", text: turn.text }] : []),
@@ -767,6 +765,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           ...(handoff || turn.system ? { system: [handoff, turn.system].filter(Boolean).join("\n\n") } : {}),
           ...(turn.permissionMode ? { permissionMode: turn.permissionMode } : {}),
           ...(turn.variant !== undefined ? { variant: turn.variant } : config?.variant ? { variant: config.variant } : {}),
+          // The turn's author travels with the prompt as well as with the
+          // durable turn record: a harness stamps it onto the user message it
+          // builds itself, and without it every message a harness authors is
+          // attributed to nobody.
+          ...(turn.author ? { author: turn.author } : {}),
         }
         if (activeTurnAdmissions.has(turn.sessionId)) {
           throw new AgentRuntimeTurnAdmissionError(turn.sessionId)
@@ -794,13 +797,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           const agentSessionId = store.getAgentSessionId(turn.sessionId) ?? undefined
           const started = store.startTurn(turnStartRecord(turn, prompt, userMessageId, assistantMessageId, agentSessionId))
           for (const payload of started.events) {
+            if (turn.admission && !turn.admission.valid()) break
             publish({ sessionId: turn.sessionId, directory, payload })
           }
           const openingUserPublished = started.events.some((payload) =>
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
-          void runTurn(turn.sessionId, prompt, directory, adapter, admission, !!handoff, openingUserPublished)
+          void runTurn(turn.sessionId, prompt, directory, adapter, admission, !!handoff, openingUserPublished, turn.admission)
             .finally(releaseAdmission)
         } catch (error) {
           releaseAdmission()
@@ -946,7 +950,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return await updateSessionConfig(sessionId, update, directory)
       },
       async options(directory: RuntimeDirectory) {
-        return merge(adapters, (adapter) => adapter.probeConfigOptions?.(directory))
+        return merge(adapters, async (adapter) => (await adapter.probeConfigOptions?.(directory))?.options)
       },
     },
     health: {
@@ -978,7 +982,7 @@ function key(input: Pick<SessionHarness, "id" | "access">) {
   return `${input.id}:${input.access}`
 }
 
-async function merge<T>(adapters: Map<string, AgentHarnessAdapter>, read: (adapter: AgentHarnessAdapter) => Promise<T[]> | undefined) {
+async function merge<T>(adapters: Map<string, AgentHarnessAdapter>, read: (adapter: AgentHarnessAdapter) => Promise<T[] | undefined> | T[] | undefined) {
   const out: T[] = []
   for (const adapter of adapters.values()) {
     const rows = await read(adapter)

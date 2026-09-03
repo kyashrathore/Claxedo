@@ -136,6 +136,8 @@ export type AgentRuntimeTurnStartInput = {
   permissionMode?: string
   variant?: string
   author?: PromptInput["author"]
+  /** Host-owned durable admission fence checked before producer mutations. */
+  admission?: { valid(): boolean; fencingToken(): number }
 } & AgentRuntimeTurnActor
 
 export type AgentRuntimeTurnStartResult = {

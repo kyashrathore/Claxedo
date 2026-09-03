@@ -1,5 +1,4 @@
 import { createIdleReaper } from "../shared/process-lifecycle"
-import { randomUUID } from "crypto"
 import os from "os"
 import path from "path"
 import {
@@ -47,6 +46,7 @@ import {
   sourceCodexAuthValue,
 } from "./auth-file"
 import { codexConfigOptions, fetchCodexModels } from "./model-options"
+import { handleCodexServerRequest } from "./server-request"
 import { CodexGoalController } from "./goal"
 import {
   CODEX_DYNAMIC_TOOLS,
@@ -57,8 +57,6 @@ import {
   codexSpawnEnv,
   codexTurnModel,
   codexUserInput,
-  permissionResponse,
-  questionIds,
   startTurnWithThreadRecovery,
 } from "./protocol"
 
@@ -581,175 +579,35 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     return JSON.stringify(this.loginParams() ?? null)
   }
 
-  private async handleServerRequest(message: JsonRecord) {
-    const method = text(message.method) ?? "request"
-    const params = record(message.params) ?? {}
-    const requestId = String(message.id ?? randomUUID())
-    const threadId = text(params.threadId) ?? text(params.conversationId)
-    const active = threadId ? this.activeThreads.get(threadId) : undefined
-    const payload = { ...params, requestId }
-    if (method === "item/tool/requestUserInput") {
-      active?.project(method, payload, message)
-      const questions = Array.isArray(params.questions) ? params.questions : []
-      const answer = await new Promise<string>((resolve, reject) => {
-        if (!active) {
-          reject(new Error("No active session for Codex question"))
-          return
-        }
-        this.host.pendingQuestions.set(requestId, {
-          sessionId: active.sessionId,
-          agentSessionId: active.agentSessionId,
-          questions,
-          resolve,
-          reject,
+  /**
+   * Every app-server request this driver answers is handled by
+   * `handleCodexServerRequest`, which owns the whole surface — questions,
+   * approvals, the `spawn_agent` dynamic tool, and auth refresh. This driver
+   * supplies only what is its own: the live thread index, the host's pending
+   * queues, the session's permission selection, and the credential refresh
+   * that also rewrites this driver's cached auth.
+   */
+  private handleServerRequest(message: JsonRecord) {
+    return handleCodexServerRequest({
+      message,
+      activeThreads: this.activeThreads,
+      host: this.host,
+      permissionModeId: (sessionId) => this.permissionSelection.currentId(sessionId),
+      refreshTokens: async () => {
+        const refreshed = await refreshCodexChatgptAuth({
+          auth: this.codexAuth,
+          home: this.codexHome,
+          fetch: this.options.fetch,
         })
-      })
-      return {
-        answers: Object.fromEntries((questionIds(params)[0] ? questionIds(params) : ["answer"]).map((id) => [id, { answers: [answer] }])),
-      }
-    }
-    if (method === "item/tool/call") {
-      if (!active || text(params.tool) !== "spawn_agent") {
+        this.codexAuth = refreshed.auth
         return {
-          contentItems: [{ type: "inputText", text: `Dynamic tool ${text(params.tool) ?? "call"} is not implemented by Claxedo.` }],
-          success: false,
+          access: refreshed.login.accessToken,
+          accountId: refreshed.login.chatgptAccountId,
+          ...(refreshed.login.chatgptPlanType ? { planType: refreshed.login.chatgptPlanType } : {}),
         }
-      }
-      return this.spawnDynamicCodexAgent(active, params, message)
-    }
-    if (
-      method === "item/commandExecution/requestApproval" ||
-      method === "item/fileChange/requestApproval" ||
-      method === "item/permissions/requestApproval" ||
-      method === "applyPatchApproval" ||
-      method === "execCommandApproval"
-    ) {
-      active?.project(method, payload, message)
-      const decision = await new Promise<"allow_once" | "allow_always" | "deny" | "reject_always">((resolve) => {
-        if (!active) {
-          resolve("deny")
-          return
-        }
-        this.host.pendingPermissions.set(requestId, {
-          sessionId: active.sessionId,
-          agentSessionId: active.agentSessionId,
-          method,
-          params,
-          resolve,
-        })
-      })
-      return permissionResponse(method, decision, params)
-    }
-    if (method === "account/chatgptAuthTokens/refresh") {
-      const refreshed = await refreshCodexChatgptAuth({ auth: this.codexAuth, home: this.codexHome, fetch: this.options.fetch })
-      this.codexAuth = refreshed.auth
-      return refreshed.login
-    }
-    throw new Error(`Unsupported Codex app-server request: ${method}`)
-  }
-
-  private async spawnDynamicCodexAgent(active: CodexActiveThread, params: JsonRecord, frame: JsonRecord) {
-    const callId = text(params.callId) ?? randomUUID()
-    const args = record(params.arguments) ?? {}
-    const prompt = text(args.message) ?? text(args.prompt) ?? text(args.description)
-    if (!prompt) {
-      return {
-        contentItems: [{ type: "inputText", text: "spawn_agent requires a message." }],
-        success: false,
-      }
-    }
-    const label = text(args.task_name) ?? "Codex subagent"
-    const settings = codexSettingsFor(this.permissionSelection.currentId(active.sessionId))
-    let childThreadId = ""
-    try {
-      const result = record(await active.process.request("thread/start", {
-        cwd: active.directory,
-        approvalPolicy: settings.approvalPolicy,
-        approvalsReviewer: "user",
-        sandbox: settings.sandbox,
-        threadSource: "subagent",
-        ...(active.model ? { model: active.model } : {}),
-      }))
-      childThreadId = text(record(result?.thread)?.id) ?? ""
-      if (!childThreadId) throw new Error("Codex app-server did not return a child thread id")
-      await active.observeSubagent({
-        observation: {
-          observationId: `codex:dynamic:${callId}:${childThreadId}:running`,
-          harnessExecutionId: active.agentSessionId,
-          stableCorrelationId: childThreadId,
-          toolCallId: callId,
-          toolCallRole: "spawn",
-          providerId: childThreadId,
-          providerKind: "codex",
-          status: "running",
-          transcript: { kind: "live" },
-          label,
-          description: prompt,
-          subagentType: active.model ?? "codex",
-        },
-        correlationKeys: [childThreadId],
-        source: { dir: "in", method: "item/tool/call", frame },
-      })
-      await this.runDynamicCodexChild(active, childThreadId, prompt)
-      await active.observeSubagent({
-        observation: {
-          observationId: `codex:dynamic:${callId}:${childThreadId}:completed`,
-          harnessExecutionId: active.agentSessionId,
-          stableCorrelationId: childThreadId,
-          toolCallId: callId,
-          toolCallRole: "spawn",
-          providerId: childThreadId,
-          providerKind: "codex",
-          status: "completed",
-          transcript: { kind: "live" },
-          label,
-          description: prompt,
-          subagentType: active.model ?? "codex",
-        },
-        correlationKeys: [childThreadId],
-        source: { dir: "in", method: "item/tool/call", frame },
-      })
-      return {
-        contentItems: [{ type: "inputText", text: `Subagent ${childThreadId} completed successfully.` }],
-        success: true,
-      }
-    } catch (cause) {
-      if (childThreadId) {
-        await active.observeSubagent({
-          observation: {
-            observationId: `codex:dynamic:${callId}:${childThreadId}:failed`,
-            harnessExecutionId: active.agentSessionId,
-            stableCorrelationId: childThreadId,
-            toolCallId: callId,
-            toolCallRole: "spawn",
-            providerId: childThreadId,
-            providerKind: "codex",
-            status: "failed",
-            transcript: { kind: "live" },
-            label: errorMessage(cause),
-            description: prompt,
-            subagentType: active.model ?? "codex",
-          },
-          correlationKeys: [childThreadId],
-          source: { dir: "in", method: "item/tool/call", frame },
-        })
-      }
-      return {
-        contentItems: [{ type: "inputText", text: `Subagent failed: ${errorMessage(cause)}` }],
-        success: false,
-      }
-    }
-  }
-
-  private async runDynamicCodexChild(active: CodexActiveThread, threadId: string, prompt: string) {
-    let resolveCompleted: (() => void) | undefined
-    let rejectCompleted: ((err: Error) => void) | undefined
-    const completed = new Promise<void>((resolve, reject) => {
-      resolveCompleted = resolve
-      rejectCompleted = reject
+      },
     })
   }
-
 }
 
 export { observeCodexAppServerProcess } from "./app-server-process"

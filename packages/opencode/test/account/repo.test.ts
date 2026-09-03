@@ -8,6 +8,19 @@ import { AccessToken, AccountID, OrgID, RefreshToken } from "../../src/account/s
 import { Database } from "@opencode-ai/core/database/database"
 import { testEffect } from "../lib/effect"
 
+const nativeBinding = {
+  adapter: "better-auth",
+  deploymentId: "deployment-test",
+  configurationVersion: "auth-v1",
+  issuer: "https://control.example.com/api/auth",
+  tokenEndpointOrigin: "https://control.example.com",
+  controlPlaneOrigin: "https://control.example.com",
+  clientId: "claxedo-cli",
+  resource: "https://control.example.com/control-plane",
+  scopes: ["offline_access", "workspace:read", "workspace:write"],
+  tokenKind: "access-token",
+} as const
+
 const truncate = Layer.effectDiscard(
   Effect.gen(function* () {
     const { db } = yield* Database.Service
@@ -39,12 +52,13 @@ it.live("persistAccount inserts and getRow retrieves", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id,
-        email: "test@example.com",
+        userId: "test@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_123"),
         refreshToken: RefreshToken.make("rt_456"),
         expiry: Date.now() + 3600_000,
         orgID: Option.some(OrgID.make("org-1")),
+        binding: nativeBinding,
       }),
     )
 
@@ -52,7 +66,7 @@ it.live("persistAccount inserts and getRow retrieves", () =>
     expect(Option.isSome(row)).toBe(true)
     const value = Option.getOrThrow(row)
     expect(value.id).toBe(AccountID.make("user-1"))
-    expect(value.email).toBe("test@example.com")
+    expect(value.user_id).toBe("test@example.com")
 
     const active = yield* AccountRepo.use.active()
     expect(Option.getOrThrow(active).active_org_id).toBe(OrgID.make("org-1"))
@@ -66,12 +80,13 @@ it.live("persistAccount normalizes trailing slashes in stored server URLs", () =
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id,
-        email: "test@example.com",
+        userId: "test@example.com",
         url: "https://control.example.com/",
         accessToken: AccessToken.make("at_123"),
         refreshToken: RefreshToken.make("rt_456"),
         expiry: Date.now() + 3600_000,
         orgID: Option.none(),
+        binding: nativeBinding,
       }),
     )
 
@@ -93,24 +108,26 @@ it.live("persistAccount sets the active account and org", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id: id1,
-        email: "first@example.com",
+        userId: "first@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_1"),
         refreshToken: RefreshToken.make("rt_1"),
         expiry: Date.now() + 3600_000,
         orgID: Option.some(OrgID.make("org-1")),
+        binding: nativeBinding,
       }),
     )
 
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id: id2,
-        email: "second@example.com",
+        userId: "second@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_2"),
         refreshToken: RefreshToken.make("rt_2"),
         expiry: Date.now() + 3600_000,
         orgID: Option.some(OrgID.make("org-2")),
+        binding: nativeBinding,
       }),
     )
 
@@ -130,30 +147,32 @@ it.live("list returns all accounts", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id: id1,
-        email: "a@example.com",
+        userId: "a@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_1"),
         refreshToken: RefreshToken.make("rt_1"),
         expiry: Date.now() + 3600_000,
         orgID: Option.none(),
+        binding: nativeBinding,
       }),
     )
 
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id: id2,
-        email: "b@example.com",
+        userId: "b@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_2"),
         refreshToken: RefreshToken.make("rt_2"),
         expiry: Date.now() + 3600_000,
         orgID: Option.some(OrgID.make("org-1")),
+        binding: nativeBinding,
       }),
     )
 
     const accounts = yield* AccountRepo.use.list()
     expect(accounts.length).toBe(2)
-    expect(accounts.map((a) => a.email).sort()).toEqual(["a@example.com", "b@example.com"])
+    expect(accounts.map((a) => a.user_id).sort()).toEqual(["a@example.com", "b@example.com"])
   }),
 )
 
@@ -164,12 +183,13 @@ it.live("remove deletes an account", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id,
-        email: "test@example.com",
+        userId: "test@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_1"),
         refreshToken: RefreshToken.make("rt_1"),
         expiry: Date.now() + 3600_000,
         orgID: Option.none(),
+        binding: nativeBinding,
       }),
     )
 
@@ -188,24 +208,26 @@ it.live("use stores the selected org and marks the account active", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id: id1,
-        email: "first@example.com",
+        userId: "first@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_1"),
         refreshToken: RefreshToken.make("rt_1"),
         expiry: Date.now() + 3600_000,
         orgID: Option.none(),
+        binding: nativeBinding,
       }),
     )
 
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id: id2,
-        email: "second@example.com",
+        userId: "second@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_2"),
         refreshToken: RefreshToken.make("rt_2"),
         expiry: Date.now() + 3600_000,
         orgID: Option.none(),
+        binding: nativeBinding,
       }),
     )
 
@@ -227,12 +249,13 @@ it.live("persistToken updates token fields", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id,
-        email: "test@example.com",
+        userId: "test@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("old_token"),
         refreshToken: RefreshToken.make("old_refresh"),
         expiry: 1000,
         orgID: Option.none(),
+        binding: nativeBinding,
       }),
     )
 
@@ -242,6 +265,7 @@ it.live("persistToken updates token fields", () =>
         accountID: id,
         accessToken: AccessToken.make("new_token"),
         refreshToken: RefreshToken.make("new_refresh"),
+        expectedRefreshToken: RefreshToken.make("old_refresh"),
         expiry: Option.some(expiry),
       }),
     )
@@ -261,12 +285,13 @@ it.live("persistToken with no expiry sets token_expiry to null", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id,
-        email: "test@example.com",
+        userId: "test@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("old_token"),
         refreshToken: RefreshToken.make("old_refresh"),
         expiry: 1000,
         orgID: Option.none(),
+        binding: nativeBinding,
       }),
     )
 
@@ -275,12 +300,47 @@ it.live("persistToken with no expiry sets token_expiry to null", () =>
         accountID: id,
         accessToken: AccessToken.make("new_token"),
         refreshToken: RefreshToken.make("new_refresh"),
+        expectedRefreshToken: RefreshToken.make("old_refresh"),
         expiry: Option.none(),
       }),
     )
 
     const row = yield* AccountRepo.use.getRow(id)
     expect(Option.getOrThrow(row).token_expiry).toBeNull()
+  }),
+)
+
+it.live("persistToken refuses to overwrite a newer refresh-token generation", () =>
+  Effect.gen(function* () {
+    const id = AccountID.make("user-cas")
+    yield* AccountRepo.Service.use((r) =>
+      r.persistAccount({
+        id,
+        userId: "usr_cas",
+        url: "https://control.example.com",
+        accessToken: AccessToken.make("current_access"),
+        refreshToken: RefreshToken.make("current_refresh"),
+        expiry: 1_000,
+        orgID: Option.none(),
+        binding: nativeBinding,
+      }),
+    )
+
+    const error = yield* Effect.flip(AccountRepo.Service.use((r) =>
+      r.persistToken({
+        accountID: id,
+        accessToken: AccessToken.make("stale_access"),
+        refreshToken: RefreshToken.make("stale_refresh"),
+        expectedRefreshToken: RefreshToken.make("already_rotated_refresh"),
+        expiry: Option.some(2_000),
+      }),
+    ))
+    expect(error.message).toContain("changed during refresh")
+    expect(Option.getOrThrow(yield* AccountRepo.use.getRow(id))).toMatchObject({
+      access_token: "current_access",
+      refresh_token: "current_refresh",
+      token_expiry: 1_000,
+    })
   }),
 )
 
@@ -291,24 +351,26 @@ it.live("persistAccount upserts on conflict", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id,
-        email: "test@example.com",
+        userId: "test@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_v1"),
         refreshToken: RefreshToken.make("rt_v1"),
         expiry: 1000,
         orgID: Option.some(OrgID.make("org-1")),
+        binding: nativeBinding,
       }),
     )
 
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id,
-        email: "test@example.com",
+        userId: "test@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_v2"),
         refreshToken: RefreshToken.make("rt_v2"),
         expiry: 2000,
         orgID: Option.some(OrgID.make("org-2")),
+        binding: nativeBinding,
       }),
     )
 
@@ -331,12 +393,13 @@ it.live("remove clears active state when deleting the active account", () =>
     yield* AccountRepo.Service.use((r) =>
       r.persistAccount({
         id,
-        email: "test@example.com",
+        userId: "test@example.com",
         url: "https://control.example.com",
         accessToken: AccessToken.make("at_1"),
         refreshToken: RefreshToken.make("rt_1"),
         expiry: Date.now() + 3600_000,
         orgID: Option.some(OrgID.make("org-1")),
+        binding: nativeBinding,
       }),
     )
 

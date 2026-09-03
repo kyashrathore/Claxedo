@@ -32,7 +32,6 @@ export type RuntimeProxyOptions = {
   relayProvider?: RelayProvider
   defaultHomeRegion?: ClaxedoRegion
   resolveRelayActor?: (request: Request, workspaceId: string) => Promise<(RuntimeActor & {
-    subject: string
     orgId: string
     role: "viewer" | "editor" | "admin" | "owner"
   }) | undefined>
@@ -209,8 +208,7 @@ export async function proxy(c: Context, hit: Hit, options?: {
     )
     const principal = actor
       ? {
-          subject: actor.subject,
-          principalKind: "user" as const,
+          principalKind: actor.actorKind === "human" ? "user" as const : "service" as const,
           actorId: actor.actorId,
           actorKind: actor.actorKind,
           ...(actor.actorPublicId && actor.actorName
@@ -224,7 +222,6 @@ export async function proxy(c: Context, hit: Hit, options?: {
           role: actor.role,
         }
       : {
-          subject: "control-plane",
           principalKind: "service" as const,
           actorId: "control-plane",
           actorKind: "agent" as const,

@@ -23,6 +23,7 @@ import {
   AccountServiceError,
   AccountTransportError,
   Login,
+  NativeLoginBinding,
   Org,
   OrgID,
   PollDenied,
@@ -34,6 +35,18 @@ import {
   PollSuccess,
   UserCode,
 } from "./schema"
+import {
+  assertCredentialBinding,
+  assertCredentialServer,
+  authorizationUri,
+  betterAuthDeviceEndpoint,
+  betterAuthTokenEndpoint,
+  credentialBindingFromRow,
+  parseCliAuthDescriptor,
+  persistedCredentialBinding,
+  type CliAuthDescriptor,
+  type NativeCredentialBinding,
+} from "./native-auth"
 
 export {
   AccountID,
@@ -66,6 +79,10 @@ export type AccountOrgs = {
 export type ActiveOrg = {
   account: Info
   org: Org
+}
+
+export type AccountRemoval = {
+  remoteRevocation: "revoked" | "uncertain"
 }
 
 class RemoteConfig extends Schema.Class<RemoteConfig>("RemoteConfig")({
@@ -115,26 +132,10 @@ class DeviceTokenError extends Schema.Class<DeviceTokenError>("DeviceTokenError"
 
 const DeviceToken = Schema.Union([DeviceTokenSuccess, DeviceTokenError])
 
-class User extends Schema.Class<User>("User")({
-  id: AccountID,
-  email: Schema.String,
+class AuthProfile extends Schema.Class<AuthProfile>("AuthProfile")({
+  user: Schema.Struct({ id: Schema.String }),
+  organizations: Schema.Array(Org),
 }) {}
-
-class ClientId extends Schema.Class<ClientId>("ClientId")({ client_id: Schema.String }) {}
-
-class DeviceTokenRequest extends Schema.Class<DeviceTokenRequest>("DeviceTokenRequest")({
-  grant_type: Schema.String,
-  device_code: DeviceCode,
-  client_id: Schema.String,
-}) {}
-
-class TokenRefreshRequest extends Schema.Class<TokenRefreshRequest>("TokenRefreshRequest")({
-  grant_type: Schema.String,
-  refresh_token: RefreshToken,
-  client_id: Schema.String,
-}) {}
-
-const clientId = "opencode-cli"
 const eagerRefreshThreshold = Duration.minutes(5)
 const eagerRefreshThresholdMs = Duration.toMillis(eagerRefreshThreshold)
 
@@ -170,7 +171,7 @@ export interface Interface {
   readonly activeOrg: () => Effect.Effect<Option.Option<ActiveOrg>, AccountError>
   readonly list: () => Effect.Effect<Info[], AccountError>
   readonly orgsByAccount: () => Effect.Effect<readonly AccountOrgs[], AccountError>
-  readonly remove: (accountID: AccountID) => Effect.Effect<void, AccountError>
+  readonly remove: (accountID: AccountID) => Effect.Effect<AccountRemoval, AccountError>
   readonly use: (accountID: AccountID, orgID: Option.Option<OrgID>) => Effect.Effect<void, AccountError>
   readonly orgs: (accountID: AccountID) => Effect.Effect<readonly Org[], AccountError>
   readonly config: (
@@ -201,31 +202,84 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
     const executeReadOk = (request: HttpClientRequest.HttpClientRequest) =>
       httpReadOk.execute(request).pipe(mapAccountServiceError("HTTP request failed"))
 
-    const executeEffectOk = <E>(request: Effect.Effect<HttpClientRequest.HttpClientRequest, E>) =>
-      request.pipe(
-        Effect.flatMap((req) => httpOk.execute(req)),
-        mapAccountServiceError("HTTP request failed"),
-      )
+    const executeOk = (request: HttpClientRequest.HttpClientRequest) =>
+      httpOk.execute(request).pipe(mapAccountServiceError("HTTP request failed"))
 
-    const executeEffect = <E>(request: Effect.Effect<HttpClientRequest.HttpClientRequest, E>) =>
-      request.pipe(
-        Effect.flatMap((req) => http.execute(req)),
-        mapAccountServiceError("HTTP request failed"),
-      )
+    const execute = (request: HttpClientRequest.HttpClientRequest) =>
+      http.execute(request).pipe(mapAccountServiceError("HTTP request failed"))
 
-    const refreshToken = Effect.fnUntraced(function* (row: AccountRow) {
+    const descriptorError = (cause: unknown) =>
+      new AccountServiceError({ message: "Authentication deployment metadata is invalid", cause })
+
+    const validateDescriptor = <A>(evaluate: () => A) => Effect.try({ try: evaluate, catch: descriptorError })
+
+    const discoverDescriptor = Effect.fnUntraced(function* (server: string) {
+      const response = yield* executeReadOk(
+        HttpClientRequest.get(`${server}/api/claxedo/auth/descriptor`).pipe(HttpClientRequest.acceptJson),
+      )
+      const body = yield* HttpClientResponse.schemaBodyJson(Schema.Unknown)(response).pipe(
+        mapAccountServiceError("Failed to decode authentication descriptor"),
+      )
+      const now = yield* Clock.currentTimeMillis
+      return yield* validateDescriptor(() => parseCliAuthDescriptor(body, server, now))
+    })
+
+    const revokeRfc7009 = Effect.fnUntraced(function* (row: AccountRow, descriptor: CliAuthDescriptor) {
+      if (descriptor.revocation.protocol !== "rfc7009") {
+        return yield* Effect.fail(new AccountServiceError({ message: "RFC 7009 revocation contract is unavailable" }))
+      }
+      const response = yield* execute(
+        HttpClientRequest.post(descriptor.revocation.endpoint).pipe(
+          HttpClientRequest.bodyUrlParams({
+            client_id: descriptor.clientId,
+            token: row.refresh_token,
+            token_type_hint: "refresh_token",
+          }),
+        ),
+      )
+      if (response.status !== 200) {
+        return yield* Effect.fail(new AccountServiceError({ message: "Remote credential revocation was not accepted" }))
+      }
+      return { remoteRevocation: "revoked" } as const
+    })
+
+    const revokeAdapterNative = Effect.fnUntraced(function* (_row: AccountRow, descriptor: CliAuthDescriptor) {
+      if (descriptor.revocation.protocol !== "adapter-native") {
+        return yield* Effect.fail(
+          new AccountServiceError({ message: "Adapter-native revocation contract is unavailable" }),
+        )
+      }
+      // The retained adapter has no certified public revocation request schema
+      // yet. Do not guess one and never fall back to the RFC 7009 endpoint.
+      return { remoteRevocation: "uncertain" } as const
+    })
+
+    const revokeRemoteCredential = Effect.fnUntraced(function* (row: AccountRow) {
+      const stored = yield* validateDescriptor(() => credentialBindingFromRow(row))
+      yield* validateDescriptor(() => assertCredentialServer(stored, row.url))
+      const descriptor = yield* discoverDescriptor(row.url)
+      yield* validateDescriptor(() => assertCredentialBinding(stored, descriptor))
+
+      switch (descriptor.revocation.protocol) {
+        case "rfc7009":
+          return yield* revokeRfc7009(row, descriptor)
+        case "adapter-native":
+          return yield* revokeAdapterNative(row, descriptor)
+      }
+    })
+
+    const refreshToken = Effect.fnUntraced(function* (row: AccountRow, descriptor: CliAuthDescriptor) {
       const now = yield* Clock.currentTimeMillis
 
-      const response = yield* executeEffectOk(
-        HttpClientRequest.post(`${row.url}/auth/device/token`).pipe(
+      const response = yield* executeOk(
+        HttpClientRequest.post(betterAuthTokenEndpoint(descriptor)).pipe(
           HttpClientRequest.acceptJson,
-          HttpClientRequest.schemaBodyJson(TokenRefreshRequest)(
-            new TokenRefreshRequest({
-              grant_type: "refresh_token",
-              refresh_token: row.refresh_token,
-              client_id: clientId,
-            }),
-          ),
+          HttpClientRequest.bodyUrlParams({
+            grant_type: "refresh_token",
+            refresh_token: row.refresh_token,
+            client_id: descriptor.clientId,
+            resource: descriptor.resource,
+          }),
         ),
       )
 
@@ -239,6 +293,7 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
         accountID: row.id,
         accessToken: parsed.access_token,
         refreshToken: parsed.refresh_token,
+        expectedRefreshToken: row.refresh_token,
         expiry,
       })
 
@@ -260,11 +315,19 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
           return account.access_token
         }
 
-        return yield* refreshToken(account)
+        const stored = yield* validateDescriptor(() => credentialBindingFromRow(account))
+        yield* validateDescriptor(() => assertCredentialServer(stored, account.url))
+        const descriptor = yield* discoverDescriptor(account.url)
+        yield* validateDescriptor(() => assertCredentialBinding(stored, descriptor))
+        return yield* refreshToken(account, descriptor)
       }),
     })
 
     const resolveToken = Effect.fnUntraced(function* (row: AccountRow) {
+      const stored = yield* validateDescriptor(() => credentialBindingFromRow(row))
+      yield* validateDescriptor(() => assertCredentialServer(stored, row.url))
+      const descriptor = yield* discoverDescriptor(row.url)
+      yield* validateDescriptor(() => assertCredentialBinding(stored, descriptor))
       const now = yield* Clock.currentTimeMillis
       if (isTokenFresh(row.token_expiry, now)) {
         return row.access_token
@@ -282,28 +345,15 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
       return Option.some({ account, accessToken })
     })
 
-    const fetchOrgs = Effect.fnUntraced(function* (url: string, accessToken: AccessToken) {
+    const fetchProfile = Effect.fnUntraced(function* (url: string, accessToken: AccessToken) {
       const response = yield* executeReadOk(
-        HttpClientRequest.get(`${url}/api/orgs`).pipe(
+        HttpClientRequest.get(`${url}/api/claxedo/auth/profile`).pipe(
           HttpClientRequest.acceptJson,
           HttpClientRequest.bearerToken(accessToken),
         ),
       )
 
-      return yield* HttpClientResponse.schemaBodyJson(Schema.Array(Org))(response).pipe(
-        mapAccountServiceError("Failed to decode response"),
-      )
-    })
-
-    const fetchUser = Effect.fnUntraced(function* (url: string, accessToken: AccessToken) {
-      const response = yield* executeReadOk(
-        HttpClientRequest.get(`${url}/api/user`).pipe(
-          HttpClientRequest.acceptJson,
-          HttpClientRequest.bearerToken(accessToken),
-        ),
-      )
-
-      return yield* HttpClientResponse.schemaBodyJson(User)(response).pipe(
+      return yield* HttpClientResponse.schemaBodyJson(AuthProfile)(response).pipe(
         mapAccountServiceError("Failed to decode response"),
       )
     })
@@ -311,6 +361,20 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
     const token = Effect.fn("Account.token")((accountID: AccountID) =>
       resolveAccess(accountID).pipe(Effect.map(Option.map((r) => r.accessToken))),
     )
+
+    const remove = Effect.fn("Account.remove")(function* (accountID: AccountID) {
+      const maybeAccount = yield* repo.getRow(accountID)
+      const remote = Option.isSome(maybeAccount)
+        ? yield* revokeRemoteCredential(maybeAccount.value).pipe(
+            Effect.catchCause(() => Effect.succeed({ remoteRevocation: "uncertain" } as const)),
+          )
+        : ({ remoteRevocation: "uncertain" } as const)
+
+      // Local logout is authoritative for this device and must not depend on
+      // network availability or a mutable remote deployment descriptor.
+      yield* repo.remove(accountID)
+      return remote
+    })
 
     const activeOrg = Effect.fn("Account.activeOrg")(function* () {
       const activeAccount = yield* repo.active()
@@ -345,7 +409,7 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
 
       const { account, accessToken } = resolved.value
 
-      return yield* fetchOrgs(account.url, accessToken)
+      return (yield* fetchProfile(account.url, accessToken)).organizations
     })
 
     const config = Effect.fn("Account.config")(function* (accountID: AccountID, orgID: OrgID) {
@@ -374,10 +438,15 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
 
     const login = Effect.fn("Account.login")(function* (server: string) {
       const normalizedServer = normalizeServerUrl(server)
-      const response = yield* executeEffectOk(
-        HttpClientRequest.post(`${normalizedServer}/auth/device/code`).pipe(
+      const descriptor = yield* discoverDescriptor(normalizedServer)
+      const response = yield* executeOk(
+        HttpClientRequest.post(betterAuthDeviceEndpoint(descriptor)).pipe(
           HttpClientRequest.acceptJson,
-          HttpClientRequest.schemaBodyJson(ClientId)(new ClientId({ client_id: clientId })),
+          HttpClientRequest.bodyUrlParams({
+            client_id: descriptor.clientId,
+            scope: descriptor.scopes.join(" "),
+            resource: descriptor.resource,
+          }),
         ),
       )
 
@@ -387,24 +456,48 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
       return new Login({
         code: parsed.device_code,
         user: parsed.user_code,
-        url: `${normalizedServer}${parsed.verification_uri_complete}`,
+        url: yield* validateDescriptor(() => authorizationUri(parsed.verification_uri_complete, descriptor)),
         server: normalizedServer,
         expiry: parsed.expires_in,
         interval: parsed.interval,
+        binding: new NativeLoginBinding({
+          adapter: descriptor.adapter,
+          deploymentId: descriptor.deploymentId,
+          configurationVersion: descriptor.configurationVersion,
+          descriptorExpiresAt: descriptor.expiresAt,
+          issuer: descriptor.issuer,
+          flow: descriptor.flow,
+          tokenEndpointOrigin: descriptor.tokenEndpointOrigin,
+          controlPlaneOrigin: descriptor.controlPlaneOrigin,
+          clientId: descriptor.clientId,
+          resource: descriptor.resource,
+          scopes: [...descriptor.scopes],
+          tokenKind: descriptor.tokenKind,
+        }),
       })
     })
 
     const poll = Effect.fn("Account.poll")(function* (input: Login) {
-      const response = yield* executeEffect(
-        HttpClientRequest.post(`${input.server}/auth/device/token`).pipe(
+      const loginBinding = {
+        adapter: input.binding.adapter,
+        deploymentId: input.binding.deploymentId,
+        issuer: input.binding.issuer,
+        tokenEndpointOrigin: input.binding.tokenEndpointOrigin,
+        controlPlaneOrigin: input.binding.controlPlaneOrigin,
+        clientId: input.binding.clientId,
+        resource: input.binding.resource,
+        scopes: input.binding.scopes,
+        tokenKind: input.binding.tokenKind,
+      } satisfies NativeCredentialBinding
+      const response = yield* execute(
+        HttpClientRequest.post(betterAuthTokenEndpoint(input.binding)).pipe(
           HttpClientRequest.acceptJson,
-          HttpClientRequest.schemaBodyJson(DeviceTokenRequest)(
-            new DeviceTokenRequest({
-              grant_type: "urn:ietf:params:oauth:grant-type:device_code",
-              device_code: input.code,
-              client_id: clientId,
-            }),
-          ),
+          HttpClientRequest.bodyUrlParams({
+            grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+            device_code: input.code,
+            client_id: input.binding.clientId,
+            resource: input.binding.resource,
+          }),
         ),
       )
 
@@ -415,29 +508,33 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
       if (parsed instanceof DeviceTokenError) return parsed.toPollResult()
       const accessToken = parsed.access_token
 
-      const user = fetchUser(input.server, accessToken)
-      const orgs = fetchOrgs(input.server, accessToken)
-
-      const [account, remoteOrgs] = yield* Effect.all([user, orgs], { concurrency: 2 })
+      // Re-read discovery before accepting a credential. A deployment that
+      // changed while the browser approval was open cannot bind a token issued
+      // under the old tuple to the new control plane.
+      const descriptor = yield* discoverDescriptor(input.server)
+      yield* validateDescriptor(() => assertCredentialBinding(loginBinding, descriptor))
+      const profile = yield* fetchProfile(input.server, accessToken)
 
       // TODO: When there are multiple orgs, let the user choose
-      const firstOrgID = remoteOrgs.length > 0 ? Option.some(remoteOrgs[0].id) : Option.none<OrgID>()
+      const firstOrgID =
+        profile.organizations.length > 0 ? Option.some(profile.organizations[0]!.id) : Option.none<OrgID>()
 
       const now = yield* Clock.currentTimeMillis
       const expiry = now + Duration.toMillis(parsed.expires_in)
       const refreshToken = parsed.refresh_token
 
       yield* repo.persistAccount({
-        id: account.id,
-        email: account.email,
+        id: AccountID.make(`${descriptor.deploymentId}:${profile.user.id}`),
+        userId: profile.user.id,
         url: input.server,
         accessToken,
         refreshToken,
         expiry,
         orgID: firstOrgID,
+        binding: persistedCredentialBinding(descriptor),
       })
 
-      return new PollSuccess({ email: account.email })
+      return new PollSuccess({ userId: profile.user.id })
     })
 
     return Service.of({
@@ -445,7 +542,7 @@ const layer: Layer.Layer<Service, never, AccountRepo.Service | HttpClient.HttpCl
       activeOrg,
       list: repo.list,
       orgsByAccount,
-      remove: repo.remove,
+      remove,
       use: repo.use,
       orgs,
       config,

@@ -4,7 +4,8 @@ import { record, text } from "../shared/sdk-runtime-values"
 import type { CodexActiveThread } from "./active-thread"
 import { spawnDynamicCodexAgent } from "./dynamic-agent"
 
-type RefreshedTokens = { access: string; accountId: string; planType?: string }
+/** A refreshed ChatGPT credential, in the app-server's own field names below. */
+type RefreshedTokens = { access: string; accountId?: string; planType?: string }
 
 export async function handleCodexServerRequest(input: {
   message: JsonRecord

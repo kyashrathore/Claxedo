@@ -17,20 +17,25 @@ const activeSuffix = (isActive: boolean) => (isActive ? dim(" (active)") : "")
 
 export const defaultConsoleUrl = "https://console.opencode.ai"
 
-export const formatAccountLabel = (account: { email: string; url: string }, isActive: boolean) =>
-  `${account.email} ${dim(account.url)}${activeSuffix(isActive)}`
+export const formatAccountLabel = (account: { user_id: string; url: string }, isActive: boolean) =>
+  `${account.user_id} ${dim(account.url)}${activeSuffix(isActive)}`
 
-const formatOrgChoiceLabel = (account: { email: string }, org: { name: string }, isActive: boolean) =>
-  `${org.name} (${account.email})${activeSuffix(isActive)}`
+export const formatLogoutMessage = (userId: string, result: Account.AccountRemoval) =>
+  result.remoteRevocation === "revoked"
+    ? `Logged out from ${userId}; remote credentials revoked`
+    : `Logged out from ${userId}; local credentials removed, remote revocation uncertain`
+
+const formatOrgChoiceLabel = (account: { user_id: string }, org: { name: string }, isActive: boolean) =>
+  `${org.name} (${account.user_id})${activeSuffix(isActive)}`
 
 export const formatOrgLine = (
-  account: { email: string; url: string },
+  account: { user_id: string; url: string },
   org: { id: string; name: string },
   isActive: boolean,
 ) => {
   const dot = isActive ? UI.Style.TEXT_SUCCESS + "●" + UI.Style.TEXT_NORMAL : " "
   const name = isActive ? UI.Style.TEXT_HIGHLIGHT_BOLD + org.name + UI.Style.TEXT_NORMAL : org.name
-  return `  ${dot} ${name}  ${dim(account.email)}  ${dim(account.url)}  ${dim(org.id)}`
+  return `  ${dot} ${name}  ${dim(account.user_id)}  ${dim(account.url)}  ${dim(org.id)}`
 }
 
 const isActiveOrgChoice = (
@@ -68,7 +73,7 @@ const loginEffect = Effect.fn("login")(function* (url: string) {
   yield* Match.valueTags(result, {
     PollSuccess: (r) =>
       Effect.gen(function* () {
-        yield* s.stop("Logged in as " + r.email)
+        yield* s.stop("Logged in as " + r.userId)
         yield* Prompt.outro("Done")
       }),
     PollExpired: () => s.stop("Device code expired", 1),
@@ -79,16 +84,16 @@ const loginEffect = Effect.fn("login")(function* (url: string) {
   })
 })
 
-const logoutEffect = Effect.fn("logout")(function* (email?: string) {
+const logoutEffect = Effect.fn("logout")(function* (userId?: string) {
   const service = yield* Account.Service
   const accounts = yield* service.list()
   if (accounts.length === 0) return yield* println("Not logged in")
 
-  if (email) {
-    const match = accounts.find((a) => a.email === email)
-    if (!match) return yield* println("Account not found: " + email)
-    yield* service.remove(match.id)
-    yield* Prompt.outro("Logged out from " + email)
+  if (userId) {
+    const match = accounts.find((a) => a.user_id === userId)
+    if (!match) return yield* println("Account not found: " + userId)
+    const result = yield* service.remove(match.id)
+    yield* Prompt.outro(formatLogoutMessage(userId, result))
     return
   }
 
@@ -108,8 +113,8 @@ const logoutEffect = Effect.fn("logout")(function* (email?: string) {
   const selected = yield* Prompt.select({ message: "Select account to log out", options: opts })
   if (Option.isNone(selected)) return
 
-  yield* service.remove(selected.value.id)
-  yield* Prompt.outro("Logged out from " + selected.value.email)
+  const result = yield* service.remove(selected.value.id)
+  yield* Prompt.outro(formatLogoutMessage(selected.value.user_id, result))
 })
 
 interface OrgChoice {
@@ -190,17 +195,17 @@ export const LoginCommand = effectCmd({
 })
 
 export const LogoutCommand = effectCmd({
-  command: "logout [email]",
+  command: "logout [user-id]",
   describe: false,
   instance: false,
   builder: (yargs) =>
-    yargs.positional("email", {
-      describe: "account email to log out from",
+    yargs.positional("user-id", {
+      describe: "canonical account user ID to log out from",
       type: "string",
     }),
   handler: Effect.fn("Cli.account.logout")(function* (args) {
     UI.empty()
-    yield* Effect.orDie(logoutEffect(args.email))
+    yield* Effect.orDie(logoutEffect(args.userId))
   }),
 })
 

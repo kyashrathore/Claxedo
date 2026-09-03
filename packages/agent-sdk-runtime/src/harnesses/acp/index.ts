@@ -46,6 +46,7 @@ import type {
   AgentGoalMutationResult,
   AgentGoalResource,
   AgentHarnessAdapterProcessOptions,
+  AgentConfigOptions,
   AgentPermissionModeState,
 } from "../../adapter-contract"
 import { goalCapabilities, harnessCapabilities, type HarnessCapabilities, type HarnessCapabilityContext } from "../../capabilities"
@@ -75,6 +76,14 @@ import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publishe
 import { acceptedSessionConfig, acceptedSessionUpdate } from "../shared/accepted-session-mutation"
 
 const log = Log.create({ service: "acp-adapter" })
+
+/** One process's cached discovery answers, as the adapter contract states them. */
+function acpConfigOptions(proc: ACPProcess): AgentConfigOptions {
+  return {
+    options: (proc.cachedConfigOptions ?? []) as AgentConfigOption[],
+    ...(proc.cachedResolvedModel ? { resolvedModel: proc.cachedResolvedModel } : {}),
+  }
+}
 
 export type AcpRuntimeStore = AgentRuntimeStoreWithRecovery
 
@@ -466,7 +475,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     }
   }
 
-  async forkSession(id: string, _messageId: string, directory: string): Promise<{ id: string }> {
+  async forkSession(id: string, _messageId: string, directory: string, childSessionId?: string): Promise<{ id: string }> {
     directory = requireWorkspaceDirectory(directory)
     log.info("forkSession: called", { id, directory })
     const row = this.getSession(id, directory) as Promise<{ agent_session_id?: string; title?: string | null } | null>
@@ -485,7 +494,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     const newAgentSessionId = await proc.forkSession(agentSessionId, directory)
     log.info("forkSession: ACP fork succeeded", { newAgentSessionId })
 
-    const newId = randomUUID()
+    const newId = childSessionId ?? randomUUID()
     const processKey = this.sessionProcessMap().get(id)
       ?? this.store.getSessionOwnerKey?.(id)
       ?? (this.options ? this.keyForSession(id, directory) : null)
@@ -522,11 +531,11 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
       if (list.length > 0) return list
     }
     const cfg = await this.probeConfigOptions(directory)
-    if (Array.isArray(cfg) && cfg.length > 0) {
+    if (cfg.options.length > 0) {
       const list = extractAgents({
         caps: null,
         prompt: null,
-        cfg: cfg as SessionConfigOption[],
+        cfg: cfg.options as SessionConfigOption[],
         modes: [],
       })
       if (list.length > 0) return list
@@ -721,17 +730,17 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     })
   }
 
-  peekConfigOptions(_directory: string): AgentConfigOption[] | null {
+  peekConfigOptions(_directory: string): AgentConfigOptions | null {
     for (const entry of this.processEntries()) {
       const proc = entry.proc
-      if (proc?.alive && proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOption[]
+      if (proc?.alive && proc.cachedConfigOptions) return acpConfigOptions(proc)
     }
     const proc = this.probe?.proc
-    if (proc?.alive && proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOption[]
+    if (proc?.alive && proc.cachedConfigOptions) return acpConfigOptions(proc)
     return null
   }
 
-  async probeConfigOptions(directory: string): Promise<AgentConfigOption[]> {
+  async probeConfigOptions(directory: string): Promise<AgentConfigOptions> {
     directory = requireWorkspaceDirectory(directory)
     const live = this.peekConfigOptions(directory)
     if (live) {
@@ -757,7 +766,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     }
     try {
       const proc = await wait("ACP mode probe", this.getOrSpawnProbe(directory))
-      if (proc.cachedConfigOptions) return proc.cachedConfigOptions as AgentConfigOption[]
+      if (proc.cachedConfigOptions) return acpConfigOptions(proc)
       await this.boot(proc, directory, undefined, probeTimeoutMs())
       if (!proc.cachedConfigOptions) {
         const ms = probeTimeoutMs()
@@ -777,7 +786,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
         }))
       }
       if (!proc.cachedConfigOptions) throw new Error("ACP harness did not return live config options")
-      return proc.cachedConfigOptions as AgentConfigOption[]
+      return acpConfigOptions(proc)
     } catch (err) {
       log.warn("probeConfigOptions: failed", {
         directory,

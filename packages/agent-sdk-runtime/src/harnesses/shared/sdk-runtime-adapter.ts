@@ -28,13 +28,16 @@ import type {
 } from "../../index"
 import type {
   AbortResult,
+  AgentConfigOptions,
   AgentGoalResource,
   AgentGoalMutationResult,
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
   AgentInteractionResult,
   AgentPermissionModeState,
+  AgentTurnWriteContext,
 } from "../../adapter-contract"
+import { resolvedModelFromConfigOptions, turnWriteFence } from "../../adapter-contract"
 import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
 import {
@@ -103,6 +106,12 @@ export type {
 export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 
 const log = Log.create({ service: "sdk-runtime-adapter" })
+
+/** A native-SDK driver's options, plus the model its own `model` select names as current. */
+function sdkConfigOptions(options: AgentConfigOption[]): AgentConfigOptions {
+  const resolvedModel = resolvedModelFromConfigOptions(options)
+  return { options, ...(resolvedModel ? { resolvedModel } : {}) }
+}
 
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")
@@ -385,10 +394,27 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.publisher().forget(id)
   }
 
-  /** Holds the busy lock until terminal emission and releases it on every exit path. */
-  async *sendMessage(id: string, input: PromptInput, directory: string): AsyncIterable<AgentRuntimeStreamEvent> {
+  /**
+   * Runs one turn, holding the session's busy lock until TERMINAL EMISSION —
+   * the moment the turn is semantically over, not the moment this generator
+   * finishes. The lock answers "is a turn in flight on this session", and a
+   * second prompt arriving while one is has nowhere to go, so it is refused.
+   * The generator outlives the turn by hundreds of milliseconds: after the
+   * terminal event the consumer (`runtime.ts`'s drain loop) still commits
+   * events, fans out to subscribers, and awaits an auto-title round-trip, and
+   * a prompt landing in that tail would be refused for a turn already over.
+   * The `finally` releases too — `enter`'s closure deletes from a Set, so a
+   * second call is a no-op — so a turn that throws or is abandoned before any
+   * terminal event cannot strand the session.
+   */
+  async *sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: string,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent> {
     directory = requireWorkspaceDirectory(directory)
-    yield* this.streamMessage(id, input, directory, (turn) => this.driver.runTurn(turn))
+    yield* this.streamMessage(id, input, directory, (turn) => this.driver.runTurn(turn), writeContext)
   }
 
   private async *streamMessage(
@@ -396,6 +422,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     input: PromptInput,
     directory: string,
     execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+    writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
     const leaveBusy = this.lifecycle().enter(id)
     if (!leaveBusy) {
@@ -403,7 +430,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       return
     }
     try {
-      for await (const event of this._sendMessage(id, input, directory, execute)) {
+      for await (const event of this._sendMessage(id, input, directory, execute, writeContext)) {
         // Release BEFORE yielding: the consumer may take arbitrarily long to
         // process this event (the auto-title round-trip is downstream of it),
         // and every millisecond of that is a window a next prompt can lose in.
@@ -420,7 +447,9 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     input: PromptInput,
     directory: string,
     execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
+    writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
+    const fenced = turnWriteFence(writeContext)
     const current = this.store.getAgentSessionId(id)
     if (!current) {
       yield sessionError(`Session ${id} not found`, id)
@@ -461,6 +490,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       })),
     ]
     const committedStart = this.store.startTurn({
+      ...fenced,
       sessionId: id,
       agentSessionId,
       userMessageId: input.userMessageId,
@@ -490,6 +520,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       else resolvers.push(resolve)
     })
     const parentProjector = createTurnEventProjector({
+      ...fenced,
       store: this.store,
       owner: {
         sessionId: id,
@@ -505,6 +536,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const router = createChildEventRouter({
       parent: parentProjector,
       createChildProjector: (target) => createTurnEventProjector({
+        ...fenced,
         store: this.store,
         owner: {
           sessionId: target.sessionId,
@@ -584,6 +616,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         const parentConfig = this.store.getSessionConfig(id)
         if (parentConfig) this.store.updateSessionConfig(childSessionId, parentConfig)
         this.store.startTurn({
+          ...fenced,
           sessionId: childSessionId,
           agentSessionId,
           userMessageId: target.input.userMessageId,
@@ -619,6 +652,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       const outcome = subagentOutcome(observation)
       if (outcome) {
         this.store.finishTurn({
+          ...fenced,
           sessionId: child.sessionId,
           assistantMessageId: child.target.assistantMessageId,
           outcome,
@@ -694,6 +728,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         variant: input.variant,
       }))
       this.store.appendEvent({
+        ...fenced,
         sessionId: id,
         agentSessionId,
         payload: updated,
@@ -717,6 +752,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       variant: input.variant,
     }))
     this.store.appendEvent({
+      ...fenced,
       sessionId: id,
       agentSessionId,
       payload: updated,
@@ -725,6 +761,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     yield updated
     const error = sessionError(promptError, id)
     this.store.appendEvent({
+      ...fenced,
       sessionId: id,
       agentSessionId,
       payload: error,
@@ -796,12 +833,12 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     await this.driver.applyConfig(config)
   }
 
-  async probeConfigOptions(directory: string): Promise<AgentConfigOption[]> {
-    return this.driver.configOptions(this.currentModel, directory)
+  async probeConfigOptions(directory: string): Promise<AgentConfigOptions> {
+    return sdkConfigOptions(await this.driver.configOptions(this.currentModel, directory))
   }
 
-  peekConfigOptions(directory: string): AgentConfigOption[] {
-    return this.driver.peekConfigOptions(this.currentModel, directory)
+  peekConfigOptions(directory: string): AgentConfigOptions {
+    return sdkConfigOptions(this.driver.peekConfigOptions(this.currentModel, directory))
   }
 
   readRuntimeHealth(_directory: string): AgentHarnessAdapterHealth {

@@ -75,10 +75,18 @@ function syncResultStatus(input: Awaited<ReturnType<typeof syncOpencodeMcpConfig
  * `app.route("/", sub)` re-registers a sub-app's middleware onto the parent
  * router, so a `"*"` middleware here would also run for every parent route
  * mounted after this one — in server.ts that is /documents, /internal/documents,
- * /api/workspace, /api/control and /api/claxedo/events, several of which
- * authenticate with an installation or runtime-access token rather than a
- * control-plane bearer and would start failing in signed mode.
- * `opencode-compat-auth-gate.test.ts` pins both halves.
+ * /api/workspace and /api/control, several of which authenticate with an
+ * installation or runtime-access token rather than a control-plane bearer and
+ * would start failing in signed mode. `auth-gate.test.ts` pins both halves.
+ *
+ * `/api/claxedo/events` is one of THIS router's own paths (`compatRoutes`
+ * below answers it directly, alongside its `/global/event` and `/api/wr/events`
+ * aliases), not one of the parent routes above — it never belongs in that
+ * after-list. Every composition that mounts this router (`self-hosted-node`,
+ * the desktop `local-app`) must let it answer here first rather than also
+ * registering its own handler for the same path: Hono resolves the
+ * first-registered handler for an exact path, so a later same-path mount is
+ * unreachable dead code, not a second implementation.
  */
 export function OpenCodeCompatRoutes(options: OpenCodeCompatRouteOptions = {}) {
   const app = new Hono()

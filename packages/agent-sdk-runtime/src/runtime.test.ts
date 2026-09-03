@@ -5,6 +5,7 @@ import path from "path"
 import { describe, expect, test } from "bun:test"
 import { createAgentRuntime } from "./runtime"
 import type { AgentHarnessFactory, AgentRuntimeAbortResult } from "./runtime"
+import { AgentRuntimeStaleTurnError } from "./adapters"
 import type { AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
 import { goalCapabilities } from "./capabilities"
 import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
@@ -1554,6 +1555,78 @@ describe("createAgentRuntime", () => {
     await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({
       lastTurn: { status: "completed", assistantMessageId: "msg_1_r" },
     })
+    runtime.dispose()
+  })
+
+  test("rejects a committing adapter terminal write after a durable fence takeover", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    let runtimeStore: {
+      startTurn(input: unknown): unknown
+      appendEvent(input: unknown): unknown
+    } | undefined
+    let admissionValid = true
+    let commitError: unknown
+    const base = testHarness({
+      commitsStreamEvents: true,
+      sendMessage: async function* (id, _prompt, _directory, writeContext) {
+        runtimeStore?.startTurn({
+          sessionId: id,
+          assistantMessageId: "replacement_r",
+          agent: "build",
+          model: { providerID: "test", modelID: "replacement" },
+          parts: [],
+          fencingToken: 2,
+        })
+        admissionValid = false
+        try {
+          runtimeStore?.appendEvent({
+            sessionId: id,
+            payload: sessionIdle(id),
+            fencingToken: writeContext?.fencingToken,
+          })
+        } catch (error) {
+          commitError = error
+        }
+      },
+    }) as unknown as {
+      id: "pi"
+      access: "native"
+      create(context: { store: typeof runtimeStore }): AgentHarnessAdapter
+    }
+    const harness = {
+      id: base.id,
+      access: base.access,
+      create(context: { store: NonNullable<typeof runtimeStore> }) {
+        runtimeStore = context.store
+        return base.create(context)
+      },
+    } as unknown as AgentHarnessFactory
+    const runtime = createAgentRuntime({ store, harnesses: [harness] })
+    const session = await runtime.sessions.create({
+      id: "ses_fenced",
+      directory: undefined,
+      harness: { id: "pi", access: "native" },
+    })
+
+    await runtime.turns.start({
+      sessionId: session.id,
+      messageId: "user_1",
+      text: "hello",
+      admission: {
+        valid: () => admissionValid,
+        fencingToken: () => 1,
+      },
+    })
+    await tick()
+
+    expect(commitError).toBeInstanceOf(AgentRuntimeStaleTurnError)
+    expect(rows.getSession(session.id)).toMatchObject({
+      status: "busy",
+    })
+    expect((rows.getMessages(session.id) as Array<{ info: { id: string } }>).map((message) => message.info.id))
+      .toContain("replacement_r")
+    expect(lastTurnOf(rows, session.id)).toBeUndefined()
     runtime.dispose()
   })
 

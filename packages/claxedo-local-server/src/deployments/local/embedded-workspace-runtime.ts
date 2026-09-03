@@ -5,6 +5,7 @@ import {
   createPersistentTranscriptHandleStore,
   createTranscriptResolver,
   createWorkspaceRuntimeApp,
+  managedWorkspaceSessionAccessPolicy,
   Pty,
   type ProcessObserver,
   type ProcessOwnerHandle,
@@ -51,6 +52,7 @@ const hosts = new Map<string, EmbeddedRuntime>()
 // external-URL mode it rewrites onto the configured URL.
 let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
 let configuredOpencodeCompat = true
+let configuredProviderCatalog: WorkspaceRuntimeServerOptions["providerCatalog"] | undefined
 let configuredPiModelBackend: PiModelBackendResolver | undefined
 /**
  * Host-supplied route groups for every embedded runtime this process creates.
@@ -103,9 +105,32 @@ let configuredOnSessionMetaCreated: ((workspace: Workspace, session: unknown) =>
 let configuredOnSessionMetaSnapshot: ((workspace: Workspace, sessions: unknown[]) => void | Promise<void>) | undefined
 let configuredOnTurnOutcome: ((input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void) | undefined
 
+/**
+ * How THIS process's embedded workspace runtimes composed their session
+ * access — the `sessionAuthority` marker of the very policy
+ * `createWorkspaceRuntimeApp` mounts them with.
+ *
+ * The one place that can answer it, and the one place that should: a host
+ * serving these runtimes to remote clients (the desktop's relay tunnel, a
+ * self-hosted `claxedo up`) has to DECLARE the composition to the control
+ * plane, and the control plane refuses to infer it. Derived from the same
+ * expression the app itself uses — the configured policy, or the unbound
+ * `managedWorkspaceSessionAccessPolicy()` an embedded exposure falls back to —
+ * so the declaration cannot drift from what is actually mounted.
+ */
+export function embeddedWorkspaceRuntimeSessionAuthority() {
+  return (configuredSessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()).sessionAuthority
+}
+
 export function configureEmbeddedWorkspaceRuntime(input: {
   opencodeRequest: OpenCodeRequestFn
   opencodeCompat?: boolean
+  /**
+   * The host's provider catalog for non-opencode harnesses, so a
+   * workspace-scoped `/provider` answers the same catalog the compat router
+   * serves unscoped. See `WorkspaceHostOptions.providerCatalog`.
+   */
+  providerCatalog?: WorkspaceRuntimeServerOptions["providerCatalog"]
   piModelBackend?: PiModelBackendResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
   processObserver?: ProcessObserver
@@ -122,6 +147,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   }
   configuredOpencodeRequest = input.opencodeRequest
   configuredOpencodeCompat = input.opencodeCompat ?? true
+  configuredProviderCatalog = input.providerCatalog
   configuredPiModelBackend = input.piModelBackend
   configuredRouteContributions = input.routeContributions ?? []
   configuredProcessObserver = input.processObserver
@@ -265,6 +291,7 @@ function options(
     // Claxedo host decision, injected via configureEmbeddedWorkspaceRuntime
     // from the composition root (this module stays ambient-env-free).
     opencodeCompat: configuredOpencodeCompat,
+    ...(configuredProviderCatalog ? { providerCatalog: configuredProviderCatalog } : {}),
     // `createSessionRoutes` awaits this before publishing `session.lifecycle`
     // "created", so the control-plane list can never be invalidated before
     // its canonical projection row exists.

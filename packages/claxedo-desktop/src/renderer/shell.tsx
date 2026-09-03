@@ -63,6 +63,7 @@ type Platform = AppPlatform & {
 
 export type DesktopRendererOptions = {
   loadHostedContributions?: ReturnType<typeof getDefaultConfig>["loadHostedContributions"]
+  serviceContributionLoaders?: ReturnType<typeof getDefaultConfig>["serviceContributionLoaders"]
 }
 
 export function startDesktopRenderer(options: DesktopRendererOptions = {}) {
@@ -152,10 +153,19 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
   // Desktop identity is never a renderer auth session. `authEnabled` stays
   // false even in a signed-capable release; the Electron AccountPort owns the
   // transition that activates `loadHostedContributions`.
+  const baseConfig = getDefaultConfig()
   const config = {
-    ...getDefaultConfig(),
+    ...baseConfig,
     authEnabled: false,
+    // On desktop the optional hosted loader is the build-time proof that main
+    // owns a configured account client. Requiring a second renderer flag hid
+    // the only sign-in entry point in exactly the build that could sign in,
+    // leaving Devices to claim remote access was unavailable. Browser products
+    // keep their explicit UI flag; this is desktop composition policy.
+    accountSignInEnabled:
+      baseConfig.accountSignInEnabled === true || options.loadHostedContributions !== undefined,
     loadHostedContributions: options.loadHostedContributions,
+    serviceContributionLoaders: options.serviceContributionLoaders,
   }
   initClaxedo(config)
 
