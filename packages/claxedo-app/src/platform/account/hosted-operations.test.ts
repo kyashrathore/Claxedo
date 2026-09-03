@@ -19,12 +19,9 @@ import {
  * consistent and simply wrong about what its route returns. Every shape below
  * is written by hand, so it agrees with whatever reading of the routes produced
  * it — which is how the workspace list, `workspace.resolve`,
- * `host.enrollCurrentMachine` and three more shipped mismatched. What binds
- * these decoders to real route output is
- * `claxedo-server/src/deployments/hosted-shared/hosted-operation-response-contract.test.ts`,
- * which drives a real hosted app and feeds the bodies it produces to these
- * decoders. The shapes here exist to pin decoder BEHAVIOUR — what is rejected,
- * and with what message — not to state the contract.
+ * `host.enrollCurrentMachine` and three more shipped mismatched. The shapes
+ * here exist to pin decoder BEHAVIOUR — what is rejected, and with what
+ * message — not to state the contract.
  */
 
 const source = readFileSync(path.join(import.meta.dir, "hosted-operations.ts"), "utf8")

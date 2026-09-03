@@ -13,7 +13,6 @@
  *   CLAXEDO_SERVER_URL - Base URL of the Claxedo local control plane
  *   OPENCODE_API_DIR   - Default project directory for requests
  *   CLAXEDO_WORKSPACE_ID - Default workspace id for Docker/cloud workspace requests
- *   CLAXEDO_REPOSITORY_URL - Optional repository URL override for a cloud workspace
  *   CLAXEDO_AUTH_TOKEN - Optional signed remote server auth token
  *   CLAXEDO_SESSION_ID - Optional current session id for documents_open and the documents CLI
  */

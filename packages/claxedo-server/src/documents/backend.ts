@@ -237,11 +237,14 @@ export function subscribeDocumentEvents(
 /**
  * Doorbell sink for the CENTRAL bus.
  *
- * Injected, never imported: this module is in the Worker import graph
- * (`hosted-app.ts` → `routes/documents.ts` → here), and `../bus` pulls
- * `@claxedo/workspace-runtime` — a FORBIDDEN_BARE dependency that
- * `worker.import-graph.test.ts` rejects. Composition roots inject the local
- * bus or hosted `LiveSyncRoom` sink without adding either transport here.
+ * Injected, never imported: this module is reached today only by the
+ * self-hosted Node composition (`self-hosted-node/app.ts` →
+ * `documents/routes/index.ts` → here) — no hosted Worker composition mounts
+ * documents at present — but it stays Worker-safe on purpose: `../bus` pulls
+ * `@claxedo/workspace-runtime`, a dependency forbidden from any Worker
+ * bundle. Composition roots inject the local bus (or, for a hosted
+ * composition that mounts documents, a `LiveSyncRoom` sink) without adding
+ * either transport here.
  *
  * The `DocumentChangedEvent` import is type-only, so it is erased and never
  * enters the bundle — while still keeping this envelope in lockstep with the

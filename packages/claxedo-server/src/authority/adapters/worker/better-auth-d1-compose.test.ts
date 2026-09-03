@@ -275,8 +275,6 @@ describe("Better Auth + D1 user-deployed composition", () => {
       modules.filter((file) =>
         [
           "/authority/adapters/hosted/",
-          "/authority/adapters/worker/hosted-compose",
-          "/authority/adapters/worker/retained-sandbox-driver",
           "/sandbox/stores/hosted",
           "/platform/auth/hosted-adapter",
           "/billing/",

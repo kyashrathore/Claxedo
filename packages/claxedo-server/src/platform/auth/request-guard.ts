@@ -11,11 +11,11 @@
  * all. Opt-in security is a per-route review item that fails silently the first
  * time someone forgets. Mounted here, once, at composition, "no hosted route
  * ships without a body cap" becomes a property of the shell — the same argument
- * `securityHeaders()` makes one middleware above this one (see hosted-app.ts).
+ * `securityHeaders()` makes one middleware above this one (see hosted-core-app.ts).
  *
  * Exemptions are therefore DATA, not absence: a route escapes the default only
  * by appearing in the exemption registry with a reason and the file that enforces
- * the replacement. `route-guard-inventory.test.ts` reads that registry and fails
+ * the replacement. `request-guard.test.ts` reads that registry and fails
  * both ways — an unexempted route that accepts an oversized body, and a stale
  * exemption matching no mounted route (a renamed path would otherwise leave a
  * permanent silent hole).
@@ -25,7 +25,7 @@
  * `billing/invariants.test.ts` keeps free of payment-vendor tokens. A
  * feature whose exemption requires naming a vendor therefore exports its own
  * entry from its own module (see `billing/billing-routes.ts`
- * `BILLING_WEBHOOK_GUARD_EXEMPTION`), and `hosted-app.ts` composes the full list
+ * `BILLING_WEBHOOK_GUARD_EXEMPTION`), and `hosted-core-app.ts` composes the full list
  * via `hostedRouteGuardExemptions()`. The composition — not this constant — is
  * what the inventory test asserts against.
  *
@@ -114,7 +114,7 @@ export const CORE_ROUTE_GUARD_EXEMPTIONS: readonly RouteGuardExemption[] = [
  * A function rather than a constant so feature modules can be imported here
  * without this module importing them in the other direction — the whole point of
  * the split (see the module header). Callers pass the result to
- * `defaultRequestGuard`; `route-guard-inventory.test.ts` asserts against it.
+ * `defaultRequestGuard`; `request-guard.test.ts` asserts against it.
  */
 export function hostedRouteGuardExemptions(
   featureExemptions: readonly RouteGuardExemption[] = [],
@@ -162,7 +162,7 @@ export function pathMatchesPrefix(path: string, prefix: string) {
  * `cf-connecting-ip` is Cloudflare's own header and cannot be spoofed by a
  * client on the Worker path; `x-forwarded-for`'s first entry is the fallback for
  * the Node container behind a proxy. Same derivation as
- * `routes/hosted-device-auth.ts` `rateLimitClientKey`.
+ * `routes/hosted/device-auth.ts` `rateLimitClientKey`.
  */
 export function requestClientKey(c: Context) {
   const direct = c.req.header("cf-connecting-ip")?.trim()
@@ -180,7 +180,7 @@ export type RequestGuardOptions = {
 }
 
 /**
- * The default guard, mounted once in `hosted-app.ts`.
+ * The default guard, mounted once in `hosted-core-app.ts`.
  *
  * Order inside: rate limit BEFORE body cap. A rejected client should be turned
  * away without the Worker reading or buffering a byte of its body — doing the

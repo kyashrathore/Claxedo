@@ -48,7 +48,8 @@ export async function hostedConnectionInfo(
   // wake/resume, not only at create — otherwise a canceled subscription leaves
   // existing cloud workspaces wake-able forever. Reached ONLY for HOSTED cloud
   // workspaces (backing=cloud-vm / access=cloud, asserted above); the hook is
-  // composed exclusively in hosted-app.ts, so self-host / local never gate.
+  // composed exclusively in claxedo-hosted-product-app.ts and wired through
+  // hosted-core-app.ts's HostedWorkspaceRoutes mount, so self-host / local never gate.
   // Denied → the typed billing_entitlement_required (402) the frontend acts on,
   // BEFORE any sandbox wake side effect.
   if (options.requireCloudWorkspaceEntitlement) {

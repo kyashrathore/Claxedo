@@ -21,7 +21,7 @@ import { sourceClosure } from "@claxedo/server-core/platform/governance/source-c
  *     `@claxedo/local-server/...` path — but it constrains WHICH subpath, not
  *     WHICH deployment. Under that rule a cloud entry could import the desktop
  *     product's execution surface through the blessed subpath and pass.
- *   - `local-product-contract.test.ts` / `hosted-product-contract.test.ts`
+ *   - `local-product-contract.test.ts` / `hosted-core-app.test.ts`
  *     pin the mounted ROUTE inventories, which is a different question from
  *     the import graph: a module can be reached without mounting a route.
  *
@@ -66,9 +66,8 @@ const ENTRIES = [
   // sessions` for workspaces this single-binary control plane routes to a
   // remote host, not only ones it runs locally — and the same `authority/
   // relay-token-record.ts` dedup as the two hosted entries above (self-hosted
-  // mints relay runtime tokens through the identical owner now). Neither
-  // hosted-shared's `hosted-remote-access-service.ts` nor its
-  // `hosted-usage-ledger.ts` are reached here: self-hosted-node keeps its own
+  // mints relay runtime tokens through the identical owner now). hosted-shared's
+  // `hosted-remote-access-service.ts` is not reached here: self-hosted-node keeps its own
   // full `RemoteAccessService` (`self-hosted-node/remote-access-service.ts`,
   // which also enrolls this machine) and its own usage ledger.
   // No new package.
@@ -102,7 +101,6 @@ describe("server deployment entry closures", () => {
         "src/hosts/wakes/",
         "src/documents/",
         "src/billing/",
-        "settlement-dispatcher.cf.ts",
         "wake-lane.cf.ts",
       ].some((prefix) => file.includes(prefix)),
     )
@@ -143,7 +141,6 @@ describe("server deployment entry closures", () => {
       [
         "authority/hosted-services",
         "core-worker.cf",
-        "deployments/hosted-shared/hosted-app",
         "documents/",
         "billing/",
         "sandbox",
@@ -174,8 +171,6 @@ describe("server deployment entry closures", () => {
       files.filter((file) =>
         [
           "better-auth-d1-locked-worker",
-          "authority/adapters/worker/hosted-compose",
-          "authority/adapters/worker/retained-sandbox-driver",
           "billing/",
           "documents/",
         ].some((value) => file.toLowerCase().includes(value)),

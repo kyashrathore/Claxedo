@@ -3,7 +3,8 @@
  * Option B — raw `@polar-sh/sdk`, our own webhook route,
  * everything Polar confined to src/billing/**).
  *
- * Mounted by hosted-app.ts at /api/billing:
+ * Mounted by claxedo-hosted-product-app.ts (createClaxedoHostedProductApp) at
+ * /api/billing:
  *   POST /api/billing/polar/webhook  — Standard-Webhooks-verified state intake
  *   POST /api/billing/checkout       — Polar checkout session (admin/owner)
  *   POST /api/billing/portal         — Polar customer portal session (admin/owner)
@@ -114,7 +115,7 @@ export type PolarClientLike = {
  * Rate-limit key for the unauthenticated webhook: the caller's IP.
  *
  * Same derivation as `authority/request-guard.ts` `requestClientKey` and
- * `routes/hosted-device-auth.ts` `rateLimitClientKey` — `cf-connecting-ip` is
+ * `routes/hosted/device-auth.ts` `rateLimitClientKey` — `cf-connecting-ip` is
  * set by Cloudflare and unspoofable on the Worker path, with the first
  * `x-forwarded-for` entry as the Node-container fallback. Taken on `Request`
  * rather than a Hono `Context` so it stays usable from the webhook's own tests
@@ -197,8 +198,9 @@ export const POLAR_WEBHOOK_MAX_BODY_BYTES = 512 * 1024
  *
  * Declared HERE rather than in `authority/request-guard.ts` because the
  * reason names the payment vendor, and `billing/invariants.test.ts` keeps the
- * vendor-agnostic control-plane core free of Polar tokens. `hosted-app.ts`
- * merges it in through `hostedRouteGuardExemptions()`, so the exemption still
+ * vendor-agnostic control-plane core free of Polar tokens. `claxedo-hosted-product-app.ts`
+ * threads it into `createHostedCoreApp`'s `requestGuardExemptions`, and
+ * `hosted-core-app.ts` merges it in through `hostedRouteGuardExemptions()`, so the exemption still
  * lives in exactly one place and is still auditable by the inventory test — it
  * just lives next to the code that enforces the replacement.
  */

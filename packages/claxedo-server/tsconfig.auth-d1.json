@@ -23,8 +23,8 @@
     "src/platform/auth/better-auth-d1-foundation.ts",
     "src/platform/auth/better-auth-d1-foundation.test.ts",
     "src/platform/auth/better-auth-d1-migration.ts",
-    "src/platform/auth/better-auth-d1-spike.test.ts",
-    "src/platform/auth/better-auth-d1-worker-spike.cf.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-worker-spike.test.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-worker-spike.cf.ts",
     "src/platform/auth/better-auth-native-clients.ts",
     "src/platform/auth/better-auth-token-hash.ts"
   ]

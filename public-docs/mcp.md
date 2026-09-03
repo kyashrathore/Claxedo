@@ -116,7 +116,6 @@ workspaces, signed remote servers, and desktop-hosted browser tools.
 | `CLAXEDO_AUTH_TOKEN` | Optional bearer token sent as `Authorization: Bearer …` on every server request. Set only when pointing the MCP at a signed remote Claxedo server. |
 | `OPENCODE_API_DIR` | Default local project directory for workspace-scoped requests. |
 | `CLAXEDO_WORKSPACE_ID` | Default workspace id for Docker/cloud workspace requests. |
-| `CLAXEDO_REPOSITORY_URL` | Optional repository URL override used when `spawn_session` resolves a hosted workspace's Git remote. |
 | `CLAXEDO_SESSION_ID` | Optional current session id used by `documents_open` and the documents CLI for the per-project local file grant. |
 | `CLAXEDO_TERMINAL_ID` | Default terminal id for `get_logs`, `session_messages`, and `summarize_logs` when no id is passed. Set automatically inside a Claxedo terminal. |
 | `CLAXEDO_TAB_ID` | Fallback tab id for `session_messages` when a terminal id is unavailable. |
@@ -318,6 +317,7 @@ Implemented in:
 - `packages/claxedo-mcp/src/documents-cli.ts`
 - `packages/claxedo-mcp/src/desktop-request.ts`
 - `packages/claxedo-mcp/src/browser-tools.ts`
+- `packages/claxedo-mcp/src/cloud-workspace-tools.ts`
 - `packages/claxedo-mcp/src/process-handler.ts`
 - `packages/claxedo-mcp/src/tool-policy.ts`
 - `packages/claxedo-mcp/src/request-scope.ts`

@@ -257,7 +257,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "runtime session authority oracle",
     reason:
-      "Isolated workspace runtimes cannot read session participation themselves. They present their already-verified Relay Host Token as an opaque proof; this route re-verifies the relay signature and expiry, then derives actor and workspace ONLY from signed claims — a request body can never assert an actor. Mounted at /api/runtime-authority by server.ts and hosted-app.ts alike.",
+      "Isolated workspace runtimes cannot read session participation themselves. They present their already-verified Relay Host Token as an opaque proof; this route re-verifies the relay signature and expiry, then derives actor and workspace ONLY from signed claims — a request body can never assert an actor. Mounted at /api/runtime-authority by self-hosted-node/app.ts and hosted-core-app.ts alike.",
     tests: [
       "routes/runtime-session-authority.test.ts",
       "authority/two-user-runtime-transport.acceptance.test.ts",
@@ -347,7 +347,7 @@ export const ARCHITECTURE_OWNERSHIP = [
     status: OwnershipStatus.Canonical,
     owner: "control-plane JWKS route",
     reason:
-      "Unit 5 MOVE: serves control-plane signing keys; only dependency is authority/web-crypto plus jose/hono. Mounted by both server.ts and hosted-app.ts (already Worker-safe). Rehomed from routes/.",
+      "Unit 5 MOVE: serves control-plane signing keys; only dependency is authority/web-crypto plus jose/hono. Mounted by both self-hosted-node/app.ts and hosted-core-app.ts (already Worker-safe). Rehomed from routes/.",
     tests: ["authority/routes/jwks.test.ts"],
     routeSamples: ["/.well-known/jwks.json"],
   },

@@ -92,10 +92,11 @@ export type CredentialRoutesOptions = {
   now?: () => number
   authenticate?: (request: Request) => Promise<void>
   /**
-   * Signed-auth configuration used to resolve the CALLER'S ORG. Defaults to
-   * `controlPlaneAuthConfig()` (process env), which is what the self-host
-   * composition relies on: signed auth off → the single-tenant partition;
-   * signed auth on → the verified `org_id` claim.
+   * Signed-auth configuration used to resolve the CALLER'S ORG. When absent,
+   * `requestOrg` passes NO config and `controlPlaneAuthContext` applies its own
+   * unsigned-local default — no environment is consulted here. That is what the
+   * self-host composition relies on: signed auth off → the single-tenant
+   * partition; signed auth on → the verified `org_id` claim from this config.
    */
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier

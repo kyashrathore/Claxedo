@@ -673,10 +673,7 @@ describe("pause", () => {
 })
 
 /**
- * Retention bounds for `host_enrollment_requests` — the SQLite half of one
- * policy. The hosted host-enrollment policy test makes the same claims
- * against the workspace authority, and `host-enrollment-policy-drift.policy.test.ts`
- * fails if the two files stop agreeing on the numbers.
+ * Retention bounds for `host_enrollment_requests`.
  *
  * These read the TABLE, not the API. Nothing this authority returns is a
  * function of how many request rows exist, which is exactly why the table grew

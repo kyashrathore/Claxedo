@@ -1,8 +1,10 @@
 /**
- * Node-server error sink. Node-only: imported by server.ts and main.ts, NEVER
- * by worker.ts/hosted-app.ts — `posthog-node` is on the Worker's forbidden-
- * import list and the Worker import-graph guard keeps this module out of that
- * graph. The Worker registers its own fetch-based sink in worker.ts.
+ * Node-server error sink. Node-only: imported by self-hosted-node/app.ts,
+ * NEVER by the hosted Worker composition (hosted-core-app.ts,
+ * hosted-workerd/core-worker.cf.ts) — `posthog-node` is on the Worker's
+ * forbidden-import list and the Worker import-graph guard keeps this module
+ * out of that graph. The Worker registers its own fetch-based sink through
+ * `workerTelemetry`/`workerErrorCapture` (platform/auth/worker-telemetry.ts).
  *
  * One client, two planes: the sink reuses the `posthog-node` client that
  * posthog.ts already owns, so product events and exceptions share a connection,

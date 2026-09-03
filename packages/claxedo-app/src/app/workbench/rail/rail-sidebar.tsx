@@ -386,7 +386,7 @@ function uniq(input: string[]) {
 }
 
 function title(input: string) {
-  if (input === "review" || input === "page" || input === "planner") return input[0].toUpperCase() + input.slice(1)
+  if (input === "review" || input === "page") return input[0].toUpperCase() + input.slice(1)
   if (input === "general") return "General"
   if (input === "local") return "Local"
   if (input === "cloud") return "Cloud"

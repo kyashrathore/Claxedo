@@ -28,6 +28,10 @@ describe("product boundary authoritative checks", () => {
     expect(commands.some((command) => command.includes("build:local"))).toBe(true)
     expect(commands.some((command) => command.includes("build:marker-control"))).toBe(true)
     expect(commands.some((command) => command.includes("check:local-bundle"))).toBe(true)
+    // The certified Better Auth + D1 Worker is otherwise bundled only at manual
+    // release time, so CI must bundle it and boot the built entry.
+    expect(commands.some((command) => command.includes("build:workerd-boundary"))).toBe(true)
+    expect(commands.some((command) => command.includes("smoke:workerd-boundary"))).toBe(true)
     expect(AUTHORITATIVE_CHECKS["@claxedo/host-connector"]?.map((check) => check.label)).toEqual([
       "host-connector production build",
       "host-connector built entry smoke",
@@ -44,6 +48,8 @@ describe("product boundary authoritative checks", () => {
     ])
     expect(AUTHORITATIVE_CHECKS["@claxedo/desktop"]?.[0]?.env).toEqual({ VITE_AUTH_ENABLED: "true" })
     expect(AUTHORITATIVE_CHECKS["@claxedo/server"]?.map((check) => check.label)).toEqual([
+      "hosted workerd production build",
+      "hosted workerd built entry smoke",
       "self-hosted OpenCode resource build",
       "self-hosted production build",
       "self-hosted built process smoke",

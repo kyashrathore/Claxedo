@@ -22,6 +22,7 @@ import type { FirstPartyServiceCatalog } from "@claxedo/service-contract"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
 import { HostedAuthProfileRoutes } from "../../routes/hosted/auth-profile"
+import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
 import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
@@ -270,6 +271,29 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }),
   )
   app.route("/", JwksRoutes(plane.env))
+  // The ADAPTER-NATIVE device-login seam. `/api/auth/device/*` (plus the CLI
+  // token exchange and revoke that ride with them) exist only for an adapter
+  // that owns its own token sets: either a `deviceAuthProvider` binding, whose
+  // issuer this Worker brokers the device-code exchange against, or an
+  // `AdapterNativeSessionAuthPort` on `services.auth.native`, which mints them
+  // directly. `public-docs/writing-an-auth-or-storage-port.md` documents both.
+  //
+  // ABSENT for Better Auth, which composes neither: its own OAuth server serves
+  // device authorization and RFC 7009 revocation, and the auth descriptor points
+  // the CLI straight at it. Mounting these unconditionally would shadow that
+  // with fail-closed 501 stubs on the certified deployment.
+  if (plane.deviceAuthProvider || services.auth.native) {
+    app.route(
+      "/",
+      HostedDeviceAuthRoutes({
+        ...(plane.deviceAuthProvider ? { provider: plane.deviceAuthProvider } : {}),
+        authConfig: services.auth.config,
+        ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+        ...(services.auth.native ? { native: services.auth.native } : {}),
+        ...(services.authority ? { ensureCliUser: (auth) => services.authority!.usersMe(auth) } : {}),
+      }),
+    )
+  }
   app.route("/api/workspace", HostedWorkspaceRoutes(services, workspaceOptions))
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
   app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({

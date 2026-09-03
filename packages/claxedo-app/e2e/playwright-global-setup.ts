@@ -3,7 +3,7 @@
  * user. General browser flows must not call this helper: the core suite runs
  * them once as Test User and once in local-unsigned/no-user mode.
  *
- * The shape matches what auth-client.ts checks:
+ * The shape matches what `src/platform/auth/browser-auth-test-bypass.ts` checks:
  *   window.__CLAXEDO_TEST_AUTH_TOKEN__ → returned by getAuthToken()
  *   window.__CLAXEDO_TEST_AUTH_USER__ → makes isSignedIn() return true
  */

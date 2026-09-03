@@ -425,13 +425,6 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     const usageKey = `${fact.sessionId}\u0000${fact.messageId}`
     const identity = usageIdentities.get(usageKey)
     const timing = usageTimings.get(usageKey)
-    const hostedAttribution = identity
-      ? await options.usageLedger?.resolveHostedAttribution?.({
-        org_id: identity.org_id,
-        user_id: identity.user_id,
-        session_id: fact.sessionId,
-      })
-      : undefined
     const count = (value: number | null) => value ?? 0
     let ledgerResult: { activated: boolean; ledger_write: "ok" | "failed" } | undefined
     if (identity && options.usageLedger?.recordTurnUsageRevision) {
@@ -460,9 +453,6 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       record: {
         message_id: fact.messageId,
         session_id: fact.sessionId,
-        ...(hostedAttribution?.stream_id ? { stream_id: hostedAttribution.stream_id } : {}),
-        ...(hostedAttribution?.run_id ? { run_id: hostedAttribution.run_id } : {}),
-        ...(hostedAttribution?.work_item_id ? { work_item_id: hostedAttribution.work_item_id } : {}),
         harness: fact.harness,
         provider_id: fact.providerId,
         model_id: fact.modelId,

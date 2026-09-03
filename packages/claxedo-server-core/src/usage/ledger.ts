@@ -5,9 +5,6 @@ export type TurnStatus = "ok" | "error"
 export type LlmTurnRecord = {
   message_id: string
   session_id: string
-  stream_id?: string
-  run_id?: string
-  work_item_id?: string
   harness: string
   provider_id: string
   model_id: string
@@ -30,11 +27,6 @@ export type UsageRevisionResult = {
 
 /** One authority contract shared by metering, sync, and dashboard reads. */
 export type UsageLedger = {
-  resolveHostedAttribution?: (input: {
-    org_id: string
-    user_id: string
-    session_id: string
-  }) => Promise<Readonly<{ stream_id?: string; run_id?: string; work_item_id?: string }> | undefined>
   recordLlmTurn: (input: LlmTurnRecord & { org_id: string; user_id: string }) => Promise<{ activated: boolean }>
   recordTurnUsageRevision?: (
     input: TurnUsageRevision & { org_id: string; user_id: string },

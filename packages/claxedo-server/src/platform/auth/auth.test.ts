@@ -33,11 +33,36 @@ function untrustedJwt(payload: Record<string, unknown>) {
 
 describe("control plane auth", () => {
   test("stays local-only by default; signed deployments compose an explicit adapter", () => {
-    expect(controlPlaneAuthConfig()).toEqual({
+    // Explicit empty env: the default is the process env, and the zero-config
+    // desktop posture must not depend on what the test runner happens to export.
+    expect(controlPlaneAuthConfig({})).toEqual({
       enabled: false,
       mode: "local-only",
       reason: "signed/cloud auth is disabled",
     })
+    expect(controlPlaneAuthConfig({ CLAXEDO_DEPLOYMENT_MODE: "local" })).toEqual({
+      enabled: false,
+      mode: "local-only",
+      reason: "signed/cloud auth is disabled",
+    })
+  })
+
+  test("hosted + no explicit auth config fails CLOSED instead of admitting unsigned-local", async () => {
+    // A hosted route mounted without a config is a composition bug. Answering
+    // local-only would serve remote callers as the trusted unsigned-local
+    // owner; `misconfigured` is a 503 at every consumer instead.
+    const config = controlPlaneAuthConfig({ CLAXEDO_DEPLOYMENT_MODE: "hosted" })
+    expect(config).toEqual({
+      enabled: false,
+      mode: "misconfigured",
+      reason: "hosted route mounted without an explicit auth config",
+    })
+    await expect(controlPlaneAuthContext(new Request("http://localhost"), { config })).rejects.toMatchObject({
+      status: 503,
+      code: "signed_cloud_auth_disabled",
+    } satisfies Partial<ControlPlaneAuthError>)
+    // Casing/padding a deploy manifest can carry resolves the same way.
+    expect(controlPlaneAuthConfig({ CLAXEDO_DEPLOYMENT_MODE: " Hosted " })).toEqual(config)
   })
 
   test("accepts bearer tokens only from the Authorization header shape", () => {
@@ -318,7 +343,7 @@ describe("deployment mode matrix", () => {
   test("absent mode = self-host: auth config resolution is byte-for-byte today's behavior", async () => {
     expect(deploymentMode({})).toBe("local")
     // Zero-config env resolves the exact same unsigned-local pass-through.
-    const config = controlPlaneAuthConfig()
+    const config = controlPlaneAuthConfig({})
     expect(config).toEqual({
       enabled: false,
       mode: "local-only",

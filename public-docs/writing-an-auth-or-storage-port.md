@@ -100,10 +100,38 @@ migration.**
 2. If your provider issues its own CLI/device token sets rather than OAuth,
    also implement `AdapterNativeSessionAuthPort` (`issue` / `refresh` /
    `authenticate` / `revoke` / `acceptsAccessToken` / `acceptsRefreshToken`) and
-   pass it as `native`. Better Auth deliberately does not implement this port —
-   its OAuth server owns device authorization and RFC 7009 revocation directly —
-   so this branch exists precisely for providers like Clerk.
-3. Browser side: add your id to `BROWSER_AUTH_ADAPTERS`, write a module
+   pass it as **`native` on the `ControlPlaneAuthAdapter`** you built in step 1
+   (`ControlPlaneAuthAdapter.native`, which becomes `services.auth.native`).
+   Better Auth deliberately does not implement this port — its OAuth server owns
+   device authorization and RFC 7009 revocation directly — so this branch exists
+   precisely for providers like Clerk.
+
+   If instead your issuer runs its own device-authorization endpoints and you
+   only want the control plane to broker the exchange, set
+   **`deviceAuthProvider` on `HostedControlPlaneAdapterBindings`**; build the
+   value with `hostedDeviceAuthProvider(env)` from
+   [`provider-neutral-hosted-services.ts`](../packages/claxedo-server/src/authority/provider-neutral-hosted-services.ts),
+   which reads the `CLAXEDO_DEVICE_LOGIN_*` variables.
+
+   **The routes mount only when one of the two is supplied.**
+   `createHostedCoreApp` mounts `HostedDeviceAuthRoutes`
+   (`/api/auth/device/code`, `/api/auth/device/token`, `/api/auth/cli/exchange`,
+   `/api/auth/cli/revoke`) if and only if `plane.deviceAuthProvider ||
+   services.auth.native` is present. Supply neither and those paths do not exist
+   — which is exactly what the Better Auth + D1 deployment wants, because its own
+   OAuth server serves them.
+
+3. Teach the CLI and desktop descriptor parsers your adapter id. Both accept
+   only `"better-auth"` today:
+   [`packages/opencode/src/account/native-auth.ts`](../packages/opencode/src/account/native-auth.ts)
+   (`NativeAuthAdapter = Schema.Literals(["better-auth"])`) and
+   [`packages/claxedo-desktop/src/main/account/auth-descriptor.ts`](../packages/claxedo-desktop/src/main/account/auth-descriptor.ts)
+   (`if (adapter !== "better-auth") return fail("invalid_descriptor", ...)`).
+   Add your id — and the native flow plus revocation shape your descriptor
+   advertises, e.g. the `"adapter-native"` flow — to both, or `claxedo login`
+   and desktop sign-in fail at descriptor decode with `invalid_descriptor`
+   before any of the server work above is ever exercised.
+4. Browser side: add your id to `BROWSER_AUTH_ADAPTERS`, write a module
    implementing `BrowserAuthAdapter` (`initialize` / `useAuth` / `getToken`,
    plus a unique `implementationMarker`), and add a branch to
    `resolveBrowserAuthBuildSelection` in
@@ -169,17 +197,23 @@ adapter runs.
 
 ## Checklist
 
-1. Implement `ControlPlaneAuthAdapter` (and `AdapterNativeSessionAuthPort` if
-   your provider owns its own token sets).
+1. Implement `ControlPlaneAuthAdapter` (and `AdapterNativeSessionAuthPort` as
+   its `native` field if your provider owns its own token sets).
 2. Implement `WorkspaceAuthority`. Run both conformance suites against it.
 3. Write `<your-profile>-compose.ts` beside `better-auth-d1-compose.ts`,
-   returning `HostedControlPlaneAdapterBindings`.
+   returning `HostedControlPlaneAdapterBindings` — including
+   `deviceAuthProvider` if you want the brokered device-code flow rather than a
+   native session port.
 4. Write a `.cf.ts` (or Node) entrypoint that calls it, and register the
    artifact in `certified-worker-artifacts.ts`.
 5. Add the profile to `CERTIFIED_ADAPTER_PROFILES` and the profile union.
-6. Browser: add the adapter id, the adapter module, and the build selector
+6. Clients: add your adapter id to the CLI descriptor schema
+   (`packages/opencode/src/account/native-auth.ts`) and the desktop descriptor
+   parser (`packages/claxedo-desktop/src/main/account/auth-descriptor.ts`).
+   Both hard-reject anything but `"better-auth"` today.
+7. Browser: add the adapter id, the adapter module, and the build selector
    branch.
-7. Run `bun run typecheck` and `bun run test:architecture-ratchets`. The
+8. Run `bun run typecheck` and `bun run test:architecture-ratchets`. The
    ratchets pin each product's module and package closure with **no headroom**,
    so your adapter will move them — re-measure and re-pin with a comment naming
    the reviewed owner, per `CLAUDE.md`.

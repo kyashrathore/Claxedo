@@ -49,7 +49,7 @@ export type SignedFixtureInfo = {
    * see `desktop-signed-embedded-shared.spec.ts`'s file header): seeding this
    * into `window.__CLAXEDO_TEST_AUTH_TOKEN__` has NO EFFECT against the
    * CURRENT packaged desktop build — `testAuth()`
-   * (`src/platform/auth/auth-client.ts:112-176`) is gated on
+   * (`src/platform/auth/browser-auth-test-bypass.ts`) is gated on
    * `import.meta.env.DEV || MODE==="test" || VITE_CLAXEDO_E2E==="1"`, none of
    * which `packages/claxedo-desktop`'s `build:inner` (`electron-vite build`,
    * always production mode) ever sets — confirmed by extracting the shipped

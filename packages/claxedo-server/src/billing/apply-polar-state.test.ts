@@ -4,7 +4,7 @@ import { polarProductConfig } from "./routes"
 
 /**
  * Payload translation: Polar wire/SDK payloads → the normalized org-state
- * writes the single the authority writer applies. Wire fixtures use Polar's
+ * writes the single authority writer applies. Wire fixtures use Polar's
  * snake_case JSON; SDK-shaped fixtures use camelCase + Date to prove the
  * reconciliation path shares the module.
  */

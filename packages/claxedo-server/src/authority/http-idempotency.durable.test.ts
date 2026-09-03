@@ -8,7 +8,7 @@
  * isolate's identity IS that module instance. Two isolates are therefore two
  * independent `import()`s of the module under `vi.resetModules()` — not two
  * objects from one factory, which would share the maps and prove nothing. Both
- * are handed the SAME fake the authority store, which is what one the authority deployment is
+ * are handed the SAME fake authority store, which is what one authority deployment is
  * across isolates.
  *
  * This mirrors the two-isolate construction `rate-limit.shared-store.test.ts`

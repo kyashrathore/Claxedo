@@ -3,7 +3,7 @@ import type { AgentExtensionPolicyOverride } from "@claxedo/server-core/hosts/ag
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
 import type { CredentialHealth, CredentialMetadata, CredentialScope, CredentialStatus, CredentialWrite } from "@claxedo/server-core/credentials/types"
 import type { CredentialDiscoveryPreview, CredentialDiscoverySelection } from "@claxedo/server-core/credentials/operations/discovery"
-import { type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { localOnlyAuthAdapter, type ControlPlaneAuthAdapter, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { DurableSessionLog } from "@claxedo/server-core/platform/auth/durable-session-log"
 import type { SessionWriteMode } from "@claxedo/server-core/platform/runtime/profile"
 import type { ProjectionStore } from "./projection-store"
@@ -137,7 +137,7 @@ export function createControlPlaneServices(
 ): ControlPlaneServices {
   const projectionStore = input.projectionStore
   const durableSessionLog = input.durableSessionLog
-  const auth = options.auth ?? { config: { enabled: false as const, mode: "local-only" as const, reason: "no auth adapter configured" } }
+  const auth = options.auth ?? localOnlyAuthAdapter("no auth adapter configured")
   const credentials = options.credentials ?? defaultControlPlaneCredentials()
   const extensionPolicy = options.extensionPolicy ?? {}
   const relay = options.relay ?? {}

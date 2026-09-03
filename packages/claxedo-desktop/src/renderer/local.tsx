@@ -10,7 +10,7 @@
  * Concretely, what this entry does NOT import, and why each matters:
  *
  *   - `@claxedo/app/auth` — the package's authenticated-identity subpath, and
- *     the edge by which the old renderer reached `auth-client.ts` and the auth vendor client.
+ *     the edge by which the old renderer reached `better-auth-browser-auth.ts`, the module that imports the auth vendor client.
  *   - `@/platform/remote-access/machine-remote-access`'s binder — it lives in
  *     the optional chunk and cannot execute before account-driven activation.
  *

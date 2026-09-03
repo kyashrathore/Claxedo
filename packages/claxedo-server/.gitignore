@@ -1,3 +1,5 @@
 .env
 .env.*
 !.env.example
+# Rendered by scripts/boundary/build-workerd.ts for the dry-run bundle; removed on exit.
+.claxedo-workerd-boundary-wrangler.toml

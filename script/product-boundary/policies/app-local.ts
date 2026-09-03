@@ -29,8 +29,8 @@ const SRC = "packages/claxedo-app/src"
  *    ceiling keeps that seam shrinking.
  *
  * What IS enforced is the part that was actually finished: no module route to
- * `auth-client.ts` — the four routes that existed on 2026-08-09 were each cut
- * to a port.
+ * `better-auth-browser-auth.ts` — the four routes that existed on 2026-08-09
+ * were each cut to a port.
  */
 export const appLocal: Policy = {
   id: "app-local",
@@ -40,11 +40,11 @@ export const appLocal: Policy = {
   roots: [SRC],
   aliases: APP_ALIASES,
 
-  forbiddenPackages: [],
+  forbiddenPackages: ["better-auth"],
   forbiddenModules: [
     // The module that MINTS a token. Every local module that needs one takes
     // it from `configureApiRuntime`/`configureAuthSession` instead.
-    `${SRC}/platform/auth/auth-client.ts`,
+    `${SRC}/platform/auth/better-auth-browser-auth.ts`,
     // The hosted browser entry. A local build reaching it would start the
     // signed-identity composition.
     `${SRC}/app/entry/main.tsx`,

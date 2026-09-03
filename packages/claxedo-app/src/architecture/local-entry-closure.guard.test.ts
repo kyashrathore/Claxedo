@@ -21,7 +21,10 @@ const srcRoot = path.join(appRoot, "src")
  *  - The shortest chain names the tightest coupling — the one a reader would
  *    have to break next, and the fastest signal when one comes back.
  *  - `LOCAL_AUTH_CLIENT_IMPORTERS` names EVERY module in the local closure that
- *    imports `auth-client.ts`. This file used to claim "the test fails if a
+ *    imports the identity provider's real modules — `browser-auth.ts` (the
+ *    port, which also carries real values, not just types) and
+ *    `better-auth-browser-auth.ts` (the vendor client). This file used to
+ *    claim "the test fails if a
  *    SECOND chain appears"; it did not. A shortest-path walk reports one chain
  *    and hides the rest, and there were four the whole time. Cutting the
  *    shortest one only promoted the next, so the whole-closure check is the one
@@ -168,7 +171,20 @@ describe("the local entry", () => {
     // appears" and it did not — there were four the whole time, and cutting the
     // shortest only promoted the next. So the check that actually holds the
     // line is this one, over the WHOLE closure, not the one above it.
-    expect(importersOf("app/entry/local.tsx", "platform/auth/auth-client.ts")).toEqual(LOCAL_AUTH_CLIENT_IMPORTERS)
+    //
+    // Targets the identity provider's two real modules: `browser-auth.ts`
+    // (the port — it also exports real values, `browserAuthUnavailable` and
+    // friends, so a value import of it is a genuine route, not just a type
+    // edge) and `better-auth-browser-auth.ts` (the vendor client that imports
+    // `better-auth/client`). Both resolve to `[]` today, and the walk itself
+    // is proven non-trivial by the positive control below, which finds ~80
+    // importers of `platform/api/api.ts` from this same entry — so an empty
+    // result here is the walk finding nothing, not the walk finding nowhere
+    // to look.
+    expect(importersOf("app/entry/local.tsx", "platform/auth/browser-auth.ts")).toEqual(LOCAL_AUTH_CLIENT_IMPORTERS)
+    expect(importersOf("app/entry/local.tsx", "platform/auth/better-auth-browser-auth.ts")).toEqual(
+      LOCAL_AUTH_CLIENT_IMPORTERS,
+    )
   })
 
   test("the importer walk sees the closure it is supposed to be measuring", () => {

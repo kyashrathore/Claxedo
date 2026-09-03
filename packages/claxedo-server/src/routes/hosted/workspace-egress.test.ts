@@ -243,9 +243,8 @@ describe("POST /create with a driver that cannot contain egress", () => {
 
 // ——— Structural ratchet ———
 //
-// Same philosophy as the rate-limit ratchet in
-// `hosted-workspace-create-guards.test.ts`: the behavioural tests above prove
-// the policy is passed TODAY; this proves nobody can quietly stop passing it.
+// The behavioural tests above prove the policy is passed TODAY; this proves
+// nobody can quietly stop passing it.
 
 const routeSource = fs.readFileSync(path.join(import.meta.dirname, "workspace.ts"), "utf8")
 

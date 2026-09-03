@@ -65,6 +65,8 @@
     "typecheck:services": "tsc --noEmit -p tsconfig.services.json",
     "build:self-hosted-boundary": "bun run scripts/boundary/build-self-hosted.ts",
     "smoke:self-hosted-boundary": "node scripts/boundary/smoke-self-hosted.mjs",
+    "build:workerd-boundary": "bun run scripts/boundary/build-workerd.ts",
+    "smoke:workerd-boundary": "node --import tsx scripts/boundary/smoke-workerd.ts",
     "smoke:central": "bun run scripts/smoke/smoke-central.ts",
     "smoke:documents-r2": "wrangler dev --remote --port 8799 --config scripts/smoke/wrangler.documents-r2.toml",
     "smoke:documents-relay-harness": "bun run scripts/smoke/documents-relay-live-harness.ts",

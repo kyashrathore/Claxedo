@@ -32,7 +32,7 @@ describe("parseStackFrames", () => {
       [
         "Error: boom",
         "    at handleRequest (/app/src/routes/x.ts:12:7)",
-        "    at /app/src/hosted-app.ts:44:19",
+        "    at /app/src/hosted-core-app.ts:44:19",
         "    at async Object.fetch (file:///app/src/worker.ts:250:5)",
         "    at new HostedPlane (/app/src/plane.ts:8:11)",
       ].join("\n"),
@@ -42,7 +42,7 @@ describe("parseStackFrames", () => {
     expect(frames).toEqual([
       { platform: "web:javascript", filename: "/app/src/plane.ts", function: "HostedPlane", in_app: true, lineno: 8, colno: 11 },
       { platform: "web:javascript", filename: "file:///app/src/worker.ts", function: "Object.fetch", in_app: true, lineno: 250, colno: 5 },
-      { platform: "web:javascript", filename: "/app/src/hosted-app.ts", function: "<anonymous>", in_app: true, lineno: 44, colno: 19 },
+      { platform: "web:javascript", filename: "/app/src/hosted-core-app.ts", function: "<anonymous>", in_app: true, lineno: 44, colno: 19 },
       { platform: "web:javascript", filename: "/app/src/routes/x.ts", function: "handleRequest", in_app: true, lineno: 12, colno: 7 },
     ])
   })

@@ -2098,7 +2098,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // HTML parse failure is swallowed into an empty inventory indistinguishable from a
   // workspace that genuinely has no sessions.
   //
-  // CONTRACT (claxedo-server/src/deployments/hosted-shared/hosted-app.ts:486-503): `{ sessions: [...] }`. The
+  // CONTRACT (claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts, the
+  // GET /api/control/sessions handler in mountSessionReadRoutes): `{ sessions: [...] }`. The
   // EMPTY body is not a stub here — it is the route's own answer on this exact request:
   // `fetchLocalControlSessions` sends no `workspaceId`, and the handler's first line is
   // `if (!workspaceId || !services.authority?.listSessions) return c.json({ sessions: [] })`.

@@ -59,8 +59,7 @@ const MAX_TTL_MS = 5 * 60_000
  * The two authorities are two implementations of one contract, so the numbers
  * are not adapter defaults to be tuned independently: a self-hosted SQLite
  * deployment and the authority Cloud must retire the same row at the same age or
- * "same bounds" is a claim nobody checks. `host-enrollment-policy-drift.test.ts`
- * reads both source files and fails when a value moves on one side only.
+ * "same bounds" is a claim nobody checks.
  *
  * ENROLLMENT_CHALLENGE_TTL_MS — how long an unconsumed nonce may be signed.
  *   60s, deliberately STRICTER than the plan's two minutes. The nonce is

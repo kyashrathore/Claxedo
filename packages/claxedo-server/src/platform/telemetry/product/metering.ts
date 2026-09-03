@@ -93,7 +93,6 @@ export function tokenProperties(tokens: CompatTokens | undefined) {
 export function llmTurnRecord(input: {
   message: unknown
   harness: string
-  attribution?: Readonly<{ streamId?: string; runId?: string; workItemId?: string }>
 }): LlmTurnRecord | undefined {
   const info = input.message as {
     role?: unknown
@@ -116,9 +115,6 @@ export function llmTurnRecord(input: {
   return {
     message_id: messageId,
     session_id: sessionId,
-    ...(input.attribution?.streamId ? { stream_id: input.attribution.streamId } : {}),
-    ...(input.attribution?.runId ? { run_id: input.attribution.runId } : {}),
-    ...(input.attribution?.workItemId ? { work_item_id: input.attribution.workItemId } : {}),
     harness: input.harness,
     provider_id: typeof info.providerID === "string" ? info.providerID : "unknown",
     model_id: typeof info.modelID === "string" ? info.modelID : "unknown",

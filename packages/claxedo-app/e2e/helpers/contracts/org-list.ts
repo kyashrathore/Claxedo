@@ -9,7 +9,8 @@
 // The real handler is `OrgTeamControlRoutes`' `GET /orgs`
 // (packages/claxedo-server/src/session/routes/org-team-routes.ts), mounted
 // under `/api/control` by every product deployment (asserted by
-// `hosted-product-contract.test.ts` and `self-hosted-product-contract.test.ts`).
+// `hosted-shared/hosted-core-app.test.ts` and
+// `self-hosted-node/local-product-contract.test.ts`).
 // It answers `authority.listOrgs(auth)` verbatim — a BARE JSON ARRAY, not an
 // envelope. That shape is load-bearing: the switcher calls `.find` on the
 // parsed body, so an object here renders the app's error boundary instead of

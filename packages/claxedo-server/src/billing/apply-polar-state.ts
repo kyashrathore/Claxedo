@@ -228,7 +228,7 @@ export function webhookEventToApplyArgs(event: PolarWebhookEvent, config: PolarP
   return undefined
 }
 
-/** Apply a normalized snapshot through the single the authority writer. */
+/** Apply a normalized snapshot through the single authority writer. */
 export async function applyPolarState(store: BillingStore, args: ApplyPolarStateArgs): Promise<ApplyPolarStateResult> {
   return await store.applyPolarState(args)
 }

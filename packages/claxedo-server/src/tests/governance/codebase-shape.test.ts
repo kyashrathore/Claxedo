@@ -48,8 +48,8 @@ describe("architecture boundaries", () => {
   })
 
   test("POSITIVE CONTROL: a Deleted entry whose module came back is caught", () => {
-    // No registry entry currently carries `Deleted`, so the branch above runs
-    // zero times and would keep passing if it were broken. This runs the same
+    // The live registry carries only a handful of `Deleted` entries, so the
+    // branch above runs rarely and could rot unnoticed. This runs the same
     // rule over a synthetic entry to prove it still rejects: a module marked
     // deleted that exists again must fail, so a revert cannot silently restore
     // something the registry says is gone.

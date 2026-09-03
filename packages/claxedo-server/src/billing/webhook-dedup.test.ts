@@ -44,7 +44,7 @@ function fakeStore(): BillingStore & { applyPolarState: ReturnType<typeof vi.fn>
   } as never
 }
 
-/** Shared across "isolates", exactly as one the authority deployment is. */
+/** Shared across "isolates", exactly as one authority deployment is. */
 function fakeIdempotencyStore(clock = { now: 1_000 }) {
   const rows = new Map<string, {
     fingerprint: string

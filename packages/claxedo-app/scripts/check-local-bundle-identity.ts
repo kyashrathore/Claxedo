@@ -34,7 +34,7 @@
  * Use `bun run build:marker-control` (./dist-marker-control) for that control,
  * NOT the hosted `./dist`, which this comment used to recommend and which is
  * wrong anywhere the auth env is unset — i.e. on every CI runner.
- * `auth-client.ts` reaches the provider only past an early return on disabled
+ * `better-auth-browser-auth.ts` reaches the provider only past an early return on disabled
  * auth, so a hosted build without `VITE_AUTH_ENABLED` emits no provider at all
  * and the control fails every marker. That failure is honest — the control is
  * doing its job — but it reads as a broken gate rather than a missing env var,

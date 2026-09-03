@@ -147,10 +147,12 @@ export const desktopAccountComposition: Policy = {
  *
  * This crosses INTO `@claxedo/app` on purpose. The desktop renderer composes
  * that package's shared shell, so "what does the unsigned desktop reach" is
- * unanswerable without following the edge — and the one specifier that matters,
- * `@claxedo/app/auth`, resolves through the app's `exports` map to
- * `src/app/entry/auth.ts` rather than to `src/auth.ts`. A walk that cannot make
- * that hop reports a clean desktop closure and is wrong; it is exactly how the
+ * unanswerable without following the edge — and the module that matters,
+ * `platform/auth/better-auth-browser-auth.ts` (the one file that imports
+ * `better-auth/client` and mints a token), is reached by walking straight into
+ * `@claxedo/app`'s own source tree; the package's `exports` map has no
+ * `"./auth"` subpath to hide behind. A walk that stops at the package
+ * boundary reports a clean desktop closure and is wrong; it is exactly how the
  * desktop once shipped a browser identity SDK to every unsigned launch while
  * the app's own local guard stayed green.
  *
@@ -170,9 +172,13 @@ export const desktopRendererUnsigned: Policy = {
 
   forbiddenPackages: ["better-auth", "@claxedo/host-connector", "electron"],
   forbiddenModules: [
-    // The app's authenticated-identity module and the subpath that reaches it.
-    `${APP}/platform/auth/auth-client.ts`,
-    `${APP}/app/entry/auth.ts`,
+    // The module that MINTS a token — the one file that imports
+    // `better-auth/client` and implements the browser auth client. There is no
+    // `@claxedo/app/auth` subpath to reach it through; the package's `exports`
+    // map only ever names `.` and `./process-diagnostics-contract`, so a
+    // source walk finds this module only by following the plain in-package
+    // import graph.
+    `${APP}/platform/auth/better-auth-browser-auth.ts`,
     // The app's hosted browser entry.
     `${APP}/app/entry/main.tsx`,
     // Electron main is a different process. A renderer import of `src/main/**`
@@ -180,8 +186,6 @@ export const desktopRendererUnsigned: Policy = {
     // in the window.
     `${DESKTOP}/main/account`,
     `${DESKTOP}/main/host-connector`,
-    // The signed renderer entry, which imports `@claxedo/app/auth`.
-    `${DESKTOP}/renderer/index.tsx`,
   ],
   permittedOutsideRoots: MANIFEST_READS,
 
@@ -321,8 +325,10 @@ export const desktopHostedContribution: Policy = {
   followed: [{ name: "@claxedo/app", dir: "packages/claxedo-app" }],
   forbiddenPackages: ["better-auth", "@claxedo/host-connector", "electron"],
   forbiddenModules: [
-    `${APP}/platform/auth/auth-client.ts`,
-    `${APP}/app/entry/auth.ts`,
+    // The module that MINTS a token (imports `better-auth/client`); see
+    // `desktopRendererUnsigned` above for why there is no `@claxedo/app/auth`
+    // subpath to reach it through instead.
+    `${APP}/platform/auth/better-auth-browser-auth.ts`,
     `${APP}/app/entry/main.tsx`,
     `${DESKTOP}/main`,
   ],

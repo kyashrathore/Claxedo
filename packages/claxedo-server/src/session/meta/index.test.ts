@@ -65,10 +65,10 @@ describe("session meta", () => {
     ])
 
     await putSessionMeta("child", {
-      tags: ["review", "planner"],
+      tags: ["review", "page"],
       attachments: [
         { kind: "review", targetID: "rev_1" },
-        { kind: "planner", targetID: "wg_1" },
+        { kind: "page", targetID: "page_1" },
       ],
     })
 
@@ -81,9 +81,9 @@ describe("session meta", () => {
       directory: "/tmp/repo",
       parentID: "root",
       rootID: "root",
-      tags: ["planner", "review"],
+      tags: ["page", "review"],
       attachments: [
-        { kind: "planner", targetID: "wg_1" },
+        { kind: "page", targetID: "page_1" },
         { kind: "review", targetID: "rev_1" },
       ],
     })
@@ -122,9 +122,9 @@ describe("session meta", () => {
         projectID: "proj_1",
         parentID: "root",
         rootID: "root",
-        tags: ["planner", "review"],
+        tags: ["page", "review"],
         attachments: [
-          { kind: "planner", targetID: "wg_1" },
+          { kind: "page", targetID: "page_1" },
           { kind: "review", targetID: "rev_1" },
         ],
       },
@@ -160,10 +160,10 @@ describe("session meta", () => {
 
     // A real writer rewrites tags with delete-all-reinsert
     // semantics — this must NOT wipe the placement.
-    await putSessionMeta("placed", { tags: ["planner"] })
+    await putSessionMeta("placed", { tags: ["page"] })
 
     expect(await sessionMeta("placed")).toMatchObject({
-      tags: ["planner"],
+      tags: ["page"],
       toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_B" },
     })
   })
@@ -330,7 +330,7 @@ describe("session meta", () => {
       directory: null,
       title: "Pi",
       tags: ["global", "global:default", "source-channel:telegram"],
-      attachments: [{ kind: "planner", targetID: "wg_1" }],
+      attachments: [{ kind: "page", targetID: "page_1" }],
     })
 
     await syncSessionMetas(ws, [
@@ -345,7 +345,7 @@ describe("session meta", () => {
       host: "central",
       title: "Pi",
       tags: ["global", "global:default", "source-channel:telegram"],
-      attachments: [{ kind: "planner", targetID: "wg_1" }],
+      attachments: [{ kind: "page", targetID: "page_1" }],
     })
   })
 
@@ -397,7 +397,7 @@ describe("session meta", () => {
     ])
     await putSessionMeta("sess", {
       tags: ["global", "global:default", "source-channel:telegram"],
-      attachments: [{ kind: "planner", targetID: "wg_1" }],
+      attachments: [{ kind: "page", targetID: "page_1" }],
     })
     expect((await sessionMeta("sess"))?.sessionRef).toBe("workspace:ws_local:session:sess")
 
@@ -409,7 +409,7 @@ describe("session meta", () => {
       title: "Renamed",
       createdAt: 10,
       tags: ["global", "global:default", "source-channel:telegram"],
-      attachments: [{ kind: "planner", targetID: "wg_1" }],
+      attachments: [{ kind: "page", targetID: "page_1" }],
     })
     expect(ClaxedoDB.raw().prepare(`
       SELECT session_ref FROM claxedo_session_meta WHERE session_id = ?
@@ -431,7 +431,7 @@ describe("session meta", () => {
     expect(await sessionMeta("sess")).toMatchObject({
       sessionRef: "local:/tmp/local-repo:session:sess",
       tags: ["global", "global:default", "source-channel:telegram"],
-      attachments: [{ kind: "planner", targetID: "wg_1" }],
+      attachments: [{ kind: "page", targetID: "page_1" }],
     })
   })
 

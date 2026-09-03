@@ -272,48 +272,6 @@ describe("llm_turn_completed carries the provider's usage object verbatim", () =
     expect(recorded[0]).toMatchObject({ org_id: "org-scope", user_id: "user-scope", messageId: "msg-scope" })
   })
 
-  test("hosted turns derive attribution from the deterministic Session identity", async () => {
-    vi.stubEnv("CLAXEDO_STREAM_ID", "wrong-cross-tenant-stream")
-    const captured = captureSink()
-    const turnCredentials = createConnectionTurnCredentials()
-    const recorded: Array<Record<string, unknown>> = []
-    const resolveHostedAttribution = vi.fn(async () => ({
-      stream_id: "stream_hosted",
-      run_id: "run_hosted",
-      work_item_id: "item_hosted",
-    }))
-    const runtime = createCentralSessionRuntime(services(captured.sink), {
-      turnCredentials,
-      usageLedger: {
-        resolveHostedAttribution,
-        recordLlmTurn: async (input) => {
-          recorded.push(input)
-          return { activated: false }
-        },
-      },
-      productDeploymentMode: "cloud",
-    })
-    const sessionId = "ses_wgrun_run_hosted"
-    const credential = turnCredentials.mint({ sessionId, subject: "user_sub_1", orgId: "org_1" })
-
-    turnCredentials.run(credential, () => publish(runtime, completedTurn({ sessionId })))
-    await vi.waitFor(() => expect(recorded).toHaveLength(1))
-
-    expect(resolveHostedAttribution).toHaveBeenCalledWith({
-      org_id: "org_1",
-      user_id: "user_sub_1",
-      session_id: sessionId,
-    })
-    expect(recorded[0]).toMatchObject({
-      session_id: sessionId,
-      stream_id: "stream_hosted",
-      run_id: "run_hosted",
-      work_item_id: "item_hosted",
-    })
-    expect(recorded[0]?.stream_id).not.toBe("wrong-cross-tenant-stream")
-    vi.unstubAllEnvs()
-  })
-
   test("a turn with no verified tenant is still measured, on the ops plane", async () => {
     const captured = captureSink()
     const turnCredentials = createConnectionTurnCredentials()

@@ -25,7 +25,7 @@ const matrixPath = path.resolve(appRoot, "../../docs/tech-docs/desktop-hosted-op
  * regex that claimed to extract them would report a confident subset and miss
  * the rest — worse than not checking, because it would look like coverage.
  * Method/path fidelity is checked against the real hosted route table in
- * `hosted-product-contract.test.ts`.
+ * `hosted-shared/hosted-core-app.test.ts`.
  */
 
 /** Hosted feature roots scanned for authenticated transport. */

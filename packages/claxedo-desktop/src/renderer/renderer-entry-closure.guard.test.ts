@@ -20,11 +20,13 @@ import { MAIN_RENDERER_DOCUMENT } from "../main/navigation-guard"
  *
  * Two properties are measured here, and they are different kinds of claim:
  *
- *  - ABSOLUTE. The unsigned entry's closure reaches no `@claxedo/app/auth` and
- *    no `auth-client.ts`. This is what Unit 11 changes, and
- *    the companion assertions prove the signed entry DOES reach all of them —
- *    without that control, a walker that resolved nothing would report a
- *    finished migration.
+ *  - ABSOLUTE. The unsigned entry's closure reaches no `@claxedo/app/auth`
+ *    subpath and no `better-auth-browser-auth.ts` — the one module that
+ *    imports `better-auth/client` and mints a token. The optional hosted-
+ *    activation chunk (`hosted-contributions.ts`) is held to the same
+ *    absence below: no renderer entry this desktop ships ever carries the
+ *    identity SDK, because a signed account is Electron main's to hold, over
+ *    its own AccountPort, never the renderer's.
  *
  *  - RELATIVE. Documents, the Relay client, the cloud runtime store
  *    and both account adapters are reachable from `@claxedo/app`'s SHARED
@@ -51,11 +53,16 @@ const appSrc = path.join(appRoot, "src")
  * `@claxedo/app`'s declared subpath exports.
  *
  * Resolved from the manifest rather than left to `resolveImport`, which maps
- * `@claxedo/app/<x>` onto `src/<x>` and therefore answers NULL for
- * `@claxedo/app/auth` — whose real target is `src/app/entry/auth.ts`. That is
- * not a hypothetical gap: it is precisely the specifier by which the desktop
- * renderer reached the identity provider, so a walk built on the unpatched resolver reports a
- * clean desktop closure and is wrong.
+ * `@claxedo/app/<x>` onto `src/<x>` and therefore answers NULL for any real
+ * subpath export whose target lives somewhere the naive mapping cannot guess.
+ * That is not a hypothetical gap: it is precisely the shape of specifier by
+ * which the desktop renderer once reached the identity provider (through a
+ * subpath the naive resolver could not follow), so a walk built on the
+ * unpatched resolver reports a clean desktop closure and is wrong. Today
+ * `@claxedo/app` declares no `"./auth"` export at all — the identity module,
+ * `platform/auth/better-auth-browser-auth.ts`, is reached only by walking the
+ * package's plain in-package import graph, which is what `resolve()` below
+ * falls through to.
  */
 const appExports = (
   JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as { exports?: Record<string, string> }
@@ -136,7 +143,8 @@ const APP_LOCAL = closure(path.join(appSrc, "app/entry/local.tsx"))
 /** The identity provider, by every name it travels under. */
 const IDENTITY = {
   "the @claxedo/app/auth subpath": (edge: Edge) => edge.specifier === "@claxedo/app/auth",
-  "platform/auth/auth-client.ts": (edge: Edge) => edge.module === "platform/auth/auth-client.ts",
+  "platform/auth/better-auth-browser-auth.ts": (edge: Edge) =>
+    edge.module === "platform/auth/better-auth-browser-auth.ts",
 } satisfies Record<string, (edge: Edge) => boolean>
 
 /**
@@ -235,7 +243,6 @@ describe("the optional signed activation", () => {
     const activation = stripComments(read("src/renderer/hosted-contributions.ts"))
     expect(activation).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
     expect(activation).toContain("contentSurfaces: []")
-    expect(activation).not.toContain("hosted-content-surfaces")
     expect(activation).not.toContain("documents-content-surfaces")
     expect(activation).not.toContain("configureHttpMachineRemoteAccess")
     expect(activation).not.toContain("configureApiRuntime")
@@ -246,7 +253,6 @@ describe("the optional signed activation", () => {
   test("keeps Documents in its own catalog-driven module", () => {
     const documents = stripComments(read("src/renderer/documents-contributions.ts"))
     expect(documents).toContain("documents-content-surfaces")
-    expect(documents).not.toContain("hosted-content-surfaces")
   })
 })
 

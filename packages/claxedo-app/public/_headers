@@ -5,7 +5,8 @@
 # published to Cloudflare Pages (`wrangler pages deploy dist`, see
 # .github/workflows/deploy-claxedo-app.yml) and is served entirely by Pages —
 # the HTML document never passes through the control-plane Worker, so the Hono
-# `securityHeaders()` middleware in packages/claxedo-server/src/hosted-app.ts
+# `securityHeaders()` middleware in
+# packages/claxedo-server/src/deployments/hosted-shared/hosted-core-app.ts
 # covers the API responses and NOTHING here. Both surfaces need their own set.
 #
 # Pages MERGES overlapping rules (see the caching note below), so these live on

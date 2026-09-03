@@ -473,7 +473,7 @@ export function isConnectionsCredentialPath(path: string): boolean {
  * Security headers for the local / self-host server.
  *
  * This server is the ONE surface that answers both response classes. The
- * hosted control plane (`hosted-app.ts` + `security-headers.ts`) serves only
+ * hosted control plane (`hosted-core-app.ts` + `security-headers.ts`) serves only
  * JSON and SSE, so it enforces `default-src 'none'`. Cloudflare Pages
  * (`packages/claxedo-app/public/_headers`) serves only the SPA, so it ships a
  * far more permissive document policy. Self-host serves BOTH: API routes plus,
@@ -646,7 +646,7 @@ const markSpaBundleRequest: MiddlewareHandler = async (c, next) => {
 
 /**
  * Outermost middleware for the local server — the counterpart to
- * `securityHeaders()` in hosted-app.ts, and mounted the same way: once, at
+ * `securityHeaders()` in hosted-core-app.ts, and mounted the same way: once, at
  * composition, ahead of everything, so "no route can ship bare" is a property
  * of the shell rather than a per-route review item.
  *
@@ -1097,8 +1097,10 @@ export function createSelfHostedApp(
   // Worker-safe and cannot import the bus, so the local composition root injects
   // the publish here. Every document mutation — saves AND `fs.watch` external
   // changes — funnels through `publishDocumentEvent`, so this one line covers
-  // both paths. Hosted (`hosted-app.ts`) injects a LiveSyncRoom nudge sink
-  // through the DocumentsRoutes option instead of this process-global one.
+  // both paths. No hosted Worker composition (`hosted-core-app.ts`) mounts
+  // documents at present; a hosted composition that did would inject a
+  // LiveSyncRoom nudge sink through the DocumentsRoutes option instead of
+  // this process-global one.
   setDocumentChangedSink((event) => claxedoBus.publish(event))
   app.route(
     "/documents",

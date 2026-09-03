@@ -42,7 +42,7 @@
  * defense-in-depth.
  *
  * Worker-safe: no node:* imports (`local-only-projection` is on the
- * Worker-safe list) — `hosted-app.ts` mounts the guard too.
+ * Worker-safe list) — `hosted-core-app.ts` mounts the guard too.
  */
 
 import type { MiddlewareHandler } from "hono"
@@ -159,7 +159,7 @@ function guardBody(code: string, message: string) {
 /**
  * The ONE global unsigned-local gate, mounted at the app-composition root
  * before every route handler (both `server.ts createApp` and
- * `hosted-app.ts createHostedApp`). Policy:
+ * `hosted-core-app.ts createHostedCoreApp`). Policy:
  *
  * - Signed deployment (`authConfig.enabled`): pass through — per-route bearer
  *   verification (`controlPlaneAuthContext`) is the gate, exactly as today.

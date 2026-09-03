@@ -2,8 +2,8 @@
  * Default request guard behavior: the body cap, the IP-keyed rate limit,
  * the exemption registry, and the ordering between them.
  *
- * `route-guard-inventory.test.ts` asserts the guard reaches every mounted route;
- * this file asserts what it DOES when it gets there.
+ * The composition tests assert where the guard is mounted; this file asserts
+ * what it DOES when it gets there.
  */
 
 import { describe, expect, test, vi } from "vitest"

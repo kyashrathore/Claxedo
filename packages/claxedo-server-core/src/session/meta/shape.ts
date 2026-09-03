@@ -1,7 +1,7 @@
 import type { SessionAttachment, SessionToolSandbox } from "./types"
 import type { Workspace } from "../../workspace/store"
 
-const KINDS = new Set(["review", "page", "planner"])
+const KINDS = new Set(["review", "page"])
 
 export function now() {
   return Date.now()

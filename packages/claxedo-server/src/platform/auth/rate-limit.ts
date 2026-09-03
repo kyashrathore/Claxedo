@@ -21,10 +21,12 @@
  *     unsafe form was the beta shape; wrangler 4.114.0 (this package's pin)
  *     ships a first-class `ratelimits` key in its config schema.
  *   - `simple.period` accepts ONLY 10 or 60 (seconds), so the shared window is
- *     not a free parameter. wrangler.toml pins 60 and `worker.ts` passes the
- *     matching `periodSeconds` to `cloudflareRateLimitStore`, which is also why
+ *     not a free parameter. The generated wrangler config pins 60 and
+ *     `worker.ts` passes the matching `periodSeconds` to
+ *     `cloudflareRateLimitStore`, which is also why
  *     `defaultRequestRateLimitWindowMs` must stay 60_000: both layers have to
- *     mean the same minute. `rate-limit-config-drift.test.ts` asserts the pin.
+ *     mean the same minute. `scripts/deploy/render-hosted-core-config.test.ts`
+ *     asserts the pin.
  *
  * Why the binding beats a counter Durable Object here:
  *   - This is an ABUSE limiter, not accounting. Cloudflare documents the

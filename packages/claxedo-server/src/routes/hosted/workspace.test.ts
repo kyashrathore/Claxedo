@@ -17,8 +17,7 @@ import type { SandboxManager } from "@claxedo/sandbox-manager"
  *   - and NEVER starts a tunnel / reads local host identity / hits the disk.
  *
  * The signature-verification and routing policy behind assignment lives in
- * the authorities (`authority/adapters/d1/host-access-authority.test.ts`, the
- * the authority policy suite, `routes/hosted/host-enrollment.parity.test.ts`); here
+ * the authority (`authority/adapters/d1/host-access-authority.test.ts`); here
  * we assert the request *behaviour* of the routes. The "no local-only"
  * guarantee at the import-graph level is enforced separately by
  * `worker.import-graph.test.ts`.

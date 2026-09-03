@@ -18,14 +18,15 @@
  *   hibernation, the internal-WebSocket-to-SSE bridge, the retention ring, the
  *   `id:`-line contract, and `replayGapEvent` are all production code.
  * - **The real hosted events route** — `HostedShellRoutes` from
- *   `routes/hosted-shell.ts`, mounted on a real Hono app at the real
+ *   `routes/hosted/shell.ts`, mounted on a real Hono app at the real
  *   `/api/wr/events` path. This matters: the route, not the DO, is what resolves
  *   the authority-internal org id at connect and hands it to the room, which is
  *   exactly the namespace half of B3 (problem 1). Tests that call
  *   `connectLiveSyncRoom` directly skip it.
  * - **The real publishers' room derivation** — `liveSyncRoomNameForPrincipal`,
- *   the single derivation `hosted-app.ts` uses for both the documents sink
- *   (`:563`) and the owner-scoped `notifyChanged` nudge (`:335`).
+ *   the single derivation `hosted-core-app.ts` uses for the owner-scoped
+ *   `sessionShareChangedSink` nudge. (No hosted Worker composition mounts a
+ *   documents sink today — see `documents/backend.ts`'s doorbell-sink note.)
  * - **The real client contract** — the viewer page replicates
  *   `claxedo-app/src/app/integrations/claxedo-events.tsx`'s fetch + manual
  *   reader loop and its `Last-Event-ID` handling line for line.
@@ -33,17 +34,17 @@
  * ## What is NOT real, and why
  *
  * - **the retired hosted identity and storage stack are replaced by an injected verifier + `resolveOrgId`.**
- *   This is not laziness, it is the only available seam: `createHostedApp`
+ *   This is not laziness, it is the only available seam: `createHostedCoreApp`
  *   refuses to boot without both, in three independent fail-closed gates
- *   (`hosted-app.ts:216-238` `assertHostedAppBootConfig`,
+ *   (`hosted-core-app.ts:129-158` `assertHostedCoreBootConfig`,
  *   `hosted-services.ts:364-374` `composeHostedControlPlane`, and
  *   `deployment-mode.ts:236-247` `unsignedLocalRequestGuard`, which 503s every
  *   request when hosted mode sees auth disabled). No env var relaxes any of
  *   them. `HostedShellRouteOptions` exposes `verifier` and `resolveOrgId` as
- *   injection points (`hosted-shell.ts:46, :67`) and `customVerifierAuthAdapter`
+ *   injection points (`routes/hosted/shell.ts`) and `customVerifierAuthAdapter`
  *   exists for exactly this (`authority/auth.ts:179`), so the drill mounts
  *   the genuine route with a synthetic identity provider. The bearer token IS
- *   the subject, matching `hosted-app.test.ts`'s `fakePlane`.
+ *   the subject, matching `hosted-core-app.test.ts`'s `plane()` fixture verifier.
  * - **The app-shell rendering layer is not in the loop.** The viewer renders
  *   received frames into the DOM; it is not `claxedo-app`. Standing up the real
  *   app additionally requires a hosted documents backend
@@ -121,13 +122,13 @@ async function bundleWorker() {
     stdin: {
       contents: `
         import { Hono } from "hono"
-        import { HostedShellRoutes } from ${JSON.stringify(new URL("../../src/routes/hosted-shell.ts", import.meta.url).pathname)}
+        import { HostedShellRoutes } from ${JSON.stringify(new URL("../../src/routes/hosted/shell.ts", import.meta.url).pathname)}
         import { LiveSyncRoom, nudgeLiveSyncRoom, liveSyncRoomNameForPrincipal } from ${JSON.stringify(new URL("../../src/deployments/hosted-workerd/live-sync-room.cf.ts", import.meta.url).pathname)}
 
         export { LiveSyncRoom }
 
-        // The bearer token IS the subject. Same shape as hosted-app.test.ts's
-        // fakePlane verifier: it stands in for the identity provider JWT verification, which
+        // The bearer token IS the subject. Same shape as hosted-core-app.test.ts's
+        // plane() fixture verifier: it stands in for the identity provider JWT verification, which
         // cannot run locally, and nothing else.
         const verifier = async (token) => ({
           mode: "signed",

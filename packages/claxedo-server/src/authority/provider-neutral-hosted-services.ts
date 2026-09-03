@@ -189,6 +189,21 @@ function sandboxManager(
   })
 }
 
+/**
+ * Build the optional `deviceAuthProvider` binding from `CLAXEDO_DEVICE_LOGIN_*`.
+ *
+ * This is the ONE supported way an adapter compose function fills that binding:
+ * a custom identity port whose issuer runs its own device-authorization
+ * endpoints calls this from its `*-compose.ts` and passes the result through
+ * `HostedControlPlaneAdapterBindings.deviceAuthProvider`, which is what makes
+ * `createHostedCoreApp` mount `/api/auth/device/*` at all (see
+ * `public-docs/writing-an-auth-or-storage-port.md`). Returns `undefined` when
+ * no issuer is configured, so the routes stay absent rather than fail closed.
+ *
+ * The certified Better Auth + D1 composition deliberately does NOT call it:
+ * Better Auth's own OAuth server owns device authorization, advertised through
+ * the auth descriptor.
+ */
 export function hostedDeviceAuthProvider(env: HostedWorkerEnv): HostedDeviceAuthProvider | undefined {
   const issuer = clean(env.CLAXEDO_DEVICE_LOGIN_ISSUER)
   if (!issuer) return
@@ -230,7 +245,11 @@ export type HostedControlPlane = {
   relayTargetLookup: RelayTargetLookup
   /** Present only for adapters whose native sessions use the retained registry. */
   cliSessionTokenRegistry?: CliSessionTokenRegistry
-  /** Device-login provider; undefined until a trusted CLI issuer is configured. */
+  /**
+   * Device-login provider, carried straight from the adapter bindings; undefined
+   * until a trusted CLI issuer is configured. Its presence (or a native session
+   * port on `services.auth.native`) is what mounts `/api/auth/device/*`.
+   */
   deviceAuthProvider?: HostedDeviceAuthProvider
   /** Explicit private-session oracle. Never inferred from the broader workspace authority. */
   runtimeSessionAuthority?: RuntimeSessionAuthorityOptions["authority"]
@@ -249,6 +268,10 @@ export type HostedControlPlaneAdapterBindings = {
   cliSessionTokenRegistry?: CliSessionTokenRegistry
   /** Required only when the static sandbox posture selects a driver. */
   sandbox?: { driver: SandboxDriver; leaseStore: SandboxLeaseStore }
+  /**
+   * Opt-in adapter-native device login: an issuer whose device-code exchange the
+   * Worker brokers. Build it with `hostedDeviceAuthProvider(env)`.
+   */
   deviceAuthProvider?: HostedDeviceAuthProvider
   /** Required by deployments that admit isolated runtime session operations. */
   runtimeSessionAuthority?: RuntimeSessionAuthorityOptions["authority"]

@@ -42,7 +42,7 @@
  *     baked at Vite-start and `true` in this harness — so `principal.kind` is
  *     NEVER `"local"` here (that branch requires `authEnabled === false`); it
  *     is `"signed"`/`"org-member"` when `auth.status() === "signed"`, else
- *     `"anonymous"`. `useAuthSession()` wraps `src/utils/auth-client.ts`'s
+ *     `"anonymous"`. `useAuthSession()` wraps `src/platform/auth/browser-auth.ts`'s
  *     `useAuth()`, whose `isSignedIn()` is true whenever a provider session, a
  *     provider user, OR the test-auth bypass (`testAuth()`) is present. The test
  *     suite runs in two explicit process-wide modes: `test-user` preserves the
@@ -289,7 +289,7 @@
  *       by an after-the-fact `toHaveCount(0)` (which any post-redirect page
  *       satisfies trivially). Not-signed visitors see "Continue", which calls
  *       `auth.signIn({redirectUrl})` — recorded by the `__claxedoSignInCalls`
- *       seam (`src/platform/auth/auth-client.ts:337`).
+ *       seam (`src/platform/auth/browser-auth-test-bypass.ts`).
  *   26. `/cli-login`: a missing/invalid `callback` or `state`, or a
  *       non-`http://127.0.0.1|localhost` callback origin, is rejected
  *       immediately with "Invalid CLI sign-in callback." AND zero auth calls —
@@ -524,7 +524,7 @@ function continueButtonFlashed(page: Page) {
   return page.evaluate(() => (window as typeof window & { __continueButtonSeen__?: boolean }).__continueButtonSeen__ === true)
 }
 
-/** Reads the `__claxedoSignInCalls` e2e seam (`src/platform/auth/auth-client.ts:337`,
+/** Reads the `__claxedoSignInCalls` e2e seam (`src/platform/auth/browser-auth-test-bypass.ts`,
  * DEV || VITE_CLAXEDO_E2E gated) — every `auth.signIn()` invocation with the
  * `redirectUrl` it was given. The `/login` "Continue triggers sign-in" test
  * below asserts a POSITIVE count through this same seam, which is this file's
@@ -1080,7 +1080,8 @@ test.describe("core settings + auth @core", () => {
     })
 
     // Entry #17 (decision A). Previously fixme for two reasons, both fixed at
-    // the app layer (src/platform/auth/auth-client.ts):
+    // the app layer (src/platform/auth/better-auth-browser-auth.ts, using the
+    // e2e seam in src/platform/auth/browser-auth-test-bypass.ts):
     //   (1) `isSignedIn()` was unconditionally true under Playwright
     //       (navigator.webdriver), so `/login`'s redirect-if-signed guard
     //       bounced back to the workbench. Fixed by an EXPLICIT signed-state
@@ -2024,7 +2025,7 @@ test.describe("core settings + auth @core", () => {
       // "Redirecting..." state clears within a microtask — asserting that label
       // was racy by construction on starved runners. The race-free contract is
       // that the click INVOKED sign-in, recorded by the e2e seam in
-      // auth-client.ts (__claxedoSignInCalls, DEV || VITE_CLAXEDO_E2E gated).
+      // browser-auth-test-bypass.ts (__claxedoSignInCalls, DEV || VITE_CLAXEDO_E2E gated).
       await expect.poll(async () => (await signInCalls(page)).length).toBe(1)
       // `/login` passes its own `redirectUrl()` (default "/",
       // src/app/routes/login.tsx:29 + :44) — assert the ARGUMENT too, not just
@@ -2070,7 +2071,7 @@ test.describe("core settings + auth @core", () => {
       // `void auth.signIn({ redirectUrl: window.location.href })`
       // (src/app/routes/cli-login.tsx:27). A regression that dropped the
       // argument would fall back to `signIn`'s own default
-      // (`window.location.origin`, src/platform/auth/auth-client.ts:341) and
+      // (`window.location.origin`, src/platform/auth/better-auth-browser-auth.ts) and
       // silently strand the CLI handshake — the callback/state query would be
       // lost across the round trip — while still painting this exact status.
       await expect.poll(async () => (await signInCalls(page)).length, { timeout: 10_000 }).toBe(1)

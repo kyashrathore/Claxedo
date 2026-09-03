@@ -13,11 +13,13 @@
  *   - `claxedo-desktop/scripts/host-connector-boundary.test.ts` — a fourth,
  *     with its own comment-stripping regex.
  *   - `claxedo-desktop/src/renderer/renderer-entry-closure.guard.test.ts` — a
- *     fifth, which had to patch the app's resolver because `@claxedo/app/auth`
- *     maps to `src/app/entry/auth.ts` and NOT to `src/auth.ts`. That gap was
- *     the exact specifier by which the desktop renderer reached the browser
- *     identity SDK, so the unpatched walk reported a clean desktop closure and
- *     was wrong.
+ *     fifth, which had to patch the app's resolver because the naive
+ *     `@claxedo/app/<x>` -> `src/<x>` mapping cannot see a followed package's
+ *     internals at all. The desktop renderer reaches the app's browser
+ *     identity SDK (`platform/auth/better-auth-browser-auth.ts`, the one
+ *     module that imports `better-auth/client`) by walking straight into
+ *     `@claxedo/app`'s source tree, not through any `exports` subpath, so the
+ *     unpatched walk reported a clean desktop closure and was wrong.
  *
  * Four different answers to "what does this entry reach" is four places for the
  * boundary to be defined differently, and the fifth item above is what that
@@ -188,12 +190,14 @@ function exportsOf(dir: string): Map<string, string> {
 }
 
 /**
- * Resolve `@claxedo/app/auth` through that package's `exports`.
+ * Resolve a followed package's subpath specifiers through that package's
+ * `exports` map.
  *
  * The naive mapping — package name off the front, the rest onto `src/` — is
- * what the desktop renderer guard had to patch around: `@claxedo/app/auth`
- * means `src/app/entry/auth.ts`, so the naive answer is "unresolvable", and an
- * unresolvable edge silently drops the identity provider out of the graph.
+ * what the desktop renderer guard had to patch around: a followed package's
+ * `exports` map can point a subpath at a file the naive guess would never
+ * find, so the naive answer is "unresolvable", and an unresolvable edge
+ * silently drops whatever lives behind that subpath out of the graph.
  */
 function resolveFollowedPackage(specifier: string, followed: readonly FollowedPackage[]): string | null {
   for (const pkg of followed) {
@@ -280,11 +284,11 @@ export function walk(options: WalkOptions): Closure {
         if (resolved === null) {
           // An alias-shaped or followed-package specifier that did not resolve
           // is a HOLE, not a dependency. This is the exact failure the desktop
-          // renderer guard had to patch around: `@claxedo/app/auth` answering
-          // null quietly drops the identity provider out of the graph and the
-          // walk reports a clean product. Recording it as `packages` would do
-          // the same thing one level up — the boundary rules match package
-          // names, and `@/platform` is not one.
+          // renderer guard had to patch around: a followed-package subpath
+          // answering null quietly drops whatever lives behind it out of the
+          // graph and the walk reports a clean product. Recording it as
+          // `packages` would do the same thing one level up — the boundary
+          // rules match package names, and `@/platform` is not one.
           if (isAliasShaped(specifier, applicable) || namesFollowedPackage(specifier, followed)) {
             unresolved.add(`${idOf(file)} -> ${specifier}`)
             continue

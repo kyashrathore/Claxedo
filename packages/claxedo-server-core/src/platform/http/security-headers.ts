@@ -1,7 +1,7 @@
 /**
  * Response security headers for the hosted control plane.
  *
- * Mounted as the OUTERMOST middleware in `hosted-app.ts` (ahead of CORS), so
+ * Mounted as the OUTERMOST middleware in `hosted-core-app.ts` (ahead of CORS), so
  * every hosted response — routed, CORS-preflighted, 404, or thrown-and-handled
  * by `onError` — carries them and no future route can forget to opt in. The
  * one hosted response that never enters the Hono app is the fail-closed 503

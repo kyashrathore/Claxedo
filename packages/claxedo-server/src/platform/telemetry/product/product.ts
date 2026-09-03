@@ -9,10 +9,12 @@
  *   hit this?" are uncomputable in principle if a single call site is allowed
  *   to omit them, so the compiler is the enforcement point — a call site
  *   missing any of the four fails the build.
- * - **Ops plane** (the host operational-telemetry modules and the other
- *   `distinct_id: "system"` monitors): bounded counts, durations, and status
- *   classes with NO org/user identifiers and no content. It keeps calling
- *   `ControlPlaneTelemetry.capture` directly and is exempt by construction.
+ * - **Ops plane** (`sandbox-relay-target.ts`'s `sandbox.touch`,
+ *   `provider-neutral-hosted-services.ts`'s `sandbox.egress_unenforced`, and
+ *   the other `distinct_id: "system"` monitors): bounded counts, durations,
+ *   and status classes with NO org/user identifiers and no content. It keeps
+ *   calling `ControlPlaneTelemetry.capture` directly and is exempt by
+ *   construction.
  *
  * Worker-safe: the only dependency is a type. `authority/services.ts` must
  * never enter the Worker's runtime graph (it lazily reaches the fs-backed

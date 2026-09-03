@@ -35,7 +35,7 @@ const HOSTED_PACKAGES = [
 
 /** In-package source roots that own hosted implementations, not local ones. */
 const HOSTED_SOURCE_ROOTS = [
-  "platform/auth/auth-client",
+  "platform/auth/better-auth-browser-auth",
   "platform/auth/auth-session",
   "platform/runtime/cloud/",
   "features/documents/",

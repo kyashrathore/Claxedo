@@ -219,11 +219,36 @@ export function betterAuthAdapter(input: {
 }
 
 /**
- * Neutral default auth config. Signed deployments pass an explicit config
- * from their Better Auth composition; without one every request stays
- * unsigned-local (desktop loopback). No hosted-provider fallback exists.
+ * Default auth config for a route mounted WITHOUT an explicit one. Signed
+ * deployments pass a config from their Better Auth composition; the fallback
+ * has to be posture-aware, because "no config" means opposite things in the
+ * two postures:
+ *
+ * - `local` (the default, variable unset): every request stays unsigned-local
+ *   — the desktop loopback posture. No hosted-provider fallback exists.
+ * - `hosted`: a route that reaches serving with no auth config is a
+ *   COMPOSITION BUG, not a desktop. Answering `local-only` there would admit
+ *   remote callers as the trusted unsigned-local owner, so fail CLOSED with
+ *   `misconfigured` — which `controlPlaneAuthContext` below already turns into
+ *   503 `signed_cloud_auth_disabled`, as does `unsignedLocalRequestGuard`.
+ *
+ * `authority/deployment-mode.ts` OWNS parsing this variable, including
+ * rejecting typos at boot; importing it here would invert the dependency
+ * direction (authority -> platform/auth), so this reads the env name directly
+ * and mirrors ONLY the fail-closed case. Values that module rejects never
+ * reach serving, so anything other than exactly `hosted` keeps the local-only
+ * default rather than duplicating that validation.
  */
-export function controlPlaneAuthConfig(): ControlPlaneAuthConfig {
+export function controlPlaneAuthConfig(
+  env: Record<string, string | undefined> = process.env,
+): ControlPlaneAuthConfig {
+  if (env.CLAXEDO_DEPLOYMENT_MODE?.trim().toLowerCase() === "hosted") {
+    return {
+      enabled: false,
+      mode: "misconfigured",
+      reason: "hosted route mounted without an explicit auth config",
+    }
+  }
   return localOnlyAuthAdapter().config
 }
 

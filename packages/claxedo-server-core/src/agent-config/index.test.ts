@@ -410,7 +410,7 @@ describe("agent config", () => {
     expect(normalizeRuntimeSnapshot(snap)).toBeDefined()
   })
 
-  test("local workspace snapshot hydrates from SQLite despite an ambient the authority URL", async () => {
+  test("local workspace snapshot hydrates from SQLite despite an ambient workspace-authority URL", async () => {
     const project = path.join(root, "project")
     await fs.mkdir(project, { recursive: true })
     await mod.saveUserConfig({ mcp: {}, auth: {} })

@@ -10,8 +10,8 @@ import { isDemoMode } from "@/lib/runtime-mode"
  * How a build hands this transport a bearer, without this transport knowing
  * who issues one.
  *
- * This module used to call `getAuthToken` from `@/platform/auth/auth-client`
- * directly. `auth-client.ts` is hosted; this file is shared. The transport
+ * This module used to call `getAuthToken` from `@/platform/auth/better-auth-browser-auth`
+ * directly. `better-auth-browser-auth.ts` is hosted; this file is shared. The transport
  * cannot import a credential source only the hosted build has.
  * `configureApiRuntime` installs the bearer from the composition root instead.
  *
@@ -113,7 +113,7 @@ export function resetApiRuntime() {
  * Two of them exist — `features/workspaces/actions/project-actions.tsx`
  * (destroying a cloud sandbox) and `platform/runtime/agent/agent-runtime-client.ts`
  * (the signed control-plane init) — and both used to import `getAuthToken` from
- * `@/platform/auth/auth-client` for one call each. That is the same edge this
+ * `@/platform/auth/better-auth-browser-auth` for one call each. That is the same edge this
  * module cut for itself above, and it put the auth vendor in the LOCAL bundle through two
  * modules the local shell genuinely needs.
  *

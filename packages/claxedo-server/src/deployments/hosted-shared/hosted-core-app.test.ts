@@ -634,3 +634,97 @@ describe("hosted-core remote access (the owner's view)", () => {
     expect(response.status).toBe(404)
   })
 })
+
+
+/**
+ * The ADAPTER-NATIVE device-login seam.
+ *
+ * `HostedDeviceAuthRoutes` mounts only when an adapter-native port or a device
+ * issuer is composed. Nothing else asserts that, and the failure it guards
+ * against is silent: the routes went unmounted while
+ * `public-docs/writing-an-auth-or-storage-port.md` still documented the
+ * extension point (implement `AdapterNativeSessionAuthPort` and pass it as
+ * `native`, or bind `deviceAuthProvider`), so the code existed and no request
+ * ever reached it. These pin the mount in both directions: absent for Better
+ * Auth, whose own OAuth server owns device authorization, and present the moment
+ * an adapter brings its own token sets.
+ */
+describe("hosted-core adapter-native device login", () => {
+  const nativePort = (overrides: Record<string, unknown> = {}) => ({
+    adapter: "custom" as const,
+    acceptsAccessToken: (token: string) => token.startsWith("cli_at_"),
+    acceptsRefreshToken: (token: string) => token.startsWith("cli_rt_"),
+    issue: vi.fn(async () => ({ access_token: "cli_at_1", refresh_token: "cli_rt_1", expires_in: 900 })),
+    refresh: vi.fn(async () => ({ access_token: "cli_at_2", refresh_token: "cli_rt_2", expires_in: 900 })),
+    authenticate: vi.fn(async () => ({ mode: "signed", user: { subject: "user-1" } })),
+    revoke: vi.fn(async () => ({ revokedAt: 1 })),
+    ...overrides,
+  })
+
+  function core(mutate: (base: HostedControlPlane) => void) {
+    const base = plane()
+    mutate(base)
+    return createHostedCoreApp(base, options) as unknown as Hono
+  }
+
+  /**
+   * The certified composition. Better Auth implements neither port, so these
+   * paths must not exist at all — a mounted fail-closed 501 would shadow the
+   * device flow the auth descriptor points the CLI at.
+   */
+  test("does not mount the device endpoints for the Better Auth composition", async () => {
+    const app = createHostedCoreApp(plane(), options) as unknown as Hono
+    expect(app.routes.map((route) => route.path).filter((path) => path.startsWith("/api/auth/"))).toEqual([])
+    for (const path of ["/api/auth/device/code", "/api/auth/device/token", "/api/auth/cli/exchange", "/api/auth/cli/revoke"]) {
+      const response = await app.request(path, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      })
+      expect(response.status, path).toBe(404)
+      expect(await response.json()).toMatchObject({ error: { code: "route_not_found" } })
+    }
+  })
+
+  test("mounts them for an adapter that owns its own token sets", async () => {
+    const native = nativePort()
+    const app = core((base) => {
+      ;(base.services as unknown as { auth: Record<string, unknown> }).auth.native = native
+    })
+    expect(app.routes.map((route) => route.path)).toContain("/api/auth/device/token")
+
+    // The native port answers a refresh it recognises, with no device issuer composed.
+    const refreshed = await app.request("/api/auth/device/token", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ refresh_token: "cli_rt_1" }),
+    })
+    expect(refreshed.status).toBe(200)
+    expect(await refreshed.json()).toEqual({ access_token: "cli_at_2", refresh_token: "cli_rt_2", expires_in: 900 })
+    expect(native.refresh).toHaveBeenCalledWith("cli_rt_1")
+
+    // Mounted, and honest about the half it cannot serve without an issuer.
+    const code = await app.request("/api/auth/device/code", { method: "POST" })
+    expect(code.status).toBe(501)
+    expect(await code.json()).toMatchObject({ error: { code: "device_login_unconfigured" } })
+  })
+
+  test("brokers the device-code exchange against a composed deviceAuthProvider", async () => {
+    const issuerFetch = vi.fn(async () =>
+      Response.json({ device_code: "dev-1", user_code: "ABCD-EFGH", interval: 5 }),
+    )
+    const app = core((base) => {
+      ;(base as { deviceAuthProvider?: unknown }).deviceAuthProvider = {
+        issuer: "https://issuer.test",
+        codeUrl: "https://issuer.test/device/code",
+        tokenUrl: "https://issuer.test/device/token",
+        audience: "claxedo-control-plane",
+        fetch: issuerFetch,
+      }
+    })
+    const response = await app.request("/api/auth/device/code", { method: "POST" })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ device_code: "dev-1", user_code: "ABCD-EFGH" })
+    expect(issuerFetch).toHaveBeenCalledWith("https://issuer.test/device/code", expect.objectContaining({ method: "POST" }))
+  })
+})

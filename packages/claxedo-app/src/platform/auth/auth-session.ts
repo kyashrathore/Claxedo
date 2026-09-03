@@ -36,7 +36,7 @@ export type AuthSession = {
  * static `import { useAuth }` therefore put the entire identity provider in the
  * local bundle — `local-entry-closure.guard.test.ts` measured that chain as
  * `local.tsx -> app/entry/app.tsx -> platform/auth/auth-session.ts ->
- * auth-client.ts`.
+ * platform/auth/better-auth-browser-auth.ts`.
  *
  * Same seam as `platform/api/api.ts`'s `configureApiRuntime({ bearerToken })`,
  * and for the same reason: the hosted entry binds a real implementation and

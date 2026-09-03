@@ -2,7 +2,7 @@ export const GLOBAL_TAG = "global"
 export const GLOBAL_SHOW_TAG = "global:default"
 
 export type SessionAttachment = {
-  kind: "review" | "page" | "planner"
+  kind: "review" | "page"
   targetID: string
 }
 
