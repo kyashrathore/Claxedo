@@ -187,7 +187,7 @@ describe("OpenCode workspace draft defaults", () => {
     store.beginDraftDefault(scope, { serverUrl: "http://server", workspaceKey: "ws-1" })
     expect(
       store.draftDefaultState(scope),
-      "the store no longer settles a no-memory scope — re-check which route this default takes",
+      "a scope with nothing remembered settles as ready, which is what routes the catalog default straight to the composer",
     ).toBe("ready")
 
     const writes: unknown[] = []
