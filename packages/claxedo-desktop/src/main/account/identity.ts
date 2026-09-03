@@ -13,6 +13,11 @@ export function userInfoUrlFromTokenUrl(tokenUrl: string): string | undefined {
   const trimmed = tokenUrl.trim()
   if (!trimmed) return undefined
   if (trimmed.endsWith("/oauth/token")) return `${trimmed.slice(0, -"/oauth/token".length)}/oauth/userinfo`
+  // Better Auth serves its userinfo as a sibling of the token route. The
+  // generic relative-resolution below would yield `/oauth2/token/userinfo`,
+  // a 404 whose swallowed failure left every desktop identity as
+  // `{ userId: "" }` against Better Auth deployments.
+  if (trimmed.endsWith("/oauth2/token")) return `${trimmed.slice(0, -"/token".length)}/userinfo`
   try {
     return new URL("userinfo", trimmed.endsWith("/") ? trimmed : `${trimmed}/`).href
   } catch {
@@ -49,7 +54,19 @@ export function identityFromUserInfo(body: unknown): AccountIdentity {
 
 export type ResolveIdentity = (accessToken: string) => Promise<AccountIdentity>
 
-const USERINFO_TIMEOUT_MS = 5_000
+/**
+ * Wide enough for an edge that stalls, because nothing waits on this.
+ *
+ * Identity is best-effort enrichment resolved off the sign-in path, so the
+ * only thing a short budget buys is a nameless account. Five seconds lost
+ * that race repeatedly on this deployment — `[account] identity: Error:
+ * userinfo timed out` on relaunch after relaunch, while the endpoint itself
+ * answered in well under a second when asked directly. The Cloudflare edge
+ * can withhold a response on a warm connection for around twelve seconds
+ * (see `reference_cf_edge_get_then_post_stall`), which is simply longer than
+ * the budget it was given.
+ */
+const USERINFO_TIMEOUT_MS = 20_000
 
 /** GET userinfo with the access token; never throws — empty identity on failure. */
 export function createIdentityResolver(input: {

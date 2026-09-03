@@ -23,6 +23,7 @@ import { workspaceRuntimeBus } from "../bus"
 import { withDir } from "../compat-events"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
+import { harnessQueryParam } from "./http"
 import { sessionStatusSnapshot } from "./session-status-snapshot"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionAccessPolicy } from "../session-access-policy"
@@ -112,6 +113,13 @@ export function SessionRoutes(
     listPermissions?: (c: unknown, directory: string) => Promise<AgentPermission[]>
     listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestion[]>
     listSessions?: (c: unknown, directory: string) => Promise<AgentSession[]>
+    /** Host-owned status transport. The session-core route remains the only
+     * public handler so its private-session filter cannot be shadowed. */
+    getStatus?: (
+      c: unknown,
+      directory: string,
+      adapter: AgentHarnessAdapter,
+    ) => Promise<Response | unknown> | Response | unknown
     /**
      * Own session creation instead of delegating straight to the adapter.
      *
@@ -212,7 +220,7 @@ export function SessionRoutes(
   function requestedHarness(c: {
     req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined }
   }) {
-    const raw = c.req.query("harness") ?? c.req.query("runner") ?? undefined
+    const raw = harnessQueryParam(c.req)
     if (raw === undefined) return undefined
     const identity = normalizeHarnessIdentity(raw)
     if (!identity) throw new HTTPException(400, { message: `Unknown harness "${raw}"` })
@@ -286,21 +294,23 @@ export function SessionRoutes(
     getTodos: options?.getTodos
       ? (_c, directory, sessionId) => options.getTodos!({ directory: requiredDirectory(directory), sessionId })
       : undefined,
-    getStatus: async (_c, directory, adapter) => {
-      const target = requiredDirectory(directory)
-      if (!hasAdapterCapability(adapter, "http-proxy")) return sessionStatusSnapshot(await adapter.listSessions(target))
-      const url = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getServerUrl()
-      const headers = new Headers(options?.opencodeHeaders)
-      headers.set("x-opencode-directory", target)
-      const res = await fetch(`${url}/session/status`, {
-        headers,
-      })
-      return new Response(res.body, {
-        status: res.status,
-        statusText: res.statusText,
-        headers: res.headers,
-      })
-    },
+    getStatus: options?.getStatus
+      ? (c, directory, adapter) => options.getStatus!(c, requiredDirectory(directory), adapter)
+      : async (_c, directory, adapter) => {
+          const target = requiredDirectory(directory)
+          if (!hasAdapterCapability(adapter, "http-proxy")) return sessionStatusSnapshot(await adapter.listSessions(target))
+          const url = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getServerUrl()
+          const headers = new Headers(options?.opencodeHeaders)
+          headers.set("x-opencode-directory", target)
+          const res = await fetch(`${url}/session/status`, {
+            headers,
+          })
+          return new Response(res.body, {
+            status: res.status,
+            statusText: res.statusText,
+            headers: res.headers,
+          })
+        },
     sessionBus: workspaceRuntimeBus,
     publishGlobal: (event) => {
       eventHub.publishGlobal(event)

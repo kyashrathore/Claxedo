@@ -7,6 +7,7 @@ import { createSelfHostedApp } from "./app"
 import { DuplicateRouteOwner, withRouteOwnership } from "../route-ownership"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 
 /**
  * Who owns what in the self-hosted composition.
@@ -48,7 +49,7 @@ function selfHosted() {
         projectionStore: centralStore.projectionStore,
         durableSessionLog: centralStore.durableSessionLog,
       },
-      { localExecution: { enabled: true }, telemetry: { capture: () => {} } },
+      { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
   )
 }
@@ -73,6 +74,7 @@ const SELF_HOSTED_MOUNTS = [
   { prefix: "/api/claxedo/remote-access", owner: "self-hosted-node" },
   { prefix: "/api/claxedo/workspace", owner: "self-hosted-node" },
   { prefix: "/api/control", owner: "self-hosted-node" },
+  { prefix: "/api/control/session-registrations", owner: "self-hosted-node" },
   { prefix: "/api/runtime-authority", owner: "self-hosted-node" },
   { prefix: "/api/workspace", owner: "self-hosted-node" },
   { prefix: "/documents", owner: "self-hosted-node" },
@@ -137,5 +139,22 @@ describe("the guard on the composed app", () => {
     expect(await (await built.app.request("/api/claxedo/health")).json()).toMatchObject({ ok: true })
     built.app.route("/api/claxedo/probe", new Hono() as never)
     expect(built.routeOwnership.owner("/api/claxedo/probe")).toBe("self-hosted-node")
+  })
+})
+
+describe("the central events stream", () => {
+  // `withRouteOwnership` above catches a second COMPOSITION claiming a prefix
+  // another one owns; it does not see two handlers for one exact path inside
+  // a single composition. `OpenCodeCompatRoutes` answers `/api/claxedo/events`
+  // itself (one of its three spellings of the central bus stream), and Hono
+  // resolves the first-registered handler for an exact path, so this
+  // composition must register no other handler for it.
+  test("exactly one handler is registered for GET /api/claxedo/events", () => {
+    const built = selfHosted()
+
+    const matches = built.app.routes.filter(
+      (route) => route.method === "GET" && route.path === "/api/claxedo/events",
+    )
+    expect(matches).toHaveLength(1)
   })
 })

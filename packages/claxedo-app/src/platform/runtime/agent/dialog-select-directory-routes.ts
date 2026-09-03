@@ -1,9 +1,5 @@
 export type WorkspaceRuntimeFileResource = "file" | "file/content" | "file/status"
 
-export function claxedoBootstrapUrl(input: { serverUrl: string }) {
-  return new URL("/api/claxedo/bootstrap", input.serverUrl)
-}
-
 export function workspaceRuntimeFilePath(input: {
   resource: WorkspaceRuntimeFileResource
   scope: string

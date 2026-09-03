@@ -109,16 +109,26 @@ vi.mock("@/platform/runtime/platform-provider", async () => {
   return { ...actual, usePlatform: () => ({ fetch }) }
 })
 
-vi.mock("@/app/providers/global-sdk/provider", () => ({
-  useGlobalSDK: () => ({
-    url: "http://localhost:4096",
-    client: {
-      session: { status: vi.fn(), requests: vi.fn() },
-      permission: { list: vi.fn() },
-      question: { list: vi.fn() },
-    },
-  }),
-}))
+// Partial, like every other override here: this module also exports the event
+// projection helpers (`isOpenCodeSdkEvent` and friends) that other modules in
+// this tree import, and a wholesale factory would hand them `undefined`. Only
+// the SDK handle is stubbed.
+vi.mock("@/app/providers/global-sdk/provider", async () => {
+  const actual = await vi.importActual<typeof import("../../providers/global-sdk/provider")>(
+    "@/app/providers/global-sdk/provider",
+  )
+  return {
+    ...actual,
+    useGlobalSDK: () => ({
+      url: "http://localhost:4096",
+      client: {
+        session: { status: vi.fn(), requests: vi.fn() },
+        permission: { list: vi.fn() },
+        question: { list: vi.fn() },
+      },
+    }),
+  }
+})
 
 vi.mock("@/features/terminal/providers/provider", () => ({
   useOptionalTerminal: () => ({ close: vi.fn() }),
@@ -414,33 +424,22 @@ describe("closed workspace disposal and reconstruction", () => {
     const { state } = renderRail(surface, otherWorkspaceSurface)
     await openPanel()
     expect(mounts()).toHaveLength(1)
-
-    // First visit to the other workspace's session: it holds no panel
-    // snapshot, so the per-session remember/restore CLOSES the panel rather
-    // than let the destination inherit this workspace's open surface (see
-    // `restoreSession` in the workspace-panel slice). The panel body then
-    // disposes after the close grace.
-    state().wb.navigation.show(otherWorkspaceSurface.id)
-    await waitFor(() => expect(screen.queryByTestId("review-workspace")).toBeNull(), { timeout: 10_000 })
-
-    // Open it here too, so BOTH sessions now hold open snapshots — the
-    // cross-workspace switch that keeps the panel open is the switch to a
-    // session remembered with an open panel.
-    await openPanel()
-    expect(mounts()).toHaveLength(2)
     const scopesBefore = paneScopeMounts.count
 
     // The pane moves to the other workspace's surface; the panel retargets from
-    // the effect that follows and rebuilds its body for /repo/other.
+    // the effect that follows and builds its body for /repo/other. Nothing
+    // closes the panel on the way: `syncFocusedSessionPanel` remembers and
+    // restores per SESSION, and the destination is a terminal, so the panel
+    // simply follows the pane across the workspace boundary.
     state().wb.navigation.show(otherWorkspaceSurface.id)
 
-    await waitFor(() => expect(mounts()).toHaveLength(3), { timeout: 10_000 })
+    await waitFor(() => expect(mounts()).toHaveLength(2), { timeout: 10_000 })
     await delay(200)
     // Exactly one construction. The outgoing body owns one directory and stops
     // projecting a pane that has left it, so it cannot build the destination
     // scope on its way out and have the panel build it a second time.
     expect(paneScopeMounts.count - scopesBefore).toBe(1)
-    expect(mounts()).toHaveLength(3)
+    expect(mounts()).toHaveLength(2)
     // What "exactly once" leaves standing changed with panel body retention:
     // the outgoing body is KEPT so a switch back is a display flip, so both
     // Review roots are in the document and exactly one of them is the user's.
@@ -458,28 +457,24 @@ describe("closed workspace disposal and reconstruction", () => {
     const { state } = renderRail(surface, otherWorkspaceSurface)
     await openPanel()
 
-    // First visit to the other session closes the panel (no snapshot to
-    // restore — see `restoreSession`); reopen it there so both sessions hold
-    // open snapshots and the switch BACK keeps the panel open, retaining the
-    // outgoing /repo/other body inert beside the displayed /repo/main one.
+    // Focus moves to the other workspace's terminal, so the panel follows the
+    // pane to /repo/other and the outgoing /repo/main body is RETAINED inert
+    // beside the newly displayed one.
     state().wb.navigation.show(otherWorkspaceSurface.id)
-    await waitFor(() => expect(screen.queryByTestId("review-workspace")).toBeNull(), { timeout: 10_000 })
-    await openPanel()
-
-    state().wb.navigation.show(surface.id)
     await waitFor(() => expect(screen.getAllByTestId("review-workspace")).toHaveLength(2), { timeout: 10_000 })
 
-    const inactiveHost = document.querySelector<HTMLElement>(
+    const retainedHost = document.querySelector<HTMLElement>(
       "[data-testid='workspace-panel-body'][data-panel-body-inert='true']",
     )
     const displayedHost = document.querySelector<HTMLElement>(
       "[data-testid='workspace-panel-body']:not([data-panel-body-inert])",
     )
-    expect(inactiveHost).not.toBeNull()
+    expect(retainedHost).not.toBeNull()
     expect(displayedHost).not.toBeNull()
 
+    // Switch the DISPLAYED /repo/other body to its processes navigator.
     state().workspacePanel.retarget({
-      workspaceDir: project.worktree,
+      workspaceDir: otherWorkspaceSurface.directory!,
       targetPaneId: "pane-1",
       navigator: "processes",
     })
@@ -487,15 +482,16 @@ describe("closed workspace disposal and reconstruction", () => {
     await waitFor(() =>
       expect(displayedHost!.querySelector("[data-testid='workspace-processes-navigator']")).not.toBeNull()
     )
-    expect(inactiveHost!.querySelector("[data-testid='workspace-processes-navigator']")).toBeNull()
+    expect(retainedHost!.querySelector("[data-testid='workspace-processes-navigator']")).toBeNull()
 
-    // Returning displays the same retained body and restores the session's
-    // remembered navigator. The processes navigator belongs to the other
-    // workspace surface; it must neither leak into this session nor disappear
-    // from the now-inactive retained body that owns it.
+    // Going back displays the same retained /repo/main body and restores that
+    // session's remembered navigator. The processes navigator belongs to the
+    // other workspace surface; it must neither leak into this session nor
+    // disappear from the now-inactive retained body that owns it — a retained
+    // body holds a FROZEN projection of the global panel navigator.
     state().wb.navigation.show(surface.id)
-    await waitFor(() => expect(inactiveHost).not.toHaveAttribute("data-panel-body-inert"), { timeout: 10_000 })
-    expect(inactiveHost!.querySelector("[data-testid='workspace-processes-navigator']")).toBeNull()
+    await waitFor(() => expect(retainedHost).not.toHaveAttribute("data-panel-body-inert"), { timeout: 10_000 })
+    expect(retainedHost!.querySelector("[data-testid='workspace-processes-navigator']")).toBeNull()
     expect(displayedHost!.querySelector("[data-testid='workspace-processes-navigator']")).not.toBeNull()
   }, 20_000)
 

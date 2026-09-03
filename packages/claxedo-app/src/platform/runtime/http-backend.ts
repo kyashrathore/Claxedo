@@ -11,6 +11,7 @@ import { createTransport, centralTransportForServer } from "@/platform/runtime/t
 import type { SessionBackend, SessionMessagePageRequest, SessionMessageRow } from "@/platform/runtime/session"
 import type { WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime"
 import { fetchWorkspaceRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type WorkspaceRuntimeBackend = {
   ensureWorkspace: (input: {
@@ -82,7 +83,7 @@ export function createHttpWorkspaceRuntimeBackend(input: {
     const workspace = input.workspace ?? (workspaceId
       ? { kind: "cloud" as const, workspaceId }
       : await workspaceRuntimeRoutingRecord({ baseUrl, request, directory }).catch(() => null))
-    if (workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted") {
+    if (!workspace || !isRelayBackedWorkspaceKind(workspace.kind)) {
       if (strictSignedRuntime) throw new Error(failure)
       return undefined
     }
@@ -111,7 +112,7 @@ export function createHttpWorkspaceRuntimeBackend(input: {
       // that opening it produced. Both reads have to be the live record.
       const scope = { baseUrl, request, directory: params.directory, workspaceId: params.workspaceId }
       const workspace = await readWorkspaceRecord(scope)
-      if (workspace.kind !== "cloud" && workspace.kind !== "user-hosted") return workspace
+      if (!isRelayBackedWorkspaceKind(workspace.kind)) return workspace
       await openWorkspaceConnection(workspace.workspaceId, { serverUrl: baseUrl, request })
       return await readWorkspaceRecord(scope)
     },

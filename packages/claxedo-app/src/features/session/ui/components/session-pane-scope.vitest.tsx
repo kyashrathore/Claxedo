@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { SessionPaneScope } from "./session-pane-scope"
 
 const calls = vi.hoisted(() => ({
+  /** What the harness store answers for a given pane scope. */
+  harnessByScope: {} as Record<string, string>,
   scopeFor: vi.fn(),
   refreshDirectory: vi.fn(),
   directoryRefresh: vi.fn(),
@@ -74,6 +76,15 @@ vi.mock("@/features/session/app-ports", () => ({
   },
 }))
 
+// The harness store the composer's picker writes. Keyed by the SAME pane scope
+// string `composerModeSnapshot` builds, so these tests fail if the pane starts
+// deriving a scope of its own.
+vi.mock("@/features/session/composer/ui/harness-controller", () => ({
+  usePromptHarnessControllersOptional: () => ({
+    submit: { harness: (scope: string) => calls.harnessByScope[scope] ?? "opencode" },
+  }),
+}))
+
 vi.mock("../../data/sync/directory-session-cache", () => ({
   useDirectorySessionCacheActions: () => ({
     refresh: calls.directoryRefresh,
@@ -115,6 +126,7 @@ beforeEach(() => {
   calls.projects = []
   calls.workspaceGateProps = undefined
   calls.directoryScopeProps = undefined
+  calls.harnessByScope = {}
 })
 
 afterEach(cleanup)
@@ -174,6 +186,61 @@ describe("SessionPaneScope", () => {
       workspace: { workspaceId: "ws_backing", kind: "cloud" },
     })
     expect(calls.scopeFor).toHaveBeenCalledWith("ws_backing")
+  })
+
+  // A DRAFT has no session ref, and every harness-keyed read below the pane —
+  // the `@`-mention agent list, the per-harness model store — needs a real
+  // harness id. The draft's harness is the one its own scope resolved, read
+  // from the store the composer's picker writes.
+  test("a draft names the harness its own pane scope resolved", () => {
+    calls.harnessByScope["draft:surface-1"] = "codex-app-server"
+
+    render(() => (
+      <SessionPaneScope
+        directory="/repo/local"
+        sessionId={() => "new"}
+        paneId={() => "pane-1"}
+        surfaceId={() => "surface-1"}
+      >
+        <div>pane content</div>
+      </SessionPaneScope>
+    ))
+
+    expect(calls.directoryScopeProps?.harnessType?.()).toBe("codex-app-server")
+  })
+
+  test("a draft on a plain local directory resolves OpenCode, not an absent harness", () => {
+    render(() => (
+      <SessionPaneScope
+        directory="/repo/local"
+        sessionId={() => "new"}
+        paneId={() => "pane-1"}
+        surfaceId={() => "surface-1"}
+      >
+        <div>pane content</div>
+      </SessionPaneScope>
+    ))
+
+    expect(calls.directoryScopeProps?.harnessType?.()).toBe("opencode")
+  })
+
+  // OpenCode is a harness id here like every other. The session-list wire
+  // spells it as an absent harness, and that spelling belongs to the read that
+  // speaks the wire, not to the pane's answer.
+  test("keeps an explicit OpenCode harness rather than erasing it", () => {
+    render(() => (
+      <SessionPaneScope
+        directory="/repo/local"
+        harnessType={() => "opencode"}
+        sessionId={() => "ses_1"}
+        paneId={() => "pane-1"}
+        surfaceId={() => "surface-1"}
+      >
+        <div>pane content</div>
+      </SessionPaneScope>
+    ))
+
+    expect(calls.directoryScopeProps?.harnessType?.()).toBe("opencode")
   })
 
   test("treats local filesystem panes as ready without a workspace scope registry entry", () => {

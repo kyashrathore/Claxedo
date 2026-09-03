@@ -8,8 +8,36 @@ import {
 import {
   managedWorkspaceSessionAccessPolicy,
   sessionAccessContext,
+  type ManagedSessionAuthority,
   type SessionAccessPolicyInput,
 } from "./session-access-policy"
+
+/** Every managed composition supplies the whole authority bundle. */
+function allowAll(): ManagedSessionAuthority {
+  return {
+    authorizeSessionRead: () => true,
+    authorizeSessionWrite: () => true,
+    authorizeSessionStream: () => ({ allowed: true, lease: "lease_1", expiresAt: Date.now() + 15_000 }),
+    registerSession: () => true,
+    acquireTurn: (input) => ({
+      allowed: true,
+      turnId: input.turnId,
+      leaseId: "turn_lease_1",
+      fencingToken: 1,
+      acquiredAt: Date.now(),
+      expiresAt: Date.now() + 15_000,
+    }),
+    renewTurn: (input) => ({
+      allowed: true,
+      turnId: input.turnId,
+      leaseId: input.leaseId,
+      fencingToken: input.fencingToken + 1,
+      acquiredAt: Date.now(),
+      expiresAt: Date.now() + 15_000,
+    }),
+    releaseTurn: () => ({ released: true }),
+  }
+}
 
 const authority = {
   managed: true as const,
@@ -46,10 +74,7 @@ describe("SessionAccessPolicy", () => {
   })
 
   test("filters actor-less managed collections instead of authorizing the whole list", async () => {
-    const policy = managedWorkspaceSessionAccessPolicy({
-      authorizeSessionRead: () => true,
-      authorizeSessionWrite: () => true,
-    })
+    const policy = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
     const input: SessionAccessPolicyInput = {
       authority,
       operation: "session_list",
@@ -64,10 +89,7 @@ describe("SessionAccessPolicy", () => {
   })
 
   test("denies a workspace viewer a session write with session_write_forbidden", async () => {
-    const policy = managedWorkspaceSessionAccessPolicy({
-      authorizeSessionRead: () => true,
-      authorizeSessionWrite: () => true,
-    })
+    const policy = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
     const viewer = { ...authority, role: "viewer" as const }
     const actor = { actorId: "actor_1", actorKind: "human" as const }
 
@@ -92,13 +114,16 @@ describe("SessionAccessPolicy", () => {
   test("denies a workspace viewer every goal mutation and routes editors to the write authority", async () => {
     const seen: string[] = []
     const policy = managedWorkspaceSessionAccessPolicy({
-      authorizeSessionRead: (input) => {
-        seen.push(`read:${input.operation}`)
-        return true
-      },
-      authorizeSessionWrite: (input) => {
-        seen.push(`write:${input.operation}`)
-        return true
+      authority: {
+        ...allowAll(),
+        authorizeSessionRead: (input) => {
+          seen.push(`read:${input.operation}`)
+          return true
+        },
+        authorizeSessionWrite: (input) => {
+          seen.push(`write:${input.operation}`)
+          return true
+        },
       },
     })
     const actor = { actorId: "actor_1", actorKind: "human" as const }
@@ -133,13 +158,16 @@ describe("SessionAccessPolicy", () => {
   test("keeps goal reads on the read authority for a workspace viewer", async () => {
     const seen: string[] = []
     const policy = managedWorkspaceSessionAccessPolicy({
-      authorizeSessionRead: (input) => {
-        seen.push(`read:${input.operation}`)
-        return true
-      },
-      authorizeSessionWrite: (input) => {
-        seen.push(`write:${input.operation}`)
-        return true
+      authority: {
+        ...allowAll(),
+        authorizeSessionRead: (input) => {
+          seen.push(`read:${input.operation}`)
+          return true
+        },
+        authorizeSessionWrite: (input) => {
+          seen.push(`write:${input.operation}`)
+          return true
+        },
       },
     })
     const goalReads = ["goal_read", "goal_state", "goal_capabilities"] as const
@@ -160,8 +188,11 @@ describe("SessionAccessPolicy", () => {
     const participants = new Set(["actor_alice"])
     const policy = managedWorkspaceSessionAccessPolicy({
       requireActor: true,
-      authorizeSessionRead: (input) => participants.has(input.actor.actorId),
-      authorizeSessionWrite: (input) => participants.has(input.actor.actorId),
+      authority: {
+        ...allowAll(),
+        authorizeSessionRead: (input) => participants.has(input.actor.actorId),
+        authorizeSessionWrite: (input) => participants.has(input.actor.actorId),
+      },
     })
     const input = {
       authority,
@@ -220,6 +251,7 @@ describe("SessionAccessPolicy", () => {
       headers: {
         authorization: "Bearer verified-runtime-proof",
         [EMBEDDED_RELAY_HOST_AUTH_HEADER]: JSON.stringify({
+          principal_kind: "user",
           actor_id: "actor_alice",
           actor_kind: "human",
           actor_public_id: "usr_alice",
@@ -243,14 +275,16 @@ describe("SessionAccessPolicy", () => {
     let peak = 0
     const policy = managedWorkspaceSessionAccessPolicy({
       requireActor: true,
-      authorizeSessionRead: async () => {
-        active += 1
-        peak = Math.max(peak, active)
-        await Promise.resolve()
-        active -= 1
-        return true
+      authority: {
+        ...allowAll(),
+        authorizeSessionRead: async () => {
+          active += 1
+          peak = Math.max(peak, active)
+          await Promise.resolve()
+          active -= 1
+          return true
+        },
       },
-      authorizeSessionWrite: () => true,
     })
 
     const sessionIds = Array.from({ length: 50 }, (_, index) => `ses_${index}`)
@@ -261,5 +295,58 @@ describe("SessionAccessPolicy", () => {
       sessionIds,
     })).resolves.toEqual(sessionIds)
     expect(peak).toBe(16)
+  })
+
+  test("gates turn admission behind verified actor and authority claims, then delegates to the bundle", async () => {
+    const policy = managedWorkspaceSessionAccessPolicy({ requireActor: true, authority: allowAll() })
+    const actor = { actorId: "actor_1", actorKind: "human" as const }
+
+    await expect(policy.acquireTurn!({
+      authority,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+    })).resolves.toMatchObject({ allowed: false, code: "session_actor_required", status: 403 })
+
+    await expect(policy.acquireTurn!({
+      actor,
+      authority,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+    })).resolves.toMatchObject({ allowed: true, turnId: "turn_1", leaseId: "turn_lease_1", fencingToken: 1 })
+
+    await expect(policy.renewTurn!({
+      actor,
+      authority,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+      leaseId: "turn_lease_1",
+      fencingToken: 1,
+    })).resolves.toMatchObject({ allowed: true, fencingToken: 2 })
+
+    await expect(policy.releaseTurn!({
+      actor,
+      authority,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+      leaseId: "turn_lease_1",
+      fencingToken: 2,
+    })).resolves.toEqual({ released: true })
+  })
+
+  test("denies turn admission on the same role rank as any other session write", async () => {
+    const policy = managedWorkspaceSessionAccessPolicy({ authority: allowAll() })
+    const viewer = { ...authority, role: "viewer" as const }
+
+    await expect(policy.acquireTurn!({
+      actor: { actorId: "actor_1", actorKind: "human" },
+      authority: viewer,
+      operation: "prompt",
+      sessionId: "ses_1",
+      turnId: "turn_1",
+    })).resolves.toMatchObject({ allowed: false, code: "session_write_forbidden", status: 403 })
   })
 })

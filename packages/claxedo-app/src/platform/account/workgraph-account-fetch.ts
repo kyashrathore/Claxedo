@@ -4,7 +4,7 @@
  * Maps `/api/workgraph…` URLs onto named ops. Browser keeps authFetch / loopback.
  */
 import { authFetch, getClaxedoServerUrl, unsignedLocalFetch, usesUnsignedLocalTransport } from "@/platform/api/api"
-import { accountRun, parseHostedHttpError } from "@/platform/account/hosted-control-call"
+import { parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -27,7 +27,7 @@ export function createWorkGraphAccountFetch(baseUrl: string = getClaxedoServerUr
   const fallback: typeof fetch = usesUnsignedLocalTransport(baseUrl) ? unsignedLocalFetch : authFetch
 
   return async (input, init) => {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (!run) return fallback(input, init)
 
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url)

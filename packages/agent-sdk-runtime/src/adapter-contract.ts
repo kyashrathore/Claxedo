@@ -47,6 +47,21 @@ export type AgentHarnessAdapterProcessOptions = {
   processObserver?: AgentProcessObserver
 }
 
+export type AgentTurnWriteContext = {
+  /** Durable authority generation required by every authoritative turn write. */
+  fencingToken?: number
+}
+
+/**
+ * The fencing fields an adapter spreads onto every store write it makes for a
+ * turn. A turn started without a write context produces no fields at all, so an
+ * unfenced store never sees a token it cannot check.
+ */
+export function turnWriteFence(writeContext: AgentTurnWriteContext | undefined): { fencingToken?: number } {
+  if (writeContext?.fencingToken === undefined) return {}
+  return { fencingToken: writeContext.fencingToken }
+}
+
 /**
  * An injectable HTTP seam. Only the call signature is ever used, so this is
  * deliberately narrower than `typeof fetch` — the platform type also carries
@@ -96,7 +111,12 @@ export interface AgentHarnessAdapterCore {
 
   readHarnessCapabilities(directory: RuntimeDirectory, context?: HarnessCapabilityContext): Promise<HarnessCapabilities> | HarnessCapabilities
 
-  sendMessage(id: string, input: PromptInput, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent>
+  sendMessage(
+    id: string,
+    input: PromptInput,
+    directory: RuntimeDirectory,
+    writeContext?: AgentTurnWriteContext,
+  ): AsyncIterable<AgentRuntimeStreamEvent>
   getMessages(id: string, directory: RuntimeDirectory): Promise<AgentMessage[]>
 
   listCommands?(directory: RuntimeDirectory): Promise<AgentCommand[]>
@@ -118,11 +138,34 @@ export interface SupportsUnrevert {
 }
 
 export interface SupportsFork {
-  forkSession(id: string, messageId: string, directory: RuntimeDirectory): Promise<{ id: string }>
+  forkSession(id: string, messageId: string, directory: RuntimeDirectory, childSessionId?: string): Promise<{ id: string }>
 }
 
 export interface SupportsCommands {
   executeCommand(id: string, command: string, directory: RuntimeDirectory): Promise<void>
+}
+
+export type ShellCommandInput = {
+  command: string
+  agent: string
+  model?: { providerID: string; modelID: string }
+  messageID?: string
+}
+
+export interface SupportsShell {
+  /** Run a shell command in the session context, same command-channel category as `executeCommand`. */
+  shell(id: string, input: ShellCommandInput, directory: RuntimeDirectory): Promise<void>
+}
+
+export type SummarizeSessionInput = {
+  providerID: string
+  modelID: string
+  auto?: boolean
+}
+
+export interface SupportsSummarize {
+  /** Compact the session transcript into an AI-generated summary (the `/compact` command). */
+  summarize(id: string, input: SummarizeSessionInput, directory: RuntimeDirectory): Promise<void>
 }
 
 /**
@@ -269,9 +312,55 @@ export interface SupportsRuntimeConfig {
   waitForConfigReady?(): Promise<void>
 }
 
+/**
+ * The model a harness resolved for itself, in the harness's own vocabulary.
+ *
+ * `id` is the harness's model id and `name` is the label the harness published
+ * for that id. Both come from the harness; neither is derived from a Claxedo
+ * catalog, so this is what the agent will actually run, not what a client
+ * asked for.
+ */
+export type ResolvedHarnessModel = {
+  id: string
+  name: string
+}
+
+/**
+ * A harness's live configuration surface.
+ *
+ * `options` are the settings a client may change. `resolvedModel` is the model
+ * the harness reports as current for the next turn — the answer for harnesses
+ * that own model selection and therefore publish no model option to pick from.
+ *
+ * It is ABSENT whenever the harness named no current model, or named one it
+ * published no label for. A client that receives no resolved model learns that
+ * the harness did not report one; it never receives a guess or a default.
+ */
+export type AgentConfigOptions = {
+  options: AgentConfigOption[]
+  resolvedModel?: ResolvedHarnessModel
+}
+
+/**
+ * The resolved model carried by a `model` select, when it carries one.
+ *
+ * Only the option's own `currentValue` and the label it published for that
+ * value are read, so an option whose current value is absent from its own
+ * choices resolves to nothing rather than to an unlabelled id.
+ */
+export function resolvedModelFromConfigOptions(
+  options: readonly AgentConfigOption[],
+): ResolvedHarnessModel | undefined {
+  const option = options.find((item) => item.type === "select" && (item.category === "model" || item.id === "model"))
+  const id = typeof option?.currentValue === "string" ? option.currentValue : undefined
+  if (!id) return undefined
+  const name = option?.selectOptions?.find((item) => item.id === id)?.name
+  return name ? { id, name } : undefined
+}
+
 export interface SupportsConfigOptions {
-  probeConfigOptions(directory: RuntimeDirectory): Promise<AgentConfigOption[]>
-  peekConfigOptions?(directory: RuntimeDirectory): Promise<AgentConfigOption[] | null> | AgentConfigOption[] | null
+  probeConfigOptions(directory: RuntimeDirectory): Promise<AgentConfigOptions>
+  peekConfigOptions?(directory: RuntimeDirectory): Promise<AgentConfigOptions | null> | AgentConfigOptions | null
 }
 
 export type AgentHarnessAdapter =
@@ -281,6 +370,8 @@ export type AgentHarnessAdapter =
   & Partial<SupportsUnrevert>
   & Partial<SupportsFork>
   & Partial<SupportsCommands>
+  & Partial<SupportsShell>
+  & Partial<SupportsSummarize>
   & Partial<SupportsMessagePages>
   & Partial<SupportsPermissionModes>
   & Partial<SupportsAgents>

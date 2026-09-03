@@ -1,9 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
-  loadMoreSessionInventoryProject,
-  loadMoreSessionInventoryWorkspace,
   loadSessionInventory,
-  reloadSessionInventory,
   removeSessionInventorySession,
 } from "./session-inventory"
 import { emptySessionInventoryStore, normalizeSessionInventory, type SessionInventoryValue } from "./queries"
@@ -157,46 +154,25 @@ describe("session inventory query helpers", () => {
     expect(next.byProject.project_a.map((session) => session.id)).toEqual(["ses-archive", "ses-keep"])
   })
 
-  test("routes transitional loader calls through one shell data boundary", async () => {
+  /**
+   * The inventory has ONE reader left: the snapshot that seeds which rail
+   * sections open. Rendered rows, pagination and freshness moved to each
+   * section's own source (`session-source.ts`), so the reload and the two
+   * paginators this boundary used to route are gone rather than unused.
+   */
+  test("routes the one remaining loader call through the shell data boundary", async () => {
     const calls: unknown[] = []
     const source = {
       inventoryActions: {
         load: () => {
           calls.push(["load"])
         },
-        reloadWorkspace: (filter?: unknown) => {
-          calls.push(["reloadWorkspace", filter])
-        },
-        loadMoreWorkspace: (directory: string, filter?: unknown) => {
-          calls.push(["loadMoreWorkspace", directory, filter])
-        },
-        loadMore: (projectID: string, projectWorktree: string, sandboxes: string[]) => {
-          calls.push(["loadMoreProject", projectID, projectWorktree, sandboxes])
-        },
       },
     }
-    const filter = { archived: "active" as const, status: ["working"] }
 
     await loadSessionInventory(source)
-    await reloadSessionInventory(source, filter)
-    await loadMoreSessionInventoryWorkspace({
-      source,
-      directory: "/repo/a",
-      filter,
-    })
-    await loadMoreSessionInventoryProject({
-      source,
-      projectID: "project_a",
-      projectWorktree: "/repo/a",
-      sandboxes: ["/repo/a-wt"],
-    })
 
-    expect(calls).toEqual([
-      ["load"],
-      ["reloadWorkspace", filter],
-      ["loadMoreWorkspace", "/repo/a", filter],
-      ["loadMoreProject", "project_a", "/repo/a", ["/repo/a-wt"]],
-    ])
+    expect(calls).toEqual([["load"]])
   })
 
   test("loopback-local control sessions coexist with signed-workspace sessions in the derived inventory", () => {

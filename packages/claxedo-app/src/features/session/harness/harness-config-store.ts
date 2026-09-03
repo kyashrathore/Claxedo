@@ -11,7 +11,6 @@ import { createHarnessModelWriter } from "./harness-model-writer"
 import { createHarnessStore } from "./harness-store"
 import { createAcpConnectionsCatalog } from "./acp-connections"
 import {
-  clearHarnessOptionsTries,
   createHarnessHydratorQueryCache,
   createHarnessOptionsQueryCache,
   createHarnessSwitcherQueryCache,
@@ -85,7 +84,7 @@ export function createHarnessConfigStore() {
       harnessStore.setConfigError(scope, err instanceof Error ? err.message : "Failed to initialize harness")
       harnessStore.setReadiness(scope, "error")
     },
-    cache: createPreparedRuntimeSessionQueryCache(),
+    cache: createPreparedRuntimeSessionQueryCache(base),
   })
 
   const optionsLoader = createHarnessOptionsLoader<ScopeInput>({
@@ -95,17 +94,15 @@ export function createHarnessConfigStore() {
     preserveSelectedModel: harnessStore.protectDraftModel,
     seed: harnessStore.seed,
     applyPatch: harnessStore.applyPatch,
-    saveModel: (scope, model) => harnessStore.save(scope, "model", model),
     draftDefaultApplication: harnessStore.draftDefaultApplication,
     resolveDraftDefault: harnessStore.applyDraftDefault,
-    completeRememberedHarness: harnessStore.completeRememberedHarness,
     setOptionsLoading: harnessStore.setOptionsLoading,
     readState: (scope) => {
       const state = harnessStore.state(scope)
       return state ? { readiness: state.readiness, configError: state.configError } : undefined
     },
     errorMessage,
-    cache: createHarnessOptionsQueryCache(),
+    cache: createHarnessOptionsQueryCache(base),
   })
 
   async function fetchConfigOptions(
@@ -117,13 +114,8 @@ export function createHarnessConfigStore() {
   }
 
   const statusActions = createHarnessStatusActions<ScopeInput>({
-    dropPrepared: (scope) => {
-      void preparedRuntimeSessions.drop(scope)
-    },
-    clearOptionsTries: clearHarnessOptionsTries,
     applyPatch: harnessStore.applyPatch,
     state: harnessStore.state,
-    save: harnessStore.save,
     fetchConfigOptions: (scope, type, input) => {
       void fetchConfigOptions(scope, type, input)
     },
@@ -148,7 +140,6 @@ export function createHarnessConfigStore() {
       return harnessStore.beginDraftDefault(scope, identity)
     },
     markServer: harnessStore.markServer,
-    resetWorkspaceDraftHarness: statusActions.resetWorkspaceDraftHarness,
     applyStatus: statusActions.applyStatus,
     setPollingHydration: statusActions.setPollingHydration,
     setReadyHydration: statusActions.setReadyHydration,
@@ -156,7 +147,7 @@ export function createHarnessConfigStore() {
       void fetchConfigOptions(scope, type, input)
     },
     refresh: statusActions.refresh,
-    workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input),
+    workspaceRuntime: (input) => !!harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? []),
     runtime: harnessRuntime,
     cache: createHarnessHydratorQueryCache(base),
   })
@@ -177,9 +168,6 @@ export function createHarnessConfigStore() {
     seed: harnessStore.seed,
     acceptsDraftModel: harnessStore.acceptsDraftModel,
     setSelectedModel: harnessStore.setSelectedModel,
-    setSelectedAgent: harnessStore.setSelectedAgent,
-    saveModel: (scope, model) => harnessStore.save(scope, "model", model),
-    saveAgent: (scope, name) => harnessStore.save(scope, "agent", name),
     rememberDraftModel: (scope, model, input, labels) => {
       rememberDraftModel(scope, model, input, labels)
     },
@@ -200,8 +188,6 @@ export function createHarnessConfigStore() {
       void preparedRuntimeSessions.drop(scope)
     },
     applyPatch: harnessStore.applyPatch,
-    saveHarness: (scope, type) => harnessStore.save(scope, "harness", type),
-    saveModel: (scope, model) => harnessStore.save(scope, "model", model),
     beginDraftHarnessChoice: (scope, type, input) => {
       const identity = draftDefaultIdentity(input)
       if (identity) harnessStore.beginDraftHarnessChoice(scope, identity, type)
@@ -216,15 +202,13 @@ export function createHarnessConfigStore() {
     publishSessionConfig,
     errorMessage,
     runtime: harnessRuntime,
-    cache: createHarnessSwitcherQueryCache(),
+    cache: createHarnessSwitcherQueryCache(base),
   })
 
   const setHarness: typeof switcher.setHarness = (scope, type, input, binary) => {
     hydrator.cancel(scope)
     return switcher.setHarness(scope, type, input, binary)
   }
-
-  const setAgent = modelWriter.setAgent
 
   const claimSession = preparedRuntimeSessions.claim
 
@@ -270,15 +254,22 @@ export function createHarnessConfigStore() {
   // This hits the harness route directly — which now forwards `/api/wr/health`'s
   // `harnessHealth` (D1 fix) — and moves readiness ready<->degraded so the
   // composer health peek + Send gate react. Deliberately does NOT re-fetch config
-  // options, re-save preferences, or touch harness/model identity: it only
-  // transitions readiness, and only when it owns that transition.
+  // options or touch harness/model identity: it only transitions readiness, and
+  // only when it owns that transition.
   const probeHarnessHealth = async (scope: string, input?: ScopeInput) => {
     if (!input?.directory) return
     const current = harnessStore.read(scope)
     if (current.harness === "opencode") return
     const res = await harnessRuntime
       .localHarnessConfigFetch(input)(
-        harnessConfigUrl({ serverUrl: base, directory: input.directory, sessionId: input.sessionId }),
+        harnessConfigUrl({
+          serverUrl: base,
+          directory: input.directory,
+          ...(harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? [])?.workspaceId
+            ? { workspaceId: harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? [])!.workspaceId }
+            : {}),
+          sessionId: input.sessionId,
+        }),
       )
       .catch(() => undefined)
     if (!res?.ok) return
@@ -310,13 +301,11 @@ export function createHarnessConfigStore() {
     resolveDraftDefault: resolveCurrentDraftDefault,
     setModel,
     setHarness,
-    setAgent,
     harnessMode: harnessStore.harnessMode,
     harnessBinary: harnessStore.harnessBinary,
     selectedModel: harnessStore.selectedModel,
     selectedModelKey: harnessStore.selectedModelKey,
     harness: harnessStore.harness,
-    selectedAgent: harnessStore.selectedAgent,
     models: harnessStore.models,
     thoughtLevels: harnessStore.thoughtLevels,
     setThoughtLevel: harnessStore.setThoughtLevel,

@@ -2,8 +2,8 @@ import { describe, expect, test } from "bun:test"
 import {
   MODELS_PREVIEW_COUNT,
   MODELS_SEARCH_THRESHOLD,
-  modelsSettingsHydrationTargets,
   providerUsesInlineSearch,
+  settingsModelCatalogProviders,
   visibleModelsForProvider,
 } from "./models-settings-logic"
 
@@ -52,14 +52,28 @@ describe("Settings Models provider search", () => {
   })
 })
 
-describe("Settings Models hydration targets", () => {
-  test("hydrates every connected provider plus a small disconnected preview", () => {
-    const result = modelsSettingsHydrationTargets({
+describe("Settings Models catalog providers", () => {
+  const provider = (id: string) => ({ id })
+
+  test("a harness catalog small enough to read is shown whole", () => {
+    const all = ["claude-sdk", "codex-app-server", "cursor-sdk"].map(provider)
+    expect(settingsModelCatalogProviders({
+      all,
+      connectedIds: ["cursor-sdk"],
+      popularProviders: ["anthropic", "openai"],
+    }).map((item) => item.id)).toEqual(["cursor-sdk", "claude-sdk", "codex-app-server"])
+  })
+
+  test("the models.dev registry shows connected providers plus a small popular preview", () => {
+    const all = [
+      ...Array.from({ length: 40 }, (_, index) => provider(`filler-${index}`)),
+      ...["opencode", "opencode-go", "anthropic", "openai", "google"].map(provider),
+    ]
+    expect(settingsModelCatalogProviders({
+      all,
       connectedIds: ["opencode-go", "opencode"],
       popularProviders: ["opencode", "opencode-go", "anthropic", "openai", "google"],
       previewDisconnectedCount: 2,
-    })
-    expect(result.key).toBe("opencode,opencode-go|anthropic,openai")
-    expect(result.providerIds).toEqual(["opencode", "opencode-go", "anthropic", "openai"])
+    }).map((item) => item.id)).toEqual(["opencode", "opencode-go", "anthropic", "openai"])
   })
 })

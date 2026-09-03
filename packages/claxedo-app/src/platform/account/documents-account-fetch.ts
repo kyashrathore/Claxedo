@@ -3,7 +3,7 @@
  * Maps known /documents routes onto named ops; falls back to authFetch.
  */
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { accountRun, hostedControlCall, parseHostedHttpError } from "@/platform/account/hosted-control-call"
+import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -30,7 +30,7 @@ async function runOp(name: HostedOperationName, input: Record<string, unknown>) 
 
 export function createDocumentsAccountFetch(baseUrl: string = getClaxedoServerUrl()): typeof fetch {
   return async (input, init) => {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (!run) return authFetch(input, init)
 
     const url = new URL(typeof input === "string" || input instanceof URL ? String(input) : input.url, baseUrl)

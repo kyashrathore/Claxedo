@@ -7,9 +7,12 @@
  * the server. So this owns exactly ONE connection per adapter and fans it out to
  * the monitored sessions, instead of opening (and re-parsing) a copy per Goal.
  *
- * The Goal snapshot itself is durable state the engine rewrites once per work
- * turn, so it is re-read at turn boundaries only — never on every
- * `session.updated`, which fires many times inside a single turn.
+ * The engine announces every Goal transition itself: the snapshot is durable
+ * session metadata, and the one durable write publishes `session.updated`
+ * carrying the whole session info, goal metadata included. So the live channel
+ * is that announcement, read straight off the feed. The authoritative HTTP read
+ * is what a fresh connection starts from, because a transition that happened
+ * while the stream was down was announced to nobody.
  */
 
 import { eventSessionId, type CompatEvent } from "../../compat-events"
@@ -17,10 +20,10 @@ import { Log } from "../../log"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import {
   drainServerEventStream,
-  isTurnBoundaryCompatEvent,
   openEventStream,
   type OpenCodeEventStreamHandle,
 } from "./events"
+import { announcedGoalSnapshot } from "./goal-metadata"
 import type { OpenCodeRequestFn } from "./index"
 
 const log = Log.create({ service: "opencode-goal-monitor" })
@@ -130,8 +133,9 @@ export class OpenCodeGoalMonitors {
           if (!sessionId || !entry) continue
           this.deps.observe(event, sessionId, entry.directory)
           entry.publish(event)
-          if (!isTurnBoundaryCompatEvent(event)) continue
-          await this.refresh(sessionId, entry.directory)
+          const announced = announcedGoalSnapshot(event)
+          if (announced === undefined) continue
+          this.settle(sessionId, entry.directory, announced)
           if (this.disposed || this.sessions.size === 0) return
         }
       } catch (error) {
@@ -163,7 +167,16 @@ export class OpenCodeGoalMonitors {
   }
 
   private async refresh(sessionId: string, directory: string) {
-    const goal = await this.deps.readGoal(sessionId, directory)
+    this.settle(sessionId, directory, await this.deps.readGoal(sessionId, directory))
+  }
+
+  /**
+   * Hand one observed snapshot to the adapter and drop the session once its
+   * Goal is no longer running. Publication is deduped by the adapter, so the
+   * same snapshot arriving from the reconnect read and from the engine's own
+   * announcement publishes once.
+   */
+  private settle(sessionId: string, directory: string, goal: RuntimeGoalSnapshot | null) {
     this.deps.publishGoal(sessionId, directory, goal)
     if (!goal || goal.status !== "active") this.stop(sessionId)
   }

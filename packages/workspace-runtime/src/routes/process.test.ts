@@ -12,6 +12,7 @@ const state = {
   names: new Map<string, { ptyId?: string }>(),
   ptys: new Map<string, { id: string; sessionId?: string }>(),
   snapshots: new Map<string, string>(),
+  owners: new Map<string, string>(),
 }
 
 const manager = {
@@ -36,6 +37,7 @@ const manager = {
 const pty = {
   get: mock((id: string) => state.ptys.get(id)),
   snapshot: mock((id: string) => state.snapshots.get(id) ?? ""),
+  accessOwner: mock((id: string) => state.owners.get(id)),
   listDetailed: mock(() => []),
   remove: mock(async () => {}),
 }
@@ -48,6 +50,7 @@ describe("ProcessRoutes logs", () => {
     state.names.clear()
     state.ptys.clear()
     state.snapshots.clear()
+    state.owners.clear()
   })
 
   afterEach(() => {
@@ -76,6 +79,7 @@ describe("ProcessRoutes logs", () => {
     state.snapshots.set("pty_1", "private output")
     const calls: Array<{ sessionId?: string; operation: string }> = []
     const policy: SessionAccessPolicy = {
+      sessionAuthority: "managed-private",
       authorize: async (input) => {
         calls.push({ sessionId: input.sessionId, operation: input.operation })
         return {
@@ -94,18 +98,19 @@ describe("ProcessRoutes logs", () => {
       c.set("relayHostAuth", {
         iss: "workspace-relay",
         aud: "workspace-host-service",
-        sub: "user_1",
+        principal_kind: "user",
+        actor_id: "actor_1",
+        actor_kind: "human",
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
         role: "editor",
         access: "cloud",
         backing: "cloud-vm",
-        actor_id: "actor_1",
-        actor_kind: "human",
         exp: now + 60,
         iat: now,
         jti: "jti_1",
+        parent_jti: "rat_jti_1",
       })
       return await next()
     })
@@ -255,7 +260,9 @@ describe("ProcessRoutes logs", () => {
       c.set("relayHostAuth", {
         iss: "workspace-relay",
         aud: "workspace-host-service",
-        sub: "user_1",
+        principal_kind: "user",
+        actor_id: "user_1",
+        actor_kind: "human",
         org_id: "org_1",
         workspace_id: "ws_1",
         host_id: "host_1",
@@ -265,6 +272,7 @@ describe("ProcessRoutes logs", () => {
         exp: now + 60,
         iat: now,
         jti: "jti_1",
+        parent_jti: "rat_jti_1",
       })
       return await next()
     })

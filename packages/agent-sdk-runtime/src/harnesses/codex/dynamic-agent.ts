@@ -5,20 +5,6 @@ import { codexSandboxPolicy, codexSettingsFor } from "../shared/permission-modes
 import type { CodexAppServerProcess } from "./app-server-process"
 import type { CodexActiveThread } from "./active-thread"
 
-export const CODEX_DYNAMIC_TOOLS = [{
-  name: "spawn_agent",
-  description: "Spawn a child Codex agent to execute one bounded task.",
-  inputSchema: {
-    type: "object",
-    properties: {
-      task_name: { type: "string", description: "Short stable name for the child task." },
-      message: { type: "string", description: "Task instructions for the child agent." },
-    },
-    required: ["task_name", "message"],
-    additionalProperties: false,
-  },
-}]
-
 type DynamicCodexThread = Pick<
   CodexActiveThread,
   "sessionId" | "agentSessionId" | "directory" | "model" | "effort" | "observeSubagent"

@@ -21,7 +21,9 @@ import {
 } from "@claxedo/workspace-runtime/host"
 import {
   managedWorkspaceSessionAccessPolicy,
+  sessionAccessRequiresWrite,
   type ProcessObserver,
+  type SessionAccessStreamDecision,
   type SessionAuthorityInput,
 } from "@claxedo/workspace-runtime"
 import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/errors/posthog"
@@ -29,7 +31,6 @@ import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
-import { eventsHandler } from "@claxedo/server-core/platform/http/events"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
@@ -86,11 +87,10 @@ import {
 } from "../../authority/services"
 import {
   betterAuthAdapter,
-  clerkAuthAdapter,
   controlPlaneAuthContext,
   ControlPlaneAuthError,
-  signedCloudAuthRequested,
 } from "@claxedo/server-core/platform/auth/auth"
+import { clerkAuthAdapter, signedCloudAuthRequested } from "@claxedo/server-core/platform/auth/clerk-adapter"
 import {
   assertHostedBootRequirements,
   deploymentMode,
@@ -113,9 +113,19 @@ import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/r
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import {
-  decideWorkspaceSessionAuthority,
+  authorizeRuntimeSessionStream,
   RuntimeSessionAuthorityRoutes,
+  sessionStreamLeaseVerifier,
+  type RuntimeSessionAuthorityOptions,
+  type SessionStreamLeaseClaims,
 } from "../../routes/runtime-session-authority"
+import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
+import {
+  SessionTurnConflictError,
+  SessionTurnLeaseLostError,
+  type SessionTurnAuthority,
+} from "@claxedo/server-core/platform/auth/session-turn-authority"
+import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth/private-session-authority"
 import { relayRole } from "../../workspace/route-support"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
@@ -160,9 +170,9 @@ import { llmTurnRecord, workGraphSessionAttribution } from "../../platform/telem
 import { ClaxedoDB } from "../../platform/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
-import { localHostIdentity, registrationPayload, signHostPayload } from "../../workspace/local-host"
+import { localHostIdentity, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
-import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
+import { DEFAULT_CLAXEDO_SERVER_PORT, embeddedWorkspaceRuntimeSessionAuthority } from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
@@ -174,6 +184,7 @@ import { scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { resolveHarnessForRequest } from "@claxedo/server-core/session/harness/resolution"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
+import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 
 const execFileAsync = promisify(execFile)
 
@@ -222,21 +233,211 @@ function authRouteOptions(services: ControlPlaneServices) {
   }
 }
 
+function selfHostedRuntimeAuthority(authority: WorkspaceAuthority | undefined): RuntimeSessionAuthorityOptions["authority"] {
+  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
+  const methods = [
+    "registerRuntimeSession",
+    "markSessionRegistrationAmbiguous",
+    "beginSessionCompensation",
+    "completeSessionCompensation",
+    "authorizeRuntimeSession",
+    "runtimeAccessTokenActive",
+  ] as const
+  if (!candidate || methods.some((method) => typeof candidate[method] !== "function")) {
+    throw new ControlPlaneCompositionError(
+      "self_host_app_required",
+      "Self-hosted runtime session authority is incomplete",
+    )
+  }
+  return candidate as unknown as RuntimeSessionAuthorityOptions["authority"]
+}
+
+function selfHostedTurnAuthority(authority: WorkspaceAuthority | undefined): SessionTurnAuthority {
+  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
+  const methods = ["acquireSessionTurn", "renewSessionTurn", "releaseSessionTurn"] as const
+  if (!candidate || methods.some((method) => typeof candidate[method] !== "function")) {
+    throw new ControlPlaneCompositionError(
+      "self_host_app_required",
+      "Self-hosted session turn authority is incomplete",
+    )
+  }
+  return candidate as unknown as SessionTurnAuthority
+}
+
+function selfHostedPrivateSessionAuthority(
+  authority: WorkspaceAuthority | undefined,
+): Pick<PrivateSessionAuthority, "reserveSession"> {
+  const candidate = authority as (WorkspaceAuthority & Record<string, unknown>) | undefined
+  if (!candidate || typeof candidate.reserveSession !== "function") {
+    throw new ControlPlaneCompositionError(
+      "self_host_app_required",
+      "Self-hosted private-session reservation authority is incomplete",
+    )
+  }
+  return candidate as unknown as Pick<PrivateSessionAuthority, "reserveSession">
+}
+
+/**
+ * The private-session authority for the embedded workspace runtime.
+ *
+ * The runtime shares this process with the control plane, so it calls the
+ * authority directly instead of crossing `POST /api/runtime-authority/
+ * session-authorize`. Streams reach the same owner the HTTP oracle serves
+ * (`authorizeRuntimeSessionStream`) and receive the same signed lease, bound
+ * to the `embedded` transport: an in-process runtime holds no Relay Host
+ * Token chain, so a renewal re-checks private-session membership rather than
+ * a parent Runtime Access Token.
+ *
+ * Turn admission is the same story one layer down. Declaring
+ * `sessionAuthority: "managed-private"` is what turns on the runtime's durable
+ * prompt admission (`acquireManagedPromptLease`, workspace-runtime
+ * routes/session-core.ts), so `ManagedSessionAuthority` (workspace-runtime
+ * session-access-policy.ts) requires `acquireTurn`/`renewTurn`/`releaseTurn`
+ * alongside read/write/stream/register: this authority bundle cannot be built
+ * without them, so a managed-private policy can never authorize a turn and
+ * then refuse to admit it. The callbacks below reach `selfHostedTurnAuthority`,
+ * the same owner `RuntimeSessionAuthorityRoutes` serves remotely; the
+ * authority's own `leaseId` travels back unwrapped because an in-process
+ * caller needs no cross-process proof to bind it to (the remote oracle mints
+ * a signed lease for exactly that reason).
+ */
 export function embeddedManagedPrivateSessionPolicy(authority: WorkspaceAuthority) {
-  const decide = (input: SessionAuthorityInput, action: "read" | "write" | "register") =>
-    decideWorkspaceSessionAuthority(authority, {
-      actorId: input.actor.actorId,
-      actorKind: input.actor.actorKind,
-      workspaceId: input.authority.workspaceId,
-      sessionId: input.sessionId,
-      action,
-      ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
-    })
-  return managedWorkspaceSessionAccessPolicy({
-    authorizeSessionRead: (input) => decide(input, "read"),
-    authorizeSessionWrite: (input) => decide(input, "write"),
-    registerSession: (input) => decide(input, "register"),
+  const runtimeAuthority = selfHostedRuntimeAuthority(authority)
+  const turnAuthority = selfHostedTurnAuthority(authority)
+  const principalOf = (input: SessionAuthorityInput) => input.actor.actorKind === "human"
+    ? { principalKind: "user" as const, actorId: input.actor.actorId, actorKind: "human" as const }
+    : { principalKind: "service" as const, actorId: input.actor.actorId, actorKind: "agent" as const }
+  const denied = (error: unknown) => {
+    if (error instanceof ControlPlaneAuthError && (error.status === 401 || error.status === 403 || error.status === 503)) {
+      return { allowed: false as const, status: error.status, code: error.code, message: error.message }
+    }
+    return {
+      allowed: false as const,
+      status: 503 as const,
+      code: "session_authority_unavailable",
+      message: error instanceof Error ? error.message : "Session authority is unavailable",
+    }
+  }
+  const decideStream = async (
+    input: SessionAuthorityInput,
+    lease?: string,
+  ): Promise<SessionAccessStreamDecision> => {
+    const action = sessionAccessRequiresWrite(input) ? "write" as const : "read" as const
+    try {
+      const claims: SessionStreamLeaseClaims = lease
+        ? await sessionStreamLeaseVerifier()(lease)
+        : {
+            ...principalOf(input),
+            transport: "embedded",
+            orgId: input.authority.orgId,
+            workspaceId: input.authority.workspaceId,
+            sessionId: input.sessionId,
+            action,
+          }
+      if (lease && (claims.sessionId !== input.sessionId || claims.action !== action)) {
+        return {
+          allowed: false,
+          status: 401,
+          code: "session_stream_lease_invalid",
+          message: "Session stream lease is invalid or mismatched",
+        }
+      }
+      return await authorizeRuntimeSessionStream({ authority: runtimeAuthority }, claims)
+    } catch (error) {
+      return denied(error)
+    }
+  }
+  const decide = async (input: SessionAuthorityInput, action: "read" | "write" | "register") => {
+    const principal = principalOf(input)
+    try {
+      if (action === "register") {
+        if (!input.registrationOperationId) {
+          return {
+            allowed: false as const,
+            status: 409 as const,
+            code: "session_registration_operation_required",
+            message: "Private session registration requires an immutable operation id",
+          }
+        }
+        await runtimeAuthority.registerRuntimeSession({
+          ...principal,
+          operationId: input.registrationOperationId,
+          workspaceId: input.authority.workspaceId,
+          sessionId: input.sessionId,
+          ...(input.sessionTitle ? { title: input.sessionTitle } : {}),
+        })
+      } else {
+        await runtimeAuthority.authorizeRuntimeSession({
+          ...principal,
+          workspaceId: input.authority.workspaceId,
+          sessionId: input.sessionId,
+          action,
+        })
+      }
+      return { allowed: true as const }
+    } catch (error) {
+      return denied(error)
+    }
+  }
+  const turnDenied = (error: unknown) => {
+    if (error instanceof SessionTurnConflictError) {
+      return { allowed: false as const, status: 409 as const, code: error.code, message: error.message }
+    }
+    if (error instanceof SessionTurnLeaseLostError) {
+      return { allowed: false as const, status: 409 as const, code: error.code, message: error.message }
+    }
+    return denied(error)
+  }
+  // A turn is admitted for a verified identity on a named workspace, exactly
+  // like a stream: `managedWorkspaceSessionAccessPolicy` already refused the
+  // call before reaching here if the actor or authority claims are absent.
+  const turnInput = (input: SessionAuthorityInput & { turnId: string }) => ({
+    ...principalOf(input),
+    sessionId: input.sessionId,
+    workspaceId: input.authority.workspaceId,
+    turnId: input.turnId,
   })
+  const policy = managedWorkspaceSessionAccessPolicy({
+    authority: {
+      authorizeSessionRead: (input) => decide(input, "read"),
+      authorizeSessionWrite: (input) => decide(input, "write"),
+      authorizeSessionStream: decideStream,
+      registerSession: (input) => decide(input, "register"),
+      acquireTurn: async (input) => {
+        try {
+          return { allowed: true as const, ...await turnAuthority.acquireSessionTurn(turnInput(input)) }
+        } catch (error) {
+          return turnDenied(error)
+        }
+      },
+      renewTurn: async (input) => {
+        try {
+          return {
+            allowed: true as const,
+            ...await turnAuthority.renewSessionTurn({
+              ...turnInput(input),
+              leaseId: input.leaseId,
+              fencingToken: input.fencingToken,
+            }),
+          }
+        } catch (error) {
+          return turnDenied(error)
+        }
+      },
+      releaseTurn: async (input) => {
+        try {
+          return await turnAuthority.releaseSessionTurn({
+            ...turnInput(input),
+            leaseId: input.leaseId,
+            fencingToken: input.fencingToken,
+          })
+        } catch (error) {
+          return turnDenied(error)
+        }
+      },
+    },
+  })
+  return policy
 }
 
 export function localDocumentsBackend() {
@@ -599,7 +800,6 @@ export function createSelfHostedApp(
                 if (typeof orgId !== "string") throw new Error("Workspace organization is unavailable")
                 return {
                   ...actor,
-                  subject: auth.user.subject,
                   orgId,
                   role: relayRole(workspace.role),
                 }
@@ -631,7 +831,6 @@ export function createSelfHostedApp(
                     actorPublicId: claims.actor_public_id,
                     actorName: claims.actor_name,
                     ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-                    subject: claims.sub,
                     orgId: claims.org_id,
                     role: claims.role,
                   }
@@ -656,7 +855,6 @@ export function createSelfHostedApp(
                 actorPublicId: claims.actor_public_id,
                 actorName: claims.actor_name,
                 ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-                subject: claims.sub,
                 orgId: claims.org_id,
                 role: claims.role,
               }
@@ -819,6 +1017,39 @@ export function createSelfHostedApp(
   }))
   const remoteAccessRelayUrl = services.relay.relayUrl ?? Object.values(services.relay.relayUrls ?? {})[0]
   const remoteAccessSigner = services.relay.hostTunnelTokenSigner
+  // One machine-share owner for the whole composition: the remote-access
+  // routes drive enable/devices/revoke through it, and the workspace routes'
+  // `/:id/host-assignment` verbs delegate their assign→beat→routable sequence
+  // to the same served set and heartbeat loop.
+  const remoteAccessService = services.authority ? createRemoteAccessService({
+    authority: services.authority,
+    relayUrl: remoteAccessRelayUrl ?? "",
+    hostTunnelTokenSigner: remoteAccessSigner ?? (async () => {
+      throw new ControlPlaneAuthError(503, "host_tunnel_token_signer_unavailable", "Host Tunnel Token signer is not configured")
+    }),
+    listLocalWorkspaces: async () => (await listWorkspaces()).map((workspace) => ({
+      id: workspace.id,
+      kind: workspace.kind,
+      displayName: workspace.workspace_name ?? workspace.project_name ?? workspace.repo_name ?? workspace.id,
+      projectId: workspace.project_id,
+      repoUrl: workspace.repo_url ?? workspace.git_remote,
+      repoName: workspace.repo_name,
+      gitBranch: workspace.git_branch,
+    })),
+    subscribeLocalWorkspaces: (listener) => subscribeLocalWorkspaceChanges(listener),
+    localHostIdentity,
+    signHostPayload,
+    // This host serves the workspaces it shares out of the embedded runtimes
+    // configured above, so the composition it declares to the control plane is
+    // read from those runtimes rather than restated here — signed deployments
+    // inject `embeddedManagedPrivateSessionPolicy` and are `managed-private`,
+    // unsigned ones stay on the unbound local policy.
+    sessionAuthority: embeddedWorkspaceRuntimeSessionAuthority,
+    startMachineTunnel: startUserHostedMachineTunnel,
+    stopMachineTunnel: stopUserHostedMachineTunnel,
+    machineTunnelActive: hasUserHostedMachineTunnel,
+    capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
+  }) : undefined
   app.route("/api/claxedo/remote-access", RemoteAccessRoutes({
     deviceLoginConfigured: !!process.env.CLAXEDO_DEVICE_LOGIN_ISSUER?.trim(),
     relayConfigured: !!remoteAccessRelayUrl && !!remoteAccessSigner,
@@ -830,30 +1061,7 @@ export function createSelfHostedApp(
       if (auth.mode === "signed") return auth
       throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
     },
-    service: services.authority ? createRemoteAccessService({
-      authority: services.authority,
-      relayUrl: remoteAccessRelayUrl ?? "",
-      hostTunnelTokenSigner: remoteAccessSigner ?? (async () => {
-        throw new ControlPlaneAuthError(503, "host_tunnel_token_signer_unavailable", "Host Tunnel Token signer is not configured")
-      }),
-      listLocalWorkspaces: async () => (await listWorkspaces()).map((workspace) => ({
-        id: workspace.id,
-        kind: workspace.kind,
-        displayName: workspace.workspace_name ?? workspace.project_name ?? workspace.repo_name ?? workspace.id,
-        projectId: workspace.project_id,
-        repoUrl: workspace.repo_url ?? workspace.git_remote,
-        repoName: workspace.repo_name,
-        gitBranch: workspace.git_branch,
-      })),
-      subscribeLocalWorkspaces: (listener) => subscribeLocalWorkspaceChanges(listener),
-      localHostIdentity,
-      signHostPayload,
-      registrationPayload,
-      startMachineTunnel: startUserHostedMachineTunnel,
-      stopMachineTunnel: stopUserHostedMachineTunnel,
-      machineTunnelActive: hasUserHostedMachineTunnel,
-      capture: (distinctId, event, properties) => services.telemetry.capture(distinctId, event, properties),
-    }) : unavailableRemoteAccessService(),
+    service: remoteAccessService ?? unavailableRemoteAccessService(),
   }))
 
   mountWorkspaceRuntimePtyWebSocketProxy(app, upgradeWebSocket, runtimeProxyOptions)
@@ -892,21 +1100,17 @@ export function createSelfHostedApp(
 
     // Runtime-owned local routes are dispatched through the embedded
     // workspace-runtime host by workspaceRuntimeProxy above.
+    //
+    // Claxedo events SSE lives on `OpenCodeCompatRoutes` above, not here: that
+    // router answers `/global/event`, `/api/wr/events`, and `/api/claxedo/events`
+    // itself (its own three spellings of the central bus stream, gated by the
+    // same control-plane bearer via `controlPlaneRouteAuth`), so a second
+    // `/api/claxedo/events` mounted after it here would never be reached —
+    // Hono resolves the first-registered handler for an exact path.
+    // `createSelfHostedApp` requires `services.localExecution.enabled`
+    // (asserted above) before this point is ever reached, so this composition
+    // never runs without that router mounted.
   }
-  // Claxedo events SSE — auth-gated via the same control-plane bearer used
-  // by /api/control/* and /api/workspace/*. authFetch on the
-  // frontend already attaches the token because the consumer uses fetch+
-  // ReadableStream, not raw EventSource. Signed subscribers resolve their
-  // AUTHORITY-INTERNAL org id at connect so org-scoped events
-  // (document.changed/provision, stamped with internal ids) are visible.
-  app.get(
-    "/api/claxedo/events",
-    eventsHandler({
-      ...authRouteOptions(services),
-      allowLoopbackLocal: true,
-      ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
-    }),
-  )
 
   const documentsBackend = localDocumentsBackend()
   // Documents doorbell. The documents backend is
@@ -945,16 +1149,27 @@ export function createSelfHostedApp(
   app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
   app.route("/api/workspace", WorkspaceRoutes(
     services,
-    workspaceRouteOptions(services, connectionsHost, options.connectionRateLimiter),
+    {
+      ...workspaceRouteOptions(services, connectionsHost, options.connectionRateLimiter),
+      ...(remoteAccessService ? { hostAssignments: remoteAccessService } : {}),
+    },
   ))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     loopbackRelayUrl: services.relay.relayUrl,
     defaultHomeRegion: services.defaultHomeRegion,
     allowUnsignedLocal: true,
   }))
-  app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services))
+  app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
+    authority: selfHostedRuntimeAuthority(services.authority),
+    turnAuthority: selfHostedTurnAuthority(services.authority),
+  }))
   app.route("/api/control", ControlPlaneHttpRoutes(services, authRouteOptions(services)))
   app.route("/api/control", OrgTeamControlRoutes(services, authRouteOptions(services)))
+  app.route("/api/control/session-registrations", PrivateSessionRegistrationRoutes({
+    authority: selfHostedPrivateSessionAuthority(services.authority),
+    ...authRouteOptions(services),
+    services,
+  }))
   app.route("/", centralControl.app)
   app.route(
     "/api/claxedo/credentials",
@@ -1249,17 +1464,7 @@ function localRelayFromEnv(
             runtimeAccessTokenSigner: runtimeSigner,
             hostTunnelTokenSigner: hostSigner,
             targetLookup: localRelayTargetLookup({ sandboxManager }),
-            recordRuntimeAccessToken: (input) =>
-              authority.recordRuntimeAccessTokenForService({
-                jti: input.jti,
-                workspaceId: input.workspaceId,
-                hostId: input.hostId,
-                actorId: input.actorId,
-                actorKind: input.actorKind,
-                principalKind: input.principalKind,
-                role: input.role,
-                expiresAt: input.expiresAt,
-              }),
+            recordRuntimeAccessToken: (input) => recordRelayRuntimeToken(authority, input),
           }),
         }
       : {}),

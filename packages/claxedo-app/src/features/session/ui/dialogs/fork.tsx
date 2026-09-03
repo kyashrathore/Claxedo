@@ -1,6 +1,6 @@
 import { Component, createMemo } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
-import { useSDK } from "@/features/session/app-ports"
+import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
@@ -11,15 +11,27 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { registeredConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import { forkableMessages, resolveForkSessionId, type ForkableMessage } from "./fork-messages"
 import { sessionRoute } from "@/platform/identity/route"
+import { forkSessionWithReservation } from "@/platform/runtime/private-session-reservation"
 
 function formatTime(date: Date): string {
   return date.toLocaleTimeString(undefined, { timeStyle: "short" })
+}
+
+function managedWorkspaceKind(kind: "local" | "cloud" | "user-hosted" | undefined) {
+  switch (kind) {
+    case "cloud":
+    case "user-hosted":
+      return true
+    default:
+      return false
+  }
 }
 
 export const DialogFork: Component = () => {
   const params = useParams()
   const navigate = useNavigate()
   const sdk = useSDK()
+  const globalSDK = useGlobalSDK()
   const prompt = usePrompt()
   const dialog = useDialog()
   const language = useLanguage()
@@ -39,8 +51,19 @@ export const DialogFork: Component = () => {
       directory: sdk.directory,
       attachmentName: language.t("common.attachment"),
     })
-    sdk.client.session
-      .fork({ sessionID, messageID: item.id })
+    const workspace = sdk.workspace(sdk.directory) as {
+      id?: string
+      workspaceId?: string
+      kind?: "local" | "cloud" | "user-hosted"
+    } | undefined
+    forkSessionWithReservation({
+      client: sdk.client.session,
+      sessionId: sessionID,
+      messageId: item.id,
+      managed: managedWorkspaceKind(workspace?.kind),
+      workspaceId: workspace?.workspaceId ?? workspace?.id,
+      serverUrl: globalSDK.url,
+    })
       .then((forked) => {
         if (!forked.data) {
           showToast({ title: language.t("common.requestFailed") })

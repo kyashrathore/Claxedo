@@ -10,30 +10,32 @@ import {
   harnessModels,
   harnessReadyForSubmit,
 } from "./selection"
-import type {
-  HarnessStorePatch,
-  HarnessStoreState,
+import {
+  initialHarnessStoreState,
+  type HarnessStorePatch,
+  type HarnessStoreState,
 } from "./store-state"
-import { createHarnessPreferences } from "./harness-preferences"
 import {
   resolveDraftDefault,
   shouldApplyDraftDefault,
   type DraftDefaultApplication,
   type ResolveDraftDefaultInput,
 } from "./draft-default-policy"
-import type { DraftDefaultLabels, DraftDefaultScope } from "./draft-defaults"
-
-type PreferenceKey = "harness" | "model" | "agent"
+import {
+  createDraftDefaultPreferences,
+  type DraftDefaultLabels,
+  type DraftDefaultScope,
+} from "./draft-defaults"
 
 export function createHarnessStore(storage: PanePreferenceStorage) {
   const [store, setStore] = createStore<Record<string, HarnessStoreState>>({})
-  const preferences = createHarnessPreferences(storage)
+  const draftDefaults = createDraftDefaultPreferences(storage)
   const initialByScope = new Map<string, HarnessStoreState>()
 
   const initialState = (scope: string) => {
     const existing = initialByScope.get(scope)
     if (existing) return existing
-    const created = preferences.initialState(scope)
+    const created = initialHarnessStoreState({ scope })
     initialByScope.set(scope, created)
     return created
   }
@@ -58,19 +60,13 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     })
   }
 
-  const save = (scope: string, key: PreferenceKey, value: string) => {
-    preferences.save(scope, key, value)
-  }
-
   const promote = (from: string, to: string) => {
     seed(from)
     setStore(to, {
       ...read(from),
       draftDefaultAuthority: "server",
       draftDefaultRevision: (read(from).draftDefaultRevision ?? 0) + 1,
-      draftDefaultWritePending: false,
     })
-    preferences.promote(from, to)
   }
 
   const owner = (scope: string) => {
@@ -92,7 +88,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     }
 
     const revision = (current.draftDefaultRevision ?? 0) + 1
-    const saved = preferences.draftDefaults.read(identity)
+    const saved = draftDefaults.read(identity)
     const type = saved?.harness ?? "opencode"
     setStore(scope, {
       draftDefaultAuthority: "unresolved",
@@ -101,7 +97,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       draftDefaultWorkspaceKey: identity.workspaceKey,
       draftDefault: saved,
       draftDefaultState: undefined,
-      draftDefaultWritePending: false,
       harness: type,
       harnessMode: type === "opencode" ? "opencode" : "harness",
       selectedModel: saved?.model?.modelID ?? "",
@@ -154,7 +149,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       draftDefaultRevision: (read(scope).draftDefaultRevision ?? 0) + 1,
       draftDefault: undefined,
       draftDefaultState: undefined,
-      draftDefaultWritePending: false,
       configError: undefined,
     })
   }
@@ -173,58 +167,88 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     }
   }
 
+  /**
+   * Whether a fresh options answer must keep this scope's model instead of
+   * replacing it with the harness's own.
+   *
+   * Only a model the USER chose is held: `draftDefault.model` is the choice
+   * this scope descends from, so it covers both a choice made here and one
+   * restored from the workspace's memory, including the choice a shrunken
+   * catalog no longer offers — that one has to stay selected for
+   * "Saved model unavailable" to name it. A model the harness resolved is a
+   * default, not a choice: every load may answer it afresh, and a catalog that
+   * drops it simply resolves the next default rather than accusing the user of
+   * selecting a model that is gone.
+   */
   const protectDraftModel = (scope: string) => {
     const current = read(scope)
-    return current.draftDefaultAuthority === "defaulted" ||
-      (current.draftDefaultAuthority === "explicit" && !current.draftDefaultWritePending)
+    const authority = current.draftDefaultAuthority
+    return (authority === "defaulted" || authority === "explicit") && !!current.draftDefault?.model
   }
 
+  /**
+   * What it means for this draft to be on harness `type`: `type` plus the
+   * choice `type` OWNS here, and nothing else.
+   *
+   * A harness switch is a choice of HARNESS, never of model. The live selection
+   * belongs to the harness being left, and the model the incoming harness
+   * resolves for itself is a default — so a harness the user has never picked a
+   * model for carries no model, its draft state stays unsettled until the
+   * options load resolves one, and the resolved default is shown afresh every
+   * time rather than filed as something the user chose.
+   */
+  const draftHarnessChoicePatch = (
+    scope: string,
+    identity: Omit<DraftDefaultScope, "fallbackWorkspaceKey">,
+    type: HarnessType,
+  ) => {
+    const current = read(scope)
+    const choice = draftDefaults.readHarness(identity, type)
+    return {
+      choice,
+      patch: {
+        draftDefaultAuthority: "explicit",
+        draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
+        draftDefaultServerUrl: identity.serverUrl,
+        draftDefaultWorkspaceKey: identity.workspaceKey,
+        draftDefault: { harness: type, ...(choice ?? {}) },
+        draftDefaultState: choice?.model || !harnessHasConfigOptions(type) ? "ready" : undefined,
+        configError: undefined,
+      } satisfies HarnessStorePatch,
+    }
+  }
+
+  /** The user's switch to `type` landed: this workspace now opens drafts on it. */
   const rememberDraftHarness = (
     scope: string,
     identity: Omit<DraftDefaultScope, "fallbackWorkspaceKey">,
     type: HarnessType,
-    labels?: DraftDefaultLabels,
   ) => {
     seed(scope)
-    const current = read(scope)
-    const revision = (current.draftDefaultRevision ?? 0) + 1
-    const selected = harnessModelKeyForSubmit(current)
-    const liveConfigModel = !harnessHasConfigOptions(type) ||
-      !!current.dynamicModels?.some((item) => item.id === selected?.modelID)
-    const model = selected && liveConfigModel &&
-      (type === "pi" || type === "opencode" || selected.providerID === type)
-      ? selected
-      : undefined
-    const persisted = preferences.draftDefaults.save(identity, { harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) })
-    setStore(scope, {
-      draftDefaultAuthority: "explicit",
-      draftDefaultRevision: revision,
-      draftDefaultServerUrl: identity.serverUrl,
-      draftDefaultWorkspaceKey: identity.workspaceKey,
-      draftDefault: { version: 1, harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) },
-      draftDefaultState: model || !harnessHasConfigOptions(type) ? "ready" : undefined,
-      draftDefaultWritePending: harnessHasConfigOptions(type) && !model,
-      configError: undefined,
-    })
+    const { choice, patch } = draftHarnessChoicePatch(scope, identity, type)
+    const persisted = draftDefaults.save(identity, { harness: type, ...(choice ?? {}) })
+    // The switch flow already put the selection where it belongs; only the
+    // remembered pair is this call's business.
+    setStore(scope, patch)
     return persisted
   }
 
+  /**
+   * The user picked `type` for this draft: restore what THAT harness last used
+   * here. Each harness owns its own slot, so switching away and back returns to
+   * the model it was on instead of "Choose a model".
+   */
   const beginDraftHarnessChoice = (
     scope: string,
     identity: Omit<DraftDefaultScope, "fallbackWorkspaceKey">,
     type: HarnessType,
   ) => {
     seed(scope)
-    const current = read(scope)
+    const { choice, patch } = draftHarnessChoicePatch(scope, identity, type)
     setStore(scope, {
-      draftDefaultAuthority: "explicit",
-      draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
-      draftDefaultServerUrl: identity.serverUrl,
-      draftDefaultWorkspaceKey: identity.workspaceKey,
-      draftDefault: { version: 1, harness: type },
-      draftDefaultState: undefined,
-      draftDefaultWritePending: harnessHasConfigOptions(type),
-      configError: undefined,
+      ...patch,
+      selectedModel: choice?.model?.modelID ?? "",
+      selectedModelProvider: choice?.model?.providerID,
     })
   }
 
@@ -237,15 +261,14 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     seed(scope)
     const current = read(scope)
     if (!canSelectDraftModel(current, model)) return false
-    const persisted = preferences.draftDefaults.save(identity, { harness: current.harness, model, ...(labels ? { labels } : {}) })
+    const persisted = draftDefaults.save(identity, { harness: current.harness, model, ...(labels ? { labels } : {}) })
     setStore(scope, {
       draftDefaultAuthority: "explicit",
       draftDefaultRevision: (current.draftDefaultRevision ?? 0) + 1,
       draftDefaultServerUrl: identity.serverUrl,
       draftDefaultWorkspaceKey: identity.workspaceKey,
-      draftDefault: { version: 1, harness: current.harness, model, ...(labels ? { labels } : {}) },
+      draftDefault: { harness: current.harness, model, ...(labels ? { labels } : {}) },
       draftDefaultState: "ready",
-      draftDefaultWritePending: false,
       configError: undefined,
     })
     return persisted
@@ -253,34 +276,12 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
   const acceptsDraftModel = (scope: string, model: ModelKey) => canSelectDraftModel(read(scope), model)
 
-  const completeRememberedHarness = (
-    scope: string,
-    type: HarnessType,
-    model?: ModelKey,
-    labels?: DraftDefaultLabels,
-  ) => {
-    const current = read(scope)
-    if (
-      current.draftDefaultAuthority !== "explicit" ||
-      !current.draftDefaultWritePending ||
-      current.harness !== type ||
-      !current.draftDefaultWorkspaceKey
-    ) return false
-    const persisted = preferences.draftDefaults.save({
-      serverUrl: current.draftDefaultServerUrl ?? "",
-      workspaceKey: current.draftDefaultWorkspaceKey,
-    }, { harness: type, ...(model ? { model } : {}), ...(labels ? { labels } : {}) })
-    if (persisted) setStore(scope, "draftDefaultWritePending", false)
-    return persisted
-  }
-
   return {
     applyPatch,
     applyDraftDefault,
     beginDraftDefault,
     beginDraftHarnessChoice,
     acceptsDraftModel,
-    completeRememberedHarness,
     draftDefaultApplication,
     protectDraftModel,
     promote,
@@ -288,14 +289,12 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
     rememberDraftHarness,
     rememberDraftModel,
     read,
-    save,
     seed,
     state: (scope: string) => store[scope],
     touch,
     setConfigError: (scope: string, message: string) => setStore(scope, "configError", message),
     setOptionsLoading: (scope: string, value: boolean) => setStore(scope, "optionsLoading", value),
     setReadiness: (scope: string, readiness: HarnessStoreState["readiness"]) => setStore(scope, "readiness", readiness),
-    setSelectedAgent: (scope: string, name: string) => setStore(scope, "selectedAgent", name),
     setSelectedModel: (scope: string, model: ModelKey) => {
       setStore(scope, "selectedModel", model.modelID)
       setStore(scope, "selectedModelProvider", model.providerID)
@@ -317,7 +316,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
       applyPatch(scope, { selectedThoughtLevel: value })
     },
     selectedThoughtLevel: (scope: string) => read(scope).selectedThoughtLevel,
-    selectedAgent: (scope: string) => read(scope).selectedAgent,
     selectedModel: (scope: string) => read(scope).selectedModel ?? "",
     selectedModelKey: (scope: string) => harnessModelKeyForSubmit(read(scope)),
     optionsSource: (scope: string) => read(scope).optionsSource,

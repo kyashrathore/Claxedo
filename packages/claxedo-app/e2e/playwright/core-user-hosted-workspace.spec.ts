@@ -12,8 +12,8 @@
  * transient relay hiccups, that every workspace-scoped surface (session send, and whatever
  * else is exercised while ready) routes through the relay lane rather than any bare/local
  * endpoint, a workspace going from ready to paused (host taken offline) after a warm
- * reload, and the in-app "Share workspace" entry point that registers a workspace as
- * user-hosted. The DEEP half — real relay/JWT fixtures, genuine WS multiplexing, PTY/file
+ * reload, and the in-app entry point that publishes this machine's local workspaces for
+ * remote access. The DEEP half — real relay/JWT fixtures, genuine WS multiplexing, PTY/file
  * writes through a live tunnel, role enforcement — is Tier L's `live-user-hosted-relay`
  * (spec 25); this spec never makes a real network call.
  *
@@ -69,14 +69,16 @@
  *   lives in a session/turn sense — it is connection-authority state, entirely orthogonal
  *   to the session timeline, and (aside from the localStorage warm-start marker) is
  *   in-memory only, fully discarded by a real page reload.
- *   Share/register — `registerUserHostedWorkspace` (`src/utils/share-workspace.ts`) is a
- *   ONE-SHOT `POST /api/workspace/:id/user-hosted/register` fired from the sidebar's
- *   "Share workspace" action (`src/claxedo-ui/layouts/rail-sidebar.tsx`'s
- *   `HeaderActions`); it does not touch `workspaceConnection` at all — it is orthogonal to
- *   the connect pipeline above, just a call that marks a LOCAL project's workspace as
- *   registered/shareable server-side and copies a share URL. It is gated by
- *   `Can do="share.workspace"` (`src/shell/auth/role.tsx`) — available to `signed`/`org-
- *   member` principals, never `local`/`anonymous` — and by `localWorkspaceShareTarget`
+ *   Share/register — sharing is MACHINE level and no longer a per-workspace gesture.
+ *   Enabling remote access (Settings > Devices) publishes every local workspace this
+ *   machine holds, and one opened later is published as soon as the inventory reports it.
+ *   The reconciler is `useLocalWorkspaceAutoShareDriver` (`features/workspaces/data/auto-
+ *   share-local-workspaces.ts`), mounted once by the app shell in `app/entry/runtime-
+ *   providers.tsx`; per workspace it still fires the same ONE-SHOT
+ *   `registerUserHostedWorkspace` (`features/workspaces/data/share-workspace.ts`) →
+ *   `POST /api/workspace/:id/host-assignment`. It does not touch `workspaceConnection` at
+ *   all — it is orthogonal to the connect pipeline above. Which workspaces qualify is
+ *   still `localWorkspaceShareTarget`
  *   finding a non-cloud workspace row for the clicked directory (falls back to the
  *   project's own id/worktree when the directory equals the project's main worktree, so
  *   no prior workspace registration is required to reach it).
@@ -105,12 +107,11 @@
  *     renders and calls `retryWorkspaceConnection`.
  *   `[role="textbox"][aria-label*="Ask anything"]` — once the gate renders children, the
  *     draft composer appears exactly like a local/cloud session (proof the gate unlocked).
- *   Rail sidebar "Share workspace" — `DropdownMenu.Item` inside the workspace header's
- *     kebab menu (`aria-label="More options for <project label>"`), gated by
- *     `Can do="share.workspace"` and `!shareTarget() || sharing()` (disabled). Success
- *     shows a `[data-slot="toast-title"]` "Workspace shared" toast whose description is
- *     the copied share URL (or a "copied to clipboard" message when the clipboard write
- *     succeeds); failure shows `[data-slot="toast-title"]` "Failed to share workspace".
+ *   Settings > Devices — the one remote-access surface. Off state offers a single
+ *     "Enable remote access" button; once on, the machine card states `Serving N
+ *     workspaces` beside a live dot that is green only when the published set equals the
+ *     machine's local inventory. There is no per-workspace tick list and no per-workspace
+ *     QR: the rail's old "Share workspace" kebab item was removed with them.
  *
  * BEHAVIORS —
  *   1. Landing on a not-yet-ready user-hosted workspace renders the 3-step pipeline with
@@ -137,11 +138,11 @@
  *      moment and then flips to the offline view once the background health check
  *      confirms the host is unreachable — "pause" surfaces as a real state transition, not
  *      a stuck stale-ready UI.
- *   7. The in-app "Share workspace" entry point (rail sidebar kebab menu, gated by `Can
- *      do="share.workspace"`) calls `registerUserHostedWorkspace`, and on success shows
- *      the "Workspace shared" toast — the app-triggered path to `share-workspace.ts`
- *      reaches a registered state without any dedicated user-hosted connect flow required
- *      first (it targets the project's own main workspace).
+ *   7. Enabling remote access in Settings > Devices publishes this machine's local
+ *      workspaces on its own: the assignment POST reaches the wire with no per-workspace
+ *      gesture, and the panel reports `Serving 1 workspace`. The app-triggered path to
+ *      `share-workspace.ts` reaches a registered state without any dedicated user-hosted
+ *      connect flow required first (it targets the project's own main workspace).
  *
  * INVARIANTS — completed assistant content is never hidden by stale busy state (#2 in
  *   e2e/INVARIANTS.md, exercised via the oracle in behavior 3); harness ownership (#1) is
@@ -168,6 +169,12 @@
  */
 import { isWorkspaceResolvePath } from "../helpers/contracts/workspace-resolve"
 import { isSessionInventoryPath, isSessionListPath } from "../helpers/contracts/session-list"
+import {
+  isSessionRegistrationReservePath,
+  parseSessionReservationRequest,
+  sessionReservationResponse,
+  sessionReservationStatus,
+} from "../helpers/contracts/session-registration"
 import { expect, test, type Page, type Route } from "@playwright/test"
 import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { stampTestAuth } from "../playwright-global-setup"
@@ -178,6 +185,8 @@ import {
 } from "../helpers/contracts/session-config"
 import { draftDefaultStorageKey } from "../../src/features/session/harness/draft-defaults"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "../../src/platform/api/local-server"
+import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime/contracts"
+import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
 
 const PROJECT_ID = "proj_core_user_hosted_workspace"
 const WORKSPACE_ID = "ws_core_user_hosted_workspace"
@@ -188,26 +197,48 @@ const WORKSPACE_ID = "ws_core_user_hosted_workspace"
 // returns `false` for any `ses_`-prefixed id (those are OpenCode-legacy sessions
 // whose compat frames arrive on the classic `/global/event` loop instead). A
 // `ses_` id here would make the runtime consumer `continue` past every frame, so
-// the contract-v4 lane below could never render. Real user-hosted runtime
+// the runtime-events lane below could never render. Real user-hosted runtime
 // sessions are runtime-native, so this matches production, not just the gate.
 const SESSION_ID = "run_core_user_hosted_workspace"
 const DIR = "/tmp/e2e-core-user-hosted-workspace"
+// The path the HOST machine serves this workspace from — a directory on
+// somebody else's filesystem. The control plane reports it as the row's
+// `remote_directory`, and it is metadata only: nothing in the app may address
+// the workspace, or a session on it, by this path.
+const HOST_DIR = "/Users/host/e2e-core-user-hosted-workspace"
+// The one identity the app addresses this workspace by — `workspaceRowDirectory`
+// in src/features/workspaces/data/workspace-catalog.ts, and the same form
+// `sessionRowDirectory` stamps on every session row of a relay-backed workspace.
+const WORKSPACE_REF = `workspace:${WORKSPACE_ID}`
 // Contention-tolerant ceiling for reactive UI transitions that a starved CI runner
 // was blowing past the 10-20s local budget (doc entry 7: CI-only, "runner-contention
 // timing"; the oracle-send and Share-toast waits are the named victims). Every use
 // still awaits the actual state transition — this only outlasts host lag, it never
 // weakens what is asserted.
 const CONTENTION_TIMEOUT = 45_000
-// The AgentRuntimeEvent contract version the consumer requires verbatim
-// (`AGENT_RUNTIME_EVENT_CONTRACT_VERSION` in
-// `packages/agent-event-runtime/src/contracts/agent-runtime-event.ts`); a frame
-// with any other value is dropped by `runtimeEnvelope` (src/context/global-sdk.tsx).
-const RUNTIME_EVENT_CONTRACT_VERSION = 4
+// The AgentRuntimeEvent contract version the consumer requires verbatim: a
+// frame with any other value is dropped by `runtimeEnvelope`
+// (`src/app/providers/global-sdk/runtime-envelope.ts`), which reads the same
+// constant. Imported rather than spelled out, because a literal here silently
+// goes stale the next time the contract is revised: the frames still reach the
+// reader (its SSE cursor still advances), the consumer just decodes none of
+// them and reports a contract mismatch instead.
+const RUNTIME_EVENT_CONTRACT_VERSION = AGENT_RUNTIME_EVENT_CONTRACT_VERSION
 // Real, versioned, servable house-model id — NOT the bare "big-pickle", which
 // the app reserves as the non-selectable pre-provisioning placeholder
 // (`signed-workspace-model.ts`); serving that exact id as the only model leaves
 // the composer stuck on "Select model". Display name stays "Big Pickle".
 const BIG_PICKLE = { id: "big-pickle-1", name: "Big Pickle" }
+
+// The title the host's runtime already carries for a session created before
+// this page loaded — the rail has no other way to name it.
+const SEEDED_SESSION_TITLE = "session on the host"
+
+// The last user message of that already-existing transcript. A turn started on
+// the HOST answers it, and the runtime announces the reply as `${id}_r`.
+const HOST_USER_MESSAGE_ID = "msg_uh_host_turn"
+const IDLE_SESSION_ID = "run_core_user_hosted_idle"
+const IDLE_SESSION_TITLE = "idle since it was created"
 
 const OFFLINE_DETAIL =
   "Start it by running `claxedo up` on the machine that serves this workspace, then retry."
@@ -339,11 +370,15 @@ async function installUserHostedRuntimeMock(
     health: HealthOutcome[]
     mintDelayMs?: number
     healthDelayMs?: number
+    /** The host already has a session; `GET /session` answers with it. */
+    existingRuntimeSession?: boolean
+    /** A SECOND host session, created later but idle ever since. */
+    idleRuntimeSession?: boolean
   },
 ) {
   const provisioningBus = new Bus<Record<string, unknown>>()
   const sessionBus = new Bus<Record<string, unknown>>()
-  // The contract-v4 runtime-events lane. A ready user-hosted (workspace-relay)
+  // The canonical-contract runtime-events lane. A ready user-hosted (workspace-relay)
   // session consumes live turn events ONLY through global-sdk's runtime loop
   // (`startRuntimeEvents`, src/context/global-sdk.tsx), which fetches
   // `${relayUrl}/workspaces/:id/api/wr/runtime-events` and reads each frame with
@@ -355,9 +390,32 @@ async function installUserHostedRuntimeMock(
   // NOT on `sessionBus` (whose `/global/event` route the app never polls for this
   // route shape — the exact gap the fixme pinned).
   const runtimeBus = new Bus<Record<string, unknown>>()
-  let sessionCreated = false
+  // The FLAT workspace bus (`/api/wr/events`). The host's daemon composes the
+  // unbound local session policy, so it serves this stream WORKSPACE-WIDE: it
+  // carries `pty.*`, `process.*`, `agent.lifecycle` and `session.lifecycle`,
+  // none of which belong to a session, and a route with no session (a terminal)
+  // has to be able to open it.
+  const workspaceBus = new Bus<Record<string, unknown>>()
+  let sessionCreated = opts.existingRuntimeSession ?? false
   let sessionBusy = false
-  let messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> = []
+  // A session that already exists on the host has a transcript, and it is the
+  // ONLY thing this client fetches: the last user message, with no reply.
+  //
+  // That is what an attached viewer holds. The host creates a turn's assistant
+  // row when the turn STARTS (`mkAssistantId` -> `buildAssistantMessage`,
+  // workspace-runtime `session/service.ts`), which is after this client read
+  // the transcript, and nothing refetches it — the behavior below asserts the
+  // refetch count never moves. So the reply's row and its text both have to
+  // arrive on the runtime-events lane or not at all.
+  let messages: Array<{ info: Record<string, unknown>; parts: Array<Record<string, unknown>> }> =
+    opts.existingRuntimeSession
+      ? [
+        {
+          info: { id: HOST_USER_MESSAGE_ID, sessionID: SESSION_ID, role: "user", time: { created: 1 }, model: { providerID: "opencode", modelID: BIG_PICKLE.id } },
+          parts: [{ id: `${HOST_USER_MESSAGE_ID}_text`, sessionID: SESSION_ID, messageID: HOST_USER_MESSAGE_ID, type: "text", text: SEEDED_SESSION_TITLE }],
+        },
+      ]
+      : []
   let promptCount = 0
   let healthAttempt = 0
   const requests = {
@@ -369,8 +427,29 @@ async function installUserHostedRuntimeMock(
     runtimeEventsPollCount: 0,
     /** Contract-v4 frames actually pushed onto `runtimeBus`. */
     runtimeFramesEmitted: [] as Array<Record<string, unknown>>,
+    /** `?parentSessionId=` of every `/api/wr/runtime-events` GET, in order. */
+    runtimeEventsParents: [] as Array<string | null>,
+    /** `?sessionID=` of every `/api/wr/events` GET, in order (`null` = workspace-wide). */
+    workspaceEventScopes: [] as Array<string | null>,
+    /**
+     * `Last-Event-ID` of every `/api/wr/events` GET. A cursor past a frame's id
+     * is the reader's own receipt for it: only a consumer that parsed the frame
+     * off the wire can resume from beyond it.
+     */
+    workspaceEventCursors: [] as number[],
+    /** The same receipt for `/api/wr/runtime-events`. */
+    runtimeEventCursors: [] as number[],
+    /** GETs of `/session/:id/message` — the whole-turn refetch path. */
+    messageFetchCount: 0,
     relayHits: [] as string[],
     bareHitsDuringReady: [] as string[],
+    /**
+     * Every request that scoped itself by the HOST's own filesystem path —
+     * `?directory=/Users/host/…` or the same value in `x-opencode-directory`.
+     * The path exists only on the machine serving this workspace, so whichever
+     * server received such a request cannot answer it. Must stay empty.
+     */
+    hostPathScopes: [] as string[],
   }
   let ready = false
 
@@ -381,25 +460,56 @@ async function installUserHostedRuntimeMock(
     model: { providerID: "opencode", modelID: BIG_PICKLE.id },
     agent: "build",
   })
+  // A runtime always names its OWN filesystem path; `sessionRowDirectory` is
+  // what decides the identity the row carries into the app.
   const sessionRow = () => ({
     id: SESSION_ID,
     slug: SESSION_ID,
     projectID: PROJECT_ID,
-    directory: WORKSPACE_ID,
-    title: textOf(messages[0]?.parts) || "",
+    directory: HOST_DIR,
+    title: textOf(messages[0]?.parts) || SEEDED_SESSION_TITLE,
     version: "2",
     time: { created: 1, updated: Date.now() },
     summary: { additions: 0, deletions: 0, files: 0 },
     config: sessionConfig(),
   })
 
+  // Created AFTER the session above and untouched since: the two rows order
+  // one way by creation and the other way by activity, so the rail's order is
+  // decided rather than accidental.
+  const idleSessionRow = () => ({
+    id: IDLE_SESSION_ID,
+    slug: IDLE_SESSION_ID,
+    projectID: PROJECT_ID,
+    directory: HOST_DIR,
+    title: IDLE_SESSION_TITLE,
+    version: "2",
+    time: { created: Date.now(), updated: 2 },
+    summary: { additions: 0, deletions: 0, files: 0 },
+    config: sessionConfig(),
+  })
+
+  // Shaped as `controlPlaneCatalogProjects` builds it from a real
+  // `/api/workspace?access=user-hosted` row: the workspace is keyed and
+  // addressed by `workspace:<id>`, and the host's own path rides along as
+  // `remote_directory` — the workspace's LOCATION, which the UI can show and
+  // nothing may scope a request by.
   const projectRow = () => ({
     id: PROJECT_ID,
     worktree: DIR,
     name: "core-user-hosted-workspace",
-    sandboxes: [WORKSPACE_ID],
+    sandboxes: [WORKSPACE_REF],
     workspaces: {
-      [WORKSPACE_ID]: { id: WORKSPACE_ID, kind: "user-hosted", workspace_name: "shared", directory: WORKSPACE_ID },
+      [WORKSPACE_REF]: {
+        id: WORKSPACE_ID,
+        workspaceId: WORKSPACE_ID,
+        kind: "user-hosted",
+        role: "owner",
+        hostOnline: true,
+        workspace_name: "shared",
+        directory: WORKSPACE_REF,
+        remote_directory: HOST_DIR,
+      },
     },
   })
 
@@ -408,6 +518,14 @@ async function installUserHostedRuntimeMock(
     const request = route.request()
     const url = new URL(request.url())
     const method = request.method()
+
+    // Record — never answer — any read that scoped itself by the HOST's path.
+    // Recording it rather than failing the request keeps the surrounding
+    // behavior intact, so the assertion reads as "this never happened" instead
+    // of as a cascade of downstream failures.
+    for (const scope of [url.searchParams.get("directory"), request.headers()["x-opencode-directory"]]) {
+      if (scope === HOST_DIR) requests.hostPathScopes.push(`${method} ${url.pathname}`)
+    }
 
     // Intent-time sprite warming uses fetch(), so Playwright reports these
     // static bundle reads as the same resource type as an API request. They
@@ -461,8 +579,35 @@ async function installUserHostedRuntimeMock(
       return json(route, { connections: [] })
     }
     if (url.pathname === "/api/workspace") return json(route, { workspaces: [] })
-    if (url.pathname === "/api/wr/events") {
+    // ONE central stream under three spellings, exactly as both real servers
+    // mount it (claxedo-local-server compat-routes/index.ts and
+    // claxedo-server/src/routes/hosted/shell.ts each map `/global/event`,
+    // `/api/wr/events` and `/api/claxedo/events` onto a single handler).
+    // `/api/claxedo/events` is the one `ClaxedoEventsProvider` opens for a
+    // signed account, so leaving it out did not silence a stream — it made the
+    // provider retry a rejected fetch for the life of the page, which is where
+    // those bare-origin hits came from.
+    if (url.pathname === "/api/wr/events" || url.pathname === "/api/claxedo/events") {
       return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
+    }
+    // Session share grants (`listSessionShares`, src/features/session/data/
+    // session-share-api.ts → GET /api/control/sessions/:id/shares?workspaceId=…).
+    // Control-plane people data about a session, never the workspace runtime —
+    // same category as the inventory above. Nobody has shared this session.
+    if (/^\/api\/control\/sessions\/[^/]+\/shares$/.test(url.pathname) && method === "GET") {
+      return json(route, { can_manage_shares: true, grants: [], participants: [], teams: [] })
+    }
+    // The signed session-reservation boundary a relay-backed send crosses
+    // BEFORE the runtime create (`reservePrivateSession`,
+    // src/platform/runtime/private-session-reservation.ts). Bare origin by
+    // design — it is the control plane's own route — so it is not part of
+    // Behavior 3's runtime lane either. Unanswered it does not degrade: the
+    // client refuses a receipt that is not its own intent and the send aborts
+    // before any session exists. See ../helpers/contracts/session-registration.ts.
+    if (isSessionRegistrationReservePath(url.pathname) && method === "POST") {
+      const reservation = parseSessionReservationRequest(request.postDataJSON?.() ?? undefined, request.url())
+      const result = sessionReservationResponse(reservation)
+      return json(route, result, sessionReservationStatus(result))
     }
     if (/^\/api\/control\/workspaces\/[^/]+\/sessions\/[^/]+\/(register|checkpoint|repair)$/.test(url.pathname) && method === "POST") {
       // `src/runtime/session-projection.ts` fire-and-forget projection pull —
@@ -489,6 +634,10 @@ async function installUserHostedRuntimeMock(
         backing: "local-worktree",
         workspaceId: WORKSPACE_ID,
         role: "owner",
+        // What `user-hosted-connection.ts` mints: the HOST's own runtime is the
+        // authority for this workspace's sessions, so the app reads and opens
+        // them there rather than in the control plane's registry.
+        sessionAuthority: "local",
         relayUrl: url.origin,
         runtimeAccessToken: `rat_${WORKSPACE_ID}`,
         tokenExpiresAt: Date.now() + 10 * 60_000,
@@ -551,18 +700,35 @@ async function installUserHostedRuntimeMock(
       if (runtimePath === "/api/wr/harness-config-options") {
         return json(route, { source: "runner", stale: false, options: [{ id: "model", name: "Model", category: "model", type: "select", currentValue: BIG_PICKLE.id, selectOptions: [BIG_PICKLE] }] })
       }
-      // The contract-v4 turn lane (see `runtimeBus` above). Frames are served from
+      // The canonical-contract turn lane (see `runtimeBus` above). Frames are served from
       // the cursor-resumed log and already carry the full
       // `{contractVersion, directory, sessionId, assistantMessageId, payload}`
       // envelope the consumer expects, so they go on the wire verbatim.
       if (runtimePath === "/api/wr/runtime-events") {
         requests.runtimeEventsPollCount += 1
+        const parentSessionId = url.searchParams.get("parentSessionId")
+        requests.runtimeEventsParents.push(parentSessionId)
+        requests.runtimeEventCursors.push(lastEventId(route))
         const batch = await runtimeBus.drain(4000, lastEventId(route))
+        // `allows()` in workspace-runtime routes/events.ts: a `parentSessionId`
+        // request receives that parent's frames and no others.
+        const scoped = parentSessionId
+          ? batch.filter((entry) => (entry.payload as { sessionId?: unknown }).sessionId === parentSessionId)
+          : batch
+        return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(scoped) }).catch(() => {})
+      }
+      // The flat workspace bus. Recorded with its scope so a spec can prove the
+      // app opened the WORKSPACE-WIDE form this runtime actually serves rather
+      // than a session-scoped one a session-less route could never open.
+      if (runtimePath === "/api/wr/events") {
+        requests.workspaceEventScopes.push(url.searchParams.get("sessionID"))
+        requests.workspaceEventCursors.push(lastEventId(route))
+        const batch = await workspaceBus.drain(4000, lastEventId(route))
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: eventStream(batch) }).catch(() => {})
       }
-      // ClaxedoEventsProvider's central stream + the legacy runtime-events alias:
-      // neither carries this spec's turn, so a bare heartbeat is correct.
-      if (runtimePath === "/api/wr/events" || runtimePath === "/api/claxedo/runtime-events") {
+      // The legacy runtime-events alias carries nothing here, so a bare
+      // heartbeat is correct.
+      if (runtimePath === "/api/claxedo/runtime-events") {
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": heartbeat\n\n" }).catch(() => {})
       }
       if (runtimePath === "/global/event" || runtimePath === "/event") {
@@ -578,7 +744,9 @@ async function installUserHostedRuntimeMock(
         messages = []
         return json(route, sessionRow())
       }
-      if (runtimePath === "/session") return json(route, sessionCreated ? [sessionRow()] : [])
+      if (runtimePath === "/session") {
+        return json(route, sessionCreated ? [sessionRow(), ...(opts.idleRuntimeSession ? [idleSessionRow()] : [])] : [])
+      }
       if (/^\/session\/[^/]+$/.test(runtimePath)) return json(route, sessionRow())
       if (/^\/session\/[^/]+\/config$/.test(runtimePath)) {
         if (method === "GET") return json(route, sessionConfig())
@@ -603,7 +771,10 @@ async function installUserHostedRuntimeMock(
         })
       }
       if (/^\/session\/[^/]+\/todo$/.test(runtimePath)) return json(route, [])
-      if (/^\/session\/[^/]+\/message$/.test(runtimePath)) return json(route, messages)
+      if (/^\/session\/[^/]+\/message$/.test(runtimePath)) {
+        requests.messageFetchCount += 1
+        return json(route, messages)
+      }
       if (/^\/session\/[^/]+\/prompt_async$/.test(runtimePath)) {
         promptCount += 1
         requests.promptCount += 1
@@ -628,22 +799,62 @@ async function installUserHostedRuntimeMock(
 
         // Fire-and-forget: emit the turn as CONTRACT-V4 AgentRuntimeEvent frames on
         // the runtime-events lane. Each frame is the exact envelope `runtimeEnvelope`
-        // (src/context/global-sdk.tsx) validates — `contractVersion` === 4,
+        // (src/context/global-sdk.tsx) validates — the canonical `contractVersion`,
         // `directory`, `sessionId`, `assistantMessageId`, and a `payload` that is one
         // `AgentRuntimeEvent` variant — then handed to `createOpencodeCompatProjection`.
         // The `session-status: busy` → `finish` pair drives the app's turn
         // busy→settled transition, and the settle re-fetches the message list over
         // the relay lane (which now carries the `${userID}_r` assistant row), which
         // is what renders the reply through the real projection path.
+        // What the HOST persists for this turn is what its own compat projection
+        // produced from these very frames: `createTurnEventProjector`
+        // (agent-sdk-runtime) appends every `projection.ingest(...)` event to the
+        // runtime store, and `GET /session/:id/message` reads that store back. So
+        // the settled reply's PART carries the projection's part id, and running
+        // the same projection here is how this mock keeps that identity instead of
+        // inventing one. An invented id makes the settle look like a SECOND part of
+        // the same reply beside the one the client streamed — a duplicate the real
+        // runtime never produces.
+        const hostProjection = createOpencodeCompatProjection({
+          sessionId: SESSION_ID,
+          directory: HOST_DIR,
+          assistantMessageId: assistantID,
+        })
+        const persistedParts = new Map<string, { id: string; sessionID: string; messageID: string; type: string; text: string }>()
+        const persistCompat = (payload: Record<string, unknown>) => {
+          for (const { payload: event } of hostProjection.ingest(payload as never)) {
+            if (event.type === "message.part.updated") {
+              const part = event.properties.part as { id: string; type: string; text?: string }
+              if (part.type !== "text") continue
+              persistedParts.set(part.id, {
+                id: part.id,
+                sessionID: SESSION_ID,
+                messageID: assistantID,
+                type: "text",
+                text: part.text ?? "",
+              })
+              continue
+            }
+            if (event.type !== "message.part.delta") continue
+            const existing = persistedParts.get(event.properties.partID)
+            if (existing) existing.text += event.properties.delta
+          }
+        }
         const emitFrame = (payload: Record<string, unknown>) => {
           const frame = {
             contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
-            directory: WORKSPACE_ID,
+            // A runtime stamps every frame with its OWN filesystem path — see
+            // `HOST_DIR`. Addressing the frame as the workspace is the CLIENT's
+            // job (`eventStreamFrameAddress` / `eventDirectoryForLiveSession`),
+            // so emitting the workspace id here would hide that translation and
+            // let a change in it pass unnoticed.
+            directory: HOST_DIR,
             sessionId: SESSION_ID,
             assistantMessageId: assistantID,
             payload,
           }
           requests.runtimeFramesEmitted.push(frame)
+          persistCompat(payload)
           runtimeBus.emit(frame)
         }
 
@@ -661,8 +872,7 @@ async function installUserHostedRuntimeMock(
           // `finish` frame, so the settle-triggered `syncSessionHistory` re-fetch
           // returns the reply. Mirrors the shape the local lane's driveTurn produces.
           const completedInfo = { id: assistantID, sessionID: SESSION_ID, role: "assistant", time: { created: Date.now(), completed: Date.now() }, parentID: userID, agent: "build", providerID: "opencode", modelID: BIG_PICKLE.id, mode: "code", path: { cwd: WORKSPACE_ID, root: WORKSPACE_ID }, cost: 0, tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } } }
-          const finalPart = { id: `${assistantID}_text`, sessionID: SESSION_ID, messageID: assistantID, type: "text", text: fullText }
-          messages = [...messages, { info: completedInfo, parts: [finalPart] }]
+          messages = [...messages, { info: completedInfo, parts: [...persistedParts.values()] }]
           await wait(40)
           // `finish` projects to `message.completed` + `session.idle`, settling the turn.
           sessionBusy = false
@@ -704,16 +914,68 @@ async function installUserHostedRuntimeMock(
     }
     if (url.pathname === "/provider/auth") return json(route, {})
 
-    if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)
-    // The usage outbox beacon fires on every boot (installUsageOutboxWakeups);
-    // an empty outbox syncs to zeros. Same contract mock-runtime serves.
+    // ---- Central boot reads (bare origin, ALWAYS) ----
+    // Each of these is issued by a mount, not by a workspace: the shell's
+    // home-directory read (`pathQuery` via `queryOptions.path(null)`,
+    // src/app/app-shell-state.ts), the central connection's health probe
+    // (`checkOpenCodeServerHealthCached`, src/app/connection/server.tsx), this
+    // machine's remote-access device list (src/platform/remote-access/
+    // http-machine-remote-access.ts) and the usage outbox beacon
+    // (`installUsageOutboxWakeups`). They belong with the bootstrap/inventory
+    // block above — central discovery, never the per-workspace runtime lane —
+    // and answering them here is what keeps behavior 3's oracle meaning "no
+    // bare RUNTIME equivalent". They are issued concurrently with the first
+    // `/api/wr/health` probe, i.e. with the very request that flips `ready`, so
+    // an unmodeled one falls through to the counter below on whichever side of
+    // that race it lands and reads as a bare runtime hit it never was.
+    if (url.pathname === "/path") {
+      return json(route, { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" })
+    }
+    if (url.pathname === "/global/health") return json(route, { healthy: true, version: "1.0.0-test" })
+    // The central is up; nothing has been published from this surface.
+    if (url.pathname === "/api/claxedo/remote-access/devices") return json(route, { devices: [] })
+    // An empty outbox syncs to zeros. Same contract mock-runtime serves.
     if (url.pathname === "/api/claxedo/usage/sync") {
       return json(route, { attempted: 0, delivered: 0, conflicts: 0, pending: 0 })
     }
+
+    if (ready) requests.bareHitsDuringReady.push(`${method} ${url.pathname}`)
     return json(route, { error: "unhandled request in core-user-hosted-workspace mock", path: url.pathname }, 598)
   })
 
-  return { requests }
+  return {
+    requests,
+    /**
+     * Publishes one canonical-contract frame on the session-scoped runtime-events lane,
+     * exactly as a turn started on the HOST (not by this client's composer)
+     * reaches an attached viewer.
+     */
+    emitRuntimeFrame(payload: Record<string, unknown>, input: { assistantMessageId: string }) {
+      const frame = {
+        contractVersion: RUNTIME_EVENT_CONTRACT_VERSION,
+        // The host's own path, exactly as `emitFrame` above — see its note.
+        directory: HOST_DIR,
+        sessionId: SESSION_ID,
+        assistantMessageId: input.assistantMessageId,
+        payload,
+      }
+      requests.runtimeFramesEmitted.push(frame)
+      runtimeBus.emit(frame)
+    },
+    /**
+     * The transcript `GET /session/:id/message` serves, right now.
+     *
+     * The refetch oracle: a reply that is not in here cannot have been put on
+     * screen by a whole-turn refetch, however many of those happen.
+     */
+    restTranscript() {
+      return messages
+    },
+    /** Publishes one flat frame on the workspace-wide bus. */
+    emitWorkspaceFrame(payload: Record<string, unknown>) {
+      workspaceBus.emit(payload)
+    },
+  }
 }
 
 function workspaceRoute(sessionId?: string) {
@@ -817,7 +1079,7 @@ test.describe("core user-hosted workspace @core", () => {
     expect(mock.requests.relayHits.some((h) => h.includes("/session") && h.startsWith("POST"))).toBe(true)
     expect(mock.requests.bareHitsDuringReady).toEqual([])
 
-    // Consumption proof: the contract-v4 emitter is actually drained by the app —
+    // Consumption proof: the canonical-contract emitter is actually drained by the app —
     // the relay `/api/wr/runtime-events` stream was polled (> 0), and the frames the
     // reply was reconstructed from were really pushed onto that lane.
     expect(mock.requests.runtimeEventsPollCount).toBeGreaterThan(0)
@@ -829,7 +1091,7 @@ test.describe("core user-hosted workspace @core", () => {
       "finish",
     ])
     for (const frame of mock.requests.runtimeFramesEmitted) {
-      expect(frame.contractVersion).toBe(4)
+      expect(frame.contractVersion).toBe(RUNTIME_EVENT_CONTRACT_VERSION)
       expect(frame.sessionId).toBe(SESSION_ID)
       // `${userID}_r` convention (Tier-M reconciliation rule, e2e/INVARIANTS.md).
       expect(String(frame.assistantMessageId).endsWith("_r")).toBe(true)
@@ -910,14 +1172,17 @@ test.describe("core user-hosted workspace @core", () => {
     await expect(page.getByTestId("workspace-offline")).toContainText("Workspace host is offline")
   })
 
-  test("the in-app Share workspace entry point registers the workspace and shows a confirmation toast — behavior 7", async ({ page }) => {
+  test("enabling remote access publishes this machine's workspaces with no per-workspace gesture — behavior 7", async ({ page }) => {
     test.setTimeout(120_000)
     await stampTestAuth(page.context())
-    // Deliberately NOT the user-hosted connect pipeline: `localWorkspaceShareTarget`
-    // resolves against the project's own main workspace directory, so a plain
-    // local session (no relay backing at all) is enough to reach the action —
-    // see this spec's STATE MODEL section on share/register.
-    const requests: string[] = []
+    // Deliberately NOT the user-hosted connect pipeline: the reconciler resolves
+    // against the project's own main workspace directory, so a plain local
+    // session (no relay backing at all) is enough — see this spec's STATE MODEL
+    // section on share/register.
+    const assignments: string[] = []
+    // The machine's own publication state, as the control plane would hold it.
+    const machine = { enabled: false, workspaceIds: [] as string[] }
+
     await page.route("**/*", async (route) => {
       if (!api(route)) return route.continue()
       const url = new URL(route.request().url())
@@ -967,10 +1232,43 @@ test.describe("core user-hosted workspace @core", () => {
       if (isWorkspaceResolvePath(url.pathname)) {
         return json(route, { workspaceId: `local-${PROJECT_ID}`, directory: DIR, kind: "local", status: "ready" })
       }
+      // Reaching Settings means opening the rail account menu, which mounts the
+      // org/team switcher. Same fatal gap as `/permission/modes` above: the
+      // trailing `json(route, {}, 200)` would serve `{}`, the switcher would
+      // call `.find` on it, and the app would render its error boundary instead
+      // of the shell — which is exactly how this test first failed.
+      if (url.pathname === "/api/control/orgs") return json(route, [])
+      if (url.pathname.startsWith("/api/control/orgs/")) return json(route, [])
 
-      if (url.pathname === `/api/workspace/${encodeURIComponent(PROJECT_ID)}/user-hosted/register` && method === "POST") {
-        requests.push(`${method} ${url.pathname}`)
-        return json(route, { workspaceId: PROJECT_ID, registered: true })
+      // The three remote-access routes the browser product's port speaks. The
+      // devices list is this machine's own row, which is where the panel's
+      // served count and the reconciler's "already published" set both come
+      // from — so the two can never disagree in this test.
+      if (url.pathname === "/api/claxedo/remote-access/devices") {
+        return json(route, {
+          devices: machine.enabled
+            ? [{ host_id: "host_1", display_name: "This machine", last_seen_at: Date.now(), workspace_ids: machine.workspaceIds }]
+            : [],
+        })
+      }
+      if (url.pathname === "/api/claxedo/remote-access/enable" && method === "POST") {
+        machine.enabled = true
+        return json(route, { host_id: "host_1", connection_count: 0 })
+      }
+      if (url.pathname === "/api/claxedo/remote-access") {
+        return json(route, {
+          device_login_configured: true,
+          relay_configured: true,
+          hosted_signed_in: true,
+          enabled: machine.enabled,
+          enrolled: machine.enabled,
+          second_device_open: false,
+        })
+      }
+      if (url.pathname === `/api/workspace/${encodeURIComponent(PROJECT_ID)}/host-assignment` && method === "POST") {
+        assignments.push(`${method} ${url.pathname}`)
+        if (!machine.workspaceIds.includes(PROJECT_ID)) machine.workspaceIds.push(PROJECT_ID)
+        return json(route, { workspaceId: PROJECT_ID, assigned: true })
       }
 
       return json(route, {}, 200)
@@ -981,28 +1279,214 @@ test.describe("core user-hosted workspace @core", () => {
     await page.waitForLoadState("domcontentloaded")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
 
-    // Header actions do not exist before engagement. Scope the probe to the
-    // exact project so another rail section cannot satisfy the Share contract.
-    const projectHeader = page.locator('[data-testid="project-header"]').filter({
-      hasText: "core-user-hosted-workspace",
-    })
-    await expect(projectHeader).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    const moreOptions = projectHeader.getByRole("button", { name: /More options for/i })
-    await expect(moreOptions).toHaveCount(0)
-    await projectHeader.hover()
-    await expect(moreOptions).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await moreOptions.click()
+    await page.getByTestId("rail-account-trigger").click()
+    await page.getByRole("menuitem", { name: /settings/i }).click()
+    await page.getByRole("tab", { name: "Devices" }).click()
 
-    const shareItem = page.getByRole("menuitem", { name: /Share workspace/i })
-    await expect(shareItem).toBeVisible({ timeout: CONTENTION_TIMEOUT })
-    await shareItem.click()
+    // Nothing is published before the machine is enabled — the reconciler must
+    // not post an assignment at a machine that is not up.
+    const enable = page.getByRole("button", { name: "Enable remote access" })
+    await expect(enable).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    expect(assignments).toEqual([])
 
-    // Await the confirmation toast explicitly (it appears only after the register
-    // POST resolves) — the register-request assertion below then confirms the exact
-    // network effect that produced it.
-    await expect(page.locator('[data-slot="toast-title"]')).toContainText("Workspace shared", {
-      timeout: CONTENTION_TIMEOUT,
+    await enable.click()
+
+    // One gesture, and the machine's whole local inventory is published: the
+    // assignment reaches the wire with nobody ticking anything, and the panel
+    // reports what it now serves.
+    await expect(page.getByText(/^Serving /)).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    await expect(page.getByText("Serving 1 workspace")).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    expect(assignments).toEqual([`POST /api/workspace/${encodeURIComponent(PROJECT_ID)}/host-assignment`])
+
+    // And no tick list came with it.
+    await expect(page.getByRole("checkbox", { name: /share/i })).toHaveCount(0)
+  })
+  test("the rail's project view lists the host's sessions and opens one on its workspace route — behavior 8", async ({ page }) => {
+    test.setTimeout(120_000)
+    // The central server answers NOTHING for this project (`isSessionListPath`
+    // above returns an empty page), so any row the rail shows can only have
+    // come from the workspace's own runtime over the relay. That is the whole
+    // point: in the rail's default "Projects" view the project section is the
+    // only place a user-hosted workspace's sessions appear.
+    const mock = await installUserHostedRuntimeMock(page, {
+      health: [200],
+      existingRuntimeSession: true,
+      idleRuntimeSession: true,
     })
-    expect(requests).toEqual([`POST /api/workspace/${encodeURIComponent(PROJECT_ID)}/user-hosted/register`])
+    await seedProject(page, { registerWorkspace: true })
+
+    await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
+    await page.waitForLoadState("domcontentloaded")
+    await expect(page.getByTestId("rail-sidebar")).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+
+    const projectGroup = page.locator(`[data-testid="project-group"][data-project-id="${PROJECT_ID}"]`)
+    await expect(projectGroup).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    const expand = projectGroup.getByLabel("Expand project")
+    if (await expand.count()) await expand.first().click()
+
+    const row = projectGroup.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${SESSION_ID}"]`)
+    await expect(row).toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    await expect(row).toContainText(SEEDED_SESSION_TITLE)
+    await expect(projectGroup.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${IDLE_SESSION_ID}"]`))
+      .toBeVisible({ timeout: CONTENTION_TIMEOUT })
+    // Never the "nothing here" state of a list read from the central server alone.
+    await expect(projectGroup.getByTestId("rail-sidebar-session-list-empty")).toHaveCount(0)
+    expect(mock.requests.relayHits).toContain("GET /session")
+
+    // Most recently ACTIVE first: the idle row was created later, so an order
+    // taken from creation time would put it on top and leave the session the
+    // user last worked in below it.
+    await expect(projectGroup.locator('[data-testid="rail-sidebar-session-row"]').first())
+      .toHaveAttribute("data-session-id", SESSION_ID, { timeout: CONTENTION_TIMEOUT })
+
+    // The row's own identity decides where it opens: the signed workspace
+    // route, never the bare `/s/<id>` one the rail falls back to when a row's
+    // workspace cannot be resolved.
+    await row.click()
+    await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session/${SESSION_ID}$`), { timeout: CONTENTION_TIMEOUT })
+
+    // And it opens ADDRESSED BY THE WORKSPACE. The pane's directory is what
+    // every later read is scoped by, so the host's path here is not cosmetic:
+    // it turns each of those reads into a question about a directory that
+    // exists on another machine.
+    await expect(page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]:visible`))
+      .toHaveAttribute("data-session-directory", WORKSPACE_REF, { timeout: CONTENTION_TIMEOUT })
+    // The workbench keeps the surfaces it stashed on the way here mounted and
+    // hidden, so `:visible` above names exactly one. None of the stashed ones
+    // may carry the host's path either — an address the user cannot see is
+    // still the address its pane's requests would be scoped by.
+    expect(await page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]`)
+      .evaluateAll((nodes) => [...new Set(nodes.map((node) => node.getAttribute("data-session-directory")))]))
+      .toEqual([WORKSPACE_REF])
+    expect(mock.requests.hostPathScopes).toEqual([])
+  })
+
+  // PRODUCT REQUIREMENT 6 — "attach to a session that is currently running and
+  // receive its live stream as it happens", from the web, over the relay.
+  //
+  // The turn here is started on the HOST, not by this client's composer: the
+  // spec pushes canonical-contract frames straight onto the session-scoped
+  // runtime-events lane, exactly as the host's runtime does for a viewer who
+  // merely navigated to the session. Nothing adds the reply's text to the REST
+  // message list, so a whole-turn `GET /session/:id/message` refetch cannot be
+  // what carries it.
+  //
+  // What this pins is the LANE: it is open for the route's session before the
+  // turn's frames exist, and this client reads them as they are published. It is
+  // a standing guard, not the evidence for the scope-owner change that made the
+  // lane read `session-event-scope` instead of the live session a history fetch
+  // marked — in THIS harness the pane's hydration marks that live session early
+  // enough either way, so the biting evidence for that change is the unit
+  // coverage on `runtimeEventLiveSession` and `sessionEventScopeId`. The
+  // transcript's own rendering of those deltas is a separate seam and is NOT
+  // asserted here — see `docs/plans` follow-up: the projected
+  // `message.part.updated` / `message.part.delta` events are published under the
+  // live session's bare `workspaceId`
+  // (`eventDirectoryForLiveSession`, app/providers/global-sdk/live-session.ts),
+  // while the pane registers its route directory, so `event-ingress.ts`'s
+  // `input.children.has(directory)` gate routes them to the shell caches instead
+  // of the conversation.
+  test("attaching to a running session by route opens its live lane — behavior 9", async ({ page }) => {
+    test.setTimeout(120_000)
+    const mock = await installUserHostedRuntimeMock(page, { health: [200], existingRuntimeSession: true })
+    await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
+
+    // ATTACH: reach the session by its route. The composer never ran here, so
+    // nothing published the session to `session-event-scope` — the route is the
+    // only thing that names it.
+    await page.goto(workspaceRoute(SESSION_ID), { waitUntil: "domcontentloaded", timeout: 90_000 })
+    await page.waitForLoadState("domcontentloaded")
+    await expect(page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]`))
+      .toBeVisible({ timeout: CONTENTION_TIMEOUT })
+
+    // Reached by ROUTE rather than by a rail click, and addressed the same
+    // way: `/w/<workspace id>` resolves to the workspace's own address, so the
+    // attach path scopes its reads by the workspace and never by the host's
+    // directory.
+    await expect(page.locator(`[data-testid="session-content"][data-session-id="${SESSION_ID}"]:visible`))
+      .toHaveAttribute("data-session-directory", WORKSPACE_REF, { timeout: CONTENTION_TIMEOUT })
+
+    // The lane must be OPEN for the route's session before the turn's frames
+    // exist — a stream that opens afterwards turns a live turn into a late burst.
+    await expect
+      .poll(() => mock.requests.runtimeEventsParents.filter((parent) => parent === SESSION_ID).length, {
+        timeout: CONTENTION_TIMEOUT,
+      })
+      .toBeGreaterThan(0)
+
+    // A turn STARTS on the host, answering the last user message: the exact
+    // frame sequence the real runtime publishes for a turn nobody here started
+    // (`AgentRuntime` names the reply `${userMessageId}_r`, then the harness
+    // adapter's deltas follow). Nothing on the lane carries a MESSAGE row —
+    // `AgentRuntimeEvent` has no such variant — so the row the transcript store
+    // needs to hang these parts on can only come from the compat projection.
+    const assistantMessageId = `${HOST_USER_MESSAGE_ID}_r`
+    mock.emitRuntimeFrame({ type: "session-status", status: "busy" }, { assistantMessageId })
+    mock.emitRuntimeFrame({ type: "text-delta", delta: "streamed from the host " }, { assistantMessageId })
+    mock.emitRuntimeFrame({ type: "text-delta", delta: "while attached" }, { assistantMessageId })
+
+    // This client really read them off the wire: its own SSE cursor moved past
+    // the frames it applied.
+    await expect.poll(() => Math.max(0, ...mock.requests.runtimeEventCursors), { timeout: 10_000 })
+      .toBeGreaterThanOrEqual(3)
+    // And the words are ON SCREEN, growing, within a second of being published —
+    // not as one finished block at the end of the turn.
+    await expect(page.locator(SELECTORS.assistantContent))
+      .toContainText("streamed from the host while attached", { timeout: 1_000 })
+    // Not the poll — and asserted as a FACT about the transcript rather than as
+    // a refetch count. Attaching schedules one catch-up refresh anchored to
+    // activation (`session-controller`'s `refresh`, scheduled through
+    // `activationRelativeDelay`), which fires whether or not a turn is running,
+    // so counting refetches across the second this assertion waits measures
+    // that timer, not the lane. What is absolute is that the host's REST
+    // transcript never gains this reply — no row for it and no text — so
+    // nothing a whole-turn `GET /session/:id/message` returns could have put
+    // those words on screen.
+    expect(mock.restTranscript().map((row) => row.info.role)).toEqual(["user"])
+    expect(JSON.stringify(mock.restTranscript())).not.toContain("streamed from the host")
+    // Nothing this attach did — the pane's own reads, the transcript, the
+    // supporting bootstrap calls — asked any server about the host's path.
+    expect(mock.requests.hostPathScopes).toEqual([])
+  })
+
+  // The workspace bus is a WORKSPACE-scoped stream on this runtime, and it has to
+  // be: `pty.*`, `process.*` and `worktree.*` belong to no session, and the route
+  // that needs them most — a terminal — names no session at all: the `pty.created`
+  // frame that registers a terminal arrives on this stream and no other.
+  test("the workspace event bus opens workspace-wide on a session-less route — behavior 10", async ({ page }) => {
+    test.setTimeout(120_000)
+    const mock = await installUserHostedRuntimeMock(page, { health: [200] })
+    await seedProject(page, { registerWorkspace: true, model: BIG_PICKLE })
+
+    // A draft route: no session id anywhere, which is the same standing the
+    // terminal route has.
+    await page.goto(workspaceRoute(), { waitUntil: "domcontentloaded", timeout: 90_000 })
+    await page.waitForLoadState("domcontentloaded")
+    await expect(page.getByRole("textbox", { name: /Ask anything/i }).last())
+      .toBeVisible({ timeout: CONTENTION_TIMEOUT })
+
+    await expect.poll(() => mock.requests.workspaceEventScopes.length, { timeout: CONTENTION_TIMEOUT })
+      .toBeGreaterThan(0)
+    // Every open is the workspace-wide form. A `?sessionID=` here would mean the
+    // app narrowed a stream this runtime serves whole — and could not open it at
+    // all from a route with no session.
+    expect(mock.requests.workspaceEventScopes.every((scope) => scope === null)).toBe(true)
+
+    // And the app really reads it: a frame published on the bus moves the
+    // reader's own SSE cursor past it on the next connection.
+    mock.emitWorkspaceFrame({
+      type: "pty.created",
+      info: {
+        id: "pty_core_user_hosted",
+        title: "zsh",
+        command: "zsh",
+        args: [],
+        cwd: HOST_DIR,
+        status: "running",
+        pid: 4242,
+      },
+    })
+    await expect.poll(() => Math.max(0, ...mock.requests.workspaceEventCursors), { timeout: CONTENTION_TIMEOUT })
+      .toBeGreaterThanOrEqual(1)
   })
 })

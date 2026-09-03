@@ -50,7 +50,12 @@ import {
   configureCliSessionTokenRegistry,
   type CliSessionTokenRegistry,
 } from "@claxedo/server-core/platform/auth/cli-session-registry"
-import { mintCliSessionTokens, refreshCliSessionTokens, verifyCliAccessBearer } from "@claxedo/server-core/platform/auth/cli-session-token"
+import {
+  createClerkNativeSessionAuthPort,
+  mintCliSessionTokens,
+  refreshCliSessionTokens,
+  verifyCliAccessBearer,
+} from "@claxedo/server-core/platform/auth/cli-session-token"
 import { composeHostedControlPlane, sandboxRelayTargetLookup, type HostedControlPlane } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
@@ -103,13 +108,17 @@ async function keyEnv() {
 }
 
 function fakePlane(cliSessionTokenRegistry: CliSessionTokenRegistry, env: Record<string, string | undefined>): HostedControlPlane {
+  const native = createClerkNativeSessionAuthPort({ env, registry: cliSessionTokenRegistry })
   const services = {
     auth: {
       config: { enabled: true, issuer: "https://clerk.test", jwksUrl: "https://clerk.test/jwks" },
-      verifier: vi.fn(async (token: string) => ({
-        mode: "signed",
-        user: { subject: token, tokenIdentifier: `https://clerk.test|${token}`, issuer: "https://clerk.test" },
-      })),
+      native,
+      verifier: vi.fn(async (token: string) => native.acceptsAccessToken(token)
+        ? native.authenticate(token)
+        : ({
+            mode: "signed" as const,
+            user: { subject: token, tokenIdentifier: `https://clerk.test|${token}`, issuer: "https://clerk.test" },
+          })),
     },
     relay: {
       relayUrl: "https://relay.test",
@@ -166,8 +175,8 @@ describe("the hosted composition serves CLI login", () => {
     // The bug, stated as a test. With no durable registry this route answered
     // 503 `cli_token_issuer_unavailable` ("CLI session token registry is not
     // configured"), so `claxedo login` could not complete against the hosted
-    // Worker at all. Nothing is configured by hand here: `createHostedApp`
-    // installs the plane's registry, which is the wiring that was missing.
+    // Worker at all. The fake plane composes the selected Clerk native adapter
+    // over its durable registry exactly as the production composition does.
     const env = await keyEnv()
     const app = createHostedApp(fakePlane(durableCliSessionTokenRegistry().registry, env))
 
@@ -203,9 +212,12 @@ describe("the hosted composition serves CLI login", () => {
     expect(new Set(stored.map((row) => row.token_identifier))).toEqual(new Set([OWNER]))
     expect(stored.map((row) => row.jti)).toContain(decodeJwt(minted.access_token).jti)
 
-    // A second isolate: fresh app, same durable table.
-    createHostedApp(fakePlane(durable.registry, env))
-    await expect(verifyCliAccessBearer(minted.access_token, env)).resolves.toMatchObject({
+    // A second isolate: fresh selected adapter, same durable table. The
+    // registry is explicit; app creation does not mutate a process-global
+    // verifier fallback.
+    const second = fakePlane(durable.registry, env)
+    createHostedApp(second)
+    await expect(second.services.auth.native!.authenticate(minted.access_token)).resolves.toMatchObject({
       tokenKind: "cli",
       user: { tokenIdentifier: OWNER },
     })
@@ -213,7 +225,7 @@ describe("the hosted composition serves CLI login", () => {
 
   test("still fails closed when no registry is configured", async () => {
     // The safety property must survive the fix. Mounted without the hosted
-    // composition (so nothing installs a registry), the same route refuses to
+    // composition (so the selected adapter has no registry), the route refuses to
     // mint rather than issuing a credential nothing could ever revoke.
     configureCliSessionTokenRegistry(undefined)
     const env = await keyEnv()
@@ -223,7 +235,7 @@ describe("the hosted composition serves CLI login", () => {
         mode: "signed",
         user: { subject: token, tokenIdentifier: `https://clerk.test|${token}`, issuer: "https://clerk.test" },
       })) as never,
-      env,
+      native: createClerkNativeSessionAuthPort({ env }),
     })
 
     const response = await app.fetch(

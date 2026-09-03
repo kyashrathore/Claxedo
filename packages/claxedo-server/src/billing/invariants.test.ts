@@ -69,10 +69,14 @@ describe("billing single-writer guard (I-3)", () => {
 
 describe("Polar confinement (ADR 014 addendum)", () => {
   test("@polar-sh/sdk is imported only under src/billing/**", () => {
+    const importsPolarSdk = (file: string) => {
+      const source = fs.readFileSync(file, "utf8")
+      return /(?:\bfrom\s+|\bimport\s*\(\s*|\bimport\s+|\brequire\s*\(\s*)["']@polar-sh\/sdk["']/.test(source)
+    }
     const offenders = walk(serverSrc)
       .filter((file) => file.endsWith(".ts") || file.endsWith(".mjs"))
       .filter((file) => !file.includes(`${path.sep}billing${path.sep}`))
-      .filter((file) => fs.readFileSync(file, "utf8").includes("@polar-sh/sdk"))
+      .filter(importsPolarSdk)
       .map((file) => path.relative(serverSrc, file))
     expect(offenders).toEqual([])
   })

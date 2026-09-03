@@ -63,12 +63,32 @@ export const serverCloudNode: Policy = {
   // pricing catalog used by the dashboard; no local-server edge is permitted.
   // Org→Team + session-people Worker-safe routers add two measured modules:
   // 137 + 2 = 139 modules, still no package edge.
-  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one:
-  // 139 + 1 = 140 modules, still no package edge.
+  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one.
+  // The reviewed multiplayer composition reaches the retained-provider owner,
+  // the canonical private-session reservation route, and the provider-neutral
+  // runtime authority support they require. The relay-protocol package owns
+  // the shared stream/turn lease TTL contract; no local-server edge is added.
+  // `relay-token-record.ts` is the one owner of how a minted runtime token is
+  // recorded — user tokens under the signed caller, service tokens through the
+  // service path — shared with the self-hosted binary so the two compositions
+  // cannot drift; it adds one module and no package edge.
+  // The owner's view of their machines (`routes/remote-access.ts` owner routes
+  // and `hosted-remote-access-service.ts`) is control-plane data every signed
+  // deployment serves; two modules, no package edge.
+  // `hosted-usage-ledger.ts` (deployments/hosted-shared) is the one Convex
+  // `UsageLedger` owner for `GET /api/claxedo/usage`/`POST .../sync` shared by
+  // every hosted composition — this Node composition mounts it through
+  // `hosted-app.ts` the same way it already reaches every other hosted-shared
+  // route; one module, no package edge (the `convex` package is already
+  // reached via the authority adapters this composition already requires).
   // The already-reachable workspace SessionEnv facade now delegates to four
-  // reviewed owners (factory, protocol, runtime env, and admission):
-  // 140 + 4 = 144 modules, still no package edge.
-  ceilings: { modules: 144, packages: 27 },
+  // reviewed owners (factory, protocol, runtime env, and admission); four
+  // modules, no package edge.
+  // Workspace share grants (`workspace/routes/share-routes.ts`, the one
+  // `workspaceShareRoutes` owner) are served by every hosted composition through
+  // `routes/hosted/workspace.ts`; one module, no package edge.
+  // Full `verify:closure` measures the exact hosted Node graph at 155/28.
+  ceilings: { modules: 155, packages: 28 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-cloud-node.json",
@@ -142,9 +162,31 @@ export const serverWorkerd: Policy = {
   // 112 + 1 = 113 modules, still no package edge.
   // Org→Team + session-people control routers (Worker-safe; no supervisor):
   // 113 + 2 = 115 modules, still no package edge.
-  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one:
-  // 115 + 1 = 116 modules, still no package edge.
-  ceilings: { modules: 116, packages: 13 },
+  // Session-share fanout doorbell owner (`session-share-fanout.ts`) adds one.
+  // The reviewed multiplayer composition reaches the retained-provider owner,
+  // the canonical private-session reservation route, and the provider-neutral
+  // runtime authority support they require. The relay-protocol package owns
+  // the shared stream/turn lease TTL contract; the graph remains Worker-safe.
+  // `relay-token-record.ts` (the one owner of user-vs-service runtime token
+  // recording, shared with the Node compositions) adds one Worker-safe module.
+  // The owner's view of their machines (`routes/remote-access.ts` owner routes
+  // and `hosted-remote-access-service.ts`) adds two Worker-safe modules.
+  // `hosted-usage-ledger.ts` (deployments/hosted-shared) is the one Convex
+  // `UsageLedger` owner for the hosted `GET /api/claxedo/usage`/
+  // `POST .../sync` surface (previously only mounted on the Node cloud and
+  // self-hosted compositions, never here) — one Worker-safe module, no
+  // package edge (`convex` is already required by this entry's own workspace
+  // authority). Deliberately built with `resolveWorkspaceRuntimeTarget` +
+  // `services.relay.provider` directly in `routes/hosted/shell.ts`'s harness
+  // probe rather than `authority/http/runtime-transport.ts`'s
+  // `verifiedRuntimeJson`, which pulls in `authority/http/protocol.ts` ->
+  // `workspace/supervisor` -> `@claxedo/workspace-runtime` — exactly the
+  // forbidden edge this policy exists to catch.
+  // Workspace share grants (`workspace/routes/share-routes.ts`) reach this
+  // Worker through `routes/hosted/workspace.ts` as well; one module, no package
+  // edge.
+  // Full `verify:closure` measures the exact workerd graph at 127/14.
+  ceilings: { modules: 127, packages: 14 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-workerd.json",
@@ -212,12 +254,16 @@ export const serverSelfHosted: Policy = {
   },
   // Nine modules complete the single-binary usage pipeline: central/local
   // routes, durable revision/provenance stores, outbox, scanner, pricing, and
-  // host identity. Package reach includes `posthog-node` via platform
-  // telemetry (`platform/telemetry/errors/posthog.ts`) — measured 34 packages.
-  // The workspace SessionEnv split keeps transport/protocol/admission policy in
-  // focused, already-reachable owners; this entry now measures 153 modules with
-  // no package growth.
-  ceilings: { modules: 153, packages: 34 },
+  // host identity. The canonical private-session reservation route adds one
+  // source module. Runtime authority now consumes the relay-protocol package's
+  // shared stream/turn lease TTL contract. `relay-token-record.ts`, the one
+  // owner of user-vs-service runtime token recording shared with the hosted
+  // compositions, adds one source module. Package reach includes `posthog-node`
+  // via platform telemetry (`platform/telemetry/errors/posthog.ts`). The
+  // workspace SessionEnv split keeps transport/protocol/admission policy in
+  // focused, already-reachable owners and adds four source modules, so the
+  // exact measured graph is 155 modules and 35 packages.
+  ceilings: { modules: 155, packages: 35 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

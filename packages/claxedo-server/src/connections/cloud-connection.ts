@@ -2,11 +2,11 @@ import { ControlPlaneAuthError, localControlPlaneAuth, type SignedControlPlaneAu
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import type { SandboxEnsureResult } from "@claxedo/sandbox-manager"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, configuredRuntimeAccessTokenSigner, relayRole, type WorkspaceRouteOptions } from "../workspace/route-support"
 import { previousRuntimeAccessTokenError, workspaceOpenAuthorizationError } from "../workspace/runtime-token-guards"
+import { CONTROL_PLANE_RUNTIME_ACTOR, resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 export async function cloudConnectionInfo(
   services: ControlPlaneServices | undefined,
   options: WorkspaceRouteOptions,
@@ -24,7 +24,6 @@ export async function cloudConnectionInfo(
     } as const
   }
   const authority = requireAuthority(services)
-  const actor = await resolveRuntimeActor(authority, auth)
   const result = await authority.openWorkspace(auth, { workspaceId: ws.id })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, ws.id)
   if (authz) return authz
@@ -54,6 +53,7 @@ export async function cloudConnectionInfo(
   }
   const hostId = target.hostId
   const role = relayRole(result.role)
+  const actor = await resolveRuntimeActor(authority, auth)
   const relayUrl = configuredRelayUrl(options)
   if (!relayUrl) {
     throw new ControlPlaneAuthError(
@@ -70,7 +70,7 @@ export async function cloudConnectionInfo(
   if (previousToken) return previousToken
   const orgId = await authority.resolveOrgId(auth)
   const token = await configuredRuntimeAccessTokenSigner(options)({
-    subject: auth.user.subject,
+    principalKind: "user",
     ...actor,
     orgId,
     workspaceId: ws.id,
@@ -119,6 +119,12 @@ export async function cloudConnectionInfo(
     connection: {
       access: "cloud",
       backing: "cloud-vm",
+      // A provisioned sandbox is a non-loopback workspace-runtime exposure, so
+      // `createWorkspaceRuntimeApp` composes `remoteWorkspaceSessionAccessPolicyFromEnv()`
+      // and reports `sessionAuthority: "managed-private"`: its event streams
+      // exist per session and an unscoped one answers 400
+      // `session_event_scope_required`.
+      sessionAuthority: "managed-private",
       workspaceId: ws.id,
       hostId,
       relayUrl,
@@ -188,28 +194,27 @@ export async function localLoopbackCloudConnectionInfo(
   }
   const hostId = target.hostId
   const orgId = current.org_id ?? ws.org_id
-  let token
-  if (options.runtimeAccessTokenSigner && orgId) {
-    const localAuth = localControlPlaneAuth()
-    const actor = await resolveRuntimeActor(requireAuthority(services), localAuth)
-    token = await options.runtimeAccessTokenSigner({
-      subject: localAuth.user.subject,
-      ...actor,
-      orgId,
-      workspaceId: ws.id,
-      hostId,
-      role: "owner",
-    })
-  } else {
-    token = {
-      runtimeAccessToken: `local-loopback-${ws.id}`,
-      tokenExpiresAt: Date.now() + 24 * 60 * 60_000,
-    }
-  }
+  const token = options.runtimeAccessTokenSigner && orgId
+    ? await options.runtimeAccessTokenSigner({
+        ...CONTROL_PLANE_RUNTIME_ACTOR,
+        orgId,
+        workspaceId: ws.id,
+        hostId,
+        role: "owner",
+      })
+    : {
+        runtimeAccessToken: `local-loopback-${ws.id}`,
+        tokenExpiresAt: Date.now() + 24 * 60 * 60_000,
+      }
   return {
     connection: {
       access: "cloud",
       backing: "cloud-vm",
+      // This branch answers a LOOPBACK caller of the local server, whose
+      // workspace runtimes are the embedded ones it starts itself
+      // (`configureEmbeddedWorkspaceRuntime`) — an embedded exposure, so the
+      // unbound local policy, so workspace-wide streams.
+      sessionAuthority: "local",
       workspaceId: ws.id,
       hostId,
       relayUrl: localLoopbackRelayUrl(request, options),

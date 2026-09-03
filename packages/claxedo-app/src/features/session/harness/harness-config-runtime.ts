@@ -88,7 +88,7 @@ export function createHarnessConfigRuntime(input: {
   }
 
   function workspaceHarnessTransport(params?: HarnessScopeInput) {
-    const runtimeRef = harnessWorkspaceRuntimeRef(params)
+    const runtimeRef = harnessWorkspaceRuntimeRef(params, input.projects())
     const serverTransport = centralTransportForServer(input.base)
     return createTransport({
       placement: runtimeRef
@@ -109,7 +109,7 @@ export function createHarnessConfigRuntime(input: {
   }
 
   function workspaceRuntimeConfigFetch(params?: HarnessScopeInput): typeof fetch | undefined {
-    const runtimeRef = harnessWorkspaceRuntimeRef(params)
+    const runtimeRef = harnessWorkspaceRuntimeRef(params, input.projects())
     if (!runtimeRef) return undefined
     return workspaceHarnessTransport(params).sdkFetch
   }
@@ -136,7 +136,13 @@ export function createHarnessConfigRuntime(input: {
     return {
       kind: workspace.kind,
       status: workspace.status,
+      ...(workspace.workspaceId ? { workspaceId: workspace.workspaceId } : {}),
     }
+  }
+
+  /** The relay-backed workspace the inventory describes for a scope, if any. */
+  function workspaceRef(params?: HarnessScopeInput) {
+    return harnessWorkspaceRuntimeRef(params, input.projects())
   }
 
   async function configOptionsFetch(type: HarnessType, params?: HarnessScopeInput) {
@@ -179,6 +185,7 @@ export function createHarnessConfigRuntime(input: {
     useLocalHarnessConfig,
     workspace,
     workspaceKind,
+    workspaceRef,
     workspaceHarnessTransport,
     workspaceRuntimeConfigFetch,
   }

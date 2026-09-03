@@ -297,7 +297,7 @@ describe("resolveHostedOperation", () => {
   })
 
   test("omits a body entirely for operations that take none", () => {
-    expect(resolveHostedOperation("account.get")).toEqual({ method: "GET", path: "/api/claxedo/bootstrap" })
+    expect(resolveHostedOperation("account.mode")).toEqual({ method: "GET", path: "/api/claxedo/mode" })
   })
 })
 
@@ -309,6 +309,6 @@ describe("hostedOperationChannel", () => {
     const channels = Object.keys(HOSTED_OPERATIONS).map((name) => hostedOperationChannel(name as never))
 
     expect(new Set(channels).size).toBe(channels.length)
-    expect(hostedOperationChannel("account.get")).toBe("claxedo.account.operation:account.get")
+    expect(hostedOperationChannel("account.mode")).toBe("claxedo.account.operation:account.mode")
   })
 })

@@ -1,8 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import {
   railProjectCaptionFromName,
   railProjectLabel,
   projectActionDirectory,
+  railWorkspaceMetaLabels,
   railWorkspaceSessionBacking,
   sessionProjectSort,
   shouldAutoOpenWorkspaceSection,
@@ -124,6 +126,30 @@ describe("railWorkspaceSessionBacking", () => {
     })).toEqual({ workspaceId: "ws_signed", kind: "cloud" })
   })
 
+  test("resolves a user-hosted row addressed as `workspace:<id>` against its host-directory catalog key", () => {
+    // What the control plane answers with for a user-hosted workspace: the
+    // catalog keys it by the HOST's own path, while the session row carries
+    // `sessionRowDirectory`'s `workspace:<id>`. The row's identity, not the
+    // section's directory, is what the backing comes from — and the signed id
+    // here is a UUID, which the `ws_*`-shape guess below would have refused.
+    expect(railWorkspaceSessionBacking({
+      directory: "workspace:5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11",
+      workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11",
+      sessionRef: "workspace:5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11:session:41c9c554",
+      project: project({
+        worktree: "/Users/host/opencode",
+        workspaces: {
+          "/Users/host/opencode": {
+            id: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11",
+            workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11",
+            directory: "/Users/host/opencode",
+            kind: "user-hosted",
+          },
+        },
+      }),
+    })).toEqual({ workspaceId: "5f39af3e-1e79-4d0d-9c4e-2b1c1f1b7a11", kind: "user-hosted" })
+  })
+
   test("does not infer signed authority from a local workspace", () => {
     expect(railWorkspaceSessionBacking({
       directory: "/repo/main",
@@ -136,7 +162,7 @@ describe("railWorkspaceSessionBacking", () => {
     })).toBeUndefined()
   })
 
-  test("keeps current local inventory authoritative over workspace-shaped rows", () => {
+  test("keeps known-local and UUID workspace associations off the relay", () => {
     const pending = project({
       worktree: "/repo/main",
       workspaces: {
@@ -163,6 +189,14 @@ describe("railWorkspaceSessionBacking", () => {
       sessionRef: "workspace:608c72e3-405a-4d2a-bf7f-883b8c76ea8e:session:ses_uuid",
       project: pending,
     })).toBeUndefined()
+
+    expect(railWorkspaceSessionBacking({
+      directory: "/runtime/repo",
+      workspaceId: "ws_pending",
+      sessionRef: "workspace:ws_pending:session:ses_pending",
+      environmentKind: "local",
+      project: project({ worktree: "/repo/main" }),
+    })).toEqual({ workspaceId: "ws_pending", kind: "user-hosted" })
   })
 
   test("keeps canonical central and local session refs off the relay", () => {
@@ -223,5 +257,66 @@ describe("workspaceInventoryGroupFor", () => {
       workspace: { workspaceId: "ws_1" },
     })
     expect(hit).toBe(groups["ws_1"])
+  })
+})
+
+describe("railWorkspaceMetaLabels", () => {
+  const label = (key: string, role?: string) => key === "role" ? `role:${role}` : key
+
+  /**
+   * The whole point of moving role and host state onto the catalog row: a
+   * workspace someone else's machine serves says what this account may do with
+   * it and whether that machine is up, before any pane opens it.
+   */
+  test("a teammate's user-hosted workspace reads viewer and host offline with no pane open", () => {
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted",
+      role: "viewer",
+      hostOnline: false,
+      publishedByThisMachine: false,
+      label,
+    })).toEqual(["hostOffline", "role:viewer", "sharedWithYou"])
+  })
+
+  test("the owner's own machine says it publishes the workspace, not that it was shared with them", () => {
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted",
+      role: "owner",
+      hostOnline: true,
+      publishedByThisMachine: true,
+      label,
+    })).toEqual(["publishedByThisMachine"])
+  })
+
+  test("an editor on a reachable shared workspace reads its role and nothing about the host", () => {
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted",
+      role: "editor",
+      hostOnline: true,
+      publishedByThisMachine: false,
+      label,
+    })).toEqual(["role:editor", "sharedWithYou"])
+  })
+
+  test("reachability is only asked about a machine someone owns", () => {
+    // A cloud workspace's runtime is provisioned on demand; an unknown host
+    // state is not an offline one.
+    expect(railWorkspaceMetaLabels({
+      kind: "cloud", role: "editor", publishedByThisMachine: false, label,
+    })).toEqual([])
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted", role: "owner", publishedByThisMachine: false, label,
+    })).toEqual([])
+  })
+
+  test("keeps the workspace status the catalog already reported, first", () => {
+    expect(railWorkspaceMetaLabels({
+      kind: "user-hosted",
+      status: "offline",
+      role: "viewer",
+      hostOnline: false,
+      publishedByThisMachine: false,
+      label,
+    })).toEqual(["offline", "hostOffline", "role:viewer", "sharedWithYou"])
   })
 })

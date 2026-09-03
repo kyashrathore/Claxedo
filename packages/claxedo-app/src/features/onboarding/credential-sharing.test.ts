@@ -16,9 +16,11 @@ function credential(overrides: Partial<OnboardingCredential> = {}): OnboardingCr
 describe("cloud shareability", () => {
   test("a discovered Claude Code login is never shareable, under either provider binding", () => {
     // `claudeOAuthItem` is the only producer of these rows and always writes
-    // `kind: "oauth_token"` — this is the machine's Keychain login.
+    // `kind: "oauth_token"` — this is the machine's Keychain login. The two
+    // bindings it can land under are `claude-sdk` (the harness id) and the
+    // bare `anthropic` provider id.
     for (const providerId of ["claude-sdk", "anthropic"]) {
-      const login = credential({ providerId, kind: "oauth_token", label: "Claude Code login · agent SDK" })
+      const login = credential({ providerId, kind: "oauth_token", label: "Claude Code login" })
       expect(isCloudShareable(login)).toBe(false)
       expect(cloudShareBlock(login)?.repair).toContain("claude setup-token")
     }
@@ -76,9 +78,11 @@ describe("cloud shareability", () => {
   })
 
   test("a kindless Claude harness row from an older server is treated as the login", () => {
-    // Discovery is the only writer of `claude-sdk` rows, so the
-    // ambiguity resolves closed: guessing wrong here costs the user their own
-    // Claude Code session.
+    // Discovery is the only thing that writes `claude-sdk` rows without an
+    // explicit kind, so the ambiguity resolves closed: guessing wrong here
+    // costs the user their own Claude Code session. (A kindless `anthropic`
+    // row resolves the other way — see the test below — because that id is
+    // also the bare API-key provider.)
     expect(isCloudShareable(credential({ providerId: "claude-sdk" }))).toBe(false)
   })
 

@@ -2,7 +2,6 @@ import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/ser
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { normalizeClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"
-import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
   apiError,
   captureWorkspaceTelemetry,
@@ -16,6 +15,7 @@ import {
   runtimeTokenOrgId,
   workspaceOpenAuthorizationError,
 } from "../workspace/runtime-token-guards"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 
 export async function userHostedConnectionInfo(
   services: ControlPlaneServices | undefined,
@@ -25,7 +25,6 @@ export async function userHostedConnectionInfo(
   previousJti?: string,
 ) {
   const authority = requireAuthority(services)
-  const actor = await resolveRuntimeActor(authority, auth)
   const result = await authority.openWorkspace(auth, { workspaceId })
   const authz = await workspaceOpenAuthorizationError(services, auth, result, workspaceId)
   if (authz) return authz
@@ -39,11 +38,11 @@ export async function userHostedConnectionInfo(
     } as const
   }
 
-  const activeLink = await authority.activeLocalHostLink(auth, { workspaceId })
+  const activeLink = await authority.activeWorkspaceHost(auth, { workspaceId })
   if (!activeLink.active) {
     await authority.auditDeny(auth, {
       action: "runtime_access_token.denied",
-      reason: "local_host_link_unavailable",
+      reason: "workspace_host_unavailable",
       workspaceId,
     })
     return {
@@ -87,8 +86,9 @@ export async function userHostedConnectionInfo(
 
   const signer = configuredRuntimeAccessTokenSigner(options)
   const orgId = await runtimeTokenOrgId(authority, auth, result.workspace)
+  const actor = await resolveRuntimeActor(authority, auth)
   const token = await signer({
-    subject: auth.user.subject,
+    principalKind: "user",
     ...actor,
     orgId,
     workspaceId,
@@ -112,7 +112,7 @@ export async function userHostedConnectionInfo(
         jti: token.jti,
         hostId,
         expiresAt: token.tokenExpiresAt,
-        localHostLinkExpiresAt: activeLink.expires_at,
+        hostLeaseExpiresAt: activeLink.expires_at,
       },
     }),
   ])
@@ -128,7 +128,7 @@ export async function userHostedConnectionInfo(
       role,
       jti: token.jti,
       expiresAt: token.tokenExpiresAt,
-      localHostLinkExpiresAt: activeLink.expires_at,
+      hostLeaseExpiresAt: activeLink.expires_at,
       relayRoom: workspaceId,
       relayUrl,
     },
@@ -141,6 +141,28 @@ export async function userHostedConnectionInfo(
       access: "user-hosted" as const,
       backing: "local-worktree" as const,
       runtimeKind: "user-hosted" as const,
+      // Which stream scopes the runtime behind this connection serves, in the
+      // HOST's own words: the machine that serves this workspace declares its
+      // runtime's `SessionAccessPolicy.sessionAuthority` on every heartbeat,
+      // and `activeWorkspaceHost` hands back what it declared.
+      //
+      // The control plane does not decide this and cannot derive it. A
+      // user-hosted workspace runs on the owner's machine, and that machine
+      // composes either flavour: an unsigned desktop daemon leaves its
+      // embedded runtime on `managedWorkspaceSessionAccessPolicy()` with no
+      // injected authority (`"local"`, serving the workspace-wide streams),
+      // while a signed self-hosted host injects one
+      // (`embeddedManagedPrivateSessionPolicy`, `"managed-private"`, which
+      // answers an unscoped `/api/wr/events` with a permanent 400
+      // `session_event_scope_required`).
+      //
+      // A host that declared nothing yields no scope at all. The client then
+      // opens no workspace stream and says why, which is the honest outcome:
+      // either guess is wrong for one of the two compositions, and guessing
+      // "local" at a managed-private host costs more than silence — the
+      // refused stream drives `[claxedo-events]` through its whole retry
+      // ladder, the workspace goes unhealthy, and the pane is torn down.
+      ...(activeLink.session_authority ? { sessionAuthority: activeLink.session_authority } : {}),
       workspaceId,
       homeRegion,
       relayUrl,

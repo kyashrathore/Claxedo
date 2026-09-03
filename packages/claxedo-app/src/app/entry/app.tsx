@@ -24,14 +24,17 @@ import { syncIconLibraryWithTheme } from "@/ui/icons/config"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Router, Route, Navigate, useLocation, useNavigate } from "@solidjs/router"
 import {
+  type Accessor,
   type Component,
   createEffect,
   createResource,
+  createRoot,
   createSignal,
   ErrorBoundary,
   For,
   type JSX,
   lazy,
+  onMount,
   type ParentProps,
   Show,
   Suspense,
@@ -44,11 +47,12 @@ import { getClaxedoServerUrl, isDemoMode, isHostedAppHostname } from "@/platform
 import { QueryClientProvider } from "@tanstack/solid-query"
 import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
+import { markShellRevealed, shellRevealedOnce } from "@/app/shell-revealed"
 import { useConfigOptional } from "@/app/providers/config"
 import { centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
-import { AccountPortProvider } from "@/platform/account/account-provider"
+import { AccountPortProvider, useAccountPort } from "@/platform/account/account-provider"
 import { browserAccountPort, type RunHostedOperation } from "@/platform/account/browser-account-port"
 import { accountBridge, electronAccountPort } from "@/platform/account/electron-account-port"
 import { queryClient } from "@/platform/query/query-client"
@@ -115,11 +119,30 @@ function waitForLayoutRevealFrame() {
   })
 }
 
+/** Resolves with the first defined value `healthy` settles on, or `false` after `timeoutMs`. */
+function waitForHealthy(healthy: Accessor<boolean | undefined>, timeoutMs: number) {
+  return new Promise<boolean>((resolve) => {
+    createRoot((dispose) => {
+      const settle = (value: boolean) => {
+        clearTimeout(timer)
+        dispose()
+        resolve(value)
+      }
+      const timer = setTimeout(() => settle(false), timeoutMs)
+      createEffect(() => {
+        const value = healthy()
+        if (value !== undefined) settle(value)
+      })
+    })
+  })
+}
+
 const Home = lazy(() => import("@/app/routes/home"))
 const DirectoryLayout = lazy(() => import("@/app/routes/directory-layout"))
 const PermissionsPage = lazy(() => import("@/app/routes/permissions"))
 const ConfigPage = lazy(() => import("@/app/routes/config"))
 const LoginPage = lazy(() => import("@/app/routes/login"))
+const BootstrapOwnerPage = lazy(() => import("@/app/routes/bootstrap-owner"))
 const CliLoginPage = lazy(() => import("@/app/routes/cli-login"))
 const DialogMatrixHarness = lazy(() => import("@/app/routes/dialog-matrix-harness"))
 const ErrorPageHarness = lazy(() => import("@/app/routes/error-page-harness"))
@@ -203,7 +226,10 @@ function ConnectionGate(props: ParentProps) {
   const location = useLocation()
   const server = useServer()
   const checkServerHealth = useCheckServerHealth()
-  const [mode, setMode] = createSignal<"blocking" | "background">("blocking")
+  // First boot blocks behind the splash; any LATER remount (sign-in switches
+  // the active server and rebuilds this gate) checks health in the background
+  // instead of replaying the boot logo over a shell the user already had.
+  const [mode, setMode] = createSignal<"blocking" | "background">(shellRevealedOnce() ? "background" : "blocking")
 
   const [startup, actions] = createResource(async () => {
     const layoutReady = preloadClaxedoAppShell()
@@ -215,6 +241,22 @@ function ConnectionGate(props: ParentProps) {
     const { http, type } = server.current
     const revealBeforeHealth = location.pathname.startsWith("/s/") || location.pathname.startsWith("/w/")
 
+    if (revealBeforeHealth) {
+      // Already reveals unconditionally below, so this only needs to learn
+      // LATER whether to fall back to background mode — the same question
+      // the recovery effect two functions down answers from `server.healthy()`.
+      // That accessor is `server.tsx`'s own continuous /global/health poll;
+      // running server-health.ts's own health loop here too was a
+      // second boot-time prober asking the same "is the connection up"
+      // question this route never blocks paint on.
+      void waitForHealthy(server.healthy, 10_000).then((healthy) => {
+        if (!healthy) setMode("background")
+      })
+      await layoutReady
+      await waitForLayoutRevealFrame()
+      return true
+    }
+
     // Poll until healthy, or give up after 10s — then drop to background mode.
     // (Plain async replaces an Effect.gen loop + timeoutOrElse + ensuring.)
     const poll = (async () => {
@@ -225,14 +267,6 @@ function ConnectionGate(props: ParentProps) {
       }
     })()
     const timeout = new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 10_000))
-    if (revealBeforeHealth) {
-      void Promise.race([poll, timeout]).then((healthy) => {
-        if (!healthy) setMode("background")
-      })
-      await layoutReady
-      await waitForLayoutRevealFrame()
-      return true
-    }
     const healthy = await Promise.race([poll, timeout])
     if (!healthy) {
       setMode("background")
@@ -388,22 +422,28 @@ function AuthenticatedProviders(props: ParentProps) {
   const config = useConfigOptional()
 
   return (
-    <PrincipalProvider authEnabled={config?.authEnabled === true}>
-      {/* Inside PrincipalProvider so both read one session, and above every
-          account surface so none of them reaches the session directly. */}
-      <BoundAccountPortProvider>
+    <BoundAccountPortProvider>
+      {/* The principal reads BOTH signed sources through one provider stack:
+          the module-bound auth session (browser) and the account port
+          (desktop, where Electron main owns the credential and no auth
+          session is ever bound — the entry injects it because the auth layer
+          must not import the account layer). Every account surface sits
+          below, so none of them reaches either source directly. */}
+      <AccountPortPrincipalProvider authEnabled={config?.authEnabled === true}>
       <TelemetryIdentityRecorder />
       <RemoteAccessMarkerRecorder />
       {/* Removes the hosted contribution set when the account signs out.
           Before this, hosted surfaces stayed registered until a reload. */}
       <HostedContributionSync />
-      <CloudAuthGate>
-        <Show when={config?.authEnabled} fallback={props.children}>
-          <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
-        </Show>
-      </CloudAuthGate>
-      </BoundAccountPortProvider>
-    </PrincipalProvider>
+      <RoutedClaxedoEventsProvider>
+        <CloudAuthGate>
+          <Show when={config?.authEnabled} fallback={props.children}>
+            <CloudAutoSwitch>{props.children}</CloudAutoSwitch>
+          </Show>
+        </CloudAuthGate>
+      </RoutedClaxedoEventsProvider>
+      </AccountPortPrincipalProvider>
+    </BoundAccountPortProvider>
   )
 }
 
@@ -414,6 +454,20 @@ function BoundAccountPortProvider(props: ParentProps) {
   return <AccountPortProvider port={port}>{props.children}</AccountPortProvider>
 }
 
+/** PrincipalProvider with the account port injected as its second signed source. */
+function AccountPortPrincipalProvider(props: ParentProps<{ authEnabled: boolean }>) {
+  const account = useAccountPort()
+  const signedAccount = () => {
+    const state = account.state()
+    return state.status === "signed" ? { userId: state.identity.userId } : undefined
+  }
+  return (
+    <PrincipalProvider authEnabled={props.authEnabled} signedAccount={signedAccount}>
+      {props.children}
+    </PrincipalProvider>
+  )
+}
+
 const unboundHostedOperation: RunHostedOperation = async (operation) => {
   throw new Error(`hosted operation "${operation}" has no transport bound in this build`)
 }
@@ -421,9 +475,14 @@ const unboundHostedOperation: RunHostedOperation = async (operation) => {
 function RoutedClaxedoEventsProvider(props: ParentProps) {
   const location = useLocation()
   const server = useServer()
+  const account = useAccountPort()
 
   return (
-    <ClaxedoEventsProvider pathname={() => location.pathname} serverUrl={() => server.url}>
+    <ClaxedoEventsProvider
+      pathname={() => location.pathname}
+      serverUrl={() => server.url}
+      accountState={account.state}
+    >
       {props.children}
     </ClaxedoEventsProvider>
   )
@@ -460,30 +519,46 @@ function AuthenticatedLayout(
   }
 
   const defaultServer = ServerConnection.Key.make(resolveDefaultUrl())
+  const [shellRevealed, setShellRevealed] = createSignal(shellRevealedOnce())
+  const ShellRevealed = () => {
+    onMount(() => {
+      markShellRevealed()
+      setShellRevealed(true)
+    })
+    return null
+  }
 
   return (
     <ServerProvider defaultServer={defaultServer} servers={props.servers}>
-      <RoutedClaxedoEventsProvider>
-        <AuthenticatedProviders>
-          <ConnectionGate>
-            <Suspense fallback={<BootSplash />}>
-              <RuntimeProviders>{props.children}</RuntimeProviders>
-            </Suspense>
-          </ConnectionGate>
-        </AuthenticatedProviders>
-      </RoutedClaxedoEventsProvider>
+      <AuthenticatedProviders>
+        <ConnectionGate>
+          {/* Boot-only. This boundary wraps the WHOLE shell, so reusing the
+              full-page splash for later suspensions replaced the entire app
+              with a loading logo mid-session — signing in did exactly that.
+              After the shell has revealed once, a later suspension keeps the
+              window quiet instead of announcing a fresh boot. */}
+          <Suspense fallback={shellRevealed() ? <Loading /> : <BootSplash />}>
+            <RuntimeProviders>
+              <ShellRevealed />
+              {props.children}
+            </RuntimeProviders>
+          </Suspense>
+        </ConnectionGate>
+      </AuthenticatedProviders>
     </ServerProvider>
   )
 }
 
 export function AppInterface(props: {
   children?: JSX.Element
+  oauthConsent?: Component
   defaultServer?: ServerConnection.Key
   servers?: Array<ServerConnection.Any>
   router?: Component<BaseRouterProps>
 }) {
   const base = isDemoMode() ? "/demo" : undefined
   const RouterComponent = props.router ?? Router
+  const OAuthConsentRoute = props.oauthConsent ?? (() => <Navigate href="/" />)
 
   return (
     <RouterComponent base={base}>
@@ -497,6 +572,20 @@ export function AppInterface(props: {
           <BoundAccountPortProvider>
             <Suspense fallback={<Loading />}>
               <LoginPage />
+            </Suspense>
+          </BoundAccountPortProvider>
+        )}
+      />
+      <Route
+        path="/oauth/consent"
+        component={OAuthConsentRoute}
+      />
+      <Route
+        path="/bootstrap-owner"
+        component={() => (
+          <BoundAccountPortProvider>
+            <Suspense fallback={<Loading />}>
+              <BootstrapOwnerPage />
             </Suspense>
           </BoundAccountPortProvider>
         )}

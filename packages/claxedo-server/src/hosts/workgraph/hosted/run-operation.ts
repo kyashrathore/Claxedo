@@ -21,7 +21,7 @@ type Executor = { mutation(fn: Mutation, args: Record<string, unknown>): Promise
 
 type TranscriptRetention = (input: Readonly<{
   organizationId: string
-  ownerSubject: string
+  ownerUserId: string
   workspaceId: string
   sessionId: string
 }>) => Promise<void>
@@ -58,7 +58,7 @@ export function createHostedRunOperationExecutor(input: Readonly<{
     if (request.operation.type === "complete" && input.retainTranscript) {
       await input.retainTranscript({
         organizationId: principal.orgId,
-        ownerSubject: principal.ownerUserId,
+        ownerUserId: principal.ownerUserId,
         workspaceId: request.identity.workspaceId,
         sessionId: request.identity.sessionId,
       })
@@ -218,7 +218,7 @@ export function createHostedRunOperationHandler(input: Readonly<{
         if (error instanceof RuntimeAccessTokenVerificationUnavailableError) runtimeKey = undefined
         throw error
       })
-      const principal = { ownerUserId: claims.sub, orgId: claims.org_id }
+      const principal = { ownerUserId: claims.actor_id, orgId: claims.org_id }
       const result = await input.execute(principal, body)
       if (result.ok) {
         try {
@@ -271,5 +271,3 @@ function convexExecutor(url: string): Executor {
 function bearer(header: string | null) {
   return header?.match(/^Bearer\s+(\S+)$/i)?.[1]
 }
-
-

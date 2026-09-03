@@ -34,11 +34,22 @@ export default {
       yield* tx.run(`
         CREATE TABLE \`account\` (
           \`id\` text PRIMARY KEY,
-          \`email\` text NOT NULL,
+          \`email\` text,
+          \`user_id\` text,
           \`url\` text NOT NULL,
           \`access_token\` text NOT NULL,
           \`refresh_token\` text NOT NULL,
           \`token_expiry\` integer,
+          \`auth_adapter\` text,
+          \`auth_deployment_id\` text,
+          \`auth_configuration_version\` text,
+          \`auth_issuer\` text,
+          \`auth_token_endpoint_origin\` text,
+          \`auth_control_plane_origin\` text,
+          \`auth_client_id\` text,
+          \`auth_resource\` text,
+          \`auth_scopes\` text,
+          \`auth_token_kind\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL
         );

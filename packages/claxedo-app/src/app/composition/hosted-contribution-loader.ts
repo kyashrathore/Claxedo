@@ -9,7 +9,21 @@ import type { HostedContributionLoader } from "./product-contributions"
  */
 export function hostedContributionLoader(): HostedContributionLoader {
   return async () => {
-    const hosted = await import("../integrations/hosted-content-surfaces")
-    return { contentSurfaces: hosted.hostedContentSurfaces }
+    const [workgraph, documents] = await Promise.all([
+      import("../integrations/hosted-content-surfaces"),
+      import("../integrations/documents-content-surfaces"),
+    ])
+    return { contentSurfaces: [...workgraph.workGraphContentSurfaces, ...documents.documentsContentSurfaces] }
   }
 }
+
+export const hostedServiceContributionLoaders = {
+  workgraph: async () => {
+    const module = await import("../integrations/hosted-content-surfaces")
+    return { contentSurfaces: module.workGraphContentSurfaces }
+  },
+  documents: async () => {
+    const module = await import("../integrations/documents-content-surfaces")
+    return { contentSurfaces: module.documentsContentSurfaces }
+  },
+} as const

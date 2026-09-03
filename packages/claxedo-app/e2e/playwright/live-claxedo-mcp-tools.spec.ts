@@ -115,7 +115,7 @@
  *      (`GET /session/:id/message`) — proven with a deterministic marker in the USER's own
  *      message text (this half needs no real model reply).
  *   8. `session_messages` with a `terminal_id` (no `session_id`) resolves a real
- *      terminal-agent binding via the real `GET/POST .../api/wr/hook/agent-lifecycle` +
+ *      terminal-agent binding via the real `POST .../api/wr/hook/agent-lifecycle` +
  *      `GET .../hook/terminal-session` routes (`packages/workspace-runtime/src/routes/
  *      agent-hook.ts`) — the same real hook a CLI wrapper agent pings — and returns that
  *      bound session's transcript.
@@ -650,7 +650,7 @@ test.describe("live claxedo-mcp tools @live", () => {
       const hookUrl =
         `${AMBIENT_URL}/api/wr/hook/agent-lifecycle?tabId=${encodeURIComponent(tabId)}&terminalId=${encodeURIComponent(terminalId)}` +
         `&eventType=Idle&sessionId=${encodeURIComponent(session.id)}&provider=opencode&directory=${encodeURIComponent(dir)}`
-      const hookRes = await fetch(hookUrl, { headers: { "x-opencode-directory": dir } })
+      const hookRes = await fetch(hookUrl, { method: "POST", headers: { "x-opencode-directory": dir } })
       expect(hookRes.ok, await hookRes.clone().text()).toBe(true)
 
       const mcp = await connectMcp({ backendUrl: AMBIENT_URL, dir })

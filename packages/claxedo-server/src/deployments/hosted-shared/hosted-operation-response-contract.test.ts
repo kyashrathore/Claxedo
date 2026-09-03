@@ -21,6 +21,8 @@ import type { Attempts, IntegrationDeclaration, IntegrationImpl } from "@claxedo
 import type { BillingStore } from "../../billing/store"
 import type { PolarClientLike } from "../../billing/routes"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
+import { verifyClerkBearer } from "@claxedo/server-core/platform/auth/clerk-adapter"
+import { createClerkNativeSessionAuthPort } from "@claxedo/server-core/platform/auth/cli-session-token"
 import {
   HOSTED_OPERATIONS as OPERATION_ROUTES,
   resolveHostedOperation,
@@ -73,13 +75,11 @@ const JWKS_URL = `${ISSUER}/jwks`
 /**
  * A real signed bearer, verified by the real `verifyClerkBearer`.
  *
- * The alternative — injecting `services.auth.verifier` — is what the rest of
- * the hosted suite does, and it works for the routes that thread the composed
- * verifier through. The checkpoint and lifecycle routes do not: they build
- * their auth from `services.auth.config` alone, so an injected verifier never
- * runs and every call 401s. Signing a token the production verifier accepts
- * reaches every operation through the same door a browser uses, which is
- * the only door this file is allowed to care about.
+ * The retained Clerk adapter is selected explicitly and composed into
+ * `services.auth.verifier`, because provider selection and bearer verification
+ * are deployment dependencies rather than implicit route behavior. Signing a
+ * token that production verifier accepts reaches every operation through the
+ * same door a browser uses.
  */
 const signing = {
   bearer: "",
@@ -177,6 +177,14 @@ function contractAuthority(): WorkspaceAuthority {
     authorizeProject: vi.fn(async (_auth, args) => ({ ok: true as const, role: "owner" as const, orgId: args.orgId ?? orgId })),
     authorizeChannelProject: vi.fn(async () => ({ ok: true as const, role: "owner" as const, orgId })),
     authorizeChannelWorkspace: vi.fn(async () => ({ actorId: SUBJECT, actorKind: "human" as const })),
+    bindChannelIdentity: vi.fn(async () => ({
+      bindingId: "binding_1",
+      created: true,
+      userId: SUBJECT,
+      actorId: SUBJECT,
+      actorKind: "human" as const,
+    })),
+    revokeChannelIdentity: vi.fn(async () => ({ revoked: true })),
     authorizeWorkspaceOpen: vi.fn(async () => undefined),
     authorizeWorkspaceCreate: vi.fn(async () => undefined),
     openWorkspace: vi.fn(async () => ({
@@ -212,27 +220,26 @@ function contractAuthority(): WorkspaceAuthority {
       },
     ]),
     registerLocalForSharing: vi.fn(async () => ({ workspace_id: WORKSPACE_ID })),
-    createLocalHostLinkChallenge: vi.fn(async () => ({
-      challenge_id: "challenge_1",
-      nonce: "nonce_1",
-      expires_at: 9_999,
-    })),
-    registerLocalHostLink: vi.fn(async () => ({ workspace_id: WORKSPACE_ID, host_id: "host_1" })),
-    heartbeatLocalHostLink: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1_000 })),
-    pauseLocalHostLink: vi.fn(async () => ({ paused: true })),
-    activeLocalHostLink: vi.fn(async () => ({
-      active: true,
-      host_id: "host_1",
-      workspace_id: WORKSPACE_ID,
-      expires_at: 9_999,
-      last_seen_at: 1_000,
-    })),
     createHostEnrollmentRequest: vi.fn(async () => ({ request_id: "req_1", nonce: "nonce_1", expires_at: 9_999 })),
     enrollHost: vi.fn(async () => ENROLLMENT),
-    heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1_000 })),
+    heartbeatHostEnrollment: vi.fn(async () => ({ expires_at: 9_999, last_seen_at: 1_000, assigned_workspace_ids: [] as string[] })),
     pauseHostEnrollment: vi.fn(async () => ({ paused: true })),
     activeHostEnrollment: vi.fn(async () => ({ active: true as const, ...ENROLLMENT })),
     markSecondDeviceOpen: vi.fn(async () => ({ recorded: true, second_device_open_at: 1_000 })),
+    assignWorkspaceHost: vi.fn(async () => ({
+      assigned: true as const,
+      workspace_id: USER_HOSTED_WORKSPACE_ID,
+      host_id: "host_1",
+    })),
+    unassignWorkspaceHost: vi.fn(async () => ({ unassigned: true })),
+    activeWorkspaceHost: vi.fn(async () => ({
+      active: true as const,
+      host_id: "host_1",
+      workspace_id: USER_HOSTED_WORKSPACE_ID,
+      expires_at: 9_999,
+      last_seen_at: 1_000,
+    })),
+    listHostAssignments: vi.fn(async () => []),
     deleteWorkspace: vi.fn(async () => ({ deleted: true })),
     createCloudWorkspace: vi.fn(async () => ({ workspace_id: WORKSPACE_ID })),
     grantWorkspaceShare: vi.fn(async () => ({ granted: true })),
@@ -241,8 +248,8 @@ function contractAuthority(): WorkspaceAuthority {
     authorizeSessionWrite: vi.fn(async () => undefined),
     authorizeRuntimeSession: vi.fn(async () => undefined),
     registerRuntimeSession: vi.fn(async () => ({ registered: true })),
-    addSessionParticipant: vi.fn(async () => ({ added: true })),
-    removeSessionParticipant: vi.fn(async () => ({ removed: true })),
+    grantSessionParticipant: vi.fn(async () => ({ participant_id: "participant_1" })),
+    revokeSessionParticipant: vi.fn(async () => ({ removed: true })),
     grantSessionShare: vi.fn(async () => ({ grant_id: "grant_1" })),
     revokeSessionShare: vi.fn(async () => ({
       revoked: true,
@@ -347,6 +354,7 @@ function fakeSandboxManager() {
  */
 function contractPlane(sandboxManager: SandboxManager = fakeSandboxManager()): HostedControlPlane {
   const authority = contractAuthority()
+  const cliSessionTokenRegistry = durableCliSessionTokenRegistry().registry
   type ContractSessionMeta = NonNullable<Awaited<ReturnType<ProjectionStore["session_meta"]>>>
   const sessionMeta = new Map<string, ContractSessionMeta>()
   sessionMeta.set("ses_1", {
@@ -403,8 +411,18 @@ function contractPlane(sandboxManager: SandboxManager = fakeSandboxManager()): H
     drainWorkspace: vi.fn(async () => undefined),
   } satisfies RelayProvider
   const services = {
-    // No injected verifier on purpose — see `signing`.
-    auth: { config: { enabled: true, issuer: ISSUER, jwksUrl: JWKS_URL } },
+    auth: {
+      config: { enabled: true, adapter: "clerk", issuer: ISSUER, jwksUrl: JWKS_URL },
+      verifier: verifyClerkBearer,
+      native: createClerkNativeSessionAuthPort({
+        registry: cliSessionTokenRegistry,
+        env: {
+          CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: signing.runtimeTokenKeys.privatePem,
+          CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM: signing.runtimeTokenKeys.publicPem,
+          CLAXEDO_CLI_ACCESS_TOKEN_TTL_SECONDS: "600",
+        },
+      }),
+    },
     relay: {
       relayUrl: "https://relay.test",
       resolverToken: "resolver-token",
@@ -444,7 +462,7 @@ function contractPlane(sandboxManager: SandboxManager = fakeSandboxManager()): H
       sandboxManager: services.sandbox.sandboxManager!,
       telemetry: services.telemetry,
     }),
-    cliSessionTokenRegistry: durableCliSessionTokenRegistry().registry,
+    cliSessionTokenRegistry,
     env: {
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
@@ -802,7 +820,6 @@ function contractDocumentsBackend(): DocumentsRouteBackend<ContractDocumentHandl
  * before its decoder is reached. Three did.
  */
 const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
-  "account.get": {},
   "account.mode": {},
   "account.compatibility": {},
   "account.cliExchange": { code: "device_code_1" },
@@ -834,7 +851,17 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
     displayName: "Yash laptop",
   },
   "host.enrollmentNonce": { hostId: "host_1" },
-  "host.enrollmentHeartbeat": { hostId: "host_1", signature: "sig", ttlMs: 60_000 },
+  "host.enrollmentHeartbeat": {
+    hostId: "host_1",
+    signature: "sig",
+    ttlMs: 60_000,
+    workspaceIds: ["ws_local_1"],
+    // The machine's declaration of how the runtime it serves composed its
+    // session access. Exercised here because the heartbeat route's schema is
+    // strict: a declared field that never reaches the route is a field the
+    // route could silently reject in production.
+    sessionAuthority: "managed-private",
+  },
   "session.list": { workspaceId: WORKSPACE_ID },
   "session.navigationList": { scope: "workspace", limit: 50, workspaceId: WORKSPACE_ID },
   "session.projection.register": {
@@ -878,7 +905,7 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
   "session.participants.add": {
     sessionId: "ses_1",
     workspaceId: WORKSPACE_ID,
-    participantTokenIdentifier: "token_bob",
+    participantActorId: "actor_bob",
   },
   "org.list": {},
   "org.create": { name: "Acme" },
@@ -987,14 +1014,19 @@ const OPERATION_INPUT: Record<HostedOperationName, Record<string, unknown>> = {
   "session.gateway": { sessionId: "ses_1", workspaceId: WORKSPACE_ID },
   "billing.checkout": { plan: "monthly" },
   "billing.portal": {},
-  "hostLink.register": {
-    id: WORKSPACE_ID,
+  "workspace.assignHost": {
+    id: USER_HOSTED_WORKSPACE_ID,
     hostId: "host_1",
-    publicKey: "-----BEGIN PUBLIC KEY-----",
-    challengeId: "challenge_1",
-    signature: "sig",
     displayName: "Host",
-    ttlMs: 60_000,
+    orgId: "org_1",
+    projectId: "proj_1",
+    repoUrl: "https://github.com/acme/local.git",
+    repoName: "acme/local",
+    gitBranch: "main",
+    remoteDirectory: "/workspace",
+  },
+  "workspace.unassignHost": {
+    id: USER_HOSTED_WORKSPACE_ID,
   },
   "usage.get": { since: 1_700_000_000_000, until: 1_700_086_400_000, timezone: "UTC", view: "quota" },
   "usage.sync": {},
@@ -1017,6 +1049,7 @@ async function callRequest(
   const plane = contractPlane(sandboxManager)
   const central = createCentralControlApp(plane.services, {
     authConfig: plane.services.auth.config,
+    verifier: plane.services.auth.verifier,
     usageLedger: {
       recordLlmTurn: vi.fn(async () => ({ activated: false })),
       usageDashboard: vi.fn(async () => ({ totals: {}, daily: [] })),

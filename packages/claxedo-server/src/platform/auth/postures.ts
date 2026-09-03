@@ -1,12 +1,12 @@
 import {
   ControlPlaneAuthError,
   bearerToken,
-  controlPlaneAuthConfig,
   controlPlaneAuthContext,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import { internalAdminAuthorized } from "../http/internal-admin-auth"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"

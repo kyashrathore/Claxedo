@@ -3,6 +3,7 @@ import os from "node:os"
 import path from "node:path"
 import { realpathSync } from "node:fs"
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from "vitest"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 
 const root = path.join(
   realpathSync(os.tmpdir()),
@@ -88,6 +89,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
     return row
   }),
   listWorkspaces: vi.fn(async () => [...new Set(workspaceRows.values())]),
+  subscribeLocalWorkspaceChanges: vi.fn(() => () => {}),
   getWorkspace: vi.fn(async (id: string) => workspaceRows.get(id)),
   getProjectWorkspace: vi.fn(async (id: string) => workspaceRows.get(id)),
   getWorkspaceByDirectory: vi.fn(async (directory: string) => workspaceRows.get(directory)),
@@ -151,6 +153,7 @@ function createContractApp() {
         durableSessionLog: centralStore.durableSessionLog,
       },
       {
+        authority: testManagedSessionAuthority(),
         localExecution: { enabled: true },
         telemetry: { capture: () => {} },
         relay: {
@@ -249,7 +252,7 @@ describe("frontend API contract", () => {
       if (runtimePath === "/file/status") return Response.json([])
       if (runtimePath === "/command") return Response.json([])
       if (runtimePath === "/agent") return Response.json([])
-      if (runtimePath === "/api/wr/harness-config-options" && url.searchParams.get("harness") === "codex-acp") {
+      if (runtimePath === "/api/wr/harness-config-options" && url.searchParams.get("harness") === "acp:codex") {
         return Response.json(
           {
             error: {
@@ -315,8 +318,8 @@ describe("frontend API contract", () => {
     await expect(responses.config.json()).resolves.toMatchObject({ provider: {}, mcp: {} })
     await expect(responses.globalConfig.json()).resolves.toMatchObject({ provider: {}, mcp: {} })
     await expect(responses.providerAuth.json()).resolves.toMatchObject({
-      "claude-acp": [expect.objectContaining({ type: "api" })],
-      "codex-acp": [expect.objectContaining({ type: "oauth" }), expect.objectContaining({ type: "api" })],
+      "claude-sdk": [expect.objectContaining({ type: "api" })],
+      "codex-app-server": [expect.objectContaining({ type: "oauth" }), expect.objectContaining({ type: "api" })],
     })
     await expect(responses.configProviders.json()).resolves.toMatchObject({
       providers: [expect.objectContaining({ id: "opencode" })],
@@ -352,6 +355,12 @@ describe("frontend API contract", () => {
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/agent?directory=%2Fworkspace",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/command?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/file/status?directory=%2Fworkspace&workspaceId=ws_frontend_contract",
+        // The app's real cloud-workspace boot: `fetchProvider()` in
+        // `claxedo-app/src/app/boot/data/bootstrap.ts` proxies the provider
+        // list through the workspace runtime connection whenever a `runtime`
+        // and `baseUrl` are both present — which they are for a `cloud`-kind
+        // workspace — rather than through the control plane's own `/provider`.
+        "http://runtime.frontend.test/workspaces/ws_frontend_contract/provider?directory=%2Fworkspace&workspaceId=ws_frontend_contract&runner=opencode",
         "http://runtime.frontend.test/workspaces/ws_frontend_contract/session?directory=%2Fworkspace&workspaceId=ws_frontend_contract&roots=true&limit=55",
       ].sort(),
     )
@@ -359,7 +368,7 @@ describe("frontend API contract", () => {
 
   test("maps Codex ACP close from runtime options to startup guidance", async () => {
     const res = await createContractApp().request(
-      "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=codex-acp",
+      "/api/claxedo/agent-config/harness/options?workspaceId=ws_frontend_contract&type=acp:codex",
     )
 
     expect(res.status).toBe(502)

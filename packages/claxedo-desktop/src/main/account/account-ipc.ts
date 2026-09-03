@@ -118,6 +118,11 @@ export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = [
   "host.enrollCurrentMachine",
   "host.enrollmentNonce",
   "host.enrollmentHeartbeat",
+  // Assignments name a HOST ID the renderer must not choose freely (the
+  // supervisor supplies this machine's own); hostConnector.share is the
+  // renderer's reviewed route.
+  "workspace.assignHost",
+  "workspace.unassignHost",
 ]
 
 /**

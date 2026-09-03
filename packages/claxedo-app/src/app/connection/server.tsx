@@ -5,7 +5,7 @@ import { type Accessor, batch, createEffect, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { Persist, persisted } from "@/platform/persistence/persist"
-import { validWorktree } from "@/platform/sync/worktree"
+import { validProjectRef } from "@/platform/sync/worktree"
 import { getExtensions } from "@/features/extensions"
 import { isDemoMode } from "@/platform/api/api"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_PORT } from "@/platform/api/local-server"
@@ -15,6 +15,14 @@ import { ServerConnection } from "@/platform/connection/server-connection"
 
 export { ServerConnection } from "@/platform/connection/server-connection"
 
+/**
+ * One row of persisted sidebar INTENT: order (the array position), whether the
+ * project is expanded, and — via `closedProjects` — whether the user closed it.
+ * `worktree` is the project ref the catalog groups by: an absolute path for a
+ * workspace this machine serves, a `workspace:<id>` ref for one the control
+ * plane owns. This store is never a data source; what renders comes from the
+ * workspace catalog.
+ */
 type StoredProject = { worktree: string; expanded: boolean }
 type StoredServer = string | ServerConnection.HttpBase | ServerConnection.Http
 type WorkspaceServerMap = Record<string, string>
@@ -364,7 +372,7 @@ const serverContextInput = {
       projects: {
         list: projectsList,
         open(directory: string) {
-          if (!validWorktree(directory)) return
+          if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
           // Remove from closed list when explicitly opening
@@ -377,7 +385,7 @@ const serverContextInput = {
           setStore("projects", key, [{ worktree: directory, expanded: true }, ...current])
         },
         close(directory: string) {
-          if (!validWorktree(directory)) return
+          if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
           // Add to closed list to prevent re-sync from API
@@ -393,7 +401,7 @@ const serverContextInput = {
           )
         },
         remove(directory: string) {
-          if (!validWorktree(directory)) return
+          if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
           const current = store.projects[key] ?? []
@@ -405,7 +413,7 @@ const serverContextInput = {
           )
         },
         isClosed(directory: string) {
-          if (!validWorktree(directory)) return false
+          if (!validProjectRef(directory)) return false
           const key = origin()
           if (!key) return false
           const closed = store.closedProjects[key] ?? []
@@ -418,7 +426,7 @@ const serverContextInput = {
           const expanded = new Map(current.map((x) => [x.worktree, x.expanded]))
           const seen = new Set<string>()
           const next = directories
-            .filter(validWorktree)
+            .filter(validProjectRef)
             .filter((worktree) => {
               if (seen.has(worktree)) return false
               seen.add(worktree)
@@ -429,7 +437,7 @@ const serverContextInput = {
           setStore("projects", key, next)
         },
         expand(directory: string) {
-          if (!validWorktree(directory)) return
+          if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
           const current = store.projects[key] ?? []
@@ -437,7 +445,7 @@ const serverContextInput = {
           if (index !== -1) setStore("projects", key, index, "expanded", true)
         },
         collapse(directory: string) {
-          if (!validWorktree(directory)) return
+          if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
           const current = store.projects[key] ?? []
@@ -445,7 +453,7 @@ const serverContextInput = {
           if (index !== -1) setStore("projects", key, index, "expanded", false)
         },
         move(directory: string, toIndex: number) {
-          if (!validWorktree(directory)) return
+          if (!validProjectRef(directory)) return
           const key = origin()
           if (!key) return
           const current = store.projects[key] ?? []

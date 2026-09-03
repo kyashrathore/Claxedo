@@ -135,7 +135,7 @@ describe("upstream contract", () => {
     state.localSessionConfig = {
       harness: { id: "claude", access: "acp" },
       agent: "build",
-      model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
+      model: { providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
     }
 
     const submit = createSubmit({
@@ -144,7 +144,7 @@ describe("upstream contract", () => {
         config: {
           harness: { id: "claude", access: "acp" },
           agent: "build",
-          model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
+          model: { providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
         },
       }),
       sessionID: () => "session-1",
@@ -159,7 +159,7 @@ describe("upstream contract", () => {
       sessionID: "session-1",
       directory: "/repo/main",
       agent: "build",
-      model: { providerID: "claude-acp", modelID: "claude-sonnet-4-6" },
+      model: { providerID: "claude-sdk", modelID: "claude-sonnet-4-6" },
     })
     expect(unsignedCalls.filter((call) => call.url.includes("/config") && call.method === "PATCH")).toEqual([])
     expect(harnessSetCalls).toEqual([])

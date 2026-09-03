@@ -18,6 +18,8 @@ import {
   harnessConfigUrl,
   sessionResourceUrl,
 } from "./harness-config-routes"
+import { workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { isRelayBackedWorkspaceKind, type SignedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type HarnessHydratorCache<ScopeInput extends HarnessScopeInput> = {
   getSeen(scope: string): string | undefined
@@ -44,7 +46,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     saved?: DraftDefault
   } | undefined
   markServer?(scope: string): void
-  resetWorkspaceDraftHarness(scope: string): void
   applyStatus(scope: string, data: HarnessState, params?: ScopeInput): Promise<void>
   setPollingHydration(scope: string, type?: HarnessType): void
   setReadyHydration(scope: string, type: HarnessType): void
@@ -53,7 +54,15 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   workspaceRuntime(params?: ScopeInput): boolean
   runtime: {
     useLocalHarnessConfig(params?: ScopeInput): boolean
-    workspaceKind?(params?: ScopeInput): "local" | "cloud" | "user-hosted" | null | undefined
+    workspaceKind?(params?: ScopeInput): WorkspaceKind | null | undefined
+    /**
+     * The workspace record itself, for a `workspace:` ref the inventory has not
+     * described yet. A draft's harness comes from the machine serving the
+     * workspace, so the draft cannot decide until the workspace is known.
+     */
+    workspace?(params?: ScopeInput): Promise<{ kind?: WorkspaceKind | null; workspaceId?: string } | undefined>
+    /** The relay-backed workspace the inventory already describes for a scope. */
+    workspaceRef?(params?: ScopeInput): { workspaceId: string; kind: SignedWorkspaceKind } | undefined
     harnessSessionFetch(params?: ScopeInput): typeof fetch
     localHarnessConfigFetch(params?: ScopeInput): typeof fetch
   }
@@ -63,14 +72,17 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   const pendingByScope = new Map<string, { key: string; run: Promise<void> }>()
   let nextGeneration = 0
 
-  const status = async (params?: ScopeInput): Promise<HarnessState | undefined> => {
+  const status = async (
+    params?: ScopeInput,
+    known?: { workspaceRuntime: boolean; workspaceId?: string },
+  ): Promise<HarnessState | undefined> => {
     // A central SessionRef is itself a runtime route. It deliberately has no
     // local/workspace runtime classification, but harnessSessionFetch maps its
     // session resource request through the central runtime API.
     if (
       params?.sessionRef?.host !== "central" &&
       !input.runtime.useLocalHarnessConfig(params) &&
-      !input.workspaceRuntime(params)
+      !(known?.workspaceRuntime ?? input.workspaceRuntime(params))
     ) return undefined
     if (!params?.directory) return undefined
     if (params.sessionId && params.sessionId !== "new") {
@@ -112,6 +124,7 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       harnessConfigUrl({
         serverUrl: input.base,
         directory: params.directory,
+        ...(known?.workspaceId ? { workspaceId: known.workspaceId } : {}),
         sessionId: params.sessionId,
       }),
     )
@@ -148,12 +161,10 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
           return
         }
         const useLocalHarnessConfig = input.runtime.useLocalHarnessConfig(params)
-        if (shouldHydrateDraftFromHarnessStatus({
-          useLocalHarnessConfig,
-          workspaceRuntime: input.workspaceRuntime(params),
-          workspaceKind: input.runtime.workspaceKind?.(params),
-        })) {
-          const data = await status(params).catch(() => undefined)
+        const backing = await draftWorkspaceBacking(params, useLocalHarnessConfig)
+        if (!active()) return
+        if (shouldHydrateDraftFromHarnessStatus({ useLocalHarnessConfig, ...backing })) {
+          const data = await status(params, backing).catch(() => undefined)
           if (!active()) return
           if (data) {
             await applyAndMarkSeen(scope, data, params, key, active)
@@ -187,6 +198,31 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
       if (generations.get(scope) === generation) generations.delete(scope)
       input.cache.removePending(scope, run)
     })
+  }
+
+  /**
+   * What serves a draft's workspace. The inventory answers synchronously once
+   * loaded; a `workspace:` ref it has not described yet is resolved from the
+   * record, because a draft hydrated before its workspace is known would
+   * commit the seed harness and never ask again.
+   */
+  const draftWorkspaceBacking = async (params: ScopeInput, useLocalHarnessConfig: boolean) => {
+    const ref = input.runtime.workspaceRef?.(params)
+    const known = ref?.kind ?? input.runtime.workspaceKind?.(params)
+    if (known || useLocalHarnessConfig || !workspaceIdFromRef(params.directory)) {
+      return {
+        workspaceRuntime: input.workspaceRuntime(params),
+        workspaceKind: known,
+        ...(ref ? { workspaceId: ref.workspaceId } : {}),
+      }
+    }
+    const resolved = await input.runtime.workspace?.(params).catch(() => undefined)
+    const kind = resolved?.kind
+    return {
+      workspaceRuntime: input.workspaceRuntime(params) || isRelayBackedWorkspaceKind(kind),
+      workspaceKind: kind,
+      ...(resolved?.workspaceId ? { workspaceId: resolved.workspaceId } : {}),
+    }
   }
 
   const applyAndMarkSeen = async (

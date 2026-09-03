@@ -1,57 +1,62 @@
 import { describe, expect, test } from "bun:test"
 import { readAccountConfig } from "./account-config"
 
-/**
- * Reading the OAuth client configuration.
- *
- * `index.ts` itself imports electron and cannot be loaded here; this is the one
- * decision in it worth testing, and it is exported for exactly that reason.
- */
-
-const COMPLETE = {
-  CLAXEDO_ACCOUNT_AUTHORIZE_URL: "https://accounts.example.com/authorize",
-  CLAXEDO_ACCOUNT_TOKEN_URL: "https://accounts.example.com/token",
-  CLAXEDO_ACCOUNT_CLIENT_ID: "client_desktop",
-  CLAXEDO_SERVER_ORIGIN: "https://control.example.com",
-}
-
 describe("readAccountConfig", () => {
-  test("reads a complete configuration", () => {
-    expect(readAccountConfig(COMPLETE)).toMatchObject({
+  test("accepts only the selected deployment's exact HTTPS origin", () => {
+    expect(readAccountConfig({ CLAXEDO_CORE_ORIGIN: "https://core.example" })).toEqual({
       configured: true,
-      clientId: "client_desktop",
-      scope: "openid profile email offline_access",
+      coreOrigin: "https://core.example",
     })
   })
 
-  test("asks for a refresh token by default", () => {
-    // Without `offline_access` the provider issues no refresh token, and the
-    // account service can then only sign the user out when the access token
-    // expires — an hour into every session.
-    const result = readAccountConfig(COMPLETE)
-
-    expect(result.configured === true && result.scope.split(" ")).toContain("offline_access")
-  })
-
-  test("names exactly what is missing", () => {
-    // This is the error a release owner sees when a build ships without its
-    // client registered. "Sign-in is unavailable" with no detail is a support
-    // thread; a list of variable names is a fix.
-    const result = readAccountConfig({ CLAXEDO_ACCOUNT_CLIENT_ID: "c" })
-
-    expect(result).toEqual({ configured: false, missing: ["authorizeUrl", "tokenUrl", "serverOrigin"] })
-  })
-
-  test("treats blank and whitespace as absent", () => {
-    // A shipped `.env` with `CLAXEDO_ACCOUNT_CLIENT_ID=` present but empty
-    // would otherwise read as configured and fail at the authorize call.
-    expect(readAccountConfig({ ...COMPLETE, CLAXEDO_ACCOUNT_CLIENT_ID: "   " })).toMatchObject({
+  test.each([
+    undefined,
+    "",
+    "http://core.example",
+    "https://core.example/",
+    "https://core.example/path",
+    "https://core.example?x=1",
+    "https://*.example",
+  ])("rejects missing or non-exact origin %p", (value) => {
+    expect(readAccountConfig({ CLAXEDO_CORE_ORIGIN: value })).toMatchObject({
       configured: false,
-      missing: ["clientId"],
+      missing: [expect.stringContaining("exact HTTPS origin")],
     })
   })
 
-  test("keeps an explicit scope", () => {
-    expect(readAccountConfig({ ...COMPLETE, CLAXEDO_ACCOUNT_SCOPE: "openid" })).toMatchObject({ scope: "openid" })
+  test("accepts only a typed release-validation operation", () => {
+    expect(
+      readAccountConfig({
+        CLAXEDO_CORE_ORIGIN: "https://core.example",
+        CLAXEDO_RELEASE_VALIDATION_OPERATION: "private_session",
+      }),
+    ).toEqual({
+      configured: true,
+      coreOrigin: "https://core.example",
+      releaseValidationOperation: "private_session",
+    })
+    expect(
+      readAccountConfig({
+        CLAXEDO_CORE_ORIGIN: "https://core.example",
+        CLAXEDO_RELEASE_VALIDATION_OPERATION: "anything",
+      }),
+    ).toMatchObject({ configured: false, missing: [expect.stringContaining("not recognized")] })
+  })
+})
+
+describe("canary journey configuration", () => {
+  test("carries an explicit canary journey id", () => {
+    expect(
+      readAccountConfig({
+        CLAXEDO_CORE_ORIGIN: "https://core.example",
+        CLAXEDO_RELEASE_CANARY_JOURNEY_ID: " journey-release-1 ",
+      }),
+    ).toEqual({ configured: true, coreOrigin: "https://core.example", canaryJourneyId: "journey-release-1" })
+  })
+
+  test("omits the journey when unset or blank", () => {
+    expect(
+      readAccountConfig({ CLAXEDO_CORE_ORIGIN: "https://core.example", CLAXEDO_RELEASE_CANARY_JOURNEY_ID: "  " }),
+    ).toEqual({ configured: true, coreOrigin: "https://core.example" })
   })
 })

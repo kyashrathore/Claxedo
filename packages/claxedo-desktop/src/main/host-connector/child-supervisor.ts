@@ -1,9 +1,11 @@
+import type { LocalWorkspaceDescription } from "./local-workspace-description"
 import {
   parseHostConnectorChildMessage,
   type HostConnectorBootstrapIdentity,
   type HostConnectorChildMessage,
   type HostConnectorChildState,
   type HostConnectorParentMessage,
+  type HostConnectorSharedWorkspace,
 } from "./child-protocol"
 
 export type AccountOperationRunner = (name: string, input?: Record<string, unknown>) => Promise<unknown>
@@ -23,10 +25,48 @@ export type HostConnectorStatus =
 export type HostConnectorSetup = {
   status(): HostConnectorStatus
   start(): Promise<HostConnectorStatus>
+  /**
+   * Publish one workspace from this machine. The child signs the control
+   * plane's challenge with the machine key; success is remembered so the
+   * share is re-established after a restart.
+   */
+  shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<HostConnectorStatus>
+  unshareWorkspace(workspaceId: string): Promise<HostConnectorStatus>
+  /** The user's pause. Keeps the identity; cancels any pending auto-resume. */
   stop(): void
+  /**
+   * Stop because the ACCOUNT lapsed, not because anyone chose to.
+   *
+   * Separate from `stop()` because the two look identical from the outside and
+   * must not behave identically afterwards. Failing closed on auth loss is
+   * right — a credential the deployment may have revoked must not keep
+   * beating — but a two-second control-plane blip then un-published the machine
+   * for good, because nothing remembered that the stop was not a decision.
+   *
+   * Returns whether there was anything to suspend, so the caller can say so in
+   * the log without guessing.
+   */
+  suspendForAuthLapse(): boolean
+  /**
+   * Undo exactly one `suspendForAuthLapse()`, and nothing else.
+   *
+   * Answers `undefined` when the last stop was NOT an auth lapse — including
+   * when the connector was never started, which is why an account merely
+   * becoming signed can never publish a machine that was not already published.
+   */
+  resumeAfterAuthLapse(): Promise<HostConnectorStatus | undefined>
   revoke(): void
   dispose(): void
 }
+
+/**
+ * The stopped-state detail an auth lapse leaves behind.
+ *
+ * Distinct from the user's pause on purpose: this string is what the panel and
+ * `main.log` show for a machine that went off the air without anyone asking.
+ */
+export const HOST_CONNECTOR_AUTH_LAPSE_DETAIL =
+  "the account session lapsed; remote access is suspended until it returns"
 
 type PendingRequest = {
   resolve(status: HostConnectorChildState): void
@@ -69,19 +109,84 @@ export function setupHostConnectorChild(input: {
   >
   storeIdentity: (identity: HostConnectorBootstrapIdentity) => Promise<{ ok: true } | { ok: false; detail: string }>
   clearIdentity: () => void
+  /**
+   * Shares to survive a restart. Not secrets — workspace ids and labels; the
+   * proof is re-signed by the child at every registration and heartbeat.
+   */
+  loadSharedWorkspaces?: () => readonly HostConnectorSharedWorkspace[]
+  storeSharedWorkspaces?: (shares: readonly HostConnectorSharedWorkspace[]) => void
+  /**
+   * This machine's own description of a workspace it is about to share —
+   * directory, repository, branch, name — recorded on the control plane's
+   * host assignment so every client addresses the workspace by what it is.
+   */
+  describeWorkspace?: (workspaceId: string) => Promise<LocalWorkspaceDescription | undefined>
+  /** The serving credential from the latest heartbeat ack, for the tunnel owner. */
+  onServing?: (tunnel: Record<string, unknown> | null) => void
+  /**
+   * How the DAEMON's workspace runtimes composed their session access, read
+   * from the daemon itself once per launch and handed to the child with the
+   * rest of the bootstrap.
+   *
+   * Injected rather than known here because Electron main did not compose
+   * those runtimes either; the daemon reports it on its own serving surface.
+   * Answering `undefined` (the daemon was unreachable) publishes an UNDECLARED
+   * machine: the control plane records the absence and mints no event-stream
+   * scope, which is the honest outcome — a guess here would put every client
+   * of this machine on the wrong stream.
+   */
+  sessionAuthority?: () => Promise<"local" | "managed-private" | undefined>
   displayName?: string
   heartbeatIntervalMs?: number
+  /**
+   * Budget for the child to exist and answer with its identity: spawn, `ready`,
+   * and the bootstrap reply. No control-plane traffic happens inside it.
+   */
   startupTimeoutMs?: number
+  /**
+   * Budget for the enrollment that follows the bootstrap reply — the
+   * createRequest/enroll/heartbeat round trips the child now runs after
+   * answering. Wider than the startup budget on purpose: it must exceed the
+   * worst-case SUM of three sequential hosted control-plane calls, each
+   * already bounded on its own by the account layer's per-request deadline
+   * (`HOSTED_REQUEST_DEADLINE_MS` in `../account/hosted-transport.ts`), not
+   * approximate it — an enrollment legitimately taking close to that sum on a
+   * slow-but-working deployment must finish, not be reported as a hung child.
+   */
+  enrollmentTimeoutMs?: number
   onError?: (stage: string, error: unknown) => void
   onStatusChange?: (status: HostConnectorStatus) => void
 }): HostConnectorSetup {
   let status: HostConnectorStatus = { status: "not-started" }
+  let identityHostId: string | undefined
+  let sharedWorkspaces: HostConnectorSharedWorkspace[] = [...(input.loadSharedWorkspaces?.() ?? [])]
   let child: HostConnectorChildProcess | undefined
   let starting: Promise<HostConnectorStatus> | undefined
   let cancelStarting: ((error: Error) => void) | undefined
   let era = 0
   let intentionalExit = false
+  /**
+   * Set only when THIS process stopped a RUNNING connector because the account
+   * left "signed" — never by a user pause, a revoke, or a child crash.
+   *
+   * Deliberately in memory. It answers one question — "was remote access taken
+   * away from this machine, or turned off on it?" — and that question only has
+   * meaning for the lifetime of the stop it describes. A relaunch already has
+   * its own resume path through the persisted identity and share list, so a
+   * flag on disk could only outlive its own truth.
+   */
+  let authLapseSuspended = false
   const pending = new Map<string, PendingRequest>()
+  /**
+   * The one launch waiting for its child to finish enrolling.
+   *
+   * The bootstrap reply now means "alive, with an identity", so the enrollment
+   * outcome arrives later on the push channel. This is where `launch` parks
+   * until the child's first non-idle status — enrolled, or stopped with the
+   * connector's own detail — so `start()` still resolves on a decided machine
+   * rather than on a spawned process.
+   */
+  let enrolling: { target: HostConnectorChildProcess; waiting: PendingRequest } | undefined
 
   const settle = (next: HostConnectorStatus) => {
     status = next
@@ -92,6 +197,9 @@ export function setupHostConnectorChild(input: {
   const rejectPending = (error: Error) => {
     for (const request of pending.values()) request.reject(error)
     pending.clear()
+    const waiting = enrolling
+    enrolling = undefined
+    waiting?.waiting.reject(error)
   }
 
   const send = (target: HostConnectorChildProcess, message: HostConnectorParentMessage) => {
@@ -123,6 +231,17 @@ export function setupHostConnectorChild(input: {
     }
     if (message.type === "status") {
       settle(message.status)
+      // `idle` is the pre-enrollment state the bootstrap reply already carried;
+      // only a decided one ends the wait.
+      if (message.status.status !== "idle" && enrolling?.target === target) {
+        const waiting = enrolling
+        enrolling = undefined
+        waiting.waiting.resolve(message.status)
+      }
+      return
+    }
+    if (message.type === "serving") {
+      input.onServing?.(message.tunnel)
       return
     }
     if (message.type === "account-operation") {
@@ -137,6 +256,7 @@ export function setupHostConnectorChild(input: {
       return
     }
     if (message.type === "identity-created") {
+      identityHostId = message.identity.hostId
       try {
         const stored = await input.storeIdentity(message.identity)
         if (!stored.ok) throw new Error(stored.detail)
@@ -155,6 +275,7 @@ export function setupHostConnectorChild(input: {
     const restored = await Promise.race([input.loadIdentity(), cancelled])
     if (startedIn !== era) return status
     if (!restored.ok) return settle({ status: "unavailable", reason: restored.reason, detail: restored.detail })
+    identityHostId = restored.identity?.hostId
 
     const target = input.spawn()
     child = target
@@ -181,23 +302,72 @@ export function setupHostConnectorChild(input: {
     const startupTimeoutMs = input.startupTimeoutMs ?? 10_000
     await bounded(Promise.race([ready.promise, cancelled]), startupTimeoutMs, "Host Connector child ready")
     if (startedIn !== era || child !== target) return status
-    const requestId = crypto.randomUUID()
-    const started = await bounded(
-      Promise.race([
-        request(target, {
-          type: "bootstrap",
-          requestId,
-          heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
-          ...(restored.identity ? { identity: restored.identity } : {}),
-          ...(input.displayName ? { displayName: input.displayName } : {}),
-        }),
-        cancelled,
-      ]),
-      startupTimeoutMs,
-      "Host Connector child bootstrap",
-    )
-    if (startedIn !== era) return status
-    return settle(started)
+
+    // Armed BEFORE the bootstrap is sent: a child that enrolls quickly can push
+    // its status before this side resumes, and a wait registered afterwards
+    // would miss the only announcement it is waiting for.
+    const enrolled = deferred<HostConnectorChildState>()
+    // The wait can be rejected by an exit or a terminate before `launch` has
+    // reached the race below; keeping a handler attached from the start is what
+    // stops that from surfacing as an unhandled rejection in main.
+    enrolled.promise.catch(() => {})
+    enrolling = { target, waiting: enrolled }
+
+    // Resolved before the bootstrap because the FIRST beat already carries it,
+    // and a declaration that arrives afterwards would leave that beat — and
+    // every client that connected on it — undeclared. A daemon that cannot
+    // answer leaves it absent rather than delaying the launch.
+    const sessionAuthority = await Promise.race([
+      input.sessionAuthority?.().catch((error) => {
+        input.onError?.("session-authority", error)
+        return undefined
+      }) ?? Promise.resolve(undefined),
+      cancelled,
+    ])
+    if (startedIn !== era || child !== target) return status
+
+    try {
+      const requestId = crypto.randomUUID()
+      const booted = await bounded(
+        Promise.race([
+          request(target, {
+            type: "bootstrap",
+            requestId,
+            heartbeatIntervalMs: input.heartbeatIntervalMs ?? 20_000,
+            ...(restored.identity ? { identity: restored.identity } : {}),
+            ...(input.displayName ? { displayName: input.displayName } : {}),
+            ...(sessionAuthority ? { sessionAuthority } : {}),
+            ...(sharedWorkspaces.length ? { sharedWorkspaces } : {}),
+          }),
+          cancelled,
+        ]),
+        startupTimeoutMs,
+        "Host Connector child bootstrap",
+      )
+      if (startedIn !== era) return status
+      // The child is alive and holds its machine identity. Publish that, so a
+      // panel opened during a slow enrollment shows a starting machine rather
+      // than the state from before the click.
+      settle(booted)
+
+      // Then the part that talks to the control plane. Its outcome arrives on
+      // the push channel, which is also how every later transition — an
+      // expiry, a rejected beat, a revocation — reaches this process.
+      const decided = await bounded(
+        Promise.race([enrolled.promise, cancelled]),
+        // 60s: three sequential hosted calls (createRequest/enroll/heartbeat)
+        // at 20s each — see the option doc above.
+        input.enrollmentTimeoutMs ?? 60_000,
+        "Host Connector child enrollment",
+      )
+      if (startedIn !== era) return status
+      // Already announced by the status handler that resolved this wait; the
+      // child's push is the authority, so this reads it back rather than
+      // settling the same transition twice.
+      return decided
+    } finally {
+      if (enrolling?.target === target) enrolling = undefined
+    }
   }
 
   const terminate = (reason: "closed" | "revoked" | "error", detail: string) => {
@@ -217,45 +387,169 @@ export function setupHostConnectorChild(input: {
     settle({ status: "stopped", reason, detail })
   }
 
+  const startConnector = async (): Promise<HostConnectorStatus> => {
+    // Whoever reaches this has decided the machine should be on the air, so
+    // there is no longer an involuntary stop for a later sign-in to undo.
+    // That covers the user pressing Enable while a lapse-suspension is armed.
+    authLapseSuspended = false
+    if (starting) return starting
+    if (child && status.status === "enrolled") return status
+    if (child) {
+      const stale = child
+      intentionalExit = true
+      try {
+        stale.postMessage({ type: "stop", requestId: crypto.randomUUID() })
+      } finally {
+        stale.kill()
+      }
+      if (child === stale) child = undefined
+      rejectPending(new Error("restarting stopped Host Connector child"))
+    }
+    // `terminate` is the only thing that moves the era, so a change across this
+    // launch means a pause or revoke landed mid-flight — and the error below is
+    // then that cancellation, which must not overwrite the deliberate stop.
+    const startedIn = era
+    const cancellation = deferred<never>()
+    cancelStarting = cancellation.reject
+    starting = launch(cancellation.promise)
+      .catch((error) => {
+        if (child) {
+          intentionalExit = true
+          child.kill()
+          child = undefined
+        }
+        input.onError?.("child-start", error)
+        if (era !== startedIn && status.status === "stopped" && (status.reason === "revoked" || status.reason === "closed")) {
+          return status
+        }
+        // Nothing interrupted this launch; it failed on its own. Reporting the
+        // stopped state it started from would leave the panel and `main.log`
+        // blaming whatever stopped the machine last — after an auth lapse, an
+        // account that has already come back — for a failure that is entirely
+        // this attempt's.
+        return settle({ status: "stopped", reason: "error", detail: String(error) })
+      })
+      .finally(() => {
+        starting = undefined
+        if (cancelStarting === cancellation.reject) cancelStarting = undefined
+      })
+    return starting
+  }
+
   return {
     status: () => status,
-    async start() {
-      if (starting) return starting
-      if (child && status.status === "enrolled") return status
-      if (child) {
-        const stale = child
-        intentionalExit = true
-        try {
-          stale.postMessage({ type: "stop", requestId: crypto.randomUUID() })
-        } finally {
-          stale.kill()
-        }
-        if (child === stale) child = undefined
-        rejectPending(new Error("restarting stopped Host Connector child"))
+    start: startConnector,
+    async shareWorkspace(share: { workspaceId: string; displayName?: string }) {
+      const target = child
+      if (!target || status.status !== "enrolled" || !identityHostId) {
+        throw new Error("Remote access is not running on this machine — enable it in Settings first")
       }
-      const cancellation = deferred<never>()
-      cancelStarting = cancellation.reject
-      starting = launch(cancellation.promise)
-        .catch((error) => {
-          if (child) {
-            intentionalExit = true
-            child.kill()
-            child = undefined
-          }
-          input.onError?.("child-start", error)
-          if (status.status === "stopped" && (status.reason === "revoked" || status.reason === "closed")) return status
-          return settle({ status: "stopped", reason: "error", detail: String(error) })
-        })
-        .finally(() => {
-          starting = undefined
-          if (cancelStarting === cancellation.reject) cancelStarting = undefined
-        })
-      return starting
+      // Owner intent first: the account credential (main's) assigns the
+      // workspace to this host at the control plane. Machine consent second:
+      // the child adds the id to its served set and forces one signed beat,
+      // and only a beat that comes back with the assignment counts as shared.
+      const description = await input.describeWorkspace?.(share.workspaceId)
+      const displayName = share.displayName ?? description?.displayName
+      await input.runAccountOperation("workspace.assignHost", {
+        id: share.workspaceId,
+        hostId: identityHostId,
+        ...(displayName ? { displayName } : {}),
+        ...(description
+          ? {
+              remoteDirectory: description.directory,
+              ...(description.repoName ? { repoName: description.repoName } : {}),
+              ...(description.gitBranch ? { gitBranch: description.gitBranch } : {}),
+              ...(description.repoUrl ? { repoUrl: description.repoUrl } : {}),
+            }
+          : {}),
+      })
+      const settled = await bounded(
+        request(target, {
+          type: "share-workspace",
+          requestId: crypto.randomUUID(),
+          workspaceId: share.workspaceId,
+          ...(share.displayName ? { displayName: share.displayName } : {}),
+        }),
+        input.startupTimeoutMs ?? 10_000,
+        "Host Connector workspace share",
+      )
+      sharedWorkspaces = [
+        ...sharedWorkspaces.filter((existing) => existing.workspaceId !== share.workspaceId),
+        { workspaceId: share.workspaceId, ...(share.displayName ? { displayName: share.displayName } : {}) },
+      ]
+      try {
+        input.storeSharedWorkspaces?.(sharedWorkspaces)
+      } catch (error) {
+        input.onError?.("share-store", error)
+      }
+      return settle(settled)
     },
+
+    async unshareWorkspace(workspaceId: string) {
+      const target = child
+      if (!target || status.status !== "enrolled") {
+        throw new Error("Remote access is not running on this machine — enable it in Settings first")
+      }
+      await input.runAccountOperation("workspace.unassignHost", { id: workspaceId })
+      const settled = await bounded(
+        request(target, { type: "unshare-workspace", requestId: crypto.randomUUID(), workspaceId }),
+        input.startupTimeoutMs ?? 10_000,
+        "Host Connector workspace unshare",
+      )
+      sharedWorkspaces = sharedWorkspaces.filter((existing) => existing.workspaceId !== workspaceId)
+      try {
+        input.storeSharedWorkspaces?.(sharedWorkspaces)
+      } catch (error) {
+        input.onError?.("share-store", error)
+      }
+      return settle(settled)
+    },
+
     stop() {
+      // The user's pause is a decision, and a decision outranks whatever this
+      // process was holding open to restore. Clearing here is what stops "I
+      // turned remote access off" from being quietly undone by the next
+      // sign-in.
+      authLapseSuspended = false
       terminate("closed", "connector closed")
     },
+
+    suspendForAuthLapse() {
+      // Nothing to take away: never started, already stopped, or already
+      // suspended. Arming on those would let an auth flap while the connector
+      // is off turn the NEXT sign-in into an enable nobody asked for.
+      if (!child && !starting) return false
+      authLapseSuspended = true
+      terminate("closed", HOST_CONNECTOR_AUTH_LAPSE_DETAIL)
+      return true
+    },
+
+    async resumeAfterAuthLapse() {
+      if (!authLapseSuspended) return undefined
+      // Consumed before the attempt, not after it: one restart per suspension
+      // is the entire budget. A restart that fails leaves the machine stopped
+      // with its reason on the panel, rather than re-arming a retry that would
+      // run again on every account transition for the rest of the session.
+      authLapseSuspended = false
+      // `start()` re-reads the share list this suspension left untouched, so
+      // the machine comes back publishing what it was publishing. There is no
+      // second store for that, and there must not be one.
+      return await startConnector()
+    },
+
     revoke() {
+      // Same reason as `stop()`, and more so: the user destroyed this
+      // machine's identity. Nothing about a later sign-in may bring it back.
+      authLapseSuspended = false
+      // A destroyed identity can never heartbeat these links again; keeping
+      // them stored would only re-register them under a DIFFERENT machine on
+      // the next enable, which is not what "revoke" promised.
+      sharedWorkspaces = []
+      try {
+        input.storeSharedWorkspaces?.(sharedWorkspaces)
+      } catch (error) {
+        input.onError?.("share-store", error)
+      }
       try {
         input.clearIdentity()
         terminate("revoked", "remote access revoked on this machine")

@@ -1,4 +1,5 @@
 import { describe, expect, test, vi } from "vitest"
+import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
 import { RemoteAccessRoutes } from "./remote-access"
 
 const auth = { user: { subject: "user_1" } } as never
@@ -25,17 +26,42 @@ describe("remote access routes", () => {
     await expect(status.json()).resolves.toEqual({
       device_login_configured: false,
       relay_configured: false,
-      hosted_signed_in: false,
+      hosted_signed_in: true,
       enrolled: false,
       enabled: false,
       second_device_open: false,
     })
+    authenticate.mockClear()
 
     const response = await app.request("http://localhost/enable", { method: "POST", body: "{}" })
     expect(response.status).toBe(501)
     await expect(response.json()).resolves.toMatchObject({ error: { code: "remote_access_unavailable" } })
     expect(authenticate).not.toHaveBeenCalled()
     expect(enable).not.toHaveBeenCalled()
+  })
+
+  test("status refuses an anonymous remote caller the same way /devices does", async () => {
+    const authenticate = vi.fn(async () => {
+      throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+    })
+    const status = vi.fn()
+    const app = RemoteAccessRoutes({
+      deviceLoginConfigured: true,
+      relayConfigured: true,
+      authenticate,
+      service: {
+        status,
+        enable: vi.fn(),
+        devices: vi.fn(),
+        revoke: vi.fn(),
+        markSecondDeviceOpen: vi.fn(),
+      },
+    })
+
+    const response = await app.request("http://localhost/")
+    expect(response.status).toBe(401)
+    await expect(response.json()).resolves.toMatchObject({ error: { code: "missing_bearer_token" } })
+    expect(status).not.toHaveBeenCalled()
   })
 
   test("enables, lists, and revokes enrolled machines through signed auth", async () => {

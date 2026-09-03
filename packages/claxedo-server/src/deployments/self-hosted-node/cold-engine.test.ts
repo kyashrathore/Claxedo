@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { createSelfHostedApp } from "./app"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import {
   __setOpenCodeEmbedLoaderForTests,
   configureOpenCodeEngine,
@@ -59,7 +60,7 @@ function localApp() {
         projectionStore: centralStore.projectionStore,
         durableSessionLog: centralStore.durableSessionLog,
       },
-      { localExecution: { enabled: true }, telemetry: { capture: () => {} } },
+      { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
   ).app
 }

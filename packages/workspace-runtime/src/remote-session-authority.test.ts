@@ -14,6 +14,28 @@ const input = {
 }
 
 describe("remote workspace session authority", () => {
+  test("uses the current host-role oracle for setup reads and administration", async () => {
+    const bodies: unknown[] = []
+    const policy = remoteWorkspaceSessionAccessPolicy({
+      url: "https://control.test/api/runtime-authority/session-authorize",
+      fetch: async (_url, init) => {
+        bodies.push(JSON.parse(String(init?.body)))
+        return Response.json({ allowed: true })
+      },
+    })
+    expect((await policy.authorizeHost!({
+      ...input,
+      operation: "agent_setup_read",
+      minimumRole: "viewer",
+    })).allowed).toBe(true)
+    expect((await policy.authorizeHost!({
+      ...input,
+      operation: "agent_setup_write",
+      minimumRole: "admin",
+    })).allowed).toBe(true)
+    expect(bodies).toEqual([{ action: "host_read" }, { action: "host_admin" }])
+  })
+
   test("forwards only the opaque proof, session id, and read/write action", async () => {
     const requests: Array<{ url: string; init?: RequestInit }> = []
     const policy = remoteWorkspaceSessionAccessPolicy({
@@ -28,7 +50,11 @@ describe("remote workspace session authority", () => {
     expect((await policy.authorize({ ...input, operation: "prompt" })).allowed).toBe(true)
     expect((await policy.authorize({ ...input, operation: "session_v2_proxy", method: "POST" })).allowed).toBe(true)
     expect(policy.registerSession).toBeDefined()
-    expect((await policy.registerSession!({ ...input, operation: "session_create" })).allowed).toBe(true)
+    expect((await policy.registerSession!({
+      ...input,
+      operation: "session_create",
+      registrationOperationId: "op_register_1",
+    })).allowed).toBe(true)
     expect(requests.map((request) => ({
       authorization: new Headers(request.init?.headers).get("authorization"),
       body: JSON.parse(String(request.init?.body)),
@@ -36,7 +62,7 @@ describe("remote workspace session authority", () => {
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "read" } },
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write" } },
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write" } },
-      { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "register" } },
+      { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "register", operationId: "op_register_1" } },
     ])
   })
 

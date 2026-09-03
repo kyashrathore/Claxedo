@@ -1,11 +1,7 @@
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
-import { normalizeProjectList } from "@/platform/query/control-plane"
-import { accountRun } from "@/platform/account/hosted-control-call"
-import { decodeHostedResult } from "@/platform/account/hosted-operations"
 
 export type ShellBootstrap = {
   path: GlobalBootstrapState["path"]
-  project: GlobalBootstrapState["project"]
 }
 
 function isRecord(input: unknown): input is Record<string, unknown> {
@@ -19,28 +15,14 @@ export function shellBootstrapUrl(baseUrl: string) {
 }
 
 function parseShellBootstrap(body: unknown): ShellBootstrap | undefined {
-  if (!isRecord(body) || body.healthy !== true || !isRecord(body.path) || !Array.isArray(body.project)) return
-  return {
-    path: body.path as GlobalBootstrapState["path"],
-    project: body.project as GlobalBootstrapState["project"],
-  }
+  if (!isRecord(body) || body.healthy !== true || !isRecord(body.path)) return
+  return { path: body.path as GlobalBootstrapState["path"] }
 }
 
 export async function fetchShellBootstrap(input: {
   baseUrl: string
   request: typeof fetch
 }): Promise<ShellBootstrap | undefined> {
-  const run = accountRun()
-  // Desktop signed mode: shell bootstrap is account.get with scope=shell.
-  if (run) {
-    try {
-      return parseShellBootstrap(
-        decodeHostedResult("account.get", await run("account.get", { scope: "shell" })),
-      )
-    } catch {
-      return
-    }
-  }
   const response = await input.request(shellBootstrapUrl(input.baseUrl), {
     headers: { Accept: "application/json" },
   }).catch(() => undefined)
@@ -49,6 +31,12 @@ export async function fetchShellBootstrap(input: {
   return parseShellBootstrap(body)
 }
 
+/**
+ * The daemon's one-call shell warmup: the paths the first paint needs, before
+ * the full bootstrap runs. It seeds no catalog — the workspace catalog is its
+ * own query (`features/workspaces/data/workspace-catalog.ts`) and reads the
+ * daemon's `/project` plus the control plane itself.
+ */
 export async function bootstrapInitialShell(input: {
   baseUrl: string
   request: typeof fetch
@@ -57,9 +45,5 @@ export async function bootstrapInitialShell(input: {
 }) {
   const shell = await fetchShellBootstrap(input)
   if (!shell) return input.fallback()
-  input.setGlobalState({
-    path: shell.path,
-    project: normalizeProjectList(shell.project),
-    ready: true,
-  })
+  input.setGlobalState({ path: shell.path, ready: true })
 }

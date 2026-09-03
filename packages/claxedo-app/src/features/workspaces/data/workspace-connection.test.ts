@@ -13,6 +13,7 @@ import {
   workspaceConnection,
   workspaceOffline,
   workspacePlacement,
+  workspaceSessionAuthority,
 } from "./workspace-connection"
 import {
   openWorkspaceConnection,
@@ -73,6 +74,38 @@ describe("workspace connection authority", () => {
       expect(connectionPlacement("ws_uh")).toEqual({ state: "role-pending", workspaceId: "ws_uh" })
       expect(workspacePlacement("ws_uh")).toBeUndefined()
       expect(isWorkspaceConnecting("ws_uh")).toBe(true)
+      dispose()
+    })
+  })
+
+  test("the minted connection is what says which stream scopes the runtime serves", () => {
+    createRoot((dispose) => {
+      acquireWorkspaceConnection({ workspaceId: "ws_scope", kind: "user-hosted", request: runtimeReadyFetch })
+      // Nothing may guess before the mint answers.
+      expect(workspaceSessionAuthority("ws_scope")).toBeUndefined()
+
+      internals.applyWorkspaceConnectionInfo(relayInfo({
+        workspaceId: "ws_scope",
+        access: "user-hosted",
+        backing: "local-worktree",
+        sessionAuthority: "local",
+      }))
+      expect(workspaceSessionAuthority("ws_scope")).toBe("local")
+
+      internals.applyWorkspaceConnectionInfo(relayInfo({
+        workspaceId: "ws_scope",
+        sessionAuthority: "managed-private",
+      }))
+      expect(workspaceSessionAuthority("ws_scope")).toBe("managed-private")
+      dispose()
+    })
+  })
+
+  test("a local workspace's runtime is this process's own, so its scope needs no mint", () => {
+    createRoot((dispose) => {
+      const handle = acquireWorkspaceConnection({ workspaceId: "ws_local_scope", kind: "local" })
+      expect(workspaceSessionAuthority("ws_local_scope")).toBe("local")
+      handle.release()
       dispose()
     })
   })

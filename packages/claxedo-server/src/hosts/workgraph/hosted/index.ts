@@ -280,6 +280,13 @@ export function createHostedWorkGraph(
     executor,
   })
   const ownerContext = async (auth: SignedControlPlaneAuth, requestId: string): Promise<WorkGraphContext> => {
+    if (!auth.token) {
+      throw new ControlPlaneAuthError(
+        503,
+        "auth_verifier_unavailable",
+        "The selected WorkGraph adapter requires Authorization transport",
+      )
+    }
     const cacheKey = await hostedIdentityCacheKey(auth.token, auth.user.orgId)
     const cached = identityCache.get(cacheKey)
     const resolvedCached = cached instanceof Promise ? await cached : cached

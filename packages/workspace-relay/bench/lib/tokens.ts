@@ -16,7 +16,7 @@ export type BenchIdentity = {
 }
 
 export type MintRatInput = {
-  subject: string
+  actorId: string
   orgId: string
   workspaceId: string
   hostId: string
@@ -25,7 +25,7 @@ export type MintRatInput = {
 }
 
 const DEFAULTS: MintRatInput = {
-  subject: "bench_user",
+  actorId: "bench_user",
   orgId: "bench_org",
   workspaceId: "ws_bench",
   hostId: "host_bench",
@@ -48,7 +48,9 @@ function identityFromKeys(
       const merged = { ...base, ...input }
       return mintRuntimeAccessToken(
         {
-          subject: merged.subject,
+          principalKind: "user",
+          actorId: merged.actorId,
+          actorKind: "human",
           orgId: merged.orgId,
           workspaceId: merged.workspaceId,
           hostId: merged.hostId,

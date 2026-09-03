@@ -17,6 +17,7 @@ import {
 } from "./store-policy"
 import { harnessConfigUrl, sessionResourceUrl } from "./harness-config-routes"
 import type { WorkspaceBoot } from "./harness-config-runtime"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type HarnessSwitcherCache = {
   getPending(key: string): Promise<void> | undefined
@@ -30,8 +31,6 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   seed(scope: string): void
   dropPrepared(scope: string): void
   applyPatch(scope: string, patch: HarnessStorePatch): void
-  saveHarness(scope: string, type: HarnessType): void
-  saveModel(scope: string, model: string): void
   beginDraftHarnessChoice?(scope: string, type: HarnessType, params?: ScopeInput): void
   rememberDraftHarness(scope: string, type: HarnessType, params?: ScopeInput): void
   refresh(directory?: string, harnessType?: string, opts?: { draft?: boolean }): Promise<void>
@@ -50,7 +49,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   let nextRevision = 0
 
   const setHarness = (scope: string, type: HarnessType, params?: ScopeInput, binary?: string) => {
-    const key = harnessChangeKey(scope, type, binary)
+    const key = harnessChangeKey({ serverUrl: input.base, ...params }, type, binary)
     const pending = input.cache.getPending(key)
     if (pending) return pending
 
@@ -77,7 +76,6 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
     if (!params?.sessionId || params.sessionId === "new") input.beginDraftHarnessChoice?.(scope, type, params)
     input.applyPatch(scope, harnessSwitchStartPatch({ type }))
     input.cache.clearOptionsTries(scope)
-    input.saveHarness(scope, type)
 
     if (!params?.sessionId || params.sessionId === "new") {
       const accepted = await switchDraftHarness(scope, type, params, binary, useLocalHarnessConfig, active)
@@ -111,7 +109,7 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   ) => {
     const workspace = await input.runtime.workspace(params).catch(() => undefined)
     if (!active()) return false
-    const status = useLocalHarnessConfig && workspace?.kind !== "cloud" && workspace?.kind !== "user-hosted"
+    const status = useLocalHarnessConfig && !isRelayBackedWorkspaceKind(workspace?.kind)
       ? await postHarnessConfig(scope, type, params, binary, undefined, active)
       : true
     if (!status || !active()) return false

@@ -24,6 +24,16 @@ const authMode = readFileSync(path.join(appRoot, "e2e/auth-mode.ts"), "utf8")
 const buildApp = readFileSync(path.join(appRoot, "scripts/build-e2e-app.ts"), "utf8")
 const serveApp = readFileSync(path.join(appRoot, "scripts/serve-e2e-app.ts"), "utf8")
 const matrixRunner = readFileSync(path.join(appRoot, "scripts/run-e2e-auth-matrix.ts"), "utf8")
+/** Every process that starts this app's vite config for the e2e suite. */
+const viteLaunchers = Object.fromEntries(
+  [
+    "scripts/build-e2e-app.ts",
+    "scripts/serve-e2e-app.ts",
+    "e2e/playwright/live-user-hosted-relay.spec.ts",
+    "e2e/playwright/real-cloud-relay.spec.ts",
+    "e2e/helpers/desktop-signed-server.ts",
+  ].map((file) => [file, readFileSync(path.join(appRoot, file), "utf8")] as const),
+)
 const packageJson = JSON.parse(readFileSync(path.join(appRoot, "package.json"), "utf8")) as {
   scripts: Record<string, string>
 }
@@ -37,6 +47,29 @@ describe("e2e auth mode matrix", () => {
     expect(authMode).toContain('VITE_CLERK_PUBLISHABLE_KEY: ""')
     expect(authMode).toContain('VITE_AUTH_ENABLED: "true"')
     expect(config).toContain("resolveE2EAuthMode()")
+  })
+
+  /**
+   * `vite.cloud.config.ts` refuses to resolve a browser auth adapter
+   * implicitly, so a launcher that restates the build environment instead of
+   * reading `e2eAppViteEnvironment` does not serve a subtly different app — it
+   * exits before it can listen, and every spec behind it then fails on the
+   * launcher's own health gate rather than on anything it meant to test. The
+   * failure surfaces far from its cause, so the single owner is guarded here
+   * rather than left to each launcher to remember.
+   */
+  test("every e2e vite launcher reads the one build-environment owner", () => {
+    expect(authMode).toContain("export function e2eAppViteEnvironment(")
+    expect(authMode).toContain('VITE_CLAXEDO_AUTH_ADAPTER: "clerk"')
+    expect(authMode).toContain('VITE_CLAXEDO_E2E: "1"')
+    for (const [name, source] of Object.entries(viteLaunchers)) {
+      // The spread into the child's env, not a mention in prose: a launcher
+      // that documents the owner but stops passing it still fails to start.
+      expect(source, `${name} must spread e2eAppViteEnvironment into its child env`).toMatch(
+        /\.\.\.e2eAppViteEnvironment\(/,
+      )
+      expect(source, `${name} must not restate the adapter selection`).not.toContain("VITE_CLAXEDO_AUTH_ADAPTER")
+    }
   })
 
   test("default, core, and mobile entrypoints use the failure-aggregating matrix runner", () => {
@@ -89,7 +122,7 @@ describe("e2e auth mode matrix", () => {
     expect(workgraphStressWorkflow).toContain("workflow_dispatch:")
     expect(workgraphStressWorkflow).not.toContain("\n  schedule:")
 
-    expect(buildApp).toContain('VITE_CLAXEDO_E2E: "1"')
+    expect(buildApp).toContain("e2eAppViteEnvironment(authMode)")
     expect(buildApp).toContain("claxedo-e2e-build.json")
     expect(serveApp).toContain('if (mode === "build-preview")')
     expect(serveApp).toContain("E2E artifact auth mode")

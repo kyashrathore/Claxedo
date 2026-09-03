@@ -11,12 +11,13 @@
 
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import "./styles/app-shell.css"
-import { createEffect, createMemo, lazy, onCleanup, onMount, type ParentProps } from "solid-js"
+import { createEffect, createMemo, lazy, type ParentProps } from "solid-js"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { AppShellLayout } from "./app-shell-layout"
 
 import { isDemoMode } from "@/platform/api/api"
 import { PromptHarnessControllersProvider } from "../features/session/composer/ui/harness-controller"
+import { ModelStoreRegistryProvider } from "../features/session/providers/models"
 import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
 import { ClaxedoRouteStateBridge } from "./workbench/state/route-bridge"
 import { routeSuppressesEmptyDraftSession } from "./workbench/state/provider"
@@ -29,7 +30,6 @@ import {
   useFocusedSessionRenderMetrics,
 } from "./integrations/process-diagnostics-context"
 import { reviewWorkspaceActiveTab } from "@/features/review/ui/review-workspace-active-tab"
-import { installUsageOutboxWakeups } from "@/features/usage/data/usage-api"
 import { resolveProductUiFlags } from "@/app/composition/product-ui-flags"
 import { useGlobalSessionAccessRevocations } from "@/app/integrations/sync/global-sync-boundary"
 
@@ -46,7 +46,6 @@ function ClaxedoAppShellContent(props: ParentProps) {
   const params = useParams()
   const location = useLocation()
   const navigate = useNavigate()
-  onMount(() => onCleanup(installUsageOutboxWakeups()))
   const shell = useAppShellState({
     params,
     pathname: () => location.pathname,
@@ -192,7 +191,15 @@ export function ClaxedoAppShellInner(props: ParentProps) {
       {isDemoMode() && <DemoTourController />}
       <ClaxedoRouteStateBridge>
         <PromptHarnessControllersProvider>
-          <ClaxedoAppShellContent>{props.children}</ClaxedoAppShellContent>
+          {/* One persisted model document per (server, workspace), for the
+              shell's lifetime. A pane's composer and the Settings Models page
+              are routinely open on the same workspace at once and edit that one
+              document, so they must hold the same record rather than a copy
+              each. Mounted here, above every pane and above the dialog host's
+              caller, so both find it. */}
+          <ModelStoreRegistryProvider>
+            <ClaxedoAppShellContent>{props.children}</ClaxedoAppShellContent>
+          </ModelStoreRegistryProvider>
         </PromptHarnessControllersProvider>
       </ClaxedoRouteStateBridge>
     </>

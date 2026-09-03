@@ -165,7 +165,6 @@ function connection(raw: unknown): DecodeResult<Record<string, unknown>> {
 }
 
 export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec> = {
-  "account.get": { safe: true, decode: object },
   "account.mode": { safe: true, decode: object },
   "account.compatibility": { safe: true, decode: object },
   // Mints a CLI session token. A replayed exchange must not mint twice — and
@@ -224,6 +223,13 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // is not retried at all — the connector stops, because re-enrolling would be
   // it overruling a revocation.
   "host.enrollmentHeartbeat": { safe: true, decode: object },
+  // Workspace shares under machine-wide enrollment: the OWNER assigns a
+  // workspace to an enrolled host (pure data — the machine's consent is the
+  // Host Connector's signed heartbeat set). Main-only like the enrollment
+  // trio; the renderer's route to sharing is the data-only
+  // hostConnector.share IPC.
+  "workspace.assignHost": { safe: false, decode: object },
+  "workspace.unassignHost": { safe: false, decode: object },
   // Control-plane session rows for a workspace (`{ sessions: [...] }`).
   "session.list": { safe: true, decode: withArrays("sessions") },
   // Paginated rail navigation list (`GET /api/control/session-list`).
@@ -287,7 +293,6 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "session.gateway": { safe: true, decode: object },
   "billing.checkout": { safe: false, decode: object },
   "billing.portal": { safe: true, decode: object },
-  "hostLink.register": { safe: false, decode: object },
   "usage.get": { safe: true, decode: object },
   "usage.sync": { safe: true, decode: object },
 }

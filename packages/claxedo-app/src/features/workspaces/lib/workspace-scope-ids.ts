@@ -4,12 +4,15 @@ import { realDirectory } from "@/features/workspaces/app-ports"
 import { sessionPaneWorkspaceKey, type SessionWorkspaceRuntimeInput } from "@/platform/runtime/session-workspace"
 
 export function openWorkspaceScopeIds(input: {
+  /** Canonical route/workspace identity; stable while sessions change. */
+  canonicalRouteId?: string
   activeDirectory?: string
   visiblePanes: readonly Pane[]
   meta: (id: string) => ContentMeta | undefined
   projects?: SessionWorkspaceRuntimeInput["projects"]
 }) {
   return [
+    input.canonicalRouteId,
     input.activeDirectory,
     ...input.visiblePanes.flatMap((pane) => {
       if (!pane.contentId) return []
@@ -25,7 +28,7 @@ export function openWorkspaceScopeIds(input: {
         }),
       ]
     }),
-  ].filter((workspaceId, index, all): workspaceId is string =>
-    !!workspaceId && all.indexOf(workspaceId) === index
+  ].filter((scopeId, index, all): scopeId is string =>
+    !!scopeId && all.indexOf(scopeId) === index
   )
 }

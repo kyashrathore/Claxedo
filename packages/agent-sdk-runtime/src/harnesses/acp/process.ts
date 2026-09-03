@@ -25,6 +25,7 @@ import {
   init,
   merge,
   permissionModes,
+  resolvedModel,
   resume,
   setPermissionMode,
   sync,
@@ -33,7 +34,7 @@ import {
   type ACPState,
   type ACPGoalExtension,
 } from "./session"
-import type { AgentPermissionModeState } from "../../adapter-contract"
+import type { AgentPermissionModeState, ResolvedHarnessModel } from "../../adapter-contract"
 import type { GoalCapabilities } from "../../capabilities"
 import { isRuntimeGoalStatus, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { IDLE_TIMEOUT_MS, promptTimeoutMs, watch } from "./helpers"
@@ -89,6 +90,8 @@ export class ACPProcess {
   readonly pendingPermissions = new Map<string, PendingPermission>()
   // agentSessionId → update listener
   readonly sessionListeners = new Map<string, (update: SessionUpdate) => void>()
+  // agentSessionId → lifecycle observer retained between prompts
+  readonly sessionObservers = new Map<string, (update: SessionUpdate) => void>()
   readonly goalListeners = new Map<string, (goal: RuntimeGoalSnapshot | null) => void>()
   readonly goalUpdateListeners = new Map<string, (update: SessionUpdate) => void>()
   private states = new Map<string, ACPState>()
@@ -96,6 +99,8 @@ export class ACPProcess {
   readonly permissionPushers = new Map<string, PermissionPusher>()
   /** Cached config options from newSession() response or config_option_update notifications */
   cachedConfigOptions: SessionConfigOption[] | null = null
+  /** The model this agent last reported as current, cached alongside the options. */
+  cachedResolvedModel: ResolvedHarnessModel | null = null
   // Serial queue: ACP processes one prompt at a time per process
   private promptQueue: Promise<void> = Promise.resolve()
   private promptQueueDepth = 0
@@ -203,19 +208,24 @@ export class ACPProcess {
           this.goalListeners.get(params.sessionId)?.(this.normalizeGoal(updateMeta.goal, params.sessionId))
         }
         const listener = this.sessionListeners.get(params.sessionId)
-        if (!listener) {
-          const goalListener = this.goalUpdateListeners.get(params.sessionId)
-          if (goalListener) {
-            goalListener(params.update)
-            return
-          }
+        const observer = this.sessionObservers.get(params.sessionId)
+        const goalListener = this.goalUpdateListeners.get(params.sessionId)
+        if (!listener && !observer && !goalListener) {
           log.info("ACP sessionUpdate: no listener registered, dropping update", {
             sessionId: params.sessionId,
             kind,
           })
           return
         }
-        listener(params.update)
+        // The prompt listener owns every update while a turn is active. The
+        // observer and the Goal listener are continuations for updates that
+        // arrive outside a prompt — the observer for lifecycle notifications
+        // that land after the prompt response removed that listener, the Goal
+        // listener for iterations the agent drives on its own. Invoking more
+        // than one would project the same canonical frame twice.
+        if (listener) listener(params.update)
+        else if (observer) observer(params.update)
+        else goalListener?.(params.update)
       })
       .onRequest(methods.client.session.requestPermission, async ({ params }) => {
         const permId = randomUUID()
@@ -426,8 +436,22 @@ export class ACPProcess {
   private remember(sessionId: string, meta: Parameters<typeof merge>[1]) {
     const next = merge(this.state(sessionId), meta)
     this.states.set(sessionId, next)
-    if (next.cfg && next.cfg.length > 0) this.cachedConfigOptions = next.cfg
+    this.cacheDiscovery(next)
     return next
+  }
+
+  /**
+   * Promote one session's discovery answers to the process-wide cache the
+   * config-option probe reads.
+   *
+   * Empty answers are skipped in both fields: an agent that has a channel but
+   * has not populated it yet reports nothing, and letting that erase what an
+   * earlier session already learned would trade a real answer for silence.
+   */
+  private cacheDiscovery(state: ACPState) {
+    if (state.cfg && state.cfg.length > 0) this.cachedConfigOptions = state.cfg
+    const model = resolvedModel(state)
+    if (model) this.cachedResolvedModel = model
   }
 
   /**
@@ -445,7 +469,7 @@ export class ACPProcess {
     this.states.set(agentSessionId, state)
     // `set_config_option` returns the complete option list, which becomes the
     // shared discovery cache.
-    if (state.cfg && state.cfg.length > 0) this.cachedConfigOptions = state.cfg
+    this.cacheDiscovery(state)
     return result
   }
 
@@ -505,7 +529,7 @@ export class ACPProcess {
     try {
       const result = await resume(this.agent, state, agentSessionId, workingDirectory, this.mcp())
       this.states.set(agentSessionId, result.state)
-      if (result.state.cfg && result.state.cfg.length > 0) this.cachedConfigOptions = result.state.cfg
+      this.cacheDiscovery(result.state)
       log.info("ACP session restored", { agentSessionId, kind: result.kind, pid, ms: Date.now() - t0 })
     } catch (err) {
       log.error("ACP session restore failed", {
@@ -547,7 +571,7 @@ export class ACPProcess {
     try {
       const next = await sync(this.agent, state, agentSessionId, input, options)
       this.states.set(agentSessionId, next)
-      if (next.cfg && next.cfg.length > 0) this.cachedConfigOptions = next.cfg
+      this.cacheDiscovery(next)
       log.info("ACP session synced", {
         agentSessionId,
         agent: input.agent,
@@ -662,6 +686,14 @@ export class ACPProcess {
     }
   }
 
+  /** Observe lifecycle notifications which may arrive after a prompt response. */
+  observeSession(agentSessionId: string, observer: (update: SessionUpdate) => void) {
+    this.sessionObservers.set(agentSessionId, observer)
+    return () => {
+      if (this.sessionObservers.get(agentSessionId) === observer) this.sessionObservers.delete(agentSessionId)
+    }
+  }
+
   async cancel(agentSessionId: string): Promise<void> {
     log.info("ACP cancel", { agentSessionId })
     await this.agent.notify(methods.agent.session.cancel, { sessionId: agentSessionId })
@@ -697,6 +729,7 @@ export class ACPProcess {
   dispose() {
     if (this.disposed) return
     this.disposed = true
+    this.sessionObservers.clear()
     this.goalListeners.clear()
     this.goalUpdateListeners.clear()
     this.exitObservation({ reason: "disposed" })

@@ -51,7 +51,7 @@ import {
   preferAuthoritativeExistingSessionConfig,
   sameExistingSessionConfig,
 } from "./submit-session-config"
-import { createSubmitTransportAdapter, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
+import { createSubmitTransportAdapter, signedSubmitWorkspaceId, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
 import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-workspace"
 import { createSubmitCommentActions } from "./comment-routing"
 import { createSubmitOptimisticTimeline } from "./submit-ui-state"
@@ -94,7 +94,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   }
   const surfaceId = () => input.surfaceId?.()
   const optimisticTimeline = createSubmitOptimisticTimeline()
-
   const errorMessage = (err: unknown) => submitErrorMessage(err, language.t("common.requestFailed"))
 
   const commentActions = createSubmitCommentActions(prompt.context)
@@ -226,6 +225,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     })
     const rememberCloudStartup = cloudStartup.remember
     const { publish: publishCloudHandoff, clear: clearCloudStartup, reportError: reportCloudStartupError } = cloudStartup
+    const showSendFailed = (err: unknown) => {
+      showToast({ title: language.t("prompt.toast.promptSendFailed.title"), description: errorMessage(err) })
+    }
     const rejectModelRequired = () => {
       const description = language.t("prompt.toast.modelAgentRequired.description")
       reportCloudStartupError(description)
@@ -339,7 +341,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const harnessMode = existingSessionConfig ? existingSessionConfig.harnessType !== "opencode" : selectedHarnessMode(scope)
     const sessionHarnessType = existingSessionConfig?.harnessType ?? (harnessMode ? selectedHarnessType(scope) : "opencode")
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
-    const signedWorkspaceId = signedControlPlane ? input.workspaceId?.() : undefined
+    const signedWorkspaceId = signedControlPlane ? signedSubmitWorkspaceId(input.workspaceId?.(), sessionDirectory) : undefined
     const signedWorkspaceKind = knownWorkspaceKind(workspaceKind)
     const goalWorkspaceKind = signedWorkspaceKind === "local" ? undefined : signedWorkspaceKind
     if (!harnessMode && !signedControlPlane && usesLoopbackWorkspaceBridge(sessionDirectory)) {
@@ -354,7 +356,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           commandListQuery({
             baseUrl: sdk.url,
             directory: sessionDirectory,
+            // Reached only on the OpenCode slash-command channel (`!harnessMode`
+            // above), so the entry it shares with the composer is OpenCode's.
+            harnessType: "opencode",
             request: platform.fetch,
+            workspace: sdk.workspace(sessionDirectory),
             client: sdk.createClient({ directory: sessionDirectory }),
           }),
         )
@@ -437,6 +443,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       replaceSession,
       harnessMode,
       signedControlPlane,
+      workspaceId: signedWorkspaceId,
+      serverUrl: getClaxedoServerUrl(),
+      request: authFetch,
       sessionDirectory,
       client,
       sessionClient: () => sessionClient(sessionDirectory, sessionHarnessType),
@@ -458,7 +467,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           sessionId: targetInput.sessionID,
           sessionConfig: targetInput.sessionConfig,
         }),
-      onOpencodeCreateError: (err) => {
+      onCreateError: (err) => {
         const message = errorMessage(err)
         reportCloudStartupError(message)
         showToast({
@@ -675,12 +684,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         clearBoot,
         clearCloudStartup,
         reportCloudStartupError,
-        showFailed: (err) => {
-          showToast({
-            title: language.t("prompt.toast.promptSendFailed.title"),
-            description: errorMessage(err),
-          })
-        },
+        showFailed: showSendFailed,
       })
       return
     }
@@ -781,12 +785,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       clearBoot,
       clearCloudStartup,
       reportCloudStartupError,
-      showSendFailed: (err) => {
-        showToast({
-          title: language.t("prompt.toast.promptSendFailed.title"),
-          description: errorMessage(err),
-        })
-      },
+      showSendFailed,
       worktreePreparingMessage: language.t("workspace.error.stillPreparing"),
     })
   }

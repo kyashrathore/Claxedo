@@ -93,3 +93,29 @@ describe("railHeaderActionsBox", () => {
     expect(railHeaderActionsBox(0)).toEqual({ width: "0rem", height: "0rem" })
   })
 })
+
+describe("createHoverEngagement independent sources", () => {
+  test("losing focus never withdraws an affordance the pointer still rests on", () => {
+    createRoot((dispose) => {
+      const engagement = createHoverEngagement()
+      engagement.handlers.onPointerEnter()
+      engagement.handlers.onFocusIn()
+      engagement.handlers.onFocusOut(new FocusEvent("focusout", { relatedTarget: null }))
+      expect(engagement.engaged()).toBe(true)
+      engagement.handlers.onPointerLeave()
+      expect(engagement.engaged()).toBe(false)
+      dispose()
+    })
+  })
+
+  test("leaving with the pointer never withdraws an affordance the keyboard is inside", () => {
+    createRoot((dispose) => {
+      const engagement = createHoverEngagement()
+      engagement.handlers.onFocusIn()
+      engagement.handlers.onPointerEnter()
+      engagement.handlers.onPointerLeave()
+      expect(engagement.engaged()).toBe(true)
+      dispose()
+    })
+  })
+})

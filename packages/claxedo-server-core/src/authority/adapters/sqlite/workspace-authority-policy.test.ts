@@ -50,12 +50,26 @@ describe("SQLite workspace session authority", () => {
     await authority.grantWorkspaceShare(owner, {
       workspaceId: "ws_1",
       role: "editor",
-      grantedToTokenIdentifier: "creator",
+      target: { kind: "actor", actorId: "creator" },
     })
     await authority.grantWorkspaceShare(owner, {
       workspaceId: "ws_1",
       role: "viewer",
-      grantedToTokenIdentifier: "participant",
+      target: { kind: "actor", actorId: "participant" },
+    })
+    await authority.reserveSession(creator, {
+      operationId: "op_create_ses_1",
+      workspaceId: "ws_1",
+      sessionId: "ses_1",
+      kind: "create",
+    })
+    await authority.registerRuntimeSession!({
+      principalKind: "user",
+      actorId: "creator",
+      actorKind: "human",
+      operationId: "op_create_ses_1",
+      workspaceId: "ws_1",
+      sessionId: "ses_1",
     })
     await authority.upsertSessionVisibility(creator, {
       workspaceId: "ws_1",
@@ -63,13 +77,13 @@ describe("SQLite workspace session authority", () => {
     })
     await authority.revokeWorkspaceShare(owner, {
       workspaceId: "ws_1",
-      grantedToTokenIdentifier: "creator",
+      target: { kind: "actor", actorId: "creator" },
     })
 
-    await expect(authority.addSessionParticipant(creator, {
+    await expect(authority.grantSessionParticipant(creator, {
       workspaceId: "ws_1",
       sessionId: "ses_1",
-      participantTokenIdentifier: "participant",
+      participantActorId: "participant",
     })).rejects.toMatchObject({ status: 403 })
   })
 
@@ -87,12 +101,26 @@ describe("SQLite workspace session authority", () => {
     await authority.grantWorkspaceShare(owner, {
       workspaceId: "ws_1",
       role: "editor",
-      grantedToTokenIdentifier: "creator",
+      target: { kind: "actor", actorId: "creator" },
     })
     await authority.grantWorkspaceShare(owner, {
       workspaceId: "ws_1",
       role: "viewer",
-      grantedToTokenIdentifier: "participant",
+      target: { kind: "actor", actorId: "participant" },
+    })
+    await authority.reserveSession(creator, {
+      operationId: "op_create_ses_1",
+      workspaceId: "ws_1",
+      sessionId: "ses_1",
+      kind: "create",
+    })
+    await authority.registerRuntimeSession!({
+      principalKind: "user",
+      actorId: "creator",
+      actorKind: "human",
+      operationId: "op_create_ses_1",
+      workspaceId: "ws_1",
+      sessionId: "ses_1",
     })
     await authority.upsertSessionVisibility(creator, {
       workspaceId: "ws_1",
@@ -129,10 +157,10 @@ describe("SQLite workspace session authority", () => {
       workspaceId: "ws_1",
       sessionId: "ses_1",
     })).rejects.toMatchObject({ status: 403 })
-    await expect(authority.addSessionParticipant(owner, {
+    await expect(authority.grantSessionParticipant(owner, {
       workspaceId: "ws_1",
       sessionId: "ses_1",
-      participantTokenIdentifier: "participant",
+      participantActorId: "participant",
     })).rejects.toMatchObject({ status: 403 })
   })
 })

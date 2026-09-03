@@ -36,7 +36,7 @@ export type RelayHostAuthOptions = {
    * When set, supersedes `key` and routes verification through the
    * unified `TokenVerifier` interface from
    * `@claxedo/workspace-relay-protocol`. The verifier returns
-   * `{ subject, scopes, claims }`; we hydrate the existing
+   * `{ scopes, claims }`; we hydrate the existing
    * `RelayHostTokenClaims` shape from `claims` so workspace/host
    * mismatches keep their original error semantics.
    *
@@ -48,8 +48,28 @@ export type RelayHostAuthOptions = {
 }
 
 export type RelayHostAuthContext = {
-  relayHostAuth?: RelayHostTokenClaims
+  relayHostAuth?: RelayHostTokenClaims | EmbeddedRelayHostIdentity
   relayHostDirectAuth?: true
+}
+
+/**
+ * Verified actor identity stamped by the in-process local-server boundary.
+ * This is deliberately not a Relay Host Token: it has no signature lifecycle,
+ * issuer, audience, or token identifiers to synthesize.
+ */
+export type EmbeddedRelayHostIdentity = {
+  principal_kind: "user" | "service"
+  actor_id: string
+  actor_kind: "human" | "agent"
+  actor_public_id: string
+  actor_name: string
+  actor_avatar_url?: string
+  org_id: string
+  workspace_id: string
+  role: "viewer" | "editor" | "admin" | "owner"
+  host_id?: string
+  access?: "cloud" | "user-hosted"
+  backing?: "cloud-vm" | "local-worktree"
 }
 
 export type RelayHostAuthAuditEvent = {
@@ -102,7 +122,7 @@ function validateRelayHostVerifierClaims(
     throw new WorkspaceRelayAuthError("relay_token_claims_invalid", "Relay Host Token audience is invalid")
   }
 
-  const sub = stringClaim(payload, "sub")
+  const principal_kind = stringClaim(payload, "principal_kind")
   const org_id = stringClaim(payload, "org_id")
   const workspace_id = stringClaim(payload, "workspace_id")
   const host_id = stringClaim(payload, "host_id")
@@ -118,9 +138,14 @@ function validateRelayHostVerifierClaims(
   const exp = numberClaim(payload, "exp")
   const iat = numberClaim(payload, "iat")
   const jti = stringClaim(payload, "jti")
+  const parent_jti = stringClaim(payload, "parent_jti")
 
   if (
-    !sub
+    !actor_id
+    || (principal_kind !== "user" && principal_kind !== "service")
+    || (actor_kind !== "human" && actor_kind !== "agent")
+    || (principal_kind === "user" && actor_kind !== "human")
+    || (principal_kind === "service" && actor_kind !== "agent")
     || !org_id
     || !workspace_id
     || !host_id
@@ -129,6 +154,7 @@ function validateRelayHostVerifierClaims(
     || !exp
     || !iat
     || !jti
+    || !parent_jti
     || (!!actor_id !== !!actor_kind)
     || (!!actor_public_id !== !!actor_name)
     || (!!actor_avatar_url && (!actor_public_id || !actor_name))
@@ -145,7 +171,12 @@ function validateRelayHostVerifierClaims(
   const claims = {
     iss: relayHostTokenIssuer,
     aud: relayHostTokenAudience,
-    sub,
+    principal_kind,
+    actor_id,
+    actor_kind,
+    ...(actor_public_id && actor_name
+      ? { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }
+      : {}),
     org_id,
     workspace_id,
     host_id,
@@ -154,16 +185,9 @@ function validateRelayHostVerifierClaims(
     exp,
     iat,
     jti,
+    parent_jti,
   } as const
-  if (actor_id && actor_kind) return {
-    ...claims,
-    actor_id,
-    actor_kind,
-    ...(actor_public_id && actor_name
-      ? { actor_public_id, actor_name, ...(actor_avatar_url ? { actor_avatar_url } : {}) }
-      : {}),
-  }
-  return { ...claims, actor_id: undefined, actor_kind: undefined }
+  return claims
 }
 
 /**

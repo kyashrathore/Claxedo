@@ -1,10 +1,10 @@
 import { createSdkForServer } from "@/app/connection/server-client"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { LiveSession } from "../global-sdk-event-fetch"
 import type { SessionRef } from "@/platform/identity/session-ref"
-
-export const USER_HOSTED_WORKSPACE_KIND = "user-hosted"
+import { USER_HOSTED_WORKSPACE_KIND } from "@/platform/runtime/agent/workspace-kind"
 
 export type GlobalSdkClientOptions = Omit<Parameters<typeof createSdkForServer>[0], "server" | "fetch"> & {
   workspaceId?: string
@@ -48,16 +48,36 @@ export function liveSessionTransition(
   }
 }
 
+/**
+ * The directory identity a live session's events are published under.
+ *
+ * A workspace id is the only identity of a relay-backed workspace both ends
+ * agree on: the runtime stamps every frame with its OWN filesystem path, which
+ * addresses nothing here, so the id — not the frame's `directory` — is what an
+ * event is routed by. The consumers, though, are keyed by the ADDRESS the pane
+ * resolved for that workspace, and that address is `sessionRowDirectory`'s
+ * `workspace:<id>`: the same form the workspace catalog gives the row
+ * (`workspaceRowDirectory`), the route resolves for the pane
+ * (`resolveWorkspaceRouteDirectory`), and every session row of that workspace
+ * carries.
+ *
+ * Publishing under the BARE id addressed the projected `message.part.updated`
+ * / `message.part.delta` of an attached session to a scope no pane had
+ * registered — `conversationScopeKey` is an exact `directory\0sessionID` match
+ * — so every delta was dropped and the turn appeared only at the settlement
+ * catch-up refetch, as one finished block. Routing through the one owner of
+ * that address makes producer and consumer name a single scope, which the
+ * pane's session query keys share too.
+ */
 export function eventDirectoryForLiveSession(input: {
   directory: string
   liveSession?: LiveSession
 }): string {
   if (input.directory === "global") return input.directory
-  if (input.liveSession?.workspaceId) return input.liveSession.workspaceId
   const legacyDirectory = input.liveSession?.directory
-  const workspaceId = legacyDirectory ? sessionWorkspaceRuntimeRef({ directory: legacyDirectory })?.workspaceId : undefined
-  if (workspaceId) return workspaceId
-  return input.directory
+  const workspaceId = input.liveSession?.workspaceId
+    ?? (legacyDirectory ? sessionWorkspaceRuntimeRef({ directory: legacyDirectory })?.workspaceId : undefined)
+  return sessionRowDirectory({ workspaceId, hostDirectory: input.directory })
 }
 
 /**
@@ -114,11 +134,28 @@ export function liveSessionWithRelayBacking(session: LiveSession, projects: Work
 }
 
 /**
- * Runtime events are scoped to one real parent session. The workspace-route
- * sentinel used by the global lifecycle stream is not an authorized parent
- * and must never be sent as `parentSessionId` to a Workspace Runtime.
+ * The session and workspace identity the runtime-events stream opens for.
+ *
+ * Runtime events are scoped to one real parent session. `scopeSessionId` is
+ * `session-event-scope`'s answer — the shell route's session, or the one the
+ * composer published for a draft route — and it is authoritative: navigating to
+ * another session must retarget the stream even though the live session still
+ * names the one whose history was fetched last. `current` supplies the workspace
+ * identity the stream is routed with (relay vs central), and its own session id
+ * is used only when the scope has none.
+ *
+ * The workspace-route sentinel `"route"` used by the global lifecycle stream is
+ * not an authorized parent and must never be sent as `parentSessionId` to a
+ * Workspace Runtime, so it never survives as the session id here.
  */
-export function runtimeEventLiveSession(current: LiveSession | undefined, projects: WorkspaceProjects) {
-  if (!current || current.sessionID === "route") return
-  return liveSessionWithRelayBacking(current, projects)
+export function runtimeEventLiveSession(
+  current: LiveSession | undefined,
+  projects: WorkspaceProjects,
+  scopeSessionId?: string,
+) {
+  if (!current) return
+  const sessionID = scopeSessionId?.trim()
+    || (current.sessionID === "route" ? undefined : current.sessionID)
+  if (!sessionID) return
+  return liveSessionWithRelayBacking({ ...current, sessionID }, projects)
 }

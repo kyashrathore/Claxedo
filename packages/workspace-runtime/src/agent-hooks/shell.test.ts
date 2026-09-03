@@ -193,6 +193,12 @@ describe("getTerminalEnvVars", () => {
     expect(env.CLAXEDO_SERVER_PORT).toBe("7860")
   })
 
+  it("adds a terminal-scoped hook capability only when the runtime supplies one", () => {
+    expect(getTerminalEnvVars(baseParams).CLAXEDO_AGENT_HOOK_TOKEN).toBeUndefined()
+    expect(getTerminalEnvVars({ ...baseParams, agentHookToken: "hook_capability" }).CLAXEDO_AGENT_HOOK_TOKEN)
+      .toBe("hook_capability")
+  })
+
   it("sets ZDOTDIR for zsh", () => {
     const env = getTerminalEnvVars({ ...baseParams, shell: "/bin/zsh" })
     expect(env.ZDOTDIR).toBe(SHELL_DIR)

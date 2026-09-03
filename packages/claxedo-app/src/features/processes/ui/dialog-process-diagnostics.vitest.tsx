@@ -116,7 +116,7 @@ describe("local performance diagnostics dialog", () => {
   test("loads retained startup history, subscribes once, and renders ranked local ownership", async () => {
     render(() => <DialogProcessDiagnostics />)
 
-    expect(screen.getByRole("dialog", { name: "Local performance diagnostics" })).toHaveClass(
+    expect(screen.getByRole("dialog", { name: "This device diagnostics" })).toHaveClass(
       "workspace-page-dialog-shell",
       "usage-dialog-shell",
       "claxedo-diagnostics-dialog",

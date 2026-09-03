@@ -1,5 +1,5 @@
 import { apiBearerToken, getClaxedoServerUrl, authFetch, normalizeUrl } from "@/platform/api/api"
-import { accountRun } from "@/platform/account/hosted-control-call"
+import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { queryClient } from "@/platform/query/query-client"
 
@@ -54,10 +54,27 @@ function workspaceConnectionRefreshUrl(input: { serverUrl?: string; workspaceId:
   )
 }
 
+/**
+ * Which event-stream scopes the workspace runtime behind a connection serves.
+ *
+ * It is the runtime's own composition marker (`SessionAccessPolicy.sessionAuthority`
+ * in `@claxedo/workspace-runtime`), reported by the control plane because the
+ * control plane is what decided where the workspace runs. A `managed-private`
+ * runtime answers an UNSCOPED `/api/wr/events` or `/api/wr/runtime-events` with
+ * a permanent 400 `session_event_scope_required`; a `local` one (the owner's own
+ * daemon serving a user-hosted workspace, and this machine's embedded runtime)
+ * serves both the workspace-wide and the session-scoped form.
+ *
+ * The client cannot infer this from the workspace kind: "user-hosted" names who
+ * owns the machine, not how the runtime composes its session authority.
+ */
+export type WorkspaceSessionAuthority = "local" | "managed-private"
+
 export type WorkspaceConnectionInfo = {
   access: "cloud" | "user-hosted"
   backing: "local-worktree" | "cloud-vm"
   runtimeKind?: "cloud" | "user-hosted"
+  sessionAuthority?: WorkspaceSessionAuthority
   workspaceId: string
   homeRegion?: string
   role: RuntimeAccessTokenRole
@@ -130,6 +147,14 @@ function parseConnection(input: unknown): WorkspaceConnectionInfo {
   const runtimeKind = "runtimeKind" in input && (input.runtimeKind === "cloud" || input.runtimeKind === "user-hosted")
     ? input.runtimeKind
     : undefined
+  // Absent means the control plane did not say, and the app must not decide for
+  // it: the stream owner opens no workspace stream until it knows which scopes
+  // the runtime serves. A wrong guess is a permanent 400 on one composition and
+  // a silently session-narrowed workspace bus on the other.
+  const sessionAuthority = "sessionAuthority" in input &&
+    (input.sessionAuthority === "local" || input.sessionAuthority === "managed-private")
+    ? input.sessionAuthority
+    : undefined
   const homeRegion = "homeRegion" in input && typeof input.homeRegion === "string" ? input.homeRegion : undefined
   if (!("runtimeAccessToken" in input) || typeof input.runtimeAccessToken !== "string") throw new Error("Invalid workspace connection token")
   if (!("tokenExpiresAt" in input) || typeof input.tokenExpiresAt !== "number") throw new Error("Invalid workspace connection expiry")
@@ -137,6 +162,7 @@ function parseConnection(input: unknown): WorkspaceConnectionInfo {
     access: input.access,
     backing: input.backing,
     ...(runtimeKind ? { runtimeKind } : {}),
+    ...(sessionAuthority ? { sessionAuthority } : {}),
     workspaceId: input.workspaceId,
     ...(homeRegion ? { homeRegion } : {}),
     role: input.role,
@@ -302,7 +328,7 @@ async function fetchConnectionBody(
     : undefined
 
   if (!options.request) {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (run) {
       try {
         const hostedParams: Record<string, unknown> = { id: params.id }

@@ -17,12 +17,12 @@ import type { ControlPlaneCredentials } from "../../authority/control-plane-cont
 import {
   ControlPlaneAuthError,
   bearerToken,
-  controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
 } from "../../platform/auth/auth"
+import { controlPlaneAuthConfig } from "../../platform/auth/clerk-adapter"
 import { isLoopbackLocalRequest } from "../../platform/http/peer-address"
 import { sandboxDriverVerifiable, verifySandboxDriverAuth } from "../../credentials/operations/sandbox-verify"
 import type { CredentialProbe } from "../../credentials/operations/discovery"

@@ -23,7 +23,6 @@ import {
 import type {
   AgentAgent,
   AgentCommand,
-  AgentConfigOption,
   AgentMessage,
   AgentPermission,
   AgentQuestion,
@@ -33,7 +32,13 @@ import type {
   SessionConfig,
   SessionConfigUpdate,
 } from "../../index"
-import type { AgentGoalMutationResult, AgentGoalResource, AgentHarnessAdapter } from "../../adapter-contract"
+import type {
+  AgentGoalMutationResult,
+  AgentGoalResource,
+  AgentHarnessAdapter,
+  ShellCommandInput,
+  SummarizeSessionInput,
+} from "../../adapter-contract"
 import {
   AgentMessagePageError,
   type AgentMessagePage,
@@ -606,7 +611,6 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       yield event
     }
     await this.subagentAdmissions
-
     if (!sawError && !sawVisibleAssistantContent) {
       const error = sessionError("OpenCode completed without visible assistant content", id)
       publishRuntime(error)
@@ -614,7 +618,9 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       return
     }
 
-    if (!sawError) yield messageCompleted(id, input.assistantMessageId)
+    if (sawError) return
+    publishRuntime.close()
+    yield messageCompleted(id, input.assistantMessageId)
   }
 
   /**
@@ -710,12 +716,12 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     requireUpstream(response, "Restore OpenCode session")
   }
 
-  async forkSession(id: string, messageId: string, directory: string): Promise<{ id: string }> {
+  async forkSession(id: string, messageId: string, directory: string, childSessionId?: string): Promise<{ id: string }> {
     const request = await this.requestFn()
     const res = await request(OpenCodeHarnessAdapter.request(`/session/${id}/fork`, {
       method: "POST",
       headers: this.headers(directory),
-      body: JSON.stringify({ messageId }),
+      body: JSON.stringify({ messageId, ...(childSessionId ? { id: childSessionId } : {}) }),
     }))
     if (!res.ok) throw new Error(`Fork failed: ${res.status}`)
     return res.json() as Promise<{ id: string }>
@@ -729,6 +735,33 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
       body: JSON.stringify({ command }),
     }))
     requireUpstream(response, "Execute OpenCode command")
+  }
+
+  async shell(id: string, input: ShellCommandInput, directory: string): Promise<void> {
+    const request = await this.requestFn()
+    await request(OpenCodeHarnessAdapter.request(`/session/${id}/shell`, {
+      method: "POST",
+      headers: this.headers(directory),
+      body: JSON.stringify({
+        command: input.command,
+        agent: input.agent,
+        ...(input.model ? { model: input.model } : {}),
+        ...(input.messageID ? { messageID: input.messageID } : {}),
+      }),
+    }))
+  }
+
+  async summarize(id: string, input: SummarizeSessionInput, directory: string): Promise<void> {
+    const request = await this.requestFn()
+    await request(OpenCodeHarnessAdapter.request(`/session/${id}/summarize`, {
+      method: "POST",
+      headers: this.headers(directory),
+      body: JSON.stringify({
+        providerID: input.providerID,
+        modelID: input.modelID,
+        ...(input.auto !== undefined ? { auto: input.auto } : {}),
+      }),
+    }))
   }
 
   async listCommands(_directory: string): Promise<AgentCommand[]> {
@@ -831,7 +864,7 @@ export class OpenCodeHarnessAdapter implements AgentHarnessAdapter {
     return Promise.resolve()
   }
 
-  async probeConfigOptions(_directory: string): Promise<AgentConfigOption[]> {
+  async probeConfigOptions(_directory: string): Promise<never> {
     throw new Error("opencode does not expose harness config options")
   }
 

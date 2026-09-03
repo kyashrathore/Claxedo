@@ -18,7 +18,9 @@ const calls: Array<{
   accept: string | null
   body: string
   cache: RequestCache
+  credentials: RequestCredentials
   dir: string | null
+  validation: string | null
   url: string
 }> = []
 const originalFetch = globalThis.fetch
@@ -111,7 +113,9 @@ beforeEach(() => {
       accept: req.headers.get("Accept"),
       body: await req.clone().text(),
       cache: init?.cache ?? req.cache ?? "default",
+      credentials: init?.credentials ?? req.credentials,
       dir: req.headers.get("x-opencode-directory"),
+      validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
       url: req.url,
     })
     return new Response("{}", {
@@ -127,7 +131,6 @@ afterAll(() => {
 })
 
 describe("demo routing", () => {
-
   test("matches only the demo path prefix", () => {
     expect(isDemoPath("/")).toBe(false)
     expect(isDemoPath("/demo")).toBe(true)
@@ -208,6 +211,80 @@ describe("authFetch", () => {
     expect(tokenRequests).toEqual([])
   })
 
+  test("includes the browser session cookie only when the selected adapter binds cookie transport", async () => {
+    configureApiRuntime({ baseUrl: "https://api.example.test", browserCredentials: "include" })
+
+    await authFetch("https://api.example.test/api/claxedo/bootstrap")
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.credentials).toBe("include")
+    expect(calls[0]?.auth).toBeNull()
+  })
+
+  /**
+   * `authFetch` is also the egress for the RELAY, which is a different origin
+   * and authenticates with a Runtime Access Token, not our cookie. A
+   * credentialed cross-origin request requires
+   * `Access-Control-Allow-Credentials: true` in the preflight response, which a
+   * bearer service correctly does not send — so the browser refuses to send the
+   * request at all.
+   *
+   * That refusal is what the hosted app reported as "Workspace host is
+   * offline", with a healthy relay, a connected host tunnel, and a laptop
+   * answering everything that reached it. Sending the control plane's cookie to
+   * another host would also be wrong on its own terms.
+   */
+  test("never sends the control-plane cookie to another origin, such as the relay", async () => {
+    configureApiRuntime({ baseUrl: "https://api.example.test", browserCredentials: "include" })
+
+    await authFetch("https://api.example.test/api/claxedo/bootstrap")
+    await authFetch("https://relay.example.test/workspaces/ws_1/api/wr/health")
+
+    expect(calls.map((call) => call.credentials)).toEqual(["include", "same-origin"])
+  })
+
+  /**
+   * On a hosted deployment the app and the control plane are DIFFERENT hosts —
+   * `app-<id>.claxedo.dev` serves the page, `cf-<id>.claxedo.dev` serves the
+   * API — and `main.tsx` does not pass a `baseUrl`, so the control plane is
+   * known only through `getClaxedoServerUrl()`.
+   *
+   * The first version of the scoping above used the page's own origin as the
+   * control plane, which withheld the cookie from the API on exactly this
+   * topology and turned every request into a 401. Caught live, on staging.
+   */
+  test("sends the cookie to a control plane on a different host from the page", async () => {
+    setServerEnv({ claxedo: "https://cf-deployment.example.test" })
+    configureApiRuntime({ browserCredentials: "include" })
+    try {
+      await authFetch("https://cf-deployment.example.test/api/wr/events")
+      await authFetch("https://relay.example.test/workspaces/ws_1/api/wr/health")
+      expect(calls.map((call) => call.credentials)).toEqual(["include", "same-origin"])
+    } finally {
+      setServerEnv({ claxedo: originalClaxedoServerUrl, legacy: originalLegacyBackendUrl })
+    }
+  })
+
+  test("identifies validation-build requests only to the exact control-plane origin", async () => {
+    configureApiRuntime({
+      releaseValidation: {
+        coreOrigin: "https://api.example.test",
+        operation: "private_session",
+      },
+    })
+
+    await authFetch("https://api.example.test/api/claxedo/auth/profile")
+    await authFetch("https://relay.example.test/api/session")
+
+    expect(calls.map((call) => call.validation)).toEqual(["private_session", null])
+  })
+
+  test("does not identify ordinary builds as release validation traffic", async () => {
+    await authFetch("https://api.example.test/api/claxedo/auth/profile")
+
+    expect(calls[0]?.validation).toBeNull()
+  })
+
   test("force-refreshes the bearer once when the server rejects it as invalid", async () => {
     // The retry that keeps a stale Clerk JWT from wedging every panel in
     // "loading" forever. It is also the only caller that passes an option
@@ -220,7 +297,9 @@ describe("authFetch", () => {
         accept: req.headers.get("Accept"),
         body: await req.clone().text(),
         cache: init?.cache ?? req.cache ?? "default",
+        credentials: init?.credentials ?? req.credentials,
         dir: req.headers.get("x-opencode-directory"),
+        validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
         url: req.url,
       })
       if (calls.length === 1) {
@@ -268,7 +347,9 @@ describe("authFetch", () => {
         accept: req.headers.get("Accept"),
         body: await req.clone().text(),
         cache: init?.cache ?? req.cache ?? "default",
+        credentials: init?.credentials ?? req.credentials,
         dir: req.headers.get("x-opencode-directory"),
+        validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
         url: req.url,
       })
       if (calls.length === 1) {
@@ -291,7 +372,7 @@ describe("authFetch", () => {
     await api.put("http://localhost/test", 0)
     await api.patch("http://localhost/test", "")
 
-    expect(calls.map((call) => call.body)).toEqual(["false", "0", "\"\""])
+    expect(calls.map((call) => call.body)).toEqual(["false", "0", '""'])
   })
 
   test("routes root-relative API calls through the configured desktop server", async () => {
@@ -399,7 +480,6 @@ describe("authFetch event streams", () => {
 })
 
 describe("authFetch workspace routing boundary", () => {
-
   test("leaves unrelated remote URLs on the normal authenticated fetch path", async () => {
     token = "tok_123"
     setServerEnv({

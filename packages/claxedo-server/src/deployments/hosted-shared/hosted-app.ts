@@ -11,8 +11,8 @@
  *   GET  /api/claxedo/mode
  *   GET  /api/claxedo/compatibility
  *   GET  /api/claxedo/events      (auth-gated live-sync SSE stream)
- *   GET  /api/claxedo/bootstrap   (aggregate shell boot payload)
- *   GET  /global/health | /global/config
+ *   GET  /api/claxedo/services    (first-party service catalog for the principal)
+ *   GET  /global/health
  *   GET  /project | /project/current | /path | /provider | /provider/auth
  *   GET  /.well-known/jwks.json
  *   POST /api/auth/device/code | /api/auth/device/token
@@ -20,16 +20,17 @@
  *   GET  /api/control/sessions/:id/gateway | /messages
  *   GET  /api/workspace/:id/connection
  *   POST /api/workspace/:id/connection/refresh
- *   POST /api/workspace/:id/user-hosted/challenge
- *   POST /api/workspace/:id/user-hosted/register
- *   POST /api/workspace/:id/user-hosted/heartbeat
- *   POST /api/workspace/:id/user-hosted/pause
+ *   POST /api/workspace/:id/host-assignment
+ *   DELETE /api/workspace/:id/host-assignment
+ *   POST   /api/workspace/:id/shares
+ *   DELETE /api/workspace/:id/shares
  *   GET  /internal/relay/target
  *   GET  /internal/relay/revocation
  *   POST /internal/sandbox-manager/gc
  *   POST /internal/workgraph/reconcile
  */
 
+import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { Hono, type Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
 import { cors } from "hono/cors"
@@ -38,12 +39,15 @@ import { securityHeaders } from "@claxedo/server-core/platform/http/security-hea
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { InternalRelayResolverRoutes, type RelayTargetLookup } from "../shared-routes/internal-relay"
 import { HostedWorkspaceRoutes, type HostedWorkspaceRouteOptions } from "../../routes/hosted/workspace"
+import { convexActiveSandboxLeaseCounter, convexHostedSandboxUsage } from "../../authority/adapters/convex/hosted-sandbox-usage"
 import { HostEnrollmentRoutes } from "../../routes/hosted/host-enrollment"
+import { RemoteAccessOwnerRoutes } from "../../routes/remote-access"
+import { hostedRemoteAccessService } from "./hosted-remote-access-service"
 import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import { signedOrError } from "../../workspace/route-support"
 import { HostedDeviceAuthRoutes } from "../../routes/hosted/device-auth"
-import { HostedShellRoutes } from "../../routes/hosted/shell"
+import { HostedShellRoutes, hostedHarnessRuntimeStatus } from "../../routes/hosted/shell"
 import { liveSyncRoomNameForPrincipal, nudgeLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
 import { HostedSandboxAdminRoutes } from "../../routes/hosted/sandbox-admin"
 import { HostedWorkGraphAdminRoutes, type WorkGraphReconcileResult } from "../../routes/hosted/workgraph-admin"
@@ -51,9 +55,9 @@ import { HostedControlRoutes } from "../../routes/hosted/control"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { SessionPeopleControlRoutes } from "../../session/routes/session-people-routes"
 import { HostedWorkerCompositionError, type HostedControlPlane } from "../../authority/hosted-services"
-import { configureCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import type { ControlPlaneServices } from "../../authority/services"
 import { RuntimeSessionAuthorityRoutes } from "../../routes/runtime-session-authority"
+import { PrivateSessionRegistrationRoutes } from "../../routes/private-session-registration"
 import {
   createFixedWindowConnectionRateLimiter,
   createLayeredRateLimiter,
@@ -62,6 +66,7 @@ import {
 import { defaultRequestGuard, hostedRouteGuardExemptions } from "../../platform/auth/request-guard"
 import { BILLING_WEBHOOK_GUARD_EXEMPTION, BillingRoutes, type BillingRouteOptions } from "../../billing/routes"
 import { createEntitlementGate, type EntitlementGate } from "../../billing/entitlement"
+import { createBillingStore } from "../../billing/store"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { deploymentCompatibilityReport } from "../../platform/governance/deployment-compatibility"
 import {
@@ -85,14 +90,20 @@ import {
 } from "../../hosts/workgraph/hosted/run-operation"
 import { createHostedSessionTranscriptRetention } from "../../hosts/workgraph/hosted/runtime"
 import { createHostedConnectionsSetup, createHostedRepositoryAccess } from "../../hosts/workgraph/hosted/connections-setup"
-import { DocumentsRoutes, type DocumentsRouteBackend } from "../../documents/routes/index"
+import {
+  DOCUMENTS_ROUTE_GUARD_EXEMPTION,
+  DocumentsRoutes,
+  type DocumentsRouteBackend,
+} from "../../documents/routes/index"
 import { workGraphHttpTelemetry } from "../../hosts/workgraph/operational-telemetry"
 import { captureProduct, productIdentity } from "../../platform/telemetry/product/product"
 import type { SettlementDispatcher } from "../../hosts/workgraph/settlement-dispatcher"
 import type { WorkGraphConvexExecutor } from "../../hosts/workgraph/convex/store"
-import { sessionInventoryResponse } from "../../session/list"
+import { parseSessionListQuery, sessionInventoryResponse, signedSessionList, sessionListErrorResponse } from "../../session/list"
 import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
+import { UsageRoutes } from "@claxedo/server-core/usage/routes"
+import { hostedUsageLedger } from "./hosted-usage-ledger"
 
 export type HostedAppOverrides = {
   /** Hosted relay target lookup. Omitted → the plane's composed lookup is used. */
@@ -120,7 +131,7 @@ export type HostedAppOverrides = {
   /** Test seam for the complete_run transcript-retention gate. */
   runTranscriptRetention?: (input: {
     organizationId: string
-    ownerSubject: string
+    ownerUserId: string
     workspaceId: string
     sessionId: string
   }) => Promise<void>
@@ -302,15 +313,6 @@ export function createHostedApp(plane: HostedControlPlane, overrides: HostedAppO
  * boot gate quietly stops covering the thing it was written for.
  */
 export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides: HostedAppOverrides = {}) {
-  // Install the plane's durable CLI session token registry process-wide.
-  //
-  // This is the `configureX(...)` composition seam the registry port defines,
-  // and this is the right moment to call it: the CLI routes are mounted below,
-  // and CLI bearer verification happens deep inside `controlPlaneAuthContext`
-  // on every request, far from any place a registry could be threaded through
-  // by hand. Without this line minting returns 503 and no CLI bearer verifies —
-  // the port fails closed when nothing is configured, on purpose.
-  configureCliSessionTokenRegistry(plane.cliSessionTokenRegistry)
   const { services } = plane
   // Every `app.route()` below is recorded against one owner. Unit 7 splits this
   // file into a shared signed core plus deployment adapters, and two
@@ -450,7 +452,10 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   // route-level limiters keep their own tuned budgets untouched.
   app.use(
     defaultRequestGuard({
-      exemptions: hostedRouteGuardExemptions([BILLING_WEBHOOK_GUARD_EXEMPTION]),
+      exemptions: hostedRouteGuardExemptions([
+        BILLING_WEBHOOK_GUARD_EXEMPTION,
+        DOCUMENTS_ROUTE_GUARD_EXEMPTION,
+      ]),
       rateLimiter: createLayeredRateLimiter({
         local: createFixedWindowConnectionRateLimiter({
           limit: plane.safetyLimits.defaultRequestRateLimit,
@@ -466,7 +471,8 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   // caller's ACTIVE org (Clerk org claim if a member, else the personal org),
   // resolved through the same authority call the rest of the control plane
   // uses. Gate errors resolve to fail-closed denials inside the gate.
-  const entitlementGate = overrides.entitlementGate ?? createEntitlementGate({ env: plane.env })
+  const billingStore = createBillingStore(plane.env)
+  const entitlementGate = overrides.entitlementGate ?? createEntitlementGate({ env: plane.env, store: billingStore })
   const connectionsSetupInput = {
     env: plane.env,
     authConfig: services.auth.config,
@@ -507,6 +513,8 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   const workspaceOptions: HostedWorkspaceRouteOptions = {
     requireCloudWorkspaceEntitlement,
     connections: { repositoryForAuth: hostedRepositoryForAuth },
+    countActiveOrgSandboxLeases: convexActiveSandboxLeaseCounter,
+    sandboxUsage: convexHostedSandboxUsage,
     // Omitted when empty rather than passed as `[]`: the route option is
     // optional, and an absent key is the shape that means "the baseline stands".
     ...(egressExtraHosts.length ? { sandboxEgressExtraHosts: egressExtraHosts } : {}),
@@ -570,6 +578,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       // publisher stamps (documents/provision events, runtime-token claims).
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       activateOwner: ownerActivationWithTelemetry(services.telemetry, workGraphOwnerActivation),
+      harnessStatus: hostedHarnessRuntimeStatus(services),
     }),
   )
 
@@ -581,7 +590,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       ...(plane.deviceAuthProvider ? { provider: plane.deviceAuthProvider } : {}),
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
-      env: plane.env,
+      ...(services.auth.native ? { native: services.auth.native } : {}),
       ...(services.authority ? { ensureCliUser: (auth) => services.authority!.usersMe(auth) } : {}),
     }),
   )
@@ -591,10 +600,43 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
   // is no workspace in any of these paths, and mounting it there would invite
   // the per-workspace shape back in.
   app.route("/api/claxedo/host/enrollments", HostEnrollmentRoutes(services, workspaceOptions))
+  // Unified usage dashboard/sync — same Convex ledger and mount shape as the
+  // Node hosted composition's `/api/claxedo/usage` (central-runtime.ts,
+  // self-hosted-node/app.ts, local-app.ts); this is that surface's Worker
+  // deployment, which had no usage route at all until now. `hostedUsageLedger`
+  // resolves `undefined` when the plane has no Convex workspace-authority
+  // binding, in which case this stays unmounted (404) exactly as today.
+  const usageLedger = hostedUsageLedger(plane.env)
+  if (usageLedger) {
+    app.route("/api/claxedo/usage", UsageRoutes({
+      ledger: usageLedger,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      telemetry: services.telemetry,
+    }))
+  }
+  app.route("/api/claxedo/remote-access", RemoteAccessOwnerRoutes({
+    deviceLoginConfigured: true,
+    relayConfigured: !!services.relay.provider,
+    authenticate: async (request) => {
+      const result = await signedOrError(request, { authConfig: services.auth.config, ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}), requireSigned: true }, services)
+      if ("error" in result) return Response.json(result.error, { status: result.status })
+      if (!result.auth) return Response.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, { status: 401 })
+      return result.auth
+    },
+    service: hostedRemoteAccessService(requireAuthority(services)),
+  }))
   app.route("/api/workspace", WorkspaceCheckpointRoutes(services, {
     defaultHomeRegion: services.defaultHomeRegion,
+    ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
   }))
-  app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services, { env: plane.env }))
+  if (plane.runtimeSessionAuthority) {
+    app.route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
+      authority: plane.runtimeSessionAuthority,
+      ...(plane.turnAuthority ? { turnAuthority: plane.turnAuthority } : {}),
+      env: plane.env,
+    }))
+  }
 
   app.all("/api/workgraph", forwardWorkGraph)
   app.all("/api/workgraph/*", forwardWorkGraph)
@@ -660,6 +702,7 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
     "/api/billing",
     BillingRoutes({
       env: plane.env,
+      store: billingStore,
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
       ...overrides.billing,
@@ -684,6 +727,29 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       return c.json(sessionInventoryResponse(
         await services.authority.listSessions(authResult.auth, { workspaceId }),
       ))
+    })
+    // The rail's paginated read; shared with hosted-core — see `signedSessionList`.
+    app.get("/api/control/session-list", async (c) => {
+      const authResult = await signedOrError(
+        c.req.raw,
+        {
+          authConfig: services.auth.config,
+          ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+          requireSigned: true,
+        },
+        services,
+      )
+      if ("error" in authResult) return c.json(authResult.error, authResult.status as 401 | 403 | 503)
+      if (!authResult.auth) {
+        return c.json({ error: { code: "UNAUTHORIZED", message: "Signed auth is required" } }, 401)
+      }
+      try {
+        return c.json(await signedSessionList(services, authResult.auth, parseSessionListQuery(new URL(c.req.url))))
+      } catch (err) {
+        const mapped = sessionListErrorResponse(err)
+        if (mapped) return mapped
+        throw err
+      }
     })
     app.get("/api/control/sessions/:sessionId/gateway", async (c) => {
       const authResult = await signedOrError(
@@ -772,6 +838,15 @@ export function createSignedControlPlaneApp(plane: HostedControlPlane, overrides
       authConfig: services.auth.config,
       ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
       cliTokenEnv: plane.env,
+    }),
+  )
+  app.route(
+    "/api/control/session-registrations",
+    PrivateSessionRegistrationRoutes({
+      authority: plane.privateSessionAuthority!,
+      authConfig: services.auth.config,
+      ...(services.auth.verifier ? { verifier: services.auth.verifier } : {}),
+      services,
     }),
   )
   // Org→Team nesting and private-session people (D17–D19). Worker-safe routers

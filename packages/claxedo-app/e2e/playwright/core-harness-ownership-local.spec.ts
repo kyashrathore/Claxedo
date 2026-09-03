@@ -9,14 +9,24 @@
  * silently routed through plain OpenCode, and switching harnesses must never leave two
  * conflicting model pickers on screen at once.
  *
- * STATE MODEL — harness selection lives in a client-local `harnessStore`
- * (`src/claxedo-ui/context/harness-store.ts`), keyed by a pane-preference `scope`
- * string (`panePreferenceScope({directory, sessionId, surfaceId, draftId})`) and
- * persisted to `localStorage` per scope (harness id, model id, agent name — see
- * `src/claxedo-ui/context/harness-preferences.ts`). It is NOT part of the server
- * session row while still a draft. `AgentHarnessSelector`
- * (`src/claxedo-ui/components/agent-harness-selector.tsx`) reads/writes it through a
- * `HarnessSelectionController` (`src/session-client/harness/controller.ts`).
+ * STATE MODEL — the live harness selection is TRANSIENT, held in a client-local
+ * `harnessStore` (`src/features/session/harness/harness-store.ts`) keyed by a
+ * pane-preference `scope` string
+ * (`panePreferenceScope({directory, sessionId, surfaceId, draftId})`,
+ * `src/features/session/preferences/pane.ts`). Nothing is persisted per SCOPE. What
+ * a NEW draft remembers is owned solely by the per-harness draft default
+ * (`createDraftDefaultPreferences`, `src/features/session/harness/draft-defaults.ts`):
+ * ONE record per (server, workspaceKey), stored under
+ * `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`
+ * (`src/platform/persistence/persist.ts:382-384`), holding `lastHarness` plus a
+ * per-harness `{model, labels}` slot — so picking Codex and then Claude no longer
+ * overwrites the Codex model. `harnessStore.rememberDraftHarness`/`rememberDraftModel`
+ * write it; `beginDraftDefault` re-reads it and re-seeds the scope whenever the
+ * scope's `workspaceKey` changes, which is also what isolates two workspaces' drafts
+ * from each other. It is NOT part of the server session row while still a draft.
+ * `AgentHarnessSelector` (`src/features/session/ui/controls/agent-harness-selector.tsx`)
+ * reads/writes the store through a `HarnessSelectionController`
+ * (`src/features/session/harness/controller.ts`).
  *   - Draft (no session yet), two ways to land on a harness: (a) the user picks one
  *     from the `<Select>`, which POSTs `/api/claxedo/agent-config/harness` `{type}`
  *     (`switchDraftHarness` in `src/claxedo-ui/context/harness-switcher.ts`); (b) on
@@ -135,8 +145,8 @@
  * BEHAVIORS —
  *   1. Exactly one unified `[data-action="prompt-harness-model"]` control owns harness,
  *      model, and effort selection for every harness.
- *   2. For each configurable harness (`claude-acp`, `claude-sdk`, `codex-acp`,
- *      `codex-app-server`, `cursor-acp`, `cursor-sdk`): a workspace whose backend
+ *   2. For each configurable harness (`acp:claude`, `claude-sdk`, `acp:codex`,
+ *      `codex-app-server`, `acp:cursor`, `cursor-sdk`): a workspace whose backend
  *      already reports that harness auto-hydrates the draft harness `<Select>` to its
  *      label and resolves its model in the harness model control (no click needed —
  *      see STATE MODEL path (b)), and that harness owns the submit payload's
@@ -183,23 +193,20 @@
  *      immediately (the model control shows the resolved model, not "Select model" or
  *      "Loading"); the scheduled retry's eventual non-stale response does not change or
  *      clear that already-resolved selection.
- *   9. [Out of scope locally — see OUT OF SCOPE] a draft harness resets to `opencode`
- *      when the scope leaves a workspace-runtime-backed directory. NOTE (corrected
- *      2026-07-25): the predicate this entry used to name,
- *      `shouldResetWorkspaceDraftHarness`, NO LONGER EXISTS — `grep -rn
- *      shouldResetWorkspaceDraftHarness packages/claxedo-app/src` returns zero hits, and
- *      it is not "the ONLY guard against carryover" anywhere. The reset is now an ACTION,
- *      not a predicate: `resetWorkspaceDraftHarness`
- *      (`src/features/session/harness/harness-status-actions.ts:36-42`) applies
- *      `workspaceDraftHarnessResetPatch()` (`store-state.ts:88-101` — harness/harnessMode
- *      back to `opencode`, model cleared, readiness `"ready"`) plus a preference save,
- *      and is handed to the hydrator as a capability
- *      (`harness-hydrator.ts:50`, wired at `harness-config-store.ts:141`). The
- *      workspace-runtime ref itself is read through `harnessWorkspaceRuntimeRef` /
- *      `refreshHarnessTypeForScope` (`store-policy.ts:76-86`) over
- *      `sessionWorkspaceRuntimeRef` (`src/platform/runtime/session-workspace.ts`), which
- *      only resolves for cloud/user-hosted workspaces — which this local-only spec's mock
- *      cannot produce, so the whole path stays untested HERE either way.
+ *   9. There is NO draft-harness reset when the scope leaves a workspace-runtime-backed
+ *      directory, and nothing in `src/` performs one (owner decision 27; see
+ *      `core-harness-ownership-cloud.spec.ts`). Neither the old predicate
+ *      `shouldResetWorkspaceDraftHarness` nor the reset action that briefly replaced it
+ *      exists — do not re-cite either. Cross-workspace isolation is PER-WORKSPACE
+ *      PERSISTENCE, not a reset hook: the draft default is keyed by
+ *      (server, workspaceKey) under `session.draft-default.v1` (see STATE MODEL), so a
+ *      different workspace reads a different record and falls back to `opencode` on its
+ *      own while the first workspace's choice survives untouched. The workspace-runtime
+ *      ref itself is read through `harnessWorkspaceRuntimeRef` /
+ *      `refreshHarnessTypeForScope` (`store-policy.ts`) over `sessionWorkspaceRuntimeRef`
+ *      (`src/platform/runtime/session-workspace.ts`), which only resolves for
+ *      cloud/user-hosted workspaces — which this local-only spec's mock cannot produce,
+ *      so that ref path stays exercised only by the cloud spec.
  *
  * INVARIANTS — harness ownership (#1 in e2e/INVARIANTS.md): the selected harness owns
  *   model/effort/payload at every stage, exactly one model control exists at a time, a
@@ -208,14 +215,14 @@
  *   state is the single source of truth — every wait below is a deterministic
  *   DOM/request-count assertion, never a bare `waitForTimeout`.
  *
- * HARNESS NOTES — `claude-acp`/`claude-sdk`, `codex-acp`/`codex-app-server`, and
- *   `cursor-acp`/`cursor-sdk` each render under the SAME visible label ("Claude" /
+ * HARNESS NOTES — `acp:claude`/`claude-sdk`, `acp:codex`/`codex-app-server`, and
+ *   `acp:cursor`/`cursor-sdk` each render under the SAME visible label ("Claude" /
  *   "Codex" / "Cursor" respectively) in different `<Select>` groups ("ACP" appears
  *   before "Native SDK" in `HARNESS_OPTIONS`'s array order,
  *   `agent-harness-selector.tsx:12`) — since the matrix cases auto-hydrate (STATE MODEL
  *   path (b)) rather than click through the `<Select>`, this spec disambiguates them
  *   purely by asserting the submit payload's `providerID`, never by label text alone
- *   (label text alone cannot tell `claude-acp` from `claude-sdk`). Behavior 1's test,
+ *   (label text alone cannot tell `acp:claude` from `claude-sdk`). Behavior 1's test,
  *   which DOES click through the `<Select>` (path (a)), disambiguates by option index
  *   instead (ACP variant = 1st match, native-SDK variant = 2nd match). Pi and OpenCode
  *   share the "Direct" group but have unique labels ("Pi", "OpenCode"). See STATE MODEL
@@ -228,8 +235,8 @@
  *   retry/error-card rendering (`core-busy-abort-errors`); the same matrix replayed
  *   over the cloud relay (`core-harness-ownership-cloud`); per-harness event/tool
  *   rendering fidelity (`core-harness-rendering-matrix`); the workspace-runtime-ref
- *   draft-reset behavior (behavior #9 above — needs a cloud/user-hosted workspace,
- *   `core-harness-ownership-cloud`).
+ *   cross-workspace draft isolation (behavior #9 above — needs a cloud/user-hosted
+ *   workspace, `core-harness-ownership-cloud`).
  */
 import { sessionListRoute } from "../helpers/contracts/session-list"
 import { expect, test, type Locator, type Page } from "@playwright/test"
@@ -368,12 +375,12 @@ test.describe("core harness ownership (local) @core", () => {
 
   for (const harnessCase of [
     {
-      harness: "claude-acp" as Harness,
+      harness: "acp:claude" as Harness,
       label: "Claude ACP",
       option: /^Claude$/,
       optionIndex: 0,
       modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i,
-      providerID: "claude-acp",
+      providerID: "acp:claude",
       modelID: "claude-sonnet-4-6",
     },
     {
@@ -386,12 +393,12 @@ test.describe("core harness ownership (local) @core", () => {
       modelID: "claude-sonnet-4-6",
     },
     {
-      harness: "codex-acp" as Harness,
+      harness: "acp:codex" as Harness,
       label: "Codex ACP",
       option: /^Codex$/,
       optionIndex: 0,
       modelLabel: /GPT-5\.2 Codex|gpt-5\.2-codex/i,
-      providerID: "codex-acp",
+      providerID: "acp:codex",
       modelID: "gpt-5.2-codex",
     },
     {
@@ -404,12 +411,12 @@ test.describe("core harness ownership (local) @core", () => {
       modelID: "gpt-5.5",
     },
     {
-      harness: "cursor-acp" as Harness,
+      harness: "acp:cursor" as Harness,
       label: "Cursor ACP",
       option: /^Cursor$/,
       optionIndex: 0,
       modelLabel: /Cursor Auto|cursor-auto/i,
-      providerID: "cursor-acp",
+      providerID: "acp:cursor",
       modelID: "cursor-auto",
     },
     {
@@ -492,6 +499,118 @@ test.describe("core harness ownership (local) @core", () => {
       await expectAssistantReplyVisible(page, `ack 3: ${third}`)
     })
   }
+
+  /**
+   * The REAL native-SDK catalog, not a one-row stand-in.
+   *
+   * Captured 2026-09-03 from `query(...).supportedModels()` against the local
+   * `claude` CLI, which is what `ClaudeDriver.fetchModels`
+   * (`agent-sdk-runtime/src/harnesses/claude/driver.ts`) maps into the `model`
+   * config option. Three facts only this shape carries, and all three are
+   * load-bearing: the FIRST row is the harness's own `default` sentinel, and it
+   * is the option's `currentValue` — so the harness always resolves a default
+   * the user did not choose, and every other row is a choice made ON TOP of that
+   * default — and every row carries a `description`, which the picker renders as
+   * a second line under the name. A fixture without descriptions makes a row's
+   * whole text equal its name, so a `^Sonnet$` filter over the row matches here
+   * and matches nothing against the real catalog.
+   */
+  const REAL_CLAUDE_SDK_MODELS = [
+    { id: "default", name: "Default (recommended)", description: "Opus 5 with 1M context \u00b7 Best for everyday, complex tasks" },
+    { id: "opus[1m]", name: "Opus (1M context)", description: "Opus 5 with 1M context \u00b7 Best for everyday, complex tasks" },
+    { id: "claude-fable-5-1[1m]", name: "Fable", description: "Fable 5.1 \u00b7 Most capable for your hardest and longest-running tasks" },
+    { id: "sonnet", name: "Sonnet", description: "Sonnet 5 \u00b7 Efficient for routine tasks" },
+    { id: "haiku", name: "Haiku", description: "Haiku 4.5 \u00b7 Fastest for quick answers" },
+  ]
+
+  test("a native-SDK harness shows the model it resolved until the user picks one, and the pick survives a reload", async ({
+    page,
+  }) => {
+    await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: "ses_core_harness_claude_resolved_default",
+      harness: "claude-sdk",
+      harnessModels: { "claude-sdk": REAL_CLAUDE_SDK_MODELS },
+    })
+    await seedOneProject(page, DIR)
+    await openDraftPrompt(page, DIR)
+
+    const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    // Rule 1 — the harness-resolved model is what a draft with no choice shows.
+    await expect(control).toHaveAttribute("data-model", "default", { timeout: 20_000 })
+    await expect(control).toContainText(/Default \(recommended\)/i)
+
+    // Rule 2 — an explicit pick is authoritative for this (workspace, harness).
+    await control.click()
+    const picker = page.locator('[data-component="harness-model-picker"]')
+    const search = page.getByRole("textbox", { name: /Search models/i }).last()
+    await expect(search).toBeVisible({ timeout: 10_000 })
+    await search.fill("Sonnet")
+    await picker
+      .locator('[data-slot="list-item"]')
+      .filter({ has: page.locator('[data-slot="list-item-name"]', { hasText: /^Sonnet$/ }) })
+      .first()
+      .click()
+    await expect(control).toHaveAttribute("data-model", "sonnet", { timeout: 10_000 })
+    await expect(control).toContainText(/Sonnet/i)
+
+    // Rule 3 — it survives a reload of the same (server, workspace, harness) scope.
+    await page.reload()
+    await page.waitForLoadState("domcontentloaded")
+    const reloaded = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    await expect(reloaded).toHaveAttribute("data-harness", "claude-sdk", { timeout: 20_000 })
+    await expect(
+      reloaded,
+      "the harness-resolved default overwrote the model the user explicitly chose",
+    ).toHaveAttribute("data-model", "sonnet", { timeout: 20_000 })
+  })
+
+  test("switching to a native-SDK harness with a slow model probe still lets the pick beat the resolved default", async ({
+    page,
+  }) => {
+    await installMockRuntime(page, {
+      dir: DIR,
+      sessionId: "ses_core_harness_claude_slow_probe",
+      harness: "opencode",
+      harnessModels: { "claude-sdk": REAL_CLAUDE_SDK_MODELS },
+    })
+    // The real `claude` model probe is a short-lived SDK query against the CLI
+    // and takes seconds, not milliseconds (`ClaudeDriver.fetchModels` budgets
+    // MODEL_LIST_TIMEOUT_MS for it). The switcher fires the options load without
+    // awaiting it, so that latency is what separates "the harness resolved a
+    // default" from "the user picked" in wall-clock order. Registered AFTER the
+    // mock so it wins the route and falls through to the mock's own answer.
+    await page.route("**/api/claxedo/agent-config/harness/options**", async (route) => {
+      await new Promise((resolve) => setTimeout(resolve, 1_500))
+      return route.fallback()
+    })
+    await seedOneProject(page, DIR)
+    await openDraftPrompt(page, DIR)
+    await expectOnlyOpenCodeModelControl(page)
+
+    // One "Claude" row: the first-party ACP rows left the picker when
+    // operator-configured ACP connections became the ACP group, and this mock
+    // deployment configures none — so the only Claude on offer is the native SDK.
+    await switchDraftHarness(page, /^Claude$/, 0)
+    const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+    await expect(control).toHaveAttribute("data-harness", "claude-sdk", { timeout: 20_000 })
+    await expect(control).toHaveAttribute("data-model", "default", { timeout: 20_000 })
+
+    await control.click()
+    const picker = page.locator('[data-component="harness-model-picker"]')
+    const search = page.getByRole("textbox", { name: /Search models/i }).last()
+    await expect(search).toBeVisible({ timeout: 10_000 })
+    await search.fill("Sonnet")
+    await picker
+      .locator('[data-slot="list-item"]')
+      .filter({ has: page.locator('[data-slot="list-item-name"]', { hasText: /^Sonnet$/ }) })
+      .first()
+      .click()
+    await expect(
+      control,
+      "the user's model pick did not stick over the harness-resolved default",
+    ).toHaveAttribute("data-model", "sonnet", { timeout: 10_000 })
+  })
 
   test("a newly-created busy Claude native session keeps its harness and model during the first turn", async ({
     page,
@@ -668,8 +787,12 @@ test.describe("core harness ownership (local) @core", () => {
     await switchDraftHarness(page, /^Pi$/, 0)
     await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
+    // `createDraftDefaultPreferences` writes the v2 record
+    // (`{version:2, byHarness, lastHarness}` — `draft-defaults.ts`'s `save`), so the
+    // harness a new draft opens with is `lastHarness`, and the per-harness slot is
+    // keyed under `byHarness`.
     await expect.poll(() => page.evaluate(() => Object.entries(localStorage)
-      .find(([key]) => key.includes("session.draft-default.v1"))?.[1])).toContain('"harness":"pi"')
+      .find(([key]) => key.includes("session.draft-default.v1"))?.[1])).toContain('"lastHarness":"pi"')
     // Pi obtains models from its provider catalog rather than harness config options.
     await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
     await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
@@ -723,7 +846,7 @@ test.describe("core harness ownership (local) @core", () => {
       const mock = await installMockRuntime(page, {
         dir: DIR,
         sessionId: "ses_core_harness_unavailable",
-        harness: "claude-acp",
+        harness: "acp:claude",
         harnessReadiness: "error",
         harnessReadinessError: errorMessage,
       })
@@ -801,7 +924,7 @@ test.describe("core harness ownership (local) @core", () => {
       const mock = await installMockRuntime(page, {
         dir: DIR,
         sessionId: "ses_core_harness_polling",
-        harness: "claude-acp",
+        harness: "acp:claude",
         harnessReadiness: "polling",
         // Keep the harness in the "applying" window for the whole assertion so
         // the polling state is stable (it never flips to ready mid-test).
@@ -869,7 +992,7 @@ test.describe("core harness ownership (local) @core", () => {
       const mock = await installMockRuntime(page, {
         dir: DIR,
         sessionId: "ses_core_harness_polling_settles",
-        harness: "claude-acp",
+        harness: "acp:claude",
         harnessReadiness: "polling",
         // Never settles via POST (there is no switch POST in this draft flow);
         // the ONLY settle path is the client's bounded GET re-probe loop.
@@ -920,7 +1043,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
       expect(mock.requests.promptBodies[0]).toMatchObject({
         text: "core harness polling settled turn",
-        providerID: "claude-acp",
+        providerID: "acp:claude",
         modelID: "claude-sonnet-4-6",
       })
     },
@@ -995,7 +1118,7 @@ test.describe("core harness ownership (local) @core", () => {
     page,
   }) => {
     const sessionId = "ses_core_harness_stale_options"
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId, harness: "claude-acp" })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId, harness: "acp:claude" })
 
     let optionsCalls = 0
     await page.route("**/api/claxedo/agent-config/harness/options**", (route) => {
@@ -1052,7 +1175,7 @@ test.describe("core harness ownership (local) @core", () => {
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
     expect(mock.requests.promptBodies[0]).toMatchObject({
       text,
-      providerID: "claude-acp",
+      providerID: "acp:claude",
       modelID: "claude-sonnet-4-6",
     })
     await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
@@ -1082,7 +1205,10 @@ test.describe("core harness ownership (local) @core", () => {
             () => Object.entries(localStorage).find(([key]) => key.includes("session.draft-default.v1"))?.[1],
           ),
         )
-        .toContain('"harness":"claude')
+        // Same v2 record as behavior 4 above: the picked harness is `lastHarness`.
+        // Deliberately prefix-loose — the picker row is "Claude", and which Claude
+        // harness backs it is the picker's business, not this behavior's.
+        .toContain('"lastHarness":"claude')
 
       // Reload the same draft route — the selection is kept, never force-reset to OpenCode.
       await openDraftPrompt(page, DIR)

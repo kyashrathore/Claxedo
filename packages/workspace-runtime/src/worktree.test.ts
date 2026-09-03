@@ -113,4 +113,23 @@ describe("WorkspaceWorktreeManager", () => {
     manager.close()
     store.close()
   })
+
+  test("does not return another workspace's record from the shared store", async () => {
+    const { manager, store } = await fixture()
+    store.putWorktree({
+      workspaceId: "workspace-2",
+      sessionId: "session-foreign",
+      branch: "claxedo/session/session-foreign",
+      baseCommit: "a".repeat(40),
+      path: "/foreign/worktree",
+      state: "active",
+      createdAt: 1,
+      updatedAt: 1,
+      lastActivityAt: 1,
+    })
+
+    expect(manager.get("session-foreign")).toBeUndefined()
+    manager.close()
+    store.close()
+  })
 })

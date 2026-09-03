@@ -1,4 +1,4 @@
-import { e2eAuthViteEnvironment, resolveE2EAuthMode } from "../e2e/auth-mode"
+import { e2eAppViteEnvironment, resolveE2EAuthMode } from "../e2e/auth-mode"
 
 const authMode = resolveE2EAuthMode()
 const appRoot = import.meta.dir + "/.."
@@ -6,8 +6,7 @@ const child = Bun.spawn(["bun", "run", "build"], {
   cwd: appRoot,
   env: {
     ...process.env,
-    ...e2eAuthViteEnvironment(authMode),
-    VITE_CLAXEDO_E2E: "1",
+    ...e2eAppViteEnvironment(authMode),
   },
   stdin: "inherit",
   stdout: "inherit",

@@ -47,6 +47,16 @@ mock.module("@/platform/api/api", () => ({
         },
       })
     }
+    if (request.url.includes("/api/control/session/fa751c3c-50ff-46dd-b600-eb8b9caf7443?")) {
+      return new Response(JSON.stringify({
+        id: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
+        parentID: "parent-session-1",
+        title: "Subagent",
+      }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    }
     if (request.url.includes("/capabilities")) {
       return new Response(JSON.stringify({
         transport: "codex-acp",
@@ -100,6 +110,7 @@ mock.module("@/platform/api/api", () => ({
 }))
 
 const {
+  createSessionInfoHydrationGetter,
   DEFAULT_OPENCODE_TRANSPORT_CAPABILITIES,
   fetchSessionCapabilitiesByTransport,
   fetchSessionByTransport,
@@ -113,6 +124,39 @@ beforeEach(() => {
 })
 
 describe("session transport split", () => {
+  test("hydrates central child metadata through its canonical session ref", async () => {
+    const client = {
+      get: mock(async () => ({ data: { id: "wrong-upstream-session" } })),
+      messages: mock(async () => ({ data: [], response: new Response(null) })),
+      todo: mock(async () => ({ data: [] })),
+    }
+    const getSession = createSessionInfoHydrationGetter({
+      client,
+      claxedoServerUrl: "http://test.local",
+      sessionRef: {
+        sessionId: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
+        host: "central",
+        harness: { id: "pi" },
+        toolSandbox: { kind: "virtual" },
+      },
+    })
+
+    const session = await getSession({
+      directory: "/repo",
+      sessionID: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
+    })
+
+    expect(client.get).toHaveBeenCalledTimes(0)
+    expect(session).toMatchObject({
+      id: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
+      parentID: "parent-session-1",
+    })
+    expect(calls).toEqual([{
+      url: "http://test.local/api/control/session/fa751c3c-50ff-46dd-b600-eb8b9caf7443?directory=%2Frepo",
+      method: "GET",
+    }])
+  })
+
   test("treats ses-prefixed ids as upstream sessions", () => {
     expect(usesClaxedoSessionTransport("ses_123")).toBe(false)
     expect(usesClaxedoSessionTransport("ses_local")).toBe(false)

@@ -117,6 +117,13 @@ describe("two-user signed app transport", () => {
     })
     await authority.ensureDefaultTeam!(aliceAuth, { orgId: org.org_id })
 
+    // Add Casey to the organization only after default-team reconciliation so
+    // the later direct workspace share does not also make Casey a team member.
+    inspectAuthority().prepare(`
+      INSERT INTO org_memberships (org_id, token_identifier, role, created_at, updated_at)
+      VALUES (?, ?, 'member', ?, ?)
+    `).run(org.org_id, caseyIdentity.token_identifier, membershipNow, membershipNow)
+
     const addMember = await signedRequest(alice.token, `/api/control/teams/${org.default_team_id}/members`, {
       method: "POST",
       body: JSON.stringify({ tokenIdentifier: bobIdentity.token_identifier, role: "member" }),
@@ -126,18 +133,53 @@ describe("two-user signed app transport", () => {
     // Casey: workspace editor only (not on the team).
     const caseyShare = await signedRequest(alice.token, "/api/workspace/ws_signed_private/shares", {
       method: "POST",
-      body: JSON.stringify({ role: "editor", grantedToTokenIdentifier: caseyIdentity.token_identifier }),
+      body: JSON.stringify({ role: "editor", target: { kind: "actor", actorId: caseyIdentity.actor_id } }),
     })
     expect(caseyShare.status).toBe(200)
 
+    await authority.reserveSession(aliceAuth, {
+      operationId: "op_signed_private",
+      sessionId: "ses_signed_private",
+      workspaceId: "ws_signed_private",
+      kind: "create",
+      title: "Signed private session",
+    })
+    await authority.registerRuntimeSession!({
+      principalKind: "user",
+      actorId: aliceIdentity.token_identifier,
+      actorKind: "human",
+      operationId: "op_signed_private",
+      sessionId: "ses_signed_private",
+      workspaceId: "ws_signed_private",
+      title: "Signed private session",
+    })
     await authority.upsertSessionVisibility(aliceAuth, {
       workspaceId: "ws_signed_private",
       sessions: [{ sessionId: "ses_signed_private", title: "Signed private session" }],
+    })
+    const turn = await authority.acquireSessionTurn!({
+      principalKind: "user",
+      actorId: aliceIdentity.token_identifier,
+      actorKind: "human",
+      workspaceId: "ws_signed_private",
+      sessionId: "ses_signed_private",
+      turnId: "msg_alice",
     })
     await authority.syncSessionMessages(aliceAuth, {
       workspaceId: "ws_signed_private",
       sessionId: "ses_signed_private",
       messages: [{ id: "msg_alice", role: "user", text: "Alice wrote this" }],
+      fencingToken: turn.fencingToken,
+    })
+    await authority.releaseSessionTurn!({
+      principalKind: "user",
+      actorId: aliceIdentity.token_identifier,
+      actorKind: "human",
+      workspaceId: "ws_signed_private",
+      sessionId: "ses_signed_private",
+      turnId: turn.turnId,
+      leaseId: turn.leaseId,
+      fencingToken: turn.fencingToken,
     })
 
     for (const user of [bob, casey]) {
@@ -177,6 +219,14 @@ describe("two-user signed app transport", () => {
       allowed: true,
       messages: [{ id: "msg_alice", role: "user" }],
     })
+    const bobTurn = await authority.acquireSessionTurn!({
+      principalKind: "user",
+      actorId: bobIdentity.token_identifier,
+      actorKind: "human",
+      workspaceId: "ws_signed_private",
+      sessionId: "ses_signed_private",
+      turnId: "msg_bob",
+    })
     await expect(authority.syncSessionMessages(bobAuth, {
       workspaceId: "ws_signed_private",
       sessionId: "ses_signed_private",
@@ -184,11 +234,25 @@ describe("two-user signed app transport", () => {
         { id: "msg_alice", role: "user", text: "Alice wrote this" },
         { id: "msg_bob", role: "user", text: "Bob replied" },
       ],
+      fencingToken: bobTurn.fencingToken,
     })).resolves.toEqual({ ok: true })
-    await expect(authority.syncSessionMessages(caseyAuth, {
+    await authority.releaseSessionTurn!({
+      principalKind: "user",
+      actorId: bobIdentity.token_identifier,
+      actorKind: "human",
       workspaceId: "ws_signed_private",
       sessionId: "ses_signed_private",
-      messages: [{ id: "msg_casey", role: "user", text: "Casey must not write" }],
+      turnId: bobTurn.turnId,
+      leaseId: bobTurn.leaseId,
+      fencingToken: bobTurn.fencingToken,
+    })
+    await expect(authority.acquireSessionTurn!({
+      principalKind: "user",
+      actorId: caseyIdentity.token_identifier,
+      actorKind: "human",
+      workspaceId: "ws_signed_private",
+      sessionId: "ses_signed_private",
+      turnId: "msg_casey",
     })).rejects.toMatchObject({ status: 403, code: "workspace_authorization_denied" })
 
     const caseyList = await signedRequest(casey.token, "/api/control/sessions?workspaceId=ws_signed_private")

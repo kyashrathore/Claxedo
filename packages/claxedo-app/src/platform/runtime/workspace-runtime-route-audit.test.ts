@@ -85,6 +85,11 @@ const workspaceSelectorSyntaxBoundary = new Set([
   "platform/runtime/placement.ts",
   "app/providers/global-sdk-event-fetch.ts",
   "features/workspaces/ui/panel/workspace-panel.tsx",
+  // A draft's workspace-backing resolution short-circuits the async
+  // `runtime.workspace()` liveness read when the directory isn't even
+  // `ws_`/`workspace:`-shaped, so it checks the raw ref shape itself before
+  // paying for that round trip.
+  "features/session/harness/harness-hydrator.ts",
 ])
 
 const sessionStatusBoundary = new Set([
@@ -626,7 +631,7 @@ describe("workspace runtime route audit", () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
-      const text = await Bun.file(path.join(root, file)).text()
+      const text = codeOnly(await Bun.file(path.join(root, file)).text())
       if (/["'`]\/api\/workspace(?:[?"'`/])/.test(text)) {
         offenders.push(file)
       }
@@ -678,14 +683,16 @@ describe("workspace runtime route audit", () => {
     const offenders: string[] = []
     for (const file of await files(root)) {
       if (runtimeGatewayBoundary.has(file)) continue
-      const text = await Bun.file(path.join(root, file)).text()
+      const text = codeOnly(await Bun.file(path.join(root, file)).text())
       if (/["'`]\/api\/claxedo\/events(?:[?"'`])/.test(text)) {
         offenders.push(file)
       }
     }
-    const events = await Bun.file(path.join(root, "app/integrations/claxedo-events.tsx")).text()
-    expect(events).toMatch(/sessionWorkspaceRuntimeRef/)
-    expect(events).not.toMatch(/workspaceIdFromDirectoryRef/)
+    // The stream targets are chosen in `claxedo-event-targets.ts`; the provider
+    // beside it only opens what that module returns.
+    const targets = await Bun.file(path.join(root, "app/integrations/claxedo-event-targets.ts")).text()
+    expect(targets).toMatch(/sessionWorkspaceRuntimeRef/)
+    expect(targets).not.toMatch(/workspaceIdFromDirectoryRef/)
     expect(offenders).toEqual([])
   })
 
@@ -996,12 +1003,25 @@ describe("workspace runtime route audit", () => {
       expect(text).not.toMatch(/@\/hooks\/use-providers|@claxedo\/hooks\/use-providers/)
       expect(text).not.toMatch(/["']\/hooks\/use-providers["']/)
     }
-    expect(settings).toMatch(/queryOptions\.globalConfig\(\)/)
-    expect(settings).toMatch(/useProviders\("opencode"\)/)
-    expect(settings).toMatch(/openCodeProviders\.queryKey\(\)/)
+    // Settings reads the catalog of the workspace and harness its scope selector names.
+    expect(settings).toMatch(/useProviders\(scope\.harness, scope\.scopeRef\)/)
+    expect(settings).not.toMatch(/useProviders\("opencode"\)|useProviders\("pi"\)/)
+    expect(settings).toMatch(/providers\.queryKey\(\)/)
     expect(settings).toMatch(/removeProviderAuthEntry/)
-    expect(settings).toMatch(/patchGlobalDisabledProviders/)
-    expect(settings).toMatch(/disconnectOpenCodeProvider/)
+    expect(settings).toMatch(/disconnectProvider/)
+    // Provider config is the workspace runtime's file, not a server global:
+    // Settings reads no `/global/config` and PATCHes no disabled-provider list
+    // there. A config-declared row disconnects through the scoped
+    // `PATCH /api/wr/provider-config` for the (workspace, harness) the scope
+    // selector names, and that writer is the only one in the app.
+    expect(settings).not.toMatch(/globalConfig/)
+    expect(settings).not.toMatch(/disabled_providers/)
+    expect(settings).toMatch(/setProviderDisabled/)
+    const providerSettingsLogic = await Bun.file(
+      path.join(root, "features/settings/provider-settings-logic.ts"),
+    ).text()
+    expect(providerSettingsLogic).toMatch(/["']\/api\/wr\/provider-config["']/)
+    expect(providerSettingsLogic).not.toMatch(/\/global\/config/)
     expect(settings).toMatch(/provider-settings-logic/)
     expect(settings).toMatch(/claxedoCredentialRequest\(\{ providerId: id \}/)
     expect(settings).not.toMatch(/useGlobalSync/)
@@ -1024,13 +1044,16 @@ describe("workspace runtime route audit", () => {
     expect(general).toMatch(/@\/features\/settings\/ui\/account-section/)
     expect(general).not.toMatch(/@\/components\/settings\/account-section/)
     expect(general).not.toMatch(/@claxedo\/context\/config/)
-    expect(connect).toMatch(/queryOptions\.providerAuth\(props\.harness\)/)
-    expect(connect).toMatch(/queryOptions\.providers\(null\)/)
+    // Auth is read for the SAME (scope, harness) the catalog is: one hook next
+    // to `useProviders`, not the boot path's central-scope query option.
+    expect(connect).toMatch(/useProviderAuth\(\(\) => props\.harness, \(\) => props\.workspaceScope\)/)
+    expect(connect).toMatch(/useProviders\(\(\) => props\.harness, \(\) => props\.workspaceScope\)/)
+    expect(connect).not.toMatch(/queryOptions\.providerAuth/)
     expect(connect).toMatch(/claxedoCredentialRequest/)
     expect(connect).not.toMatch(/globalSync\.data\.(?:provider|provider_auth)/)
     expect(connect).not.toMatch(/globalSync\.set\("provider"/)
-    expect(custom).toMatch(/queryOptions\.globalConfig\(\)/)
-    expect(custom).toMatch(/queryOptions\.providers\(null\)/)
+    expect(custom).not.toMatch(/globalConfig/)
+    expect(custom).toMatch(/useProviders\("opencode", \(\) => props\.scope\)/)
     expect(custom).toMatch(/claxedoCredentialRequest/)
     expect(custom).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
     expect(custom).not.toMatch(/@\/app\/dialogs\/select-provider/)
@@ -1217,10 +1240,13 @@ describe("workspace runtime route audit", () => {
     const layout = await Bun.file(path.join(root, layoutContext)).text()
     const controller = await Bun.file(path.join(root, sessionController)).text()
 
+    // The inventory snapshot has ONE reader left: it seeds which rail sections
+    // open. Rendered rows, pagination and freshness belong to each section's
+    // own source, so the reload and the two paginators are gone.
     expect(inventory).toMatch(/loadSessionInventory/)
-    expect(inventory).toMatch(/reloadSessionInventory/)
-    expect(inventory).toMatch(/loadMoreSessionInventoryWorkspace/)
     expect(inventory).toMatch(/useSessionInventoryActions/)
+    expect(inventory).not.toMatch(/reloadSessionInventory/)
+    expect(inventory).not.toMatch(/loadMoreSessionInventoryWorkspace/)
     expect(await Bun.file(path.join(root, "overrides/context/global-sync/global-session-identity.ts")).exists()).toBe(
       false,
     )
@@ -1239,8 +1265,10 @@ describe("workspace runtime route audit", () => {
     expect(rail).not.toMatch(/globalSync/)
     expect(layout).toMatch(/useSessionInventoryActions/)
     expect(layout).toMatch(/sessionInventoryActions\.load\(\)/)
-    expect(controller).toMatch(/useSessionInventoryActions/)
-    expect(controller).toMatch(/sessionInventoryActions\.reloadWorkspace\(\)/)
+    // A settled turn used to reload the whole inventory through the control
+    // plane. The workspace's own event stream now carries the row change.
+    expect(controller).not.toMatch(/useSessionInventoryActions/)
+    expect(controller).not.toMatch(/sessionInventoryActions\.reloadWorkspace/)
     expect(offenders).toEqual([])
   })
 
@@ -1653,7 +1681,10 @@ describe("workspace runtime route audit", () => {
     expect(context).not.toMatch(/\bcreateStore\b/)
     expect(context).not.toMatch(/\bGlobalStore\b/)
     expect(context).not.toMatch(/\b(?:Persist\.global|persisted)\b/)
-    expect(context).toMatch(/queryKeys\.controlPlane\.projects\(globalSDK\.url\)/)
+    // The workspace catalog has one owner; global-sync reads and refreshes it
+    // through that owner instead of holding the query key itself.
+    expect(context).toMatch(/from "@\/features\/workspaces\/data\/workspace-catalog"/)
+    expect(context).not.toMatch(/queryKeys\.controlPlane\.projects/)
     expect(context).toMatch(/setGlobalState/)
   })
 
@@ -1996,9 +2027,13 @@ describe("workspace runtime route audit", () => {
     expect(text).toMatch(/return `session:\$\{input\.sessionId\}`/)
     expect(text).not.toMatch(/session:\$\{input\.directory/)
     expect(harnessPolicy).toMatch(/export const harnessScope = panePreferenceScope/)
-    expect(harnessPolicy).toMatch(/return `\$\{base\}\\n\$\{input\.sessionId\}`/)
+    // The harness-config request keys carry the machine and the workspace, and
+    // build that tuple with `session-capabilities-query.ts`'s own builder
+    // rather than a second one that can drift from it.
+    expect(harnessPolicy).toMatch(/sessionResourceAuthorityKey\(sessionResourceAuthorityScope\(\{/)
+    expect(harnessPolicy).toMatch(/return JSON\.stringify\(harnessConfigAuthorityKey\(authority\)\)/)
+    expect(harnessPolicy).not.toMatch(/\$\{base\}\\n\$\{input\.sessionId\}/)
     expect(harnessPolicy).not.toMatch(/\$\{input\?\.directory \?\? ""\}\\n\$\{input\?\.sessionId/)
-    expect(harnessPolicy).not.toMatch(/\$\{base\}\\n\$\{input\.directory\}\\n\$\{input\.sessionId\}/)
   })
 
   test("generic auth fetch does not own workspace session transport routing", async () => {
@@ -2165,6 +2200,7 @@ describe("workspace runtime route audit", () => {
 
   test("workspace directory alias canonicalization is shared from signed-workspace identity", async () => {
     const globalSdk = await Bun.file(path.join(root, "app/providers/global-sdk/provider.tsx")).text()
+    const runtimeProjection = await Bun.file(path.join(root, "app/providers/global-sdk/runtime-event-projection.ts")).text()
     const signedWorkspace = await Bun.file(path.join(root, "platform/runtime/agent/signed-workspace.ts")).text()
 
     expect(await Bun.file(path.join(root, "overrides/app/providers/global-sdk/provider.tsx")).exists()).toBe(false)
@@ -2173,10 +2209,10 @@ describe("workspace runtime route audit", () => {
     expect(globalSdk).toMatch(/const placement = globalSdkClientPlacement\(workspaceId\)/)
     expect(globalSdk).toMatch(/fetch: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
     expect(globalSdk).not.toMatch(/transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/)
-    expect(globalSdk).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
-    expect(globalSdk).toMatch(/return sessionID/)
-    expect(globalSdk).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId\}`/)
-    expect(globalSdk).toMatch(/directory: input\.directory/)
+    expect(runtimeProjection).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
+    expect(runtimeProjection).toMatch(/return sessionID/)
+    expect(runtimeProjection).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId \?\? ""\}`/)
+    expect(runtimeProjection).toMatch(/directory: input\.directory/)
     expect(globalSdk).toMatch(/return `session\.status:\$\{payload\.properties\.sessionID\}`/)
     expect(globalSdk).not.toMatch(/workspaceIdFromDirectoryRef/)
     expect(globalSdk).not.toMatch(/\$\{directory\}\\n\$\{sessionID\}/)
@@ -2836,7 +2872,6 @@ describe("workspace runtime route audit", () => {
     expect(capabilitiesQuery).toMatch(/queryKey: sessionCapabilitiesKey\(\{/)
     expect(capabilitiesQuery).not.toMatch(/createStore/)
     expect(text).toMatch(/useDirectorySessionCacheActions/)
-    expect(text).toMatch(/useSessionInventoryActions/)
     expect(text).not.toMatch(/useGlobalSync/)
     expect(text).not.toMatch(/createStore\(/)
     expect(text).not.toMatch(/const \[compat, setCompat\]/)
@@ -3450,7 +3485,21 @@ describe("workspace runtime route audit", () => {
     ).text()
     const sidebarDataPlane = `${text}\n${headerSurfaces}\n${projectSessionInfo}`
 
-    expect(text).toMatch(/sessionListQueryOptions/)
+    // Each section reads its own SOURCE, chosen from the catalog row's kind:
+    // the central server for a local/cloud workspace and for Global Chat, the
+    // workspace's own runtime over the relay for a user-hosted one. The rail
+    // never names a list route itself.
+    const sectionList = await Bun.file(
+      path.join(root, "app/workbench/rail/rail-section-session-list.ts"),
+    ).text()
+    expect(text).toMatch(/createRailSectionSessionList/)
+    expect(text).toMatch(/sessionSourceForWorkspace/)
+    expect(text).toMatch(/centralSessionSource/)
+    // A project section lists every workspace in it, so its source is the
+    // composition of theirs — never the central server alone.
+    expect(text).toMatch(/projectSessionSource/)
+    expect(text).not.toMatch(/sessionListQueryOptions/)
+    expect(sectionList).toMatch(/sessionSourceQueryOptions/)
     expect(text).not.toMatch(/claxedoState\.rail/)
     expect(text).toMatch(/<SessionNavigation/)
     expect(text).toMatch(/<TerminalSurfaceNavigation/)
@@ -3664,17 +3713,17 @@ describe("workspace runtime route audit", () => {
     ).text()
     const configHelper = await Bun.file(path.join(root, "platform/query/directory-config-cache.ts")).text()
 
-    expect(configHelper).toMatch(/queryKeys\.directory\.config\(baseUrl, directory\)/)
+    expect(configHelper).toMatch(/queryKeys\.directory\.config\(baseUrl, directory, workspaceQueryKey\(workspace\)\)/)
     // as-any: regex asserts upstream text still contains this compatibility cast.
     expect(configHelper).toMatch(/queryFn: async \(\) => undefined as unknown as Config/)
     expect(autoResponseCache).toMatch(/"permission-auto-respond"/)
     expect(autoResponseCache).toMatch(/permissionAutoRespondedQueryKey/)
     expect(autoResponseCache).toMatch(/permissionAutoAcceptVersionQueryKey/)
-    expect(text).toMatch(/useQuery\(\(\) => directoryConfigQuery\(globalSDK\.url, directory\(\) \?\? ""\)\)/)
+    expect(text).toMatch(/directoryConfigQuery\(globalSDK\.url, dir, workspaceFor\(dir\)\)/)
     expect(text).toMatch(/const permissionConfig = createMemo\(\(\) => configQuery\.data\?\.permission\)/)
     expect(text).toMatch(/hasPermissionPromptRules\(permissionConfig\(\)\)/)
     expect(text).toMatch(/const perm = permissionConfig\(\)/)
-    expect(text).toMatch(/directoryConfig\(globalSDK\.url, directory\)\?\.permission/)
+    expect(text).toMatch(/directoryConfig\(globalSDK\.url, directory, workspaceFor\(directory\)\)\?\.permission/)
     expect(text).toMatch(/const session = directory \? directorySessions\(directory\) : \[\]/)
     expect(text).toMatch(/autoRespondsPermission\(store\.autoAccept, session, \{ sessionID \}, directory\)/)
     expect(text).toMatch(/autoRespondsPermission\(store\.autoAccept, session, permission, directory\)/)

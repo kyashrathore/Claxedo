@@ -20,6 +20,17 @@ export function createElectronRenderer(mode: string): UserConfig {
   const terminal = env.VITE_TERMINAL_BACKEND || "xterm"
   const hostedActivationEnabled = env.VITE_AUTH_ENABLED?.trim() === "true"
   const localServerUrl = env.VITE_CLAXEDO_SERVER_URL?.trim() || "http://127.0.0.1:2593"
+  // The hosted app a PHONE must open, baked per build.
+  //
+  // `loadEnv` reads these from claxedo-app, but `root` is the RENDERER
+  // directory, so Vite's own env handling never sees them — anything not
+  // explicitly forwarded through `define` below is simply absent at runtime.
+  // `VITE_CLAXEDO_APP_ORIGIN` was read by `remoteAccessAppOrigin()` and
+  // forwarded by nobody, so it was always undefined and the resolver fell
+  // through to its hardcoded production default: a STAGING desktop handed
+  // phones a `app.claxedo.com` QR code, which renders a blank page there
+  // because the workspace does not exist on that control plane.
+  const appOrigin = env.VITE_CLAXEDO_APP_ORIGIN?.trim() ?? ""
 
   return {
     define: {
@@ -28,6 +39,10 @@ export function createElectronRenderer(mode: string): UserConfig {
       // removes the dynamic import entirely; a release emits it as a hashed
       // chunk while keeping the base document and its startup path local.
       __CLAXEDO_HOSTED_ACTIVATION_ENABLED__: JSON.stringify(hostedActivationEnabled),
+      // Empty when unset, which `remoteAccessAppOrigin()` treats as "not
+      // baked" and falls back from — rather than baking the string
+      // "undefined", which is truthy and would be handed to a phone verbatim.
+      "import.meta.env.VITE_CLAXEDO_APP_ORIGIN": JSON.stringify(appOrigin),
     },
     plugins: [solidPlugin(), tailwindcss(), desktopRendererBoundaryManifestPlugin(desktopDir)],
     publicDir: normalize(path.join(claxedoAppDir, "public")),

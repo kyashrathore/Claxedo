@@ -221,7 +221,9 @@ describe("hosted local document relay", () => {
       ).toBe(403)
       const wrongAudience = await mintRuntimeAccessToken(
         {
-          subject: "user_1",
+          principalKind: "user",
+          actorId: "user_1",
+          actorKind: "human",
           orgId: "org_1",
           workspaceId: "local_ws",
           hostId: "host_1",
@@ -257,7 +259,7 @@ describe("hosted local document relay", () => {
       let role = "viewer"
       const services = {
         authority: {
-          usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
+          usersMe: vi.fn(async () => ({ actor_id: "user_1", actor_kind: "human" as const })),
           openWorkspace: vi.fn(async () => ({
             role,
             workspace: {
@@ -268,14 +270,16 @@ describe("hosted local document relay", () => {
               backing: "local-worktree",
             },
           })),
-          activeLocalHostLink: vi.fn(async () => (active ? { active: true, host_id: "host_1" } : { active: false })),
+          activeWorkspaceHost: vi.fn(async () => (active ? { active: true, host_id: "host_1" } : { active: false })),
         },
         relay: {
           provider: {
             mintRuntimeAccessToken: vi.fn(async () => ({
               token: await mintRuntimeAccessToken(
                 {
-                  subject: "user_1",
+                  principalKind: "user",
+                  actorId: "user_1",
+                  actorKind: "human",
                   orgId: "org_1",
                   workspaceId: "local_ws",
                   hostId: "host_1",
@@ -468,7 +472,7 @@ async function relayFixture() {
     },
     services: {
       authority: {
-        usersMe: vi.fn(async () => ({ actor_id: "actor_1", actor_kind: "human" as const, actor_public_id: "usr_public_1", actor_name: "Test User" })),
+        usersMe: vi.fn(async () => ({ actor_id: "user_1", actor_kind: "human" as const })),
         openWorkspace: vi.fn(async () => ({
           role: "editor",
           workspace: {
@@ -479,7 +483,7 @@ async function relayFixture() {
             backing: "local-worktree",
           },
         })),
-        activeLocalHostLink: vi.fn(async () => ({ active: true, host_id: "host_1" })),
+        activeWorkspaceHost: vi.fn(async () => ({ active: true, host_id: "host_1" })),
       },
       relay: { provider: {
         mintRuntimeAccessToken: vi.fn(async () => ({ token: "runtime-token", expiresAt: Date.now() + 300_000 })),

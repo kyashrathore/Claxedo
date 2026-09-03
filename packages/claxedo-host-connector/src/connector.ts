@@ -20,7 +20,16 @@
  * Transport is injected, so the protocol is testable without a control plane.
  */
 
-import { enrollmentPayload, heartbeatPayload, type HostKeyPair } from "./host-identity"
+import { enrollmentPayload, heartbeatPayloadV2, type HostKeyPair } from "./host-identity"
+
+/**
+ * How a runtime composed its session access, mirroring
+ * `SessionAccessPolicy.sessionAuthority` in `@claxedo/workspace-runtime` and
+ * `HostSessionAuthority` at the control plane. Restated here rather than
+ * imported because this package depends on neither: it is a laptop-side
+ * client that holds a machine key and speaks one protocol.
+ */
+export type HostSessionAuthority = "local" | "managed-private"
 
 export type EnrollmentRequest = { request_id: string; nonce: string; expires_at: number }
 export type Enrollment = { enrollment_id: string; host_id: string; expires_at: number }
@@ -34,7 +43,25 @@ export type ConnectorTransport = {
     signature: string
     displayName?: string
   }) => Promise<Enrollment>
-  heartbeat: (input: { hostId: string; signature: string; ttlMs?: number }) => Promise<{ expires_at: number }>
+  /**
+   * One signed beat carries everything: the lease renewal AND the served
+   * workspace set (heartbeat payload v2). The response returns the owner's
+   * assignment view for reconciliation, and one Host Tunnel credential per
+   * workspace that is both assigned and just acked — the serving side opens
+   * its relay tunnels from the same answer that renewed the lease.
+   */
+  heartbeat: (input: {
+    hostId: string
+    signature: string
+    ttlMs?: number
+    workspaceIds: readonly string[]
+    sessionAuthority?: HostSessionAuthority
+  }) => Promise<{
+    expires_at: number
+    assigned_workspace_ids?: readonly string[]
+    /** ONE credential covering the whole assigned∩acked set, or absent. */
+    hostTunnel?: Record<string, unknown>
+  }>
 }
 
 export type ConnectorOptions = {
@@ -44,9 +71,40 @@ export type ConnectorOptions = {
   transport: ConnectorTransport
   /** How often to prove the machine is still here. */
   heartbeatIntervalMs: number
+  /**
+   * How the runtime this machine serves composed its session access, as that
+   * runtime reports it — `"local"` serves the workspace-wide event streams,
+   * `"managed-private"` serves session-scoped ones only.
+   *
+   * Declared rather than derived: the control plane mints a client's event
+   * stream scope from this and will not infer one, so a connector that leaves
+   * it undefined leaves every client of this machine with no workspace stream.
+   * The connector does not know the answer itself — the process that composed
+   * the runtime does — so it is injected and carried on every beat.
+   */
+  sessionAuthority?: HostSessionAuthority
   /** Injected so a test does not wait, and so Electron can use its own timer. */
   setInterval: (fn: () => void, ms: number) => { cancel: () => void }
-  onError?: (stage: "enroll" | "heartbeat", error: unknown) => void
+  onError?: (stage: "enroll" | "heartbeat" | "share", error: unknown) => void
+  /**
+   * The serving credential from the latest ack — one token whose claim is
+   * exactly the workspaces this machine is currently routable for, or
+   * undefined when nothing is. The consumer (the daemon's tunnel runner, via
+   * the parent process) owns opening and closing the relay connection.
+   */
+  onServing?: (tunnel: Record<string, unknown> | undefined) => void
+  /**
+   * Every time a heartbeat renews the lease — on the timer, or forced by
+   * `shareWorkspace`/`unshareWorkspace` — with the state that now holds it.
+   *
+   * `state()` always answers this immediately; a caller across a process
+   * boundary (Electron main's Host Connector child) does not poll it and can
+   * only know the lease was renewed if told, so this is the one place that
+   * tells it. Firing on every successful beat, not just the ones a caller
+   * happened to be waiting on, is what keeps the cross-process status current
+   * between explicit requests.
+   */
+  onLeaseRenewed?: (state: Extract<ConnectorState, { status: "enrolled" }>) => void
 }
 
 export type ConnectorState =
@@ -61,9 +119,41 @@ export type ConnectorState =
    */
   | { status: "stopped"; reason: "revoked" | "error" | "closed"; detail: string }
 
+/**
+ * Whether a failed heartbeat says "you are not enrolled" or merely "not right
+ * now".
+ *
+ * Only the control plane can revoke a machine, and it says so with a decisive
+ * status: 401/403 (this machine may not ask), 404/410 (no such enrollment),
+ * 409 (its state is not one that can beat). Anything else — a 5xx, a timeout,
+ * a rate limit, a socket that never opened — describes the CONNECTION to the
+ * control plane, not the enrollment, and must not be read as a decision the
+ * control plane made.
+ *
+ * The transport reports HTTP failures as `HOSTED_HTTP <status> <json>`
+ * (`claxedo-desktop/src/main/account/account-service.ts`), so the status is
+ * recoverable from the message. An error with no status at all is a transport
+ * failure and therefore transient; the enrollment lease at the control plane
+ * is what bounds that, expiring on its own if the machine really has gone.
+ */
+export function transientHeartbeatFailure(error: unknown) {
+  const status = /HOSTED_HTTP (\d{3})\b/.exec(error instanceof Error ? error.message : String(error))?.[1]
+  if (!status) return true
+  return !new Set(["400", "401", "403", "404", "409", "410"]).has(status)
+}
+
 export function createHostConnector(options: ConnectorOptions) {
   let state: ConnectorState = { status: "idle" }
   let timer: { cancel: () => void } | undefined
+  /**
+   * Workspaces this machine currently publishes, by id.
+   *
+   * Links are heartbeat-scoped: they exist only while `beat()` keeps renewing
+   * them, so this map IS the share state — losing the enrollment (stop,
+   * revoke, rejected beat) implicitly lets every link lapse at the control
+   * plane, and the map is cleared with it.
+   */
+  const links = new Map<string, { displayName?: string }>()
   /**
    * Which enrollment the connector is living in, counted.
    *
@@ -86,11 +176,53 @@ export function createHostConnector(options: ConnectorOptions) {
     era++
     timer?.cancel()
     timer = undefined
+    links.clear()
     state = { status: "stopped", reason, detail }
   }
 
   return {
     state: () => state,
+
+    /** Workspaces this machine currently publishes, sorted for stable display. */
+    sharedWorkspaceIds: () => [...links.keys()].sort(),
+
+    /**
+     * Serve one more workspace from this machine.
+     *
+     * The OWNER'S assignment happens elsewhere (an authenticated control-plane
+     * call by the process that holds the account credential); the connector's
+     * half is machine CONSENT: add the id to the served set and force one
+     * beat so the acked set — and therefore routability — updates within a
+     * round trip. Success requires the beat to come back with the workspace
+     * in the owner's assignment view: consent without intent is not a share.
+     */
+    async shareWorkspace(input: { workspaceId: string; displayName?: string }): Promise<void> {
+      if (state.status !== "enrolled") {
+        throw new Error("remote access is not active on this machine — enable it first")
+      }
+      links.set(input.workspaceId, input.displayName ? { displayName: input.displayName } : {})
+      const startedIn = era
+      try {
+        const result = await this.beat()
+        if (startedIn !== era || result.status !== "enrolled") {
+          throw new Error("remote access stopped while the share was registering")
+        }
+        if (!links.has(input.workspaceId)) {
+          throw new Error("the control plane has no assignment for this workspace on this machine")
+        }
+      } catch (error) {
+        links.delete(input.workspaceId)
+        options.onError?.("share", error)
+        throw error
+      }
+    },
+
+    /** Stop serving one workspace: drop consent, ack the smaller set now. */
+    async unshareWorkspace(workspaceId: string): Promise<void> {
+      if (!links.delete(workspaceId)) return
+      if (state.status !== "enrolled") return
+      await this.beat()
+    },
 
     async start(): Promise<ConnectorState> {
       try {
@@ -148,15 +280,43 @@ export function createHostConnector(options: ConnectorOptions) {
       const startedIn = era
       const enrollment = state.enrollment
       try {
+        // One signature covers the lease AND the served set (payload v2).
+        // The signature is fresh per call — never reuse one, every signature
+        // hash is single-use at the authority.
+        const workspaceIds = [...links.keys()].sort()
         const result = await options.transport.heartbeat({
           hostId: options.hostId,
-          signature: await options.keys.sign(heartbeatPayload({ hostId: options.hostId })),
+          signature: await options.keys.sign(heartbeatPayloadV2({ hostId: options.hostId, workspaceIds })),
+          workspaceIds,
+          // Outside the signature on purpose: the signature proves machine
+          // CONSENT to serve this set, while this describes the composition
+          // that set is served by — a description that can neither grant nor
+          // widen access, because the runtime itself admits or refuses every
+          // stream.
+          ...(options.sessionAuthority ? { sessionAuthority: options.sessionAuthority } : {}),
         })
         // The enrollment this beat was proving ended while it was in flight.
         // Its answer describes a machine the control plane has already stopped
         // recognising, so it is dropped rather than adopted.
         if (startedIn !== era) return state
         state = { status: "enrolled", enrollment: { ...enrollment, expires_at: result.expires_at } }
+        // Reconcile consent against intent: an id the owner has unassigned
+        // (from another device, or by revoking the share) leaves the served
+        // set here, so the next beat's signed set is truthful and the panel
+        // shows what actually routes.
+        if (result.assigned_workspace_ids) {
+          const assigned = new Set(result.assigned_workspace_ids)
+          for (const workspaceId of [...links.keys()]) {
+            if (!assigned.has(workspaceId)) links.delete(workspaceId)
+          }
+        }
+        // The serving credential for everything assigned∩acked, straight
+        // from the ack that renewed the lease.
+        options.onServing?.(result.hostTunnel)
+        // `state` down to `links` are now the coherent result of this beat —
+        // renewed expiry, reconciled shares — so tell a listener now rather
+        // than leaving it to notice on its own next read.
+        options.onLeaseRenewed?.(state)
       } catch (error) {
         // Same test on the failing path, for the opposite mistake. A beat that
         // was already open when the user paused comes back rejected — the
@@ -165,10 +325,30 @@ export function createHostConnector(options: ConnectorOptions) {
         // away when they turned it off themselves.
         if (startedIn !== era) return state
         options.onError?.("heartbeat", error)
-        // A rejected heartbeat means the control plane no longer recognises
-        // this machine — revoked, paused past expiry, or enrolled elsewhere.
-        // Re-enrolling on its own would be the connector overruling that
-        // decision, so it stops and waits for the user.
+        // A beat can fail for two completely different reasons, and treating
+        // them alike is what made remote access fragile.
+        //
+        // A DECISION — the control plane no longer recognises this machine
+        // (revoked, paused past expiry, enrolled elsewhere) — must stop the
+        // connector. Re-enrolling itself would be overruling the user.
+        //
+        // A DISRUPTION — the control plane was briefly unreachable or was mid
+        // release — must not. Observed live and repeatedly: deploying the
+        // control plane makes it answer
+        // `503 deployment_candidate_unavailable` for the seconds between the
+        // upload and the phase opening, and every beat in that window used to
+        // stop the machine permanently, with `revoked` on the panel. The
+        // laptop went on reporting `serving: true` with open relay sockets
+        // (its credential lease had not expired yet) while the control plane
+        // refused to route to it and the app said "Workspace host is
+        // offline" — the same symptom as a genuine revocation, with none of
+        // the same cause. Every deploy silently took remote access down.
+        //
+        // So a disruption keeps the enrollment and lets the next beat retry.
+        // The lease is the backstop: if the control plane really is gone, the
+        // enrollment expires there on its own and stops routing without this
+        // side having to guess.
+        if (transientHeartbeatFailure(error)) return state
         stop("revoked", String(error))
       }
       return state

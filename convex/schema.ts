@@ -151,6 +151,98 @@ export default defineSchema({
   // transaction-visible fence while a batched purge runs, plus a durable
   // receipt that outlives the org row and therefore carries HASHES only.
 
+  private_session_registrations: defineTable({
+    operation_id: v.string(),
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    workspace_public_id: v.string(),
+    creator_actor_id: v.id("users"),
+    operation_kind: v.union(v.literal("create"), v.literal("fork")),
+    parent_session_id: v.optional(v.string()),
+    requested_title: v.optional(v.string()),
+    state: v.union(
+      v.literal("reserved"),
+      v.literal("reconciliation_required"),
+      v.literal("registered"),
+      v.literal("compensation_pending"),
+      v.literal("compensated"),
+    ),
+    state_reason: v.optional(v.string()),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_operation_id", ["operation_id"])
+    .index("by_session_id", ["session_id"]),
+
+  private_sessions: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    workspace_public_id: v.string(),
+    org_id: v.optional(v.id("orgs")),
+    project_id: v.optional(v.id("projects")),
+    creator_actor_id: v.id("users"),
+    operation_id: v.string(),
+    title: v.optional(v.string()),
+    created_at: v.number(),
+    updated_at: v.number(),
+    deleted_at: v.optional(v.number()),
+    max_event_ordinal: v.number(),
+  })
+    .index("by_session_id", ["session_id"])
+    .index("by_workspace_updated", ["workspace_id", "updated_at"])
+    .index("by_workspace_creator_updated", ["workspace_id", "creator_actor_id", "updated_at"]),
+
+  private_session_participants: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    participant_actor_id: v.id("users"),
+    added_by_actor_id: v.id("users"),
+    created_at: v.number(),
+    revoked_at: v.optional(v.number()),
+  })
+    .index("by_session_actor", ["session_id", "participant_actor_id"])
+    .index("by_actor", ["participant_actor_id"]),
+
+  private_session_messages: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    message_id: v.string(),
+    author_actor_id: v.optional(v.id("users")),
+    role: v.string(),
+    ordinal: v.number(),
+    data: v.any(),
+    created_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_session_ordinal", ["session_id", "ordinal"])
+    .index("by_session_message", ["session_id", "message_id"]),
+
+  private_session_turn_leases: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    workspace_public_id: v.string(),
+    turn_id: v.string(),
+    lease_id: v.string(),
+    fencing_token: v.number(),
+    actor_id: v.id("users"),
+    acquired_at: v.number(),
+    expires_at: v.number(),
+    released_at: v.optional(v.number()),
+  })
+    .index("by_session_id", ["session_id"])
+    .index("by_lease_id", ["lease_id"]),
+
+  private_session_turn_producers: defineTable({
+    session_id: v.string(),
+    workspace_id: v.id("workspaces"),
+    turn_id: v.string(),
+    fencing_token: v.number(),
+    actor_id: v.id("users"),
+    admitted_at: v.number(),
+  })
+    .index("by_session_turn", ["session_id", "turn_id"])
+    .index("by_session_fence", ["session_id", "fencing_token"]),
+
   /**
    * The durable record of one org purge. `org_key_hash` is
    * `sha256(orgDocId \0 clerkOrgId)` and `operation_hash` is `sha256(operationId)`
@@ -363,33 +455,10 @@ export default defineSchema({
     .index("by_org", ["granted_to_org_id"])
     .index("by_team", ["granted_to_team_id"]),
 
-  local_host_links: defineTable({
-    workspace_id: v.id("workspaces"),
-    owner_user_id: v.id("users"),
-    host_id: v.optional(v.string()),
-    public_key: v.optional(v.string()),
-    display_name: v.optional(v.string()),
-    second_device_open_at: v.optional(v.number()),
-    last_seen_at: v.number(),
-    expires_at: v.number(),
-    paused_at: v.optional(v.number()),
-    // Pause provenance: a user pause must survive a kill-switch resume.
-    paused_by: v.optional(v.union(v.literal("user"), v.literal("killswitch"))),
-    paused_reason: v.optional(v.string()),
-    revoked_at: v.optional(v.number()),
-    created_at: v.number(),
-    updated_at: v.number(),
-  })
-    .index("by_workspace", ["workspace_id"])
-    .index("by_owner", ["owner_user_id"])
-    .index("by_host_id", ["host_id"])
-    .index("by_expires_at", ["expires_at"]),
-
-  // Machine-wide remote access (Unit 6). One row per (owner, machine) — NOT
-  // per workspace, which is the whole difference from local_host_links above.
-  // A user with twelve projects on one laptop enrolls the laptop once; which
-  // workspaces a session may reach is decided at request time from the
-  // workspace tables rather than frozen into a registration row.
+  // Machine-wide remote access. One row per (owner, machine) — NOT per
+  // workspace: a user with twelve projects on one laptop enrolls the laptop
+  // once, and which workspaces a session may reach is decided at request time
+  // from the workspace tables rather than frozen into a registration row.
   //
   // Convex has no unique constraints, so `by_owner_host` is how that rule is
   // enforced: every write path reads through it first and patches rather than
@@ -406,6 +475,16 @@ export default defineSchema({
     paused_by: v.optional(v.union(v.literal("user"), v.literal("killswitch"))),
     paused_reason: v.optional(v.string()),
     revoked_at: v.optional(v.number()),
+    // The machine's last-acked served set (PUBLIC workspace ids), written only
+    // by a verified heartbeat v2 signature, plus when it was acked. Routing
+    // requires a workspace to be BOTH owner-assigned and inside this set.
+    acked_workspace_ids: v.optional(v.array(v.string())),
+    acked_at: v.optional(v.number()),
+    // How the runtime this machine serves composed its session access, as the
+    // machine declared it on its last heartbeat. Absent means it declared
+    // nothing, and a connection minted from this host then carries no stream
+    // scope — the control plane never infers a runtime's composition.
+    session_authority: v.optional(v.union(v.literal("local"), v.literal("managed-private"))),
     created_at: v.number(),
     updated_at: v.number(),
   })
@@ -414,9 +493,31 @@ export default defineSchema({
     .index("by_host_id", ["host_id"])
     .index("by_expires_at", ["expires_at"]),
 
-  // The one-use nonce a machine signs to prove it holds the private key.
-  // Separate from host_attestation_challenges because that table is keyed by
-  // workspace and this flow has no workspace to key by.
+  // The OWNER's declaration that host H serves workspace X (machine-wide
+  // enrollment, assignment grain). Pure data: no liveness of its own — the
+  // enrollment lease answers "is the machine here", the machine's consent is
+  // the heartbeat-acked set on host_enrollments, and routing requires all
+  // three.
+  //
+  // One workspace, one host: a local association id names a directory on ONE
+  // machine, so the PUBLIC workspace id alone is the identity (`by_workspace`
+  // is read-then-patch enforced, the same device `by_owner_host` uses above).
+  // Public id rather than a doc reference because the heartbeat's acked set
+  // carries public ids and routing compares the two directly.
+  host_workspace_assignments: defineTable({
+    workspace_id: v.string(),
+    host_id: v.string(),
+    owner_user_id: v.id("users"),
+    second_device_open_at: v.optional(v.number()),
+    assigned_at: v.number(),
+    updated_at: v.number(),
+  })
+    .index("by_workspace", ["workspace_id"])
+    .index("by_owner_host", ["owner_user_id", "host_id"])
+    .index("by_owner", ["owner_user_id"]),
+
+  // The one-use nonce a machine signs to prove it holds the private key. It
+  // carries no workspace: enrollment is machine-wide.
   host_enrollment_requests: defineTable({
     request_id: v.string(),
     owner_user_id: v.id("users"),
@@ -433,23 +534,6 @@ export default defineSchema({
     // out to `used_at + ENROLLMENT_CONSUMED_RETENTION_MS` so one index answers
     // for both live nonces and retained consumed evidence.
     .index("by_expires_at", ["expires_at"]),
-
-  host_attestation_challenges: defineTable({
-    challenge_id: v.string(),
-    // PUBLIC workspace id (not a doc reference): a challenge may be issued for
-    // a never-registered workspace — the workspace doc is only created at
-    // register time, after the host proves its key.
-    workspace_id: v.string(),
-    owner_user_id: v.id("users"),
-    host_id: v.string(),
-    nonce: v.string(),
-    expires_at: v.number(),
-    used_at: v.optional(v.number()),
-    created_at: v.number(),
-  })
-    .index("by_challenge_id", ["challenge_id"])
-    .index("by_workspace", ["workspace_id"])
-    .index("by_owner", ["owner_user_id"]),
 
   session_history: defineTable({
     session_id: v.string(),
@@ -500,9 +584,12 @@ export default defineSchema({
     workspace_id: v.optional(v.id("workspaces")),
     workspace_public_id: v.optional(v.string()),
     host_id: v.string(),
+    principal_kind: v.union(v.literal("user"), v.literal("service")),
+    actor_id: v.string(),
+    actor_kind: v.union(v.literal("human"), v.literal("agent")),
+    role: workspaceRole,
     minted_for_user_id: v.optional(v.id("users")),
     minted_for_subject: v.optional(v.string()),
-    principal_kind: v.optional(v.union(v.literal("user"), v.literal("service"))),
     minted_for_actor_id: v.optional(v.string()),
     minted_for_actor_kind: v.optional(v.union(v.literal("human"), v.literal("agent"))),
     // EXPAND: tokens minted before live role validation do not carry the role
@@ -1895,6 +1982,46 @@ export default defineSchema({
    * no expiry is neither replayable nor collectable, which is the latent bug in
    * the in-memory version (a hung request wedged its key permanently).
    */
+  service_installations: defineTable({
+    environment_id: v.string(),
+    deployment_id: v.string(),
+    service_id: v.union(v.literal("workgraph"), v.literal("documents")),
+    protocol_version: v.literal("claxedo.service.v1"),
+    schema_version: v.number(),
+    lifecycle_state: v.union(v.literal("installed_disabled"), v.literal("enabled")),
+    binding_name: v.union(v.literal("WORKGRAPH_SERVICE"), v.literal("DOCUMENTS_SERVICE")),
+    entrypoint: v.string(),
+    binding_provenance: v.string(),
+    probe_status: v.optional(v.union(v.literal("ready"), v.literal("unhealthy"))),
+    probe_checked_at: v.optional(v.string()),
+    service_build_id: v.optional(v.string()),
+    revision: v.number(),
+    last_operation_id: v.string(),
+    updated_at: v.string(),
+  })
+    .index("by_deployment_service", ["environment_id", "deployment_id", "service_id"])
+    .index("by_deployment_state", ["environment_id", "deployment_id", "lifecycle_state", "service_id"]),
+
+  service_installation_audit: defineTable({
+    environment_id: v.string(),
+    deployment_id: v.string(),
+    operation_id: v.string(),
+    operation_intent: v.string(),
+    service_id: v.union(v.literal("workgraph"), v.literal("documents")),
+    action: v.union(
+      v.literal("register_disabled"),
+      v.literal("record_probe"),
+      v.literal("enable"),
+      v.literal("disable"),
+      v.literal("uninstall"),
+    ),
+    from_revision: v.optional(v.number()),
+    to_revision: v.optional(v.number()),
+    occurred_at: v.string(),
+  })
+    .index("by_deployment_operation", ["environment_id", "deployment_id", "operation_id"])
+    .index("by_deployment_time", ["environment_id", "deployment_id", "occurred_at", "operation_id"]),
+
   control_idempotency: defineTable({
     cache_key: v.string(),
     /** Payload binding: same key + different payload is a conflict, never a replay. */

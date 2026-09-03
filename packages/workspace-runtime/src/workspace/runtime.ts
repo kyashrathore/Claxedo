@@ -54,10 +54,13 @@ import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore } from "../store"
 import { assertTarget, workspaceDir, type WorkspaceTarget } from "../target"
 import { normalizeRuntimeSnapshot, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeRunner, type RuntimeSnapshot } from "../routes/config"
+import { harnessQueryParam } from "../routes/http"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
 import { OpenCodeCompatRoutes } from "../routes/opencode-compat"
+import { ProviderConfigRoutes, type ProviderConfigStore } from "../routes/provider-config"
 import { SessionRoutes } from "../routes/session"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
+import { sessionV2Proxy } from "../routes/session-v2-proxy"
 import {
   mountWorkspaceAgentHooks,
   mountWorkspaceCore,
@@ -81,6 +84,13 @@ import {
   sessionAccessDenied,
   type SessionAccessPolicy,
 } from "../session-access-policy"
+import {
+  authorizeSessionEventScope,
+  compatEnvelopeSessionId,
+  isSessionEventScopeResponse,
+  scopedReplay,
+  watchSessionEventLease,
+} from "../routes/session-event-privacy"
 
 /**
  * The store surface the workspace-runtime engine actually consumes — derived
@@ -106,6 +116,7 @@ export type WorkspaceRuntimeStore =
     getMessages(id: string): AgentMessage[]
     getMessagePage?: (id: string, page: AgentMessagePageInput) => AgentMessagePage | undefined
     getSessionMaxSeq(sessionId: string): number
+    getSessionFencingToken?: (sessionId: string) => number | undefined
     listSubagents?: (parentSessionId: string) => unknown[]
     bindSession(input: {
       sessionId: string
@@ -147,8 +158,6 @@ export type WorkspaceRuntimeStore =
 export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
 
 export type WorkspaceHostOptions = {
-  /** Required when mounting a non-loopback managed session surface. */
-  sessionAccessPolicy?: SessionAccessPolicy
   /** Optional, local-only lifecycle observer supplied by an embedding host. */
   processObserver?: ProcessObserver
   /** Host observer for the durable turn.finish outcome after store commit. */
@@ -189,8 +198,28 @@ export type WorkspaceHostOptions = {
    * env flags into `true`/`false`.
    */
   opencodeCompat?: boolean
+  /**
+   * Host-owned provider catalog for harnesses OTHER than opencode.
+   *
+   * `/provider` is served here for every workspace-scoped caller — the cloud
+   * control plane proxies it, and a relayed user-hosted request lands here
+   * too. The kit can answer it only for opencode (by proxying the engine);
+   * for `pi`, `claude-sdk`, `codex-app-server` and the rest the catalog is
+   * derived from credentials and env the HOST owns and the kit must not read.
+   * Without this seam those harnesses answered 502 on this route while the
+   * host's own compat router answered them fine — and once `/provider` is
+   * runtime-owned, the host's router is no longer in the path for a
+   * workspace-scoped request. This is how the kit stays a superset of what
+   * the host served before, without importing the host.
+   *
+   * Return the catalog body; `ok: false` in it is answered as 502, matching
+   * the host router. Absent, non-opencode harnesses keep the kit's 502.
+   */
+  providerCatalog?: (input: { harnessId: string; providerId?: string }) => Promise<unknown>
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
+  /** Private-session authority selected by the host composition. */
+  sessionAccessPolicy?: SessionAccessPolicy
   /** Host-owned credential/model resolver for concrete Pi model turns. */
   piModelBackend?: PiModelBackendResolver
   harness?: RuntimeRunner
@@ -1524,7 +1553,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   async function listSessions(input: {
     req: { query: (k: string) => string | undefined }
   }, directory: string) {
-    const requestedRunner = normalizeHarnessIdentity(input.req.query("harness") || input.req.query("runner") || undefined)
+    const requestedRunner = normalizeHarnessIdentity(harnessQueryParam(input.req))
     if (requestedRunner) {
       const target: RuntimeRunner = {
         id: requestedRunner.id,
@@ -2054,7 +2083,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         if (options.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
       }
       app.get("/api/wr/harness-config-options", async (c) => {
-        const requestedHarness = normalizeHarnessIdentity(c.req.query("harness") || c.req.query("runner") || c.req.query("type"))
+        const requestedHarness = normalizeHarnessIdentity(harnessQueryParam(c.req) || c.req.query("type"))
         const targetRunner = requestedHarness
           ? {
               id: requestedHarness.id,
@@ -2072,9 +2101,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             },
           }, 404)
         }
-        const adapter = await ensureSessionAdapter(targetRunner)
         const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
         try {
+          // Adapter selection is inside the guarded region because it is a
+          // source of the very failure this route reports: an ACP identity with
+          // no applied connection descriptor raises
+          // `WorkspaceHarnessUnavailableError` before any process is spawned.
+          // Selecting outside it let that escape as an untyped 500, so the
+          // caller saw a transport failure instead of the named reason.
+          const adapter = await ensureSessionAdapter(targetRunner)
           if (!adapter.probeConfigOptions) {
             return c.json({
               ok: false,
@@ -2099,15 +2134,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             },
           }, 502)
         }
-      })
-
-      app.get("/session/status", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
-          const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
-          return c.json(sessionStatusSnapshot(await adapter.listSessions(directory)))
-        }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       })
 
       app.get("/mcp", async (c) => {
@@ -2137,8 +2163,16 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // Cloud control plane proxies /provider through here so the session
       // sidebar can list model metadata for both OpenCode and ACP runners.
       app.get("/provider", async (c) => {
-        const requestedHarness = c.req.query("harness") || c.req.query("runner")
-        if (runner.id !== "opencode" && requestedHarness !== "opencode") return c.json(providerUnavailable(runner), 502)
+        const requestedHarness = harnessQueryParam(c.req)
+        const harnessId = requestedHarness || runner.id
+        if (harnessId !== "opencode") {
+          // Not the kit's to answer: see `WorkspaceHostOptions.providerCatalog`.
+          if (!hostOptions.providerCatalog) return c.json(providerUnavailable(harnessId), 502)
+          const detail = c.req.query("provider")
+          const body = await hostOptions.providerCatalog({ harnessId, ...(detail ? { providerId: detail } : {}) })
+          const failed = !!body && typeof body === "object" && (body as { ok?: unknown }).ok === false
+          return c.json(body, failed ? 502 : 200)
+        }
         if (hostOptions.opencodeCompat !== true) {
           return c.json(
             providerUnavailable(
@@ -2185,6 +2219,48 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
       })
 
+      // The write half of `GET /provider` above. A provider the harness config
+      // DECLARES has no credential to drop, so disconnecting it means naming it
+      // in that config's `disabled_providers` — and that config belongs to this
+      // workspace's runtime, never to a central server global. Same
+      // (workspace, harness) scope the catalog read carries, so the read
+      // reflects the write on the next fetch.
+      app.route("/", ProviderConfigRoutes({
+        defaultHarness: () => runner.id,
+        store: async (harnessId) => {
+          // Only opencode keeps a provider registry in config; every other
+          // harness answers `/provider` from the host-injected catalog, which
+          // has no per-workspace declaration to disable.
+          if (harnessId !== "opencode") return undefined
+          if (hostOptions.opencodeCompat !== true) {
+            throw new Error("opencode provider configuration is unavailable because compatibility proxying is disabled")
+          }
+          const adapter = runner.id === "opencode"
+            ? await ensureSessionAdapter(runner)
+            : await ensureSessionAdapter({ id: "opencode", access: "native" })
+          if (!hasAdapterCapability(adapter, "http-proxy")) {
+            throw new Error("opencode provider configuration is not reachable through this harness adapter")
+          }
+          const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
+          const call = async (init?: RequestInit) => {
+            const headers = new Headers(hostOptions.opencodeHeaders)
+            headers.set("accept", "application/json")
+            if (init?.body) headers.set("content-type", "application/json")
+            const res = await request(new Request(`${OPENCODE_INTERNAL_BASE}/global/config`, { ...init, headers }))
+            if (!res.ok) throw new Error(`opencode configuration request failed with status ${res.status}`)
+            return await res.json() as Record<string, unknown>
+          }
+          const store: ProviderConfigStore = {
+            read: () => call(),
+            // The engine disposes every cached InstanceState when a config
+            // update actually changes the file, so the catalog `GET /provider`
+            // re-derives is the one this write produced.
+            write: (patch) => call({ method: "PATCH", body: JSON.stringify(patch) }),
+          }
+          return store
+        },
+      }))
+
       app.get("/experimental/tool/ids", async (c) => {
         const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
@@ -2208,6 +2284,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       })
 
       app.get("/global/event", async (c) => {
+        const scope = await authorizeSessionEventScope(c, sessionAccessPolicy, "sessionID")
+        if (isSessionEventScopeResponse(scope)) return scope
+        const allows = scope.managed
+          ? (event: CompatEnvelope) => compatEnvelopeSessionId(event) === scope.sessionId
+          : (_event: CompatEnvelope) => true
         const principal = eventDeliveryPrincipal(c)
         // Two changes meet here and BOTH are load-bearing.
         //
@@ -2224,7 +2305,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         // so a session pinned to a non-default harness gets ITS adapter. That
         // helper only creates and configures; it does not spawn, so it does not
         // reintroduce the start this gate exists to prevent.
-        const proxy = runner.id === "opencode" && hostOptions.opencodeCompat === true
+        // A managed-private stream is served from the canonical hub so replay
+        // and live frames pass through one session filter. The raw upstream
+        // proxy cannot enforce that boundary.
+        const proxy = !scope.managed && runner.id === "opencode" && hostOptions.opencodeCompat === true
           ? await ensureSessionAdapter(runner)
           : undefined
         const adapter = proxy && hasAdapterCapability(proxy, "http-proxy")
@@ -2273,39 +2357,44 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
 
         let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null
+        let cleanup = () => {}
+        let stopLeaseWatch = () => {}
+        let closed = false
+        const close = () => {
+          if (closed) return
+          closed = true
+          stopLeaseWatch()
+          cleanup()
+          try {
+            ctrl?.close()
+          } catch {}
+        }
         const body = new ReadableStream<Uint8Array>({
           start(next) {
             ctrl = next
             next.enqueue(encodeSseData({ payload: { id: "server.connected", type: "server.connected", properties: {} } }))
           },
+          cancel: close,
         })
 
         const opened = globalEvents.open(principal)
         await opened.ready
-        let cleanup: () => void = () => {}
         cleanup = attachSseFanout({
-          subscribe: (listener) => opened.subscribe(listener, () => {
-            cleanup()
-            try {
-              ctrl?.close()
-            } catch {}
-          }),
+          subscribe: (listener) => opened.subscribe((event) => {
+            if (allows(event)) listener(event)
+          }, close),
           write: async (event, meta) => {
             ctrl?.enqueue(encodeSseData(event, meta?.id))
           },
           heartbeat: { payload: { type: "server.heartbeat", properties: {} } },
           heartbeatMs: 10_000,
           lastEventId: c.req.header("last-event-id"),
-          replay: opened.replay,
+          replay: scope.managed ? scopedReplay(opened.replay, allows) : opened.replay,
           replayLive: false,
         })
 
-        c.req.raw.signal.addEventListener("abort", () => {
-          cleanup()
-          try {
-            ctrl?.close()
-          } catch {}
-        })
+        stopLeaseWatch = watchSessionEventLease(scope, sessionAccessPolicy, close)
+        c.req.raw.signal.addEventListener("abort", close, { once: true })
 
         return new Response(body, { headers: sseHeaders() })
       })
@@ -2313,65 +2402,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       // Session V2 and its model catalog are the durable agent-control
       // contracts used by hosted WorkGraph. Keep them on the authenticated
       // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
-      const proxySessionV2 = async (c: Context) => {
-        const decision = await sessionAccessPolicy.authorizePrefix({
-          ...sessionAccessContext(c as never),
-          operation: "session_v2_proxy",
-          method: c.req.method,
-          path: c.req.path,
-          ...(c.req.path.startsWith("/api/session/")
-            ? { sessionId: decodeURIComponent(c.req.path.slice("/api/session/".length).split("/")[0] ?? "") }
-            : {}),
-        })
-        if (!decision.allowed) return sessionAccessDenied(decision)
+      const forwardSessionV2 = async (c: Context) => {
         const adapter = await ensureSessionAdapter(runner)
         if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
           return c.json({ error: { code: "session_v2_unavailable", message: "Session V2 requires the OpenCode HTTP runtime" } }, 503)
         }
-        const response = (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-        if (!response.ok || c.req.path !== "/api/session") return response
-        if (c.req.method === "POST") {
-          const payload = await response.clone().json().catch(() => undefined)
-          const sessionId = sessionV2CreatedId(payload)
-          if (!sessionId) {
-            return c.json({ error: { code: "session_create_response_invalid", message: "Session V2 create response is missing an id" } }, 502)
-          }
-          if (!sessionAccessPolicy.registerSession) {
-            return sessionAccessDenied({
-              allowed: false,
-              status: 403,
-              code: "session_authority_required",
-              message: "Managed session creation requires creator registration authority",
-            })
-          }
-          const registration = await sessionAccessPolicy.registerSession({
-            ...sessionAccessContext(c as never),
-            operation: "session_create",
-            sessionId,
-            method: c.req.method,
-            path: c.req.path,
-          })
-          if (!registration.allowed) return sessionAccessDenied(registration)
-          return response
-        }
-        if (c.req.method !== "GET") return response
-        const payload = await response.clone().json().catch(() => undefined)
-        const collection = sessionV2Collection(payload)
-        if (!collection) {
-          return c.json({ error: { code: "session_list_response_invalid", message: "Session V2 list response is invalid" } }, 502)
-        }
-        const allowed = new Set(await sessionAccessPolicy.filterSessions({
-          ...sessionAccessContext(c as never),
-          operation: "session_list",
-          method: c.req.method,
-          path: c.req.path,
-          sessionIds: collection.rows.map(sessionV2RowId).filter(Boolean),
-        }))
-        return sessionV2JsonResponse(
-          response,
-          collection.rebuild(collection.rows.filter((row) => allowed.has(sessionV2RowId(row)))),
-        )
+        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
       }
+      const proxySessionV2 = sessionV2Proxy({
+        policy: sessionAccessPolicy,
+        forward: forwardSessionV2,
+      })
       app.all("/api/model", proxySessionV2)
       app.all("/api/session", proxySessionV2)
       app.all("/api/session/*", proxySessionV2)
@@ -2419,7 +2460,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // silently creates the session on the wrong adapter — and when the
           // active runner is ACP, spawns a process the caller never asked for.
           const query = (c as { req: { query: (k: string) => string | undefined } }).req
-          const requested = normalizeHarnessIdentity(query.query("harness") || query.query("runner") || undefined)
+          const requested = normalizeHarnessIdentity(harnessQueryParam(query))
           const adapter = await adapterForSession({
             ...(id ? { sessionId: id } : {}),
             directory,
@@ -2447,6 +2488,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         },
         afterCreateSession: hostOptions.afterCreateSession,
         listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
+        getStatus: async (c, directory, adapter) => {
+          if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
+            return sessionStatusSnapshot(await adapter.listSessions(directory))
+          }
+          return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
+        },
         listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listQuestions: (c, directory) => listQuestions(c as { req: { query: (k: string) => string | undefined } }, directory),
@@ -2487,13 +2534,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           if (!store().getSession(sessionId)) return undefined
           const messages = store().getMessages(sessionId)
           if (!messages.length) return undefined
+          const fencingToken = store().getSessionFencingToken?.(sessionId) ?? 0
           return {
             messages,
             maxEventOrdinal: store().getSessionMaxSeq(sessionId),
+            ...(fencingToken === 0 ? {} : { fencingToken }),
           }
         },
         getSession: async ({ adapter, directory, sessionId }) => {
-          return store().getSession(sessionId) ?? await adapter.getSession(sessionId, directory)
+          const stored = store().getSession(sessionId) as { directory?: string } | null
+          if (stored) return (stored.directory ?? "") === (directory ?? "") ? stored as AgentSession : null
+          return await adapter.getSession(sessionId, directory)
         },
         getTodos: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined

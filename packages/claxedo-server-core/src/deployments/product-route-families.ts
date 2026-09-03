@@ -191,12 +191,18 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     paths: ["/api/claxedo/project/remote"],
   },
 
+  {
+    id: "remote-access-owner",
+    owner: "server",
+    serves: "The owner's view of their enrolled machines: status, devices, revoke, second-device open.",
+    paths: ["/api/claxedo/remote-access", "/api/claxedo/remote-access/"],
+  },
   // ── Host publication: moves to @claxedo/host-connector ───────────────────
   {
-    id: "remote-access",
+    id: "remote-access-machine",
     owner: "host-connector",
-    serves: "Machine enrollment, device listing, and second-device open for user-hosted workspaces.",
-    paths: ["/api/claxedo/remote-access", "/api/claxedo/remote-access/"],
+    serves: "Enrolling this process as a machine (the self-hosted single binary is its own machine).",
+    paths: ["/api/claxedo/remote-access/enable"],
   },
 ]
 

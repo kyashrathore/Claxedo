@@ -1,4 +1,8 @@
-import { createHostedContributionPort, type HostedContributionPort } from "@/platform/account/hosted-contribution-port"
+import {
+  createHostedContributionPort,
+  type HostedContributionInput,
+  type HostedContributionPort,
+} from "@/platform/account/hosted-contribution-port"
 import type { AccountState } from "@/platform/account/account-port"
 import type { ContentSurfaceContribution } from "../integrations/content-surface-contract"
 
@@ -35,6 +39,20 @@ export type HostedContributionSet = {
 }
 
 export type HostedContributionLoader = () => Promise<HostedContributionSet>
+
+/**
+ * The one app-layer binding of the generic account-owned activation mechanism.
+ *
+ * Product and fixed-service policies may each need an independently fenced
+ * activation, but they must not bind the platform mechanism themselves. This
+ * keeps the contribution vocabulary and registry ownership in one module while
+ * allowing WorkGraph and Documents to have separate lifecycles.
+ */
+export function createContentSurfaceActivation(
+  input: HostedContributionInput<ContentSurfaceContribution>,
+): HostedContributionPort {
+  return createHostedContributionPort<ContentSurfaceContribution>(input)
+}
 
 /**
  * Content types the hosted set provides, as plain strings.
@@ -117,7 +135,7 @@ export function createProductContributions(input: ProductContributionsInput): Pr
   let expectsHosted = false
   let held = false
 
-  const hosted: HostedContributionPort = createHostedContributionPort<ContentSurfaceContribution>({
+  const hosted = createContentSurfaceActivation({
     signedIn: input.hostedComposition,
     load: async () => {
       if (!input.loadHosted) {

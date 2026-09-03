@@ -26,11 +26,8 @@ let signInCalls: ({ redirectUrl?: string } | undefined)[] = []
  * typechecks against nothing.
  */
 const provider = {
-  clerk: {
-    get organization() {
-      return organization
-    },
-  },
+  descriptor: () => null,
+  methods: () => ["clerk"] as const,
   session: () => null,
   user: () => user,
   loading: () => loading,
@@ -40,8 +37,9 @@ const provider = {
   },
   signOut: async () => undefined,
   signUp: async () => undefined,
-  getToken: async () => signed ? "token" : null,
+  getToken: async () => (signed ? "token" : null),
   refreshSession: async () => undefined,
+  organization: () => organization,
 }
 
 const fakeAuth: ExternalAuthSource = () => provider
@@ -131,6 +129,7 @@ describe("useAuthSession with an identity provider bound", () => {
     expect(session.status()).toBe("signed")
     expect(session.user()).toEqual({ id: "usr_1" })
     expect(session.organization()).toEqual({ id: "org_1" })
+    expect(session.methods()).toEqual(["clerk"])
     await expect(session.getToken()).resolves.toBe("token")
     // Forwarded by reference, not re-wrapped: the accessor callers read IS the
     // provider's, so a Solid effect over it tracks the provider's own signal.

@@ -3,18 +3,24 @@ import { anyApi } from "convex/server"
 import type { UserHostedTargetResolver } from "../../sandbox-relay-target"
 import { controlPlaneTimeoutMs, withTimeout } from "./timeout"
 
-// Service-authenticated resolver for the current user-hosted host of a
-// workspace. The hosted internal-relay resolver calls in with the control-plane
-// service token (no end-user identity), so it queries `localHostLinks.activeForRelay`
-// (service-token authenticated) rather than the signed `active` query.
+// Service-authenticated resolver for the routable host of a user-hosted
+// workspace. The hosted internal-relay resolver calls in with the
+// control-plane service token (no end-user identity), so it queries
+// `hostEnrollments.activeWorkspaceHostForRelay` (service-token authenticated)
+// rather than the signed `activeWorkspaceHost` query.
 //
-// Cloud workspaces resolve through the SandboxLease; user-hosted
-// workspaces have no lease (the host dials *out* to the relay), so the relay
-// routes by `hostId` over the established tunnel and `baseUrl` is empty.
+// Same three conditions as the D1 resolver
+// (`authority/adapters/d1/user-hosted-relay-target.ts`): the workspace must be
+// owner-assigned to a host, inside that machine's heartbeat-acked served set,
+// and the machine's enrollment lease must be live.
+//
+// Cloud workspaces resolve through the SandboxLease; user-hosted workspaces
+// have no lease (the host dials *out* to the relay), so the relay routes by
+// `hostId` over the established tunnel and `baseUrl` is empty.
 
-const localHostLinks = (anyApi as unknown as {
-  localHostLinks: { activeForRelay: unknown }
-}).localHostLinks
+const hostEnrollments = (anyApi as unknown as {
+  hostEnrollments: { activeWorkspaceHostForRelay: unknown }
+}).hostEnrollments
 
 export function createUserHostedTargetResolver(input: {
   convexUrl: string
@@ -22,7 +28,8 @@ export function createUserHostedTargetResolver(input: {
 }): UserHostedTargetResolver {
   const client = new ConvexHttpClient(input.convexUrl)
   return async (workspaceId) => {
-    const result = await withTimeout(client.query(localHostLinks.activeForRelay as never, {
+    if (!workspaceId.trim()) return { active: false }
+    const result = await withTimeout(client.query(hostEnrollments.activeWorkspaceHostForRelay as never, {
       service_token: input.serviceToken,
       workspace_id: workspaceId,
     } as never), controlPlaneTimeoutMs("read")) as

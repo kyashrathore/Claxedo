@@ -5,8 +5,10 @@
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { nonCanonicalWorkspaceRouteRedirect } from "@/platform/identity/route"
 import { centralSessionRef, retargetSessionRef, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
+import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
+import { requestName, sessionPerf } from "@/platform/performance/session-perf"
 
 type RouteSessionDirectory = NonNullable<Parameters<typeof signedWorkspaceFromProjects>[1]>
 
@@ -84,6 +86,28 @@ export function routeSessionMetaIsCentral(input: unknown) {
   return row.host === "central" ||
     (typeof row.sessionRef === "string" && row.sessionRef.startsWith("central:")) ||
     (typeof row.session_ref === "string" && row.session_ref.startsWith("central:"))
+}
+
+type CachedRouteSessionRow = {
+  id: string
+  directory?: string
+  host?: unknown
+  sessionRef?: unknown
+  session_ref?: unknown
+  time?: { archived?: unknown }
+}
+
+export function routeCachedWorkspaceSessionCandidate<T extends CachedRouteSessionRow>(
+  sessionId: string,
+  caches: Array<{ directory: AgentRuntimeDirectory; sessions: T[] }>,
+) {
+  const matches = caches.flatMap(({ directory, sessions }) =>
+    sessions
+      .filter((session) => session.id === sessionId && !session.time?.archived)
+      .map((session) => ({ cacheDirectory: directory, session })),
+  )
+  if (matches.some(({ session }) => routeSessionMetaIsCentral(session))) return
+  return matches[0]
 }
 
 export function routeSessionMetaIsArchived(input: unknown) {
@@ -223,7 +247,11 @@ const inflightSessionProbes = new Map<string, Promise<unknown>>()
 function shareSessionProbe<T>(key: string, run: () => Promise<T>): Promise<T> {
   const pending = inflightSessionProbes.get(key)
   if (pending) return pending as Promise<T>
-  const request = run().finally(() => inflightSessionProbes.delete(key))
+  const span = sessionPerf.span("session.resolveProbe", { url: requestName(key) })
+  const request = run().finally(() => {
+    inflightSessionProbes.delete(key)
+    span.end()
+  })
   inflightSessionProbes.set(key, request)
   return request
 }
@@ -265,4 +293,13 @@ export async function probeRouteSessionDirectory(sessionId: string, directories:
     if (response?.ok) return directory
   }
   return undefined
+}
+
+/**
+ * The title a route-opened session pane shows while its session is still being
+ * resolved. A surface that already carries a resolved title keeps it; only a
+ * surface with none reads the generic label.
+ */
+export function routeSessionPaneTitle(surface: { content?: { title?: string } } | undefined): string {
+  return surface?.content?.title || "Session"
 }

@@ -11,20 +11,20 @@ const providerState = vi.hoisted(() => ({
 
 vi.mock("@/app/providers/use-providers", () => ({
   popularProviders: ["anthropic", "openai", "google"],
-  useProviders: () => ({
-    connected: () => providerState.connected,
-    load: async (providerID: string) => {
-      providerState.loaded.push(providerID)
-    },
-  }),
 }))
 
+// The dialog no longer holds a catalog of its own: the pane's model store owns
+// the catalog of the (workspace, harness) it is mounted for, and `hydrate()` is
+// the one call that expands its connected providers.
 vi.mock("@/features/session/providers/session-selection", () => ({
   useLocal: () => ({
     model: {
       list: () => [],
       visible: () => true,
       setVisibility: () => undefined,
+      hydrate: async () => {
+        for (const provider of providerState.connected) providerState.loaded.push(provider.id)
+      },
     },
   }),
 }))

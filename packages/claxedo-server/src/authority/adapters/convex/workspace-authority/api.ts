@@ -7,6 +7,8 @@ type ConvexApi = {
   channelIdentities: {
     authorizeProject: ConvexQuery
     authorizeWorkspace: ConvexQuery
+    bind: ConvexMutation
+    revoke: ConvexMutation
   }
   users: { me: ConvexMutation; meForService: ConvexMutation }
   orgs: {
@@ -52,6 +54,28 @@ type ConvexApi = {
     revoke: ConvexMutation
     list: ConvexQuery
   }
+  privateSessions: {
+    reserve: ConvexMutation
+    registerRuntime: ConvexMutation
+    markRegistrationAmbiguous: ConvexMutation
+    beginCompensation: ConvexMutation
+    completeCompensation: ConvexMutation
+    authorizeRead: ConvexQuery
+    authorizeWrite: ConvexQuery
+    authorizeRuntime: ConvexQuery
+    grantParticipant: ConvexMutation
+    revokeParticipant: ConvexMutation
+    list: ConvexQuery
+    resolve: ConvexQuery
+    readMessages: ConvexQuery
+    syncMessages: ConvexMutation
+    acquireTurn: ConvexMutation
+    renewTurn: ConvexMutation
+    releaseTurn: ConvexMutation
+    upsertVisibility: ConvexMutation
+    replaceVisibility: ConvexMutation
+    deleteVisibility: ConvexMutation
+  }
   workspaces: {
     authorizeCreate: ConvexQuery
     open: ConvexQuery
@@ -61,18 +85,6 @@ type ConvexApi = {
     registerLocalForSharingForService: ConvexMutation
     delete: ConvexMutation
     createCloud: ConvexMutation
-  }
-  localHostLinks: {
-    createChallenge: ConvexMutation
-    createChallengeForService: ConvexMutation
-    register: ConvexMutation
-    registerForService: ConvexMutation
-    heartbeat: ConvexMutation
-    heartbeatForService: ConvexMutation
-    pause: ConvexMutation
-    pauseForService: ConvexMutation
-    markSecondDeviceOpen: ConvexMutation
-    active: ConvexQuery
   }
   hostEnrollments: {
     createRequest: ConvexMutation
@@ -85,6 +97,14 @@ type ConvexApi = {
     pauseForService: ConvexMutation
     active: ConvexQuery
     activeForService: ConvexQuery
+    assignWorkspace: ConvexMutation
+    assignWorkspaceForService: ConvexMutation
+    unassignWorkspace: ConvexMutation
+    unassignWorkspaceForService: ConvexMutation
+    activeWorkspaceHost: ConvexQuery
+    activeWorkspaceHostForRelay: ConvexQuery
+    listAssignments: ConvexQuery
+    markSecondDeviceOpen: ConvexMutation
   }
   workspaceShares: {
     grant: ConvexMutation

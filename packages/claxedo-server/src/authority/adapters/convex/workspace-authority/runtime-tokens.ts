@@ -53,6 +53,7 @@ export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
       jti: string
       workspaceId: string
       hostId: string
+      minimumRole?: "viewer" | "editor" | "admin" | "owner"
     }) {
       // Machine path with no end-user JWT: the executor stays unsigned, and the
       // verified principal is the control-plane service token. Convex
@@ -62,6 +63,7 @@ export function runtimeTokenAuthority(input: ConvexAuthorityInput) {
         jti: args.jti,
         workspace_id: args.workspaceId,
         host_id: args.hostId,
+        ...(args.minimumRole ? { minimum_role: args.minimumRole } : {}),
       })
     },
     async revokeRuntimeAccessToken(auth: SignedControlPlaneAuth, args: {

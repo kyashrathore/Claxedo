@@ -1,0 +1,31 @@
+{
+  "extends": "./tsconfig.json",
+  "include": [],
+  "files": [
+    "scripts/deploy/prepare-better-auth-d1.ts",
+    "scripts/deploy/prepare-better-auth-d1.test.ts",
+    "scripts/deploy/greenfield-user-deployed.ts",
+    "scripts/deploy/greenfield-user-deployed.test.ts",
+    "scripts/deploy/cutover-better-auth-d1.ts",
+    "scripts/deploy/cutover-better-auth-d1.test.ts",
+    "scripts/deploy/release-better-auth-d1.ts",
+    "scripts/deploy/release-better-auth-d1.test.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-locked-worker.test.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-release-state.cf.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-release-state.test.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-cutover-gate.cf.ts",
+    "src/deployments/hosted-workerd/better-auth-d1-locked-wrangler.test.ts",
+    "src/platform/auth/better-auth-configuration.ts",
+    "src/platform/auth/better-auth-configuration.test.ts",
+    "src/platform/auth/better-auth-d1-adapter.ts",
+    "src/platform/auth/better-auth-d1-adapter.test.ts",
+    "src/platform/auth/better-auth-d1-foundation.ts",
+    "src/platform/auth/better-auth-d1-foundation.test.ts",
+    "src/platform/auth/better-auth-d1-migration.ts",
+    "src/platform/auth/better-auth-d1-spike.test.ts",
+    "src/platform/auth/better-auth-d1-worker-spike.cf.ts",
+    "src/platform/auth/better-auth-native-clients.ts",
+    "src/platform/auth/better-auth-token-hash.ts"
+  ]
+}

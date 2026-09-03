@@ -833,7 +833,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
         snapshotOrdinal: 11,
       })
       expect(stored).toEqual(newer)
-      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(2)
+      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(1)
       for (const call of authority.syncSessionMessages.mock.calls) {
         expect(call[1]).toMatchObject({ messages: newer })
       }
@@ -919,7 +919,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
       expect(stored).toEqual(newer)
       expect(authorityMessages).toEqual(newer)
       expect(authorityOrdinal).toBe(12)
-      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(3)
+      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(2)
       expect(authority.syncSessionMessages).toHaveBeenCalledWith(
         expect.anything(),
         expect.objectContaining({ messages: older, maxEventOrdinal: 11 }),
@@ -932,7 +932,7 @@ describe("central projection: snapshot ordinal skip rules", () => {
   )
 
   test.each(["http", "hosted"] as const)(
-    "%s authority sync converges when projection advances during the authority write",
+    "%s authority sync never synthesizes a newer producer from projection state",
     async (flow) => {
       const svc = services()
       const authority = presentAuthority()
@@ -998,12 +998,12 @@ describe("central projection: snapshot ordinal skip rules", () => {
       releaseOlderAuthority()
       await expect(pull).resolves.toMatchObject({ ok: true, maxEventOrdinal: 11 })
 
-      expect(authorityMessages).toEqual(newer)
-      expect(authorityOrdinal).toBe(12)
-      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(2)
+      expect(authorityMessages).toEqual(older)
+      expect(authorityOrdinal).toBe(11)
+      expect(authority.syncSessionMessages).toHaveBeenCalledTimes(1)
       expect(authority.syncSessionMessages).toHaveBeenLastCalledWith(
         expect.anything(),
-        expect.objectContaining({ messages: newer, maxEventOrdinal: 12 }),
+        expect.objectContaining({ messages: older, maxEventOrdinal: 11 }),
       )
     },
   )

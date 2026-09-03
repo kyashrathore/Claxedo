@@ -128,10 +128,20 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
     () => productUi().accountSignIn && hostedAccount() && !pending() && !signed(),
   )
   const local = createMemo(() => !pending() && !signed() && !showSignIn())
+  // Signed with an empty identity means the userinfo enrichment is still in
+  // flight: keep the spinner up and say so, never the misleading generic
+  // "Account" (which read as "the lookup worked and your name is Account").
+  const identityLoading = createMemo(() => {
+    const state = accountState()
+    return state.status === "signed"
+      && state.identityLookup !== "failed"
+      && !state.identity.displayName
+      && !state.identity.email
+  })
   const label = createMemo(() => {
     const state = accountState()
     if (state.status === "signed") {
-      return state.identity.displayName ?? state.identity.email ?? language.t("settings.general.section.account")
+      return state.identity.displayName ?? state.identity.email ?? "Signed in"
     }
     if (pending()) return "Signing in…"
     return showSignIn() ? "Sign in" : "Local workspace"
@@ -177,7 +187,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
         data-testid="rail-account-trigger"
       >
         <Show
-          when={pending()}
+          when={pending() || identityLoading()}
           fallback={
             <Show
               when={signed()}
@@ -218,7 +228,7 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
           */}
           <div class="flex items-center gap-2 px-2 py-1" aria-hidden="true">
             <Show
-              when={pending()}
+              when={pending() || identityLoading()}
               fallback={
                 <Show
                   when={signed()}
@@ -273,6 +283,13 @@ export function RailAccountMenu(props: RailAccountMenuProps) {
             </DropdownMenu.Item>
           </DropdownMenu.Group>
 
+          {/*
+            Only while a sign-in is actually in flight. A signed account whose
+            profile lookup is still running (or failed) is signed: offering
+            "Cancel sign in" there, next to "Log out", read as two contradictory
+            states at once — and selecting it logged the user out of a working
+            session.
+          */}
           <Show when={pending()}>
             <DropdownMenu.Item
               onSelect={() => {

@@ -8,6 +8,7 @@ import {
 } from "../../authority/hosted-services"
 import type { ControlPlaneServices } from "../../authority/services"
 import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-registry"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 
 /**
  * Hosted product contract.
@@ -31,6 +32,7 @@ import { durableCliSessionTokenRegistry } from "../../test-support/cli-session-r
  */
 
 function hostedPlane(): HostedControlPlane {
+  const managedSessionAuthority = testManagedSessionAuthority()
   const services = {
     auth: {
       config: { enabled: true, issuer: "https://clerk.test", jwksUrl: "https://clerk.test/jwks" },
@@ -65,6 +67,8 @@ function hostedPlane(): HostedControlPlane {
     },
     relayTargetLookup: sandboxRelayTargetLookup({ telemetry: services.telemetry }),
     cliSessionTokenRegistry: durableCliSessionTokenRegistry().registry,
+    privateSessionAuthority: managedSessionAuthority,
+    runtimeSessionAuthority: managedSessionAuthority,
     env: {
       CLAXEDO_DEPLOYMENT_MODE: "hosted",
       CLAXEDO_WORKSPACE_AUTHORITY_URL: "https://convex.test",
@@ -85,25 +89,33 @@ function hostedPaths() {
  * failure names the product area that changed, not just a path.
  */
 const HOSTED_FAMILIES: Record<string, string[]> = {
+  remoteAccessOwner: [
+    "/api/claxedo/remote-access",
+    "/api/claxedo/remote-access/devices",
+    "/api/claxedo/remote-access/devices/:hostId",
+    "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
+  ],
   identity: [
     "/.well-known/jwks.json",
     "/api/auth/cli/exchange",
+    "/api/auth/cli/revoke",
     "/api/auth/device/code",
     "/api/auth/device/token",
+    "/api/claxedo/auth/descriptor",
     "/auth/:providerID",
   ],
   shell: [
-    "/api/claxedo/bootstrap",
     "/api/claxedo/compatibility",
     "/api/claxedo/events",
     "/api/claxedo/health",
     "/api/claxedo/mode",
-    "/global/config",
+    "/api/claxedo/services",
     "/global/event",
     "/global/health",
     "/path",
     "/project",
     "/project/current",
+    "/project/:id",
     "/provider",
     "/provider/auth",
     "/api/claxedo/agent-config/extensions",
@@ -112,12 +124,20 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/claxedo/agent-config/extensions/:id/enable",
     "/api/claxedo/agent-config/extensions/catalog",
     "/api/claxedo/agent-config/extensions/machine-scan",
+    "/api/claxedo/agent-config/harness",
+    "/api/claxedo/agent-config/harness/acp-connections",
   ],
+  // Unified usage dashboard/sync, mounted only when the plane has a Convex
+  // workspace-authority binding to build a ledger from (`hostedUsageLedger`
+  // in `hosted-usage-ledger.ts`) — this fixture's plane does.
+  usage: ["/api/claxedo/usage", "/api/claxedo/usage/sync"],
   billing: ["/api/billing/checkout", "/api/billing/polar/webhook", "/api/billing/portal"],
   connections: ["/api/claxedo/integrations", "/api/claxedo/integrations/*"],
   sessions: [
     "/api/control/runtime/heartbeat",
     "/api/control/runtime/register",
+    "/api/control/session-registrations/reserve",
+    "/api/control/session-list",
     "/api/control/sessions",
     "/api/control/sessions/:sessionId/gateway",
     "/api/control/sessions/:sessionId/messages",
@@ -179,26 +199,20 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
     "/api/workspace/:id/checkpoints/:checkpointId/restore",
     "/api/workspace/:id/connection",
     "/api/workspace/:id/connection/refresh",
+    // Owner assignment under machine-wide enrollment (POST assigns, DELETE
+    // unassigns — one path, two verbs). The replacement for the retired
+    // per-workspace `user-hosted/(challenge|register|heartbeat|pause)` quartet.
+    "/api/workspace/:id/host-assignment",
+    "/api/workspace/:id/shares",
     "/api/workspace/:id/lifecycle/:operation",
     "/api/workspace/create",
     "/api/workspace/resolve",
   ],
   /**
-   * The user-hosted control path Unit 6 keeps in the hosted plane while the
-   * laptop-side orchestration moves to Host Connector. Recording it separately
-   * makes that division visible: these four stay, `remote-access` does not.
-   */
-  userHostedControl: [
-    "/api/workspace/:id/user-hosted/challenge",
-    "/api/workspace/:id/user-hosted/heartbeat",
-    "/api/workspace/:id/user-hosted/pause",
-    "/api/workspace/:id/user-hosted/register",
-  ],
-  /**
-   * Machine-wide enrollment, Unit 6's replacement for `userHostedControl`
-   * above. Listed as its own family rather than folded in, so the cutover is
-   * visible here as one list appearing and the other leaving — and so a build
-   * that somehow mounts neither is caught.
+   * Machine-wide enrollment, Unit 6's replacement for the retired
+   * per-workspace `userHostedControl` family. The cutover is complete: the
+   * old quartet is gone (see the 404 assertions below) and this family plus
+   * `host-assignment` above are what replaced it.
    *
    * No `:id` in any entry. That is the whole difference.
    */
@@ -218,7 +232,7 @@ const HOSTED_FAMILIES: Record<string, string[]> = {
  */
 const LOCAL_ONLY_PREFIXES = [
   "/api/claxedo/credentials",
-  "/api/claxedo/remote-access",
+  "/api/claxedo/remote-access/enable",
   "/api/claxedo/network-policy",
   "/api/claxedo/usage-limits",
   "/api/wr/pty",
@@ -254,6 +268,21 @@ describe("hosted product contract", () => {
     ).toEqual([])
   })
 
+  test("the retired per-workspace user-hosted quartet answers 404, not a handler", async () => {
+    // NO backward compatibility: machine-wide enrollment + owner assignment
+    // replaced the per-workspace challenge/register/heartbeat/pause flow. A
+    // 401/400/409 here would mean a handler still exists behind the path.
+    const app = createHostedApp(hostedPlane()) as unknown as Hono
+    for (const retired of ["challenge", "register", "heartbeat", "pause"]) {
+      const response = await app.request(`/api/workspace/ws_1/user-hosted/${retired}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: "{}",
+      })
+      expect(response.status, `POST /api/workspace/ws_1/user-hosted/${retired}`).toBe(404)
+    }
+  })
+
   /**
    * K5 pins these three assertions in place: Unit 7 extracts the shared signed
    * route core OUT of `createHostedApp`, and the tempting shortcut is to let
@@ -281,5 +310,38 @@ describe("hosted product contract", () => {
     const plane = hostedPlane()
     ;(plane.services as unknown as { authority: undefined }).authority = undefined
     expect(() => createHostedApp(plane)).toThrow(/no workspace authority is composed/)
+  })
+})
+
+/**
+ * `/api/claxedo/usage` gating (`hosted-usage-ledger.ts`).
+ *
+ * The route table assertion above already proves the paths mount for THIS
+ * fixture's plane (which carries both Convex bindings). These two cases prove
+ * the two things the table can't: the auth gate is real, and a plane missing
+ * either binding gets no route at all rather than one that would 503 on
+ * every call.
+ */
+describe("hosted usage route", () => {
+  test("requires signed auth", async () => {
+    const app = createHostedApp(hostedPlane()) as unknown as Hono
+    const res = await app.request("/api/claxedo/usage?since=0&until=1")
+    expect(res.status).toBe(401)
+  })
+
+  test("stays unmounted for a plane with no Convex workspace-authority URL", async () => {
+    const plane = hostedPlane()
+    ;(plane as unknown as { env: Record<string, string | undefined> }).env = {
+      ...plane.env,
+      CLAXEDO_WORKSPACE_AUTHORITY_URL: undefined,
+    }
+    // Hosted WorkGraph independently requires this same URL (or an injected
+    // executor) to boot at all; supply the test executor seam so the app
+    // still composes and this test exercises `hostedUsageLedger`'s own gate,
+    // not WorkGraph's.
+    const app = createHostedApp(plane, { workGraphExecutor: {} as never }) as unknown as Hono
+    expect([...new Set(app.routes.map((route) => route.path))]).not.toContain("/api/claxedo/usage")
+    const res = await app.request("/api/claxedo/usage?since=0&until=1")
+    expect(res.status).toBe(404)
   })
 })

@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs"
-import { e2eAuthViteEnvironment, resolveE2EAuthMode } from "../e2e/auth-mode"
+import { e2eAppViteEnvironment, resolveE2EAuthMode } from "../e2e/auth-mode"
 
 const modes = ["dev", "build-preview", "preview"] as const
 type Mode = (typeof modes)[number]
@@ -15,8 +15,7 @@ const appRoot = import.meta.dir + "/.."
 const authMode = resolveE2EAuthMode()
 const env = {
   ...process.env,
-  ...e2eAuthViteEnvironment(authMode),
-  VITE_CLAXEDO_E2E: "1",
+  ...e2eAppViteEnvironment(authMode),
 }
 
 async function run(command: string[]) {

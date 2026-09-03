@@ -13,6 +13,7 @@ import type { Process } from "@/features/processes/data/process"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { workspaceVcsQuery } from "@/platform/runtime/workspace-query"
 import { workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { isProjectWorktreeDirectory, projectForDirectory } from "@/platform/runtime/agent/project-owner"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
@@ -610,7 +611,7 @@ export function SessionEnvironmentCardMount(props: {
         client: sdk.client,
         workspaceId: workspace?.workspaceId,
         workspace,
-        signedControlPlane: workspace?.kind === "cloud" || workspace?.kind === "user-hosted",
+        signedControlPlane: isRelayBackedWorkspaceKind(workspace?.kind),
       }),
       enabled: visible(),
     }

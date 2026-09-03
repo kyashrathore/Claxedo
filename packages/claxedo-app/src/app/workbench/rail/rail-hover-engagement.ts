@@ -11,9 +11,13 @@ import { createSignal, onCleanup, type Accessor } from "solid-js"
  * every row, while being invisible essentially all of the time. Mounting it on
  * engagement instead removes that subtree from the pass.
  *
- * Engagement is deliberately hover OR focus: focusing a row's own control
- * mounts its actions, so keyboard users still reach them with the next Tab
- * exactly as they did when the cluster was always mounted.
+ * Engagement is hover OR focus OR an explicit hold, and the three are tracked
+ * as independent facts: focusing a row's own control mounts its actions, so
+ * keyboard users still reach them with the next Tab exactly as they did when
+ * the cluster was always mounted, and losing focus never withdraws an
+ * affordance the pointer is still resting on (a pointer that never left fires
+ * no second `pointerenter`), just as leaving with the pointer never withdraws
+ * one the keyboard is still inside.
  *
  * `releaseDelayMs` keeps the cluster mounted for the length of its own
  * fade-out transition after disengagement, so an affordance that used to fade
@@ -32,6 +36,9 @@ export function createHoverEngagement(input?: { releaseDelayMs?: number }): {
 } {
   const releaseDelayMs = input?.releaseDelayMs ?? 0
   const [engaged, setEngaged] = createSignal(false)
+  let hovered = false
+  let focusWithin = false
+  let held = false
   let pending: ReturnType<typeof setTimeout> | undefined
 
   const cancel = () => {
@@ -39,20 +46,30 @@ export function createHoverEngagement(input?: { releaseDelayMs?: number }): {
     clearTimeout(pending)
     pending = undefined
   }
-  const hold = () => {
-    cancel()
-    setEngaged(true)
-  }
-  const release = () => {
-    cancel()
+  const settle = () => {
+    const next = hovered || focusWithin || held
+    if (next) {
+      cancel()
+      setEngaged(true)
+      return
+    }
+    if (!engaged() || pending !== undefined) return
     if (releaseDelayMs <= 0) {
       setEngaged(false)
       return
     }
     pending = setTimeout(() => {
       pending = undefined
-      setEngaged(false)
+      setEngaged(hovered || focusWithin || held)
     }, releaseDelayMs)
+  }
+  const hold = () => {
+    held = true
+    settle()
+  }
+  const release = () => {
+    held = false
+    settle()
   }
   onCleanup(cancel)
 
@@ -61,16 +78,26 @@ export function createHoverEngagement(input?: { releaseDelayMs?: number }): {
     hold,
     release,
     handlers: {
-      onPointerEnter: hold,
-      onPointerLeave: release,
-      onFocusIn: hold,
+      onPointerEnter: () => {
+        hovered = true
+        settle()
+      },
+      onPointerLeave: () => {
+        hovered = false
+        settle()
+      },
+      onFocusIn: () => {
+        focusWithin = true
+        settle()
+      },
       // `focusout` fires when focus moves BETWEEN two controls inside the same
       // row as well as when it leaves; only the second one disengages.
       onFocusOut: (event: FocusEvent) => {
         const next = event.relatedTarget
         const host = event.currentTarget
         if (next instanceof Node && host instanceof Node && host.contains(next)) return
-        release()
+        focusWithin = false
+        settle()
       },
     },
   }

@@ -1,4 +1,5 @@
 import type { Command, Project, ProviderAuthResponse, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { cmp } from "@/platform/query/sort"
 import { mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
@@ -48,6 +49,31 @@ type ProviderAuthClient = {
   }
 }
 
+/**
+ * A stable empty catalog. Consumers memoise per catalog ARRAY IDENTITY
+ * (`signedWorkspaceFromProjects`'s WeakMap), so handing out a fresh `[]` on
+ * every miss would defeat that memo and leak one map entry per call.
+ */
+const EMPTY_CATALOG: Project[] = []
+
+/**
+ * The project/workspace catalog this app has already resolved, read from its
+ * cache.
+ *
+ * The single reader of `queryKeys.controlPlane.projects`. It is what makes
+ * "which workspace is this, and what kind" answerable WITHOUT every caller
+ * threading an inventory down to whoever asks: a guess about a local
+ * workspace's kind is not a smaller answer than the catalog's, it is a
+ * different one.
+ *
+ * `baseUrl` is part of the identity, not a convenience: the key is per-server,
+ * so reading it with the wrong one answers an empty catalog rather than a
+ * wrong row.
+ */
+export function readProjectCatalog(baseUrl: string | undefined): Project[] {
+  return queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(baseUrl)) ?? EMPTY_CATALOG
+}
+
 export function normalizeProjectList(data: Project[] | undefined) {
   return (data ?? [])
     .filter((item) => !!item?.id)
@@ -69,7 +95,7 @@ export function normalizeProjectList(data: Project[] | undefined) {
  * basename and, because the engine's hashed `id` never matches the workspace
  * uuid the session inventory groups by, shows no sessions. `staleTime` freezes
  * that payload for five minutes, so it only heals when something invalidates
- * the query (previously: opening a surface, via `ensureProject`).
+ * the query.
  */
 export function projectCatalogMissingWorkspace(
   projects: Array<Project & { workspaces?: Record<string, unknown> }> | undefined,
@@ -96,24 +122,11 @@ export function projectListQuery(input: {
   }
 }
 
-/**
- * The harness a provider cache entry BELONGS TO.
- *
- * Every harness — including OpenCode — owns its own key. An unqualified
- * `/provider` request resolves to the *configured default* harness, which is
- * often the agent/workspace default rather than OpenCode, so collapsing
- * `"opencode"` into the unqualified key mixed agent catalogs into the OpenCode
- * settings list (empty popular providers).
- */
-export function providerCacheHarness(harnessType: string | undefined) {
-  return harnessType || undefined
-}
-
 export function providerListQuery(input: {
   baseUrl?: string
   client: ProviderClient
   directory?: string | null
-  harnessType?: string
+  harnessType: string
   request?: typeof fetch
 }) {
   const backend = createHttpShellBackend({
@@ -123,7 +136,7 @@ export function providerListQuery(input: {
     queryKey: queryKeys.controlPlane.providers(
       input.baseUrl,
       input.directory ?? undefined,
-      providerCacheHarness(input.harnessType),
+      input.harnessType,
     ),
     staleTime: 5 * 60 * 1000,
     // Provider discovery is a read-only startup dependency and may race the
@@ -137,10 +150,9 @@ export function providerListQuery(input: {
       index as Parameters<typeof mergeProviderIndexWithDetails>[1],
     ),
     queryFn: async () => {
-      if (!input.harnessType) {
+      if (!input.baseUrl || !input.request) {
         return normalizeProviderList((await backend.listProviders()) ?? { all: [], connected: [], default: {} })
       }
-      if (!input.baseUrl || !input.request) throw new Error("Harness provider query requires an authenticated request")
       const url = new URL("/provider", input.baseUrl)
       url.searchParams.set("harness", input.harnessType)
       if (input.directory) url.searchParams.set("directory", input.directory)
@@ -151,20 +163,36 @@ export function providerListQuery(input: {
   }
 }
 
+/**
+ * Which credentials a harness holds, on the machine that serves this scope.
+ *
+ * Auth is the machine's, not the harness name's: the daemon and a cloud sandbox
+ * can both run `claude-sdk` and hold different credentials for it, so the entry
+ * carries the same (server, scope, harness) triple the catalog does. A
+ * `directory` of `null`/`undefined` names the central server's own runtime.
+ */
 export function providerAuthQuery(input: {
   baseUrl?: string
-  client: ProviderAuthClient
-  harnessType?: string
-  request?: typeof fetch
+  client?: ProviderAuthClient
+  directory?: string | null
+  harnessType: string
+  request?: (url: URL, init?: RequestInit) => Promise<Response>
 }) {
   return {
-    queryKey: queryKeys.controlPlane.providerAuth(input.baseUrl, input.harnessType),
+    queryKey: queryKeys.controlPlane.providerAuth(
+      input.baseUrl,
+      input.directory ?? undefined,
+      input.harnessType,
+    ),
     staleTime: 0,
     queryFn: async () => {
-      if (!input.harnessType) return (await input.client.provider.auth()).data ?? {}
-      if (!input.baseUrl || !input.request) throw new Error("Harness provider auth query requires an authenticated request")
+      if (!input.baseUrl || !input.request) {
+        if (!input.client) throw new Error("Provider auth requires a client or an authenticated request")
+        return (await input.client.provider.auth()).data ?? {}
+      }
       const url = new URL("/provider/auth", input.baseUrl)
       url.searchParams.set("harness", input.harnessType)
+      if (input.directory) url.searchParams.set("directory", input.directory)
       const response = await input.request(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} provider authentication`)
       return await response.json() as ProviderAuthResponse
@@ -176,7 +204,7 @@ export function providerDetailsQuery(input: {
   baseUrl: string
   providerId: string
   directory?: string | null
-  harnessType?: string
+  harnessType: string
   request: (url: URL, init?: RequestInit) => Promise<Response>
 }) {
   return {
@@ -184,7 +212,7 @@ export function providerDetailsQuery(input: {
     queryFn: async () => {
       const url = new URL("/provider", input.baseUrl)
       url.searchParams.set("provider", input.providerId)
-      if (input.harnessType) url.searchParams.set("harness", input.harnessType)
+      url.searchParams.set("harness", input.harnessType)
       if (input.directory) url.searchParams.set("directory", input.directory)
       const response = await input.request(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.providerId} models`)

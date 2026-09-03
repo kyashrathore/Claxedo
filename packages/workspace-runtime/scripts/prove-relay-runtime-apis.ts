@@ -398,18 +398,24 @@ async function main() {
     await waitForPresence(directory)
 
     const runtimeAccessToken = await mintRuntimeAccessToken({
-      subject,
+      principalKind: "user",
+      actorId: subject,
+      actorKind: "human",
       orgId,
       workspaceId,
       hostId,
       role: "editor",
+      jti: "rat_prove_relay_runtime_apis",
     }, runtime.privateKey, "EdDSA")
     const relayHostToken = await mintRelayHostToken({
-      subject,
+      principalKind: "user",
+      actorId: subject,
+      actorKind: "human",
       orgId,
       workspaceId,
       hostId,
       role: "editor",
+      parentJti: "rat_prove_relay_runtime_apis",
       access: "user-hosted",
       backing: "local-worktree",
     }, relayHost.privateKey, "EdDSA")

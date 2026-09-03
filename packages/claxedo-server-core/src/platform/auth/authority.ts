@@ -1,4 +1,8 @@
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "./auth"
+import type {
+  AuthorizeRuntimePrivateSessionInput,
+  RegisterRuntimePrivateSessionInput,
+} from "./private-session-authority"
 
 /**
  * Typed neutral authority port for the control plane.
@@ -78,6 +82,11 @@ export type WorkspaceOpenResult = {
   workspace?: WorkspaceRecord
 }
 
+export type WorkspaceShareTarget =
+  | { kind: "actor"; actorId: string }
+  | { kind: "user"; userId: string }
+  | { kind: "org"; orgId: string }
+
 /**
  * Canonical recipient identity resolved by the authority before a session
  * share is revoked. Routes use this target for recipient doorbells, including
@@ -136,6 +145,20 @@ export type WorkspaceAuthority = {
     workspaceId: string
     action: ProjectAction
   }) => Promise<RuntimeActorIdentity | void>
+  bindChannelIdentity: (
+    auth: SignedControlPlaneAuth,
+    args: { channel: string; externalUserId: string },
+  ) => Promise<{
+    bindingId: string
+    created: boolean
+    userId: string
+    actorId: string
+    actorKind: "human" | "agent"
+  }>
+  revokeChannelIdentity: (
+    auth: SignedControlPlaneAuth,
+    args: { channel: string; externalUserId: string },
+  ) => Promise<{ revoked: boolean }>
 
   // workspaces
   authorizeWorkspaceOpen: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<void>
@@ -156,64 +179,21 @@ export type WorkspaceAuthority = {
       homeRegion?: string
     },
   ) => Promise<unknown>
-  createLocalHostLinkChallenge: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId: string
-    },
-  ) => Promise<{ challenge_id: string; nonce: string; expires_at: number }>
-  registerLocalHostLink: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId: string
-      publicKey: string
-      challengeId: string
-      signature: string
-      displayName?: string
-      ttlMs?: number
-    },
-  ) => Promise<unknown>
-  heartbeatLocalHostLink: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId: string
-      signature: string
-      ttlMs?: number
-    },
-  ) => Promise<unknown>
-  pauseLocalHostLink: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      hostId?: string
-      paused: boolean
-    },
-  ) => Promise<unknown>
-  activeLocalHostLink: (
-    auth: SignedControlPlaneAuth,
-    args: { workspaceId: string },
-  ) => Promise<
-    | { active: true; host_id: string; workspace_id: string; display_name?: string; second_device_open_at?: number; expires_at: number; last_seen_at: number }
-    | { active: false }
-  >
   // --- machine-wide enrollment (Unit 6) ------------------------------------
   //
-  // The same four verbs as the local-host-link methods above, with the
-  // workspace removed from every one of them. That absence IS the feature: a
-  // laptop is enrolled once, and which workspaces a session may reach is
-  // decided at request time from the workspace tables rather than frozen into a
+  // Enrollment carries no workspace, and that absence IS the feature: a laptop
+  // is enrolled once, and which workspaces a session may reach is decided at
+  // request time from the workspace tables rather than frozen into a
   // registration row per project.
   //
-  // Optional on the port while both authorities are being built out; Unit 6's
-  // hard cut removes the legacy methods and makes these required.
-  createHostEnrollmentRequest?: (
+  // Required on the port. Unit 6's hard cut removed the per-workspace
+  // "local host link" methods these replaced, so every authority implements
+  // this grain and no call site needs an absence check.
+  createHostEnrollmentRequest: (
     auth: SignedControlPlaneAuth,
     args: { hostId: string },
   ) => Promise<{ request_id: string; nonce: string; expires_at: number }>
-  enrollHost?: (
+  enrollHost: (
     auth: SignedControlPlaneAuth,
     args: {
       hostId: string
@@ -224,19 +204,120 @@ export type WorkspaceAuthority = {
       ttlMs?: number
     },
   ) => Promise<HostEnrollment>
-  heartbeatHostEnrollment?: (
+  heartbeatHostEnrollment: (
     auth: SignedControlPlaneAuth,
-    args: { hostId: string; signature: string; ttlMs?: number },
-  ) => Promise<{ expires_at: number; last_seen_at: number }>
-  pauseHostEnrollment?: (
+    args: {
+      hostId: string
+      signature: string
+      ttlMs?: number
+      /**
+       * The workspaces this machine currently serves, sorted, covered by the
+       * heartbeat signature (payload v2). One signature per interval carries
+       * the machine's whole consent set; routing requires a workspace to be
+       * BOTH owner-assigned and inside the machine's last-acked set.
+       */
+      workspaceIds: readonly string[]
+      /**
+       * How the runtime this machine serves composed its session access —
+       * `SessionAccessPolicy.sessionAuthority` on that very runtime, read from
+       * the composition rather than assumed from the product.
+       *
+       * Deliberately outside the heartbeat signature, which exists to prove
+       * MACHINE CONSENT to serve a workspace set. This is a description of a
+       * composition, not an authorization claim: it can neither grant nor
+       * widen access, because the runtime itself is what admits or refuses
+       * every stream (`authorizeSessionEventScope`). A wrong value only makes
+       * a client open a stream its own runtime then rejects.
+       *
+       * Absent means the machine did not say. The control plane records the
+       * absence and mints no stream scope from it — it never guesses a
+       * runtime's composition on the host's behalf.
+       */
+      sessionAuthority?: HostSessionAuthority
+    },
+  ) => Promise<{
+    expires_at: number
+    last_seen_at: number
+    /** Owner assignments for this host, for client-side set reconciliation. */
+    assigned_workspace_ids: string[]
+  }>
+  /** The owner destroys one of their machine enrollments; absent, the deployment cannot. */
+  revokeHostEnrollment?: (
+    auth: SignedControlPlaneAuth,
+    args: { hostId?: string },
+  ) => Promise<{ revoked: number; runtime_tokens_revoked: number }>
+  pauseHostEnrollment: (
     auth: SignedControlPlaneAuth,
     args: { hostId?: string; paused: boolean },
   ) => Promise<{ paused: boolean }>
-  activeHostEnrollment?: (
+  activeHostEnrollment: (
     auth: SignedControlPlaneAuth,
     args?: Record<string, never>,
   ) => Promise<HostEnrollmentState>
-  markSecondDeviceOpen?: (
+  /**
+   * Assign one workspace to one enrolled host — the OWNER's declaration that
+   * host H serves workspace X. Pure data: no challenge, no signature, no TTL
+   * of its own (liveness is the enrollment lease; consent is the heartbeat's
+   * acked set). Cold-registers the workspace row when it does not exist yet,
+   * exactly as the retired per-workspace registration did.
+   */
+  assignWorkspaceHost: (
+    auth: SignedControlPlaneAuth,
+    args: {
+      workspaceId: string
+      hostId: string
+      displayName?: string
+      orgId?: string
+      projectId?: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      remoteDirectory?: string
+      homeRegion?: string
+    },
+  ) => Promise<{ assigned: true; workspace_id: string; host_id: string }>
+  unassignWorkspaceHost: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<{ unassigned: boolean }>
+  /**
+   * The routable host for a workspace: owner-assigned AND inside the host's
+   * last-acked served set AND the enrollment lease is live. The single
+   * read-side routing question every consumer asks.
+   */
+  activeWorkspaceHost: (
+    auth: SignedControlPlaneAuth,
+    args: { workspaceId: string },
+  ) => Promise<
+    | {
+      active: true
+      host_id: string
+      workspace_id: string
+      display_name?: string
+      second_device_open_at?: number
+      expires_at: number
+      last_seen_at: number
+      /**
+       * The composition the routable machine declared on its last heartbeat.
+       * Absent when it declared none — the caller reports the absence rather
+       * than substituting a guess.
+       */
+      session_authority?: HostSessionAuthority
+    }
+    | { active: false }
+  >
+  /** Every live assignment on the account, grouped for the devices surface. */
+  listHostAssignments: (
+    auth: SignedControlPlaneAuth,
+  ) => Promise<Array<{
+    host_id: string
+    display_name: string
+    last_seen_at: number
+    expires_at: number
+    workspace_ids: string[]
+    acked_workspace_ids: string[]
+  }>>
+  markSecondDeviceOpen: (
     auth: SignedControlPlaneAuth,
     args: { workspaceId: string },
   ) => Promise<{ recorded: boolean; second_device_open_at: number }>
@@ -259,11 +340,7 @@ export type WorkspaceAuthority = {
     args: {
       workspaceId: string
       role: "viewer" | "editor" | "admin"
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
+      target: WorkspaceShareTarget
     },
   ) => Promise<unknown>
   revokeWorkspaceShare: (
@@ -271,11 +348,7 @@ export type WorkspaceAuthority = {
     args: {
       workspaceId: string
       grantId?: string
-      grantedToTokenIdentifier?: string
-      grantedToClerkSubject?: string
-      grantedToClerkOrgId?: string
-      grantedToTeamId?: string
-      grantedToTeamPublicId?: string
+      target?: WorkspaceShareTarget
     },
   ) => Promise<unknown>
 
@@ -288,28 +361,16 @@ export type WorkspaceAuthority = {
     auth: SignedControlPlaneAuth,
     args: { sessionId: string; workspaceId: string },
   ) => Promise<void>
-  authorizeRuntimeSession?: (args: {
-    actorId: string
-    actorKind: "human" | "agent"
-    sessionId: string
-    workspaceId: string
-    action: "read" | "write"
-  }) => Promise<void>
-  registerRuntimeSession?: (args: {
-    actorId: string
-    actorKind: "human" | "agent"
-    sessionId: string
-    workspaceId: string
-    title?: string
-  }) => Promise<unknown>
-  addSessionParticipant: (
+  authorizeRuntimeSession?: (args: AuthorizeRuntimePrivateSessionInput) => Promise<void>
+  registerRuntimeSession?: (args: RegisterRuntimePrivateSessionInput) => Promise<unknown>
+  grantSessionParticipant: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
-  ) => Promise<unknown>
-  removeSessionParticipant: (
+    args: { sessionId: string; workspaceId: string; participantActorId: string },
+  ) => Promise<{ participant_id: string }>
+  revokeSessionParticipant: (
     auth: SignedControlPlaneAuth,
-    args: { sessionId: string; workspaceId: string; participantTokenIdentifier: string },
-  ) => Promise<unknown>
+    args: { sessionId: string; workspaceId: string; participantActorId: string },
+  ) => Promise<{ removed: boolean }>
   grantSessionShare?: (
     auth: SignedControlPlaneAuth,
     args: {
@@ -392,6 +453,7 @@ export type WorkspaceAuthority = {
       messages: unknown[]
       intakeReady?: boolean
       maxEventOrdinal?: number
+      fencingToken?: number
     },
   ) => Promise<unknown>
   upsertSessionVisibility: (
@@ -439,7 +501,12 @@ export type WorkspaceAuthority = {
     role: "viewer" | "editor" | "admin" | "owner"
     expiresAt: number
   }) => Promise<unknown>
-  runtimeAccessTokenActive: (args: { jti: string; workspaceId: string; hostId: string }) => Promise<unknown>
+  runtimeAccessTokenActive: (args: {
+    jti: string
+    workspaceId: string
+    hostId: string
+    minimumRole?: "viewer" | "editor" | "admin" | "owner"
+  }) => Promise<unknown>
   revokeRuntimeAccessToken: (
     auth: SignedControlPlaneAuth,
     args: { jti: string; workspaceId: string },
@@ -527,6 +594,30 @@ export type WorkspaceAuthority = {
 export function requireAuthority(services: { authority?: WorkspaceAuthority } | undefined): WorkspaceAuthority {
   if (services?.authority) return services.authority
   throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace authority is not configured")
+}
+
+/**
+ * How the runtime behind a host composed its session access, in the host's own
+ * words: the `SessionAccessPolicy.sessionAuthority` marker of the very runtime
+ * the machine serves (`@claxedo/workspace-runtime` session-access-policy.ts).
+ *
+ * `"local"` serves the broad workspace event streams as well as session-scoped
+ * ones; `"managed-private"` serves session-scoped streams ONLY and answers an
+ * unscoped one with a permanent 400 `session_event_scope_required`. Which of
+ * the two a machine runs is a fact only that machine holds — the same product
+ * (a desktop daemon, a `claxedo up` host) composes either one depending on
+ * whether a session authority was injected — so the control plane records what
+ * the host declares and never infers it from access, backing or kind.
+ */
+export type HostSessionAuthority = "local" | "managed-private"
+
+/**
+ * Narrow a declared or stored value to a `HostSessionAuthority`. Anything else
+ * — including the NULL a row carries before any host declared one — is "not
+ * declared", which every caller must treat as an answer rather than a default.
+ */
+export function hostSessionAuthority(input: unknown): HostSessionAuthority | undefined {
+  return input === "local" || input === "managed-private" ? input : undefined
 }
 
 /** One machine's enrollment, as the owner sees it. Carries no key material. */

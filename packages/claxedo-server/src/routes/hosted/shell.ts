@@ -11,9 +11,8 @@
  *   GET /api/claxedo/events     — auth-gated hosted live-sync SSE stream,
  *                                 resumable by `Last-Event-ID` when a
  *                                 LiveSyncRoom is bound (see deployments/hosted-workerd/live-sync-room.cf.ts)
- *   GET /api/claxedo/bootstrap  — aggregate boot payload (signed → Convex workspaces)
+ *   GET /api/claxedo/services   — { authenticated, services } first-party catalog
  *   GET /global/health          — { healthy, version }
- *   GET /global/config          — {}
  *   GET /project                — signed → Convex workspace projects, else []
  *   GET /project/current        — synthetic project derived from ?directory
  *   GET /path                   — synthetic path derived from ?directory
@@ -39,10 +38,24 @@ import {
   type ControlPlaneAuthContext,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
+import { requestHasAuthenticationCredential } from "@claxedo/server-core/platform/auth/authentication"
+import {
+  EMPTY_SERVICE_CATALOG,
+  projectServiceCatalogForBrowser,
+  type FirstPartyServiceCatalog,
+} from "@claxedo/service-contract"
 import { connectLiveSyncRoom, type LiveSyncRoomNamespace } from "../../deployments/hosted-workerd/live-sync-room.cf"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { requireAuthority, type WorkspaceAuthority, type WorkspaceRecord } from "@claxedo/server-core/platform/auth/authority"
+import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
+import { WORKSPACE_RUNTIME_IDENTITY_PATH } from "@claxedo/server-core/platform/governance/route-ownership"
+import type { ControlPlaneServices } from "../../authority/services"
+import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
+import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import type { RelayRole } from "@claxedo/workspace-relay"
 
 export type HostedShellRouteOptions = {
+  authentication?: RequestAuthenticationAdapter
   authConfig: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   /** Reported by /global/health and the bootstrap aggregate. */
@@ -79,6 +92,41 @@ export type HostedShellRouteOptions = {
   >
   /** Idempotent owner setup scheduled only from signed bootstrap on Worker waitUntil. */
   activateOwner?: (auth: SignedControlPlaneAuth) => Promise<void>
+  /** Authenticated, data-only first-party installation catalog. */
+  serviceCatalog?: (auth: SignedControlPlaneAuth) => Promise<FirstPartyServiceCatalog>
+  /**
+   * Ask a signed user-hosted workspace's runtime for harness health/identity,
+   * through the relay. Backs `GET /api/claxedo/agent-config/harness` — the
+   * probe the app shell's harness store polls unconditionally
+   * (`features/session/harness/{harness-config-store,harness-switcher,
+   * harness-hydrator}.ts`) to keep session readiness and the composer health
+   * peek current. Desktop answers the same probe locally by proxying
+   * `/api/wr/health` through the sandbox manager
+   * (`claxedo-local-server/src/agent-config/routes/harness-routes.ts`); a
+   * hosted central has no sandbox manager, so this asks the SAME endpoint on
+   * the workspace's own runtime over the relay (`hostedHarnessRuntimeStatus`
+   * below is the production implementation). Returns `undefined` for a
+   * workspace the caller cannot open — the route answers 404, matching an
+   * unknown project id elsewhere on this surface. Absent entirely (a
+   * composition with no relay wiring) degrades every probe to that same 404
+   * rather than a bare unmatched-route 404, which is what the app already
+   * treats as "no harness" — silent, not broken.
+   */
+  harnessStatus?: (
+    auth: SignedControlPlaneAuth,
+    input: { workspaceId: string; sessionId?: string },
+  ) => Promise<HostedHarnessProbe | undefined>
+}
+
+/** `/api/wr/health`'s shape, trimmed to the fields the harness probe reports. */
+export type HostedHarnessProbe = {
+  ok?: boolean
+  status?: string
+  agentType?: string
+  acpBinary?: string | null
+  model?: string | null
+  error?: string
+  harnessHealth?: { status: "ok" | "degraded" | "unavailable"; reason?: string }
 }
 
 function rec(input: unknown) {
@@ -130,13 +178,6 @@ function emptyProvider() {
     all: [],
     default: {},
     connected: [],
-  }
-}
-
-function emptyConfigProviders() {
-  return {
-    providers: [],
-    default: {},
   }
 }
 
@@ -223,7 +264,10 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
     // presented by the WorkGraph surface; the projects rail is for workspaces
     // a user can actually open.
     if (workspaceId.startsWith("wg-")) continue
-    const directory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? "/workspace"
+    // A workspace served elsewhere is addressed by its id; the host's own path
+    // is location metadata.
+    const directory = `workspace:${workspaceId}`
+    const remoteDirectory = txt(row?.remote_directory) ?? txt(row?.remoteDirectory)
     const projectId = txt(row?.project_id) ?? txt(row?.projectID) ?? workspaceId
     const workspaceName = txt(row?.workspace_name) ?? txt(row?.workspaceName) ?? txt(row?.display_name) ?? txt(row?.displayName) ?? workspaceId
     const created = num(row?.created_at) ?? num(row?.createdAt) ?? now
@@ -248,6 +292,7 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
       kind: txt(row?.access) ?? txt(row?.backing) ?? "cloud",
       workspace_name: workspaceName,
       directory,
+      ...(remoteDirectory ? { remote_directory: remoteDirectory } : {}),
       // Carried so the client can derive an owner/repo label of its own (the
       // rail already does) without a second round-trip.
       ...(txt(row?.repo_url) ?? txt(row?.repoUrl) ? { repo_url: txt(row?.repo_url) ?? txt(row?.repoUrl) } : {}),
@@ -267,16 +312,262 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
   }))
 }
 
+/**
+ * The scope a hosted request names. A workspace id is the identity; `directory`
+ * is what a client shows for it (a `workspace:` ref, or the machine's path for
+ * a user-hosted workspace) and only stands in when no id was sent.
+ */
 function directoryInput(c: Context) {
-  return c.req.query("directory") ?? c.req.query("workspaceId") ?? c.req.header("x-opencode-directory") ?? ""
+  return c.req.query("workspaceId") ?? c.req.query("directory") ?? c.req.header("x-opencode-directory") ?? ""
 }
 
 async function signedAuth(c: Context, options: HostedShellRouteOptions) {
   const context = await controlPlaneAuthContext(c.req.raw, {
+    authentication: options.authentication,
     config: options.authConfig,
     ...(options.verifier ? { verifier: options.verifier } : {}),
   })
   return context.mode === "signed" ? context : undefined
+}
+
+// The one legal `directory -> workspaceId` narrowing point on the hosted
+// central. Mirrors the app's `workspaceIdFromRef`
+// (`claxedo-app/src/platform/identity/legacy-resolver.ts`): the app sends
+// either a bare `ws_...`/uuid workspace id or that id prefixed
+// `workspace:<id>` — a hosted central has no filesystem, so those are the
+// only two shapes a `directory` query param can legally carry here. Anything
+// else (a filesystem path, an empty string, a malformed ref) resolves to
+// `undefined`, which the route answers as an unknown workspace (404) —
+// exactly how a genuinely unknown workspace id resolves once opened.
+const HARNESS_WORKSPACE_ID = /^(ws_[A-Za-z0-9_-]+|[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})$/i
+
+function harnessWorkspaceId(directory: string) {
+  const trimmed = directory.trim()
+  if (!trimmed) return undefined
+  const candidate = trimmed.match(/^workspace:(.+)$/)?.[1] ?? trimmed
+  return HARNESS_WORKSPACE_ID.test(candidate) ? candidate : undefined
+}
+
+function runtimeHealthPath(sessionId?: string) {
+  return sessionId ? `/api/wr/health?${new URLSearchParams({ sessionId })}` : "/api/wr/health"
+}
+
+function relayRoleOf(input: unknown): RelayRole | undefined {
+  return input === "viewer" || input === "editor" || input === "admin" || input === "owner" ? input : undefined
+}
+
+// `/api/wr/health`'s shape, read defensively the way every other hosted
+// shape-mirror in this file reads a runtime/authority payload: an untyped
+// wire response, never a value this module minted itself.
+function decodeSandboxHealth(input: unknown): HostedHarnessProbe {
+  const row = rec(input)
+  const health = rec(row?.harnessHealth)
+  const healthStatus = health?.status
+  return {
+    ...(typeof row?.ok === "boolean" ? { ok: row.ok } : {}),
+    ...(txt(row?.status) ? { status: txt(row?.status) } : {}),
+    ...(txt(row?.agentType) ? { agentType: txt(row?.agentType) } : {}),
+    ...(typeof row?.acpBinary === "string" || row?.acpBinary === null ? { acpBinary: row.acpBinary as string | null } : {}),
+    ...(typeof row?.model === "string" || row?.model === null ? { model: row.model as string | null } : {}),
+    ...(txt(row?.error) ? { error: txt(row?.error) } : {}),
+    ...(healthStatus === "ok" || healthStatus === "degraded" || healthStatus === "unavailable"
+      ? { harnessHealth: { status: healthStatus, ...(txt(health?.reason) ? { reason: txt(health?.reason) } : {}) } }
+      : {}),
+  }
+}
+
+/**
+ * Production `harnessStatus` for `HostedShellRouteOptions`: resolves the
+ * caller's access to `workspaceId` through the authority (the same
+ * `openWorkspace` gate every other signed workspace read on this plane uses),
+ * then asks that workspace's runtime for `/api/wr/health` through the
+ * relay-backed `verifiedRuntimeJson` — the identity probe it runs first
+ * (`WORKSPACE_RUNTIME_IDENTITY_PATH`) refuses to answer for a relay target
+ * that is not actually serving this workspace (see
+ * `authority/hosted-session-pull.ts` for the same resolve-then-verify shape
+ * on the session-pull path). `httpOptions.runtimeFetch` is a test seam only —
+ * production composition passes none, so `verifiedRuntimeJson` mints a real
+ * runtime access token and calls the relay.
+ *
+ * A workspace the caller cannot open (unknown id, revoked share, wrong org)
+ * answers `undefined` — the route's 404 — rather than throwing, so a stale
+ * project reference degrades to "not found" instead of a 401/403 that would
+ * misreport the caller's own auth as invalid. Once the workspace is known,
+ * any further failure (relay down, runtime unreachable, identity mismatch)
+ * is reported as a DEGRADED probe (`ok: false`, `status: "error"`, `error`)
+ * rather than re-thrown, matching the local proxy's own
+ * catch-and-degrade for the same unreachable-runtime case.
+ *
+ * This resolves and calls the relay directly (mint token, fetch) rather than
+ * through `authority/http/runtime-transport.ts`'s `verifiedRuntimeJson`: that
+ * module pulls in `authority/http/protocol.ts`, which pulls in
+ * `workspace/supervisor` — the desktop-only control-token verifier — and
+ * `@claxedo/workspace-runtime` with it, a package this Worker bundle must
+ * never reach (`test:architecture-ratchets` catches exactly this edge). The
+ * shape below mirrors `authority/hosted-session-pull.ts`'s OWN private
+ * `runtimeJson`/`verifiedRuntimeJson`, written for the identical reason.
+ */
+type HarnessRuntimeFetch = (input: { workspaceId: string; path: string }) => Promise<Response>
+
+async function harnessRelayFetch(
+  services: ControlPlaneServices,
+  auth: SignedControlPlaneAuth,
+  input: {
+    workspaceId: string
+    ws: Workspace
+    authorityWorkspace?: WorkspaceRecord
+    authorityRole: RelayRole
+    path: string
+  },
+) {
+  const provider = services.relay.provider
+  if (!provider) throw new Error("Workspace runtime pull transport is not configured")
+  const orgId = input.ws.org_id
+  if (!orgId) throw new Error("Workspace is missing org identity for runtime token minting")
+  const target = await resolveWorkspaceRuntimeTarget(services, auth, {
+    workspaceId: input.workspaceId,
+    ...(input.authorityWorkspace ? { workspace: input.authorityWorkspace } : {}),
+  })
+  const token = await provider.mintRuntimeAccessToken({
+    workspaceId: input.workspaceId,
+    hostId: target.hostId,
+    principalKind: "user",
+    auth,
+    ...(await resolveRuntimeActor(requireAuthority(services), auth)),
+    orgId,
+    role: input.authorityRole,
+    ttlMs: 10 * 60_000,
+  })
+  const relayUrl = await provider.getRelayEndpoint(input.workspaceId, target.homeRegion)
+  return await fetch(
+    `${relayUrl.replace(/\/+$/, "")}/workspaces/${encodeURIComponent(input.workspaceId)}${input.path}`,
+    {
+      headers: {
+        accept: "application/json",
+        authorization: `Bearer ${token.token}`,
+        "x-opencode-directory": `workspace:${input.workspaceId}`,
+      },
+    },
+  )
+}
+
+async function harnessRuntimeJson<T>(
+  services: ControlPlaneServices,
+  auth: SignedControlPlaneAuth,
+  input: Parameters<typeof harnessRelayFetch>[2],
+  runtimeFetch?: HarnessRuntimeFetch,
+) {
+  const res = runtimeFetch
+    ? await runtimeFetch({ workspaceId: input.workspaceId, path: input.path })
+    : await harnessRelayFetch(services, auth, input)
+  if (!res.ok) {
+    throw new Error((await res.text().catch(() => "")) || `Workspace runtime pull failed: ${res.status}`)
+  }
+  return (await res.json()) as T
+}
+
+export function hostedHarnessRuntimeStatus(
+  services: ControlPlaneServices,
+  /** Test seam only — production composition passes none and every fetch goes through the relay. */
+  testOptions: { runtimeFetch?: HarnessRuntimeFetch } = {},
+): NonNullable<HostedShellRouteOptions["harnessStatus"]> {
+  return async (auth, input) => {
+    const authority = requireAuthority(services)
+    const opened = await authority.openWorkspace(auth, { workspaceId: input.workspaceId }).catch((err) => {
+      if (err instanceof ControlPlaneAuthError) return undefined
+      throw err
+    })
+    const role = relayRoleOf(opened?.role)
+    if (!opened || !role) return undefined
+    const workspaceRecord = opened.workspace
+    const orgId = txt(workspaceRecord?.org_id) ?? txt(await authority.resolveOrgId(auth))
+    const stamp = Date.now()
+    const ws: Workspace = {
+      id: input.workspaceId,
+      ...(orgId ? { org_id: orgId } : {}),
+      directory: `workspace:${input.workspaceId}`,
+      kind: "cloud",
+      status: "ready",
+      created_at: stamp,
+      updated_at: stamp,
+    }
+    const target = { workspaceId: input.workspaceId, ws, authorityWorkspace: workspaceRecord, authorityRole: role }
+    try {
+      // The identity probe first: refuse to trust a relay target that does
+      // not answer for the workspace we asked about.
+      const identity = await harnessRuntimeJson<Record<string, unknown>>(
+        services,
+        auth,
+        { ...target, path: WORKSPACE_RUNTIME_IDENTITY_PATH },
+        testOptions.runtimeFetch,
+      )
+      if (txt(identity.workspaceId) !== input.workspaceId) {
+        throw new Error("Workspace runtime identity does not match requested workspace")
+      }
+      // MUTATION-CHECK: runtime health call short-circuited on purpose.
+      const health = await harnessRuntimeJson<Record<string, unknown>>(
+        services,
+        auth,
+        {
+          ...target,
+          path: input.sessionId ? `/api/wr/health?sessionId=${encodeURIComponent(input.sessionId)}` : "/api/wr/health",
+        },
+        testOptions.runtimeFetch,
+      )
+      return decodeSandboxHealth(health)
+    } catch (err) {
+      return { ok: false, status: "error", error: err instanceof Error ? err.message : String(err) }
+    }
+  }
+}
+
+/**
+ * The identity the daemon's own status route reports as `harness` /
+ * `activeHarness`: the runtime health's `agentType` is the base harness id,
+ * served natively unless the runtime is driving an ACP binary.
+ */
+function hostedHarnessIdentity(probe: HostedHarnessProbe) {
+  return { id: probe.agentType, access: probe.acpBinary ? "acp" : "native" }
+}
+
+function hostedHarnessStatusBody(probe: HostedHarnessProbe, workspaceId: string, sessionId?: string) {
+  return {
+    workspaceId,
+    directory: `workspace:${workspaceId}`,
+    ...(sessionId ? { sessionId } : {}),
+    status: probe.ok ? "ready" : probe.status ?? "error",
+    ready: probe.ok ?? false,
+    ...(probe.agentType
+      ? {
+          harness: hostedHarnessIdentity(probe),
+          activeHarness: hostedHarnessIdentity(probe),
+          agentType: probe.agentType,
+          activeType: probe.agentType,
+        }
+      : {}),
+    activeBinary: probe.acpBinary ?? null,
+    ...(probe.model !== undefined ? { model: probe.model } : {}),
+    ...(probe.error ? { error: probe.error } : {}),
+    ...(probe.harnessHealth ? { harnessHealth: probe.harnessHealth } : {}),
+  }
+}
+
+async function harnessStatusResponse(c: Context, options: HostedShellRouteOptions) {
+  try {
+    const auth = await signedAuth(c, options)
+    if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+    const workspaceId = harnessWorkspaceId(directoryInput(c))
+    const sessionId = c.req.query("sessionId")?.trim() || undefined
+    const probe = workspaceId && options.harnessStatus
+      ? await options.harnessStatus(auth, { workspaceId, ...(sessionId ? { sessionId } : {}) })
+      : undefined
+    if (!probe) {
+      return c.json({ error: { code: "workspace_not_found", message: "Workspace not found" } }, 404)
+    }
+    return c.json(hostedHarnessStatusBody(probe, workspaceId!, sessionId))
+  } catch (err) {
+    return authErrorResponse(c, err)
+  }
 }
 
 function guardedWaitUntil(c: Context) {
@@ -290,7 +581,9 @@ function guardedWaitUntil(c: Context) {
 }
 
 async function signedProjects(c: Context, options: HostedShellRouteOptions, activateOwner = false) {
-  if (!bearerToken(c.req.header("authorization") ?? null)) return []
+  if (options.authentication) {
+    if (!requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)) return []
+  } else if (!bearerToken(c.req.header("authorization") ?? null)) return []
   const auth = await signedAuth(c, options)
   if (!auth) return []
   if (activateOwner && options.activateOwner) {
@@ -299,6 +592,29 @@ async function signedProjects(c: Context, options: HostedShellRouteOptions, acti
   if (!options.listWorkspaces) return []
   const workspaces = await options.listWorkspaces(auth)
   return signedShellProjects(Array.isArray(workspaces) ? workspaces : [], Date.now())
+}
+
+/**
+ * The browser-visible first-party service catalog.
+ *
+ * `authenticated: false` is authoritative: the app deactivates already-loaded
+ * services on it, so an unsigned request must answer the pair rather than an
+ * error. This is also the app's first signed read of the session, so it is
+ * where the owner's runtime activation is scheduled.
+ */
+async function signedServiceCatalogState(c: Context, options: HostedShellRouteOptions) {
+  const hasCredential = options.authentication
+    ? requestHasAuthenticationCredential(c.req.raw, options.authentication.descriptor)
+    : !!bearerToken(c.req.header("authorization") ?? null)
+  if (!hasCredential) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
+  const auth = await signedAuth(c, options)
+  if (!auth) return { authenticated: false, services: EMPTY_SERVICE_CATALOG }
+  if (options.activateOwner) guardedWaitUntil(c)?.(options.activateOwner(auth))
+  const services = options.serviceCatalog ? await options.serviceCatalog(auth) : EMPTY_SERVICE_CATALOG
+  return {
+    authenticated: true,
+    services: projectServiceCatalogForBrowser(services),
+  }
 }
 
 function authErrorResponse(c: Context, err: unknown) {
@@ -382,6 +698,7 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       // ones, since a room's retention ring is shared by every member of an org.
       const authorize = async () => {
         const auth = await controlPlaneAuthContext(c.req.raw, {
+          authentication: options.authentication,
           config: options.authConfig,
           ...(options.verifier ? { verifier: options.verifier } : {}),
         })
@@ -410,25 +727,36 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     }
   }
   return new Hono()
+    // Public discovery surface for browser and native clients. Keep this
+    // separate from the aggregate bootstrap so a CLI never has to interpret
+    // application boot state in order to bind a credential to one deployment.
+    // `AuthAdapterDescriptor` is deliberately public configuration: adapter
+    // implementations retain every provider secret and signing key.
+    .get("/api/claxedo/auth/descriptor", (c) => {
+      c.header("Cache-Control", "no-store")
+      if (!options.authentication) {
+        return c.json({
+          error: {
+            code: "auth_configuration_invalid",
+            message: "Authentication adapter is not configured",
+          },
+        }, 503)
+      }
+      return c.json(options.authentication.descriptor)
+    })
     // Mirrors routes/events.ts: every bus subscriber passes the
     // same control-plane auth gate as the other claxedo routes. There is no
     // loopback bypass on a hosted central.
     .get("/api/claxedo/events", events)
     .get("/api/wr/events", events)
     .get("/global/event", events)
-    .get("/api/claxedo/bootstrap", async (c) => {
+    // The first-party service catalog for this principal. The app reads it on
+    // its own rather than as one field of a boot aggregate: every other field
+    // that aggregate carried is per-workspace, per-harness, or a stub, and the
+    // workspace catalog is the app's own query over `/api/workspace`.
+    .get("/api/claxedo/services", async (c) => {
       try {
-        const provider = emptyProvider()
-        return c.json({
-          healthy: true,
-          version: version(options),
-          path: hostedPath(),
-          project: await signedProjects(c, options, true),
-          provider,
-          provider_auth: {},
-          config: {},
-          config_providers: emptyConfigProviders(),
-        })
+        return c.json(await signedServiceCatalogState(c, options))
       } catch (err) {
         return authErrorResponse(c, err)
       }
@@ -438,7 +766,6 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
         healthy: true,
         version: version(options),
       }))
-    .get("/global/config", (c) => c.json({}))
     .get("/project", async (c) => {
       try {
         return c.json(await signedProjects(c, options))
@@ -447,6 +774,17 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       }
     })
     .get("/project/current", (c) => c.json(hostedProject(directoryInput(c))))
+    .get("/project/:id", async (c) => {
+      try {
+        const id = c.req.param("id")
+        const project = (await signedProjects(c, options)).find((item) => item.id === id)
+        return project
+          ? c.json(project)
+          : c.json({ error: { code: "project_not_found", message: "Project not found" } }, 404)
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
     .get("/path", (c) => c.json(hostedPath(directoryInput(c))))
     .get("/provider", async (c) => {
       if (c.req.query("harness") !== "pi") return c.json(emptyProvider())
@@ -493,6 +831,28 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // Machine-scan discovers extensions already installed under ~/.claude etc.
     // A hosted central has no such local machine, so it returns an empty set.
     .get("/api/claxedo/agent-config/extensions/machine-scan", (c) => c.json([]))
+    // Operator-configured ACP agents live in the local machine's
+    // `user-agent-config.json` (an fs-backed store the local/self-hosted roots
+    // own). A hosted central has no such machine, so it answers the valid
+    // empty shape rather than Hono's bare 404 — the app treats any non-ok as
+    // "no ACP group", so this only quiets a recurring console 404 that read
+    // as a broken deployment. Still per-caller data in shape (a future
+    // per-user store), so it requires the same signed bearer every other
+    // agent-config data route does.
+    .get("/api/claxedo/agent-config/harness/acp-connections", async (c) => {
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        return c.json({ connections: [] })
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
+    // Harness health/status probe — see `HostedShellRouteOptions.harnessStatus`
+    // above for what this asks and why. Every session's harness store polls
+    // this unconditionally; before this route existed it 404'd and was
+    // swallowed, so readiness never moved off its initial state.
+    .get("/api/claxedo/agent-config/harness", (c) => harnessStatusResponse(c, options))
     // A hosted central has no local machine/project install surface, so those
     // scopes return the valid empty shape. Workspace scope is authority-owned:
     // list and state mutations below use the same durable rows runtimes read.

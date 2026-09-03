@@ -64,6 +64,14 @@ export function createSqliteChannelAccessStore(now: () => number = Date.now): Ch
         set: { approved_by: approvedBy ?? null, approved_at: now() },
       }).run())
     },
+    async disallow(channel, externalUserId) {
+      ClaxedoDB.use((db) => db.delete(ClaxedoChannelAllowTable)
+        .where(and(
+          eq(ClaxedoChannelAllowTable.channel, channel),
+          eq(ClaxedoChannelAllowTable.external_user_id, externalUserId),
+        ))
+        .run())
+    },
     async listPending(channel) {
       pruneExpired(now())
       return ClaxedoDB.use((db) =>
@@ -177,6 +185,14 @@ export function createSqliteChannelIdentityBindingStore(): ChannelIdentityBindin
           bound_by: binding.boundBy ?? null,
         },
       }).run())
+    },
+    async delete(channel, externalUserId) {
+      ClaxedoDB.use((db) => db.delete(ClaxedoChannelIdentityTable)
+        .where(and(
+          eq(ClaxedoChannelIdentityTable.channel, channel),
+          eq(ClaxedoChannelIdentityTable.external_user_id, externalUserId),
+        ))
+        .run())
     },
   }
 }

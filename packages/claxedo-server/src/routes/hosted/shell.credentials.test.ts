@@ -56,7 +56,7 @@ const OWNERS: Record<string, { subject: string; orgId: string }> = {
 
 const verifier = async (token: string) => {
   const owner = OWNERS[token]
-  if (!owner) throw new Error("unknown token")
+  if (!owner) throw Object.assign(new Error("unknown token"), { status: 401 })
   return {
     mode: "signed" as const,
     user: {

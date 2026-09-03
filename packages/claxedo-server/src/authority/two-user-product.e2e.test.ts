@@ -90,6 +90,13 @@ describe("two-user managed-product proof", () => {
           created_at: now,
           updated_at: now,
         }),
+        ctx.db.insert("org_memberships", {
+          org_id: org.org_id,
+          user_id: caseyProfile.user_id,
+          role: "member",
+          created_at: now,
+          updated_at: now,
+        }),
       ])
     })
 
@@ -105,7 +112,7 @@ describe("two-user managed-product proof", () => {
       display_name: "Admin workspace",
       repo_url: "https://github.com/acme/admin.git",
     })).resolves.toMatchObject({ workspace_doc_id: expect.any(String) })
-    // Casey is not an org member — only a later workspace share recipient.
+    // Casey is an org member, but not a workspace member until explicitly shared.
     await expect(casey.mutation(api.workspaces.createCloud, {
       workspace_id: "ws_casey",
       org_id: org.org_id,
@@ -124,7 +131,7 @@ describe("two-user managed-product proof", () => {
     await alice.mutation(api.workspaceShares.grant, {
       workspace_id: "ws_private",
       role: "editor",
-      granted_to_token_identifier: caseyIdentity.tokenIdentifier,
+      target_actor_id: caseyProfile.user_id,
     })
     await alice.mutation(api.sessions.upsertVisibility, {
       workspace_id: "ws_private",

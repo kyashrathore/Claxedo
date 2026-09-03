@@ -13,18 +13,21 @@ import {
   type ParentProps,
 } from "solid-js"
 import { createStreamConnectivity } from "../connection/stream-connectivity"
-import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
-import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import {
-  accountStreamUsable,
-  openAccountStreamResponse,
-} from "@/platform/account/account-stream-fetch"
+import type { AccountState } from "@/platform/account/account-port"
 import type { SessionLifecycleEvent } from "../../features/session/data/session-lifecycle"
 import type { WorkgraphChangedEvent } from "../../features/workgraph/workgraph-changed-event"
 import type { DocumentChangedEvent } from "../../features/documents/data/document-changed-event"
-import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
-import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { markWorkspaceReconnected, markWorkspaceReconnecting } from "../../features/workspaces/data/workspace-connection"
+import {
+  claxedoEventRouteSessionID,
+  claxedoEventStreamTargets,
+  eventStreamFetch,
+  eventStreamFrameAddress,
+  type StreamFrameAddress,
+  eventStreamTargetKey,
+  routeDirectory,
+  type ClaxedoEventStreamTarget,
+} from "./claxedo-event-targets"
+import { markWorkspaceReconnected, markWorkspaceReconnecting, workspaceSessionAuthority } from "../../features/workspaces/data/workspace-connection"
 import { fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
 import {
   streamSyncArmedTimer,
@@ -33,11 +36,16 @@ import {
   type StreamSyncLifecycleState,
 } from "../connection/stream-sync-lifecycle"
 import { clearStreamSyncLifecycle, reportStreamSyncLifecycle, type StreamSyncStreamId } from "@/platform/runtime/stream-sync-status"
+import {
+  registerSessionEventStreamLane,
+  reportSessionEventStreamClosed,
+  reportSessionEventStreamOpen,
+  sessionEventScopeId,
+  setSessionEventRouteScope,
+} from "@/platform/runtime/session-event-scope"
 import { queryClient } from "@/platform/query/query-client"
+import { readProjectCatalog } from "@/platform/query/control-plane"
 import { queryKeys } from "@/platform/query/keys"
-import { createTransport } from "@/platform/runtime/transport"
-import { centralTransportForServer } from "@/platform/runtime/transport"
-import { controlPlaneEventsUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {
   HEARTBEAT_TIMEOUT_MS,
   failureEscalation,
@@ -184,18 +192,41 @@ function isClaxedoEvent(input: unknown): input is ClaxedoEvent | { type: "heartb
   return !!input && typeof input === "object" && "type" in input && typeof input.type === "string"
 }
 
-export function normalizeClaxedoStreamEvent(input: unknown): ClaxedoEvent | { type: "heartbeat" } | undefined {
-  if (isClaxedoEvent(input)) return input
+/**
+ * One stream frame, addressed the way this app addresses that workspace.
+ *
+ * `address` is the stream's own translation (`eventStreamFrameAddress`): a
+ * producer stamps frames with the only path it knows — its own — and for a
+ * relay-backed workspace that path names nothing this app can resolve, while
+ * every consumer keys on the `workspace:<id>` form the pane, the rail section
+ * and the session rows were registered under. It applies to the ENVELOPE's
+ * directory and to a payload that carries its own, because both come from the
+ * same producer.
+ */
+export function normalizeClaxedoStreamEvent(
+  input: unknown,
+  address: StreamFrameAddress = (hostDirectory) => hostDirectory,
+): ClaxedoEvent | { type: "heartbeat" } | undefined {
+  if (isClaxedoEvent(input)) {
+    if (input.type === "heartbeat") return input
+    return addressClaxedoEvent(input, address)
+  }
   const envelope = input && typeof input === "object" && !Array.isArray(input)
     ? input as { directory?: unknown; payload?: unknown }
     : undefined
   const payload = envelope?.payload
   if (!isClaxedoEvent(payload)) return
   if (payload.type === "heartbeat") return payload
+  const addressed = addressClaxedoEvent(payload, address)
+  if ("directory" in addressed && typeof addressed.directory === "string" && addressed.directory) return addressed
   const directory = typeof envelope?.directory === "string" && envelope.directory ? envelope.directory : undefined
-  if (!directory) return payload
-  if ("directory" in payload && typeof payload.directory === "string" && payload.directory) return payload
-  return { ...payload, directory } as ClaxedoEvent
+  if (!directory) return addressed
+  return { ...addressed, directory: address(directory) } as ClaxedoEvent
+}
+
+function addressClaxedoEvent(event: ClaxedoEvent, address: StreamFrameAddress) {
+  if (!("directory" in event) || typeof event.directory !== "string" || !event.directory) return event
+  return { ...event, directory: address(event.directory) } as ClaxedoEvent
 }
 
 // ─── Context ──────────────────────────────────────────────────────────────
@@ -234,114 +265,6 @@ export function useClaxedoEventsOptional() {
 
 // ─── Provider ─────────────────────────────────────────────────────────────
 
-type ProjectCache = Parameters<typeof signedWorkspaceFromProjects>[0]
-
-// The central GLOBAL event stream is fetched directly (signed control-plane
-// auth). The per-workspace stream is a runtime-owned long-lived GET that lives
-// behind the workspace's relay connection and is reached with the Runtime
-// Access Token — exactly like provider/file/PTY reads. Targets are therefore
-// discriminated so the events provider can pick the right transport: the
-// central stream uses `authFetch`, the workspace stream uses the transport
-// seam so loopback workspace streams stay on the local proxy while remote
-// workspace streams open through the relay.
-export type ClaxedoEventStreamTarget =
-  | { kind: "central"; url: URL }
-  | {
-      kind: "workspace"
-      serverUrl: string
-      workspaceId: string
-      workspaceKind?: "local" | "cloud" | "user-hosted"
-      directory?: string
-    }
-
-/**
- * The workspace id for a LOCAL workspace at `directory`.
- *
- * `signedWorkspaceFromProjects` deliberately skips anything that is not
- * `cloud` / `user-hosted`, because signed identity is what the relay needs.
- * Event streams need an id for a different reason — to name which workspace's
- * events to receive — and a local workspace has one in the projects cache.
- */
-function localWorkspaceForDirectory(projects: ProjectCache, directoryOrId: string | undefined) {
-  if (!directoryOrId) return undefined
-  for (const project of projects) {
-    for (const [key, workspace] of Object.entries(project.workspaces ?? {})) {
-      if (workspace.kind && workspace.kind !== "local") continue
-      const workspaceId = workspace.workspaceId ?? workspace.id ?? key
-      if (!workspaceId) continue
-      // The shell route is `/w/<workspaceId>/…`, so what reaches here is often
-      // the workspace ID rather than a path — matching on directory alone
-      // silently found nothing and left the workspace stream unopened.
-      if (
-        workspaceId === directoryOrId ||
-        key === directoryOrId ||
-        sameWorkspaceDirectory(workspace.directory, directoryOrId)
-      ) return {
-        workspaceId,
-        kind: "local" as const,
-        directory: workspace.directory ?? directoryOrId,
-      }
-    }
-  }
-  return undefined
-}
-
-export function claxedoEventStreamTargets(input: {
-  serverUrl?: string
-  directory?: string
-  projects?: ProjectCache
-}): ClaxedoEventStreamTarget[] {
-  const serverUrl = input.serverUrl ?? getClaxedoServerUrl()
-  const central: ClaxedoEventStreamTarget = {
-    kind: "central",
-    url: controlPlaneEventsUrl({ baseUrl: serverUrl }),
-  }
-  const routeWorkspace = input.directory ? sessionWorkspaceRuntimeRef({ directory: input.directory }) : undefined
-  const workspace = routeWorkspace
-    ?? signedWorkspaceFromProjects(input.projects ?? [], input.directory)
-      // A LOCAL workspace has no signed identity, so the two lookups above both
-      // come back empty and the app used to fall through to the bare central
-      // stream alone — which carries only `server.connected` / heartbeats.
-      // Every workspace-scoped event (`pty.created`, `pty.stream`,
-      // `agent.lifecycle`, session status) is published on the workspace stream,
-      // so local sessions received NONE of them: terminals sat forever on their
-      // `pending-…` placeholder because the `pty.created` that resolves it never
-      // arrived, and a coding agent in a terminal never reported status.
-      // Measured against the running server: `/api/wr/events` bare yields only
-      // server.connected + heartbeat, while the workspace-scoped stream yields
-      // pty.created, pty.stream, pty.exited and agent.lifecycle.
-      //
-      // Local belongs on the same per-workspace stream as everything else —
-      // remote workspaces connect directly too, so there is no single global
-      // stream to fall back on. The transport seam already handles it: a
-      // loopback `serverUrl` resolves this target to the local proxy rather
-      // than the relay (see `eventStreamFetch`), so no Runtime Access Token is
-      // minted for a workspace that needs none.
-      ?? localWorkspaceForDirectory(input.projects ?? [], input.directory)
-
-  if (!workspace) return [central]
-  return [
-    central,
-    {
-      kind: "workspace",
-      serverUrl,
-      workspaceId: workspace.workspaceId,
-      workspaceKind: workspace.kind,
-      ...("directory" in workspace && workspace.directory
-        ? { directory: workspace.directory }
-        : input.directory
-          ? { directory: input.directory }
-          : {}),
-    },
-  ]
-}
-
-// Resolves the fetch + request URL for a target. The workspace stream streams
-// from the relay (`relayUrl/workspaces/:id/api/wr/events`) with the RAT in
-// `Authorization: Bearer`; the central stream is fetched directly. Both return a
-// `Response` whose body the provider reads incrementally (the relay seam does
-// NOT buffer GET responses).
-export const CLAXEDO_EVENTS_RELAY_PATH = "/api/wr/events"
 
 // Classify an event-stream connect failure into a human-actionable cause.
 // Distinguishes the relay edge (network/CORS) from the Runtime Access Token
@@ -392,64 +315,12 @@ function describeEventStreamFailure(error: unknown, target: ClaxedoEventStreamTa
   return { cause, ...(hint ? { hint } : {}), errorName: name, errorMessage: message.slice(0, 200), ...ctx }
 }
 
-export async function eventStreamFetch(
-  target: ClaxedoEventStreamTarget,
-  init: RequestInit,
-  overrides?: { request?: typeof fetch; relayRequest?: typeof fetch },
-) {
-  if (target.kind === "central") {
-    // Signed accounts stream the hosted central bus through the account
-    // bridge; every other account state (unsigned, unconfigured build,
-    // pending, revoked) keeps `authFetch` against the local server's own
-    // `/api/claxedo/events` — see `accountStreamUsable` for why bridge
-    // presence alone must not route here.
-    if (!overrides?.request && await accountStreamUsable()) {
-      const lastEventId = new Headers(init.headers).get("Last-Event-ID") ?? undefined
-      return openAccountStreamResponse({
-        operation: "session.events",
-        params: lastEventId ? { lastEventId } : {},
-        signal: init.signal ?? undefined,
-      })
-    }
-    return (overrides?.request ?? authFetch)(target.url, init)
-  }
-  const serverTransport = centralTransportForServer(target.serverUrl)
-  const request = overrides?.request ?? authFetch
-  const runtimePath = target.workspaceKind === "local" && target.directory
-    ? `${CLAXEDO_EVENTS_RELAY_PATH}?directory=${encodeURIComponent(target.directory)}`
-    : CLAXEDO_EVENTS_RELAY_PATH
-  return createTransport({
-    placement: {
-      workspaceId: target.workspaceId,
-      hosting: "workspace",
-      transport: serverTransport === "loopback" ? "loopback" : "workspace-relay",
-    },
-    serverUrl: target.serverUrl,
-    directory: target.directory,
-    ...(target.workspaceKind ? { workspace: { kind: target.workspaceKind, workspaceId: target.workspaceId } } : {}),
-    request,
-    ...(overrides?.relayRequest ? { relayRequest: overrides.relayRequest } : {}),
-  }).fetch(runtimePath, init)
-}
 
-function routeDirectory(pathname: string) {
-  if (typeof window === "undefined") return
-  const routed = shellRouteDirectoryFromPathname(pathname)
-  if (routed) return routed
-  const configured = (window as typeof window & {
-    __OPENCODE__?: { activeDirectory?: string }
-  }).__OPENCODE__?.activeDirectory
-  if (configured) return configured
-}
-
-function eventStreamTargetKey(target: ClaxedoEventStreamTarget) {
-  if (target.kind === "central") return `central:${target.url.href}`
-  return `workspace:${target.serverUrl}:${target.workspaceId}:${target.directory ?? ""}`
-}
 
 export function ClaxedoEventsProvider(props: ParentProps<{
   pathname: () => string
   serverUrl: () => string
+  accountState: () => AccountState
 }>) {
   const emitter = createEventEmitter()
   const connectivity = createStreamConnectivity()
@@ -457,9 +328,9 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   const connections = new Map<string, () => void>()
   let stopped = false
 
-  const emitEvent = (input: string) => {
+  const emitEvent = (input: string, address: StreamFrameAddress) => {
     try {
-      const event = normalizeClaxedoStreamEvent(JSON.parse(input) as unknown)
+      const event = normalizeClaxedoStreamEvent(JSON.parse(input) as unknown, address)
       if (!event || event.type === "heartbeat") return
       emitter.emit(event)
     } catch {
@@ -481,7 +352,8 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     })
   }
 
-  const connectTarget = (target: ClaxedoEventStreamTarget) => {
+  const connectTarget = (target: ClaxedoEventStreamTarget, accountState: AccountState) => {
+    const frameAddress = eventStreamFrameAddress(target)
     const state = {
       abort: null as AbortController | null,
       heartbeatTimer: null as ReturnType<typeof setTimeout> | null,
@@ -492,6 +364,22 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       // loop below for why an untracked cursor is a correctness bug, not just
       // a bandwidth one.
       lastEventId: null as string | null,
+    }
+
+    // The workspace stream is one of the two lanes that carry a session's live
+    // frames, so the scope owner has to know whether it is open and for which
+    // session. A LOCAL workspace's stream is workspace-wide (`target.sessionID`
+    // is absent), which the owner reads as "carries every session".
+    const releaseLane = target.kind === "workspace"
+      ? registerSessionEventStreamLane("workspace-bus")
+      : undefined
+    const reportLaneOpen = () => {
+      if (target.kind !== "workspace") return
+      reportSessionEventStreamOpen("workspace-bus", target.sessionID)
+    }
+    const reportLaneClosed = () => {
+      if (target.kind !== "workspace") return
+      reportSessionEventStreamClosed("workspace-bus")
     }
 
     // Per-kind accounting: this stream's bit feeds BOTH the aggregate
@@ -546,6 +434,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         state.abort?.abort()
         state.abort = null
         setStreamConnected(false)
+        reportLaneClosed()
         scheduleReconnect()
       }, HEARTBEAT_TIMEOUT_MS)
     }
@@ -579,7 +468,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       void eventStreamFetch(target, {
         headers,
         signal: state.abort.signal,
-      }).then(async (res) => {
+      }, { accountState }).then(async (res) => {
         if (!res.ok || !res.body) {
           // The relay seam maps a failed relay connection to a synthetic 502
           // whose BODY carries the underlying error (e.g. the real
@@ -590,6 +479,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         }
         stepLifecycle("open")
         setStreamConnected(true)
+        reportLaneOpen()
         state.failures = 0
         // Bridge stream health → the single WorkspaceConnection authority: a
         // recovered workspace stream nudges `reconnecting → ready` (no-op unless
@@ -631,7 +521,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
             if (!data) continue
             stepLifecycle("heartbeat")
             resetHeartbeat()
-            emitEvent(data)
+            emitEvent(data, frameAddress)
           }
         }
         throw new Error("events stream closed")
@@ -669,6 +559,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
         }
         state.abort = null
         setStreamConnected(false)
+        reportLaneClosed()
         stepLifecycle("error")
         if (state.heartbeatTimer) clearTimeout(state.heartbeatTimer)
         scheduleReconnect()
@@ -681,6 +572,7 @@ export function ClaxedoEventsProvider(props: ParentProps<{
       state.abort?.abort()
       state.abort = null
       setStreamConnected(false)
+      releaseLane?.()
       stepLifecycle("stop")
       // Deliberate teardown (target removed / provider cleanup) must not leave
       // a frozen `{stopped, everLive: true}` snapshot behind: nothing will
@@ -697,12 +589,21 @@ export function ClaxedoEventsProvider(props: ParentProps<{
   }
 
   const reconcileTargets = () => {
+    const accountState = props.accountState()
+    const accountSigned = accountState.status === "signed"
     const targets = claxedoEventStreamTargets({
       serverUrl: props.serverUrl(),
       directory: routeDirectory(props.pathname()),
-      projects: queryClient.getQueryData<ProjectCache>(queryKeys.controlPlane.projects(props.serverUrl())) ?? [],
+      // `session-event-scope` owns which session the scoped stream must carry;
+      // the route is its standing input, not a second decider.
+      sessionID: sessionEventScopeId(),
+      // …and the minted connection owns whether a scoped stream is the only
+      // kind this workspace's runtime serves.
+      sessionAuthority: workspaceSessionAuthority,
+      projects: readProjectCatalog(props.serverUrl()),
+      accountSigned,
     })
-    const next = new Map(targets.map((target) => [eventStreamTargetKey(target), target]))
+    const next = new Map(targets.map((target) => [eventStreamTargetKey(target, { accountSigned }), target]))
     for (const [key, cleanup] of connections) {
       if (next.has(key)) continue
       cleanup()
@@ -710,9 +611,18 @@ export function ClaxedoEventsProvider(props: ParentProps<{
     }
     for (const [key, target] of next) {
       if (connections.has(key)) continue
-      connections.set(key, connectTarget(target))
+      connections.set(key, connectTarget(target, accountState))
     }
   }
+
+  // This provider is the app's reader of the shell route for event purposes, so
+  // it is what publishes the route's session to `session-event-scope`. Both
+  // lanes then read one answer: this provider's workspace bus below, and the
+  // global-sdk provider's runtime-events stream, which mounts underneath and
+  // cannot see this one's closures.
+  const publishRouteScope = () => setSessionEventRouteScope(claxedoEventRouteSessionID(props.pathname()))
+  publishRouteScope()
+  createEffect(publishRouteScope)
 
   // Route identity and project/workspace identity resolve independently. A
   // client-side navigation can supply the former after boot, while the project

@@ -13,10 +13,14 @@ import type { createSessionController } from "@/features/session/store/session-c
 import type { useSDK } from "@/features/session/app-ports"
 import type { useLanguage } from "@/platform/i18n/provider"
 import type { usePrompt } from "@/features/session/providers/prompt"
+import { forkSessionWithReservation } from "@/platform/runtime/private-session-reservation"
 
 export function createSessionMessageActions(input: {
   sessionID: () => string | undefined
   directory: () => string
+  signedControlPlane: () => boolean
+  workspaceId: () => string | undefined
+  serverUrl: () => string
   sdk: ReturnType<typeof useSDK>
   language: ReturnType<typeof useLanguage>
   prompt: ReturnType<typeof usePrompt>
@@ -69,8 +73,14 @@ export function createSessionMessageActions(input: {
   const fork = (forkInput: { sessionID: string; messageID: string }) => {
     if (!supports("fork")) return Promise.resolve()
     const value = draft(forkInput.messageID)
-    return sdk.client.session
-      .fork(forkInput)
+    return forkSessionWithReservation({
+      client: sdk.client.session,
+      sessionId: forkInput.sessionID,
+      messageId: forkInput.messageID,
+      managed: input.signedControlPlane(),
+      workspaceId: input.workspaceId(),
+      serverUrl: input.serverUrl(),
+    })
       .then((result) => {
         const next = result.data
         if (!next) {

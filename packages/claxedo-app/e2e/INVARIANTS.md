@@ -74,8 +74,8 @@ arrives), delayed idle, error mid-turn, dispatch failure, and slow/failed config
 These hold across every spec in this suite. A spec that needs to violate one must say so
 explicitly in its own SPEC block's INVARIANTS section, with a reason.
 
-1. **Harness ownership.** The selected harness (opencode / claude-acp / codex-app-server /
-   cursor-acp / pi / …) owns model, effort/variant, and submit payload shape at every
+1. **Harness ownership.** The selected harness (opencode / acp:claude / codex-app-server /
+   acp:cursor / pi / …) owns model, effort/variant, and submit payload shape at every
    stage of a session's life — draft, first send, mid-session change, reload, follow-up
    send. Exactly one model control exists in the DOM at a time, even mid-switch. A harness
    is locked once the session is created; nothing silently falls back to plain OpenCode.

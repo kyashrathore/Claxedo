@@ -2,27 +2,37 @@ import { v } from "convex/values"
 import {
   authedMutation,
   authedQuery,
+  authorizeWorkspace,
+  authorizeWorkspaceForUser,
   cronMutation,
+  hostEnrollmentServesWorkspace,
   serviceMutation,
   serviceQuery,
   upsertServiceUser,
   upsertUser,
   userByTokenIdentifier,
+  workspaceByPublicId,
 } from "./model"
+import { registerLocalForSharingAs } from "./workspaces"
 
 /**
  * Machine-wide remote access.
  *
- * `localHostLinks.ts` does the same four things per WORKSPACE. This does them
- * per MACHINE, and every difference between the two files is the removal of
- * workspace handling: no ownership check against a workspace doc, no
+ * The retired per-workspace host-link module did these four things per
+ * WORKSPACE. This does them per MACHINE, and every difference is the removal
+ * of workspace handling: no ownership check against a workspace doc, no
  * cloud-workspace refusal, and — the one that matters — no implicit workspace
  * insert. Enrolling a laptop creates nothing to own.
  *
- * Unit 6's hard cut replaces that file with this one. Until the cutover runbook
- * runs, both exist; `docs/tech-docs/host-enrollment-hard-cut-runbook.md` is the
- * only supported way to retire the old one, and there is deliberately no
- * compatibility mode reading both.
+ * Workspaces re-enter at the ASSIGNMENT grain (`host_workspace_assignments`):
+ * the owner's declaration that host H serves workspace X. An assignment
+ * carries no liveness of its own — the enrollment lease answers "is the
+ * machine here", the machine's consent set is acked by the heartbeat's v2
+ * signature and stored on the enrollment doc, and routing requires all three.
+ *
+ * The hard cut removed the per-workspace module entirely — there is no
+ * compatibility mode reading both, because two writers to one access decision
+ * is how a session gets admitted while the other side believes it is paused.
  */
 
 const DEFAULT_TTL_MS = 60_000
@@ -81,8 +91,8 @@ function base64urlBytes(input: string) {
 /**
  * Signed payloads carry their own domain prefix.
  *
- * Distinct from `claxedo.local-host-link.*`: a signature captured from one flow
- * must not be replayable in the other, and the prefix is what prevents it.
+ * A signature captured from one flow must not be replayable in another, and
+ * the domain prefix is what prevents it.
  */
 function enrollmentPayload(input: { host_id: string; request_id: string; nonce: string }) {
   return [
@@ -93,9 +103,27 @@ function enrollmentPayload(input: { host_id: string; request_id: string; nonce: 
   ].join("\n")
 }
 
-function heartbeatPayload(input: { host_id: string; ttl_ms?: number }) {
-  return ["claxedo.host-enrollment.heartbeat.v1", `host_id=${input.host_id}`, `ttl_ms=${input.ttl_ms ?? ""}`].join("\n")
+/**
+ * Heartbeat v2: the machine's ONE signature per interval also covers the
+ * workspaces it currently serves (sorted, comma-joined). Routing requires a
+ * workspace to be BOTH owner-assigned and inside this acked set, which
+ * preserves the retired per-workspace signature's security property — an
+ * owner session cannot conjure serving the machine never consented to — at
+ * one signature instead of N+1. Same literal as the D1 authority's
+ * `hostEnrollmentHeartbeatPayloadV2` and the SQLite authority's builder:
+ * three authorities, one signed contract.
+ */
+function heartbeatPayloadV2(input: { host_id: string; ttl_ms?: number; workspace_ids: readonly string[] }) {
+  return [
+    "claxedo.host-enrollment.heartbeat.v2",
+    `host_id=${input.host_id}`,
+    `ttl_ms=${input.ttl_ms ?? ""}`,
+    `workspaces=${[...input.workspace_ids].sort().join(",")}`,
+  ].join("\n")
 }
+
+/** A signed heartbeat payload must stay small; 200 shares per machine is generous. Mirrors the D1 authority. */
+const MAX_ACKED_WORKSPACES = 200
 
 async function verifyHostSignature(input: { public_key: string; payload: string; signature: string }) {
   const jwk = JSON.parse(input.public_key)
@@ -137,6 +165,26 @@ function enrollmentByOwnerHost(ctx: any, user: { _id: unknown }, host_id: string
     .query("host_enrollments")
     .withIndex("by_owner_host", (q: any) => q.eq("owner_user_id", user._id).eq("host_id", host_id))
     .unique()
+}
+
+function assignmentsByOwnerHost(ctx: any, user: { _id: unknown }, host_id: string) {
+  return ctx.db
+    .query("host_workspace_assignments")
+    .withIndex("by_owner_host", (q: any) => q.eq("owner_user_id", user._id).eq("host_id", host_id))
+    .collect()
+}
+
+function assignmentByWorkspace(ctx: any, workspace_id: string) {
+  return ctx.db
+    .query("host_workspace_assignments")
+    .withIndex("by_workspace", (q: any) => q.eq("workspace_id", workspace_id))
+    .unique()
+}
+
+function refuseCloudWorkspace(workspace: { backing?: unknown; access?: unknown }) {
+  if (workspace.backing === "cloud-vm" || workspace.access === "cloud") {
+    throw new Error("workspace_backing_conflict: cannot assign a host to a cloud workspace")
+  }
 }
 
 async function createRequestForUser(ctx: any, user: { _id: unknown }, args: { host_id: string }) {
@@ -247,19 +295,54 @@ async function enrollForUser(
 async function heartbeatForUser(
   ctx: any,
   user: { _id: unknown },
-  args: { host_id: string; signature: string; ttl_ms?: number },
+  args: {
+    host_id: string
+    signature: string
+    ttl_ms?: number
+    workspace_ids: string[]
+    session_authority?: "local" | "managed-private"
+  },
 ) {
   const row = await enrollmentByOwnerHost(ctx, user, args.host_id)
   if (!row || row.revoked_at) throw new Error("Host enrollment not found")
+  if (!Array.isArray(args.workspace_ids)) {
+    throw new Error("workspace_ids is required — the heartbeat signature covers the served set")
+  }
+  const workspaceIds = [...new Set(args.workspace_ids.map((id) => {
+    const value = typeof id === "string" ? id.trim() : ""
+    if (!value) throw new Error("workspace_ids must be non-empty workspace ids")
+    return value
+  }))].sort()
+  if (workspaceIds.length > MAX_ACKED_WORKSPACES) {
+    throw new Error("workspace_ids exceeds the served-set cap")
+  }
   await verifyHostSignature({
     public_key: row.public_key,
-    payload: heartbeatPayload({ host_id: args.host_id, ttl_ms: args.ttl_ms }),
+    payload: heartbeatPayloadV2({ host_id: args.host_id, ttl_ms: args.ttl_ms, workspace_ids: workspaceIds }),
     signature: args.signature,
   })
   const now = Date.now()
   const expires_at = now + ttl(args.ttl_ms)
-  await ctx.db.patch(row._id, { last_seen_at: now, expires_at, updated_at: now })
-  return { expires_at, last_seen_at: now }
+  await ctx.db.patch(row._id, {
+    last_seen_at: now,
+    expires_at,
+    updated_at: now,
+    acked_workspace_ids: workspaceIds,
+    acked_at: now,
+    // The latest beat is the whole truth about the machine's composition: a
+    // host that stops declaring is undeclared again, so this assigns rather
+    // than coalesces.
+    session_authority: args.session_authority,
+  })
+  // The owner's assignment view rides back on every ack so the machine can
+  // reconcile its persisted set — without this, machine consent and owner
+  // intent drift apart silently forever.
+  const assignments = await assignmentsByOwnerHost(ctx, user, args.host_id)
+  return {
+    expires_at,
+    last_seen_at: now,
+    assigned_workspace_ids: assignments.map((assignment: any) => assignment.workspace_id as string).sort(),
+  }
 }
 
 async function pauseForUser(ctx: any, user: { _id: unknown }, args: { host_id?: string; paused: boolean }) {
@@ -297,6 +380,142 @@ async function activeForUser(ctx: any, user: { _id: unknown }) {
   return { active: true as const, ...toEnrollment(row) }
 }
 
+/**
+ * The OWNER's declaration that host H serves workspace X. Pure data: no
+ * challenge and no TTL — liveness is the enrollment lease, consent is the
+ * heartbeat's acked set, and routing requires all three. Cold-registers the
+ * workspace doc exactly as the retired per-workspace registration did
+ * (`registerLocalForSharingAs`).
+ */
+async function assignForUser(
+  ctx: any,
+  user: { _id: unknown; name?: string; email?: string },
+  args: {
+    workspace_id: string
+    host_id: string
+    display_name?: string
+    org_id?: string
+    project_id?: string
+    repo_url?: string
+    repo_name?: string
+    git_branch?: string
+    remote_directory?: string
+    home_region?: string
+  },
+) {
+  const enrollment = await enrollmentByOwnerHost(ctx, user, args.host_id)
+  if (!enrollment || enrollment.revoked_at) throw new Error("Host enrollment not found")
+  const existing = await workspaceByPublicId(ctx.db, args.workspace_id)
+  if (existing) {
+    if (!(await authorizeWorkspaceForUser(ctx, existing, user, "admin"))) throw new Error("Workspace not found")
+    refuseCloudWorkspace(existing)
+  } else {
+    await registerLocalForSharingAs(ctx, {
+      workspace_id: args.workspace_id,
+      display_name: args.display_name ?? args.workspace_id,
+      ...(args.org_id ? { org_id: args.org_id } : {}),
+      ...(args.project_id ? { project_id: args.project_id } : {}),
+      ...(args.repo_url ? { repo_url: args.repo_url } : {}),
+      ...(args.repo_name ? { repo_name: args.repo_name } : {}),
+      ...(args.git_branch ? { git_branch: args.git_branch } : {}),
+      ...(args.remote_directory ? { remote_directory: args.remote_directory } : {}),
+      ...(args.home_region ? { home_region: args.home_region } : {}),
+    }, user)
+  }
+  const now = Date.now()
+  // Convex has no unique constraint, so one-host-per-workspace lives in this
+  // read-then-patch, the same device `by_owner_host` uses for enrollments.
+  const assignment = await assignmentByWorkspace(ctx, args.workspace_id)
+  if (assignment) {
+    await ctx.db.patch(assignment._id, {
+      host_id: args.host_id,
+      owner_user_id: user._id,
+      updated_at: now,
+    })
+  } else {
+    await ctx.db.insert("host_workspace_assignments", {
+      workspace_id: args.workspace_id,
+      host_id: args.host_id,
+      owner_user_id: user._id,
+      assigned_at: now,
+      updated_at: now,
+    })
+  }
+  return { assigned: true as const, workspace_id: args.workspace_id, host_id: args.host_id }
+}
+
+async function unassignForUser(ctx: any, user: { _id: unknown }, args: { workspace_id: string }) {
+  const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+  if (!workspace || !(await authorizeWorkspaceForUser(ctx, workspace, user, "admin"))) {
+    throw new Error("Workspace not found")
+  }
+  const assignment = await assignmentByWorkspace(ctx, args.workspace_id)
+  if (!assignment) return { unassigned: false }
+  await ctx.db.delete(assignment._id)
+  return { unassigned: true }
+}
+
+/** Routable host: owner-assigned AND machine-acked AND live lease. */
+async function activeWorkspaceHostRow(ctx: any, workspace_id: string) {
+  const assignment = await assignmentByWorkspace(ctx, workspace_id)
+  if (!assignment) return { active: false as const }
+  const enrollment = await ctx.db
+    .query("host_enrollments")
+    .withIndex("by_owner_host", (q: any) => q.eq("owner_user_id", assignment.owner_user_id).eq("host_id", assignment.host_id))
+    .unique()
+  if (!hostEnrollmentServesWorkspace(enrollment, assignment.workspace_id, Date.now())) {
+    return { active: false as const }
+  }
+  return {
+    active: true as const,
+    host_id: assignment.host_id,
+    workspace_id: assignment.workspace_id,
+    ...(enrollment.display_name ? { display_name: enrollment.display_name } : {}),
+    ...(assignment.second_device_open_at ? { second_device_open_at: assignment.second_device_open_at } : {}),
+    expires_at: enrollment.expires_at,
+    last_seen_at: enrollment.last_seen_at,
+    ...(enrollment.session_authority ? { session_authority: enrollment.session_authority } : {}),
+  }
+}
+
+/** Every live assignment on the account, grouped for the devices surface. */
+async function listAssignmentsForUser(ctx: any, user: { _id: unknown }) {
+  const assignments = await ctx.db
+    .query("host_workspace_assignments")
+    .withIndex("by_owner", (q: any) => q.eq("owner_user_id", user._id))
+    .collect()
+  const now = Date.now()
+  const groups = new Map<string, {
+    host_id: string
+    display_name: string
+    last_seen_at: number
+    expires_at: number
+    workspace_ids: string[]
+    acked_workspace_ids: string[]
+  }>()
+  for (const assignment of assignments.sort((a: any, b: any) =>
+    a.host_id === b.host_id
+      ? String(a.workspace_id).localeCompare(String(b.workspace_id))
+      : String(a.host_id).localeCompare(String(b.host_id)))) {
+    let group = groups.get(assignment.host_id)
+    if (!group) {
+      const enrollment = await enrollmentByOwnerHost(ctx, user, assignment.host_id)
+      if (!enrollment || enrollment.revoked_at || enrollment.paused_at || enrollment.expires_at <= now) continue
+      group = {
+        host_id: assignment.host_id,
+        display_name: enrollment.display_name ?? assignment.host_id,
+        last_seen_at: enrollment.last_seen_at,
+        expires_at: enrollment.expires_at,
+        workspace_ids: [],
+        acked_workspace_ids: (enrollment.acked_workspace_ids ?? []) as string[],
+      }
+      groups.set(assignment.host_id, group)
+    }
+    group.workspace_ids.push(assignment.workspace_id)
+  }
+  return [...groups.values()]
+}
+
 const hostId = { host_id: v.string() }
 const enrollArgs = {
   ...hostId,
@@ -318,7 +537,13 @@ export const enroll = authedMutation({
 })
 
 export const heartbeat = authedMutation({
-  args: { ...hostId, signature: v.string(), ttl_ms: v.optional(v.number()) },
+  args: {
+    ...hostId,
+    signature: v.string(),
+    ttl_ms: v.optional(v.number()),
+    workspace_ids: v.array(v.string()),
+    session_authority: v.optional(v.union(v.literal("local"), v.literal("managed-private"))),
+  },
   handler: async (ctx, args) => heartbeatForUser(ctx, await upsertUser(ctx), args),
 })
 
@@ -340,7 +565,7 @@ export const active = authedQuery({
 })
 
 // Service variants: Hosted Server calls these on behalf of a user it has
-// already authenticated, exactly as the local-host-link module does.
+// already authenticated.
 export const createRequestForService = serviceMutation({
   args: { user: serviceUser, ...hostId },
   handler: async (ctx, args) => createRequestForUser(ctx, await upsertServiceUser(ctx, args.user), args),
@@ -352,8 +577,86 @@ export const enrollForService = serviceMutation({
 })
 
 export const heartbeatForService = serviceMutation({
-  args: { user: serviceUser, ...hostId, signature: v.string(), ttl_ms: v.optional(v.number()) },
+  args: {
+    user: serviceUser,
+    ...hostId,
+    signature: v.string(),
+    ttl_ms: v.optional(v.number()),
+    workspace_ids: v.array(v.string()),
+    session_authority: v.optional(v.union(v.literal("local"), v.literal("managed-private"))),
+  },
   handler: async (ctx, args) => heartbeatForUser(ctx, await upsertServiceUser(ctx, args.user), args),
+})
+
+const assignArgs = {
+  workspace_id: v.string(),
+  ...hostId,
+  display_name: v.optional(v.string()),
+  org_id: v.optional(v.string()),
+  project_id: v.optional(v.string()),
+  repo_url: v.optional(v.string()),
+  repo_name: v.optional(v.string()),
+  git_branch: v.optional(v.string()),
+  remote_directory: v.optional(v.string()),
+  home_region: v.optional(v.string()),
+}
+
+export const assignWorkspace = authedMutation({
+  args: assignArgs,
+  handler: async (ctx, args) => assignForUser(ctx, await upsertUser(ctx), args),
+})
+
+export const assignWorkspaceForService = serviceMutation({
+  args: { user: serviceUser, ...assignArgs },
+  handler: async (ctx, args) => assignForUser(ctx, await upsertServiceUser(ctx, args.user), args),
+})
+
+export const unassignWorkspace = authedMutation({
+  args: { workspace_id: v.string() },
+  handler: async (ctx, args) => unassignForUser(ctx, await upsertUser(ctx), args),
+})
+
+export const unassignWorkspaceForService = serviceMutation({
+  args: { user: serviceUser, workspace_id: v.string() },
+  handler: async (ctx, args) => unassignForUser(ctx, await upsertServiceUser(ctx, args.user), args),
+})
+
+export const activeWorkspaceHost = authedQuery({
+  args: { workspace_id: v.string() },
+  handler: async (ctx, args) => {
+    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+    if (!workspace || !(await authorizeWorkspace(ctx, workspace, "read"))) return { active: false as const }
+    return activeWorkspaceHostRow(ctx, args.workspace_id)
+  },
+})
+
+export const listAssignments = authedQuery({
+  args: {},
+  handler: async (ctx) => {
+    // A QUERY, so it looks the user up rather than upserting (`active` above
+    // documents why). Nothing enrolled means nothing assigned.
+    const user = await userByTokenIdentifier(ctx.db, ctx.identity.tokenIdentifier)
+    if (!user) return []
+    return listAssignmentsForUser(ctx, user)
+  },
+})
+
+export const markSecondDeviceOpen = authedMutation({
+  args: { workspace_id: v.string() },
+  handler: async (ctx, args) => {
+    const user = await upsertUser(ctx)
+    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+    if (!workspace || !(await authorizeWorkspaceForUser(ctx, workspace, user, "read"))) {
+      throw new Error("Workspace not found")
+    }
+    const assignment = await assignmentByWorkspace(ctx, args.workspace_id)
+    const now = Date.now()
+    const owned = assignment && assignment.owner_user_id === user._id
+    if (owned && !assignment.second_device_open_at) {
+      await ctx.db.patch(assignment._id, { second_device_open_at: now, updated_at: now })
+    }
+    return { recorded: !!owned, second_device_open_at: now }
+  },
 })
 
 export const pauseForService = serviceMutation({
@@ -401,6 +704,37 @@ export const sweepExpired = cronMutation({
       .take(limit)
     for (const doc of stale) await ctx.db.delete(doc._id)
     return { swept: stale.length }
+  },
+})
+
+/**
+ * Service-authenticated routing lookup for the internal relay resolver.
+ *
+ * The hosted relay resolver calls in with the control-plane service token and
+ * no end-user identity, so it cannot use `activeWorkspaceHost` above (which
+ * requires a signed workspace read). It answers the same question and applies
+ * the same three conditions — owner-assigned AND inside the machine's
+ * heartbeat-acked served set AND a live enrollment lease — and rechecks the
+ * authoritative workspace posture in the same call, matching
+ * `authority/adapters/d1/user-hosted-relay-target.ts` semantics.
+ */
+export const activeWorkspaceHostForRelay = serviceQuery({
+  args: { workspace_id: v.string() },
+  handler: async (ctx, args) => {
+    const workspace = await workspaceByPublicId(ctx.db, args.workspace_id)
+    if (
+      !workspace
+      || workspace.deleted_at
+      || workspace.access !== "user-hosted"
+      || workspace.backing !== "local-worktree"
+    ) {
+      return { active: false as const }
+    }
+    const org = workspace.org_id ? await ctx.db.get(workspace.org_id) : undefined
+    if (!org || (org as { deleted_at?: number }).deleted_at) return { active: false as const }
+    const row = await activeWorkspaceHostRow(ctx, args.workspace_id)
+    if (!row.active) return { active: false as const }
+    return { active: true as const, host_id: row.host_id, backing: workspace.backing }
   },
 })
 

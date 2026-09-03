@@ -40,6 +40,22 @@ export type WorkspaceRelayHostTunnelOptions = {
    * function has no reason to provide. The global `fetch` still satisfies it.
    */
   request?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>
+  /**
+   * Rewrites the remote caller's headers before this machine replays the
+   * request onto its OWN local server — applied to both the HTTP replay and
+   * the local WebSocket upgrade, so a policy cannot cover one and miss the
+   * other.
+   *
+   * The host that serves decides the policy: an unsigned-local daemon must
+   * strip the proxy/client-identity headers the relay's edge stamps on
+   * (`cf-connecting-ip`, `x-forwarded-*`, a foreign `Origin`/`Host`), because
+   * they describe the remote caller rather than the loopback request actually
+   * being made, and their presence makes a genuinely local request look
+   * proxied to the daemon's unsigned-local gate. Not applied to the tunnel's
+   * OWN outbound connection to the relay, whose headers carry its Host Tunnel
+   * Token.
+   */
+  localReplayHeaders?: (headers: TunnelHeaderMap) => TunnelHeaderMap
   pingIntervalMs?: number
   reconnectIntervalMs?: number
   reconnectMaxIntervalMs?: number
@@ -137,6 +153,11 @@ function targetUrl(baseUrl: string, path: string) {
 
 function localTarget(input: WorkspaceRelayHostTunnelOptions, workspaceId: string, path: string) {
   return input.resolveLocalUrl?.({ workspaceId, path }) ?? (input.resolveLocalUrl ? undefined : targetUrl(input.localBaseUrl, path))
+}
+
+/** The caller's headers as this machine will replay them onto its own server. */
+function replayHeaders(input: WorkspaceRelayHostTunnelOptions, map: TunnelHeaderMap) {
+  return input.localReplayHeaders ? input.localReplayHeaders(map) : map
 }
 
 function headers(input: TunnelHeaderMap) {
@@ -349,7 +370,7 @@ async function forwardHttp(
     }
     const res = await (input.request ?? fetch)(target, {
       method: message.method,
-      headers: headers(message.headers),
+      headers: headers(replayHeaders(input, message.headers)),
       body: message.body_base64 ? decoded(message.body_base64) : undefined,
       redirect: "manual",
       signal,
@@ -421,7 +442,7 @@ function openChannel(
   const upstream = new (WebSocketCtor as unknown as {
     new(url: string, options: { headers?: Record<string, string> }): WebSocket
   })(target.toString().replace(/^http/, "ws"), {
-    headers: message.headers,
+    headers: replayHeaders(input, message.headers),
   })
   const channel: TunnelChannel = {
     upstream,

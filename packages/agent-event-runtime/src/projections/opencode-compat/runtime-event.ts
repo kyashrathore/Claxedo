@@ -52,22 +52,22 @@ export function legacyRuntimeEventFromOpencodeCompat(
     }
   }
   if (event.type === "message.part.delta") {
-    if (event.properties.field === "text") {
-      const partType = content.get(partTypeKey(event.properties.messageID, event.properties.partID))
-      return {
-        assistantMessageId: text(event.properties.messageID),
-        payload: partType === "reasoning"
-          ? agentRuntimeEvent.thinkingDelta({ delta: String(event.properties.delta ?? "") })
-          : agentRuntimeEvent.textDelta({ delta: String(event.properties.delta ?? "") }),
-      }
+    if (event.properties.field !== "text" && event.properties.field !== "thinking") return
+    const delta = String(event.properties.delta ?? "")
+    // A delta advances the part's accumulated text, exactly as the full-value
+    // `message.part.updated` for the same part does. The engine sends BOTH for
+    // one part — deltas while it streams, then the settled value — so a delta
+    // that left the accumulator behind made the settled value look like brand
+    // new text and replayed the whole reply a second time.
+    const key = partKey(event.properties.messageID, event.properties.partID)
+    content.set(key, (content.get(key) ?? "") + delta)
+    const partType = content.get(partTypeKey(event.properties.messageID, event.properties.partID))
+    return {
+      assistantMessageId: text(event.properties.messageID),
+      payload: event.properties.field === "thinking" || partType === "reasoning"
+        ? agentRuntimeEvent.thinkingDelta({ delta })
+        : agentRuntimeEvent.textDelta({ delta }),
     }
-    if (event.properties.field === "thinking") {
-      return {
-        assistantMessageId: text(event.properties.messageID),
-        payload: agentRuntimeEvent.thinkingDelta({ delta: String(event.properties.delta ?? "") }),
-      }
-    }
-    return
   }
   if (event.type === "message.part.updated") {
     const part = record(event.properties.part)

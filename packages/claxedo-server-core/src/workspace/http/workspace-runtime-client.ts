@@ -1,4 +1,5 @@
 import type { RelayTokenInput } from "../../adapters/relay/index"
+import { CONTROL_PLANE_RUNTIME_ACTOR } from "../../platform/auth/runtime-actor"
 import { normalizeClaxedoRegion, type ClaxedoRegion } from "../../platform/runtime/region/index"
 import type { SandboxReadyTarget } from "../../sandbox/manager-port"
 import type { Workspace } from "../store/index"
@@ -12,10 +13,7 @@ export type WorkspaceRuntimeClientOptions = {
   relayProvider?: import("../../adapters/relay/index").RelayProvider
   loopbackRelayUrl?: string
   defaultHomeRegion?: ClaxedoRegion
-  subject?: string
-  principalKind?: "user" | "service"
-  actorId?: string
-  actorKind?: "human" | "agent"
+  runtimeActor?: Pick<RelayTokenInput, "principalKind" | "actorId" | "actorKind" | "actorPublicId" | "actorName" | "actorAvatarUrl">
   orgId?: string
   role?: RelayTokenInput["role"]
   /** Inspect an already-ready runtime without waking or reprovisioning it. */
@@ -103,15 +101,9 @@ export function createWorkspaceRuntimeClient(input: {
   if (!relayProvider) throw new Error(`workspace relay provider unavailable: ${ws.id}`)
   const orgId = options.orgId ?? ws.org_id
   if (!orgId) throw new Error(`workspace org required for runtime token minting: ${ws.id}`)
-  if (!options.principalKind) throw new Error(`runtime principal kind required for runtime token minting: ${ws.id}`)
-  if (!options.subject || !options.actorId || !options.actorKind || !options.role) {
-    throw new Error(`complete runtime principal required for runtime token minting: ${ws.id}`)
-  }
+  if (!options.role) throw new Error(`runtime role required for runtime token minting: ${ws.id}`)
   const principal = {
-    subject: options.subject,
-    principalKind: options.principalKind,
-    actorId: options.actorId,
-    actorKind: options.actorKind,
+    ...(options.runtimeActor ?? CONTROL_PLANE_RUNTIME_ACTOR),
     role: options.role,
     orgId,
   }
@@ -166,12 +158,7 @@ export function createWorkspaceRuntimeClient(input: {
       relayProvider.mintRuntimeAccessToken({
         workspaceId: ws.id,
         hostId: active.hostId,
-        subject: principal.subject,
-        principalKind: principal.principalKind,
-        actorId: principal.actorId,
-        actorKind: principal.actorKind,
-        orgId: principal.orgId,
-        role: principal.role,
+        ...principal,
         ttlMs: 10 * 60_000,
       }),
     ])

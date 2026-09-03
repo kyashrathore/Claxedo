@@ -145,6 +145,12 @@ import {
   parseSessionConfigPatch,
   SESSION_CONFIG_PATCH_SUCCESS_STATUS,
 } from "../helpers/contracts/session-config"
+import {
+  isSessionRegistrationReservePath,
+  parseSessionReservationRequest,
+  sessionReservationResponse,
+  sessionReservationStatus,
+} from "../helpers/contracts/session-registration"
 
 const DIR = "/tmp/e2e-core-cloud-provisioning"
 const PROJECT_ID = "proj_core_cloud_provisioning"
@@ -498,6 +504,16 @@ async function installCloudRuntimeMock(
     ) {
       return json(route, { ok: true })
     }
+    // The signed session-reservation boundary crossed BEFORE the runtime create
+    // (`reservePrivateSession`, src/platform/runtime/private-session-reservation.ts).
+    // Unanswered it does not degrade: the client refuses a receipt that is not
+    // its own immutable intent, so the send aborts before any session exists and
+    // the oracle has nothing to prove. See ../helpers/contracts/session-registration.ts.
+    if (isSessionRegistrationReservePath(url.pathname) && method === "POST") {
+      const reservation = parseSessionReservationRequest(request.postDataJSON?.() ?? undefined, request.url())
+      const result = sessionReservationResponse(reservation)
+      return json(route, result, sessionReservationStatus(result))
+    }
     if (url.pathname === "/api/workspace") {
       const access = url.searchParams.get("access")
       if (access === "cloud") {
@@ -532,6 +548,10 @@ async function installCloudRuntimeMock(
       return json(route, {
         access: "cloud",
         backing: "cloud-vm",
+        // What `cloud-connection.ts` mints: a provisioned sandbox's runtime
+        // delegates to the control plane's session authority, so it serves
+        // SESSION-SCOPED event streams only.
+        sessionAuthority: "managed-private",
         workspaceId: WORKSPACE_ID,
         role: "owner",
         relayUrl: url.origin,

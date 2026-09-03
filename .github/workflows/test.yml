@@ -611,8 +611,7 @@ jobs:
 
       # The claude/codex CLIs the native-SDK scenarios spawn. No credentials —
       # the scripted endpoint answers everything, so these never authenticate.
-      # The ACP scenarios use the workspace's own @agentclientprotocol wrapper
-      # packages (already installed by bun install above).
+      # ACP agents are operator configuration, so this lane installs none.
       - name: Install harness CLIs
         run: npm install -g @anthropic-ai/claude-code @openai/codex
 

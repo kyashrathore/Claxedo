@@ -73,6 +73,8 @@ export type WorkspaceRuntimeEvent =
       terminalId?: string
       workspaceId?: string
       provider?: string
+      /** Provider-native agent id; never accepted as private-session scope. */
+      providerSessionId?: string
       sessionId?: string
       transcriptPath?: string
       refName?: string

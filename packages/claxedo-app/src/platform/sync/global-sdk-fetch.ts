@@ -14,9 +14,7 @@ export function createGlobalSdkFetch(input: {
   return async (requestInput, init) => {
     const url = new URL(requestInput instanceof Request ? requestInput.url : String(requestInput), input.serverUrl)
     const request = input.request ?? authFetch
-    const runtimeOwned =
-      /^\/(session|file|config|mcp|agent|command|permission|question)(\/|$)/.test(url.pathname) ||
-      /^\/api\/claxedo\/(pty|process|diff|hook)(\/|$)/.test(url.pathname)
+    const runtimeOwned = /^\/(session|file|config|mcp|agent|command|permission|question)(\/|$)/.test(url.pathname)
     if (runtimeOwned) {
       // Inspect headers without constructing from a body-bearing Request.
       // `new Request(requestInput, init)` transfers/locks that body, so the

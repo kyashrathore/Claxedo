@@ -224,7 +224,7 @@ describe("the unsigned desktop renderer entry", () => {
     // descriptor omit `getAuthToken` and `authEnabled` resolve false; an
     // argument here would compose hosted contributions in a build with no
     // provider to sign into.
-    expect(entry).toMatch(/startDesktopRenderer\(\{\s*loadHostedContributions\s*\}\)/)
+    expect(entry).toMatch(/startDesktopRenderer\(\{\s*loadHostedContributions,\s*serviceContributionLoaders\s*\}\)/)
   })
 })
 
@@ -233,14 +233,25 @@ describe("the optional signed activation", () => {
     expect(HOSTED_ACTIVATION.edges.filter(isMatch)).toEqual([])
   })
 
-  test("binds machine remote access through Electron and loads the hosted content set", () => {
+  test("binds machine remote access through Electron without owning optional service renderers", () => {
     const activation = stripComments(read("src/renderer/hosted-contributions.ts"))
     expect(activation).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
-    expect(activation).toContain("hostedContributionLoader()")
+    expect(activation).toContain("contentSurfaces: []")
+    expect(activation).not.toContain("hosted-content-surfaces")
+    expect(activation).not.toContain("documents-content-surfaces")
     expect(activation).not.toContain("configureHttpMachineRemoteAccess")
     expect(activation).not.toContain("configureApiRuntime")
     expect(activation).not.toContain("configureAuthSession")
-    expect(hostedModules(HOSTED_ACTIVATION.modules).length).toBeGreaterThan(0)
+    expect(hostedModules(HOSTED_ACTIVATION.modules)).toEqual([])
+  })
+
+  test("keeps WorkGraph and Documents in separate catalog-driven modules", () => {
+    const workgraph = stripComments(read("src/renderer/workgraph-contributions.ts"))
+    const documents = stripComments(read("src/renderer/documents-contributions.ts"))
+    expect(workgraph).toContain("hosted-content-surfaces")
+    expect(workgraph).not.toContain("documents-content-surfaces")
+    expect(documents).toContain("documents-content-surfaces")
+    expect(documents).not.toContain("hosted-content-surfaces")
   })
 })
 
@@ -321,5 +332,54 @@ describe("the local base document reaches main and the renderer build", () => {
     expect(main).toContain("isTrustedRendererDocumentUrl(input, {")
     expect(main).toContain("devServerUrl: process.env.ELECTRON_RENDERER_URL")
     expect(main).toContain("packagedIndexUrl: pathToFileURL(join(root, `../renderer/${RENDERER_DOCUMENT}`)).href")
+  })
+})
+
+/**
+ * The origin a PHONE is sent to, and whether the build actually carries it.
+ *
+ * `remoteAccessAppOrigin()` reads `import.meta.env.VITE_CLAXEDO_APP_ORIGIN` and
+ * falls back to the hardcoded production origin. The resolver was correct; the
+ * PLUMBING was missing. `loadEnv` reads the app's env files, but the renderer's
+ * `root` is the renderer directory, so Vite never applies them itself — a var
+ * that is not forwarded through `define` is simply absent at runtime.
+ *
+ * The result was silent and pointed the wrong way: a STAGING desktop handed
+ * phones an `app.claxedo.com` QR, which renders a blank page there because the
+ * workspace does not exist on that control plane. Nothing failed; the QR just
+ * went somewhere useless.
+ *
+ * Asserted through the REAL config rather than by reading the file, because the
+ * bug was precisely that the value never reached the config.
+ */
+describe("renderer build carries the hosted app origin", () => {
+  async function defineFor(origin: string | undefined) {
+    const previous = process.env.VITE_CLAXEDO_APP_ORIGIN
+    if (origin === undefined) delete process.env.VITE_CLAXEDO_APP_ORIGIN
+    else process.env.VITE_CLAXEDO_APP_ORIGIN = origin
+    try {
+      const { createElectronRenderer } = await import("../../vite.renderer")
+      return createElectronRenderer("production").define ?? {}
+    } finally {
+      if (previous === undefined) delete process.env.VITE_CLAXEDO_APP_ORIGIN
+      else process.env.VITE_CLAXEDO_APP_ORIGIN = previous
+    }
+  }
+
+  test("forwards a configured app origin into the bundle", async () => {
+    const define = await defineFor("https://app-acc-stg-example.claxedo.dev")
+    expect(define["import.meta.env.VITE_CLAXEDO_APP_ORIGIN"]).toBe(
+      JSON.stringify("https://app-acc-stg-example.claxedo.dev"),
+    )
+  })
+
+  /**
+   * Empty, NOT the string "undefined". `remoteAccessAppOrigin()` treats a falsy
+   * value as "not baked" and falls back; the literal text "undefined" is
+   * truthy and would be handed to a phone as if it were a URL.
+   */
+  test("bakes an empty value when unset, so the resolver can fall back", async () => {
+    const define = await defineFor("")
+    expect(define["import.meta.env.VITE_CLAXEDO_APP_ORIGIN"]).toBe(JSON.stringify(""))
   })
 })

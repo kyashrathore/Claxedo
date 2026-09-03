@@ -40,10 +40,13 @@ describe("native Goal recovery matrix", () => {
       store.setGoal?.(sessionId, persisted)
 
       const adapter = entry.create(store)
+      // Only an AVAILABLE driver advertises the delete this resource can
+      // perform; `goalActionAvailable` denies every action on an unavailable
+      // capability, so advertising one there would be a choice nothing honors.
       expect(await adapter.goals!.readCapabilities(sessionId, directory)).toMatchObject({
         implemented: true,
         available: entry.available,
-        actions: ["delete"],
+        actions: entry.available ? ["delete"] : [],
         recovery: "blocked",
       })
       expect(await adapter.goals!.read(sessionId, directory)).toEqual({

@@ -25,22 +25,53 @@ function runtimeVcsDirectoryKey(baseUrl: string | undefined, directory: string) 
   return ["runtime", runtimeServer(baseUrl), "vcs", directory] as const
 }
 
+/**
+ * The scope of a control-plane catalog read that is about the server itself and
+ * about no workspace on it — the central server's own runtime. It is a real
+ * scope, not a placeholder: the central runtime answers `/provider` for its own
+ * harness installation, and that answer belongs to nothing else.
+ */
+const CENTRAL_RUNTIME_SCOPE = "central"
+
+/**
+ * The RESOLVED workspace identity (`kind:id`) a directory-scoped key carries.
+ *
+ * A query that fires before workspace resolution answers from a different
+ * authority than the same query after it, so the resolution is part of the key:
+ * the pre-resolution answer is never served to a resolved reader. One builder
+ * for every family that carries it (`agents`, `commands`, `config`,
+ * `fileStatus`) so a reader and a writer cannot disagree about its shape.
+ */
+export function workspaceQueryKey(
+  workspace?: { kind?: string | null; workspaceId?: string | null } | null,
+) {
+  return workspace ? `${workspace.kind ?? ""}:${workspace.workspaceId ?? ""}` : ""
+}
+
 export const queryKeys = {
   controlPlane: {
     projects: (baseUrl?: string) => ["controlPlane", normalized(baseUrl), "projects"] as const,
-    // Harness catalogs are runtime-owned: the same harness may expose different
-    // models in two workspaces. The stable workspace/directory scope isolates
-    // those catalogs while allowing every pane for one runtime to share them.
-    // The default OpenCode catalog remains server-wide for its SDK-backed path.
-    providers: (baseUrl?: string, scope?: string, harnessType?: string) => harnessType
-      ? ["controlPlane", normalized(baseUrl), "providers", scope ?? "", harnessType] as const
-      : ["controlPlane", normalized(baseUrl), "providers"] as const,
-    providerAuth: (baseUrl?: string, harnessType?: string) => harnessType
-      ? ["controlPlane", normalized(baseUrl), "providerAuth", harnessType] as const
-      : ["controlPlane", normalized(baseUrl), "providerAuth"] as const,
+    // A harness catalog and its provider authentication both belong to (the
+    // machine serving the scope, the workspace-or-directory scope, the harness).
+    // The same harness exposes different models — and holds different
+    // credentials — on two machines, so neither the catalog nor the auth entry
+    // can be shared by name alone. Both keys carry all three components; the
+    // harness is required because "no harness" is not a catalog, it is an
+    // unresolved question.
+    providers: (baseUrl: string | undefined, scope: string | undefined, harnessType: string) =>
+      ["controlPlane", normalized(baseUrl), "providers", scope ?? CENTRAL_RUNTIME_SCOPE, harnessType] as const,
+    providerAuth: (baseUrl: string | undefined, scope: string | undefined, harnessType: string) =>
+      ["controlPlane", normalized(baseUrl), "providerAuth", scope ?? CENTRAL_RUNTIME_SCOPE, harnessType] as const,
   },
   shell: {
-    commands: (baseUrl: string | undefined, directory: string) => ["shell", normalized(baseUrl), "commands", directory] as const,
+    // Commands are a harness's command set for one worktree, served by the
+    // machine that owns the workspace — same key family as `directory.agents`.
+    commands: (
+      baseUrl: string | undefined,
+      directory: string,
+      harnessType?: string,
+      workspaceKey?: string,
+    ) => ["shell", normalized(baseUrl), "commands", directory, harnessType ?? "", workspaceKey ?? ""] as const,
     sessionInventory: (baseUrl?: string) => ["shell", normalized(baseUrl), "sessionInventory"] as const,
     sessionList: (baseUrl: string | undefined, query: unknown) =>
       ["shell", normalized(baseUrl), "sessionList", query] as const,
@@ -49,8 +80,8 @@ export const queryKeys = {
   directory: {
     project: (baseUrl: string | undefined, directory: string) =>
       ["directory", normalized(baseUrl), "project", directory] as const,
-    config: (baseUrl: string | undefined, directory: string) =>
-      ["directory", normalized(baseUrl), "config", directory] as const,
+    config: (baseUrl: string | undefined, directory: string, workspaceKey?: string) =>
+      ["directory", normalized(baseUrl), "config", directory, workspaceKey ?? ""] as const,
     // `workspaceKey` carries the RESOLVED workspace identity (kind:id). The
     // agents queryFn branches on `workspace?.kind` (central agent-config vs
     // workspace runtime) — keying on the resolution means a query that fired
@@ -68,6 +99,14 @@ export const queryKeys = {
     sessionCache: (directory: string) => ["directory", "local", "sessionCache", directory] as const,
   },
   runtime: {
+    /**
+     * A user-hosted workspace's own session list, as its RUNTIME answers it
+     * over the relay. Keyed by workspace rather than by list query: one relay
+     * hop answers every rail section and every page of that workspace, and the
+     * per-query `shell.sessionList` entries are shaped from this one read.
+     */
+    workspaceSessions: (baseUrl: string | undefined, workspaceId: string) =>
+      ["runtime", runtimeServer(baseUrl), "workspaceSessions", workspaceId] as const,
     workspace: (input: { baseUrl?: string; directory?: string; workspaceId?: string; create?: boolean }) =>
       [
         "runtime",

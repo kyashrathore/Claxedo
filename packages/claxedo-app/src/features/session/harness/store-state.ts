@@ -10,7 +10,7 @@ import {
   type OptionsSource,
 } from "./profile"
 import { harnessMode, type HarnessReadiness } from "./selection"
-import { initialHarness, initialValue } from "./store-policy"
+import { initialHarness } from "./store-policy"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultAuthority, DraftDefaultResult } from "./draft-default-policy"
 
@@ -20,7 +20,6 @@ export type HarnessStoreState = {
   harness: HarnessType
   selectedModel: string
   selectedModelProvider?: string
-  selectedAgent: string
   dynamicModels: HarnessModelOption[] | null
   /** Reasoning/thinking levels the harness offers; `[]` = none, `null` = unknown. */
   thoughtLevels: HarnessModelOption[] | null
@@ -37,30 +36,28 @@ export type HarnessStoreState = {
   draftDefaultWorkspaceKey?: string
   draftDefault?: DraftDefault
   draftDefaultState?: DraftDefaultResult["state"]
-  draftDefaultWritePending?: boolean
 }
 
 export type HarnessStorePatch = Partial<HarnessStoreState>
 
+/**
+ * The TRANSIENT seed a scope starts from, before any authority answers.
+ *
+ * It carries no remembered choice: a draft's remembered (harness, model) comes
+ * from the per-(server, workspace, harness) draft defaults, and an existing
+ * session's comes from its session config. Both overwrite this within the same
+ * hydration.
+ */
 export function initialHarnessStoreState(input: {
   scope: string
-  savedHarness?: string
-  savedModel?: string
-  savedAgent?: string
-  legacyHarness?: string | null
-  legacyModel?: string | null
-  legacyAgent?: string | null
 }): HarnessStoreState {
-  const type = initialHarness(input.scope, input.savedHarness, input.legacyHarness)
-  const saved = savedModelKey(input.savedModel)
-  const model = saved?.modelID ?? initialValue(input.scope, input.savedModel, input.legacyModel)
+  const type = initialHarness()
   return {
     harnessMode: harnessMode(type),
     harnessBinary: "",
     harness: type,
-    selectedModel: effectiveHarnessModel(type, model),
-    selectedModelProvider: saved?.providerID ?? (type === "pi" ? undefined : type),
-    selectedAgent: initialValue(input.scope, input.savedAgent, input.legacyAgent),
+    selectedModel: effectiveHarnessModel(type, ""),
+    selectedModelProvider: type === "pi" ? undefined : type,
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
@@ -71,40 +68,11 @@ export function initialHarnessStoreState(input: {
     configError: undefined,
     draftDefaultAuthority: scopeAuthority(input.scope),
     draftDefaultRevision: 0,
-    draftDefaultWritePending: false,
   }
 }
 
 function scopeAuthority(scope: string): DraftDefaultAuthority {
   return scope.startsWith("session:") ? "server" : "unresolved"
-}
-
-function savedModelKey(input?: string) {
-  if (!input?.startsWith("{")) return
-  try {
-    const value = JSON.parse(input) as { providerID?: unknown; modelID?: unknown }
-    if (typeof value.providerID !== "string" || typeof value.modelID !== "string") return
-    return { providerID: value.providerID, modelID: value.modelID }
-  } catch {
-    return
-  }
-}
-
-export function workspaceDraftHarnessResetPatch(): HarnessStorePatch {
-  return {
-    harness: "opencode",
-    harnessMode: "opencode",
-    selectedModel: "",
-    selectedModelProvider: undefined,
-    dynamicModels: null,
-    thoughtLevels: null,
-    selectedThoughtLevel: undefined,
-    readiness: "ready",
-    optionsSource: "empty",
-    optionsStale: false,
-    optionsLoading: false,
-    configError: undefined,
-  }
 }
 
 export function harnessStatusPatch(input: {

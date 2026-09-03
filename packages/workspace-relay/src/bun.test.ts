@@ -171,7 +171,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -244,7 +246,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -308,7 +312,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -375,7 +381,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -456,7 +464,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -553,7 +563,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -624,7 +636,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -682,7 +696,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -760,7 +776,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -819,7 +837,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -882,7 +902,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1179,7 +1201,9 @@ describe("workspace relay Bun adapter", () => {
       }))
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1238,7 +1262,9 @@ describe("workspace relay Bun adapter", () => {
       if (message.type === "http.request") forwarded = true
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1301,7 +1327,9 @@ describe("workspace relay Bun adapter", () => {
       new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
     )
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1395,7 +1423,9 @@ describe("workspace relay Bun adapter", () => {
       resolveRequest()
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1476,7 +1506,9 @@ describe("workspace relay Bun adapter", () => {
       }))
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1561,7 +1593,9 @@ describe("workspace relay Bun adapter", () => {
       }))
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1654,7 +1688,9 @@ describe("workspace relay Bun adapter", () => {
       }, 2_600)
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1730,7 +1766,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1811,7 +1849,9 @@ describe("workspace relay Bun adapter", () => {
       if (message.type === "ws.frame") resolveFrame(message)
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1885,7 +1925,9 @@ describe("workspace relay Bun adapter", () => {
       }
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -1962,7 +2004,9 @@ describe("workspace relay Bun adapter", () => {
       }
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2041,7 +2085,9 @@ describe("workspace relay Bun adapter", () => {
       }))
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2173,7 +2219,9 @@ describe("workspace relay Bun adapter", () => {
       }
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2286,7 +2334,9 @@ describe("workspace relay Bun adapter", () => {
       new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
     )
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2377,7 +2427,9 @@ describe("workspace relay Bun adapter", () => {
     })
 
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2468,7 +2520,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2520,7 +2574,9 @@ describe("workspace relay Bun adapter", () => {
     })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2554,6 +2610,54 @@ describe("workspace relay Bun adapter", () => {
     }
   })
 
+  // The workspace fast path answers the browser's preflight itself, before any
+  // token is read. A deployment that configures its own app origin has to be
+  // answered from THAT list: stamping the product default here let the
+  // configured origin pass the WebSocket upgrade check and still fail every
+  // preflight, so the browser never sent a single fast-path request.
+  test("honors configured allowedOrigins for workspace fast-path preflight", async () => {
+    const runtime = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHost = await generateKeyPair("EdDSA", { extractable: true })
+    const relayHandler = createWorkspaceRelayBun({
+      runtimeAccessKey: runtime.publicKey,
+      relayHostSigningKey: relayHost.privateKey,
+      relayHostAlgorithm: "EdDSA",
+      allowedOrigins: ["https://selfhost.example.com"],
+      resolveTarget: (claims) => ({
+        workspaceId: claims.workspace_id,
+        hostId: claims.host_id,
+        baseUrl: "http://127.0.0.1:9",
+        access: "user-hosted",
+        backing: "local-worktree",
+      }),
+    })
+    const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
+    try {
+      const configured = await fetch(new URL("/workspaces/ws_1/api/wr/health", relay.url), {
+        method: "OPTIONS",
+        headers: {
+          origin: "https://selfhost.example.com",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization",
+        },
+      })
+      expect(configured.status).toBe(204)
+      expect(configured.headers.get("access-control-allow-origin")).toBe("https://selfhost.example.com")
+
+      const product = await fetch(new URL("/workspaces/ws_1/api/wr/health", relay.url), {
+        method: "OPTIONS",
+        headers: {
+          origin: "https://app.claxedo.com",
+          "access-control-request-method": "GET",
+          "access-control-request-headers": "authorization",
+        },
+      })
+      expect(product.headers.get("access-control-allow-origin")).toBeNull()
+    } finally {
+      relay.stop(true)
+    }
+  })
+
   test("closes an idle Bun WebSocket after its Runtime Access Token is revoked", async () => {
     const runtime = await generateKeyPair("EdDSA", { extractable: true })
     const relayHost = await generateKeyPair("EdDSA", { extractable: true })
@@ -2583,7 +2687,9 @@ describe("workspace relay Bun adapter", () => {
     }, { runtimeAccessTokenActiveCheckIntervalMs: 5 })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2633,7 +2739,9 @@ describe("workspace relay Bun adapter", () => {
     }, { now: () => Date.now() + 31 * 60_000 })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2678,7 +2786,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2738,7 +2848,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2798,7 +2910,9 @@ describe("workspace relay Bun adapter", () => {
       websocket: relayHandler.websocket,
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -2852,7 +2966,9 @@ describe("workspace relay Bun adapter", () => {
       new URL("/host-tunnels/host_1?workspaceId=ws_1", relay.url).toString().replace(/^http/, "ws"),
     )
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -3023,7 +3139,9 @@ describe("workspace relay Bun adapter", () => {
       }))
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -3154,7 +3272,9 @@ describe("workspace relay Bun adapter", () => {
       }))
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -3235,7 +3355,9 @@ describe("workspace relay Bun adapter", () => {
       }))
     }
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -3433,7 +3555,9 @@ describe("workspace relay Bun adapter", () => {
       }
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -3520,7 +3644,9 @@ describe("workspace relay Bun adapter", () => {
       }
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -3682,7 +3808,9 @@ describe("workspace relay Bun adapter", () => {
       }
     })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",
@@ -3908,7 +4036,9 @@ describe("workspace relay Bun adapter", () => {
         workspaceIds: ["ws_1"],
       }, runtime.privateKey, "EdDSA")
       const ratToken = await mintRuntimeAccessToken({
-        subject: "user_1",
+        principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
         orgId: "org_1",
         workspaceId: "ws_1",
         hostId: "host_1",
@@ -4008,7 +4138,9 @@ describe("workspace relay Bun adapter", () => {
         websocket: handler.websocket,
       })
       const ratToken = await mintRuntimeAccessToken({
-        subject: "user_1",
+        principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
         orgId: "org_1",
         workspaceId: "ws_1",
         hostId: "host_1",
@@ -4170,7 +4302,9 @@ describe("workspace relay Bun adapter", () => {
         websocket: handler.websocket,
       })
       const ratToken = await mintRuntimeAccessToken({
-        subject: "user_1",
+        principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
         orgId: "org_1",
         workspaceId: "ws_1",
         hostId: "host_1",
@@ -4563,7 +4697,9 @@ describe("WebSocket send backpressure guard wiring (end-to-end)", () => {
     })
     const relay = Bun.serve({ port: 0, fetch: relayHandler.fetch, websocket: relayHandler.websocket })
     const token = await mintRuntimeAccessToken({
-      subject: "user_1",
+      principalKind: "user",
+      actorId: "user_1",
+      actorKind: "human",
       orgId: "org_1",
       workspaceId: "ws_1",
       hostId: "host_1",

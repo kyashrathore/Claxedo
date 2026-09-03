@@ -28,6 +28,7 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeDataDir } from "./env"
+import type { SessionAccessPolicy } from "./session-access-policy"
 import {
   configTokenFromEnv,
   hostTunnelFromEnv,
@@ -561,6 +562,93 @@ describe("workspace runtime host route auth", () => {
         },
       })
     } finally {
+      await runtime.host.dispose()
+    }
+  })
+
+  test("terminal hook capabilities authorize only POST lifecycle in their recorded workspace", async () => {
+    const access = spyOn(Pty, "agentHookAccessForToken").mockImplementation((token) => token === "hook-ws-1"
+      ? {
+          terminalId: "pty_hook",
+          token: "hook-ws-1",
+          context: {
+            actor: { actorId: "actor_1", actorKind: "human" },
+            authority: { managed: true, workspaceId: "ws_1", orgId: "org_1", role: "editor" },
+          },
+          sessionId: "session_hook",
+          authorityLease: "lease-ws-1",
+          authorityExpiresAt: Date.now() + 15_000,
+        }
+      : token === "hook-ws-other"
+        ? {
+            terminalId: "pty_hook",
+            token: "hook-ws-other",
+            context: {
+              actor: { actorId: "actor_other", actorKind: "human" },
+              authority: { managed: true, workspaceId: "ws_other", orgId: "org_other", role: "editor" },
+            },
+            sessionId: "session_hook",
+            authorityLease: "lease-ws-other",
+            authorityExpiresAt: Date.now() + 15_000,
+          }
+        : undefined)
+    const owner = spyOn(Pty, "accessOwner").mockReturnValue("actor_1")
+    const renew = spyOn(Pty, "renewAgentHookAccess").mockReturnValue(true)
+    const terminal = spyOn(Pty, "get").mockReturnValue({
+      id: "pty_hook",
+      sessionId: "session_hook",
+      title: "hook",
+      command: "/bin/sh",
+      args: [],
+      cwd: "/tmp",
+      status: "running",
+      pid: 1,
+    })
+    const runtime = createWorkspaceRuntimeApp({
+      exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
+      relayHostAuth,
+      sessionAccessPolicy: {
+        sessionAuthority: "managed-private",
+        authorize: async () => ({ allowed: true }),
+        filterSessions: async (input) => input.sessionIds,
+        authorizePrefix: async () => ({ allowed: true }),
+        authorizeStream: async (_input, lease) => ({
+          allowed: true,
+          lease: lease ?? "terminal-lease",
+          expiresAt: Date.now() + 15_000,
+        }),
+      } satisfies SessionAccessPolicy,
+    })
+    try {
+      const lifecycle = await runtime.app.request("http://localhost/api/wr/hook/agent-lifecycle", {
+        method: "POST",
+        headers: { authorization: "Bearer hook-ws-1", "content-type": "application/json" },
+        body: JSON.stringify({ tabId: "tab_hook", terminalId: "pty_hook", eventType: "Busy" }),
+      })
+      expect(lifecycle.status).toBe(200)
+
+      const wrongWorkspace = await runtime.app.request("http://localhost/api/wr/hook/agent-lifecycle", {
+        method: "POST",
+        headers: { authorization: "Bearer hook-ws-other", "content-type": "application/json" },
+        body: JSON.stringify({ tabId: "tab_hook", terminalId: "pty_hook", eventType: "Busy" }),
+      })
+      expect(wrongWorkspace.status).toBe(401)
+
+      const wrongMethod = await runtime.app.request(
+        "http://localhost/api/wr/hook/agent-lifecycle?tabId=tab_hook&terminalId=pty_hook&eventType=Busy",
+        { headers: { authorization: "Bearer hook-ws-1" } },
+      )
+      expect(wrongMethod.status).toBe(401)
+
+      const wrongRoute = await runtime.app.request("http://localhost/api/wr/health", {
+        headers: { authorization: "Bearer hook-ws-1" },
+      })
+      expect(wrongRoute.status).toBe(401)
+    } finally {
+      access.mockRestore()
+      owner.mockRestore()
+      terminal.mockRestore()
+      renew.mockRestore()
       await runtime.host.dispose()
     }
   })

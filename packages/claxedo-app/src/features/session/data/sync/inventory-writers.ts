@@ -145,38 +145,6 @@ export function mergeSessionInventoryProjectPage(
   if (!draft.workspaceOrder.includes(input.workspaceKey)) draft.workspaceOrder.push(input.workspaceKey)
 }
 
-export function mergeSessionInventoryWorkspacePage(
-  draft: SessionInventoryValue<SessionInventoryRow>,
-  input: {
-    workspaceKey: string
-    directory: SessionInventoryRow["directory"]
-    rows: SessionInventoryRow[]
-    cursor: string | number | null
-  },
-) {
-  const existing = draft.byWorkspace[input.workspaceKey]
-  if (!existing) return
-  for (const item of input.rows) upsertSessionInventoryRow(draft, item)
-  const rows = workspaceRows(draft, input.workspaceKey, input.directory)
-  const more = !!input.cursor || rows.length < existing.total
-  const next = input.cursor
-    ? Number(input.cursor)
-    : more
-      ? (rows.at(-1)?.time.updated ?? rows.at(-1)?.time.created)
-      : undefined
-  setWorkspaceMeta(draft, input.workspaceKey, {
-    ...existing,
-    sessions: rows,
-    hasMore: more,
-    total: Math.max(existing.total, rows.length),
-    nextCursor: next,
-  })
-  if (!draft.workspaceState[input.workspaceKey]) {
-    draft.workspaceState[input.workspaceKey] = { hasMore: false, loading: false, cursor: undefined }
-  }
-  draft.workspaceState[input.workspaceKey].hasMore = more
-  draft.workspaceState[input.workspaceKey].cursor = next
-}
 
 export function replaceSessionInventoryWorkspaceRows(
   draft: SessionInventoryValue<SessionInventoryRow>,

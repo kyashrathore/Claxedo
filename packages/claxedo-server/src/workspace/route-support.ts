@@ -10,13 +10,44 @@ import {
   type ControlPlaneAuthConfig,
   type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import type { ControlPlaneCredentials, ControlPlaneServices } from "../authority/services"
 import type { HostTunnelTokenSigner, RuntimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import type { ConnectionRateLimiter } from "../platform/auth/rate-limit"
 import { regionValue, type ClaxedoRegion, type ClaxedoRegionMap } from "@claxedo/server-core/platform/runtime/region/index"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 
+/** The owner-side facts one local workspace share carries to `assignWorkspaceHost`. */
+export type LocalWorkspaceShare = {
+  workspaceId: string
+  displayName?: string
+  orgId?: string
+  projectId?: string
+  repoUrl?: string
+  repoName?: string
+  gitBranch?: string
+  remoteDirectory?: string
+  homeRegion?: string
+}
+
+/**
+ * The local composition's machine-share seam. Implemented by the self-hosted
+ * remote-access service, which owns this machine's enrollment, served set, and
+ * heartbeat loop; the workspace routes only guard and delegate. `assignWorkspace`
+ * resolves only after a signed heartbeat acked the workspace — share success
+ * means routable.
+ */
+export type LocalHostAssignments = {
+  assignWorkspace(
+    auth: SignedControlPlaneAuth,
+    share: LocalWorkspaceShare,
+  ): Promise<{ assignment: { assigned: true; workspace_id: string; host_id: string }; hostTunnel?: unknown }>
+  unassignWorkspace(auth: SignedControlPlaneAuth, workspaceId: string): Promise<{ unassigned: boolean }>
+}
+
 export type WorkspaceRouteOptions = {
+  hostAssignments?: LocalHostAssignments
+  authentication?: RequestAuthenticationAdapter
   authConfig?: ControlPlaneAuthConfig
   verifier?: ClerkVerifier
   cliTokenEnv?: Record<string, string | undefined>
@@ -71,7 +102,7 @@ export function relayRole(input?: string): RelayRole {
 export function signedAccessOptions(request: Request, options: WorkspaceRouteOptions) {
   return {
     ...options,
-    ...(options.authConfig?.enabled && !isLoopbackLocalRequest(request)
+    ...((options.authentication || options.authConfig?.enabled) && !isLoopbackLocalRequest(request)
       ? { requireSigned: true as const }
       : {}),
   }
@@ -137,6 +168,7 @@ export function captureWorkspaceTelemetry(input: {
 export async function routeAuth(
   request: Request,
   options: {
+    authentication?: RequestAuthenticationAdapter
     authConfig?: ControlPlaneAuthConfig
     verifier?: ClerkVerifier
     cliTokenEnv?: Record<string, string | undefined>
@@ -145,6 +177,7 @@ export async function routeAuth(
 ) {
   if (!options.requireSigned && !bearerToken(request.headers.get("authorization"))) return
   const context = await controlPlaneAuthContext(request, {
+    authentication: options.authentication,
     config: options.authConfig,
     verifier: options.verifier,
     cliTokenEnv: options.cliTokenEnv,
@@ -155,6 +188,7 @@ export async function routeAuth(
 export async function signedOrError(
   request: Request,
   options: {
+    authentication?: RequestAuthenticationAdapter
     authConfig?: ControlPlaneAuthConfig
     verifier?: ClerkVerifier
     requireSigned?: boolean

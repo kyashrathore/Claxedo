@@ -8,7 +8,7 @@
  * stores keep their Response-based contract (including 409 connect conflicts).
  */
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-import { accountRun, hostedControlCall, parseHostedHttpError } from "@/platform/account/hosted-control-call"
+import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { HostedOperationName } from "@/platform/account/account-port"
 
 /** Path is relative to the /api/claxedo/integrations mount ("" for the root list). */
@@ -44,7 +44,7 @@ export function createIntegrationsRequest(baseUrl: string = getClaxedoServerUrl(
     authFetch(new URL(`/api/claxedo/integrations${path}`, baseUrl).toString(), init)
 
   return async (path, init) => {
-    if (!accountRun()) return fallback(path, init)
+    if (!await signedAccountRun()) return fallback(path, init)
 
     const method = (init?.method ?? "GET").toUpperCase()
     try {

@@ -1,20 +1,23 @@
 import type { QueryClient } from "@tanstack/solid-query"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import type { SessionInventoryRow, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
 import { insertSortedSessionItem } from "@/platform/sync/global-session-identity"
 import { normalizeSessionTurnOutcome } from "../session-types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
+import { workspaceHostingKind, type SignedWorkspaceKind } from "@/platform/runtime/agent/signed-workspace"
+import { isUserHostedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { isFilesystemDirectory, isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { authFetch as defaultAuthFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { accountRun } from "@/platform/account/hosted-control-call"
+import { signedAccountRun } from "@/platform/account/hosted-control-call"
 import { decodeHostedResult } from "@/platform/account/hosted-operations"
 import { centralTransportForServer } from "@/platform/runtime/transport"
-import { controlSessionListUrl } from "@/platform/runtime/agent/workspace-control-routes"
+import { controlSessionListUrl, workspaceListUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { applySessionFilter, type SessionFilter } from "../../../../platform/sync/global-sync/session-filter"
 import { paginateSessions } from "../../../../platform/sync/global-sync/session-pagination"
-import { mapInventoryToSessions, signedInventoryItems, signedInventoryProjects } from "../query/inventory"
+import { mapInventoryToSessions, signedInventoryItems } from "../query/inventory"
 import {
   inventoryRecord as rec,
   inventorySessionAttachments,
@@ -26,7 +29,6 @@ import {
 export { inventorySessionAttachments, inventorySessionEnvironment, inventorySessionGit } from "./session-inventory"
 
 type ProjectDirectory = string
-type SignedWorkspaceKind = "cloud" | "user-hosted"
 type SignedWorkspaceInfo = {
   workspaceId: string
   directory?: ProjectDirectory
@@ -72,12 +74,6 @@ function inventoryServerUrl(serverUrl: string | undefined) {
 
 function usesLocalControlTransport(baseUrl: string | undefined) {
   return centralTransportForServer(baseUrl) === "loopback"
-}
-
-function controlWorkspaceListUrl(input: { serverUrl?: string; access?: SignedWorkspaceKind }) {
-  const url = new URL("/api/workspace", inventoryServerUrl(input.serverUrl))
-  if (input.access) url.searchParams.set("access", input.access)
-  return url
 }
 
 function experimentalSessionUrl(input: {
@@ -137,15 +133,6 @@ export function mergeWorkspaceGroups(localGroups: WorkspaceGroup[], signedGroups
   return [...byDirectory.values()]
 }
 
-export function signedWorkspaceHosting(input: unknown) {
-  const row = rec(input)
-  const access = txt(row?.access)
-  if (access === "cloud" || access === "user-hosted") return access
-  const backing = txt(row?.backing)
-  if (backing === "cloud" || backing === "user-hosted") return backing
-  return undefined
-}
-
 export function controlPlaneSessionToItem(input: {
   session: unknown
   workspace: unknown
@@ -177,7 +164,7 @@ export function controlPlaneSessionToItem(input: {
     tags: [],
     attachments: [],
     environment: {
-      kind: signedWorkspaceHosting(workspace),
+      kind: workspaceHostingKind(workspace),
       driver: txt(workspace?.backing) ?? txt(workspace?.access),
     },
     ...(lastTurn ? { lastTurn } : {}),
@@ -249,13 +236,25 @@ export function createSignedInventorySource(input: {
     directory: ProjectDirectory
     kind?: SignedWorkspaceKind
   }) {
-    // Signed inventory has one authoritative producer. Runtime lists are not
-    // participant-filtered and cached authority must never survive revocation.
-    return await requestControlPlaneSessions(sessionInput.workspaceId)
+    // The registry is not the authority for a user-hosted workspace's sessions
+    // — its host is, and the rail reads that workspace's list straight off the
+    // runtime over the relay (`session-source.ts`). Asking here answered a
+    // subset (only the sessions created THROUGH the control plane) and cost a
+    // round trip per shared machine on every boot.
+    if (isUserHostedWorkspaceKind(sessionInput.kind)) return []
+    // This is a display read (snapshot rows, directory session lists), so it
+    // shares the deduping cache: the same workspace is asked for by both the
+    // signed-workspace snapshot and each directory's own bootstrap within the
+    // same boot window, and without the shared cache that turns into one
+    // request per caller instead of one per workspace. The security boundary
+    // is `hasControlPlaneSessionAccess`, not this list — it calls
+    // `requestControlPlaneSessions` directly so a revoke is never masked by a
+    // stale cache entry.
+    return await fetchControlPlaneSessions(sessionInput.workspaceId)
   }
 
   async function requestControlPlaneSessions(workspaceId: string) {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (run) {
       const body = decodeHostedResult<{ sessions: unknown[] }>(
         "session.list",
@@ -318,7 +317,7 @@ export function createSignedInventorySource(input: {
   }
 
   async function fetchControlPlaneWorkspaces(access: SignedWorkspaceKind) {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (run) {
       const operation = access === "cloud" ? "workspace.list.cloud" : "workspace.list.userHosted"
       const body = decodeHostedResult<{ workspaces: unknown[] }>(
@@ -328,8 +327,8 @@ export function createSignedInventorySource(input: {
       if (!Array.isArray(body.workspaces)) throw new Error(`${operation} returned an invalid workspaces payload`)
       return body.workspaces
     }
-    const res = await input.authFetch(controlWorkspaceListUrl({
-      serverUrl: input.baseUrl(),
+    const res = await input.authFetch(workspaceListUrl({
+      baseUrl: input.baseUrl(),
       access,
     }), { headers: { Accept: "application/json" } })
     if (!res.ok) throw new Error(`Control-plane ${access} workspace list failed with ${res.status}`)
@@ -348,22 +347,23 @@ export function createSignedInventorySource(input: {
   }
 
   async function fetchSignedWorkspaceSnapshotUncached() {
-    const workspaces = [
-      ...await fetchControlPlaneWorkspaces("cloud"),
-      ...await fetchControlPlaneWorkspaces("user-hosted"),
-    ]
+    // Cloud and user-hosted are independent access lists on independent
+    // routes/operations — nothing here reads one to form the other — so they
+    // run concurrently instead of paying two serial round trips.
+    const [cloudWorkspaces, userHostedWorkspaces] = await Promise.all([
+      fetchControlPlaneWorkspaces("cloud"),
+      fetchControlPlaneWorkspaces("user-hosted"),
+    ])
+    const workspaces = [...cloudWorkspaces, ...userHostedWorkspaces]
     const sessionsByWorkspace = Object.fromEntries(await Promise.all(workspaces.flatMap((workspace) => {
       const row = rec(workspace)
       const workspaceId = txt(row?.workspace_id) ?? txt(row?.workspaceId)
       if (!workspaceId) return []
-      const directory = txt(row?.remote_directory) ??
-        txt(row?.remoteDirectory) ??
-        txt(row?.directory) ??
-        `workspace:${workspaceId}`
+      const directory = sessionRowDirectory({ workspaceId, hostDirectory: txt(row?.remote_directory) ?? txt(row?.remoteDirectory) ?? "" })
       return [fetchSignedWorkspaceSessions({
         workspaceId,
         directory,
-        kind: signedWorkspaceHosting(workspace),
+        kind: workspaceHostingKind(workspace),
       }).then((sessions) => [workspaceId, sessions] as const)]
     })))
     const items = signedInventoryItems({ workspaces, sessionsByWorkspace })
@@ -386,7 +386,6 @@ export function createSignedInventorySource(input: {
       byDirectory[key] = group
     }
     return {
-      projects: signedInventoryProjects({ workspaces }),
       groups: Object.values(byDirectory).map((group) => ({
         ...group,
         sessions: group.sessions.sort((a, b) => (b.time.updated ?? 0) - (a.time.updated ?? 0)),
@@ -555,51 +554,11 @@ export function createInventoryPageSource(input: InventoryPageSourceInput) {
       .finally(() => queryClient.removeQueries({ queryKey: requestKey }))
   }
 
-  async function fetchWorkspacePage(directory: string, opts: { limit: number; filter?: SessionFilter; cursor?: number }) {
-    if (shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: input.hasSignedAccess(),
-      baseUrl: input.baseUrl(),
-      directory,
-    })) {
-      return {
-        data: mapInventoryToSessions(await input.signedInventorySource.fetchSignedDirectorySessions(directory)),
-        cursor: null,
-      }
-    }
-    if (usesLocalControlTransport(input.baseUrl())) {
-      const page = paginateSessions(
-        sessionWorkspaceRuntimeRef({ directory })
-          ? await fetchLocalWorkspaceRuntimeSessions(directory)
-          : await fetchLocalControlSessions(directory),
-        { limit: opts.limit, cursor: opts.cursor },
-      )
-      return { data: page.sessions, cursor: page.nextCursor ?? null }
-    }
-    const url = experimentalSessionUrl({
-      serverUrl: getClaxedoServerUrl(),
-      roots: true,
-      directory,
-      limit: opts.limit,
-      cursor: opts.cursor,
-    })
-    applySessionFilter(url, opts.filter)
-    const res = await authFetch(url, {
-      headers: { Accept: "application/json" },
-    })
-    if (!res.ok) return { data: [] as InventoryGlobalSession[], cursor: null }
-    const body = await res.json().catch(() => [])
-    return {
-      data: Array.isArray(body) ? body as InventoryGlobalSession[] : [],
-      cursor: res.headers.get("x-next-cursor"),
-    }
-  }
-
   return {
     fetchGlobalList,
     fetchLocalControlSessions,
     fetchLocalWorkspaceRuntimeSessions,
     fetchWorkspaceGrouped,
-    fetchWorkspacePage,
   }
 }
 

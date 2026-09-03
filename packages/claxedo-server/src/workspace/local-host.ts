@@ -55,31 +55,36 @@ export function localHostIdentity(): Promise<LocalHostIdentity> {
   return identityPromise
 }
 
-export function registrationPayload(input: {
-  workspaceId: string
-  hostId: string
-  challengeId: string
-  nonce: string
-}) {
+/**
+ * Machine-wide enrollment payload (v1). The literal mirrors the authority
+ * adapters' `hostEnrollmentPayload` byte for byte — deliberately copied rather
+ * than imported so the local host machinery never depends on an authority
+ * adapter module.
+ */
+export function hostEnrollmentPayload(input: { hostId: string; requestId: string; nonce: string }) {
   return [
-    "claxedo.local-host-link.register.v1",
-    `workspace_id=${input.workspaceId}`,
+    "claxedo.host-enrollment.enroll.v1",
     `host_id=${input.hostId}`,
-    `challenge_id=${input.challengeId}`,
+    `request_id=${input.requestId}`,
     `nonce=${input.nonce}`,
   ].join("\n")
 }
 
-export function heartbeatPayload(input: {
-  workspaceId: string
+/**
+ * Heartbeat v2: the machine's ONE signature per interval also covers the
+ * workspaces it currently serves (sorted, comma-joined). The literal mirrors
+ * the authority adapters' `hostEnrollmentHeartbeatPayloadV2` byte for byte.
+ */
+export function hostEnrollmentHeartbeatPayloadV2(input: {
   hostId: string
   ttlMs?: number
+  workspaceIds: readonly string[]
 }) {
   return [
-    "claxedo.local-host-link.heartbeat.v1",
-    `workspace_id=${input.workspaceId}`,
+    "claxedo.host-enrollment.heartbeat.v2",
     `host_id=${input.hostId}`,
     `ttl_ms=${input.ttlMs ?? ""}`,
+    `workspaces=${[...input.workspaceIds].sort().join(",")}`,
   ].join("\n")
 }
 

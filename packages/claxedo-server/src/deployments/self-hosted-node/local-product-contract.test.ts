@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import { createSelfHostedApp } from "./app"
 import { createControlPlaneServices } from "../../authority/services"
 import { createSqliteCentralStore } from "../../authority/adapters/sqlite/central-store"
+import { testManagedSessionAuthority } from "../../test-support/managed-session-authority"
 import {
   PRODUCT_ROUTE_FAMILIES,
   pathsByOwner,
@@ -50,7 +51,7 @@ function localApp() {
         projectionStore: centralStore.projectionStore,
         durableSessionLog: centralStore.durableSessionLog,
       },
-      { localExecution: { enabled: true }, telemetry: { capture: () => {} } },
+      { authority: testManagedSessionAuthority(), localExecution: { enabled: true }, telemetry: { capture: () => {} } },
     ),
   ).app
 }
@@ -65,10 +66,11 @@ describe("route family table", () => {
     // `/api/claxedo/network-policy` is a prefix of nothing else, but
     // `/api/claxedo/remote-access/devices` sits under a family whose bare path
     // also matches. Longest-entry-wins is what keeps those apart.
-    expect(routeFamilyFor("/api/claxedo/remote-access/devices")?.id).toBe("remote-access")
+    expect(routeFamilyFor("/api/claxedo/remote-access/devices")?.id).toBe("remote-access-owner")
+    expect(routeFamilyFor("/api/claxedo/remote-access/enable")?.id).toBe("remote-access-machine")
     expect(routeFamilyFor("/api/claxedo/network-policy/effective/:workspaceId")?.id).toBe("network-policy")
     expect(routeFamilyFor("/api/claxedo/workspace/resolve")?.id).toBe("local-workspace-resolve")
-    expect(routeFamilyFor("/api/workspace/:id/user-hosted/register")?.id).toBe("workspace-authority")
+    expect(routeFamilyFor("/api/workspace/:id/host-assignment")?.id).toBe("workspace-authority")
   })
 
   test("reports an unowned path instead of silently absorbing it", () => {
@@ -146,6 +148,7 @@ describe("desktop-local product contract", () => {
       "/api/control/runtime/heartbeat",
       "/api/control/runtime/register",
       "/api/control/session-list",
+      "/api/control/session-registrations/reserve",
       "/api/control/session/:id/runtime-events",
       "/api/control/sessions",
       "/api/control/sessions/:sessionId/capabilities",
@@ -213,8 +216,10 @@ describe("desktop-local product contract", () => {
       "/api/channels/fake",
       "/api/channels/github",
       "/api/channels/github/*",
+      "/api/channels/identity",
       "/api/channels/pairing",
       "/api/channels/pairing/approve",
+      "/api/channels/pairing/claim",
       "/api/channels/slack",
       "/api/channels/slack/*",
       "/api/channels/telegram",
@@ -232,6 +237,10 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/integrations/connections/:id/token",
       "/api/claxedo/integrations/connections/:id/webhook-secret",
       "/api/claxedo/project/remote",
+      "/api/claxedo/remote-access",
+      "/api/claxedo/remote-access/devices",
+      "/api/claxedo/remote-access/devices/:hostId",
+      "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
       "/api/runtime-authority/session-authorize",
       "/api/workspace",
       "/api/workspace/:id",
@@ -239,11 +248,9 @@ describe("desktop-local product contract", () => {
       "/api/workspace/:id/checkpoints/:checkpointId/restore",
       "/api/workspace/:id/connection",
       "/api/workspace/:id/connection/refresh",
+      "/api/workspace/:id/host-assignment",
       "/api/workspace/:id/lifecycle/:operation",
       "/api/workspace/:id/shares",
-      "/api/workspace/:id/user-hosted/heartbeat",
-      "/api/workspace/:id/user-hosted/pause",
-      "/api/workspace/:id/user-hosted/register",
       "/api/workspace/create",
       "/api/workspace/drivers",
       "/api/workspace/drivers/:id/auth",
@@ -286,11 +293,7 @@ describe("desktop-local product contract", () => {
 
   test("records the machine-publication routes Host Connector takes over", () => {
     expect(pathsByOwner(localApp().routes, "host-connector")).toEqual([
-      "/api/claxedo/remote-access",
-      "/api/claxedo/remote-access/devices",
-      "/api/claxedo/remote-access/devices/:hostId",
       "/api/claxedo/remote-access/enable",
-      "/api/claxedo/remote-access/workspaces/:workspaceId/second-device-open",
     ])
   })
 

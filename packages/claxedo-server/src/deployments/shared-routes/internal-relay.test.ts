@@ -29,6 +29,19 @@ function authedRequest(path: string) {
 }
 
 describe("InternalRelayResolverRoutes /internal/relay/revocation", () => {
+  test("fails closed without an injected revocation lookup or authority", async () => {
+    const app = new Hono()
+    app.route("/", InternalRelayResolverRoutes({ resolverToken: RESOLVER_TOKEN }))
+    const res = await app.fetch(authedRequest(
+      "/internal/relay/revocation?jti=jti_1&workspaceId=ws_1&hostId=host_1",
+    ))
+    expect(await res.json()).toEqual({
+      active: false,
+      code: "runtime_access_token_lookup_unconfigured",
+      reason: "Runtime Access Token revocation authority is not configured",
+    })
+  })
+
   test("returns active=true when Convex says active", async () => {
     let called = 0
     const app = buildApp({

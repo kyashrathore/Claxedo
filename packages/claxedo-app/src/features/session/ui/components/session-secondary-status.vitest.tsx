@@ -16,8 +16,8 @@ vi.mock("./session-health-peek", () => ({
 }))
 
 vi.mock("./session-connection-line", () => ({
-  SessionConnectionLine: () => {
-    calls.connection()
+  SessionConnectionLine: (props: { workspaceId: () => string | undefined }) => {
+    calls.connection(props.workspaceId())
     return <div data-testid="connection" />
   },
 }))
@@ -40,7 +40,7 @@ describe("DeferredSessionSecondaryStatus", () => {
         firstFoldReady={firstFoldReady}
         directory={() => "/work/repo"}
         sessionId={() => "ses_1"}
-        workspaceId={() => "ws_1"}
+        eventWorkspaceId={() => "ws_local"}
         delayMs={25}
       />
     ))
@@ -61,5 +61,6 @@ describe("DeferredSessionSecondaryStatus", () => {
 
     expect(calls.health).toHaveBeenCalledOnce()
     expect(calls.connection).toHaveBeenCalledOnce()
+    expect(calls.connection).toHaveBeenCalledWith("ws_local")
   })
 })

@@ -8,12 +8,14 @@
  */
 
 import { createServer } from "node:http"
-import { readFileSync, rmSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import { closeSync, fsyncSync, openSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs"
+import { randomUUID } from "node:crypto"
+import { basename, join } from "node:path"
 import type { CallbackDisposition, OAuthSeams, TokenSet } from "./oauth-flow"
 import type { CredentialFile } from "./credential-store"
 import { ACCOUNT_CREDENTIAL_RECORD } from "./marker"
-import type { RefreshOutcome } from "./account-service"
+import type { RefreshOutcome } from "./desktop-native-auth"
+import { fetchWithDeadline } from "./hosted-transport"
 
 /**
  * A loopback listener on an OS-assigned port.
@@ -65,21 +67,60 @@ export function loopbackListener(): OAuthSeams["listen"] {
 }
 
 /** The credential file, in Electron's per-app userData directory. */
+export function readCredentialFile(path: string, read: (path: string, encoding: "utf8") => string = readFileSync) {
+  try {
+    return read(path, "utf8")
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined
+    throw error
+  }
+}
+
 export function credentialFile(userDataDir: string): CredentialFile {
   const path = join(userDataDir, ACCOUNT_CREDENTIAL_RECORD)
+  const syncDirectory = () => {
+    let descriptor: number | undefined
+    try {
+      descriptor = openSync(userDataDir, "r")
+      fsyncSync(descriptor)
+    } catch {
+      // Some platforms do not permit fsync on a directory. The credential
+      // bytes were still flushed before rename; directory durability is best
+      // effort where the OS exposes it.
+    } finally {
+      if (descriptor !== undefined) closeSync(descriptor)
+    }
+  }
   return {
-    read: () => {
+    read: () => readCredentialFile(path),
+    replace: (contents) => {
+      const temporary = join(userDataDir, `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`)
+      let descriptor: number | undefined
       try {
-        return readFileSync(path, "utf8")
-      } catch {
-        // Absent is the normal state before first sign-in, not an error.
-        return undefined
+        descriptor = openSync(temporary, "wx", 0o600)
+        writeFileSync(descriptor, contents, "utf8")
+        fsyncSync(descriptor)
+        closeSync(descriptor)
+        descriptor = undefined
+        renameSync(temporary, path)
+        syncDirectory()
+      } finally {
+        if (descriptor !== undefined) closeSync(descriptor)
+        rmSync(temporary, { force: true })
       }
     },
-    // 0600: the OS store holds the secret, but the record also names the
-    // backend and expiry, and there is no reason for another user to read it.
-    write: (contents) => writeFileSync(path, contents, { mode: 0o600 }),
-    clear: () => rmSync(path, { force: true }),
+    quarantine: () => {
+      try {
+        renameSync(path, join(userDataDir, `${ACCOUNT_CREDENTIAL_RECORD}.rejected-${randomUUID()}`))
+        syncDirectory()
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+      }
+    },
+    clear: () => {
+      rmSync(path, { force: true })
+      syncDirectory()
+    },
   }
 }
 
@@ -100,6 +141,7 @@ type TokenPayload = {
   id_token?: string
   refresh_token?: string
   expires_in?: number
+  token_type?: string
   error?: string
 }
 
@@ -139,6 +181,18 @@ export function controlPlaneBearerFromTokenPayload(payload: {
  */
 const TOKEN_REQUEST_TIMEOUT_MS = 30_000
 
+/**
+ * The token transport: one bounded attempt, no retry.
+ *
+ * A retry can only be safe when a caller can tell "never reached the server"
+ * apart from "reached it, and it is just slow" — across a real network that
+ * distinction is not observable, and a retried grant risks the authorization
+ * server seeing the same one-use code or refresh token twice. The deadline
+ * below is the safe half of that: if no response arrives in time, the attempt
+ * is aborted and the caller gets a clear, terminal error. `fetchWithDeadline`
+ * is defined once, in `hosted-transport.ts`, and shared with every hosted
+ * control-plane request rather than re-implemented here.
+ */
 async function postToTokenEndpoint(
   fetchImpl: typeof fetch,
   tokenUrl: string,
@@ -146,50 +200,25 @@ async function postToTokenEndpoint(
   timeoutMs: number,
   parentSignal?: AbortSignal,
 ) {
-  const controller = new AbortController()
-  let rejectAborted!: (error: Error) => void
-  const aborted = new Promise<never>((_resolve, reject) => {
-    rejectAborted = reject
-  })
-  const abortFromParent = () => {
-    const reason = parentSignal?.reason instanceof Error ? parentSignal.reason : new Error("token request cancelled")
-    controller.abort(reason)
-    rejectAborted(reason)
-  }
-  if (parentSignal?.aborted) abortFromParent()
-  else parentSignal?.addEventListener("abort", abortFromParent, { once: true })
-
-  let handle: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<never>((_resolve, reject) => {
-    handle = setTimeout(() => {
-      const error = new Error(`token endpoint timed out after ${String(timeoutMs)}ms`)
-      controller.abort(error)
-      reject(error)
-    }, timeoutMs)
-    // Deliberately ref'd, unlike nodeTimer(): this timer is the race's only
-    // wake-up when the transport holds no live handle, and bun on win32 never
-    // fires an unref'd timer once the loop has no ref'd handles left — which
-    // turned this bounded timeout into a permanent hang (CI unit lane, run
-    // 374). It cannot outlive the request it bounds: at most timeoutMs, and
-    // cleared in the finally below the moment the race settles. A pending
-    // real fetch refs the loop on its own, so quit behavior is unchanged.
-  })
-
-  try {
-    return await Promise.race([
-      fetchImpl(tokenUrl, {
-        method: "POST",
-        headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
-        body: new URLSearchParams(form).toString(),
-        signal: controller.signal,
-      }),
-      timeout,
-      aborted,
-    ])
-  } finally {
-    if (handle) clearTimeout(handle)
-    parentSignal?.removeEventListener("abort", abortFromParent)
-  }
+  return fetchWithDeadline(
+    fetchImpl,
+    tokenUrl,
+    {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+      body: new URLSearchParams(form).toString(),
+    },
+    timeoutMs,
+    {
+      parentSignal,
+      // The token exchange can be the only pending work on the event loop —
+      // a directly injected `fetch` with no socket of its own, as tests use —
+      // so its deadline timer must be able to wake the process on its own.
+      // See `hosted-transport.ts`'s `refTimer` for what an unref'd timer would
+      // cost here (a permanent hang, not a timeout, on Windows).
+      refTimer: true,
+    },
+  )
 }
 
 /**
@@ -202,33 +231,48 @@ async function postToTokenEndpoint(
  */
 function decodeTokenPayload(payload: TokenPayload, fallbackRefreshToken?: string): TokenSet | undefined {
   const accessToken = controlPlaneBearerFromTokenPayload(payload)
-  if (!accessToken) return undefined
+  if (
+    !accessToken ||
+    typeof payload.expires_in !== "number" ||
+    !Number.isFinite(payload.expires_in) ||
+    payload.expires_in <= 0
+  ) return undefined
   const refreshToken = payload.refresh_token ?? fallbackRefreshToken
   return {
     accessToken,
     ...(refreshToken ? { refreshToken } : {}),
     // Absolute, in seconds. Storing the relative `expires_in` would mean
     // every reader has to remember when it was issued.
-    expiresAt: Math.floor(Date.now() / 1000) + (payload.expires_in ?? 3600),
+    expiresAt: Math.floor(Date.now() / 1000) + payload.expires_in,
   }
 }
 
 /** The Authorization Code exchange. */
-export function tokenExchange(fetchImpl: typeof fetch = fetch, timeoutMs = TOKEN_REQUEST_TIMEOUT_MS): OAuthSeams["exchange"] {
+export function tokenExchange(
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = TOKEN_REQUEST_TIMEOUT_MS,
+): OAuthSeams["exchange"] {
   return async (input) => {
-    const response = await postToTokenEndpoint(fetchImpl, input.tokenUrl, {
-      grant_type: "authorization_code",
-      client_id: input.clientId,
-      code: input.code,
-      code_verifier: input.codeVerifier,
-      redirect_uri: input.redirectUri,
-    }, timeoutMs, input.signal)
+    const response = await postToTokenEndpoint(
+      fetchImpl,
+      input.tokenUrl,
+      {
+        grant_type: "authorization_code",
+        client_id: input.clientId,
+        code: input.code,
+        code_verifier: input.codeVerifier,
+        redirect_uri: input.redirectUri,
+        ...(input.resource ? { resource: input.resource } : {}),
+      },
+      timeoutMs,
+      input.signal,
+    )
     if (!response.ok) throw new Error(`token exchange failed: ${response.status}`)
     const tokens = decodeTokenPayload((await response.json()) as TokenPayload)
     // Throwing, unlike the refresh grant below: this one runs inside a sign-in
     // attempt that already has a failure channel, and there is no existing
     // session whose fate depends on telling the causes apart.
-    if (!tokens) throw new Error("token exchange returned no access token")
+    if (!tokens) throw new Error("token exchange returned no valid access token and lifetime")
     return tokens
   }
 }
@@ -237,6 +281,7 @@ export type RefreshExchange = (input: {
   tokenUrl: string
   clientId: string
   refreshToken: string
+  resource?: string
 }) => Promise<RefreshOutcome>
 
 /**
@@ -251,15 +296,24 @@ export type RefreshExchange = (input: {
  * malformed request of OUR making also produces a 400, and signing the user out
  * over our own bug is the failure that cannot be walked back.
  */
-export function refreshExchange(fetchImpl: typeof fetch = fetch, timeoutMs = TOKEN_REQUEST_TIMEOUT_MS): RefreshExchange {
+export function refreshExchange(
+  fetchImpl: typeof fetch = fetch,
+  timeoutMs = TOKEN_REQUEST_TIMEOUT_MS,
+): RefreshExchange {
   return async (input) => {
     let response: Response
     try {
-      response = await postToTokenEndpoint(fetchImpl, input.tokenUrl, {
-        grant_type: "refresh_token",
-        client_id: input.clientId,
-        refresh_token: input.refreshToken,
-      }, timeoutMs)
+      response = await postToTokenEndpoint(
+        fetchImpl,
+        input.tokenUrl,
+        {
+          grant_type: "refresh_token",
+          client_id: input.clientId,
+          refresh_token: input.refreshToken,
+          ...(input.resource ? { resource: input.resource } : {}),
+        },
+        timeoutMs,
+      )
     } catch (error) {
       // Never reached an answer — an offline laptop, DNS, a dropped TLS
       // handshake. Says nothing about the credential.
@@ -272,7 +326,11 @@ export function refreshExchange(fetchImpl: typeof fetch = fetch, timeoutMs = TOK
     if (!response.ok) {
       const revoked = payload?.error === "invalid_grant" || response.status === 401
       return revoked
-        ? { ok: false, reason: "revoked", detail: `the authorization server rejected the refresh token (${response.status})` }
+        ? {
+            ok: false,
+            reason: "revoked",
+            detail: `the authorization server rejected the refresh token (${response.status})`,
+          }
         : { ok: false, reason: "unavailable", detail: `refresh failed: ${response.status}` }
     }
 

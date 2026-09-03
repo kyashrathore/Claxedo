@@ -26,10 +26,36 @@ async function until(condition: () => boolean, description: string) {
   throw new Error(`timed out waiting for ${description}`)
 }
 
-function childHarness() {
+/**
+ * Like `until`, but for a condition that depends on REAL wall-clock time
+ * elapsing (a `setInterval` tick) rather than one more microtask turn. 1,000
+ * `Bun.sleep(0)` turns finish in a couple of milliseconds total — nowhere
+ * near enough for even a single-digit-millisecond timer to fire — so this
+ * polls against the clock instead of a fixed attempt count.
+ */
+async function untilElapsed(condition: () => boolean, description: string, budgetMs = 2_000) {
+  const deadline = Date.now() + budgetMs
+  while (Date.now() < deadline) {
+    if (condition()) return
+    await Bun.sleep(1)
+  }
+  throw new Error(`timed out waiting for ${description}`)
+}
+
+function childHarness(options?: {
+  /**
+   * Withhold this operation's answer until `release()`.
+   *
+   * Stands in for the edge behaviour that produced the live defect: a
+   * control-plane POST whose response is held on a warm connection for longer
+   * than the supervisor's bootstrap budget.
+   */
+  stall?: string
+}) {
   let receive: ((message: unknown) => void) | undefined
   const sent: HostConnectorChildMessage[] = []
   const accountOperations: Array<Extract<HostConnectorChildMessage, { type: "account-operation" }>> = []
+  const stalled: Array<() => void> = []
   let createdIdentity: Extract<HostConnectorChildMessage, { type: "identity-created" }>["identity"] | undefined
 
   const send = (message: HostConnectorParentMessage) => receive?.(message)
@@ -53,10 +79,22 @@ function childHarness() {
           : message.name === "host.enrollCurrentMachine"
             ? { enrollment: { enrollment_id: "enr_1", host_id: hostId, expires_at: 10_000 } }
             : { expires_at: 11_000 }
-      send({ type: "account-result", requestId: message.requestId, ok: true, value })
+      const answer = () => send({ type: "account-result", requestId: message.requestId, ok: true, value })
+      if (message.name === options?.stall) {
+        stalled.push(answer)
+        return
+      }
+      answer()
     },
   })
-  return { runtime, send, sent, accountOperations, createdIdentity: () => createdIdentity }
+  return {
+    runtime,
+    send,
+    sent,
+    accountOperations,
+    createdIdentity: () => createdIdentity,
+    release: () => stalled.splice(0).forEach((answer) => answer()),
+  }
 }
 
 describe("the separately built child", () => {
@@ -104,8 +142,8 @@ describe("the private bootstrap protocol", () => {
 
     child.send({ type: "bootstrap", requestId, heartbeatIntervalMs: 20_000, displayName: "Work laptop" })
     await until(
-      () => child.sent.some((message) => message.type === "response" && message.requestId === requestId),
-      "bootstrap response",
+      () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push",
     )
 
     expect(child.sent[0]).toEqual({ type: "ready" })
@@ -116,7 +154,102 @@ describe("the private bootstrap protocol", () => {
       "host.enrollCurrentMachine",
     ])
     expect(JSON.stringify(child.accountOperations)).not.toMatch(/authorization|bearer|access_?token/i)
-    expect(child.sent.at(-1)).toMatchObject({ type: "response", requestId, ok: true, status: { status: "enrolled" } })
+    // The reply means "alive, holding this machine's identity" — it is answered
+    // before the first control-plane call goes out. The enrollment it then runs
+    // announces itself on the push channel.
+    expect(child.sent.find((message) => message.type === "response")).toEqual({
+      type: "response",
+      requestId,
+      ok: true,
+      status: { status: "idle" },
+    })
+    expect(child.sent.at(-1)).toMatchObject({ type: "status", status: { status: "enrolled" } })
+    child.runtime.close()
+  })
+
+  test("answers the bootstrap while the first enrollment call is still stalled", async () => {
+    const child = childHarness({ stall: "host.enrollmentNonce" })
+
+    child.send({ type: "bootstrap", requestId: "stalled", heartbeatIntervalMs: 20_000 })
+    await until(
+      () => child.sent.some((message) => message.type === "response" && message.requestId === "stalled"),
+      "bootstrap response",
+    )
+
+    // The nonce POST is still open — the exact shape of the live failure, where
+    // the edge withheld it for ~12s against a 10s bootstrap budget — and the
+    // reply has already landed. It does not depend on that call at all, so no
+    // stall length can push it past the budget.
+    expect(child.accountOperations.map((message) => message.name)).toEqual(["host.enrollmentNonce"])
+    expect(child.sent.find((message) => message.type === "response")).toMatchObject({
+      ok: true,
+      status: { status: "idle" },
+    })
+    expect(child.sent.some((message) => message.type === "status")).toBe(false)
+
+    child.release()
+    await until(
+      () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push after the stall clears",
+    )
+    expect(child.accountOperations.map((message) => message.name)).toEqual([
+      "host.enrollmentNonce",
+      "host.enrollCurrentMachine",
+    ])
+    child.runtime.close()
+  })
+
+  test("a stalled enrollment that is stopped mid-flight never claims an enrollment", async () => {
+    const child = childHarness({ stall: "host.enrollmentNonce" })
+
+    child.send({ type: "bootstrap", requestId: "stalled", heartbeatIntervalMs: 20_000 })
+    await until(() => child.accountOperations.length === 1, "the stalled nonce request")
+    child.send({ type: "stop", requestId: "stop_1" })
+    await until(
+      () => child.sent.some((message) => message.type === "response" && message.requestId === "stop_1"),
+      "stop response",
+    )
+    child.release()
+    await Bun.sleep(1)
+
+    expect(child.sent.filter((message) => message.type === "status").at(-1)).toMatchObject({
+      status: { status: "stopped", reason: "closed" },
+    })
+    expect(child.sent.some((message) => message.type === "status" && message.status.status === "enrolled")).toBe(false)
+    child.runtime.close()
+  })
+
+  test("pushes a fresh status after a timer-driven heartbeat, not just after enrollment", async () => {
+    // Observed live: the desktop reported the lease expired 645s ago while the
+    // control plane had it live with 41s left and an 18s-old heartbeat ack —
+    // because nothing pushed a status update for a heartbeat nobody was
+    // waiting on. `heartbeatIntervalMs` is small here so a real timer tick
+    // fires inside the test without a fake clock.
+    const child = childHarness()
+    child.send({ type: "bootstrap", requestId: "bootstrap", heartbeatIntervalMs: 20 })
+    await until(
+      () => child.sent.some((message) => message.type === "status" && message.status.status === "enrolled"),
+      "enrolled status push",
+    )
+    const enrolledPush = child.sent.find(
+      (message) => message.type === "status" && message.status.status === "enrolled",
+    )
+    expect(enrolledPush).toMatchObject({ status: { enrollment: { expires_at: 10_000 } } })
+
+    await untilElapsed(
+      () => child.accountOperations.some((message) => message.name === "host.enrollmentHeartbeat"),
+      "the timer-driven heartbeat",
+    )
+    await untilElapsed(
+      () =>
+        child.sent.some(
+          (message) =>
+            message.type === "status"
+            && message.status.status === "enrolled"
+            && message.status.enrollment.expires_at === 11_000,
+        ),
+      "a status push carrying the heartbeat-renewed lease",
+    )
     child.runtime.close()
   })
 

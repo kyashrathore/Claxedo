@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import {
   projectDisplayName,
   projectWorkspaceDirectories,
+  projectWorkspaceForRef,
   workspaceRouteIdentity,
   workspaceDisplayName,
   workspaceIsCloud,
@@ -9,6 +10,7 @@ import {
 } from "./workspace-display"
 import { parseShellRoute, shellRouteDirectory, workspaceRouteWithId, workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
+import { controlPlaneCatalogProjects } from "../data/workspace-catalog"
 
 const project: WorkspaceDisplayProject = {
   id: "p-1",
@@ -313,5 +315,72 @@ describe("workspace display helpers", () => {
       sandboxes: ["/home/user/myapp", "/home/user/myapp-feature"],
     }
     expect(projectWorkspaceDirectories(dupe)).toEqual(["/home/user/myapp", "/home/user/myapp-feature"])
+  })
+})
+
+describe("projectWorkspaceForRef", () => {
+  const workspaces = {
+    "/Users/host/repo": { id: "ws_1", workspaceId: "ws_1", directory: "/Users/host/repo", kind: "user-hosted" as const },
+  }
+
+  test("one workspace answers to every identity that names it", () => {
+    for (const ref of ["/Users/host/repo", "ws_1", "workspace:ws_1"]) {
+      expect(projectWorkspaceForRef(workspaces, ref)?.id).toBe("ws_1")
+    }
+  })
+
+  test("a ref that names nothing, and no ref at all, resolve to nothing", () => {
+    expect(projectWorkspaceForRef(workspaces, "workspace:ws_other")).toBeUndefined()
+    expect(projectWorkspaceForRef(workspaces, undefined)).toBeUndefined()
+    expect(projectWorkspaceForRef(undefined, "ws_1")).toBeUndefined()
+  })
+})
+
+/**
+ * The route and the catalog are one rule, so these run against what the
+ * catalog owner ACTUALLY builds rather than a hand-shaped project: a
+ * relay-backed workspace is addressed by `workspace:<id>`, and the serving
+ * host's path is metadata that addresses nothing.
+ */
+describe("workspaceRouteIdentity over a control-plane catalog", () => {
+  const HOST_PATH = "/Users/host/opencode"
+  const projects = controlPlaneCatalogProjects({
+    workspaces: [{
+      workspace_id: "ws_hosted",
+      project_id: "proj_hosted",
+      access: "user-hosted",
+      remote_directory: HOST_PATH,
+      workspace_name: "shared",
+    }],
+  })
+
+  test("resolves /w/<workspace id> to the workspace's own address", () => {
+    expect(workspaceRouteIdentity(projects, "ws_hosted")).toEqual({
+      routeId: "ws_hosted",
+      directory: "workspace:ws_hosted",
+    })
+  })
+
+  test("resolves the address back to the same route id, so the URL never churns", () => {
+    expect(workspaceRouteIdentity(projects, "workspace:ws_hosted")).toEqual({
+      routeId: "ws_hosted",
+      directory: "workspace:ws_hosted",
+    })
+  })
+
+  // The path names a directory on the HOST's filesystem. Resolving it would
+  // hand the app an address it cannot reach — every `?directory=` read scoped
+  // by it asks this app's server about a path that only exists elsewhere.
+  test("the serving host's path is not a route identity", () => {
+    expect(workspaceRouteIdentity(projects, HOST_PATH)).toBeUndefined()
+    expect(workspaceRouteId(projects, HOST_PATH)).toBeUndefined()
+  })
+
+  test("the catalog row answers to its address and to its bare id alike", () => {
+    const workspaces = projects[0]?.workspaces
+    for (const ref of ["ws_hosted", "workspace:ws_hosted"]) {
+      expect(projectWorkspaceForRef(workspaces, ref)?.workspaceId).toBe("ws_hosted")
+    }
+    expect(projectWorkspaceForRef(workspaces, "workspace:ws_hosted")?.remote_directory).toBe(HOST_PATH)
   })
 })

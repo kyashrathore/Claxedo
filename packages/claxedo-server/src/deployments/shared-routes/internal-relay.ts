@@ -3,7 +3,6 @@ import type { RelayTargetLookup, RelayTargetResult } from "@claxedo/server-core/
 import { Hono, type Context } from "hono"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import { createConvexAuthority } from "../../authority/adapters/convex/workspace-authority"
 import { ControlPlaneRequestTimeoutError } from "../../platform/runtime/timeout"
 import type { WorkspaceAuthority } from "../../authority/services"
 import { timingSafeEqualStrings } from "@claxedo/server-core/platform/auth/web-crypto"
@@ -75,9 +74,10 @@ export type InternalRelayResolverOptions = {
    */
   localTargetExists?: LocalRelayTargetExists
   /**
-   * Lookup that returns the Convex `runtimeAccessTokens.active` shape:
+   * Lookup that returns the selected authority's runtime-token state:
    *   { active: true } | { active: false, code: string, reason: string }
-   * Defaults to the shared ConvexAuthority instance.
+   * When omitted, `authority` must be injected; otherwise revocation fails
+   * closed without selecting a storage adapter inside this route module.
    */
   revocationLookup?: RuntimeAccessRevocationLookup
   authority?: WorkspaceAuthority
@@ -96,13 +96,15 @@ function defaultRevocationLookup(authority: WorkspaceAuthority): RuntimeAccessRe
 export function InternalRelayResolverRoutes(options: InternalRelayResolverOptions = {}) {
   const app = new Hono()
 
-  let cachedAuthority: WorkspaceAuthority | undefined = options.authority
   const revocationLookup: RuntimeAccessRevocationLookup =
     options.revocationLookup ??
-    ((args) => {
-      if (!cachedAuthority) cachedAuthority = createConvexAuthority()
-      return defaultRevocationLookup(cachedAuthority)(args)
-    })
+    (options.authority
+      ? defaultRevocationLookup(options.authority)
+      : async () => ({
+          active: false,
+          code: "runtime_access_token_lookup_unconfigured",
+          reason: "Runtime Access Token revocation authority is not configured",
+        }))
 
   app.use("/internal/relay/*", async (c, next) => {
     if (!authorized(c.req.raw, clean(options.resolverToken))) {
@@ -166,7 +168,7 @@ export function InternalRelayResolverRoutes(options: InternalRelayResolverOption
 
     try {
       const result = await revocationLookup({ jti, workspaceId, hostId })
-      // Pass through whatever the Convex query returned. If for any reason the shape
+      // Pass through whatever the selected authority returned. If for any reason the shape
       // is unexpected we fall back to fail-closed.
       if (result && typeof result === "object" && "active" in result) {
         if (

@@ -12,10 +12,10 @@ describe("embedded relay host auth stamp", () => {
       actorKind: "human",
       actorPublicId: "usr_bob",
       actorName: "Bob",
-      subject: "user_bob",
       orgId: "org_1",
       role: "editor",
     }, "ws_1")).toEqual({
+      principal_kind: "user",
       actor_id: "issuer|user_bob",
       actor_kind: "human",
       actor_public_id: "usr_bob",
@@ -32,7 +32,6 @@ describe("embedded relay host auth stamp", () => {
       actorKind: "human",
       actorPublicId: "usr_bob",
       actorName: "Bob",
-      subject: "user_bob",
       orgId: "org_1",
       role: "editor",
     }, "ws_1")

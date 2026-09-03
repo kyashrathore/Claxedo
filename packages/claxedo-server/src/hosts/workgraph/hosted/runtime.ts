@@ -22,9 +22,6 @@ import { settlementTenantKey, type SettlementTenant } from "../settlement-dispat
 type Mutation = FunctionReference<"mutation">
 type Query = FunctionReference<"query">
 const api = anyApi as unknown as {
-  users: {
-    resolveSubjectForService: Query
-  }
   sessions: {
     syncWorkGraphSession: Mutation
     retainWorkGraphSessionTranscript: Mutation
@@ -389,7 +386,6 @@ export function createHostedWorkGraphRuntime(
               const token = await provider.mintRuntimeAccessToken({
                 workspaceId,
                 hostId: placement.hostId,
-                subject: claim.ownerSubject,
                 principalKind: "user",
                 actorId: claim.ownerUserId,
                 actorKind: "human",
@@ -550,7 +546,6 @@ export function createHostedWorkGraphRuntime(
               const token = await provider.mintRuntimeAccessToken({
                 workspaceId: run.workspaceId,
                 hostId: placement.hostId,
-                subject: run.ownerUserId,
                 principalKind: "user",
                 actorId: run.ownerUserId,
                 actorKind: "human",
@@ -864,7 +859,6 @@ async function reconcileHostedMaster(
     const token = await provider.mintRuntimeAccessToken({
       workspaceId,
       hostId: placement.hostId,
-      subject: claim.ownerSubject,
       principalKind: "user",
       actorId: input.intent.ownerUserId,
       actorKind: "human",
@@ -1129,7 +1123,6 @@ async function drainControlEffects(
           const token = await provider.mintRuntimeAccessToken({
             workspaceId,
             hostId: placement.hostId,
-            subject: control.ownerUserId,
             principalKind: "user",
             actorId: control.ownerUserId,
             actorKind: "human",
@@ -1261,7 +1254,6 @@ async function reconcileSourcePlanning(
         const token = await provider.mintRuntimeAccessToken({
           workspaceId,
           hostId: placement.hostId,
-          subject: claim.ownerUserId,
           principalKind: "user",
           actorId: claim.ownerUserId,
           actorKind: "human",
@@ -1370,7 +1362,6 @@ async function reconcileSourcePlanning(
         const token = await provider.mintRuntimeAccessToken({
           workspaceId: plan.workspaceId,
           hostId: placement.hostId,
-          subject: plan.ownerUserId,
           principalKind: "user",
           actorId: plan.ownerUserId,
           actorKind: "human",
@@ -1781,26 +1772,16 @@ export function createHostedSessionTranscriptRetention(
   if (!provider || !manager) return
   const request = options.fetch ?? fetch
   const now = options.now ?? Date.now
-  return async (input: { organizationId: string; ownerSubject: string; workspaceId: string; sessionId: string }) => {
+  return async (input: { organizationId: string; ownerUserId: string; workspaceId: string; sessionId: string }) => {
     try {
-      if (!client.query) throw new Error("Hosted transcript retention requires users-registry lookup")
-      const actor = await client.query(api.users.resolveSubjectForService, {
-        service_token: serviceToken,
-        subject: input.ownerSubject,
-      }) as { actor_id?: unknown; actor_kind?: unknown } | null
-      if (
-        typeof actor?.actor_id !== "string"
-        || (actor.actor_kind !== "human" && actor.actor_kind !== "agent")
-      ) throw new Error("Hosted transcript retention owner is not registered")
       const placement = await manager.target(input.workspaceId)
       if (placement.status !== "ready") throw new Error("Hosted workspace is unavailable for transcript retention")
       const token = await provider.mintRuntimeAccessToken({
         workspaceId: input.workspaceId,
         hostId: placement.hostId,
-        subject: input.ownerSubject,
         principalKind: "user",
-        actorId: actor.actor_id,
-        actorKind: actor.actor_kind,
+        actorId: input.ownerUserId,
+        actorKind: "human",
         orgId: input.organizationId,
         role: "owner",
         ttlMs: 10 * 60_000,
@@ -1823,7 +1804,7 @@ export function createHostedSessionTranscriptRetention(
       await client.mutation(api.sessions.retainWorkGraphSessionTranscript, {
         service_token: serviceToken,
         organization_id: input.organizationId,
-        owner_subject: input.ownerSubject,
+        owner_user_id: input.ownerUserId,
         workspace_id: input.workspaceId,
         session_id: input.sessionId,
         updated_at: now(),

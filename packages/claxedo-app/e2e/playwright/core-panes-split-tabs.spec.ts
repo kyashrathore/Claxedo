@@ -534,7 +534,7 @@ async function buildDraftPlusTerminalSplit(page: Page) {
  * reader for its status dot. Used by the switcher-status-dot behaviors. */
 async function establishBackgroundedSession(page: Page, beforeUnpin?: (page: Page) => Promise<void>) {
   await seedOneProject(page, DIR)
-  const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harness: "codex-acp" })
+  const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, harness: "acp:codex" })
   await installPtyMock(page)
   await openWorkbench(page, DIR)
   await beforeUnpin?.(page)
@@ -1153,7 +1153,12 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
         body: JSON.stringify({ workspaceId: WORKSPACE_ID, directory: CLOUD_DIR, kind: "cloud", status: "ready" }),
       })
     })
+    // One mint per shared connection is the OBSERVABLE half of the sharing
+    // claim: every extra pane/tab on this workspace must reuse the connection
+    // the first one established, so this counter must never move past 1.
+    let connectionMints = 0
     await page.route(`**/api/workspace/${WORKSPACE_ID}/connection**`, async (route) => {
+      if (new URL(route.request().url()).pathname.endsWith("/connection")) connectionMints += 1
       await route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1161,6 +1166,7 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
           access: "cloud",
           backing: "cloud-vm",
           runtimeKind: "cloud",
+          sessionAuthority: "managed-private",
           workspaceId: WORKSPACE_ID,
           relayUrl: RELAY_ORIGIN,
           runtimeAccessToken: "test-runtime-access-token",
@@ -1208,36 +1214,16 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
               .__claxedoConnections
             return hook?.snapshot?.()?.[wsId]?.refs ?? null
           }, WORKSPACE_ID),
-        { timeout: 20_000, message: "workspace connection refs never reached 2 for the second pane" },
+        { timeout: 20_000, message: "the second pane must not open a second workspace connection" },
       )
-      .toBe(2)
+      .toBe(1)
+    expect(connectionMints, "the second pane re-minted the workspace connection instead of sharing it").toBe(1)
 
-    // Closing a TAB while its pane stays part of the split does NOT cleanly
-    // decrement refs in this app, for a reason distinct from (but adjacent
-    // to) INVARIANTS #4: `layout.closeContent` only nullifies that pane's
-    // `contentId` (`contents.remove` in `layout/reducers/contents.ts`) — it
-    // does not remove the pane from the split tree. The now-`contentId:
-    // null` pane immediately renders `<Workbench>`'s `renderEmpty` fallback
-    // (`rail-workbench-canvas.tsx`), which is `<EmptyDraftSessionComposer>`
-    // — a full `SessionContent` render for a synthetic `sessionId: "new"`
-    // meta, carrying the SAME `[data-testid="session-content"][data-
-    // session-id="new"]` markers as a real draft tab. That fallback itself
-    // resolves and holds the same workspace connection, so the pane never
-    // actually goes empty from the connection's point of view — verified
-    // live: closing either tab (draft or terminal) while both remained
-    // part of the split left `refs` at 2 for a full 20s poll every time.
-    // Sidestep the entanglement: navigate to a THIRD surface first (behavior
-    // 13's mechanism — a 2+-pane layout collapses to ONE new pane, and BOTH
-    // previous panes' content survives as UNPANED background tabs, per
-    // `destroyContent:false` semantics), then close one of those background
-    // tabs' switcher entries. An unpaned tab has no pane to leave behind, so
-    // there is nothing for `renderEmpty` to backfill, and closing it is a
-    // clean, real content-destroy with no compensating re-acquire. The new
-    // (Codex) terminal ALSO resolves this same workspaceId and mounts its
-    // own `WorkspaceGate` while the other two stay mounted in the
-    // background — `refs` climbs to 3 here, verified live, before the
-    // close brings it back down to 2 (not 1 — two live surfaces, draft +
-    // one terminal, remain after closing just one background tab).
+    // A THIRD surface on the same workspace (behavior 13's mechanism: a 2+-pane
+    // layout collapses to ONE new pane and both previous panes' content survives
+    // as UNPANED background tabs, per `destroyContent:false`) still shares the
+    // one lease — the Codex terminal, the draft and the first terminal are three
+    // live `WorkspaceGate`s over a single connection.
     await startTerminalFromCreator(page, "codex")
     await expect(visiblePaneContents(page)).toHaveCount(1, { timeout: 10_000 })
     await expect(backgroundTitleButtons(page)).toHaveCount(2, { timeout: 10_000 })
@@ -1247,12 +1233,17 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
           page.evaluate((wsId) => {
             const hook = (window as unknown as { __claxedoConnections?: { snapshot?: () => Record<string, { refs?: number }> } })
               .__claxedoConnections
-            return hook?.snapshot?.()?.[wsId]?.refs ?? null
+            const snapshot = hook?.snapshot?.() ?? {}
+            return { refs: snapshot[wsId]?.refs ?? null, workspaces: Object.keys(snapshot).length }
           }, WORKSPACE_ID),
-        { timeout: 20_000, message: "workspace connection refs never reached 3 for the third (Codex) surface" },
+        { timeout: 20_000, message: "the third surface must not open a second workspace connection" },
       )
-      .toBe(3)
+      .toEqual({ refs: 1, workspaces: 1 })
+    expect(connectionMints, "the third surface re-minted the workspace connection instead of sharing it").toBe(1)
 
+    // Closing one surface does not disturb the lease either: the workspace is
+    // still open, so the connection every remaining surface reads stays the same
+    // live one — no teardown, no reconnect flash, no re-mint.
     const backgroundTabRow = switcherTabs(page)
       .filter({ has: page.locator('[data-testid="switcher-title-button"]:not([aria-current="page"])') })
       .first()
@@ -1262,12 +1253,15 @@ test.describe("core panes: split, tabs, focus, shell chrome @core", () => {
       .poll(
         async () =>
           page.evaluate((wsId) => {
-            const hook = (window as unknown as { __claxedoConnections?: { snapshot?: () => Record<string, { refs?: number }> } })
-              .__claxedoConnections
-            return hook?.snapshot?.()?.[wsId]?.refs ?? null
+            const hook = (window as unknown as {
+              __claxedoConnections?: { snapshot?: () => Record<string, { refs?: number; status?: string }> }
+            }).__claxedoConnections
+            const entry = hook?.snapshot?.()?.[wsId]
+            return { refs: entry?.refs ?? null, status: entry?.status ?? null }
           }, WORKSPACE_ID),
-        { timeout: 20_000, message: "workspace connection refs never dropped back to 2 after closing the background tab" },
+        { timeout: 20_000, message: "closing one surface tore down the shared workspace connection" },
       )
-      .toBe(2)
+      .toEqual({ refs: 1, status: "ready" })
+    expect(connectionMints, "closing one surface re-minted the shared workspace connection").toBe(1)
   })
 })

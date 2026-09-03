@@ -52,6 +52,10 @@ test("packaged Windows app completes a real Codex-authenticated session @live @s
 
     const project = packaged.page.locator(`[data-testid="project-group"][data-project-id="${workspaceId}"]`)
     await expect(project).toBeVisible({ timeout: 30_000 })
+    // The header's action cluster mounts on engagement (hover, focus or an
+    // explicit hold — `rail-hover-engagement.ts`), so the pointer has to reach
+    // the header before its "New session" button exists.
+    await project.locator('[data-testid="project-header"]').hover()
     await project.locator('[aria-label="New session in main"]').click()
 
     const input = packaged.page.locator('[role="textbox"][aria-label*="Ask anything"]:visible').last()

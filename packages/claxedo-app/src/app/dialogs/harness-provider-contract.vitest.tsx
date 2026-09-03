@@ -7,8 +7,11 @@
  * catalog a dialog asks for is the one its harness context implies.
  *
  * `useProviders` is stubbed at the query seam so no network or SDK scope is
- * needed; the stub records the harness argument it was called with, which is
- * how the inheritance assertions are made.
+ * needed; the stub records the (scope, harness) pair it was called with, which
+ * is how the inheritance assertions are made. Both halves of that pair are
+ * inherited: a catalog belongs to a harness ON a machine, so a dialog opened
+ * from a workspace surface must carry the workspace scope down with the
+ * harness.
  */
 import { cleanup, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
@@ -22,6 +25,7 @@ import {
 } from "./test-support/harness-provider-contract"
 
 const requestedHarnesses: Array<string | undefined> = []
+const requestedScopes: Array<string | undefined> = []
 
 vi.mock("@/app/providers/use-providers", async () => {
   const actual = await vi.importActual<typeof import("@/platform/query/provider-list")>(
@@ -29,9 +33,10 @@ vi.mock("@/app/providers/use-providers", async () => {
   )
   return {
     popularProviders: actual.popularProviders,
-    useProviders: (harnessType?: string | (() => string | undefined)) => {
+    useProviders: (harnessType: string | (() => string), scope?: string | (() => string | undefined)) => {
       const harness = typeof harnessType === "function" ? harnessType() : harnessType
       requestedHarnesses.push(harness)
+      requestedScopes.push(typeof scope === "function" ? scope() : scope)
       const catalog = providerCatalogFixture(contractProviderIds(harness))
       const all = new Map(catalog.all.map((provider) => [provider.id, provider] as const))
       return {
@@ -98,6 +103,7 @@ async function renderedProviderIdsWhenSettled(container: HTMLElement) {
 
 beforeEach(() => {
   requestedHarnesses.length = 0
+  requestedScopes.length = 0
   dialogState.shown.length = 0
 })
 
@@ -120,15 +126,23 @@ describe("ProviderList renders the contracted catalog per harness", () => {
     expect((await renderedProviderIdsWhenSettled(container)).sort()).toEqual([...PI_PROVIDER_IDS].sort())
   })
 
-  test("no harness lists the models.dev catalog and adds the Custom provider entry", async () => {
-    const { container } = render(() => <ProviderList onSelect={() => undefined} />)
+  test("harness=opencode lists the models.dev catalog and adds the Custom provider entry", async () => {
+    const { container } = render(() => <ProviderList harness="opencode" onSelect={() => undefined} />)
 
     const ids = await renderedProviderIdsWhenSettled(container)
     for (const id of OPENCODE_SAMPLE_PROVIDER_IDS) expect(ids, id).toContain(id)
-    // "Custom provider" is offered only in the harness-less catalog: a harness
+    // "Custom provider" is an OpenCode provider-registry entry; a harness
     // catalog is a fixed set of bindings that a custom provider cannot join.
     expect(ids).toContain(CUSTOM_PROVIDER_ID)
-    expect(requestedHarnesses).toContain(undefined)
+    expect(requestedHarnesses).toContain("opencode")
+  })
+
+  // There is no unqualified catalog to fall into any more: every surface names
+  // the harness it is showing.
+  test("no catalog is ever requested without a harness", async () => {
+    render(() => <ProviderList harness="opencode" onSelect={() => undefined} />)
+    await waitFor(() => expect(requestedHarnesses.length).toBeGreaterThan(0))
+    expect(requestedHarnesses).not.toContain(undefined)
   })
 
   test("a harness catalog never offers the Custom provider entry", async () => {
@@ -158,10 +172,26 @@ describe("the connect dialog inherits the harness it was opened with", () => {
     expect(requestedHarnesses.every((harness) => harness === "pi")).toBe(true)
   })
 
-  test("DialogSelectProvider with no harness asks for the full catalog", async () => {
-    render(() => <DialogSelectProvider />)
+  test("DialogSelectProvider asks for the OpenCode catalog when that is the harness", async () => {
+    render(() => <DialogSelectProvider harness="opencode" />)
     await waitFor(() => expect(requestedHarnesses.length).toBeGreaterThan(0))
-    expect(requestedHarnesses.every((harness) => harness === undefined)).toBe(true)
+    expect(requestedHarnesses.every((harness) => harness === "opencode")).toBe(true)
+  })
+
+  test("the workspace scope rides down with the harness", async () => {
+    render(() => <DialogSelectProvider harness="claude-sdk" scope="workspace:ws_1" />)
+    await waitFor(() => expect(requestedScopes.length).toBeGreaterThan(0))
+    expect(requestedScopes.every((scope) => scope === "workspace:ws_1")).toBe(true)
+  })
+
+  test("selecting a provider carries the workspace scope into the connect dialog", async () => {
+    const { container } = render(() => <DialogSelectProvider harness="claude-sdk" scope="workspace:ws_1" />)
+    await renderedProviderIdsWhenSettled(container)
+
+    container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="claude-sdk"]')!.click()
+
+    await waitFor(() => expect(dialogState.shown.length).toBe(1))
+    expect(requestedScopes.at(-1)).toBe("workspace:ws_1")
   })
 
   test("selecting a provider carries the harness into the connect dialog", async () => {

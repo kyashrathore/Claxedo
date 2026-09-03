@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import {
   applySubagentRuntimeEventEnvelope,
@@ -484,23 +485,51 @@ describe("global sdk event fetch", () => {
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
       sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       payload: { type: "text-delta", delta: "hello" },
     })
 
     expect(events).toEqual([
+      // The row the parts hang from comes FIRST. The transcript store files a
+      // part against an existing message, so a viewer that has never seen this
+      // reply — anyone attached to a session another client is driving — has
+      // nothing to attach to without it.
       {
         directory: "/repo/main",
         payload: {
-          id: "message.part.updated:assistant-1:000000_assistant-1-text",
+          id: "message.updated:msg_turn_1_r",
+          type: "message.updated",
+          properties: {
+            sessionID: "runtime-session-1",
+            info: {
+              id: "msg_turn_1_r",
+              sessionID: "runtime-session-1",
+              role: "assistant",
+              time: { created: expect.any(Number) },
+              parentID: "msg_turn_1",
+              modelID: "",
+              providerID: "",
+              mode: "auto",
+              agent: "",
+              path: { cwd: "/repo/main", root: "/repo/main" },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+            },
+          },
+        },
+      },
+      {
+        directory: "/repo/main",
+        payload: {
+          id: "message.part.updated:msg_turn_1_r:000000_msg_turn_1_r-text",
           type: "message.part.updated",
           properties: {
             sessionID: "runtime-session-1",
             time: expect.any(Number),
             part: {
-              id: "000000_assistant-1-text",
+              id: "000000_msg_turn_1_r-text",
               sessionID: "runtime-session-1",
-              messageID: "assistant-1",
+              messageID: "msg_turn_1_r",
               type: "text",
               text: "",
             },
@@ -510,12 +539,12 @@ describe("global sdk event fetch", () => {
       {
         directory: "/repo/main",
         payload: {
-          id: "message.part.delta:assistant-1:000000_assistant-1-text",
+          id: "message.part.delta:msg_turn_1_r:000000_msg_turn_1_r-text",
           type: "message.part.delta",
           properties: {
             sessionID: "runtime-session-1",
-            messageID: "assistant-1",
-            partID: "000000_assistant-1-text",
+            messageID: "msg_turn_1_r",
+            partID: "000000_msg_turn_1_r-text",
             field: "text",
             delta: "hello",
           },
@@ -605,7 +634,7 @@ describe("global sdk event fetch", () => {
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
       sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       payload: { type: "step-start", newMessageId: "assistant-2" },
     }, projections)
 
@@ -613,12 +642,19 @@ describe("global sdk event fetch", () => {
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/main",
       sessionId: "runtime-session-1",
-      assistantMessageId: "assistant-1",
+      assistantMessageId: "msg_turn_1_r",
       payload: { type: "text-delta", delta: "after step" },
     }, projections)
 
     expect(projections.size).toBe(1)
+    // A step moves the turn onto a message the engine named, and that message
+    // answers the same prompt — the row the lane announces for it is parented
+    // on the turn's user message, not on the step it followed.
     expect(events[0]?.payload).toMatchObject({
+      type: "message.updated",
+      properties: { info: { id: "assistant-2", parentID: "msg_turn_1" } },
+    })
+    expect(events[1]?.payload).toMatchObject({
       type: "message.part.updated",
       properties: {
         part: {
@@ -991,7 +1027,38 @@ describe("global sdk event fetch", () => {
     })
   })
 
+  test("runtime events open for the session the scope names, on the route's workspace identity", () => {
+    // ATTACH: the route names a running session this client never created, so
+    // nothing has marked a live session yet — only the workspace-route sentinel
+    // exists. The scope owner supplies the session; the sentinel supplies the
+    // relay identity to route the stream with.
+    expect(runtimeEventLiveSession({
+      sessionID: "route",
+      directory: "ws_user_hosted",
+      workspaceId: "ws_user_hosted",
+      workspaceKind: "user-hosted",
+    }, [], "ses_attached")).toEqual({
+      sessionID: "ses_attached",
+      directory: "ws_user_hosted",
+      workspaceId: "ws_user_hosted",
+      workspaceKind: "user-hosted",
+    })
+  })
+
+  test("runtime events retarget to the scope when the live session is the one left behind", () => {
+    // A navigation from one session to another must move the stream even though
+    // the live session still names the session whose history was fetched last.
+    expect(runtimeEventLiveSession({
+      sessionID: "ses_previous",
+      directory: "/repo/main",
+      workspaceId: "ws_signed",
+      workspaceKind: "cloud",
+    }, [], "ses_next")?.sessionID).toBe("ses_next")
+  })
+
   test("event directory routing prefers typed workspaceId over directory shape", () => {
+    // The frame's own `/runtime/repo` is the HOST's path and addresses nothing
+    // here; the workspace's address is what every consumer is keyed by.
     expect(eventDirectoryForLiveSession({
       directory: "/runtime/repo",
       liveSession: {
@@ -999,7 +1066,7 @@ describe("global sdk event fetch", () => {
         directory: "/repo/alias",
         workspaceId: "ws_typed",
       },
-    })).toBe("ws_typed")
+    })).toBe("workspace:ws_typed")
   })
 
   test("event directory routing keeps legacy workspace-id directory fallback only when workspaceId is absent", () => {
@@ -1009,14 +1076,14 @@ describe("global sdk event fetch", () => {
         sessionID: "session-1",
         directory: "ws_legacy",
       },
-    })).toBe("ws_legacy")
+    })).toBe("workspace:ws_legacy")
     expect(eventDirectoryForLiveSession({
       directory: "/runtime/repo",
       liveSession: {
         sessionID: "session-1",
         directory: "workspace:ws_legacy",
       },
-    })).toBe("ws_legacy")
+    })).toBe("workspace:ws_legacy")
     expect(eventDirectoryForLiveSession({
       directory: "global",
       liveSession: {
@@ -1031,6 +1098,18 @@ describe("global sdk event fetch", () => {
         directory: "/repo/local",
       },
     })).toBe("/runtime/repo")
+  })
+
+  test("a live session's events are addressed the same way its pane and its session row are", () => {
+    // One owner for the address: `sessionRowDirectory`. A pane on a
+    // relay-backed workspace registers its conversation under that exact
+    // string (`conversationScopeKey` is an exact match), so an event published
+    // under the bare id reaches no pane at all.
+    const workspaceId = "ws_attached"
+    expect(eventDirectoryForLiveSession({
+      directory: "/host/machine/worktree",
+      liveSession: { sessionID: "run_attached", directory: "/host/machine/worktree", workspaceId },
+    })).toBe(sessionRowDirectory({ workspaceId, hostDirectory: "/host/machine/worktree" }))
   })
 
   test("signed mode sends idle global events to the control-plane lifecycle stream", async () => {
@@ -1200,7 +1279,10 @@ describe("global sdk event fetch", () => {
     expect(calls.filter((url) => url.includes("/workspace/resolve"))).toEqual([
       "http://claxedo.test/api/workspace/resolve?directory=%2Frepo%2Fquery-owned-events",
     ])
-    expect(calls.filter((url) => url.includes("/workspaces/ws_event_query/global/event"))).toHaveLength(2)
+    expect(calls.filter((url) => url.includes("/workspaces/ws_event_query/global/event"))).toEqual([
+      "http://claxedo.test/workspaces/ws_event_query/global/event?sessionID=session-query",
+      "http://claxedo.test/workspaces/ws_event_query/global/event?sessionID=session-query",
+    ])
   })
 
   test("signed workspace-id session events use Workspace Relay even on loopback", async () => {
@@ -1296,12 +1378,17 @@ describe("global sdk event fetch", () => {
     expect(calls.some((url) => url.includes("/api/workspace/resolve"))).toBe(false)
   })
 
-  test("workspace runtime event rewrites preserve Last-Event-ID", async () => {
+  test("managed workspace runtime event reconnects preserve canonical session scope and Last-Event-ID", async () => {
     const calls: Array<{ url: string; lastEventId: string | null }> = []
 
     await createControlPlaneEventFetch({
-      signedControlPlane: () => false,
-      liveSession: () => ({ sessionID: "session-1", directory: "ws_1", workspaceId: "ws_1" }),
+      signedControlPlane: () => true,
+      liveSession: () => ({
+        sessionID: "session-1",
+        directory: "ws_1",
+        workspaceId: "ws_1",
+        workspaceKind: "cloud",
+      }),
       setLiveSession: () => {},
       fetch: recordingRequests(calls, (request) => {
         if (request.url.includes("/api/workspace/ws_1/connection")) {
@@ -1321,10 +1408,10 @@ describe("global sdk event fetch", () => {
       headers: { "Last-Event-ID": "9" },
     }))
 
-    expect(calls).toMatchObject([{
-      url: "http://localhost:3001/workspaces/ws_1/global/event",
+    expect(calls.at(-1)).toMatchObject({
+      url: "http://localhost:3001/workspaces/ws_1/global/event?sessionID=session-1",
       lastEventId: "9",
-    }])
+    })
   })
 
   test("signed session events rewrite sdk /event path to the workspace runtime", async () => {
@@ -1357,7 +1444,7 @@ describe("global sdk event fetch", () => {
     expect(calls.some(oldEventPath)).toBe(false)
   })
 
-  test("signed global events use the live workspace runtime even when sdk omits session query params", async () => {
+  test("signed global events append the canonical live session when sdk omits query params", async () => {
     const calls: string[] = []
 
     await createControlPlaneEventFetch({
@@ -1382,7 +1469,37 @@ describe("global sdk event fetch", () => {
 
     expect(calls).toEqual([
       "http://claxedo.test/api/workspace/ws_2/connection",
-      "http://claxedo.test/workspaces/ws_2/global/event",
+      "http://claxedo.test/workspaces/ws_2/global/event?sessionID=session-2",
     ])
+  })
+
+  test("workspace-route sentinels discard stale caller session scope and stay on the signed lifecycle stream", async () => {
+    const calls: string[] = []
+
+    await createControlPlaneEventFetch({
+      signedControlPlane: () => true,
+      liveSession: () => ({
+        sessionID: "route",
+        workspaceId: "ws_route_only",
+        workspaceKind: "cloud",
+      }),
+      setLiveSession: () => {},
+      fetch: recordingFetch(calls),
+    })("http://claxedo.test/global/event?sessionID=stale-session")
+
+    expect(calls).toEqual(["http://claxedo.test/api/wr/events"])
+  })
+
+  test("unmanaged local event streams remain unscoped when the sdk omits a session query", async () => {
+    const calls: string[] = []
+
+    await createControlPlaneEventFetch({
+      signedControlPlane: () => false,
+      liveSession: () => ({ sessionID: "session-local", directory: "/repo/local" }),
+      setLiveSession: () => {},
+      fetch: recordingFetch(calls),
+    })("http://localhost:3001/global/event")
+
+    expect(calls).toEqual(["http://localhost:3001/global/event"])
   })
 })

@@ -45,6 +45,8 @@ export type HostConnectorSnapshot = {
   expiresAt?: number
   reason?: string
   detail?: string
+  /** Workspaces this machine currently publishes. */
+  sharedWorkspaceIds?: readonly string[]
 }
 
 /** The bridge the preload exposes. Absent in every non-Electron build. */
@@ -53,10 +55,14 @@ export type HostConnectorBridge = {
   start: () => Promise<HostConnectorSnapshot>
   pause: () => Promise<HostConnectorSnapshot>
   revoke: () => Promise<HostConnectorSnapshot>
+  /** Publish one workspace: data-only input, the proof is main's and the child's. */
+  share: (input: { workspaceId: string; displayName?: string }) => Promise<HostConnectorSnapshot>
+  /** Withdraw one workspace. */
+  unshare: (input: { workspaceId: string }) => Promise<HostConnectorSnapshot>
   onStatus: (listener: (snapshot: HostConnectorSnapshot) => void) => () => void
 }
 
-const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "onStatus"] as const
+const BRIDGE_MEMBERS = ["status", "start", "pause", "revoke", "share", "unshare", "onStatus"] as const
 
 /**
  * The bridge, if this build has one.
@@ -109,6 +115,13 @@ export function machineRemoteAccessStatus(snapshot: HostConnectorSnapshot): Mach
     // only the control plane holds, and reading it is not one of the four
     // operations. Reported false rather than guessed.
     secondDeviceOpen: false,
+    // The connector already reports what it publishes on every snapshot, so
+    // this costs no extra channel. Main OMITS the field when the set is empty
+    // (status-channel.ts spreads it conditionally), which is why absent reads
+    // as `[]` here and not as "unknown": on this product the connector always
+    // knows. A machine that is not enrolled publishes nothing, whatever a stale
+    // snapshot still lists.
+    sharedWorkspaceIds: enrolled ? [...(snapshot.sharedWorkspaceIds ?? [])] : [],
   }
 }
 
@@ -150,6 +163,28 @@ export function electronMachineRemoteAccess(bridge: HostConnectorBridge): Machin
       const snapshot = await bridge.revoke()
       return { revoked: snapshot.status !== "enrolled" }
     },
+
+    async shareWorkspace(input) {
+      const snapshot = await bridge.share(input)
+      if (snapshot.status !== "enrolled") {
+        throw new Error(snapshot.detail ?? `Remote access is not active (${snapshot.status})`)
+      }
+    },
+
+    async unshareWorkspace(workspaceId) {
+      const snapshot = await bridge.unshare({ workspaceId })
+      if (snapshot.status !== "enrolled") {
+        throw new Error(snapshot.detail ?? `Remote access is not active (${snapshot.status})`)
+      }
+    },
+
+    // `devices` stays ABSENT here, as the port documents. Enumerating the
+    // account's machines is not one of the closed operations, and the synthetic
+    // "this machine" row that used to stand in for it existed only to carry
+    // `sharedWorkspaceIds` to the share surface. That fact now travels on
+    // `status()` where it belongs, so the row would be a second, weaker source
+    // for the same truth — and it made a one-machine desktop render an
+    // "Enrolled machines" list it cannot actually enumerate.
 
     subscribe(listener) {
       return bridge.onStatus((snapshot) => listener(machineRemoteAccessStatus(snapshot)))

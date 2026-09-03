@@ -1,11 +1,11 @@
 import type { Agent, Config, Path, Project } from "@opencode-ai/sdk/v2/client"
 export type { Agent } from "@opencode-ai/sdk/v2/client"
-import { queryKeys } from "@/platform/query/keys"
+import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
+import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"
-import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
-import { queryClient } from "@/platform/query/query-client"
 import { normalizeUrl } from "@/platform/api/api"
 import { workspaceScopedResourceList } from "@/platform/runtime/agent-config-routes"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 type ProjectClient = {
   project: {
@@ -36,8 +36,15 @@ function agentListFromUnknown(data: unknown) {
     : []
 }
 
+/**
+ * Whether `harnessType` is the harness whose sessions carry agent profiles.
+ *
+ * An UNKNOWN harness is unknown, not OpenCode: a directory read that fires
+ * before the pane resolves its harness must not be answered with OpenCode's
+ * agent list, which is what put OpenCode's profiles under every other harness.
+ */
 export function harnessUsesAgentProfiles(harnessType?: string) {
-  return !harnessType || harnessType === "opencode"
+  return harnessType === "opencode"
 }
 
 export function projectCurrentQuery(input: {
@@ -59,7 +66,11 @@ export function configQuery(input: {
   client: ConfigClient
 }) {
   return {
-    queryKey: queryKeys.directory.config(input.baseUrl, input.directory),
+    queryKey: queryKeys.directory.config(
+      input.baseUrl,
+      input.directory,
+      workspaceQueryKey(input.workspace),
+    ),
     staleTime: 60 * 1000,
     queryFn: async () => {
       // Relay/workspace-backed scopes (cloud / user-hosted) do not serve the
@@ -67,7 +78,7 @@ export function configQuery(input: {
       // config at `POST /api/wr/config` — so issuing the GET produces a
       // guaranteed 404 (BUG-7). Config is optional and every consumer reads it
       // with `?.`, so skip the doomed fetch and treat it as empty config.
-      if (input.workspace?.kind === "cloud" || input.workspace?.kind === "user-hosted") {
+      if (isRelayBackedWorkspaceKind(input.workspace?.kind)) {
         return {} as Config
       }
       try {
@@ -95,17 +106,14 @@ export function agentListQuery(input: {
       input.baseUrl,
       input.directory,
       input.harnessType,
-      input.workspace ? `${input.workspace.kind ?? ""}:${input.workspace.workspaceId ?? ""}` : "",
+      workspaceQueryKey(input.workspace),
     ),
     staleTime: 30 * 1000,
     queryFn: async () => {
       if (!harnessUsesAgentProfiles(input.harnessType)) return []
       if (input.request && input.baseUrl) {
         const baseUrl = normalizeUrl(input.baseUrl) ?? input.baseUrl
-        const signedWorkspace = signedWorkspaceFromProjects(
-          queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(input.baseUrl)) ?? [],
-          input.directory,
-        )
+        const signedWorkspace = cachedSignedWorkspace(input.baseUrl, input.directory)
         const workspace = input.workspace ?? signedWorkspace ?? (
           input.workspace !== undefined
             ? input.workspace

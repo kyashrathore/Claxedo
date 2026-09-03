@@ -2,12 +2,12 @@ import type { MiddlewareHandler } from "hono"
 import {
   ControlPlaneAuthError,
   bearerToken,
-  controlPlaneAuthConfig,
   controlPlaneAuthContext,
   controlPlaneAuthErrorBody,
   type ClerkVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
+import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/clerk-adapter"
 
 type Options = {
   authConfig?: ControlPlaneAuthConfig

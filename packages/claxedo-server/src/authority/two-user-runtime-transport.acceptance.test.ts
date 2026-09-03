@@ -129,7 +129,7 @@ type Stream = {
 
 async function connect(app: Hono, token: string, lastEventId?: string): Promise<Stream> {
   const controller = new AbortController()
-  const response = await app.request("http://runtime.test/event", {
+  const response = await app.request("http://runtime.test/event?sessionID=ses_runtime_private", {
     headers: {
       authorization: `Bearer ${token}`,
       accept: "text/event-stream",
@@ -139,7 +139,7 @@ async function connect(app: Hono, token: string, lastEventId?: string): Promise<
     },
     signal: controller.signal,
   })
-  expect(response.status).toBe(200)
+  if (response.status !== 200) throw new Error(`${response.status}: ${await response.text()}`)
   const reader = response.body!.getReader()
   // Start pulling before returning the connection. Hono installs the stream
   // subscriber from the first read; publishing immediately after `connect()`
@@ -338,7 +338,7 @@ describe("two-user signed runtime transport acceptance", () => {
     for (const identity of [bobIdentity, caseyIdentity]) {
       const granted = await signedRequest(alice.token, "/api/workspace/ws_runtime_private/shares", {
         method: "POST",
-        body: JSON.stringify({ role: "editor", grantedToTokenIdentifier: identity.token_identifier }),
+        body: JSON.stringify({ role: "editor", target: { kind: "actor", actorId: identity.actor_id } }),
       })
       expect(granted.status).toBe(200)
     }
@@ -348,7 +348,9 @@ describe("two-user signed runtime transport acceptance", () => {
       exportPKCS8(key.privateKey),
       exportSPKI(key.publicKey),
     ])
-    const oracle = new Hono().route("/api/runtime-authority", RuntimeSessionAuthorityRoutes(services, {
+    const oracle = new Hono().route("/api/runtime-authority", RuntimeSessionAuthorityRoutes({
+      authority,
+      turnAuthority: authority,
       env: {
         CLAXEDO_RELAY_HOST_VERIFY_PEM: publicKeyPem,
         CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM: privateKeyPem,
@@ -368,8 +370,8 @@ describe("two-user signed runtime transport acceptance", () => {
         expiresAt: Date.now() + 60_000,
       })
       return await mintRelayHostToken({
-        subject: identity.subject,
-        jti,
+        principalKind: "user",
+        parentJti: jti,
         actorId: identity.actor_id,
         actorKind: identity.actor_kind,
         actorPublicId: identity.actor_public_id,
@@ -442,8 +444,22 @@ describe("two-user signed runtime transport acceptance", () => {
       publishGlobal: () => {},
     }))
 
+    const operationId = "op_runtime_private"
+    const reserved = await signedRequest(alice.token, "/api/control/session-registrations/reserve", {
+      method: "POST",
+      body: JSON.stringify({
+        operationId,
+        sessionId: "ses_runtime_private",
+        workspaceId: "ws_runtime_private",
+        kind: "create",
+        title: "Private signed runtime",
+      }),
+    })
+    expect(reserved.status, await reserved.clone().text()).toBe(201)
+
     const created = await runtimeRequest(runtimeApp, aliceRht, "/session", {
       method: "POST",
+      headers: { "x-claxedo-session-registration-operation": operationId },
       body: JSON.stringify({ id: "ses_runtime_private", title: "Private signed runtime" }),
     })
     expect(created.status, await created.clone().text()).toBe(201)
@@ -453,7 +469,7 @@ describe("two-user signed runtime transport acceptance", () => {
       method: "POST",
       body: JSON.stringify({
         workspaceId: "ws_runtime_private",
-        participantTokenIdentifier: bobIdentity.token_identifier,
+        participantActorId: bobIdentity.actor_id,
       }),
     })
     expect(participant.status).toBe(200)
@@ -475,7 +491,7 @@ describe("two-user signed runtime transport acceptance", () => {
       method: "POST",
       body: JSON.stringify({ messageID: "msg_alice_runtime", parts: [{ type: "text", text: "Alice wrote this" }] }),
     })
-    expect(aliceMessage.status).toBe(200)
+    expect(aliceMessage.status, await aliceMessage.clone().text()).toBe(200)
     const bobPrompt = await runtimeRequest(runtimeApp, bobRht, "/session/ses_runtime_private/prompt_async", {
       method: "POST",
       body: JSON.stringify({ messageID: "msg_bob_runtime", parts: [{ type: "text", text: "Bob replied" }] }),
@@ -538,7 +554,15 @@ describe("two-user signed runtime transport acceptance", () => {
     })
 
     const bobLive = await connect(runtimeApp, bobRht)
-    const caseyLive = await connect(runtimeApp, caseyRht)
+    const caseyLive = await runtimeApp.request("http://runtime.test/event?sessionID=ses_runtime_private", {
+      headers: {
+        authorization: `Bearer ${caseyRht}`,
+        accept: "text/event-stream",
+        "x-workspace-id": "ws_runtime_private",
+        "x-forwarded-by": "workspace-relay",
+      },
+    })
+    expect(caseyLive.status).toBe(403)
     sessionBus.publish({
       type: "session.lifecycle",
       phase: "created",
@@ -549,12 +573,9 @@ describe("two-user signed runtime transport acceptance", () => {
     })
     sessionBus.publish({ type: "process.status", directory: "/workspace", configId: "public-process", status: "running" })
     const bobLiveFrames = await bobLive.until((frames) => frames.some((frame) => frame.data.info && (frame.data.info as { title?: string }).title === "live-private"))
-    const caseyLiveFrames = await caseyLive.observe(250)
-    expect(caseyLiveFrames.some((frame) => frame.data.sessionID === "ses_runtime_private")).toBe(false)
     const bobCursor = bobLiveFrames.findLast((frame) => frame.id)?.id
     expect(bobCursor).toBeTruthy()
     bobLive.close()
-    caseyLive.close()
 
     sessionBus.publish({
       type: "session.lifecycle",
@@ -572,16 +593,17 @@ describe("two-user signed runtime transport acceptance", () => {
       method: "DELETE",
       body: JSON.stringify({
         workspaceId: "ws_runtime_private",
-        participantTokenIdentifier: bobIdentity.token_identifier,
+        participantActorId: bobIdentity.actor_id,
       }),
     })
     expect(removed.status).toBe(200)
+    await expect(removed.json()).resolves.toMatchObject({ removed: true })
     const revoked = await signedRequest(alice.token, "/api/workspace/ws_runtime_private/shares", {
       method: "DELETE",
-      body: JSON.stringify({ grantedToTokenIdentifier: bobIdentity.token_identifier }),
+      body: JSON.stringify({ target: { kind: "actor", actorId: bobIdentity.actor_id } }),
     })
     expect(revoked.status).toBe(200)
-    await expect(revoked.json()).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 1 })
+    await expect(revoked.json()).resolves.toMatchObject({ revoked: true, runtime_tokens_revoked: 0 })
     await expect(authority.runtimeAccessTokenActive({
       jti: "jti_runtime_bob",
       workspaceId: "ws_runtime_private",

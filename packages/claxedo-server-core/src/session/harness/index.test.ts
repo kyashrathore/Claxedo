@@ -56,8 +56,8 @@ describe("session harness", () => {
     mod.setSessionHarness("ws_1", "ses_1", acp("claude"))
     const runner = mod.getSessionHarness("ws_1", "ses_1")
     expect(runner).toBeDefined()
-    expect(runner).toMatchObject(acp("claude"))
-    expect(processBinary(runner!)).toBeTruthy() // binary is auto-inferred
+    expect(runner).toEqual(acp("claude"))
+    expect(processBinary(runner!)).toBeUndefined()
   })
 
   test("returns undefined for unbound session", () => {
@@ -121,11 +121,10 @@ describe("session harness", () => {
 
   // ── normalize ────────────────────────────────────────────────────────
 
-  test("normalize infers binary for acp types", () => {
+  test("normalize keeps ACP bindings logical when no connection is supplied", () => {
     const runner = mod.normalize(acp("claude"))
-    expect(runner).toMatchObject(acp("claude"))
-    expect(processBinary(runner)).toBeTruthy()
-    expect(typeof processBinary(runner)).toBe("string")
+    expect(runner).toEqual(acp("claude"))
+    expect(processBinary(runner)).toBeUndefined()
   })
 
   test("normalize returns opencode type without binary", () => {

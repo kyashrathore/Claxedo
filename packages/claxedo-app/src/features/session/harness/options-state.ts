@@ -29,7 +29,6 @@ export type HarnessOptionsStatePatch = {
 
 export type HarnessOptionsDecision = {
   patch: HarnessOptionsStatePatch
-  saveModel?: string
   /** A live operator ACP answered, but owns model selection outside ACP. */
   managedDefault?: boolean
   retry: boolean
@@ -90,6 +89,24 @@ export function applyHarnessOptionsResponse(input: {
     // not a selectable row synthesized into the picker.
     if (input.type.startsWith("acp:") && input.payload.source === "harness" &&
       !input.payload.stale && input.payload.options.length > 0) {
+      // Such an agent can still NAME the model it resolved for itself. That
+      // named model IS the picker's single row, so the control reads the real
+      // model and the prompt carries the real model id. Only an agent that
+      // named nothing falls back to the client-side sentinel.
+      const resolved = input.payload.resolvedModel
+      if (resolved) {
+        return {
+          patch: {
+            ...base,
+            dynamicModels: [resolved],
+            selectedModel: resolved.id,
+            configError: undefined,
+            optionsLoading: false,
+          },
+          retry: false,
+          clearTries: true,
+        }
+      }
       return {
         patch: {
           ...base,
@@ -98,7 +115,6 @@ export function applyHarnessOptionsResponse(input: {
           configError: undefined,
           optionsLoading: false,
         },
-        saveModel: DEFAULT_HARNESS_MODEL.id,
         managedDefault: true,
         retry: false,
         clearTries: true,
@@ -172,7 +188,6 @@ export function applyHarnessOptionsResponse(input: {
       configError: undefined,
       optionsLoading: retry ? base.optionsLoading : false,
     },
-    saveModel: next,
     retry,
     clearTries,
   }

@@ -301,7 +301,7 @@ describe("opencode adapter", () => {
     adapter.dispose()
   })
 
-  test("shares one server event stream across Goals and reads each Goal at turn boundaries", async () => {
+  test("shares one server event stream across Goals and follows each Goal the engine announces", async () => {
     type Snapshot = {
       sessionId: string
       objective: string
@@ -367,9 +367,12 @@ describe("opencode adapter", () => {
       if (!predicate()) throw new Error(`timed out waiting for ${what}`)
     }
     const push = (payload: unknown) => feed!.enqueue(encoder.encode(`data: ${JSON.stringify(payload)}\n\n`))
-    const sessionUpdated = (id: string) => ({
+    const sessionUpdated = (id: string, metadata?: Record<string, unknown>) => ({
       type: "session.updated",
-      properties: { sessionID: id, info: { id, title: "t", directory: "/repo" } },
+      properties: {
+        sessionID: id,
+        info: { id, title: "t", directory: "/repo", ...(metadata ? { metadata } : {}) },
+      },
     })
 
     try {
@@ -378,20 +381,21 @@ describe("opencode adapter", () => {
       expect(await adapter.goals.start("goal-b", { objective: "B" }, "/repo")).toMatchObject({ ok: true })
       await until(() => goalReads.includes("goal-b"), "the second Goal's first read")
 
-      // Mid-turn churn must not re-read the Goal: only the trailing boundary does.
+      // Turn churn touches no metadata, so it says nothing about either Goal
+      // and costs no read: the engine's own announcement is the live channel.
       const readsBefore = goalReads.length
       for (let i = 0; i < 3; i += 1) push(sessionUpdated("goal-a"))
       for (let i = 0; i < 3; i += 1) push(sessionUpdated("goal-b"))
-      push({ type: "session.idle", properties: { sessionID: "goal-b" } })
-      await until(() => goalReads.length > readsBefore, "the boundary read")
       await new Promise((resolve) => setTimeout(resolve, 25))
-      expect(goalReads.slice(readsBefore)).toEqual(["goal-b"])
+      expect(goalReads.length).toBe(readsBefore)
 
       // One Goal finishing leaves the other one's stream untouched.
-      stored.set("goal-a", { ...stored.get("goal-a")!, status: "complete" })
-      push({ type: "session.idle", properties: { sessionID: "goal-a" } })
+      const done = { ...stored.get("goal-a")!, status: "complete" as const, iteration: 2 }
+      stored.set("goal-a", done)
+      push(sessionUpdated("goal-a", { "claxedo.goal": done }))
       await until(() => completed.includes("goal-a"), "the completed Goal")
       expect(streamOpens).toBe(1)
+      expect(goalReads.length).toBe(readsBefore)
     } finally {
       adapter.dispose()
     }

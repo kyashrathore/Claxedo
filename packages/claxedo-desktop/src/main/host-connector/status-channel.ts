@@ -44,6 +44,12 @@ export type HostConnectorStatusEvent = {
   reason?: string
   detail?: string
   expiresAt?: number
+  /**
+   * Workspaces this machine currently publishes. Carried so the Remote
+   * Access panel can show live share state without a route the desktop's
+   * sidecar does not serve; ids only — the host id itself stays behind.
+   */
+  sharedWorkspaceIds?: readonly string[]
   /** Whether this build can publish a machine at all. */
   available: boolean
   /** Whether an account is signed in. */
@@ -65,12 +71,19 @@ export type HostConnectorContext = {
 }
 
 export function toStatusEvent(state: HostConnectorStatus, context: HostConnectorContext): HostConnectorStatusEvent {
-  const record = state as { status: string; reason?: string; detail?: string; enrollment?: { expires_at?: number } }
+  const record = state as {
+    status: string
+    reason?: string
+    detail?: string
+    enrollment?: { expires_at?: number }
+    sharedWorkspaceIds?: readonly string[]
+  }
   return {
     status: record.status,
     ...(record.reason ? { reason: record.reason } : {}),
     ...(record.detail ? { detail: record.detail } : {}),
     ...(record.enrollment?.expires_at ? { expiresAt: record.enrollment.expires_at } : {}),
+    ...(record.sharedWorkspaceIds ? { sharedWorkspaceIds: record.sharedWorkspaceIds } : {}),
     available: context.available,
     signedIn: context.signedIn,
   }

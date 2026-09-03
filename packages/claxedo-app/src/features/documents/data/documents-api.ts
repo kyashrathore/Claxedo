@@ -1,5 +1,5 @@
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-import { accountRun, hostedControlCall, parseHostedHttpError } from "@/platform/account/hosted-control-call"
+import { hostedControlCall, parseHostedHttpError, signedAccountRun } from "@/platform/account/hosted-control-call"
 import type { SaveRequest, SaveResponse } from "@/features/documents/state/persistence-controller"
 
 export type DocumentSummary = {
@@ -260,7 +260,7 @@ export const documentsApi = {
     )
   },
   async save(id: string, input: SaveRequest): Promise<SaveResponse> {
-    const run = accountRun()
+    const run = await signedAccountRun()
     if (run) {
       try {
         const saved = await documentCall<DocumentContent>(

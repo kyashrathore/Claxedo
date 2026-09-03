@@ -1,7 +1,8 @@
 import { applyClaxedoSessionLifecycleEvent, type ClaxedoSessionLifecycleEvent } from "@/features/session/data/sync/session-list-events"
+import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import {
-  invalidateSessionListQueries,
   invalidateSessionShareQueries,
+  reconcileUpdatedSessionListQueryData,
   removeSessionListQueryData,
   upsertCreatedSessionListRow,
 } from "@/features/session/data/query/session-list"
@@ -14,6 +15,7 @@ import {
   installSessionProjectionSelfHeal,
   retryUnsettledSessionProjectionPulls,
   scheduleSessionProjectionPull,
+  sessionProjectionBacking,
 } from "@/platform/runtime/agent/session-projection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { applyDirectoryEventToShellQueries } from "../../../features/session/data/sync/directory-event-projector"
@@ -200,18 +202,28 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
     }
 
     const sessionEventType = globalSessionEventType(event)
-    if (sessionEventType === "created") void invalidateSessionListQueries()
     const raw = sessionEventType
       ? (event.properties as { info?: LifecycleSession } | undefined)?.info
       : undefined
     if (sessionEventType && raw) {
+      // The workspace's own stream is the authority for its list, so the frame
+      // is APPLIED rather than used as a doorbell for a refetch: a created row
+      // appears with no list request at all, and an updated title or timestamp
+      // reorders in place.
+      applySessionEventToSessionList({ info: raw, type: sessionEventType, directory, projects: input.projects() })
       projectCanonicalSessionTitle({
         writer: input.sessionTitles,
         info: raw,
         type: sessionEventType,
         directory,
       })
-      if (input.sessionInventoryLoaded()) {
+      // Central runtime events share the OpenCode compatibility stream for
+      // transcript/title projection, but their `directory` is the runtime's
+      // internal session key rather than a workspace directory. Their signed
+      // control-plane inventory remains authoritative; inserting this frame
+      // into workspace inventory invents a workspace keyed by the session id
+      // and can replace the already-open central surface on a cold route.
+      if (input.sessionInventoryLoaded() && !isCentralLifecycleSession(raw)) {
         const info = { ...raw }
         if (!info.projectID && info.directory) {
           const project = input.projectFor(info.directory)
@@ -232,15 +244,17 @@ export function createGlobalSyncEventIngress(input: EventIngressInput) {
       sinks: {
         schedule: (event) => {
           const projection = sessionProjectionEvent(event)
-          const runtimeRef = projection ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }) : undefined
-          if (projection && runtimeRef) {
+          const backing = projection
+            ? sessionProjectionBacking(sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }))
+            : undefined
+          if (projection && backing) {
             void scheduleSessionProjectionPull({
               action: projection.action,
               reason: projection.reason,
-              workspaceId: runtimeRef.workspaceId,
+              workspaceId: backing.workspaceId,
               sessionId: projection.sessionId,
               ...(projection.expectedEventOrdinal === undefined ? {} : { expectedEventOrdinal: projection.expectedEventOrdinal }),
-              idempotencyKey: `${projection.reason}:${runtimeRef.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
+              idempotencyKey: `${projection.reason}:${backing.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
             })
           }
           if (shouldInvalidateBootstrapFresh(event.type)) input.push(directory)
@@ -450,15 +464,17 @@ function applyClaxedoDirectoryEventToSync(input: EventIngressInput, event: Extra
     sinks: {
       schedule: (event) => {
         const projection = sessionProjectionEvent(event)
-        const runtimeRef = projection ? sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }) : undefined
-        if (projection && runtimeRef) {
+        const backing = projection
+          ? sessionProjectionBacking(sessionWorkspaceRuntimeRef({ directory, projects: input.projects() }))
+          : undefined
+        if (projection && backing) {
           void scheduleSessionProjectionPull({
             action: projection.action,
             reason: projection.reason,
-            workspaceId: runtimeRef.workspaceId,
+            workspaceId: backing.workspaceId,
             sessionId: projection.sessionId,
             ...(projection.expectedEventOrdinal === undefined ? {} : { expectedEventOrdinal: projection.expectedEventOrdinal }),
-            idempotencyKey: `${projection.reason}:${runtimeRef.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
+            idempotencyKey: `${projection.reason}:${backing.workspaceId}:${projection.sessionId}:${projection.expectedEventOrdinal ?? Date.now()}`,
           })
         }
         if (shouldInvalidateBootstrapFresh(event.type)) input.push(directory)
@@ -502,27 +518,17 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   const info: LifecycleSession = inventoryProjectID
     ? { ...eventInfo, projectID: inventoryProjectID }
     : eventInfo
-  // The rendered rail rows come from the paginated `session-list` query, which
-  // this projection's cache write does not feed; refetch it so the newly
-  // created session row appears without a reload (matches the flat-inventory
-  // refresh `applySessionEvent` performs below).
-  void invalidateSessionListQueries()
-  const eventWorkspaceId = typeof info.workspaceID === "string"
-    ? info.workspaceID
-    : event.workspaceId
-  // Local association UUIDs are not signed workspace ids. Stamping them here
-  // mints a `workspace:<uuid>:session:<id>` row beside the `local:<dir>` row
-  // (open issue #14 / tier-real local harness strict-mode duplicates).
-  const signedWorkspaceId = typeof eventWorkspaceId === "string" && /^ws_/.test(eventWorkspaceId)
-    ? eventWorkspaceId
-    : undefined
+  const workspaceId = addressedWorkspaceId(
+    typeof info.workspaceID === "string" ? info.workspaceID : event.workspaceId,
+    input.projects(),
+  )
   upsertCreatedSessionListRow({
     row: {
       sessionId: info.id,
       title: info.title,
-      directory: info.directory,
+      directory: sessionRowDirectory({ workspaceId, hostDirectory: info.directory }),
       projectId: info.projectID,
-      ...(signedWorkspaceId ? { workspaceId: signedWorkspaceId } : {}),
+      ...(workspaceId ? { workspaceId } : {}),
       createdAt: info.time.created,
       updatedAt: info.time.updated,
     },
@@ -538,6 +544,80 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
   })
   if (!input.sessionInventoryLoaded()) return
   input.applySessionEvent(info, "created")
+}
+
+/**
+ * The workspace a session row is ADDRESSED by, or nothing.
+ *
+ * A minted `ws_*` id is self-identifying. A caller-chosen id is not: a machine
+ * publishes its own LOCAL workspace under the id it already held, and the
+ * control plane stores that id verbatim (`registerLocalForSharing`), so the
+ * SAME uuid shape names a user-hosted workspace on one machine and a purely
+ * local association on another. The resolved project catalog is the authority
+ * for that distinction and `sessionWorkspaceRuntimeRef` is its reader: it
+ * answers with the workspace's real kind, and `undefined` both for one the
+ * catalog knows as local and for one it has never heard of. Failing closed
+ * there is what keeps a local session's row from gaining a `workspace:<uuid>`
+ * twin beside its `local:<dir>` row.
+ */
+function addressedWorkspaceId(value: string | undefined, projects: GlobalProject[]) {
+  if (!value) return undefined
+  if (/^ws_/.test(value)) return value
+  return sessionWorkspaceRuntimeRef({ directory: `workspace:${value}`, projects })?.workspaceId
+}
+
+/**
+ * A workspace stream's `session.created/updated/deleted` frame, applied to the
+ * rendered list.
+ *
+ * The frame carries the whole row, so nothing here needs the server: created
+ * prepends it, updated reconciles title and `time.updated` (and re-sorts a
+ * `updated_desc` view), deleted removes it. Every source writes the same
+ * `shell.sessionList` entry, so one applier covers the daemon's stream, the
+ * control plane's, and a user-hosted workspace's runtime over the relay.
+ */
+function applySessionEventToSessionList(input: {
+  info: LifecycleSession
+  type: SessionEventType
+  directory: DirectoryRef
+  projects: GlobalProject[]
+}) {
+  const workspaceId = addressedWorkspaceId(
+    txt(input.info.workspaceID) ?? txt(input.info.workspaceId),
+    input.projects,
+  )
+  const directory = sessionRowDirectory({
+    workspaceId,
+    hostDirectory: input.info.directory || input.directory,
+  })
+  const identity = {
+    sessionId: input.info.id,
+    directory,
+    ...(workspaceId ? { workspaceId } : {}),
+  }
+  if (input.type === "deleted") {
+    removeSessionListQueryData(identity)
+    return
+  }
+  if (input.type === "updated") {
+    reconcileUpdatedSessionListQueryData({
+      ...identity,
+      title: input.info.title,
+      updatedAt: input.info.time.updated,
+    })
+    return
+  }
+  upsertCreatedSessionListRow({
+    row: {
+      sessionId: input.info.id,
+      title: input.info.title,
+      directory,
+      projectId: input.info.projectID,
+      ...(workspaceId ? { workspaceId } : {}),
+      createdAt: input.info.time.created,
+      updatedAt: input.info.time.updated,
+    },
+  })
 }
 
 function projectCanonicalSessionTitle(input: {
@@ -621,6 +701,11 @@ function globalSessionEventType(event: RoutableEvent): SessionEventType | undefi
   if (event.type === "session.updated") return "updated"
   if (event.type === "session.deleted") return "deleted"
   return
+}
+
+function isCentralLifecycleSession(input: LifecycleSession) {
+  return input.host === "central" ||
+    (typeof input.sessionRef === "string" && input.sessionRef.startsWith("central:"))
 }
 
 function rec(input: unknown) {

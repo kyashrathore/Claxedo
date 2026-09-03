@@ -210,8 +210,11 @@ describe("@claxedo/local-server closure", () => {
     // gained surface, and a fall should lower the ceiling with it. The package
     // number is the reach that matters — a rise is a new dependency the
     // unsigned desktop now carries and is worth reading before it is bumped.
+    // The user-hosted serving surface (the machine-wide host tunnel: its
+    // routes, the serving loop, and the deny/root/workspace path map) and the
+    // user extension routes add four local modules with no new package.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(57)
+    expect(modules.size).toBeLessThanOrEqual(61)
     expect(packages.size).toBeLessThanOrEqual(21)
   })
 })

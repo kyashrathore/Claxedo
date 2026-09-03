@@ -24,11 +24,13 @@ vi.mock("./auth-session", () => ({
 
 import { usePrincipal } from "./identity-provider"
 import { PrincipalProvider } from "./principal-provider"
+const accountState: { current: { userId: string } | undefined } = { current: undefined }
 
 beforeEach(() => {
   authState.status = "anonymous"
   authState.user = undefined
   authState.organization = undefined
+  accountState.current = undefined
 })
 
 afterEach(() => cleanup())
@@ -64,6 +66,21 @@ describe("PrincipalProvider", () => {
       memberships: []
     })
   })
+
+  test("uses a signed principal from the account port when no auth session is bound", () => {
+    // Desktop: Electron main owns the credential; the renderer auth session
+    // stays anonymous forever. The signed account port is the only signed
+    // source, and without it `share.workspace` was unreachable in the UI.
+    accountState.current = { userId: "usr_desktop" }
+
+    expect(renderPrincipal(true)).toEqual({ kind: "signed", userId: "usr_desktop" })
+  })
+
+  test("falls back to a stable placeholder userId when the port identity is empty", () => {
+    accountState.current = { userId: "" }
+
+    expect(renderPrincipal(true)).toEqual({ kind: "signed", userId: "signed-user" })
+  })
 })
 
 function renderPrincipal(authEnabled: boolean) {
@@ -74,7 +91,7 @@ function renderPrincipal(authEnabled: boolean) {
   }
 
   render(() => (
-    <PrincipalProvider authEnabled={authEnabled}>
+    <PrincipalProvider authEnabled={authEnabled} signedAccount={() => accountState.current}>
       <Probe />
     </PrincipalProvider>
   ))

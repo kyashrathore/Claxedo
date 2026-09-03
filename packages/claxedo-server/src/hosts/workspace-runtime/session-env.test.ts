@@ -686,10 +686,11 @@ describe("cloud session-env caching", () => {
       sandboxManager,
       relayProvider,
       defaultHomeRegion: "us-east",
-      subject: "control-plane",
-      principalKind: "service",
-      actorId: "control-plane",
-      actorKind: "agent",
+      runtimeActor: {
+        principalKind: "service",
+        actorId: "control-plane",
+        actorKind: "agent",
+      },
       role: "owner",
     } satisfies SandboxFetchOptions
     return { sandboxManager, relayProvider, options }
@@ -731,7 +732,7 @@ describe("cloud session-env caching", () => {
         workspace: cloudWorkspace,
         fetchOptions: { ...options, role: undefined },
       }),
-    ).toThrow("complete runtime principal required for runtime token minting: ws-cloud")
+    ).toThrow("runtime role required for runtime token minting: ws-cloud")
   })
 
   test("re-mints the token when it is near expiry", async () => {
@@ -859,10 +860,7 @@ describe("prepareWorkspaceRuntimeSession", () => {
         fetchOptions: {
           sandboxManager,
           relayProvider,
-          subject: "control-plane",
-          principalKind: "service",
-          actorId: "control-plane",
-          actorKind: "agent",
+          runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
           role: "owner",
         },
       }),

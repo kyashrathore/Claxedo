@@ -24,6 +24,7 @@ import net from "node:net"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import type { Page } from "@playwright/test"
+import { e2eAppViteEnvironment } from "../auth-mode"
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const APP_DIR = path.resolve(HERE, "..", "..")
@@ -225,6 +226,11 @@ export async function startSignedFixture(input: {
  * duplication the task's "extract, don't copy" instruction warns against —
  * one already-working implementation is reused instead of a second one that
  * could silently diverge.
+ *
+ * It is spawned with `e2eAppViteEnvironment()`, the single owner of the build
+ * environment every e2e vite launcher passes: `vite.cloud.config.ts` refuses to
+ * resolve a browser auth adapter implicitly, so a launcher without that
+ * selection exits before it can listen.
  */
 export async function startForwardedForProxy(backendUrl: string): Promise<{ url: string; close: () => Promise<void> }> {
   const port = await freePort()
@@ -234,7 +240,7 @@ export async function startForwardedForProxy(backendUrl: string): Promise<{ url:
     [path.join(APP_DIR, "e2e", "helpers", "live-user-hosted-relay-frontend-server.mjs")],
     {
       cwd: APP_DIR,
-      env: { ...process.env, VITE_CLAXEDO_SERVER_URL: backendUrl, PORT: String(port) },
+      env: { ...process.env, ...e2eAppViteEnvironment(), VITE_CLAXEDO_SERVER_URL: backendUrl, PORT: String(port) },
       stdio: ["ignore", "pipe", "pipe"],
     },
   )

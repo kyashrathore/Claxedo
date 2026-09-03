@@ -118,7 +118,7 @@ export function SessionContextTab() {
   const sessionParams = useSessionParams()
   const layout = useLayout()
   const language = useLanguage()
-  const providers = useProviders()
+  const providers = useProviders("opencode")
   const paneActive = () => sessionParams.active?.() ?? true
 
   const sessionId = createMemo(() => sessionParams.sessionId())

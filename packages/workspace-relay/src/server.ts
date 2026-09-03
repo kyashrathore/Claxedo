@@ -18,6 +18,7 @@ import {
 import type { WorkspaceRelayDirectory } from "./directory"
 import { createOriginMatcher, DEFAULT_RELAY_APP_ORIGINS } from "./cors-origins"
 import { bearerToken, errorBody } from "./http"
+import { isUserHostedTarget } from "./user-hosted-forwarding"
 
 export type RelayHostPublicKey = {
   publicKey: CryptoKey | Uint8Array
@@ -70,7 +71,9 @@ export type WorkspaceRelayAuditEvent = {
     | "host_tunnel.disconnected"
   result: "allow" | "deny"
   reason?: string
-  subject?: string
+  actorId?: string
+  actorKind?: "human" | "agent"
+  principalKind?: "user" | "service"
   role?: RelayRole
   workspaceId?: string
   hostId?: string
@@ -545,12 +548,9 @@ function relayHostTokenCacheKey(
 ) {
   return [
     claims.jti,
-    claims.sub,
-    claims.actor_id ?? "",
-    claims.actor_kind ?? "",
-    claims.actor_public_id ?? "",
-    claims.actor_name ?? "",
-    claims.actor_avatar_url ?? "",
+    claims.principal_kind,
+    claims.actor_id,
+    claims.actor_kind,
     claims.org_id,
     claims.role,
     claims.workspace_id,
@@ -680,11 +680,17 @@ async function relayHostTokenFor(
   try {
     const token = await trace.span("rht-mint", async () => {
       promise = mintRelayHostToken({
-        subject: claims.sub,
-        // Preserve the authoritative RAT identifier so downstream renewable
-        // stream leases can be checked against the same revocation record.
-        jti: claims.jti,
-        ...relayActorInput(claims),
+        principalKind: claims.principal_kind,
+        actorId: claims.actor_id,
+        actorKind: claims.actor_kind,
+        parentJti: claims.jti,
+        ...(claims.actor_public_id && claims.actor_name
+          ? {
+              actorPublicId: claims.actor_public_id,
+              actorName: claims.actor_name,
+              ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+            }
+          : {}),
         orgId: claims.org_id,
         role: claims.role,
         ...target,
@@ -713,30 +719,23 @@ async function uncachedRelayHostTokenFor(
 ) {
   return await trace.span("rht-mint", async () =>
     await mintRelayHostToken({
-      subject: claims.sub,
-      jti: claims.jti,
-      ...relayActorInput(claims),
+      principalKind: claims.principal_kind,
+      actorId: claims.actor_id,
+      actorKind: claims.actor_kind,
+      parentJti: claims.jti,
+      ...(claims.actor_public_id && claims.actor_name
+        ? {
+            actorPublicId: claims.actor_public_id,
+            actorName: claims.actor_name,
+            ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
+          }
+        : {}),
       orgId: claims.org_id,
       role: claims.role,
       ...target,
       ...(options.relayHostMintKid ? { kid: options.relayHostMintKid } : {}),
     }, options.relayHostSigningKey, options.relayHostAlgorithm)
   )
-}
-
-function relayActorInput(claims: RuntimeAccessTokenClaims) {
-  if (!claims.actor_id || !claims.actor_kind) return { actorId: undefined, actorKind: undefined } as const
-  return {
-    actorId: claims.actor_id,
-    actorKind: claims.actor_kind,
-    ...(claims.actor_public_id && claims.actor_name
-      ? {
-          actorPublicId: claims.actor_public_id,
-          actorName: claims.actor_name,
-          ...(claims.actor_avatar_url ? { actorAvatarUrl: claims.actor_avatar_url } : {}),
-        }
-      : {}),
-  } as const
 }
 
 export function workspaceRelayTargetUrl(target: WorkspaceRelayTarget, path: string, search: string) {
@@ -924,6 +923,40 @@ function originMatcherFor(options: WorkspaceRelayOptions) {
   return matcher
 }
 
+/**
+ * Request headers a browser may send to the relay, for every adapter.
+ *
+ * ONE list, because there were three identical copies — `server.ts`,
+ * `cloudflare.ts` and `bun.ts` — and three copies of a list means the next
+ * header is added to two of them. A header missing from the copy that serves a
+ * given deployment does not degrade anything gracefully: the browser refuses to
+ * send the request at all, and the failure surfaces somewhere else entirely.
+ * The control plane's equivalent list is `BROWSER_ALLOWED_REQUEST_HEADERS` in
+ * `claxedo-server-core`; a header the app sends to BOTH must be in both.
+ *
+ * `Traceparent`/`Tracestate` are W3C Trace Context, carried from the browser
+ * through this relay to the laptop.
+ */
+export const RELAY_ALLOWED_REQUEST_HEADER_LIST = [
+  "Accept",
+  "Authorization",
+  "Content-Type",
+  "Last-Event-ID",
+  "Traceparent",
+  "Tracestate",
+  "X-Fetch-Bypass-Throttle",
+  "X-Daytona-Skip-Preview-Warning",
+  "X-Workspace-Id",
+  "X-OpenCode-Directory",
+  "X-Claxedo-Runner",
+  "X-Claxedo-Model",
+  "X-Claxedo-Draft-Id",
+  "X-Claxedo-Binary",
+] as const
+
+/** The same list as a header value, for the adapters that write it directly. */
+export const RELAY_ALLOWED_REQUEST_HEADERS = RELAY_ALLOWED_REQUEST_HEADER_LIST.join(", ")
+
 function denyCorsHeaders(request: Request, originAllowed: (origin: string) => boolean = defaultOriginMatcher) {
   const origin = request.headers.get("origin")
   if (!origin) return undefined
@@ -932,7 +965,7 @@ function denyCorsHeaders(request: Request, originAllowed: (origin: string) => bo
   if (!originAllowed(origin)) return undefined
   return {
     "access-control-allow-origin": origin,
-    "access-control-allow-headers": "Accept, Authorization, Content-Type, Last-Event-ID, X-Fetch-Bypass-Throttle, X-Daytona-Skip-Preview-Warning, X-Workspace-Id, X-OpenCode-Directory, X-Claxedo-Runner, X-Claxedo-Model, X-Claxedo-Draft-Id, X-Claxedo-Binary",
+    "access-control-allow-headers": RELAY_ALLOWED_REQUEST_HEADERS,
     "access-control-allow-methods": "GET, HEAD, POST, PUT, PATCH, DELETE, OPTIONS",
   }
 }
@@ -949,7 +982,9 @@ async function deny(options: WorkspaceRelayOptions, input: {
     action: "relay.request.denied",
     result: "deny",
     reason: input.code,
-    subject: input.claims?.sub,
+    actorId: input.claims?.actor_id,
+    actorKind: input.claims?.actor_kind,
+    principalKind: input.claims?.principal_kind,
     ...(input.claims ? { role: input.claims.role } : {}),
     workspaceId: input.claims?.workspace_id,
     hostId: input.claims?.host_id,
@@ -1040,7 +1075,7 @@ export async function authorizeWorkspaceRelayRequest(
       }
     }
     if (
-      target.access === "user-hosted"
+      isUserHostedTarget(target)
       && !options.directory?.activeHost({ hostId: target.hostId, workspaceId: target.workspaceId })
     ) {
       return {
@@ -1058,7 +1093,9 @@ export async function authorizeWorkspaceRelayRequest(
     await span("audit", async () => await audit(options, {
       action: "relay.request.accepted",
       result: "allow",
-      subject: claims.sub,
+      actorId: claims.actor_id,
+      actorKind: claims.actor_kind,
+      principalKind: claims.principal_kind,
       role: claims.role,
       workspaceId: claims.workspace_id,
       hostId: claims.host_id,
@@ -1239,23 +1276,23 @@ export function createWorkspaceRelay(options: WorkspaceRelayOptions): WorkspaceR
   const app = new Hono() as WorkspaceRelayApp
   const originAllowed = originMatcherFor(options)
 
+  // Resource timing for the app: an admitted origin may read the timing
+  // breakdown of every relay response, not just a masked duration.
+  app.use("*", async (c, next) => {
+    await next()
+    const origin = c.res.headers.get("access-control-allow-origin")
+    if (origin && origin !== "*" && !c.res.headers.has("timing-allow-origin")) {
+      c.res.headers.set("timing-allow-origin", origin)
+    }
+  })
   app.use("*", cors({
     origin: (origin) => {
       if (!origin) return undefined
       return originAllowed(origin) ? origin : undefined
     },
-    allowHeaders: [
-      "Accept",
-      "Authorization",
-      "Content-Type",
-      "X-Daytona-Skip-Preview-Warning",
-      "X-Workspace-Id",
-      "X-OpenCode-Directory",
-      "X-Claxedo-Runner",
-      "X-Claxedo-Model",
-      "X-Claxedo-Draft-Id",
-      "X-Claxedo-Binary",
-    ],
+    // Was a fourth hand-maintained copy, and it had already lost
+    // `Last-Event-ID` and `X-Fetch-Bypass-Throttle` relative to the others.
+    allowHeaders: [...RELAY_ALLOWED_REQUEST_HEADER_LIST],
     allowMethods: ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
   }))
 

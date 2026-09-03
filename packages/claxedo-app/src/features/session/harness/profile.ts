@@ -12,7 +12,19 @@ export type HarnessState = { type?: HarnessType; binary?: string | null; model?:
  * context window (e.g. "Opus 4.8 with 1M context"), which `name` omits. */
 export type HarnessModelOption = { id: string; name: string; description?: string }
 export type HarnessConfigOption = { id: string; name: string; category?: string | null; type: "select" | "boolean"; currentValue: unknown; options?: Array<{ value: string; name: string; description?: string }>; selectOptions?: Array<HarnessModelOption> }
-export type OptionsResponse = { options: HarnessConfigOption[]; source: OptionsSource; stale: boolean }
+/**
+ * A config-options answer, from either producer.
+ *
+ * `resolvedModel` is the model the harness reports as current for its next
+ * turn, in the harness's own vocabulary. It is ABSENT whenever the harness
+ * named no current model — never a guess and never a catalog default.
+ */
+export type OptionsResponse = {
+  options: HarnessConfigOption[]
+  source: OptionsSource
+  stale: boolean
+  resolvedModel?: HarnessModelOption
+}
 
 export const DEFAULT_HARNESS_MODEL = { id: "default", name: "Default (recommended)" }
 const harnessStatuses = ["configured", "ready", "applying", "error"] as const
@@ -202,15 +214,26 @@ export function optionsResponse(value: unknown): OptionsResponse {
   }
   const raw = record(value)
   if (!raw) return { options: [], source: "empty", stale: true }
+  const resolvedModel = decodeSelectOption(raw.resolvedModel)
+  const options = Array.isArray(raw.options) ? decodeConfigOptions(raw.options) : []
+  const model = resolvedModel ? { resolvedModel } : {}
+  // The workspace runtime answers `AgentConfigOptions` — `{options, resolvedModel?}`
+  // with no freshness of its own, because it asked the harness just now. The
+  // daemon route wraps the same payload in its own `source`/`stale` bookkeeping,
+  // so only an answer that declares neither is the runtime's, and it is live.
+  if (raw.source === undefined && raw.stale === undefined) {
+    return { options, source: "harness", stale: false, ...model }
+  }
   const source = raw.source === "harness" || raw.source === "runner" || raw.source === "live"
     ? "harness"
     : raw.source === "catalog" || raw.source === "empty"
     ? raw.source
     : "empty"
   return {
-    options: Array.isArray(raw.options) ? decodeConfigOptions(raw.options) : [],
+    options,
     source,
     stale: raw.stale === true,
+    ...model,
   }
 }
 

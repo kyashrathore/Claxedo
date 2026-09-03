@@ -6,6 +6,15 @@ import { configureAppPortsForTest } from "@/app/integrations/test-support/app-po
 beforeEach(() => configureAppPortsForTest())
 
 describe("openWorkspaceScopeIds", () => {
+  test("keeps the canonical workspace scope while session content is between identities", () => {
+    expect(openWorkspaceScopeIds({
+      canonicalRouteId: "ws_cloud_1",
+      activeDirectory: "/workspace",
+      visiblePanes: [{ id: "pane-1", contentId: "loading-session" }],
+      meta: () => undefined,
+    })).toEqual(["ws_cloud_1", "/workspace"])
+  })
+
   test("limits workspace scopes to the active workspace and visible panes", () => {
     const meta = new Map<string, ContentMeta>([
       ["visible-session", {

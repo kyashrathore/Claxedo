@@ -4,19 +4,19 @@
  * The one place electron, node, and the account modules meet. Everything it
  * does is wiring; every decision lives in the module it belongs to.
  *
- * Configuration comes from the environment because the OAuth client is
- * registered by the release owner in the identity provider, not by this code.
- * When it is absent the account is still constructed and still registers its
- * IPC — sign-in then refuses with a reason. The alternative, not registering,
- * would leave `window.api.account` missing, the renderer would fall back to the
- * BROWSER port, and a desktop build would quietly try to run Clerk in the
- * renderer — which is the arrangement this unit exists to end.
+ * The environment selects only one exact HTTPS core origin. That core's live,
+ * short-lived descriptor selects Better Auth or Clerk and supplies every
+ * public native-client value. When the origin is absent the account still
+ * registers its refusing IPC service; the renderer never falls back to a
+ * browser provider implementation.
  */
 
 import { app, safeStorage, shell } from "electron"
 import { createAccountService, type AccountState } from "./account-service"
 import { createCredentialStore } from "./credential-store"
 import { credentialFile, loopbackListener, nodeTimer, refreshExchange, tokenExchange } from "./electron-seams"
+import { createDesktopNativeAuth } from "./desktop-native-auth"
+import { noConnectionReuseFetch } from "./no-reuse-fetch"
 import { registerAccountIpc, type AccountIpcTarget } from "./account-ipc"
 import { readAccountConfig, type AccountConfigEnv } from "./account-config"
 import { createIdentityResolver, userInfoUrlFromTokenUrl } from "./identity"
@@ -61,6 +61,7 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     return {
       configured: false as const,
       missing: config.missing,
+      ready: Promise.resolve(),
       service: {
         state: () => unavailable,
         signIn: async () => unavailable,
@@ -82,13 +83,47 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     ...(input.onError ? { onRejected: (reason) => input.onError?.("credential", reason) } : {}),
   })
 
+  const releaseValidationOperation = config.releaseValidationOperation
+  const canaryJourneyId = config.canaryJourneyId
+  // Core-origin traffic never reuses a connection (see no-reuse-fetch.ts for
+  // the poisoned keep-alive pool this removes); anything else keeps the
+  // platform fetch. Release-phase identification rides the same seam, so the
+  // descriptor, token, refresh, revoke, and hosted operations all carry it.
+  const controlPlaneFetch: typeof fetch = (request, init) => {
+    const next = new Request(request, init)
+    if (new URL(next.url).origin !== config.coreOrigin) return fetch(next)
+    if (!releaseValidationOperation && !canaryJourneyId) return noConnectionReuseFetch(next)
+    const headers = new Headers(next.headers)
+    if (releaseValidationOperation && !headers.has("x-claxedo-multiplayer-validation-operation")) {
+      headers.set("x-claxedo-multiplayer-validation-operation", releaseValidationOperation)
+    }
+    if (canaryJourneyId && !headers.has("x-claxedo-canary-journey-id")) {
+      headers.set("x-claxedo-canary-journey-id", canaryJourneyId)
+    }
+    // The canary gate serializes the release's FIRST product write and demands
+    // every mutation name an operation id; without one the gate throws and the
+    // Worker answers 503 deployment_candidate_unavailable — which is exactly
+    // what "Share workspace" hit. One stable id per journey suffices: the gate
+    // records the first write's id and admits later mutations by identity.
+    const unsafe = next.method !== "GET" && next.method !== "HEAD" && next.method !== "OPTIONS"
+    if (canaryJourneyId && unsafe && !headers.has("x-claxedo-canary-mutation-operation-id")) {
+      headers.set("x-claxedo-canary-mutation-operation-id", `${canaryJourneyId}-desktop-write`)
+    }
+    return noConnectionReuseFetch(new Request(next, { headers }))
+  }
+
   const seams: OAuthSeams = {
     // The system browser, never an in-app window: an embedded window rendering
     // the provider's password field is indistinguishable from phishing, and
     // cannot use the user's existing session or password manager.
     openExternal: (url) => shell.openExternal(url),
     listen: loopbackListener(),
-    exchange: tokenExchange(),
+    // The exchange is a request to the selected core just like descriptor,
+    // refresh, revoke, and hosted operations. Release-validation builds must
+    // identify it through the same canonical fetch; bypassing that fetch made
+    // the public token request indistinguishable from an unbound multiplayer
+    // request after cutover.
+    exchange: tokenExchange(controlPlaneFetch),
     safeStorage: () => ({
       available: safeStorage.isEncryptionAvailable(),
       backend: safeStorage.getSelectedStorageBackend?.() ?? "unknown",
@@ -97,44 +132,42 @@ export function createAccountAssembly(input: Omit<AccountAssemblyInput, "ipcMain
     setTimeout: nodeTimer(),
   }
 
-  // The refresh grant, bound to the same client and token endpoint the sign-in
-  // used. Supplying it is what makes a session outlive one access token: with
-  // no `refresh` the service can only sign the user out at expiry, which for a
-  // typical one-hour token means every day starts signed out.
-  const refresh = refreshExchange()
-
-  const userInfoUrl = userInfoUrlFromTokenUrl(config.tokenUrl)
-  const resolveIdentity = userInfoUrl
-    ? createIdentityResolver({
-        userInfoUrl,
-        fetch,
-        ...(input.onError ? { onError: (error) => input.onError?.("identity", error) } : {}),
-      })
-    : undefined
+  const auth = createDesktopNativeAuth({
+    coreOrigin: config.coreOrigin,
+    seams,
+    refresh: refreshExchange(controlPlaneFetch),
+    fetch: controlPlaneFetch,
+    timeoutMs: SIGN_IN_TIMEOUT_MS,
+  })
 
   const service = createAccountService({
-    config: {
-      authorizeUrl: config.authorizeUrl,
-      tokenUrl: config.tokenUrl,
-      clientId: config.clientId,
-      scope: config.scope,
-      timeoutMs: SIGN_IN_TIMEOUT_MS,
-    },
-    seams,
+    auth,
     store,
-    serverOrigin: config.serverOrigin,
-    fetch: (url, init) => fetch(url, init),
-    refresh: (refreshToken) => refresh({ tokenUrl: config.tokenUrl, clientId: config.clientId, refreshToken }),
-    ...(resolveIdentity ? { resolveIdentity } : {}),
+    fetch: (url, init) => controlPlaneFetch(url, init),
     now: () => Math.floor(Date.now() / 1000),
+    // Without this the service short-circuits and every signed account keeps
+    // the empty identity it starts with, so account surfaces show the literal
+    // word "Account" instead of the person. The userinfo URL is not a config
+    // value: it is derived from the live descriptor's token endpoint, which is
+    // the same trust anchor the rest of this flow uses.
+    resolveIdentity: async (accessToken) => {
+      const descriptor = await auth.discover()
+      const userInfoUrl = userInfoUrlFromTokenUrl(descriptor.tokenUrl)
+      if (!userInfoUrl) return { userId: "" }
+      return await createIdentityResolver({
+        userInfoUrl,
+        fetch: controlPlaneFetch,
+        ...(input.onError ? { onError: (error) => input.onError?.("identity", error) } : {}),
+      })(accessToken)
+    },
     ...(input.onError ? { onError: input.onError } : {}),
     ...(input.onStateChange ? { onStateChange: input.onStateChange } : {}),
   })
 
   // Before registering: a renderer that asks for state during its first frame
   // should get the restored answer, not `unsigned` followed by a correction.
-  service.restore()
-  return { configured: true as const, service }
+  const ready = service.restore().then(() => undefined)
+  return { configured: true as const, service, ready }
 }
 
 export type AccountAssembly = ReturnType<typeof createAccountAssembly>
@@ -144,5 +177,5 @@ export function setupAccount(input: AccountAssemblyInput) {
   const { channels } = registerAccountIpc({ ipcMain: input.ipcMain, service: account.service })
   return account.configured
     ? { ...account, channels }
-    : { configured: false as const, missing: account.missing, channels }
+    : { configured: false as const, missing: account.missing, channels, ready: account.ready }
 }

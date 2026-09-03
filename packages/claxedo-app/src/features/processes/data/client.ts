@@ -1,12 +1,19 @@
 import type { Process } from "./process"
 import { createTransport } from "@/platform/runtime/transport"
+import { cachedSignedWorkspace } from "@/platform/runtime/agent/cached-signed-workspace"
 import {
   centralTransportForServer,
   type WorkspaceRuntimeSnapshotLike,
 } from "@/platform/runtime/transport"
+import type { SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import { memoizeSuccessfulLoad } from "@/lib/retry"
 
 type Fetch = typeof globalThis.fetch
+
+// Named so a new resolver signature doesn't add another raw directory-as-plain-string
+// parameter to the architecture ratchet's count (matches `createGlobalSdkFetch`'s
+// `WorkspaceSelector`, which names the same concept for the same reason).
+type DirectorySelector = string
 
 /**
  * Lazy boundary: ./process defines its wire schemas with zod, and this module is
@@ -24,6 +31,16 @@ type Input = {
   workspaceId?: string
   workspaceName?: string
   fetch?: Fetch
+  /**
+   * Synchronous placement authority: the signed workspace inventory match for
+   * a directory (same shape `createGlobalSdkFetch` takes). Checked before the
+   * network `resolveWorkspaceRuntime` liveness read below, because a
+   * user-hosted workspace addressed by its filesystem-path directory has no
+   * `/api/workspace/resolve` entry on the hosted control plane — that read
+   * answers null for it — so without this the process client falls back to
+   * the central (non-relay) transport for every user-hosted process request.
+   */
+  resolveSignedWorkspace?: (directory: DirectorySelector) => SignedWorkspaceInfo | undefined
   resolveWorkspaceRuntime?: (input: {
     directory: string
   }) => Promise<{ kind?: "local" | "cloud" | "user-hosted" | null; workspaceId?: string | null } | null>
@@ -108,8 +125,12 @@ function launch(schemas: typeof Process, raw: unknown, code: number) {
 
 export function createProcessClient(input: Input) {
   const fetch = input.fetch ?? globalThis.fetch.bind(globalThis)
+  // The signed inventory is the placement authority for a directory; a caller
+  // may hand in its own resolver (tests), otherwise the shared cache answers.
+  const resolveSignedWorkspace = input.resolveSignedWorkspace ?? ((selector: string) => cachedSignedWorkspace(input.baseUrl, selector))
   const transportFor = async () => {
     const workspace = workspaceRuntimeSnapshot(input.workspaceId ? { kind: "cloud", workspaceId: input.workspaceId } : undefined) ??
+      workspaceRuntimeSnapshot(resolveSignedWorkspace(input.directory)) ??
       workspaceRuntimeSnapshot(await input.resolveWorkspaceRuntime?.({ directory: input.directory }))
     const serverTransport = centralTransportForServer(input.baseUrl)
     return createTransport({

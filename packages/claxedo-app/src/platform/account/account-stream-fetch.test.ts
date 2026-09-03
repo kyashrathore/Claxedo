@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test"
 
-import { accountStreamUsable, openAccountStreamResponse } from "./account-stream-fetch"
+import { accountStreamAvailable, openAccountStreamResponse } from "./account-stream-fetch"
 
 type Chunk = { streamId: string; text: string }
 type End = { streamId: string }
@@ -64,26 +64,23 @@ function bridge(input: {
   return { closes, chunks, ends, errors, starts: () => starts }
 }
 
-describe("accountStreamUsable", () => {
-  test("true only for a SIGNED account: bridge presence alone must not route streams", async () => {
-    const h = bridge({ onStart: () => {} })
-    void h
-    expect(await accountStreamUsable()).toBe(true)
+describe("accountStreamAvailable", () => {
+  test("true only for a SIGNED account: bridge presence alone must not route streams", () => {
+    bridge({ onStart: () => {} })
 
-    // Same bridge, unsigned account — an unsigned or unconfigured build
-    // exposes the full bridge but every operation would throw; streams must
-    // stay on the local authFetch path.
-    const api = (globalThis as { api?: { account?: { state?: () => Promise<{ status?: string }> } } }).api
-    api!.account!.state = async () => ({ status: "unsigned" })
-    expect(await accountStreamUsable()).toBe(false)
+    expect(accountStreamAvailable({ status: "signed", identity: { userId: "user_1" } })).toBe(true)
 
-    api!.account!.state = async () => {
-      throw new Error("this build has no account client configured")
-    }
-    expect(await accountStreamUsable()).toBe(false)
+    // The same bridge with any non-signed state: an unsigned build, a sign-in
+    // still in flight, a revoked account, and an unconfigured build (no
+    // `CLAXEDO_ACCOUNT_*` baked) whose every account operation refuses. All of
+    // them must stay on the local authFetch path.
+    expect(accountStreamAvailable({ status: "unsigned" })).toBe(false)
+    expect(accountStreamAvailable({ status: "pending" })).toBe(false)
+    expect(accountStreamAvailable({ status: "unavailable", reason: "revoked" })).toBe(false)
+    expect(accountStreamAvailable({ status: "unavailable", reason: "callback-failed" })).toBe(false)
 
     delete (globalThis as { api?: unknown }).api
-    expect(await accountStreamUsable()).toBe(false)
+    expect(accountStreamAvailable({ status: "signed", identity: { userId: "user_1" } })).toBe(false)
   })
 })
 

@@ -17,15 +17,21 @@ describe("lazy account production wiring", () => {
     expect(broker).toContain('import("./index")')
   })
 
-  test("restored account state settles before the renderer initializes", () => {
-    const ready = main.indexOf("await account.ready")
+  test("restored account state does not gate the local renderer", () => {
+    const ready = main.indexOf("void account.ready.catch")
     const initialize = main.indexOf("await initialize()", ready)
     expect(ready).toBeGreaterThan(-1)
     expect(initialize).toBeGreaterThan(ready)
+    expect(main).not.toContain("await account.ready")
   })
 
-  test("a signed-to-unsigned transition pauses Host Connector publication", () => {
+  test("signed-to-unsigned suspends Host Connector publication, and a returning account resumes it", () => {
     expect(main).toMatch(/onStateChange:\s*\(next, previous\)\s*=>/)
-    expect(main).toMatch(/previous\.status === "signed" && next\.status !== "signed"\) hostConnector\?\.stop\(\)/)
+    // The verdict is one owned function (`remoteAccessFollow`), so a transient
+    // lapse holds and only a real sign-out suspends; both edges are wired.
+    expect(main).toMatch(/remoteAccessFollow\(previous, next\)/)
+    // Tolerant of the formatter breaking the optional-call across lines.
+    expect(main).toMatch(/hostConnector\s*\?\.suspendForAuthLapse\(\)/)
+    expect(main).toMatch(/hostConnector\s*\?\.resumeAfterAuthLapse\(\)/)
   })
 })

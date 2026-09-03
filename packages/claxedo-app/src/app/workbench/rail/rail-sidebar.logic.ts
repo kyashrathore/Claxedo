@@ -1,8 +1,11 @@
 import { getFilename } from "@/lib/path"
 import { parseOwnerRepo } from "./rail-git-remote"
-import type { ProjectItem } from "./domain-types"
+import type { ProjectItem, RuntimeKind } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"
 import type { WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { localWorkspaceAssociationId } from "@/platform/identity/legacy-resolver"
+import { isRelayBackedWorkspaceKind, isUserHostedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { projectWorkspaceForRef } from "@/features/workspaces/lib/workspace-display"
 
 export function sessionRowTitle(title?: string, projectedTitle?: string, updatedAt?: number) {
   return resolveSessionTitle({
@@ -18,10 +21,9 @@ export function sessionRowTitle(title?: string, projectedTitle?: string, updated
 /**
  * The owner/repo label shown for a project in the rail, derived from (in order)
  * an explicit project name, the parsed owner/repo of the first workspace with a
- * git remote (`repo_url`), or the worktree's folder name. This is the real
- * implementation used by rail-sidebar.tsx — previously an inline closure that a
- * 1186-line test file hand-mirrored (and had already drifted from: the mirror
- * read `sessions[].git.remote`, not `workspaces[].repo_url`).
+ * git remote (`repo_url`), or the worktree's folder name. This is the one real
+ * implementation `rail-sidebar.tsx` calls — tests exercise it directly instead
+ * of hand-mirroring the derivation, so the two can never drift apart.
  */
 export function railProjectLabel(project: Pick<ProjectItem, "name" | "worktree" | "workspaces">): string {
   return (
@@ -75,6 +77,28 @@ export function projectActionDirectory<TDirectory extends string>(input: {
   return active ?? input.directories[0] ?? input.projectWorktree
 }
 
+/**
+ * The identity a relay-backed workspace is addressed by. Falls back to the
+ * ref itself, which for a control-plane row IS `workspace:<id>` — the same
+ * identity, in the form the catalog keyed it under.
+ */
+export function workspaceRowId(project: Pick<ProjectItem, "workspaces">, directory: string) {
+  const workspace = projectWorkspaceForRef(project.workspaces, directory)
+  return workspace?.workspaceId ?? workspace?.id ?? directory
+}
+
+/** The runtime that serves a workspace, as its catalog row reports it. */
+export function workspaceRuntimeKind(
+  project: Pick<ProjectItem, "workspaces" | "worktree">,
+  directory: string,
+  mainIsCloud?: boolean,
+): RuntimeKind {
+  const kind = workspaceKind(projectWorkspaceForRef(project.workspaces, directory)?.kind)
+  if (kind) return kind
+  if (directory === project.worktree && mainIsCloud) return "cloud"
+  return "local"
+}
+
 export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
   workspaceId?: string
   environmentKind?: string
@@ -86,27 +110,27 @@ export function railWorkspaceSessionBacking<TDirectory extends string>(input: {
     input.sessionRef?.startsWith("central:") ||
     input.sessionRef?.startsWith("local:")
   ) return
-  const workspace = input.project.workspaces?.[input.directory] ??
-    Object.values(input.project.workspaces ?? {}).find((item) =>
-      item.directory === input.directory ||
-      item.id === input.directory ||
-      item.workspaceId === input.directory
-    )
+  // A relay-backed session row is addressed as `workspace:<id>`, which is the
+  // catalog's row under another of its identities — `projectWorkspaceForRef`
+  // is what makes the two meet, so the row's own kind and id decide the
+  // backing instead of the `ws_*`-shape guess below.
+  const workspace = projectWorkspaceForRef(input.project.workspaces, input.directory)
   const kind = input.environmentKind ?? workspace?.kind
   const workspaceId = input.workspaceId ?? workspace?.workspaceId ?? workspace?.id
-  // Current project inventory is authoritative for placement. In particular,
-  // a retained workspace-shaped ref must not override an explicit local kind
-  // and send the local project UUID to the relay connection endpoint.
-  if (kind === "local") return
-  if (kind === "cloud" || kind === "user-hosted") {
-    return workspaceId ? { workspaceId, kind } : undefined
+  // The project inventory is authoritative for a workspace it already knows. A
+  // `workspace:<uuid>` navigation ref is also how the local sidecar associates
+  // sessions with a project; it is not evidence of relay hosting, so a
+  // confirmed-local inventory record must win over the optimistic user-hosted
+  // guess below.
+  if (workspace?.kind === "local") return
+  const relayKind = workspaceKind(kind)
+  if (isRelayBackedWorkspaceKind(relayKind)) {
+    return workspaceId ? { workspaceId, kind: relayKind } : undefined
   }
   if (!input.workspaceId) return
-  // Project and runtime environment labels can still say `local` for a
-  // user-hosted workspace: its owner executes it locally while browsers reach
-  // it through the relay. Canonical central/local refs above are placement;
-  // these labels are not. An explicit workspace row with no signed kind stays
-  // optimistically relay-backed until signed inventory hydrates.
+  if (localWorkspaceAssociationId(input.workspaceId)) return
+  // An unknown `ws_*` row can still predate signed inventory hydration. UUIDs
+  // and inventory-confirmed local records have already returned above.
   return { workspaceId: input.workspaceId, kind: "user-hosted" }
 }
 
@@ -226,4 +250,37 @@ export function mergedSessionStatusType(
   if (liveType === "busy" || liveType === "retry") return liveType
   if (batchType === "busy" || batchType === "retry") return batchType
   return liveType ?? batchType
+}
+
+/**
+ * The badges under a workspace row's name, in the order they are read.
+ *
+ * All of it comes from the CATALOG, so a workspace a teammate shares says what
+ * this account may do with it and whether the machine serving it is up before
+ * any pane opens it. The two sharing badges are different facts and were one
+ * word ("Shared") that meant only the first:
+ *
+ * - "published by this machine" — this desktop is the host serving it out;
+ * - "shared with you" — someone else's machine serves it and this account
+ *   holds a granted role on it.
+ */
+export function railWorkspaceMetaLabels(input: {
+  kind: string | undefined
+  status?: string
+  role?: string
+  hostOnline?: boolean
+  publishedByThisMachine: boolean
+  label: (key: "role" | "hostOffline" | "sharedWithYou" | "publishedByThisMachine", role?: string) => string
+}) {
+  const userHosted = isUserHostedWorkspaceKind(workspaceKind(input.kind))
+  const granted = userHosted && !!input.role && input.role !== "owner"
+  return [
+    input.status,
+    // Reachability is only a question about a machine someone owns; a cloud
+    // workspace's runtime is provisioned on demand and reports its own state.
+    userHosted && input.hostOnline === false ? input.label("hostOffline") : undefined,
+    granted ? input.label("role", input.role) : undefined,
+    input.publishedByThisMachine ? input.label("publishedByThisMachine") : undefined,
+    granted && !input.publishedByThisMachine ? input.label("sharedWithYou") : undefined,
+  ].filter((item): item is string => !!item)
 }

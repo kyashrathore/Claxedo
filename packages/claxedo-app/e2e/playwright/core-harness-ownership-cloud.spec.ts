@@ -165,6 +165,7 @@
 import { expect, test, type Page } from "@playwright/test"
 import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
+import { decodeDraftDefaultRecord } from "../../src/features/session/harness/draft-defaults"
 
 const DIR = "/tmp/e2e-core-harness-ownership-cloud"
 const PROJECT_ID = "proj_core_harness_cloud"
@@ -245,6 +246,18 @@ function readDraftDefaults(page: Page) {
         .map(([key, value]) => [key, String(value)] as const),
     ),
   )
+}
+
+/**
+ * The harness a stored draft-default record opens a new draft with, decoded by
+ * the app's OWN reader (`decodeDraftDefaultRecord`).
+ *
+ * Not a substring match on the raw JSON: the record is
+ * `{version, byHarness, lastHarness}`, and a raw-string match would assert the
+ * shape rather than the fact this test means to prove.
+ */
+function draftDefaultHarness(raw: string | undefined) {
+  return raw === undefined ? undefined : decodeDraftDefaultRecord(raw)?.record.lastHarness
 }
 
 function visibleHarnessTrigger(page: Page, harness: Harness) {
@@ -484,7 +497,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     // directory, so it cannot be reconstructed in the test, but it CAN be pinned by
     // observing it before the second directory exists.
     await expect
-      .poll(async () => Object.values(await readDraftDefaults(page)).filter((value) => value.includes('"harness":"claude-sdk"')).length, {
+      .poll(async () => Object.values(await readDraftDefaults(page)).filter((value) => draftDefaultHarness(value) === "claude-sdk").length, {
         timeout: 20_000,
       })
       .toBe(1)
@@ -512,11 +525,11 @@ test.describe("core harness ownership (cloud) @core", () => {
     // fail the second half instead of silently passing a substring search.
     const afterNavigation = await readDraftDefaults(page)
     expect(afterNavigation[localDraftDefaultKey]).toBe(localDraftDefaults[localDraftDefaultKey])
-    expect(afterNavigation[localDraftDefaultKey]).toContain('"harness":"claude-sdk"')
+    expect(draftDefaultHarness(afterNavigation[localDraftDefaultKey])).toBe("claude-sdk")
     expect(
       Object.entries(afterNavigation)
         .filter(([key]) => key !== localDraftDefaultKey)
-        .filter(([, value]) => value.includes('"harness":"claude-sdk"')),
+        .filter(([, value]) => draftDefaultHarness(value) === "claude-sdk"),
     ).toEqual([])
 
     // "Preserved per-directory" means RESTORED, not merely retained — so navigate the same

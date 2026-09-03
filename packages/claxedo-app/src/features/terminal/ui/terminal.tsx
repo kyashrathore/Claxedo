@@ -29,6 +29,7 @@ import { stripTerminalRepliesFromInput } from "@/features/terminal/core/input-re
 import { getCapabilityResponses } from "@/features/terminal/core/capability-responder"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
+import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import { resolveTerminalReloadFlag, terminalReloadStorageKey } from "./pty-key-migration"
 import { resolveInitialCommand } from "./initial-command"
 import { buildRestoreWrite, shouldTrimRestoredTail, trimTrailingLines } from "./restore"
@@ -36,7 +37,6 @@ import { classifyTerminalClose } from "./close"
 import { MIN_CONTAINER_PX, TERMINAL_OPTIONS } from "../core/config"
 import { scheduleFontSettleRefit } from "../core/font-settle"
 import { terminalBenchmarkBackendObservers } from "../core/benchmark-observer"
-
 import { resolveTerminalColors, type TerminalColors } from "./terminal-colors"
 import { createPtySnapshot } from "./terminal-pty-snapshot"
 import { MAX_BATCH_BYTES, MAX_BATCH_ITEMS, MAX_DROPPED_CHUNKS, MAX_PENDING_BYTES, MAX_STREAM_BYTES, OPEN_RESIZE_SETTLE_MS } from "./terminal-limits"
@@ -92,7 +92,7 @@ export const Terminal = (props: TerminalProps) => {
       directory: sdk.directory,
     })
       .then((workspace) =>
-        (workspace?.kind === "cloud" || workspace?.kind === "user-hosted") && workspace.workspaceId
+        workspace && isRelayBackedWorkspaceKind(workspace.kind) && workspace.workspaceId
           ? workspace.workspaceId
           : undefined,
       )

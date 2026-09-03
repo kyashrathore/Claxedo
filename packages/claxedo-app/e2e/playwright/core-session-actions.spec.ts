@@ -1011,7 +1011,7 @@ test.describe("core session actions: subagent (child session) @core", () => {
       sessionId: HARNESS_SESSION_ID,
       projectId: PROJECT_ID,
       projectName: PROJECT_NAME,
-      harness: "codex-acp",
+      harness: "acp:codex",
     })
     // The session inventory bootstrap endpoint (`fetchLocalControlSessions` in
     // `src/features/session/data/sync/inventory-source.ts`, now GET

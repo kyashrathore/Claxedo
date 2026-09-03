@@ -4,7 +4,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
 import { List, type ListRef } from "@opencode-ai/ui/list"
 import { getDirectory, getFilename } from "@/lib/path"
-import { createMemo, createResource, createSignal } from "solid-js"
+import { createMemo, createSignal } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
@@ -14,7 +14,6 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { cachedDirectoryChildrenRequest } from "@/platform/query/directory-search-cache"
 import { ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
 import {
-  claxedoBootstrapUrl,
   workspaceRuntimeFilePath,
   workspaceRuntimeFindFilePath,
 } from "@/platform/runtime/agent/dialog-select-directory-routes"
@@ -23,11 +22,6 @@ interface DialogSelectDirectoryProps {
   title?: string
   multiple?: boolean
   onSelect: (result: string | string[] | null) => void
-}
-
-type BootPath = {
-  home?: string
-  directory?: string
 }
 
 type Row = {
@@ -151,17 +145,6 @@ function uniqueRows(rows: Row[]) {
     seen.add(row.absolute)
     return true
   })
-}
-
-async function bootstrapPath(input: {
-  url: string
-  request?: typeof fetch
-}) {
-  const url = claxedoBootstrapUrl({ serverUrl: input.url })
-  const res = await localRequest(input.url, input.request)(url, { headers: { Accept: "application/json" } }).catch(() => undefined)
-  if (!res?.ok) return
-  const body = await res.json().catch(() => undefined) as { path?: BootPath } | undefined
-  return body?.path
 }
 
 function useDirectorySearch(args: {
@@ -290,14 +273,9 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const [filter, setFilter] = createSignal("")
   let list: ListRef | undefined
 
-  const [boot] = createResource(
-    () => sdk.url,
-    (url) => bootstrapPath({ url, request: platform.fetch }),
-    { initialValue: undefined },
-  )
   const pathQuery = useQuery(() => queryOptions.path(null))
-  const home = createMemo(() => pathQuery.data?.home || boot()?.home || "")
-  const start = createMemo(() => pathQuery.data?.home || pathQuery.data?.directory || boot()?.home || boot()?.directory)
+  const home = createMemo(() => pathQuery.data?.home || "")
+  const start = createMemo(() => pathQuery.data?.home || pathQuery.data?.directory)
   const directories = useDirectorySearch({ serverUrl: () => sdk.url, request: platform.fetch, home, start })
   const recentProjects = createMemo(() =>
     layout.projects.list().slice(0, 5).map((project) => {

@@ -2,6 +2,8 @@ import { spawn } from "node:child_process"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
+import { resolveDeploymentProfileFromEnv } from "../../src/deployments/hosted-shared/deployment-profile"
+import { betterAuthD1ReleaseInputs } from "./release-better-auth-d1"
 
 const serverRoot = path.resolve(import.meta.dirname, "../..")
 const repoRoot = path.resolve(serverRoot, "../..")
@@ -22,13 +24,14 @@ function clean(value: string | undefined) {
   return value?.trim() || undefined
 }
 
-function targets(args = process.argv) {
+function targets(args = process.argv, fallback = "central,app") {
   const targetFlag = args.findIndex((arg) => arg === "--target" || arg === "--targets")
-  const input = clean(process.env.CLAXEDO_DEPLOY_TARGETS)
-    ?? args.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length)
-    ?? args.find((arg) => arg.startsWith("--target="))?.slice("--target=".length)
-    ?? (targetFlag >= 0 ? args[targetFlag + 1] : undefined)
-    ?? "central,app"
+  const input =
+    clean(process.env.CLAXEDO_DEPLOY_TARGETS) ??
+    args.find((arg) => arg.startsWith("--targets="))?.slice("--targets=".length) ??
+    args.find((arg) => arg.startsWith("--target="))?.slice("--target=".length) ??
+    (targetFlag >= 0 ? args[targetFlag + 1] : undefined) ??
+    fallback
   return input.split(",").map((item) => {
     const target = item.trim()
     if (target === "central" || target === "app" || target === "cloudflare-sandbox") return target
@@ -43,19 +46,41 @@ export function hostedDeployCommands(input: {
   env?: NodeJS.ProcessEnv
 }): Command[] {
   const env = input.env ?? process.env
+  const profile = resolveDeploymentProfileFromEnv(env)
+  if (profile.adapterProfile === "better-auth-d1" && input.targets.some((target) => target !== "central")) {
+    throw new Error("the Better Auth D1 locked composition supports only the central target")
+  }
   return input.targets.flatMap((target): Command[] => {
     if (target === "central") {
-      return [{
-        name: input.dryRun ? "central.worker.dry_run" : "central.worker.deploy",
-        cwd: serverRoot,
-        cmd: "wrangler",
-        args: [
-          "deploy",
-          "--env",
-          input.staging ? "staging" : "",
-          ...(input.dryRun ? ["--dry-run", "--outdir", "dist-worker"] : []),
-        ],
-      }]
+      if (profile.adapterProfile === "better-auth-d1") {
+        betterAuthD1ReleaseInputs(env, input.staging ? "staging" : "production")
+        return [
+          {
+            name: input.dryRun ? "better_auth_d1.release.preflight" : "better_auth_d1.release.deploy",
+            cwd: serverRoot,
+            cmd: "bun",
+            args: [
+              "run",
+              "scripts/deploy/release-better-auth-d1.ts",
+              ...(input.staging ? ["--staging"] : []),
+              ...(!input.dryRun ? ["--deploy"] : []),
+            ],
+          },
+        ]
+      }
+      return [
+        {
+          name: input.dryRun ? "central.worker.dry_run" : "central.worker.deploy",
+          cwd: serverRoot,
+          cmd: "wrangler",
+          args: [
+            "deploy",
+            "--env",
+            input.staging ? "staging" : "",
+            ...(input.dryRun ? ["--dry-run", "--outdir", "dist-worker"] : []),
+          ],
+        },
+      ]
     }
     if (target === "app") {
       return [
@@ -67,29 +92,40 @@ export function hostedDeployCommands(input: {
           env: {
             VITE_CLAXEDO_SERVER_URL: clean(env.CLAXEDO_CENTRAL_URL) ?? "",
             VITE_AUTH_ENABLED: "true",
-            // Hosted staging/prod ship login + cloud sandbox + org/team multiplayer UI.
-            VITE_SANDBOX_ENABLED: clean(env.VITE_SANDBOX_ENABLED) ?? "true",
-            ...(clean(env.VITE_CLERK_PUBLISHABLE_KEY) ? { VITE_CLERK_PUBLISHABLE_KEY: clean(env.VITE_CLERK_PUBLISHABLE_KEY)! } : {}),
-            ...(clean(env.VITE_CONVEX_URL) ? { VITE_CONVEX_URL: clean(env.VITE_CONVEX_URL)! } : {}),
+            VITE_CLAXEDO_PRODUCT_POSTURE: profile.productPosture,
+            VITE_CLAXEDO_AUTH_ADAPTER: profile.authAdapter,
+            ...(profile.adapterProfile === "clerk-convex" && clean(env.VITE_CLERK_PUBLISHABLE_KEY)
+              ? { VITE_CLERK_PUBLISHABLE_KEY: clean(env.VITE_CLERK_PUBLISHABLE_KEY)! }
+              : {}),
+            ...(profile.adapterProfile === "clerk-convex" && clean(env.VITE_CONVEX_URL)
+              ? { VITE_CONVEX_URL: clean(env.VITE_CONVEX_URL)! }
+              : {}),
           },
         },
-        ...(input.dryRun ? [] : [{
-          name: "app.pages.deploy",
-          cwd: appRoot,
-          cmd: "wrangler",
-          args: [
-            "pages",
-            "deploy",
-            "dist",
-            "--project-name",
-            clean(env.CLAXEDO_PAGES_PROJECT) ?? "claxedo-app-staging",
-            "--branch",
-            input.staging ? "staging" : "dev",
-          ],
-        }]),
+        ...(input.dryRun
+          ? []
+          : [
+              {
+                name: "app.pages.deploy",
+                cwd: appRoot,
+                cmd: "wrangler",
+                args: [
+                  "pages",
+                  "deploy",
+                  "dist",
+                  "--project-name",
+                  clean(env.CLAXEDO_PAGES_PROJECT) ?? "claxedo-app-staging",
+                  "--branch",
+                  input.staging ? "staging" : "dev",
+                ],
+              },
+            ]),
       ]
     }
     if (target === "cloudflare-sandbox") {
+      if (profile.sandboxPosture !== "full-hosted" || profile.sandboxDriver !== "cloudflare") {
+        throw new Error("cloudflare-sandbox target requires the full-hosted Cloudflare sandbox profile")
+      }
       // Bundle the in-repo workspace-runtime host into the wrangler build
       // context (.build/) — the Dockerfile COPYs it. Replaces the old
       // npm-view publish gate: images build from the repo, not from npm.
@@ -97,12 +133,7 @@ export function hostedDeployCommands(input: {
         name: "cloudflare_sandbox.bundle_host",
         cwd: sandboxScriptsRoot,
         cmd: "npx",
-        args: [
-          "tsx",
-          "build-sandbox-image.ts",
-          "--bundle-only",
-          `--out=${path.join(cloudflareSandboxRoot, ".build")}`,
-        ],
+        args: ["tsx", "build-sandbox-image.ts", "--bundle-only", `--out=${path.join(cloudflareSandboxRoot, ".build")}`],
       }
       return input.dryRun
         ? [
@@ -117,7 +148,12 @@ export function hostedDeployCommands(input: {
         : [
             bundleHost,
             { name: "cloudflare_sandbox.dependencies", cwd: cloudflareSandboxRoot, cmd: "npm", args: ["ci"] },
-            { name: "cloudflare_sandbox.worker.deploy", cwd: cloudflareSandboxRoot, cmd: "npm", args: ["run", "deploy"] },
+            {
+              name: "cloudflare_sandbox.worker.deploy",
+              cwd: cloudflareSandboxRoot,
+              cmd: "npm",
+              args: ["run", "deploy"],
+            },
           ]
     }
     throw new Error(`Unknown deploy target: ${target}`)
@@ -175,7 +211,11 @@ function printSandboxBuildInfo() {
 
 async function main() {
   const dryRun = !process.argv.includes("--deploy")
-  const requestedTargets = targets()
+  const profile = resolveDeploymentProfileFromEnv(process.env)
+  const requestedTargets = targets(
+    process.argv,
+    profile.adapterProfile === "better-auth-d1" ? "central" : "central,app",
+  )
   const commands = hostedDeployCommands({
     staging: process.argv.includes("--staging"),
     dryRun,

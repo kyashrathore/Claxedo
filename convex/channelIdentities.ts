@@ -1,9 +1,11 @@
 import { v } from "convex/values"
 import {
+  authedMutation,
   authorizeProjectForUser,
   authorizeWorkspaceForUser,
   projectByPublicId,
   serviceQuery,
+  upsertUser,
   workspaceByPublicId,
 } from "./model"
 

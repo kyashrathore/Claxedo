@@ -39,10 +39,11 @@ export async function sandboxFetchOptionsForRequest(
   if (options.services?.localExecution.enabled && isLoopbackLocalRequest(request)) {
     return {
       ...base,
-      subject: "control-plane",
-      principalKind: "service",
-      actorId: "control-plane",
-      actorKind: "agent",
+      runtimeActor: {
+        principalKind: "service",
+        actorId: "control-plane",
+        actorKind: "agent",
+      },
       role: "owner",
     }
   }
@@ -67,9 +68,10 @@ export async function sandboxFetchOptionsForRequest(
   }
   return {
     ...base,
-    subject: auth.user.subject,
-    principalKind: "user",
-    ...actor,
+    runtimeActor: {
+      principalKind: actor.actorKind === "human" ? "user" : "service",
+      ...actor,
+    },
     orgId,
     role,
   }

@@ -1,3 +1,4 @@
+import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import type { RuntimeSession, SessionTurnOutcome } from "@/platform/runtime/session"
 export type { SessionTurnOutcome } from "@/platform/runtime/session"
 export type ClaxedoSession = RuntimeSession
@@ -33,7 +34,7 @@ export function sessionTurnOutcomeSettled(outcome: SessionTurnOutcome | undefine
 }
 
 export function assistantMessageIdForUserMessage(messageId: string | undefined) {
-  return messageId ? `${messageId}_r` : undefined
+  return messageId ? assistantMessageIdForTurn(messageId) : undefined
 }
 
 export function sessionTurnOutcomeMatchesAssistant(input: {

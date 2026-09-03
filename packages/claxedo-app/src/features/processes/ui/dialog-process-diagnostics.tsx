@@ -53,7 +53,7 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
 
   const load = async () => {
     if (!capability) {
-      setError("Local performance diagnostics are available only in the Claxedo desktop app.")
+      setError("This device's diagnostics are available only in the Claxedo desktop app.")
       setLoading(false)
       return
     }
@@ -217,19 +217,29 @@ export function DialogProcessDiagnostics(props: { warmSessions?: () => LocalDiag
       transition
       flush
       class="flex-1 workspace-page-dialog workspace-page-dialog-shell settings-dialog-shell usage-dialog-shell claxedo-diagnostics-dialog"
-      aria-label="Local performance diagnostics"
+      aria-label="This device diagnostics"
       onEscapeKeyDown={() => dialog.close()}
     >
       <div class="workspace-page-mobile-header usage-dialog-mobile-header">
-        <span>Diagnostics</span>
+        <span>This device</span>
         <button type="button" aria-label="Close diagnostics" onClick={() => dialog.close()}>
           <Icon name="close" size="small" />
         </button>
       </div>
       <div class="workspace-page-dashboard usage-dashboard claxedo-diagnostics-dashboard">
         <header class="workspace-page-header usage-dashboard-header">
+          {/* Scoped to the machine this app window runs on, and named as
+              such. The numbers below come from the desktop process itself
+              (`usePlatform().processDiagnostics`), so they describe THIS
+              device whatever workspace is focused — a cloud sandbox or a
+              teammate's host has its own processes and its own memory, and
+              this dialog has never been able to see them. */}
           <div class="workspace-page-title usage-dashboard-title">
-            <h2>Diagnostics</h2>
+            <h2>This device</h2>
+            <p class="text-xs text-text-weak">
+              Processes and memory on the machine running this app. Cloud and teammate-hosted
+              workspaces run elsewhere and are not measured here.
+            </p>
           </div>
           <div class="workspace-page-toolbar claxedo-diagnostics-toolbar">
             <div

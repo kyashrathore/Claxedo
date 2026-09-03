@@ -119,7 +119,7 @@
  *   is either a local auto-answer (ACP, cursor-sdk, pi) or a native mode/policy the
  *   composer's delivery path deliberately does not send from this control (claude-sdk,
  *   codex-app-server) — so `deliverNative` returns before any request in both directions.
- *   Behavior 5 samples `claude-acp` (ACP, local-answer delivery) and `claude-sdk` (native
+ *   Behavior 5 samples `acp:claude` (ACP, local-answer delivery) and `claude-sdk` (native
  *   SDK mode delivery) — the two structurally different non-opencode outcomes.
  *
  * KNOWN FAILURE (behavior 5, both harnesses, as of this spec landing) — the app DOES write
@@ -410,14 +410,16 @@ test.describe("core permission ruleset delivery @core", () => {
   })
 
   const nonOpencode: { harness: Harness; note: string }[] = [
-    { harness: "claude-acp", note: "ACP — Claxedo answers locally, mode ids are open strings" },
+    { harness: "acp:claude", note: "ACP — Claxedo answers locally, mode ids are open strings" },
     { harness: "claude-sdk", note: "native SDK permission mode — not sent from this control" },
   ]
 
   for (const harnessCase of nonOpencode) {
     test(`toggling Approve for me on ${harnessCase.harness} writes no ruleset — behavior 5`, async ({ page }) => {
       // ${harnessCase.note}
-      const sessionId = `ses_core_permission_${harnessCase.harness.replace(/-/g, "_")}`
+      // Session ids ride in URLs, so flatten EVERY non-alphanumeric in the
+      // harness identity (`acp:claude` carries a colon), not just hyphens.
+      const sessionId = `ses_core_permission_${harnessCase.harness.replace(/[^a-z0-9]/g, "_")}`
       await seedOneProject(page, DIR)
       const mock = await installMockRuntime(page, { dir: DIR, sessionId, harness: harnessCase.harness })
 

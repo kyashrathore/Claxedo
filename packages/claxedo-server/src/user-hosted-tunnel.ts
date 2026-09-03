@@ -13,6 +13,7 @@ import {
   workspaceSupervisorServerUrl,
 } from "./workspace/supervisor"
 import { getWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { loopbackReplayHeaders } from "@claxedo/server-core/platform/http/peer-address"
 import { RouteHandler, routeOwnership } from "@claxedo/server-core/platform/governance/route-ownership"
 
 const log = Log.create({ service: "user-hosted-tunnel" })
@@ -154,6 +155,13 @@ export async function startUserHostedMachineTunnel(input: {
       )
     },
     tokenProvider: () => token.current(),
+    // This machine replays a relay-delivered request onto its OWN loopback
+    // server, whose relay-shaped surface is gated by `isLoopbackLocalRequest`.
+    // The remote caller's `Origin`/`Host` and the edge's forwarded-client
+    // headers describe someone else and make that local fetch look proxied,
+    // so the one owner of that policy strips them here exactly as the daemon's
+    // own serving path does.
+    localReplayHeaders: loopbackReplayHeaders,
     onEvent: (event) => logTunnelEvent({ workspaceId: workspaceIds.join(","), hostId: input.hostId, relayUrl }, event),
     pingIntervalMs: 15_000,
     reconnectIntervalMs: 1_000,
@@ -204,6 +212,7 @@ export async function startUserHostedWorkspaceTunnel(input: {
         localBaseUrl: target.url,
         region: target.region,
         tokenProvider: async () => token.current,
+        localReplayHeaders: loopbackReplayHeaders,
         onEvent: (event) => logTunnelEvent({ workspaceId: input.workspaceId, hostId: input.hostId, relayUrl }, event),
         pingIntervalMs: 15_000,
         reconnectIntervalMs: 1_000,

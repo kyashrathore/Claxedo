@@ -1,0 +1,39 @@
+{
+  "name": "@claxedo/service-contract",
+  "version": "0.1.0",
+  "type": "module",
+  "private": true,
+  "description": "Dependency-neutral contracts for Claxedo's fixed first-party optional services",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "bun": "./src/index.ts",
+      "development": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./workgraph": {
+      "types": "./src/workgraph.ts",
+      "bun": "./src/workgraph.ts",
+      "development": "./src/workgraph.ts",
+      "import": "./src/workgraph.ts",
+      "default": "./src/workgraph.ts"
+    },
+    "./documents": {
+      "types": "./src/documents.ts",
+      "bun": "./src/documents.ts",
+      "development": "./src/documents.ts",
+      "import": "./src/documents.ts",
+      "default": "./src/documents.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "bun test src"
+  },
+  "devDependencies": {
+    "@tsconfig/node-lts": "22.0.4",
+    "@types/bun": "1.3.13",
+    "typescript": "catalog:"
+  }
+}

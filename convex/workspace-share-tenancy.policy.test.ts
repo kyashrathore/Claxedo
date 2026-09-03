@@ -15,20 +15,15 @@ const modules = import.meta.glob("./**/*.ts")
 const stamped = <T extends Record<string, unknown>>(row: T) => ({ created_at: 1, updated_at: 1, ...row })
 
 /**
- * Cross-tenant fence on `workspaceShares.grant` (convex/workspaceShares.ts).
+ * Tenant fence on `workspaceShares.grant` (convex/workspaceShares.ts).
  *
- * WHY THIS IS A SECURITY SUITE, not a validation one. A workspace share is not
- * a label — `model.ts teamShareRole`/`orgShareRole` turn `granted_to_team_id` /
- * `granted_to_org_id` into a real WorkspaceRole, up to admin. Neither resolver
- * checks the granted principal's tenant, so an unfenced `grant` lets a
- * workspace admin in org A confer admin over their workspace on a team or an
- * org in org B. `sessionShares.grant` already refuses exactly that
- * (`session_share_team_org_mismatch` / `session_share_org_mismatch`), and it
- * gates on a workspace role — so the unfenced workspace-level grant was a way
- * around the session-level guard rather than a separate gap.
- *
- * Runs through the real pipeline via `convex-test`, so the `authedMutation`
- * wrapper and `authorizeWorkspace(..., "admin")` are exercised as deployed.
+ * A workspace share confers a real WorkspaceRole (`model.ts orgShareRole`
+ * turns `granted_to_org_id` into a role on the workspace), so a grant may only
+ * name a principal inside the workspace's own organization:
+ * `requireTargetInWorkspaceOrganization` refuses any other organization and
+ * any user without a membership there. Runs through the real pipeline via
+ * `convex-test`, so `authedMutation` and `authorizeWorkspace(..., "admin")`
+ * are exercised as deployed.
  */
 async function seedTwoTenants(t: ReturnType<typeof convexTest>) {
   return await t.run(async (ctx) => {
@@ -36,6 +31,12 @@ async function seedTwoTenants(t: ReturnType<typeof convexTest>) {
       token_identifier: "alice_token",
       clerk_subject: "alice_subject",
       public_id: "usr_alice",
+      kind: "human",
+    }) as never)
+    const bobId = await ctx.db.insert("users", stamped({
+      token_identifier: "bob_token",
+      clerk_subject: "bob_subject",
+      public_id: "usr_bob",
       kind: "human",
     }) as never)
     const malloryId = await ctx.db.insert("users", stamped({
@@ -57,27 +58,9 @@ async function seedTwoTenants(t: ReturnType<typeof convexTest>) {
       owner_user_id: malloryId,
     }) as never)
     await ctx.db.insert("org_memberships", stamped({ org_id: homeOrgId, user_id: aliceId, role: "owner" }) as never)
+    await ctx.db.insert("org_memberships", stamped({ org_id: homeOrgId, user_id: bobId, role: "member" }) as never)
     await ctx.db.insert("org_memberships", stamped({
       org_id: foreignOrgId,
-      user_id: malloryId,
-      role: "owner",
-    }) as never)
-    const homeTeamId = await ctx.db.insert("teams", stamped({
-      public_id: "team_home",
-      org_id: homeOrgId,
-      name: "Everyone",
-      is_default: true,
-      created_by_user_id: aliceId,
-    }) as never)
-    const foreignTeamId = await ctx.db.insert("teams", stamped({
-      public_id: "team_foreign",
-      org_id: foreignOrgId,
-      name: "Outsiders",
-      is_default: true,
-      created_by_user_id: malloryId,
-    }) as never)
-    await ctx.db.insert("team_memberships", stamped({
-      team_id: foreignTeamId,
       user_id: malloryId,
       role: "owner",
     }) as never)
@@ -89,7 +72,7 @@ async function seedTwoTenants(t: ReturnType<typeof convexTest>) {
       access: "cloud",
       display_name: "Home workspace",
     }) as never)
-    return { aliceId, malloryId, homeOrgId, foreignOrgId, homeTeamId, foreignTeamId, workspaceId }
+    return { aliceId, bobId, malloryId, homeOrgId, foreignOrgId, workspaceId }
   })
 }
 
@@ -102,63 +85,62 @@ async function activeGrants(t: ReturnType<typeof convexTest>) {
 }
 
 describe("workspace share tenant fence", () => {
-  test("refuses a grant to a team in another organization", async () => {
-    const t = convexTest(schema, modules)
-    await seedTwoTenants(t)
-
-    await expect(alice(t).mutation(api.workspaceShares.grant, {
-      workspace_id: "ws_home",
-      role: "admin",
-      granted_to_team_public_id: "team_foreign",
-    } as never)).rejects.toThrow("workspace_share_team_org_mismatch")
-
-    expect(await activeGrants(t)).toEqual([])
-  })
-
   test("refuses a grant to another organization", async () => {
     const t = convexTest(schema, modules)
-    await seedTwoTenants(t)
+    const { foreignOrgId } = await seedTwoTenants(t)
 
     await expect(alice(t).mutation(api.workspaceShares.grant, {
       workspace_id: "ws_home",
       role: "admin",
-      granted_to_clerk_org_id: "clerk_org_foreign",
-    } as never)).rejects.toThrow("workspace_share_org_mismatch")
+      target_org_id: foreignOrgId,
+    })).rejects.toThrow("Workspace share target belongs to another organization")
 
     expect(await activeGrants(t)).toEqual([])
   })
 
-  test("still grants to a team and an organization inside the workspace's own tenant", async () => {
+  test("refuses a grant to a user outside the workspace's organization", async () => {
     const t = convexTest(schema, modules)
-    const { homeTeamId, homeOrgId } = await seedTwoTenants(t)
+    const { malloryId } = await seedTwoTenants(t)
+
+    await expect(alice(t).mutation(api.workspaceShares.grant, {
+      workspace_id: "ws_home",
+      role: "admin",
+      target_user_id: malloryId,
+    })).rejects.toThrow("Workspace share target belongs to another organization")
+
+    expect(await activeGrants(t)).toEqual([])
+  })
+
+  test("grants to a member and to the organization inside the workspace's own tenant", async () => {
+    const t = convexTest(schema, modules)
+    const { bobId, homeOrgId } = await seedTwoTenants(t)
 
     await alice(t).mutation(api.workspaceShares.grant, {
       workspace_id: "ws_home",
       role: "editor",
-      granted_to_team_public_id: "team_home",
-    } as never)
+      target_user_id: bobId,
+    })
     await alice(t).mutation(api.workspaceShares.grant, {
       workspace_id: "ws_home",
       role: "viewer",
-      granted_to_clerk_org_id: "clerk_org_home",
-    } as never)
+      target_org_id: homeOrgId,
+    })
 
     const grants = await activeGrants(t)
     expect(grants).toHaveLength(2)
-    expect(grants.find((row) => row.granted_to_team_id === homeTeamId)).toMatchObject({ role: "editor" })
+    expect(grants.find((row) => row.granted_to_user_id === bobId)).toMatchObject({ role: "editor" })
     expect(grants.find((row) => row.granted_to_org_id === homeOrgId)).toMatchObject({ role: "viewer" })
   })
 
-  test("a foreign-tenant team that was already granted stays revocable", async () => {
-    // The fence is on `grant` only. `revoke` removes access, so fencing it too
-    // would strand any cross-tenant grant written before the fence existed —
-    // exactly the rows an operator most needs to be able to clear.
+  test("a foreign organization that already holds a grant stays revocable", async () => {
+    // Only `grant` is fenced. `revoke` removes access, so a workspace admin can
+    // always clear a grant that names a principal outside the tenant.
     const t = convexTest(schema, modules)
-    const { aliceId, foreignTeamId, workspaceId } = await seedTwoTenants(t)
+    const { aliceId, foreignOrgId, workspaceId } = await seedTwoTenants(t)
     await t.run(async (ctx) => {
       await ctx.db.insert("workspace_share_grants", {
         workspace_id: workspaceId,
-        granted_to_team_id: foreignTeamId,
+        granted_to_org_id: foreignOrgId,
         role: "admin",
         created_by_user_id: aliceId,
         created_at: 1,
@@ -167,8 +149,8 @@ describe("workspace share tenant fence", () => {
 
     await expect(alice(t).mutation(api.workspaceShares.revoke, {
       workspace_id: "ws_home",
-      granted_to_team_public_id: "team_foreign",
-    } as never)).resolves.toMatchObject({ revoked: true })
+      target_org_id: foreignOrgId,
+    })).resolves.toMatchObject({ revoked: true })
     expect(await activeGrants(t)).toEqual([])
   })
 })

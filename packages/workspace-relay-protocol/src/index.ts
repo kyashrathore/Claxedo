@@ -1,4 +1,6 @@
 export const TUNNEL_PROTOCOL_VERSION = 1
+export const SESSION_STREAM_LEASE_TTL_MS = 15_000
+export const SESSION_TURN_LEASE_TTL_MS = 60_000
 
 export {
   type TokenClaims,

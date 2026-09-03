@@ -330,6 +330,26 @@ describe("createCentralSessionRuntime", () => {
           "subagent-tool-call:tool-foreground",
         ]),
       }))
+      svc.projectionStore.session_meta = vi.fn(async (sessionId) => sessionId === child.childSessionId ? {
+        sessionID: child.childSessionId,
+        parentID: source.id,
+        workspaceID: "ws_parent",
+        host: "central" as const,
+        title: "Child",
+        createdAt: 1,
+        updatedAt: 2,
+        tags: [],
+        attachments: [],
+      } : undefined)
+      const childSession = await runtime.routes.request(`http://127.0.0.1/session/${child.childSessionId}`)
+      expect(childSession.status).toBe(200)
+      await expect(childSession.json()).resolves.toMatchObject({
+        id: child.childSessionId,
+        parentID: source.id,
+        host: "central",
+        sessionRef: `central:${child.childSessionId}`,
+        workspaceID: "ws_parent",
+      })
       const config = await runtime.routes.request(`http://127.0.0.1/session/${child.childSessionId}/config`)
       await expect(config.json()).resolves.toMatchObject({ model: { providerID: "anthropic", modelID } })
       const rootCapabilities = await runtime.routes.request(`http://127.0.0.1/session/${source.id}/capabilities`)
@@ -598,6 +618,15 @@ describe("createCentralSessionRuntime", () => {
       "session-status",
       "finish",
     ])
+    expect(events[0]).toMatchObject({
+      directory: session.id,
+      sessionId: session.id,
+      payload: {
+        type: "session-info",
+        sessionRef: `central:${session.id}`,
+        host: "central",
+      },
+    })
     expect(events).toContainEqual(expect.objectContaining({
       directory: session.id,
       sessionId: session.id,
@@ -739,6 +768,22 @@ describe("createCentralSessionRuntime", () => {
 
   test("persists auto-title updates for central runtime sessions", async () => {
     const svc = services()
+    let meta: Awaited<ReturnType<typeof svc.projectionStore.session_meta>>
+    const sessionMeta = svc.projectionStore.session_meta as ReturnType<typeof vi.fn>
+    const putSessionMeta = svc.projectionStore.put_session_meta as ReturnType<typeof vi.fn>
+    sessionMeta.mockImplementation(async () => meta)
+    putSessionMeta.mockImplementation(async (sessionID, input) => {
+      meta = {
+        sessionID,
+        host: "central",
+        createdAt: meta?.createdAt ?? 1,
+        updatedAt: 2,
+        tags: [],
+        attachments: [],
+        ...(meta ?? {}),
+        ...(input.title !== undefined ? { title: input.title } : {}),
+      }
+    })
     const runtime = createCentralSessionRuntime(svc)
     const session = await runtime.createHybridSession({ title: "New session - 2026-07-08T09:09:30.378Z" })
 
@@ -1178,11 +1223,15 @@ describe("createCentralSessionRuntime", () => {
         },
       },
     })
+    // An acknowledged abort releases the session's turn admission, so the
+    // aborted generation's remaining harness frames — its `session-status:
+    // error` and `error` — are fenced and never reach the hub. The turn still
+    // settles: the abort answers `cancelled`, the prompt route returns the
+    // assistant message carrying the abort error, and the usage revision below
+    // records the stop. What the hub sees is the session and its busy status.
     expect(events.map((event) => event.payload.type)).toEqual([
       "session-info",
       "session-status",
-      "session-status",
-      "error",
     ])
     await runtime.flushUsage()
     expect(usage.at(-1)).toMatchObject({

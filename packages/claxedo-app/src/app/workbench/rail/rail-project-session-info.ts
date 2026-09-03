@@ -1,7 +1,12 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import { getFilename } from "@/lib/path"
-import { projectWorkspaceDirectories, workspaceDisplayName, workspaceIsCloud } from "../../../features/workspaces/lib/workspace-display"
+import {
+  projectWorkspaceDirectories,
+  projectWorkspaceForRef,
+  workspaceDisplayName,
+  workspaceIsCloud,
+} from "../../../features/workspaces/lib/workspace-display"
 import {
   directorySessionCacheQueryOptions,
   emptySessionInventory,
@@ -51,9 +56,7 @@ export function railProjectDisplayName(project: ProjectItem, repoName?: string):
 }
 
 export function projectWorkspaceInfo(project: ProjectItem, directory: string): WorkspaceInfo | undefined {
-  return project.workspaces?.[directory] ?? Object.values(project.workspaces ?? {}).find((workspace) =>
-    workspace.directory === directory || workspace.id === directory || workspace.workspaceId === directory
-  )
+  return projectWorkspaceForRef(project.workspaces, directory)
 }
 
 /** Every filesystem and opaque route identity that can place a surface under this project. */

@@ -1,5 +1,6 @@
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
-import type { HostEnrollment, HostEnrollmentState } from "@claxedo/server-core/platform/auth/authority"
+import { hostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
+import type { HostEnrollment, HostEnrollmentState, HostSessionAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { isCliAccessAuth } from "@claxedo/server-core/platform/auth/cli-session-token"
 import { convexApi } from "./api"
 import { requireExecutor } from "./executor"
@@ -8,19 +9,20 @@ import type { ConvexAuthorityInput, ServiceArgs } from "./types"
 /**
  * Machine-wide enrollment, against `convex/hostEnrollments.ts`.
  *
- * Its own module rather than more of `workspaces.ts` because nothing here is
- * workspace-scoped: a laptop is enrolled once, and which workspaces a session
- * may reach is decided at request time. The SQLite authority
+ * Its own module rather than more of `workspaces.ts` because everything here
+ * is machine-domain: a laptop is enrolled once, and workspaces enter only at
+ * the assignment grain (owner intent that host H serves workspace X, routed
+ * with the heartbeat-acked consent set). The SQLite authority
  * (`claxedo-server-core/src/authority/adapters/sqlite/workspace-authority.ts`)
- * implements the same five methods over its own tables, and
+ * implements the same methods over its own tables, and
  * `routes/hosted/host-enrollment.parity.test.ts` runs the routes against BOTH
  * so a behaviour that exists on one backend only fails there.
  *
  * ## authed vs. `ForService`, per call
  *
  * Every method branches on `isCliAccessAuth(auth)`, the same branch
- * `workspaces.ts` makes for local host links, and it is an authorization
- * decision rather than a style one:
+ * `workspaces.ts` makes for its own service variants, and it is an
+ * authorization decision rather than a style one:
  *
  *  - A Clerk-issued bearer is a token CONVEX can verify. Passing it through
  *    (`requireExecutor(input, auth)`) lets `authedMutation` resolve the identity
@@ -81,16 +83,26 @@ export function hostEnrollmentAuthority(input: ConvexAuthorityInput, serviceArgs
       hostId: string
       signature: string
       ttlMs?: number
-    }): Promise<{ expires_at: number; last_seen_at: number }> {
+      workspaceIds: readonly string[]
+      sessionAuthority?: HostSessionAuthority
+    }): Promise<{ expires_at: number; last_seen_at: number; assigned_workspace_ids: string[] }> {
+      const declared = hostSessionAuthority(args.sessionAuthority)
       const body = {
         host_id: args.hostId,
         signature: args.signature,
         ...(args.ttlMs === undefined ? {} : { ttl_ms: args.ttlMs }),
+        // The v2 signature covers this served set; Convex verifies and stores
+        // it as the machine's acked consent.
+        workspace_ids: [...args.workspaceIds],
+        // The machine's own account of the runtime it serves. Outside the
+        // signature by design (see `HostSessionAuthority`), and omitted rather
+        // than nulled when the machine declared nothing.
+        ...(declared ? { session_authority: declared } : {}),
       }
       const result = isCliAccessAuth(auth)
         ? await asService().mutation(convexApi.hostEnrollments.heartbeatForService, { ...serviceArgs(auth), ...body })
         : await requireExecutor(input, auth).mutation(convexApi.hostEnrollments.heartbeat, body)
-      return result as { expires_at: number; last_seen_at: number }
+      return result as { expires_at: number; last_seen_at: number; assigned_workspace_ids: string[] }
     },
 
     async pauseHostEnrollment(auth: SignedControlPlaneAuth, args: {
@@ -114,6 +126,75 @@ export function hostEnrollmentAuthority(input: ConvexAuthorityInput, serviceArgs
         ? await asService().query(convexApi.hostEnrollments.activeForService, serviceArgs(auth))
         : await requireExecutor(input, auth).query(convexApi.hostEnrollments.active, {})
       return result as HostEnrollmentState
+    },
+
+    // --- owner assignments (assignment grain of the same domain) ------------
+    async assignWorkspaceHost(auth: SignedControlPlaneAuth, args: {
+      workspaceId: string
+      hostId: string
+      displayName?: string
+      orgId?: string
+      projectId?: string
+      repoUrl?: string
+      repoName?: string
+      gitBranch?: string
+      remoteDirectory?: string
+      homeRegion?: string
+    }): Promise<{ assigned: true; workspace_id: string; host_id: string }> {
+      const body = {
+        workspace_id: args.workspaceId,
+        host_id: args.hostId,
+        ...(args.displayName ? { display_name: args.displayName } : {}),
+        ...(args.orgId ? { org_id: args.orgId } : {}),
+        ...(args.projectId ? { project_id: args.projectId } : {}),
+        ...(args.repoUrl ? { repo_url: args.repoUrl } : {}),
+        ...(args.repoName ? { repo_name: args.repoName } : {}),
+        ...(args.gitBranch ? { git_branch: args.gitBranch } : {}),
+        ...(args.remoteDirectory ? { remote_directory: args.remoteDirectory } : {}),
+        ...(args.homeRegion ? { home_region: args.homeRegion } : {}),
+      }
+      const result = isCliAccessAuth(auth)
+        ? await asService().mutation(convexApi.hostEnrollments.assignWorkspaceForService, { ...serviceArgs(auth), ...body })
+        : await requireExecutor(input, auth).mutation(convexApi.hostEnrollments.assignWorkspace, body)
+      return result as { assigned: true; workspace_id: string; host_id: string }
+    },
+
+    async unassignWorkspaceHost(auth: SignedControlPlaneAuth, args: {
+      workspaceId: string
+    }): Promise<{ unassigned: boolean }> {
+      const body = { workspace_id: args.workspaceId }
+      const result = isCliAccessAuth(auth)
+        ? await asService().mutation(convexApi.hostEnrollments.unassignWorkspaceForService, { ...serviceArgs(auth), ...body })
+        : await requireExecutor(input, auth).mutation(convexApi.hostEnrollments.unassignWorkspace, body)
+      return result as { unassigned: boolean }
+    },
+
+    async activeWorkspaceHost(auth: SignedControlPlaneAuth, args: { workspaceId: string }) {
+      return await requireExecutor(input, auth).query(convexApi.hostEnrollments.activeWorkspaceHost, {
+        workspace_id: args.workspaceId,
+      }) as
+        | {
+          active: true
+          host_id: string
+          workspace_id: string
+          display_name?: string
+          second_device_open_at?: number
+          expires_at: number
+          last_seen_at: number
+          session_authority?: HostSessionAuthority
+        }
+        | { active: false }
+    },
+
+    async listHostAssignments(auth: SignedControlPlaneAuth) {
+      return await requireExecutor(input, auth).query(convexApi.hostEnrollments.listAssignments, {}) as Array<{
+        host_id: string
+        display_name: string
+        last_seen_at: number
+        expires_at: number
+        workspace_ids: string[]
+        acked_workspace_ids: string[]
+      }>
     },
   }
 }

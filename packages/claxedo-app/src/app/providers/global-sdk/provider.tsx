@@ -1,10 +1,8 @@
 import { isAbortError } from "@/lib/abort-error"
-import type { Event as OpenCodeEvent, Project } from "@opencode-ai/sdk/v2/client"
-import { createOpencodeCompatProjection, runtimeOwnsOpencodeCompatProjection, type CompatEvent, type OpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
 import { record, reportRuntimeContractMismatch, runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
-import { batch, onCleanup, onMount } from "solid-js"
+import { batch, createEffect, on, onCleanup, onMount } from "solid-js"
 import { createSdkForServer } from "@/app/connection/server-client"
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -12,13 +10,19 @@ import { centralTransportForServer, createTransport } from "@/platform/runtime/t
 import { useServer } from "@/app/connection/server"
 import { authFetch } from "@/platform/api/api"
 import { principalHasSignedAccess, usePrincipal } from "@/platform/auth/identity-provider"
+import { useAccountPort } from "@/platform/account/account-provider"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { shellRouteDirectoryFromPathname } from "@/platform/identity/route"
 import { isUserHostedWorkspaceDirectory } from "@/platform/identity/legacy-resolver"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { fastSessionSwitchAnyNetworkQuiet, fastSessionSwitchAnyQuietDelay } from "@/platform/runtime/session-switch"
-import { queryClient } from "@/platform/query/query-client"
-import { queryKeys } from "@/platform/query/keys"
+import {
+  registerSessionEventStreamLane,
+  reportSessionEventStreamClosed,
+  reportSessionEventStreamOpen,
+  sessionEventScopeId,
+  whenSessionEventStreamsOpen,
+} from "@/platform/runtime/session-event-scope"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import { createControlPlaneEventFetch, openCentralRuntimeEventResponse, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
 import { createGlobalSdkFetch } from "@/platform/sync/global-sdk-fetch"
@@ -28,7 +32,7 @@ import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-s
 import { createSubagentRegistry, type SubagentRegistry } from "@/features/session/subagents/subagent-registry"
 import { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { applyLiveSessionGoalEvent, invalidateSessionGoalData, liveSessionGoalScope } from "./goal-events"
+import { applyLiveSessionGoalEvent, liveSessionGoalScope } from "./goal-events"
 import {
   eventDirectoryForLiveSession,
   globalSdkClientPlacement,
@@ -36,193 +40,46 @@ import {
   liveSessionTransition,
   liveSessionWithRelayBacking,
   runtimeEventLiveSession,
-  USER_HOSTED_WORKSPACE_KIND,
   type GlobalSdkClientOptions,
 } from "./live-session"
+import {
+  cachedProjectInventory,
+  initialRouteDirectory,
+  initialRouteWorkspace,
+  shouldUseSignedEventAccess,
+} from "./route-event-scope"
+import { EVENT_STREAM_STALL_MS } from "@claxedo/agent-event-runtime"
+import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
 export { createControlPlaneEventFetch, createGlobalSdkFetch, workspaceEventTransport }
 export { runtimeEnvelope, type RuntimeEventEnvelope } from "./runtime-envelope"
-export type GlobalSdkEvent = OpenCodeEvent | CompatEvent
+import {
+  compatEventEnvelope,
+  partUpdateSupersedesDeltas,
+  projectRuntimeEventEnvelope,
+  rememberRuntimeEventEnvelope,
+  resetRuntimeReplayGapState,
+  runtimeProjectionOwnsCompat,
+  runtimeReplayGap,
+  shouldAcceptCompatEvent,
+  type GlobalSdkEvent,
+  type RuntimeCoveredSessions,
+  type RuntimeProjectionCache,
+} from "./runtime-event-projection"
+export {
+  compatEventEnvelope,
+  isOpenCodeSdkEvent,
+  partUpdateSupersedesDeltas,
+  projectRuntimeEventEnvelope,
+  rememberRuntimeEventEnvelope,
+  resetRuntimeReplayGapState,
+  runtimeProjectionOwnsCompat,
+  runtimeReplayGap,
+  shouldAcceptCompatEvent,
+  type GlobalSdkEvent,
+} from "./runtime-event-projection"
 type Event = GlobalSdkEvent
-type EventDirectory = string
-const claxedoExtensionEventTypes = new Set<string>(["message.completed", "session.agent", "session.config", "session.usage", "runtime.diagnostic"])
-export function isOpenCodeSdkEvent(event: GlobalSdkEvent): event is OpenCodeEvent {
-  return !claxedoExtensionEventTypes.has(event.type)
-}
-function runtimeWorkspaceKind(input: unknown) {
-  if (input === "local" || input === "cloud" || input === USER_HOSTED_WORKSPACE_KIND) return input
-}
-function initialRouteDirectory() {
-  if (typeof window === "undefined") return
-  return shellRouteDirectoryFromPathname(window.location.pathname)
-}
-
-function cachedProjectInventory(baseUrl?: string) {
-  return baseUrl ? queryClient.getQueryData<Project[]>(queryKeys.controlPlane.projects(baseUrl)) ?? [] : []
-}
-function initialRouteWorkspace(baseUrl?: string) {
-  const directory = initialRouteDirectory()
-  if (!directory) return
-  for (const project of cachedProjectInventory(baseUrl) as Array<Project & {
-    workspaces?: Record<string, { id?: string; workspaceId?: string; kind?: string; directory?: Project["worktree"] }>
-  }>) {
-    const match = Object.entries(project.workspaces ?? {})
-      .find(([key, workspace]) =>
-        (sameWorkspaceDirectory(key, directory) || sameWorkspaceDirectory(workspace.directory, directory)) &&
-        (workspace.kind === "cloud" || workspace.kind === USER_HOSTED_WORKSPACE_KIND)
-      )
-    if (!match) continue
-    const [key, workspace] = match
-    return {
-      directory,
-      workspaceId: workspace.workspaceId ?? workspace.id ?? key,
-      workspaceKind: workspace.kind,
-    }
-  }
-  return undefined
-}
-
-function shouldUseSignedEventAccess(input: {
-  hasSignedAccess: boolean
-  serverUrl?: string
-  liveSession?: LiveSession
-}) {
-  if (!input.hasSignedAccess) return false
-  if (initialRouteWorkspace(input.serverUrl)) return true
-  if (centralTransportForServer(input.serverUrl) !== "loopback") return true
-  const directory = input.liveSession?.directory ?? initialRouteDirectory()
-  if (!directory && input.liveSession?.workspaceId) return true
-  if (!directory) return true
-  return !!(directory && sessionWorkspaceRuntimeRef({ directory })) ||
-    isUserHostedWorkspaceDirectory(directory)
-}
-
-type RuntimeProjectionCache = Map<string, OpencodeCompatProjection>
-type RuntimeCoveredSessions = Set<string>
-
-export function compatEventEnvelope(input: unknown): { directory?: string; payload: Event } | undefined {
-  const row = record(input)
-  if (!row || row.type === "heartbeat") return
-  const payload = record(row.payload) ?? row
-  if (typeof payload.type !== "string" || payload.type === "server.heartbeat") return
-  return {
-    ...(typeof row.directory === "string" ? { directory: row.directory } : {}),
-    payload: payload as Event,
-  }
-}
-
-export function projectRuntimeEventEnvelope(
-  input: RuntimeEventEnvelope,
-  projections: RuntimeProjectionCache = new Map(),
-): Array<{ directory: EventDirectory; payload: Event }> {
-  const assistantMessageId = input.assistantMessageId ?? `${input.sessionId}_r`
-  const key = `${input.sessionId}:${assistantMessageId}`
-  const projection = projections.get(key) ?? createOpencodeCompatProjection({
-    sessionId: input.sessionId,
-    directory: input.directory,
-    assistantMessageId,
-  })
-  projections.set(key, projection)
-  return projection.ingest(input.payload).map((event) => ({
-    directory: input.directory,
-    payload: event.payload as Event,
-  }))
-}
-
-function eventSessionId(payload: Event): string | undefined {
-  const properties = record((payload as { properties?: unknown }).properties)
-  if (typeof properties?.sessionID === "string") return properties.sessionID
-  if (typeof properties?.sessionId === "string") return properties.sessionId
-  const part = record(properties?.part)
-  if (typeof part?.sessionID === "string") return part.sessionID
-  const info = record(properties?.info)
-  if (typeof info?.sessionID === "string") return info.sessionID
-  return undefined
-}
-
-function runtimeSessionKey(sessionID: string) {
-  return sessionID
-}
-
-export function rememberRuntimeEventEnvelope(input: RuntimeEventEnvelope, covered: RuntimeCoveredSessions) {
-  covered.add(runtimeSessionKey(input.sessionId))
-}
-
-export function runtimeProjectionOwnsCompat(input: RuntimeEventEnvelope) {
-  return runtimeOwnsOpencodeCompatProjection(input)
-}
-
-export function runtimeReplayGap(input: RuntimeEventEnvelope) {
-  const payload = input.payload
-  return payload.type === "harness-notice" &&
-    payload.code === "runtime.sse_replay_gap"
-}
-
-export function resetRuntimeReplayGapState(input: {
-  envelope: RuntimeEventEnvelope
-  projections?: RuntimeProjectionCache
-  covered?: RuntimeCoveredSessions
-  baseUrl?: string
-  liveSession?: LiveSession
-  subagents?: SubagentRegistry
-  goalScope?: Parameters<typeof invalidateSessionGoalData>[0]
-}) {
-  input.projections?.clear()
-  input.covered?.clear()
-  input.subagents?.replayGap()
-  const directory = eventDirectoryForLiveSession({
-    directory: input.envelope.directory,
-    liveSession: input.liveSession,
-  })
-  return Promise.all([
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.row(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.messages(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.todo(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.session.diff(input.baseUrl, directory, input.envelope.sessionId) }),
-    queryClient.invalidateQueries({ queryKey: queryKeys.shell.sessionInventory(input.baseUrl) }),
-    ...(input.goalScope ? [invalidateSessionGoalData(input.goalScope)] : []),
-  ]).then(() => {})
-}
-
-function mirroredByRuntimeProjection(payload: Event) {
-  // Defensive: keepalive frames (`{"type":"heartbeat"}`) and other envelopes
-  // carry no event payload, so callers can hand us `undefined` — never read
-  // `.type` off it or the whole event loop throws and the bus dies.
-  if (!payload || typeof payload !== "object") return false
-  const type = payload.type as string
-  return type === "message.updated" ||
-    type === "message.part.updated" ||
-    type === "message.part.delta" ||
-    type === "message.completed" ||
-    type === "session.idle" ||
-    type === "session.error" ||
-    type === "session.status" ||
-    type === "session.updated" ||
-    type === "session.agent" ||
-    type === "todo.updated" ||
-    type === "permission.asked" ||
-    type === "permission.replied" ||
-    type === "question.asked" ||
-    type === "question.replied" ||
-    type === "question.rejected" ||
-    type === "session.diff" ||
-    type === "session.compacted"
-}
-
-export function shouldAcceptCompatEvent(payload: Event, covered: RuntimeCoveredSessions) {
-  if (!mirroredByRuntimeProjection(payload)) return true
-  const sessionID = eventSessionId(payload)
-  if (!sessionID) return true
-  if (runtimeOwnsOpencodeCompatProjection({ sessionId: sessionID })) return false
-  return !covered.has(runtimeSessionKey(sessionID))
-}
-
-export function partUpdateSupersedesDeltas(payload: Event) {
-  if (payload.type !== "message.part.updated") return false
-  const part = record((payload.properties as { part?: unknown }).part)
-  return typeof part?.text === "string" && part.text.length > 0
-}
 
 async function* sseJsonStream(response: Response, signal: AbortSignal, onEventId?: (id: string) => void): AsyncGenerator<unknown> {
   if (!response.ok) throw new Error(`runtime event stream failed: ${response.status}`)
@@ -265,6 +122,7 @@ const globalSDKContextInput = {
     const server = useServer()
     const platform = usePlatform()
     const principal = usePrincipal()
+    const account = useAccountPort()
     const abort = new AbortController()
 
     let liveSession: LiveSession | undefined
@@ -318,8 +176,6 @@ const globalSDKContextInput = {
 
     const FLUSH_FRAME_MS = 16
     const STREAM_YIELD_MS = 8
-    let streamReady = false
-    const readyResolvers = new Set<() => void>()
 
     const deltaKey = (directory: string, messageID: string, partID: string) => `${directory}:${messageID}:${partID}`
 
@@ -363,15 +219,6 @@ const globalSDKContextInput = {
       error instanceof TypeError && error.message.toLowerCase() === "network error"
     const runtimeCoveredSessions: RuntimeCoveredSessions = new Set()
     const subagents = createSubagentRegistry()
-    const markStreamReady = () => {
-      if (streamReady) return
-      streamReady = true
-      for (const resolve of readyResolvers) resolve()
-      readyResolvers.clear()
-    }
-    const markStreamPending = () => {
-      streamReady = false
-    }
 
     let attempt: AbortController | undefined
     let runtimeAttempt: AbortController | undefined
@@ -381,7 +228,9 @@ const globalSDKContextInput = {
     let lastGlobalEventId: string | undefined
     let lastRuntimeEventId: string | undefined
     let liveSessionRestartTimer: ReturnType<typeof setTimeout> | undefined
-    const HEARTBEAT_TIMEOUT_MS = 15_000
+    // The stall budget is the producers' heartbeat contract, not a local guess:
+    // a quiet-but-healthy stream must outlive the watchdog on every transport.
+    const HEARTBEAT_TIMEOUT_MS = EVENT_STREAM_STALL_MS
     const heartbeat = createHeartbeatWatchdog({
       timeoutMs: HEARTBEAT_TIMEOUT_MS,
       onTimeout: () => {
@@ -389,6 +238,15 @@ const globalSDKContextInput = {
         runtimeAttempt?.abort()
       },
     })
+    // A retarget is a change of SESSION, so only the session-scoped lane has a
+    // cursor that no longer means anything: `/api/wr/runtime-events` is opened
+    // per `parentSessionId` and its ids belong to that session's log. The
+    // workspace-wide compat lane carries every session on the server, so its
+    // cursor stays valid across a switch — dropping it makes the next connection
+    // cursor-less, which the two producers answer in opposite, equally wrong
+    // ways: a server that replays its whole retained log re-delivers frames the
+    // app already applied, and a workspace runtime that serves a cursor-less
+    // connection nothing at all silently loses everything published in the gap.
     const restartLiveSessionStreams = () => {
       if (fastSessionSwitchAnyQuietDelay() > 0) {
         scheduleLiveSessionRestart()
@@ -396,9 +254,7 @@ const globalSDKContextInput = {
       }
       if (liveSessionRestartTimer) clearTimeout(liveSessionRestartTimer)
       liveSessionRestartTimer = undefined
-      lastGlobalEventId = undefined
       lastRuntimeEventId = undefined
-      attempt?.abort()
       runtimeAttempt?.abort()
     }
     const scheduleLiveSessionRestart = () => {
@@ -411,9 +267,23 @@ const globalSDKContextInput = {
       liveSessionRestartTimer = setTimeout(restartLiveSessionStreams, delay)
     }
 
+    // The scope owner is the authority on which session the runtime-events lane
+    // carries, and it changes on navigation — including a navigation to a
+    // session this client never created. Retarget the open stream from the scope
+    // itself, so an ATTACH opens the same lane a create does instead of waiting
+    // for a history fetch to mark a live session.
+    createEffect(on(sessionEventScopeId, () => {
+      if (started) scheduleLiveSessionRestart()
+    }, { defer: true }))
+
     const startRuntimeEvents = () => {
       if (runtimeRun) return runtimeRun
       const projections: RuntimeProjectionCache = new Map()
+      // The runtime-events stream is one of the two lanes that carry a
+      // session's live frames, and it is always scoped to one parent session.
+      // The scope owner needs to know it exists so a caller can wait for THIS
+      // session's stream instead of for "some stream, once".
+      const releaseLane = registerSessionEventStreamLane("runtime-events")
       runtimeRun = (async () => {
         let failures = 0
         while (!abort.signal.aborted && started) {
@@ -438,7 +308,16 @@ const globalSDKContextInput = {
               signal: runtimeAttempt.signal,
               headers,
             }
-            const session = runtimeEventLiveSession(liveSession, cachedProjectInventory(currentServer.http.url))
+            // `session-event-scope` — not this provider's own live session —
+            // owns WHICH session's frames must be streaming. `eventLiveSession()`
+            // supplies the workspace identity to route with, including for a
+            // session reached purely by navigation, where no history fetch has
+            // marked a live session yet.
+            const session = runtimeEventLiveSession(
+              eventLiveSession(),
+              cachedProjectInventory(currentServer.http.url),
+              sessionEventScopeId(),
+            )
             if (!session || session.host !== "central" && !session.directory && !session.workspaceId) {
               await wait(RECONNECT_DELAY_MS)
               continue
@@ -446,7 +325,12 @@ const globalSDKContextInput = {
             const runtimePath = new URL("/api/wr/runtime-events", "http://workspace-runtime.local")
             if (session.directory) runtimePath.searchParams.set("directory", session.directory)
             runtimePath.searchParams.set("parentSessionId", session.sessionID)
-            const sessionWorkspaceKind = runtimeWorkspaceKind(session.workspaceKind)
+            const sessionWorkspaceKind = workspaceKind(session.workspaceKind)
+            // A workspace whose runtime lives on another machine, reached over
+            // the relay: this stream is the only place its turns reach here.
+            const relayBackedStream = session.host !== "central"
+              && !!session.workspaceId
+              && isRelayBackedWorkspaceKind(sessionWorkspaceKind)
             const response = session.host === "central"
               ? await openCentralRuntimeEventResponse({
                   request,
@@ -455,6 +339,7 @@ const globalSDKContextInput = {
                   lastEventId: lastRuntimeEventId,
                   init,
                   signal: runtimeAttempt.signal,
+                  accountState: account.state(),
                 })
               : await createTransport({
               placement: {
@@ -480,6 +365,10 @@ const globalSDKContextInput = {
               request,
               relayRequest: request,
               }).fetch(`${runtimePath.pathname}${runtimePath.search}`, init)
+            // Open, not first-frame: a caller waiting to dispatch a turn needs
+            // the stream to be listening before the turn's frames exist, and a
+            // healthy stream can be quiet for its whole heartbeat interval.
+            reportSessionEventStreamOpen("runtime-events", session.sessionID)
             let yielded = Date.now()
             for await (const item of sseJsonStream(response, runtimeAttempt.signal, (id) => {
               lastRuntimeEventId = id
@@ -493,12 +382,20 @@ const globalSDKContextInput = {
                 })
                 continue
               }
+              // Address the frame by the workspace THIS stream was opened for,
+              // not by whatever session a history fetch last marked live. A
+              // relay-backed runtime stamps every frame with its OWN filesystem
+              // path — the only path it knows — and this connection is scoped to
+              // exactly one `parentSessionId` on one workspace, so `session` is
+              // the authority on the address its consumers registered. Reading
+              // the live session instead dropped every delta of an ATTACHED
+              // turn: the pane registers `workspace:<id>`, the live session was
+              // still unmarked, and `conversationScopeKey` is an exact match.
               envelope.directory = eventDirectoryForLiveSession({
                 directory: envelope.directory,
-                liveSession: eventLiveSession(),
+                liveSession: session,
               })
               heartbeat.reset()
-              markStreamReady()
               becameReady = true
               streamErrorLogged = false
               if (runtimeReplayGap(envelope)) {
@@ -541,7 +438,7 @@ const globalSDKContextInput = {
                 })
               }
               applySubagentRuntimeEventEnvelope(envelope, subagents)
-              if (!runtimeProjectionOwnsCompat(envelope)) continue
+              if (!runtimeProjectionOwnsCompat(envelope, { soleCompatLane: relayBackedStream })) continue
               rememberRuntimeEventEnvelope(envelope, runtimeCoveredSessions)
               for (const event of projectRuntimeEventEnvelope(envelope, projections)) {
                 enqueue(event.directory, event.payload)
@@ -572,6 +469,7 @@ const globalSDKContextInput = {
           } finally {
             abort.signal.removeEventListener("abort", onAbort)
             runtimeAttempt = undefined
+            reportSessionEventStreamClosed("runtime-events")
           }
 
           if (abort.signal.aborted || !started) return
@@ -580,6 +478,7 @@ const globalSDKContextInput = {
         }
       })().finally(() => {
         runtimeRun = undefined
+        releaseLane()
         flush()
       })
       return runtimeRun
@@ -599,7 +498,6 @@ const globalSDKContextInput = {
             continue
           }
           attempt = new AbortController()
-          markStreamPending()
           heartbeat.touch()
           let becameReady = false
           const onAbort = () => {
@@ -619,7 +517,6 @@ const globalSDKContextInput = {
               lastGlobalEventId = id
             })) {
               heartbeat.reset()
-              markStreamReady()
               becameReady = true
               streamErrorLogged = false
               const event = compatEventEnvelope(item)
@@ -671,23 +568,26 @@ const globalSDKContextInput = {
       attempt?.abort()
       runtimeAttempt?.abort()
       heartbeat.clear()
-      markStreamPending()
-      for (const resolve of readyResolvers) resolve()
-      readyResolvers.clear()
     }
 
+    /**
+     * Resolves once the event streams that carry the CURRENT live session's
+     * frames are open — the workspace bus and this provider's runtime-events
+     * stream, as reported to `session-event-scope`. The composer awaits it
+     * before dispatching a turn, so the turn's frames arrive live rather than
+     * as a late burst when the stream finally opens.
+     *
+     * `timeoutMs` bounds how long a user's prompt is held for a stream that is
+     * not coming up; the wait is dropped rather than left behind.
+     */
     const ready = async (timeoutMs = 8_000) => {
       start()
-      if (streamReady) return
-      let resolveReady: (() => void) | undefined
+      const give = new AbortController()
       await Promise.race([
-        new Promise<void>((resolve) => {
-          resolveReady = resolve
-          readyResolvers.add(resolve)
-        }),
+        whenSessionEventStreamsOpen(sessionEventScopeId(), { signal: give.signal }),
         wait(timeoutMs),
       ])
-      if (resolveReady) readyResolvers.delete(resolveReady)
+      give.abort()
     }
 
     onMount(() => {
