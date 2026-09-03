@@ -161,3 +161,17 @@ machine world launches again. The operation is renderer-withheld: only main hold
   but the module lands in the shared main chunk; its importers are identical on dev). The source ratchets and the
   product-boundary source checks pass; the emitted check needs a chunking decision by the desktop owner.
 - Branch pushed to `origin/codex/refactor-agent-plugins` (no PR, per owner).
+- Release 68 (`release-acc-plugins4-260904-050000-3851`, rev 172 open). **V3 up to consent, live**: the signed
+  catalog reports both servers as `oauth` (Context7 with issuers `clerk.context7.com` / `context7.com`);
+  `POST /api/claxedo/integrations/<mcp-…>/connect` (method oauth, scope personal) registered clients dynamically —
+  `mcp_oauth_clients` holds `https://clerk.context7.com` → `i5MSj5eaMigMknSR`, `https://connect.composio.dev` →
+  `client_01M1MSW87WAY8978XFYSVKAAY7`, `https://context7.com` → `sVIoBCRLmFIhW7Ig`, no secrets — and returned PKCE
+  authorization URLs bound to the staging callback and the exact MCP resource. Attempts are owner-gated rows in
+  `hosted_connection_attempts` (`pending`, then `expired` after the TTL). The signed daemon world advanced to
+  revision 2 with both plugins. Connect is offered only for MCP servers of retained (enabled) plugins, which is
+  why Composio first answered `unknown_integration`.
+- **Still owner-blocked**: the consent click at Clerk/Composio (both require the owner's own account session; the
+  Claude-in-Chrome extension reported no connected browser all session), so the callback → token → gateway →
+  runtime-credential half of V3 is proven only by `signed-composio.miniflare.test.ts` (real D1 authority, real
+  hosted-d1 Connections, dynamic registration, gateway forwards the bearer). Cloud-VM half of V2/V3 remains
+  blocked on a D1 sandbox lease store (staging is control-plane-only).
