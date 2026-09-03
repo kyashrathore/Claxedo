@@ -85,6 +85,16 @@ export function writeOpenCodeDraftVariant(input: DraftInput & {
  * falls to the resolved default. The resolved default is SHOWN, never
  * remembered — `writeOpenCodeDraftModel` is the only path that persists a
  * choice, and it runs on an explicit pick.
+ *
+ * The two sources reach the composer by two different routes, because the
+ * draft-default policy only has something to settle when the workspace saved a
+ * pair. `beginDraftDefault` finishes a no-memory scope the instant it reads
+ * one: the scope is left `defaulted`/`ready` carrying NO model, and from then
+ * on `draftDefaultApplication` refuses an application and
+ * `resolveCurrentDraftDefault` finds no saved harness to resolve. So a
+ * remembered pair is validated through the policy, while the catalog's own
+ * answer is written straight to the composer — routing it through the policy is
+ * what left a fresh profile reading "Select model" until a reload.
  */
 export function restoreOpenCodeDraftDefault(input: DraftInput & {
   ready: boolean
@@ -96,22 +106,38 @@ export function restoreOpenCodeDraftDefault(input: DraftInput & {
 }) {
   if (!input.newSession || !input.controller || !input.ready) return false
   const snapshot = input.controller.read(input.scope)
-  if (snapshot.harness !== "opencode" || snapshot.draftDefaultState !== undefined) return false
-  const saved = snapshot.draftDefaultModel
-  const chosen = saved ?? input.resolvedDefault
-  if (!chosen) return false
+  if (snapshot.harness !== "opencode") return false
   const eligibleModels = input.models.flatMap((item) => {
     const model = { providerID: item.provider.id, modelID: item.id }
     return [model, ...Object.keys(item.variants ?? {}).map((variant) => ({ ...model, variant }))]
   })
+  const saved = snapshot.draftDefaultModel
+  if (!saved) {
+    const resolved = input.resolvedDefault
+    // Still only the catalog's own answer, never a guess: a machine with no
+    // connected provider resolves nothing, and a model the catalog does not
+    // offer is not shown.
+    if (!resolved) return false
+    if (!eligibleModels.some((model) => sameModelKey(model, resolved))) return false
+    input.write(resolved)
+    input.writeVariant(resolved.variant)
+    return true
+  }
+  if (snapshot.draftDefaultState !== undefined) return false
   const applied = input.controller.resolveDraftDefault(input.scope, {
     supportedHarnesses: ["opencode"],
     eligibleModels,
     ...(input.resolvedDefault ? { declaredDefaultModel: input.resolvedDefault } : {}),
   })
   if (applied) {
-    input.write(chosen)
-    input.writeVariant(chosen.variant)
+    input.write(saved)
+    input.writeVariant(saved.variant)
   }
   return applied
+}
+
+function sameModelKey(left: ModelKey, right: ModelKey) {
+  return left.providerID === right.providerID
+    && left.modelID === right.modelID
+    && left.variant === right.variant
 }

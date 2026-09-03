@@ -308,6 +308,26 @@ export async function launchPackagedApp(
   // paths still honour it.
   const dataDir = path.join(userDataDir, "server-data")
   await fs.mkdir(dataDir, { recursive: true })
+  // FOURTH ROOT — the interactive shell a terminal in this app spawns.
+  //
+  // A terminal launched from the packaged app runs the operator's own `$SHELL`
+  // with the operator's own rc files, and those rc files write to, and read
+  // from, the same PTY a spec types into. Measured 2026-09-03: oh-my-zsh's
+  // periodic "Would you like to update? [Y/n]" prompt was on screen when
+  // `desktop-unsigned-embedded`'s D1/D3 typed `echo "CLAXEDO_PORT_CHECK=..."`,
+  // so zsh handed the leading `e` to that prompt and ran `cho …` instead —
+  // reported as "the terminal's $CLAXEDO_PORT never echoed the real port" while
+  // the port was never actually asked for. The same rc set `correct`, which then
+  // asked about `cho` too.
+  //
+  // So the shell's startup files are isolated the way `userData` and
+  // `CLAXEDO_DATA_DIR` already are: `ZDOTDIR` points at an empty directory, and
+  // zsh reads its startup files from there instead of the operator's `$HOME`.
+  // `HOME` itself is deliberately left alone — the real git identity, the real
+  // `claude` credential and the real PATH are what make this lane's harnesses
+  // real.
+  const shellRcDir = path.join(userDataDir, "shell-rc")
+  await fs.mkdir(shellRcDir, { recursive: true })
 
   // Strip, never merely omit. `ELECTRON_RENDERER_URL` is exported by
   // `electron-vite dev`, so a developer running the dev server in the same
@@ -324,6 +344,7 @@ export async function launchPackagedApp(
   }
   env.CLAXEDO_DESKTOP_USER_DATA_DIR = userDataDir
   env.CLAXEDO_DATA_DIR = dataDir
+  env.ZDOTDIR = shellRcDir
   if (input.testOnlyHttpsTrust) env.NODE_EXTRA_CA_CERTS = input.testOnlyHttpsTrust.caPath
   Object.assign(env, input.env ?? {})
 

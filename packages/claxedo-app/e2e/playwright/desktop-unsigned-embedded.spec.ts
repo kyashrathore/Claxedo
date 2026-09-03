@@ -235,8 +235,8 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
   })
 
   /**
-   * The local daemon's lifetime is the packaged PROCESS's, not the window's
-   * focus. `holdClaxedoDaemonLease` (claxedo-desktop's
+   * The local daemon's lifetime is the packaged PROCESS's, not the window's.
+   * `holdClaxedoDaemonLease` (claxedo-desktop's
    * `src/main/server-daemon-lease.ts`) takes one lease during `initialize()`
    * and renews it until the app exits, and the exit paths — quit, restart,
    * update — are what release or hand it off (`daemon-exit-lifecycle.ts`).
@@ -254,8 +254,20 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
    *     BECAUSE the main process pins it, not because nothing is watching;
    *   - the pid and generation never change, so a reachable health endpoint
    *     cannot be a replacement daemon that quietly took over.
+   *
+   * THE STIMULUS IS MINIMIZE, NOT BLUR. A Playwright-launched Electron app is
+   * never the frontmost macOS application — measured 2026-09-03 on this
+   * packaged binary, `BrowserWindow.getFocusedWindow()` stays `null` and
+   * `isFocused()` stays false through `win.focus()`, `win.show()`,
+   * `win.moveTop()`, `app.dock.show()` and `app.focus({steal: true})`, in that
+   * order. `blur()` on a window that was never focused changes nothing, so a
+   * blur-driven version of this test backgrounds nothing and proves nothing.
+   * Minimize is a real window-state transition the same environment DOES
+   * perform (`isMinimized` true, `isVisible` false, both read back below), and
+   * it is the same class of user gesture: the window leaves the foreground
+   * without any of the exit paths that own the lease.
    */
-  test("the local daemon's lifetime follows the packaged process, not window focus", async () => {
+  test("the local daemon's lifetime follows the packaged process, not window state", async () => {
     test.setTimeout(90_000)
     packaged = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
@@ -300,15 +312,23 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
       return await response.json() as { state: string; leases: number; idleGraceMs: number; residencyPins: number }
     }
 
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
-    await expect.poll(() => mainBrowserWindow.evaluate((browserWindow) => browserWindow.isFocused())).toBe(true)
+    const windowState = () => mainBrowserWindow.evaluate((browserWindow) => ({
+      visible: browserWindow.isVisible(),
+      minimized: browserWindow.isMinimized(),
+    }))
+    await expect
+      .poll(windowState, { message: "the packaged app never showed its window, so nothing can be backgrounded" })
+      .toEqual({ visible: true, minimized: false })
     expect(
       (await daemonState()).idleGraceMs,
       "the shortened idle grace never reached the daemon, so a surviving daemon would prove nothing",
     ).toBe(1_200)
 
     // Background the window for several times the grace.
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.blur())
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.minimize())
+    await expect
+      .poll(windowState, { message: "minimize never took, so the app was never backgrounded" })
+      .toEqual({ visible: false, minimized: true })
     await packaged.page.waitForTimeout(5_000)
     expect(await health(), "backgrounding the packaged app took its local daemon down").toBe(true)
     const backgrounded = await daemonState()
@@ -318,9 +338,12 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     ).toBeGreaterThan(0)
     expect(backgrounded.state).toBe("running")
 
-    // Returning focus changes nothing either: the same daemon keeps serving,
-    // with no restart and no adoption of a new generation.
-    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.focus())
+    // Coming back to the foreground changes nothing either: the same daemon
+    // keeps serving, with no restart and no adoption of a new generation.
+    await mainBrowserWindow.evaluate((browserWindow) => browserWindow.restore())
+    await expect
+      .poll(windowState, { message: "the window never came back, so the return leg tests nothing" })
+      .toEqual({ visible: true, minimized: false })
     await packaged.page.waitForTimeout(2_000)
     expect(await health()).toBe(true)
     expect((await daemonState()).leases).toBeGreaterThan(0)
@@ -807,9 +830,15 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const search = page.getByRole("textbox", { name: /Search models/i }).last()
     await expect(search).toBeVisible({ timeout: 10_000 })
     await search.fill("Sonnet")
+    // Match the row's NAME slot, not the row's whole text. A real catalog row
+    // renders its harness-supplied description under the name
+    // ("Sonnet" + "Sonnet 5 · Efficient for routine tasks"), so a `^Sonnet$`
+    // filter over the row text matches nothing here while still matching the
+    // Tier M rows — which is why only this lane saw it.
     const model = page
       .locator('[data-component="harness-model-picker"]')
-      .locator('[data-slot="list-item"]', { hasText: /^Sonnet$/ })
+      .locator('[data-slot="list-item"]')
+      .filter({ has: page.locator('[data-slot="list-item-name"]', { hasText: /^Sonnet$/ }) })
       .first()
     await expect(model, "the real Claude catalog did not expose an explicit Sonnet model").toBeVisible({
       timeout: 15_000,
@@ -1483,6 +1512,16 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
         ? "echo CLAXEDO_PORT_CHECK=%CLAXEDO_PORT%"
         : 'echo "CLAXEDO_PORT_CHECK=$CLAXEDO_PORT"'
     await packaged.page.keyboard.type(portEchoCommand, { delay: 15 })
+    // The shell must have taken the WHOLE command before it is submitted.
+    // Anything already reading this PTY when the keystrokes arrive (a shell rc
+    // prompt, a pager) consumes the leading characters, and the truncated
+    // command then fails the port assertion below while never having asked for
+    // the port at all — see `electron-app.ts`'s ZDOTDIR root for the case that
+    // produced this.
+    await expect(
+      xtermRows,
+      "the shell never echoed the typed command back, so the port assertion below would test nothing",
+    ).toContainText(portEchoCommand, { timeout: 10_000 })
     await packaged.page.keyboard.press("Enter")
     await expect(
       xtermRows,

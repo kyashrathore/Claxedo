@@ -124,7 +124,13 @@ export type Harness =
   | "cursor-sdk"
   | "pi"
 
-export type HarnessModelOption = { id: string; name: string }
+/**
+ * `description` is the harness-supplied detail line every real native-SDK row
+ * carries (`ClaudeDriver.fetchModels` forwards `model.description`), and the
+ * picker renders it under the name. Fixtures carry it so a row's text here has
+ * the same shape it has against a real harness.
+ */
+export type HarnessModelOption = { id: string; name: string; description?: string }
 
 export type HarnessReadiness = "ready" | "polling" | "error"
 
@@ -822,7 +828,7 @@ const DEFAULT_HARNESS_MODELS: Record<Harness, HarnessModelOption[]> = {
   "acp:claude": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6" }],
   "acp:codex": [{ id: "gpt-5.2-codex", name: "GPT-5.2 Codex" }],
   "acp:cursor": [{ id: "cursor-auto", name: "Cursor Auto" }],
-  "claude-sdk": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6" }],
+  "claude-sdk": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6", description: "Sonnet 4.6 · Efficient for routine tasks" }],
   "codex-app-server": [{ id: "gpt-5.5", name: "GPT-5.5" }],
   "cursor-sdk": [{ id: "cursor-auto", name: "Cursor Auto" }],
   pi: [{ id: "virtual", name: "Virtual" }],

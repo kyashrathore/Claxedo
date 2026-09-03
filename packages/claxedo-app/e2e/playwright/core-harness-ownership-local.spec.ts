@@ -503,20 +503,24 @@ test.describe("core harness ownership (local) @core", () => {
   /**
    * The REAL native-SDK catalog, not a one-row stand-in.
    *
-   * Captured 2026-09-02 from `query(...).supportedModels()` against the local
+   * Captured 2026-09-03 from `query(...).supportedModels()` against the local
    * `claude` CLI, which is what `ClaudeDriver.fetchModels`
    * (`agent-sdk-runtime/src/harnesses/claude/driver.ts`) maps into the `model`
-   * config option. Two facts only this shape carries, and both are load-bearing:
-   * the FIRST row is the harness's own `default` sentinel, and it is the option's
-   * `currentValue` — so the harness always resolves a default the user did not
-   * choose, and every other row is a choice made ON TOP of that default.
+   * config option. Three facts only this shape carries, and all three are
+   * load-bearing: the FIRST row is the harness's own `default` sentinel, and it
+   * is the option's `currentValue` — so the harness always resolves a default
+   * the user did not choose, and every other row is a choice made ON TOP of that
+   * default — and every row carries a `description`, which the picker renders as
+   * a second line under the name. A fixture without descriptions makes a row's
+   * whole text equal its name, so a `^Sonnet$` filter over the row matches here
+   * and matches nothing against the real catalog.
    */
   const REAL_CLAUDE_SDK_MODELS = [
-    { id: "default", name: "Default (recommended)" },
-    { id: "opus[1m]", name: "Opus (1M context)" },
-    { id: "claude-fable-5[1m]", name: "Fable" },
-    { id: "sonnet", name: "Sonnet" },
-    { id: "haiku", name: "Haiku" },
+    { id: "default", name: "Default (recommended)", description: "Opus 5 with 1M context \u00b7 Best for everyday, complex tasks" },
+    { id: "opus[1m]", name: "Opus (1M context)", description: "Opus 5 with 1M context \u00b7 Best for everyday, complex tasks" },
+    { id: "claude-fable-5-1[1m]", name: "Fable", description: "Fable 5.1 \u00b7 Most capable for your hardest and longest-running tasks" },
+    { id: "sonnet", name: "Sonnet", description: "Sonnet 5 \u00b7 Efficient for routine tasks" },
+    { id: "haiku", name: "Haiku", description: "Haiku 4.5 \u00b7 Fastest for quick answers" },
   ]
 
   test("a native-SDK harness shows the model it resolved until the user picks one, and the pick survives a reload", async ({
@@ -542,7 +546,11 @@ test.describe("core harness ownership (local) @core", () => {
     const search = page.getByRole("textbox", { name: /Search models/i }).last()
     await expect(search).toBeVisible({ timeout: 10_000 })
     await search.fill("Sonnet")
-    await picker.locator('[data-slot="list-item"]', { hasText: /^Sonnet$/ }).first().click()
+    await picker
+      .locator('[data-slot="list-item"]')
+      .filter({ has: page.locator('[data-slot="list-item-name"]', { hasText: /^Sonnet$/ }) })
+      .first()
+      .click()
     await expect(control).toHaveAttribute("data-model", "sonnet", { timeout: 10_000 })
     await expect(control).toContainText(/Sonnet/i)
 
@@ -593,7 +601,11 @@ test.describe("core harness ownership (local) @core", () => {
     const search = page.getByRole("textbox", { name: /Search models/i }).last()
     await expect(search).toBeVisible({ timeout: 10_000 })
     await search.fill("Sonnet")
-    await picker.locator('[data-slot="list-item"]', { hasText: /^Sonnet$/ }).first().click()
+    await picker
+      .locator('[data-slot="list-item"]')
+      .filter({ has: page.locator('[data-slot="list-item-name"]', { hasText: /^Sonnet$/ }) })
+      .first()
+      .click()
     await expect(
       control,
       "the user's model pick did not stick over the harness-resolved default",

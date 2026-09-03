@@ -161,7 +161,10 @@ export const ModelList: Component<{
       {(i) => (
         <div class="w-full min-w-0 flex flex-col items-start gap-y-0.5 text-left text-13-regular">
           <div class="w-full flex items-center gap-x-2">
-            <span class="truncate">{i.name}</span>
+            {/* The row's own name, separate from the description line below it:
+                a display name is a short label ("Sonnet") and only this slot
+                carries it alone. */}
+            <span data-slot="list-item-name" class="truncate">{i.name}</span>
             <Show when={isFree(i.provider.id, i.cost)}>
               <Tag>{language.t("model.tag.free")}</Tag>
             </Show>
