@@ -97,3 +97,14 @@ Settled-tree gates on `80be5590b2`: `packages/claxedo-app` `bun run typecheck` e
 - Req 6: a turn started on the host (`prompt_async` at +14.0 s) rendered its first delta ("1") in the attached web pane at +24.1 s and the full reply ("…12 live64-done", 38 chars) at +25.1 s, matching the model's own two-chunk emission observed on the relay's runtime-events lane; the host's transcript holds the same 38-char reply. Live streaming to an attached web pane over the real relay: MET.
 - Reqs 1–5 and terminal creation re-verified on releases 61–63 (numbers above); Tier L `live-user-hosted-relay` proves attach streaming (six paced deltas → six rendered states) and the terminal round trip (typed `echo` echoed back through xterm's screen-reader layer) against a real relay with zero route mocks: 6 passed / 1 skipped / 0 failed.
 - Matrix 8 on `273e014c77` (the release 64 tree, CI shape): `test-user` 347 / 0, onboarding 3/3; `local-unsigned` 347 / 0, onboarding 3/3; exit 0. Desktop suite on the package built from `76823ddcc8`: 11 passed / 4 failed / 2 skipped — `desktop-unsigned-embedded` :258, :1217 (OpenCode draft model on the real unsigned surface), :1245 (Sonnet row locator vs real catalog rows carrying descriptions), :1376 (`$CLAXEDO_PORT` in a terminal's environment) — in progress.
+
+### PRs (2026-09-03)
+
+Stacked on origin `kyashrathore/Claxedo` from the merge base with `dev` (`bac44c69f9`), each group one commit, the stack's head reproducing `891d440ea3`'s tree exactly:
+1. https://github.com/kyashrathore/Claxedo/pull/45 — `pr/1-runtime-control-plane` → `dev`
+2. https://github.com/kyashrathore/Claxedo/pull/46 — `pr/2-harness-runtime` → `pr/1`
+3. https://github.com/kyashrathore/Claxedo/pull/47 — `pr/3-web-client` → `pr/2`
+4. https://github.com/kyashrathore/Claxedo/pull/48 — `pr/4-e2e-infrastructure` → `pr/3`
+5. https://github.com/kyashrathore/Claxedo/pull/49 — `pr/5-plans` → `pr/4`
+
+The working branch `codex/cloudflare-multiplayer-migration` stays local: its remote counterpart diverged (8 commits on origin, 335 here) and a force push is not permitted; the PR branches carry every change. Desktop suite on the final package: 15 passed / 0 failed / 2 skipped (`891d440ea3`).
