@@ -513,6 +513,14 @@ binding = "CF_VERSION_METADATA"
 [observability]
 enabled = true
 
+# Run beside the data. Every request performs several sequential D1 reads
+# (release state, recovery epoch, session, then the route's own) and the
+# plugin routes read R2; with the databases and bucket in APAC and the
+# isolate at the caller's colo, each await was a cross-region hop and a
+# signed catalog read measured 4 s with under 100 ms of CPU.
+[placement]
+mode = "smart"
+
 [vars]
 CLAXEDO_ADAPTER_PROFILE = "better-auth-d1"
 CLAXEDO_PRODUCT_POSTURE = "user-deployed"
