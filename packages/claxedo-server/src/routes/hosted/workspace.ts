@@ -448,10 +448,15 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           })
           if (leaseCapped) return c.json(leaseCapped.body, leaseCapped.status)
           await authority.usersMe(auth)
+          // Only a project the caller named is handed to the authority. Without
+          // one the authority derives the project from the repository (reusing
+          // the org's existing project for that repo, else creating it); a
+          // fresh id here would be an unknown project the caller cannot
+          // administer, which the D1 authority rightly refuses.
           await authority.createCloudWorkspace(auth, {
             workspaceId,
             ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
-            projectId,
+            ...(body.projectId?.trim() ? { projectId: body.projectId.trim() } : {}),
             displayName,
             repoUrl,
             ...(body.repoName?.trim() ? { repoName: body.repoName.trim() } : {}),

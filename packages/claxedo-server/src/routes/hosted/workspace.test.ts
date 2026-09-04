@@ -784,6 +784,22 @@ describe("hosted cloud workspace create (POST /create)", () => {
     expect(await res.json()).toMatchObject({ error: { code: "sandbox_driver_unavailable" } })
   })
 
+  test("lets the authority derive the project when the caller names none", async () => {
+    // A fresh id passed as the project would be one the caller cannot
+    // administer; the D1 authority refuses that, so the route must leave the
+    // project to the authority's repository-keyed derivation.
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const sandboxManager = { ensure } as unknown as SandboxManager
+    const { app } = buildApp({ authority: authority, sandboxManager })
+    const res = await app.fetch(post("/create", { workspaceName: "First cloud", repoUrl: "https://github.com/a/b" }))
+    expect(res.status).toBe(200)
+    const args = (createCloudWorkspace.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+    expect(args).not.toHaveProperty("projectId")
+    expect(args).toMatchObject({ repoUrl: "https://github.com/a/b", displayName: "First cloud" })
+  })
+
   test("creates the cloud workspace doc and kicks off provisioning", async () => {
     const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
     const authority = fakeAuthority({ createCloudWorkspace })
