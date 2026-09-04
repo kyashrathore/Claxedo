@@ -20,7 +20,7 @@
     "dev": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth vite --config vite.cloud.config.ts",
     "dev:local": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth vite --config vite.local.config.ts",
     "build": "VITE_CLAXEDO_AUTH_ADAPTER=better-auth node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts",
-    "build:better-auth": "VITE_AUTH_ENABLED=true VITE_SANDBOX_ENABLED=true VITE_CLAXEDO_AUTH_ADAPTER=better-auth node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts --outDir dist-better-auth",
+    "build:better-auth": "VITE_AUTH_ENABLED=true VITE_SANDBOX_ENABLED=true VITE_CLAXEDO_ONBOARDING_V1=true VITE_CLAXEDO_AUTH_ADAPTER=better-auth node ./node_modules/vite/bin/vite.js build --config vite.cloud.config.ts --outDir dist-better-auth",
     "check:browser-auth-bundles": "bun scripts/browser-auth-bundle-identity.ts better-auth dist",
     "check:browser-auth-bundles:build": "VITE_AUTH_ENABLED=true bun run build && bun run check:browser-auth-bundles",
     "build:e2e": "bun ./scripts/build-e2e-app.ts",
