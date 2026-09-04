@@ -85,11 +85,12 @@ export const queryPersistencePolicies = [
   {
     id: "control-plane.cache",
     owner: "shared/query control-plane catalog fetchers",
-    scope: "per-user project and provider catalogs",
+    scope: "per-user project, provider, and Agent Plugins catalogs",
     reason: "Warm app boot can reuse slow-changing control-plane data before SWR refetch.",
     deletionCondition: "Delete when GlobalSync no longer consumes control-plane catalog projections.",
     matches: (queryKey: readonly unknown[]) =>
-      queryKey[0] === "controlPlane" && (queryKey[2] === "projects" || queryKey[2] === "providers"),
+      queryKey[0] === "controlPlane"
+      && (queryKey[2] === "projects" || queryKey[2] === "providers" || queryKey[2] === "agentPlugins"),
   },
   {
     id: "shell.commands-cache",

@@ -1,19 +1,49 @@
-import { skillBody } from "./view"
+import { activationSummary, defaultOutcome, pluginStatus, skillBody } from "./view"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
+import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import type { JSX } from "solid-js"
-import { agentPluginApi } from "../api"
+import { agentPluginApi, type HarnessActivation, type PluginCandidate, type PluginSkill, type PluginSource } from "../api"
 import type { AgentPluginConnectionPort } from "../connections"
 import { directoryApi } from "./data"
+import { AGENT_PLUGIN_PANE_WIDTH_KEY, readPaneWidth, writePaneWidth } from "./pane-width"
 
 // The detail pane renders SKILL.md through the app's shared markdown boundary,
 // which drags marked/shiki and its providers into a component test. The
 // established pattern in this package is to substitute that one barrel.
 vi.mock("@/ui/session-kit", () => ({ Markdown: (props: { text: string }) => <pre>{props.text}</pre> as JSX.Element }))
 
+// Kobalte's menu is portal- and pointer-driven, which a jsdom component test
+// cannot open. Substituting it — the established pattern for every other menu
+// surface in this package — leaves the menu's CONTENTS as the thing under test,
+// which is exactly what the pane's action hierarchy is about.
+vi.mock("@opencode-ai/ui/dropdown-menu", () => {
+  const Root = (props: { children?: JSX.Element }) => <div>{props.children}</div>
+  return {
+    DropdownMenu: Object.assign(Root, {
+      Trigger: (props: { children?: JSX.Element; "aria-label"?: string }) => (
+        <button type="button" aria-label={props["aria-label"]}>{props.children}</button>
+      ),
+      Portal: (props: { children?: JSX.Element }) => <>{props.children}</>,
+      Content: (props: { children?: JSX.Element }) => <div>{props.children}</div>,
+      Item: (props: { children?: JSX.Element; disabled?: boolean; onSelect?: () => void }) => (
+        <div
+          role="menuitem"
+          aria-disabled={props.disabled === true}
+          onClick={() => {
+            if (!props.disabled) props.onSelect?.()
+          }}
+        >
+          {props.children}
+        </div>
+      ),
+    }),
+  }
+})
+
 const BASE = "https://control.example"
 
-const activation = (effective: boolean, organizationDefault = false) => ({
+const activation = (effective: boolean, organizationDefault = false): HarnessActivation => ({
   explicit: null,
   projectOverride: null,
   userDefault: null,
@@ -22,26 +52,26 @@ const activation = (effective: boolean, organizationDefault = false) => ({
   effective: { status: "ready", effective, winner: "user-default", artifactDigest: "sha256:retained" },
 })
 
-const harnesses = (effective: boolean, organizationDefault = false) => ({
-  opencode: activation(effective, organizationDefault),
-  claude: activation(effective, organizationDefault),
-  codex: activation(effective, organizationDefault),
-  cursor: activation(effective, organizationDefault),
-})
+/** The same activation on every supported harness; the fixtures never differ per harness. */
+const everyHarness = (state: HarnessActivation): PluginCandidate["harnesses"] =>
+  ({ opencode: state, claude: state, codex: state, cursor: state })
 
-const CLAXEDO = { id: "claxedo", kind: "claxedo", label: "Claxedo", repository: "kyashrathore/plugins" }
-const ACME = { id: "src-acme", kind: "personal", label: "acme/agent-plugins", repository: "acme/agent-plugins" }
+const harnesses = (effective: boolean, organizationDefault = false) =>
+  everyHarness(activation(effective, organizationDefault))
+
+const CLAXEDO: PluginSource = { id: "claxedo", kind: "claxedo", label: "Claxedo", repository: "kyashrathore/plugins" }
+const ACME: PluginSource = { id: "src-acme", kind: "personal", label: "acme/agent-plugins", repository: "acme/agent-plugins" }
 
 function candidate(input: {
   name: string
   installed: boolean
-  source: typeof CLAXEDO
+  source: PluginSource
   retained?: boolean
   updateAvailable?: boolean
-  mcpServers?: unknown[]
-  skills?: unknown[]
+  mcpServers?: PluginCandidate["mcpServers"]
+  skills?: PluginSkill[]
   description?: string
-}) {
+}): PluginCandidate {
   return {
     pluginInstanceId: `["${input.source.id}","${input.name}"]`,
     sourceId: input.source.id,
@@ -50,7 +80,7 @@ function candidate(input: {
     icon: { kind: "monogram", text: input.name.slice(0, 2).toUpperCase() },
     skills: input.skills ?? [],
     sourceRevision: "main",
-    relativePath: input.name,
+    relativePath: `catalog/${input.name}/plugin.json`,
     candidateDigest: "sha256:candidate",
     sourceAvailable: true,
     retainedDigest: input.retained === false ? null : input.installed || input.retained ? "sha256:retained" : null,
@@ -62,8 +92,16 @@ function candidate(input: {
   }
 }
 
-const OAUTH = { name: "knowledge", type: "streamable-http", authentication: { state: "oauth", integrationId: "mcp-knowledge" } }
-const PUBLIC = { name: "docs-http", type: "streamable-http", authentication: { state: "public" } }
+const OAUTH: PluginCandidate["mcpServers"][number] = {
+  name: "knowledge",
+  type: "streamable-http",
+  authentication: { state: "oauth", integrationId: "mcp-knowledge" },
+}
+const PUBLIC: PluginCandidate["mcpServers"][number] = {
+  name: "docs-http",
+  type: "streamable-http",
+  authentication: { state: "public" },
+}
 
 function catalogBody(overrides: Record<string, unknown> = {}) {
   return {
@@ -153,18 +191,21 @@ function harness(options: {
 async function renderDirectory(options: Parameters<typeof harness>[0] & { mode?: "signed" | "unsigned" } = {}) {
   const context = harness(options)
   const onAdd = vi.fn(async () => {})
+  const client = new QueryClient({ defaultOptions: { queries: { retry: false } } })
   const { AgentPluginDirectory } = await import("./directory")
   render(() => (
-    <AgentPluginDirectory
-      mode={options.mode ?? "signed"}
-      api={agentPluginApi({ baseUrl: BASE, request: context.fetchMock })}
-      directory={directoryApi({ baseUrl: BASE, request: context.fetchMock })}
-      connections={context.port}
-      onAdd={onAdd}
-    />
+    <QueryClientProvider client={client}>
+      <AgentPluginDirectory
+        mode={options.mode ?? "signed"}
+        api={agentPluginApi({ baseUrl: BASE, request: context.fetchMock })}
+        directory={directoryApi({ baseUrl: BASE, request: context.fetchMock })}
+        connections={context.port}
+        onAdd={onAdd}
+      />
+    </QueryClientProvider>
   ))
   await screen.findByRole("button", { name: "composio" })
-  return { ...context, onAdd }
+  return { ...context, onAdd, client }
 }
 
 async function openPane(name: string) {
@@ -174,7 +215,10 @@ async function openPane(name: string) {
 
 const posted = (recorded: Recorded[], path: string) => recorded.filter((entry) => entry.url === path && entry.method === "POST")
 
-afterEach(cleanup)
+afterEach(() => {
+  cleanup()
+  localStorage.clear()
+})
 
 describe("Agent Plugin Directory sections", () => {
   test("splits candidates into needs attention, installed, source and personal sections", async () => {
@@ -198,10 +242,25 @@ describe("Agent Plugin Directory sections", () => {
     const personal = await screen.findByRole("region", { name: "Personal" })
     expect(within(personal).getByText("figma")).toBeVisible()
     // The Claxedo adapters' own marker entry is not the user's install.
-    expect(within(personal).queryByText("~/.cursor/plugins/local/claxedo-context7")).toBeNull()
+    expect(within(personal).queryByText("context7")).toBeNull()
   })
 
-  test("a connected OAuth server keeps an installed plugin out of Needs attention", async () => {
+  test("no card shows a plugin's path; the path is the row's title instead", async () => {
+    await renderDirectory()
+    await screen.findByRole("region", { name: "Personal" })
+
+    for (const card of document.querySelectorAll("[data-agent-plugin-card]")) {
+      expect(card.textContent).not.toContain("catalog/")
+    }
+    const personalRow = document.querySelector("[data-agent-plugin-personal='figma']")
+    expect(personalRow?.textContent).not.toContain("~/.cursor")
+    expect(personalRow?.getAttribute("title")).toBe("~/.cursor/plugins/local/figma")
+    expect(document.querySelector("[data-agent-plugin-card]")?.getAttribute("title")).toContain("catalog/")
+    // The section title already says whose installs these are.
+    expect(screen.queryByText("Installed by you")).toBeNull()
+  })
+
+  test("an installed plugin reports its harness count as muted status, not a green pill", async () => {
     await renderDirectory({
       connections: [{ id: "c1", integrationId: "mcp-knowledge", scope: "personal", status: "connected" }],
     })
@@ -209,7 +268,8 @@ describe("Agent Plugin Directory sections", () => {
     await waitFor(() => expect(screen.queryByRole("region", { name: "Needs attention" })).toBeNull())
     const installed = screen.getByRole("region", { name: "Installed" })
     expect(within(installed).getByRole("button", { name: "composio" })).toBeVisible()
-    expect(within(installed).getByText("Installed on 4 harnesses")).toBeVisible()
+    expect(within(installed).getByText("Installed · 4 harnesses")).toBeVisible()
+    expect(screen.queryByText("Installed ✓")).toBeNull()
   })
 
   test("search matches a skill name and hides everything else", async () => {
@@ -230,6 +290,14 @@ describe("Agent Plugin Directory sections", () => {
     expect(screen.getByRole("button", { name: "granola" })).toBeVisible()
     expect(screen.queryByRole("button", { name: "posthog" })).toBeNull()
     expect(screen.queryByRole("region", { name: "Personal" })).toBeNull()
+  })
+
+  test("the add-source form is closed until it is asked for", async () => {
+    await renderDirectory()
+
+    expect(screen.queryByRole("form", { name: "Add source" })).toBeNull()
+    await fireEvent.click(screen.getByRole("button", { name: "+ Add source" }))
+    expect(screen.getByRole("form", { name: "Add source" })).toBeVisible()
   })
 })
 
@@ -252,13 +320,27 @@ describe("Agent Plugin Directory detail pane", () => {
 
     const pane = await openPane("context7")
     expect(within(pane).getByText("docs-lookup")).toBeVisible()
-    expect(within(pane).getByText("Where it is installed")).toBeVisible()
+    expect(within(pane).getByText("Enabled · your choice")).toBeVisible()
 
     await fireEvent.keyDown(screen.getByRole("main"), { key: "Escape" })
     await waitFor(() => expect(screen.queryByRole("complementary", { name: "context7 details" })).toBeNull())
   })
 
-  test("expanding a skill reads its SKILL.md from the retained artifact", async () => {
+  test("the facts strip answers status, where, projects and harnesses above the description", async () => {
+    await renderDirectory()
+    const pane = await openPane("context7")
+
+    const facts = pane.querySelector("[data-component='agent-plugin-facts']")!
+    expect(within(facts as HTMLElement).getByText("Enabled · your choice")).toBeVisible()
+    expect(within(facts as HTMLElement).getByText("Local")).toBeVisible()
+    expect(within(facts as HTMLElement).getByText("Cross-project default")).toBeVisible()
+    expect(within(facts as HTMLElement).getByText("opencode")).toBeVisible()
+    // The strip precedes the prose it gives context to.
+    expect(facts.compareDocumentPosition(within(pane).getByText("context7 plugin")))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING)
+  })
+
+  test("clicking a skill navigates the pane to the skill, and the breadcrumb comes back", async () => {
     const { recorded } = await renderDirectory()
     const pane = await openPane("context7")
 
@@ -266,6 +348,46 @@ describe("Agent Plugin Directory detail pane", () => {
 
     await waitFor(() => expect(recorded.some((entry) =>
       entry.url === `/api/claxedo/plugins/${encodeURIComponent('["claxedo","context7"]')}/skills/docs-lookup`)).toBe(true))
+    const crumbs = await within(pane).findByRole("navigation", { name: "Breadcrumb" })
+    expect(within(crumbs).getByText("context7")).toBeVisible()
+    expect(within(crumbs).getByText("docs-lookup")).toBeVisible()
+    await waitFor(() => expect(within(pane).getByText(/resolve-library-id/)).toBeVisible())
+    // The plugin view is replaced, not pushed underneath.
+    expect(within(pane).queryByRole("button", { name: "Disable" })).toBeNull()
+
+    await fireEvent.click(within(pane).getByRole("button", { name: "Back to context7" }))
+    expect(within(pane).getByRole("button", { name: "Disable" })).toBeVisible()
+  })
+
+  test("Escape in the skill view returns to the plugin instead of closing the pane", async () => {
+    await renderDirectory()
+    const pane = await openPane("context7")
+    await fireEvent.click(within(pane).getByRole("button", { name: /docs-lookup/ }))
+    await within(pane).findByRole("navigation", { name: "Breadcrumb" })
+
+    await fireEvent.keyDown(pane, { key: "Escape" })
+
+    expect(screen.getByRole("complementary", { name: "context7 details" })).toBeVisible()
+    expect(within(pane).queryByRole("navigation", { name: "Breadcrumb" })).toBeNull()
+
+    await fireEvent.keyDown(pane, { key: "Escape" })
+    await waitFor(() => expect(screen.queryByRole("complementary", { name: "context7 details" })).toBeNull())
+  })
+
+  test("the pane opens at the remembered width and its handle resizes with the keyboard", async () => {
+    localStorage.setItem(AGENT_PLUGIN_PANE_WIDTH_KEY, "500")
+    await renderDirectory()
+    const pane = await openPane("context7")
+
+    expect(pane.style.width).toBe("500px")
+
+    const handle = within(pane).getByRole("separator", { name: "Resize plugin details" })
+    await fireEvent.keyDown(handle, { key: "ArrowLeft" })
+    expect(pane.style.width).toBe("516px")
+    expect(localStorage.getItem(AGENT_PLUGIN_PANE_WIDTH_KEY)).toBe("516")
+
+    await fireEvent.keyDown(handle, { key: "End" })
+    expect(pane.style.width).toBe("360px")
   })
 })
 
@@ -300,11 +422,26 @@ describe("Agent Plugin Directory actions", () => {
     })
   })
 
-  test("Use default posts activation with choice null", async () => {
+  test("the overflow menu carries every secondary action and names what clearing would do", async () => {
+    await renderDirectory()
+    const pane = await openPane("context7")
+
+    const items = within(pane).getAllByRole("menuitem").map((item) => item.textContent)
+    expect(items).toEqual([
+      "Clear my override — follow the organization default (would be disabled)",
+      "Make organization default (admin)",
+      "Update to 1.0.0",
+    ])
+    // The main row keeps exactly one button; the rest are menu items.
+    expect(within(pane).queryByRole("button", { name: "Use default" })).toBeNull()
+    expect(within(pane).queryByRole("button", { name: /organization/ })).toBeNull()
+  })
+
+  test("Clear my override posts activation with choice null", async () => {
     const { recorded } = await renderDirectory()
     const pane = await openPane("context7")
 
-    await fireEvent.click(within(pane).getByRole("button", { name: "Use default" }))
+    await fireEvent.click(within(pane).getByRole("menuitem", { name: /Clear my override/ }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
     expect(posted(recorded, "/api/claxedo/plugins/activation")[0]!.body).toMatchObject({ choice: null })
@@ -314,7 +451,7 @@ describe("Agent Plugin Directory actions", () => {
     const { recorded } = await renderDirectory()
     const pane = await openPane("context7")
 
-    await fireEvent.click(within(pane).getByRole("button", { name: "Update" }))
+    await fireEvent.click(within(pane).getByRole("menuitem", { name: "Update to 1.0.0" }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/update")).toHaveLength(1))
     expect(posted(recorded, "/api/claxedo/plugins/update")[0]!.body).toEqual({
@@ -324,11 +461,11 @@ describe("Agent Plugin Directory actions", () => {
     })
   })
 
-  test("Enable for organization posts the positive organization default", async () => {
+  test("Make organization default posts the positive organization default", async () => {
     const { recorded } = await renderDirectory()
     const pane = await openPane("context7")
 
-    await fireEvent.click(within(pane).getByRole("button", { name: "Enable for organization" }))
+    await fireEvent.click(within(pane).getByRole("menuitem", { name: "Make organization default (admin)" }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/organization-default")).toHaveLength(1))
     expect(posted(recorded, "/api/claxedo/plugins/organization-default")[0]!.body).toEqual({
@@ -339,7 +476,7 @@ describe("Agent Plugin Directory actions", () => {
     })
   })
 
-  test("Connect opens the personal scope and Connect for organization the team scope", async () => {
+  test("Connect is the row's one button; the organization scope lives in its menu", async () => {
     const { open } = await renderDirectory()
     const pane = await openPane("composio")
 
@@ -351,7 +488,7 @@ describe("Agent Plugin Directory actions", () => {
       teamScopeEnabled: true,
     }))
 
-    await fireEvent.click(within(pane).getByRole("button", { name: "Connect for organization" }))
+    await fireEvent.click(within(pane).getByRole("menuitem", { name: "Connect for organization (admin)" }))
     expect(open).toHaveBeenLastCalledWith(expect.objectContaining({ integrationId: "mcp-knowledge", scope: "team" }))
   })
 
@@ -361,7 +498,7 @@ describe("Agent Plugin Directory actions", () => {
     })
     const pane = await openPane("composio")
 
-    await fireEvent.click(await within(pane).findByRole("button", { name: "Disconnect" }))
+    await fireEvent.click(await within(pane).findByRole("menuitem", { name: "Disconnect" }))
 
     await waitFor(() => expect(disconnect).toHaveBeenCalledWith("conn-1"))
   })
@@ -375,7 +512,7 @@ describe("Agent Plugin Directory unsigned mode", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "context7" }))
     const pane = await screen.findByRole("complementary", { name: "context7 details" })
-    expect(within(pane).queryByRole("button", { name: "Enable for organization" })).toBeNull()
+    expect(within(pane).queryByRole("menuitem", { name: /\(admin\)$/ })).toBeNull()
     expect(within(pane).getByText("Every project on this machine")).toBeVisible()
   })
 
@@ -435,6 +572,111 @@ describe("Agent Plugin Directory sources", () => {
     expect(alert).toHaveTextContent("broken: unknown key: hooks")
     expect(posted(recorded, "/api/claxedo/plugins/sources")).toHaveLength(1)
     expect(screen.getByLabelText("GitHub repository")).toHaveValue("acme/empty")
+  })
+})
+
+describe("plugin status derivation", () => {
+  const plugin = (overrides: Partial<PluginCandidate> = {}): PluginCandidate =>
+    ({ ...candidate({ name: "composio", installed: true, source: CLAXEDO }), ...overrides })
+
+  test("an installed plugin counts its harnesses in muted language", () => {
+    expect(pluginStatus({ plugin: plugin() })).toEqual({
+      label: "Installed · 4 harnesses",
+      tone: "normal",
+      attention: false,
+    })
+  })
+
+  test("an unauthenticated OAuth server outranks an available update", () => {
+    const needy = plugin({ updateAvailable: true, mcpServers: [OAUTH] })
+    expect(pluginStatus({ plugin: needy })).toEqual({
+      label: "Needs authentication",
+      tone: "warning",
+      attention: true,
+    })
+    expect(pluginStatus({
+      plugin: needy,
+      connections: [{ id: "c", integrationId: "mcp-knowledge", scope: "personal", status: "broken" }],
+    })).toEqual({ label: "Missing credential", tone: "critical", attention: true })
+  })
+
+  test("an update on an otherwise healthy plugin is an accent, not a warning", () => {
+    expect(pluginStatus({ plugin: plugin({ updateAvailable: true }) })?.tone).toBe("accent")
+  })
+
+  test("an uninstalled offer carries no status at all", () => {
+    expect(pluginStatus({ plugin: candidate({ name: "posthog", installed: false, source: CLAXEDO }) })).toBeUndefined()
+  })
+
+  test("the Status fact names the authority that decided it", () => {
+    const winner = (name: string, effective: boolean) => plugin({
+      harnesses: {
+        opencode: { ...activation(effective), effective: { status: "ready", effective, winner: name } },
+        claude: activation(false),
+        codex: activation(false),
+        cursor: activation(false),
+      },
+    })
+    expect(activationSummary(winner("user-default", true))).toBe("Enabled · your choice")
+    expect(activationSummary(winner("project", true))).toBe("Enabled · your choice")
+    expect(activationSummary(winner("organization", true))).toBe("Enabled · organization default")
+    expect(activationSummary(winner("claxedo", true))).toBe("Enabled · Claxedo default")
+    expect(activationSummary(winner("user-default", false))).toBe("Disabled · your choice")
+  })
+
+  test("a candidate no authority has spoken about is not installed", () => {
+    const untouched = plugin({
+      harnesses: everyHarness({ effective: { status: "ready", effective: false, winner: "none" } }),
+    })
+    expect(activationSummary(untouched)).toBe("Not installed")
+  })
+
+  test("clearing an override falls to the organization default, else to Claxedo", () => {
+    const harnessIds = ["opencode", "claude", "codex", "cursor"] as const
+    const states = (organizationDefault: boolean | undefined, claxedoDefault: boolean) =>
+      everyHarness({
+        ...(organizationDefault === undefined ? {} : { organizationDefault }),
+        claxedoDefault,
+        effective: { status: "ready", effective: false, winner: "user-default" },
+      })
+
+    expect(defaultOutcome({ plugin: plugin({ harnesses: states(true, false) }), harnesses: harnessIds }))
+      .toEqual({ authority: "organization", enabled: true })
+    expect(defaultOutcome({ plugin: plugin({ harnesses: states(false, true) }), harnesses: harnessIds }))
+      .toEqual({ authority: "organization", enabled: false })
+    expect(defaultOutcome({ plugin: plugin({ harnesses: states(undefined, true) }), harnesses: harnessIds }))
+      .toEqual({ authority: "Claxedo", enabled: true })
+    expect(defaultOutcome({ plugin: plugin({ harnesses: states(undefined, false) }), harnesses: harnessIds }))
+      .toEqual({ authority: "Claxedo", enabled: false })
+  })
+})
+
+describe("detail pane width", () => {
+  test("a stored width survives a round trip and a short one falls back to the default", () => {
+    writePaneWidth(512.4)
+    expect(localStorage.getItem(AGENT_PLUGIN_PANE_WIDTH_KEY)).toBe("512")
+    expect(readPaneWidth()).toBe(512)
+
+    localStorage.setItem(AGENT_PLUGIN_PANE_WIDTH_KEY, "12")
+    expect(readPaneWidth()).toBe(420)
+    localStorage.setItem(AGENT_PLUGIN_PANE_WIDTH_KEY, "not a number")
+    expect(readPaneWidth()).toBe(420)
+  })
+
+  test("storage that throws costs the pane its memory, not its render", () => {
+    const original = Object.getOwnPropertyDescriptor(window, "localStorage")!
+    Object.defineProperty(window, "localStorage", {
+      configurable: true,
+      get() {
+        throw new Error("storage is disabled in this partition")
+      },
+    })
+    try {
+      expect(readPaneWidth()).toBe(420)
+      expect(() => writePaneWidth(500)).not.toThrow()
+    } finally {
+      Object.defineProperty(window, "localStorage", original)
+    }
   })
 })
 

@@ -1,6 +1,6 @@
 import { oauthServers, type OAuthServer } from "../connections"
 export { oauthServers, type OAuthServer }
-import { AGENT_PLUGIN_HARNESSES, type AgentPluginHarness, type PluginCandidate } from "../api"
+import { AGENT_PLUGIN_HARNESSES, type AgentPluginHarness, type HarnessActivation, type PluginCandidate } from "../api"
 import type { AgentPluginConnectionSummary } from "../connections"
 import type { DirectorySource, MachineInstalled, MachineInstalledEntry } from "./data"
 
@@ -45,28 +45,30 @@ export function effectiveConnection(
   return connectionFor(connections, integrationId, "personal") ?? connectionFor(connections, integrationId, "team")
 }
 
-export type DirectoryStateChip = {
+export type PluginStatusTone = "normal" | "warning" | "critical" | "accent"
+
+export type PluginStatus = {
   label: string
-  tone: "ok" | "warning" | "critical"
-  /** Attention chips move the card into the first section. */
+  tone: PluginStatusTone
+  /** Attention states move the card into the first section. */
   attention: boolean
 }
 
 /**
- * The one chip a card and the detail pane both show.
+ * The one status a card and the detail pane both report.
  *
- * Only installed plugins carry a state: the rest are offers, and an offer has
+ * Only installed plugins carry a status: the rest are offers, and an offer has
  * no runtime condition to report. Connection facts are read from the same list
- * the pane's per-server rows use, so a card never claims a state the pane
+ * the pane's per-server rows use, so a card never claims a status the pane
  * contradicts.
  */
-export function stateChip(input: {
+export function pluginStatus(input: {
   plugin: PluginCandidate
   connections?: readonly AgentPluginConnectionSummary[]
-}): DirectoryStateChip | undefined {
+}): PluginStatus | undefined {
   const { plugin } = input
   if (!isInstalled(plugin)) {
-    return plugin.updateAvailable ? { label: "Update available", tone: "warning", attention: false } : undefined
+    return plugin.updateAvailable ? { label: "Update available", tone: "accent", attention: false } : undefined
   }
   if (artifactUnavailable(plugin)) return { label: "Artifact unavailable", tone: "critical", attention: true }
   for (const server of oauthServers(plugin)) {
@@ -75,9 +77,69 @@ export function stateChip(input: {
     if (connection.status === "broken") return { label: "Missing credential", tone: "critical", attention: true }
     if (connection.status === "degraded") return { label: "Needs reconnection", tone: "warning", attention: true }
   }
-  if (plugin.updateAvailable) return { label: "Update available", tone: "warning", attention: false }
+  if (plugin.updateAvailable) return { label: "Update available", tone: "accent", attention: false }
   const count = installedHarnesses(plugin).length
-  return { label: `Installed on ${count} ${count === 1 ? "harness" : "harnesses"}`, tone: "ok", attention: false }
+  return { label: `Installed \u00b7 ${count} ${count === 1 ? "harness" : "harnesses"}`, tone: "normal", attention: false }
+}
+
+/** Whether any authority has spoken about this harness at all. */
+function decided(state: HarnessActivation) {
+  return state.explicit !== undefined && state.explicit !== null
+    || state.projectOverride !== undefined && state.projectOverride !== null
+    || state.userDefault !== undefined && state.userDefault !== null
+    || state.organizationDefault !== undefined
+    || state.claxedoDefault !== undefined
+}
+
+/** What `effective.winner` is called in the pane's facts strip. */
+function authorityPhrase(winner: string) {
+  switch (winner) {
+    case "project":
+    case "user-default":
+      return "your choice"
+    case "organization":
+      return "organization default"
+    case "claxedo":
+      return "Claxedo default"
+    case "machine":
+      return "this machine"
+    default:
+      return "no default"
+  }
+}
+
+/**
+ * The Status fact: whether the plugin runs, and which authority decided it.
+ *
+ * The winner is read from the harness that actually resolves the plugin — the
+ * first effective one, else the first one any authority has spoken about — so
+ * the sentence names the authority the user would have to change.
+ */
+export function activationSummary(plugin: PluginCandidate): string {
+  const installed = isInstalled(plugin)
+  const harness = AGENT_PLUGIN_HARNESSES.find((id) => plugin.harnesses[id].effective.effective)
+    ?? AGENT_PLUGIN_HARNESSES.find((id) => decided(plugin.harnesses[id]))
+  if (!installed && !harness) return "Not installed"
+  const winner = harness ? plugin.harnesses[harness].effective.winner : "none"
+  return `${installed ? "Enabled" : "Disabled"} \u00b7 ${authorityPhrase(winner)}`
+}
+
+/**
+ * What the plugin would resolve to once the user's own override is gone.
+ *
+ * Clearing an override hands the decision back to the organization when it has
+ * one and to Claxedo otherwise, which is exactly the sentence the overflow menu
+ * has to promise before it posts `choice: null`.
+ */
+export function defaultOutcome(input: {
+  plugin: PluginCandidate
+  harnesses: readonly AgentPluginHarness[]
+}): { authority: "organization" | "Claxedo"; enabled: boolean } {
+  const states = input.harnesses.map((harness) => input.plugin.harnesses[harness])
+  return {
+    authority: states.some((state) => state.organizationDefault !== undefined) ? "organization" : "Claxedo",
+    enabled: states.some((state) => state.organizationDefault ?? state.claxedoDefault ?? false),
+  }
 }
 
 /** Search covers what a user would type: the plugin, its skills, its servers. */
@@ -95,14 +157,13 @@ export function matchesQuery(plugin: PluginCandidate, query: string) {
 export type DirectorySection = {
   id: string
   title: string
-  subtitle?: string
   plugins: PluginCandidate[]
 }
 
 export type PersonalEntry = MachineInstalledEntry & { harnessId: MachineInstalled["harnesses"][number]["harnessId"] }
 
-/** What a section needs from a source; the full row carries removal state too. */
-export type DirectorySourceView = Pick<DirectorySource, "id" | "kind" | "label" | "repository">
+/** What a section needs from a source; the full row carries kind and removal state too. */
+export type DirectorySourceView = Pick<DirectorySource, "id" | "label">
 
 /** The sources a candidate list came from, in first-seen order. */
 export function sourcesFromCandidates(candidates: readonly PluginCandidate[]): DirectorySourceView[] {
@@ -110,12 +171,7 @@ export function sourcesFromCandidates(candidates: readonly PluginCandidate[]): D
   for (const candidate of candidates) {
     const source = candidate.source
     if (!source || seen.has(source.id)) continue
-    seen.set(source.id, {
-      id: source.id,
-      kind: source.kind,
-      label: source.label,
-      repository: source.repository ?? "",
-    })
+    seen.set(source.id, { id: source.id, label: source.label })
   }
   return [...seen.values()]
 }
@@ -147,8 +203,8 @@ export function directorySections(input: {
       offered.push(plugin)
       continue
     }
-    const chip = stateChip({ plugin, ...(input.connections ? { connections: input.connections } : {}) })
-    if (chip?.attention) attention.push(plugin)
+    const status = pluginStatus({ plugin, ...(input.connections ? { connections: input.connections } : {}) })
+    if (status?.attention) attention.push(plugin)
     else installed.push(plugin)
   }
   const sections: DirectorySection[] = []
@@ -159,17 +215,12 @@ export function directorySections(input: {
   for (const source of input.sources) {
     const plugins = offered.filter((plugin) => plugin.source?.id === source.id)
     if (plugins.length === 0) continue
-    sections.push({
-      id: `source:${source.id}`,
-      title: source.label,
-      subtitle: source.kind === "claxedo" ? source.repository : `added by you · ${source.repository}`,
-      plugins,
-    })
+    sections.push({ id: `source:${source.id}`, title: source.label, plugins })
   }
   const known = new Set(input.sources.map((source) => source.id))
   const orphans = offered.filter((plugin) => !plugin.source || !known.has(plugin.source.id))
   if (orphans.length > 0) {
-    sections.push({ id: "source:unknown", title: "Other", subtitle: "no longer served by a source", plugins: orphans })
+    sections.push({ id: "source:unknown", title: "No longer served by a source", plugins: orphans })
   }
   return sections
 }

@@ -299,7 +299,10 @@ export const desktopRendererUnsigned: Policy = {
   // DirectoryApi over hosted operations, replacing the single catalog surface.
   // Reviewed owner: features/agent-plugins (this product's own surface); every
   // edge stays inside packages already in the closure. Re-measured, no headroom.
-  ceilings: { modules: 1013, packages: 56 },
+  // +7 modules / 0 packages (2026-09-04, polish): the Directory split into status,
+  // facts, actions, MCP rows, skill view, overflow menu, pane width, and chrome
+  // modules; every edge stays inside packages already in the closure. Re-measured, no headroom.
+  ceilings: { modules: 1020, packages: 56 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

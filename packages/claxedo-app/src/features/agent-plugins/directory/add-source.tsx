@@ -2,7 +2,7 @@ import { createSignal, For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { DirectorySourceError, type DirectorySourceDiagnostic, type DirectorySourceRegistration } from "./data"
 
-const FIELD = "w-full rounded-md border border-border-weak-base bg-background-base px-2 py-1.5 text-13-regular text-text-base"
+const FIELD = "w-full rounded-md border border-border-weak-base bg-surface-base px-2 py-1.5 text-13-regular text-text-base"
 
 /**
  * The inline "add a GitHub source" form.
@@ -57,7 +57,7 @@ export function AddSourceForm(props: {
     <form
       data-component="agent-plugin-add-source"
       aria-label="Add source"
-      class="grid gap-2 rounded-lg border border-border-weak-base bg-surface-base p-3"
+      class="grid gap-2 rounded-lg border border-border-weak-base bg-surface-inset-base p-3"
       onSubmit={submit}
     >
       <div class="flex flex-wrap items-end gap-2">

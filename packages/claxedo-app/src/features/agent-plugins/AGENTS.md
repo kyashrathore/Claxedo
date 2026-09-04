@@ -10,7 +10,7 @@ feature is present in a build.
 - `directory/` — the browse surface: sections, source chips, search, and the
   detail pane. `directory/data.ts` owns the sources and machine-installed reads
   that live beside the catalog; `directory/view.ts` holds the pure derivations
-  (section membership, state chips, search) the surface and its tests share.
+  (section membership, status lines, search) the surface and its tests share.
 - `install/` — the install sheet the Directory opens on `Add`.
 
 ```json

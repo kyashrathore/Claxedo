@@ -194,7 +194,10 @@ export const appLocal: Policy = {
   // DirectoryApi over hosted operations, replacing the single catalog surface.
   // Reviewed owner: features/agent-plugins (this product's own surface); every
   // edge stays inside packages already in the closure. Re-measured, no headroom.
-  ceilings: { modules: 963, packages: 37 },
+  // +7 modules / 0 packages (2026-09-04, polish): the Directory split into status,
+  // facts, actions, MCP rows, skill view, overflow menu, pane width, and chrome
+  // modules; every edge stays inside packages already in the closure. Re-measured, no headroom.
+  ceilings: { modules: 970, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

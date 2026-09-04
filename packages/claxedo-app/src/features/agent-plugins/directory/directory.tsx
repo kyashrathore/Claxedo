@@ -1,10 +1,14 @@
 import { createMemo, createResource, createSignal, For, Show } from "solid-js"
+import { keepPreviousData, useQuery } from "@tanstack/solid-query"
 import { Button } from "@opencode-ai/ui/button"
+import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
+import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
 import type { AgentPluginApi, AgentPluginHarness, PluginCandidate, PluginCatalog } from "../api"
 import type { AgentPluginConnectionPort, AgentPluginConnectionSummary } from "../connections"
 import { AddSourceForm } from "./add-source"
 import { DirectoryCard, PersonalCard } from "./card"
+import { GHOST_ICON_BUTTON } from "./chrome"
 import type { DirectoryApi, DirectorySourceRegistration } from "./data"
 import { PluginDetailPane } from "./detail-pane"
 import {
@@ -12,13 +16,14 @@ import {
   isInstalled,
   matchesQuery,
   personalEntries,
+  pluginStatus,
   sourcesFromCandidates,
-  stateChip,
   type DirectorySourceView,
 } from "./view"
 
 const ALL = "all"
 const PERSONAL = "personal"
+const CROSS_PROJECT = "Cross-project defaults"
 
 /**
  * The Agent Plugins Directory: the one browse surface for plugins.
@@ -27,6 +32,12 @@ const PERSONAL = "personal"
  * update and organization defaults are all guarded by the same `revision` and
  * all end in the same refetch. The detail pane renders one candidate and calls
  * back; the install sheet is a composition concern reached through `onAdd`.
+ *
+ * The catalog is a query rather than a resource so that reopening the surface
+ * paints the last read immediately and revalidates behind it — the same warm
+ * boot the workspace catalog gets, through the same persisted `controlPlane`
+ * prefix. "Refresh catalog" stays the one explicit way to make the server go
+ * back to the source.
  */
 export function AgentPluginDirectory(props: {
   mode: "signed" | "unsigned"
@@ -41,7 +52,6 @@ export function AgentPluginDirectory(props: {
   onAdd: (plugin: PluginCandidate, catalog: PluginCatalog) => void | Promise<unknown>
 }) {
   const signed = () => props.mode === "signed"
-  const [fresh, setFresh] = createSignal(false)
   const [projectId, setProjectId] = createSignal<string>()
   const [query, setQuery] = createSignal("")
   const [filter, setFilter] = createSignal<string>(ALL)
@@ -49,10 +59,26 @@ export function AgentPluginDirectory(props: {
   const [pending, setPending] = createSignal<string>()
   const [adding, setAdding] = createSignal(false)
 
-  const [catalog, { refetch }] = createResource(
-    () => ({ mode: props.mode, refresh: fresh(), projectId: signed() ? projectId() : undefined }),
-    (options) => props.api.catalog(options),
-  )
+  // Not a signal: a forced re-read is a property of one fetch, not of the
+  // query's identity. Keying on it would split the cache into a stale half and
+  // a fresh half that never see each other's data.
+  let forceRefresh = false
+  const catalogQuery = useQuery(() => ({
+    queryKey: ["controlPlane", props.mode, "agentPlugins", signed() ? projectId() ?? null : null],
+    queryFn: () => {
+      const refresh = forceRefresh
+      forceRefresh = false
+      const project = signed() ? projectId() : undefined
+      return props.api.catalog({ ...(refresh ? { refresh: true } : {}), ...(project ? { projectId: project } : {}) })
+    },
+    staleTime: 30_000,
+    placeholderData: keepPreviousData,
+  }))
+  const reread = async (options: { refresh?: boolean } = {}) => {
+    forceRefresh = options.refresh === true
+    await catalogQuery.refetch()
+  }
+
   const [connections, { refetch: refetchConnections }] = createResource(
     () => signed() && props.connections ? "signed" : undefined,
     () => props.connections!.load(),
@@ -69,6 +95,7 @@ export function AgentPluginDirectory(props: {
   const listedSources = () => (sources.error ? [] : sources()?.sources ?? [])
   const machineInstalled = () => (machine.error ? undefined : machine())
 
+  const catalog = () => catalogQuery.data
   const candidates = () => catalog()?.candidates ?? []
   const connectionRows = (): AgentPluginConnectionSummary[] => connections()?.connections ?? []
   const harnesses = createMemo<AgentPluginHarness[]>(() => catalog()?.supportedHarnesses ?? [])
@@ -92,10 +119,9 @@ export function AgentPluginDirectory(props: {
   const personalCount = () => personalEntries({ machine: machineInstalled(), query: query(), filter: ALL }).length
 
   const selected = createMemo(() => candidates().find((plugin) => plugin.pluginInstanceId === selectedId()))
+  const projectLabel = () => catalog()?.projects?.find((project) => project.id === projectId())?.label ?? CROSS_PROJECT
 
   // ── Mutations, ported from the catalog article they replaced ──────────────
-  const chosenHarnesses = () => harnesses()
-
   const mutate = async (plugin: PluginCandidate, choice: boolean | null) => {
     const current = catalog()
     if (!current) return
@@ -109,7 +135,7 @@ export function AgentPluginDirectory(props: {
       }
       const result = await props.api.activation({
         pluginInstanceId: plugin.pluginInstanceId,
-        harnessIds: chosenHarnesses(),
+        harnessIds: harnesses(),
         choice,
         expectedRevision: current.revision,
         ...(targetSelection ? { target: targetSelection } : {}),
@@ -120,8 +146,7 @@ export function AgentPluginDirectory(props: {
           description: result.reconciliation.message ?? "Runtime reconciliation will be retried.",
         })
       }
-      setFresh(false)
-      await refetch()
+      await reread()
       if (signed() && props.connections) await refetchConnections()
     } catch (error) {
       showToast({ title: "Could not change plugin", description: error instanceof Error ? error.message : String(error) })
@@ -140,8 +165,7 @@ export function AgentPluginDirectory(props: {
         expectedRevision: current.revision,
         ...(signed() ? { authority: "user" as const } : {}),
       })
-      setFresh(false)
-      await refetch()
+      await reread()
       if (signed() && props.connections) await refetchConnections()
     } catch (error) {
       showToast({ title: "Could not update plugin", description: error instanceof Error ? error.message : String(error) })
@@ -157,12 +181,11 @@ export function AgentPluginDirectory(props: {
     try {
       await props.api.organizationDefault({
         pluginInstanceId: plugin.pluginInstanceId,
-        harnessIds: chosenHarnesses(),
+        harnessIds: harnesses(),
         choice,
         expectedRevision: current.revision,
       })
-      setFresh(false)
-      await refetch()
+      await reread()
     } catch (error) {
       showToast({
         title: "Could not change organization default",
@@ -207,8 +230,7 @@ export function AgentPluginDirectory(props: {
     const current = catalog()
     if (!current) return
     await props.onAdd(plugin, current)
-    setFresh(false)
-    await refetch()
+    await reread()
     if (signed() && props.connections) await refetchConnections()
   }
 
@@ -219,8 +241,7 @@ export function AgentPluginDirectory(props: {
       await props.directory.sources.remove(id)
       setFilter(ALL)
       await refetchSources()
-      setFresh(true)
-      await refetch()
+      await reread({ refresh: true })
     } catch (error) {
       showToast({ title: "Could not remove source", description: error instanceof Error ? error.message : String(error) })
     }
@@ -230,13 +251,7 @@ export function AgentPluginDirectory(props: {
     await props.directory.sources.add(registration)
     setAdding(false)
     await refetchSources()
-    setFresh(true)
-    await refetch()
-  }
-
-  const refresh = async () => {
-    setFresh(true)
-    await refetch()
+    await reread({ refresh: true })
   }
 
   // ── Keyboard: Esc closes the pane, arrows walk the cards ──────────────────
@@ -283,7 +298,7 @@ export function AgentPluginDirectory(props: {
     >
       <div class="min-w-0 overflow-y-auto px-6 py-5">
         <div class="mx-auto flex max-w-5xl flex-col gap-4">
-          <header class="flex flex-wrap items-center gap-2">
+          <header class="flex items-center gap-1.5">
             <input
               type="search"
               aria-label="Search plugins"
@@ -293,19 +308,36 @@ export function AgentPluginDirectory(props: {
               onInput={(event) => setQuery(event.currentTarget.value)}
             />
             <Show when={signed()}>
-              <select
-                aria-label="Inspect effective state for"
-                class="rounded-lg border border-border-weak-base bg-surface-base px-2 py-2 text-13-regular text-text-base"
-                value={projectId() ?? ""}
-                onChange={(event) => setProjectId(event.currentTarget.value || undefined)}
-              >
-                <option value="">Cross-project defaults</option>
-                <For each={catalog()?.projects ?? []}>{(project) => <option value={project.id}>{project.label}</option>}</For>
-              </select>
+              <DropdownMenu>
+                <DropdownMenu.Trigger
+                  aria-label="Inspect effective state for"
+                  class="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-12-regular text-text-weak hover:bg-surface-raised-base hover:text-text-base"
+                >
+                  <span class="truncate">{projectLabel()}</span>
+                  <Icon name="chevron-down" size="small" />
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content>
+                    <DropdownMenu.Item onSelect={() => setProjectId(undefined)}>{CROSS_PROJECT}</DropdownMenu.Item>
+                    <For each={catalog()?.projects ?? []}>
+                      {(project) => (
+                        <DropdownMenu.Item onSelect={() => setProjectId(project.id)}>{project.label}</DropdownMenu.Item>
+                      )}
+                    </For>
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu>
             </Show>
-            <Button size="normal" variant="secondary" disabled={catalog.loading} onClick={() => void refresh()}>
-              {catalog.loading ? "Refreshing…" : "Refresh catalog"}
-            </Button>
+            <button
+              type="button"
+              aria-label="Refresh catalog"
+              title="Refresh catalog"
+              disabled={catalogQuery.isFetching}
+              class={`${GHOST_ICON_BUTTON} size-7`}
+              onClick={() => void reread({ refresh: true })}
+            >
+              <Icon name="reset" size="small" />
+            </button>
           </header>
 
           <div role="tablist" aria-label="Sources" class="flex flex-wrap items-center gap-2">
@@ -340,9 +372,9 @@ export function AgentPluginDirectory(props: {
             />
           </Show>
 
-          <Show when={catalog.error}>
+          <Show when={catalogQuery.error}>
             <div role="alert" class="rounded-lg border border-border-critical-base p-3 text-13-regular text-icon-critical-base">
-              {String(catalog.error)}
+              {String(catalogQuery.error)}
             </div>
           </Show>
           <Show when={sources.error}>
@@ -359,23 +391,21 @@ export function AgentPluginDirectory(props: {
             </section>
           </Show>
 
+          <Show when={catalogQuery.isPending && !catalog()}>
+            <CatalogSkeleton />
+          </Show>
+
           <div ref={grid} class="flex flex-col gap-6">
             <For each={sections()}>
               {(section) => (
                 <section aria-label={section.title}>
-                  <h2 class="mb-2 flex items-baseline gap-2 text-14-medium text-text-strong">
-                    {section.title}
-                    <span class="text-13-regular text-text-weaker">{section.plugins.length}</span>
-                    <Show when={section.subtitle}>
-                      {(subtitle) => <span class="text-12-regular text-text-weak">{subtitle()}</span>}
-                    </Show>
-                  </h2>
+                  <SectionHeading title={section.title} count={section.plugins.length} />
                   <div class="grid gap-2 md:grid-cols-2">
                     <For each={section.plugins}>
                       {(plugin) => (
                         <DirectoryCard
                           plugin={plugin}
-                          chip={stateChip({ plugin, connections: connectionRows() })}
+                          status={pluginStatus({ plugin, connections: connectionRows() })}
                           selected={selectedId() === plugin.pluginInstanceId}
                           action={cardAction(plugin)}
                           onOpen={() => setSelectedId(plugin.pluginInstanceId)}
@@ -389,11 +419,7 @@ export function AgentPluginDirectory(props: {
 
             <Show when={personal().length > 0 || machine.error}>
               <section aria-label="Personal">
-                <h2 class="mb-2 flex items-baseline gap-2 text-14-medium text-text-strong">
-                  Personal
-                  <span class="text-13-regular text-text-weaker">{personal().length}</span>
-                  <span class="text-12-regular text-text-weak">installed by you for these harnesses</span>
-                </h2>
+                <SectionHeading title="Personal" count={personal().length} note="installed for other harnesses" />
                 <Show when={machine.error}>
                   <p class="text-12-regular text-text-weak">
                     Could not read this machine's harness installs: {String(machine.error)}
@@ -405,7 +431,7 @@ export function AgentPluginDirectory(props: {
               </section>
             </Show>
 
-            <Show when={sections().length === 0 && personal().length === 0 && !catalog.loading}>
+            <Show when={sections().length === 0 && personal().length === 0 && !catalogQuery.isPending}>
               <p class="text-13-regular text-text-weak">No plugins match this search.</p>
             </Show>
           </div>
@@ -414,27 +440,62 @@ export function AgentPluginDirectory(props: {
 
       <Show when={selected()}>
         {(plugin) => (
-          <PluginDetailPane
-            plugin={plugin()}
-            signed={signed()}
-            catalog={catalog()!}
-            api={props.api}
-            projectId={signed() ? projectId() : undefined}
-            connections={connectionRows()}
-            connectionsLoading={connections.loading}
-            connectionsError={connections.error}
-            pending={pending() === plugin().pluginInstanceId}
-            onAdd={() => void add(plugin())}
-            onActivate={(choice) => void mutate(plugin(), choice)}
-            onUpdate={() => void update(plugin())}
-            onOrganizationDefault={(choice) => void organizationDefault(plugin(), choice)}
-            onConnect={openConnection}
-            onDisconnect={(connection) => void disconnect(connection)}
-            onClose={() => setSelectedId(undefined)}
-          />
+          <Show when={catalog()}>
+            {(current) => (
+              <PluginDetailPane
+                plugin={plugin()}
+                signed={signed()}
+                catalog={current()}
+                api={props.api}
+                harnesses={harnesses()}
+                projectId={signed() ? projectId() : undefined}
+                connections={connectionRows()}
+                connectionsLoading={connections.loading}
+                connectionsError={connections.error}
+                pending={pending() === plugin().pluginInstanceId}
+                onAdd={() => void add(plugin())}
+                onActivate={(choice) => void mutate(plugin(), choice)}
+                onUpdate={() => void update(plugin())}
+                onOrganizationDefault={(choice) => void organizationDefault(plugin(), choice)}
+                onConnect={openConnection}
+                onDisconnect={(connection) => void disconnect(connection)}
+                onClose={() => setSelectedId(undefined)}
+              />
+            )}
+          </Show>
         )}
       </Show>
     </main>
+  )
+}
+
+/** 13/medium title, muted count, and nothing else unless the section needs a word. */
+function SectionHeading(props: { title: string; count: number; note?: string }) {
+  return (
+    <h2 class="mb-2 flex items-baseline gap-2 text-13-medium text-text-strong">
+      {props.title}
+      <span class="text-12-regular text-text-weaker">{props.count}</span>
+      <Show when={props.note}>{(note) => <span class="text-12-regular text-text-weaker">{note()}</span>}</Show>
+    </h2>
+  )
+}
+
+/** The first read has nothing to paint, so it paints the shape of the answer. */
+function CatalogSkeleton() {
+  return (
+    <div data-component="agent-plugin-skeleton" aria-hidden="true" class="grid gap-2 md:grid-cols-2">
+      <For each={[0, 1, 2]}>
+        {() => (
+          <div class="flex items-start gap-3 rounded-lg border border-border-weak-base bg-surface-base p-3">
+            <div class="size-10 shrink-0 rounded-lg bg-surface-raised-stronger" />
+            <div class="flex min-w-0 flex-1 flex-col gap-2 pt-1">
+              <div class="h-3 w-1/3 rounded-sm bg-surface-raised-stronger" />
+              <div class="h-2.5 w-4/5 rounded-sm bg-surface-raised-base" />
+            </div>
+          </div>
+        )}
+      </For>
+    </div>
   )
 }
 
