@@ -2,7 +2,17 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import type { ServerConnection } from "@/app/connection/server"
 import { queryClient } from "@/platform/query/query-client"
 
-export type ServerHealth = { healthy: boolean; version?: string }
+export type ServerHealth = {
+  healthy: boolean
+  version?: string
+  /**
+   * Whether this server runs workspaces on its own filesystem. The self-host
+   * binary (and the desktop's embedded server) reports true; the hosted plane
+   * reports false. It is what makes "a folder on this machine" a valid project
+   * here, signed in or not.
+   */
+  localExecution?: boolean
+}
 
 const cacheMs = 750
 
@@ -26,10 +36,16 @@ export async function checkServerHealth(server: ServerConnection.HttpBase, fetch
       headers: server.password ? { authorization: `Bearer ${server.password}` } : undefined,
     })
     if (!res.ok) return { healthy: false }
-    const body = await res.json().catch(() => undefined) as { ok?: boolean; healthy?: boolean; version?: string } | undefined
+    const body = await res.json().catch(() => undefined) as {
+      ok?: boolean
+      healthy?: boolean
+      version?: string
+      localExecution?: boolean
+    } | undefined
     return {
       healthy: body?.ok === true || body?.healthy === true,
       ...(body?.version ? { version: body.version } : {}),
+      ...(typeof body?.localExecution === "boolean" ? { localExecution: body.localExecution } : {}),
     }
   } catch {
     return { healthy: false }

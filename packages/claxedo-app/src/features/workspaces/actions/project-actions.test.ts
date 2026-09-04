@@ -113,6 +113,10 @@ beforeAll(async () => {
     DialogCreateCloudProject: () => "create-cloud-project",
   }))
 
+  mock.module("../ui/dialogs/new-project-kind", () => ({
+    DialogNewProjectKind: () => "new-project-kind",
+  }))
+
   mock.module("../../workspaces/ui/dialogs/delete-workspace-dialog", () => ({
     DialogDeleteWorkspace: (props: { onDelete: (dir: string) => Promise<void> | void }) => {
       deleteDialogProps = props
@@ -310,18 +314,47 @@ function make(dir: string) {
 }
 
 describe("createProjectActions New Project", () => {
-  test("an unsigned local server opens the folder picker, in a browser exactly as in the desktop", () => {
+  const healthFetch = (localExecution: boolean | undefined) => async () =>
+    Response.json({ ok: true, ...(localExecution === undefined ? {} : { localExecution }) })
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+  test("an unsigned server with its own filesystem opens the folder picker, in a browser exactly as in the desktop", async () => {
     const fixture = make("/repo/one")
-    const props = { ...fixture.props, config: {}, globalSDK: { ...fixture.props.globalSDK, url: "http://127.0.0.1:2593" } }
+    const props = {
+      ...fixture.props,
+      config: {},
+      platform: { ...fixture.props.platform, fetch: healthFetch(true) },
+      globalSDK: { ...fixture.props.globalSDK, url: "http://127.0.0.1:2593" },
+    }
     createProjectActions(props as never, fixture.nav).handleNewProject()
+    await settle()
     expect(fixture.shows).toEqual(["select-directory"])
   })
 
-  test("a signed server opens the cloud project onboarding, whatever its address", () => {
+  test("a signed server with no filesystem opens the cloud project onboarding", async () => {
     const fixture = make("/repo/one")
-    const props = { ...fixture.props, config: { authEnabled: true }, globalSDK: { ...fixture.props.globalSDK, url: "https://localhost:4449" } }
+    const props = {
+      ...fixture.props,
+      config: { authEnabled: true },
+      platform: { ...fixture.props.platform, fetch: healthFetch(false) },
+      globalSDK: { ...fixture.props.globalSDK, url: "https://plane.example.dev" },
+    }
     createProjectActions(props as never, fixture.nav).handleNewProject()
+    await settle()
     expect(fixture.shows).toEqual(["create-cloud-project"])
+  })
+
+  test("a signed server with its own filesystem lets the user choose, whatever its address", async () => {
+    const fixture = make("/repo/one")
+    const props = {
+      ...fixture.props,
+      config: { authEnabled: true },
+      platform: { ...fixture.props.platform, fetch: healthFetch(true) },
+      globalSDK: { ...fixture.props.globalSDK, url: "https://localhost:4449" },
+    }
+    createProjectActions(props as never, fixture.nav).handleNewProject()
+    await settle()
+    expect(fixture.shows).toEqual(["new-project-kind"])
   })
 })
 

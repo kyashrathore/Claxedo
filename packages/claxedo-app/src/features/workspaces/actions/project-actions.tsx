@@ -9,6 +9,9 @@ import {
 } from "@/features/workspaces/app-ports"
 import { showToast } from "@opencode-ai/ui/toast"
 import { centralTransportForDeployment } from "@/platform/runtime/transport"
+import { checkServerHealthCached } from "@/app/connection/server-health"
+import { newProjectFlow } from "./new-project-flow"
+import { DialogNewProjectKind } from "../ui/dialogs/new-project-kind"
 import { validWorktree } from "@/platform/sync/worktree"
 
 import { api, apiBearerToken, getDefaultBaseUrl } from "@/platform/api/api"
@@ -178,15 +181,18 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       props.dialog.close()
     }
 
-    // The server's mode decides the product, not the client's platform or
-    // URL. A signed server (the hosted plane, or the self-host binary with
-    // accounts on) is the hosted product: there is no local filesystem behind
-    // the directory picker for a browser session, so New Project is the cloud
-    // project onboarding — name, connected GitHub repository or URL,
-    // environment, provision, open. An unsigned local server is the local
-    // product, the same frontend the desktop wraps, and its New Project is a
-    // folder on this machine — in a browser tab exactly as in the desktop.
-    if (centralTransportForDeployment({ serverUrl: props.globalSDK.url, authEnabled: props.config?.authEnabled === true }) === "signed-web") {
+    const openFolder = () => {
+      void props.dialog.show(() => (
+        <DialogSelectDirectory
+          onSelect={(dir) => {
+            if (typeof dir === "string") {
+              void handleProjectSelected(dir)
+            }
+          }}
+        />
+      ))
+    }
+    const openCloud = () => {
       void props.dialog.show(() => (
         <DialogCreateCloudProject
           onSelect={(result) => {
@@ -197,18 +203,23 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
           }}
         />
       ))
-      return
     }
-
-    void props.dialog.show(() => (
-      <DialogSelectDirectory
-        onSelect={(dir) => {
-          if (typeof dir === "string") {
-            void handleProjectSelected(dir)
-          }
-        }}
-      />
-    ))
+    // The server's mode decides the flow (see new-project-flow.ts): a server
+    // with its own filesystem offers a folder on this machine — in a browser
+    // tab exactly as in the desktop, whose server it is — and a signed server
+    // adds cloud projects. Both means the user chooses.
+    void (async () => {
+      const signed = centralTransportForDeployment({
+        serverUrl: props.globalSDK.url,
+        authEnabled: props.config?.authEnabled === true,
+      }) === "signed-web"
+      const url = props.globalSDK.url
+      const health = url ? await checkServerHealthCached({ url }, props.platform.fetch ?? globalThis.fetch) : undefined
+      const flow = newProjectFlow({ localExecution: health?.localExecution, signed })
+      if (flow === "folder") openFolder()
+      else if (flow === "cloud") openCloud()
+      else void props.dialog.show(() => <DialogNewProjectKind onFolder={openFolder} onCloud={openCloud} />)
+    })()
   }
 
   /** Create a local worktree directly — no dialog */

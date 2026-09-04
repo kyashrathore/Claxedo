@@ -303,7 +303,10 @@ export const desktopRendererUnsigned: Policy = {
   // facts, actions, MCP rows, skill view, overflow menu, pane width, and chrome
   // modules; every edge stays inside packages already in the closure. Re-measured, no headroom.
     // +1 module (2026-09-04): the Personal entry pane. Re-measured, no headroom.
-  ceilings: { modules: 1021, packages: 56 },
+  // +2 modules (2026-09-05): the New Project flow rule and the
+  // folder-versus-cloud chooser reached through the shared project actions
+  // (see app-local.ts for the owner).
+  ceilings: { modules: 1023, packages: 56 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

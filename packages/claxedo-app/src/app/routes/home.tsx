@@ -16,6 +16,9 @@ import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { DialogCreateCloudProject } from "@/features/workspaces/ui/dialogs/create-cloud-project"
+import { DialogNewProjectKind } from "@/features/workspaces/ui/dialogs/new-project-kind"
+import { newProjectFlow } from "@/features/workspaces/actions/new-project-flow"
+import { checkServerHealthCached } from "@/app/connection/server-health"
 import { ensureLocalProject } from "../../features/workspaces/data/query/project-ensure"
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
@@ -70,32 +73,36 @@ export default function Home() {
       }
     }
 
-    // The server's mode decides the product, not the client's platform or
-    // URL. A signed server (the hosted plane, or the self-host binary with
-    // accounts on) is the hosted product: New Project is the cloud project
-    // onboarding. An unsigned local server is the local product — the same
-    // frontend the desktop wraps — and its New Project is a folder on this
-    // machine, in a browser tab exactly as in the desktop.
-    if (centralTransportForDeployment({ serverUrl: server.url, authEnabled: config?.authEnabled === true }) === "signed-web") {
+    const openFolder = async () => {
+      if (platform.openDirectoryPickerDialog && server.isLocal()) {
+        const result = await platform.openDirectoryPickerDialog?.({
+          title: language.t("command.project.open"),
+          multiple: true,
+        })
+        resolve(result)
+      } else {
+        dialog.show(
+          () => <DialogSelectDirectory multiple={true} onSelect={resolve} />,
+          () => void resolve(null),
+        )
+      }
+    }
+    const openCloud = () => {
       dialog.show(
         () => <DialogCreateCloudProject onSelect={resolve} />,
         () => void resolve(null),
       )
-      return
     }
-
-    if (platform.openDirectoryPickerDialog && server.isLocal()) {
-      const result = await platform.openDirectoryPickerDialog?.({
-        title: language.t("command.project.open"),
-        multiple: true,
-      })
-      resolve(result)
-    } else {
-      dialog.show(
-        () => <DialogSelectDirectory multiple={true} onSelect={resolve} />,
-        () => void resolve(null),
-      )
-    }
+    // The server's mode decides the flow (see new-project-flow.ts): a server
+    // with its own filesystem offers a folder on this machine — in a browser
+    // tab exactly as in the desktop, whose server it is — and a signed server
+    // adds cloud projects. Both means the user chooses.
+    const signed = centralTransportForDeployment({ serverUrl: server.url, authEnabled: config?.authEnabled === true }) === "signed-web"
+    const health = await checkServerHealthCached({ url: server.url }, platform.fetch ?? globalThis.fetch)
+    const flow = newProjectFlow({ localExecution: health.localExecution, signed })
+    if (flow === "folder") await openFolder()
+    else if (flow === "cloud") openCloud()
+    else dialog.show(() => <DialogNewProjectKind onFolder={() => void openFolder()} onCloud={openCloud} />, () => void resolve(null))
   }
 
   return (
