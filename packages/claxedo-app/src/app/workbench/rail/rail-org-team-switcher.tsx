@@ -11,13 +11,28 @@ import {
   type OrgListItem,
   type TeamListItem,
 } from "@/features/settings/data/org-team-api"
+import { useAccountPort } from "@/platform/account/account-provider"
 import { RailAccountSubmenu } from "./rail-account-menu"
 
 /**
  * Active org/team picker in the rail account menu.
  * Selection is application-owned (localStorage); it does not depend on the identity provider's organizations.
+ *
+ * Organizations belong to a signed account. An unsigned workspace (the local
+ * product, or a hosted app before sign-in) has none, and a picker that only
+ * ever says "No organizations yet" next to no way to sign in reads as broken,
+ * so the switcher renders nothing until the account is signed.
  */
 export const RailOrgTeamSwitcher: Component = () => {
+  const account = useAccountPort()
+  return (
+    <Show when={account.state().status === "signed"}>
+      <SignedOrgTeamSwitcher />
+    </Show>
+  )
+}
+
+const SignedOrgTeamSwitcher: Component = () => {
   const [activeOrgId, setActiveOrgId] = createSignal(readActiveOrgId())
   const [activeTeamId, setActiveTeamId] = createSignal(readActiveTeamId())
   const [orgs] = createResource(async () => {
