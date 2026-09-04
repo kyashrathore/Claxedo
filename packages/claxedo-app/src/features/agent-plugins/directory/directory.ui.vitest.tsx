@@ -715,3 +715,11 @@ describe("Personal entries", () => {
     expect(screen.queryByRole("complementary", { name: "figma details" })).toBeNull()
   })
 })
+
+describe("unknown connection status", () => {
+  test("an unreadable connection list never reads as needs-authentication", async () => {
+    await renderDirectory({ connectionsError: new Error("plane unreachable") })
+    expect(screen.queryByText("Needs authentication")).toBeNull()
+    expect(screen.queryByRole("heading", { name: /Needs attention/ })).toBeNull()
+  })
+})

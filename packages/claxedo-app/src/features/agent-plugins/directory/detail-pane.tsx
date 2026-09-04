@@ -92,6 +92,7 @@ export function PluginDetailPane(props: {
   const status = () => pluginStatus({
     plugin: props.plugin,
     ...(props.connections ? { connections: props.connections } : {}),
+    connectionsKnown: !props.connectionsError,
   })
 
   const onKeyDown = (event: KeyboardEvent) => {

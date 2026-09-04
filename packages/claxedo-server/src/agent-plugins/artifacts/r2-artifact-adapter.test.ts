@@ -43,6 +43,21 @@ describe("hostedAgentPluginArtifactStore", () => {
     expect(bucket.put).toHaveBeenCalledTimes(2)
   })
 
+  test("reads, verifies, and inspects a retained artifact once per isolate; a miss is not remembered", async () => {
+    const { bucket } = memoryBucket()
+    const reads = vi.fn(bucket.get)
+    const store = hostedAgentPluginArtifactStore({ ...bucket, get: reads })
+    const inspected = await artifact()
+    await store.put(inspected)
+    const before = reads.mock.calls.length
+    await store.get(inspected.digest)
+    await store.get(inspected.digest)
+    expect(reads.mock.calls.length).toBe(before + 1)
+    expect(await store.get("sha256:" + "0".repeat(64))).toBeUndefined()
+    expect(await store.get("sha256:" + "0".repeat(64))).toBeUndefined()
+    expect(reads.mock.calls.length).toBe(before + 3)
+  })
+
   test("rejects corrupted retained bytes rather than synthesizing a result", async () => {
     const { bucket, values } = memoryBucket()
     const store = hostedAgentPluginArtifactStore(bucket)

@@ -65,13 +65,15 @@ export type PluginStatus = {
 export function pluginStatus(input: {
   plugin: PluginCandidate
   connections?: readonly AgentPluginConnectionSummary[]
+  /** False while the connection list could not be read: an unknown status is not "needs authentication". */
+  connectionsKnown?: boolean
 }): PluginStatus | undefined {
   const { plugin } = input
   if (!isInstalled(plugin)) {
     return plugin.updateAvailable ? { label: "Update available", tone: "accent", attention: false } : undefined
   }
   if (artifactUnavailable(plugin)) return { label: "Artifact unavailable", tone: "critical", attention: true }
-  for (const server of oauthServers(plugin)) {
+  for (const server of input.connectionsKnown === false ? [] : oauthServers(plugin)) {
     const connection = effectiveConnection(input.connections, server.integrationId)
     if (!connection) return { label: "Needs authentication", tone: "warning", attention: true }
     if (connection.status === "broken") return { label: "Missing credential", tone: "critical", attention: true }
@@ -188,6 +190,7 @@ export function directorySections(input: {
   candidates: readonly PluginCandidate[]
   sources: readonly DirectorySourceView[]
   connections?: readonly AgentPluginConnectionSummary[]
+  connectionsKnown?: boolean
   query: string
   filter: string
 }): DirectorySection[] {
@@ -203,7 +206,7 @@ export function directorySections(input: {
       offered.push(plugin)
       continue
     }
-    const status = pluginStatus({ plugin, ...(input.connections ? { connections: input.connections } : {}) })
+    const status = pluginStatus({ plugin, ...(input.connections ? { connections: input.connections } : {}), ...(input.connectionsKnown === false ? { connectionsKnown: false } : {}) })
     if (status?.attention) attention.push(plugin)
     else installed.push(plugin)
   }

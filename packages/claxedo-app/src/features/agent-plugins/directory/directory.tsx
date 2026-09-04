@@ -113,6 +113,7 @@ export function AgentPluginDirectory(props: {
   })
 
   const sections = createMemo(() => directorySections({
+    connectionsKnown: !connections.error,
     candidates: candidates(),
     sources: sourceViews(),
     connections: connectionRows(),
@@ -413,7 +414,7 @@ export function AgentPluginDirectory(props: {
                       {(plugin) => (
                         <DirectoryCard
                           plugin={plugin}
-                          status={pluginStatus({ plugin, connections: connectionRows() })}
+                          status={pluginStatus({ plugin, connections: connectionRows(), connectionsKnown: !connections.error })}
                           selected={selectedId() === plugin.pluginInstanceId}
                           action={cardAction(plugin)}
                           onOpen={() => { setSelectedPersonalKey(undefined); setSelectedId(plugin.pluginInstanceId) }}

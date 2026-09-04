@@ -60,7 +60,13 @@ async function readBounded(object: AgentPluginR2Object) {
 
 /** Feature-owned immutable R2 storage; no catalog source is needed after acquisition. */
 export function hostedAgentPluginArtifactStore(bucket: AgentPluginR2Bucket): AgentPluginArtifactStore {
-  const get: AgentPluginArtifactStore["get"] = async (digest) => {
+  // A retained artifact is immutable by construction (its key is its digest),
+  // so an isolate reads it from R2, verifies and inspects it once. Every
+  // catalog read used to repeat that per candidate — a cross-region R2 fetch
+  // plus hashing and validation — which was most of a 4 s signed catalog.
+  // A miss or a failure is not remembered.
+  const loaded = new Map<string, Promise<Awaited<ReturnType<AgentPluginArtifactStore["get"]>>>>()
+  const load = async (digest: string) => {
     const object = await bucket.get(objectKey(digest))
     if (!object) return undefined
     const tree = decodePluginTree(await readBounded(object))
@@ -69,6 +75,20 @@ export function hostedAgentPluginArtifactStore(bucket: AgentPluginR2Bucket): Age
     }
     const inspected = await inspectPluginTree(tree)
     return { digest, tree: inspected.tree, plugin: inspected.plugin }
+  }
+  const get: AgentPluginArtifactStore["get"] = async (digest) => {
+    const pending = loaded.get(digest)
+    if (pending) return pending
+    const attempt = load(digest)
+    loaded.set(digest, attempt)
+    try {
+      const artifact = await attempt
+      if (!artifact) loaded.delete(digest)
+      return artifact
+    } catch (error) {
+      loaded.delete(digest)
+      throw error
+    }
   }
   return {
     async put(artifact) {
