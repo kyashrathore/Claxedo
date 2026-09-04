@@ -1,5 +1,6 @@
 import type { SandboxBrokeredSecret } from "@claxedo/sandbox-manager"
 import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import type { RequestTiming } from "../request-timing"
 import { encodePluginTreeBase64 } from "@claxedo/server-core/agent-plugins/artifacts/codec"
 import type { AgentPluginArtifactStore } from "@claxedo/server-core/agent-plugins/artifacts/types"
 import type { AgentPluginRuntimeApplyRequest } from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
@@ -23,7 +24,10 @@ export type AgentPluginSelfRuntime = AgentPluginRuntimeApplyRequest & {
   expiresAt?: number
 }
 
-export type AgentPluginSelfRuntimeReader = (auth: SignedControlPlaneAuth) => Promise<AgentPluginSelfRuntime>
+export type AgentPluginSelfRuntimeReader = (
+  auth: SignedControlPlaneAuth,
+  timing?: RequestTiming,
+) => Promise<AgentPluginSelfRuntime>
 
 export function createHostedAgentPluginSelfRuntime(input: {
   activations: { runtimeSnapshotForUser(auth: SignedControlPlaneAuth): Promise<SignedAgentPluginRuntimeSnapshot> }
@@ -40,9 +44,10 @@ export function createHostedAgentPluginSelfRuntime(input: {
 }): AgentPluginSelfRuntimeReader {
   const ttl = input.credentialTtlMs ?? 30 * 60_000
   const now = input.now ?? Date.now
-  return async (auth) => {
+  return async (auth, timing) => {
     const minted = now()
     const snapshot = await input.activations.runtimeSnapshotForUser(auth)
+    timing?.mark("snapshot")
     const selections = desiredAgentPluginSelections(snapshot)
     const digests = [...new Set(selections.map((selection) => selection.artifactDigest))].toSorted()
     const artifacts = await Promise.all(digests.map(async (digest) => {
@@ -50,11 +55,13 @@ export function createHostedAgentPluginSelfRuntime(input: {
       if (!artifact) throw new Error(`Retained Agent Plugin artifact ${digest} is unavailable`)
       return { digest, tree: encodePluginTreeBase64(artifact.tree) }
     }))
+    timing?.mark("artifacts")
     // The desktop is its own secret broker: the credentials travel in this
     // response and main hands them to the daemon, so the deployment's sandbox
     // posture (control-plane-only has no driver at all) must not decide
     // whether the user's own machine may reach the gateway.
     const preparation = await input.preparer.forSnapshot(snapshot, { secretBrokering: "native" })
+    timing?.mark("preparation")
     const plan = agentPluginMcpRuntimePlan(preparation)
     const secrets = preparation.secrets ?? []
     return {

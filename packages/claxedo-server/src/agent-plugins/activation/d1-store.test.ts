@@ -14,6 +14,7 @@ import {
   AGENT_PLUGIN_ALL_PROJECTS_SCOPE,
   AGENT_PLUGIN_DESKTOP_WORKSPACE,
   D1SignedAgentPluginActivationStore,
+  type AgentPluginActivationAuthority,
 } from "./d1-store"
 
 // The store reads and writes canonical authority rows, so the harness applies
@@ -206,6 +207,48 @@ describe("D1 signed Agent Plugins activation store", () => {
       harnessId: "codex",
       pins: {},
     })
+  })
+
+  test("resolves the caller's scope and project access once per request auth object", async () => {
+    const { authority, database } = await setup()
+    const calls = { usersMe: 0, authorizeProject: 0 }
+    const counting: AgentPluginActivationAuthority = {
+      usersMe: (auth) => {
+        calls.usersMe += 1
+        return authority.usersMe(auth)
+      },
+      resolveOrgId: (auth) => authority.resolveOrgId(auth),
+      authorizeProject: (auth, input) => {
+        calls.authorizeProject += 1
+        return authority.authorizeProject(auth, input)
+      },
+      listOrgs: (auth) => authority.listOrgs(auth),
+    }
+    const store = new D1SignedAgentPluginActivationStore({ database, authority: counting })
+    const auth = await signed(authority, identity("alice"))
+    const { orgId } = await principalOf(authority, auth)
+    const project = await workspace({ authority, auth, orgId, workspaceId: "ws-one", access: "cloud" })
+
+    // One catalog read's worth of calls against the same auth object.
+    await store.revision(auth)
+    await store.listKnown(auth)
+    await Promise.all((["opencode", "claude", "codex", "cursor"] as const).map((harnessId) => store.read(auth, {
+      pluginInstanceId: PLUGIN,
+      harnessId,
+      projectId: project.project_id,
+    })))
+    await store.authorizeProject(auth, project.project_id)
+    expect(calls).toEqual({ usersMe: 1, authorizeProject: 1 })
+
+    // A fresh auth object is a new request: the authority is asked again.
+    const next = await signed(authority, identity("alice"))
+    await store.revision(next)
+    expect(calls.usersMe).toBe(2)
+
+    // A denied project is not remembered as an answer.
+    await expect(store.authorizeProject(next, "prj_missing")).rejects.toThrow()
+    await expect(store.authorizeProject(next, "prj_missing")).rejects.toThrow()
+    expect(calls.authorizeProject).toBe(3)
   })
 
   test("commits an all-projects user default with its artifact pin", async () => {

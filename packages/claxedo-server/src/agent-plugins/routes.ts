@@ -31,6 +31,7 @@ import { controlPlaneAuthErrorBody, ControlPlaneAuthError } from "@claxedo/serve
 import type { ControlPlaneServices } from "../authority/services"
 import { signedOrError } from "../workspace/route-support"
 import type { AgentPluginMcpCatalogAuthenticationResolver } from "./mcp/catalog-auth"
+import { createRequestTiming } from "./request-timing"
 import type { HostedMcpClientMetadata } from "./mcp/client-metadata"
 import type { AgentPluginSelfRuntimeReader } from "./runtime/self-runtime"
 
@@ -165,6 +166,8 @@ async function canManageOrganization(input: {
 
 async function candidateView(input: {
   candidate: AgentPluginCatalogCandidate
+  /** The caller's retained plugins, read once per request by the catalog. */
+  known: SignedKnownPlugin[]
   auth: SignedControlPlaneAuth
   projectId?: string
   activations: SignedAgentPluginActivationStore
@@ -194,8 +197,7 @@ async function candidateView(input: {
       }),
     }] as const
   }))
-  const known = (await input.activations.listKnown(input.auth))
-    .find((item) => item.pluginInstanceId === input.candidate.pluginInstanceId)
+  const known = input.known.find((item) => item.pluginInstanceId === input.candidate.pluginInstanceId)
   const retained = known?.pins.user ?? known?.pins.organization ?? known?.pins.claxedo
   let retainedArtifact: Awaited<ReturnType<AgentPluginArtifactStore["get"]>>
   let artifactError: string | undefined
@@ -365,35 +367,55 @@ export function HostedAgentPluginRoutes(input: {
   }
 
   const catalog = async (c: Context, options: { fresh: boolean; projectId?: string }) => {
+    const timing = createRequestTiming()
     const authResult = await authenticate(c.req.raw)
     if ("error" in authResult || !authResult.auth) return c.json("error" in authResult ? authResult.error : error("missing_bearer_token", "Signed auth is required"), "status" in authResult ? authResult.status : 401)
     const auth = authResult.auth
     const projectId = options.projectId?.trim()
     if (projectId) await input.activations.authorizeProject(auth, projectId)
+    timing.mark("auth")
     const before = await input.activations.revision(auth)
+    timing.mark("revision")
     const resolved = await resolveCollections(input.sources(auth), { fresh: options.fresh })
-    const after = await input.activations.revision(auth)
+    timing.mark("sources")
+    // The source listing must not have moved activation state; the rest of
+    // the read is independent of it, so those reads share one wait.
+    const [after, known, workspaceResult, organizationManager] = await Promise.all([
+      input.activations.revision(auth),
+      input.activations.listKnown(auth),
+      input.services.authority?.listWorkspaces(auth),
+      canManageOrganization({ services: input.services, auth, me: authResult.me }),
+    ])
     if (before !== after) throw new Error("Catalog reads must not mutate Agent Plugins activation state")
-    const candidates = await Promise.all(resolved.candidates.map((candidate) => candidateView({
-      candidate,
-      auth,
-      projectId,
-      activations: input.activations,
-      artifacts: input.artifacts,
-      ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
-    })))
+    timing.mark("state")
     const candidateIds = new Set(resolved.candidates.map((candidate) => candidate.pluginInstanceId))
-    const retained = await Promise.all((await input.activations.listKnown(auth))
-      .filter((known) => !candidateIds.has(known.pluginInstanceId))
-      .map((known) => retainedView({
+    const [candidates, retained] = await Promise.all([
+      Promise.all(resolved.candidates.map((candidate) => candidateView({
+        candidate,
         known,
         auth,
         projectId,
         activations: input.activations,
         artifacts: input.artifacts,
         ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
-      })))
-    const workspaceResult = await input.services.authority?.listWorkspaces(auth)
+      }))),
+      Promise.all(known
+        .filter((entry) => !candidateIds.has(entry.pluginInstanceId))
+        .map((entry) => retainedView({
+          known: entry,
+          auth,
+          projectId,
+          activations: input.activations,
+          artifacts: input.artifacts,
+          ...(input.mcpAuthentication ? { mcpAuthentication: input.mcpAuthentication } : {}),
+        }))),
+    ])
+    timing.mark("views")
+    timing.report(options.fresh ? "catalog.refresh" : "catalog", {
+      candidates: candidates.length,
+      retained: retained.length,
+      project: Boolean(projectId),
+    })
     const workspaces: unknown[] = Array.isArray(workspaceResult) ? workspaceResult : []
     const projects = [...new Map<string, { id: string; label: string }>(workspaces.flatMap((workspace) => {
       if (!record(workspace)) return []
@@ -404,7 +426,6 @@ export function HostedAgentPluginRoutes(input: {
         : id
       return [[id, { id, label }] as const]
     })).values()].toSorted((left, right) => left.label.localeCompare(right.label) || left.id.localeCompare(right.id))
-    const organizationManager = await canManageOrganization({ services: input.services, auth, me: authResult.me })
     return c.json({
       revision: after,
       canManageOrganizationDefaults: organizationManager,
@@ -427,9 +448,13 @@ export function HostedAgentPluginRoutes(input: {
   if (input.selfRuntime) {
     const selfRuntime = input.selfRuntime
     app.get("/runtime/self", async (c) => {
+      const timing = createRequestTiming()
       const authResult = await authenticate(c.req.raw)
       if ("error" in authResult || !authResult.auth) return c.json("error" in authResult ? authResult.error : error("missing_bearer_token", "Signed auth is required"), "status" in authResult ? authResult.status : 401)
-      return c.json(await selfRuntime(authResult.auth), 200, { "cache-control": "no-store" })
+      timing.mark("auth")
+      const runtime = await selfRuntime(authResult.auth, timing)
+      timing.report("runtime.self", { selections: runtime.selections.length, mcpServers: runtime.mcpServers.length })
+      return c.json(runtime, 200, { "cache-control": "no-store" })
     })
   }
   app.get("/projects/:projectId", (c) => catalog(c, { fresh: false, projectId: c.req.param("projectId") }))

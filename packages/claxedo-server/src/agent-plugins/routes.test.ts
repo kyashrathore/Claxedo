@@ -104,7 +104,10 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
     return this.currentRevision
   }
 
+  listKnownCalls = 0
+
   async listKnown() {
+    this.listKnownCalls += 1
     const ids = new Set(this.pins.keys())
     for (const key of this.userDefaults.keys()) ids.add(JSON.parse(key)[1])
     for (const key of this.projectOverrides.keys()) ids.add(JSON.parse(key)[2])
@@ -388,6 +391,15 @@ describe("hosted Agent Plugins routes", () => {
       source: { id: "org-collection", kind: "organization", label: "Team" },
     })
     expect(catalog.candidates[0]).not.toHaveProperty("sourceLabel")
+  })
+
+  test("reads the caller's retained plugins once per catalog request", async () => {
+    const subject = await fixture()
+
+    const catalog = await (await request(subject.app, "/")).json() as any
+
+    expect(catalog.candidates.length).toBeGreaterThan(0)
+    expect(subject.activations.listKnownCalls).toBe(1)
   })
 
   test("serves a skill's retained markdown and reports the plugin's source is gone with its skills intact", async () => {

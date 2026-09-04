@@ -43,6 +43,12 @@ export type D1SignedAgentPluginActivationStoreInput = {
   now?: () => number
 }
 
+type RequestResolution = {
+  scope?: Promise<Scope>
+  /** Keyed `${action}:${projectId}`; a settled entry is an authorization that passed. */
+  projects: Map<string, Promise<void>>
+}
+
 type Scope = {
   userId: string
   orgId: string
@@ -295,6 +301,14 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
   private readonly database: D1Database
   private readonly authority: AgentPluginActivationAuthority
   private readonly now: () => number
+  /**
+   * One request = one `SignedControlPlaneAuth` object (`routeAuth` builds it
+   * from the bearer), and a catalog read calls this store a dozen times with
+   * it. The caller's scope and project authorization are decided by that
+   * request's identity, so they resolve once per auth object instead of
+   * paying the authority's cross-region round trips on every method call.
+   */
+  private readonly resolved = new WeakMap<SignedControlPlaneAuth, RequestResolution>()
 
   constructor(input: D1SignedAgentPluginActivationStoreInput) {
     this.database = input.database
@@ -561,7 +575,27 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     ])
   }
 
-  private async scope(auth: SignedControlPlaneAuth): Promise<Scope> {
+  private resolution(auth: SignedControlPlaneAuth): RequestResolution {
+    const existing = this.resolved.get(auth)
+    if (existing) return existing
+    const created: RequestResolution = { projects: new Map() }
+    this.resolved.set(auth, created)
+    return created
+  }
+
+  private scope(auth: SignedControlPlaneAuth): Promise<Scope> {
+    const resolution = this.resolution(auth)
+    if (!resolution.scope) {
+      resolution.scope = this.resolveScope(auth).catch((cause: unknown) => {
+        // A failed lookup is not an answer; the next call asks the authority again.
+        resolution.scope = undefined
+        throw cause
+      })
+    }
+    return resolution.scope
+  }
+
+  private async resolveScope(auth: SignedControlPlaneAuth): Promise<Scope> {
     const me = await this.authority.usersMe(auth)
     if (!record(me)) invalid("principal")
     const userId = text(me.user_id, "principal")
@@ -571,7 +605,25 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     return { userId, orgId }
   }
 
-  private async requireProject(
+  private requireProject(
+    auth: SignedControlPlaneAuth,
+    scope: Scope,
+    projectId: string,
+    action: "read" | "write",
+  ): Promise<void> {
+    const resolution = this.resolution(auth)
+    const key = `${action}:${projectId}`
+    const existing = resolution.projects.get(key)
+    if (existing) return existing
+    const pending = this.authorizeProjectAccess(auth, scope, projectId, action).catch((cause: unknown) => {
+      resolution.projects.delete(key)
+      throw cause
+    })
+    resolution.projects.set(key, pending)
+    return pending
+  }
+
+  private async authorizeProjectAccess(
     auth: SignedControlPlaneAuth,
     scope: Scope,
     projectId: string,
