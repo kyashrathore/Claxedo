@@ -302,7 +302,8 @@ export const desktopRendererUnsigned: Policy = {
   // +7 modules / 0 packages (2026-09-04, polish): the Directory split into status,
   // facts, actions, MCP rows, skill view, overflow menu, pane width, and chrome
   // modules; every edge stays inside packages already in the closure. Re-measured, no headroom.
-  ceilings: { modules: 1020, packages: 56 },
+    // +1 module (2026-09-04): the Personal entry pane. Re-measured, no headroom.
+  ceilings: { modules: 1021, packages: 56 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

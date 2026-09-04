@@ -233,14 +233,26 @@ async function archiveSource(
   }
 }
 
-async function resolveRevision(fetcher: Fetch, collection: GitHubRepositoryCollection) {
+/** GitHub's answer to an anonymous caller that has spent its hourly budget (403 with a rate-limit body, or 429). */
+class GitHubRateLimited extends Error {
+  constructor(status: number) {
+    super(`GitHub revision lookup failed with ${status}`)
+  }
+}
+
+async function resolveRevision(fetcher: Fetch, collection: GitHubRepositoryCollection, token?: string) {
   const response = await fetcher(
     `https://api.github.com/repos/${collection.owner}/${collection.repository}/commits/${encodeURIComponent(collection.ref)}`,
     {
-      headers: { accept: "application/vnd.github+json", "user-agent": "Claxedo-Agent-Plugins" },
+      headers: {
+        accept: "application/vnd.github+json",
+        "user-agent": "Claxedo-Agent-Plugins",
+        ...(token ? { authorization: `Bearer ${token}` } : {}),
+      },
       signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
     },
   )
+  if (response.status === 403 || response.status === 429) throw new GitHubRateLimited(response.status)
   if (!response.ok) throw new Error(`GitHub revision lookup failed with ${response.status}`)
   const raw = JSON.parse(new TextDecoder().decode(await responseBytes(response, MAX_GITHUB_METADATA_BYTES))) as unknown
   if (!raw || typeof raw !== "object" || !("sha" in raw) || typeof raw.sha !== "string" || !/^[a-f0-9]{40}$/.test(raw.sha)) {
@@ -249,14 +261,26 @@ async function resolveRevision(fetcher: Fetch, collection: GitHubRepositoryColle
   return raw.sha
 }
 
-async function loadCollection(fetcher: Fetch, collection: GitHubRepositoryCollection) {
+async function loadCollection(fetcher: Fetch, collection: GitHubRepositoryCollection, token?: string) {
   if (!isGitHubNameSegment(collection.owner) || !isGitHubNameSegment(collection.repository) || !isGitHubRef(collection.ref)) {
     return unavailable(collection, "GitHub collection configuration is invalid")
   }
   try {
-    const revision = await resolveRevision(fetcher, collection)
+    // The commit lookup is what pins the archive to an exact revision. It is
+    // also the one call GitHub rate-limits for anonymous callers (60 an hour
+    // per address, shared across every Worker isolate on that egress), so
+    // when it refuses, the archive is fetched by ref name instead: codeload
+    // is not metered the same way, and the collection still lists — only the
+    // revision string is the ref rather than a commit until the next read.
+    let revision: string
+    try {
+      revision = await resolveRevision(fetcher, collection, token)
+    } catch (error) {
+      if (!(error instanceof GitHubRateLimited)) throw error
+      revision = collection.ref
+    }
     const response = await fetcher(
-      `https://codeload.github.com/${collection.owner}/${collection.repository}/zip/${revision}`,
+      `https://codeload.github.com/${collection.owner}/${collection.repository}/zip/${revision === collection.ref && !/^[a-f0-9]{40}$/.test(revision) ? `refs/heads/${encodeURIComponent(revision)}` : revision}`,
       {
         headers: { accept: "application/zip", "user-agent": "Claxedo-Agent-Plugins" },
         signal: AbortSignal.timeout(GITHUB_REQUEST_TIMEOUT_MS),
@@ -284,8 +308,11 @@ export function githubRepositoryCatalogSourceProvider(input: {
   kind: AgentPluginSourceKind
   label?: string
   fetch?: Fetch
+  /** A GitHub token lifts the anonymous rate limit on the commit lookup; the archive download needs none. */
+  token?: string
 }): CatalogSourceProvider {
   const fetcher = input.fetch ?? globalThis.fetch
+  const token = input.token
   const collection: GitHubRepositoryCollection = {
     id: input.id,
     kind: input.kind,
@@ -297,7 +324,7 @@ export function githubRepositoryCatalogSourceProvider(input: {
   let cache: Promise<readonly GitHubRepositoryCollectionSource[]> | undefined
   return {
     listAuthorizedSources(options = {}) {
-      if (!cache || options.fresh) cache = loadCollection(fetcher, collection).then((source) => [source])
+      if (!cache || options.fresh) cache = loadCollection(fetcher, collection, token).then((source) => [source])
       return cache
     },
   }

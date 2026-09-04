@@ -197,7 +197,8 @@ export const appLocal: Policy = {
   // +7 modules / 0 packages (2026-09-04, polish): the Directory split into status,
   // facts, actions, MCP rows, skill view, overflow menu, pane width, and chrome
   // modules; every edge stays inside packages already in the closure. Re-measured, no headroom.
-  ceilings: { modules: 970, packages: 37 },
+    // +1 module (2026-09-04): the Personal entry pane. Re-measured, no headroom.
+  ceilings: { modules: 971, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

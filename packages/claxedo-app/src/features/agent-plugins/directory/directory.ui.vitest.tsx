@@ -702,3 +702,16 @@ describe("connection status failures", () => {
     expect(within(pane).queryByText(/could not renew the session/)).toBeNull()
   })
 })
+
+describe("Personal entries", () => {
+  test("a Personal card opens a pane with the harness, marketplace, and location", async () => {
+    await renderDirectory()
+    const card = await screen.findByRole("button", { name: "figma" })
+    await fireEvent.click(card)
+    const pane = await screen.findByRole("complementary", { name: "figma details" })
+    expect(within(pane).getByText("Cursor", { selector: "dd" })).toBeTruthy()
+    expect(within(pane).getByText(/\.cursor\/plugins\/local/)).toBeTruthy()
+    await fireEvent.click(within(pane).getByRole("button", { name: "Close" }))
+    expect(screen.queryByRole("complementary", { name: "figma details" })).toBeNull()
+  })
+})

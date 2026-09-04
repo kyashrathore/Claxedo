@@ -73,12 +73,20 @@ export function DirectoryCard(props: {
  * carries only what distinguishes one from another — the harness it lives in
  * and the marketplace it came from. Its path is the row's `title`.
  */
-export function PersonalCard(props: { entry: PersonalEntry }) {
+export function personalEntryKey(entry: PersonalEntry) {
+  return `${entry.harnessId}:${entry.marketplace ?? ""}:${entry.name}`
+}
+
+export function PersonalCard(props: { entry: PersonalEntry; selected?: boolean; onOpen: () => void }) {
   return (
-    <div
+    <button
+      type="button"
       data-agent-plugin-personal={props.entry.name}
+      aria-label={props.entry.name}
+      aria-pressed={props.selected}
       title={props.entry.root}
-      class="flex items-start gap-3 rounded-lg border border-border-weak-base bg-surface-base p-3"
+      onClick={() => props.onOpen()}
+      class={`flex items-start gap-3 rounded-lg border bg-surface-base p-3 text-left ${props.selected ? "border-border-base" : "border-border-weak-base hover:border-border-base"}`}
     >
       <PluginIconTile name={props.entry.name} />
       <div class="flex min-w-0 flex-1 flex-wrap items-center gap-2 pt-0.5">
@@ -94,6 +102,6 @@ export function PersonalCard(props: { entry: PersonalEntry }) {
           )}
         </Show>
       </div>
-    </div>
+    </button>
   )
 }

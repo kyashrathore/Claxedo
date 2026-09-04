@@ -7,7 +7,8 @@ import { showToast } from "@opencode-ai/ui/toast"
 import type { AgentPluginApi, AgentPluginHarness, PluginCandidate, PluginCatalog } from "../api"
 import type { AgentPluginConnectionPort, AgentPluginConnectionSummary } from "../connections"
 import { AddSourceForm } from "./add-source"
-import { DirectoryCard, PersonalCard } from "./card"
+import { DirectoryCard, PersonalCard, personalEntryKey } from "./card"
+import { PersonalPane } from "./personal-pane"
 import { GHOST_ICON_BUTTON } from "./chrome"
 import type { DirectoryApi, DirectorySourceRegistration } from "./data"
 import { PluginDetailPane } from "./detail-pane"
@@ -56,6 +57,7 @@ export function AgentPluginDirectory(props: {
   const [query, setQuery] = createSignal("")
   const [filter, setFilter] = createSignal<string>(ALL)
   const [selectedId, setSelectedId] = createSignal<string>()
+  const [selectedPersonalKey, setSelectedPersonalKey] = createSignal<string>()
   const [pending, setPending] = createSignal<string>()
   const [adding, setAdding] = createSignal(false)
 
@@ -124,6 +126,7 @@ export function AgentPluginDirectory(props: {
   const personalCount = () => personalEntries({ machine: machineInstalled(), query: query(), filter: ALL }).length
 
   const selected = createMemo(() => candidates().find((plugin) => plugin.pluginInstanceId === selectedId()))
+  const selectedPersonal = createMemo(() => personal().find((entry) => personalEntryKey(entry) === selectedPersonalKey()))
   const projectLabel = () => catalog()?.projects?.find((project) => project.id === projectId())?.label ?? CROSS_PROJECT
 
   // ── Mutations, ported from the catalog article they replaced ──────────────
@@ -405,7 +408,7 @@ export function AgentPluginDirectory(props: {
               {(section) => (
                 <section aria-label={section.title}>
                   <SectionHeading title={section.title} count={section.plugins.length} />
-                  <div class="grid gap-2 md:grid-cols-2">
+                  <div class="grid gap-2 grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]">
                     <For each={section.plugins}>
                       {(plugin) => (
                         <DirectoryCard
@@ -413,7 +416,7 @@ export function AgentPluginDirectory(props: {
                           status={pluginStatus({ plugin, connections: connectionRows() })}
                           selected={selectedId() === plugin.pluginInstanceId}
                           action={cardAction(plugin)}
-                          onOpen={() => setSelectedId(plugin.pluginInstanceId)}
+                          onOpen={() => { setSelectedPersonalKey(undefined); setSelectedId(plugin.pluginInstanceId) }}
                         />
                       )}
                     </For>
@@ -430,8 +433,14 @@ export function AgentPluginDirectory(props: {
                     Could not read this machine's harness installs: {String(machine.error)}
                   </p>
                 </Show>
-                <div class="grid gap-2 md:grid-cols-2">
-                  <For each={personal()}>{(entry) => <PersonalCard entry={entry} />}</For>
+                <div class="grid gap-2 grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]">
+                  <For each={personal()}>{(entry) => (
+                    <PersonalCard
+                      entry={entry}
+                      selected={selectedPersonalKey() === personalEntryKey(entry)}
+                      onOpen={() => { setSelectedId(undefined); setSelectedPersonalKey(personalEntryKey(entry)) }}
+                    />
+                  )}</For>
                 </div>
               </section>
             </Show>
@@ -443,6 +452,9 @@ export function AgentPluginDirectory(props: {
         </div>
       </div>
 
+      <Show when={selectedPersonal()}>
+        {(entry) => <PersonalPane entry={entry()} onClose={() => setSelectedPersonalKey(undefined)} />}
+      </Show>
       <Show when={selected()}>
         {(plugin) => (
           <Show when={catalog()}>
@@ -489,7 +501,7 @@ function SectionHeading(props: { title: string; count: number; note?: string }) 
 /** The first read has nothing to paint, so it paints the shape of the answer. */
 function CatalogSkeleton() {
   return (
-    <div data-component="agent-plugin-skeleton" aria-hidden="true" class="grid gap-2 md:grid-cols-2">
+    <div data-component="agent-plugin-skeleton" aria-hidden="true" class="grid gap-2 grid-cols-[repeat(auto-fill,minmax(19rem,1fr))]">
       <For each={[0, 1, 2]}>
         {() => (
           <div class="flex items-start gap-3 rounded-lg border border-border-weak-base bg-surface-base p-3">

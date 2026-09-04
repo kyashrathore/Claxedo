@@ -82,3 +82,31 @@ describe("githubRepositoryCatalogSourceProvider", () => {
     expect(fetcher).not.toHaveBeenCalled()
   })
 })
+
+describe("GitHub rate limits", () => {
+  test("a rate-limited commit lookup falls back to the archive by ref name", async () => {
+    const zip = await archive({ "review/plugin.json": JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "review" }) })
+    const urls: string[] = []
+    const fetcher = vi.fn<AgentPluginSourceFetch>(async (input) => {
+      const url = String(input); urls.push(url)
+      if (url.startsWith("https://api.github.com/")) return new Response(JSON.stringify({ message: "API rate limit exceeded" }), { status: 403 })
+      return new Response(zip.slice().buffer, { status: 200 })
+    })
+    const provider = githubRepositoryCatalogSourceProvider({ id: "claxedo", kind: "claxedo", label: "Claxedo", owner: "kyashrathore", repository: "plugins", ref: "main", fetch: fetcher })
+    const [source] = await provider.listAuthorizedSources()
+    expect(urls[1]).toBe("https://codeload.github.com/kyashrathore/plugins/zip/refs/heads/main")
+    expect(source?.revision).toBe("main")
+    expect(source?.plugins.map((plugin) => plugin.relativePath)).toEqual(["review"])
+  })
+
+  test("a configured token rides on the commit lookup only", async () => {
+    const zip = await archive({ "review/plugin.json": JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "review" }) })
+    const headers: Array<string | undefined> = []
+    const fetcher = vi.fn<AgentPluginSourceFetch>(async (input, init) => {
+      const url = String(input); headers.push(new Headers(init?.headers).get("authorization") ?? undefined)
+      return url.startsWith("https://api.github.com/") ? new Response(JSON.stringify({ sha }), { status: 200 }) : new Response(zip.slice().buffer, { status: 200 })
+    })
+    await githubRepositoryCatalogSourceProvider({ id: "c", kind: "claxedo", label: "C", owner: "o", repository: "r", ref: "main", fetch: fetcher, token: "ghp_test" }).listAuthorizedSources()
+    expect(headers).toEqual(["Bearer ghp_test", undefined])
+  })
+})
