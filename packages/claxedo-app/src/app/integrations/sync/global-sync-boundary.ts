@@ -89,7 +89,12 @@ function isSamePersonGainingContext(previous: Principal | undefined, next: Princ
   if (previous.kind === "local" && next.kind !== "local") return true
   const before = userIdOf(previous)
   const after = userIdOf(next)
-  return before !== undefined && before === after && previous.kind === "signed" && next.kind === "org-member"
+  if (before === undefined || after === undefined) return false
+  if (previous.kind !== "signed" || (next.kind !== "signed" && next.kind !== "org-member")) return false
+  // Sign-in publishes a signed principal before the profile lookup names it
+  // (`identity.userId` is "" until then); the named principal that follows is
+  // the same session, not another person.
+  return before === "" || before === after
 }
 
 export function createPrincipalDataIsolation(input: {

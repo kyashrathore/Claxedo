@@ -58,6 +58,18 @@ describe("conversation principal isolation", () => {
     expect(calls).toEqual(["clear", "refresh", "clear", "clear"])
   })
 
+  test("the unnamed signed principal published at sign-in becoming the named one is enrichment, not a new person", async () => {
+    const calls: string[] = []
+    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    transition({ kind: "local", deviceId: "device_a" })
+    transition({ kind: "signed", userId: "" })
+    transition({ kind: "signed", userId: "user_a" })
+    transition({ kind: "org-member", userId: "user_a", orgId: "org_a", memberships: [] })
+    expect(calls).toEqual(["clear", "refresh", "refresh", "refresh"])
+    transition({ kind: "signed", userId: "user_b" })
+    expect(calls.at(-1)).toBe("clear")
+  })
+
   test("does not clear again for a reactive refresh of the same principal", async () => {
     const cleared: string[] = []
 
