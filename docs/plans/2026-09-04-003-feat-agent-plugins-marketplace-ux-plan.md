@@ -285,3 +285,14 @@ seeded in both registries with `builtIn: true, enabled: boolean`; the catalog re
 Directory groups by source with the harness's mark on the section. Acceptance: Claude's official marketplace
 lists in the Directory on both rails, one of its plugins installs into all four harnesses, disabling the source
 hides its section on the next read, and the machine-scan route and section are gone.
+- 2026-09-04 (night): the blank rail was traced twice more. Cause each time: a principal transition treated as a
+  change of person. First `signed(user)` → `org-member(user, org)` when identity resolves; then the interim
+  `signed("")` principal published at sign-in (the profile lookup names it a moment later). Both are now
+  revalidations (`73328c234d`, `1e7f9b30bd`); a different user, an org switch, or sign-out still wipes.
+  "GitHub revision lookup failed with 403" is GitHub's anonymous rate limit on the commit lookup (Workers
+  egress shares one budget); the provider now falls back to the archive by ref name and takes a token
+  (`b7b063a2de`, staging release 80 `release-acc-mkt3-260904-222000-3851`). Also: container-driven card grid,
+  Personal entries open a pane, the overflow menu is bounded, the add-source row explains the repository shape.
+  Still open: measured signed-catalog latency (the in-renderer probe caught the account in `unavailable`
+  because the descriptor validation had just failed on the edge; retry-once is in, but the plane's flakiness
+  remains the owner's environment issue), and the curated harness-official sources slice.
