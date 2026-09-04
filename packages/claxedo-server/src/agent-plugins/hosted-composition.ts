@@ -27,6 +27,7 @@ import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"
 import { D1AgentPluginSourceStore } from "./sources/d1-store"
+import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cache"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
@@ -148,9 +149,14 @@ export function createHostedAgentPluginsComposition(input: {
   const authority = requireAuthority(services)
   const artifacts = hostedAgentPluginArtifactStore(bucket)
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
-  const claxedo = claxedoPublicGitHubCatalogSourceProvider()
+  // GitHub reads are cached at the edge across isolates (see github-edge-cache.ts);
+  // `caches` exists only inside a Worker isolate, so it is looked up per call.
+  const githubFetch = githubEdgeCachedFetch({
+    cache: () => (globalThis as { caches?: { default?: EdgeCache } }).caches?.default,
+  })
+  const claxedo = claxedoPublicGitHubCatalogSourceProvider(githubFetch)
   const sourceRegistry = new D1AgentPluginSourceStore({ database: input.database, authority })
-  const sourceProviders = createAgentPluginSourceProviderCache()
+  const sourceProviders = createAgentPluginSourceProviderCache(githubFetch)
   // The public origin doubles as the OAuth client identity document host and,
   // by default, as the MCP gateway origin (see `McpGatewayEndpointStyle`).
   const publicUrl = required(env.CLAXEDO_PUBLIC_URL ?? env.BETTER_AUTH_URL, "CLAXEDO_PUBLIC_URL")
