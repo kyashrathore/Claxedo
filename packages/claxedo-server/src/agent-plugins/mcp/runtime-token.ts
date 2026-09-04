@@ -27,9 +27,14 @@ function pem(value: string | undefined) {
   return clean?.replaceAll("\\n", "\n") || undefined
 }
 
+/** The deployment lacks what minting or verifying needs — a fault, not a bad credential. */
+export class McpGatewayConfigurationError extends Error {
+  readonly code = "mcp_gateway_misconfigured"
+}
+
 function required(value: string | undefined, name: string) {
   const clean = value?.trim()
-  if (!clean) throw new Error(`MCP gateway token requires ${name}`)
+  if (!clean) throw new McpGatewayConfigurationError(`MCP gateway token requires ${name}`)
   return clean
 }
 

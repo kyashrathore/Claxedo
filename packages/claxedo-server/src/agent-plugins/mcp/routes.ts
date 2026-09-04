@@ -1,6 +1,6 @@
 import { Hono } from "hono"
 import { forwardMcpGatewayRequest, McpGatewayError } from "@claxedo/server-core/agent-plugins/mcp/gateway"
-import { verifyMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
+import { McpGatewayConfigurationError, verifyMcpGatewayToken, type McpGatewayTokenScope } from "./runtime-token"
 
 type ResolvedMcpConnection =
   | { ok: true; connectionId: string; token: string; tokenType: "bearer" | "basic"; fields?: Record<string, string> }
@@ -26,8 +26,15 @@ export function HostedMcpGatewayRoutes(input: {
     let scope: McpGatewayTokenScope
     try {
       scope = await verifyMcpGatewayToken(credential, { integrationId: c.req.param("integrationId") }, input.env)
-    } catch {
-      return c.json({ code: "mcp_gateway_unauthorized" }, 401)
+    } catch (cause) {
+      // A deployment without its verification key is broken, not being probed:
+      // answer 503 and say so in the log, instead of the 401 every harness
+      // would read as "reconnect", which no reconnect can fix.
+      if (cause instanceof McpGatewayConfigurationError) {
+        console.error("[agent-plugins] MCP gateway cannot verify credentials", cause.message)
+        return c.json({ code: "mcp_gateway_misconfigured" }, 503)
+      }
+      return c.json({ code: "mcp_gateway_unauthorized", reason: "invalid_token" }, 401)
     }
     // Activation/membership is checked before Connections so a stale runtime
     // credential cannot even probe whether a personal/org Connection exists.

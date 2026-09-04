@@ -17,6 +17,8 @@ const scope: McpGatewayTokenScope = {
 async function setup(overrides: {
   authorize?: (scope: McpGatewayTokenScope) => Promise<{ resource: string } | undefined>
   resource?: string
+  /** Serve the route with this env instead of the minting env (a deployment missing its key). */
+  routeEnv?: Record<string, string | undefined>
 } = {}) {
   const key = await generateKeyPair("EdDSA", { extractable: true })
   const env = {
@@ -44,7 +46,7 @@ async function setup(overrides: {
     })
   }
   const app = HostedMcpGatewayRoutes({
-    env,
+    env: overrides.routeEnv ?? env,
     authorize: overrides.authorize ?? (async () => {
       order.push("authorize")
       return { resource: "https://mcp.example/mcp" }
@@ -56,6 +58,29 @@ async function setup(overrides: {
 }
 
 describe("hosted MCP gateway route", () => {
+  test("a deployment without its verification key answers 503, not a reconnect-inviting 401", async () => {
+    const subject = await setup({ routeEnv: {} })
+    const response = await subject.app.request("http://gateway.test/integration-1", {
+      method: "POST",
+      headers: { authorization: `Bearer ${subject.credential}`, "content-type": "application/json" },
+      body: "{}",
+    })
+    expect(response.status).toBe(503)
+    expect(await response.json()).toEqual({ code: "mcp_gateway_misconfigured" })
+    expect(subject.resolveConnection).not.toHaveBeenCalled()
+  })
+
+  test("a tampered credential is refused as invalid", async () => {
+    const subject = await setup()
+    const response = await subject.app.request("http://gateway.test/integration-1", {
+      method: "POST",
+      headers: { authorization: `Bearer ${subject.credential.slice(0, -4)}AAAA`, "content-type": "application/json" },
+      body: "{}",
+    })
+    expect(response.status).toBe(401)
+    expect(await response.json()).toEqual({ code: "mcp_gateway_unauthorized", reason: "invalid_token" })
+  })
+
   test("authorizes the exact activation before resolving and forwarding a Connection token", async () => {
     const subject = await setup()
     const response = await subject.app.request(`/mcp-docs`, {
