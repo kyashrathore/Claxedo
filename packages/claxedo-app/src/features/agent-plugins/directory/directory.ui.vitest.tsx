@@ -431,8 +431,9 @@ describe("Agent Plugin Directory actions", () => {
     const pane = await openPane("context7")
 
     const items = within(pane).getAllByRole("menuitem").map((item) => item.textContent)
-    expect(items).toEqual([
-      "Clear my override — follow the organization default (would be disabled)",
+    expect(items[0]).toContain("Clear my override")
+    expect(items[0]).toContain("Follow the organization default — it would be disabled")
+    expect(items.slice(1)).toEqual([
       "Make organization default (admin)",
       "Update to 1.0.0",
     ])

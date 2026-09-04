@@ -1,4 +1,4 @@
-import { createResource, Show } from "solid-js"
+import { createResource, Show, Suspense } from "solid-js"
 import { Markdown } from "@/ui/session-kit"
 import type { AgentPluginApi } from "../api"
 import { GHOST_ICON_BUTTON } from "./chrome"
@@ -56,9 +56,10 @@ export function SkillView(props: {
         <Show when={document.error}>
           <p class="text-12-regular text-icon-critical-base">{String(document.error)}</p>
         </Show>
-        <Show when={document.loading}>
-          <p class="text-12-regular text-text-weak">Reading SKILL.md…</p>
-        </Show>
+        {/* The document read suspends to the NEAREST boundary. Without this one
+            it reached the surface-level Suspense in the loader, so opening a
+            skill replaced the entire marketplace with "Loading…". */}
+        <Suspense fallback={<p class="text-12-regular text-text-weak">Reading SKILL.md…</p>}>
         <Show when={document()}>
           {(loaded) => (
             <article class="max-w-[68ch] text-14-regular text-text-base">
@@ -66,6 +67,7 @@ export function SkillView(props: {
             </article>
           )}
         </Show>
+        </Suspense>
       </div>
     </div>
   )

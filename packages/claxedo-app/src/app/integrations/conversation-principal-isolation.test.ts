@@ -33,6 +33,20 @@ describe("conversation principal isolation", () => {
     expect(conversationPersistenceKey("scope")).toBe("org-member:user_b:org_b\0scope")
   })
 
+  test("the local device becoming the signed user keeps its data and revalidates", async () => {
+    const calls: string[] = []
+    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    transition({ kind: "local", deviceId: "device_a" })
+    transition({ kind: "signed", userId: "user_a" })
+    // The first transition after boot is the usual namespace clear; the flip to the signed user is a refresh.
+    expect(calls).toEqual(["clear", "refresh"])
+    expect(conversationPersistenceKey("scope")).toBe("signed:user_a\0scope")
+    // Leaving the signed user (sign-out, or another person) is a real change of principal.
+    transition({ kind: "local", deviceId: "device_a" })
+    transition({ kind: "signed", userId: "user_b" })
+    expect(calls).toEqual(["clear", "refresh", "clear", "refresh"])
+  })
+
   test("does not clear again for a reactive refresh of the same principal", async () => {
     const cleared: string[] = []
 

@@ -67,8 +67,12 @@ export function PluginActions(props: {
       </Show>
 
       <OverflowMenu label={`More actions for ${pluginLabel(props.plugin)}`}>
-        <OverflowItem disabled={props.pending} onSelect={() => props.onActivate(null)}>
-          {`Clear my override — follow the ${outcome().authority} default (would be ${outcome().enabled ? "enabled" : "disabled"})`}
+        <OverflowItem
+          disabled={props.pending}
+          onSelect={() => props.onActivate(null)}
+          hint={`Follow the ${outcome().authority} default — it would be ${outcome().enabled ? "enabled" : "disabled"}`}
+        >
+          Clear my override
         </OverflowItem>
         <Show when={canManageOrganization()}>
           <Show

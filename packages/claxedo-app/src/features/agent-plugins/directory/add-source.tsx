@@ -2,7 +2,7 @@ import { createSignal, For, Show } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { DirectorySourceError, type DirectorySourceDiagnostic, type DirectorySourceRegistration } from "./data"
 
-const FIELD = "w-full rounded-md border border-border-weak-base bg-surface-base px-2 py-1.5 text-13-regular text-text-base"
+const FIELD = "h-7 w-full rounded-md border border-border-weak-base bg-surface-base px-2 py-0 text-13-regular text-text-base"
 
 /**
  * The inline "add a GitHub source" form.
@@ -60,6 +60,11 @@ export function AddSourceForm(props: {
       class="grid gap-2 rounded-lg border border-border-weak-base bg-surface-inset-base p-3"
       onSubmit={submit}
     >
+      <p class="text-12-regular text-text-weak">
+        A public GitHub repository whose top-level folders are plugins: each holds a <code class="text-12-mono">plugin.json</code>
+        (Agent Plugins schema 1.0.0), optional <code class="text-12-mono">skills/&lt;name&gt;/SKILL.md</code> files, and an optional
+        <code class="text-12-mono">.mcp.json</code> — shaped like <code class="text-12-mono">kyashrathore/plugins</code>.
+      </p>
       <div class="flex flex-wrap items-end gap-2">
         <label class="grid min-w-56 flex-1 gap-1">
           <span class="text-11-medium text-text-weaker">GitHub repository</span>
@@ -81,10 +86,10 @@ export function AddSourceForm(props: {
             onInput={(event) => setRef(event.currentTarget.value)}
           />
         </label>
-        <Button type="submit" size="small" variant="primary" disabled={busy()}>
+        <Button type="submit" size="normal" variant="primary" disabled={busy()}>
           {busy() ? "Checking…" : "Add source"}
         </Button>
-        <Button type="button" size="small" variant="ghost" onClick={() => props.onCancel()}>Cancel</Button>
+        <Button type="button" size="normal" variant="ghost" onClick={() => props.onCancel()}>Cancel</Button>
       </div>
       <Show when={props.organizationAllowed}>
         <label class="flex items-center gap-2 text-12-regular text-text-weak">

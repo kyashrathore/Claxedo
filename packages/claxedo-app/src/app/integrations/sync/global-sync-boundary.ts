@@ -56,8 +56,25 @@ export function clearPrincipalData() {
   queryClient.clear()
 }
 
+/**
+ * The one transition that is not a change of person: the desktop boots as the
+ * local device and becomes the signed user a few seconds later, once main has
+ * restored the credential. Everything cached until then is this machine's own
+ * local data, which the signed user owns too, so it is kept on screen and
+ * revalidated instead of wiped — wiping it emptied the rail and put the
+ * workbench behind "Loading…" on every launch.
+ */
+export function refreshPrincipalData() {
+  void queryClient.invalidateQueries().catch(() => undefined)
+}
+
+function isLocalDeviceScope(scope: string | undefined) {
+  return scope !== undefined && scope.startsWith("local:")
+}
+
 export function createPrincipalDataIsolation(input: {
   clear?: () => void
+  refresh?: () => void
 }) {
   let previousScope: string | undefined
   return (principal: Principal) => {
@@ -69,8 +86,10 @@ export function createPrincipalDataIsolation(input: {
       return
     }
     if (previousScope === nextScope) return
+    const fromLocalDevice = isLocalDeviceScope(previousScope) && !isLocalDeviceScope(nextScope)
     previousScope = nextScope
-    ;(input.clear ?? clearPrincipalData)()
+    if (fromLocalDevice) (input.refresh ?? refreshPrincipalData)()
+    else (input.clear ?? clearPrincipalData)()
   }
 }
 

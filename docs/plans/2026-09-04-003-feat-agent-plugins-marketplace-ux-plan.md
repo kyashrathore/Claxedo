@@ -265,3 +265,23 @@ New hosted operations in `claxedo-desktop/src/main/account/hosted-operations.ts`
   sources route (`e3b0d2631b`) and a connection reset during session renewal that took the whole app to the
   crash screen on every launch (`241a5e26d8`: descriptor fetch retries once on a connection-level failure;
   the Directory shows a calm connection-status line with Retry).
+- 2026-09-04 (late): three more live findings fixed — opening a skill suspended the whole surface (the document
+  read now has its own boundary; Directory resources are read through `.latest` so refetches never suspend),
+  the overflow menu was unbounded and end-aligned nowhere, the add-source row misaligned its buttons and said
+  nothing about the repository shape. The account flip from the local device to the signed user no longer
+  wipes the caches (it revalidates them), which removes the emptied rail and "Loading…" seconds after launch.
+
+## Next slice (owner direction, 2026-09-04): harness-official sources instead of a machine scan
+
+Codex shows other harnesses' curated marketplaces (`claude-plugins-official`, its own bundled set) as sources a
+user can install from. Claxedo should do the same: built-in sources per harness (Claude Code's official
+marketplace at minimum; Cursor's marketplace and Codex's bundled set where a public listing exists), enabled by
+default, each toggleable in "Manage sources", their plugins installable into every harness through the normal
+install sheet. This replaces the Personal machine scan (D3/WP3), which is then removed rather than kept beside
+it. Design points: a `claude-marketplace` source adapter (Claude's `.claude-plugin/marketplace.json` +
+`.claude-plugin/plugin.json` format mapped onto the Agent Plugins model: skills and MCP servers carry over;
+commands, agents, hooks are reported as unsupported per plugin, not silently dropped); built-in source records
+seeded in both registries with `builtIn: true, enabled: boolean`; the catalog reads only enabled sources; the
+Directory groups by source with the harness's mark on the section. Acceptance: Claude's official marketplace
+lists in the Directory on both rails, one of its plugins installs into all four harnesses, disabling the source
+hides its section on the next read, and the machine-scan route and section are gone.

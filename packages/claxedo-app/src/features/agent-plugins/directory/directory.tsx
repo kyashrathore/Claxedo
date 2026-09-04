@@ -92,14 +92,17 @@ export function AgentPluginDirectory(props: {
   // control plane without the sources route (or a daemon that cannot read the
   // machine's harness installs) must not take the whole Directory down: the
   // catalog still renders, and each failure is reported in its own place.
-  const listedSources = () => (sources.error ? [] : sources()?.sources ?? [])
-  const machineInstalled = () => (machine.error ? undefined : machine())
+  // `.latest` keeps the last settled value through a refetch instead of
+  // suspending the surface: reading `sources()` mid-refetch would put the whole
+  // marketplace behind the surface-level "Loading…" fallback.
+  const listedSources = () => (sources.error ? [] : sources.latest?.sources ?? [])
+  const machineInstalled = () => (machine.error ? undefined : machine.latest)
 
   const catalog = () => catalogQuery.data
   const candidates = () => catalog()?.candidates ?? []
   // Guarded like sources and machine: an errored resource rethrows on read, and a
   // failed connection status must not take the Directory down.
-  const connectionRows = (): AgentPluginConnectionSummary[] => (connections.error ? [] : connections()?.connections ?? [])
+  const connectionRows = (): AgentPluginConnectionSummary[] => (connections.error ? [] : connections.latest?.connections ?? [])
   const harnesses = createMemo<AgentPluginHarness[]>(() => catalog()?.supportedHarnesses ?? [])
 
   const sourceViews = createMemo<DirectorySourceView[]>(() => {
