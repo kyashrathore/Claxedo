@@ -140,7 +140,13 @@ Cloudflare sandbox Worker `claxedo-sandbox-proxy` at `sandbox.claxedo.com` (depl
   the org's current revision is 2 (`agent_plugin_user_defaults`: context7 + composio enabled on opencode/claude/codex/
   cursor), so the VM holds the signed Context7/Composio world. Local gates re-run green: ratchets, 19 focused server
   files / 115 tests, release scripts 11 files / 74 tests.
-- Follow-ups (not blocking): `POST /api/workspace/create` should `waitUntil` its provisioning instead of relying on
-  the first `/connection` poll; the release script should rebuild the dist-resolved packages it bundles
+- `waitUntil` follow-up done (`0ae9eb570f`): both create routes hand the provisioning chain to
+  `executionCtx.waitUntil` through `@claxedo/server-core/platform/http/background-work` (which also replaced the two
+  private `guardedWaitUntil` copies in the hosted shell and the internal relay). Release 77
+  (`release-acc-vm5-260904-150000-3851`, rev 190, dev-opened) proves it live: workspace
+  `ws_mtmqmj3w_tp7ca9hxwj6dpe6z` was created and never polled; the create request itself ran 14.7 s, the sandbox
+  worker tail shows `ensure-runtime → 200` and `proxy/api/wr/agent-plugins/apply → 200` for that workspace, and
+  `sandbox_leases` was `ready` 20 s later with no `/connection` call in the plane tail.
+- Follow-ups (not blocking): the release script should rebuild the dist-resolved packages it bundles
   (`@claxedo/connections`, sandbox-manager, workspace-relay, agent-sdk-runtime); the sandbox worker workflow's
   token-sync job overwrites the rotated `API_TOKEN` (re-put it after every image deploy).
