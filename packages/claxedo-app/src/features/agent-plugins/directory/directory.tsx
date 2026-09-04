@@ -4,7 +4,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
 import { Icon } from "@opencode-ai/ui/icon"
 import { showToast } from "@opencode-ai/ui/toast"
-import type { AgentPluginApi, AgentPluginHarness, PluginCandidate, PluginCatalog } from "../api"
+import { withCurrentRevision, type AgentPluginApi, type AgentPluginHarness, type PluginCandidate, type PluginCatalog } from "../api"
 import type { AgentPluginConnectionPort, AgentPluginConnectionSummary } from "../connections"
 import { AddSourceForm } from "./add-source"
 import { DirectoryCard, PersonalCard, personalEntryKey } from "./card"
@@ -142,12 +142,16 @@ export function AgentPluginDirectory(props: {
       if (signed() && targetSelection && targetSelection.projectIds.length === 0) {
         throw new Error("Select at least one project")
       }
-      const result = await props.api.activation({
-        pluginInstanceId: plugin.pluginInstanceId,
-        harnessIds: harnesses(),
-        choice,
-        expectedRevision: current.revision,
-        ...(targetSelection ? { target: targetSelection } : {}),
+      const result = await withCurrentRevision({
+        revision: () => catalog()?.revision,
+        reread,
+        run: (expectedRevision) => props.api.activation({
+          pluginInstanceId: plugin.pluginInstanceId,
+          harnessIds: harnesses(),
+          choice,
+          expectedRevision,
+          ...(targetSelection ? { target: targetSelection } : {}),
+        }),
       })
       if (result.reconciliation.state === "failed") {
         showToast({
@@ -165,14 +169,17 @@ export function AgentPluginDirectory(props: {
   }
 
   const update = async (plugin: PluginCandidate) => {
-    const current = catalog()
-    if (!current) return
+    if (!catalog()) return
     setPending(plugin.pluginInstanceId)
     try {
-      await props.api.update({
-        pluginInstanceId: plugin.pluginInstanceId,
-        expectedRevision: current.revision,
-        ...(signed() ? { authority: "user" as const } : {}),
+      await withCurrentRevision({
+        revision: () => catalog()?.revision,
+        reread,
+        run: (expectedRevision) => props.api.update({
+          pluginInstanceId: plugin.pluginInstanceId,
+          expectedRevision,
+          ...(signed() ? { authority: "user" as const } : {}),
+        }),
       })
       await reread()
       if (signed() && props.connections) await refetchConnections()
@@ -184,15 +191,18 @@ export function AgentPluginDirectory(props: {
   }
 
   const organizationDefault = async (plugin: PluginCandidate, choice: true | null) => {
-    const current = catalog()
-    if (!current) return
+    if (!catalog()) return
     setPending(plugin.pluginInstanceId)
     try {
-      await props.api.organizationDefault({
-        pluginInstanceId: plugin.pluginInstanceId,
-        harnessIds: harnesses(),
-        choice,
-        expectedRevision: current.revision,
+      await withCurrentRevision({
+        revision: () => catalog()?.revision,
+        reread,
+        run: (expectedRevision) => props.api.organizationDefault({
+          pluginInstanceId: plugin.pluginInstanceId,
+          harnessIds: harnesses(),
+          choice,
+          expectedRevision,
+        }),
       })
       await reread()
     } catch (error) {

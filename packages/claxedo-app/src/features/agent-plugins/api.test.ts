@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { agentPluginApi, agentPluginSkillResult } from "./api"
+import { AgentPluginRequestError, agentPluginApi, agentPluginMutationResult, agentPluginSkillResult, isAgentPluginRevisionConflict, withCurrentRevision } from "./api"
 
 const activation = { effective: { status: "ready", effective: true, winner: "user-default" } }
 
@@ -143,5 +143,64 @@ describe("Agent Plugins client", () => {
     })
 
     await expect(api.update({ pluginInstanceId: "source/plugin", expectedRevision: 1 })).rejects.toThrow("did not match its API contract")
+  })
+})
+
+describe("withCurrentRevision", () => {
+  test("a revision conflict re-reads the catalog and retries once with the fresh revision", async () => {
+    let revision: number | undefined = 9
+    const attempts: number[] = []
+    const result = await withCurrentRevision({
+      revision: () => revision,
+      reread: async () => { revision = 11 },
+      run: async (expectedRevision) => {
+        attempts.push(expectedRevision)
+        if (expectedRevision !== 11) {
+          throw new AgentPluginRequestError(409, "agent_plugins_revision_conflict", `Agent plugin activation revision changed from ${expectedRevision} to 11`)
+        }
+        return { revision: 12 }
+      },
+    })
+    expect(result).toEqual({ revision: 12 })
+    expect(attempts).toEqual([9, 11])
+  })
+
+  test("a second conflict, an unchanged revision, and any other failure surface as-is", async () => {
+    const conflict = (expected: number) => new AgentPluginRequestError(409, "agent_plugins_revision_conflict", `changed from ${expected}`)
+    const twice: number[] = []
+    await expect(withCurrentRevision({
+      revision: () => 9 + twice.length * 2,
+      reread: async () => undefined,
+      run: async (expectedRevision) => { twice.push(expectedRevision); throw conflict(expectedRevision) },
+    })).rejects.toThrow("changed from 11")
+    expect(twice).toEqual([9, 11])
+
+    const stuck: number[] = []
+    await expect(withCurrentRevision({
+      revision: () => 9,
+      reread: async () => undefined,
+      run: async (expectedRevision) => { stuck.push(expectedRevision); throw conflict(expectedRevision) },
+    })).rejects.toThrow("changed from 9")
+    expect(stuck).toEqual([9])
+
+    const denied: number[] = []
+    await expect(withCurrentRevision({
+      revision: () => 9,
+      reread: async () => { throw new Error("must not re-read") },
+      run: async (expectedRevision) => { denied.push(expectedRevision); throw new AgentPluginRequestError(403, "workspace_authorization_denied", "denied") },
+    })).rejects.toThrow("denied")
+    expect(denied).toEqual([9])
+  })
+
+  test("a 409 answer becomes a request error the retry recognises", () => {
+    expect(() => agentPluginMutationResult({ status: 409, body: { error: { code: "agent_plugins_revision_conflict", message: "moved" } } }))
+      .toThrow(AgentPluginRequestError)
+    try {
+      agentPluginMutationResult({ status: 409, body: { error: { code: "agent_plugins_revision_conflict", message: "moved" } } })
+    } catch (error) {
+      expect(isAgentPluginRevisionConflict(error)).toBe(true)
+      expect(error).toMatchObject({ status: 409, code: "agent_plugins_revision_conflict", message: "moved" })
+    }
+    expect(isAgentPluginRevisionConflict(new Error("moved"))).toBe(false)
   })
 })

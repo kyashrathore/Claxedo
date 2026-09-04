@@ -228,13 +228,54 @@ async function responseJson<T>(response: Response, validate: (value: unknown) =>
 
 export type AgentPluginStatusResult = { status: number; body?: unknown }
 
+/** A non-2xx Agent Plugins answer, keeping the status and error code the server named. */
+export class AgentPluginRequestError extends Error {
+  constructor(readonly status: number, readonly code: string | undefined, message: string) {
+    super(message)
+    this.name = "AgentPluginRequestError"
+  }
+}
+
+/**
+ * The server refused a mutation because the catalog revision it was decided
+ * on has moved (another client, device, or runtime apply changed activation
+ * state since this catalog was read). The decision itself is still valid on
+ * the newer state, so callers re-read and retry once instead of failing.
+ */
+export function isAgentPluginRevisionConflict(error: unknown): boolean {
+  return error instanceof AgentPluginRequestError && error.status === 409
+}
+
+/**
+ * Runs a revision-guarded mutation against the current catalog revision and,
+ * on a revision conflict, re-reads the catalog and retries exactly once with
+ * the fresh revision. A second conflict is reported as-is.
+ */
+export async function withCurrentRevision<T>(input: {
+  revision: () => number | undefined
+  reread: () => Promise<void>
+  run: (expectedRevision: number) => Promise<T>
+}): Promise<T> {
+  const first = input.revision()
+  if (first === undefined) throw new Error("The plugin catalog is not loaded")
+  try {
+    return await input.run(first)
+  } catch (error) {
+    if (!isAgentPluginRevisionConflict(error)) throw error
+    await input.reread()
+    const next = input.revision()
+    if (next === undefined || next === first) throw error
+    return await input.run(next)
+  }
+}
+
 function resultJson<T>(result: AgentPluginStatusResult, validate: (value: unknown) => value is T): T {
   if (result.status < 200 || result.status >= 300) {
     const body = result.body
-    const message = record(body) && record(body.error) && typeof body.error.message === "string"
-      ? body.error.message
-      : undefined
-    throw new Error(message ?? `Agent Plugins request failed (${result.status})`)
+    const failure = record(body) && record(body.error) ? body.error : undefined
+    const message = failure && typeof failure.message === "string" ? failure.message : undefined
+    const code = failure && typeof failure.code === "string" ? failure.code : undefined
+    throw new AgentPluginRequestError(result.status, code, message ?? `Agent Plugins request failed (${result.status})`)
   }
   const body = result.body
   if (!validate(body)) throw new Error("Agent Plugins response did not match its API contract")
