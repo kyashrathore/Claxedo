@@ -13,6 +13,8 @@ import { SqliteUnsignedAgentPluginActivationStore } from "./sqlite-store"
 
 const roots: string[] = []
 
+const SKILL_MARKDOWN = "---\nname: triage\ndescription: Triage a review\n---\n\n# Triage\n\nRead the diff twice.\n"
+
 async function fixture() {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-plugin-routes-"))
   roots.push(root)
@@ -25,6 +27,8 @@ async function fixture() {
     version: "1.0.0",
   }))
   await fs.writeFile(path.join(plugin, "marker.txt"), "version one")
+  await fs.mkdir(path.join(plugin, "skills", "triage"), { recursive: true })
+  await fs.writeFile(path.join(plugin, "skills", "triage", "SKILL.md"), SKILL_MARKDOWN)
 
   const freshCalls: boolean[] = []
   const sources: CatalogSourceProvider = {
@@ -60,6 +64,9 @@ async function catalog(app: Hono, suffix = "") {
       retainedDigest: string | null
       updateAvailable: boolean
       sourceAvailable: boolean
+      icon?: { kind: string; url?: string; text?: string }
+      skills: Array<{ name: string; description: string; path: string }>
+      source: { id: string; kind: string; label: string; repository?: string } | null
       harnesses: Record<string, { explicit: boolean | null }>
     }>
   }
@@ -121,6 +128,63 @@ describe("unsigned Agent Plugins public route contribution", () => {
       machineOverride: true,
       pins: { localMachine: candidate.candidateDigest },
     })
+  })
+
+  test("projects the monogram icon, skills, and named source instead of a free-text label", async () => {
+    const subject = await fixture()
+
+    const first = await catalog(subject.app)
+
+    expect(first.candidates[0]).toMatchObject({
+      icon: { kind: "monogram", text: "R" },
+      skills: [{ name: "triage", description: "Triage a review", path: "skills/triage" }],
+      source: { id: "claxedo-public", kind: "claxedo", label: "Claxedo" },
+    })
+    expect(first.candidates[0]).not.toHaveProperty("sourceLabel")
+  })
+
+  test("serves a skill's retained markdown and keeps serving it after the source disappears", async () => {
+    const subject = await fixture()
+    const candidate = (await catalog(subject.app)).candidates[0]!
+    const skillUrl = (skill: string) =>
+      `http://local.test/api/claxedo/plugins/${encodeURIComponent(candidate.pluginInstanceId)}/skills/${encodeURIComponent(skill)}`
+
+    // Nothing is retained yet: the route never falls back to the live source.
+    const beforeInstall = await subject.app.request(skillUrl("triage"))
+    expect(beforeInstall.status).toBe(404)
+    expect(await beforeInstall.json()).toMatchObject({ error: { code: "agent_plugins_skill_not_found" } })
+
+    await subject.app.request("http://local.test/api/claxedo/plugins/activation", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        pluginInstanceId: candidate.pluginInstanceId,
+        harnessIds: ["opencode"],
+        choice: true,
+        expectedRevision: 0,
+      }),
+    })
+
+    const installed = await subject.app.request(skillUrl("triage"))
+    expect(installed.status).toBe(200)
+    expect(await installed.json()).toEqual({
+      name: "triage",
+      description: "Triage a review",
+      markdown: SKILL_MARKDOWN,
+    })
+    expect((await subject.app.request(skillUrl("unknown"))).status).toBe(404)
+    expect((await subject.app.request(skillUrl("../plugin.json"))).status).toBe(404)
+    expect((await subject.app.request(skillUrl("../../marker.txt"))).status).toBe(404)
+
+    await fs.rm(subject.collection, { recursive: true })
+    const gone = await catalog(subject.app, "/refresh")
+    expect(gone.candidates[0]).toMatchObject({
+      sourceAvailable: false,
+      source: null,
+      icon: { kind: "monogram", text: "R" },
+      skills: [{ name: "triage", description: "Triage a review", path: "skills/triage" }],
+    })
+    expect((await subject.app.request(skillUrl("triage"))).status).toBe(200)
   })
 
   test("Refresh is a fresh read that reports Update without mutating or reconciling", async () => {

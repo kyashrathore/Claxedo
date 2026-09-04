@@ -10,7 +10,13 @@ export function pluginInstanceId(sourceId: string, relativePath: string) {
 }
 
 export async function indexCollection(source: AgentPluginCollectionSource): Promise<AgentPluginCollectionIndex> {
-  const sourceMetadata = { id: source.id, kind: source.kind, label: source.label, revision: source.revision }
+  const sourceMetadata = {
+    id: source.id,
+    kind: source.kind,
+    label: source.label,
+    ...(source.repository ? { repository: source.repository } : {}),
+    revision: source.revision,
+  }
   const candidates: AgentPluginCollectionIndex["candidates"] = []
   const errors: AgentPluginCatalogError[] = (source.errors ?? []).map((error) => ({
     sourceId: source.id,
@@ -40,10 +46,12 @@ export async function indexCollection(source: AgentPluginCollectionSource): Prom
         sourceId: source.id,
         sourceKind: source.kind,
         sourceLabel: source.label,
+        ...(source.repository ? { sourceRepository: source.repository } : {}),
         sourceRevision: source.revision,
         relativePath: child.relativePath,
         artifactDigest: artifact.digest,
         manifest: artifact.plugin.manifest,
+        skills: artifact.plugin.skills,
         mcp: artifact.plugin.mcp,
         componentDiagnostics: artifact.diagnostics,
         tree: artifact.tree,

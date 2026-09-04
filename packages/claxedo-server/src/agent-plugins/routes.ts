@@ -13,6 +13,11 @@ import type {
 } from "@claxedo/server-core/agent-plugins/activation/store"
 import { AgentPluginActivationStoreError } from "@claxedo/server-core/agent-plugins/activation/store"
 import { resolveCollections } from "@claxedo/server-core/agent-plugins/catalog/resolve-collections"
+import {
+  candidatePresentation,
+  retainedPresentation,
+} from "@claxedo/server-core/agent-plugins/catalog/presentation"
+import { readRetainedSkill } from "@claxedo/server-core/agent-plugins/catalog/read-skill"
 import type { AgentPluginCatalogCandidate } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { ValidatedAgentPlugin } from "@claxedo/server-core/agent-plugins/catalog/types"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
@@ -203,7 +208,7 @@ async function candidateView(input: {
     pluginInstanceId: input.candidate.pluginInstanceId,
     sourceId: input.candidate.sourceId,
     sourceKind: input.candidate.sourceKind,
-    sourceLabel: input.candidate.sourceLabel,
+    ...candidatePresentation({ candidate: input.candidate, retained: retainedArtifact?.plugin }),
     sourceRevision: input.candidate.sourceRevision,
     relativePath: input.candidate.relativePath,
     candidateDigest: input.candidate.artifactDigest,
@@ -266,7 +271,7 @@ async function retainedView(input: {
     pluginInstanceId: input.known.pluginInstanceId,
     sourceId: retainedPin?.sourceId ?? null,
     sourceKind: null,
-    sourceLabel: null,
+    ...retainedPresentation(retained?.plugin),
     sourceRevision: retainedPin?.sourceRevision ?? null,
     relativePath: retainedPin?.relativePath ?? null,
     candidateDigest: null,
@@ -429,6 +434,35 @@ export function HostedAgentPluginRoutes(input: {
   }
   app.get("/projects/:projectId", (c) => catalog(c, { fresh: false, projectId: c.req.param("projectId") }))
   app.get("/projects/:projectId/refresh", (c) => catalog(c, { fresh: true, projectId: c.req.param("projectId") }))
+
+  /**
+   * One skill's SKILL.md, read from the retained artifact tree. A source read
+   * would show the caller text their runtime does not run, so a plugin with no
+   * retained artifact has no readable skill. The project prefix authorizes the
+   * project the way the catalog does and selects nothing else: retained
+   * artifacts are user- and organization-scoped, never project-scoped.
+   */
+  const skill = async (c: Context, options: { projectId?: string }) => {
+    const authResult = await authenticate(c.req.raw)
+    if ("error" in authResult || !authResult.auth) return c.json("error" in authResult ? authResult.error : error("missing_bearer_token", "Signed auth is required"), "status" in authResult ? authResult.status : 401)
+    const auth = authResult.auth
+    const projectId = options.projectId?.trim()
+    if (projectId) await input.activations.authorizeProject(auth, projectId)
+    const known = (await input.activations.listKnown(auth))
+      .find((item) => item.pluginInstanceId === c.req.param("pluginInstanceId"))
+    const retainedPin = known?.pins.user ?? known?.pins.organization ?? known?.pins.claxedo
+    const retained = retainedPin ? await input.artifacts.get(retainedPin.digest) : undefined
+    const document = readRetainedSkill(retained, c.req.param("skill"))
+    if (!document) {
+      return c.json(error("agent_plugins_skill_not_found", "No retained artifact serves this skill"), 404)
+    }
+    return c.json(document)
+  }
+  app.get("/:pluginInstanceId/skills/:skill", (c) => skill(c, {}))
+  app.get(
+    "/projects/:projectId/:pluginInstanceId/skills/:skill",
+    (c) => skill(c, { projectId: c.req.param("projectId") }),
+  )
 
   app.post("/activation", async (c) => {
     const authResult = await authenticate(c.req.raw)

@@ -15,11 +15,33 @@ export type HarnessActivation = {
   }
 }
 
+export type AgentPluginSourceKind = "claxedo" | "personal" | "organization"
+
+export type PluginIcon =
+  | { kind: "url"; url: string }
+  | { kind: "monogram"; text: string }
+
+export type PluginSkill = {
+  name: string
+  description: string
+  path: string
+}
+
+/** The collection a candidate came from; `null` once no source serves it any more. */
+export type PluginSource = {
+  id: string
+  kind: AgentPluginSourceKind
+  label: string
+  repository?: string
+}
+
 export type PluginCandidate = {
   pluginInstanceId: string
   sourceId: string | null
-  sourceKind: "claxedo" | "personal" | "organization" | null
-  sourceLabel: string | null
+  sourceKind: AgentPluginSourceKind | null
+  source: PluginSource | null
+  icon?: PluginIcon
+  skills: PluginSkill[]
   sourceRevision: string | null
   relativePath: string | null
   candidateDigest: string | null
@@ -60,6 +82,9 @@ type RequestFn = (input: RequestInfo | URL, init?: RequestInit) => Promise<Respo
 
 type MutationReceipt = { revision: number; reconciliation: { state: string; message?: string } }
 
+/** One skill's SKILL.md, read from the plugin's retained artifact. */
+export type SkillDocument = { name: string; description: string; markdown: string }
+
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value)
 }
@@ -86,12 +111,41 @@ function harnessActivation(value: unknown): value is HarnessActivation {
     && optionalString(effective.artifactDigest)
 }
 
+function sourceKind(value: unknown): value is AgentPluginSourceKind {
+  return value === "claxedo" || value === "personal" || value === "organization"
+}
+
+function pluginIcon(value: unknown): value is PluginIcon | undefined {
+  if (value === undefined) return true
+  if (!record(value)) return false
+  if (value.kind === "url") return typeof value.url === "string"
+  return value.kind === "monogram" && typeof value.text === "string"
+}
+
+function pluginSource(value: unknown): value is PluginSource | null {
+  if (value === null) return true
+  return record(value)
+    && typeof value.id === "string"
+    && sourceKind(value.kind)
+    && typeof value.label === "string"
+    && optionalString(value.repository)
+}
+
+function pluginSkills(value: unknown): value is PluginSkill[] {
+  return Array.isArray(value) && value.every((skill) => record(skill)
+    && typeof skill.name === "string"
+    && typeof skill.description === "string"
+    && typeof skill.path === "string")
+}
+
 function pluginCandidate(value: unknown): value is PluginCandidate {
   if (!record(value)
     || typeof value.pluginInstanceId !== "string"
     || !optionalString(value.sourceId)
-    || !(value.sourceKind === null || value.sourceKind === "claxedo" || value.sourceKind === "personal" || value.sourceKind === "organization")
-    || !optionalString(value.sourceLabel)
+    || !(value.sourceKind === null || sourceKind(value.sourceKind))
+    || !pluginSource(value.source)
+    || !pluginIcon(value.icon)
+    || !pluginSkills(value.skills)
     || !optionalString(value.sourceRevision)
     || !optionalString(value.relativePath)
     || !optionalString(value.candidateDigest)
@@ -151,6 +205,13 @@ function pluginCatalog(value: unknown): value is PluginCatalog {
       && typeof error.message === "string")
 }
 
+function skillDocument(value: unknown): value is SkillDocument {
+  return record(value)
+    && typeof value.name === "string"
+    && typeof value.description === "string"
+    && typeof value.markdown === "string"
+}
+
 function mutationReceipt(value: unknown): value is MutationReceipt {
   return record(value)
     && typeof value.revision === "number"
@@ -182,6 +243,7 @@ function resultJson<T>(result: AgentPluginStatusResult, validate: (value: unknow
 
 export const agentPluginCatalogResult = (result: AgentPluginStatusResult) => resultJson(result, pluginCatalog)
 export const agentPluginMutationResult = (result: AgentPluginStatusResult) => resultJson(result, mutationReceipt)
+export const agentPluginSkillResult = (result: AgentPluginStatusResult) => resultJson(result, skillDocument)
 
 export function agentPluginApi(input: { baseUrl: string; request: RequestFn }) {
   const url = (path = "", options: { refresh?: boolean; projectId?: string } = {}) => {
@@ -195,6 +257,12 @@ export function agentPluginApi(input: { baseUrl: string; request: RequestFn }) {
   return {
     catalog(options: { refresh?: boolean; projectId?: string } = {}) {
       return input.request(url("", options)).then((response) => responseJson(response, pluginCatalog))
+    },
+    /** One skill's SKILL.md from the plugin's retained artifact; 404 until the plugin is installed. */
+    skill(options: { pluginInstanceId: string; skill: string; projectId?: string }) {
+      const path = `/${encodeURIComponent(options.pluginInstanceId)}/skills/${encodeURIComponent(options.skill)}`
+      return input.request(url(path, options.projectId ? { projectId: options.projectId } : {}))
+        .then((response) => responseJson(response, skillDocument))
     },
     activation(body: {
       pluginInstanceId: string

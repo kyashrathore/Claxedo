@@ -72,6 +72,8 @@ export type AgentPluginCollectionSource = {
   id: string
   kind: AgentPluginSourceKind
   label: string
+  /** `owner/repository` when the adapter reads a GitHub repository. */
+  repository?: string
   revision: string
   /** Immediate children supplied by a filesystem, GitHub, or other product adapter. */
   plugins: readonly { relativePath: string; tree: AgentPluginTree }[]
@@ -87,11 +89,13 @@ export type AgentPluginCatalogCandidate = {
   sourceId: string
   sourceKind: AgentPluginSourceKind
   sourceLabel: string
+  sourceRepository?: string
   sourceRevision: string
   relativePath: string
   artifactDigest: `sha256:${string}`
   manifest: AgentPluginManifest
   /** Validated component metadata only; source bytes remain acquisition-only. */
+  skills: AgentPluginSkill[]
   mcp: ValidatedAgentPlugin["mcp"]
   componentDiagnostics: AgentPluginDiagnostic[]
   /** Acquisition input only. Runtime snapshots never expose source bytes. */
