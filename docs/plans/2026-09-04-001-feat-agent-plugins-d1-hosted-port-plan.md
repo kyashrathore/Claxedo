@@ -175,3 +175,23 @@ machine world launches again. The operation is renderer-withheld: only main hold
   runtime-credential half of V3 is proven only by `signed-composio.miniflare.test.ts` (real D1 authority, real
   hosted-d1 Connections, dynamic registration, gateway forwards the bearer). Cloud-VM half of V2/V3 remains
   blocked on a D1 sandbox lease store (staging is control-plane-only).
+- Consent completed by the owner in Chrome (Google SSO, kanusdlp@gmail.com) for both servers: `hosted_connections`
+  holds two `connected` personal rows (`client_kind: dynamic`). The refreshed desktop world then carried NO
+  gateway servers: the preparer marks every protected server `secret_brokering_unsupported` when the deployment's
+  sandbox driver cannot broker secrets, which a control-plane-only staging never can. Fixed in `5148d50ffa`
+  (`forSnapshot` takes the consumer's brokering; the self runtime is `native`). Release 69 follows.
+- Release 69 (rev 174): the desktop world carried gateway servers with bearers for both plugins, but the gateway
+  answered 401 for every bearer, including tokens verifiable locally with the deployment's JWKS key. Cause: a
+  leftover zone Worker route `https://*.claxedo.dev/api/claxedo/plugins/mcp/*` → `claxedo-control-plane-staging`
+  (the retired Convex-era plane) shadowed the path; the candidate worker never received those requests. Deleted with
+  the owner's approval. Release 70 (rev 176) also made the gateway answer 503 `mcp_gateway_misconfigured` when it
+  lacks its verification key (`d2784a6192`). With the route gone the gateway refused
+  `mcp_gateway_activation_denied`: the D1 store's runtime read required project and workspace rows for the
+  desktop sentinels; fixed in `45fe7dba3d` (desktop scope = org membership). Release 71 follows.
+- Release 71 (rev 178): gateway reached the Connection but answered 409 `mcp_gateway_resource_mismatch` — the
+  worker bundle resolves `@claxedo/connections` through its gitignored `dist`, and the release does not rebuild
+  dependency dists, so the kit's OAuth-token `fields` fix (`bba574288b`) had never shipped. Rebuilt the kit dist
+  by hand for release 72. Follow-up for the deploy owner: `release-better-auth-d1.ts` should build (or hash-verify)
+  the dist of every workspace package the worker bundle resolves through `dist` (`@claxedo/connections`,
+  `@claxedo/sandbox-manager`, `@claxedo/workspace-relay`, `@claxedo/workspace-relay-protocol`,
+  `@claxedo/agent-sdk-runtime`) before bundling.
