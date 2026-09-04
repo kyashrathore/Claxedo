@@ -335,4 +335,16 @@ hides its section on the next read, and the machine-scan route and section are g
   refresh attempted (one `refresh failed: 503` line in main.log, then zero requests reaching the plane) while the
   rail still read "Signed in". Fixed by expressing the cool-down in seconds with a test that bites at the 20 s
   boundary (mutation-checked). This is the mechanism behind "stuck on Signed in" after a deploy.
+- 2026-09-04 (release 82 measured, `agent_plugins.timing` in the tail): catalog 2.1–2.7 s plane-side (was
+  3.7–3.9): auth ~230 ms, revision ~200, sources 220–560, state ~180, views 1.1–1.8 s. runtime/self 3.4–7.2 s:
+  auth ~250, snapshot 300–480, artifacts 0–160, preparation 2.7–6.5 s. Both remainders are MCP OAuth discovery —
+  a probe plus several live `/.well-known/` reads per server, serial across servers, walked by the catalog per
+  server per candidate and by the runtime pull per server per request. Fix (`780b4440cd`, staging release 83):
+  one `edgeCachedFetch` mechanism with two policies (GitHub; OAuth well-known documents and their 404s for
+  ten minutes), wired into the composition's OAuth fetch, and the preparer starts every server's discovery
+  before walking the ordered plan. In-app (desktop, rebuilt with the cool-down fix): catalog 2.9–3.3 s,
+  refresh 4.1 s, connections 2.3 s, sources 1.1 s before release 83.
+- Verification surface: the owner asked to test in the staging web app rather than rebuilding the desktop for
+  every change; plane changes are measured through `wrangler tail` plus any signed client, and UI changes are
+  checked at `app-acc-stg-…claxedo.dev`.
 
