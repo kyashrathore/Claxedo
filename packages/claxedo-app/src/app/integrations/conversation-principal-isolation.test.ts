@@ -47,6 +47,17 @@ describe("conversation principal isolation", () => {
     expect(calls).toEqual(["clear", "refresh", "clear", "refresh"])
   })
 
+  test("a signed user whose organization resolves keeps its data; another user or an org switch wipes", async () => {
+    const calls: string[] = []
+    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    transition({ kind: "signed", userId: "user_a" })
+    transition({ kind: "org-member", userId: "user_a", orgId: "org_a", memberships: [] })
+    expect(calls).toEqual(["clear", "refresh"])
+    transition({ kind: "org-member", userId: "user_a", orgId: "org_b", memberships: [] })
+    transition({ kind: "org-member", userId: "user_b", orgId: "org_b", memberships: [] })
+    expect(calls).toEqual(["clear", "refresh", "clear", "clear"])
+  })
+
   test("does not clear again for a reactive refresh of the same principal", async () => {
     const cleared: string[] = []
 

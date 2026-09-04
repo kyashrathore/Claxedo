@@ -68,8 +68,24 @@ export function refreshPrincipalData() {
   void queryClient.invalidateQueries().catch(() => undefined)
 }
 
-function isLocalDeviceScope(scope: string | undefined) {
-  return scope !== undefined && scope.startsWith("local:")
+function userIdOf(principal: Principal | undefined): string | undefined {
+  return principal && "userId" in principal && typeof principal.userId === "string" ? principal.userId : undefined
+}
+
+/**
+ * Same person, more context: the local device becoming the signed user, or a
+ * signed user whose organization membership resolves a moment later
+ * (`signed` → `org-member` with the same user id). Neither exposes one
+ * person's data to another, so the caches are revalidated, not destroyed.
+ * A different user, or leaving the signed user (sign-out), is a real change
+ * of principal and is still a wipe.
+ */
+function isSamePersonGainingContext(previous: Principal | undefined, next: Principal): boolean {
+  if (!previous) return false
+  if (previous.kind === "local" && next.kind !== "local") return true
+  const before = userIdOf(previous)
+  const after = userIdOf(next)
+  return before !== undefined && before === after && previous.kind === "signed" && next.kind === "org-member"
 }
 
 export function createPrincipalDataIsolation(input: {
@@ -77,18 +93,21 @@ export function createPrincipalDataIsolation(input: {
   refresh?: () => void
 }) {
   let previousScope: string | undefined
+  let previousPrincipal: Principal | undefined
   return (principal: Principal) => {
     const nextScope = principalDataScope(principal)
     const namespaceChanged = setConversationPersistencePrincipal(nextScope)
     if (previousScope === undefined) {
       previousScope = nextScope
+      previousPrincipal = principal
       if (namespaceChanged) (input.clear ?? clearPrincipalData)()
       return
     }
     if (previousScope === nextScope) return
-    const fromLocalDevice = isLocalDeviceScope(previousScope) && !isLocalDeviceScope(nextScope)
+    const softened = isSamePersonGainingContext(previousPrincipal, principal)
     previousScope = nextScope
-    if (fromLocalDevice) (input.refresh ?? refreshPrincipalData)()
+    previousPrincipal = principal
+    if (softened) (input.refresh ?? refreshPrincipalData)()
     else (input.clear ?? clearPrincipalData)()
   }
 }
