@@ -44,6 +44,7 @@ import { DocumentsRoutes } from "../../documents/routes/index"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { LocalProjectRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { OpenCodeCompatRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { resolveHarnessId } from "@claxedo/local-server/self-hosted-execution"
@@ -1147,6 +1148,9 @@ export function createSelfHostedApp(
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
   app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
+  // Projects on this server's filesystem: a folder here, or a repository cloned
+  // under the data directory. The same routes the desktop's server mounts.
+  app.route("/api/claxedo/projects", LocalProjectRoutes(authRouteOptions(services)))
   app.route("/api/workspace", WorkspaceRoutes(
     services,
     {

@@ -16,13 +16,14 @@ const mocks = {
   putCredential: vi.fn(async () => ({})),
   deleteCredentialsByProvider: vi.fn(async () => 0),
   ensureHostForRepo: vi.fn(),
+  projectEnv: vi.fn(async (): Promise<Record<string, string> | undefined> => undefined),
   workspaceRows: new Map<string, Record<string, unknown>>(),
   resolveWorkspace: vi.fn(
     async (input: { workspaceId?: string; directory?: string }) =>
       mocks.workspaceRows.get(input.workspaceId ?? "") ?? mocks.workspaceRows.get(input.directory ?? ""),
   ),
   ensureWorkspace: vi.fn(
-    async (input: { workspaceId?: string; org_id?: string; directory?: string; kind?: string; status?: string; env?: Record<string, string> }) => {
+    async (input: { workspaceId?: string; org_id?: string; directory?: string; kind?: string; status?: string }) => {
       const row: WorkspaceTestRow = {
         id: input.workspaceId ?? crypto.randomUUID(),
         org_id: input.org_id,
@@ -31,7 +32,6 @@ const mocks = {
         directory: input.directory ?? "/workspace",
         kind: input.kind ?? "local",
         status: input.status,
-        ...(input.env ? { env: input.env } : {}),
         created_at: 1,
         updated_at: 1,
       }
@@ -71,7 +71,7 @@ function resetWorkspaceStoreMocks() {
   )
   mocks.ensureWorkspace.mockReset()
   mocks.ensureWorkspace.mockImplementation(
-    async (input: { workspaceId?: string; org_id?: string; directory?: string; kind?: string; status?: string; env?: Record<string, string> }) => {
+    async (input: { workspaceId?: string; org_id?: string; directory?: string; kind?: string; status?: string }) => {
       const row: WorkspaceTestRow = {
         id: input.workspaceId ?? crypto.randomUUID(),
         org_id: input.org_id,
@@ -80,7 +80,6 @@ function resetWorkspaceStoreMocks() {
         directory: input.directory ?? "/workspace",
         kind: input.kind ?? "local",
         status: input.status,
-        ...(input.env ? { env: input.env } : {}),
         created_at: 1,
         updated_at: 1,
       }
@@ -125,6 +124,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
     return value && /^ws_[A-Za-z0-9_-]+$/.test(value) ? value : undefined
   },
   ensureWorkspace: mocks.ensureWorkspace,
+  projectEnv: mocks.projectEnv,
   getWorkspaceByDirectory: vi.fn(async (directory: string) => mocks.workspaceRows.get(directory)),
   getWorkspace: vi.fn(async (id: string) => mocks.workspaceRows.get(id)),
   getProjectWorkspace: mocks.getProjectWorkspace,
@@ -175,7 +175,7 @@ vi.mock("../../user-hosted-tunnel", () => ({
 }))
 
 const { localOnlyAuthAdapter } = await import("@claxedo/server-core/platform/auth/auth")
-const { WorkspaceRoutes, workspaceEnvProblem } = await import("./index")
+const { WorkspaceRoutes } = await import("./index")
 const { createFixedWindowConnectionRateLimiter } = await import("../../platform/auth/rate-limit")
 
 const acceptedSandboxProbe = (async () =>
@@ -338,58 +338,42 @@ describe("workspace create environment", () => {
     resetWorkspaceStoreMocks()
   })
 
-  test("persists the project environment on the workspace and starts the sandbox with it", async () => {
+  test("starts the sandbox with the project's environment", async () => {
     const svc = services()
     const sandbox = readySandboxManager()
     svc.sandbox.sandboxManager = sandbox.manager
+    mocks.projectEnv.mockResolvedValue({ DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" })
     const app = WorkspaceRoutes(svc, { authConfig, verifier: vi.fn(verifier) })
 
     const res = await app.request("http://localhost/create", {
       method: "POST",
       headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
-      body: JSON.stringify({
-        repoUrl: "https://github.com/acme/demo.git",
-        projectName: "Demo",
-        env: { DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" },
-      }),
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", projectName: "Demo" }),
     })
 
     expect(res.status).toBe(200)
-    expect(mocks.ensureWorkspace).toHaveBeenCalledWith(
-      expect.objectContaining({
-        project_name: "Demo",
-        env: { DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" },
-      }),
-    )
     expect(sandbox.ensure).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({ env: { DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" } }),
     )
   })
 
-  test("refuses an environment whose names are not variable names", async () => {
+  test("a project without an environment starts a sandbox without one", async () => {
     const svc = services()
     const sandbox = readySandboxManager()
     svc.sandbox.sandboxManager = sandbox.manager
+    mocks.projectEnv.mockResolvedValue(undefined)
     const app = WorkspaceRoutes(svc, { authConfig, verifier: vi.fn(verifier) })
 
     const res = await app.request("http://localhost/create", {
       method: "POST",
       headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
-      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", env: { "not a name": "x" } }),
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
     })
 
-    expect(res.status).toBe(400)
-    expect(sandbox.ensure).not.toHaveBeenCalled()
-    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
-  })
-
-  test("names the limits it enforces", () => {
-    expect(workspaceEnvProblem(undefined)).toBeUndefined()
-    expect(workspaceEnvProblem({ OK_1: "v" })).toBeUndefined()
-    expect(workspaceEnvProblem({ "1BAD": "v" })).toMatch(/not a valid variable name/)
-    expect(workspaceEnvProblem(Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`K${i}`, "v"])))).toMatch(/more than 64/)
-    expect(workspaceEnvProblem({ BIG: "x".repeat(32 * 1024) })).toMatch(/exceeds/)
+    expect(res.status).toBe(200)
+    const input = (sandbox.ensure.mock.calls[0] as unknown as [string, Record<string, unknown>])[1]
+    expect(input).not.toHaveProperty("env")
   })
 })
 

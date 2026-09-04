@@ -28,6 +28,7 @@ import { listPolicies } from "@claxedo/server-core/sandbox/network/policy"
 import { resolveSandboxNetworkPolicy } from "../../sandbox/network/resolve"
 import { insertSnapshot } from "./prepared-image.sql"
 import { updateWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { projectEnv } from "@claxedo/server-core/workspace/store/index"
 import {
   configToken,
   configTokenHeaders,
@@ -131,9 +132,9 @@ export async function startSandbox(
       },
       bootSource: bootSourceForAction(action),
       workspaceRoot: state.ws.remote_directory || WORKSPACE_DIR,
-      // The project's environment, persisted on the workspace at creation so a
-      // re-provisioned sandbox starts the same way the first one did.
-      env: state.ws.env ?? {},
+      // The project's environment (`projectEnv`): every sandbox of the project,
+      // first or re-provisioned, starts the same way.
+      env: (await projectEnv(state.ws.project_id)) ?? {},
       source: state.ws.repo_url
         ? { kind: "git", repoUrl: state.ws.repo_url, branch: state.ws.git_branch ?? undefined }
         : { kind: "empty" },

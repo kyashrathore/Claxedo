@@ -48,6 +48,7 @@ import { sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { AgentConfigRoutes } from "../agent-config/routes/index"
 import { SessionMetaRoutes } from "../session/routes/meta-routes"
 import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
+import { LocalProjectRoutes } from "../workspace/routes/projects-route"
 import { OpenCodeCompatRoutes } from "../opencode/compat-routes/index"
 import { CredentialRoutes } from "../credentials/routes/credential"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
@@ -337,6 +338,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   })
   app.route("/api/claxedo/workspace", localWorkspaceRoutes)
   app.route("/api/claxedo/workspace", sandboxDriverSettingsRoutes)
+  app.route("/api/claxedo/projects", LocalProjectRoutes(authRouteOptions(services)))
   // The renderer's inventory contract uses the hosted-compatible list path in
   // every product. On desktop, the authoritative local workspace store answers
   // it; this avoids treating an intentionally absent hosted router as a 404.

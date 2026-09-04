@@ -18,6 +18,7 @@ import {
   ensureWorkspace,
   getProjectWorkspace,
   listProjects,
+  projectEnv,
   resolveWorkspace,
   workspaceIdFromDirectoryRef,
   type Workspace,
@@ -56,37 +57,11 @@ const createBody = z
     remoteDirectory: z.string().optional(),
     driver: z.string().optional(),
     provision: z.boolean().optional(),
-    // The environment the sandbox starts with (plaintext, readable inside it
-    // by design — see `SandboxHostInput.env`; brokered secrets are a different
-    // channel). Persisted on the workspace so a re-provisioned sandbox gets the
-    // same environment.
-    env: z.record(z.string(), z.string()).optional(),
   })
   .strict()
   .refine((body) => Boolean(body.connectionId) === Boolean(body.repo), {
     message: "connectionId and repo must be provided together",
   })
-  .refine((body) => workspaceEnvProblem(body.env) === undefined, {
-    message: "env must map valid variable names to strings, at most 64 entries and 32 KiB in total",
-  })
-
-const WORKSPACE_ENV_MAX_ENTRIES = 64
-const WORKSPACE_ENV_MAX_BYTES = 32 * 1024
-const WORKSPACE_ENV_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
-
-/** Why an `env` body is unacceptable, or `undefined` when it is fine. */
-export function workspaceEnvProblem(env: Record<string, string> | undefined): string | undefined {
-  if (!env) return undefined
-  const entries = Object.entries(env)
-  if (entries.length > WORKSPACE_ENV_MAX_ENTRIES) return `env has more than ${WORKSPACE_ENV_MAX_ENTRIES} entries`
-  let bytes = 0
-  for (const [name, value] of entries) {
-    if (!WORKSPACE_ENV_NAME.test(name)) return `env name "${name}" is not a valid variable name`
-    bytes += Buffer.byteLength(name) + Buffer.byteLength(value)
-  }
-  if (bytes > WORKSPACE_ENV_MAX_BYTES) return `env exceeds ${WORKSPACE_ENV_MAX_BYTES} bytes`
-  return undefined
-}
 
 const hostAssignmentBody = z
   .object({
@@ -115,6 +90,8 @@ function startCloudWorkspaceProvisioning(input: {
   provisionSecrets?: Array<{ name: string; value: string; hosts: string[]; header?: string }>
   gitBranch?: string
   remoteDirectory: string
+  /** The project's environment (`projectEnv`); every sandbox of the project starts with it. */
+  env?: Record<string, string>
   /** Holds the provisioning open past the response (Workers cancel detached work). */
   keepAlive: (work: Promise<unknown>) => void
 }) {
@@ -125,7 +102,7 @@ function startCloudWorkspaceProvisioning(input: {
       projectId: input.ws.project_id ?? "",
     },
     workspaceRoot: input.remoteDirectory,
-    ...(input.ws.env && Object.keys(input.ws.env).length ? { env: input.ws.env } : {}),
+    ...(input.env && Object.keys(input.env).length ? { env: input.env } : {}),
     source: input.provisionRepoUrl
       ? {
           kind: "git",
@@ -632,7 +609,6 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           git_branch: gitBranch,
           remote_directory,
           status,
-          ...(body.env && Object.keys(body.env).length ? { env: body.env } : {}),
         })
         if (!ws) return c.json({ error: apiError("cloud_workspace_create_failed", "failed to create workspace") }, 500)
         if (authResult.auth) {
@@ -683,6 +659,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           provisionSecrets,
           gitBranch,
           remoteDirectory: remote_directory,
+          env: await projectEnv(ws.project_id),
           keepAlive: (work) => keepAlivePastResponse(c, work),
         })
 

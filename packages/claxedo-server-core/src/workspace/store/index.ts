@@ -62,9 +62,23 @@ export type Workspace = {
   sandbox_id?: string
   remote_directory?: string
   status?: string
-  /** The environment a cloud sandbox starts with; plaintext by design (see `SandboxHostInput.env`). */
-  env?: Record<string, string>
   available?: boolean
+  created_at: number
+  updated_at: number
+}
+
+/**
+ * A project: a repository and a name. Where it executes is a workspace
+ * (local worktree or cloud sandbox) that carries this project's id; the
+ * project itself never runs anything. `env` is the environment every cloud
+ * sandbox of the project starts with — plaintext by design, see
+ * `SandboxHostInput.env`; credentials the agent must not read belong in
+ * Connections.
+ */
+export type Project = {
+  id: string
+  name: string
+  env?: Record<string, string>
   created_at: number
   updated_at: number
 }
@@ -72,6 +86,7 @@ export type Workspace = {
 type State = {
   version: 4
   workspaces: Workspace[]
+  projects?: Project[]
 }
 
 type StoredWorkspace = Omit<Workspace, "driver"> & {
@@ -80,6 +95,7 @@ type StoredWorkspace = Omit<Workspace, "driver"> & {
 
 const byId = new Map<string, Workspace>()
 const byDir = new Map<string, string>()
+const projectsById = new Map<string, Project>()
 const listeners = new Set<() => void | Promise<void>>()
 const localFirstTouch = new Map<string, Promise<Workspace | undefined>>()
 
@@ -217,6 +233,18 @@ async function load(target: string) {
   try {
     const raw = JSON.parse(await fs.readFile(target, "utf-8"))
     const state = raw as Partial<Omit<State, "workspaces"> & { workspaces: StoredWorkspace[] }>
+    for (const item of state.projects ?? []) {
+      const id = trim(item.id)
+      const name = trim(item.name)
+      if (!id || !name) continue
+      projectsById.set(id, {
+        id,
+        name,
+        env: envRecord(item.env),
+        created_at: item.created_at ?? Date.now(),
+        updated_at: item.updated_at ?? Date.now(),
+      })
+    }
     for (const item of state.workspaces ?? []) {
       const id = item.id
       const kind = item.kind === "cloud" ? "cloud" : "local"
@@ -237,7 +265,6 @@ async function load(target: string) {
         sandbox_id: trim(item.sandbox_id),
         remote_directory: trim(item.remote_directory),
         status: trim(item.status),
-        env: envRecord(item.env),
         created_at: item.created_at ?? Date.now(),
         updated_at: item.updated_at ?? Date.now(),
       }
@@ -253,6 +280,7 @@ async function save() {
   const state: State = {
     version: 4,
     workspaces: [...byId.values()].sort((a, b) => a.created_at - b.created_at),
+    projects: [...projectsById.values()].sort((a, b) => a.created_at - b.created_at),
   }
   await fs.writeFile(target, JSON.stringify(state, null, 2) + "\n")
 }
@@ -264,6 +292,7 @@ async function boot() {
     loaded = target
     byId.clear()
     byDir.clear()
+    projectsById.clear()
     ready = load(target).catch((err) => {
       log.warn("Failed to load workspaces", { error: err instanceof Error ? err.message : String(err) })
     })
@@ -346,7 +375,6 @@ type EnsureWorkspaceInput = {
   git_branch?: string
   remote_directory?: string
   status?: string
-  env?: Record<string, string>
 }
 
 function envRecord(value: unknown): Record<string, string> | undefined {
@@ -437,7 +465,6 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
     const git_remote = info.git_remote ?? ws.git_remote
     const remote_directory = trim(input.remote_directory) || ws.remote_directory
     const status = trim(input.status) || ws.status
-    const env = envRecord(input.env) ?? ws.env
     const same =
       ws.directory === directory &&
       ws.org_id === org_id &&
@@ -453,8 +480,7 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
       ws.git_branch === git_branch &&
       ws.git_remote === git_remote &&
       ws.remote_directory === remote_directory &&
-      ws.status === status &&
-      sameEnv(ws.env, env)
+      ws.status === status
     if (ws.directory !== directory) byDir.delete(ws.directory)
     const next = same && ws.updated_at === now
       ? ws
@@ -475,7 +501,6 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
           git_remote,
           remote_directory,
           status,
-          env,
           updated_at: now,
         }
     upsert(next)
@@ -504,7 +529,6 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
     git_remote: info.git_remote,
     remote_directory: trim(input.remote_directory),
     status: trim(input.status),
-    env: envRecord(input.env),
     created_at: now,
     updated_at: now,
   })
@@ -682,3 +706,50 @@ export async function listProjects() {
 
   return list.sort((a, b) => b.time.updated - a.time.updated)
 }
+
+// ── Projects ────────────────────────────────────────────────────────────────
+
+export async function listProjectRecords(): Promise<Project[]> {
+  await boot()
+  return [...projectsById.values()].sort((a, b) => a.created_at - b.created_at)
+}
+
+export async function getProjectRecord(id: string | undefined): Promise<Project | undefined> {
+  await boot()
+  const key = trim(id)
+  return key ? projectsById.get(key) : undefined
+}
+
+/** Names are unique per server, compared case-insensitively. */
+export async function findProjectRecordByName(name: string): Promise<Project | undefined> {
+  await boot()
+  const wanted = name.trim().toLowerCase()
+  return [...projectsById.values()].find((project) => project.name.toLowerCase() === wanted)
+}
+
+/** Creates or renames a project record; the workspace rows carrying `id` are its executions. */
+export async function upsertProjectRecord(input: { id: string; name: string; env?: Record<string, string> }): Promise<Project> {
+  await boot()
+  const id = trim(input.id)
+  const name = trim(input.name)
+  if (!id || !name) throw new Error("project id and name are required")
+  const now = Date.now()
+  const existing = projectsById.get(id)
+  const next: Project = {
+    id,
+    name,
+    env: input.env === undefined ? existing?.env : envRecord(input.env),
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  }
+  projectsById.set(id, next)
+  await save()
+  notifyWorkspaceChanges()
+  return next
+}
+
+/** The environment every cloud sandbox of the project starts with. */
+export async function projectEnv(projectId: string | undefined): Promise<Record<string, string> | undefined> {
+  return (await getProjectRecord(projectId))?.env
+}
+
