@@ -306,3 +306,15 @@ hides its section on the next read, and the machine-scan route and section are g
   staging: catalog 3.6–3.9 s, sources 2.9 s, with one 20 s stall and one ECONNRESET in the same minute;
   plain `curl`/Node fetches of `/health` from this machine ranged 0.3–1.8 s with 1.1 s TLS connects, so the
   remaining slowness is this network's path to the edge plus the plane's own work, not the app.
+- 2026-09-04 (plane): the owner rejected "the network is slow" and was right. Correlating the Worker tail with
+  in-renderer timings: `GET /api/claxedo/plugins` spends ~4.3 s of wall with 60–97 ms CPU (I/O waits), the
+  fresh GitHub path is faster than the cached one, and some requests (`/userinfo`, `/runtime/self`,
+  `/plugins`) sit 19.5 s with 3 ms CPU until the client cancels — the wedged-isolate class recorded on
+  2026-08-31. Causes found: (1) every request runs release-state, recovery-epoch, and session reads against
+  D1 before its route, and D1 lives in SIN/HKG while the isolate runs at the caller's colo, so each sequential
+  await is a cross-region hop; (2) each catalog read re-fetched, re-verified, and re-inspected every retained
+  artifact from R2 (APAC). Fixes: smart placement for the candidate worker (`a503d3e5ad`) and a per-isolate
+  artifact memo by digest (`aeb997fd69`), shipped as staging release 81. Still open: the 19.5 s hangs — with
+  3 ms CPU the request never left its first D1 await; whether placement removes them is the next measurement.
+  Also fixed: a disabled plugin no longer reads as "Needs authentication" while the connection list is
+  unreadable (status honours the effective activation and an unknown list).
