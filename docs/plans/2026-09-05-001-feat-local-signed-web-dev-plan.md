@@ -58,17 +58,28 @@ server mints that cookie because the embedded issuer's `baseURL` is the HTTPS or
 
 ## Definition of done
 
-- [ ] `GET /api/claxedo/auth/descriptor` on the self-hosted server (embedded auth on)
-      answers a descriptor the web client's `parseDescriptor` accepts; unit test.
-- [ ] A cookie session reaches a signed self-hosted route as the same principal a bearer
-      session does; a cookie-authenticated POST without JSON content type is refused 415
-      and a cross-site one 403; unit tests over the self-hosted app.
-- [ ] `/api/claxedo/plugins` answers on the self-hosted server with `CLAXEDO_AGENT_PLUGINS=1`.
-- [ ] Web client: localhost server with auth enabled is `signed-web`; signed catalog
-      without projects mutates with `all-projects`; unit tests.
-- [ ] Live: `https://localhost:4449` — sign up with email + password, marketplace renders,
-      Enable and Disable round-trip, sign out. Recorded with request evidence.
+- [x] `GET /api/claxedo/auth/descriptor` on the self-hosted server (embedded auth on)
+      answers a descriptor the web client's `parseDescriptor` accepts; unit test
+      (`embedded-browser-auth.test.ts`).
+- [x] A cookie session reaches a signed self-hosted route as the bearer credential; a
+      cookie-authenticated POST without JSON content type is refused 415 and a cross-site
+      one 403; unit tests, and proven live through the HTTPS proxy origin.
+- [x] `/api/claxedo/plugins` answers on the self-hosted server with `CLAXEDO_AGENT_PLUGINS=1`.
+- [x] Web client: localhost server with auth enabled is `signed-web` (`server-transport.test.ts`);
+      signed catalog without projects mutates with `all-projects` (proven live: activation 200,
+      revision 0 → 1).
+- [ ] Live in a browser: `https://localhost:4449` — sign in with email + password, marketplace
+      renders, Enable and Disable round-trip, sign out. The in-app browser pane refuses the
+      self-signed certificate outright; this needs a real Chrome click-through (owner).
 
 ## Progress log
 
 - 2026-09-05: gaps enumerated from the code (above); plan written.
+- 2026-09-05 00:45: slice landed (`f57cd5ca46`). Launch entries `claxedo-server-embedded-auth`
+  (:2597, `BETTER_AUTH_URL=https://localhost:4449`) and `claxedo-app-signed-local` (:4449,
+  `CLAXEDO_DEV_TLS=1`, `CLAXEDO_DEV_PROXY_TARGET=http://127.0.0.1:2597`,
+  `VITE_CLAXEDO_SERVER_URL=https://localhost:4449`) run the pair. Fixture user created through
+  the local sign-up API for the curl proofs. Open: the local plugin routes answer the catalog
+  without a session even in signed mode (machine-local semantics); decide whether a signed box
+  should gate them.
+
