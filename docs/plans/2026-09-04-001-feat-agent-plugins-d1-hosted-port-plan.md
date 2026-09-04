@@ -1,7 +1,7 @@
 ---
 title: "feat: port the hosted Agent Plugins composition from Convex/Clerk to Better Auth + D1"
 date: 2026-09-04
-status: in-progress (WP1–WP3 committed on the branch; staging release 65 + live pass in progress)
+status: done on staging (release 72); cloud-VM half blocked on a D1 sandbox lease store
 branch: codex/refactor-agent-plugins
 ---
 
@@ -195,3 +195,21 @@ machine world launches again. The operation is renderer-withheld: only main hold
   the dist of every workspace package the worker bundle resolves through `dist` (`@claxedo/connections`,
   `@claxedo/sandbox-manager`, `@claxedo/workspace-relay`, `@claxedo/workspace-relay-protocol`,
   `@claxedo/agent-sdk-runtime`) before bundling.
+- **Release 72 (`release-acc-plugins8-260904-113500-3851`, rev 180 open): V3/V4 live end to end.** The desktop's
+  signed world carries `Bearer` gateway credentials for both plugins; `POST /api/claxedo/plugins/mcp/<id>`
+  forwarded `initialize` to Composio (`mcp-typescript server on vercel`) and Context7 (`Context7 4.0.4`) with the
+  stored OAuth grants, and `tools/list` through the gateway returned Composio's 7 tools. Auth once: wiping
+  `~/.claxedo-dev/runtime-signed` and letting main re-pull restored gateway access with no new consent.
+
+## Definition of done — result
+
+| Requirement | Result |
+| --- | --- |
+| Typechecks, ratchets, closure tests | green (server, server-core, local-server, app, desktop; ratchets 2/2 + product boundary; deployment closures) |
+| WP1/WP2 suites on Miniflare D1; signed-composio rail | green (server suite 261 files) |
+| Staging serves `/api/claxedo/plugins` and `/api/claxedo/integrations` | release 72, both 401 without a bearer, live with one |
+| V1 unsigned machine-wide | live on the dev desktop (generation 1; Codex/Cursor machine files) |
+| V2/V3 local (other machine = fresh profile/state) | live: signed activation → daemon world; wipe → re-pull; sign-out/in |
+| V3 auth once for Composio + Context7 | live: dynamic registration, consent once, gateway forwards with stored grants |
+| V2/V3 cloud VM | still blocked: staging is control-plane-only (no D1 sandbox lease store) — owner decision |
+| Desktop `verify:closure` emitted-manifest check | pre-existing failure (hosted contribution chunking) — desktop owner |
