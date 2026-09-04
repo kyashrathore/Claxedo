@@ -1,4 +1,3 @@
-import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 
@@ -19,20 +18,31 @@ export function DialogNewProjectKind(props: { onFolder: () => void; onCloud: () 
   }
   return (
     <Dialog title="New Project">
-      <div class="flex min-w-[400px] flex-col gap-2">
-        <Button variant="secondary" class="justify-start" onClick={() => choose(props.onFolder)}>
-          <span class="flex flex-col items-start">
-            <span class="text-13-medium">Folder on this machine</span>
-            <span class="text-11-regular text-text-weak">Open a repository that already lives on this server.</span>
-          </span>
-        </Button>
-        <Button variant="secondary" class="justify-start" onClick={() => choose(props.onCloud)}>
-          <span class="flex flex-col items-start">
-            <span class="text-13-medium">Cloud project</span>
-            <span class="text-11-regular text-text-weak">Name it, pick a repository, set its environment, provision a sandbox.</span>
-          </span>
-        </Button>
+      <div class="flex min-w-[420px] flex-col gap-2">
+        <Option
+          title="Folder on this machine"
+          detail="Open a repository that already lives on this server. Sessions run here, on its files."
+          onClick={() => choose(props.onFolder)}
+        />
+        <Option
+          title="Cloud project"
+          detail="Clone a repository into a sandbox on a provider you have configured. Sessions run there, with the environment you set."
+          onClick={() => choose(props.onCloud)}
+        />
       </div>
     </Dialog>
+  )
+}
+
+function Option(props: { title: string; detail: string; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      class="flex w-full flex-col items-start gap-1 rounded-lg border border-border-base bg-surface-inset-base px-4 py-3 text-left transition-colors hover:bg-surface-raised-base-hover focus:outline-none focus-visible:border-border-focus"
+      onClick={() => props.onClick()}
+    >
+      <span class="text-13-medium text-text-strong">{props.title}</span>
+      <span class="text-12-regular text-text-weak">{props.detail}</span>
+    </button>
   )
 }
