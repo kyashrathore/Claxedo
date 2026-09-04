@@ -151,7 +151,19 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
   const base = gatewayBase(input.gatewayUrl)
   const style = input.endpointStyle ?? "subdomain"
   const oauthFetch = (url: string, init?: RequestInit) => input.oauth.fetch(url, init)
-  const forSnapshot = async (snapshot: SignedAgentPluginRuntimeSnapshot): Promise<WorkspaceRuntimePreparation> => {
+  const forSnapshot = async (
+    snapshot: SignedAgentPluginRuntimeSnapshot,
+    options: {
+      /**
+       * Who injects the brokered secrets into the runtime that consumes this
+       * plan. Defaults to the deployment's sandbox driver (cloud VMs); a
+       * consumer that carries the secrets itself — the signed desktop, which
+       * receives them in the same response — names its own capability here.
+       */
+      secretBrokering?: SandboxDriverMetadata["secretBrokering"]
+    } = {},
+  ): Promise<WorkspaceRuntimePreparation> => {
+    const secretBrokering = options.secretBrokering ?? input.secretBrokering
     const selections = desiredAgentPluginSelections(snapshot)
     const mcpServers: AgentPluginRuntimeApplyRequest["mcpServers"] = []
     const secrets: SandboxBrokeredSecret[] = []
@@ -251,7 +263,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
             mcpServers.push(unavailable({ ...identity, reason: connection.ok ? "mcp_connection_resource_mismatch" : connection.code }))
             continue
           }
-          if (input.secretBrokering === "none") {
+          if (secretBrokering === "none") {
             mcpServers.push(unavailable({ ...identity, reason: "secret_brokering_unsupported" }))
             continue
           }

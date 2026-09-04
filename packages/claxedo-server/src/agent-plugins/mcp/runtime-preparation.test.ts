@@ -4,7 +4,7 @@ import type { AgentPluginHarnessId } from "@claxedo/server-core/agent-plugins/ru
 import type { SignedAgentPluginRuntimeSnapshot } from "../runtime/provision"
 import { mcpOAuthIntegrationId } from "@claxedo/server-core/agent-plugins/mcp/integration"
 import { verifyMcpGatewayToken } from "./runtime-token"
-import { agentPluginMcpRuntimePlan, createHostedMcpRuntimePreparation } from "./runtime-preparation"
+import { agentPluginMcpRuntimePlan, createHostedMcpRuntimePreparation, createHostedMcpRuntimePreparer } from "./runtime-preparation"
 
 const digest = `sha256:${"a".repeat(64)}` as const
 
@@ -82,7 +82,7 @@ async function subject(input: {
           ...(input.multipleIssuers ? { issuer: "https://login-two.example" } : {}),
         },
       })
-  const prepare = createHostedMcpRuntimePreparation({
+  const preparerInput = {
     activations: { runtimeSnapshot: async () => snapshot() },
     artifacts: {
       put: async (value) => value,
@@ -110,8 +110,10 @@ async function subject(input: {
     gatewayUrl: "https://mcp-gateway.example/",
     signingEnv: env,
     secretBrokering: input.brokering ?? "native",
-  })
-  return { env, resolveConnection, preparation: await prepare("workspace-1") }
+  } satisfies Parameters<typeof createHostedMcpRuntimePreparation>[0]
+  const prepare = createHostedMcpRuntimePreparation(preparerInput)
+  const preparer = createHostedMcpRuntimePreparer(preparerInput)
+  return { env, resolveConnection, preparation: await prepare("workspace-1"), preparer, snapshot }
 }
 
 describe("hosted MCP runtime preparation", () => {
@@ -132,6 +134,17 @@ describe("hosted MCP runtime preparation", () => {
       integrationId: await mcpOAuthIntegrationId({ pluginInstanceId: "claxedo/docs", serverName: "docs" }),
     }, value.env)
     expect(scope).toMatchObject({ workspaceId: "workspace-1", pluginInstanceId: "claxedo/docs" })
+  })
+
+  test("a consumer that carries the secrets itself gets gateway servers even where the deployment has no broker", async () => {
+    // Staging is control-plane-only (no sandbox driver, brokering "none"), yet
+    // the signed desktop receives its credentials in the runtime/self answer.
+    const value = await subject({ brokering: "none" })
+    const own = await value.preparer.forSnapshot(value.snapshot(), { secretBrokering: "native" })
+    const plan = agentPluginMcpRuntimePlan(own)
+    expect(plan.mcpServers.length).toBeGreaterThan(0)
+    expect(plan.mcpServers.every((server) => server.state === "gateway")).toBe(true)
+    expect(own.secrets?.length).toBe(plan.mcpServers.length)
   })
 
   test("fails only the protected server closed when the driver cannot broker", async () => {

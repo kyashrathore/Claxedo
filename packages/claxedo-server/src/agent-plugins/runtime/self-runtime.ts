@@ -28,7 +28,12 @@ export type AgentPluginSelfRuntimeReader = (auth: SignedControlPlaneAuth) => Pro
 export function createHostedAgentPluginSelfRuntime(input: {
   activations: { runtimeSnapshotForUser(auth: SignedControlPlaneAuth): Promise<SignedAgentPluginRuntimeSnapshot> }
   artifacts: AgentPluginArtifactStore
-  preparer: { forSnapshot(snapshot: SignedAgentPluginRuntimeSnapshot): Promise<WorkspaceRuntimePreparation> }
+  preparer: {
+    forSnapshot(
+      snapshot: SignedAgentPluginRuntimeSnapshot,
+      options?: { secretBrokering?: "native" },
+    ): Promise<WorkspaceRuntimePreparation>
+  }
   /** Gateway credential lifetime the preparer mints with; see `mintMcpGatewayToken`. */
   credentialTtlMs?: number
   now?: () => number
@@ -45,7 +50,11 @@ export function createHostedAgentPluginSelfRuntime(input: {
       if (!artifact) throw new Error(`Retained Agent Plugin artifact ${digest} is unavailable`)
       return { digest, tree: encodePluginTreeBase64(artifact.tree) }
     }))
-    const preparation = await input.preparer.forSnapshot(snapshot)
+    // The desktop is its own secret broker: the credentials travel in this
+    // response and main hands them to the daemon, so the deployment's sandbox
+    // posture (control-plane-only has no driver at all) must not decide
+    // whether the user's own machine may reach the gateway.
+    const preparation = await input.preparer.forSnapshot(snapshot, { secretBrokering: "native" })
     const plan = agentPluginMcpRuntimePlan(preparation)
     const secrets = preparation.secrets ?? []
     return {
