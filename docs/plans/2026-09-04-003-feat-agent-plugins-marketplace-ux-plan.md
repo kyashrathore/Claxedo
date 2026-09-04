@@ -254,3 +254,14 @@ New hosted operations in `claxedo-desktop/src/main/account/hosted-operations.ts`
   a GitHub source (no second public agent-plugins repository at hand). Follow-ups: the detached daemon writes no
   log of its own (its exit reason on 2026-09-04 could not be recovered); each ad-hoc-signed dev build triggers
   the macOS Keychain prompt on first launch.
+- 2026-09-04 (polish): owner review of the first build ("not good enough") led to a design pass (`a609c19f18`):
+  no paths on cards, brand tiles, muted status line instead of green pills, small scope/refresh affordances, a
+  resizable pane with a breadcrumb skill view and a facts strip under the header, one main action plus an
+  overflow menu whose items state their outcome ("Clear my override — follow the organization default (would
+  be enabled)"), organization items only for admins/owners, catalog painted from the persisted query cache.
+  Perceived slowness traced to cold-isolate GitHub round trips on the hosted rail: edge cache for the ref
+  lookup (1 min) and the archive by commit (1 day) — `66601950a9`, staging release 79
+  (`release-acc-mkt2-260904-204500-3851`). Two crashes seen live were fixed: a 404 from a plane without the
+  sources route (`e3b0d2631b`) and a connection reset during session renewal that took the whole app to the
+  crash screen on every launch (`241a5e26d8`: descriptor fetch retries once on a connection-level failure;
+  the Directory shows a calm connection-status line with Retry).
