@@ -53,8 +53,9 @@ describe("hostedAgentPluginArtifactStore", () => {
     await store.get(inspected.digest)
     await store.get(inspected.digest)
     expect(reads.mock.calls.length).toBe(before + 1)
-    expect(await store.get("sha256:" + "0".repeat(64))).toBeUndefined()
-    expect(await store.get("sha256:" + "0".repeat(64))).toBeUndefined()
+    const missing = `sha256:${"0".repeat(64)}` as const
+    expect(await store.get(missing)).toBeUndefined()
+    expect(await store.get(missing)).toBeUndefined()
     expect(reads.mock.calls.length).toBe(before + 3)
   })
 
