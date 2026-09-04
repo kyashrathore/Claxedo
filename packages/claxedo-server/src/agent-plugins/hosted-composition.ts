@@ -234,8 +234,11 @@ export function createHostedAgentPluginsComposition(input: {
         ...(services.defaultHomeRegion ? { defaultHomeRegion: services.defaultHomeRegion } : {}),
         orgId: identity.organizationId,
         // Provisioning is a machine actor, not the signed human: it materializes
-        // the pinned plugin trees before any user turn runs.
-        runtimeActor: { principalKind: "service", actorId: "agent-plugins-provisioner", actorKind: "agent" },
+        // the pinned plugin trees before any user turn runs. The D1 runtime
+        // authority mints service runtime tokens only for the one control-plane
+        // service actor ("control-plane", owner role), the same actor the
+        // checkpoint routes use; a feature-named actor is refused.
+        runtimeActor: { principalKind: "service", actorId: "control-plane", actorKind: "agent" },
         role: "owner",
         resume: false,
       })
