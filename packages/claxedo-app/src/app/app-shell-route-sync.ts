@@ -1,3 +1,4 @@
+import { findProjectForDirectory, type ProjectInventoryEntry } from "@/features/session/ui/components/session-new-workspace-options"
 import { createEffect, on, type Accessor } from "solid-js"
 import type { Navigator, Params } from "@solidjs/router"
 
@@ -136,6 +137,42 @@ export function useAppShellRouteSync(input: {
 type SessionRevocationNavigate = (to: string, options: { replace: boolean }) => unknown
 
 /** Close all retained panes for a revoked session and leave its active deep link. */
+/**
+ * Panes whose workspace no longer exists — a project removed while this tab was
+ * away, or a wiped dev store — must not survive a reload as "live" drafts. The
+ * persisted workbench state restores them faithfully, the pane's provider chain
+ * bootstraps the directory, every request 404s/503s, the events stream
+ * reconnects, and the bootstrap repeats: the toast-and-retry loop. Once the
+ * project inventory has actually loaded, close every session surface whose
+ * directory it does not know, and leave a deep link into one for the root.
+ *
+ * Decided on the inventory only after it has loaded: an empty list while it is
+ * still fetching must not sweep the panes it would have vouched for.
+ */
+export function applyStaleWorkspaceSweep(input: {
+  inventoryReady: boolean
+  inventory: readonly ProjectInventoryEntry[]
+  activeSurfaceId: () => string | null | undefined
+  surfaces: () => ContentMeta[]
+  closeContent: (id: string, reason: "panic") => void
+  navigate: SessionRevocationNavigate
+}) {
+  if (!input.inventoryReady) return []
+  const stale = input.surfaces().filter((surface) => {
+    if (surface.type !== "session" && surface.type !== "context") return false
+    const directory = realDirectory(surface.directory)
+    if (!directory) return false
+    return !findProjectForDirectory(input.inventory, [directory])
+  })
+  if (stale.length === 0) return []
+
+  const activeSurfaceId = input.activeSurfaceId()
+  const activeWasStale = stale.some((surface) => surface.id === activeSurfaceId)
+  for (const surface of stale) input.closeContent(surface.id, "panic")
+  if (activeWasStale) input.navigate("/", { replace: true })
+  return stale.map((surface) => surface.id)
+}
+
 export function applySessionAccessRevocation(input: {
   sessionId: string
   workspaceId: string

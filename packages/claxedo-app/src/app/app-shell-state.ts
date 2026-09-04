@@ -190,6 +190,9 @@ export function useAppShellState(input: { params: Params; pathname: Accessor<str
 
   return {
     activeProjectId,
+    /** The project inventory the routes resolve against; `inventoryReady` says it has loaded once. */
+    inventory: () => projectsQuery.data ?? [],
+    inventoryReady: () => projectsQuery.status === "success",
     activeWorkspaceRouteId,
     activeSessionId,
     activeSurface,

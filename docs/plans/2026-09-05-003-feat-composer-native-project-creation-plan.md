@@ -135,3 +135,12 @@ Proven live from a wiped store: empty canvas → chip "Select project" → rail 
 chip panel → Select project → create → lands in the new project's draft. The full draft pane
 (prompt input included) still needs a project directory for its provider chain; a project-less
 draft pane is a separate slice (the pane suspends forever inside a transition without one).
+
+Follow-up (2026-09-05, late): a tab whose persisted workbench state (localStorage `claxedo.state.v5`)
+still held a pane for a wiped workspace restored it as a live draft: every directory request 404'd,
+the events stream reconnected, the bootstrap repeated (10k+ console errors, `/api/workspace` rate
+limited to 429). `applyStaleWorkspaceSweep` (`app-shell-route-sync.ts`, mirrors the access-revocation
+sweep) now closes session surfaces the loaded inventory does not know and sends an active one to `/`.
+Proven with a saved browser state against a wiped server: the pane closes, the URL lands on `/`, two
+initial 404s, then quiet. Note: a directory that still exists on disk is re-registered by the server
+on first touch (directory-shaped routing), so the sweep only fires once the folder is really gone.
