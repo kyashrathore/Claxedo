@@ -65,7 +65,11 @@ export function clearPrincipalData() {
  * workbench behind "Loading…" on every launch.
  */
 export function refreshPrincipalData() {
-  void queryClient.invalidateQueries().catch(() => undefined)
+  // `cancelRefetch: false`: an invalidation that cancels an in-flight fetch
+  // rejects that fetch with a CancelledError nothing awaits, which is the
+  // unhandled-rejection overlay `clearPrincipalData` guards against. A fetch
+  // already in flight is the fresh read we want anyway.
+  void queryClient.invalidateQueries(undefined, { cancelRefetch: false }).catch(() => undefined)
 }
 
 function userIdOf(principal: Principal | undefined): string | undefined {
