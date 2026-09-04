@@ -13,9 +13,12 @@ async function archive(files: Record<string, string>) {
 }
 
 function provider(zip: Uint8Array, status = 200) {
-  const fetcher = vi.fn(async (url: string, _init?: RequestInit) => url.startsWith("https://api.github.com/")
-    ? new Response(JSON.stringify({ sha }), { status: 200 })
-    : new Response(zip.slice().buffer, { status }))
+  const fetcher = vi.fn<AgentPluginSourceFetch>(async (input, _init) => {
+    const url = String(input)
+    return url.startsWith("https://api.github.com/")
+      ? new Response(JSON.stringify({ sha }), { status: 200 })
+      : new Response(zip.slice().buffer, { status })
+  })
   return { provider: githubRepositoryCatalogSourceProvider({
     id: "claxedo",
     kind: "claxedo",
