@@ -366,4 +366,13 @@ hides its section on the next read, and the machine-scan route and section are g
   (proven in the local web app: 409 → catalog → 200, no toast). The desktop needs a rebuild to pick it up; the
   web app gets it on the next deploy. Still worth doing: refetch the marketplace catalog when the runtime sync
   applies a newer revision, so the pane is never stale in the first place.
+- 2026-09-05 (web as a real client): the local web run (`dev:local`) is the unsigned local product — its entry
+  hard-sets `authEnabled: false`, so there is no Sign in by design; the rail still offered "Select organization →
+  No organizations yet" there, fixed so the picker renders only for a signed account (`65e2b0e27b`). A signed
+  web client against a LOCAL box is not composed today: the self-hosted-node server has embedded Better Auth
+  (`CLAXEDO_EMBEDDED_AUTH=1`, sessions answer) but serves neither `/api/claxedo/auth/descriptor` (hosted shell
+  only) nor the Agent Plugins routes (local-server module, mounted by the desktop). Signing in on the web
+  therefore means the deployed app origin, which is the only origin the plane trusts for cookie auth.
+  Follow-up slice: compose descriptor + agent-plugins into the self-hosted-node so `bun run dev` (cloud entry)
+  can sign in locally.
 
