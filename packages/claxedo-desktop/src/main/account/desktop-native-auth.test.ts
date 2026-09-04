@@ -145,6 +145,21 @@ describe("descriptor-selected desktop native auth", () => {
   })
 })
 
+describe("descriptor memo", () => {
+  test("validation reuses the descriptor within its validity instead of fetching it per operation", async () => {
+    const h = harness()
+    const signed = await h.auth.signIn()
+    if (!signed.ok) throw new Error(signed.detail)
+    const before = h.requests.filter((r) => r.url.endsWith("/auth/descriptor")).length
+    await h.auth.validate(signed.credential)
+    await h.auth.validate(signed.credential)
+    expect(h.requests.filter((r) => r.url.endsWith("/auth/descriptor")).length).toBe(before)
+    h.expireDescriptor()
+    await h.auth.validate(signed.credential).catch(() => undefined)
+    expect(h.requests.filter((r) => r.url.endsWith("/auth/descriptor")).length).toBe(before + 1)
+  })
+})
+
 describe("descriptor fetch resilience", () => {
   function flakyHarness(failure: unknown, failures = 1) {
     const descriptorCalls: string[] = []

@@ -3,6 +3,7 @@ import { useGlobalSync } from "@/app/providers/global-sync/provider"
 import { clearRegisteredConversationMemory } from "@/features/session/conversation/conversation-registry"
 import { setConversationPersistencePrincipal } from "@/features/session/conversation/conversation-persistence"
 import { principalDataScope, type Principal } from "@/platform/auth/identity-provider"
+import { UNNAMED_SIGNED_USER_ID } from "@/platform/auth/principal-provider"
 import { queryClient } from "@/platform/query/query-client"
 import type {
   SessionAccessRevocationSource,
@@ -91,10 +92,9 @@ function isSamePersonGainingContext(previous: Principal | undefined, next: Princ
   const after = userIdOf(next)
   if (before === undefined || after === undefined) return false
   if (previous.kind !== "signed" || (next.kind !== "signed" && next.kind !== "org-member")) return false
-  // Sign-in publishes a signed principal before the profile lookup names it
-  // (`identity.userId` is "" until then); the named principal that follows is
-  // the same session, not another person.
-  return before === "" || before === after
+  // Sign-in publishes a signed principal before the profile lookup names it;
+  // the named principal that follows is the same session, not another person.
+  return before === UNNAMED_SIGNED_USER_ID || before === "" || before === after
 }
 
 export function createPrincipalDataIsolation(input: {
@@ -114,6 +114,7 @@ export function createPrincipalDataIsolation(input: {
     }
     if (previousScope === nextScope) return
     const softened = isSamePersonGainingContext(previousPrincipal, principal)
+    console.info("[principal] transition", { from: previousScope, to: nextScope, action: softened ? "refresh" : "clear" })
     previousScope = nextScope
     previousPrincipal = principal
     if (softened) (input.refresh ?? refreshPrincipalData)()

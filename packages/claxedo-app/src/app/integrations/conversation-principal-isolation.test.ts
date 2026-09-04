@@ -62,7 +62,7 @@ describe("conversation principal isolation", () => {
     const calls: string[] = []
     const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
     transition({ kind: "local", deviceId: "device_a" })
-    transition({ kind: "signed", userId: "" })
+    transition({ kind: "signed", userId: "signed-user" })
     transition({ kind: "signed", userId: "user_a" })
     transition({ kind: "org-member", userId: "user_a", orgId: "org_a", memberships: [] })
     expect(calls).toEqual(["clear", "refresh", "refresh", "refresh"])

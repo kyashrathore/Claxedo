@@ -37,6 +37,7 @@ type SelectedDesktopAdapter = {
 }
 
 const DESCRIPTOR_PATH = "/api/claxedo/auth/descriptor"
+const DESCRIPTOR_MEMO_MS = 5 * 60_000
 const NETWORK_TIMEOUT_MS = 30_000
 
 /**
@@ -116,7 +117,24 @@ export function createDesktopNativeAuth(input: {
     redirect: "manual",
     signal: AbortSignal.timeout(timeoutMs),
   })
+  // One descriptor per validity window, not one per hosted operation. Every
+  // signed request validates the credential's binding first, and fetching the
+  // descriptor each time doubled every round trip through the edge (the
+  // catalog took 5–20 s on a slow edge). The descriptor carries its own
+  // `expiresAt`, which already is the freshness rule; a short ceiling keeps a
+  // long-lived descriptor from outliving a redeploy for more than minutes.
+  let remembered: { descriptor: DesktopAuthDescriptor; until: number } | undefined
+  // Callers receive a copy: the descriptor's binding becomes the stored
+  // credential's binding, and a shared object would let a mutated credential
+  // rewrite what the next validation compares it against.
   const discover = async () => {
+    if (!remembered || now() >= remembered.until) {
+      const descriptor = await load()
+      remembered = { descriptor, until: Math.min(descriptor.expiresAt, now() + DESCRIPTOR_MEMO_MS) }
+    }
+    return structuredClone(remembered.descriptor)
+  }
+  const load = async () => {
     let response: Response
     try {
       try {
