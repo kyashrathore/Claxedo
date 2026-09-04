@@ -241,3 +241,16 @@ New hosted operations in `claxedo-desktop/src/main/account/hosted-operations.ts`
 - 2026-09-04: plan written after mapping the current implementation (renderer catalog, both rails, adapters,
   connections dialog, workbench tab). Owner answered the three open questions the same day (see above);
   ready to execute.
+- 2026-09-04 (build): executed WP1–WP6 with parallel subagents under supervisor review; commits `5d1ccb7786`
+  (icon), `5a244031fd` (WP3), `c033dbffd7` (WP1), `1cfea26e12` (WP5), `7f91f4bb1c` (WP6), `710a6c0df2` (WP2),
+  `ffd06039d5` (WP4), `e3b0d2631b` (Directory survives a plane without the sources route), plus polish. Gates:
+  typecheck in all five packages, agent-plugins suites (32 vitest + 5 bun), architecture debt ratchet 261,
+  closure ceilings re-measured (+6 modules), product boundary green. Staging release 78
+  (`release-acc-mkt-260904-174500-3851`) carries the sources routes and migration 0023. Live on the packaged dev
+  build, signed: Directory with Installed (composio, context7) and Personal (29 Claude Code/Codex installs),
+  detail pane with the composio SKILL.md rendered, the MCP server's personal connection, and Where it is
+  installed (Local/Cloud, cross-project default, four harnesses, Personal). Not exercised live: the install
+  sheet (both collection plugins are already installed on this account; covered by 13 vitest cases) and adding
+  a GitHub source (no second public agent-plugins repository at hand). Follow-ups: the detached daemon writes no
+  log of its own (its exit reason on 2026-09-04 could not be recovered); each ad-hoc-signed dev build triggers
+  the macOS Keychain prompt on first launch.
