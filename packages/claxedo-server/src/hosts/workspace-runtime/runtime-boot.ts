@@ -142,6 +142,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     // env var is the wire format of this HOST decision across the process
     // boundary; the kit itself never reads it (option-only).
     opencodeCompat: env.WORKSPACE_RUNTIME_OPENCODE_COMPAT !== "0",
+    // The host entry's route contributions (the Agent Plugins VM image mounts
+    // its apply route this way). Accepting them without forwarding them left
+    // the sandbox image answering 404 to the provisioner.
+    ...(input.routeContributions?.length ? { routeContributions: input.routeContributions } : {}),
   }
   return { port, hostname, options }
 }

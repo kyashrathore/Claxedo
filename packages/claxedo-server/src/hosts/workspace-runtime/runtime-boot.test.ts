@@ -84,6 +84,16 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.opencodeCompat).toBe(true)
   })
 
+  test("forwards the host entry's route contributions into the server options", async () => {
+    const contribution = { id: "agent-plugins", mount: () => ({ path: "/", routes: {} as never, dispose() {} }) }
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv({ WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_test", WORKSPACE_RUNTIME_WORKSPACE_DIR: "/workspace" }, {
+      routeContributions: [contribution as never],
+    })
+    expect(boot.options.routeContributions).toEqual([contribution])
+    const plain = await claxedoWorkspaceRuntimeBootFromEnv({ WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_test", WORKSPACE_RUNTIME_WORKSPACE_DIR: "/workspace" })
+    expect(plain.options.routeContributions).toBeUndefined()
+  })
+
   test("compat env flag decodes to opencodeCompat=false", async () => {
     const boot = await claxedoWorkspaceRuntimeBootFromEnv({
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
