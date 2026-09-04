@@ -1,4 +1,5 @@
 import type { CompatEvent } from "./compat-events"
+import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { StatusChunk } from "./status"
 import { GoalCapabilityError } from "./capabilities"
@@ -107,22 +108,21 @@ export interface AgentHarnessAdapterCore {
   /** Release the no-longer-authoritative source resources after a handoff commits. */
   releaseHandoffSource?(id: string, agentSessionId: string, ownerKey: string | null, directory: RuntimeDirectory): Promise<void>
   /** Apply provider/process effects and return the accepted session without writing the RuntimeStore. */
-  updateSession(id: string, updates: { title?: string; time?: { archived?: number } }, directory: RuntimeDirectory): Promise<AgentSession | null>
-  getSessionConfig(id: string, directory: RuntimeDirectory): Promise<SessionConfig>
+  updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }): Promise<AgentSession | null>
+  getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig>
   /** Apply the runtime-supplied complete config and return the accepted config without writing the RuntimeStore. */
-  updateSessionConfig(id: string, update: SessionConfigUpdate, directory: RuntimeDirectory): Promise<SessionConfig>
+  updateSessionConfig(binding: AgentExecutionBinding, update: SessionConfigUpdate): Promise<SessionConfig>
   /** Release provider/process resources without deleting the RuntimeStore session. */
-  deleteSession(id: string, directory: RuntimeDirectory): Promise<void>
+  deleteSession(binding: AgentExecutionBinding): Promise<void>
 
   readHarnessCapabilities(directory: RuntimeDirectory, context?: HarnessCapabilityContext): Promise<HarnessCapabilities> | HarnessCapabilities
 
-  sendMessage(
-    id: string,
+  executeTurn(
+    binding: AgentExecutionBinding,
     input: PromptInput,
-    directory: RuntimeDirectory,
     writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent>
-  getMessages(id: string, directory: RuntimeDirectory): Promise<AgentMessage[]>
+  getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]>
 
   listCommands?(directory: RuntimeDirectory): Promise<AgentCommand[]>
   readRuntimeHealth?(directory: RuntimeDirectory, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth
@@ -143,7 +143,7 @@ export interface SupportsUnrevert {
 }
 
 export interface SupportsFork {
-  forkSession(id: string, messageId: string, directory: RuntimeDirectory, childSessionId?: string): Promise<{ id: string }>
+  forkSession(binding: AgentExecutionBinding, messageId: string, childSessionId?: string): Promise<{ id: string }>
 }
 
 export interface SupportsCommands {

@@ -400,6 +400,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
       unrevert: false,
       configOptions: false,
       subagents: false,
+      goals: false,
     })
     expect(adapter).not.toHaveProperty("listSessions")
     expect(adapter).not.toHaveProperty("discoverSessions")

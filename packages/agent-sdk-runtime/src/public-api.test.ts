@@ -56,13 +56,14 @@ describe("agent-sdk-runtime public API manifest", () => {
       claude: harnessApi.claude(),
       codex: harnessApi.codex(),
       cursor: harnessApi.cursor(),
-      opencode: harnessApi.opencode(),
       pi: harnessApi.pi(),
-      acp: harnessApi.acp("operator-agent", { binary: "operator-agent" }),
+      acp: harnessApi.acp("operator-agent", {
+        connection: { kind: "process", command: "operator-agent" },
+      }),
     } as Record<string, unknown>
     for (const [name, factory] of Object.entries(factories)) {
       const access = (factory as { access: string }).access
-      expect(access, name).toBe(name === "acp" ? "acp" : "native")
+      expect(access, name).toBe(name === "acp" ? "connection" : "native")
       expect(manifest.symbols[name]?.purpose).not.toContain("native or ACP")
     }
   })

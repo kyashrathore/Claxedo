@@ -51,7 +51,7 @@ function acpAdapterWithHarness<Extra extends object = Record<never, never>>(
     sessionProcesses: new Map(),
     probe: null,
   }
-  Object.assign(adapter, defaults, { processes: defaults.sessions })
+  Object.assign(adapter, defaults)
   return adapter
 }
 
@@ -110,7 +110,6 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     ]
 
     expect(unsupported.every((item) => item.goals === false)).toBe(true)
-    expect(new OpenCodeHarnessAdapter("http://127.0.0.1:4096").readHarnessCapabilities().goals).toBe(true)
     expect((await new PiHarnessAdapter().readHarnessCapabilities(undefined)).goals).toBe(true)
   })
 
@@ -166,20 +165,23 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
 
   test("ACP fork is reported only for a live process that advertises session fork", () => {
     const adapter = acpAdapterWithHarness<{
-      sessions: Map<string, unknown>
+      processes: Map<string, unknown>
       sessionProcesses: Map<string, string>
       store: { getAgentSessionId: (sessionId: string) => string | null }
     }>("openclaw")
     adapter.store = { getAgentSessionId: () => "agent_1" }
-    adapter.sessionProcesses = new Map([["s1", "s1"]])
-    adapter.sessions.set("s1", {
+    adapter.sessionProcesses = new Map([["s1", "process-1"]])
+    adapter.processes = new Map([["process-1", {
+      key: "process-1",
+      directory: "/work",
       proc: {
         alive: true,
         supportsForkSession: (agentSessionId?: string) => !agentSessionId || agentSessionId === "agent_1",
         goalCapabilities: () => ({ implemented: false, available: false, actions: [], optionalFields: [] }),
       },
-    })
-    adapter.sessionProcesses.set("s1", "process-1")
+      init: null,
+      sessionIds: new Set(["s1"]),
+    }]])
 
     expect(adapter.readHarnessCapabilities("/work").fork).toBe(true)
     expect(adapter.readHarnessCapabilities("/work", { sessionId: "s1" }).fork).toBe(true)

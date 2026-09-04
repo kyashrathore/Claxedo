@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test"
 import type { WithInternals } from "../../test-utils/class-internals"
 import { committedStartTurn } from "../../test-utils/fake-runtime-store"
+import { executionBinding } from "../../test-utils/execution-binding"
 import { AcpHarnessAdapter } from "./index"
 
 type BaseInternals = {
@@ -645,7 +646,7 @@ describe("AcpHarnessAdapter", () => {
     item.sessions = new Map()
     Object.assign(item, { processes: item.sessions })
 
-    await item.respondPermission("perm-1", "allow_once", "/work")
+    await item.respondPermission(executionBinding("s1", "/work"), "perm-1", "allow_once")
 
     expect(calls).toHaveLength(1)
     expect(calls[0]?.sessionId).toBe("s1")
@@ -685,7 +686,7 @@ describe("AcpHarnessAdapter", () => {
     ])
     Object.assign(item, { processes: item.sessions })
 
-    expect(await item.listPermissions("/work")).toEqual([{ id: "perm-live", sessionID: "s-live" }])
+    expect(await item.listPermissions("/work")).toMatchObject([{ id: "perm-live", sessionID: "s-live" }])
     expect(stale).toEqual([])
     expect(recovering).toEqual([])
   })

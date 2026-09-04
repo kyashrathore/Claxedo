@@ -117,11 +117,6 @@
       "import": "./dist/harness-factories/cursor.mjs",
       "default": "./dist/harness-factories/cursor.mjs"
     },
-    "./harnesses/opencode": {
-      "types": "./dist/harness-factories/opencode.d.ts",
-      "import": "./dist/harness-factories/opencode.mjs",
-      "default": "./dist/harness-factories/opencode.mjs"
-    },
     "./harnesses/pi": {
       "types": "./dist/harness-factories/pi.d.ts",
       "import": "./dist/harness-factories/pi.mjs",

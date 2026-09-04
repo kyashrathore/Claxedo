@@ -60,7 +60,7 @@ export type ConnectionProviderResolution<TResolvedConfig> = {
 export type ConnectionSecretLease = {
   /** Provider-named secret values, resolved only at the trusted runtime boundary. */
   secrets: Readonly<Record<string, string>>
-  /** Non-secret version/expiry token used to key the adapter generation. */
+  /** Non-secret version or expiry token that keys the adapter generation. */
   secretLeaseGeneration: string
 }
 

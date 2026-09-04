@@ -41,6 +41,7 @@ export function fakeRuntimeStore(
     getSessionConfig: () => null,
     deleteSession: () => {},
     getAgentSessionId: () => null,
+    getExecutionBinding: () => null,
     startTurn: committedStartTurn,
     finishTurn: () => ({ events: [] }),
     appendEvent: committedAppend,

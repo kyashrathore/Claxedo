@@ -142,6 +142,7 @@ export class SqliteRuntimeStore implements AgentRuntimeStoreWithRecovery {
   }
 
   getAgentSessionId(id: string) { return this.memory.getAgentSessionId(id) }
+  getExecutionBinding(id: string) { return this.memory.getExecutionBinding(id) }
   acquireTurnLease(sessionId: string) {
     if (this.turnLeases.has(sessionId)) return
     const leaseId = `${sessionId}:${++this.nextTurnLease}`

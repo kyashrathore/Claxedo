@@ -1,2 +1,2 @@
-export * from "./contracts"
-export * from "./core"
+export * from "./contracts/index"
+export * from "./core/index"

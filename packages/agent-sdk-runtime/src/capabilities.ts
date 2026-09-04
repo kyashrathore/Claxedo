@@ -4,7 +4,8 @@ import type { AgentCapabilities } from "@claxedo/agent-runtime-contract"
 export type HarnessCapabilityTarget = SessionHarnessId
 export type AdapterCapability = "runtime-config"
 
-export type HarnessCapabilities = {
+export type HarnessCapabilities = Omit<AgentCapabilities, "harness" | "modelSelection"> &
+  Partial<Pick<AgentCapabilities, "modelSelection">> & {
   harness: HarnessCapabilityTarget
   abort: boolean
   reconnect: boolean
@@ -20,7 +21,7 @@ export type HarnessCapabilities = {
   subagents: boolean
   /** Runtime availability only. Detailed support is read from `SupportsGoals.goals`. */
   goals: boolean
-}
+  }
 
 export type HarnessCapabilityContext = {
   sessionId?: string

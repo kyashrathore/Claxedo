@@ -1,4 +1,8 @@
 import { randomUUID } from "crypto"
+import {
+  assertAgentExecutionBinding,
+  type AgentExecutionBinding,
+} from "@claxedo/agent-runtime-contract"
 import { type RawHarnessEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { createAgentSessionIndex } from "./agent-session-index"
 import { createGoalPublisher, type GoalPublisher } from "./goal-publisher"
@@ -16,7 +20,6 @@ import {
 import { listCommands } from "../../command-discovery"
 import type {
   AgentCommand,
-  AgentConfigOption,
   AgentMessage,
   AgentPermission,
   AgentQuestion,
@@ -39,8 +42,8 @@ import type {
   AgentPermissionModeState,
   AgentTurnWriteContext,
 } from "../../adapter-contract"
-import { resolvedModelFromConfigOptions, turnWriteFence } from "../../adapter-contract"
-import { harnessCapabilities, type HarnessCapabilities } from "../../capabilities"
+import { turnWriteFence } from "../../adapter-contract"
+import type { HarnessCapabilities } from "../../capabilities"
 import { createTurnEventProjector, type RuntimeAppendSource } from "../shared/turn-projection"
 import {
   createChildEventRouter,
@@ -89,6 +92,7 @@ import {
 } from "./subagent-transcript"
 import { acceptedSessionConfig, acceptedSessionUpdate } from "./accepted-session-mutation"
 import { SdkRuntimeInteractions } from "./sdk-runtime-interactions"
+import { sdkConfigOptions, sdkHarnessCapabilities } from "./sdk-runtime-capabilities"
 
 export type {
   ActiveTurn,
@@ -108,12 +112,6 @@ export type {
 export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
 
 const log = Log.create({ service: "sdk-runtime-adapter" })
-
-/** A native-SDK driver's options, plus the model its own `model` select names as current. */
-function sdkConfigOptions(options: AgentConfigOption[]): AgentConfigOptions {
-  const resolvedModel = resolvedModelFromConfigOptions(options)
-  return { options, ...(resolvedModel ? { resolvedModel } : {}) }
-}
 
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")
@@ -188,23 +186,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   readHarnessCapabilities(): HarnessCapabilities {
-    return harnessCapabilities({
-      harness: this.driver.type,
-      modelSelection: { status: "optional" },
-      abort: true,
-      reconnect: false,
-      replay: true,
-      permissions: true,
-      questions: true,
-      todos: true,
-      commands: false,
-      fork: false,
-      revert: false,
-      unrevert: false,
-      configOptions: true,
-      subagents: true,
-      goals: !!this.driver.goals || !!this.driver.nativeGoal,
-    })
+    return sdkHarnessCapabilities(this.driver)
   }
 
   /** One resource per adapter: the driver it wraps never changes. */
@@ -255,7 +237,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       lifecycle: () => this.lifecycle(),
       projectedGoal: (sessionId) => this.store.getGoal?.(sessionId),
       publishGoal: (sessionId, directory, goal) => this.publishGoal(sessionId, directory, goal),
-      sessionConfig: (sessionId, directory) => this.getSessionConfig(sessionId, directory),
+      sessionConfig: async (sessionId) => this.store.getSessionConfig(sessionId) ?? {
+        harness: { id: this.driver.type, access: "native" },
+        variant: null,
+        agent: null,
+      },
       defaultModelId: () => this.currentModel,
       streamTurn: (sessionId, input, directory, execute) => this.streamMessage(sessionId, input, directory, execute),
     })
@@ -298,8 +284,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async getSession(binding: AgentExecutionBinding): Promise<AgentSession | null> {
-    assertAgentExecutionBinding(binding)
-    return this.store.getSession(binding.sessionId) as AgentSession | null
+    const { sessionId } = assertAgentExecutionBinding(binding)
+    return this.store.getSession(sessionId) as AgentSession | null
   }
 
   async createSession(directory: string, title?: string, sessionId: string = randomUUID()): Promise<{ id: string }> {
@@ -372,15 +358,18 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     }
   }
 
-  async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
-    directory = requireWorkspaceDirectory(directory)
-    const current = this.store.getSessionConfig(id)
-    if (!current) throw new Error(`Session ${id} has no runtime config`)
+  async updateSessionConfig(binding: AgentExecutionBinding, update: SessionConfigUpdate): Promise<SessionConfig> {
+    assertAgentExecutionBinding(binding)
+    requireWorkspaceDirectory(binding.directory)
+    const current = this.store.getSessionConfig(binding.sessionId)
+    if (!current) throw new Error(`Session ${binding.sessionId} has no runtime config`)
     return acceptedSessionConfig(current, update)
   }
 
-  async deleteSession(id: string, directory: string): Promise<void> {
-    directory = requireWorkspaceDirectory(directory)
+  async deleteSession(binding: AgentExecutionBinding): Promise<void> {
+    assertAgentExecutionBinding(binding)
+    const id = binding.sessionId
+    const directory = requireWorkspaceDirectory(binding.directory)
     this.lifecycle().abort(id)
     for (const child of this.store.listSubagents?.(id) ?? []) {
       const childSessionId = (child as { childSessionId?: string }).childSessionId
@@ -409,13 +398,14 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
    * second call is a no-op — so a turn that throws or is abandoned before any
    * terminal event cannot strand the session.
    */
-  async *sendMessage(
-    id: string,
+  async *executeTurn(
+    binding: AgentExecutionBinding,
     input: PromptInput,
-    directory: string,
     writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
-    directory = requireWorkspaceDirectory(directory)
+    assertAgentExecutionBinding(binding)
+    const id = binding.sessionId
+    const directory = requireWorkspaceDirectory(binding.directory)
     yield* this.streamMessage(id, input, directory, (turn) => this.driver.runTurn(turn), writeContext)
   }
 
@@ -773,8 +763,8 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async getMessages(binding: AgentExecutionBinding): Promise<AgentMessage[]> {
-    assertAgentExecutionBinding(binding)
-    return this.store.getMessages(binding.sessionId) as AgentMessage[]
+    const { sessionId } = assertAgentExecutionBinding(binding)
+    return this.store.getMessages(sessionId) as AgentMessage[]
   }
 
   async abort(binding: AgentExecutionBinding): Promise<AbortResult> {
@@ -791,13 +781,11 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     return { ok: true, status: "cancelled" }
   }
 
-  async listCommands(_directory: string): Promise<AgentCommand[]> {
-    return listCommands()
-  }
+  async listCommands(_directory: string): Promise<AgentCommand[]> { return listCommands() }
 
   async getTodos(binding: AgentExecutionBinding): Promise<Array<{ content: string; status: string; priority: string }>> {
-    assertAgentExecutionBinding(binding)
-    return this.store.getTodos(binding.sessionId)
+    const { sessionId } = assertAgentExecutionBinding(binding)
+    return this.store.getTodos(sessionId)
   }
 
   async listDraftPermissionModes(directory: string): Promise<AgentPermissionModeState> {
@@ -806,46 +794,42 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async listPermissionModes(binding: AgentExecutionBinding): Promise<AgentPermissionModeState> {
-    assertAgentExecutionBinding(binding)
-    return this.driver.permissionModes?.(binding.sessionId, binding.directory) ?? { modes: [], appliesFrom: "next-turn" }
+    const { sessionId, directory } = assertAgentExecutionBinding(binding)
+    return this.driver.permissionModes?.(sessionId, directory) ?? { modes: [], appliesFrom: "next-turn" }
   }
 
   async setPermissionMode(binding: AgentExecutionBinding, modeId: string): Promise<AgentPermissionModeState> {
-    assertAgentExecutionBinding(binding)
+    const { sessionId, directory } = assertAgentExecutionBinding(binding)
     if (!this.driver.setPermissionMode) {
       throw new Error(`${this.driver.type} does not support permission modes`)
     }
-    return this.driver.setPermissionMode(binding.sessionId, modeId, binding.directory)
+    return this.driver.setPermissionMode(sessionId, modeId, directory)
   }
 
-  async listPermissions(directory: string): Promise<AgentPermission[]> {
-    return this.interactions.listPermissions(directory)
-  }
+  async listPermissions(directory: string): Promise<AgentPermission[]> { return this.interactions.listPermissions(directory) }
 
   async respondPermission(
     binding: AgentExecutionBinding,
     permId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
-    directory: string,
   ) {
-    return this.interactions.respondPermission(permId, decision, directory)
+    assertAgentExecutionBinding(binding)
+    return this.interactions.respondPermission(binding, permId, decision)
   }
 
-  async listQuestions(directory: string): Promise<AgentQuestion[]> {
-    return this.interactions.listQuestions(directory)
+  async listQuestions(directory: string): Promise<AgentQuestion[]> { return this.interactions.listQuestions(directory) }
+
+  async replyQuestion(binding: AgentExecutionBinding, qId: string, answers: AgentQuestionAnswer[]) {
+    assertAgentExecutionBinding(binding)
+    return this.interactions.replyQuestion(binding, qId, answers)
   }
 
-  async replyQuestion(qId: string, answer: string, _directory: string) {
-    return this.interactions.replyQuestion(qId, answer)
+  async rejectQuestion(binding: AgentExecutionBinding, qId: string) {
+    assertAgentExecutionBinding(binding)
+    return this.interactions.rejectQuestion(binding, qId)
   }
 
-  async rejectQuestion(qId: string, _directory: string) {
-    return this.interactions.rejectQuestion(qId)
-  }
-
-  async applyConfig(config: Record<string, unknown>): Promise<void> {
-    await this.driver.applyConfig(config)
-  }
+  async applyConfig(config: Record<string, unknown>): Promise<void> { await this.driver.applyConfig(config) }
 
   async probeConfigOptions(directory: string): Promise<AgentConfigOptions> {
     return sdkConfigOptions(await this.driver.configOptions(this.currentModel, directory))

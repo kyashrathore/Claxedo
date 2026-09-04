@@ -5,6 +5,7 @@ import { ACPProcess } from "./process"
 import { AcpHarnessAdapter } from "."
 import { MemoryRuntimeStore } from "../../stores/memory"
 import { createRuntimeEventHub } from "../../runtime-event-hub"
+import { executionBinding } from "../../test-utils/execution-binding"
 import {
   ACP_GOAL_METHODS,
   goalExtension,
@@ -159,7 +160,7 @@ describe("neutral ACP Goal extension", () => {
       },
     }
     const adapter = new AcpHarnessAdapter({
-      binary: "fake-acp",
+      connection: { kind: "process", command: "fake-acp" },
       harness: "example",
       store,
       eventHub,
@@ -248,7 +249,7 @@ describe("neutral ACP Goal extension", () => {
       async cancel() {},
     }
     const adapter = new AcpHarnessAdapter({
-      binary: "fake-acp",
+      connection: { kind: "process", command: "fake-acp" },
       harness: "example",
       store,
       eventHub,
@@ -325,7 +326,7 @@ describe("neutral ACP Goal extension", () => {
       if (event.payload.type === "goal-updated") published.push(event.payload.goal.status)
     })
     const adapter = new AcpHarnessAdapter({
-      binary: "fake-acp",
+      connection: { kind: "process", command: "fake-acp" },
       harness: "example",
       store,
       eventHub,
@@ -362,7 +363,7 @@ describe("neutral ACP Goal extension", () => {
     goalListener?.(goal)
     expect(published).toEqual(["active"])
 
-    await adapter.deleteSession("local-session", "/work")
+    await adapter.deleteSession(executionBinding("local-session", "/work", "connection:example"))
 
     expect(unlistened).toEqual(["agent-session"])
     // Deleting the session drops its dedupe state, so an identical snapshot
@@ -415,7 +416,7 @@ describe("neutral ACP Goal extension", () => {
       },
     }
     const adapter = new AcpHarnessAdapter({
-      binary: "fake-acp",
+      connection: { kind: "process", command: "fake-acp" },
       harness: "example",
       store,
     })
@@ -501,7 +502,7 @@ describe("neutral ACP Goal extension", () => {
       },
       async cancel() {},
     }
-    const adapter = new AcpHarnessAdapter({ binary: "fake-acp", harness: "example", store })
+    const adapter = new AcpHarnessAdapter({ connection: { kind: "process", command: "fake-acp" }, harness: "example", store })
     const internal = adapter as unknown as {
       processes: Map<string, unknown>
       sessionProcesses: Map<string, string>

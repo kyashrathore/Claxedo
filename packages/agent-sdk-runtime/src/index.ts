@@ -14,6 +14,7 @@ import type {
   PromptModel,
 } from "@claxedo/agent-runtime-contract"
 import type { CompatEvent } from "./compat-events"
+import type { AgentRuntimeEvent as RuntimeStreamEvent } from "@claxedo/agent-event-runtime"
 import type { AgentHarnessAccess, AgentHarnessId, AgentHarnessTransport, SessionHarnessId } from "./harness-types"
 
 export {
@@ -42,9 +43,32 @@ export type {
   AgentRuntimeTurnStartInput,
   AgentRuntimeTurnStartResult,
 } from "./runtime"
+export type {
+  AgentAgent,
+  AgentCommand,
+  AgentConfigOption,
+  AgentContentPart,
+  AgentExecutionBinding,
+  AgentMessage,
+  AgentMessageAuthor,
+  AgentPermission,
+  AgentQuestion,
+  AgentQuestionAnswer,
+  AgentRuntimeEvent,
+  AgentSession,
+  AgentTurnOutcome,
+  AgentWorkspaceIdentity,
+  ClientResult,
+  ExecutionAvailability,
+  ModelSelection,
+  PromptFormat,
+  PromptInput,
+  PromptModel,
+} from "@claxedo/agent-runtime-contract"
+export { connectionIdForHarness } from "@claxedo/agent-runtime-contract"
 export { AgentRuntimeGoalError, isAgentRuntimeGoalError } from "./runtime"
 export { isRuntimeGoalStatus, RUNTIME_GOAL_STATUSES } from "@claxedo/agent-event-runtime"
-export type { AgentRuntimeEvent, RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-event-runtime"
+export type { RuntimeGoalSnapshot, RuntimeGoalStatus } from "@claxedo/agent-event-runtime"
 export {
   GOAL_ACTIONS,
   GOAL_OPTIONAL_FIELDS,
@@ -209,100 +233,5 @@ export type SessionConfigUpdate = {
  * Pending handoff state is runtime-owned and must not be client-authored. */
 export type SessionConfigRequestUpdate = Omit<SessionConfigUpdate, "handoff">
 
-export type AgentRuntimeStreamEvent = AgentRuntimeEvent | CompatEvent
+export type AgentRuntimeStreamEvent = RuntimeStreamEvent | CompatEvent
 export type RuntimeDirectory = string | undefined
-
-export type AgentSession = {
-  id: string
-  title?: string | null
-  slug?: string
-  version?: string
-  directory?: string
-  parentID?: string
-  sessionRef?: string
-  host?: "central" | "workspace"
-  workspaceID?: string
-  rootID?: string
-  projectID?: string
-  tags?: unknown[]
-  attachments?: unknown[]
-  time?: { created: number; updated?: number; archived?: number }
-  created_at?: number
-  archived_at?: number | null
-  status?: string | null
-  lastTurn?: AgentTurnOutcome
-  harnessPayload?: unknown
-}
-
-export type AgentTurnOutcome = (
-  | { status: "completed"; completedAt: number; reason?: string }
-  | { status: "failed"; completedAt: number; error: string }
-  | { status: "cancelled"; completedAt: number; reason?: string }
-) & { assistantMessageId?: string }
-
-export type AgentMessage = {
-  info: {
-    id: string
-    role: string
-    sessionID?: string
-    parentID?: string
-    time?: { created?: number; completed?: number }
-    providerID?: string
-    modelID?: string
-    agent?: string
-    harnessPayload?: unknown
-  }
-  parts: unknown[]
-  harnessPayload?: unknown
-}
-
-export type AgentPermission = {
-  id: string
-  sessionID: string
-  tool?: string
-  title?: string
-  permission?: string
-  patterns?: string[]
-  always?: string[]
-  metadata?: Record<string, unknown>
-  time?: { created?: number }
-  harnessPayload?: unknown
-}
-
-export type AgentQuestion = {
-  id: string
-  sessionID: string
-  questions?: unknown[]
-  harnessPayload?: unknown
-}
-
-export type AgentCommand = {
-  name: string
-  content?: string
-  description?: string
-  harnessPayload?: unknown
-}
-
-export type AgentAgent = {
-  name: string
-  description?: string
-  mode?: string
-  harnessPayload?: unknown
-}
-
-export type AgentConfigOption = {
-  id: string
-  name?: string
-  type?: string
-  category?: string
-  currentValue?: unknown
-  description?: string
-  selectOptions?: Array<{
-    id: string
-    name?: string
-    description?: string
-    value?: unknown
-    harnessPayload?: unknown
-  }>
-  harnessPayload?: unknown
-}

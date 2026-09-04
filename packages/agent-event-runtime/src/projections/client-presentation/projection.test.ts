@@ -98,7 +98,7 @@ describe("createOpencodeCompatProjection", () => {
   // row, then the assistant row). This projection stands in for that producer
   // on the runtime-events lane, so it owes its consumers the same row.
   test("announces the assistant message row before the first part of a turn", () => {
-    const projection = createOpencodeCompatProjection({
+    const projection = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_host_turn_r",
@@ -154,7 +154,7 @@ describe("createOpencodeCompatProjection", () => {
     // `buildAssistantMessage` row at turn start, complete with the agent and
     // model this lane never carries. A row announced here would land after it
     // and overwrite it with a thinner one.
-    const projection = createOpencodeCompatProjection({
+    const projection = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_turn_1_r",
@@ -172,7 +172,7 @@ describe("createOpencodeCompatProjection", () => {
     // convention cannot resolve names no user message. Parenting it on the
     // session would invent a turn, so the projection says the producer broke
     // the contract and announces nothing.
-    const projection = createOpencodeCompatProjection({
+    const projection = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_engine_named_this",
@@ -206,7 +206,7 @@ describe("createOpencodeCompatProjection", () => {
     // The other half of an attached viewer's turn: the reply hangs off the
     // prompt, so a lane that announced only the reply left its consumer with a
     // row parented on a message it never received.
-    const projection = createOpencodeCompatProjection({
+    const projection = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_host_turn_r",
@@ -246,7 +246,7 @@ describe("createOpencodeCompatProjection", () => {
     // The whole contract an attached viewer rides: the announced row names the
     // user message the reply answers, and every part of the turn is filed
     // against THAT row — the two halves a timeline needs to place the reply.
-    const projection = createOpencodeCompatProjection({
+    const projection = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_host_turn_r",
@@ -286,7 +286,7 @@ describe("createOpencodeCompatProjection", () => {
   })
 
   test("a resumed projection does not re-announce a row its consumer already has", () => {
-    const first = createOpencodeCompatProjection({
+    const first = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_turn_1_r",
@@ -294,7 +294,7 @@ describe("createOpencodeCompatProjection", () => {
     })
     first.ingest({ type: "text-delta", delta: "hello" })
 
-    const next = createOpencodeCompatProjection({
+    const next = createClientPresentationProjection({
       sessionId: "session-1",
       directory: "/repo",
       assistantMessageId: "msg_turn_1_r",

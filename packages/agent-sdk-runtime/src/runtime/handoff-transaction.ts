@@ -1,5 +1,9 @@
 import { randomUUID } from "crypto"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import {
+  connectionIdForHarness,
+  type AgentExecutionBinding,
+} from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "../adapter-contract"
 import { buildUserMessage, messagePartUpdated, messageUpdated, type CompatEvent } from "../compat-events"
 import type { SessionConfig, SessionConfigUpdate, SessionHarness } from "../index"
@@ -20,6 +24,7 @@ export type HandoffTransactionInput = {
   store: AgentRuntimeStoreWithRecovery
   source: AgentHarnessAdapter
   target: AgentHarnessAdapter
+  binding: AgentExecutionBinding
   commit(event: CompatEvent): void
   diagnose(event: AgentRuntimeEvent): void
 }
@@ -33,6 +38,90 @@ export class HandoffRollbackError extends AggregateError {
   }
 }
 
+async function releaseSource(
+  input: HandoffTransactionInput,
+  previousAgentSessionId: string,
+  previousOwnerKey: string | null,
+  targetDirectory: string | undefined,
+) {
+  try {
+    await input.source.releaseHandoffSource?.(
+      input.sessionId,
+      previousAgentSessionId,
+      previousOwnerKey,
+      input.session.directory ?? targetDirectory,
+    )
+  } catch (error) {
+    input.diagnose(diagnostic(
+      "session_handoff_source_cleanup_failed",
+      error,
+      "Source harness cleanup failed",
+      "session.handoff.source-cleanup",
+      { sessionId: input.sessionId, sourceHarness: input.current.harness.id },
+    ))
+  }
+}
+
+async function rollbackHandoff(
+  input: HandoffTransactionInput,
+  prepared: Awaited<ReturnType<NonNullable<AgentHarnessAdapter["createHandoffSession"]>>> | undefined,
+  previousAgentSessionId: string,
+  previousOwnerKey: string | null,
+  handoffError: unknown,
+) {
+  let rollbackFailure: unknown
+  try {
+    await prepared?.rollback()
+  } catch (error) {
+    rollbackFailure = error
+    input.diagnose(diagnostic(
+      "session_handoff_rollback_failed",
+      error,
+      "Target harness rollback failed",
+      "session.handoff.rollback",
+      { sessionId: input.sessionId, targetHarness: input.update.harness.id },
+    ))
+  }
+  input.store.bindSession({
+    sessionId: input.sessionId,
+    workspaceId: input.binding.workspaceId,
+    directory: input.session.directory ?? "",
+    connectionId: input.binding.connectionId,
+    upstreamSessionId: input.binding.upstreamSessionId,
+    title: input.session.title ?? undefined,
+    agentSessionId: previousAgentSessionId,
+    ownerKey: previousOwnerKey,
+  })
+  input.store.updateSessionConfig(input.sessionId, {
+    harness: input.current.harness,
+    model: input.current.model ?? null,
+    variant: input.current.variant ?? null,
+    agent: input.current.agent ?? null,
+    handoff: input.current.handoff ?? null,
+  })
+  if (rollbackFailure !== undefined) throw new HandoffRollbackError(handoffError, rollbackFailure)
+}
+
+function diagnostic(
+  code: string,
+  error: unknown,
+  fallback: string,
+  method: string,
+  details: Record<string, unknown>,
+): AgentRuntimeEvent {
+  return {
+    type: "diagnostic",
+    diagnostic: {
+      code,
+      message: error instanceof Error ? error.message : fallback,
+      severity: "error",
+      source: "agent-sdk-runtime",
+      method,
+      details,
+    },
+  }
+}
+
 /** Owns the prepare/configure/commit/rollback boundary for a harness switch. */
 export async function executeHandoffTransaction(input: HandoffTransactionInput): Promise<SessionConfig> {
   const previousAgentSessionId = input.store.getAgentSessionId(input.sessionId)
@@ -40,7 +129,7 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
   const previousOwnerKey = input.store.getSessionOwnerKey?.(input.sessionId) ?? null
   const targetDirectory = input.directory ?? input.session.directory
   const transcript = renderSessionHandoff(
-    await input.source.getMessages(input.sessionId, targetDirectory),
+    input.store.getMessages(input.sessionId),
     input.current.harness,
   )
   if (!input.target.createHandoffSession) {
@@ -57,17 +146,26 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
     )
     input.store.bindSession({
       sessionId: input.sessionId,
+      workspaceId: input.binding.workspaceId,
       directory: targetDirectory ?? "",
+      connectionId: connectionIdForHarness(input.update.harness),
+      upstreamSessionId: prepared.agentSessionId ?? prepared.id,
       title: input.session.title ?? undefined,
       agentSessionId: prepared.agentSessionId ?? prepared.id,
       ownerKey: prepared.ownerKey ?? null,
     })
-    const configured = await input.target.updateSessionConfig(input.sessionId, {
+    const targetBinding: AgentExecutionBinding = {
+      ...input.binding,
+      directory: targetDirectory ?? "",
+      connectionId: connectionIdForHarness(input.update.harness),
+      upstreamSessionId: prepared.agentSessionId ?? prepared.id,
+    }
+    const configured = await input.target.updateSessionConfig(targetBinding, {
       ...input.update,
       ...(input.update.model === undefined ? { model: null } : {}),
       ...(input.update.variant === undefined ? { variant: null } : {}),
       ...(input.update.agent === undefined ? { agent: null } : {}),
-    }, targetDirectory)
+    })
     const next = input.store.updateSessionConfig(input.sessionId, {
       ...configured,
       harness: input.update.harness,
@@ -94,62 +192,10 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
       from: input.current.harness,
       to: input.update.harness,
     }))
-    try {
-      await input.source.releaseHandoffSource?.(
-        input.sessionId,
-        previousAgentSessionId,
-        previousOwnerKey,
-        input.session.directory ?? targetDirectory,
-      )
-    } catch (cleanupError) {
-      input.diagnose({
-        type: "diagnostic",
-        diagnostic: {
-          code: "session_handoff_source_cleanup_failed",
-          message: cleanupError instanceof Error ? cleanupError.message : "Source harness cleanup failed",
-          severity: "error",
-          source: "agent-sdk-runtime",
-          method: "session.handoff.source-cleanup",
-          details: { sessionId: input.sessionId, sourceHarness: input.current.harness.id },
-        },
-      })
-    }
+    await releaseSource(input, previousAgentSessionId, previousOwnerKey, targetDirectory)
     return next
   } catch (error) {
-    let rollbackFailure: unknown
-    if (prepared) {
-      try {
-        await prepared.rollback()
-      } catch (rollbackError) {
-        rollbackFailure = rollbackError
-        input.diagnose({
-          type: "diagnostic",
-          diagnostic: {
-            code: "session_handoff_rollback_failed",
-            message: rollbackError instanceof Error ? rollbackError.message : "Target harness rollback failed",
-            severity: "error",
-            source: "agent-sdk-runtime",
-            method: "session.handoff.rollback",
-            details: { sessionId: input.sessionId, targetHarness: input.update.harness.id },
-          },
-        })
-      }
-    }
-    input.store.bindSession({
-      sessionId: input.sessionId,
-      directory: input.session.directory ?? "",
-      title: input.session.title ?? undefined,
-      agentSessionId: previousAgentSessionId,
-      ownerKey: previousOwnerKey,
-    })
-    input.store.updateSessionConfig(input.sessionId, {
-      harness: input.current.harness,
-      model: input.current.model ?? null,
-      variant: input.current.variant ?? null,
-      agent: input.current.agent ?? null,
-      handoff: input.current.handoff ?? null,
-    })
-    if (rollbackFailure !== undefined) throw new HandoffRollbackError(error, rollbackFailure)
+    await rollbackHandoff(input, prepared, previousAgentSessionId, previousOwnerKey, error)
     throw error
   }
 }

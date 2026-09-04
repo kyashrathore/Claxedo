@@ -21,6 +21,7 @@ import { CodexGoalController, type CodexGoalControllerHost } from "./goal"
 import type { CodexActiveThread } from "./protocol"
 import { CodexHarnessAdapter } from "./index"
 import type { PromptInput } from "../../index"
+import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 
 const tempDirs: string[] = []
 
@@ -231,7 +232,7 @@ describe("Codex Goal lifecycle", () => {
       codexHome: path.join(fake.directory, "codex-home"),
     })
     expect(await third.goals!.read(session.id, fake.directory)).toMatchObject({ status: "paused" })
-    await third.deleteSession(session.id, fake.directory)
+    await third.deleteSession(executionBinding(session.id, fake.directory, "native:codex"))
 
     expect(fs.existsSync(fake.goalFile)).toBe(false)
     const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line))
@@ -266,7 +267,7 @@ describe("Codex Goal lifecycle", () => {
       store: runtimeStore,
       codexHome: path.join(fake.directory, "codex-home"),
     })
-    await broken.deleteSession(session.id, fake.directory)
+    await broken.deleteSession(executionBinding(session.id, fake.directory, "native:codex"))
 
     expect(runtimeStore.getSession(session.id)).toBeNull()
     // No process was spawned to clean the Goal up, so the provider Goal
@@ -309,7 +310,7 @@ describe("Codex Goal lifecycle", () => {
     expect(events).toContainEqual(expect.objectContaining({ type: "text-delta", delta: "Working" }))
     expect(events.filter((event) => (event as { type?: string }).type === "finish")).toHaveLength(1)
     const turn = (async () => {
-      for await (const _event of adapter.sendMessage(session.id, prompt(), fake.directory)) {}
+      for await (const _event of executeTestTurn(adapter, session.id, prompt(), fake.directory)) {}
     })()
     await waitForRequest(fake.log, "turn/start")
     expect(await goals.stop(session.id, fake.directory)).toMatchObject({ ok: true, goal: { status: "paused" } })
@@ -478,7 +479,7 @@ describe("Codex Goal lifecycle", () => {
     expect(await adapter.goals!.pause(session.id, fake.directory)).toMatchObject({ ok: true, goal: { status: "paused" } })
     // Pause interrupts and awaits the in-flight Goal turn, so the session must
     // already be idle — a stranded turn would report "cancelled" here instead.
-    expect(await adapter.abort(session.id, fake.directory)).toEqual({ ok: true, status: "already_idle" })
+    expect(await adapter.abort(executionBinding(session.id, fake.directory, "native:codex"))).toEqual({ ok: true, status: "already_idle" })
     adapter.dispose()
   })
 })

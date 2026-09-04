@@ -1,4 +1,5 @@
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "../adapter-contract"
 import { sessionError, sessionIdle, toCompatEvent, type CompatEvent } from "../compat-events"
 import type { AgentRuntimeStreamEvent, AgentTurnOutcome, PromptInput, RuntimeDirectory } from "../index"
@@ -14,7 +15,7 @@ type TurnPublication = {
 }
 
 export type RunRuntimeTurnInput = {
-  sessionId: string
+  binding: AgentExecutionBinding
   prompt: PromptInput
   directory: RuntimeDirectory
   adapter: AgentHarnessAdapter
@@ -28,7 +29,8 @@ export type RunRuntimeTurnInput = {
 
 /** Owns stream normalization, projection, and the one authoritative turn outcome. */
 export async function runRuntimeTurn(input: RunRuntimeTurnInput): Promise<void> {
-  const { sessionId, prompt, directory, adapter, store, publish, commit } = input
+  const { binding, prompt, adapter, store, publish, commit } = input
+  const { sessionId, directory } = binding
   let openingUserAlreadyPublished = input.openingUserAlreadyPublished ?? false
   let outcome: AgentTurnOutcome | undefined
   const stableAssistantMessageId = prompt.assistantMessageId
@@ -91,7 +93,7 @@ export async function runRuntimeTurn(input: RunRuntimeTurnInput): Promise<void> 
   })
   try {
     let terminal = false
-    for await (const payload of adapter.sendMessage(sessionId, prompt, directory)) {
+    for await (const payload of adapter.executeTurn(binding, prompt)) {
       terminal ||= isTerminalRuntimePayload(payload)
       outcome = mergeOutcome(outcome, outcomeFromPayload(payload))
       if (outcome?.status === "failed" && isTerminalRuntimePayload(payload)) continue
@@ -140,7 +142,7 @@ export async function runRuntimeTurn(input: RunRuntimeTurnInput): Promise<void> 
         directory,
         prompt,
         store,
-        updateSession: async (id, title, targetDirectory) => await adapter.updateSession(id, { title }, targetDirectory),
+        updateSession: async (_id, title) => await adapter.updateSession(binding, { title }),
         commit: (event) => { commit(event, { dir: "in", method: "auto-title" }) },
         diagnose: (payload) => publish({ sessionId, directory, payload }),
       })

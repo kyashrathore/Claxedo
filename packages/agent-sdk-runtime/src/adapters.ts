@@ -54,7 +54,6 @@ export type {
   GoalCapabilities,
   GoalOptionalField,
   GoalRecovery,
-  HttpProxyAdapter,
   RuntimeConfigurableAdapter,
 } from "./capabilities"
 export {

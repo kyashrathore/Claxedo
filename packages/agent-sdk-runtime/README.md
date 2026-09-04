@@ -170,11 +170,10 @@ Harness factories have individual entries and a convenience aggregate:
 - `@claxedo/agent-sdk-runtime/harnesses/claude`
 - `@claxedo/agent-sdk-runtime/harnesses/codex`
 - `@claxedo/agent-sdk-runtime/harnesses/cursor`
-- `@claxedo/agent-sdk-runtime/harnesses/opencode`
 - `@claxedo/agent-sdk-runtime/harnesses/pi`
 
 ```ts
-import { acp, claude, codex, cursor, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { acp, claude, codex, cursor, pi } from "@claxedo/agent-sdk-runtime/harnesses"
 // Smaller single-harness graph:
 import { claude as nativeClaude } from "@claxedo/agent-sdk-runtime/harnesses/claude"
 ```

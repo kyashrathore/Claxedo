@@ -108,6 +108,7 @@ export type AgentRuntimeSubscribeInput = {
 
 export type AgentRuntimeSessionCreateInput = {
   id?: string
+  workspaceId: string
   directory: RuntimeDirectory
   harness: SessionHarness
   model?: PromptModel
@@ -125,7 +126,7 @@ export type AgentRuntimeTurnStartInput = {
   /** Runs after this turn wins the per-session admission and before harness work starts. */
   onAdmitted?: () => void
   text?: string
-  parts?: unknown[]
+  parts?: PromptInput["parts"]
   messageId?: string
   assistantMessageId?: string
   agent?: string

@@ -5,6 +5,7 @@ import { createMemoryRuntimeStore } from "../../stores/memory"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import { piWorkerStream } from "./test-worker-stream"
 import { PiHarnessAdapter } from "."
+import { executionBinding } from "../../test-utils/execution-binding"
 
 async function waitUntil(check: () => boolean | Promise<boolean>, label: string) {
   const deadline = Date.now() + 2_000
@@ -17,9 +18,9 @@ async function waitUntil(check: () => boolean | Promise<boolean>, label: string)
 async function configuredAdapter(input: ConstructorParameters<typeof PiHarnessAdapter>[0]) {
   const adapter = new PiHarnessAdapter(input)
   await adapter.bindSession({ id: "session-1", directory: "/repo" })
-  await adapter.updateSessionConfig("session-1", {
+  await adapter.updateSessionConfig(executionBinding("session-1", "/repo", "native:pi"), {
     model: { providerID: "openai-codex", modelID: "gpt-5.1-codex-mini" },
-  }, "/repo")
+  })
   return adapter
 }
 
@@ -163,9 +164,9 @@ describe("Pi owned Goal lifecycle", () => {
     // A central Pi session is bound with no directory, mirroring bindSession's
     // canonical '' scope (a Session id is never a directory).
     await adapter.bindSession({ id: "central-session" })
-    await adapter.updateSessionConfig("central-session", {
+    await adapter.updateSessionConfig(executionBinding("central-session", "", "native:pi"), {
       model: { providerID: "openai-codex", modelID: "gpt-5.1-codex-mini" },
-    }, "")
+    })
 
     await adapter.goals.start("central-session", { objective: "Ship centrally" }, "")
     await waitUntil(() => goalScopes.length > 0, "central Goal publish")

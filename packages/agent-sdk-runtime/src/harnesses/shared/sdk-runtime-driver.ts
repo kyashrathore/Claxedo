@@ -5,6 +5,7 @@ import type {
   PromptInput,
   SessionConfig,
 } from "../../index"
+import type { AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import type {
   AgentGoalResource,
   AgentHarnessAdapterHealth,
@@ -59,7 +60,7 @@ export type PendingQuestion = {
   sessionId: string
   agentSessionId: string
   questions: unknown[]
-  resolve: (answer: string) => void
+  resolve: (answers: AgentQuestionAnswer[]) => void
   reject: () => void
 }
 

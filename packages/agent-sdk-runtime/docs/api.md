@@ -199,7 +199,6 @@ Import: `@claxedo/agent-sdk-runtime/capabilities`
 
 Import: `@claxedo/agent-sdk-runtime/adapters`
 
-- `HttpProxyAdapter`
 - `RuntimeConfigurableAdapter`
 
 Capability data should be explicit. Do not infer support from harness names when

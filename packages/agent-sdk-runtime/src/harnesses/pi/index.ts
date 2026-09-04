@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto"
+import {
+  assertAgentExecutionBinding,
+  type AgentExecutionBinding,
+  type AgentQuestionAnswer,
+} from "@claxedo/agent-runtime-contract"
 import { createGoalPublisher, type GoalPublisher } from "../shared/goal-publisher"
 import { goalContinuationPrompt, goalEvaluationProgress, goalInitialPrompt } from "../shared/goal-protocol"
 import { errorMessage } from "../shared/sdk-runtime-values"
@@ -41,7 +46,7 @@ import type { RunStore, SessionEnv, SessionEnvFactory, SessionEnvFactoryInput } 
 import { createMemoryRunStore } from "../../session-env"
 import type { RuntimeEventHub } from "../../runtime-event-hub"
 import { firstTurnErrorData } from "../../first-turn-error"
-import type { AgentRuntimeEvent, RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
+import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { Agent } from "@mariozechner/pi-agent-core"
 import type { AgentRuntimeStoreWithRecovery } from "../shared/runtime-store"
 import type { Usage as PiUsage } from "@mariozechner/pi-ai"
@@ -61,6 +66,7 @@ import {
   type AgentProcessObserver,
 } from "../../process-observer"
 import { defaultPiSessionConfig, piSessionRow as row, type PiSession } from "./session-state"
+import { notImplemented, promptText, runtimeEvent, text } from "./values"
 
 export type PiAdapterOptions = AgentHarnessAdapterProcessOptions & {
   createEnv?: SessionEnvFactory
@@ -89,29 +95,6 @@ export type PiToolExtensionProvider = {
 }
 
 export type PiSessionPlacement = Omit<SessionEnvFactoryInput, "sessionId">
-
-function text(input: unknown) {
-  return typeof input === "string" && input.trim().length > 0 ? input : undefined
-}
-
-function promptText(parts: unknown[]) {
-  return parts.flatMap((part) => {
-    if (typeof part === "string") return [part]
-    if (!part || typeof part !== "object") return []
-    const row = part as Record<string, unknown>
-    if (typeof row.text === "string") return [row.text]
-    if (typeof row.content === "string") return [row.content]
-    const resource = row.resource
-    if (resource && typeof resource === "object" && typeof (resource as Record<string, unknown>).text === "string") {
-      return [(resource as Record<string, string>).text]
-    }
-    return []
-  }).join("\n\n").trim()
-}
-
-function notImplemented(feature: string) {
-  return new Error(`${feature} is not implemented for Pi central sessions yet`)
-}
 
 function textPart(input: { sessionId: string; messageId: string; text: string; suffix: string }): CompatPart {
   return {
@@ -188,10 +171,6 @@ function completedPiMessage(input: {
       ? [textPart({ sessionId: input.sessionId, messageId: input.assistant.id, text: input.assistantText, suffix: "text" })]
       : [],
   }
-}
-
-function runtimeEvent(input: AgentRuntimeStreamEvent): input is AgentRuntimeEvent {
-  return !("properties" in input)
 }
 
 export class PiHarnessAdapter implements AgentHarnessAdapter {
@@ -406,7 +385,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     }
     goalRun.done = (async () => {
       let runError: string | undefined
-      for await (const event of this.sendMessage(session.id, input, session.directory)) {
+      for await (const event of this.executeTurnStream(session.id, input, session.directory)) {
         if (event.type === "error") runError = event.error
       }
       const current = this.readGoal(session.id)
@@ -489,14 +468,14 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       ownerKey: null,
       rollback: async () => {
         if (rolledBack) return
-        await this.deleteSession(created.id, directory)
+        await this.deleteSessionById(created.id, true)
         rolledBack = true
       },
     }
   }
 
-  async releaseHandoffSource(id: string, _agentSessionId: string, _ownerKey: string | null, directory: RuntimeDirectory) {
-    await this.deleteSession(id, directory)
+  async releaseHandoffSource(id: string, _agentSessionId: string, _ownerKey: string | null, _directory: RuntimeDirectory) {
+    await this.deleteSessionById(id, false)
   }
 
   async bindSession(input: { id: string; parentID?: string; title?: string | null; directory?: RuntimeDirectory; placement?: PiSessionPlacement }) {
@@ -600,12 +579,14 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return row(session)
   }
 
-  async getSessionConfig(id: string, _directory: RuntimeDirectory) {
-    return this.sessions.get(id)?.config ?? defaultPiSessionConfig()
+  async getSessionConfig(binding: AgentExecutionBinding) {
+    assertAgentExecutionBinding(binding)
+    return this.sessions.get(binding.sessionId)?.config ?? defaultPiSessionConfig()
   }
 
-  async updateSessionConfig(id: string, update: SessionConfigUpdate, _directory: RuntimeDirectory) {
-    const session = this.sessions.get(id)
+  async updateSessionConfig(binding: AgentExecutionBinding, update: SessionConfigUpdate) {
+    assertAgentExecutionBinding(binding)
+    const session = this.sessions.get(binding.sessionId)
     if (!session) return defaultPiSessionConfig()
     if (update.model !== undefined && session.active) {
       throw new Error("Start a new Pi session to use another model")
@@ -621,13 +602,18 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return session.config
   }
 
-  async deleteSession(id: string, _directory: RuntimeDirectory) {
+  async deleteSession(binding: AgentExecutionBinding) {
+    assertAgentExecutionBinding(binding)
+    await this.deleteSessionById(binding.sessionId, true)
+  }
+
+  private async deleteSessionById(id: string, deleteStore: boolean) {
     const session = this.sessions.get(id)
     if (session) await this.disableGoalContinuation(session)
     await session?.env.dispose?.()
     session?.processObservation.exit({ reason: "disposed" })
     this.sessions.delete(id)
-    this.goalStore?.deleteSession(id)
+    if (deleteStore) this.goalStore?.deleteSession(id)
   }
 
   /**
@@ -929,7 +915,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
     return []
   }
 
-  async replyQuestion(binding: AgentExecutionBinding, _questionId: string, _answers: string[][]) {
+  async replyQuestion(binding: AgentExecutionBinding, _questionId: string, _answers: AgentQuestionAnswer[]) {
     assertAgentExecutionBinding(binding)
   }
 

@@ -1,4 +1,5 @@
 import type { CompatEvent } from "../../compat-events"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { AgentSession, AgentTurnOutcome, SessionConfig, SessionConfigUpdate } from "../../index"
 import type { RuntimeAppendSource } from "./turn-projection"
@@ -63,6 +64,7 @@ export type AgentRuntimeStoreCore = {
   getSessionConfig(id: string): SessionConfig | null | undefined
   deleteSession(id: string): void
   getAgentSessionId(id: string): string | null | undefined
+  getExecutionBinding(id: string): AgentExecutionBinding | null | undefined
   getGoal?(id: string): RuntimeGoalSnapshot | null | undefined
   setGoal?(id: string, goal: RuntimeGoalSnapshot | null): void
   acquireTurnLease(sessionId: string): string | undefined

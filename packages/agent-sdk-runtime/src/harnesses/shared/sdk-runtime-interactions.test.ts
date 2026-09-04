@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test"
 import { SdkRuntimeInteractions } from "./sdk-runtime-interactions"
 import type { SdkRuntimeStore } from "./sdk-runtime-driver"
+import { executionBinding } from "../../test-utils/execution-binding"
 
 function rejectingStore(): SdkRuntimeStore {
   return {
@@ -20,7 +21,8 @@ test("question replies remain retryable when persistence fails", () => {
     reject() {},
   })
 
-  expect(() => interactions.replyQuestion("question-1", "answer")).toThrow("durable write failed")
+  expect(() => interactions.replyQuestion(executionBinding("session-1", "/work"), "question-1", [["answer"]]))
+    .toThrow("durable write failed")
   expect(interactions.questions.has("question-1")).toBe(true)
   expect(interactions.listQuestions("/work")).toHaveLength(1)
 })

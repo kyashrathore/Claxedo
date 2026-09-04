@@ -1,5 +1,5 @@
 import { agentRuntimeEvent } from "@claxedo/agent-event-runtime"
-import type { AgentRuntimeEvent } from "@claxedo/agent-runtime-contract"
+import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 
 export type OpenCodeLeafEvent = { type: string; properties: Record<string, unknown> }
 

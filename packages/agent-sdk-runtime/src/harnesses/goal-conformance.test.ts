@@ -17,6 +17,7 @@ import { storeRows } from "../test-utils/store-internals"
 import { installFakeCodexAppServer } from "../test-utils/fake-codex-app-server"
 import { removeTestTempDir } from "./shared/test-temp-dir"
 import { SdkRuntimeAdapter } from "./shared/sdk-runtime-adapter"
+import { executionBinding } from "../test-utils/execution-binding"
 import { CodexHarnessAdapter } from "./codex"
 import { createClaudeSdkDriver } from "./claude/driver"
 import { createCursorSdkDriver } from "./cursor/driver"
@@ -151,9 +152,9 @@ async function piHarness(): Promise<ConformanceHarness> {
     },
   })
   await adapter.bindSession({ id: "session-conformance", directory: "/repo" })
-  await adapter.updateSessionConfig("session-conformance", {
+  await adapter.updateSessionConfig(executionBinding("session-conformance", "/repo", "native:pi"), {
     model: { providerID: "openai-codex", modelID: "gpt-5.1-codex-mini" },
-  }, "/repo")
+  })
   return {
     goals: adapter.goals,
     sessionId: "session-conformance",

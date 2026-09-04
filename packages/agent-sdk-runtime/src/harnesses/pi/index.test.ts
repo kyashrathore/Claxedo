@@ -68,7 +68,7 @@ describe("PiHarnessAdapter", () => {
 
     await expect(adapter.createHandoffSession(undefined, "Replacement", "ses_existing"))
       .rejects.toThrow("target session ses_existing already exists")
-    expect(await adapter.getSession("ses_existing", undefined)).toMatchObject({ title: "Prior target" })
+    expect(await adapter.getSession(executionBinding("ses_existing", undefined, "native:pi"))).toMatchObject({ title: "Prior target" })
   })
 
   test("persists a child session's parent identity in canonical session reads", async () => {

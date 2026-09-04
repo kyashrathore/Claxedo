@@ -1,4 +1,9 @@
 import { randomUUID } from "crypto"
+import {
+  AgentRuntimeContractError,
+  connectionIdForHarness,
+  type AgentExecutionBinding,
+} from "@claxedo/agent-runtime-contract"
 import { agentRuntimeEvent, assistantMessageIdForTurn, type AgentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type {
   AgentMessage,
@@ -18,9 +23,8 @@ import type {
 } from "./index"
 import type { AgentGoalMutationResult, AgentGoalResource, AgentHarnessAdapter } from "./adapter-contract"
 import { requireGoalResource } from "./adapter-contract"
-import { renderSessionHandoff } from "./session-handoff"
 import { GoalCapabilityError, hasAdapterCapability, requireGoalAction, type GoalAction, type GoalCapabilities } from "./capabilities"
-import { buildSession, buildUserMessage, eventSessionId, messagePartUpdated, messageUpdated, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
+import { buildSession, eventSessionId, sessionIdle, sessionUpdated, toCompatEvent, type CompatEvent } from "./compat-events"
 import { createTurnEventProjector } from "./harnesses/shared/turn-projection"
 import { createChildEventRouter } from "./harnesses/shared/child-event-routing"
 import { createRuntimeEventHub, type RuntimeEventHub } from "./runtime-event-hub"
@@ -30,6 +34,8 @@ import { resolveSessionModel } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
 import { turnStartRecord } from "./runtime/turn-record"
+import { assertSessionCreateBindingScope, requireExecutionBinding } from "./runtime/execution-binding"
+import { executeHandoffTransaction } from "./runtime/handoff-transaction"
 
 export {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
@@ -147,29 +153,12 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     return session?.directory ?? undefined
   }
 
-  /**
-   * The store is authoritative for session config, but a session row can exist
-   * without one — an adapter bound the session before its config write landed,
-   * or the store was hydrated from an older shape. Ask the adapter that owns the
-   * session to describe it and write that answer back, so the store stays the
-   * authority: the derivation runs once per session and every later read is a
-   * plain store hit. A session no adapter can be named for stays a hard error.
-   */
   const runtimeForSession = async (
     sessionId: string,
   ): Promise<{ adapter: AgentHarnessAdapter; config: SessionConfig }> => {
     const stored = store.getSessionConfig(sessionId)
-    if (stored) return { adapter: await adapterFor(stored.harness), config: stored }
-    // Without a persisted harness only a lone registered adapter can be named
-    // the owner; picking one of several would be a guess. An id the store never
-    // bound is not a config gap — deriving one would write a config row for a
-    // session that does not exist, so it stays an unknown session.
-    const adapter = store.getSession(sessionId) && adapters.size === 1
-      ? adapters.values().next().value
-      : undefined
-    if (!adapter) throw new Error(`Session ${sessionId} has no runtime config`)
-    const derived = await adapter.getSessionConfig(sessionId, sessionDirectory(sessionId))
-    return { adapter, config: store.updateSessionConfig(sessionId, derived) ?? derived }
+    if (!stored) throw new Error(`Session ${sessionId} has no runtime config`)
+    return { adapter: await adapterFor(stored.harness), config: stored }
   }
 
   const configForSession = async (sessionId: string) => (await runtimeForSession(sessionId)).config
@@ -200,50 +189,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     sessionId: string,
     directory?: RuntimeDirectory,
     expectedHarness?: SessionHarness,
-  ): AgentExecutionBinding => {
-    const binding = store.getExecutionBinding(sessionId)
-    if (!binding) {
-      throw new AgentRuntimeContractError({
-        code: "invalid_execution_binding",
-        field: "upstreamSessionId",
-        message: `Session ${sessionId} has no complete execution binding`,
-      })
-    }
-    const session = store.getSession(sessionId) as { directory?: string } | null
-    const config = store.getSessionConfig(sessionId)
-    if (!session || !config) {
-      throw new AgentRuntimeContractError({
-        code: "invalid_execution_binding",
-        field: !session ? "sessionId" : "connectionId",
-        message: `Session ${sessionId} has no complete execution binding`,
-      })
-    }
-    return assertAgentExecutionBinding(binding, {
-      ...binding,
-      sessionId,
-      directory: runtimeDirectory(directory ?? session.directory),
-      connectionId: connectionIdForHarness(expectedHarness ?? config.harness),
-    })
-  }
+  ): AgentExecutionBinding => requireExecutionBinding(store, sessionId, directory, expectedHarness)
 
-  const assertCreateBindingScope = (sessionId: string, create: AgentRuntimeSessionCreateInput) => {
-    const existing = store.getExecutionBinding(sessionId)
-    if (!store.getSession(sessionId) && !existing) return
-    if (!existing) {
-      throw new AgentRuntimeContractError({
-        code: "invalid_execution_binding",
-        field: "upstreamSessionId",
-        message: `Session ${sessionId} has no complete execution binding`,
-      })
-    }
-    assertAgentExecutionBinding(existing, {
-      ...existing,
-      sessionId,
-      workspaceId: create.workspaceId,
-      directory: runtimeDirectory(create.directory),
-      connectionId: connectionIdForHarness(create.harness),
-    })
-  }
+  const assertCreateBindingScope = (sessionId: string, create: AgentRuntimeSessionCreateInput) =>
+    assertSessionCreateBindingScope(store, sessionId, create)
 
   const presentationSession = (session: AgentSession | null): AgentSession | null => {
     if (!session) return null
@@ -313,6 +262,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     openingUserPublished = false,
     fence?: AgentRuntimeTurnStartInput["admission"],
   ) => {
+    const sessionId = binding.sessionId
+    const directory = binding.directory
     const ownsAdmission = () => activeTurnAdmissions.get(sessionId) === admission
     // Two fences guard every producer write for this turn. `ownsAdmission`
     // rejects a superseded in-process generation; `fence` is the host's
@@ -457,7 +408,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       const text = extractPromptTitleText(prompt.parts)
       if (!text) return
       const title = deriveSessionTitle(text)
-      await adapter.updateSession(sessionId, { title }, directory)
+      await adapter.updateSession(binding, { title })
       if (!admitted()) return
       commitAndPublish(sessionId, directory, sessionUpdated(buildSession({
         id: sessionId,
@@ -476,10 +427,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         })
       }
       let terminal = false
-      for await (const payload of adapter.sendMessage(
-        sessionId,
+      for await (const payload of adapter.executeTurn(
+        binding,
         prompt,
-        directory,
         fence ? { fencingToken: fence.fencingToken() } : undefined,
       )) {
         // An acknowledged abort may release this session for a replacement
@@ -562,7 +512,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     const changingHarness = !!current && !!update.harness && key(current.harness) !== key(update.harness)
     if (!changingHarness) {
       const adapter = await adapterForSession(sessionId)
-      const configured = await adapter.updateSessionConfig(sessionId, update, directory)
+      const configured = await adapter.updateSessionConfig(executionBinding(sessionId, directory), update)
       const persisted = store.updateSessionConfig(sessionId, configured)
       if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)
       return persisted
@@ -570,84 +520,25 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     const session = store.getSession(sessionId) as { title?: string | null; status?: string | null; directory?: string } | null
     if (!session) throw new Error(`Session ${sessionId} not found`)
     if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
-    const previousAgentSessionId = store.getAgentSessionId(sessionId)
-    if (!previousAgentSessionId) throw new Error(`Session ${sessionId} has no native harness session`)
-    const previousOwnerKey = store.getSessionOwnerKey?.(sessionId) ?? null
     const targetDirectory = directory ?? session.directory
+    const previousBinding = executionBinding(sessionId, targetDirectory, current!.harness)
     const source = await adapterFor(current!.harness)
-    const transcript = renderSessionHandoff(
-      await source.getMessages(sessionId, targetDirectory),
-      current!.harness,
-    )
     const target = await adapterFor(update.harness!)
-    if (!target.createHandoffSession) throw new Error(`Harness ${update.harness!.id} does not support conversation handoff`)
-    try {
-      const created = await target.createHandoffSession(
-        targetDirectory,
-        session.title ?? undefined,
-        sessionId,
-        { system: transcript },
-      )
-      store.bindSession({
-        sessionId,
-        directory: runtimeDirectory(targetDirectory),
-        title: session.title ?? undefined,
-        agentSessionId: created.agentSessionId ?? created.id,
-        ownerKey: created.ownerKey ?? null,
-      })
-      const configured = await target.updateSessionConfig(sessionId, {
-        ...update,
-        ...(update.model === undefined ? { model: null } : {}),
-        ...(update.variant === undefined ? { variant: null } : {}),
-        ...(update.agent === undefined ? { agent: null } : {}),
-      }, targetDirectory)
-      const next = store.updateSessionConfig(sessionId, {
-        ...configured,
-        harness: update.harness!,
-        model: configured.model ?? null,
-        variant: configured.variant ?? null,
-        agent: configured.agent ?? null,
-        handoff: { from: current!.harness, pending: true, transcript },
-      })!
-      const markerId = `handoff-${randomUUID()}`
-      const createdAt = Date.now()
-      const markerModel = configured.model ?? {
-        providerID: update.harness!.id,
-        modelID: "default",
-      }
-      commitAndPublish(sessionId, targetDirectory, messageUpdated(buildUserMessage({
-        id: markerId,
-        sessionID: sessionId,
-        agent: configured.agent ?? "build",
-        model: markerModel,
-        created: createdAt,
-      })), { dir: "out", method: "session/handoff" })
-      commitAndPublish(sessionId, targetDirectory, messagePartUpdated({
-        id: `${markerId}-part`,
-        sessionID: sessionId,
-        messageID: markerId,
-        type: "handoff",
-        from: current!.harness,
-        to: update.harness!,
-      }), { dir: "out", method: "session/handoff" })
-      return next
-    } catch (error) {
-      store.bindSession({
-        sessionId,
-        directory: runtimeDirectory(session.directory),
-        title: session.title ?? undefined,
-        agentSessionId: previousAgentSessionId,
-        ownerKey: previousOwnerKey,
-      })
-      store.updateSessionConfig(sessionId, {
-        harness: current!.harness,
-        model: current!.model ?? null,
-        variant: current!.variant ?? null,
-        agent: current!.agent ?? null,
-        handoff: current!.handoff ?? null,
-      })
-      throw error
-    }
+    return executeHandoffTransaction({
+      sessionId,
+      directory: targetDirectory,
+      session,
+      current: current!,
+      update: { ...update, harness: update.harness! },
+      binding: previousBinding,
+      store,
+      source,
+      target,
+      commit: (event) => {
+        commitAndPublish(sessionId, targetDirectory, event, { dir: "out", method: "session/handoff" })
+      },
+      diagnose: (payload) => publish({ sessionId, directory: targetDirectory, payload }),
+    })
   }
 
   const goalResourceReadContext = async (sessionId: string, requestedDirectory?: RuntimeDirectory) => {
@@ -775,7 +666,12 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           adapter.setModel(create.model.modelID === "default" ? "" : create.model.modelID)
         }
         const session = await adapter.createSession(create.directory, create.title, create.id)
-        assertCreateBindingScope(session.id, create)
+        // Provider creation establishes the local row; the runtime completes
+        // its workspace binding below. An unexpected returned id that already
+        // has a complete binding belongs to another execution scope.
+        if (session.id !== create.id && store.getExecutionBinding(session.id)) {
+          assertCreateBindingScope(session.id, create)
+        }
         const upstreamSessionId = session.agentSessionId ?? store.getAgentSessionId(session.id) ?? session.id
         store.bindSession({
           sessionId: session.id,
@@ -807,7 +703,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       },
       async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)
-        const updated = await adapter.updateSession(sessionId, updates, directory) as AgentSession | null
+        const updated = await adapter.updateSession(executionBinding(sessionId, directory), updates) as AgentSession | null
         if (!updated) throw new Error(`Session ${sessionId} not found`)
         const persisted = store.updateSession(sessionId, {
           ...(updated.title !== undefined ? { title: updated.title ?? undefined } : {}),
@@ -821,7 +717,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       },
       async delete(sessionId: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)
-        await adapter.deleteSession(sessionId, directory)
+        await adapter.deleteSession(executionBinding(sessionId, directory))
         store.deleteSession(sessionId)
         publishedGoalSignatures.delete(sessionId)
       },
@@ -891,7 +787,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
-          void runTurn(turn.sessionId, prompt, directory, adapter, admission, !!handoff, openingUserPublished, turn.admission)
+          void runTurn(executionBinding(turn.sessionId, directory), prompt, adapter, admission, !!handoff, openingUserPublished, turn.admission)
             .finally(releaseAdmission)
         } catch (error) {
           releaseAdmission()
@@ -971,8 +867,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return createRuntimeSubscription(subscribers, subscribe, input.subscriberBufferSize ?? 256, input.eventDelivery)
       },
       async list(sessionId: string, directory?: RuntimeDirectory): Promise<AgentMessage[]> {
-        const adapter = await adapterForSession(sessionId)
-        return await adapter.getMessages(sessionId, directory) as AgentMessage[]
+        await adapterForSession(sessionId)
+        executionBinding(sessionId, directory)
+        return store.getMessages(sessionId) as AgentMessage[]
       },
     },
     permissions: {
@@ -982,6 +879,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async respond(permissionId: string, decision: AgentRuntimePermissionDecision, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as AgentPermission[])
           .find((item) => item.id === permissionId)
+        if (!permission) throw new Error(`Permission ${permissionId} not found`)
         const adapter = await interactionAdapter("respondPermission", permission?.sessionID)
         if (!adapter?.respondPermission) throw new Error("No registered harness supports permissions")
         const result = await adapter.respondPermission(executionBinding(permission.sessionID, directory), permissionId, decision)
@@ -996,6 +894,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async answer(questionId: string, answers: AgentQuestionAnswer[], directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
+        if (!question) throw new Error(`Question ${questionId} not found`)
         const adapter = await interactionAdapter("replyQuestion", question?.sessionID)
         if (!adapter?.replyQuestion) throw new Error("No registered harness supports questions")
         const result = await adapter.replyQuestion(executionBinding(question.sessionID, directory), questionId, answers)
@@ -1005,6 +904,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async reject(questionId: string, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
         const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
           .find((item) => item.id === questionId)
+        if (!question) throw new Error(`Question ${questionId} not found`)
         const adapter = await interactionAdapter("rejectQuestion", question?.sessionID)
         if (!adapter?.rejectQuestion) throw new Error("No registered harness supports questions")
         const result = await adapter.rejectQuestion(executionBinding(question.sessionID, directory), questionId)
@@ -1016,7 +916,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async list(sessionId: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)
         if (!adapter.getTodos) throw new Error("This harness does not support todos")
-        return await adapter.getTodos(sessionId, directory)
+        return await adapter.getTodos(executionBinding(sessionId, directory))
       },
     },
     commands: {

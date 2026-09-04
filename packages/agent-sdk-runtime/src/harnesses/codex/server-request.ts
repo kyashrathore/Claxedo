@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto"
+import type { AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import type { JsonRecord, SdkRuntimeDriverHost } from "../shared/sdk-runtime-driver"
 import { record, text } from "../shared/sdk-runtime-values"
 import type { CodexActiveThread } from "./active-thread"
@@ -24,7 +25,7 @@ export async function handleCodexServerRequest(input: {
   if (method === "item/tool/requestUserInput") {
     active?.project(method, payload, input.message)
     const questions = Array.isArray(params.questions) ? params.questions : []
-    const answer = await new Promise<string>((resolve, reject) => {
+    const answers = await new Promise<AgentQuestionAnswer[]>((resolve, reject) => {
       if (!active) {
         reject(new Error("No active session for Codex question"))
         return
@@ -38,7 +39,11 @@ export async function handleCodexServerRequest(input: {
       })
     })
     const ids = questionIds(params)
-    return { answers: Object.fromEntries((ids[0] ? ids : ["answer"]).map((id) => [id, { answers: [answer] }])) }
+    return {
+      answers: Object.fromEntries(
+        (ids[0] ? ids : ["answer"]).map((id, index) => [id, { answers: answers[index] ?? [] }]),
+      ),
+    }
   }
 
   if (method === "item/tool/call") {

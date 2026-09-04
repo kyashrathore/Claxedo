@@ -1,5 +1,9 @@
 import type { StopReason } from "@agentclientprotocol/sdk"
 import { randomUUID } from "crypto"
+import {
+  assertAgentExecutionBinding,
+  type AgentExecutionBinding,
+} from "@claxedo/agent-runtime-contract"
 import { createAgentEventRuntime } from "@claxedo/agent-event-runtime"
 import { createAcpEventTranslator, translateStopReason } from "@claxedo/agent-event-runtime/harnesses/acp"
 import {
@@ -254,12 +258,14 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
     return projection
   }
 
-  async *sendMessage(
-    id: string,
+  async *executeTurn(
+    binding: AgentExecutionBinding,
     input: PromptInput,
-    directory: string,
     writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
+    assertAgentExecutionBinding(binding)
+    const id = binding.sessionId
+    const directory = binding.directory
     const t0 = Date.now()
     log.info("sendMessage: start", { id, directory, partCount: input.parts.length })
 
@@ -326,7 +332,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
 
     log.info("sendMessage: got ACP process, starting prompt", {
       directory,
-      binary: this.options.binary,
+      transport: this.connection().kind,
       agentSessionId,
       msToHere: Date.now() - t0,
     })

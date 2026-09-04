@@ -8,6 +8,7 @@ import { generateAITitle } from "./title"
 import type { CompatEvent } from "../../compat-events"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import { MemoryRuntimeStore } from "../../stores/memory"
+import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 
 function adapter() {
   const item = Object.create(AcpHarnessAdapter.prototype) as WithInternals<AcpHarnessAdapter, {
@@ -59,7 +60,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     })
 
-    await item.respondPermission("perm-1", "deny", path.resolve("/work"))
+    await item.respondPermission(executionBinding("session-1", path.resolve("/work")), "perm-1", "deny")
 
     expect(selected).toEqual([{ outcome: { outcome: "cancelled" } }])
     expect(replies).toHaveLength(1)
@@ -91,7 +92,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     })
 
-    await item.respondPermission("perm-1", "allow_always", path.resolve("/work"))
+    await item.respondPermission(executionBinding("session-1", path.resolve("/work")), "perm-1", "allow_always")
 
     expect(selected).toEqual([{ outcome: { outcome: "selected", optionId: "allow-session" } }])
   })
@@ -124,7 +125,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     })
 
-    await expect(item.listPermissions(path.resolve("/work"))).resolves.toEqual([{ id: "perm-1", sessionID: "session-1" }])
+    expect(await item.listPermissions(path.resolve("/work"))).toMatchObject([{ id: "perm-1", sessionID: "session-1" }])
     expect(stale).toEqual([])
   })
 
@@ -158,7 +159,7 @@ describe("AcpHarnessAdapter permissions", () => {
       },
     })
 
-    await item.respondPermission("perm-1", "allow_always", path.resolve("/work"))
+    await item.respondPermission(executionBinding("session-1", path.resolve("/work")), "perm-1", "allow_always")
 
     expect(selected).toEqual([{ outcome: { outcome: "selected", optionId: "allow-session" } }])
   })

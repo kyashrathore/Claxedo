@@ -4,7 +4,12 @@ import { Log } from "../../log"
 import { ACP_RECOVER } from "./recovery"
 import { ACPProcess } from "./process"
 import { createSessionTurnLifecycle, type SessionTurnLifecycle } from "../shared/turn-lifecycle"
-import { createStdioACPTransport, type ACPTransportEnv } from "./transport"
+import {
+  createACPTransportFactory,
+  validateACPConnection,
+  type ACPConnection,
+  type ACPTransportEnv,
+} from "./transport"
 import {
   errorMessage,
   initializeTimeoutMs,
@@ -75,11 +80,29 @@ export abstract class AcpProcessManager {
   protected permissionOwners = new Map<string, ACPProcess>()
   protected probe: ProbeEntry | null = null
   protected configRestartPending = false
+  private connectionConfig?: ACPConnection
 
   constructor(protected readonly options: AcpHarnessAdapterOptions) {
+    this.connectionConfig = validateACPConnection(options.connection)
+    const connection = this.connection()
     this.store = options.store ?? options.createStore?.(options.storeRoot) ?? missingStore()
     this.ownsStore = !options.store
-    this.currentEnv = options.env ?? {}
+    this.currentEnv = connection.kind === "process" ? { ...connection.env } : {}
+  }
+
+  protected connection(): ACPConnection {
+    this.connectionConfig ??= validateACPConnection(this.options.connection)
+    return this.connectionConfig
+  }
+
+  private processCommand() {
+    const connection = this.connection()
+    return connection.kind === "process" ? connection.command : undefined
+  }
+
+  private processArgs() {
+    const connection = this.connection()
+    return connection.kind === "process" ? connection.args ?? [] : []
   }
 
   protected harnessId(): string {
@@ -111,15 +134,36 @@ export abstract class AcpProcessManager {
     return this.legacySessions()?.values() ?? []
   }
 
+  protected supportsForkCapability(sessionId?: string) {
+    if (sessionId) {
+      const entry = this.entryForSession(sessionId)
+      if (!entry?.proc?.alive) return false
+      return entry.proc.supportsForkSession(this.store.getAgentSessionId(sessionId) ?? undefined)
+    }
+    for (const entry of this.processEntries()) {
+      if (entry.proc?.alive && entry.proc.supportsForkSession()) return true
+    }
+    return !!this.probe?.proc?.alive && this.probe.proc.supportsForkSession()
+  }
+
+  protected supportsGoalCapability(sessionId?: string) {
+    const available = (proc?: ACPProcess | null) => !!proc?.alive && proc.goalCapabilities().available
+    if (sessionId) return available(this.entryForSession(sessionId)?.proc)
+    for (const entry of this.processEntries()) {
+      if (available(entry.proc)) return true
+    }
+    return false
+  }
+
   protected processKey(directory: string): ACPProcessKey {
-    const options = this.options ?? { binary: "" }
+    const options = this.options
     return processFingerprint({
       harness: this.harnessId(),
-      access: "acp",
+      access: "connection",
       directory,
-      binary: options.binary,
-      args: options.args ?? [],
-      transport: options.createTransport ? "custom" : "stdio",
+      command: this.processCommand(),
+      args: this.processArgs(),
+      transport: options.createTransport ? "custom" : this.connection().kind,
       env: this.currentEnv ?? {},
       mcp: this.currentMcp ?? [],
       model: this.currentModel || null,
@@ -227,7 +271,7 @@ export abstract class AcpProcessManager {
     log.info("ACP model updated, ACP session processes disposed", {
       model,
       harness: this.harnessId(),
-      binary: this.options.binary,
+      command: this.processCommand(),
     })
   }
 
@@ -242,22 +286,22 @@ export abstract class AcpProcessManager {
     this.forgetSessionProcessBindings()
     log.info("ACP env updated, ACP session processes disposed", {
       harness: this.harnessId(),
-      binary: this.options.binary,
+      command: this.processCommand(),
     })
   }
 
   protected make(directory: string, role: "harness" | "probe", dead: () => void = () => {}) {
-    const launch = { args: this.options.args ?? [], env: this.currentEnv }
+    const launch = { args: this.processArgs(), env: this.currentEnv }
     const ownerId = `acp-${role}:${randomUUID()}`
     const launchId = randomUUID()
     return new ACPProcess(
       root(),
-      this.options.binary,
+      this.processCommand(),
       launch.args,
       this.currentModel,
       () => this.currentMcp,
       dead,
-      this.options.createTransport ?? createStdioACPTransport,
+      this.options.createTransport ?? createACPTransportFactory(this.connection()),
       () => launch.env,
       (transport) => this.observeProcess({
         directory,
@@ -283,7 +327,7 @@ export abstract class AcpProcessManager {
         ownerId: input.ownerId,
         launchId: input.launchId,
         harnessId: this.harnessId(),
-        access: "acp",
+        access: "connection",
         role: input.role,
         label: `${this.harnessId()} ACP ${input.role}`,
         locality: local ? "local-process" : "remote",
@@ -294,14 +338,14 @@ export abstract class AcpProcessManager {
         },
         ...(input.transport.pid ? { pid: input.transport.pid } : {}),
         directory: input.directory,
-        ...(local ? { executableBasename: executableBasename(this.options.binary) } : {}),
+        ...(local && this.processCommand() ? { executableBasename: executableBasename(this.processCommand()!) } : {}),
         transport: input.transport.kind,
       }),
       ...this.currentMcp.map((server) => observeAgentProcess(this.options.processObserver, {
         ownerId: `acp-mcp:${randomUUID()}`,
         launchId: randomUUID(),
         harnessId: this.harnessId(),
-        access: "acp",
+        access: "connection",
         role: "mcp" as const,
         label: `MCP ${server.name}`,
         locality: "command" in server ? "local-process" as const : "remote" as const,

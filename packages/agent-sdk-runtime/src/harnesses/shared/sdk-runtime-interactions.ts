@@ -5,6 +5,7 @@ import {
   type CompatEvent,
 } from "../../compat-events"
 import type { AgentPermission, AgentQuestion } from "../../index"
+import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
 import type { AgentInteractionResult } from "../../adapter-contract"
 import { requireWorkspaceDirectory } from "../../target"
 import type { PendingPermission, PendingQuestion, SdkRuntimeStore } from "./sdk-runtime-driver"
@@ -22,12 +23,14 @@ export class SdkRuntimeInteractions {
   }
 
   respondPermission(
+    binding: AgentExecutionBinding,
     permissionId: string,
     decision: "allow_once" | "allow_always" | "deny" | "reject_always",
-    directory: string,
   ): AgentInteractionResult | void {
-    directory = requireWorkspaceDirectory(directory)
-    const row = this.store.listPermissions(directory).find((item) => item.id === permissionId)
+    const directory = requireWorkspaceDirectory(binding.directory)
+    const row = this.store.listPermissions(directory).find(
+      (item) => item.id === permissionId && item.sessionID === binding.sessionId,
+    )
     const pending = this.permissions.get(permissionId)
     const events: CompatEvent[] = []
     if (row) {
@@ -55,22 +58,28 @@ export class SdkRuntimeInteractions {
       .filter((row) => this.questions.has(row.id)) as AgentQuestion[]
   }
 
-  replyQuestion(questionId: string, answer: string): AgentInteractionResult | void {
+  replyQuestion(binding: AgentExecutionBinding, questionId: string, answers: AgentQuestionAnswer[]): AgentInteractionResult | void {
     const pending = this.questions.get(questionId)
+    if (pending && pending.sessionId !== binding.sessionId) {
+      throw new Error(`Question ${questionId} does not belong to session ${binding.sessionId}`)
+    }
     if (!pending) return
     const committed = this.store.appendEvent({
       sessionId: pending.sessionId,
       agentSessionId: pending.agentSessionId,
-      payload: questionReplied(pending.sessionId, questionId, [[answer]]),
-      source: { dir: "out", method: "question.reply", frame: { answer } },
+      payload: questionReplied(pending.sessionId, questionId, answers),
+      source: { dir: "out", method: "question.reply", frame: { answers } },
     })
     this.questions.delete(questionId)
-    pending.resolve(answer)
+    pending.resolve(answers)
     return { events: [committed.payload] }
   }
 
-  rejectQuestion(questionId: string): AgentInteractionResult | void {
+  rejectQuestion(binding: AgentExecutionBinding, questionId: string): AgentInteractionResult | void {
     const pending = this.questions.get(questionId)
+    if (pending && pending.sessionId !== binding.sessionId) {
+      throw new Error(`Question ${questionId} does not belong to session ${binding.sessionId}`)
+    }
     if (!pending) return
     const committed = this.store.appendEvent({
       sessionId: pending.sessionId,

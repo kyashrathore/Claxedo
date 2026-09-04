@@ -247,7 +247,7 @@ describe("SdkRuntimeAdapter", () => {
     // One accepted state publishes once, however often the driver reports it.
     expect(goalUpdates()).toHaveLength(1)
 
-    await adapter.deleteSession("session-1", directory)
+    await adapter.deleteSession(executionBinding("session-1", directory, "native:codex"))
     await adapter.createSession(directory, undefined, "session-1")
     host!.publishGoal({ sessionId: "session-1", directory, goal: projectedGoal() })
 
@@ -712,7 +712,7 @@ describe("SdkRuntimeAdapter", () => {
     const item = new SdkRuntimeAdapter({ store, driver: () => minimalSdkRuntimeDriver() })
     const session = await item.createSession(path.resolve("/work"))
 
-    const accepted = await item.updateSessionConfig(session.id, {
+    const accepted = await item.updateSessionConfig(executionBinding(session.id, path.resolve("/work"), "native:codex"), {
       harness: { id: "codex", access: "native" },
       model: { providerID: "codex", modelID: "session-model" },
     })
@@ -768,7 +768,7 @@ describe("SdkRuntimeAdapter busy lock", () => {
     const adapter = lockProbeAdapter([{ type: "session.idle", properties: { sessionID: "s1" } }])
     const lifecycle = (adapter as unknown as { lifecycle: () => ReturnType<typeof createSessionTurnLifecycle> }).lifecycle()
 
-    for await (const _ of adapter.sendMessage("s1", prompt as never, path.resolve("/repo"))) {
+    for await (const _ of executeTestTurn(adapter, "s1", prompt as never, path.resolve("/repo"))) {
       // Terminal emission releases admission during stream consumption.
       const leaveReplacement = lifecycle.enter("s1")
       expect(leaveReplacement).not.toBeNull()

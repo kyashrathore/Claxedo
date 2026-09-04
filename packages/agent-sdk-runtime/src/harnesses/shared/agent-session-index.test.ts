@@ -4,6 +4,7 @@ import { createMemoryRuntimeStore } from "../../stores/memory"
 import { storeRows } from "../../test-utils/store-internals"
 import { createAgentSessionIndex } from "./agent-session-index"
 import { SdkRuntimeAdapter, type SdkRuntimeDriver, type SdkRuntimeDriverHost } from "./sdk-runtime-adapter"
+import { executionBinding } from "../../test-utils/execution-binding"
 
 describe("agent session index", () => {
   test("a provider session resolves back to its runtime session and scope", () => {
@@ -69,7 +70,7 @@ describe("SdkRuntimeAdapter provider-id reverse lookup", () => {
     await adapter.createSession("/work", "Ship", "session-1")
     expect(host?.getSessionForAgentSession?.("thread-1")).toEqual({ sessionId: "session-1", directory: "/work" })
 
-    await adapter.deleteSession("session-1", "/work")
+    await adapter.deleteSession(executionBinding("session-1", "/work", "native:codex"))
     expect(host?.getSessionForAgentSession?.("thread-1")).toBeNull()
     adapter.dispose()
   })

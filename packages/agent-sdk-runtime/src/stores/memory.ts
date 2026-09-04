@@ -8,7 +8,7 @@ import {
   sessionStatus,
   type CompatEvent,
 } from "../compat-events"
-import type { AssistantMessage } from "@opencode-ai/sdk/v2"
+import type { AgentExecutionBinding, AgentMessageInfo } from "@claxedo/agent-runtime-contract"
 import type { RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import { chunk } from "../status"
 import { firstTurnErrorData } from "../first-turn-error"
@@ -201,6 +201,18 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   getAgentSessionId(id: string) {
     return this.sessions.get(id)?.agentSessionId ?? null
+  }
+
+  getExecutionBinding(id: string): AgentExecutionBinding | null {
+    const session = this.sessions.get(id)
+    if (!session?.workspaceId || !session.connectionId || !session.agentSessionId) return null
+    return {
+      sessionId: id,
+      workspaceId: session.workspaceId,
+      directory: session.directory,
+      connectionId: session.connectionId,
+      upstreamSessionId: session.agentSessionId,
+    }
   }
 
   getGoal(id: string) {

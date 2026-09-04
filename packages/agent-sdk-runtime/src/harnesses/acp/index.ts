@@ -21,6 +21,10 @@
 
 import { randomUUID } from "crypto"
 import {
+  assertAgentExecutionBinding,
+  type AgentExecutionBinding,
+} from "@claxedo/agent-runtime-contract"
+import {
   type SessionConfigOption,
 } from "@agentclientprotocol/sdk"
 import {
@@ -58,9 +62,11 @@ import { toAcpMcpServers, type ResolvedMcpServer } from "../../mcp-resolver"
 import { requireWorkspaceDirectory } from "../../target"
 import type { ACPProcess } from "./process"
 import {
+  type ACPConnection,
   type ACPTransportEnv,
   type ACPTransportFactory,
 } from "./transport"
+import { acpHarnessCapabilities, acpSessionConfig } from "./capabilities"
 import {
   envFromConfig,
   errorMessage,
@@ -130,58 +136,13 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
   private publisher(): GoalPublisher {
     return this.goalPublisher ??= createGoalPublisher(this.options.eventHub)
   }
-  private cfg(model?: SessionConfig["model"]) {
-    if (model) return model
-    if (this.currentModel) {
-      return {
-        providerID: this.harnessId(),
-        modelID: this.currentModel,
-      }
-    }
-    return {
-      providerID: this.harnessId(),
-      modelID: "default",
-    }
-  }
-
-  private supportsFork(sessionId?: string) {
-    if (sessionId) {
-      const entry = this.entryForSession(sessionId)
-      if (!entry?.proc?.alive) return false
-      return entry.proc.supportsForkSession(this.store.getAgentSessionId(sessionId) ?? undefined)
-    }
-    for (const entry of this.processEntries()) {
-      if (entry.proc?.alive && entry.proc.supportsForkSession()) return true
-    }
-    return !!this.probe?.proc?.alive && this.probe.proc.supportsForkSession()
-  }
-
-  private supportsGoal(sessionId?: string) {
-    const available = (proc?: ACPProcess | null) => !!proc?.alive && proc.goalCapabilities().available
-    if (sessionId) return available(this.entryForSession(sessionId)?.proc)
-    for (const entry of this.processEntries()) {
-      if (available(entry.proc)) return true
-    }
-    return false
-  }
+  private cfg(model?: SessionConfig["model"]) { return acpSessionConfig(this.harnessId(), this.currentModel, model) }
 
   readHarnessCapabilities(_directory?: string, context?: HarnessCapabilityContext): HarnessCapabilities {
-    return harnessCapabilities({
+    return acpHarnessCapabilities({
       harness: this.harnessId(),
-      modelSelection: { status: "optional" },
-      abort: true,
-      reconnect: false,
-      replay: true,
-      permissions: true,
-      questions: false,
-      todos: false,
-      commands: false,
-      fork: this.supportsFork(context?.sessionId),
-      revert: false,
-      unrevert: false,
-      configOptions: true,
-      subagents: false,
-      goals: this.supportsGoal(context?.sessionId),
+      fork: this.supportsForkCapability(context?.sessionId),
+      goals: this.supportsGoalCapability(context?.sessionId),
     })
   }
 
@@ -316,8 +277,9 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return this.store.listSessions(directory) as AgentSession[]
   }
 
-  async getSession(id: string, _directory: string): Promise<AgentSession | null> {
-    return this.store.getSession(id) as AgentSession | null
+  async getSession(binding: AgentExecutionBinding): Promise<AgentSession | null> {
+    assertAgentExecutionBinding(binding)
+    return this.store.getSession(binding.sessionId) as AgentSession | null
   }
 
   async createSession(directory: string, title?: string, id: string = randomUUID()): Promise<{ id: string }> {
@@ -387,8 +349,10 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     }
   }
 
-  async updateSessionConfig(id: string, update: SessionConfigUpdate, directory: string): Promise<SessionConfig> {
-    directory = requireWorkspaceDirectory(directory)
+  async updateSessionConfig(binding: AgentExecutionBinding, update: SessionConfigUpdate): Promise<SessionConfig> {
+    assertAgentExecutionBinding(binding)
+    const id = binding.sessionId
+    requireWorkspaceDirectory(binding.directory)
     const current = this.store.getSessionConfig(id)
     if (!current) throw new Error(`Session ${id} has no runtime config`)
     const next = acceptedSessionConfig(current, update)
@@ -408,15 +372,31 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     return next
   }
 
-  async deleteSession(id: string, _directory: string): Promise<void> {
+  async deleteSession(binding: AgentExecutionBinding): Promise<void> {
+    assertAgentExecutionBinding(binding)
+    const id = binding.sessionId
     this.finishGoalProjection(id)
     const key = this.sessionProcessMap().get(id) ?? this.store.getSessionOwnerKey?.(id)
     this.releaseSessionProcess(id, key)
   }
 
-  private releaseSessionProcess(id: string, key: string | null | undefined): void {
+  async releaseHandoffSource(
+    id: string,
+    agentSessionId: string,
+    ownerKey: string | null,
+    _directory: string,
+  ): Promise<void> {
+    this.finishGoalProjection(id)
+    this.releaseSessionProcess(id, ownerKey, agentSessionId)
+  }
+
+  private releaseSessionProcess(
+    id: string,
+    key: string | null | undefined,
+    boundAgentSessionId?: string,
+  ): void {
     const entry = key ? this.processMap().get(key) : undefined
-    const agentSessionId = this.store.getAgentSessionId(id)
+    const agentSessionId = boundAgentSessionId ?? this.store.getAgentSessionId(id)
     if (agentSessionId) entry?.proc?.unlistenGoal(agentSessionId)
     // Nothing published means nothing to retire; never build a publisher here.
     this.goalPublisher?.forget(id)
@@ -476,8 +456,10 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
     }
   }
 
-  async forkSession(id: string, _messageId: string, directory: string, childSessionId?: string): Promise<{ id: string }> {
-    directory = requireWorkspaceDirectory(directory)
+  async forkSession(binding: AgentExecutionBinding, _messageId: string, childSessionId?: string): Promise<{ id: string }> {
+    assertAgentExecutionBinding(binding)
+    const id = binding.sessionId
+    const directory = requireWorkspaceDirectory(binding.directory)
     log.info("forkSession: called", { id, directory })
     const session = this.store.getSession(id) as { agent_session_id?: string; title?: string | null } | null
     const agentSessionId = this.store.getAgentSessionId(id)

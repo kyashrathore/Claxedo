@@ -32,7 +32,12 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   readHarnessCapabilities(directory?: string): HarnessCapabilities {
     this.assertSourceDirectory(directory)
-    return { harness: this.config.connectionId, modelSelection: { status: "unsupported" }, ...OPENCODE_SERVER_CONNECTION_CAPABILITIES }
+    return {
+      harness: this.config.connectionId,
+      modelSelection: { status: "unsupported" },
+      ...OPENCODE_SERVER_CONNECTION_CAPABILITIES,
+      goals: false,
+    }
   }
 
   async createSession(directory: string | undefined, title?: string, id?: string): Promise<{ id: string; agentSessionId: string }> {

@@ -58,23 +58,10 @@ describe("mcp resolver", () => {
     await expect(loadManagedMcpState(4310)).rejects.toBeInstanceOf(SyntaxError)
   })
 
-  test("does not derive MCP control from ambient OpenCode URL", () => {
-    const value = process.env.OPENCODE_URL
-    process.env.OPENCODE_URL = "http://ambient-opencode.test"
-    try {
-      expect(mcpControl("opencode")).toBe("managed")
-      expect(mcpControl("opencode", { externalOpencode: true })).toBe("external-unmanaged")
-    } finally {
-      if (value === undefined) delete process.env.OPENCODE_URL
-      else process.env.OPENCODE_URL = value
-    }
-  })
-
   test("maps harness identities to MCP agents through harness metadata", () => {
     expect(harnessAgent("claude")).toBe("claude")
     expect(harnessAgent("codex")).toBe("codex")
     expect(harnessAgent("cursor")).toBe("cursor")
-    expect(harnessAgent("opencode")).toBeNull()
     expect(harnessAgent("connection:openclaw")).toBeNull()
   })
 })
