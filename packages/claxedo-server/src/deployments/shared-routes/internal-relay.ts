@@ -1,6 +1,7 @@
+import { guardedWaitUntil } from "@claxedo/server-core/platform/http/background-work"
 import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import type { RelayTargetLookup, RelayTargetResult } from "@claxedo/server-core/adapters/relay-port"
-import { Hono, type Context } from "hono"
+import { Hono } from "hono"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ControlPlaneRequestTimeoutError } from "../../platform/runtime/timeout"
@@ -18,21 +19,6 @@ function authorized(request: Request, expected: string | undefined) {
   }
   // Without a configured token, only loopback callers may use the resolver routes.
   return isLoopbackLocalRequest(request)
-}
-
-/**
- * Worker-safe background scheduler: on Cloudflare Workers this is
- * `executionCtx.waitUntil` (keeps fire-and-forget work alive past the
- * response); on Node `executionCtx` throws, so callers fall back to `void`.
- */
-function guardedWaitUntil(c: Context): ((promise: Promise<unknown>) => void) | undefined {
-  try {
-    const ctx = c.executionCtx
-    if (typeof ctx?.waitUntil !== "function") return undefined
-    return (promise) => ctx.waitUntil(promise)
-  } catch {
-    return undefined
-  }
 }
 
 export type RuntimeAccessRevocationLookup = (args: {

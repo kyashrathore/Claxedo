@@ -24,6 +24,7 @@
  * is intentionally empty so the UI degrades gracefully instead of toasting.
  */
 
+import { guardedWaitUntil } from "@claxedo/server-core/platform/http/background-work"
 import { Hono } from "hono"
 import type { Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
@@ -538,15 +539,6 @@ async function harnessStatusResponse(c: Context, options: HostedShellRouteOption
   }
 }
 
-function guardedWaitUntil(c: Context) {
-  try {
-    const execution = c.executionCtx
-    if (typeof execution?.waitUntil !== "function") return
-    return (promise: Promise<unknown>) => execution.waitUntil(promise)
-  } catch {
-    return
-  }
-}
 
 async function signedProjects(c: Context, options: HostedShellRouteOptions, activateOwner = false) {
   if (options.authentication) {

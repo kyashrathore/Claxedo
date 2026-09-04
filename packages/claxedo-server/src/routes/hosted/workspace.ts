@@ -22,6 +22,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
+import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, rec, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
@@ -493,9 +494,13 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         }
 
         // Kick off provisioning. The lease state machine + driver.ensureHost are
-        // idempotent and re-polled by the app via /connection, so this is
-        // fire-and-forget: a slow cold-start must not block the create response.
-        void Promise.resolve()
+        // idempotent and re-polled by the app via /connection, so the response
+        // does not wait for it: a slow cold-start must not block the create.
+        // It is held open past the response (`waitUntil` on Workers) because
+        // workerd cancels detached work with the request, which left the first
+        // `ensure` — and the Agent Plugins runtime provisioning behind it — to
+        // whichever `/connection` poll came next.
+        keepAlivePastResponse(c, Promise.resolve()
           .then(async () => {
             const runtimePreparation = await options.prepareRuntime?.(workspaceId)
             const runtimeSecrets = runtimePreparation?.secrets ?? []
@@ -599,9 +604,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             //    `personal:<subject>`) would corrupt every per-org aggregate
             //    downstream, which is why the owner is a separate column rather
             //    than an org id we invent to make the count work.
-            void options.sandboxUsage?.recordLeaseTenant({ auth, workspaceId })
+            await Promise.resolve(options.sandboxUsage?.recordLeaseTenant({ auth, workspaceId })).catch(() => undefined)
           })
-          .catch(() => undefined)
+          .catch(() => undefined))
 
         return c.json({ workspaceId, directory })
       })

@@ -642,6 +642,28 @@ describe("workspace routes signed control plane authority", () => {
     expect(JSON.stringify(mocks.ensureWorkspace.mock.calls)).not.toContain("github-secret")
   })
 
+  test("signed cloud create holds provisioning open past the response on Workers", async () => {
+    const svc = services()
+    const ensure = vi.fn(async () => ({ status: "ready", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
+    svc.sandbox.sandboxManager = { ensure } as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+    const waitUntil = vi.fn()
+    const res = await app.request(
+      "http://localhost/create",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+        body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", remoteDirectory: "/work/demo" }),
+      },
+      undefined,
+      { waitUntil, passThroughOnException() {}, props: {} } as never,
+    )
+    expect(res.status).toBe(200)
+    expect(waitUntil).toHaveBeenCalledTimes(1)
+    await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
+    expect(ensure).toHaveBeenCalledWith("ws_1", expect.objectContaining({ workspaceRoot: "/work/demo" }))
+  })
+
   test("signed cloud create provisions through SandboxManager when composed", async () => {
     const svc = services()
     const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "eu-west" }))
