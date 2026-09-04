@@ -347,4 +347,15 @@ hides its section on the next read, and the machine-scan route and section are g
 - Verification surface: the owner asked to test in the staging web app rather than rebuilding the desktop for
   every change; plane changes are measured through `wrangler tail` plus any signed client, and UI changes are
   checked at `app-acc-stg-…claxedo.dev`.
+- 2026-09-05 (releases 83–84 measured): runtime/self 2.1–2.4 s (preparation 1.2 s, was 2.7–6.5); catalog warm
+  2.4 s plane-side (views 1.1–1.3 s, first cold read 4.3 s while the well-known cache fills). Release 84
+  (`8566333a9a`) reads the principal's identity row once per request in D1WorkspaceAuthority (it was paid four
+  or five times per catalog). Disable proven on both paths: signed through the desktop's account operation
+  (200, revision 9 → 10 → restored at 11, main.log shows each world applied) and unsigned in the local web app
+  (`POST /api/claxedo/plugins/activation` 200). Open: the staging web app in the Browser pane stalls every
+  cookie-credentialed request before it reaches the worker (anonymous requests fine; curl with a bogus cookie
+  fine) — a browser/edge-side gate, not a plane bug; the web build also fetches control routes on the app
+  origin and gets HTML back ("Something went wrong" when the workspace panel opens), and the Personal section
+  shows a control-plane error where the web has no machine to scan. The desktop re-applies each signed world
+  three or four times within seconds of a revision (redundant work, harmless).
 
