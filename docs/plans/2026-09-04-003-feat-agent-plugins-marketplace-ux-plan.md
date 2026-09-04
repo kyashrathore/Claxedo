@@ -358,4 +358,12 @@ hides its section on the next read, and the machine-scan route and section are g
   origin and gets HTML back ("Something went wrong" when the workspace panel opens), and the Personal section
   shows a control-plane error where the web has no machine to scan. The desktop re-applies each signed world
   three or four times within seconds of a revision (redundant work, harmless).
+- 2026-09-05 (Disable "still failing"): driving the signed desktop's own marketplace over CDP showed the real
+  failure — a toast "Could not change plugin: Agent plugin activation revision changed from 9 to 11". The pane
+  held a catalog read at revision 9 after another client moved activation state, every click sent the stale
+  `expectedRevision`, the plane answered 409, and nothing refreshed. Fixed in the client: AgentPluginRequestError
+  carries status and code, and withCurrentRevision re-reads the catalog and retries exactly once on a 409
+  (proven in the local web app: 409 → catalog → 200, no toast). The desktop needs a rebuild to pick it up; the
+  web app gets it on the next deploy. Still worth doing: refetch the marketplace catalog when the runtime sync
+  applies a newer revision, so the pane is never stale in the first place.
 
