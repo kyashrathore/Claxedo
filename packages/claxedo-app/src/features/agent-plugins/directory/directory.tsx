@@ -136,12 +136,15 @@ export function AgentPluginDirectory(props: {
     if (!current) return
     setPending(plugin.pluginInstanceId)
     try {
+      // A signed choice names the projects it covers. A deployment that lists
+      // none (a self-hosted box, or an account before its first project) has
+      // nothing to enumerate, so the choice is the user's cross-project default.
+      const projectIds = (current.projects ?? []).map((project) => project.id)
       const targetSelection = signed()
-        ? { scope: "projects" as const, projectIds: (current.projects ?? []).map((project) => project.id) }
+        ? projectIds.length > 0
+          ? { scope: "projects" as const, projectIds }
+          : { scope: "all-projects" as const }
         : undefined
-      if (signed() && targetSelection && targetSelection.projectIds.length === 0) {
-        throw new Error("Select at least one project")
-      }
       const result = await withCurrentRevision({
         revision: () => catalog()?.revision,
         reread,

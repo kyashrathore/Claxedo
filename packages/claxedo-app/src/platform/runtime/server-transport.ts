@@ -12,3 +12,15 @@ export function isLocalPersonalScope(input: { serverUrl?: string; directory?: st
 export function centralTransportForServer(serverUrl: string | undefined) {
   return isLocalPersonalScope({ serverUrl, directory: "/" }) ? "loopback" : "signed-web"
 }
+
+/**
+ * The central transport for the deployment the app was built against.
+ *
+ * A loopback URL alone says "this machine's own server", which has no accounts
+ * in the local product. A build with auth enabled is talking to a server that
+ * issues sessions — the self-hosted server with its embedded issuer runs on
+ * localhost too — so that build is signed web wherever the server lives.
+ */
+export function centralTransportForDeployment(input: { serverUrl: string | undefined; authEnabled: boolean }) {
+  return input.authEnabled ? ("signed-web" as const) : centralTransportForServer(input.serverUrl)
+}

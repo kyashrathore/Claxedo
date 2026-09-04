@@ -54,8 +54,15 @@ export const serverSelfHosted: Policy = {
   // -32 modules / -3 packages: retiring the hosted work-ledger service took its
   // host composition, the self-hosted capability seam, and the service package
   // with its transitive pins out of the single binary. Re-measured, no
-  // headroom: 123 modules and 32 packages.
-  ceilings: { modules: 123, packages: 32 },
+  // headroom: 129 modules and 36 packages. The last six modules and four
+  // packages are the local signed web composition (2026-09-05): the embedded
+  // issuer's browser descriptor and cookie bridge
+  // (`self-hosted-node/embedded-browser-auth.ts` over the shared
+  // `browser-auth-security` guard and the Better Auth native-client
+  // constants) and the local Agent Plugins module the self-hosted entry now
+  // mounts from `@claxedo/local-server/agent-plugins/local-composition`, the
+  // same module the desktop's server entry mounts.
+  ceilings: { modules: 129, packages: 36 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",

@@ -100,6 +100,7 @@ import {
 } from "@claxedo/server-core/authority/deployment-mode"
 import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
+import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBrowserSessionBearer } from "./embedded-browser-auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
@@ -962,6 +963,17 @@ export function createSelfHostedApp(
     // ones the signed control-plane routes accept.
     const embedded = getEmbeddedAuth()
     app.all("/api/auth/*", (c) => embedded.handler(c.req.raw))
+    // The browser half (embedded-browser-auth.ts): the descriptor the signed
+    // web app validates first, the guard cookie-authenticated mutations must
+    // pass, and the bridge that lets a session cookie reach the bearer
+    // verifier every signed route already uses. Present only behind an HTTPS
+    // public origin, which is what makes the session cookie `Secure`.
+    const browserDescriptor = embeddedBrowserAuthDescriptor()
+    if (browserDescriptor) {
+      app.use("/api/*", embeddedBrowserAuthSecurity(browserDescriptor))
+      app.use("/api/*", embeddedBrowserSessionBearer(browserDescriptor))
+      app.get("/api/claxedo/auth/descriptor", (c) => c.json(embeddedBrowserAuthDescriptor()))
+    }
   }
   app.route("/", JwksRoutes(process.env))
   app.route(
@@ -1310,6 +1322,8 @@ export type ControlPlaneStackOptions = {
   opencodeEmbedPath?: string
   opencodeWorkerPath?: string
   processObserver?: ProcessObserver
+  /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
+  routeContributions?: readonly ControlPlaneRouteContribution[]
 }
 
 export function captureControlPlaneStartupTelemetry(
@@ -1611,6 +1625,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     usageOutbox,
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
+    ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
     onOpencodeAccess: () => upstreamEvents?.start(),
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return
@@ -1668,6 +1683,7 @@ export function startServer(
     processObserver?: ProcessObserver
     opencodeEmbedPath?: string
     opencodeWorkerPath?: string
+    routeContributions?: readonly ControlPlaneRouteContribution[]
   } = {},
 ) {
   // `undefined` opencodeUrl => embedded engine (the default local composition).
@@ -1680,5 +1696,6 @@ export function startServer(
     ...(options.opencodeEmbedPath ? { opencodeEmbedPath: options.opencodeEmbedPath } : {}),
     ...(options.opencodeWorkerPath ? { opencodeWorkerPath: options.opencodeWorkerPath } : {}),
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
+    ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
   })
 }

@@ -2,6 +2,7 @@ import { defineConfig, loadEnv, type HtmlTagDescriptor, type Plugin, type UserCo
 import solidPlugin from "vite-plugin-solid"
 import tailwindcss from "@tailwindcss/vite"
 import { fileURLToPath } from "node:url"
+import { readFileSync } from "node:fs"
 import { resolveBrowserAuthBuildSelection } from "./vite.browser-auth"
 
 /**
@@ -82,6 +83,21 @@ const shikiThemesDist = normalizePath(
 )
 
 const isDemoBuild = process.env.CLAXEDO_BUILD_TARGET === "demo"
+
+/**
+ * Local signed web development runs the dev server over TLS: the browser
+ * client's auth contract requires exact HTTPS origins, and the `Secure`
+ * session cookie needs one. `script/dev-tls.ts` mints the certificate;
+ * `CLAXEDO_DEV_TLS=1` turns it on. Absent, the dev server stays plain HTTP.
+ */
+function devTls(): { key: Buffer; cert: Buffer } | undefined {
+  if (process.env.CLAXEDO_DEV_TLS?.trim() !== "1") return undefined
+  const dir = new URL("./.artifacts/dev-tls/", import.meta.url)
+  return {
+    key: readFileSync(new URL("key.pem", dir)),
+    cert: readFileSync(new URL("cert.pem", dir)),
+  }
+}
 const agentPluginsEnabled = process.env.CLAXEDO_AGENT_PLUGINS?.trim() === "1"
 
 /**
@@ -94,7 +110,13 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
   )
   // 2593 tracks DEFAULT_CLAXEDO_SERVER_PORT in claxedo-server (see
   // src/deployments/local/port.ts) — the port `claxedo-server dev` listens on.
-  const backendTarget = env.VITE_CLAXEDO_SERVER_URL || env.VITE_OPENCODE_BACKEND_URL || "http://127.0.0.1:2593"
+  // `CLAXEDO_DEV_PROXY_TARGET` names the server the dev proxy forwards to when
+  // the app's own origin is configured as its server (local signed web
+  // development: VITE_CLAXEDO_SERVER_URL is this dev server's HTTPS origin).
+  const backendTarget = process.env.CLAXEDO_DEV_PROXY_TARGET
+    || env.VITE_CLAXEDO_SERVER_URL
+    || env.VITE_OPENCODE_BACKEND_URL
+    || "http://127.0.0.1:2593"
   return {
     define: {
       __DEMO_ENABLED__: JSON.stringify(isDemoBuild || mode === "development"),
@@ -107,6 +129,7 @@ function cloudConfig({ mode }: { mode: string }): UserConfig {
       allowedHosts: true,
       port: Number(process.env.PORT) || 4444,
       strictPort: true,
+      ...(devTls() ? { https: devTls() } : {}),
       proxy: [
         "/agent",
         "/api",

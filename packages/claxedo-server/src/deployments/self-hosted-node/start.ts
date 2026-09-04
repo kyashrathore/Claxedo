@@ -80,12 +80,22 @@ export function selfHostedPosture(env: NodeJS.ProcessEnv) {
  * discovering that after the listener is up means the operator finds out from a
  * user rather than from a log line.
  */
-export function startSelfHostedServer(options: SelfHostedStartOptions) {
+export async function startSelfHostedServer(options: SelfHostedStartOptions) {
   const env = options.env ?? process.env
   // Asserted here as well as inside `createSelfHostedApp`, and deliberately so:
   // this runs before the port is bound and before any subsystem is started,
   // where a refusal costs nothing. The one inside the composition catches a
   // caller that reaches it another way.
   assertSelfHostedPosture(selfHostedPosture(env))
-  return startServer(options.port, options.opencodeUrl)
+  // The local Agent Plugins module (catalog, activation, machine discovery),
+  // composed the way the desktop's server entry composes it. Behind the same
+  // flag so a box that did not ask for the marketplace mounts none of it.
+  const agentPlugins = env.CLAXEDO_AGENT_PLUGINS?.trim() === "1"
+    ? await import("@claxedo/local-server/agent-plugins/local-composition")
+        .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition(env))
+    : undefined
+  await agentPlugins?.ready
+  return startServer(options.port, options.opencodeUrl, undefined, {
+    ...(agentPlugins ? { routeContributions: agentPlugins.routeContributions } : {}),
+  })
 }

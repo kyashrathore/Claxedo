@@ -178,6 +178,17 @@ function localUrl(url: string | undefined): boolean {
   }
 }
 
+function configuredOwnOrigin(url: string | undefined): string | undefined {
+  if (typeof window === "undefined" || !url) return undefined
+  try {
+    const configured = new URL(url)
+    if (configured.pathname !== "/" || configured.search || configured.hash) return undefined
+    return configured.origin === window.location.origin ? window.location.origin : undefined
+  } catch {
+    return undefined
+  }
+}
+
 function sameOriginForRemoteLocalBackend(url: string | undefined): string | undefined {
   if (typeof window === "undefined") return undefined
   // Only a page actually served over http(s) can double as its own API origin.
@@ -387,6 +398,13 @@ export function getClaxedoServerUrl(): string {
   // actual sidecar.
   if (cfg.base) return cfg.base
   const envUrl = envString(import.meta.env.VITE_CLAXEDO_SERVER_URL)
+  // The page's own origin, configured as the server, IS the server: the dev
+  // server proxies the API there (local signed web development runs one
+  // HTTPS origin for both halves). Rewriting it to a loopback address below
+  // would move the API to a second origin and lose the host-only session
+  // cookie.
+  const ownOrigin = configuredOwnOrigin(envUrl)
+  if (ownOrigin) return ownOrigin
   const remoteOrigin = sameOriginForRemoteLocalBackend(envUrl)
   if (remoteOrigin) return remoteOrigin
   const localOrigin = localBackendForCurrentHost(envUrl)
