@@ -28,7 +28,9 @@ import {
 // the two Agent Plugins ones, so the applied order matches production. 0018 and
 // 0019 are inert for this suite — 0018's `drop ... if exists` targets 0005's
 // tables, which this slice does not create, and nothing here reads an
-// activation row — but running them proves 0020 composes after them.
+// activation row — but running them proves 0020 composes after them. 0022 is
+// inert here for the same reason and is applied for the same one: it proves the
+// sandbox lease table composes after the connections tables.
 const MIGRATIONS = [
   "0001_service_installations.sql",
   "0002_workspace_authority.sql",
@@ -40,6 +42,7 @@ const MIGRATIONS = [
   "0019_agent_plugin_activations.sql",
   "0020_hosted_connections.sql",
   "0021_mcp_oauth_clients.sql",
+  "0022_sandbox_leases.sql",
 ]
 
 const NOW = 1_900_000_000_000
