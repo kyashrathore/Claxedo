@@ -58,6 +58,11 @@ jobs:
       - name: Install worker dependencies
         run: npm install
 
+      # sandbox-manager resolves @claxedo/sandbox-contract through its dist, which
+      # a fresh runner does not have; build the contract first.
+      - name: Build sandbox contract
+        run: bun run --cwd ../../../../sandbox-contract build
+
       - name: Build sandbox manager
         run: bun run --cwd ../../../../sandbox-manager build
 
