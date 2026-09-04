@@ -318,3 +318,21 @@ hides its section on the next read, and the machine-scan route and section are g
   3 ms CPU the request never left its first D1 await; whether placement removes them is the next measurement.
   Also fixed: a disabled plugin no longer reads as "Needs authentication" while the connection list is
   unreadable (status honours the effective activation and an unknown list).
+- 2026-09-04 (plane, continued): release 81 (placement + artifact memo) removed the hangs in a 3-minute sample and
+  brought `/userinfo`, `/sources`, and the descriptor to 0.1–0.5 s, but `/plugins` stayed at 3.7–3.9 s and
+  `/runtime/self` at 3.5–5.9 s with <200 ms CPU. Cause read from the code: every method of the D1 activation
+  store re-resolved the caller's scope through the authority (`usersMe`, then `resolveOrgId`) and re-authorized
+  the project per harness read, and the catalog made ~13 such calls per request (`revision` ×2, `listKnown`
+  once per candidate plus once more, `read` ×4 per candidate) — each a sequential cross-region hop. Fix
+  (`221397f37c`, staging release 82): the store memoizes scope and project authorization per request auth
+  object (fresh per request from `routeAuth`; failures not remembered), the catalog reads the retained list once
+  and awaits its independent reads together, and both read routes emit one `agent_plugins.timing` log line with
+  per-phase durations for `wrangler tail`.
+- 2026-09-04 (desktop): measuring release 82 from the app found the deeper bug the owner suspected. The account
+  service's clock is Unix SECONDS, but the refresh-failure cool-down compared it against `20_000` as
+  milliseconds: one 503 from a session refresh during the release's locked window answered every hosted
+  operation instantly with "could not renew the session: refresh failed: 503" for ~5.5 hours — no further
+  refresh attempted (one `refresh failed: 503` line in main.log, then zero requests reaching the plane) while the
+  rail still read "Signed in". Fixed by expressing the cool-down in seconds with a test that bites at the 20 s
+  boundary (mutation-checked). This is the mechanism behind "stuck on Signed in" after a deploy.
+
