@@ -9,18 +9,15 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { DialogSelectDirectory } from "@/app/dialogs/select-directory"
 import { useConfigOptional } from "@/app/providers/config"
 import { useServer } from "@/app/connection/server"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLanguage } from "@/platform/i18n/provider"
-import { DialogCreateProject } from "@/features/workspaces/ui/dialogs/create-project-dialog"
-import { checkServerHealthCached } from "@/app/connection/server-health"
 import { ensureLocalProject, refreshProjectInventory } from "../../features/workspaces/data/query/project-ensure"
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
-import { centralTransportForDeployment, centralTransportForServer } from "@/platform/runtime/transport"
+import { centralTransportForServer } from "@/platform/runtime/transport"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
 
 export default function Home() {
@@ -64,45 +61,9 @@ export default function Home() {
     navigate(workspaceRoute(workspaceId))
   }
 
-  async function chooseProject() {
-    async function resolve(result: string | string[] | null) {
-      if (Array.isArray(result)) {
-        for (const directory of result) {
-          await openProject(directory)
-        }
-      } else if (result) {
-        await openProject(result)
-      }
-    }
-
-    const pickFolder = async () => {
-      if (platform.openDirectoryPickerDialog && server.isLocal()) {
-        const result = await platform.openDirectoryPickerDialog?.({ title: language.t("command.project.open"), multiple: false })
-        return Array.isArray(result) ? result[0] : result ?? undefined
-      }
-      return new Promise<string | undefined>((done) => {
-        dialog.show(
-          () => <DialogSelectDirectory onSelect={(dir) => done(typeof dir === "string" ? dir : undefined)} />,
-          () => done(undefined),
-        )
-      })
-    }
-    // A project is a repository and a name; where it runs is decided later in
-    // the composer (see docs/plans/2026-09-05-003).
-    const signed = centralTransportForDeployment({ serverUrl: server.url, authEnabled: config?.authEnabled === true }) === "signed-web"
-    const health = await checkServerHealthCached({ url: server.url }, platform.fetch ?? globalThis.fetch)
-    dialog.show(
-      () => (
-        <DialogCreateProject
-          baseUrl={server.url}
-          localExecution={health.localExecution ?? !signed}
-          pickFolder={pickFolder}
-          onCreated={(project) => void resolve(project.checkoutDirectory)}
-        />
-      ),
-      () => void resolve(null),
-    )
-  }
+  // Creation lives in the composer's Project chip (the empty canvas mounts
+  // one); this only raises the intent.
+  const chooseProject = () => layout.projects.requestCreate()
 
   return (
     <div class="mx-auto mt-55 w-full md:w-auto px-4">

@@ -13,10 +13,11 @@ vi.mock("@/features/session/ui/components/session-context-row", () => ({
   },
 }))
 
+const sdkDirectory = vi.hoisted(() => ({ value: "/repo" }))
 vi.mock("@/features/session/app-ports", () => ({
   useShellQueryOptions: () => ({ projects: () => ({ queryKey: ["projects"], queryFn: () => [] }) }),
-  useLayout: () => ({ projects: { list: () => [], open: () => {} } }),
-  useSDK: () => ({ directory: "/repo" }),
+  useLayout: () => ({ projects: { list: () => [], open: () => {}, createRequests: () => 0, requestCreate: () => {} } }),
+  useSDK: () => ({ get directory() { return sdkDirectory.value } }),
   useServer: () => ({ projects: { touch: () => {} } }),
   // The local product's server answers no `localExecution` field; the view
   // then falls back to "unsigned means local".
@@ -70,6 +71,7 @@ const renderView = () =>
   ))
 
 afterEach(() => {
+  sdkDirectory.value = "/repo"
   captured.chips = []
   state.projects = []
   cleanup()
@@ -86,6 +88,19 @@ describe("NewSessionDesignView project chip create panel", () => {
   test("offers 'Create project…' as the chip's panel, not a footer action", () => {
     renderView()
     expect(projectChip()?.action).toBeUndefined()
+    expect(projectChip()?.panel?.label).toBe("Create project…")
+  })
+
+  // The empty canvas mounts the composer with no project at all.
+  test("with no project the chip reads Select project and is the only chip", () => {
+    sdkDirectory.value = ""
+    render(() => (
+      <NewSessionDesignView worktree="" workspaceKind="local" onWorktreeChange={() => {}} onWorkspaceKindChange={() => {}}>
+        <div />
+      </NewSessionDesignView>
+    ))
+    expect(captured.chips.map((chip) => chip.slot)).toEqual(["context-chip-project"])
+    expect(projectChip()?.label).toBe("Select project")
     expect(projectChip()?.panel?.label).toBe("Create project…")
   })
 

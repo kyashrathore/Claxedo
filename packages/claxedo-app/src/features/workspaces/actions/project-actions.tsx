@@ -8,7 +8,6 @@ import {
   message,
 } from "@/features/workspaces/app-ports"
 import { showToast } from "@opencode-ai/ui/toast"
-import { centralTransportForDeployment } from "@/platform/runtime/transport"
 import { validWorktree } from "@/platform/sync/worktree"
 
 import { api, apiBearerToken, getDefaultBaseUrl } from "@/platform/api/api"
@@ -19,7 +18,6 @@ import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId as routeIdFromProjects } from "@/platform/identity/workspace-route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
-import { DialogCreateProject } from "../ui/dialogs/create-project-dialog"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -105,7 +103,7 @@ export type ProjectActionProps = Pick<
     }
   }
   layout: {
-    projects: Pick<ActionProps["layout"]["projects"], "open" | "close" | "remove">
+    projects: Pick<ActionProps["layout"]["projects"], "open" | "close" | "remove" | "requestCreate">
   }
   platform: Pick<ActionProps["platform"], "platform" | "fetch" | "openLink">
 }
@@ -131,67 +129,47 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     }
     return props.state.layout.openSession(workspaceDir, "new", "New Session", { workspaceRouteId })
   }
-  const handleNewProject = () => {
-    async function handleProjectSelected(workspaceDir: string) {
-      props.flowLog("new project selected", {
-        workspaceDir,
-        routeDir: props.activeDirectory(),
-        routeSession: props.params.id,
+  /**
+   * A project the create route just made (from the composer's Project chip):
+   * refresh the inventory it is not in yet, open it, and land on a draft there.
+   */
+  const handleProjectCreated = async (project: { worktree: string }) => {
+    const workspaceDir = project.worktree
+    props.flowLog("new project selected", {
+      workspaceDir,
+      routeDir: props.activeDirectory(),
+      routeSession: props.params.id,
+    })
+
+    if (!validWorktree(workspaceDir)) {
+      showToast({
+        title: "Invalid project path",
+        description: workspaceDir,
+        variant: "error",
       })
-
-      if (!validWorktree(workspaceDir)) {
-        showToast({
-          title: "Invalid project path",
-          description: workspaceDir,
-          variant: "error",
-        })
-        return
-      }
-
-      // The server created the project (and its workspace) a moment ago; the
-      // cached inventory predates it, so route from a fresh one.
-      const projects = await refreshProjectInventory(props.projectInventoryActions.query()).catch(() => undefined)
-      const routeId = (Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : undefined)
-        ?? props.workspaceRouteId(workspaceDir)
-      if (!routeId) return
-      props.layout.projects.open(workspaceDir)
-      void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
-      const id = openProjectSessionSurface(workspaceDir, routeId)
-      if (id)
-        nav(workspaceSessionRoute(routeId), "new-project-selected", {
-          workspaceDir,
-          surfaceId: id,
-        })
-      props.dialog.close()
+      return
     }
 
-    // A project is a repository and a name; where it runs is decided later in
-    // the composer. This dialog is the create form's host for the empty canvas
-    // (no composer yet); inside a draft the Project chip renders the same form.
-    void (async () => {
-      const health = await props.serverHealth()
-      const signed = centralTransportForDeployment({
-        serverUrl: props.globalSDK.url,
-        authEnabled: props.config?.authEnabled === true,
-      }) === "signed-web"
-      const localExecution = health?.localExecution ?? !signed
-      void props.dialog.show(() => (
-        <DialogCreateProject
-          baseUrl={props.globalSDK.url}
-          localExecution={localExecution}
-          pickFolder={() =>
-            new Promise<string | undefined>((resolve) => {
-              void props.dialog.show(() => (
-                <DialogSelectDirectory onSelect={(dir) => resolve(typeof dir === "string" ? dir : undefined)} />
-              ))
-            })}
-          onCreated={(project) => {
-            if (project.checkoutDirectory) void handleProjectSelected(project.checkoutDirectory)
-          }}
-        />
-      ))
-    })()
+    const projects = await refreshProjectInventory(props.projectInventoryActions.query()).catch(() => undefined)
+    const routeId = (Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : undefined)
+      ?? props.workspaceRouteId(workspaceDir)
+    if (!routeId) return
+    props.layout.projects.open(workspaceDir)
+    void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
+    const id = openProjectSessionSurface(workspaceDir, routeId)
+    if (id)
+      nav(workspaceSessionRoute(routeId), "new-project-selected", {
+        workspaceDir,
+        surfaceId: id,
+      })
   }
+
+  /**
+   * "New Project" is not a dialog: creation lives in the composer's Project
+   * chip, so this only raises the intent and the mounted composer (a draft's,
+   * or the empty canvas's) opens its create panel.
+   */
+  const handleNewProject = () => props.layout.projects.requestCreate()
 
   /** Create a local worktree directly — no dialog */
   const handleNewLocalWorkspace = async (
@@ -559,6 +537,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
 
   return {
     handleNewProject,
+    handleProjectCreated,
     handleNewLocalWorkspace,
     handleNewCloudWorkspace,
     createWorkspaceDirectory,

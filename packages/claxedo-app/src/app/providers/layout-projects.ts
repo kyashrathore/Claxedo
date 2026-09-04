@@ -1,3 +1,5 @@
+import { createSignal, type Accessor } from "solid-js"
+import type { useServer } from "@/app/connection/server"
 import type { Project } from "@opencode-ai/sdk/v2"
 
 function isRejectedWorktree(dir: string) {
@@ -11,7 +13,8 @@ export type ProjectState = {
 }
 
 /** A predicate over a workspace directory (validity, closed-ness, …). */
-export type DirectoryPredicate = (directory: string) => boolean
+export type DirectoryFn<R> = (directory: string) => R
+export type DirectoryPredicate = DirectoryFn<boolean>
 
 export function sandboxRoots(projects: Project[] | undefined) {
   const map = new Map<string, string>()
@@ -278,4 +281,66 @@ export function canAutoOpenProject(input: {
   const root = resolveRoot(sandboxRoots(input.api), dir)
   if (input.ignoreClosed) return true
   return !input.closed(root)
+}
+
+export type LayoutProjectsServer = Pick<ReturnType<typeof useServer>, "isLocal" | "projects">
+
+/**
+ * The layout's `projects` API: the sidebar list, the open/close/expand
+ * operations the rail delegates to the server, and the "create a project"
+ * intent. Creation itself lives in the composer's Project chip; the rail's
+ * "New Project" and the empty canvas only raise `requestCreate`, and whichever
+ * composer is mounted opens its chip's create panel on the next
+ * `createRequests` value (a counter, so two requests in a row both register).
+ */
+export function createLayoutProjectsApi<List extends Accessor<unknown>>(deps: {
+  list: List
+  server: LayoutProjectsServer
+  rootFor: DirectoryFn<string>
+  validProjectRef: DirectoryPredicate
+  ensureDirectorySessionCache: DirectoryFn<void>
+  sidebarProjects: () => readonly { worktree: string; expanded?: boolean }[]
+}) {
+  const [createRequests, setCreateRequests] = createSignal(0)
+  const { server } = deps
+  return {
+    list: deps.list,
+    createRequests,
+    requestCreate() {
+      setCreateRequests((count) => count + 1)
+    },
+    open(directory: string) {
+      const root = deps.rootFor(directory)
+      if (!deps.validProjectRef(root)) return
+      deps.ensureDirectorySessionCache(root)
+      if (!shouldStoreOpenedProject({ root, sidebar: deps.sidebarProjects(), isLocal: server.isLocal(), valid: deps.validProjectRef })) return
+      server.projects.open(root)
+    },
+    close(directory: string) {
+      if (!server.isLocal()) return
+      server.projects.close(directory)
+    },
+    isClosed(directory: string) {
+      if (!server.isLocal()) return false
+      return server.projects.isClosed(directory)
+    },
+    remove(directory: string) {
+      server.projects.remove(directory)
+    },
+    expand(directory: string) {
+      server.projects.expand(directory)
+    },
+    collapse(directory: string) {
+      server.projects.collapse(directory)
+    },
+    toggle(directory: string) {
+      const project = deps.sidebarProjects().find((item) => item.worktree === directory)
+      if (!project) return
+      if (project.expanded) server.projects.collapse(directory)
+      else server.projects.expand(directory)
+    },
+    move(directory: string, toIndex: number) {
+      server.projects.move(directory, toIndex)
+    },
+  }
 }

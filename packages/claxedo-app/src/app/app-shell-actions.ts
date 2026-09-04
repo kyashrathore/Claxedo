@@ -63,12 +63,10 @@ export function useAppShellActions(input: { shell: AppShellState; params: Params
     flowLog: input.shell.flowLog,
   })
 
-  // `handleNewProject` (create-project dialog -> open project -> open a session
-  // surface on it) is only reachable from here, but the desktop menu's "Open
+  // `handleNewProject` raises the create-project intent the mounted composer's
+  // Project chip answers (its create panel). The desktop menu's "Open
   // Project..." entry declares `project.open` (app/entry/desktop-menu.ts) and
-  // was permanently disabled while nothing registered that id. The composer's
-  // Project chip does not go through the command: it hosts the create form in
-  // its own panel.
+  // was permanently disabled while nothing registered that id.
   const command = useCommand()
   const language = useLanguage()
   command.register("claxedo-project", () => [

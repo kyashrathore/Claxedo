@@ -43,7 +43,7 @@ vi.mock("@/features/session/ui/components/session-context-row", () => ({
 
 vi.mock("@/features/session/app-ports", () => ({
   useShellQueryOptions: () => ({ projects: () => ({ queryKey: ["projects"], queryFn: () => [] }) }),
-  useLayout: () => ({ projects: { list: () => [], open: () => {} } }),
+  useLayout: () => ({ projects: { list: () => [], open: () => {}, createRequests: () => 0, requestCreate: () => {} } }),
   useSDK: () => ({
     get directory() {
       return state.directory

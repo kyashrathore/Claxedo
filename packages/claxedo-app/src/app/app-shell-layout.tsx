@@ -129,6 +129,8 @@ export type AppShellLayoutProps = ParentProps<{
    * Callback to create a new project
    */
   onNewProject?: () => void
+  /** A project the empty canvas's composer created; opens it. */
+  onProjectCreated?: (project: { worktree: string }) => void
 
   /**
    * Callback to open settings
@@ -487,6 +489,7 @@ function AppShellLayoutBody(props: AppShellLayoutProps) {
           canUseDocuments={props.canUseDocuments}
           canCreateTerminal={workbenchController.canCreateTerminal}
           emptyDraftDirectory={emptyDraft.emptyDraftDirectory}
+          onProjectCreated={props.onProjectCreated}
           focusedPanelTarget={workbenchController.focusedPanelTarget}
           hasWorkspacePanelTarget={workbenchController.hasWorkspacePanelTarget}
           onCloseFocusedPane={(paneId, contentId) => closeFocusedPaneFromShortcut({

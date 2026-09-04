@@ -1,5 +1,12 @@
-import { Show, Suspense, createMemo, lazy, type Accessor } from "solid-js"
+import { Show, Suspense, createMemo, lazy, type Accessor, type ParentProps } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { SDKProvider } from "@/app/providers/sdk/sdk"
+import { useServer } from "@/app/connection/server"
+import { useConfigOptional } from "@/app/providers/config"
+import { centralTransportForDeployment } from "@/platform/runtime/transport"
+import { NewSessionDesignView, type NewSessionProjectSelection } from "@/features/session/ui/components/session-new-design-view"
+import { pickProjectFolderWith } from "@/features/session/ui/components/session-pick-project-folder"
 
 import { Workbench } from "../workbench/index"
 import { createMountIdleGovernor } from "../workbench/mount-idle-governor"
@@ -37,6 +44,8 @@ export function RailWorkbenchCanvas(props: {
   onCloseFocusedPane: (paneId: string, contentId: string | null) => void
   onDiagnostics?: () => void
   onNewProject?: () => void
+  /** A project the empty canvas's composer just created; the shell opens it. */
+  onProjectCreated?: (project: NewSessionProjectSelection) => void
 }) {
   const onboardingOverlayDirectory = createMemo(() => {
     if (!ONBOARDING_V1) return
@@ -69,9 +78,13 @@ export function RailWorkbenchCanvas(props: {
         renderEmpty={() => (
           <Show
             when={props.emptyDraftDirectory()}
-            fallback={ONBOARDING_V1
-              ? <OnboardingEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />
-              : <LegacyEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />}
+            fallback={
+              <NoProjectComposer onProjectCreated={props.onProjectCreated}>
+                {ONBOARDING_V1
+                  ? <OnboardingEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />
+                  : <LegacyEmptyState onDiagnostics={props.onDiagnostics} onNewProject={props.onNewProject} />}
+              </NoProjectComposer>
+            }
           >
             {(workspaceDir) => (
               <EmptyDraftSessionComposer
@@ -116,6 +129,42 @@ function LegacyEmptyState(props: { onDiagnostics?: () => void; onNewProject?: ()
           </Button>
         )}
       </Show>
+    </div>
+  )
+}
+
+/**
+ * The canvas before the first project exists: the same composer chip row a
+ * draft shows (`NewSessionDesignView`), mounted with no project, so the first
+ * project is created exactly where every later one is — the Project chip's
+ * "Create project…" panel. The full draft pane needs a project directory for
+ * its provider chain, so the pane below stays for the empty-draft-with-project
+ * case; this only hosts the chip row over the empty-state copy.
+ */
+function NoProjectComposer(props: ParentProps<{ onProjectCreated?: (project: NewSessionProjectSelection) => void }>) {
+  const server = useServer()
+  const config = useConfigOptional()
+  const dialog = useDialog()
+  const signed = () =>
+    centralTransportForDeployment({ serverUrl: server.url, authEnabled: config?.authEnabled === true }) === "signed-web"
+  return (
+    <div data-testid="no-project-composer" class="flex h-full w-full flex-col">
+      <SDKProvider directory="">
+        <NewSessionDesignView
+          worktree=""
+          workspaceKind="local"
+          onWorktreeChange={() => {}}
+          onWorkspaceKindChange={() => {}}
+          signedControlPlane={signed()}
+          sandboxEnabled={config?.sandboxEnabled}
+          pickProjectFolder={pickProjectFolderWith(dialog)}
+          onProjectChange={(_directory, project) => props.onProjectCreated?.(project)}
+        >
+          {/* The composer lifts its body over the chip row's bottom padding;
+              give the empty-state copy the room a prompt card would take. */}
+          <div class="px-3 pb-2 pt-6">{props.children}</div>
+        </NewSessionDesignView>
+      </SDKProvider>
     </div>
   )
 }

@@ -61,8 +61,10 @@ There is no New Project dialog. The draft composer is the one surface:
 - [x] Environment lives on the project; cloud provisioning and the supervisor read `projectEnv(project_id)`
       (route + supervisor call sites; the second-sandbox case is covered at the route level only).
 - [ ] Hosted plane: same contract on D1. (Next slice; the D1 `projects` table has no env column yet.)
-- [x] No desktop-style New Project flow remains: the rail's "New Project" and the empty canvas host the
-      same `ProjectCreateForm` in a dialog; the composer's Project chip hosts it in its panel. Tests:
+- [x] No New Project dialog remains anywhere. The empty canvas mounts the same composer chip row
+      (`NewSessionDesignView` with no project; the chip reads "Select project") and the rail's "New
+      Project" only raises `layout.projects.requestCreate()`, which the mounted composer's Project
+      chip answers by opening its create panel. Tests:
       `session-new-workspace-options.test.ts` (rule), `projects-route.test.ts` (route, 11 cases),
       `session-new-design-view*.vitest.tsx` (chip panel + environment options).
 
@@ -126,3 +128,10 @@ authority denied access") for a folder project on the signed server; the hosted 
   "Runs after creating a new workspace (worktree)") and is persisted through the engine's project
   update (`Project.Commands`, `PATCH /project/:id`). The environment editor joins it there.
 
+Owner correction (2026-09-05, late): the dialog host for the rail / empty canvas was wrong — "a
+session composer UI, exact same". Replaced by the composer chip row on the empty canvas plus the
+create intent on the layout's projects API (`createLayoutProjectsApi`, split out of `layout.tsx`).
+Proven live from a wiped store: empty canvas → chip "Select project" → rail "New Project" opens the
+chip panel → Select project → create → lands in the new project's draft. The full draft pane
+(prompt input included) still needs a project directory for its provider chain; a project-less
+draft pane is a separate slice (the pane suspends forever inside a transition without one).

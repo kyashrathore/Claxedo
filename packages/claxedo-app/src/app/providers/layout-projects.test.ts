@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import {
   canAutoOpenProject,
+  createLayoutProjectsApi,
   planProjectColorAssignment,
   projectCatalog,
   resolveRoot,
@@ -577,5 +578,53 @@ describe("the rail is the catalog, the store is intent", () => {
     })
 
     expect(catalog.list).toEqual([])
+  })
+})
+
+describe("createLayoutProjectsApi", () => {
+  function api(overrides: Partial<Parameters<typeof createLayoutProjectsApi>[0]> = {}) {
+    const calls: string[] = []
+    const record = (name: string) => (directory: string) => {
+      calls.push(`${name}:${directory}`)
+    }
+    const server = {
+      isLocal: () => true,
+      projects: {
+        open: record("open"),
+        close: record("close"),
+        isClosed: (directory: string) => {
+          calls.push(`isClosed:${directory}`)
+          return false
+        },
+        remove: record("remove"),
+        expand: record("expand"),
+        collapse: record("collapse"),
+        move: (directory: string) => calls.push(`move:${directory}`),
+      },
+    }
+    const projects = createLayoutProjectsApi({
+      list: () => [],
+      server,
+      rootFor: (directory) => directory,
+      validProjectRef,
+      ensureDirectorySessionCache: (directory) => calls.push(`cache:${directory}`),
+      sidebarProjects: () => [],
+      ...overrides,
+    })
+    return { projects, calls }
+  }
+
+  test("requestCreate is a counter the mounted composer can answer", () => {
+    const { projects } = api()
+    expect(projects.createRequests()).toBe(0)
+    projects.requestCreate()
+    projects.requestCreate()
+    expect(projects.createRequests()).toBe(2)
+  })
+
+  test("open resolves the root, warms its cache, and stores it on a local server", () => {
+    const { projects, calls } = api()
+    projects.open("/repo/one")
+    expect(calls).toEqual(["cache:/repo/one", "open:/repo/one"])
   })
 })

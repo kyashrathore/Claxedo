@@ -143,7 +143,7 @@ export function NewSessionDesignView(props: {
   const creatingWorkspace = createMemo(() => workspaceState().creatingWorkspace)
   const projects = createMemo(() => {
     const roots = inventoryProjects().map((project) => project.worktree)
-    if (roots.includes(projectRoot())) return roots
+    if (!projectRoot() || roots.includes(projectRoot())) return roots
     return [projectRoot(), ...roots]
   })
   // The project options are directory paths. Cloud workspaces live in
@@ -290,13 +290,16 @@ export function NewSessionDesignView(props: {
         // `icon` is the fallback the chip uses when no avatar resolves; in practice
         // `projectRoot()` always does, so the avatar is what renders.
         icon: <Icon name="folder" size="small" />,
-        avatar: projectAvatar(projectRoot()),
-        label: projectLabel(projectRoot()),
+        // The empty canvas mounts this composer with no project at all: the
+        // chip then reads "Select project" and is the one place to create one.
+        avatar: projectRoot() ? projectAvatar(projectRoot()) : undefined,
+        label: projectRoot() ? projectLabel(projectRoot()) : "Select project",
         ariaLabel: "Project",
         search: { placeholder: "Search projects" },
         groupLabel: "Projects",
-        emptyMessage: "No projects",
+        emptyMessage: "No projects yet",
         current: projectRoot(),
+        openPanelRequest: layout.projects.createRequests,
         options: projects().map<ContextChipOption>((value) => ({
           value,
           label: projectLabel(value),
@@ -341,6 +344,8 @@ export function NewSessionDesignView(props: {
         },
       },
     ]
+    // No project yet: nothing to choose an environment, workspace or branch for.
+    if (!projectRoot()) return chips
     if (selfHostedWorkspace()) return chips
 
     if (environmentOptions().length > 0) {

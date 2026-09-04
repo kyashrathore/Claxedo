@@ -119,6 +119,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
     handleWorkspaceSelect,
     handleSessionSelect,
     handleNewProject,
+    handleProjectCreated,
     handleSettings,
     handleUsage,
     handleHelp,
@@ -152,6 +153,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onWorkspaceSelect={handleWorkspaceSelect}
         onSessionSelect={handleSessionSelect}
         onNewProject={handleNewProject}
+        onProjectCreated={handleProjectCreated}
         onSettings={handleSettings}
         onUsage={handleUsage}
         onHelp={handleHelp}
