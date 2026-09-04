@@ -1,3 +1,4 @@
+import { plainHostedInput } from "./agent-plugin-account-api"
 import type { AccountPort, HostedOperationName } from "@/platform/account/account-port"
 import type { AgentPluginStatusResult } from "@/features/agent-plugins/api"
 import {
@@ -14,7 +15,7 @@ async function run(
   operation: HostedOperationName,
   input?: Record<string, unknown>,
 ): Promise<AgentPluginStatusResult> {
-  return await account.run<AgentPluginStatusResult>(operation, input)
+  return await account.run<AgentPluginStatusResult>(operation, plainHostedInput(input))
 }
 
 function record(value: unknown): value is Record<string, unknown> {

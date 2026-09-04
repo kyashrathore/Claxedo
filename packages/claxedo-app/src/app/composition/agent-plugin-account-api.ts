@@ -7,12 +7,23 @@ import {
   type AgentPluginStatusResult,
 } from "@/features/agent-plugins/api"
 
+/**
+ * Hosted inputs cross Electron's IPC, which structured-clones them. Catalog
+ * data arrives through the query cache as Solid store proxies, and a body
+ * that carries one ("harnessIds" straight from the catalog) fails with "An
+ * object could not be cloned". Bodies are JSON by contract, so a JSON round
+ * trip is exactly the plain copy the channel needs.
+ */
+export function plainHostedInput<T extends Record<string, unknown> | undefined>(input: T): T {
+  return input === undefined ? input : (JSON.parse(JSON.stringify(input)) as T)
+}
+
 async function run(
   account: AccountPort,
   operation: HostedOperationName,
   input?: Record<string, unknown>,
 ): Promise<AgentPluginStatusResult> {
-  return await account.run<AgentPluginStatusResult>(operation, input)
+  return await account.run<AgentPluginStatusResult>(operation, plainHostedInput(input))
 }
 
 /** Signed desktop Agent Plugins client over the credential-owning AccountPort. */

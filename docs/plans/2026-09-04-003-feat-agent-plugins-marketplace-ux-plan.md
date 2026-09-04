@@ -296,3 +296,13 @@ hides its section on the next read, and the machine-scan route and section are g
   Still open: measured signed-catalog latency (the in-renderer probe caught the account in `unavailable`
   because the descriptor validation had just failed on the edge; retry-once is in, but the plane's flakiness
   remains the owner's environment issue), and the curated harness-official sources slice.
+- 2026-09-04 (late night): the rail wipe is closed — the instrumented trace shows every boot transition
+  (`local` → `signed:signed-user` → `signed:<id>`) as a refresh and the project count never drops. The interim
+  signed principal's placeholder id is now one exported constant (`UNNAMED_SIGNED_USER_ID`). Signed hosted
+  operations no longer re-fetch the auth descriptor per call (memoized within its validity, handed out as a
+  copy). Hosted inputs are sent as plain JSON copies: the catalog's store proxies broke Electron's structured
+  clone ("An object could not be cloned") on Disable. The marketplace is dropped from persisted workbench
+  state, so it is never the landing surface after a relaunch. Measured from inside the renderer against
+  staging: catalog 3.6–3.9 s, sources 2.9 s, with one 20 s stall and one ECONNRESET in the same minute;
+  plain `curl`/Node fetches of `/health` from this machine ranged 0.3–1.8 s with 1.1 s TLS connects, so the
+  remaining slowness is this network's path to the edge plus the plane's own work, not the app.
