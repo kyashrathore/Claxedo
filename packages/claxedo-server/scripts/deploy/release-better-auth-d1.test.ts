@@ -216,6 +216,76 @@ describe("single-artifact Better Auth D1 release", () => {
     expect(subprocess.CLAXEDO_RELAY_BUILD_ID).toBe("relay-absent-v1")
   })
 
+  test("full-hosted selects the Agent Plugins full-hosted candidate with its driver inputs, and only for cutover", () => {
+    const browserBuildId = `sha256:${"c".repeat(64)}`
+    const fullHostedEnv = {
+      ...env,
+      CLAXEDO_SANDBOX_POSTURE: "full-hosted",
+      CLAXEDO_SANDBOX_DRIVER: "cloudflare",
+      CLAXEDO_PRODUCTION_CREDENTIALS_KV_NAMESPACE_ID: "8ba5baa64c82449080d36d3008208fa9",
+      CLAXEDO_PRODUCTION_SANDBOX_WORKER_URL: "https://sandbox.claxedo.test",
+      CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT: String(Date.now() + 86_400_000),
+      CLAXEDO_ENVIRONMENT_ID: "production",
+      CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID: "org_deployment",
+      CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME: "My deployment",
+      CLAXEDO_CANARY_JOURNEY_ID: "journey-cutover-0001",
+    }
+    const release = betterAuthD1ReleaseInputs(fullHostedEnv, "production", {
+      mode: "cutover",
+      browserBuildId,
+      agentPlugins: true,
+    })
+    expect(release.sandbox).toEqual({ driver: "cloudflare" })
+    expect(release.requiredSecrets).toContain("CLOUDFLARE_SANDBOX_API_TOKEN")
+    expect(release.runtimeVariables).toContainEqual(["CLAXEDO_SANDBOX_DRIVER", "cloudflare"])
+    expect(release.runtimeVariables).toContainEqual(["CLOUDFLARE_SANDBOX_WORKER_URL", "https://sandbox.claxedo.test"])
+    const config = renderBetterAuthD1WranglerConfig({ staging: false, ...release })
+    expect(config).toContain('CLAXEDO_SANDBOX_POSTURE = "full-hosted"')
+    expect(config).toContain(
+      'main = "../src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.full-hosted.cf.ts"',
+    )
+    expect(config).toContain('binding = "CLAXEDO_AGENT_PLUGINS"')
+    const manifest = betterAuthD1DeploymentManifest({
+      release,
+      workerBuildId: `sha256:${"a".repeat(64)}`,
+      platformVersionId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      authConfigurationId: `sha256:${"b".repeat(64)}`,
+    })
+    expect(manifest).toMatchObject({ sandboxPosture: "full-hosted", sandboxDriver: "cloudflare" })
+    expect(JSON.stringify(manifest)).not.toContain("TOKEN")
+
+    // The plain candidate cannot carry a sandbox provider, and the locked
+    // train over the same environment still renders control-plane-only.
+    expect(() => betterAuthD1ReleaseInputs(fullHostedEnv, "production", { mode: "cutover", browserBuildId })).toThrow(
+      /requires the Agent Plugins candidate/,
+    )
+    const locked = betterAuthD1ReleaseInputs(fullHostedEnv, "production")
+    expect(locked.sandbox).toBeUndefined()
+    expect(renderBetterAuthD1WranglerConfig({ staging: false, ...locked })).toContain('CLAXEDO_SANDBOX_POSTURE = "control-plane-only"')
+    expect(locked.runtimeVariables.some(([name]) => name === "CLAXEDO_SANDBOX_DRIVER")).toBe(false)
+  })
+
+  test("a secret carried by the release file rides the tagged version instead of needing a prior secret put", async () => {
+    const { mkdtemp, writeFile, chmod } = await import("node:fs/promises")
+    const { tmpdir } = await import("node:os")
+    const dir = await mkdtemp(`${tmpdir()}/claxedo-release-secrets-`)
+    const file = `${dir}/secrets.json`
+    await writeFile(file, JSON.stringify({ CLOUDFLARE_SANDBOX_API_TOKEN: "rotated" }))
+    await chmod(file, 0o600)
+    const resolved = await resolveReleaseSecretsFile(
+      { CLAXEDO_RELEASE_SECRETS_FILE: file },
+      ["BETTER_AUTH_SECRET", "CLOUDFLARE_SANDBOX_API_TOKEN"],
+    )
+    expect(resolved?.names).toEqual(["CLOUDFLARE_SANDBOX_API_TOKEN"])
+    const inventory = JSON.stringify([{ name: "BETTER_AUTH_SECRET" }])
+    // The Worker inventory lacks the new secret, and that is fine only for the
+    // name the file supplies.
+    expect(() =>
+      requireSecretInventory(inventory, ["BETTER_AUTH_SECRET", "CLOUDFLARE_SANDBOX_API_TOKEN"].filter((name) => !resolved?.names.includes(name))),
+    ).not.toThrow()
+    expect(() => requireSecretInventory(inventory, ["BETTER_AUTH_SECRET", "CLOUDFLARE_SANDBOX_API_TOKEN"])).toThrow(/missing remote Worker secrets/)
+  })
+
   test("passes the paired recovery epoch to its migration subprocess", () => {
     const release = betterAuthD1ReleaseInputs(env, "staging")
     const subprocess = betterAuthD1ReleaseSubprocessEnvironment({

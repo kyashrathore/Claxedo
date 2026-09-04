@@ -81,6 +81,8 @@ const ENTRIES = [
 const CLOUD_ENTRIES = ENTRIES.filter((item) => item.name !== "self-hosted-node")
 const BETTER_AUTH_D1_LOCKED_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
 const BETTER_AUTH_D1_CANDIDATE_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
+const BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY =
+  "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.full-hosted.cf.ts"
 const BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY =
   "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.cf.ts"
 const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.ts"
@@ -224,6 +226,32 @@ describe("server deployment entry closures", () => {
     expect(
       feature.packages.filter((name) =>
         ["@claxedo/local-server", "@claxedo/documents-service", "@claxedo/wakes", "@polar-sh/sdk", "convex"].includes(name),
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps sandbox providers out of every control-plane-only candidate and inside the full-hosted one", () => {
+    const providerMarkers = ["sandbox-manager/src/drivers/", "src/sandbox/stores/d1.ts", "hosted-sandbox-driver.ts"]
+    for (const entry of [BETTER_AUTH_D1_CANDIDATE_ENTRY, BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY]) {
+      const files = closure(entry, { runtimeOnly: true }).modules.map((module) => module.relative)
+      expect(files.filter((file) => providerMarkers.some((marker) => file.includes(marker)))).toEqual([])
+    }
+    const fullHosted = closure(BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, { runtimeOnly: true })
+    const files = fullHosted.modules.map((module) => module.relative)
+    expect(fullHosted.unresolved).toEqual([])
+    expect(fullHosted.opaque).toEqual([])
+    expect(files).toContain(BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY)
+    expect(files).toContain("src/authority/adapters/worker/hosted-sandbox-driver.ts")
+    expect(files).toContain("src/sandbox/stores/d1.ts")
+    // The provider SDKs are package edges of the driver composer, not source
+    // files of this package; the composer itself is the edge that matters.
+    expect(fullHosted.packages).toContain("@claxedo/sandbox-manager")
+    // Still no desktop product, billing, or the retired stack.
+    expect(
+      files.filter((file) =>
+        ["better-auth-d1-locked-worker", "packages/claxedo-local-server/src", "billing/", "convex"].some((value) =>
+          file.toLowerCase().includes(value),
+        ),
       ),
     ).toEqual([])
   })

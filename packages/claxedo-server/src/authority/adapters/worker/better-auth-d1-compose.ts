@@ -1,4 +1,5 @@
 import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
+import type { SandboxDriver, SandboxLeaseStore } from "@claxedo/sandbox-manager"
 import { oauthProviderAuthServerMetadata } from "@better-auth/oauth-provider"
 import type { D1Database } from "@cloudflare/workers-types"
 import { Hono } from "hono"
@@ -91,6 +92,12 @@ export type BetterAuthD1UserDeployedCompositionInput = {
   now?: () => number
   /** Bound by feature entries that enable the hosted credential store (Agent Plugins). */
   credentialsNamespace?: CloudflareKvNamespaceBinding
+  /**
+   * The full-hosted entry's sandbox driver and durable lease store. Present
+   * exactly when `CLAXEDO_SANDBOX_POSTURE=full-hosted`; the composition refuses
+   * every other combination so a deployment never half-promises cloud VMs.
+   */
+  sandbox?: { driver: SandboxDriver; leaseStore: SandboxLeaseStore }
 }
 
 export type BetterAuthD1UserDeployedComposition = {
@@ -131,7 +138,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
   }
   const deploymentId = required(input.env.CLAXEDO_DEPLOYMENT_ID, "CLAXEDO_DEPLOYMENT_ID")
   const environmentId = required(input.environmentId, "environmentId")
-  requireProfile(input.env)
+  requireProfile(input.env, input.sandbox)
   const configured = resolveBetterAuthConfiguration({
     env: input.env,
     ...(input.emailSender ? { emailSender: input.emailSender } : {}),
@@ -211,6 +218,7 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     privateSessionAuthority: authority,
     turnAuthority: authority,
     ...(input.credentialsNamespace ? { credentialsNamespace: input.credentialsNamespace } : {}),
+    ...(input.sandbox ? { sandbox: input.sandbox } : {}),
     userHostedResolver: createD1UserHostedTargetResolver(input.controlPlaneDatabase, {
       ...(input.now ? { now: input.now } : {}),
       deploymentId,
@@ -222,15 +230,20 @@ export function composeBetterAuthD1UserDeployedControlPlane(
     options: {
       authentication,
       serviceCatalog,
-      cloudWorkspaceAdmission: async () => ({
-        status: 403,
-        body: {
-          error: {
-            code: "cloud_workspace_capability_unavailable",
-            message: "This user-deployed control-plane-only profile does not provide cloud workspace execution",
-          },
-        },
-      }),
+      // User-deployed has no billing tier: with a composed sandbox the owner's
+      // organization is entitled to cloud workspaces; without one the answer
+      // names the posture instead of a 404.
+      cloudWorkspaceAdmission: input.sandbox
+        ? async () => undefined
+        : async () => ({
+            status: 403,
+            body: {
+              error: {
+                code: "cloud_workspace_capability_unavailable",
+                message: "This user-deployed control-plane-only profile does not provide cloud workspace execution",
+              },
+            },
+          }),
       product: STATIC_PRODUCT_DESCRIPTORS["user-deployed"],
       requestGuardExemptions: [],
       userDeployedIdentityAdmission: {
@@ -314,7 +327,7 @@ function betterAuthDescriptor(
   } as const satisfies AuthAdapterDescriptor
 }
 
-function requireProfile(env: HostedWorkerEnv) {
+function requireProfile(env: HostedWorkerEnv, sandbox: BetterAuthD1UserDeployedCompositionInput["sandbox"]) {
   if (env.CLAXEDO_ADAPTER_PROFILE !== "better-auth-d1") {
     throw new HostedWorkerCompositionError(
       "adapter_profile_mismatch",
@@ -327,18 +340,33 @@ function requireProfile(env: HostedWorkerEnv) {
       "User-deployed Better Auth + D1 composition requires CLAXEDO_PRODUCT_POSTURE=user-deployed",
     )
   }
-  if (env.CLAXEDO_SANDBOX_POSTURE !== "control-plane-only") {
-    throw new HostedWorkerCompositionError(
-      "sandbox_posture_unsupported",
-      "Better Auth + D1 currently supports only control-plane-only because no D1 durable sandbox lease store is implemented",
-    )
+  const posture = env.CLAXEDO_SANDBOX_POSTURE
+  const selectedDriver = env.CLAXEDO_SANDBOX_DRIVER?.trim()
+  if (posture === "control-plane-only") {
+    if (selectedDriver || sandbox) {
+      throw new HostedWorkerCompositionError(
+        "sandbox_posture_unsupported",
+        "control-plane-only Better Auth + D1 must not configure CLAXEDO_SANDBOX_DRIVER or inject a sandbox",
+      )
+    }
+    return
   }
-  if (env.CLAXEDO_SANDBOX_DRIVER?.trim()) {
-    throw new HostedWorkerCompositionError(
-      "sandbox_posture_unsupported",
-      "control-plane-only Better Auth + D1 must not configure CLAXEDO_SANDBOX_DRIVER",
-    )
+  if (posture === "full-hosted") {
+    // The lease store lives in CONTROL_PLANE_DB (sandbox/stores/d1.ts); the
+    // driver is the full-hosted entry's, selected by the same variable the
+    // provider-neutral plane checks it against.
+    if (!selectedDriver || !sandbox || sandbox.driver.id !== selectedDriver) {
+      throw new HostedWorkerCompositionError(
+        "sandbox_posture_unsupported",
+        "full-hosted Better Auth + D1 requires CLAXEDO_SANDBOX_DRIVER and a composed sandbox driver of that id with its D1 lease store",
+      )
+    }
+    return
   }
+  throw new HostedWorkerCompositionError(
+    "sandbox_posture_unsupported",
+    "Better Auth + D1 supports CLAXEDO_SANDBOX_POSTURE control-plane-only or full-hosted",
+  )
 }
 
 function introspectionSecret(env: HostedWorkerEnv, configured: BetterAuthConfiguration) {

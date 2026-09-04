@@ -29,6 +29,18 @@ const BETTER_AUTH_D1_LIVE_SYNC_MIGRATION_BRIDGE_ARTIFACT =
   "user-deployed-better-auth-d1-live-sync-migration-bridge" as const
 const BETTER_AUTH_D1_CUTOVER_ARTIFACT = "user-deployed-better-auth-d1-candidate" as const
 const BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_ARTIFACT = "user-deployed-better-auth-d1-candidate-agent-plugins" as const
+const BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_FULL_HOSTED_ARTIFACT =
+  "user-deployed-better-auth-d1-candidate-agent-plugins-full-hosted" as const
+
+export type BetterAuthD1SandboxDriver = "cloudflare" | "daytona" | "exe" | "fetch"
+
+/** The secret each full-hosted driver needs on the Worker, checked against the inventory before release. */
+const SANDBOX_DRIVER_SECRETS: Readonly<Record<BetterAuthD1SandboxDriver, readonly string[]>> = Object.freeze({
+  cloudflare: ["CLOUDFLARE_SANDBOX_API_TOKEN"],
+  daytona: ["DAYTONA_API_KEY"],
+  exe: ["EXE_DEV_API_TOKEN"],
+  fetch: [],
+})
 const publicDnsResolver = new Resolver()
 publicDnsResolver.setServers(["1.1.1.1", "1.0.0.1"])
 
@@ -114,7 +126,8 @@ export function betterAuthD1DeploymentManifest(input: {
     environment: input.release.environment,
     adapterProfile: "better-auth-d1" as const,
     productPosture: "user-deployed" as const,
-    sandboxPosture: "control-plane-only" as const,
+    sandboxPosture: input.release.sandbox ? ("full-hosted" as const) : ("control-plane-only" as const),
+    ...(input.release.sandbox ? { sandboxDriver: input.release.sandbox.driver } : {}),
     workerBuildId: input.workerBuildId,
     platformVersionId: input.platformVersionId,
     browserBuildId: input.release.browserBuildId,
@@ -228,12 +241,24 @@ export function betterAuthD1ReleaseInputs(
   options: Readonly<{ mode: BetterAuthD1ReleaseMode; browserBuildId?: string; agentPlugins?: boolean }> = { mode: "locked" },
 ) {
   const profile = resolveDeploymentProfileFromEnv(env)
-  if (
-    profile.adapterProfile !== "better-auth-d1" ||
-    profile.productPosture !== "user-deployed" ||
-    profile.sandboxPosture !== "control-plane-only"
-  )
-    throw new Error("Better Auth D1 release supports only user-deployed control-plane-only")
+  if (profile.adapterProfile !== "better-auth-d1" || profile.productPosture !== "user-deployed") {
+    throw new Error("Better Auth D1 release supports only the user-deployed product")
+  }
+  // Full-hosted is a cutover-only, Agent Plugins-only artifact: the certified
+  // candidate that carries a sandbox provider is the feature candidate, and
+  // the locked/bootstrap train never executes workspaces.
+  // The locked/bootstrap train never executes workspaces, so a full-hosted
+  // profile only shapes the cutover candidate; a locked preflight over the same
+  // environment still renders the control-plane-only locked Worker.
+  if (profile.sandboxPosture === "full-hosted" && options.mode === "cutover" && !options.agentPlugins) {
+    throw new Error("full-hosted Better Auth D1 requires the Agent Plugins candidate (--agent-plugins)")
+  }
+  const sandbox = profile.sandboxPosture === "full-hosted" && options.mode === "cutover"
+    ? { driver: profile.sandboxDriver as BetterAuthD1SandboxDriver }
+    : undefined
+  if (sandbox && !(sandbox.driver in SANDBOX_DRIVER_SECRETS)) {
+    throw new Error(`Better Auth D1 full-hosted supports drivers ${Object.keys(SANDBOX_DRIVER_SECRETS).join(", ")}; got ${sandbox.driver}`)
+  }
   if (env.CLAXEDO_WORKER_BUILD_ID?.trim() || env.CLAXEDO_BROWSER_BUILD_ID?.trim()) {
     throw new Error("Worker and browser build IDs are derived from emitted artifacts and must not be supplied")
   }
@@ -332,6 +357,19 @@ export function betterAuthD1ReleaseInputs(
           (environment === "staging" ? "claxedo-agent-plugins-staging" : "claxedo-agent-plugins"),
       }
     : undefined
+  // The driver's own configuration is release input too. Only the cloudflare
+  // driver's sandbox Worker URL is a variable here; its token and the other
+  // drivers' keys are Worker secrets checked against the inventory.
+  const sandboxVariables: Array<readonly [string, string]> = sandbox
+    ? [
+        ["CLAXEDO_SANDBOX_DRIVER", sandbox.driver],
+        ...(sandbox.driver === "cloudflare"
+          ? ([["CLOUDFLARE_SANDBOX_WORKER_URL", exactHttpsOrigin(env, `CLAXEDO_${environment.toUpperCase()}_SANDBOX_WORKER_URL`).origin]] as const)
+          : []),
+        ...(sandbox.driver === "daytona" ? ([["CLAXEDO_DAYTONA_SNAPSHOT", required(env, "CLAXEDO_DAYTONA_SNAPSHOT")]] as const) : []),
+        ...(sandbox.driver === "fetch" ? ([["CLAXEDO_SANDBOX_DRIVER_URL", exactHttpsOrigin(env, "CLAXEDO_SANDBOX_DRIVER_URL").origin]] as const) : []),
+      ]
+    : []
   const candidateStateRevision = previousStateRevision === undefined ? 0 : previousStateRevision + 1
   const candidateOperationId =
     previousStateRevision === undefined ? `initialize:${releaseId}` : required(env, "CLAXEDO_RELEASE_OPERATION_ID")
@@ -355,6 +393,7 @@ export function betterAuthD1ReleaseInputs(
   return {
     mode: options.mode,
     ...(agentPlugins ? { agentPlugins } : {}),
+    ...(sandbox ? { sandbox } : {}),
     browserBuildId,
     relayBuildId: LOCKED_RELAY_BUILD_ID,
     environment,
@@ -382,6 +421,7 @@ export function betterAuthD1ReleaseInputs(
       "CLAXEDO_RELAY_HOST_VERIFY_PEM",
       ...methods.map((method) => (method === "google" ? "GOOGLE_CLIENT_SECRET" : "GITHUB_CLIENT_SECRET")),
       ...(agentPlugins ? ["CLAXEDO_CREDENTIALS_KEK"] : []),
+      ...(sandbox ? SANDBOX_DRIVER_SECRETS[sandbox.driver] : []),
     ],
     runtimeVariables: [
       ["CLAXEDO_DEPLOYMENT_MODE", "hosted"],
@@ -400,6 +440,7 @@ export function betterAuthD1ReleaseInputs(
       ["CLAXEDO_WORKSPACE_RELAY_URL", relayUrl],
       ...cutoverVariables,
       ...publicProviderVariables,
+      ...sandboxVariables,
       ...(agentPlugins
         ? ([
             ["CLAXEDO_HOSTED_CREDENTIALS_ENABLED", "1"],
@@ -415,6 +456,7 @@ type BetterAuthD1WranglerConfigInput = {
   staging: boolean
   mode?: BetterAuthD1ReleaseMode
   agentPlugins?: { credentialsNamespaceId: string; bucketName: string }
+  sandbox?: { driver: BetterAuthD1SandboxDriver }
   authDatabaseId: string
   authDatabaseName: string
   controlPlaneDatabaseId: string
@@ -428,7 +470,8 @@ function renderBetterAuthD1WranglerConfigForArtifact(
     | typeof BETTER_AUTH_D1_LOCKED_ARTIFACT
     | typeof BETTER_AUTH_D1_LIVE_SYNC_MIGRATION_BRIDGE_ARTIFACT
     | typeof BETTER_AUTH_D1_CUTOVER_ARTIFACT
-    | typeof BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_ARTIFACT,
+    | typeof BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_ARTIFACT
+    | typeof BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_FULL_HOSTED_ARTIFACT,
   liveSyncResources: boolean,
 ) {
   const quote = (value: string) => JSON.stringify(value)
@@ -473,7 +516,7 @@ enabled = true
 [vars]
 CLAXEDO_ADAPTER_PROFILE = "better-auth-d1"
 CLAXEDO_PRODUCT_POSTURE = "user-deployed"
-CLAXEDO_SANDBOX_POSTURE = "control-plane-only"
+CLAXEDO_SANDBOX_POSTURE = ${quote(input.sandbox ? "full-hosted" : "control-plane-only")}
 
 [[d1_databases]]
 binding = "AUTH_DB"
@@ -497,14 +540,20 @@ ${liveSyncConfiguration}${agentPluginsResources}
 `
 }
 
-export function betterAuthD1CutoverArtifact(agentPlugins: boolean) {
+export function betterAuthD1CutoverArtifact(agentPlugins: boolean, fullHosted = false) {
+  if (fullHosted) {
+    if (!agentPlugins) throw new Error("full-hosted Better Auth D1 is an Agent Plugins artifact")
+    return BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_FULL_HOSTED_ARTIFACT
+  }
   return agentPlugins ? BETTER_AUTH_D1_CUTOVER_AGENT_PLUGINS_ARTIFACT : BETTER_AUTH_D1_CUTOVER_ARTIFACT
 }
 
 export function renderBetterAuthD1WranglerConfig(input: BetterAuthD1WranglerConfigInput) {
   return renderBetterAuthD1WranglerConfigForArtifact(
     input,
-    input.mode === "cutover" ? betterAuthD1CutoverArtifact(Boolean(input.agentPlugins)) : BETTER_AUTH_D1_LOCKED_ARTIFACT,
+    input.mode === "cutover"
+      ? betterAuthD1CutoverArtifact(Boolean(input.agentPlugins), Boolean(input.sandbox))
+      : BETTER_AUTH_D1_LOCKED_ARTIFACT,
     input.mode === "cutover",
   )
 }
@@ -845,6 +894,7 @@ export async function resolveReleaseSecretsFile(env: NodeJS.ProcessEnv, required
   const canonical = JSON.stringify(Object.fromEntries(entries.sort(([left], [right]) => left.localeCompare(right))))
   return Object.freeze({
     file,
+    names: Object.freeze(entries.map(([name]) => name)),
     bundleId: `sha256:${createHash("sha256").update(canonical).digest("hex")}`,
   })
 }
@@ -1159,9 +1209,11 @@ async function main() {
     const bundle = path.join(
       bundleDirectory,
       cutover
-        ? agentPlugins
-          ? "better-auth-d1-candidate-worker.agent-plugins.cf.js"
-          : "better-auth-d1-candidate-worker.cf.js"
+        ? input.sandbox
+          ? "better-auth-d1-candidate-worker.agent-plugins.full-hosted.cf.js"
+          : agentPlugins
+            ? "better-auth-d1-candidate-worker.agent-plugins.cf.js"
+            : "better-auth-d1-candidate-worker.cf.js"
         : "better-auth-d1-locked-worker.cf.js",
     )
     await writeFile(config, renderBetterAuthD1WranglerConfig({ staging, ...input }))
@@ -1240,8 +1292,14 @@ async function main() {
     await run(["wrangler", "d1", "info", "AUTH_DB", ...configArgs, "--json"], { capture: true })
     await run(["wrangler", "d1", "info", "CONTROL_PLANE_DB", ...configArgs, "--json"], { capture: true })
     const secrets = await run(["wrangler", "secret", "list", ...configArgs, "--format", "json"], { capture: true })
-    requireSecretInventory(secrets, input.requiredSecrets)
     const releaseSecrets = await resolveReleaseSecretsFile(process.env, input.requiredSecrets)
+    // A secret the release file carries is uploaded with the tagged version, so
+    // it need not already sit on the Worker — provisioning it by hand first
+    // would mint an untagged version the candidate gate refuses.
+    requireSecretInventory(
+      secrets,
+      input.requiredSecrets.filter((name) => !releaseSecrets?.names.includes(name)),
+    )
     await ensureCutoverLiveSyncLifecycle({
       release: input,
       staging,

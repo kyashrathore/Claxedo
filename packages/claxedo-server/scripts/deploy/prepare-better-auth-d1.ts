@@ -63,12 +63,8 @@ function literal(value: string | number) {
 
 export function betterAuthD1PreparationIdentity(env: NodeJS.ProcessEnv): DeploymentReleaseIdentity {
   const profile = resolveDeploymentProfileFromEnv(env)
-  if (
-    profile.adapterProfile !== "better-auth-d1" ||
-    profile.productPosture !== "user-deployed" ||
-    profile.sandboxPosture !== "control-plane-only"
-  ) {
-    throw new Error("Better Auth D1 locked preparation certifies only user-deployed control-plane-only")
+  if (profile.adapterProfile !== "better-auth-d1" || profile.productPosture !== "user-deployed") {
+    throw new Error("Better Auth D1 locked preparation certifies only user-deployed Better Auth D1 profiles")
   }
   return {
     deploymentId: required(env, "CLAXEDO_DEPLOYMENT_ID"),

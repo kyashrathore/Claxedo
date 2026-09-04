@@ -13,6 +13,7 @@ export const CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS = [
   "user-deployed-better-auth-d1-live-sync-migration-bridge",
   "user-deployed-better-auth-d1-candidate",
   "user-deployed-better-auth-d1-candidate-agent-plugins",
+  "user-deployed-better-auth-d1-candidate-agent-plugins-full-hosted",
 ] as const
 
 export type CertifiedHostedWorkerArtifactId = (typeof CERTIFIED_HOSTED_WORKER_ARTIFACT_IDS)[number]
@@ -50,6 +51,8 @@ const LIVE_SYNC_MIGRATION_BRIDGE_ENTRYPOINT =
 const CANDIDATE_ENTRYPOINT = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
 const CANDIDATE_AGENT_PLUGINS_ENTRYPOINT =
   "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.cf.ts"
+const CANDIDATE_AGENT_PLUGINS_FULL_HOSTED_ENTRYPOINT =
+  "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.full-hosted.cf.ts"
 
 const ARTIFACTS = Object.freeze({
   "user-deployed-better-auth-d1-locked": Object.freeze({
@@ -118,6 +121,32 @@ const ARTIFACTS = Object.freeze({
       optionalServices: false as const,
       billing: false as const,
       sandboxDriver: false as const,
+      agentPlugins: true as const,
+    }),
+  }),
+  // The same release train again, now with cloud workspace execution: the
+  // Agent Plugins composition plus a sandbox driver selected by
+  // CLAXEDO_SANDBOX_DRIVER and the D1 lease store. It is the only artifact
+  // whose closure may carry a sandbox provider SDK.
+  "user-deployed-better-auth-d1-candidate-agent-plugins-full-hosted": Object.freeze({
+    artifactId: "user-deployed-better-auth-d1-candidate-agent-plugins-full-hosted" as const,
+    adapterProfile: "better-auth-d1" as const,
+    productPosture: "user-deployed" as const,
+    sandboxPosture: "full-hosted" as const,
+    entrypointFromPackageRoot: CANDIDATE_AGENT_PLUGINS_FULL_HOSTED_ENTRYPOINT,
+    entrypointFromPackageChild: `../${CANDIDATE_AGENT_PLUGINS_FULL_HOSTED_ENTRYPOINT}`,
+    workerNames: Object.freeze({
+      production: "claxedo-user-deployed-locked",
+      staging: "claxedo-user-deployed-locked-staging",
+    }),
+    resources: Object.freeze({
+      authDatabase: true as const,
+      controlPlaneDatabase: true as const,
+      requestLimiter: true as const,
+      liveSyncRoom: true as const,
+      optionalServices: false as const,
+      billing: false as const,
+      sandboxDriver: true as const,
       agentPlugins: true as const,
     }),
   }),
