@@ -72,4 +72,12 @@ environment editor keys rows by index so typing does not recreate the input unde
   picker is its own step. The hosted browser build sets `VITE_SANDBOX_ENABLED=true`. Connect GitHub
   offers the OAuth device flow whenever the server has a `GITHUB_CLIENT_ID`; the local launch entry
   carries the staging client id.
+- 2026-09-05 02:30 (owner correction, adopted): a server with its own filesystem (the self-host
+  binary, which is the desktop's server) offers "a folder on this machine" as a project whether or not
+  an account is signed in — only the hosted plane has no folders. New Project now reads
+  `localExecution` from the server's health document plus the signed state
+  (`features/workspaces/actions/new-project-flow.ts`): filesystem only → folder picker, accounts
+  only → cloud onboarding, both → `DialogNewProjectKind` chooser. The rail action receives the health
+  as an injected port (`ActionProps.serverHealth`, built in `app-shell-actions.ts`) because features
+  may not import the app layer. Landed as `1a86583dad` + `844d491b18`.
 
