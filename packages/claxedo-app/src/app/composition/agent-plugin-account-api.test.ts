@@ -36,6 +36,36 @@ describe("signed desktop Agent Plugins account client", () => {
     }])
   })
 
+  test("reads a plugin's skill document through the plain operation", async () => {
+    const document = { name: "search", description: "Search the docs", markdown: "# Search" }
+    const subject = account(() => ({ status: 200, body: document }))
+
+    await expect(
+      accountAgentPluginApi(subject.port).skill({ pluginInstanceId: "claxedo/docs", skill: "search" }),
+    ).resolves.toEqual(document)
+    expect(subject.calls).toEqual([{
+      operation: "agentPlugins.skill",
+      input: { pluginInstanceId: "claxedo/docs", skill: "search" },
+    }])
+  })
+
+  test("chooses the project-scoped skill operation when a project is selected", async () => {
+    const document = { name: "search", description: "Search the docs", markdown: "# Search" }
+    const subject = account(() => ({ status: 200, body: document }))
+
+    await expect(
+      accountAgentPluginApi(subject.port).skill({
+        pluginInstanceId: "claxedo/docs",
+        skill: "search",
+        projectId: "project-1",
+      }),
+    ).resolves.toEqual(document)
+    expect(subject.calls).toEqual([{
+      operation: "agentPlugins.skill.project",
+      input: { pluginInstanceId: "claxedo/docs", skill: "search", projectId: "project-1" },
+    }])
+  })
+
   test("forwards the complete activation contract and preserves the server's canonical error", async () => {
     const subject = account(() => ({
       status: 409,

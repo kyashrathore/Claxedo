@@ -192,6 +192,26 @@ describe("decodeHostedResult", () => {
     expect(() => decodeHostedResult("account.mode", null)).toThrow(/expected an object/)
   })
 
+  test("decodes the Agent Plugins skill and Directory sources rows as status results", () => {
+    // Regression for the 2026-09-04 defect: these `response: "http"` operations
+    // must be read through `statusResult`, never through a bare `object`
+    // decoder that would accept a raw body and hide the HTTP status the caller
+    // needs to tell a 422 diagnostic from a decoded document.
+    for (const name of [
+      "agentPlugins.skill",
+      "agentPlugins.skill.project",
+      "agentPlugins.sources.list",
+      "agentPlugins.sources.add",
+      "agentPlugins.sources.remove",
+    ] as const) {
+      expect(() => decodeHostedResult(name, { name: "search" })).toThrow(/expected a response status/)
+      expect(decodeHostedResult(name, { status: 200, body: { ok: true } })).toEqual({
+        status: 200,
+        body: { ok: true },
+      })
+    }
+  })
+
   test("accepts null only where a route answers it deliberately", () => {
     // The hosted control plane's `/api/workspace/resolve` returns `null` as its
     // "no central runtime snapshot" signal. Nullability is per-operation for
@@ -213,6 +233,9 @@ describe("isSafeOperation", () => {
       "workspace.checkpoints.restore",
       "account.cliExchange",
       "host.enrollCurrentMachine",
+      // Creating a Directory source: a repeated add is main's call, same as
+      // every other creating mutation in this table.
+      "agentPlugins.sources.add",
     ] as const) {
       expect(isSafeOperation(unsafe), unsafe).toBe(false)
     }
@@ -224,6 +247,12 @@ describe("isSafeOperation", () => {
       "workspace.list.cloud",
       "workspace.list.userHosted",
       "workspace.checkpoints.list",
+      "agentPlugins.skill",
+      "agentPlugins.skill.project",
+      "agentPlugins.sources.list",
+      // Idempotent delete: `remove` treats a 404 as already-removed, so a
+      // retried call after a dropped response is still correct.
+      "agentPlugins.sources.remove",
     ] as const) {
       expect(isSafeOperation(safe), safe).toBe(true)
     }

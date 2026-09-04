@@ -334,6 +334,87 @@ describe("resolveHostedOperation", () => {
   test("omits a body entirely for operations that take none", () => {
     expect(resolveHostedOperation("account.mode")).toEqual({ method: "GET", path: "/api/claxedo/mode" })
   })
+
+  test("resolves the Agent Plugins skill document, plain and project-scoped", () => {
+    expect(resolveHostedOperation("agentPlugins.skill", {
+      pluginInstanceId: "claxedo/composio",
+      skill: "search",
+    })).toEqual({
+      method: "GET",
+      path: "/api/claxedo/plugins/claxedo%2Fcomposio/skills/search",
+      response: "http",
+    })
+    expect(resolveHostedOperation("agentPlugins.skill.project", {
+      projectId: "project_1",
+      pluginInstanceId: "claxedo/composio",
+      skill: "search",
+    })).toEqual({
+      method: "GET",
+      path: "/api/claxedo/plugins/projects/project_1/claxedo%2Fcomposio/skills/search",
+      response: "http",
+    })
+  })
+
+  test("a plugin instance id or skill name cannot add a path segment to the skill route", () => {
+    // Encoded, so an id carrying a slash becomes one literal component rather
+    // than escaping into `/skills/:skill` or past it.
+    const resolved = resolveHostedOperation("agentPlugins.skill", {
+      pluginInstanceId: "../../admin",
+      skill: "search",
+    })
+    expect(resolved.path).toBe("/api/claxedo/plugins/..%2F..%2Fadmin/skills/search")
+    expect(resolved.path.split("/").filter(Boolean)).toHaveLength(6)
+  })
+
+  test("refuses a skill lookup missing either path parameter", () => {
+    expect(() => resolveHostedOperation("agentPlugins.skill", { pluginInstanceId: "claxedo/composio" })).toThrow(
+      MissingOperationParameter,
+    )
+    expect(() => resolveHostedOperation("agentPlugins.skill", { skill: "search" })).toThrow(
+      MissingOperationParameter,
+    )
+    expect(() =>
+      resolveHostedOperation("agentPlugins.skill.project", {
+        pluginInstanceId: "claxedo/composio",
+        skill: "search",
+      })
+    ).toThrow(MissingOperationParameter)
+  })
+
+  test("resolves Directory source listing and removal", () => {
+    expect(resolveHostedOperation("agentPlugins.sources.list")).toEqual({
+      method: "GET",
+      path: "/api/claxedo/plugins/sources",
+      response: "http",
+    })
+    expect(resolveHostedOperation("agentPlugins.sources.remove", { id: "src_1" })).toEqual({
+      method: "DELETE",
+      path: "/api/claxedo/plugins/sources/src_1",
+      response: "http",
+    })
+  })
+
+  test("a source id cannot add a path segment to the removal route", () => {
+    const resolved = resolveHostedOperation("agentPlugins.sources.remove", { id: "../../admin" })
+    expect(resolved.path).toBe("/api/claxedo/plugins/sources/..%2F..%2Fadmin")
+    expect(resolved.path.split("/").filter(Boolean)).toHaveLength(5)
+  })
+
+  test("adds a Directory source with only the declared body fields", () => {
+    const resolved = resolveHostedOperation("agentPlugins.sources.add", {
+      owner: "acme",
+      repository: "plugins",
+      ref: "main",
+      authority: "user",
+      unreviewed: "must-not-reach-the-server",
+    })
+    expect(resolved).toEqual({
+      method: "POST",
+      path: "/api/claxedo/plugins/sources",
+      body: { owner: "acme", repository: "plugins", ref: "main", authority: "user" },
+      response: "http",
+    })
+  })
 })
 
 describe("hostedOperationChannel", () => {

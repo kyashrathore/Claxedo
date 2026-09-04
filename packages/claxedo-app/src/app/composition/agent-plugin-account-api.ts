@@ -2,6 +2,7 @@ import type { AccountPort, HostedOperationName } from "@/platform/account/accoun
 import {
   agentPluginCatalogResult,
   agentPluginMutationResult,
+  agentPluginSkillResult,
   type AgentPluginApi,
   type AgentPluginStatusResult,
 } from "@/features/agent-plugins/api"
@@ -30,6 +31,14 @@ export function accountAgentPluginApi(account: AccountPort): AgentPluginApi {
         operation,
         options.projectId ? { projectId: options.projectId } : undefined,
       ))
+    },
+    async skill(options) {
+      const operation: HostedOperationName = options.projectId ? "agentPlugins.skill.project" : "agentPlugins.skill"
+      return agentPluginSkillResult(await run(account, operation, {
+        pluginInstanceId: options.pluginInstanceId,
+        skill: options.skill,
+        ...(options.projectId ? { projectId: options.projectId } : {}),
+      }))
     },
     async activation(input) {
       return agentPluginMutationResult(await run(account, "agentPlugins.activation", input))

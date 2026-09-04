@@ -86,6 +86,40 @@ export const HOSTED_OPERATIONS = {
     body: ["pluginInstanceId", "expectedRevision", "authority"],
     response: "http",
   },
+  // One retained SKILL.md, decoded by the renderer (`agentPluginSkillResult`)
+  // like every other `agentPlugins.*` row. Two names for the same document,
+  // not one row with an optional `:projectId`, because a `:name` segment that
+  // is sometimes present and sometimes absent cannot be expressed as a single
+  // path template here — `resolveHostedOperation` fills every `:name` it finds
+  // or throws `MissingOperationParameter`, so a project-scoped call must be its
+  // own row with its own fixed shape.
+  "agentPlugins.skill": {
+    method: "GET",
+    path: "/api/claxedo/plugins/:pluginInstanceId/skills/:skill",
+    response: "http",
+  },
+  "agentPlugins.skill.project": {
+    method: "GET",
+    path: "/api/claxedo/plugins/projects/:projectId/:pluginInstanceId/skills/:skill",
+    response: "http",
+  },
+  // Source registrations (`sources.md`): the Directory's add/remove/list over
+  // repository sources, machine-wide for unsigned, per-owner for signed. Same
+  // `:id`-style encoded substitution as `workspace.checkpoints.list`'s `:id` —
+  // a slash in the parameter becomes one literal `%2F` component, never a new
+  // segment.
+  "agentPlugins.sources.list": { method: "GET", path: "/api/claxedo/plugins/sources", response: "http" },
+  "agentPlugins.sources.add": {
+    method: "POST",
+    path: "/api/claxedo/plugins/sources",
+    body: ["owner", "repository", "ref", "authority"],
+    response: "http",
+  },
+  "agentPlugins.sources.remove": {
+    method: "DELETE",
+    path: "/api/claxedo/plugins/sources/:id",
+    response: "http",
+  },
   // Main's own pull of the signed world for this machine. The answer carries
   // gateway bearer credentials, so it is withheld from the renderer
   // (`RENDERER_WITHHELD_OPERATIONS`) and handed only to the daemon.

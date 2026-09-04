@@ -190,6 +190,20 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "agentPlugins.activation": { safe: false, decode: statusResult },
   "agentPlugins.organizationDefault": { safe: false, decode: statusResult },
   "agentPlugins.update": { safe: false, decode: statusResult },
+  // One retained SKILL.md, project-scoped or not. Read-only, so both are safe
+  // to retry.
+  "agentPlugins.skill": { safe: true, decode: statusResult },
+  // Main-only (withheld from the renderer in account-ipc.ts): listed so the two
+  // registries name the same operations; the channel refuses a page.
+  "agentPlugins.runtimeSelf": { safe: true, decode: statusResult },
+  "agentPlugins.skill.project": { safe: true, decode: statusResult },
+  // Directory sources: listing and removal are idempotent reads/deletes
+  // (`remove` treats a 404 as success, so a retried delete is still correct);
+  // adding a source is not — a repeated POST with the same owner/repository is
+  // main's call, like every other creating mutation in this table.
+  "agentPlugins.sources.list": { safe: true, decode: statusResult },
+  "agentPlugins.sources.add": { safe: false, decode: statusResult },
+  "agentPlugins.sources.remove": { safe: true, decode: statusResult },
   // An ENVELOPE, not a bare array: `GET /api/workspace` answers
   // `{ workspaces: [...] }`, the same shape the local server's list handler
   // uses. Validated and passed through rather than unwrapped, because every

@@ -220,6 +220,11 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `agentPlugins.activation` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/activation` | unary | unsafe | Writes user all-project or explicit-project choices at an optimistic revision. |
 | `agentPlugins.organizationDefault` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/organization-default` | unary | unsafe | Organization-admin positive default mutation. |
 | `agentPlugins.update` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/update` | unary | unsafe | Explicitly acquires and pins changed bytes. |
+| `agentPlugins.skill` | `app/composition/agent-plugin-account-api.ts` | `GET /api/claxedo/plugins/:pluginInstanceId/skills/:skill` | unary | safe | One retained SKILL.md for the marketplace detail pane. |
+| `agentPlugins.skill.project` | `app/composition/agent-plugin-account-api.ts` | `GET /api/claxedo/plugins/projects/:projectId/:pluginInstanceId/skills/:skill` | unary | safe | The same document through a project the caller administers. |
+| `agentPlugins.sources.list` | `app/composition/agent-plugin-account-directory-api.ts` | `GET /api/claxedo/plugins/sources` | unary | safe | Marketplaces the signed user or organization added from GitHub. |
+| `agentPlugins.sources.add` | `app/composition/agent-plugin-account-directory-api.ts` | `POST /api/claxedo/plugins/sources` | unary | unsafe | Registers a GitHub repository as a source after it serves at least one valid plugin; 422/409 carry diagnostics. |
+| `agentPlugins.sources.remove` | `app/composition/agent-plugin-account-directory-api.ts` | `DELETE /api/claxedo/plugins/sources/:id` | unary | safe | Idempotent removal; 404 is already removed. |
 | `agentPlugins.runtimeSelf` | `main/agent-plugins-signed-sync.ts` | `GET /api/claxedo/plugins/runtime/self` | unary | safe | The signed user's own runtime world plus gateway credentials; main-only, handed to the daemon's loopback signed-runtime surface. Withheld from the renderer. |
 
 ### Provisioning and sandbox
