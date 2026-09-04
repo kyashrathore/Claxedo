@@ -46,10 +46,11 @@ const claxedoIcons = {
   // these three, so all three used to alias codex-20-123 — one sparkle standing
   // in for Marketplace, Models and Providers at once, which made the Settings
   // tab list unreadable. Drawn locally instead: a three-tile plugin cluster, a
-  // sparkle, and a chip. Geometry matches the same three names in the upstream `icons` table in
+  // sparkle, and a chip. The marketplace mark is a three-tile grid whose fourth
+  // cell is a plus: "add to your set". Geometry matches the same three names in the upstream `icons` table in
   // `packages/ui/src/components/icon.tsx`, so a callsite renders the same mark
   // whichever component it reaches for.
-  marketplace: `<rect x="2.75" y="6.75" width="6.75" height="6.75" rx="1.75" stroke="currentColor" stroke-width="1.25"/><rect x="10.75" y="2.75" width="6.5" height="6.5" rx="1.75" stroke="currentColor" stroke-width="1.25"/><rect x="2.75" y="10.75" width="9.5" height="6.5" rx="1.75" stroke="currentColor" stroke-width="1.25"/>`,
+  marketplace: `<rect x="2.5" y="2.5" width="6.25" height="6.25" rx="1.25" stroke="currentColor" stroke-width="1.25"/><rect x="11.25" y="2.5" width="6.25" height="6.25" rx="1.25" stroke="currentColor" stroke-width="1.25"/><rect x="2.5" y="11.25" width="6.25" height="6.25" rx="1.25" stroke="currentColor" stroke-width="1.25"/><path d="M14.375 11.25V17.5M11.25 14.375H17.5" stroke="currentColor" stroke-width="1.25" stroke-linecap="round"/>`,
   models: `<path fill-rule="evenodd" clip-rule="evenodd" d="M17.5 10C12.2917 10 10 12.2917 10 17.5C10 12.2917 7.70833 10 2.5 10C7.70833 10 10 7.70833 10 2.5C10 7.70833 12.2917 10 17.5 10Z" stroke="currentColor"/>`,
   providers: `<path d="M10.0001 4.37562V2.875M13 4.37793V2.87793M7.00014 4.37793V2.875M10 17.1279V15.6279M13 17.1279V15.6279M7 17.1279V15.6279M15.625 13.0029H17.125M15.625 7.00293H17.125M15.625 10.0029H17.125M2.875 10.0029H4.375M2.875 13.0029H4.375M2.875 7.00293H4.375M4.375 4.37793H15.625V15.6279H4.375V4.37793ZM12.6241 10.0022C12.6241 11.4519 11.4488 12.6272 9.99908 12.6272C8.54934 12.6272 7.37408 11.4519 7.37408 10.0022C7.37408 8.55245 8.54934 7.3772 9.99908 7.3772C11.4488 7.3772 12.6241 8.55245 12.6241 10.0022Z" stroke="currentColor" stroke-linecap="square"/>`,
   "more-horizontal": `<circle cx="5" cy="10" r="1.6" fill="currentColor"/><circle cx="10" cy="10" r="1.6" fill="currentColor"/><circle cx="15" cy="10" r="1.6" fill="currentColor"/>`,
