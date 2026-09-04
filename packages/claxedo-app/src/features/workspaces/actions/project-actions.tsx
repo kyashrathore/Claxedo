@@ -8,6 +8,7 @@ import {
   message,
 } from "@/features/workspaces/app-ports"
 import { showToast } from "@opencode-ai/ui/toast"
+import { centralTransportForDeployment } from "@/platform/runtime/transport"
 import { validWorktree } from "@/platform/sync/worktree"
 
 import { api, apiBearerToken, getDefaultBaseUrl } from "@/platform/api/api"
@@ -177,14 +178,15 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       props.dialog.close()
     }
 
-    // On the web there is no local filesystem behind the directory picker —
-    // it routes through the loopback bridge and dead-ends. Every web build's
-    // New Project is the cloud project onboarding: name the project, pick a
-    // connected GitHub repository (or paste a URL, with a connect-GitHub path
-    // inside the dialog), set its environment, provision a sandbox, and open
-    // the resulting workspace directory like any other selection. The folder
-    // picker below is the desktop's.
-    if (props.platform.platform === "web") {
+    // The server's mode decides the product, not the client's platform or
+    // URL. A signed server (the hosted plane, or the self-host binary with
+    // accounts on) is the hosted product: there is no local filesystem behind
+    // the directory picker for a browser session, so New Project is the cloud
+    // project onboarding — name, connected GitHub repository or URL,
+    // environment, provision, open. An unsigned local server is the local
+    // product, the same frontend the desktop wraps, and its New Project is a
+    // folder on this machine — in a browser tab exactly as in the desktop.
+    if (centralTransportForDeployment({ serverUrl: props.globalSDK.url, authEnabled: props.config?.authEnabled === true }) === "signed-web") {
       void props.dialog.show(() => (
         <DialogCreateCloudProject
           onSelect={(result) => {

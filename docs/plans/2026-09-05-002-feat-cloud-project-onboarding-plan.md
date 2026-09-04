@@ -62,4 +62,14 @@ environment editor keys rows by index so typing does not recreate the input unde
 - 2026-09-05 01:15: plan written from the code (create route schema, supervisor `env: {}`,
   JSON workspace store, dialog and action call sites).
 - 2026-09-05 01:40: slice implemented and verified as above.
+- 2026-09-05 02:00 (owner correction, adopted): the product is decided by the SERVER's mode, not the
+  client's platform or URL. Unsigned local server = the local product (the same frontend the desktop
+  wraps; New Project is a folder on this machine, also in a browser tab). Signed server (the hosted
+  plane, or the self-host binary with accounts on, on a VM or on a laptop for development) = the
+  hosted product (New Project is the cloud onboarding). "Web is always cloud" overshot and is
+  reverted: both the home route and the rail action now key off `centralTransportForDeployment`
+  (auth-enabled build/server → signed-web), with action tests for both modes. The sandbox provider
+  picker is its own step. The hosted browser build sets `VITE_SANDBOX_ENABLED=true`. Connect GitHub
+  offers the OAuth device flow whenever the server has a `GITHUB_CLIENT_ID`; the local launch entry
+  carries the staging client id.
 

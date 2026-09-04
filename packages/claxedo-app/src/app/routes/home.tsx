@@ -10,6 +10,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogSelectDirectory } from "@/app/dialogs/select-directory"
+import { useConfigOptional } from "@/app/providers/config"
 import { useServer } from "@/app/connection/server"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -18,7 +19,7 @@ import { DialogCreateCloudProject } from "@/features/workspaces/ui/dialogs/creat
 import { ensureLocalProject } from "../../features/workspaces/data/query/project-ensure"
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
-import { centralTransportForServer } from "@/platform/runtime/transport"
+import { centralTransportForDeployment, centralTransportForServer } from "@/platform/runtime/transport"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
 
 export default function Home() {
@@ -31,6 +32,7 @@ export default function Home() {
   const server = useServer()
   const language = useLanguage()
   const projectsQuery = useQuery(() => queryOptions.projects())
+  const config = useConfigOptional()
   const pathQuery = useQuery(() => queryOptions.path(null))
   const homedir = createMemo(() => pathQuery.data?.home ?? "")
   const recent = createMemo(() => {
@@ -68,11 +70,13 @@ export default function Home() {
       }
     }
 
-    // The web has no local filesystem to pick from: New Project is the cloud
-    // project onboarding (name, repository, environment) on every web build,
-    // whatever the transport or the sandbox flag. The folder picker below is
-    // the desktop's and the local product's.
-    if (platform.platform === "web") {
+    // The server's mode decides the product, not the client's platform or
+    // URL. A signed server (the hosted plane, or the self-host binary with
+    // accounts on) is the hosted product: New Project is the cloud project
+    // onboarding. An unsigned local server is the local product — the same
+    // frontend the desktop wraps — and its New Project is a folder on this
+    // machine, in a browser tab exactly as in the desktop.
+    if (centralTransportForDeployment({ serverUrl: server.url, authEnabled: config?.authEnabled === true }) === "signed-web") {
       dialog.show(
         () => <DialogCreateCloudProject onSelect={resolve} />,
         () => void resolve(null),

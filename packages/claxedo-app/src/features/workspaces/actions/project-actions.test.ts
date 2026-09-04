@@ -106,7 +106,11 @@ beforeAll(async () => {
   }))
 
   mock.module("@/app/dialogs/select-directory", () => ({
-    DialogSelectDirectory: () => null,
+    DialogSelectDirectory: () => "select-directory",
+  }))
+
+  mock.module("../ui/dialogs/create-cloud-project", () => ({
+    DialogCreateCloudProject: () => "create-cloud-project",
   }))
 
   mock.module("../../workspaces/ui/dialogs/delete-workspace-dialog", () => ({
@@ -304,6 +308,22 @@ function make(dir: string) {
 
   return { props, adds, acts, navs, nav, worktreeReady, routes, closes, removes, workspaceDeletes, worktreeRemoves, cleaned, metas, closedContents, shows, data, projectsQueryKey, cacheEnsures, cacheRefreshes, bootstraps, paneWorktrees }
 }
+
+describe("createProjectActions New Project", () => {
+  test("an unsigned local server opens the folder picker, in a browser exactly as in the desktop", () => {
+    const fixture = make("/repo/one")
+    const props = { ...fixture.props, config: {}, globalSDK: { ...fixture.props.globalSDK, url: "http://127.0.0.1:2593" } }
+    createProjectActions(props as never, fixture.nav).handleNewProject()
+    expect(fixture.shows).toEqual(["select-directory"])
+  })
+
+  test("a signed server opens the cloud project onboarding, whatever its address", () => {
+    const fixture = make("/repo/one")
+    const props = { ...fixture.props, config: { authEnabled: true }, globalSDK: { ...fixture.props.globalSDK, url: "https://localhost:4449" } }
+    createProjectActions(props as never, fixture.nav).handleNewProject()
+    expect(fixture.shows).toEqual(["create-cloud-project"])
+  })
+})
 
 describe("createProjectActions", () => {
   // NOTE: handleNewWorkspace (the Local/Cloud picker behind onNewWorkspace) was
