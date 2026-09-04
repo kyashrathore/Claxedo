@@ -455,13 +455,31 @@ export class D1SignedAgentPluginActivationStore implements SignedAgentPluginActi
     harnessId: AgentPluginHarnessId
   }): Promise<SignedActivationSnapshot> {
     const harnessId = requireHarness(input.harnessId)
-    await this.requireRuntimeAccess(input)
+    // The signed desktop's own world: no project or workspace row can stand
+    // for a user's machine, so the scope is the two sentinels the self pull
+    // minted with, and access is the user's org membership — the same check
+    // that authorized the pull. Everything else is a real cloud workspace.
+    const desktop = input.projectId === AGENT_PLUGIN_ALL_PROJECTS_SCOPE
+      && input.workspaceId === AGENT_PLUGIN_DESKTOP_WORKSPACE
+    if (desktop) await this.requireMembership(input.ownerUserId, input.organizationId)
+    else await this.requireRuntimeAccess(input)
     return await this.snapshot(
       { userId: input.ownerUserId, orgId: input.organizationId },
       input.pluginInstanceId,
       harnessId,
-      input.projectId,
+      desktop ? undefined : input.projectId,
     )
+  }
+
+  private async requireMembership(ownerUserId: string, organizationId: string) {
+    const [user, membership] = await Promise.all([
+      this.database
+        .prepare(`select 1 as present from users where user_id = ? and state = 'active'`)
+        .bind(ownerUserId)
+        .first<PresenceRow>(),
+      this.database.prepare(ORG_MEMBERSHIP_SQL).bind(ownerUserId, organizationId, ownerUserId).first<PresenceRow>(),
+    ])
+    if (!user || !membership) throw denied("Agent Plugins organization membership is required")
   }
 
   /** The whole desired world of one cloud workspace, from its canonical owner. */

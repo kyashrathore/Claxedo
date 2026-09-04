@@ -559,6 +559,44 @@ describe("D1 signed Agent Plugins activation store", () => {
     expect(scoped.projectOverride).toBe(false)
   })
 
+  test("the desktop scope reads the user's all-projects world on membership alone, and refuses an outsider", async () => {
+    // The MCP gateway authorizes with the scope the self pull minted:
+    // projectId "all-projects", workspaceId "desktop". No project or workspace
+    // row exists for those, so runtime access is org membership.
+    const { authority, store } = await setup()
+    const auth = await signed(authority, identity("alice"))
+    const me = await authority.usersMe(auth)
+    const userId = me.user_id
+    const orgId = me.org_id
+    if (!orgId) throw new Error("fixture user has no organization")
+    await store.mutateUser(auth, {
+      pluginInstanceId: PLUGIN,
+      harnessIds: ["claude"],
+      choice: true,
+      target: { scope: "all-projects" },
+      artifact: artifact("a"),
+      expectedRevision: 0,
+    })
+    const snapshot = await store.readRuntime({
+      ownerUserId: userId,
+      organizationId: orgId,
+      projectId: AGENT_PLUGIN_ALL_PROJECTS_SCOPE,
+      workspaceId: AGENT_PLUGIN_DESKTOP_WORKSPACE,
+      pluginInstanceId: PLUGIN,
+      harnessId: "claude",
+    })
+    expect(snapshot.userDefault).toBe(true)
+    expect(snapshot.projectOverride).toBeUndefined()
+    await expect(store.readRuntime({
+      ownerUserId: "usr_nobody",
+      organizationId: orgId,
+      projectId: AGENT_PLUGIN_ALL_PROJECTS_SCOPE,
+      workspaceId: AGENT_PLUGIN_DESKTOP_WORKSPACE,
+      pluginInstanceId: PLUGIN,
+      harnessId: "claude",
+    })).rejects.toThrow(/membership/)
+  })
+
   test("rejects an unknown harness before writing anything", async () => {
     const { database, authority, store } = await setup()
     const auth = await signed(authority, identity("alice"))
