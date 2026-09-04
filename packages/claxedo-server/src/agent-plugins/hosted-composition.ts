@@ -28,6 +28,7 @@ import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./arti
 import { hostedAgentPluginsModule } from "./module"
 import { D1AgentPluginSourceStore } from "./sources/d1-store"
 import { githubEdgeCachedFetch, type EdgeCache } from "./sources/github-edge-cache"
+import { oauthMetadataEdgeCachedFetch } from "./mcp/oauth-metadata-edge-cache"
 import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
@@ -151,9 +152,8 @@ export function createHostedAgentPluginsComposition(input: {
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   // GitHub reads are cached at the edge across isolates (see github-edge-cache.ts);
   // `caches` exists only inside a Worker isolate, so it is looked up per call.
-  const githubFetch = githubEdgeCachedFetch({
-    cache: () => (globalThis as { caches?: { default?: EdgeCache } }).caches?.default,
-  })
+  const edgeCache = () => (globalThis as { caches?: { default?: EdgeCache } }).caches?.default
+  const githubFetch = githubEdgeCachedFetch({ cache: edgeCache })
   const claxedo = claxedoPublicGitHubCatalogSourceProvider(githubFetch)
   const sourceRegistry = new D1AgentPluginSourceStore({ database: input.database, authority })
   const sourceProviders = createAgentPluginSourceProviderCache(githubFetch)
@@ -170,7 +170,10 @@ export function createHostedAgentPluginsComposition(input: {
   const { client_id: _published, ...registrationMetadata } = clientMetadata.document
   const oauth = {
     callbackUrl: clientMetadata.redirectUri,
-    fetch: (url: string, init?: RequestInit) => fetch(url, init),
+    // Discovery's well-known reads are cached at the edge across isolates
+    // (see oauth-metadata-edge-cache.ts); the probe and registration POSTs
+    // pass straight through.
+    fetch: oauthMetadataEdgeCachedFetch({ cache: edgeCache }),
     ...(preRegistered ? { preRegistered } : {}),
     clientIdMetadataDocumentUrl: clientMetadata.clientId,
     dynamicRegistration: {

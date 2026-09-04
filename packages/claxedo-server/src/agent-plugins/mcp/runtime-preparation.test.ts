@@ -136,6 +136,54 @@ describe("hosted MCP runtime preparation", () => {
     expect(scope).toMatchObject({ workspaceId: "workspace-1", pluginInstanceId: "claxedo/docs" })
   })
 
+  test("starts every server's discovery before walking any of them", async () => {
+    const env = await signingEnv()
+    const requested: string[] = []
+    const servers = ["https://mcp.example/mcp", "https://mcp-two.example/mcp"]
+    const fetch = vi.fn(async (url: string) => {
+      requested.push(url)
+      const origin = new URL(url).origin
+      if (servers.includes(url)) {
+        return new Response(null, { status: 401, headers: { "www-authenticate": `Bearer resource_metadata="${origin}/resource"` } })
+      }
+      if (url === `${origin}/resource`) return Response.json({ resource: `${origin}/mcp`, authorization_servers: ["https://login.example"] })
+      if (url === "https://login.example/.well-known/oauth-authorization-server") return Response.json({
+        issuer: "https://login.example",
+        authorization_endpoint: "https://login.example/authorize",
+        token_endpoint: "https://login.example/token",
+        code_challenge_methods_supported: ["S256"],
+      })
+      return new Response(null, { status: 404 })
+    })
+    const preparer = createHostedMcpRuntimePreparer({
+      activations: { runtimeSnapshot: async () => snapshot() },
+      artifacts: {
+        put: async (value) => value,
+        get: async () => ({
+          digest,
+          tree: { entries: [] },
+          plugin: {
+            root: ".",
+            manifest: { $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "docs" },
+            skills: [],
+            mcp: { status: "valid", servers: servers.map((url, index) => ({ name: `docs-${index}`, type: "streamable-http" as const, url })) },
+          },
+        }),
+      },
+      resolveConnection: async () => ({ ok: false as const, status: 404, code: "connection_not_found" }),
+      oauth: { fetch, preRegistered: { "https://login.example": { clientId: "claxedo" } } },
+      gatewayUrl: "https://mcp-gateway.example/",
+      signingEnv: env,
+      secretBrokering: "native",
+    })
+    const plan = agentPluginMcpRuntimePlan(await preparer.forSnapshot(snapshot()))
+    expect(plan.mcpServers).toHaveLength(4)
+    // Both probes go out before either server's metadata walk begins; a
+    // serial walk would place the first server's whole chain ahead of the
+    // second probe.
+    expect(requested.slice(0, 2)).toEqual(servers)
+  })
+
   test("a consumer that carries the secrets itself gets gateway servers even where the deployment has no broker", async () => {
     // Staging is control-plane-only (no sandbox driver, brokering "none"), yet
     // the signed desktop receives its credentials in the runtime/self answer.

@@ -168,10 +168,41 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
     const mcpServers: AgentPluginRuntimeApplyRequest["mcpServers"] = []
     const secrets: SandboxBrokeredSecret[] = []
     const discovery = new Map<string, ReturnType<typeof discoverMcpOAuth>>()
+    const discover = (resourceUrl: string) => {
+      const existing = discovery.get(resourceUrl)
+      if (existing) return existing
+      const started = discoverMcpOAuth({
+        resourceUrl,
+        fetch: oauthFetch,
+        ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
+        ...(input.oauth.clientIdMetadataDocumentUrl
+          ? { clientIdMetadataDocumentUrl: input.oauth.clientIdMetadataDocumentUrl }
+          : {}),
+        ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
+      })
+      // The plan below awaits each discovery in server order; a failure that
+      // lands before its turn must not surface as an unhandled rejection.
+      started.catch(() => undefined)
+      discovery.set(resourceUrl, started)
+      return started
+    }
 
-    for (const selection of selections) {
+    // Every server's discovery walks the network, so all of them start now
+    // and the ordered plan below only waits for answers already in flight.
+    const loaded = await Promise.all(selections.map(async (selection) => {
       const artifact = await input.artifacts.get(selection.artifactDigest)
       if (!artifact) throw new Error(`Retained Agent Plugin artifact ${selection.artifactDigest} is unavailable`)
+      return { selection, artifact }
+    }))
+
+    for (const { artifact } of loaded) {
+      if (artifact.plugin.mcp.status !== "valid") continue
+      for (const server of artifact.plugin.mcp.servers) {
+        if (server.type === "streamable-http") discover(server.url)
+      }
+    }
+
+    for (const { selection, artifact } of loaded) {
       if (artifact.plugin.mcp.status !== "valid") continue
       for (const server of artifact.plugin.mcp.servers) {
         if (server.type !== "streamable-http") continue
@@ -179,19 +210,7 @@ export function createHostedMcpRuntimePreparer(input: HostedMcpRuntimePreparerIn
           pluginInstanceId: selection.pluginInstanceId,
           serverName: server.name,
         })
-        let discovered = discovery.get(server.url)
-        if (!discovered) {
-          discovered = discoverMcpOAuth({
-            resourceUrl: server.url,
-            fetch: oauthFetch,
-            ...(input.oauth.preRegistered ? { preRegistered: input.oauth.preRegistered } : {}),
-            ...(input.oauth.clientIdMetadataDocumentUrl
-              ? { clientIdMetadataDocumentUrl: input.oauth.clientIdMetadataDocumentUrl }
-              : {}),
-            ...(input.oauth.dynamicRegistration ? { dynamicRegistration: input.oauth.dynamicRegistration } : {}),
-          })
-          discovery.set(server.url, discovered)
-        }
+        const discovered = discover(server.url)
         let connection: Awaited<ReturnType<ConnectionReadiness>> | undefined
         let auth: Awaited<ReturnType<typeof discoverMcpOAuth>> | undefined
         let discoveryFailure: unknown
