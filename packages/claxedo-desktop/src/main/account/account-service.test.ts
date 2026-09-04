@@ -547,7 +547,11 @@ describe("bound desktop account lifecycle", () => {
     await expect(service.run("org.list")).rejects.toThrow("could not renew the session")
     expect(refreshAttempts).toBe(1)
 
-    clock += 21_000
+    // The clock is Unix seconds: the cool-down is 20 of them, not 20,000.
+    clock += 19
+    await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
+    expect(refreshAttempts).toBe(1)
+    clock += 2
     await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
     expect(refreshAttempts).toBe(2)
   })

@@ -68,7 +68,7 @@ type Credential = { ok: true; token: string } | { ok: false; detail: string }
  * `account-service.test.ts`, "a failed refresh answers later operations
  * without re-running until the cool-down passes".
  */
-const REFRESH_FAILURE_COOLDOWN_MS = 20_000
+const REFRESH_FAILURE_COOLDOWN_SECONDS = 20
 /** Backoff for the profile lookup after a failure: quick, then patient, then stop asking. */
 const IDENTITY_RETRY_DELAYS_MS = [15_000, 60_000, 5 * 60_000] as const
 
@@ -117,6 +117,13 @@ export type AccountServiceOptions = {
    * to the generic "Account" label until something else supplies a name.
    */
   resolveIdentity?: (accessToken: string) => Promise<AccountIdentity>
+  /**
+   * Unix time in SECONDS — the unit of the credential's `expiresAt` and of
+   * the store's persistence clock. Every interval this service measures with
+   * it is expressed in seconds too: a millisecond constant here once turned a
+   * 20 s refresh cool-down into five and a half hours of instant failures
+   * after one 503 during a release.
+   */
   now: () => number
   /**
    * Schedules the retry that recovers a session left unavailable by an
@@ -338,9 +345,9 @@ export function createAccountService(options: AccountServiceOptions) {
     // cross-process filesystem CAS (rename alone cannot provide one).
     if (renewing) return renewing
     // A failed refresh answers for the next window instead of re-running: see
-    // `REFRESH_FAILURE_COOLDOWN_MS` above. Failing fast lets the shell
+    // `REFRESH_FAILURE_COOLDOWN_SECONDS` above. Failing fast lets the shell
     // bootstrap fall back and render while the account stays degraded.
-    if (renewFailure && options.now() - renewFailure.at < REFRESH_FAILURE_COOLDOWN_MS) {
+    if (renewFailure && options.now() - renewFailure.at < REFRESH_FAILURE_COOLDOWN_SECONDS) {
       return Promise.resolve<Credential>({ ok: false, detail: renewFailure.detail })
     }
     renewing = exchangeRefresh(held)
