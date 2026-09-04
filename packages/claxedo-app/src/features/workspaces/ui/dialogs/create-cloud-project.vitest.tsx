@@ -346,11 +346,10 @@ describe("create cloud project dialog on a local control plane", () => {
 
     renderDialog()
 
-    await waitFor(() => expect(screen.getByText("Sandbox Provider")).toBeTruthy())
-    // Both selects exist only once the repository load settles too; indexing
-    // before that would grab the provider select and assert nothing.
-    await waitFor(() => expect(screen.getAllByRole("combobox")).toHaveLength(2))
-    fireEvent.input(screen.getAllByRole("combobox")[1]!, { target: { value: "1" } })
+    await waitFor(() => expect(screen.getByRole("combobox", { name: "Sandbox Provider" })).toBeTruthy())
+    // The repository select exists only once the repository load settles.
+    const repositorySelect = await screen.findByRole("combobox", { name: "Connected GitHub repository" })
+    fireEvent.input(repositorySelect, { target: { value: "1" } })
 
     // A repository is chosen, so only the empty provider is holding submit.
     await waitFor(() => expect(submitButton().disabled).toBe(true))
@@ -368,8 +367,8 @@ describe("create cloud project dialog on a local control plane", () => {
     })
 
     renderDialog()
-    await waitFor(() => expect(screen.getAllByRole("combobox")).toHaveLength(2))
-    fireEvent.input(screen.getAllByRole("combobox")[1]!, { target: { value: "1" } })
+    const repositorySelect = await screen.findByRole("combobox", { name: "Connected GitHub repository" })
+    fireEvent.input(repositorySelect, { target: { value: "1" } })
     await waitFor(() => expect(submitButton().disabled).toBe(false))
 
     fireEvent.click(submitButton())

@@ -367,37 +367,6 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
 
               <section class="space-y-4">
               <SectionHeading step={2} title="Repository" />
-              <Show when={driversAvailable()}>
-              <div>
-                <label class="block text-sm text-text-weak mb-1">
-                  Sandbox Provider
-                </label>
-                <select
-                  value={provider()}
-                  onInput={(e) => setProvider(e.currentTarget.value)}
-                  class="w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
-                >
-                  <For each={providers()}>
-                    {(item) => (
-                      <option value={item.id} disabled={!item.configured}>
-                        {item.label}{item.configured ? "" : " (configure in Settings)"}
-                      </option>
-                    )}
-                  </For>
-                </select>
-                <div class="mt-2 flex flex-col gap-0.5 text-12-regular text-text-weak">
-                  <span>{sandboxProviderFacts(provider()).cost}</span>
-                  <span>Needs: {sandboxProviderFacts(provider()).needs}</span>
-                  <Show when={sandboxProviderFacts(provider()).keyUrl}>
-                    {(url) => (
-                      <a class="text-12-medium text-text-interactive-base" href={url()} target="_blank" rel="noreferrer">
-                        Open provider key page (setup stays here)
-                      </a>
-                    )}
-                  </Show>
-                </div>
-              </div>
-              </Show>
 
               <div>
                 <Show when={repositoryLoadError()}>
@@ -415,6 +384,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                     class="mb-2 w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
                   />
                   <select
+                    aria-label="Connected GitHub repository"
                     value={repository()?.id ?? ""}
                     onInput={(event) => {
                       setRepository(repositories().find((item) => item.id === event.currentTarget.value))
@@ -525,6 +495,40 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                   </Show>
                 </div>
               </section>
+
+              <Show when={driversAvailable()}>
+                <section>
+                  <SectionHeading step={4} title="Sandbox" />
+                  <label class="block text-sm text-text-weak mb-1">
+                    Sandbox Provider
+                  </label>
+                  <select
+                    aria-label="Sandbox Provider"
+                    value={provider()}
+                    onInput={(e) => setProvider(e.currentTarget.value)}
+                    class="w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
+                  >
+                    <For each={providers()}>
+                      {(item) => (
+                        <option value={item.id} disabled={!item.configured}>
+                          {item.label}{item.configured ? "" : " (configure in Settings)"}
+                        </option>
+                      )}
+                    </For>
+                  </select>
+                  <div class="mt-2 flex flex-col gap-0.5 text-12-regular text-text-weak">
+                    <span>{sandboxProviderFacts(provider()).cost}</span>
+                    <span>Needs: {sandboxProviderFacts(provider()).needs}</span>
+                    <Show when={sandboxProviderFacts(provider()).keyUrl}>
+                      {(url) => (
+                        <a class="text-12-medium text-text-interactive-base" href={url()} target="_blank" rel="noreferrer">
+                          Open provider key page (setup stays here)
+                        </a>
+                      )}
+                    </Show>
+                  </div>
+                </section>
+              </Show>
 
               <div class="flex justify-end gap-2 mt-6">
                 <span class="mr-auto self-center text-11-regular text-text-weak">
