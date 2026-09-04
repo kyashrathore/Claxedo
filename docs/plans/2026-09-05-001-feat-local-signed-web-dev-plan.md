@@ -87,4 +87,15 @@ server mints that cookie because the embedded issuer's `baseURL` is the HTTPS or
   engine-compat `/file` and `/path` routes, which verify a bearer in signed mode. Bridge and guard now
   mount on every route; proven: `/file` and `/path` through the proxy answer 401 without the cookie and
   200 with it.
+- 2026-09-05 01:00 (owner feedback): (1) signed web should onboard through cloud project creation
+  (name, repo, environment variables), not the local folder picker. The New Project action opens the
+  cloud dialog only when the build's `sandboxEnabled` config is on (`VITE_SANDBOX_ENABLED=true`,
+  `home.tsx` `chooseProject`); that flag is now in the `claxedo-app-signed-local` launch entry. The
+  self-hosted server already serves `GET /api/workspace/drivers` (daytona default, exe, modal; none
+  configured on this box). The existing cloud dialog collects repository and provider only — there is
+  no name or environment-variables step; that is the onboarding journey work
+  (`docs/plans/2026-07-17-002-feat-onboarding-v1-implementation-plan.md`, unit O6/O7), not built.
+  (2) Folder picker "still not working" after the route-wide bridge: the routes answer 200 with the
+  cookie from curl; the page must reload to pick up the server restart, and with `sandboxEnabled` the
+  picker is no longer the signed web path.
 
