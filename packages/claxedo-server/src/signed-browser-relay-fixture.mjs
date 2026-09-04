@@ -864,7 +864,7 @@ await authority.releaseSessionTurn({
 // therefore calls the same canonical authority-policy factory explicitly
 // before any tunnel request can create the runtime host.
 configureEmbeddedWorkspaceRuntime({
-  opencodeRuntime: createWorkspaceOpenCodeRuntime(directory),
+  opencodeRuntime: createWorkspaceOpenCodeRuntime(workspaceDir),
   sessionAccessPolicy: embeddedSessionPolicy,
 })
 

@@ -4,6 +4,7 @@ import path from "node:path"
 export default defineConfig({
   resolve: {
     alias: {
+      "@claxedo/workspace-runtime/opencode": path.resolve(import.meta.dirname, "../workspace-runtime/src/opencode.ts"),
       "@claxedo/workspace-runtime/config": path.resolve(import.meta.dirname, "../workspace-runtime/src/config.ts"),
       "@claxedo/workspace-runtime/exposure": path.resolve(import.meta.dirname, "../workspace-runtime/src/exposure.ts"),
       "@claxedo/workspace-runtime/host": path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts"),

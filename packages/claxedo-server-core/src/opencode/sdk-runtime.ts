@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { createOpenCodeRuntime, type OpenCodeRuntime } from "@claxedo/opencode-runtime"
+import { createOpenCodeRuntime, type OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 
 let runtime: OpenCodeRuntime | undefined

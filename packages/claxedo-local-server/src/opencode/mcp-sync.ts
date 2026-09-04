@@ -1,4 +1,4 @@
-import { authorizeWorkspace, type OpenCodeRuntime } from "@claxedo/opencode-runtime"
+import { authorizeWorkspace, type OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import { getEffectiveConfig } from "@claxedo/server-core/agent-config/index"
 
 export type McpSyncResult = {

@@ -181,6 +181,9 @@ jobs:
           --filter=@claxedo/workspace-relay
           --filter=@claxedo/workspace-runtime
 
+      - name: Verify embedded OpenCode on the Node runtime
+        run: bun run --cwd packages/workspace-runtime test:opencode-node
+
       # Product boundaries are independent release artifacts. Keep each public
       # command separately selectable so an app-only change does not build the
       # server products, and ordinary CI never invokes Desktop's production

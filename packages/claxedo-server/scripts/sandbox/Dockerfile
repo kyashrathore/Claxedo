@@ -1,4 +1,6 @@
-FROM node:22-bookworm-slim
+# better-sqlite3 13's Linux ARM64 prebuild requires glibc >= 2.38.
+# Trixie supplies it; Bookworm's 2.36 cannot load the runtime store.
+FROM node:24.18.0-trixie-slim
 
 LABEL org.opencontainers.image.source="https://github.com/kyashrathore/Claxedo"
 
@@ -56,7 +58,7 @@ RUN cd /opt/workspace-runtime && \
 RUN set -eu; \
     mkdir -p /tmp/opencode-embedded-smoke; \
     cd /tmp/opencode-embedded-smoke; \
-    smoke_id="ses_workgraph_image_smoke_$(printf 'w%.0s' $(seq 1 200))"; \
+    smoke_id="ses_embedded_image_smoke"; \
     export smoke_id; \
     setsid env WORKSPACE_RUNTIME_PORT=2593 WORKSPACE_RUNTIME_HOSTNAME=127.0.0.1 WORKSPACE_RUNTIME_ID=image-smoke WORKSPACE_RUNTIME_RUNNER=opencode WORKSPACE_RUNTIME_DIRECTORY=/tmp/opencode-embedded-smoke workspace-runtime >/tmp/workspace-runtime-smoke.log 2>&1 & \
     runtime_pid=$!; \
@@ -72,7 +74,7 @@ RUN set -eu; \
     if [ "$ready" -ne 1 ]; then cat /tmp/workspace-runtime-smoke.log; exit 1; fi; \
     node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-embedded-session.json','utf8'));if(value.id!==process.env.smoke_id)throw new Error('Embedded Session did not adopt the requested id')"; \
     curl -fsS -X POST -H 'content-type: application/json' \
-      -d '{"messageID":"msg_workgraph_image_failure","parts":[{"type":"text","text":"Prove embedded pre-provider failures are durable."}],"agent":"build","model":{"providerID":"missing-provider","modelID":"missing-model"},"variant":"invalid"}' \
+      -d '{"messageID":"msg_embedded_image_failure","parts":[{"type":"text","text":"Prove embedded pre-provider failures are durable."}],"agent":"build","model":{"providerID":"missing-provider","modelID":"missing-model"},"variant":"invalid"}' \
       "http://127.0.0.1:2593/session/$smoke_id/prompt_async?harness=opencode" >/dev/null; \
     failed=0; \
     for attempt in $(seq 1 40); do \

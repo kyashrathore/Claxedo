@@ -49,7 +49,7 @@ import {
   shouldUseSignedEventAccess,
 } from "./route-event-scope"
 import { EVENT_STREAM_STALL_MS } from "@claxedo/agent-event-runtime"
-import { isRelayBackedWorkspaceKind, workspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 export { abortSubagentsForParent, applySubagentCompatLifecycleEvent, applySubagentRuntimeEventEnvelope } from "@/features/session/subagents/subagent-ingress"
 export { eventDirectoryForLiveSession, globalSdkClientPlacement, globalSdkClientWorkspaceId, liveSessionTransition, liveSessionWithRelayBacking, nextLiveSession, runtimeEventLiveSession } from "./live-session"
 export { createControlPlaneEventFetch, createGlobalSdkFetch, workspaceEventTransport }
@@ -58,13 +58,10 @@ import {
   compatEventEnvelope,
   partUpdateSupersedesDeltas,
   projectRuntimeEventEnvelope,
-  rememberRuntimeEventEnvelope,
   resetRuntimeReplayGapState,
-  runtimeProjectionOwnsCompat,
   runtimeReplayGap,
   shouldAcceptCompatEvent,
   type GlobalSdkEvent,
-  type RuntimeCoveredSessions,
   type RuntimeProjectionCache,
 } from "./runtime-event-projection"
 export {
@@ -72,9 +69,7 @@ export {
   isOpenCodeSdkEvent,
   partUpdateSupersedesDeltas,
   projectRuntimeEventEnvelope,
-  rememberRuntimeEventEnvelope,
   resetRuntimeReplayGapState,
-  runtimeProjectionOwnsCompat,
   runtimeReplayGap,
   shouldAcceptCompatEvent,
   type GlobalSdkEvent,
@@ -217,7 +212,6 @@ const globalSDKContextInput = {
     const aborted = isAbortError
     const transientStreamError = (error: unknown) =>
       error instanceof TypeError && error.message.toLowerCase() === "network error"
-    const runtimeCoveredSessions: RuntimeCoveredSessions = new Set()
     const subagents = createSubagentRegistry()
 
     let attempt: AbortController | undefined
@@ -326,11 +320,6 @@ const globalSDKContextInput = {
             if (session.directory) runtimePath.searchParams.set("directory", session.directory)
             runtimePath.searchParams.set("parentSessionId", session.sessionID)
             const sessionWorkspaceKind = workspaceKind(session.workspaceKind)
-            // A workspace whose runtime lives on another machine, reached over
-            // the relay: this stream is the only place its turns reach here.
-            const relayBackedStream = session.host !== "central"
-              && !!session.workspaceId
-              && isRelayBackedWorkspaceKind(sessionWorkspaceKind)
             const response = session.host === "central"
               ? await openCentralRuntimeEventResponse({
                   request,
@@ -414,7 +403,6 @@ const globalSDKContextInput = {
                 void resetRuntimeReplayGapState({
                   envelope,
                   projections,
-                  covered: runtimeCoveredSessions,
                   baseUrl: currentServer.http.url,
                   liveSession: eventLiveSession(),
                   subagents,
@@ -438,8 +426,6 @@ const globalSDKContextInput = {
                 })
               }
               applySubagentRuntimeEventEnvelope(envelope, subagents)
-              if (!runtimeProjectionOwnsCompat(envelope, { soleCompatLane: relayBackedStream })) continue
-              rememberRuntimeEventEnvelope(envelope, runtimeCoveredSessions)
               for (const event of projectRuntimeEventEnvelope(envelope, projections)) {
                 enqueue(event.directory, event.payload)
               }
@@ -526,7 +512,7 @@ const globalSDKContextInput = {
                 liveSession: eventLiveSession(),
               })
               applySubagentCompatLifecycleEvent(event.payload, subagents)
-              if (!shouldAcceptCompatEvent(event.payload, runtimeCoveredSessions)) continue
+              if (!shouldAcceptCompatEvent(event.payload)) continue
               enqueue(directory, event.payload)
 
               if (Date.now() - yielded < STREAM_YIELD_MS) continue

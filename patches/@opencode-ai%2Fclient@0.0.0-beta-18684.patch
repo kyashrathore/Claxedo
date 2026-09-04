@@ -1,0 +1,43 @@
+diff --git a/dist/effect/index.js b/dist/effect/index.js
+--- a/dist/effect/index.js
++++ b/dist/effect/index.js
+@@ -1,4 +1,4 @@
+-export * from "./generated/index";
++export * from "./generated/index.js";
+ export { Agent } from "@opencode-ai/schema/agent";
+ export { Command } from "@opencode-ai/schema/command";
+ export { Config } from "@opencode-ai/schema/config";
+diff --git a/dist/solid/index.js b/dist/solid/index.js
+--- a/dist/solid/index.js
++++ b/dist/solid/index.js
+@@ -1,3 +1,3 @@
+-export * from "./data";
++export * from "./data.js";
+-export * from "./connection";
++export * from "./connection.js";
+-export * from "./pty";
++export * from "./pty.js";
+diff --git a/dist/solid/data.js b/dist/solid/data.js
+--- a/dist/solid/data.js
++++ b/dist/solid/data.js
+@@ -5,7 +5,7 @@
+ import { Worktree } from "@opencode-ai/schema/worktree";
+ import { SessionID } from "@opencode-ai/schema/session-id";
+ import { SessionMessage } from "@opencode-ai/schema/session-message";
+-import { isFormAlreadySettledError, isFormNotFoundError, isPermissionNotFoundError, } from "../promise";
++import { isFormAlreadySettledError, isFormNotFoundError, isPermissionNotFoundError, } from "../promise/index.js";
+ import { createStore, produce, reconcile } from "solid-js/store";
+ import { batch, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+ const messageIDFromEvent = (eventID) => eventID.replace(/^evt_/, "msg_");
+diff --git a/dist/effect/generated/client.js b/dist/effect/generated/client.js
+--- a/dist/effect/generated/client.js
++++ b/dist/effect/generated/client.js
+@@ -3,7 +3,7 @@
+ import { Sse } from "effect/unstable/encoding";
+ import { HttpClientError } from "effect/unstable/http";
+ import { HttpApiClient } from "effect/unstable/httpapi";
+-import { ClientApi } from "../../contract";
++import { ClientApi } from "../../contract.js";
+ import { ClientError } from "./client-error.js";
+ const mapClientError = (error) => HttpClientError.isHttpClientError(error) || Schema.isSchemaError(error) || Sse.Retry.is(error)
+     ? new ClientError({ cause: error })

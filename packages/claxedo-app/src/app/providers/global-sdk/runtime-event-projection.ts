@@ -12,7 +12,6 @@
 import type { Event as OpenCodeEvent } from "@opencode-ai/sdk/v2/client"
 import {
   createOpencodeCompatProjection,
-  runtimeOwnsOpencodeCompatProjection,
   type CompatEvent,
   type OpencodeCompatProjection,
 } from "@claxedo/agent-event-runtime/opencode-compat"
@@ -25,7 +24,6 @@ import { eventDirectoryForLiveSession } from "./live-session"
 import { invalidateSessionGoalData } from "./goal-events"
 
 export type RuntimeProjectionCache = Map<string, OpencodeCompatProjection>
-export type RuntimeCoveredSessions = Set<string>
 
 export type GlobalSdkEvent = OpenCodeEvent | CompatEvent
 type Event = GlobalSdkEvent
@@ -87,38 +85,6 @@ function eventSessionId(payload: Event): string | undefined {
   return undefined
 }
 
-function runtimeSessionKey(sessionID: string) {
-  return sessionID
-}
-
-export function rememberRuntimeEventEnvelope(input: RuntimeEventEnvelope, covered: RuntimeCoveredSessions) {
-  covered.add(runtimeSessionKey(input.sessionId))
-}
-
-/**
- * Whether THIS lane must project the frame into OpenCode-compatible events.
- *
- * `runtimeOwnsOpencodeCompatProjection` answers that for a runtime sharing a
- * process with the surface: a `ses_`-prefixed session is an OpenCode-legacy one
- * whose compat frames ALSO arrive on this app's `/global/event` loop, so
- * projecting them here as well would apply every delta twice.
- *
- * A relay-backed workspace has no such second lane. Its engine publishes onto
- * the HOST's own global bus, which this app never reads — its `/global/event` is
- * its own control plane's — so `soleCompatLane` says the runtime-events stream
- * is the only carrier this session has. Deferring to a lane that does not exist
- * is what made an attached pane render a host-started turn as one finished block
- * at the settle refetch instead of text that grows: the ids the app mints for a
- * managed private session are `ses_`-prefixed (`reservePrivateSession`), so the
- * prefix rule dropped every frame of every user-hosted turn.
- */
-export function runtimeProjectionOwnsCompat(
-  input: RuntimeEventEnvelope,
-  options?: { soleCompatLane?: boolean },
-) {
-  return options?.soleCompatLane === true || runtimeOwnsOpencodeCompatProjection(input)
-}
-
 export function runtimeReplayGap(input: RuntimeEventEnvelope) {
   const payload = input.payload
   return payload.type === "harness-notice" &&
@@ -128,14 +94,12 @@ export function runtimeReplayGap(input: RuntimeEventEnvelope) {
 export function resetRuntimeReplayGapState(input: {
   envelope: RuntimeEventEnvelope
   projections?: RuntimeProjectionCache
-  covered?: RuntimeCoveredSessions
   baseUrl?: string
   liveSession?: LiveSession
   subagents?: SubagentRegistry
   goalScope?: Parameters<typeof invalidateSessionGoalData>[0]
 }) {
   input.projections?.clear()
-  input.covered?.clear()
   input.subagents?.replayGap()
   const directory = eventDirectoryForLiveSession({
     directory: input.envelope.directory,
@@ -176,12 +140,12 @@ function mirroredByRuntimeProjection(payload: Event) {
     type === "session.compacted"
 }
 
-export function shouldAcceptCompatEvent(payload: Event, covered: RuntimeCoveredSessions) {
+export function shouldAcceptCompatEvent(payload: Event) {
   if (!mirroredByRuntimeProjection(payload)) return true
   const sessionID = eventSessionId(payload)
   if (!sessionID) return true
-  if (runtimeOwnsOpencodeCompatProjection({ sessionId: sessionID })) return false
-  return !covered.has(runtimeSessionKey(sessionID))
+  // Every harness, including embedded OpenCode, publishes through the runtime.
+  return false
 }
 
 export function partUpdateSupersedesDeltas(payload: Event) {

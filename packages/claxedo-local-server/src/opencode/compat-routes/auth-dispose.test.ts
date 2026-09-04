@@ -8,7 +8,8 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
-import * as engine from "@claxedo/server-core/opencode/engine"
+import * as registry from "@claxedo/server-core/credentials/registry"
+import * as fanout from "../../agent-config/fanout"
 
 const root = path.join(realpathSync(os.tmpdir()), `compat-auth-dispose-${randomUUID().slice(0, 8)}`)
 const prev = {
@@ -34,78 +35,20 @@ function mountApp() {
   return app
 }
 
-describe("OpenCode compat auth/dispose routes", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
+describe("OpenCode credential ownership", () => {
+  beforeEach(() => { vi.restoreAllMocks() })
+
+  test("DELETE /auth uses the credential owner and fans out the new snapshot", async () => {
+    const remove = vi.spyOn(registry, "deleteCredentialsByProvider").mockResolvedValue(undefined as never)
+    const sync = vi.spyOn(fanout, "fanOutConfig").mockResolvedValue()
+    const response = await mountApp().request("http://localhost/auth/openai?harness=opencode", { method: "DELETE" })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toBe(true)
+    expect(remove).toHaveBeenCalledWith("openai")
+    expect(sync).toHaveBeenCalledOnce()
   })
 
-  test("DELETE /auth/:id proxies to the engine then disposes cached instances", async () => {
-    const opencodeRequest = vi.spyOn(engine, "opencodeRequest").mockImplementation(async (req: Request) => {
-      const url = new URL(req.url)
-      if (url.pathname === "/auth/openai" && req.method === "DELETE") {
-        return new Response("true", { status: 200, headers: { "Content-Type": "application/json" } })
-      }
-      if (url.pathname === "/global/dispose" && req.method === "POST") {
-        return new Response("true", { status: 200, headers: { "Content-Type": "application/json" } })
-      }
-      return new Response(`unexpected ${url.pathname}`, { status: 500 })
-    })
-
-    const app = mountApp()
-    const res = await app.request("http://localhost/auth/openai?harness=opencode", { method: "DELETE" })
-    expect(res.status).toBe(200)
-    await expect(res.text()).resolves.toBe("true")
-
-    expect(opencodeRequest).toHaveBeenCalledTimes(2)
-    const paths = opencodeRequest.mock.calls.map((call) => new URL((call[0] as Request).url).pathname)
-    expect(paths).toEqual(["/auth/openai", "/global/dispose"])
-  })
-
-  test("PATCH /global/config disposes cached instances after upstream patch", async () => {
-    const opencodeRequest = vi.spyOn(engine, "opencodeRequest").mockImplementation(async (req: Request) => {
-      const url = new URL(req.url)
-      if (url.pathname === "/global/config" && req.method === "PATCH") {
-        return new Response(JSON.stringify({ disabled_providers: ["clinepass-2"] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
-      if (url.pathname === "/global/dispose" && req.method === "POST") {
-        return new Response("true", { status: 200, headers: { "Content-Type": "application/json" } })
-      }
-      return new Response("unexpected", { status: 500 })
-    })
-
-    const app = mountApp()
-    const res = await app.request("http://localhost/global/config", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ config: { disabled_providers: ["clinepass-2"] } }),
-    })
-    expect(res.status).toBe(200)
-
-    expect(opencodeRequest).toHaveBeenCalledTimes(2)
-    const paths = opencodeRequest.mock.calls.map((call) => new URL((call[0] as Request).url).pathname)
-    expect(paths).toEqual(["/global/config", "/global/dispose"])
-  })
-
-  test("POST /global/dispose proxies to the engine instead of returning a local stub", async () => {
-    const opencodeRequest = vi.spyOn(engine, "opencodeRequest").mockImplementation(async (req: Request) => {
-      const url = new URL(req.url)
-      if (url.pathname === "/global/dispose" && req.method === "POST") {
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        })
-      }
-      return new Response("unexpected", { status: 500 })
-    })
-
-    const app = mountApp()
-    const res = await app.request("http://localhost/global/dispose", { method: "POST" })
-    expect(res.status).toBe(200)
-    await expect(res.json()).resolves.toEqual({ ok: true })
-    expect(opencodeRequest).toHaveBeenCalledTimes(1)
-    expect(new URL((opencodeRequest.mock.calls[0]![0] as Request).url).pathname).toBe("/global/dispose")
+  test("the removed engine-disposal endpoint cannot be invoked", async () => {
+    expect((await mountApp().request("http://localhost/global/dispose", { method: "POST" })).status).toBe(404)
   })
 })

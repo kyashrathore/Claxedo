@@ -12,7 +12,7 @@
  *     ANTHROPIC_BASE_URL pointed here (enforcement-probe's exact mechanism).
  *   codex — same adapter, `-c model_providers.*` overrides → CODEX_CONFIG.
  *
- * The OpenCode path is embedded and owned by `@claxedo/opencode-runtime`; its
+ * The OpenCode path is embedded and owned by `@claxedo/workspace-runtime/opencode`; its
  * public SDK contract probes live beside that package. This probe must never
  * resurrect the removed CLI/server process path.
  *

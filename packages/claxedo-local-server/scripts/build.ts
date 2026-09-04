@@ -1,6 +1,7 @@
 import { createRequire } from "node:module"
 import fs from "node:fs"
 import path from "node:path"
+import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
 
 import {
   normalizeSourceMapBuildManifest,
@@ -26,7 +27,7 @@ const result = await Bun.build({
   splitting: false,
   sourcemap: "external",
   // Native modules are resources supplied by the composition host.
-  external: ["@lydell/node-pty", "better-sqlite3"],
+  external: ["@lydell/node-pty", "better-sqlite3", "@opencode-ai/sdk"],
   plugins: [{
     name: "jsonc-parser-esm",
     setup(build) {
@@ -37,6 +38,7 @@ const result = await Bun.build({
   }],
 })
 if (!result.success) throw new AggregateError(result.logs, "Local Server bundle failed")
+stageOpenCodeSdk(path.join(DIST, "node_modules"))
 
 const journalModule = require.resolve("@claxedo/server-core/platform/db/journal")
 const migrations = path.join(path.dirname(journalModule), "claxedo-migration")

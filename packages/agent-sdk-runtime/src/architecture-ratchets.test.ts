@@ -14,8 +14,7 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       //
       // Re-measured again where the Cloudflare multiplayer branch merged in.
       // sdk-runtime-adapter.ts threads the host's durable turn admission fence
-      // through every producer write, and opencode/index.ts gained the session
-      // shell and summarize adapter methods. runtime.ts threads the same fence
+      // through every producer write. runtime.ts threads the same fence
       // but stays below its previous ceiling because the durable turn record
       // moved out to runtime/turn-record.ts.
       //
@@ -31,7 +30,6 @@ describe("agent-sdk-runtime architecture ratchets", () => {
       "harnesses/acp/index.ts": 844,
       "harnesses/codex/driver.ts": 755,
       "harnesses/shared/sdk-runtime-adapter.ts": 890,
-      "harnesses/opencode/index.ts": 906,
       "harnesses/pi/index.ts": 988,
     }
     const violations = Object.entries(ceilings).flatMap(([file, ceiling]) => {
@@ -50,7 +48,7 @@ describe("agent-sdk-runtime architecture ratchets", () => {
   })
 
   test("concrete harness implementations do not import one another", () => {
-    const harnesses = ["acp", "claude", "codex", "cursor", "opencode", "pi"]
+    const harnesses = ["acp", "claude", "codex", "cursor", "pi"]
     const violations: string[] = []
     for (const harness of harnesses) {
       for (const file of productionFiles(path.join(root, "harnesses", harness))) {

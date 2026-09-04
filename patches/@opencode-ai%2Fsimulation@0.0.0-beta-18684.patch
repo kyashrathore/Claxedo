@@ -1,0 +1,200 @@
+diff --git a/dist/manifest.js b/dist/manifest.js
+--- a/dist/manifest.js
++++ b/dist/manifest.js
+@@ -58,4 +58,4 @@
+   })));
+ });
+ 
+-export * as DriveManifest from "./manifest";
++export * as DriveManifest from "./manifest.js";
+diff --git a/dist/recording.js b/dist/recording.js
+--- a/dist/recording.js
++++ b/dist/recording.js
+@@ -102,4 +102,4 @@
+   }
+ }
+ 
+-export * as SimulationRecording from "./recording";
++export * as SimulationRecording from "./recording.js";
+diff --git a/dist/control-server.js b/dist/control-server.js
+--- a/dist/control-server.js
++++ b/dist/control-server.js
+@@ -1,5 +1,5 @@
+ import { Effect, Fiber, FiberSet, Queue, Stream } from "effect";
+-import { SimulationProtocol } from "./protocol";
++import { SimulationProtocol } from "./protocol/index.js";
+ const maxOutboundBytes = 67108864;
+ export function start(options) {
+   return Effect.gen(function* () {
+@@ -96,4 +96,4 @@
+   return socket.send(JSON.stringify(response));
+ }
+ 
+-export * as SimulationControlServer from "./control-server";
++export * as SimulationControlServer from "./control-server.js";
+diff --git a/dist/frontend/renderer.js b/dist/frontend/renderer.js
+--- a/dist/frontend/renderer.js
++++ b/dist/frontend/renderer.js
+@@ -1,6 +1,6 @@
+ import { createTestRenderer } from "@opentui/core/testing";
+ import { Effect } from "effect";
+-import { Timeline } from "../recording";
++import { Timeline } from "../recording.js";
+ const setups = new WeakMap, recordings = new WeakMap;
+ export const create = Effect.fn("SimulationRenderer.create")(function* (options, path, viewport) {
+   const cols = viewport?.cols ?? 100, rows = viewport?.rows ?? 40, recording = path ? yield* Effect.acquireRelease(Effect.tryPromise(() => Timeline.create(path, cols, rows)), (recording) => Effect.tryPromise(() => recording.finish()).pipe(Effect.catch((error) => Effect.sync(() => process.stderr.write(`Failed to finish UI recording: ${error}
+@@ -35,4 +35,4 @@
+   return Effect.tryPromise(() => recording.finish());
+ }
+ 
+-export * as SimulationRenderer from "./renderer";
++export * as SimulationRenderer from "./renderer.js";
+diff --git a/dist/frontend/actions.js b/dist/frontend/actions.js
+--- a/dist/frontend/actions.js
++++ b/dist/frontend/actions.js
+@@ -4,9 +4,9 @@
+   KeyCodes
+ } from "@opentui/core/testing";
+ import { Effect, Schema } from "effect";
+-import { SimulationProtocol } from "../protocol";
++import { SimulationProtocol } from "../protocol/index.js";
+-import { SimulationRenderer } from "./renderer";
++import { SimulationRenderer } from "./renderer.js";
+-import { SimulationSemantics } from "./semantics";
++import { SimulationSemantics } from "./semantics.js";
+ const decoder = new TextDecoder;
+ function isKeyCode(key) {
+   return Object.hasOwn(KeyCodes, key);
+@@ -151,4 +151,4 @@
+   return state(harness);
+ });
+ 
+-export * as SimulationActions from "./actions";
++export * as SimulationActions from "./actions.js";
+diff --git a/dist/frontend/server.js b/dist/frontend/server.js
+--- a/dist/frontend/server.js
++++ b/dist/frontend/server.js
+@@ -1,8 +1,8 @@
+ import { Effect } from "effect";
+-import { SimulationControlServer } from "../control-server";
++import { SimulationControlServer } from "../control-server.js";
+-import { SimulationProtocol } from "../protocol";
++import { SimulationProtocol } from "../protocol/index.js";
+-import { SimulationActions } from "./actions";
++import { SimulationActions } from "./actions.js";
+-import { SimulationRenderer } from "./renderer";
++import { SimulationRenderer } from "./renderer.js";
+ function handle(harness, request, version) {
+   switch (request.method) {
+     case "simulation.handshake":
+@@ -61,4 +61,4 @@
+   });
+ });
+ 
+-export * as SimulationServer from "./server";
++export * as SimulationServer from "./server.js";
+diff --git a/dist/frontend/simulation.js b/dist/frontend/simulation.js
+--- a/dist/frontend/simulation.js
++++ b/dist/frontend/simulation.js
+@@ -1,9 +1,9 @@
+ import { createCliRenderer } from "@opentui/core";
+ import { Config, Effect } from "effect";
+-import { DriveManifest } from "../manifest";
++import { DriveManifest } from "../manifest.js";
+-import { SimulationActions } from "./actions";
++import { SimulationActions } from "./actions.js";
+-import { SimulationRenderer } from "./renderer";
++import { SimulationRenderer } from "./renderer.js";
+-import { SimulationServer } from "./server";
++import { SimulationServer } from "./server.js";
+ export const create = Effect.fn("Drive.create")(function* (options, version) {
+   const headless = (yield* Config.string("OPENCODE_DRIVE_RENDERER").pipe(Config.withDefault("visible"))) === "headless", manifest = yield* DriveManifest.resolve(), renderer = headless ? yield* SimulationRenderer.create(options, manifest.recording?.timeline, manifest.viewport) : yield* Effect.acquireRelease(Effect.tryPromise(() => createCliRenderer(options)), (renderer) => Effect.sync(() => {
+     if (!renderer.isDestroyed)
+@@ -17,4 +17,4 @@
+   return renderer;
+ });
+ 
+-export * as Drive from "./simulation";
++export * as Drive from "./simulation.js";
+diff --git a/dist/backend/simulated-provider.js b/dist/backend/simulated-provider.js
+--- a/dist/backend/simulated-provider.js
++++ b/dist/backend/simulated-provider.js
+@@ -20,8 +20,8 @@
+   Semaphore,
+   Stream
+ } from "effect";
+-import { SimulationControlServer } from "../control-server";
++import { SimulationControlServer } from "../control-server.js";
+-import { SimulationProtocol } from "../protocol";
++import { SimulationProtocol } from "../protocol/index.js";
+ 
+ export class ProviderDisconnectedError extends Schema.TaggedError()("SimulatedProvider.ProviderDisconnectedError", { message: Schema.String }) {
+ }
+@@ -482,4 +482,4 @@
+   }));
+ }
+ 
+-export * as SimulatedProvider from "./simulated-provider";
++export * as SimulatedProvider from "./simulated-provider.js";
+diff --git a/dist/backend/index.js b/dist/backend/index.js
+--- a/dist/backend/index.js
++++ b/dist/backend/index.js
+@@ -4,10 +4,10 @@
+ import { SdkPlugins } from "@opencode-ai/core/plugin/sdk";
+ import { Config, Effect, FileSystem, Layer } from "effect";
+ import { HttpClient } from "effect/unstable/http";
+-import { DriveManifest } from "../manifest";
++import { DriveManifest } from "../manifest.js";
+-import { SimulationNetwork } from "./network";
++import { SimulationNetwork } from "./network.js";
+-import { SimulationOpenAI } from "./openai";
++import { SimulationOpenAI } from "./openai.js";
+-import { SimulatedProvider } from "./simulated-provider";
++import { SimulatedProvider } from "./simulated-provider.js";
+ export const simulationReplacements = Effect.fn("Simulation.replacements")(function* (app) {
+   const models = SimulationNetwork.json("GET", "https://models.opencode.ai/api.json", {});
+   if (!(yield* Config.string("OPENCODE_DRIVE").pipe(Config.withDefault(void 0))))
+@@ -26,4 +26,4 @@
+   return [[httpClient, networkNode]];
+ });
+ 
+-export * as Simulation from "./index";
++export * as Simulation from "./index.js";
+diff --git a/dist/backend/openai.js b/dist/backend/openai.js
+--- a/dist/backend/openai.js
++++ b/dist/backend/openai.js
+@@ -2,8 +2,8 @@
+ import { HttpClientResponse } from "effect/unstable/http";
+ import { HttpClientError, TransportError } from "effect/unstable/http/HttpClientError";
+ import { OpenAIChatEvent, DEFAULT_BASE_URL, PATH } from "@opencode-ai/ai/protocols/openai-chat";
+-import { SimulationNetwork } from "./network";
++import { SimulationNetwork } from "./network.js";
+-import { SimulatedProvider } from "./simulated-provider";
++import { SimulatedProvider } from "./simulated-provider.js";
+ const encodeChunk = Schema.encodeUnknownSync(OpenAIChatEvent), encoder = new TextEncoder, decodeBody = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json));
+ function chunkOf(item) {
+   if (item.type === "textDelta")
+@@ -98,4 +98,4 @@
+   }
+ });
+ 
+-export * as SimulationOpenAI from "./openai";
++export * as SimulationOpenAI from "./openai.js";
+diff --git a/dist/backend/network.js b/dist/backend/network.js
+--- a/dist/backend/network.js
++++ b/dist/backend/network.js
+@@ -1,7 +1,7 @@
+ import { Clock, Effect, Layer, Ref } from "effect";
+ import { HttpClient, HttpClientResponse } from "effect/unstable/http";
+ import { HttpClientError, TransportError } from "effect/unstable/http/HttpClientError";
+-import { SimulationProtocol } from "../protocol";
++import { SimulationProtocol } from "../protocol/index.js";
+ const LOG_LIMIT = 1000;
+ export function json(method, url, body) {
+   return {
+@@ -41,4 +41,4 @@
+   })), log: () => Ref.get(log) };
+ }), layer = (routes = []) => Layer.effect(HttpClient.HttpClient, make(routes).pipe(Effect.map((run) => run.client)));
+ 
+-export * as SimulationNetwork from "./network";
++export * as SimulationNetwork from "./network.js";

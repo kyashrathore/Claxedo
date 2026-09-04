@@ -5,6 +5,7 @@ import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { build as esbuildBuild } from "esbuild"
+import { stageOpenCodePatches } from "../../../workspace-runtime/scripts/stage-opencode-patches"
 import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
 import { claxedoWorkspaceRuntimeEntry, workspaceRuntimeRoot, workspaceRuntimeVersion } from "../../src/hosts/workspace-runtime/startup"
 
@@ -214,11 +215,15 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   }))
   const bundlePath = path.join(outDir, HOST_BUNDLE_FILENAME)
   const packageJsonPath = path.join(outDir, "package.json")
+  const stagedPatches = await stageOpenCodePatches(outDir)
   const packageJson = JSON.stringify({
     name: "claxedo-workspace-runtime-host",
     private: true,
     type: "module",
+    engines: { node: ">=24" },
     dependencies: hostBundleDependencies(),
+    scripts: { postinstall: `node ${stagedPatches.installer}` },
+    claxedoDependencyPatches: stagedPatches.patches,
   }, null, 2)
   fs.writeFileSync(packageJsonPath, packageJson)
   // Content build-id: sha256 over the emitted bundle + generated package.json,
@@ -229,6 +234,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
     .update(fs.readFileSync(bundlePath))
     .update(fs.readFileSync(versionFile))
     .update(packageJson)
+    .update(stagedPatches.digest)
     .digest("hex")
     .slice(0, 10)
   return {

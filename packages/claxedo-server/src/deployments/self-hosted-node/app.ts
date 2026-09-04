@@ -48,7 +48,7 @@ import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/self-hosted-execution"
 import { createLocalWorkspaceRelayProxy } from "../../workspace/runtime-dispatch/shared-workspace-endpoint"
 import { configureOpencodeMcpSync } from "@claxedo/local-server/self-hosted-execution"
-import { createOpencodeEvents, type OpencodeEvent, type OpencodeEventsHandle } from "@claxedo/local-server/self-hosted-execution"
+import { type OpencodeEvent, type OpencodeEventsHandle } from "@claxedo/local-server/self-hosted-execution"
 import { claxedoBus, globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"
 import {
   configureWorkspaceSupervisor,

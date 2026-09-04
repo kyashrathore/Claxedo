@@ -18,16 +18,19 @@ import path from "path"
 import { fileURLToPath } from "url"
 import { rollup } from "rollup"
 import dts from "rollup-plugin-dts"
+import { stageOpenCodePatches } from "./stage-opencode-patches"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
-const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "session-env-contract", "testing"] as const
+const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "session-env-contract", "testing", "opencode"] as const
 type PublicEntry = typeof PUBLIC_ENTRIES[number]
 
 // Dependencies that stay external (consumers install them)
 const LIBRARY_EXTERNALS = [
-  "@claxedo/opencode-runtime",
-  "@claxedo/opencode-runtime/*",
+  "@opencode-ai/sdk",
+  "@opencode-ai/sdk/*",
+  "@opencode-ai/plugin",
+  "koffi",
   "@claxedo/agent-extensions",
   "@claxedo/agent-extensions/*",
   "@claxedo/agent-sdk-runtime",
@@ -136,26 +139,30 @@ function isDeclarationExternal(id: string) {
   return DECLARATION_EXTERNALS.some((external) => typeof external === "string" ? external === id : external.test(id))
 }
 
-async function bundleDeclaration(entry: PublicEntry) {
-  const file = path.join(DIST, `${entry}.d.ts`)
-  const bundled = path.join(DIST, `${entry}.bundled.d.ts`)
+async function bundleDeclarations() {
+  // One declaration graph preserves nominal identities (WorkspaceScope's
+  // unique symbol) across public subpaths. Independent bundles duplicate them.
+  const staging = path.join(DIST, ".declarations")
   const bundle = await rollup({
-    input: file,
+    input: Object.fromEntries(PUBLIC_ENTRIES.map((entry) => [entry, path.join(DIST, `${entry}.d.ts`)])),
     plugins: [dts({ respectExternal: true })],
     external: isDeclarationExternal,
   })
   try {
-    await bundle.write({ file: bundled, format: "es" })
+    await bundle.write({ dir: staging, entryFileNames: "[name].d.ts", chunkFileNames: "shared/[name]-[hash].d.ts", format: "es" })
   } finally {
     await bundle.close()
   }
-  fs.renameSync(bundled, file)
+  pruneInternalDeclarations()
+  fs.cpSync(staging, DIST, { recursive: true })
+  fs.rmSync(staging, { recursive: true })
 }
 
 function pruneInternalDeclarations(dir = DIST) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, entry.name)
     if (entry.isDirectory()) {
+      if (entry.name === ".declarations") continue
       pruneInternalDeclarations(file)
       if (fs.readdirSync(file).length === 0) fs.rmdirSync(file)
       continue
@@ -166,18 +173,17 @@ function pruneInternalDeclarations(dir = DIST) {
   }
 }
 
-async function bundleDeclarations() {
-  for (const entry of PUBLIC_ENTRIES) {
-    await bundleDeclaration(entry)
-  }
-  pruneInternalDeclarations()
-}
 
 async function main() {
   clean()
   bundleJS()
   emitDeclarations()
   await bundleDeclarations()
+  const patchOutput = path.join(DIST, "opencode-node")
+  const staged = await stageOpenCodePatches(patchOutput)
+  fs.writeFileSync(path.join(patchOutput, "package.json"), JSON.stringify({
+    private: true, type: "module", claxedoDependencyPatches: staged.patches,
+  }, null, 2))
   console.log("\nBuild complete: public dist/*.mjs entries + bundled declarations")
 }
 

@@ -65,12 +65,14 @@ Kind: Functions
 - `claude`
 - `codex`
 - `cursor`
-- `opencode`
 - `pi`
 - `acp(id, options)` for an explicit operator-configured ACP connection
 
 Use factories with `createAgentRuntime()` instead of constructing adapter
 classes directly.
+
+Claxedo's embedded OpenCode adapter is owned by
+`@claxedo/workspace-runtime/opencode`, not by this package's factory registry.
 
 ## Advanced Adapter API
 

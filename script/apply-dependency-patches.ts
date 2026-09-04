@@ -1,5 +1,7 @@
-import { realpath } from "node:fs/promises"
+import { readdir, readFile, realpath } from "node:fs/promises"
 import { randomUUID } from "node:crypto"
+import { spawnSync } from "node:child_process"
+import { pathToFileURL } from "node:url"
 import path from "node:path"
 
 type Manifest = {
@@ -7,7 +9,7 @@ type Manifest = {
 }
 
 const root = path.resolve(import.meta.dirname, "..")
-const manifest = (await Bun.file(path.join(root, "package.json")).json()) as Manifest
+const manifest = JSON.parse(await readFile(path.join(root, "package.json"), "utf8")) as Manifest
 const patches = manifest.claxedoDependencyPatches ?? {}
 
 export async function runGitApply(directory: string, patch: string, args: string[]) {
@@ -20,8 +22,8 @@ export async function runGitApply(directory: string, patch: string, args: string
   const gitDirectory = path.join(directory, `.claxedo-dependency-patch-no-git-${process.pid}-${randomUUID()}`)
   // Patches describe exact package bytes. Do not let a user's Git for Windows
   // configuration rewrite line endings while applying them.
-  const child = Bun.spawn(
-    ["git", "-c", "core.autocrlf=false", "apply", "--no-index", "--whitespace=nowarn", ...args, patch],
+  const child = spawnSync(
+    "git", ["-c", "core.autocrlf=false", "apply", "--no-index", "--whitespace=nowarn", ...args, patch],
     {
       cwd: directory,
       env: {
@@ -32,38 +34,50 @@ export async function runGitApply(directory: string, patch: string, args: string
         // repository discovery but does not consistently anchor the write target.
         GIT_WORK_TREE: directory,
       },
-      stdout: "pipe",
-      stderr: "pipe",
+      encoding: "utf8",
     },
   )
-  const [exitCode, stdout, stderr] = await Promise.all([
-    child.exited,
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-  ])
-  return { exitCode, output: `${stdout}${stderr}`.trim() }
+  if (child.error) throw child.error
+  return { exitCode: child.status, output: `${child.stdout}${child.stderr}`.trim() }
 }
 
 async function packageDirectories(name: string, version: string) {
-  const manifests = new Set<string>()
-  const direct = path.join(root, "node_modules", name, "package.json")
-  if (await Bun.file(direct).exists()) manifests.add(direct)
-
-  const glob = new Bun.Glob(`**/node_modules/${name}/package.json`)
-  for await (const item of glob.scan({ cwd: root, absolute: true, onlyFiles: true, dot: true })) {
-    manifests.add(item)
-  }
-
   const directories = new Set<string>()
-  for (const packageManifest of manifests) {
-    const installed = (await Bun.file(packageManifest).json()) as { version?: string }
-    if (installed.version !== version) continue
-    directories.add(await realpath(path.dirname(packageManifest)))
+  const visited = new Set<string>()
+  async function scan(modules: string) {
+    const canonical = await realpath(modules).catch(() => undefined)
+    if (!canonical || visited.has(canonical)) return
+    visited.add(canonical)
+    const candidate = path.join(canonical, name)
+    try {
+      const installed = JSON.parse(await readFile(path.join(candidate, "package.json"), "utf8"))
+      if (installed.version === version) directories.add(await realpath(candidate))
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error
+    }
+    for (const entry of await readdir(canonical, { withFileTypes: true })) {
+      if (entry.name === ".bun") {
+        for (const item of await readdir(path.join(canonical, ".bun"))) {
+          await scan(path.join(canonical, ".bun", item, "node_modules"))
+        }
+      } else if (entry.name.startsWith("@")) {
+        const scope = path.join(canonical, entry.name)
+        for (const item of await readdir(scope)) await scan(path.join(scope, item, "node_modules"))
+      } else if (!entry.name.startsWith(".")) {
+        await scan(path.join(canonical, entry.name, "node_modules"))
+      }
+    }
+  }
+  // An npm consumer may hoist the SDK above this package. Start locally,
+  // then find the nearest installed graph; never depend on INIT_CWD.
+  for (let ancestor = root; ; ancestor = path.dirname(ancestor)) {
+    await scan(path.join(ancestor, "node_modules"))
+    if (directories.size > 0 || path.dirname(ancestor) === ancestor) break
   }
   return directories
 }
 
-async function main() {
+export async function applyDependencyPatches() {
   for (const [specifier, patchFile] of Object.entries(patches)) {
     const separator = specifier.lastIndexOf("@")
     if (separator <= 0 || separator === specifier.length - 1) {
@@ -108,4 +122,4 @@ async function main() {
   }
 }
 
-if (import.meta.main) await main()
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) await applyDependencyPatches()

@@ -243,7 +243,7 @@ data.
 
 ```ts
 import { createAgentRuntime } from "@claxedo/agent-sdk-runtime"
-import { claude, codex, cursor, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { claude, codex, cursor, pi } from "@claxedo/agent-sdk-runtime/harnesses"
 import { createSqliteRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/sqlite"
 
 const runtime = createAgentRuntime({
@@ -252,7 +252,6 @@ const runtime = createAgentRuntime({
     claude({ access: "native" }),
     codex({ access: "acp" }),
     cursor({ access: "native" }),
-    opencode({ url: "http://127.0.0.1:4096" }),
     pi(),
   ],
 })
@@ -468,13 +467,8 @@ const codexNative = codex({
 })
 ```
 
-OpenCode HTTP:
-
-```ts
-import { opencode } from "@claxedo/agent-sdk-runtime/harnesses"
-
-const opencodeHarness = opencode({ url: "http://127.0.0.1:4096" })
-```
+Embedded OpenCode is composed by `@claxedo/workspace-runtime/opencode`.
+It has no HTTP-engine factory in this package.
 
 Pi:
 
@@ -483,10 +477,6 @@ import { pi } from "@claxedo/agent-sdk-runtime/harnesses"
 
 const piHarness = pi()
 ```
-
-OpenCode's `http-proxy` adapter capability means selected compatibility routes
-may use the backing server. It does not mean your product should expose every
-OpenCode route.
 
 Next: build sidebar/history and app-owned projections.
 

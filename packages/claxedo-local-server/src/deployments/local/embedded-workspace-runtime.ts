@@ -13,7 +13,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { agentExtensionStateRoot } from "@claxedo/agent-extensions"
-import type { OpenCodeRuntime } from "@claxedo/opencode-runtime"
+import type { OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { globalBus } from "@claxedo/server-core/platform/runtime/lib/bus"

@@ -1,7 +1,7 @@
 import fs from "fs"
 import { createRequire } from "module"
 import path from "path"
-import type { UserMessage } from "@opencode-ai/sdk/v2"
+type UserMessage = ReturnType<typeof buildUserMessage>
 import {
   ACP_RECOVER,
   AgentRuntimeStaleTurnError,

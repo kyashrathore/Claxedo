@@ -166,6 +166,11 @@
     "@tanstack/solid-query@5.99.2": "patches/@tanstack%2Fsolid-query@5.99.2.patch",
     "@tanstack/virtual-core@3.17.8": "patches/@tanstack%2Fvirtual-core@3.17.8.patch",
     "@kobalte/core@0.13.12": "patches/@kobalte%2Fcore@0.13.12.patch",
-    "tokentracker-cli@0.91.0": "patches/tokentracker-cli@0.91.0.patch"
+    "tokentracker-cli@0.91.0": "patches/tokentracker-cli@0.91.0.patch",
+    "@opencode-ai/sdk@0.0.0-beta-18684": "patches/@opencode-ai%2Fsdk@0.0.0-beta-18684.patch",
+    "@opencode-ai/client@0.0.0-beta-18684": "patches/@opencode-ai%2Fclient@0.0.0-beta-18684.patch",
+    "@opencode-ai/server@0.0.0-beta-18684": "patches/@opencode-ai%2Fserver@0.0.0-beta-18684.patch",
+    "@opencode-ai/simulation@0.0.0-beta-18684": "patches/@opencode-ai%2Fsimulation@0.0.0-beta-18684.patch",
+    "@opencode-ai/core@0.0.0-beta-18684": "patches/@opencode-ai%2Fcore@0.0.0-beta-18684.patch"
   }
 }

@@ -21,6 +21,7 @@ const PACKAGE_DIR = path.resolve(SCRIPT_DIR, "..")
 const SERVER_BUNDLE = localServerBundleEntry(PACKAGE_DIR)
 
 const require = createRequire(import.meta.url)
+const electronExecutable = () => process.env.CLAXEDO_TEST_ELECTRON_EXECUTABLE || require("electron")
 
 test("a missing local-server bundle stops the boot, naming the artifact", async () => {
   // The error path the plan requires, exercised at the real boot boundary
@@ -32,7 +33,7 @@ test("a missing local-server bundle stops the boot, naming the artifact", async 
 
   const port = await freePort()
   const child = Bun.spawn({
-    cmd: [process.execPath, require.resolve("electron/cli.js"), missing],
+    cmd: [electronExecutable(), missing],
     env: {
       ...Bun.env,
       ELECTRON_RUN_AS_NODE: "1",
@@ -108,7 +109,7 @@ test("bundled claxedo-server boots the public embedded SDK and serves its routes
       CLAXEDO_DIAGNOSTICS_LAUNCH_ID: launchId,
       CLAXEDO_DIAGNOSTICS_GENERATION: generation,
     }),
-    execPath: require("electron"),
+    execPath: electronExecutable(),
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   })
   const exited = new Promise<number | null>((resolve) => child.once("exit", resolve))
@@ -230,7 +231,7 @@ test("bundled claxedo-server boots the public embedded SDK and serves its routes
 }, 90_000)
 
 test("a quiescent daemon exits after its bounded idle grace", async () => {
-  if (!fs.existsSync(SERVER_BUNDLE) || !fs.existsSync(ENGINE_ARTIFACT)) {
+  if (!fs.existsSync(SERVER_BUNDLE)) {
     console.warn("[skip] server artifacts missing — run `bun run predev` first")
     return
   }
@@ -251,9 +252,8 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
       CLAXEDO_DAEMON_IDLE_GRACE_MS: "75",
       CLAXEDO_DAEMON_POLL_INTERVAL_MS: "5",
       CLAXEDO_DATA_DIR: path.join(root, "data"),
-      CLAXEDO_CHILD_OPENCODE_EMBED_PATH: ENGINE_ARTIFACT,
     }),
-    execPath: require("electron"),
+    execPath: electronExecutable(),
     stdio: ["ignore", "ignore", "pipe", "ipc"],
   })
   const messages: unknown[] = []

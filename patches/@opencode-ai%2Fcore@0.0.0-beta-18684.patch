@@ -1,0 +1,94 @@
+diff --git a/dist/chunks/state-ns0sdez7.js b/dist/chunks/state-ns0sdez7.js
+--- a/dist/chunks/state-ns0sdez7.js
++++ b/dist/chunks/state-ns0sdez7.js
+@@ -25,7 +25,7 @@
+   Native: () => Native,
+   Event: () => Event
+ });
+-import { createWrapper } from "@parcel/watcher/wrapper";
++import { createWrapper } from "@parcel/watcher/wrapper.js";
+ import { FileSystem } from "@opencode-ai/schema/filesystem";
+ import { makeGlobalNode } from "@opencode-ai/util/effect/app-node";
+ import { Cause, Context, Effect, Layer, PubSub, RcMap, Schema, Stream } from "effect";
+diff --git a/dist/util/process-lock-ffi.node.js b/dist/util/process-lock-ffi.node.js
+--- a/dist/util/process-lock-ffi.node.js
++++ b/dist/util/process-lock-ffi.node.js
+@@ -1,46 +1,19 @@
+-import"../chunks/state-rvfvac9x.js";
+-
+-// src/util/process-lock-ffi.node.ts
+-import { dlopen, getInt32 } from "node:ffi";
+-var LOCK_EX = 2;
+-var LOCK_NB = 4;
+-var DARWIN_EWOULDBLOCK = 35;
+-var LINUX_EWOULDBLOCK = 11;
+-function lockDarwin(fd) {
+-  const library = dlopen("/usr/lib/libSystem.B.dylib", {
+-    flock: { arguments: ["int32", "int32"], return: "int32" },
+-    __error: { arguments: [], return: "pointer" }
+-  });
+-  try {
+-    const result = library.functions.flock(fd, LOCK_EX | LOCK_NB);
+-    const code = result === 0 ? 0 : getInt32(library.functions.__error(), 0);
+-    if (result === 0)
+-      return { acquired: true };
+-    if (code === DARWIN_EWOULDBLOCK)
+-      return { acquired: false, held: true };
+-    return { acquired: false, held: false, code };
+-  } finally {
+-    library.lib.close();
+-  }
+-}
+-function lockLinux(fd) {
+-  const library = dlopen("libc.so.6", {
+-    flock: { arguments: ["int32", "int32"], return: "int32" },
+-    __errno_location: { arguments: [], return: "pointer" }
+-  });
+-  try {
+-    const result = library.functions.flock(fd, LOCK_EX | LOCK_NB);
+-    const code = result === 0 ? 0 : getInt32(library.functions.__errno_location(), 0);
+-    if (result === 0)
+-      return { acquired: true };
+-    if (code === LINUX_EWOULDBLOCK)
+-      return { acquired: false, held: true };
+-    return { acquired: false, held: false, code };
+-  } finally {
+-    library.lib.close();
+-  }
+-}
+-export {
+-  lockLinux,
+-  lockDarwin
+-};
++import koffi from "koffi";
++
++// Node-API binding for Electron's Node runtime. Keep the upstream flock
++// protocol: the kernel owns exclusion, and closing the fd releases the lock.
++function lock(fd, wouldBlock) {
++  const library = koffi.load(null);
++  try {
++    const flock = library.func("int flock(int fd, int operation)");
++    const result = flock(fd, 2 | 4);
++    const code = result === 0 ? 0 : koffi.errno();
++    if (result === 0) return { acquired: true };
++    if (code === wouldBlock) return { acquired: false, held: true };
++    return { acquired: false, held: false, code };
++  } finally {
++    library.unload();
++  }
++}
++export function lockDarwin(fd) { return lock(fd, 35); }
++export function lockLinux(fd) { return lock(fd, 11); }
+diff --git a/dist/chunks/state-8q7v1yfa.js b/dist/chunks/state-8q7v1yfa.js
+--- a/dist/chunks/state-8q7v1yfa.js
++++ b/dist/chunks/state-8q7v1yfa.js
+@@ -52,7 +52,8 @@
+       for (const [id, item] of configuredProviders(loaded.entries)) {
+         const providerID = id;
+         catalog.provider.update(providerID, (provider) => {
+-          provider.activation = "enabled";
++          if (provider.activation !== "disabled")
++            provider.activation = "enabled";
+           if (item.name !== undefined)
+             provider.name = item.name;
+           if (item.package !== undefined)

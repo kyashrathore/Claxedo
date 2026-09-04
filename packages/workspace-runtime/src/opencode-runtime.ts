@@ -1,6 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
-import { createOpenCodeRuntime, type OpenCodeRuntime } from "@claxedo/opencode-runtime"
+import { createOpenCodeRuntime, type OpenCodeRuntime } from "./opencode/index"
 
 /**
  * Compose the SDK owner for a standalone workspace-runtime process.

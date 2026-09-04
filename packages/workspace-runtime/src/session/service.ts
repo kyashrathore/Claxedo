@@ -1,7 +1,8 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
 import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
-import type { Message } from "@opencode-ai/sdk/v2"
+import type { EventMessageUpdated } from "@claxedo/agent-event-runtime/opencode-compat"
+type Message = EventMessageUpdated["properties"]["info"]
 import type {
   AgentMessage,
   AgentRuntime,

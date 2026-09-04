@@ -3,8 +3,9 @@
  * Packaging invariants, checked against an already-packaged app (the app.asar
  * under dist, any platform). Wire in after electron-builder (package.ts).
  *
- * 1. Every JavaScript dependency is bundled from an entry point at build time,
- *    so the packaged asar must contain no node_modules beyond the native
+ * 1. Application JavaScript is bundled from entry points at build time.
+ *    The public SDK closure lives outside asar and is verified separately;
+ *    the packaged asar must contain no node_modules beyond the native
  *    modules that cannot be bundled (better-sqlite3, @lydell/node-pty and its
  *    per-target platform package, plus @vscode/windows-process-tree on
  *    Windows).
@@ -37,6 +38,7 @@ import { spawnSync } from "node:child_process"
 
 import { ALL_NATIVE_MODULES, isDeclaredStructuralEntry, requiredPackagedBoundaryEntries } from "./package-structure"
 import { verifyHostConnectorChildArtifact } from "../src/main/host-connector/child-artifact"
+import { embeddedSdkPins, verifyOpenCodeSdkResources } from "./opencode-sdk-resources"
 
 const ALLOWED_NATIVE_MODULES = new Set(ALL_NATIVE_MODULES)
 
@@ -198,6 +200,11 @@ export function verifyPackageContents(
   }
   const failures: string[] = [...checkArtifactSizes(root, asars)]
   for (const archive of asars) {
+    try {
+      verifyOpenCodeSdkResources(path.dirname(archive), embeddedSdkPins())
+    } catch (error) {
+      failures.push(`${archive}: embedded SDK resources: ${String(error)}`)
+    }
     const resourceDir = path.join(path.dirname(archive), "host-connector")
     try {
       verifyHostConnectorChildArtifact(resourceDir)

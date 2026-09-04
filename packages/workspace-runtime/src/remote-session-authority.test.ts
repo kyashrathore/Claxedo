@@ -48,7 +48,7 @@ describe("remote workspace session authority", () => {
 
     expect((await policy.authorize({ ...input, operation: "message_read" })).allowed).toBe(true)
     expect((await policy.authorize({ ...input, operation: "prompt" })).allowed).toBe(true)
-    expect((await policy.authorize({ ...input, operation: "session_v2_proxy", method: "POST" })).allowed).toBe(true)
+    expect((await policy.authorize({ ...input, operation: "abort", method: "POST" })).allowed).toBe(true)
     expect(policy.registerSession).toBeDefined()
     expect((await policy.registerSession!({
       ...input,
@@ -66,7 +66,7 @@ describe("remote workspace session authority", () => {
     ])
   })
 
-  test("allows opaque Session V2 collection reads for policy filtering", async () => {
+  test("allows canonical collection operations for policy filtering", async () => {
     const policy = remoteWorkspaceSessionAccessPolicy({
       url: "https://control.test/authorize",
       fetch: async () => Response.json({ allowed: true }),
@@ -74,16 +74,16 @@ describe("remote workspace session authority", () => {
     expect((await policy.authorize({
       ...input,
       sessionId: undefined,
-      operation: "session_v2_proxy",
+      operation: "session_list",
       method: "GET",
-      path: "/api/session",
+      path: "/session",
     })).allowed).toBe(true)
     expect((await policy.authorize({
       ...input,
       sessionId: undefined,
-      operation: "session_v2_proxy",
+      operation: "session_create",
       method: "POST",
-      path: "/api/session",
+      path: "/session",
     })).allowed).toBe(true)
   })
 

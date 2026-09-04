@@ -2,7 +2,7 @@ import type {
   EventPermissionAsked,
   EventQuestionAsked,
   EventTodoUpdated,
-} from "@opencode-ai/sdk/v2"
+} from "@claxedo/agent-event-runtime/opencode-compat"
 import {
   messagePartDelta,
   permissionAsked,

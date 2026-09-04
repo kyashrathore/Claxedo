@@ -19,7 +19,6 @@ export type { RuntimeSessionBusEvent, SessionLifecycleEvent } from "./routes/ses
 export {
   managedWorkspaceSessionAccessPolicy,
   SESSION_CORE_ROUTE_ACCESS,
-  SESSION_V2_PROXY_ROUTE_ACCESS,
   sessionAccessContext,
   sessionAccessDenied,
 } from "./session-access-policy"

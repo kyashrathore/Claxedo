@@ -13,7 +13,7 @@ import {
 } from "./embedded-workspace-runtime"
 import type { OpencodeEvent } from "../../opencode/events"
 import { disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
-import type { OpenCodeRuntime } from "@claxedo/opencode-runtime"
+import type { OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
@@ -121,7 +121,7 @@ describe("embedded workspace runtime", () => {
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
 
     configureEmbeddedWorkspaceRuntime({
-      opencodeRequest: async () => new Response(null, { status: 404 }),
+      opencodeRuntime: unusedOpenCodeRuntime,
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
         authority: {
           authorizeSessionRead: () => true,
@@ -151,7 +151,7 @@ describe("embedded workspace runtime", () => {
     try {
       expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
     }
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
   })
@@ -201,7 +201,15 @@ describe("embedded workspace runtime", () => {
       },
     })
     configureEmbeddedWorkspaceRuntime({
-      opencodeRequest: async () => Response.json({ id: "ses_private", directory: project, title: "Private" }),
+      opencodeRuntime: {
+        ...unusedOpenCodeRuntime,
+        sessions: {
+          ...unusedOpenCodeRuntime.sessions,
+          get: async (scope: { directory: string }, id: string) => ({
+            id, directory: scope.directory, title: "Private", createdAt: 1, updatedAt: 1,
+          }),
+        },
+      } as OpenCodeRuntime,
       sessionAccessPolicy,
     })
 
@@ -238,7 +246,7 @@ describe("embedded workspace runtime", () => {
         "actor_alice:read:ses_private:Bearer alice-proof",
       ])
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({ opencodeRuntime: unusedOpenCodeRuntime })
       shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
@@ -657,7 +665,7 @@ describe("embedded runtime provider catalog", () => {
     const { root, project } = await makeWorkspaceRoot("embedded-provider-")
     const asked: string[] = []
     configureEmbeddedWorkspaceRuntime({
-      opencodeRequest: async () => new Response(null, { status: 404 }),
+      opencodeRuntime: unusedOpenCodeRuntime,
       providerCatalog: async ({ harnessId }) => {
         asked.push(harnessId)
         return { all: [{ id: "anthropic", name: "Anthropic", models: {} }], default: {}, connected: [] }

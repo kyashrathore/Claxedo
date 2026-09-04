@@ -51,7 +51,6 @@ export { LocalUsageRoutes, UsageRoutes, type UsageLedger } from "@claxedo/server
 export { resolveHarnessId } from "./opencode/compat-routes/provider-config"
 export { configureOpencodeMcpSync } from "./opencode/mcp-sync"
 export {
-  createOpencodeEvents,
   type OpencodeEvent,
   type OpencodeEventsHandle,
 } from "./opencode/events"

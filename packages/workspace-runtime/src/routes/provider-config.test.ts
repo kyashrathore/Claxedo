@@ -48,6 +48,19 @@ describe("nextDisabledProviders", () => {
 })
 
 describe("PATCH /api/wr/provider-config", () => {
+  test("concurrent disconnects retain both choices and a failed write can retry", async () => {
+    const config = memoryStore()
+    const app = ProviderConfigRoutes({ defaultHarness: () => "opencode", store: async () => config.store })
+    const responses = await Promise.all(["a", "b"].map((provider) => patch(app, { body: { provider, disabled: true } })))
+    expect(responses.map((response) => response.status)).toEqual([200, 200])
+    expect(config.current().disabled_providers).toEqual(["a", "b"])
+    const write = config.store.write
+    config.store.write = async () => { throw new Error("offline") }
+    expect((await patch(app, { body: { provider: "c", disabled: true } })).status).toBe(502)
+    config.store.write = write
+    expect((await patch(app, { body: { provider: "c", disabled: true } })).status).toBe(200)
+    expect(config.current().disabled_providers).toEqual(["a", "b", "c"])
+  })
   test("disables one provider in the named harness's config and answers the resulting list", async () => {
     const config = memoryStore({ provider: { "clinepass-2": { name: "Cline pass 2" } } })
     const harnesses: string[] = []

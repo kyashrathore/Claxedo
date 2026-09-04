@@ -14,6 +14,10 @@ import {
 } from "../build-sandbox-image"
 
 describe("build-sandbox-image", () => {
+  test("the Node image supports the SDK syntax and SQLite native prebuild", () => {
+    const dockerfile = fs.readFileSync(path.join(import.meta.dirname, "../Dockerfile"), "utf8")
+    expect(dockerfile).toContain("FROM node:24.18.0-trixie-slim")
+  })
   test("builds from the sandbox scripts context with no version build-arg", () => {
     expect(sandboxImageBuildArgs({
       tags: ["ghcr.io/example/claxedo-sandbox:workspace-runtime-0-5-1-v8"],
@@ -64,20 +68,15 @@ describe("build-sandbox-image", () => {
           "better-sqlite3": "12.10.0",
           "@lydell/node-pty": "1.2.0-beta.14",
           "@claxedo/agent-sdk-runtime": "0.5.1",
-          "@claxedo/opencode-runtime": "workspace:*",
+          "@opencode-ai/plugin": "0.0.0-beta-18684",
+          "@opencode-ai/sdk": "0.0.0-beta-18684",
+          koffi: "3.1.6",
           hono: "4.12.12",
         },
       },
       "agent-sdk-runtime": {
         name: "@claxedo/agent-sdk-runtime",
         dependencies: { hono: "4.10.7", "just-bash": "3.0.1" },
-      },
-      "opencode-runtime": {
-        name: "@claxedo/opencode-runtime",
-        dependencies: {
-          "@opencode-ai/plugin": "0.0.0-beta-18684",
-          "@opencode-ai/sdk": "0.0.0-beta-18684",
-        },
       },
     }
     const deps = hostBundleDependencies((dir) => {
@@ -92,6 +91,7 @@ describe("build-sandbox-image", () => {
       "just-bash": "3.0.1",
       "@opencode-ai/plugin": "0.0.0-beta-18684",
       "@opencode-ai/sdk": "0.0.0-beta-18684",
+      koffi: "3.1.6",
     })
   })
 
@@ -140,7 +140,7 @@ describe("build-sandbox-image", () => {
       expect(dockerfile).toContain("http://127.0.0.1:2593/session?harness=opencode")
       expect(dockerfile).toContain("Embedded Session did not adopt the requested id")
       expect(dockerfile).toContain("Embedded Session snapshot was invalid")
-      expect(dockerfile).toContain("ses_workgraph_image_failure")
+      expect(dockerfile).toContain("msg_embedded_image_failure")
       expect(dockerfile).toContain("lastTurn?.status!=='failed'")
       expect(dockerfile).toContain("accept-encoding: gzip")
       expect(dockerfile).not.toContain("opencode serve")

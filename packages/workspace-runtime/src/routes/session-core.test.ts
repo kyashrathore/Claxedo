@@ -23,7 +23,8 @@ import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memo
 // These fixtures carry only the fields the routes under test read; the cast
 // keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
-import type { Message } from "@opencode-ai/sdk/v2"
+import type { EventMessageUpdated } from "@claxedo/agent-event-runtime/opencode-compat"
+type Message = EventMessageUpdated["properties"]["info"]
 import { Hono } from "hono"
 import type { SessionAccessPolicy } from "../session-access-policy"
 

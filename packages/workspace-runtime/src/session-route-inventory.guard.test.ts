@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test"
 import fs from "node:fs"
 import {
   SESSION_CORE_ROUTE_ACCESS,
-  SESSION_V2_PROXY_ROUTE_ACCESS,
 } from "./session-access-policy"
 
 function source(relative: string) {
@@ -27,10 +26,10 @@ describe("private-session route inventory", () => {
       .toEqual(Object.keys(SESSION_CORE_ROUTE_ACCESS).sort())
   })
 
-  test("every Session V2 proxy mount has an explicit access classification", () => {
+  test("the removed Session V2 proxy cannot acquire a mount", () => {
     const sessionProxyRoutes = declaredRoutes(source("./workspace/runtime.ts"), ["all"])
       .filter((route) => route.startsWith("ALL /api/session"))
-    expect(sessionProxyRoutes).toEqual(Object.keys(SESSION_V2_PROXY_ROUTE_ACCESS).sort())
+    expect(sessionProxyRoutes).toEqual([])
   })
 
   test("sensitive peripheral route families cannot grow without an inventory decision", () => {
@@ -101,11 +100,7 @@ describe("private-session route inventory", () => {
 
   test("direct host routes cannot grow around the classified session router", () => {
     expect(uniqueDeclaredRoutes(source("./workspace/runtime.ts"))).toEqual([
-      "ALL /api/model",
-      "ALL /api/session",
-      "ALL /api/session/*",
       "GET /api/wr/harness-config-options",
-      "GET /experimental/tool/ids",
       "GET /global/event",
       "GET /lsp",
       "GET /mcp",

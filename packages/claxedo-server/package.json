@@ -93,7 +93,6 @@
     "@claxedo/connections": "0.4.0",
     "@claxedo/local-server": "workspace:*",
     "@claxedo/mcp": "workspace:0.4.0",
-    "@claxedo/opencode-runtime": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:0.7.0",
     "@claxedo/sandbox-manager": "workspace:0.7.0",
     "@claxedo/service-contract": "workspace:*",

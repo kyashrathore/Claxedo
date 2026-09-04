@@ -198,6 +198,7 @@ mountWorkspaceCore(app, upgradeWebSocket, {
 | `GET /api/wr/capabilities` | Runtime capability manifest. |
 | `/api/wr/checkpoint/*` | Freeze, flush, scrub, resume, and restore reconciliation for consistent provider capture. |
 | `POST /api/wr/config` | Apply a `RuntimeSnapshot`. Requires configured auth. |
+| `PATCH /api/wr/provider-config` | Disable or re-enable one provider in the workspace's selected harness catalog. |
 | `GET /api/wr/harness-config-options` | Probe harness config options for non-OpenCode harnesses. |
 | `/api/wr/events` | Process-global compatibility event stream. |
 | `/api/wr/runtime-events` | Runtime event stream. |

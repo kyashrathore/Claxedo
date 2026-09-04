@@ -1,6 +1,7 @@
 # OpenCode embedded SDK contract (Unit 1)
 
-Status: UPSTREAM FIXED; NO CLAXEDO REPAIR. The original
+Status: filesystem cycle fixed upstream; temporary Node package patches retained.
+The original
 `@opencode-ai/core@0.0.0-beta-18314` build captured an undefined filesystem
 search dependency and returned an empty 500 from every location-resolving
 request. Section 2.3 retains the root-cause record. Upstream removed the
@@ -18,7 +19,7 @@ claim below is marked `VERIFIED` (observed by running the pinned release or
 reading the published artifact), `READ` (read from published typings without
 executing), or `OPEN` (still a gate).
 
-Reproduce with `packages/opencode-runtime/contract/` (see "Running the probes").
+Reproduce with `packages/workspace-runtime/contract/opencode/` (see "Running the probes").
 
 ## 1. Release identity
 
@@ -100,73 +101,33 @@ exists: a newly published exact pin was blocked by the age gate until its
 reviewed integrity-hashed graph entered `bun.lock`. Release builds continue to
 use the frozen graph and do not make a new adoption decision.
 
-## 2. Node loadability — RESOLVED via the existing bundle pipeline
+## 2. Node loadability — patched public packages, Node 24 minimum
 
-**Status: resolved.** All 31 contract assertions pass through the supported
-`Bun.build` Node bundle. Reproduce with
-`bun run build-node-bundle.ts && node probe-node.mjs`.
+The unmodified beta-18684 SDK has extensionless relative ESM exports and a
+Node process-lock implementation requiring experimental `node:ffi`. These
+are upstream defects, not a reason to add a Bun runtime or another engine.
 
-The rest of this section records the blocker and why the fix is the repo's
-existing mechanism rather than a new one.
+The product applies exact-version package patches via the existing repository
+postinstall. ESM specifiers and the watcher wrapper gain explicit extensions;
+the process lock uses Koffi's Node-API binding for the same nonblocking POSIX
+`flock` protocol. A config overlay fix preserves host-disabled providers.
+See `patches/README.opencode-node.md` for patch removal criteria and tracking.
 
-**The pinned SDK cannot be imported by plain Node ESM.** VERIFIED:
+Desktop and standalone builds retain the installed, patched SDK closure as
+real packages instead of rebundling its native/data-relative graph. The desktop
+ships these outside app.asar. Neither product spawns a Bun process.
 
-```
-Error [ERR_MODULE_NOT_FOUND]: Cannot find module '.../dist/opencode'
-  imported from .../@opencode-ai/sdk/dist/index.js
-```
+VERIFIED: public SDK calls, process-lock contention and persistence on Node
+26.8.1 and Electron 43.2.0 / Node 24.18.0, macOS arm64. The public workspace
+host smoke also exercises session creation, prompt failure, durable recovery
+and shutdown. Node 22.22.3 cannot parse the published util package's
+`await using`; standalone and sandbox runtimes therefore require Node 24.
 
-`dist/index.js` is published as:
+The independent diagnostic fixture remains unpatched and is not the product
+runtime. Its old bundle probes characterize upstream only. Product acceptance
+lives in `packages/workspace-runtime/scripts/node-sdk-smoke.mjs`,
+`node-host-smoke.mjs`, and the desktop boot/package-structure tests.
 
-```js
-export * as OpenCode from "./opencode" // no file extension
-export * as Tool from "./tool"
-export { ClientError } from "@opencode-ai/client"
-export * from "./contracts"
-```
-
-Extensionless relative specifiers are invalid in Node ESM. The same pattern
-appears throughout the published `dist/` (`./promise`, `./internal/host`,
-`./workerd`, `./contracts`, `./tool`).
-
-Every shipped Claxedo deployment is Node:
-
-| Deployment     | Runtime                                                | Evidence                        |
-| -------------- | ------------------------------------------------------ | ------------------------------- |
-| Hosted sandbox | `FROM node:22-bookworm-slim`                           | `scripts/sandbox/Dockerfile:1`  |
-| Desktop        | esbuild/Bun bundle, `target: "node"`, `better-sqlite3` | `bundle-claxedo-server.ts:9,20` |
-| Self-hosted    | `deployments/self-hosted-node`                         | package name                    |
-
-So R2 ("the public embedded SDK is the only OpenCode executor") cannot be met
-by importing the package directly on Node. Resolution paths, in preference
-order:
-
-1. **Bundle it — this is the answer.** VERIFIED. Claxedo already bundles the
-   server with `Bun.build` (`target: "node"`, `format: "esm"`), and bundlers
-   resolve extensionless specifiers. The dynamic-require leak that broke the
-   first attempt came from **`jsonc-parser`**, whose UMD default entry hides
-   relative requires inside its factory closure — precisely the package the
-   repo already fixes with the `jsonc-parser-esm` resolve plugin in
-   `claxedo-desktop/scripts/bundle-claxedo-server.ts:37`. Reusing that one
-   plugin, plus keeping native modules external, produces a Node-loadable
-   28.7 MB bundle that passes the full probe.
-2. Run the SDK under Bun in-process. Unnecessary now; would contradict the Node
-   packaging story for desktop and sandbox.
-3. A Node loader/resolver shim. Rejected: a private-resolution hack of exactly
-   the kind Decision 15 forbids.
-
-**Gate for Unit 2 checkpoint 2a:** the isolated runtime package must import the
-pinned SDK and boot a host under Node _by this supported build path_. That is
-now demonstrated, so 2a is unblocked.
-
-Two build settings are load-bearing:
-
-- **`jsonc-parser` must resolve to its ESM entry.** Without the plugin the
-  bundle throws `Cannot find module './impl/format'` at import time.
-- **Target Node explicitly.** The published code emits `await using` (explicit
-  resource management), which Node 22.22 cannot parse. `Bun.build`'s
-  `target: "node"` handles it; with esbuild, pass `--target=node22`. VERIFIED
-  (esbuild without a target produced `SyntaxError: Unexpected identifier '_3'`).
 
 ### 2.1 SQLite comes from Node itself — no native module
 
@@ -898,7 +859,7 @@ Decision 15's gates must name `dist/internal`, `/internal/host`,
 ## 9. Running the probes
 
 ```
-packages/opencode-runtime/contract/
+packages/workspace-runtime/contract/opencode/
 ```
 
 See that directory's README. The probes are deliberately runnable outside the

@@ -38,7 +38,7 @@ import {
   type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { OpenCodeSdkHarnessAdapter, authorizeWorkspace, type OpenCodeRuntime } from "@claxedo/opencode-runtime"
+import { OpenCodeSdkHarnessAdapter, authorizeWorkspace, type OpenCodeRuntime } from "../opencode/index"
 import { attachSseFanout, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import { isTerminalCompatEvent, type CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
@@ -1977,14 +1977,11 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // harness answers `/provider` from the host-injected catalog, which
           // has no per-workspace declaration to disable.
           if (harnessId !== "opencode") return undefined
-          throw new Error("The pinned embedded SDK does not expose provider configuration writes")
+          if (!hostOptions.opencodeRuntime) throw new Error("OpenCode SDK runtime is unavailable")
+          const directory = workspaceDir()
+          return hostOptions.opencodeRuntime.providerConfig(authorizeWorkspace({ workspaceID: directory, directory }))
         },
       }))
-
-      app.get("/experimental/tool/ids", (c) => c.json({
-        ok: false,
-        error: { code: "tool_catalog_unavailable", harness: runner.id, message: "The harness does not expose a live Tool catalog" },
-      }, 502))
 
       app.get("/vcs", async (c) => c.json(await localVcsInfo(requestDirectory(c))))
 
@@ -2278,6 +2275,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         if (!hostOptions.opencodeRuntime) throw new Error("OpenCode SDK runtime is required for Session tool registration")
         sessionToolPrompts.delete(input.sessionId)
         await hostOptions.opencodeRuntime.tools.registerSession({
+          scope: authorizeWorkspace({ workspaceID: workspaceDir(), directory: workspaceDir() }),
           sessionID: input.sessionId,
           callbackUrl: input.callbackUrl,
           tools: input.tools,

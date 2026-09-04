@@ -56,7 +56,6 @@ describe("agent-sdk-runtime public API manifest", () => {
       claude: harnessApi.claude(),
       codex: harnessApi.codex(),
       cursor: harnessApi.cursor(),
-      opencode: harnessApi.opencode(),
       pi: harnessApi.pi(),
       acp: harnessApi.acp("operator-agent", { binary: "operator-agent" }),
     } as Record<string, unknown>

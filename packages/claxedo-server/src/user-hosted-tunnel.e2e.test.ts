@@ -13,7 +13,7 @@ import {
 } from "@claxedo/workspace-relay"
 import { configureWorkspaceSupervisor, shutdownWorkspaceSupervisor } from "./workspace/supervisor"
 import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/deployments/local/embedded-workspace-runtime"
-import { createOpenCodeRuntime } from "@claxedo/opencode-runtime"
+import { createOpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { startUserHostedWorkspaceTunnel, stopAllUserHostedWorkspaceTunnels } from "./user-hosted-tunnel"
 import { createSelfHostedApp } from "./deployments/self-hosted-node/app"

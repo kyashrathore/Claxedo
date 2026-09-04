@@ -142,12 +142,11 @@ Harness factories register one harness family or access mode with an
 Examples:
 
 ```ts
-import { claude, codex, opencode, pi } from "@claxedo/agent-sdk-runtime/harnesses"
+import { claude, codex, pi } from "@claxedo/agent-sdk-runtime/harnesses"
 
 const harnesses = [
   claude({ access: "native" }),
   codex({ access: "acp" }),
-  opencode({ url: "http://127.0.0.1:4096" }),
   pi(),
 ]
 ```

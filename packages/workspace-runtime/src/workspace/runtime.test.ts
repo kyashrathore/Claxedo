@@ -27,6 +27,7 @@ import type { SessionAccessPolicy } from "../session-access-policy"
 import { createRuntimeEventHub } from "../runtime-event-hub"
 import { RuntimeStore } from "../store"
 import { Pty } from "../pty"
+import type { OpenCodeRuntime } from "../opencode/index"
 import { createProcessObserver, type ProcessObserverEvent } from "../managed-processes/process-observer"
 import { registerWorkspaceDirectory, unregisterWorkspaceDirectory, workspaceId } from "../target"
 import type { AgentConfigOption, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
@@ -1773,7 +1774,6 @@ describe("workspace runtime auth helpers", () => {
 
     const app = new Hono()
     mountTestHost(app, {
-      opencodeCompat: true,
       providerCatalog: async (input) => {
         asked.push(input)
         if (input.harnessId === "broken") return { ok: false, error: { code: "provider_models_unavailable" } }
@@ -1802,29 +1802,23 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
-    const seen: Array<{ method: string; path: string; body?: unknown }> = []
-    let config: Record<string, unknown> = { provider: { "clinepass-2": { name: "Cline pass 2" } } }
-    const handler: OpenCodeRequestFn = async (req) => {
-      const url = new URL(req.url)
-      const body = req.method === "PATCH" ? await req.json() as Record<string, unknown> : undefined
-      seen.push({ method: req.method, path: url.pathname, ...(body ? { body } : {}) })
-      if (url.pathname === "/global/config") {
-        if (req.method === "PATCH") config = { ...config, ...body }
-        return Response.json(config)
-      }
-      if (url.pathname === "/provider") {
-        const disabled = new Set((config.disabled_providers as string[] | undefined) ?? [])
-        return Response.json({
-          all: [{ id: "clinepass-2", name: "Cline pass 2", env: [], models: { "kimi-k3": { id: "kimi-k3", name: "Kimi K3" } } }],
-          connected: ["clinepass-2"].filter((id) => !disabled.has(id)),
-          default: {},
-        })
-      }
-      return new Response("unexpected", { status: 500 })
-    }
-
+    const written: unknown[] = []
+    let disabled: string[] = []
+    const opencodeRuntime = {
+      providerConfig: async () => ({
+        read: async () => ({ disabled_providers: disabled }),
+        write: async (patch: { disabled_providers: string[] }) => {
+          written.push(patch)
+          disabled = patch.disabled_providers
+          return patch
+        },
+      }),
+      catalog: { models: async () => disabled.includes("clinepass-2") ? [] : [
+        { providerID: "clinepass-2", id: "kimi-k3", name: "Kimi K3" },
+      ] },
+    } as unknown as OpenCodeRuntime
     const app = new Hono()
-    mountTestHost(app, { opencodeRequest: handler, opencodeCompat: true })
+    mountTestHost(app, { opencodeRuntime })
 
     const before = await app.request("http://localhost/provider?harness=opencode")
     expect(await before.json()).toMatchObject({ connected: ["clinepass-2"] })
@@ -1836,10 +1830,7 @@ describe("workspace runtime auth helpers", () => {
     })
     expect(disable.status).toBe(200)
     expect(await disable.json()).toEqual({ harness: "opencode", disabled_providers: ["clinepass-2"] })
-    expect(seen.filter((item) => item.path === "/global/config")).toEqual([
-      { method: "GET", path: "/global/config" },
-      { method: "PATCH", path: "/global/config", body: { disabled_providers: ["clinepass-2"] } },
-    ])
+    expect(written).toEqual([{ disabled_providers: ["clinepass-2"] }])
 
     const after = await app.request("http://localhost/provider?harness=opencode")
     expect(await after.json()).toMatchObject({ connected: [] })
@@ -1852,7 +1843,7 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
 
     const app = new Hono()
-    mountTestHost(app, { opencodeCompat: true })
+    mountTestHost(app, {})
 
     const res = await app.request("http://localhost/api/wr/provider-config?harness=claude-sdk", {
       method: "PATCH",
@@ -1870,7 +1861,7 @@ describe("workspace runtime auth helpers", () => {
     process.env.WORKSPACE_RUNTIME_RUNNER = "opencode"
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
     const app = new Hono()
-    mountTestHost(app, { opencodeCompat: true })
+    mountTestHost(app, {})
 
     const res = await app.request("http://localhost/provider?harness=pi")
     expect(res.status).toBe(502)
@@ -1881,19 +1872,10 @@ describe("workspace runtime auth helpers", () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-managed-events-"))
     tempDirs.push(dir)
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const encoder = new TextEncoder()
     let upstreamRequests = 0
-    const handler: OpenCodeRequestFn = async () => {
-      upstreamRequests += 1
-      return new Response(new ReadableStream<Uint8Array>({
-        start(controller) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "server.heartbeat", properties: {} } })}\n\n`))
-          controller.enqueue(encoder.encode("data: not-json\n\n"))
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ payload: { type: "future.transcript", properties: { text: "secret" } } })}\n\n`))
-          controller.close()
-        },
-      }), { headers: { "Content-Type": "text/event-stream" } })
-    }
+    const opencodeRuntime = {
+      host: { client: async () => { upstreamRequests++; throw new Error("must stay cold") } },
+    } as unknown as OpenCodeRuntime
     const policy: SessionAccessPolicy = {
       sessionAuthority: "managed-private",
       authorize: async () => ({ allowed: true }),
@@ -1906,8 +1888,7 @@ describe("workspace runtime auth helpers", () => {
       }),
     }
     const host = createWorkspaceHost({
-      opencodeRequest: handler,
-      opencodeCompat: true,
+      opencodeRuntime,
       sessionAccessPolicy: policy,
     })
     const app = new Hono()
@@ -2000,46 +1981,29 @@ describe("workspace runtime auth helpers", () => {
     host.dispose()
   })
 
-  test("session create honors runner query while active runner is ACP", async () => {
+  test("session create honors runner query while a different native harness is active", async () => {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "wr-session-runner-query-"))
     tempDirs.push(dir)
-
     process.env.WORKSPACE_RUNTIME_DIRECTORY = dir
-    const calls: Array<{ url: string; directory: string; body: unknown }> = []
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const req = input instanceof Request ? input : new Request(String(input), init)
-      calls.push({
-        url: req.url,
-        directory: req.headers.get("x-opencode-directory") ?? "",
-        body: req.method === "POST" ? await req.json().catch(() => undefined) : undefined,
-      })
-      return new Response(JSON.stringify({ id: "session-1" }), {
-        status: 201,
-        headers: { "Content-Type": "application/json" },
-      })
-    }))
-
-    const app = new Hono()
-    mountTestHost(app, {
-      opencodeUrl: "http://opencode.test",
-      harness: { id: "cursor", access: "acp" },
-    })
-
-    const session = await app.request("http://localhost/session?runner=opencode", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
+    const calls: unknown[] = []
+    const runtime = {
+      sessions: {
+        async create(scope: { directory: string }, input: { title: string }) {
+          calls.push({ directory: scope.directory, input })
+          return { id: "ses_created", title: input.title, directory: scope.directory, createdAt: 1, updatedAt: 1 }
+        },
       },
+    } as unknown as OpenCodeRuntime
+    const app = new Hono()
+    mountTestHost(app, { opencodeRuntime: runtime, harness: { id: "cursor", access: "native" } })
+    const response = await app.request("http://localhost/session?runner=opencode", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ title: "Cloud smoke" }),
     })
-
-    expect(session.status).toBe(201)
-    expect(await session.json()).toMatchObject({ id: "session-1" })
-    expect(calls).toEqual([{
-      url: "http://opencode.test/session",
-      directory: dir,
-      body: { title: "Cloud smoke" },
-    }])
+    expect(response.status).toBe(201)
+    expect(await response.json()).toMatchObject({ id: "ses_created", title: "Cloud smoke" })
+    expect(calls).toEqual([{ directory: fs.realpathSync(dir), input: { title: "Cloud smoke" } }])
   })
 
   test("runtime config push replays agent_extensions snapshot", async () => {

@@ -60,6 +60,21 @@ export function nextDisabledProviders(
 
 type ProviderDisableRequest = { provider: string; disabled: boolean }
 
+const updates = new WeakMap<ProviderConfigStore, Promise<unknown>>()
+
+function updateProvider(store: ProviderConfigStore, input: ProviderDisableRequest) {
+  const operation = (updates.get(store) ?? Promise.resolve()).then(async () => {
+    const current = disabledProviders(await store.read())
+    return store.write({ disabled_providers: nextDisabledProviders(current, input) })
+  })
+  // Serialize the read AND write. Serializing replacement-array writes alone
+  // loses one selection when two disconnect requests read the same snapshot.
+  const settled = operation.catch(() => {})
+  updates.set(store, settled)
+  void settled.then(() => { if (updates.get(store) === settled) updates.delete(store) })
+  return operation
+}
+
 function providerDisableRequest(input: unknown): ProviderDisableRequest | undefined {
   if (!input || typeof input !== "object" || Array.isArray(input)) return
   const body = input as { provider?: unknown; disabled?: unknown }
@@ -113,8 +128,7 @@ export const ProviderConfigRoutes = (options: ProviderConfigRouteOptions) =>
             404,
           )
         }
-        const current = disabledProviders(await store.read())
-        const written = await store.write({ disabled_providers: nextDisabledProviders(current, body) })
+        const written = await updateProvider(store, body)
         return c.json({ harness, disabled_providers: disabledProviders(written) })
       } catch (cause) {
         return c.json(errorBody("provider_config_unavailable", failureMessage(cause)), 502)

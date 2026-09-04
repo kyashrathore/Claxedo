@@ -42,7 +42,6 @@
     "@claxedo/agent-event-runtime": "workspace:0.7.0",
     "@claxedo/agent-extensions": "workspace:0.7.0",
     "@claxedo/agent-sdk-runtime": "workspace:*",
-    "@claxedo/opencode-runtime": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:0.7.0",
     "@claxedo/usage-contract": "workspace:0.7.0",
     "@claxedo/workspace-relay": "workspace:0.7.0",

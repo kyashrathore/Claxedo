@@ -110,7 +110,6 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     ]
 
     expect(unsupported.every((item) => item.goals === false)).toBe(true)
-    expect(new OpenCodeHarnessAdapter("http://127.0.0.1:4096").readHarnessCapabilities().goals).toBe(true)
     expect((await new PiHarnessAdapter().readHarnessCapabilities(undefined)).goals).toBe(true)
   })
 
