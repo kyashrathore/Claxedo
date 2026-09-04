@@ -314,8 +314,7 @@ function make(dir: string) {
 }
 
 describe("createProjectActions New Project", () => {
-  const healthFetch = (localExecution: boolean | undefined) => async () =>
-    Response.json({ ok: true, ...(localExecution === undefined ? {} : { localExecution }) })
+  const health = (localExecution: boolean | undefined) => async () => ({ healthy: true, ...(localExecution === undefined ? {} : { localExecution }) })
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
   test("an unsigned server with its own filesystem opens the folder picker, in a browser exactly as in the desktop", async () => {
@@ -323,7 +322,7 @@ describe("createProjectActions New Project", () => {
     const props = {
       ...fixture.props,
       config: {},
-      platform: { ...fixture.props.platform, fetch: healthFetch(true) },
+      serverHealth: health(true),
       globalSDK: { ...fixture.props.globalSDK, url: "http://127.0.0.1:2593" },
     }
     createProjectActions(props as never, fixture.nav).handleNewProject()
@@ -336,7 +335,7 @@ describe("createProjectActions New Project", () => {
     const props = {
       ...fixture.props,
       config: { authEnabled: true },
-      platform: { ...fixture.props.platform, fetch: healthFetch(false) },
+      serverHealth: health(false),
       globalSDK: { ...fixture.props.globalSDK, url: "https://plane.example.dev" },
     }
     createProjectActions(props as never, fixture.nav).handleNewProject()
@@ -349,7 +348,7 @@ describe("createProjectActions New Project", () => {
     const props = {
       ...fixture.props,
       config: { authEnabled: true },
-      platform: { ...fixture.props.platform, fetch: healthFetch(true) },
+      serverHealth: health(true),
       globalSDK: { ...fixture.props.globalSDK, url: "https://localhost:4449" },
     }
     createProjectActions(props as never, fixture.nav).handleNewProject()

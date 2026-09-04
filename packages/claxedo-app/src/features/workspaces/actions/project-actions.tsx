@@ -9,7 +9,6 @@ import {
 } from "@/features/workspaces/app-ports"
 import { showToast } from "@opencode-ai/ui/toast"
 import { centralTransportForDeployment } from "@/platform/runtime/transport"
-import { checkServerHealthCached } from "@/app/connection/server-health"
 import { newProjectFlow } from "./new-project-flow"
 import { DialogNewProjectKind } from "../ui/dialogs/new-project-kind"
 import { validWorktree } from "@/platform/sync/worktree"
@@ -69,6 +68,7 @@ export type ProjectActionProps = Pick<
   | "globalBootstrapActions"
   | "projectInventoryActions"
   | "config"
+  | "serverHealth"
   | "projects"
   | "routeDirectory"
   | "activeDirectory"
@@ -213,8 +213,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         serverUrl: props.globalSDK.url,
         authEnabled: props.config?.authEnabled === true,
       }) === "signed-web"
-      const url = props.globalSDK.url
-      const health = url ? await checkServerHealthCached({ url }, props.platform.fetch ?? globalThis.fetch) : undefined
+      const health = await props.serverHealth()
       const flow = newProjectFlow({ localExecution: health?.localExecution, signed })
       if (flow === "folder") openFolder()
       else if (flow === "cloud") openCloud()

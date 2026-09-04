@@ -1,4 +1,5 @@
 import type { Navigator, Params } from "@solidjs/router"
+import { checkServerHealthCached } from "@/app/connection/server-health"
 
 import { createClaxedoLayoutActions } from "./workbench/actions/index"
 import { useClaxedoEventsOptional } from "./integrations/claxedo-events"
@@ -56,6 +57,14 @@ export function useAppShellActions(input: {
     workspaceRouteId: input.shell.routeIdForDirectory,
     workspaceKindForRoute: (routeId) => workspaceConnection(routeId)?.kind,
     canUseDocuments: input.shell.canUseDocuments,
+    // The server's own account of itself (local execution), read from its
+    // health document; features take it as a port rather than reaching in.
+    serverHealth: () => {
+      const url = input.shell.globalSDK.url
+      return url
+        ? checkServerHealthCached({ url }, input.shell.platform.fetch ?? globalThis.fetch)
+        : Promise.resolve(undefined)
+    },
     flowLog: input.shell.flowLog,
   })
 
