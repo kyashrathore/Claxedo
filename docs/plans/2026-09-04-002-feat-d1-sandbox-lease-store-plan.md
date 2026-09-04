@@ -68,8 +68,8 @@ driver, `full-hosted` refuses a missing one — both fail closed at composition.
   `CLAXEDO_SANDBOX_DRIVER=<driver>` `CLAXEDO_<ENV>_SANDBOX_WORKER_URL`), cutover + `--agent-plugins` only: posture
   `full-hosted` in the profile, ledger identity and manifest; vars `CLAXEDO_SANDBOX_POSTURE=full-hosted`, `CLAXEDO_SANDBOX_DRIVER=<driver>`,
   `CLOUDFLARE_SANDBOX_WORKER_URL`; required secret `CLOUDFLARE_SANDBOX_API_TOKEN` (cloudflare) /
-  `DAYTONA_API_KEY` (daytona). `prepare-better-auth-d1.ts` certifies both postures. `deploy-hosted.ts` threads the
-  flag.
+  `DAYTONA_API_KEY` (daytona). `prepare-better-auth-d1.ts` certifies both postures; `deploy-hosted.ts` already
+  reads the same profile (its `cloudflare-sandbox` target requires it).
 
 ### Live target (owner decision 2026-09-04)
 
@@ -122,3 +122,9 @@ Cloudflare sandbox Worker `claxedo-sandbox-proxy` at `sandbox.claxedo.com` (depl
   access/backing pair, no actor profile requirement). Rebuilding the sandbox worker image from the current tree
   (`build-sandbox-image.ts --agent-plugins --bundle-only` + `wrangler deploy` in
   `scripts/sandbox/cloudflare-worker`), which also ships the Agent Plugins materializer the VM needs.
+- Sandbox worker image rebuild: the local cross-compile needs Linux-only optionals (`@opentui/core-linux-x64`,
+  `@ff-labs/fff-bin-linux-x64-gnu`), so the canonical path is the `deploy-cloudflare-sandbox-worker` workflow on
+  the branch (`gh workflow run … -f deploy_worker=true -f agent_plugins=true`). Its "Build sandbox manager" step
+  failed on a fresh runner (`@claxedo/sandbox-contract` dist missing); fixed in `6e630d9447`. The workflow's last
+  step re-syncs the sandbox worker's `API_TOKEN` to `CLAXEDO_RUNTIME_ADMIN_TOKEN`, so the rotated token is
+  re-put afterwards.
