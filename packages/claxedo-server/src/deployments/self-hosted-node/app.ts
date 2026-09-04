@@ -967,11 +967,14 @@ export function createSelfHostedApp(
     // web app validates first, the guard cookie-authenticated mutations must
     // pass, and the bridge that lets a session cookie reach the bearer
     // verifier every signed route already uses. Present only behind an HTTPS
-    // public origin, which is what makes the session cookie `Secure`.
+    // public origin, which is what makes the session cookie `Secure`. Mounted
+    // on every route, not only `/api/*`: the signed web app reaches the
+    // engine-compat surface (`/find`, `/file`, `/path`, `/session`) with the
+    // same cookie, and in signed mode those routes verify a bearer too.
     const browserDescriptor = embeddedBrowserAuthDescriptor()
     if (browserDescriptor) {
-      app.use("/api/*", embeddedBrowserAuthSecurity(browserDescriptor))
-      app.use("/api/*", embeddedBrowserSessionBearer(browserDescriptor))
+      app.use("*", embeddedBrowserAuthSecurity(browserDescriptor))
+      app.use("*", embeddedBrowserSessionBearer(browserDescriptor))
       app.get("/api/claxedo/auth/descriptor", (c) => c.json(embeddedBrowserAuthDescriptor()))
     }
   }

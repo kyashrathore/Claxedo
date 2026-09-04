@@ -82,4 +82,9 @@ server mints that cookie because the embedded issuer's `baseURL` is the HTTPS or
   the local sign-up API for the curl proofs. Open: the local plugin routes answer the catalog
   without a session even in signed mode (machine-local semantics); decide whether a signed box
   should gate them.
+- 2026-09-05 00:50: owner signed in on https://localhost:4449 in Chrome; New Project showed "No folders
+  found" because the cookie bridge was mounted on `/api/*` only while the folder picker reads the
+  engine-compat `/file` and `/path` routes, which verify a bearer in signed mode. Bridge and guard now
+  mount on every route; proven: `/file` and `/path` through the proxy answer 401 without the cookie and
+  200 with it.
 
