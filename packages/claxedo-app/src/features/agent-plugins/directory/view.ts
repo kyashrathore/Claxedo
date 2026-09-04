@@ -186,3 +186,12 @@ export function personalEntries(input: {
     .filter((entry) => !entry.ownedByClaxedo && entry.name.toLowerCase().includes(query))
     .map((entry) => ({ ...entry, harnessId: harness.harnessId })))
 }
+
+/**
+ * The body of a SKILL.md: the YAML frontmatter (name, description, …) is
+ * already shown as the skill's row, so the pane renders only what follows it.
+ */
+export function skillBody(markdown: string): string {
+  const match = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(markdown)
+  return (match ? markdown.slice(match[0].length) : markdown).replace(/^\s+/, "")
+}

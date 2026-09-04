@@ -11,8 +11,7 @@ import {
   isInstalled,
   oauthServers,
   pluginLabel,
-  stateChip,
-} from "./view"
+  stateChip, skillBody } from "./view"
 
 const ROW = "rounded-lg border border-border-weak-base bg-surface-raised-base px-2.5 py-2"
 const HEADING = "text-11-medium uppercase tracking-wide text-text-weaker"
@@ -53,7 +52,7 @@ function SkillRow(props: {
             <span class="text-icon-critical-base">{String(document.error)}</span>
           </Show>
           <Show when={document.loading}><span>Reading SKILL.md…</span></Show>
-          <Show when={document()}>{(loaded) => <Markdown text={loaded().markdown} />}</Show>
+          <Show when={document()}>{(loaded) => <Markdown text={skillBody(loaded().markdown)} />}</Show>
         </div>
       </Show>
     </div>

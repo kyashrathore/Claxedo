@@ -78,6 +78,7 @@ export function PersonalCard(props: { entry: PersonalEntry }) {
           <span class="shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium text-text-weak">
             {props.entry.harnessId}
           </span>
+          <Show when={props.entry.marketplace}>{(marketplace) => <span class="shrink-0 rounded-full border border-border-weak-base px-2 py-px text-11-medium text-text-weaker">{marketplace()}</span>}</Show>
         </div>
         <p class="truncate text-12-mono text-text-weak">{props.entry.root}</p>
       </div>

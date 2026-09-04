@@ -1,3 +1,4 @@
+import { skillBody } from "./view"
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { JSX } from "solid-js"
@@ -434,5 +435,12 @@ describe("Agent Plugin Directory sources", () => {
     expect(alert).toHaveTextContent("broken: unknown key: hooks")
     expect(posted(recorded, "/api/claxedo/plugins/sources")).toHaveLength(1)
     expect(screen.getByLabelText("GitHub repository")).toHaveValue("acme/empty")
+  })
+})
+
+describe("skill documents", () => {
+  test("the pane renders the SKILL.md body without its frontmatter", () => {
+    expect(skillBody("---\nname: docs\ndescription: Look things up\n---\n\n# Docs\n\nBody")).toBe("# Docs\n\nBody")
+    expect(skillBody("# No frontmatter\n")).toBe("# No frontmatter\n")
   })
 })
