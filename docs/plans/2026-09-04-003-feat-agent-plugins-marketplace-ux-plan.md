@@ -1,7 +1,7 @@
 ---
 title: "feat: Agent Plugins marketplace — Directory surface and Install flow"
 date: 2026-09-04
-status: planned (owner review pending)
+status: planned (owner decisions recorded 2026-09-04; ready to execute)
 branch: codex/refactor-agent-plugins
 depends-on: 2026-09-04-001-feat-agent-plugins-d1-hosted-port-plan.md, 2026-09-04-002-feat-d1-sandbox-lease-store-plan.md
 ---
@@ -87,7 +87,7 @@ and keep the Claxedo collection as one instance. Add a source registry:
   on each candidate is what the Directory filters by.
 - Import from disk is **out of scope** for this slice (see Non-goals).
 
-### D3. Installed by other harnesses on this machine (read-only discovery)
+### D3. "Personal" — plugins the user installed themselves for other harnesses (read-only discovery)
 
 Local rail only, `GET /api/claxedo/plugins/machine-installed` → `{ harnesses: Array<{ harnessId, entries:
 Array<{ name, version?, root, marketplace?, ownedByClaxedo: boolean }> }> }`:
@@ -99,8 +99,8 @@ Array<{ name, version?, root, marketplace?, ownedByClaxedo: boolean }> }> }`:
 - codex: `$CODEX_HOME/config.toml` `[plugins.*]` blocks outside the Claxedo marker block + `plugins/cache/*`
   excluding `claxedo-agent-plugins`.
 
-The Directory shows these under "On this machine" with the harness badge. They are informational in this slice
-(no import action); the owner decides later whether "Bring to Claxedo" is worth a disk source.
+The Directory shows these under **Personal** ("installed by you for these harnesses") with the harness badge.
+They are informational: no import action (owner decision 2026-09-04).
 
 ### D4. Directory surface (renderer)
 
@@ -108,10 +108,10 @@ The Directory shows these under "On this machine" with the harness badge. They a
 beside it.
 
 - **Header**: search over name/description/skill names/MCP server names; source chips `All · Claxedo ·
-  <each added source> · On this machine · + Add source` (Add source opens a small form: GitHub `owner/repo`,
+  <each added source> · Personal · + Add source` (Add source opens a small form: GitHub `owner/repo`,
   optional ref; validation errors from D2 are shown inline).
 - **Sections** (in order): *Needs attention* (installed plugins whose OAuth MCP server is `broken`/`degraded`
-  or whose artifact is unavailable) → *Installed* → one section per source → *On this machine*. Each section is
+  or whose artifact is unavailable) → *Installed* → one section per source → *Personal* (D3). Each section is
   a two-column card grid: icon (D1), name, one-line description, a state chip (`Installed on 3 harnesses` /
   `Needs authentication` / `Update available`), primary action `Add` or `Installed ✓`.
 - **Detail pane**: a right-side pane inside the marketplace tab (master/detail split inside the surface, not
@@ -161,7 +161,7 @@ New hosted operations in `claxedo-desktop/src/main/account/hosted-operations.ts`
 
 - Editable Local/Cloud environment targeting (needs an activation dimension on the control plane).
 - Import from disk, hooks/commands/agents in plugins, ratings or usage counts, plugin publishing.
-- Migrating other harnesses' installs into Claxedo ("Bring to Claxedo").
+- Importing the Personal section's entries into Claxedo (owner decision: informational only).
 
 ## Work packages (disjoint file ownership; run in parallel)
 
@@ -184,9 +184,9 @@ New hosted operations in `claxedo-desktop/src/main/account/hosted-operations.ts`
       nothing; a valid repository's plugins appear in the next catalog read with `source.id` set; unsigned
       sources are machine-wide, signed personal sources are per user, organization sources need admin/owner;
       Miniflare test for the D1 store, SQLite test for the local store, route tests on both rails. Progress:
-- [ ] **WP3** Discovery lists a Claude Code plugin, a Cursor local plugin and a Codex plugin from fixture
-      home directories, excludes Claxedo-owned entries, and tolerates missing or malformed files (tests with
-      temp homes). Progress:
+- [ ] **WP3** Personal discovery lists a Claude Code plugin, a Cursor local plugin and a Codex plugin from
+      fixture home directories, excludes Claxedo-owned entries, and tolerates missing or malformed files (tests
+      with temp homes); the Directory labels the section "Personal" with no import action. Progress:
 - [ ] **WP4** Directory renders sections, search, source chips, add-source form, and the detail pane; the
       old `catalog.tsx` is gone and no import references it; vitest covers section membership (needs attention
       vs installed), search, pane open/close, and that every action calls the same API method the old component
@@ -210,7 +210,7 @@ New hosted operations in `claxedo-desktop/src/main/account/hosted-operations.ts`
 - [ ] All WP suites green: server-core catalog tests, both rails' route tests, D1 Miniflare and SQLite store
       tests, discovery tests, app vitest for directory and install sheet, desktop account-api tests. Progress:
 - [ ] Live: on the packaged dev build signed into staging, the Directory shows the Claxedo collection, an added
-      GitHub source, and the machine's Claude/Cursor/Codex installs; opening Context7 shows its skills and MCP
+      GitHub source, and the Personal section with this machine's Claude/Cursor/Codex installs; opening Context7 shows its skills and MCP
       server; installing Composio walks Where → Authentication (Personal) → Connect; the VM provisioner still
       delivers revision N+1 (lease ready, apply 200). Progress:
 - [ ] Architecture note `docs/agent-plugins-marketplace.md` (present tense: owners, flows, contracts) written;
@@ -228,15 +228,16 @@ New hosted operations in `claxedo-desktop/src/main/account/hosted-operations.ts`
 - The supervisor reviews every diff against the acceptance criteria above before it is committed, and runs the
   ratchets and the CDP probe (`scratchpad/cdp-probe.mjs`) for the live checks.
 
-## Open questions for the owner
+## Owner decisions (2026-09-04)
 
-1. Icon source: `extensions.claxedo.icon` in the plugin manifest (proposed) versus a fixed icon set keyed by
-   plugin name in the app.
-2. "Enterprise" is proposed as *team connection scope + organization default activation*. Confirm, or keep it
-   to the connection scope only.
-3. Whether "On this machine" should offer an import in this slice or stay informational.
+1. **Icons**: `extensions.claxedo.icon` in the plugin manifest, monogram fallback (owner deferred to the
+   proposal; no manifest schema change).
+2. **Enterprise** = team connection scope **plus** organization-default activation. Confirmed.
+3. **Third section is "Personal"**, not "On this machine": plugins the user installed themselves for those
+   harnesses (Claude Code, Cursor, Codex). Informational only, no import.
 
 ## Progress log
 
 - 2026-09-04: plan written after mapping the current implementation (renderer catalog, both rails, adapters,
-  connections dialog, workbench tab). Owner review pending.
+  connections dialog, workbench tab). Owner answered the three open questions the same day (see above);
+  ready to execute.
