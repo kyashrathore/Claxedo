@@ -62,13 +62,19 @@ export function AgentPluginDirectory(props: {
     () => props.directory.sources.list(),
   )
   const [machine] = createResource(() => "machine", () => props.directory.machineInstalled())
+  // A resource read while errored rethrows its error into the render, so a
+  // control plane without the sources route (or a daemon that cannot read the
+  // machine's harness installs) must not take the whole Directory down: the
+  // catalog still renders, and each failure is reported in its own place.
+  const listedSources = () => (sources.error ? [] : sources()?.sources ?? [])
+  const machineInstalled = () => (machine.error ? undefined : machine())
 
   const candidates = () => catalog()?.candidates ?? []
   const connectionRows = (): AgentPluginConnectionSummary[] => connections()?.connections ?? []
   const harnesses = createMemo<AgentPluginHarness[]>(() => catalog()?.supportedHarnesses ?? [])
 
   const sourceViews = createMemo<DirectorySourceView[]>(() => {
-    const listed = sources()?.sources ?? []
+    const listed = listedSources()
     return listed.length > 0 ? listed : sourcesFromCandidates(candidates())
   })
 
@@ -79,11 +85,11 @@ export function AgentPluginDirectory(props: {
     query: query(),
     filter: filter(),
   }))
-  const personal = createMemo(() => personalEntries({ machine: machine(), query: query(), filter: filter() }))
+  const personal = createMemo(() => personalEntries({ machine: machineInstalled(), query: query(), filter: filter() }))
 
   const sourceCount = (id: string) => candidates()
     .filter((plugin) => plugin.source?.id === id && matchesQuery(plugin, query().trim().toLowerCase())).length
-  const personalCount = () => personalEntries({ machine: machine(), query: query(), filter: ALL }).length
+  const personalCount = () => personalEntries({ machine: machineInstalled(), query: query(), filter: ALL }).length
 
   const selected = createMemo(() => candidates().find((plugin) => plugin.pluginInstanceId === selectedId()))
 
@@ -206,7 +212,7 @@ export function AgentPluginDirectory(props: {
     if (signed() && props.connections) await refetchConnections()
   }
 
-  const removableSource = () => (sources()?.sources ?? []).find((source) => source.id === filter() && source.canRemove)
+  const removableSource = () => listedSources().find((source) => source.id === filter() && source.canRemove)
 
   const removeSource = async (id: string) => {
     try {
