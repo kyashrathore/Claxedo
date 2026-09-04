@@ -1,4 +1,4 @@
-import type { AgentPluginConnectionPort, AgentPluginConnectionSummary } from "@/features/agent-plugins/catalog"
+import type { AgentPluginConnectionPort, AgentPluginConnectionSummary } from "@/features/agent-plugins/connections"
 import type { ConnectionsRequest } from "@/platform/account/integrations-request"
 
 /**

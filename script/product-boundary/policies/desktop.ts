@@ -293,7 +293,13 @@ export const desktopRendererUnsigned: Policy = {
   // -46 modules / -3 packages: retiring the hosted work-ledger service took its
   // renderer contribution loader and the whole app-side surface graph out of
   // the unsigned renderer. Re-measured, no headroom.
-  ceilings: { modules: 1007, packages: 56 },
+  // +6 modules / 0 packages (2026-09-04): the Agent Plugins marketplace became a
+  // Directory (search, source chips, cards, detail pane, add-source form) plus
+  // an install sheet, the shared connections helper, and the signed desktop's
+  // DirectoryApi over hosted operations, replacing the single catalog surface.
+  // Reviewed owner: features/agent-plugins (this product's own surface); every
+  // edge stays inside packages already in the closure. Re-measured, no headroom.
+  ceilings: { modules: 1013, packages: 56 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,

@@ -188,7 +188,13 @@ export const appLocal: Policy = {
   // hosted content-surface module, its app-ports seam, the shared rich-text
   // editor (its only consumer), the document work-source action chain, and the
   // service package itself out of this closure. Re-measured, no headroom.
-  ceilings: { modules: 957, packages: 37 },
+  // +6 modules / 0 packages (2026-09-04): the Agent Plugins marketplace became a
+  // Directory (search, source chips, cards, detail pane, add-source form) plus
+  // an install sheet, the shared connections helper, and the signed desktop's
+  // DirectoryApi over hosted operations, replacing the single catalog surface.
+  // Reviewed owner: features/agent-plugins (this product's own surface); every
+  // edge stays inside packages already in the closure. Re-measured, no headroom.
+  ceilings: { modules: 963, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

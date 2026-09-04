@@ -1,7 +1,8 @@
 import { Show, Suspense } from "solid-js"
 import { SurfaceFallback } from "@/app/integrations/surface-fallback"
 import type { AgentPluginContributionSet } from "./product-contributions"
-import { AgentPluginCatalog } from "@/features/agent-plugins/catalog"
+import { AgentPluginDirectory, directoryApi } from "@/features/agent-plugins/directory"
+import { InstallAgentPluginSheet } from "@/features/agent-plugins/install/sheet"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogConnectIntegration } from "@/app/dialogs/connect-integration"
 import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl } from "@/platform/api/api"
@@ -12,8 +13,9 @@ import { unsignedLocalFetch } from "@/platform/runtime/transport"
 import { agentPluginApi } from "@/features/agent-plugins/api"
 import { accountAgentPluginApi } from "./agent-plugin-account-api"
 import { agentPluginConnectionPort } from "./agent-plugin-connections"
+import { accountDirectoryApi } from "./agent-plugin-account-directory-api"
 
-function CatalogSurface() {
+function DirectorySurface() {
   const dialog = useDialog()
   const account = useAccountPort()
   const platform = usePlatform()
@@ -27,6 +29,17 @@ function CatalogSurface() {
   const desktopSignedApi = accountAgentPluginApi(account)
   const mode = () => account.state().status === "signed" ? "signed" as const : "unsigned" as const
   const desktopSigned = () => platform.platform === "desktop" && mode() === "signed"
+  const api = () => mode() === "signed" ? (desktopSigned() ? desktopSignedApi : browserSignedApi) : unsignedApi
+  // Sources follow the account, but what other harnesses installed on this
+  // machine can only be read by the machine's own sidecar, so that half is
+  // always the local rail — in every mode.
+  const localDirectory = directoryApi({ baseUrl: getDefaultBaseUrl(), request: unsignedLocalFetch })
+  const browserSignedDirectory = directoryApi({ baseUrl, request: platform.fetch ?? authFetch })
+  const desktopSignedDirectory = accountDirectoryApi(account, localDirectory.machineInstalled)
+  const directory = () => {
+    if (mode() !== "signed") return localDirectory
+    return desktopSigned() ? desktopSignedDirectory : browserSignedDirectory
+  }
   // One integrations request for every mode: it picks the signed desktop's
   // named account operations or the browser's authenticated fetch itself.
   const integrationsRequest = createIntegrationsRequest(baseUrl)
@@ -49,10 +62,29 @@ function CatalogSurface() {
   })
   return (
     <Show when={account.state().status !== "pending"} fallback={<SurfaceFallback />}>
-      <AgentPluginCatalog
+      <AgentPluginDirectory
         mode={mode()}
-        api={mode() === "signed" ? (desktopSigned() ? desktopSignedApi : browserSignedApi) : unsignedApi}
+        api={api()}
+        directory={directory()}
         connections={mode() === "signed" ? connections : undefined}
+        onAdd={(plugin, catalog) => new Promise<void>((resolve) => {
+          void dialog.show(() => (
+            <InstallAgentPluginSheet
+              plugin={plugin}
+              mode={mode()}
+              catalog={{
+                revision: catalog.revision,
+                projects: catalog.projects,
+                supportedHarnesses: catalog.supportedHarnesses,
+                canManageOrganizationDefaults: catalog.canManageOrganizationDefaults,
+                canManageOrganizationConnections: catalog.canManageOrganizationConnections,
+              }}
+              api={api()}
+              connections={mode() === "signed" ? connections : undefined}
+              onDone={() => resolve()}
+            />
+          ))
+        })}
       />
     </Show>
   )
@@ -66,7 +98,7 @@ export function agentPluginContributions(): AgentPluginContributionSet {
       tier: "claxedo-first-party",
       surface: "marketplace",
       slot: "workbench",
-      renderer: () => <Suspense fallback={<SurfaceFallback />}><CatalogSurface /></Suspense>,
+      renderer: () => <Suspense fallback={<SurfaceFallback />}><DirectorySurface /></Suspense>,
     }],
   }
 }

@@ -14,7 +14,7 @@ import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import type { AgentPluginApi, AgentPluginHarness, PluginCandidate, PluginCatalog } from "@/features/agent-plugins/api"
-import type { AgentPluginConnectionPort } from "@/features/agent-plugins/connections"
+import { oauthServers, type AgentPluginConnectionPort, type OAuthServer } from "@/features/agent-plugins/connections"
 
 /** The catalog facts the sheet needs; the Directory owns the catalog itself. */
 export type InstallCatalogFacts = {
@@ -29,26 +29,12 @@ export type InstallCatalogFacts = {
 
 export type InstallResult = { installed: boolean; revision?: number }
 
-type OAuthServer = { name: string; integrationId: string; issuers?: readonly string[] }
-
 type HarnessRow = { harnessId: AgentPluginHarness; available: boolean; reason?: string }
 
 const pluginName = (plugin: PluginCandidate) =>
   plugin.manifest?.name ?? plugin.relativePath ?? plugin.pluginInstanceId
 
 const monogram = (text: string) => (text.trim()[0] ?? "?").toUpperCase()
-
-/** The MCP servers that need a connected account before the plugin can run. */
-export function oauthServers(plugin: PluginCandidate): OAuthServer[] {
-  return plugin.mcpServers.flatMap((server) =>
-    server.authentication.state === "oauth"
-      ? [{
-          name: server.name,
-          integrationId: server.authentication.integrationId,
-          ...(server.authentication.issuers ? { issuers: server.authentication.issuers } : {}),
-        }]
-      : [])
-}
 
 /**
  * Harness rows for step 1. A harness the candidate cannot serve is the one the

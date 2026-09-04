@@ -91,12 +91,12 @@ function harness(input: {
     return { revision: 9, reconciliation: { state: "applied" } }
   })
   const api = {
-    catalog: vi.fn(),
-    skill: vi.fn(),
-    update: vi.fn(),
+    catalog: vi.fn<AgentPluginApi["catalog"]>(),
+    skill: vi.fn<AgentPluginApi["skill"]>(),
+    update: vi.fn<AgentPluginApi["update"]>(),
     activation,
     organizationDefault,
-  } as unknown as AgentPluginApi
+  } satisfies AgentPluginApi
   const open = vi.fn<AgentPluginConnectionPort["open"]>(() => order.push("connections.open"))
   const connections: AgentPluginConnectionPort = {
     load: async () => ({ connections: [] }),
