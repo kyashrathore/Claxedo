@@ -19,7 +19,6 @@ import { workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId as routeIdFromProjects } from "@/platform/identity/workspace-route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
 import { DialogCreateCloudProject } from "../ui/dialogs/create-cloud-project"
-import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -178,15 +177,14 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       props.dialog.close()
     }
 
-    // On HOSTED web there is no local filesystem behind the directory picker —
-    // it routes through the loopback bridge and dead-ends. The hosted-web path
-    // is the cloud create flow: pick a connected GitHub repository (or paste a
-    // URL, with a connect-GitHub path inside the dialog), provision a sandbox,
-    // and open the resulting workspace directory like any other selection.
-    // Web against a LOOPBACK server (self-host localhost) keeps the directory
-    // picker — the local filesystem is right there, same discriminator the
-    // home route uses.
-    if (props.platform.platform === "web" && centralTransportForServer(props.globalSDK.url) !== "loopback") {
+    // On the web there is no local filesystem behind the directory picker —
+    // it routes through the loopback bridge and dead-ends. Every web build's
+    // New Project is the cloud project onboarding: name the project, pick a
+    // connected GitHub repository (or paste a URL, with a connect-GitHub path
+    // inside the dialog), set its environment, provision a sandbox, and open
+    // the resulting workspace directory like any other selection. The folder
+    // picker below is the desktop's.
+    if (props.platform.platform === "web") {
       void props.dialog.show(() => (
         <DialogCreateCloudProject
           onSelect={(result) => {

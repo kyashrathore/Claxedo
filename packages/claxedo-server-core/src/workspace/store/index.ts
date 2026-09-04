@@ -62,6 +62,8 @@ export type Workspace = {
   sandbox_id?: string
   remote_directory?: string
   status?: string
+  /** The environment a cloud sandbox starts with; plaintext by design (see `SandboxHostInput.env`). */
+  env?: Record<string, string>
   available?: boolean
   created_at: number
   updated_at: number
@@ -235,6 +237,7 @@ async function load(target: string) {
         sandbox_id: trim(item.sandbox_id),
         remote_directory: trim(item.remote_directory),
         status: trim(item.status),
+        env: envRecord(item.env),
         created_at: item.created_at ?? Date.now(),
         updated_at: item.updated_at ?? Date.now(),
       }
@@ -343,6 +346,20 @@ type EnsureWorkspaceInput = {
   git_branch?: string
   remote_directory?: string
   status?: string
+  env?: Record<string, string>
+}
+
+function envRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  return entries.length ? Object.fromEntries(entries) : undefined
+}
+
+function sameEnv(left: Record<string, string> | undefined, right: Record<string, string> | undefined) {
+  const a = Object.entries(left ?? {}).toSorted()
+  const b = Object.entries(right ?? {}).toSorted()
+  return a.length === b.length && a.every(([key, value], index) => b[index]![0] === key && b[index]![1] === value)
 }
 
 export async function ensureWorkspace(input: EnsureWorkspaceInput) {
@@ -420,6 +437,7 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
     const git_remote = info.git_remote ?? ws.git_remote
     const remote_directory = trim(input.remote_directory) || ws.remote_directory
     const status = trim(input.status) || ws.status
+    const env = envRecord(input.env) ?? ws.env
     const same =
       ws.directory === directory &&
       ws.org_id === org_id &&
@@ -435,7 +453,8 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
       ws.git_branch === git_branch &&
       ws.git_remote === git_remote &&
       ws.remote_directory === remote_directory &&
-      ws.status === status
+      ws.status === status &&
+      sameEnv(ws.env, env)
     if (ws.directory !== directory) byDir.delete(ws.directory)
     const next = same && ws.updated_at === now
       ? ws
@@ -456,6 +475,7 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
           git_remote,
           remote_directory,
           status,
+          env,
           updated_at: now,
         }
     upsert(next)
@@ -484,6 +504,7 @@ async function ensureWorkspaceUncoalesced(input: EnsureWorkspaceInput) {
     git_remote: info.git_remote,
     remote_directory: trim(input.remote_directory),
     status: trim(input.status),
+    env: envRecord(input.env),
     created_at: now,
     updated_at: now,
   })

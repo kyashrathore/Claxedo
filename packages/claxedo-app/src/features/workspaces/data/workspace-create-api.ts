@@ -23,6 +23,12 @@ export type CreateCloudWorkspaceInput = {
   /** Local control-plane driver picker only; hosted compose ignores this. */
   driver?: string
   gitBranch?: string
+  /**
+   * Variables the sandbox starts with. Sent only when non-empty, and only on
+   * the browser path: the hosted plane's create route does not persist an
+   * environment yet and answers 400 to the field, which the dialog shows.
+   */
+  env?: Record<string, string>
   baseUrl?: string
 }
 
@@ -61,6 +67,7 @@ export async function createCloudWorkspace(
       }
       if (input.driver) body.driver = input.driver
       if (input.gitBranch) body.gitBranch = input.gitBranch
+      if (input.env && Object.keys(input.env).length) body.env = input.env
 
       return api.post<CreateCloudWorkspaceResult>(
         workspaceCreateUrl({ baseUrl: input.baseUrl }),

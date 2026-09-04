@@ -5,6 +5,7 @@ import {
   type WorkspaceConnectionAuthority,
 } from "@/platform/runtime/agent/workspace-relay-connection"
 import { configureWorkspaceCreateAuthority } from "@/platform/runtime/agent/workspace-create-authority"
+import { createCloudWorkspace } from "@/features/workspaces/data/workspace-create-api"
 
 /** Makes Electron/browser account operations the one signed connection authority. */
 export const WorkspaceConnectionAuthoritySync: Component = () => {
@@ -17,15 +18,11 @@ export const WorkspaceConnectionAuthoritySync: Component = () => {
   createEffect(() => {
     const signed = account.state().status === "signed"
     configureWorkspaceConnectionAuthority(signed ? authority : undefined)
-    configureWorkspaceCreateAuthority(signed
-      ? ({ repo, ...rest }) => account.run("workspace.create", {
-        ...rest,
-        // Operation parameters are scalars, so the connected-repository source
-        // travels flat. Electron main re-nests `repoFullName` into the
-        // `{ fullName }` object the hosted create schema requires.
-        ...(repo?.fullName ? { repoFullName: repo.fullName } : {}),
-      })
-      : undefined)
+    // Workspace creation has one transport-aware implementation:
+    // `createCloudWorkspace` reaches the hosted plane through Electron main on
+    // the desktop and posts with the session cookie in the browser. Bound
+    // whenever a signed account exists, on every platform.
+    configureWorkspaceCreateAuthority(signed ? (input) => createCloudWorkspace(input) : undefined)
   })
   onCleanup(() => {
     configureWorkspaceConnectionAuthority(undefined)

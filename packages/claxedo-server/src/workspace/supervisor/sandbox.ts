@@ -131,7 +131,9 @@ export async function startSandbox(
       },
       bootSource: bootSourceForAction(action),
       workspaceRoot: state.ws.remote_directory || WORKSPACE_DIR,
-      env: {},
+      // The project's environment, persisted on the workspace at creation so a
+      // re-provisioned sandbox starts the same way the first one did.
+      env: state.ws.env ?? {},
       source: state.ws.repo_url
         ? { kind: "git", repoUrl: state.ws.repo_url, branch: state.ws.git_branch ?? undefined }
         : { kind: "empty" },

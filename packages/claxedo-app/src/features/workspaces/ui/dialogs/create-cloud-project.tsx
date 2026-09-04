@@ -1,4 +1,4 @@
-import { createMemo, createSignal, For, Match, onCleanup, onMount, Show, Switch } from "solid-js"
+import { createMemo, createSignal, For, Index, Match, onCleanup, onMount, Show, Switch } from "solid-js"
 import { Button } from "@opencode-ai/ui/button"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
@@ -63,12 +63,57 @@ function isProvisionStep(status: string | null | undefined): status is Provision
     status === "error"
 }
 
+type EnvironmentRow = { id: number; name: string; value: string }
+
+const ENVIRONMENT_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/
+
+/** Rows with a name become variables; a row with neither name nor value is an empty line and is dropped. */
+export function environmentRecord(rows: readonly EnvironmentRow[]): Record<string, string> {
+  const record: Record<string, string> = {}
+  for (const row of rows) {
+    const name = row.name.trim()
+    if (!name) continue
+    record[name] = row.value
+  }
+  return record
+}
+
+/** Why the rows cannot be submitted yet, or `undefined` when they can. */
+export function environmentRowsProblem(rows: readonly EnvironmentRow[]): string | undefined {
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const name = row.name.trim()
+    if (!name) {
+      if (row.value.trim()) return "Each value needs a variable name"
+      continue
+    }
+    if (!ENVIRONMENT_NAME.test(name)) return `"${name}" is not a valid variable name`
+    if (seen.has(name)) return `"${name}" is listed twice`
+    seen.add(name)
+  }
+  return undefined
+}
+
+function SectionHeading(props: { step: number; title: string }) {
+  return (
+    <div class="mb-2 flex items-center gap-2">
+      <span class="flex size-5 items-center justify-center rounded-full bg-surface-raised-base text-11-medium text-text-weak">
+        {props.step}
+      </span>
+      <span class="text-13-medium text-text-strong">{props.title}</span>
+    </div>
+  )
+}
+
 /**
  * DialogCreateCloudProject component for creating new cloud projects.
  * Allows users to clone a Git repository into a cloud sandbox.
  * Shows live provisioning progress via SSE events.
  */
 export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
+  const [projectName, setProjectName] = createSignal("")
+  const [environment, setEnvironment] = createSignal<EnvironmentRow[]>([{ id: 1, name: "", value: "" }])
+  let nextRowId = 2
   const [repoUrl, setRepoUrl] = createSignal("")
   const [repository, setRepository] = createSignal<RepositoryChoice>()
   const [repositorySearch, setRepositorySearch] = createSignal("")
@@ -185,7 +230,20 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   // A provider is only REQUIRED where the user was offered a choice. Where the
   // drivers endpoint is absent (hosted), demanding one is a gate on a field the
   // user cannot possibly fill.
-  const canSubmit = () => Boolean(repoUrl() || repository()) && (!driversAvailable() || Boolean(provider()))
+  /** The repository's own name, offered as the default project name. */
+  const suggestedName = () => repository()?.name ?? repoUrl().split("/").pop()?.replace(/\.git$/, "") ?? ""
+  const effectiveName = () => projectName().trim() || suggestedName()
+  const environmentProblem = () => environmentRowsProblem(environment())
+  const canSubmit = () =>
+    Boolean(repoUrl() || repository())
+    && Boolean(effectiveName())
+    && !environmentProblem()
+    && (!driversAvailable() || Boolean(provider()))
+  const updateRow = (id: number, patch: Partial<EnvironmentRow>) =>
+    setEnvironment((rows) => rows.map((row) => (row.id === id ? { ...row, ...patch } : row)))
+  const addRow = () => setEnvironment((rows) => [...rows, { id: nextRowId++, name: "", value: "" }])
+  const removeRow = (id: number) =>
+    setEnvironment((rows) => (rows.length > 1 ? rows.filter((row) => row.id !== id) : [{ id: nextRowId++, name: "", value: "" }]))
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault()
@@ -243,7 +301,12 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
       const source = selected
         ? { connectionId: selected.connectionId, repo: { fullName: selected.fullName } }
         : { repoUrl: repoUrl() }
-      const name = (selected?.name ?? repoUrl().split("/").pop()?.replace(".git", "")) || "Untitled"
+      const name = effectiveName() || "Untitled"
+      const env = environmentRecord(environment())
+      // The signed account's create authority (bound in
+      // workspace-connection-authority-sync.tsx to the one transport-aware
+      // create function): Electron main on the desktop, the session cookie in
+      // the browser. The dialog builds no create URL of its own.
       const created = await createHostedWorkspace({
         // Omitted rather than sent empty when this control plane exposes no
         // driver choice: the hosted create route composes one driver from env.
@@ -251,6 +314,7 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
         projectName: name,
         workspaceName: "main",
         ...source,
+        ...(Object.keys(env).length ? { env } : {}),
       })
 
       if (!created.directory) throw new Error("Workspace create did not return a directory")
@@ -281,11 +345,28 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
   }
 
   return (
-    <Dialog title="New Cloud Project">
+    <Dialog title="New Project">
       <div class="min-w-[400px]">
         <Switch>
           <Match when={phase() === "form"}>
-            <form onSubmit={handleSubmit} class="space-y-4">
+            <form onSubmit={handleSubmit} class="space-y-5">
+              <section>
+                <SectionHeading step={1} title="Name" />
+                <input
+                  type="text"
+                  value={projectName()}
+                  onInput={(e) => setProjectName(e.currentTarget.value)}
+                  placeholder={suggestedName() || "My project"}
+                  aria-label="Project name"
+                  class="w-full px-3 py-2 bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
+                />
+                <p class="mt-1 text-11-regular text-text-weak">
+                  How the project appears in your list. Defaults to the repository's name.
+                </p>
+              </section>
+
+              <section class="space-y-4">
+              <SectionHeading step={2} title="Repository" />
               <Show when={driversAvailable()}>
               <div>
                 <label class="block text-sm text-text-weak mb-1">
@@ -393,6 +474,57 @@ export function DialogCreateCloudProject(props: DialogCreateCloudProjectProps) {
                   Try the example public repository
                 </button>
               </div>
+              </section>
+
+              <section>
+                <SectionHeading step={3} title="Environment" />
+                <p class="mb-2 text-11-regular text-text-weak">
+                  Variables the sandbox starts with, the way a <code>.env</code> file would set them. They are readable
+                  inside the sandbox; keep credentials the agent must not see in Connections instead.
+                </p>
+                <div class="flex flex-col gap-2" role="group" aria-label="Environment variables">
+                  <Index each={environment()}>
+                    {(row) => (
+                      <div class="flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={row().name}
+                          onInput={(e) => updateRow(row().id, { name: e.currentTarget.value })}
+                          placeholder="NAME"
+                          aria-label="Variable name"
+                          spellcheck={false}
+                          class="w-2/5 px-3 py-1.5 font-mono text-13-regular bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
+                        />
+                        <input
+                          type="text"
+                          value={row().value}
+                          onInput={(e) => updateRow(row().id, { value: e.currentTarget.value })}
+                          placeholder="value"
+                          aria-label="Variable value"
+                          spellcheck={false}
+                          class="flex-1 px-3 py-1.5 font-mono text-13-regular bg-surface-inset-base border border-border-base rounded-lg text-text-strong focus:outline-none focus:border-border-interactive-base"
+                        />
+                        <button
+                          type="button"
+                          aria-label="Remove variable"
+                          class="px-2 text-text-weak hover:text-text-strong"
+                          onClick={() => removeRow(row().id)}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    )}
+                  </Index>
+                </div>
+                <div class="mt-2 flex items-center gap-3">
+                  <button type="button" class="text-12-medium text-text-interactive-base" onClick={addRow}>
+                    + Add variable
+                  </button>
+                  <Show when={environmentProblem()}>
+                    {(problem) => <span class="text-11-regular text-icon-warning-base">{problem()}</span>}
+                  </Show>
+                </div>
+              </section>
 
               <div class="flex justify-end gap-2 mt-6">
                 <span class="mr-auto self-center text-11-regular text-text-weak">

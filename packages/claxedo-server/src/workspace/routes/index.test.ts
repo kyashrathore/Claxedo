@@ -22,7 +22,7 @@ const mocks = {
       mocks.workspaceRows.get(input.workspaceId ?? "") ?? mocks.workspaceRows.get(input.directory ?? ""),
   ),
   ensureWorkspace: vi.fn(
-    async (input: { workspaceId?: string; org_id?: string; directory?: string; kind?: string; status?: string }) => {
+    async (input: { workspaceId?: string; org_id?: string; directory?: string; kind?: string; status?: string; env?: Record<string, string> }) => {
       const row: WorkspaceTestRow = {
         id: input.workspaceId ?? crypto.randomUUID(),
         org_id: input.org_id,
@@ -31,6 +31,7 @@ const mocks = {
         directory: input.directory ?? "/workspace",
         kind: input.kind ?? "local",
         status: input.status,
+        ...(input.env ? { env: input.env } : {}),
         created_at: 1,
         updated_at: 1,
       }
@@ -70,7 +71,7 @@ function resetWorkspaceStoreMocks() {
   )
   mocks.ensureWorkspace.mockReset()
   mocks.ensureWorkspace.mockImplementation(
-    async (input: { workspaceId?: string; org_id?: string; directory?: string; kind?: string; status?: string }) => {
+    async (input: { workspaceId?: string; org_id?: string; directory?: string; kind?: string; status?: string; env?: Record<string, string> }) => {
       const row: WorkspaceTestRow = {
         id: input.workspaceId ?? crypto.randomUUID(),
         org_id: input.org_id,
@@ -79,6 +80,7 @@ function resetWorkspaceStoreMocks() {
         directory: input.directory ?? "/workspace",
         kind: input.kind ?? "local",
         status: input.status,
+        ...(input.env ? { env: input.env } : {}),
         created_at: 1,
         updated_at: 1,
       }
@@ -173,7 +175,7 @@ vi.mock("../../user-hosted-tunnel", () => ({
 }))
 
 const { localOnlyAuthAdapter } = await import("@claxedo/server-core/platform/auth/auth")
-const { WorkspaceRoutes } = await import("./index")
+const { WorkspaceRoutes, workspaceEnvProblem } = await import("./index")
 const { createFixedWindowConnectionRateLimiter } = await import("../../platform/auth/rate-limit")
 
 const acceptedSandboxProbe = (async () =>
@@ -328,6 +330,67 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
     tokenIdentifier: `${config.issuer}|${token}`,
     issuer: config.issuer,
   },
+})
+
+describe("workspace create environment", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    resetWorkspaceStoreMocks()
+  })
+
+  test("persists the project environment on the workspace and starts the sandbox with it", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier: vi.fn(verifier) })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({
+        repoUrl: "https://github.com/acme/demo.git",
+        projectName: "Demo",
+        env: { DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" },
+      }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(mocks.ensureWorkspace).toHaveBeenCalledWith(
+      expect.objectContaining({
+        project_name: "Demo",
+        env: { DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" },
+      }),
+    )
+    expect(sandbox.ensure).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ env: { DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" } }),
+    )
+  })
+
+  test("refuses an environment whose names are not variable names", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    const app = WorkspaceRoutes(svc, { authConfig, verifier: vi.fn(verifier) })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", env: { "not a name": "x" } }),
+    })
+
+    expect(res.status).toBe(400)
+    expect(sandbox.ensure).not.toHaveBeenCalled()
+    expect(mocks.ensureWorkspace).not.toHaveBeenCalled()
+  })
+
+  test("names the limits it enforces", () => {
+    expect(workspaceEnvProblem(undefined)).toBeUndefined()
+    expect(workspaceEnvProblem({ OK_1: "v" })).toBeUndefined()
+    expect(workspaceEnvProblem({ "1BAD": "v" })).toMatch(/not a valid variable name/)
+    expect(workspaceEnvProblem(Object.fromEntries(Array.from({ length: 65 }, (_, i) => [`K${i}`, "v"])))).toMatch(/more than 64/)
+    expect(workspaceEnvProblem({ BIG: "x".repeat(32 * 1024) })).toMatch(/exceeds/)
+  })
 })
 
 describe("workspace routes signed control plane authority", () => {

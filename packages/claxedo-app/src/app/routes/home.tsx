@@ -15,7 +15,6 @@ import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { DialogCreateCloudProject } from "@/features/workspaces/ui/dialogs/create-cloud-project"
-import { useConfigOptional } from "@/app/providers/config"
 import { ensureLocalProject } from "../../features/workspaces/data/query/project-ensure"
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
@@ -31,7 +30,6 @@ export default function Home() {
   const navigate = useNavigate()
   const server = useServer()
   const language = useLanguage()
-  const config = useConfigOptional()
   const projectsQuery = useQuery(() => queryOptions.projects())
   const pathQuery = useQuery(() => queryOptions.path(null))
   const homedir = createMemo(() => pathQuery.data?.home ?? "")
@@ -70,7 +68,11 @@ export default function Home() {
       }
     }
 
-    if (platform.platform === "web" && config?.sandboxEnabled) {
+    // The web has no local filesystem to pick from: New Project is the cloud
+    // project onboarding (name, repository, environment) on every web build,
+    // whatever the transport or the sandbox flag. The folder picker below is
+    // the desktop's and the local product's.
+    if (platform.platform === "web") {
       dialog.show(
         () => <DialogCreateCloudProject onSelect={resolve} />,
         () => void resolve(null),

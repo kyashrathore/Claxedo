@@ -13,10 +13,12 @@
  *      with no connection had no move.
  */
 import { onMount } from "solid-js"
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { cleanup, fireEvent, render, screen, waitFor } from "@solidjs/testing-library"
 import { DialogProvider, useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogCreateCloudProject } from "./create-cloud-project"
+import { configureWorkspaceCreateAuthority } from "@/platform/runtime/agent/workspace-create-authority"
+import { createCloudWorkspace } from "@/features/workspaces/data/workspace-create-api"
 
 const apiMocks = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
 const authFetchMock = vi.hoisted(() => vi.fn())
@@ -92,6 +94,12 @@ function Harness() {
   return null
 }
 
+// Production binds the create authority to the transport-aware create
+// function (workspace-connection-authority-sync.tsx); here that function runs
+// against the mocked API.
+beforeEach(() => configureWorkspaceCreateAuthority((input) => createCloudWorkspace(input)))
+afterEach(() => configureWorkspaceCreateAuthority(undefined))
+
 function renderDialog() {
   return render(() => (
     <DialogProvider>
@@ -101,6 +109,86 @@ function renderDialog() {
 }
 
 const submitButton = () => screen.getByRole("button", { name: "Clone & Open" }) as HTMLButtonElement
+
+describe("create cloud project onboarding", () => {
+  test("sends the entered name and the environment rows with the create request", async () => {
+    apiMocks.get.mockRejectedValue(new Error("Request failed: 404"))
+    apiMocks.post.mockResolvedValue({ workspaceId: "ws_1", directory: "/w/1" })
+    integrationsResponses({ integrations: [GITHUB_INTEGRATION] })
+
+    renderDialog()
+
+    await waitFor(() => expect(screen.getByText("Connect GitHub")).toBeTruthy())
+    fireEvent.input(screen.getByLabelText("Project name"), { target: { value: "Demo App" } })
+    fireEvent.input(screen.getByPlaceholderText("https://github.com/username/repo"), {
+      target: { value: "https://github.com/acme/app.git" },
+    })
+    fireEvent.click(screen.getByText("+ Add variable"))
+    const names = screen.getAllByLabelText("Variable name")
+    const values = screen.getAllByLabelText("Variable value")
+    fireEvent.input(names[0]!, { target: { value: "DATABASE_URL" } })
+    fireEvent.input(values[0]!, { target: { value: "postgres://localhost/demo" } })
+    fireEvent.input(names[1]!, { target: { value: "NODE_ENV" } })
+    fireEvent.input(values[1]!, { target: { value: "development" } })
+    await waitFor(() => expect(submitButton().disabled).toBe(false))
+
+    fireEvent.click(submitButton())
+
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalled())
+    expect(apiMocks.post.mock.calls[0]![1]).toMatchObject({
+      projectName: "Demo App",
+      repoUrl: "https://github.com/acme/app.git",
+      env: { DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" },
+    })
+  })
+
+  test("defaults the name to the repository and omits an empty environment", async () => {
+    apiMocks.get.mockRejectedValue(new Error("Request failed: 404"))
+    apiMocks.post.mockResolvedValue({ workspaceId: "ws_1", directory: "/w/1" })
+    integrationsResponses({ integrations: [GITHUB_INTEGRATION] })
+
+    renderDialog()
+
+    await waitFor(() => expect(screen.getByText("Connect GitHub")).toBeTruthy())
+    fireEvent.input(screen.getByPlaceholderText("https://github.com/username/repo"), {
+      target: { value: "https://github.com/acme/app.git" },
+    })
+    await waitFor(() => expect(submitButton().disabled).toBe(false))
+    fireEvent.click(submitButton())
+
+    await waitFor(() => expect(apiMocks.post).toHaveBeenCalled())
+    const body = apiMocks.post.mock.calls[0]![1] as Record<string, unknown>
+    expect(body).toMatchObject({ projectName: "app" })
+    expect(body).not.toHaveProperty("env")
+  })
+
+  test("holds submit while a variable name is invalid, a name is missing, or a name repeats", async () => {
+    apiMocks.get.mockRejectedValue(new Error("Request failed: 404"))
+    integrationsResponses({ integrations: [GITHUB_INTEGRATION] })
+
+    renderDialog()
+
+    await waitFor(() => expect(screen.getByText("Connect GitHub")).toBeTruthy())
+    fireEvent.input(screen.getByPlaceholderText("https://github.com/username/repo"), {
+      target: { value: "https://github.com/acme/app.git" },
+    })
+    await waitFor(() => expect(submitButton().disabled).toBe(false))
+
+    fireEvent.input(screen.getAllByLabelText("Variable name")[0]!, { target: { value: "1BAD" } })
+    await waitFor(() => expect(submitButton().disabled).toBe(true))
+    expect(screen.getByText('"1BAD" is not a valid variable name')).toBeTruthy()
+
+    fireEvent.input(screen.getAllByLabelText("Variable name")[0]!, { target: { value: "" } })
+    fireEvent.input(screen.getAllByLabelText("Variable value")[0]!, { target: { value: "orphan" } })
+    await waitFor(() => expect(screen.getByText("Each value needs a variable name")).toBeTruthy())
+
+    fireEvent.input(screen.getAllByLabelText("Variable name")[0]!, { target: { value: "KEY" } })
+    fireEvent.click(screen.getByText("+ Add variable"))
+    fireEvent.input(screen.getAllByLabelText("Variable name")[1]!, { target: { value: "KEY" } })
+    await waitFor(() => expect(screen.getByText('"KEY" is listed twice')).toBeTruthy())
+    expect(submitButton().disabled).toBe(true)
+  })
+})
 
 describe("create cloud project dialog on a hosted control plane", () => {
   test("submit is reachable when the drivers endpoint is absent", async () => {
