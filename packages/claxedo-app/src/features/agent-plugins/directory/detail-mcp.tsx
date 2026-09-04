@@ -41,6 +41,7 @@ export function PluginMcpServers(props: {
   connections?: readonly AgentPluginConnectionSummary[]
   connectionsLoading: boolean
   connectionsError?: unknown
+  onRetryConnections?: () => void
   onConnect: (input: ConnectRequest) => void
   onDisconnect: (connection: AgentPluginConnectionSummary) => void
 }) {
@@ -156,7 +157,13 @@ export function PluginMcpServers(props: {
         }}
       </For>
       <Show when={props.connectionsError}>
-        <p class="text-12-regular text-icon-critical-base">Connections unavailable: {String(props.connectionsError)}</p>
+        <p class="text-12-regular text-text-weak">
+          Connection status is unavailable right now — the control plane could not be reached.
+          <Show when={props.onRetryConnections}>
+            {" "}
+            <button type="button" class="text-12-medium text-text-strong underline-offset-2 hover:underline" onClick={() => props.onRetryConnections?.()}>Retry</button>
+          </Show>
+        </p>
       </Show>
     </>
   )

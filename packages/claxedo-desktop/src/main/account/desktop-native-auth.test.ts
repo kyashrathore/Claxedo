@@ -145,6 +145,62 @@ describe("descriptor-selected desktop native auth", () => {
   })
 })
 
+describe("descriptor fetch resilience", () => {
+  function flakyHarness(failure: unknown, failures = 1) {
+    const descriptorCalls: string[] = []
+    let remaining = failures
+    const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url) === `${CORE}/api/claxedo/auth/descriptor`) {
+        descriptorCalls.push(String(url))
+        if (remaining > 0) {
+          remaining -= 1
+          throw failure
+        }
+        return Response.json(descriptor())
+      }
+      return new Response(null, { status: 200 })
+    }) as typeof fetch
+    let callback: ((url: string) => unknown) | undefined
+    const seams: OAuthSeams = {
+      openExternal: async (url) => {
+        queueMicrotask(() => {
+          const state = new URL(url).searchParams.get("state")
+          callback?.(`${REDIRECT_PATH}?code=code-1&state=${state}`)
+        })
+      },
+      listen: async (handler) => {
+        callback = handler
+        return { port: 51_337, close: async () => {} }
+      },
+      exchange: async () => ({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: 2_000_000_000 }),
+      safeStorage: () => ({ available: true, platform: "darwin" }),
+      setTimeout: () => ({ cancel: () => {} }),
+    }
+    const auth = createDesktopNativeAuth({ coreOrigin: CORE, seams, fetch: fetchImpl, refresh: async () => ({ ok: false, detail: "unused" }), now: () => NOW })
+    return { auth, descriptorCalls }
+  }
+
+  test("a connection reset on the descriptor fetch is retried once on a fresh request", async () => {
+    const reset = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } })
+    const { auth, descriptorCalls } = flakyHarness(reset)
+    const signed = await auth.signIn()
+    // The retry is what matters here: the second descriptor request answers,
+    // so discovery no longer fails on the reset.
+    expect(descriptorCalls).toHaveLength(2)
+    expect(signed).toMatchObject({ ok: true })
+  })
+
+  test("two resets in a row still fail, and a non-network failure is not retried", async () => {
+    const reset = Object.assign(new TypeError("fetch failed"), { cause: { code: "ECONNRESET" } })
+    const twice = flakyHarness(reset, 2)
+    await expect(twice.auth.signIn()).rejects.toThrow(/descriptor could not be loaded/)
+    expect(twice.descriptorCalls).toHaveLength(2)
+    const other = flakyHarness(new Error("boom"))
+    await expect(other.auth.signIn()).rejects.toThrow(/boom/)
+    expect(other.descriptorCalls).toHaveLength(1)
+  })
+})
+
 describe("revocationRejectedTheToken", () => {
   test("treats a server rejection of the token as revoked", async () => {
     // Better Auth's answer for a token it does not recognize. Reading this as

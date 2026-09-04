@@ -88,6 +88,15 @@ export async function revocationRejectedTheToken(response: Response) {
   )
 }
 
+/** A failure before any HTTP response: the socket, not the server, said no. */
+function isConnectionLevelFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  if (error.name === "AbortError" || error.name === "TimeoutError") return false
+  const cause = (error as { cause?: unknown }).cause
+  const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : ""
+  return error.message.includes("fetch failed") || /ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EAI_AGAIN/.test(code + error.message)
+}
+
 export function createDesktopNativeAuth(input: {
   coreOrigin: string
   seams: OAuthSeams
@@ -101,15 +110,26 @@ export function createDesktopNativeAuth(input: {
   const timeoutMs = input.timeoutMs ?? NETWORK_TIMEOUT_MS
   let activeFlow: ReturnType<typeof createOAuthFlow> | undefined
 
+  const request = () => fetchImpl(`${input.coreOrigin}${DESCRIPTOR_PATH}`, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    redirect: "manual",
+    signal: AbortSignal.timeout(timeoutMs),
+  })
   const discover = async () => {
     let response: Response
     try {
-      response = await fetchImpl(`${input.coreOrigin}${DESCRIPTOR_PATH}`, {
-        method: "GET",
-        headers: { accept: "application/json" },
-        redirect: "manual",
-        signal: AbortSignal.timeout(timeoutMs),
-      })
+      try {
+        response = await request()
+      } catch (first) {
+        // One retry on a fresh connection. The edge in front of the control
+        // plane occasionally resets a warm connection (ECONNRESET, "fetch
+        // failed") and the very next attempt succeeds; without this, that one
+        // reset failed the session renewal and every hosted operation behind
+        // it for the whole refresh cooldown.
+        if (!isConnectionLevelFailure(first)) throw first
+        response = await request()
+      }
     } catch (error) {
       throw new DesktopAuthDescriptorError(
         "descriptor_unavailable",

@@ -43,6 +43,7 @@ export function PluginDetailPane(props: {
   connections?: readonly AgentPluginConnectionSummary[]
   connectionsLoading: boolean
   connectionsError?: unknown
+  onRetryConnections?: () => void
   pending: boolean
   onAdd: () => void
   onActivate: (choice: boolean | null) => void
@@ -224,6 +225,7 @@ export function PluginDetailPane(props: {
                   connections={props.connections}
                   connectionsLoading={props.connectionsLoading}
                   connectionsError={props.connectionsError}
+                  onRetryConnections={props.onRetryConnections}
                   onConnect={props.onConnect}
                   onDisconnect={props.onDisconnect}
                 />

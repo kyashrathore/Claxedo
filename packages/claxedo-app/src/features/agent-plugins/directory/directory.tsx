@@ -97,7 +97,9 @@ export function AgentPluginDirectory(props: {
 
   const catalog = () => catalogQuery.data
   const candidates = () => catalog()?.candidates ?? []
-  const connectionRows = (): AgentPluginConnectionSummary[] => connections()?.connections ?? []
+  // Guarded like sources and machine: an errored resource rethrows on read, and a
+  // failed connection status must not take the Directory down.
+  const connectionRows = (): AgentPluginConnectionSummary[] => (connections.error ? [] : connections()?.connections ?? [])
   const harnesses = createMemo<AgentPluginHarness[]>(() => catalog()?.supportedHarnesses ?? [])
 
   const sourceViews = createMemo<DirectorySourceView[]>(() => {
@@ -452,6 +454,7 @@ export function AgentPluginDirectory(props: {
                 connections={connectionRows()}
                 connectionsLoading={connections.loading}
                 connectionsError={connections.error}
+                onRetryConnections={() => void refetchConnections()}
                 pending={pending() === plugin().pluginInstanceId}
                 onAdd={() => void add(plugin())}
                 onActivate={(choice) => void mutate(plugin(), choice)}

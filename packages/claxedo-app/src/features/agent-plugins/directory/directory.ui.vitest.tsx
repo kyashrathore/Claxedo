@@ -152,6 +152,7 @@ const MACHINE = {
 type Recorded = { url: string; method: string; body?: unknown }
 
 function harness(options: {
+  connectionsError?: Error
   catalog?: Record<string, unknown>
   sourceAdd?: { status: number; body: unknown }
   connections?: Array<{ id: string; integrationId: string; scope: "personal" | "team"; status: "connected" | "degraded" | "broken" }>
@@ -181,7 +182,10 @@ function harness(options: {
   const open = vi.fn<AgentPluginConnectionPort["open"]>()
   const disconnect = vi.fn<AgentPluginConnectionPort["disconnect"]>(async () => {})
   const port: AgentPluginConnectionPort = {
-    load: async () => ({ connections: options.connections ?? [] }),
+    load: async () => {
+      if (options.connectionsError) throw options.connectionsError
+      return { connections: options.connections ?? [] }
+    },
     open,
     disconnect,
   }
@@ -684,5 +688,16 @@ describe("skill documents", () => {
   test("the pane renders the SKILL.md body without its frontmatter", () => {
     expect(skillBody("---\nname: docs\ndescription: Look things up\n---\n\n# Docs\n\nBody")).toBe("# Docs\n\nBody")
     expect(skillBody("# No frontmatter\n")).toBe("# No frontmatter\n")
+  })
+})
+
+describe("connection status failures", () => {
+  test("a failed connections list leaves the Directory standing and offers a retry in the pane", async () => {
+    await renderDirectory({ connectionsError: new Error("Connections request failed (500: could not renew the session)") })
+    expect(screen.getByRole("button", { name: "composio" })).toBeTruthy()
+    const pane = await openPane("composio")
+    expect(within(pane).getByText(/Connection status is unavailable right now/)).toBeTruthy()
+    expect(within(pane).getByRole("button", { name: "Retry" })).toBeTruthy()
+    expect(within(pane).queryByText(/could not renew the session/)).toBeNull()
   })
 })
