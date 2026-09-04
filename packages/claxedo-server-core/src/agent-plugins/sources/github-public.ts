@@ -12,13 +12,15 @@ import type {
 import type { CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 
 const OWNER_REPOSITORY = /^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,99})$/
+const GIT_REF = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,99}$/
 const MAX_ARCHIVE_BYTES = 50 * 1024 * 1024
 const MAX_ARCHIVE_ENTRIES = 25_000
 const MAX_COLLECTION_UNCOMPRESSED_BYTES = 200 * 1024 * 1024
 const MAX_GITHUB_METADATA_BYTES = 256 * 1024
 const GITHUB_REQUEST_TIMEOUT_MS = 15_000
 
-export type PublicGitHubCollection = {
+/** One GitHub repository read as a collection of immediate plugin directories. */
+export type GitHubRepositoryCollection = {
   id: string
   kind: AgentPluginSourceKind
   label: string
@@ -27,13 +29,49 @@ export type PublicGitHubCollection = {
   ref: string
 }
 
-type Fetch = typeof globalThis.fetch
+/**
+ * A collection source that always names the repository it was read from.
+ *
+ * `AgentPluginCollectionSource.repository` is optional because a filesystem
+ * collection has none; a GitHub source always does, and `candidatePresentation`
+ * projects it into the Directory's `source.repository`.
+ */
+export type GitHubRepositoryCollectionSource = AgentPluginCollectionSource & { repository: string }
 
-function unavailable(collection: PublicGitHubCollection, message: string): AgentPluginCollectionSource {
+/**
+ * Exactly what this adapter calls. Narrower than `typeof globalThis.fetch`,
+ * which in this repo's ambient types also carries `preconnect`: a source fetcher
+ * is a request function, and nothing here needs more than that.
+ */
+export type AgentPluginSourceFetch = (input: RequestInfo | URL, init?: RequestInit) => Promise<Response>
+
+type Fetch = AgentPluginSourceFetch
+
+/**
+ * The owner and repository segment rule, defined once here because this
+ * adapter is what interpolates both into a GitHub URL. A registry that accepts
+ * a repository from a user validates through these rather than restating them.
+ */
+export function isGitHubNameSegment(value: string) {
+  return OWNER_REPOSITORY.test(value)
+}
+
+/** The ref (branch, tag, or commit) rule; `..` is refused so no ref can traverse. */
+export function isGitHubRef(value: string) {
+  return GIT_REF.test(value) && !value.includes("..") && !value.endsWith("/")
+}
+
+/** The `owner/repository` slug a source is presented under. */
+export function gitHubRepositorySlug(owner: string, repository: string) {
+  return `${owner}/${repository}`
+}
+
+function unavailable(collection: GitHubRepositoryCollection, message: string): GitHubRepositoryCollectionSource {
   return {
     id: collection.id,
     kind: collection.kind,
     label: collection.label,
+    repository: gitHubRepositorySlug(collection.owner, collection.repository),
     revision: collection.ref,
     plugins: [],
     errors: [{ relativePath: ".", code: "source_unavailable", message }],
@@ -99,10 +137,10 @@ function addParents(entries: Map<string, Entry | "directory">, relativePath: str
 }
 
 async function archiveSource(
-  collection: PublicGitHubCollection,
+  collection: GitHubRepositoryCollection,
   revision: string,
   archive: Uint8Array,
-): Promise<AgentPluginCollectionSource> {
+): Promise<GitHubRepositoryCollectionSource> {
   const reader = new ZipReader(new Uint8ArrayReader(archive))
   try {
     const zipEntries = await reader.getEntries()
@@ -185,6 +223,7 @@ async function archiveSource(
       id: collection.id,
       kind: collection.kind,
       label: collection.label,
+      repository: gitHubRepositorySlug(collection.owner, collection.repository),
       revision,
       plugins,
       errors,
@@ -194,7 +233,7 @@ async function archiveSource(
   }
 }
 
-async function resolveRevision(fetcher: Fetch, collection: PublicGitHubCollection) {
+async function resolveRevision(fetcher: Fetch, collection: GitHubRepositoryCollection) {
   const response = await fetcher(
     `https://api.github.com/repos/${collection.owner}/${collection.repository}/commits/${encodeURIComponent(collection.ref)}`,
     {
@@ -210,9 +249,9 @@ async function resolveRevision(fetcher: Fetch, collection: PublicGitHubCollectio
   return raw.sha
 }
 
-async function loadCollection(fetcher: Fetch, collection: PublicGitHubCollection) {
-  if (!OWNER_REPOSITORY.test(collection.owner) || !OWNER_REPOSITORY.test(collection.repository) || !collection.ref.trim()) {
-    return unavailable(collection, "Public GitHub collection configuration is invalid")
+async function loadCollection(fetcher: Fetch, collection: GitHubRepositoryCollection) {
+  if (!isGitHubNameSegment(collection.owner) || !isGitHubNameSegment(collection.repository) || !isGitHubRef(collection.ref)) {
+    return unavailable(collection, "GitHub collection configuration is invalid")
   }
   try {
     const revision = await resolveRevision(fetcher, collection)
@@ -230,32 +269,54 @@ async function loadCollection(fetcher: Fetch, collection: PublicGitHubCollection
   }
 }
 
-/** Public-only GitHub source adapter. Source selection remains a containing-product concern. */
-export function publicGitHubCatalogSourceProvider(input: {
-  collections: readonly PublicGitHubCollection[]
+/**
+ * Public-only GitHub source adapter for ONE repository.
+ *
+ * Source selection stays a containing-product concern: this adapter is handed
+ * an already-authorized repository, whether that is the built-in Claxedo
+ * collection or a repository a user registered (`sources/registry.ts`).
+ */
+export function githubRepositoryCatalogSourceProvider(input: {
+  owner: string
+  repository: string
+  ref: string
+  id: string
+  kind: AgentPluginSourceKind
+  label?: string
   fetch?: Fetch
 }): CatalogSourceProvider {
   const fetcher = input.fetch ?? globalThis.fetch
-  let cache: Promise<readonly AgentPluginCollectionSource[]> | undefined
+  const collection: GitHubRepositoryCollection = {
+    id: input.id,
+    kind: input.kind,
+    label: input.label ?? gitHubRepositorySlug(input.owner, input.repository),
+    owner: input.owner,
+    repository: input.repository,
+    ref: input.ref,
+  }
+  let cache: Promise<readonly GitHubRepositoryCollectionSource[]> | undefined
   return {
     listAuthorizedSources(options = {}) {
-      if (!cache || options.fresh) cache = Promise.all(input.collections.map((collection) => loadCollection(fetcher, collection)))
+      if (!cache || options.fresh) cache = loadCollection(fetcher, collection).then((source) => [source])
       return cache
     },
   }
 }
 
+/** The identity of the one public Claxedo collection every product includes. */
+export const CLAXEDO_PUBLIC_GITHUB_COLLECTION = {
+  id: "claxedo",
+  kind: "claxedo",
+  label: "Claxedo",
+  owner: "kyashrathore",
+  repository: "plugins",
+  ref: "main",
+} as const satisfies GitHubRepositoryCollection
+
 /** The one public Claxedo collection used by products that include Agent Plugins. */
 export function claxedoPublicGitHubCatalogSourceProvider(fetch?: Fetch) {
-  return publicGitHubCatalogSourceProvider({
-    collections: [{
-      id: "claxedo",
-      kind: "claxedo",
-      label: "Claxedo",
-      owner: "kyashrathore",
-      repository: "plugins",
-      ref: "main",
-    }],
+  return githubRepositoryCatalogSourceProvider({
+    ...CLAXEDO_PUBLIC_GITHUB_COLLECTION,
     ...(fetch ? { fetch } : {}),
   })
 }

@@ -1,15 +1,23 @@
 import path from "node:path"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
+import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { resolveEffectiveActivation } from "@claxedo/server-core/agent-plugins/activation/effective"
 import type { ArtifactDigest } from "@claxedo/server-core/agent-plugins/activation/types"
 import { claxedoPublicGitHubCatalogSourceProvider } from "@claxedo/server-core/agent-plugins/sources/github-public"
+import {
+  agentPluginCatalogSources,
+  createAgentPluginSourceProviderCache,
+} from "@claxedo/server-core/agent-plugins/sources/registry"
+import { AGENT_PLUGINS_ROUTE_PATH } from "@claxedo/server-core/agent-plugins/module"
 import type { AgentPluginReconcilePort, CatalogSourceProvider } from "@claxedo/server-core/agent-plugins/ports"
 import type { AgentPluginRuntimeApplyRequest } from "@claxedo/server-core/agent-plugins/runtime/apply-contract"
 import { SUPPORTED_AGENT_PLUGIN_HARNESSES } from "@claxedo/server-core/agent-plugins/runtime/harness-registry"
 import { LocalAgentPluginArtifactStore } from "./artifacts/local-store"
 import { SqliteUnsignedAgentPluginActivationStore } from "./activation/sqlite-store"
 import { createLocalAgentPluginsModule } from "./module"
+import { LocalAgentPluginSourceRoutes } from "./sources/routes"
+import { SqliteAgentPluginSourceStore } from "./sources/sqlite-store"
 import { claudeAgentPluginAdapter } from "./runtime/adapters/claude"
 import { codexAgentPluginAdapter } from "./runtime/adapters/codex"
 import { cursorAgentPluginAdapter } from "./runtime/adapters/cursor"
@@ -41,7 +49,7 @@ export type SignedAgentPluginRuntimeState = {
 }
 
 export type LocalAgentPluginsComposition = {
-  routeContributions: ReturnType<typeof createLocalAgentPluginsModule>["routeContributions"]
+  routeContributions: readonly ControlPlaneRouteContribution[]
   harnessLaunch: () => Promise<Record<string, Record<string, unknown>>>
   ready: Promise<void>
   /** The signed world Electron main pulls; absent means the machine world launches. */
@@ -74,7 +82,16 @@ export function createLocalAgentPluginsComposition(
   const activations = new SqliteUnsignedAgentPluginActivationStore(ClaxedoDB.raw())
   const runtimeRoot = path.join(dataDir(), "runtime")
   const signedRuntimeRoot = path.join(dataDir(), "runtime-signed")
-  const sources = options.sources ?? claxedoPublicGitHubCatalogSourceProvider()
+  const sourceRegistry = new SqliteAgentPluginSourceStore(ClaxedoDB.raw())
+  const sourceProviders = createAgentPluginSourceProviderCache()
+  // Resolved per catalog read, not once here: a repository registered through
+  // `POST /api/claxedo/plugins/sources` has to appear in the next read without
+  // restarting the daemon.
+  const sources = agentPluginCatalogSources({
+    base: options.sources ?? claxedoPublicGitHubCatalogSourceProvider(),
+    cache: sourceProviders,
+    list: () => sourceRegistry.list(),
+  })
   const adapters = () => [
     openCodeAgentPluginAdapter(),
     claudeAgentPluginAdapter(),
@@ -201,7 +218,14 @@ export function createLocalAgentPluginsComposition(
     return agentPluginHarnessLaunch(signedGeneration ?? activeGeneration)
   }
   return {
-    routeContributions: module.routeContributions,
+    routeContributions: [
+      ...module.routeContributions,
+      {
+        id: "agent-plugins-sources",
+        path: `${AGENT_PLUGINS_ROUTE_PATH}/sources`,
+        routes: LocalAgentPluginSourceRoutes({ registry: sourceRegistry, cache: sourceProviders }),
+      },
+    ],
     harnessLaunch,
     signedRuntime,
     ready: ready.then(() => {

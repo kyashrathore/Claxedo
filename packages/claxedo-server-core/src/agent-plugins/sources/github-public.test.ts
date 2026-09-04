@@ -1,7 +1,7 @@
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js"
 import { describe, expect, test, vi } from "vitest"
 import { resolveCollections } from "@claxedo/server-core/agent-plugins/catalog/resolve-collections"
-import { publicGitHubCatalogSourceProvider } from "./github-public"
+import { githubRepositoryCatalogSourceProvider } from "./github-public"
 
 const sha = "a".repeat(40)
 
@@ -16,13 +16,18 @@ function provider(zip: Uint8Array, status = 200) {
   const fetcher = vi.fn(async (url: string, _init?: RequestInit) => url.startsWith("https://api.github.com/")
     ? new Response(JSON.stringify({ sha }), { status: 200 })
     : new Response(zip.slice().buffer, { status }))
-  return { provider: publicGitHubCatalogSourceProvider({
-    collections: [{ id: "claxedo", kind: "claxedo", label: "Claxedo", owner: "kyashrathore", repository: "plugins", ref: "main" }],
-    fetch: fetcher as unknown as typeof fetch,
+  return { provider: githubRepositoryCatalogSourceProvider({
+    id: "claxedo",
+    kind: "claxedo",
+    label: "Claxedo",
+    owner: "kyashrathore",
+    repository: "plugins",
+    ref: "main",
+    fetch: fetcher,
   }), fetcher }
 }
 
-describe("publicGitHubCatalogSourceProvider", () => {
+describe("githubRepositoryCatalogSourceProvider", () => {
   test("resolves a ref to a commit and indexes only immediate plugin children", async () => {
     const zip = await archive({
       "review/plugin.json": JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "review" }),
@@ -32,6 +37,14 @@ describe("publicGitHubCatalogSourceProvider", () => {
     const { provider: source, fetcher } = provider(zip)
     const result = await resolveCollections(source)
     expect(result.collections[0]?.source.revision).toBe(sha)
+    // The Directory shows the repository a candidate came from, so the source
+    // carries it beside its id, kind, and label.
+    expect((await source.listAuthorizedSources())[0]).toMatchObject({
+      id: "claxedo",
+      kind: "claxedo",
+      label: "Claxedo",
+      repository: "kyashrathore/plugins",
+    })
     expect(result.candidates.map((candidate) => candidate.manifest.name)).toEqual(["review"])
     expect(result.errors).toEqual([expect.objectContaining({ relativePath: "nested", code: "manifest_invalid" })])
     expect(fetcher.mock.calls[1]?.[0]).toBe(`https://codeload.github.com/kyashrathore/plugins/zip/${sha}`)
@@ -47,5 +60,22 @@ describe("publicGitHubCatalogSourceProvider", () => {
     const refreshed = await source.listAuthorizedSources({ fresh: true })
     expect(fetcher).toHaveBeenCalledTimes(4)
     expect(refreshed[0]?.errors).toEqual([expect.objectContaining({ code: "source_unavailable" })])
+    expect(refreshed[0]).toMatchObject({ repository: "kyashrathore/plugins" })
+  })
+
+  test("refuses a ref that could traverse out of the repository", async () => {
+    const fetcher = vi.fn()
+    const source = githubRepositoryCatalogSourceProvider({
+      id: "github:acme/plugins@../etc",
+      kind: "personal",
+      label: "acme/plugins",
+      owner: "acme",
+      repository: "plugins",
+      ref: "../etc",
+      fetch: fetcher,
+    })
+    const [resolved] = await source.listAuthorizedSources()
+    expect(resolved?.errors).toEqual([expect.objectContaining({ code: "source_unavailable" })])
+    expect(fetcher).not.toHaveBeenCalled()
   })
 })

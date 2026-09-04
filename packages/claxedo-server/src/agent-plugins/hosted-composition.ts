@@ -8,6 +8,11 @@ import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform
 import type { CloudflareKvNamespaceBinding } from "@claxedo/server-core/credentials/backends/cloudflare"
 import type { ControlPlaneRouteContribution } from "@claxedo/server-core/platform/http/route-contribution"
 import { claxedoPublicGitHubCatalogSourceProvider } from "@claxedo/server-core/agent-plugins/sources/github-public"
+import {
+  agentPluginCatalogSources,
+  createAgentPluginSourceProviderCache,
+} from "@claxedo/server-core/agent-plugins/sources/registry"
+import { AGENT_PLUGINS_ROUTE_PATH } from "@claxedo/server-core/agent-plugins/module"
 import type { HostedControlPlane } from "../authority/hosted-services"
 import { hostedOrgCredentials } from "../credentials/worker/index"
 import {
@@ -21,6 +26,8 @@ import type { WorkspaceRuntimePreparation } from "../workspace/route-support"
 import { D1SignedAgentPluginActivationStore } from "./activation/d1-store"
 import { hostedAgentPluginArtifactStore, type AgentPluginR2Bucket } from "./artifacts/r2-artifact-adapter"
 import { hostedAgentPluginsModule } from "./module"
+import { D1AgentPluginSourceStore } from "./sources/d1-store"
+import { HostedAgentPluginSourceRoutes } from "./sources/routes"
 import { createHostedAgentPluginRuntimeProvisioner } from "./runtime/provision"
 import { createHostedAgentPluginSelfRuntime } from "./runtime/self-runtime"
 import { hostedAgentPluginConnectionIntegrations } from "./mcp/connections"
@@ -142,6 +149,8 @@ export function createHostedAgentPluginsComposition(input: {
   const artifacts = hostedAgentPluginArtifactStore(bucket)
   const activations = new D1SignedAgentPluginActivationStore({ database: input.database, authority })
   const claxedo = claxedoPublicGitHubCatalogSourceProvider()
+  const sourceRegistry = new D1AgentPluginSourceStore({ database: input.database, authority })
+  const sourceProviders = createAgentPluginSourceProviderCache()
   // The public origin doubles as the OAuth client identity document host and,
   // by default, as the MCP gateway origin (see `McpGatewayEndpointStyle`).
   const publicUrl = required(env.CLAXEDO_PUBLIC_URL ?? env.BETTER_AUTH_URL, "CLAXEDO_PUBLIC_URL")
@@ -287,7 +296,14 @@ export function createHostedAgentPluginsComposition(input: {
   const module = hostedAgentPluginsModule({
     services,
     authentication: input.authentication,
-    sources: () => claxedo,
+    // Resolved per catalog read so a repository registered through
+    // `POST /api/claxedo/plugins/sources` appears in the next read, and per
+    // caller so a personal source stays invisible to the rest of the org.
+    sources: (auth) => agentPluginCatalogSources({
+      base: claxedo,
+      cache: sourceProviders,
+      list: () => sourceRegistry.list(auth),
+    }),
     activations,
     artifacts,
     // Activation is durable immediately. Each runtime is brought to this
@@ -300,7 +316,19 @@ export function createHostedAgentPluginsComposition(input: {
     selfRuntime: createHostedAgentPluginSelfRuntime({ activations, artifacts, preparer }),
   })
   return {
-    routeContributions: module.routeContributions,
+    routeContributions: [
+      ...module.routeContributions,
+      {
+        id: "agent-plugins-sources",
+        path: `${AGENT_PLUGINS_ROUTE_PATH}/sources`,
+        routes: HostedAgentPluginSourceRoutes({
+          services,
+          authentication: input.authentication,
+          registry: sourceRegistry,
+          cache: sourceProviders,
+        }),
+      },
+    ],
     integrationRoutes,
     prepareRuntime,
     provisionRuntime,
