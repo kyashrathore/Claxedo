@@ -1383,7 +1383,27 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     return { state: "active", userId: row.user_id, actorId: row.actor_id }
   }
 
-  private async requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
+  /**
+   * One request = one `SignedControlPlaneAuth` object, and a single request
+   * asks this authority for its principal several times (the route's own
+   * lookup, then every store and port it calls). The identity row cannot
+   * change the answer within that request, so it is read once per auth
+   * object; a refusal is not remembered.
+   */
+  private readonly principals = new WeakMap<SignedControlPlaneAuth, Promise<Principal>>()
+
+  private requirePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
+    const existing = this.principals.get(auth)
+    if (existing) return existing
+    const pending = this.resolvePrincipal(auth).catch((cause: unknown) => {
+      this.principals.delete(auth)
+      throw cause
+    })
+    this.principals.set(auth, pending)
+    return pending
+  }
+
+  private async resolvePrincipal(auth: SignedControlPlaneAuth): Promise<Principal> {
     const principal = auth.principal
     if (!principal) {
       throw new ControlPlaneAuthError(503, "identity_provisioning", "Canonical application identity is required")
