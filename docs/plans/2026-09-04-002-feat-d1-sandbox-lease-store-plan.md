@@ -1,7 +1,7 @@
 ---
 title: "feat: D1 sandbox lease store so Better Auth + D1 deployments run cloud VMs"
 date: 2026-09-04
-status: in-progress
+status: done
 branch: codex/refactor-agent-plugins
 depends-on: 2026-09-04-001-feat-agent-plugins-d1-hosted-port-plan.md
 ---
@@ -128,3 +128,19 @@ Cloudflare sandbox Worker `claxedo-sandbox-proxy` at `sandbox.claxedo.com` (depl
   failed on a fresh runner (`@claxedo/sandbox-contract` dist missing); fixed in `6e630d9447`. The workflow's last
   step re-syncs the sandbox worker's `API_TOKEN` to `CLAXEDO_RUNTIME_ADMIN_TOKEN`, so the rotated token is
   re-put afterwards.
+- Rebuilt image (workflow run 33848036784): the VM now accepts the provisioner's relay token, and the apply
+  answers **404** — `claxedoWorkspaceRuntimeBootFromEnv` accepted the host entry's `routeContributions` and never
+  forwarded them into the server options, so `host-entry.agent-plugins.ts` mounted nothing. Fixed in
+  `53ce38e241` (regression test pins the forwarding); image rebuilt again (workflow run 33851986130).
+- **Done (workflow run 33851986130, image with `53ce38e241`).** Fresh cloud workspace `ws_mtmpcst2_ty1r3859nh7e4wpd`:
+  the first `/connection` poll returned a ready cloud-vm connection; the sandbox worker tail shows
+  `ensure-runtime → 200`, `touch-runtime → 200`, `proxy/api/wr/agent-plugins/apply → 200`; the plane tail has no
+  provision error; `sandbox_leases` = `epoch 1, status ready, retry_count 0, last_error NULL`; the registry lists
+  `claxedo-ws_mtmpcst2_…`. The provisioner accepts an apply receipt only when the VM answers the pushed revision, and
+  the org's current revision is 2 (`agent_plugin_user_defaults`: context7 + composio enabled on opencode/claude/codex/
+  cursor), so the VM holds the signed Context7/Composio world. Local gates re-run green: ratchets, 19 focused server
+  files / 115 tests, release scripts 11 files / 74 tests.
+- Follow-ups (not blocking): `POST /api/workspace/create` should `waitUntil` its provisioning instead of relying on
+  the first `/connection` poll; the release script should rebuild the dist-resolved packages it bundles
+  (`@claxedo/connections`, sandbox-manager, workspace-relay, agent-sdk-runtime); the sandbox worker workflow's
+  token-sync job overwrites the rotated `API_TOKEN` (re-put it after every image deploy).
