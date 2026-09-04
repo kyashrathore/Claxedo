@@ -1,7 +1,7 @@
 import { TextReader, Uint8ArrayWriter, ZipWriter } from "@zip.js/zip.js"
 import { describe, expect, test, vi } from "vitest"
 import { resolveCollections } from "@claxedo/server-core/agent-plugins/catalog/resolve-collections"
-import { githubRepositoryCatalogSourceProvider } from "./github-public"
+import { githubRepositoryCatalogSourceProvider, type AgentPluginSourceFetch } from "./github-public"
 
 const sha = "a".repeat(40)
 
