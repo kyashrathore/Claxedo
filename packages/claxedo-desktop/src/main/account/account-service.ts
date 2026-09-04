@@ -69,6 +69,8 @@ type Credential = { ok: true; token: string } | { ok: false; detail: string }
  * without re-running until the cool-down passes".
  */
 const REFRESH_FAILURE_COOLDOWN_MS = 20_000
+/** Backoff for the profile lookup after a failure: quick, then patient, then stop asking. */
+const IDENTITY_RETRY_DELAYS_MS = [15_000, 60_000, 5 * 60_000] as const
 
 function connectionRetryResult(name: HostedOperationName, response: Response, value: unknown) {
   if (name !== "workspace.connection.mint" && name !== "workspace.connection.refresh") return
@@ -412,6 +414,15 @@ export function createAccountService(options: AccountServiceOptions) {
     // /userinfo endpoint into a sign-in that never completes.
     setState({ status: "signed", identity: { userId: "" } })
     if (!options.resolveIdentity) return
+    resolveIdentityInto(accessToken, startedIn, 0)
+  }
+  /**
+   * The profile lookup, retried with backoff while the session stays the
+   * same. One timed-out /userinfo used to leave the rail on a nameless
+   * "Signed in" until the next relaunch; a stalled edge is exactly the case
+   * where the next attempt succeeds.
+   */
+  const resolveIdentityInto = (accessToken: string, startedIn: number, attempt: number) => {
     void (async () => {
       // On restore the persisted access token is usually already expired
       // (5-minute TTL), so resolving identity with it answered 401 and every
@@ -427,10 +438,19 @@ export function createAccountService(options: AccountServiceOptions) {
     })().catch((error) => {
       options.onError?.("identity", error)
       // Still signed — the credential is adopted — but the rail must not keep
-      // a spinner up for a lookup that is over. Say the lookup failed.
+      // a spinner up for a lookup that is over. Say the lookup failed, then
+      // try again later.
       if (startedIn === era && state.status === "signed") {
         setState({ status: "signed", identity: state.identity, identityLookup: "failed" })
       }
+      const delay = IDENTITY_RETRY_DELAYS_MS[attempt]
+      if (delay === undefined) return
+      const schedule = options.scheduleRevalidation ?? ((run, ms) => setTimeout(run, ms))
+      const timer = schedule(() => {
+        if (startedIn !== era || state.status !== "signed") return
+        resolveIdentityInto(accessToken, startedIn, attempt + 1)
+      }, delay)
+      if (typeof timer === "object" && timer && "unref" in timer) (timer as { unref: () => void }).unref()
     })
   }
 

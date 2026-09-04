@@ -286,6 +286,38 @@ describe("bound desktop account lifecycle", () => {
     expect(service.state()).toEqual({ status: "signed", identity: { userId: "" }, identityLookup: "failed" })
   })
 
+  test("a failed identity lookup is retried with backoff and the name lands when the network recovers", async () => {
+    const h = harness({ store: memoryStore(CREDENTIAL) })
+    const scheduled: Array<{ run: () => void; delayMs: number }> = []
+    let attempts = 0
+    const service = createAccountService({
+      auth: h.auth.auth,
+      store: h.store,
+      now: () => 1_000,
+      fetch: async () => Response.json({ ok: true }),
+      resolveIdentity: async () => {
+        attempts += 1
+        if (attempts === 1) throw new Error("userinfo timed out")
+        return { userId: "user-1", displayName: "Yash" }
+      },
+      scheduleRevalidation: (run, delayMs) => {
+        scheduled.push({ run, delayMs })
+        return setTimeout(() => {}, 0)
+      },
+    })
+    await service.restore()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(service.state()).toMatchObject({ status: "signed", identityLookup: "failed" })
+    const retry = scheduled.find((entry) => entry.delayMs === 15_000)
+    expect(retry, "the first retry is scheduled 15 s out").toBeDefined()
+    retry!.run()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(service.state()).toMatchObject({ status: "signed", identity: { userId: "user-1", displayName: "Yash" } })
+    expect(attempts).toBe(2)
+  })
+
   test("a blip while already signed suspends, then returns to signed on the next success", async () => {
     let reachable = true
     const h = harness({
