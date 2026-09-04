@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import type { AccountPort, HostedOperationName } from "@/platform/account/account-port"
 import { accountAgentPluginApi, plainHostedInput } from "./agent-plugin-account-api"
 import { createStore } from "solid-js/store"
+import type { AgentPluginHarness } from "@/features/agent-plugins/api"
 
 const catalog = {
   revision: 7,
@@ -88,18 +89,12 @@ describe("signed desktop Agent Plugins account client", () => {
 
 describe("hosted inputs are plain data", () => {
   test("a Solid store proxy in the body is sent as a cloneable copy", async () => {
-    const [store] = createStore({ harnessIds: ["opencode", "claude"] })
-    const received: unknown[] = []
-    const port: AccountPort = {
-      state: () => ({ status: "signed", identity: { userId: "u" } }) as never,
-      onState: () => () => {},
-      signIn: async () => undefined as never,
-      signOut: async () => undefined,
-      run: async (_operation, input) => { received.push(input); return { status: 200, body: { revision: 2, reconciliation: { state: "applied" } } } as never },
-    } as unknown as AccountPort
-    await accountAgentPluginApi(port).activation({ pluginInstanceId: "p", harnessIds: store.harnessIds as never, choice: true, expectedRevision: 1 })
-    expect(() => structuredClone(received[0])).not.toThrow()
-    expect(received[0]).toEqual({ pluginInstanceId: "p", harnessIds: ["opencode", "claude"], choice: true, expectedRevision: 1 })
+    const [store] = createStore({ harnessIds: ["opencode", "claude"] as AgentPluginHarness[] })
+    const subject = account(() => ({ status: 200, body: { revision: 2, reconciliation: { state: "applied" } } }))
+    await accountAgentPluginApi(subject.port).activation({ pluginInstanceId: "p", harnessIds: store.harnessIds, choice: true, expectedRevision: 1 })
+    const sent = subject.calls[0]?.input
+    expect(() => structuredClone(sent)).not.toThrow()
+    expect(sent).toEqual({ pluginInstanceId: "p", harnessIds: ["opencode", "claude"], choice: true, expectedRevision: 1 })
     expect(plainHostedInput(undefined)).toBeUndefined()
   })
 })
