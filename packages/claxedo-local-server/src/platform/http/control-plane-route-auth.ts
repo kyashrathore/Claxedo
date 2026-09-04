@@ -5,6 +5,7 @@ import {
   controlPlaneAuthErrorBody,
   type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
+  type SignedControlPlaneAuth,
 } from "@claxedo/server-core/platform/auth/auth"
 import { controlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 
@@ -65,6 +66,20 @@ export async function requireSignedControlPlaneRoute(
   if (context.mode !== "signed") {
     throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
   }
+  return context
+}
+
+/**
+ * The verified context of a request that passed `controlPlaneRouteAuth`, for
+ * handlers that act AS the caller (registering a workspace in the authority,
+ * say) rather than merely behind the gate. Keyed by the raw request so the
+ * middleware never has to widen Hono's variable map; absent on the
+ * unsigned-local pass-through, where there is no caller identity.
+ */
+const verifiedRouteAuth = new WeakMap<Request, SignedControlPlaneAuth>()
+
+export function signedRouteAuth(request: Request): SignedControlPlaneAuth | undefined {
+  return verifiedRouteAuth.get(request)
 }
 
 /**
@@ -80,7 +95,8 @@ export async function requireSignedControlPlaneRoute(
 export function controlPlaneRouteAuth(options: ControlPlaneRouteAuthOptions): MiddlewareHandler {
   return async (c, next) => {
     try {
-      await requireSignedControlPlaneRoute(c.req.raw, options)
+      const context = await requireSignedControlPlaneRoute(c.req.raw, options)
+      if (context) verifiedRouteAuth.set(c.req.raw, context)
     } catch (err) {
       if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
       throw err

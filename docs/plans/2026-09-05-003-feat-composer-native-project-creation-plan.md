@@ -52,13 +52,56 @@ There is no New Project dialog. The draft composer is the one surface:
 
 ## Definition of done
 
-- [ ] Create a project from a folder (local server) and from a repository URL (any server) through the
-      composer chip; both appear in the rail without any execution.
-- [ ] Repository-backed project + Local → first submit clones into the server's projects directory and
-      starts a session there; + Cloud → provisions a sandbox with the project's environment.
-- [ ] Environment lives on the project; a second sandbox for the same project receives it.
-- [ ] Hosted plane: same contract on D1.
-- [ ] No New Project dialog remains; the three flows have tests at the rule level and the route level.
+- [x] Create a project from a folder (local server) and from a repository URL (any server) through the
+      composer chip; both appear in the rail without any execution. (Live on the signed local web app,
+      2026-09-05; see execution log.)
+- [x] Repository-backed project → the create route clones into the server's projects directory and the
+      composer opens the checkout locally (live). + Cloud → `startCloudWorkspaceProvisioning` receives
+      the project's environment (route test `workspace/routes/index.test.ts`; not exercised live).
+- [x] Environment lives on the project; cloud provisioning and the supervisor read `projectEnv(project_id)`
+      (route + supervisor call sites; the second-sandbox case is covered at the route level only).
+- [ ] Hosted plane: same contract on D1. (Next slice; the D1 `projects` table has no env column yet.)
+- [x] No desktop-style New Project flow remains: the rail's "New Project" and the empty canvas host the
+      same `ProjectCreateForm` in a dialog; the composer's Project chip hosts it in its panel. Tests:
+      `session-new-workspace-options.test.ts` (rule), `projects-route.test.ts` (route, 11 cases),
+      `session-new-design-view*.vitest.tsx` (chip panel + environment options).
+
+## Execution log (2026-09-05)
+
+Built and verified on the signed local web stack (`claxedo-server-embedded-auth` :2597 behind Vite TLS
+:4449, fixture user) with a Playwright Chromium driver against the real dev server (the in-app browser
+refuses the self-signed origin). Flows proven live, in order:
+
+1. Rail "New Project" → create dialog → **Select project** opens the server's directory browser
+   (lists the machine's folders) → the dialog resumes the draft after the picker → 201 → the composer
+   opens the new project.
+2. Composer Project chip → "Create project…" panel → Select project (the popover holds open under the
+   picker) → 201 → the chip switches to the new project.
+3. Panel → "Clone a repository instead" (top-right text switch) → repository URL → clone under
+   `<dataDir>/projects/<slug>` → the chip switches to the clone within ~5 s.
+4. Duplicate name → 409 shown in the form. Environment chip lists Local and Cloud.
+5. Rail row → Edit → environment variables saved (`PATCH /api/claxedo/projects/:id`) and shown again
+   on reopen.
+
+Defects found and fixed on the way (each with a test):
+
+- Signed server + local folder: every engine call 503'd (`Signed runtime proxy requires a verified
+  actor`) because `resolveRelayActor` authorises against authority workspace membership and folder
+  projects had no authority row. The create route now registers the workspace through
+  `registerLocalForSharing` (backing `local-worktree`, access `user-hosted`) as the signed caller;
+  `controlPlaneRouteAuth` keeps the verified context for handlers (`signedRouteAuth`).
+- Directory picker gated on a loopback **http** URL, so on `https://localhost` it listed nothing; it
+  now asks the server's health (`localExecution`).
+- The chip popover dismissed itself when the picker dialog took focus; `ContextChip.panel.render`
+  gained `hold()`.
+- The dialog host shows one dialog at a time, so the picker replaced the create dialog; the dialog
+  re-shows itself with the draft after the picker.
+- Creating a project over a folder that already is one renamed the existing project; now 409.
+- A private GitHub repository clones with the caller's connected GitHub account
+  (`connectionsHost.service.getToken(id, "code-host")`, header via `GIT_CONFIG_*` env, never argv).
+
+Known, not in this slice: `GET /session/new/subagents?directory=…` answers 403 ("Private session
+authority denied access") for a folder project on the signed server; the hosted plane env column.
 
 ## Open decisions (owner)
 

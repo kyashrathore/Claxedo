@@ -3,13 +3,15 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, For, onMount, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLanguage } from "@/platform/i18n/provider"
 import { getAvatarColors, useGlobalSDK } from "@/features/workspaces/app-ports"
 import { getFilename } from "@/lib/path"
 import { Avatar } from "@opencode-ai/ui/avatar"
 import { setProjectIcon, upsertProjectMeta } from "../data/query/project-meta"
+import { projectByCheckout, projectRequestMessage, updateProject } from "../data/project-api"
+import { EnvironmentEditor, environmentRecord, environmentRows, environmentRowsProblem } from "./environment-editor"
 
 const AVATAR_COLOR_KEYS = ["pink", "mint", "orange", "purple", "cyan", "lime"] as const
 
@@ -40,9 +42,23 @@ export function DialogEditProject(props: { project: LocalProject }) {
     color: props.project.icon?.color || "pink",
     iconUrl: props.project.icon?.override || "",
     startup: props.project.commands?.start ?? "",
+    environment: environmentRows(undefined),
+    environmentProjectId: "" as string,
+    environmentLoaded: false,
+    environmentError: "",
     saving: false,
     dragOver: false,
     iconHover: false,
+  })
+
+  // The project's own record (name, environment) lives on the server behind
+  // this worktree; the engine row this dialog receives carries icon and
+  // commands only.
+  onMount(() => {
+    void projectByCheckout({ baseUrl: globalSDK.url, worktree: props.project.worktree }).then((record) => {
+      if (!record) return
+      setStore({ environment: environmentRows(record.env), environmentProjectId: record.id, environmentLoaded: true })
+    })
   })
 
   function handleFileSelect(file: File) {
@@ -84,9 +100,22 @@ export function DialogEditProject(props: { project: LocalProject }) {
   async function handleSubmit(e: SubmitEvent) {
     e.preventDefault()
 
+    if (environmentRowsProblem(store.environment)) return
     setStore("saving", true)
     const name = store.name.trim() === folderName() ? "" : store.name.trim()
     const start = store.startup.trim()
+
+    // The environment is the project's own record on the server; the engine
+    // row below carries icon and commands. Saved first so a refused
+    // environment (server-side validation) keeps the dialog open.
+    if (store.environmentLoaded && store.environmentProjectId) {
+      try {
+        await updateProject({ baseUrl: globalSDK.url, id: store.environmentProjectId, env: environmentRecord(store.environment) })
+      } catch (cause) {
+        setStore({ saving: false, environmentError: projectRequestMessage(cause) })
+        return
+      }
+    }
 
     if (props.project.id && props.project.id !== "global") {
       await globalSDK.client.project.update({
@@ -237,6 +266,21 @@ export function DialogEditProject(props: { project: LocalProject }) {
             spellcheck={false}
             class="max-h-40 w-full font-mono text-xs no-scrollbar"
           />
+          <Show when={store.environmentLoaded}>
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-col gap-0.5">
+                <span class="text-13-medium text-text-strong">Environment</span>
+                <span class="text-12-regular text-text-weak">
+                  What every cloud sandbox of this project starts with, the way a <code>.env</code> file would set it.
+                  Readable inside the sandbox; keep credentials the agent must not see in Connections.
+                </span>
+              </div>
+              <EnvironmentEditor rows={store.environment} onChange={(rows) => setStore("environment", rows)} />
+              <Show when={store.environmentError}>
+                <p class="text-12-regular text-icon-warning-base" role="alert">{store.environmentError}</p>
+              </Show>
+            </div>
+          </Show>
 
         </div>
 

@@ -9,6 +9,7 @@ const previousDataDir = process.env.CLAXEDO_DATA_DIR
 process.env.CLAXEDO_DATA_DIR = root
 
 const { LocalProjectRoutes, projectsDirectory } = await import("./projects-route")
+const { vi } = await import("vitest")
 
 afterAll(async () => {
   if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
@@ -23,7 +24,9 @@ async function gitRepository(prefix: string) {
 }
 
 /** Stands in for `git clone`: initialises a repository at the target. */
-async function fakeClone(_repoUrl: string, directory: string) {
+const clones: Array<{ repoUrl: string; options: unknown }> = []
+async function fakeClone(repoUrl: string, directory: string, options?: unknown) {
+  clones.push({ repoUrl, options: options ?? {} })
   await fs.mkdir(directory, { recursive: true })
   execFileSync("git", ["init", "-b", "main"], { cwd: directory, stdio: "ignore" })
 }
@@ -32,6 +35,18 @@ const json = (body: unknown) => ({ method: "POST", headers: { "content-type": "a
 
 describe("local project routes", () => {
   const app = LocalProjectRoutes({}, { clone: fakeClone })
+
+  test("a folder that already is a project is refused rather than renamed", async () => {
+    const directory = await gitRepository("owned-")
+    const first = await app.request("http://localhost/", json({ name: "Owner One", source: { kind: "directory", directory } }))
+    expect(first.status).toBe(201)
+    const again = await app.request("http://localhost/", json({ name: "Owner Two", source: { kind: "directory", directory } }))
+    expect(again.status).toBe(409)
+    expect(await again.json()).toMatchObject({ error: { code: "project_directory_taken" } })
+    const listed = await (await app.request("http://localhost/")).json() as { projects: Array<{ name: string }> }
+    expect(listed.projects.map((item) => item.name)).toContain("Owner One")
+    expect(listed.projects.map((item) => item.name)).not.toContain("Owner Two")
+  })
 
   test("creates a project from a folder on this server, with its name and no execution", async () => {
     const directory = await gitRepository("folder-")
@@ -105,5 +120,96 @@ describe("local project routes", () => {
     expect(taken.status).toBe(409)
     const renamed = await app.request(`http://localhost/${id}`, { ...json({ name: "Env Project 2" }), method: "PATCH" })
     expect(((await renamed.json()) as { project: { name: string } }).project.name).toBe("Env Project 2")
+  })
+})
+
+/**
+ * On a signed server the route acts AS the caller: the workspace behind a new
+ * project is registered with the caller's authority, because engine calls for
+ * that directory are authorised against authority membership.
+ */
+describe("local project routes on a signed server", () => {
+  const signed = {
+    mode: "signed" as const,
+    user: { subject: "usr_1", tokenIdentifier: "tok_1", issuer: "https://issuer.test" },
+  }
+  const options = {
+    authConfig: { enabled: true as const, issuer: "https://issuer.test", jwksUrl: "https://issuer.test/jwks" },
+    verifier: async () => signed,
+  }
+  const bearer = { authorization: "Bearer session-token" }
+
+  test("registers the folder project's workspace for the signed caller", async () => {
+    const registerWorkspace = vi.fn(async () => undefined)
+    const app = LocalProjectRoutes(options, { clone: fakeClone, registerWorkspace })
+    const directory = await gitRepository("signed-")
+    const res = await app.request("http://localhost/", {
+      ...json({ name: "Signed Folder", source: { kind: "directory", directory } }),
+      headers: { "content-type": "application/json", ...bearer },
+    })
+    expect(res.status).toBe(201)
+    expect(registerWorkspace).toHaveBeenCalledTimes(1)
+    const [auth, workspace] = registerWorkspace.mock.calls[0] as unknown as [typeof signed, { workspaceId: string; displayName: string; directory: string; repoUrl?: string }]
+    expect(auth).toMatchObject({ mode: "signed", user: { subject: "usr_1" } })
+    expect(workspace).toMatchObject({ displayName: "Signed Folder", directory })
+    expect(workspace.workspaceId).toBeTruthy()
+    expect(workspace.repoUrl).toBeUndefined()
+  })
+
+  test("a registration failure refuses the project instead of leaving it unreachable", async () => {
+    const app = LocalProjectRoutes(options, {
+      clone: fakeClone,
+      registerWorkspace: async () => {
+        throw new Error("Workspace creation authority was denied")
+      },
+    })
+    const directory = await gitRepository("denied-")
+    const res = await app.request("http://localhost/", {
+      ...json({ name: "Denied Folder", source: { kind: "directory", directory } }),
+      headers: { "content-type": "application/json", ...bearer },
+    })
+    expect(res.status).toBe(502)
+    expect(await res.json()).toMatchObject({ error: { code: "project_register_failed" } })
+    const listed = await (await app.request("http://localhost/", { headers: bearer })).json() as { projects: Array<{ name: string }> }
+    expect(listed.projects.map((item) => item.name)).not.toContain("Denied Folder")
+  })
+
+  test("clones a GitHub repository with the caller's connected-account credential, off argv", async () => {
+    const { githubCloneAuthorization } = await import("./projects-route")
+    const app = LocalProjectRoutes(options, {
+      clone: fakeClone,
+      registerWorkspace: async () => undefined,
+      cloneCredential: async (auth, repoUrl) =>
+        auth.user.subject === "usr_1" && repoUrl.startsWith("https://github.com/")
+          ? { authorization: githubCloneAuthorization("gho_secret") }
+          : undefined,
+    })
+    clones.length = 0
+    const res = await app.request("http://localhost/", {
+      ...json({ name: "Private Clone", source: { kind: "repository", repoUrl: "https://github.com/acme/private" } }),
+      headers: { "content-type": "application/json", ...bearer },
+    })
+    expect(res.status).toBe(201)
+    expect(clones).toEqual([
+      {
+        repoUrl: "https://github.com/acme/private",
+        options: { authorization: githubCloneAuthorization("gho_secret"), host: "github.com" },
+      },
+    ])
+    const other = await app.request("http://localhost/", {
+      ...json({ name: "Elsewhere Clone", source: { kind: "repository", repoUrl: "https://gitlab.com/acme/public" } }),
+      headers: { "content-type": "application/json", ...bearer },
+    })
+    expect(other.status).toBe(201)
+    expect(clones[1]).toEqual({ repoUrl: "https://gitlab.com/acme/public", options: {} })
+  })
+
+  test("the unsigned local product never registers", async () => {
+    const registerWorkspace = vi.fn(async () => undefined)
+    const app = LocalProjectRoutes({}, { clone: fakeClone, registerWorkspace })
+    const directory = await gitRepository("unsigned-")
+    const res = await app.request("http://localhost/", json({ name: "Unsigned Folder", source: { kind: "directory", directory } }))
+    expect(res.status).toBe(201)
+    expect(registerWorkspace).not.toHaveBeenCalled()
   })
 })

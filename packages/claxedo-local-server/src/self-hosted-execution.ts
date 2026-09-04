@@ -31,7 +31,7 @@ export {
 export { AgentConfigRoutes } from "./agent-config/routes/index"
 export { SessionMetaRoutes } from "./session/routes/meta-routes"
 export { LocalWorkspaceRoutes } from "./workspace/routes/resolve-route"
-export { LocalProjectRoutes } from "./workspace/routes/projects-route"
+export { LocalProjectRoutes, githubCloneAuthorization } from "./workspace/routes/projects-route"
 export { OpenCodeCompatRoutes } from "./opencode/compat-routes/index"
 export { CredentialRoutes } from "./credentials/routes/credential"
 export { ProviderAuthRoutes } from "./credentials/routes/provider-auth"

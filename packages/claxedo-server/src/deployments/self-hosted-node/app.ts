@@ -44,7 +44,7 @@ import { DocumentsRoutes } from "../../documents/routes/index"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
-import { LocalProjectRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { LocalProjectRoutes, githubCloneAuthorization } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { OpenCodeCompatRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { resolveHarnessId } from "@claxedo/local-server/self-hosted-execution"
@@ -1150,7 +1150,40 @@ export function createSelfHostedApp(
   app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
   // Projects on this server's filesystem: a folder here, or a repository cloned
   // under the data directory. The same routes the desktop's server mounts.
-  app.route("/api/claxedo/projects", LocalProjectRoutes(authRouteOptions(services)))
+  // A folder project on a signed server is a local worktree this server hosts:
+  // the same authority row the desktop's sharing flow creates, in the caller's
+  // org, so `resolveRelayActor` above can authorise engine calls against it.
+  // A private GitHub repository clones with the caller's connected GitHub
+  // account — the same token `repositoryForAuth` hands the cloud clone — and
+  // anonymously when they have none.
+  const projectAuthority = services.authority
+  app.route(
+    "/api/claxedo/projects",
+    LocalProjectRoutes(authRouteOptions(services), {
+      cloneCredential: async (auth, repoUrl) => {
+        if (!repoUrl.startsWith("https://github.com/")) return
+        const connections = await connectionsHost.service.list({ owner: auth.user.subject })
+        const github = connections.find((row) => row.integrationId === "github" && row.status === "connected")
+        if (!github) return
+        const token = await connectionsHost.service.getToken(github.id, "code-host")
+        return token.ok ? { authorization: githubCloneAuthorization(token.response.token) } : undefined
+      },
+      ...(projectAuthority
+        ? {
+            registerWorkspace: async (auth, workspace) => {
+              const known = await projectAuthority.openWorkspace(auth, { workspaceId: workspace.workspaceId }).catch(() => undefined)
+              if (known?.allowed) return
+              await projectAuthority.registerLocalForSharing(auth, {
+                workspaceId: workspace.workspaceId,
+                displayName: workspace.displayName,
+                remoteDirectory: workspace.directory,
+                ...(workspace.repoUrl ? { repoUrl: workspace.repoUrl } : {}),
+              })
+            },
+          }
+        : {}),
+    }),
+  )
   app.route("/api/workspace", WorkspaceRoutes(
     services,
     {

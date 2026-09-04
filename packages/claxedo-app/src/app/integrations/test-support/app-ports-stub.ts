@@ -56,6 +56,9 @@ function portsFromThunks<P extends object>(thunks: Thunks<P>, overrides: Partial
 
 const sessionThunks: Thunks<SessionAppPorts> = {
   useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
+  checkServerHealth: lazy("@/app/connection/server-health", "checkServerHealthCached"),
+  ProjectCreateForm: lazy("@/features/workspaces/ui/project-create-form", "ProjectCreateForm"),
+  DialogSelectDirectory: lazy("@/app/dialogs/select-directory", "DialogSelectDirectory"),
   useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   useLayout: lazy("@/app/providers/layout", "useLayout"),
   useServer: lazy("@/app/connection/server", "useServer"),
@@ -164,6 +167,7 @@ const reviewThunks: Thunks<ReviewAppPorts> = {
 
 const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   useServer: lazy("@/app/connection/server", "useServer"),
+  checkServerHealth: lazy("@/app/connection/server-health", "checkServerHealthCached"),
   useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   getAvatarColors: lazy("@/app/providers/layout", "getAvatarColors"),
   useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),

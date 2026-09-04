@@ -144,32 +144,23 @@ describe("createNewSessionWorkspaceState", () => {
 })
 
 describe("newSessionEnvironmentOptions", () => {
-  // The web build has no local machine behind the renderer, so "Local" was an
-  // option the user could pick but that could never resolve to a workspace.
-  test("offers cloud only on hosted web", () => {
-    expect(newSessionEnvironmentOptions({ platform: "web", signedControlPlane: true }))
-      .toEqual(["cloud"])
+  test("a server with no filesystem offers cloud only", () => {
+    expect(newSessionEnvironmentOptions({ localExecution: false, signed: true })).toEqual(["cloud"])
+    expect(newSessionEnvironmentOptions({ localExecution: false, signed: false })).toEqual(["cloud"])
   })
 
-  test("keeps both options on desktop", () => {
-    expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: true }))
-      .toEqual(["local", "cloud"])
+  test("a server with its own filesystem offers local, signed in or not", () => {
+    expect(newSessionEnvironmentOptions({ localExecution: true, signed: true })).toEqual(["local", "cloud"])
+    expect(newSessionEnvironmentOptions({ localExecution: true, signed: false })).toEqual(["local", "cloud"])
   })
 
-  // A desktop app pointed at its own embedded (loopback) server is NOT the
-  // hosted composition — the gate is web AND signed, never web alone.
-  test("keeps both options when the control plane is loopback", () => {
-    expect(newSessionEnvironmentOptions({ platform: "web", signedControlPlane: false }))
-      .toEqual(["local", "cloud"])
-    expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: false }))
-      .toEqual(["local", "cloud"])
+  test("a server that says nothing about its filesystem falls back to the product its mode has always been", () => {
+    expect(newSessionEnvironmentOptions({ localExecution: undefined, signed: false })).toEqual(["local", "cloud"])
+    expect(newSessionEnvironmentOptions({ localExecution: undefined, signed: true })).toEqual(["cloud"])
   })
 
-  test("keeps only local when cloud sandboxes are disabled", () => {
-    expect(newSessionEnvironmentOptions({ platform: "desktop", signedControlPlane: false, sandboxEnabled: false }))
-      .toEqual(["local"])
-    expect(newSessionEnvironmentOptions({ platform: "web", signedControlPlane: false, sandboxEnabled: false }))
-      .toEqual(["local"])
+  test("cloud disappears where sandbox creation is off", () => {
+    expect(newSessionEnvironmentOptions({ localExecution: true, signed: false, sandboxEnabled: false })).toEqual(["local"])
   })
 })
 

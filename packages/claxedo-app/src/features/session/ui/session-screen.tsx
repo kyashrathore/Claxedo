@@ -5,8 +5,7 @@ import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
-import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useCommand, useConfigOptional, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useTerminal } from "@/features/session/app-ports"
-import { addProjectAction } from "@/features/session/ui/components/session-add-project-action"
+import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useTerminal } from "@/features/session/app-ports"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useLocation, useNavigate } from "@solidjs/router"
@@ -15,6 +14,7 @@ import type { SessionStatus } from "@opencode-ai/sdk/v2/client"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { useComments } from "@/platform/comments/provider"
 import { showToast } from "@opencode-ai/ui/toast"
+import { pickProjectFolderWith } from "./components/session-pick-project-folder"
 import { NewSessionDesignView, SessionHeader, type NewSessionWorkspaceKind } from "@/features/session/ui/components"
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
 import { same } from "@/lib/same"
@@ -101,8 +101,6 @@ export default function SessionPage() {
   const sessionParams = useSessionParams()
   const claxedoState = useClaxedoState()
   const paneId = usePaneId()
-  const command = useCommand()
-  const addProject = createMemo(() => addProjectAction(command))
   const layout = useLayout()
   const local = useLocal()
   const server = useServer()
@@ -1301,7 +1299,7 @@ export default function SessionPage() {
                   workspaceKind="cloud"
                   onWorktreeChange={changeNewSessionWorktree}
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
-                  onAddProject={addProject()}
+                  pickProjectFolder={pickProjectFolderWith(dialog)}
                   signedControlPlane={signedControlPlane()}
                   sandboxEnabled={config?.sandboxEnabled}
                   main={
@@ -1421,7 +1419,7 @@ export default function SessionPage() {
                   branch={newSessionBranch()} branches={newSessionBranchSource.choices()} branchState={newSessionBranchSource.state().status} onBranchChange={newSessionBranchSource.select}
                   onWorktreeChange={changeNewSessionWorktree}
                   onWorkspaceKindChange={setNewSessionWorkspaceKind}
-                  onAddProject={addProject()}
+                  pickProjectFolder={pickProjectFolderWith(dialog)}
                   signedControlPlane={signedControlPlane()}
                   sandboxEnabled={config?.sandboxEnabled}
                   onProjectChange={(target, project) => {

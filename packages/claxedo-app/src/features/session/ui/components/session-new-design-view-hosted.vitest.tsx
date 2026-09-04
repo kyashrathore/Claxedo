@@ -20,18 +20,23 @@ import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ContextChip } from "@/features/session/ui/components/session-context-row"
 import { NewSessionDesignView } from "./session-new-design-view"
 
-const captured = vi.hoisted(() => ({ chips: [] as ContextChip[] }))
+// An ACCESSOR, not a snapshot: the environment chip's options settle after the
+// server-health resource resolves, so a copy taken at first render would miss
+// them and every `waitFor` below would poll a stale array.
+const captured = vi.hoisted(() => ({ read: (() => []) as () => ContextChip[] }))
 // Mutable so each test can pick the pane's directory, the inventory it sees,
 // and the platform, without a separate module registry per case.
 const state = vi.hoisted(() => ({
   directory: "/workspace",
   projects: [] as unknown[],
   platform: "web" as "web" | "desktop",
+  /** What `GET /api/claxedo/health` reports; undefined = the field is absent. */
+  localExecution: undefined as boolean | undefined,
 }))
 
 vi.mock("@/features/session/ui/components/session-context-row", () => ({
   SessionContextRow: (props: { chips: ContextChip[] }) => {
-    captured.chips = props.chips
+    captured.read = () => props.chips
     return <div data-testid="context-row" />
   },
 }))
@@ -39,22 +44,36 @@ vi.mock("@/features/session/ui/components/session-context-row", () => ({
 vi.mock("@/features/session/app-ports", () => ({
   useShellQueryOptions: () => ({ projects: () => ({ queryKey: ["projects"], queryFn: () => [] }) }),
   useLayout: () => ({ projects: { list: () => [], open: () => {} } }),
-  useSDK: () => ({ get directory() { return state.directory } }),
-  useServer: () => ({ projects: { touch: () => {} } }),
+  useSDK: () => ({
+    get directory() {
+      return state.directory
+    },
+  }),
+  useServer: () => ({ url: "https://plane.test", projects: { touch: () => {} } }),
+  checkServerHealth: async () => ({ localExecution: state.localExecution }),
+  ProjectCreateForm: () => <div data-testid="project-create-form" />,
 }))
 
 vi.mock("@tanstack/solid-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/solid-query")>()),
-  useQuery: () => ({ get data() { return state.projects } }),
+  useQuery: () => ({
+    get data() {
+      return state.projects
+    },
+  }),
 }))
 
 vi.mock("@solidjs/router", () => ({ useNavigate: () => () => {} }))
 vi.mock("@/platform/i18n/provider", () => ({ useLanguage: () => ({ t: (key: string) => key }) }))
 vi.mock("@/platform/runtime/platform-provider", () => ({
-  usePlatform: () => ({ get platform() { return state.platform } }),
+  usePlatform: () => ({
+    get platform() {
+      return state.platform
+    },
+  }),
 }))
 
-const chip = (slot: string) => captured.chips.find((item) => item.slot === slot)
+const chip = (slot: string) => captured.read().find((item) => item.slot === slot)
 const projectChip = () => chip("context-chip-project")
 const environmentChip = () => chip("context-chip-environment")
 const workspaceChip = () => chip("context-chip-worktree")
@@ -68,8 +87,20 @@ const bootstrapProject = {
   worktree: "ws_1",
   sandboxes: ["ws_1", "ws_2"],
   workspaces: {
-    ws_1: { id: "ws_1", kind: "cloud", workspace_name: "main", directory: "/workspace", repo_url: "https://github.com/claxedo/opencode.git" },
-    ws_2: { id: "ws_2", kind: "cloud", workspace_name: "feature", directory: "/workspace", repo_url: "https://github.com/claxedo/opencode.git" },
+    ws_1: {
+      id: "ws_1",
+      kind: "cloud",
+      workspace_name: "main",
+      directory: "/workspace",
+      repo_url: "https://github.com/claxedo/opencode.git",
+    },
+    ws_2: {
+      id: "ws_2",
+      kind: "cloud",
+      workspace_name: "feature",
+      directory: "/workspace",
+      repo_url: "https://github.com/claxedo/opencode.git",
+    },
   },
 }
 
@@ -78,12 +109,29 @@ const snapshotProject = {
   worktree: "/workspace",
   sandboxes: ["/workspace", "/workspace-2"],
   workspaces: {
-    "/workspace": { id: "ws_1", kind: "cloud", workspace_name: "main", directory: "/workspace", repo_url: "https://github.com/claxedo/opencode.git" },
-    "/workspace-2": { id: "ws_2", kind: "cloud", workspace_name: "feature", directory: "/workspace-2", repo_url: "https://github.com/claxedo/opencode.git" },
+    "/workspace": {
+      id: "ws_1",
+      kind: "cloud",
+      workspace_name: "main",
+      directory: "/workspace",
+      repo_url: "https://github.com/claxedo/opencode.git",
+    },
+    "/workspace-2": {
+      id: "ws_2",
+      kind: "cloud",
+      workspace_name: "feature",
+      directory: "/workspace-2",
+      repo_url: "https://github.com/claxedo/opencode.git",
+    },
   },
 }
 
-const renderView = (props?: { worktree?: string; workspaceKind?: "local" | "cloud"; signedControlPlane?: boolean; sandboxEnabled?: boolean }) =>
+const renderView = (props?: {
+  worktree?: string
+  workspaceKind?: "local" | "cloud"
+  signedControlPlane?: boolean
+  sandboxEnabled?: boolean
+}) =>
   render(() => (
     <NewSessionDesignView
       worktree={props?.worktree ?? "main"}
@@ -98,7 +146,8 @@ const renderView = (props?: { worktree?: string; workspaceKind?: "local" | "clou
   ))
 
 afterEach(() => {
-  captured.chips = []
+  captured.read = () => []
+  state.localExecution = undefined
   state.directory = "/workspace"
   state.projects = []
   state.platform = "web"
@@ -131,7 +180,11 @@ describe("hosted cloud project label", () => {
   // The guarantee the bug report is really about: whatever else is missing, the
   // chip must not read "workspace" while better data is in the inventory.
   test("never labels a hosted cloud project 'workspace'", () => {
-    for (const projects of [[bootstrapProject], [snapshotProject], [{ ...bootstrapProject, name: "claxedo/opencode" }]]) {
+    for (const projects of [
+      [bootstrapProject],
+      [snapshotProject],
+      [{ ...bootstrapProject, name: "claxedo/opencode" }],
+    ]) {
       state.projects = projects
       renderView()
       expect(projectChip()?.label).not.toBe("workspace")
@@ -157,11 +210,27 @@ describe("environment options", () => {
     expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["cloud"])
   })
 
-  test("desktop keeps local and cloud", () => {
+  // The desktop's embedded server, and a self-hosted server on a machine
+  // with a filesystem, report `localExecution: true`; that report — not the
+  // platform — is what keeps "Local" beside "Cloud" on a signed plane.
+  test("a signed server that executes locally keeps local and cloud", async () => {
     state.platform = "desktop"
+    state.localExecution = true
     state.projects = [bootstrapProject]
     renderView({ signedControlPlane: true })
-    expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["local", "cloud"])
+    await vi.waitFor(() => {
+      expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["local", "cloud"])
+    })
+  })
+
+  test("a signed server without local execution offers cloud only, even on desktop", async () => {
+    state.platform = "desktop"
+    state.localExecution = false
+    state.projects = [bootstrapProject]
+    renderView({ signedControlPlane: true })
+    await vi.waitFor(() => {
+      expect(environmentChip()?.options?.map((option) => option.value)).toEqual(["cloud"])
+    })
   })
 
   // Web against a LOOPBACK control plane is the dev/embedded composition, which

@@ -15,11 +15,9 @@ import { useServer } from "@/app/connection/server"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLanguage } from "@/platform/i18n/provider"
-import { DialogCreateCloudProject } from "@/features/workspaces/ui/dialogs/create-cloud-project"
-import { DialogNewProjectKind } from "@/features/workspaces/ui/dialogs/new-project-kind"
-import { newProjectFlow } from "@/features/workspaces/actions/new-project-flow"
+import { DialogCreateProject } from "@/features/workspaces/ui/dialogs/create-project-dialog"
 import { checkServerHealthCached } from "@/app/connection/server-health"
-import { ensureLocalProject } from "../../features/workspaces/data/query/project-ensure"
+import { ensureLocalProject, refreshProjectInventory } from "../../features/workspaces/data/query/project-ensure"
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { centralTransportForDeployment, centralTransportForServer } from "@/platform/runtime/transport"
@@ -54,6 +52,10 @@ export default function Home() {
         projectsQuery: queryOptions.projects(),
       })
       if (Array.isArray(ensured)) projects = ensured
+    } else {
+      // A project the create dialog just made is not in the cached list yet.
+      const refreshed = await refreshProjectInventory(queryOptions.projects()).catch(() => undefined)
+      if (Array.isArray(refreshed)) projects = refreshed
     }
     const workspaceId = workspaceRouteId(selectedProject ? [selectedProject] : projects, directory)
     if (!workspaceId) return
@@ -73,36 +75,33 @@ export default function Home() {
       }
     }
 
-    const openFolder = async () => {
+    const pickFolder = async () => {
       if (platform.openDirectoryPickerDialog && server.isLocal()) {
-        const result = await platform.openDirectoryPickerDialog?.({
-          title: language.t("command.project.open"),
-          multiple: true,
-        })
-        resolve(result)
-      } else {
-        dialog.show(
-          () => <DialogSelectDirectory multiple={true} onSelect={resolve} />,
-          () => void resolve(null),
-        )
+        const result = await platform.openDirectoryPickerDialog?.({ title: language.t("command.project.open"), multiple: false })
+        return Array.isArray(result) ? result[0] : result ?? undefined
       }
+      return new Promise<string | undefined>((done) => {
+        dialog.show(
+          () => <DialogSelectDirectory onSelect={(dir) => done(typeof dir === "string" ? dir : undefined)} />,
+          () => done(undefined),
+        )
+      })
     }
-    const openCloud = () => {
-      dialog.show(
-        () => <DialogCreateCloudProject onSelect={resolve} />,
-        () => void resolve(null),
-      )
-    }
-    // The server's mode decides the flow (see new-project-flow.ts): a server
-    // with its own filesystem offers a folder on this machine — in a browser
-    // tab exactly as in the desktop, whose server it is — and a signed server
-    // adds cloud projects. Both means the user chooses.
+    // A project is a repository and a name; where it runs is decided later in
+    // the composer (see docs/plans/2026-09-05-003).
     const signed = centralTransportForDeployment({ serverUrl: server.url, authEnabled: config?.authEnabled === true }) === "signed-web"
     const health = await checkServerHealthCached({ url: server.url }, platform.fetch ?? globalThis.fetch)
-    const flow = newProjectFlow({ localExecution: health.localExecution, signed })
-    if (flow === "folder") await openFolder()
-    else if (flow === "cloud") openCloud()
-    else dialog.show(() => <DialogNewProjectKind onFolder={() => void openFolder()} onCloud={openCloud} />, () => void resolve(null))
+    dialog.show(
+      () => (
+        <DialogCreateProject
+          baseUrl={server.url}
+          localExecution={health.localExecution ?? !signed}
+          pickFolder={pickFolder}
+          onCreated={(project) => void resolve(project.checkoutDirectory)}
+        />
+      ),
+      () => void resolve(null),
+    )
   }
 
   return (

@@ -1,5 +1,4 @@
 [
-  "features/workspaces/ui/dialogs/create-cloud-project.test.ts",
   "features/session/composer/ui/submit.test.ts",
   "app/providers/global-sync/global-sync-state-ownership.test.ts",
   "app/providers/sdk/sdk.test.ts",

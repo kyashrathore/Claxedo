@@ -2,6 +2,9 @@ import type * as SDK from "@/app/providers/sdk/sdk"
 import type * as GlobalSDK from "@/app/providers/global-sdk/provider"
 import type * as Layout from "@/app/providers/layout"
 import type * as Server from "@/app/connection/server"
+import type * as ServerHealth from "@/app/connection/server-health"
+import type * as ProjectCreateFormModule from "@/features/workspaces/ui/project-create-form"
+import type * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
 import type * as Command from "@/app/providers/command"
 import type * as FileContext from "@/app/providers/file"
 import type * as Providers from "@/app/providers/use-providers"
@@ -40,6 +43,9 @@ export type SessionAppPorts = {
   useGlobalSDK: typeof GlobalSDK.useGlobalSDK
   useLayout: typeof Layout.useLayout
   useServer: typeof Server.useServer
+  checkServerHealth: typeof ServerHealth.checkServerHealthCached
+  ProjectCreateForm: typeof ProjectCreateFormModule.ProjectCreateForm
+  DialogSelectDirectory: typeof DialogSelectDirectoryModule.DialogSelectDirectory
   formatKeybind: typeof Command.formatKeybind
   useCommand: typeof Command.useCommand
   useFile: typeof FileContext.useFile
@@ -108,6 +114,9 @@ export const useSDK = bind("useSDK")
 export const useGlobalSDK = bind("useGlobalSDK")
 export const useLayout = bind("useLayout")
 export const useServer = bind("useServer")
+export const checkServerHealth = bind("checkServerHealth")
+export const ProjectCreateForm = bind("ProjectCreateForm")
+export const DialogSelectDirectory = bind("DialogSelectDirectory")
 export const formatKeybind = bind("formatKeybind")
 export const useCommand = bind("useCommand")
 export type CommandOption = Command.CommandOption

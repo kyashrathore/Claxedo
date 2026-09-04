@@ -63,6 +63,21 @@ export type ContextChip = {
   groupLabel?: string
   emptyMessage: string
   action?: ContextChipAction
+  /**
+   * A form the chip opens in place of its list: the footer row switches the
+   * popover to `render`, and the panel closes the popover itself when done.
+   * The Project chip's "Create project…" is this.
+   */
+  panel?: {
+    label: string
+    /**
+     * `hold(true)` keeps the popover open while the panel has handed focus to
+     * something outside it — a dialog it opened, such as the directory picker —
+     * so the dismiss-on-outside rules do not tear the panel (and its form state)
+     * down underneath that dialog. `hold(false)` restores them.
+     */
+    render: (input: { close: () => void; back: () => void; hold: (active: boolean) => void }) => JSX.Element
+  }
   /** Explicitly unavailable state; an empty option list alone never disables a chip. */
   disabled?: boolean
 }
@@ -82,14 +97,14 @@ function ChipAvatar(props: { avatar: ContextChipAvatar }) {
 }
 
 function ContextChipPicker(props: { chip: ContextChip }) {
-  const [store, setStore] = createStore({ open: false })
+  const [store, setStore] = createStore({ open: false, panel: false, hold: false })
   const chip = () => props.chip
   const options = () => chip().options
   const current = () => options().find((option) => option.value === chip().current)
   let contentRef: HTMLDivElement | undefined
   let listRef: ListRef | undefined
 
-  const close = () => setStore("open", false)
+  const close = () => setStore({ open: false, panel: false, hold: false })
 
   const searchInput = () =>
     contentRef?.querySelector<HTMLInputElement>('[data-slot="list-search"] input') ?? undefined
@@ -188,14 +203,23 @@ function ContextChipPicker(props: { chip: ContextChip }) {
             background: "var(--overlay-surface)",
           }}
           onEscapeKeyDown={(event) => {
-            close()
             event.preventDefault()
             event.stopPropagation()
+            if (store.hold) return
+            close()
           }}
-          onPointerDownOutside={close}
-          onFocusOutside={close}
+          onPointerDownOutside={(event) => (store.hold ? event.preventDefault() : close())}
+          onFocusOutside={(event) => (store.hold ? event.preventDefault() : close())}
         >
           <Kobalte.Title class="sr-only">{chip().ariaLabel}</Kobalte.Title>
+          <Show when={store.panel && chip().panel}>
+            {(panel) => (
+              <div data-slot="context-chip-panel" class="flex min-h-0 flex-col p-2">
+                {panel().render({ close, back: () => setStore("panel", false), hold: (active) => setStore("hold", active) })}
+              </div>
+            )}
+          </Show>
+          <Show when={!store.panel}>
           <List
             ref={(ref) => (listRef = ref)}
             class="flex-1 min-h-0 p-1 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
@@ -263,6 +287,22 @@ function ContextChipPicker(props: { chip: ContextChip }) {
                 </button>
               </div>
             )}
+          </Show>
+          <Show when={chip().panel}>
+            {(panel) => (
+              <div class="mt-1 shrink-0 border-t border-v2-border-border-muted p-1 pt-1">
+                <button
+                  data-slot="context-chip-panel-open"
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-13-regular text-text-weak transition-colors duration-150 hover:bg-[var(--overlay-surface-hover)] hover:text-text-base"
+                  onClick={() => setStore("panel", true)}
+                >
+                  <Icon name="plus-small" size="small" class="shrink-0" />
+                  <span class="truncate">{panel().label}</span>
+                </button>
+              </div>
+            )}
+          </Show>
           </Show>
         </Kobalte.Content>
       </Kobalte.Portal>

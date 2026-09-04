@@ -15,7 +15,8 @@ import {
   listProjectRecords,
   upsertProjectRecord,
 } from "@claxedo/server-core/workspace/store/index"
-import { controlPlaneRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
+import { controlPlaneRouteAuth, signedRouteAuth, type ControlPlaneRouteAuthOptions } from "../../platform/http/control-plane-route-auth"
+import type { SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 
 /**
  * Projects on a server with its own filesystem.
@@ -72,9 +73,39 @@ function safeRepoUrl(input: string) {
   }
 }
 
-async function cloneRepository(repoUrl: string, directory: string) {
+export type CloneOptions = {
+  /** An `Authorization` header value for the repository's host, never placed in argv. */
+  authorization?: string
+  host?: string
+}
+
+async function cloneRepository(repoUrl: string, directory: string, options: CloneOptions = {}) {
   await fs.mkdir(path.dirname(directory), { recursive: true })
-  await execFileAsync("git", ["clone", "--", repoUrl, directory])
+  // The credential rides in git's config environment, not on the command
+  // line, so it is invisible to `ps` and never lands in the clone's config.
+  const env = options.authorization && options.host
+    ? {
+        ...process.env,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: `http.https://${options.host}/.extraheader`,
+        GIT_CONFIG_VALUE_0: `Authorization: ${options.authorization}`,
+        GIT_TERMINAL_PROMPT: "0",
+      }
+    : { ...process.env, GIT_TERMINAL_PROMPT: "0" }
+  await execFileAsync("git", ["clone", "--", repoUrl, directory], { env })
+}
+
+/** GitHub's token-in-basic-auth form for `x-access-token`, as the cloud clone path uses. */
+export function githubCloneAuthorization(token: string) {
+  return `Basic ${Buffer.from(`x-access-token:${token}`).toString("base64")}`
+}
+
+function repositoryHost(repoUrl: string) {
+  try {
+    return new URL(repoUrl).hostname || undefined
+  } catch {
+    return undefined
+  }
 }
 
 function apiError(code: string, message: string) {
@@ -96,7 +127,36 @@ async function projectView(id: string) {
   }
 }
 
-export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, deps: { clone?: typeof cloneRepository } = {}) {
+/**
+ * A local project's workspace as the signed authority should know it. On a
+ * signed server every engine call for a directory is authorised against the
+ * authority's workspace membership (`resolveRelayActor` in the self-hosted
+ * app), so a folder project must exist there too or it can never be opened.
+ */
+export type LocalProjectWorkspaceRegistration = {
+  workspaceId: string
+  displayName: string
+  directory: string
+  repoUrl?: string
+}
+
+export type LocalProjectRouteDeps = {
+  clone?: typeof cloneRepository
+  /**
+   * Registers the workspace with the signed caller's authority. Supplied by
+   * signed compositions only; the unsigned local product has no authority and
+   * no caller identity, and the route skips registration there.
+   */
+  registerWorkspace?: (auth: SignedControlPlaneAuth, workspace: LocalProjectWorkspaceRegistration) => Promise<void>
+  /**
+   * A credential for cloning `repoUrl` as the signed caller — the token of
+   * their connected GitHub account, say — or `undefined` to clone anonymously.
+   * Signed compositions supply it from the connections host.
+   */
+  cloneCredential?: (auth: SignedControlPlaneAuth, repoUrl: string) => Promise<{ authorization: string } | undefined>
+}
+
+export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, deps: LocalProjectRouteDeps = {}) {
   const clone = deps.clone ?? cloneRepository
   return new Hono()
     .get("/", controlPlaneRouteAuth(options), async (c) => {
@@ -120,6 +180,11 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
         directory = body.source.directory
         const stat = await fs.stat(directory).catch(() => undefined)
         if (!stat?.isDirectory()) return c.json(apiError("project_directory_missing", "That folder does not exist on this server"), 400)
+        const existing = await getWorkspaceByDirectory(directory)
+        const owner = existing?.project_id ? await getProjectRecord(existing.project_id) : undefined
+        if (owner) {
+          return c.json(apiError("project_directory_taken", `That folder is already the project "${owner.name}"`), 409)
+        }
       } else {
         repoUrl = safeRepoUrl(body.source.repoUrl)
         if (!repoUrl) return c.json(apiError("project_repository_invalid", "That is not a repository URL this server can clone"), 400)
@@ -130,7 +195,10 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
           return c.json(apiError("project_directory_taken", `${directory} already exists on this server`), 409)
         }
         try {
-          await clone(repoUrl, directory)
+          const auth = signedRouteAuth(c.req.raw)
+          const credential = auth && deps.cloneCredential ? await deps.cloneCredential(auth, repoUrl) : undefined
+          const host = repositoryHost(repoUrl)
+          await clone(repoUrl, directory, credential && host ? { authorization: credential.authorization, host } : {})
         } catch (cause) {
           await fs.rm(directory, { recursive: true, force: true }).catch(() => undefined)
           const message = cause instanceof Error ? cause.message : String(cause)
@@ -141,6 +209,20 @@ export function LocalProjectRoutes(options: ControlPlaneRouteAuthOptions = {}, d
       const workspace = await ensureWorkspace({ directory, kind: "local", project_name: body.name, ...(repoUrl ? { repo_url: repoUrl } : {}) })
       if (!workspace?.project_id) {
         return c.json(apiError("project_not_git", "Only git repositories can be projects; that folder is not one"), 400)
+      }
+      const auth = signedRouteAuth(c.req.raw)
+      if (auth && deps.registerWorkspace) {
+        try {
+          await deps.registerWorkspace(auth, {
+            workspaceId: workspace.id,
+            displayName: body.name,
+            directory,
+            ...(repoUrl ? { repoUrl } : {}),
+          })
+        } catch (cause) {
+          const message = cause instanceof Error ? cause.message : String(cause)
+          return c.json(apiError("project_register_failed", `The project could not be registered for your account: ${message}`), 502)
+        }
       }
       const record = await upsertProjectRecord({ id: workspace.project_id, name: body.name, env: body.env ?? {} })
       return c.json({ project: await projectView(record.id) }, 201)

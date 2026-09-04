@@ -205,7 +205,6 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `connections.list` | `features/settings/ui/connections.tsx` | `GET /api/claxedo/integrations` | unary | safe | |
 | `connections.connect` | `features/settings/ui/connections.tsx` | `POST /api/claxedo/integrations/:id/connect` | unary | unsafe | Starts an OAuth attempt or key connect. |
 | `connections.attempt` | `features/settings/ui/connections.tsx` | `GET /api/claxedo/integrations/attempts/:state` | unary | safe | |
-| `connections.repositories` | `features/workspaces/ui/dialogs/repository-picker.ts` | `GET /api/claxedo/integrations/connections/:id/repositories` | unary | safe | |
 | `connections.disconnect` | `features/settings/ui/connections.tsx` | `DELETE /api/claxedo/integrations/connections/:id` | unary | safe | |
 | `connections.reverify` | `features/settings/ui/connections.tsx` | `POST /api/claxedo/integrations/connections/:id/reverify` | unary | unsafe | Re-checks stored credentials. |
 

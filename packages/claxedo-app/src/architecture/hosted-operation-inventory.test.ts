@@ -49,8 +49,8 @@ const LOCAL_AUTHENTICATED_MODULES: Record<string, string> = {
     "Local route shell. Unit 9 replaces its authFetch use with the injected local transport; it never calls Hosted Server.",
   "features/workspaces/ui/panel/workspace-panel.tsx":
     "Local workspace panel. Its api calls target local-server routes; hosted rows arrive through the injected port.",
-  "features/workspaces/ui/dialogs/create-cloud-project.tsx":
-    "Cloud create goes through workspace-create-api (AccountPort). Remaining api use is local driver listing on the sidecar.",
+  "features/workspaces/data/project-api.ts":
+    "Projects live on servers with a filesystem (`/api/claxedo/projects` on the local and self-hosted servers); the hosted plane has no such route, so this is not a Hosted Server AccountPort surface.",
   "features/settings/ui/providers.tsx":
     "Local provider settings. Credential list/disconnect uses local-server credential routes via claxedoCredentialRequest; hosted account identity stays on account-section.",
   "features/settings/ui/sandbox-section.tsx":

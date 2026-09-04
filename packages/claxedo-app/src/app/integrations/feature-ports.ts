@@ -1,4 +1,6 @@
 import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
+import { checkServerHealthCached } from "@/app/connection/server-health"
+import { ProjectCreateForm } from "@/features/workspaces/ui/project-create-form"
 import { configureSessionAppPorts } from "@/features/session/app-ports"
 import { configureDocumentsAppPorts } from "@/features/documents/app-ports"
 import { configureWorkspacesAppPorts } from "@/features/workspaces/app-ports"
@@ -82,6 +84,9 @@ configureSessionAppPorts({
   useGlobalSDK: GlobalSDK.useGlobalSDK,
   useLayout: Layout.useLayout,
   useServer: Server.useServer,
+  checkServerHealth: checkServerHealthCached,
+  ProjectCreateForm,
+  DialogSelectDirectory,
   formatKeybind: Command.formatKeybind,
   useCommand: Command.useCommand,
   useFile: FileContext.useFile,
@@ -137,6 +142,7 @@ configureDocumentsAppPorts({
 
 configureWorkspacesAppPorts({
   useServer: Server.useServer,
+  checkServerHealth: checkServerHealthCached,
   useGlobalSDK: GlobalSDK.useGlobalSDK,
   getAvatarColors: Layout.getAvatarColors,
   useClaxedoEventsOptional: Events.useClaxedoEventsOptional,

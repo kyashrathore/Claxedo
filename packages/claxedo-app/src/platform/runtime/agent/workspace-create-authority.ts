@@ -7,8 +7,6 @@ export type HostedWorkspaceCreateInput = {
   driver?: string
   connectionId?: string
   repo?: { fullName: string }
-  /** Variables the sandbox starts with (plaintext by design); omitted when empty. */
-  env?: Record<string, string>
 }
 
 export type HostedWorkspaceCreateResult = {

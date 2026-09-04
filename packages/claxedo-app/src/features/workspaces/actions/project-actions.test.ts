@@ -109,12 +109,8 @@ beforeAll(async () => {
     DialogSelectDirectory: () => "select-directory",
   }))
 
-  mock.module("../ui/dialogs/create-cloud-project", () => ({
-    DialogCreateCloudProject: () => "create-cloud-project",
-  }))
-
-  mock.module("../ui/dialogs/new-project-kind", () => ({
-    DialogNewProjectKind: () => "new-project-kind",
+  mock.module("../ui/dialogs/create-project-dialog", () => ({
+    DialogCreateProject: (props: { localExecution: boolean }) => `create-project:${props.localExecution ? "folder-or-repository" : "repository-only"}`,
   }))
 
   mock.module("../../workspaces/ui/dialogs/delete-workspace-dialog", () => ({
@@ -317,43 +313,31 @@ describe("createProjectActions New Project", () => {
   const health = (localExecution: boolean | undefined) => async () => ({ healthy: true, ...(localExecution === undefined ? {} : { localExecution }) })
   const settle = () => new Promise((resolve) => setTimeout(resolve, 0))
 
-  test("an unsigned server with its own filesystem opens the folder picker, in a browser exactly as in the desktop", async () => {
+  test("opens the create form; a server with its own filesystem offers a folder as well as a repository", async () => {
     const fixture = make("/repo/one")
-    const props = {
-      ...fixture.props,
-      config: {},
-      serverHealth: health(true),
-      globalSDK: { ...fixture.props.globalSDK, url: "http://127.0.0.1:2593" },
-    }
+    const props = { ...fixture.props, config: {}, serverHealth: health(true), globalSDK: { ...fixture.props.globalSDK, url: "http://127.0.0.1:2593" } }
     createProjectActions(props as never, fixture.nav).handleNewProject()
     await settle()
-    expect(fixture.shows).toEqual(["select-directory"])
+    expect(fixture.shows).toEqual(["create-project:folder-or-repository"])
   })
 
-  test("a signed server with no filesystem opens the cloud project onboarding", async () => {
+  test("a server with no filesystem offers a repository only", async () => {
     const fixture = make("/repo/one")
-    const props = {
-      ...fixture.props,
-      config: { authEnabled: true },
-      serverHealth: health(false),
-      globalSDK: { ...fixture.props.globalSDK, url: "https://plane.example.dev" },
-    }
+    const props = { ...fixture.props, config: { authEnabled: true }, serverHealth: health(false), globalSDK: { ...fixture.props.globalSDK, url: "https://plane.example.dev" } }
     createProjectActions(props as never, fixture.nav).handleNewProject()
     await settle()
-    expect(fixture.shows).toEqual(["create-cloud-project"])
+    expect(fixture.shows).toEqual(["create-project:repository-only"])
   })
 
-  test("a signed server with its own filesystem lets the user choose, whatever its address", async () => {
-    const fixture = make("/repo/one")
-    const props = {
-      ...fixture.props,
-      config: { authEnabled: true },
-      serverHealth: health(true),
-      globalSDK: { ...fixture.props.globalSDK, url: "https://localhost:4449" },
-    }
-    createProjectActions(props as never, fixture.nav).handleNewProject()
+  test("a server that says nothing about its filesystem is local when unsigned and hosted when signed", async () => {
+    const unsigned = make("/repo/one")
+    createProjectActions({ ...unsigned.props, config: {}, serverHealth: health(undefined), globalSDK: { ...unsigned.props.globalSDK, url: "http://127.0.0.1:2593" } } as never, unsigned.nav).handleNewProject()
     await settle()
-    expect(fixture.shows).toEqual(["new-project-kind"])
+    expect(unsigned.shows).toEqual(["create-project:folder-or-repository"])
+    const signed = make("/repo/one")
+    createProjectActions({ ...signed.props, config: { authEnabled: true }, serverHealth: health(undefined), globalSDK: { ...signed.props.globalSDK, url: "https://plane.example.dev" } } as never, signed.nav).handleNewProject()
+    await settle()
+    expect(signed.shows).toEqual(["create-project:repository-only"])
   })
 })
 

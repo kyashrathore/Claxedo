@@ -25,6 +25,8 @@ import { useShellQueryOptions as useQueryOptions } from "@/features/session/app-
 import { useLayout } from "@/features/session/app-ports"
 import { useSDK } from "@/features/session/app-ports"
 import { useServer } from "@/features/session/app-ports"
+import { checkServerHealth, ProjectCreateForm } from "@/features/session/app-ports"
+import { createResource } from "solid-js"
 import {
   CREATE_WORKTREE,
   createNewSessionWorkspaceState,
@@ -82,17 +84,13 @@ export function NewSessionDesignView(props: {
   onBranchChange?: (value: string) => void
   onProjectChange?: (directory: string, project: NewSessionProjectSelection) => void
   /**
-   * Upstream's project menu ends in an "Add project" footer action. Adding a
-   * project needs the directory-picker dialog plus the `ensureLocalProject`
-   * round-trip, both of which live in `app/` and `features/workspaces/` — paths
-   * `features/session` is forbidden to import (see `src/features/session/AGENTS.md`).
-   * So the owner of that surface passes the handler in; the footer row is omitted
-   * entirely when it is absent, rather than rendered inert.
-   *
-   * `session-screen.tsx` builds it with `addProjectAction()`, which reaches the
-   * real flow through the `project.open` command the app shell registers.
+   * Creation lives in the Project chip itself: its footer opens a panel with
+   * `ProjectCreateForm` (name, then a folder on this machine or a repository
+   * URL). The folder source needs the directory-picker dialog, which lives in
+   * `app/` — a path `features/session` may not import — so the owner of this
+   * surface passes the picker in; without it the form offers repositories only.
    */
-  onAddProject?: () => void
+  pickProjectFolder?: () => Promise<string | undefined>
   /**
    * True when this pane talks to a signed, non-loopback control plane (the
    * hosted composition). Combined with the web platform it means "there is no
@@ -123,7 +121,8 @@ export function NewSessionDesignView(props: {
   // so the workspace picker collapsed to "create new" even for a project that
   // already had cloud workspaces. `findProjectForDirectory` matches both.
   const activeProject = createMemo(() => {
-    const selection = props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
+    const selection =
+      props.worktree === MAIN_WORKTREE || props.worktree === CREATE_WORKTREE ? sdk.directory : props.worktree
     return findProjectForDirectory(inventoryProjects(), [sdk.directory, selection])
   })
   const projectRoot = createMemo(() => activeProject()?.worktree ?? sdk.directory)
@@ -136,7 +135,7 @@ export function NewSessionDesignView(props: {
       workspaceKind: props.workspaceKind,
       sandboxes: sandboxes(),
       workspaces: workspaces(),
-    })
+    }),
   )
   const worktreeOptions = createMemo(() => workspaceState().options)
   const runtimeMode = () => props.main !== undefined
@@ -169,7 +168,9 @@ export function NewSessionDesignView(props: {
     //    has no name of its own but always has a repo, and its directory is the
     //    literal "/workspace", so this is what stands between the user and a
     //    chip that reads "workspace".
-    const fromRepo = repoDerivedProjectLabel(project?.workspaces ?? (value === projectRoot() ? workspaces() : undefined))
+    const fromRepo = repoDerivedProjectLabel(
+      project?.workspaces ?? (value === projectRoot() ? workspaces() : undefined),
+    )
     if (fromRepo) return fromRepo
     // 5) Last resort: the directory basename (a UUID for cloud workspaces).
     return getFilename(value)
@@ -232,18 +233,35 @@ export function NewSessionDesignView(props: {
   const selfHostedWorkspace = createMemo(() => props.workspaceKind === "user-hosted")
 
   const environmentLabel = (kind: NewSessionWorkspaceKind) => (kind === "cloud" ? "Cloud" : "Local")
-  // On the hosted web build there is no local machine to run on, so "Local" is
-  // an option that can be picked but never resolves to a workspace. Desktop —
-  // and any loopback-backed composition — keeps both.
+  // The server's own account of itself: whether it runs workspaces on its
+  // filesystem. That, not the platform or the URL, decides whether "Local"
+  // and "Select project" (a folder on this machine) exist here.
+  const [serverHealth] = createResource(
+    () => server.url,
+    async (url) => {
+      if (!url) return undefined
+      // A server that cannot be asked says nothing; the rules below treat
+      // "nothing" as the product the mode has always been.
+      return checkServerHealth({ url }, platform.fetch ?? globalThis.fetch).catch(() => undefined)
+    },
+  )
+  const localExecution = () => serverHealth.latest?.localExecution
   const environmentOptions = createMemo(() =>
     newSessionEnvironmentOptions({
-      platform: platform.platform === "web" ? "web" : "desktop",
-      signedControlPlane: !!props.signedControlPlane,
+      localExecution: localExecution(),
+      signed: !!props.signedControlPlane,
       sandboxEnabled: props.sandboxEnabled,
-    })
+    }),
   )
-  const createActionLabel = () =>
-    props.workspaceKind === "cloud" ? "New cloud sandbox" : "New local worktree"
+  const openCreatedProject = async (checkout: string) => {
+    const refreshed = await projectsQuery.refetch()
+    const inventory = (refreshed.data ?? []) as ProjectInventoryItem[]
+    const project = findProjectForDirectory(inventory, [checkout])
+    if (!project) return
+    if (props.onProjectChange) props.onProjectChange(checkout, project)
+    else openProject(checkout)
+  }
+  const createActionLabel = () => (props.workspaceKind === "cloud" ? "New cloud sandbox" : "New local worktree")
 
   const openProject = (directory: string | undefined) => {
     if (!directory) return
@@ -291,9 +309,36 @@ export function NewSessionDesignView(props: {
           avatar: projectAvatar(value),
         })),
         onSelect: openProject,
-        action: props.onAddProject
-          ? { label: language.t("home.project.add"), onSelect: props.onAddProject }
-          : undefined,
+        // Create project lives in the chip, like "Create new worktree" lives
+        // in the Workspace chip: a name, then where the repository is. Where
+        // it runs is the Environment chip's question, asked later.
+        panel: {
+          label: "Create project…",
+          render: ({ close, back, hold }) => (
+            <ProjectCreateForm
+              baseUrl={server.url}
+              localExecution={localExecution() ?? !props.signedControlPlane}
+              // The picker is a dialog outside the chip's popover; without the
+              // hold, its focus would dismiss the popover and unmount this form.
+              pickFolder={
+                props.pickProjectFolder &&
+                (async () => {
+                  hold(true)
+                  try {
+                    return await props.pickProjectFolder!()
+                  } finally {
+                    hold(false)
+                  }
+                })
+              }
+              onCreated={(project) => {
+                close()
+                if (project.checkoutDirectory) void openCreatedProject(project.checkoutDirectory)
+              }}
+              onCancel={back}
+            />
+          ),
+        },
       },
     ]
     if (selfHostedWorkspace()) return chips
@@ -316,12 +361,13 @@ export function NewSessionDesignView(props: {
     }
     chips.push({
       slot: "context-chip-worktree",
-      icon: (
-        creatingWorkspace() && props.workspaceKind === "cloud"
-          ? <Icon name="cloud-upload" size="small" />
-          : <SemanticIcon concept="isolationWorktree" size="small" />
-      ),
-      label: creatingWorkspace() ? createActionLabel() : (currentWorktree() ? worktreeLabel(currentWorktree()!) : ""),
+      icon:
+        creatingWorkspace() && props.workspaceKind === "cloud" ? (
+          <Icon name="cloud-upload" size="small" />
+        ) : (
+          <SemanticIcon concept="isolationWorktree" size="small" />
+        ),
+      label: creatingWorkspace() ? createActionLabel() : currentWorktree() ? worktreeLabel(currentWorktree()!) : "",
       ariaLabel: "Workspace",
       search: { placeholder: "Search workspaces" },
       emptyMessage: props.workspaceKind === "cloud" ? "No cloud workspace" : "No local workspace",
@@ -337,7 +383,8 @@ export function NewSessionDesignView(props: {
     })
     if (props.onBranchChange && props.branchState !== "disabled") {
       const ready = props.branchState === "ready" && props.branch
-      const selected = ready && (props.workspaceKind !== "cloud" || props.branch!.sourceBranch) ? props.branch : undefined
+      const selected =
+        ready && (props.workspaceKind !== "cloud" || props.branch!.sourceBranch) ? props.branch : undefined
       const branches = ready
         ? (props.branches ?? []).filter((choice) => props.workspaceKind !== "cloud" || !!choice.sourceBranch)
         : []
@@ -345,10 +392,12 @@ export function NewSessionDesignView(props: {
         slot: "context-chip-branch",
         icon: <Icon name="branch" size="small" />,
         label: selected
-          ? selected.sourceBranch ?? selected.gitRef
+          ? (selected.sourceBranch ?? selected.gitRef)
           : ready && props.workspaceKind === "cloud"
             ? "Default branch"
-            : props.branchState === "error" ? "Branches unavailable" : "Loading branches…",
+            : props.branchState === "error"
+              ? "Branches unavailable"
+              : "Loading branches…",
         ariaLabel: "Base branch",
         search: { placeholder: "Search branches" },
         groupLabel: "Branches",
@@ -373,66 +422,66 @@ export function NewSessionDesignView(props: {
 
   return (
     <ComposerNoticeProvider channel={notice}>
-    <div data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
-      <div
-        class="absolute inset-x-0 flex justify-center px-6"
-        classList={{
-          "top-[18%]": runtimeMode(),
-          "top-[34%]": !runtimeMode(),
-        }}
-      >
-        <div data-component="session-new-design-content" class="w-full max-w-[720px]">
-          <Show when={!runtimeMode()}>
-            <div class="mb-5 flex justify-center">
-              <ClaxedoLogo class="w-12 opacity-14" />
-            </div>
-          </Show>
-          <div>
-            {/* Top of the stack: one row for whatever is currently wrong with
+      <div data-component="session-new-design" class="relative size-full overflow-hidden bg-background-base">
+        <div
+          class="absolute inset-x-0 flex justify-center px-6"
+          classList={{
+            "top-[18%]": runtimeMode(),
+            "top-[34%]": !runtimeMode(),
+          }}
+        >
+          <div data-component="session-new-design-content" class="w-full max-w-[720px]">
+            <Show when={!runtimeMode()}>
+              <div class="mb-5 flex justify-center">
+                <ClaxedoLogo class="w-12 opacity-14" />
+              </div>
+            </Show>
+            <div>
+              {/* Top of the stack: one row for whatever is currently wrong with
                 the composer's agent. It peeks above the chips exactly the way
                 the chips peek above the composer — see composer-notice.tsx for
                 why this is a channel and not a prop. */}
-            <ComposerNoticeRow notice={notice.current()} />
-            {/* The content wrapper is a named inline-size container; the context
+              <ComposerNoticeRow notice={notice.current()} />
+              {/* The content wrapper is a named inline-size container; the context
                 row's chips truncate against it when the session pane is
                 squeezed. */}
-            <Show when={!runtimeMode()}>
+              <Show when={!runtimeMode()}>
+                <div
+                  classList={{
+                    relative: true,
+                    "z-10 -mt-2": !!notice.current(),
+                  }}
+                >
+                  <SessionContextRow
+                    chips={contextChips()}
+                    pin={
+                      selfHostedWorkspace()
+                        ? {
+                            slot: "self-hosted-workspace",
+                            label: pinnedWorkspaceName(),
+                            detail: "· Self-hosted · Connected via relay",
+                            compactDetail: "· Self-hosted",
+                          }
+                        : undefined
+                    }
+                  />
+                </div>
+              </Show>
+              {/* Lifts the composer over the row above's bottom padding (and
+                above it in paint order) so they read as one stacked card
+                instead of separate surfaces. */}
               <div
                 classList={{
                   relative: true,
-                  "z-10 -mt-2": !!notice.current(),
+                  "z-10 -mt-2": !runtimeMode() || !!notice.current(),
                 }}
               >
-                <SessionContextRow
-                  chips={contextChips()}
-                  pin={
-                    selfHostedWorkspace()
-                      ? {
-                          slot: "self-hosted-workspace",
-                          label: pinnedWorkspaceName(),
-                          detail: "· Self-hosted · Connected via relay",
-                          compactDetail: "· Self-hosted",
-                        }
-                      : undefined
-                  }
-                />
+                {props.main ?? props.children}
               </div>
-            </Show>
-            {/* Lifts the composer over the row above's bottom padding (and
-                above it in paint order) so they read as one stacked card
-                instead of separate surfaces. */}
-            <div
-              classList={{
-                relative: true,
-                "z-10 -mt-2": !runtimeMode() || !!notice.current(),
-              }}
-            >
-              {props.main ?? props.children}
             </div>
           </div>
         </div>
       </div>
-    </div>
     </ComposerNoticeProvider>
   )
 }

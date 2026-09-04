@@ -9,8 +9,6 @@ import {
 } from "@/features/workspaces/app-ports"
 import { showToast } from "@opencode-ai/ui/toast"
 import { centralTransportForDeployment } from "@/platform/runtime/transport"
-import { newProjectFlow } from "./new-project-flow"
-import { DialogNewProjectKind } from "../ui/dialogs/new-project-kind"
 import { validWorktree } from "@/platform/sync/worktree"
 
 import { api, apiBearerToken, getDefaultBaseUrl } from "@/platform/api/api"
@@ -21,12 +19,12 @@ import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId as routeIdFromProjects } from "@/platform/identity/workspace-route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
-import { DialogCreateCloudProject } from "../ui/dialogs/create-cloud-project"
+import { DialogCreateProject } from "../ui/dialogs/create-project-dialog"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { DirectorySessionCacheValue } from "../../session/data/sync/queries"
-import { ensureLocalProject } from "../data/query/project-ensure"
+import { ensureLocalProject, refreshProjectInventory } from "../data/query/project-ensure"
 import {
   controlWorkspaceUrl,
   experimentalSandboxPath,
@@ -150,25 +148,11 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         return
       }
 
-      let routeId = props.workspaceRouteId(workspaceDir)
-      if (props.platform.platform !== "web") {
-        try {
-          const projects = await ensureLocalProject({
-            baseUrl: props.globalSDK.url,
-            request: props.platform.fetch,
-            directory: workspaceDir,
-            projectsQuery: props.projectInventoryActions.query(),
-          })
-          routeId = Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : routeId
-        } catch {
-          showToast({
-            title: "Not a git repository",
-            description: "Only git repositories can be added as projects",
-            variant: "error",
-          })
-          return
-        }
-      }
+      // The server created the project (and its workspace) a moment ago; the
+      // cached inventory predates it, so route from a fresh one.
+      const projects = await refreshProjectInventory(props.projectInventoryActions.query()).catch(() => undefined)
+      const routeId = (Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : undefined)
+        ?? props.workspaceRouteId(workspaceDir)
       if (!routeId) return
       props.layout.projects.open(workspaceDir)
       void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
@@ -181,43 +165,31 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       props.dialog.close()
     }
 
-    const openFolder = () => {
-      void props.dialog.show(() => (
-        <DialogSelectDirectory
-          onSelect={(dir) => {
-            if (typeof dir === "string") {
-              void handleProjectSelected(dir)
-            }
-          }}
-        />
-      ))
-    }
-    const openCloud = () => {
-      void props.dialog.show(() => (
-        <DialogCreateCloudProject
-          onSelect={(result) => {
-            const directory = Array.isArray(result) ? result[0] : result
-            if (typeof directory === "string" && directory) {
-              void handleProjectSelected(directory)
-            }
-          }}
-        />
-      ))
-    }
-    // The server's mode decides the flow (see new-project-flow.ts): a server
-    // with its own filesystem offers a folder on this machine — in a browser
-    // tab exactly as in the desktop, whose server it is — and a signed server
-    // adds cloud projects. Both means the user chooses.
+    // A project is a repository and a name; where it runs is decided later in
+    // the composer. This dialog is the create form's host for the empty canvas
+    // (no composer yet); inside a draft the Project chip renders the same form.
     void (async () => {
+      const health = await props.serverHealth()
       const signed = centralTransportForDeployment({
         serverUrl: props.globalSDK.url,
         authEnabled: props.config?.authEnabled === true,
       }) === "signed-web"
-      const health = await props.serverHealth()
-      const flow = newProjectFlow({ localExecution: health?.localExecution, signed })
-      if (flow === "folder") openFolder()
-      else if (flow === "cloud") openCloud()
-      else void props.dialog.show(() => <DialogNewProjectKind onFolder={openFolder} onCloud={openCloud} />)
+      const localExecution = health?.localExecution ?? !signed
+      void props.dialog.show(() => (
+        <DialogCreateProject
+          baseUrl={props.globalSDK.url}
+          localExecution={localExecution}
+          pickFolder={() =>
+            new Promise<string | undefined>((resolve) => {
+              void props.dialog.show(() => (
+                <DialogSelectDirectory onSelect={(dir) => resolve(typeof dir === "string" ? dir : undefined)} />
+              ))
+            })}
+          onCreated={(project) => {
+            if (project.checkoutDirectory) void handleProjectSelected(project.checkoutDirectory)
+          }}
+        />
+      ))
     })()
   }
 
