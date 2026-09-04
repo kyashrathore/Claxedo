@@ -64,3 +64,22 @@ There is no New Project dialog. The draft composer is the one surface:
 
 - Where local checkouts of repository-backed projects live (`<dataDir>/projects/<slug>` proposed).
 - Whether a project may be renamed after creation and whether the name must be unique per server.
+
+## Code facts that shape S2 (2026-09-05)
+
+- A draft session is always keyed by a directory: `layout.openSession(directory, "new", …)`, and the
+  empty-canvas composer (`EmptyDraftSessionComposer`) is rendered for `emptyDraftDirectory()` =
+  the active directory, else the first project's worktree (`rail-empty-draft-controller.ts`). With
+  no projects at all there is no draft: the canvas shows `OnboardingEmptyState` (behind
+  `VITE_CLAXEDO_ONBOARDING_V1`, now on) or the legacy empty state, both with a New Project button.
+  So "Create project" in the Project chip covers every state except the very first project, which
+  the empty state's New Project button must open as the same create flow (a composer with the chip
+  expanded, no directory yet).
+- The Project chip's "Add project" action is the `claxedo-project` command
+  (`ADD_PROJECT_COMMAND_ID` → `actions.handleNewProject()`), i.e. today's New Project flow; the chip's
+  `onProjectChange` navigates to the chosen project's workspace route, which opens a fresh draft
+  there. Creating a project therefore ends by navigating to it, not by mutating the current draft.
+- The project's startup command lives in the project's Edit dialog (rail project kebab → Edit →
+  "Runs after creating a new workspace (worktree)") and is persisted through the engine's project
+  update (`Project.Commands`, `PATCH /project/:id`). The environment editor joins it there.
+
