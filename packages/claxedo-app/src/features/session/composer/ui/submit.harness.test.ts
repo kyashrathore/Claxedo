@@ -372,7 +372,7 @@ export function createSubmit(
 const mockedSpecifiers = [
   "@solidjs/router",
   "@opencode-ai/ui/toast",
-  "@/lib/encode",
+  "@opencode-ai/ui/utils/encode",
   "@/platform/runtime/session-url",
   "@/platform/api/api",
   "@/platform/runtime/transport",
@@ -495,7 +495,7 @@ export async function installSubmitMocks(mock: ModuleMocker) {
     },
   }))
 
-  mock.module("@/lib/encode", () => ({
+  mock.module("@opencode-ai/ui/utils/encode", () => ({
     base64Decode: (value: string) => new TextDecoder().decode(Uint8Array.from(
       atob(value.replace(/-/g, "+").replace(/_/g, "/")),
       (char) => char.charCodeAt(0),

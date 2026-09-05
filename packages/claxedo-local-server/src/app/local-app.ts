@@ -91,7 +91,6 @@ export type LocalAppOptions = {
   /** Answers `/workspaces/:workspaceId`; registered ahead of the runtime proxy. */
   workspaceRelayProxy?: MiddlewareHandler
   onError?: Parameters<Hono["onError"]>[0]
-  updateCentralSessionModel?: (sessionId: string, model: { providerID: string; modelID: string }) => Promise<void>
   invalidateCentralSession?: (sessionId: string) => void
   refreshSessionProjection?: (workspace: Workspace) => Promise<void>
   env?: NodeJS.ProcessEnv
@@ -299,7 +298,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   }))
   app.route("/api/claxedo/agent-config", AgentConfigRoutes({
     services,
-    ...(options.updateCentralSessionModel ? { updateCentralSessionModel: options.updateCentralSessionModel } : {}),
     ...(options.invalidateCentralSession ? { invalidateCentralSession: options.invalidateCentralSession } : {}),
     ...authRouteOptions(services),
   }))

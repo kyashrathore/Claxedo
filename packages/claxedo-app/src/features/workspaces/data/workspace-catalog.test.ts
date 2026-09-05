@@ -48,7 +48,7 @@ describe("controlPlaneCatalogProjects", () => {
    * A cloud or user-hosted workspace is served by ANOTHER machine, so the path
    * its row reports names a directory on that machine's filesystem. Addressing
    * the workspace by it makes every later read (`?directory=`,
-   * `x-opencode-directory`, the route's own key) ask a server about a path it
+   * `x-claxedo-directory`, the route's own key) ask a server about a path it
    * cannot resolve. The workspace id — as `workspace:<id>`, the same form
    * `sessionRowDirectory` stamps on this workspace's session rows — is the one
    * address both sides agree on; the host's path survives as metadata only.

@@ -5,6 +5,7 @@ import { createOpenCodeHost, type OpenCodeHost, type OpenCodeHostOptions } from 
 import { createInteractionPort, type OpenCodeInteractionPort } from "./interaction-port"
 import { createSessionPort, type OpenCodeSessionPort } from "./session-port"
 import { createToolPort, type OpenCodeToolPort } from "./tool-port"
+import { createLaunchPolicy, type LaunchPolicyStore } from "./launch-policy"
 import { createProviderPolicy, type ProviderConfigStore } from "./provider-policy"
 import type { WorkspaceScope } from "./scope"
 
@@ -14,6 +15,8 @@ export type OpenCodeRuntime = Readonly<{
   catalog: OpenCodeCatalogPort
   configuration: OpenCodeConfigurationPort
   providerConfig(scope: WorkspaceScope): Promise<ProviderConfigStore>
+  /** The workspace's launch document (skills + MCP servers) enforced in the engine. */
+  launch(scope: WorkspaceScope): Promise<LaunchPolicyStore>
   interactions: OpenCodeInteractionPort
   tools: OpenCodeToolPort
   events: Readonly<{
@@ -34,7 +37,8 @@ export type OpenCodeRuntime = Readonly<{
  */
 export function createOpenCodeRuntime(options: OpenCodeHostOptions): OpenCodeRuntime {
   const policy = createProviderPolicy()
-  const host = createOpenCodeHost({ ...options, plugins: [...(options.plugins ?? []), policy.plugin] })
+  const launch = createLaunchPolicy()
+  const host = createOpenCodeHost({ ...options, plugins: [...(options.plugins ?? []), policy.plugin, launch.plugin] })
   const listeners = new Set<(event: ProjectedEvent) => void>()
   const pump: EventPump = createEventPump(host, {
     onEvent(event) {
@@ -49,6 +53,7 @@ export function createOpenCodeRuntime(options: OpenCodeHostOptions): OpenCodeRun
     catalog: createCatalogPort(host),
     configuration: createConfigurationPort(host),
     providerConfig: (scope) => policy.store(host, scope),
+    launch: (scope) => launch.store(host, scope),
     interactions: createInteractionPort(host),
     tools: createToolPort(host),
     events: {

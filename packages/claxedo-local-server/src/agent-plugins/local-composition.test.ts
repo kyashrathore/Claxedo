@@ -82,9 +82,9 @@ describe("local Agent Plugins composition", () => {
     expect(activation.status).toBe(200)
 
     const launch = await composition.harnessLaunch()
-    const config = launch.opencode?.config as { skills?: { paths?: string[] } }
-    expect(config.skills?.paths).toHaveLength(1)
-    const skills = config.skills!.paths![0]!
+    const config = launch.opencode?.config as { skills?: string[] }
+    expect(config.skills).toHaveLength(1)
+    const skills = config.skills![0]!
     expect(skills).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(skills).not.toContain(collection)
     await expect(fs.readFile(path.join(skills, "review", "SKILL.md"), "utf8"))
@@ -117,7 +117,7 @@ describe("local Agent Plugins composition", () => {
     })
     await restarted.ready
     const relaunch = await restarted.harnessLaunch()
-    const reprojected = (relaunch.opencode?.config as { skills: { paths: string[] } }).skills.paths[0]!
+    const reprojected = (relaunch.opencode?.config as { skills: string[] }).skills[0]!
     expect(reprojected).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(reprojected.startsWith(generationRoot + path.sep)).toBe(false)
     await expect(fs.readFile(path.join(reprojected, "review", "SKILL.md"), "utf8")).resolves.toContain("name: review")

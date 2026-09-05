@@ -1,9 +1,21 @@
 {
   "name": "@claxedo/agent-runtime-contract",
-  "version": "0.1.0",
+  "version": "0.7.0",
   "type": "module",
   "description": "Dependency-free canonical contracts for Claxedo agent sessions, content, execution, errors, and events",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kyashrathore/Claxedo.git",
+    "directory": "packages/agent-runtime-contract"
+  },
+  "keywords": [
+    "claxedo",
+    "agents",
+    "contracts",
+    "sessions",
+    "events"
+  ],
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
@@ -14,13 +26,19 @@
     }
   },
   "files": [
+    "README.md",
+    "LICENSE",
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
   "scripts": {
     "build": "bun build src/index.ts --target=browser --format=esm --outfile=dist/index.mjs && tsc -p tsconfig.build.json",
     "test:node": "node --test scripts/package.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "bun test src"
+    "test": "bun test src",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@tsconfig/bun": "1.0.9",

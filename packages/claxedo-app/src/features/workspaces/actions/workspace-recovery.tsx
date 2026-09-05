@@ -1,4 +1,4 @@
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { DialogRecoverWorkspace, ensureDirectorySessionCache, findProjectForWorkspace, message, missingLocalWorkspace } from "@/features/workspaces/app-ports"
 import type { ProjectItem } from "../../../app/workbench/rail/domain-types"

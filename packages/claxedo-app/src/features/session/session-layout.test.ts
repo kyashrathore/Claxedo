@@ -8,7 +8,7 @@ beforeEach(() => configureAppPortsForTest())
 // file stubs and re-register them after the suite so the fakes (notably the
 // reversible `encoded:` base64) do not leak into later test files.
 const realModules = new Map<string, Record<string, unknown>>()
-for (const specifier of ["@/features/session/providers/session-params", "@/lib/encode", "@/app/providers/layout"]) {
+for (const specifier of ["@/features/session/providers/session-params", "@opencode-ai/ui/utils/encode", "@/app/providers/layout"]) {
   realModules.set(specifier, { ...(await import(specifier)) })
 }
 afterAll(() => {
@@ -35,7 +35,7 @@ mock.module("@/features/session/providers/session-params", () => ({
   },
 }))
 
-mock.module("@/lib/encode", () => ({
+mock.module("@opencode-ai/ui/utils/encode", () => ({
   base64Decode: (value: string) => value.replace(/^encoded:/, ""),
   base64Encode: (value: string) => `encoded:${value}`,
   checksum: (value: string) => value || undefined,

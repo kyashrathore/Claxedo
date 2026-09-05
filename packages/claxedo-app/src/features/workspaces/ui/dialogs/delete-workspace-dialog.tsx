@@ -5,7 +5,7 @@ import { Dialog } from "@opencode-ai/ui/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useGlobalSDK } from "@/features/workspaces/app-ports"
 import { showToast } from "@opencode-ai/ui/toast"
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 
 function message(err: unknown) {
   if (typeof err === "string") return err

@@ -1,4 +1,4 @@
-import { base64Decode, base64Encode } from "@/lib/encode"
+import { base64Decode, base64Encode } from "@opencode-ai/ui/utils/encode"
 import { asDirectoryRef, type DirectoryRef } from "./brand"
 import { opaqueWorkspaceRouteId } from "./workspace-route"
 

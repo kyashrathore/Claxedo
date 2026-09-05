@@ -11,10 +11,10 @@
     "dev:storybook": "bun --cwd packages/storybook storybook",
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck",
-    "test:architecture-ratchets": "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts && bun ./script/product-boundary/verify.ts --all --source-only",
+    "test:architecture-ratchets": "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts ./script/upstream-engine-retirement.test.ts && bun ./script/product-boundary/verify.ts --all --source-only",
     "prepush": "bun run typecheck && bun run test:architecture-ratchets",
     "upgrade-opentui": "bun run script/upgrade-opentui.ts",
-    "postinstall": "bun script/apply-dependency-patches.ts && bun packages/core/script/fix-node-pty.ts",
+    "postinstall": "bun script/apply-dependency-patches.ts && bun script/fix-node-pty.ts",
     "prepare": "husky",
     "random": "echo 'Random script'",
     "sso": "aws sso login --sso-session=opencode --no-browser",
@@ -29,7 +29,6 @@
   "workspaces": {
     "packages": [
       "packages/*",
-      "packages/sdk/js",
       "examples/*"
     ],
     "catalog": {
@@ -113,9 +112,7 @@
     "@claxedo/server-core": "workspace:*",
     "@claxedo/service-contract": "workspace:*",
     "@claxedo/workspace-relay-protocol": "workspace:*",
-    "@opencode-ai/plugin": "workspace:*",
     "@opencode-ai/script": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
     "@solid-primitives/event-listener": "2.4.6",
     "@solid-primitives/resize-observer": "2.2.0",
     "dompurify": "3.4.12",

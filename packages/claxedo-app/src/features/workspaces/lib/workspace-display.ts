@@ -1,4 +1,4 @@
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 
 export { workspaceRouteIdentity } from "@/platform/identity/workspace-route"

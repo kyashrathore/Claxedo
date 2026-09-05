@@ -49,8 +49,8 @@ import type {
   AgentUserMessage as UserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { showToast } from "@opencode-ai/ui/toast"
-import { Binary } from "@/lib/binary"
-import { getFilename } from "@/lib/path"
+import { Binary } from "@opencode-ai/ui/utils/binary"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import { shouldMarkBoundaryGesture, normalizeWheelDelta } from "./message-gesture"
 import { openTitleEditorPatch, resolveTitleSave } from "./session-title-editor"
 import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "./session-archive"

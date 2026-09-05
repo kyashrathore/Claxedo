@@ -4,6 +4,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 
 export const runtimePackages = [
+  { name: "@claxedo/agent-runtime-contract", dir: "packages/agent-runtime-contract" },
   { name: "@claxedo/workspace-relay-protocol", dir: "packages/workspace-relay-protocol" },
   { name: "@claxedo/workspace-relay", dir: "packages/workspace-relay" },
   { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime" },

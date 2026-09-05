@@ -1,4 +1,4 @@
-import { Binary } from "@/lib/binary"
+import { Binary } from "@opencode-ai/ui/utils/binary"
 import type {
   AgentPermission as PermissionRequest,
   AgentPresentationSession as Session,

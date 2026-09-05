@@ -1,6 +1,6 @@
 import { createComputed, createEffect, createMemo, createSelector, createSignal, mapArray, onCleanup, type Accessor } from "solid-js"
 import type { AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 
 import {
   buildSwitcherItemsFromStateWithOptions,

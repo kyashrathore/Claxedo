@@ -99,7 +99,7 @@ export function providerLabel(input: { providerID?: string; modelID?: string; re
   // Operator ACP connections dispatch with their `acp:<slug>` key as the
   // provider id; derive their product label the same way the harness selector
   // does instead of echoing the raw key.
-  if (id) return PROVIDER_NAMES[id] ?? (id.startsWith("acp:") ? harnessDisplayLabel(id) : id)
+  if (id) return PROVIDER_NAMES[id] ?? (id.startsWith("acp:") ? harnessDisplayLabel(id.slice("acp:".length)) : id)
   const relay = input.relayLabel?.trim()
   if (relay) return relay
   return undefined

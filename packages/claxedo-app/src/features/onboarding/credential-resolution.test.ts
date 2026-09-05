@@ -13,29 +13,30 @@ describe("verified credential resolution", () => {
     {
       name: "anthropic-only",
       credentials: [{ providerId: "anthropic", verification: "ok" }],
-      runnableHarnesses: ["claude-sdk", "pi"],
-      defaultHarness: "claude-sdk",
+      runnableHarnesses: ["claude", "pi", "opencode"],
+      defaultHarness: "claude",
       defaultModel: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
     },
     {
       name: "openai-only",
       credentials: [{ providerId: "openai", verification: "ok" }],
-      runnableHarnesses: ["codex-app-server", "opencode", "pi"],
-      defaultHarness: "opencode",
+      runnableHarnesses: ["codex", "pi", "opencode"],
+      defaultHarness: "codex",
       defaultModel: { providerID: "openai", modelID: "gpt-5.3-codex" },
     },
     {
       name: "codex subscription",
       credentials: [{ providerId: "codex-app-server", verification: "ok" }],
-      runnableHarnesses: ["codex-app-server", "opencode", "pi"],
-      defaultHarness: "codex-app-server",
+      // A Codex subscription is OAuth, which the OpenCode credential bridge does not carry.
+      runnableHarnesses: ["codex", "pi"],
+      defaultHarness: "codex",
       defaultModel: { providerID: "openai-codex", modelID: "gpt-5.3-codex" },
     },
     {
       name: "cursor",
       credentials: [{ providerId: "cursor", verification: "ok" }],
-      runnableHarnesses: ["cursor-sdk"],
-      defaultHarness: "cursor-sdk",
+      runnableHarnesses: ["cursor"],
+      defaultHarness: "cursor",
       defaultModel: { providerID: "cursor", modelID: "cursor-default" },
     },
     {
@@ -46,13 +47,13 @@ describe("verified credential resolution", () => {
         { providerId: "openai", verification: "ok" },
       ],
       runnableHarnesses: [
-        "claude-sdk",
-        "codex-app-server",
-        "cursor-sdk",
-        "opencode",
+        "claude",
+        "codex",
+        "cursor",
         "pi",
+        "opencode",
       ],
-      defaultHarness: "opencode",
+      defaultHarness: "codex",
       defaultModel: { providerID: "openai", modelID: "gpt-5.3-codex" },
     },
     {
@@ -81,8 +82,8 @@ describe("verified credential resolution", () => {
       credentials: [{ providerId: "anthropic", verification: "ok" }],
       providerDefaults: {},
     })).toEqual({
-      runnableHarnesses: ["claude-sdk", "pi"],
-      defaultHarness: "claude-sdk",
+      runnableHarnesses: ["claude", "pi", "opencode"],
+      defaultHarness: "claude",
       defaultModel: undefined,
     })
   })

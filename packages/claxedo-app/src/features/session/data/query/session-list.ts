@@ -187,7 +187,7 @@ export async function fetchSessionListPage(input: {
   }), {
     // Scope travels in the QUERY STRING only — `sessionNavigationListUrl`
     // already carries directory / workspaceId / projectId, and every
-    // server parses those, never a header. Adding an `x-opencode-directory`
+    // server parses those, never a header. Adding an `x-claxedo-directory`
     // header here would be redundant against the loopback server and fatal
     // against the hosted control plane: a header the cross-origin preflight
     // does not name is not "ignored", the browser refuses to send the

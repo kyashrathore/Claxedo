@@ -172,7 +172,7 @@ describe("upstream contract", () => {
     state.localCurrentModel = { id: "big-pickle", provider: { id: "stale-provider" } }
     state.localCurrentAgent = { name: "stale-agent" }
     state.runtimeSessionConfig = {
-      harness: { id: "codex", access: "acp" },
+      harness: { id: "acp:codex", access: "connection" },
       agent: "build",
       model: { providerID: "acp:codex", modelID: "gpt-5.5" },
     }
@@ -181,7 +181,7 @@ describe("upstream contract", () => {
       directory: "ws_1",
       serverUrl: "http://localhost:3001",
     }), {
-      harness: { id: "codex", access: "acp" },
+      harness: { id: "acp:codex", access: "connection" },
       agent: "build",
       model: { providerID: "acp:codex", modelID: "gpt-5.5" },
     })

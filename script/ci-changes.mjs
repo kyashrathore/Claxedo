@@ -30,11 +30,7 @@ const WINDOWS_PREFIXES = [
   "packages/claxedo-server/",
   "packages/claxedo-server-core/",
   "packages/cli/",
-  "packages/core/",
-  "packages/opencode/",
   "packages/sandbox-manager/",
-  "packages/sdk/",
-  "packages/tui/",
   "packages/wakes/",
   "packages/workspace-relay/",
   "packages/workspace-runtime/",
@@ -44,8 +40,6 @@ const WINDOWS_PREFIXES = [
 
 const APP_DEPENDENCY_PREFIXES = [
   "packages/claxedo-app/",
-  "packages/core/",
-  "packages/sdk/",
   "packages/session-ui/",
   "packages/ui/",
 ]
@@ -59,7 +53,6 @@ const SERVER_DEPENDENCY_PREFIXES = [
   "packages/claxedo-mcp/",
   "packages/claxedo-server/",
   "packages/claxedo-server-core/",
-  "packages/opencode/",
   "packages/sandbox-contract/",
   "packages/sandbox-manager/",
   "packages/wakes/",

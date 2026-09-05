@@ -28,6 +28,12 @@
 import type { OpenCodeHost } from "./host"
 import { assertLocationInScope, type WorkspaceScope } from "./scope"
 
+/** Identity used by the runtime's transcript projection for SDK message content. */
+export function openCodePartId(messageID: string, role: string, content: { id?: unknown }, ordinal: number): string {
+  if (role === "user") return `${messageID}:text`
+  return typeof content.id === "string" ? content.id : `${messageID}:${String(ordinal).padStart(6, "0")}`
+}
+
 export type SessionSummary = Readonly<{
   id: string
   title?: string

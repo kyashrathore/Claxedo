@@ -111,7 +111,7 @@ beforeEach(() => {
       body: await req.clone().text(),
       cache: init?.cache ?? req.cache ?? "default",
       credentials: init?.credentials ?? req.credentials,
-      dir: req.headers.get("x-opencode-directory"),
+      dir: req.headers.get("x-claxedo-directory"),
       validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
       url: req.url,
     })
@@ -258,7 +258,7 @@ describe("authFetch", () => {
       await authFetch("https://relay.example.test/workspaces/ws_1/api/wr/health")
       expect(calls.map((call) => call.credentials)).toEqual(["include", "same-origin"])
     } finally {
-      setServerEnv({ claxedo: originalClaxedoServerUrl, legacy: originalLegacyBackendUrl })
+      setServerEnv({ claxedo: originalClaxedoServerUrl })
     }
   })
 
@@ -295,7 +295,7 @@ describe("authFetch", () => {
         body: await req.clone().text(),
         cache: init?.cache ?? req.cache ?? "default",
         credentials: init?.credentials ?? req.credentials,
-        dir: req.headers.get("x-opencode-directory"),
+        dir: req.headers.get("x-claxedo-directory"),
         validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
         url: req.url,
       })
@@ -345,7 +345,7 @@ describe("authFetch", () => {
         body: await req.clone().text(),
         cache: init?.cache ?? req.cache ?? "default",
         credentials: init?.credentials ?? req.credentials,
-        dir: req.headers.get("x-opencode-directory"),
+        dir: req.headers.get("x-claxedo-directory"),
         validation: req.headers.get("x-claxedo-multiplayer-validation-operation"),
         url: req.url,
       })

@@ -167,7 +167,7 @@ describe("session list query cache", () => {
     }))
 
     expect(calls[0]?.url).toBe("http://test.local/api/control/session-list?scope=project&limit=2&projectId=ws_1")
-    expect(calls[0]?.headers.get("x-opencode-directory")).toBeNull()
+    expect(calls[0]?.headers.get("x-claxedo-directory")).toBeNull()
   })
 
   test("removes archived rows from active pages without resetting cursor state", () => {

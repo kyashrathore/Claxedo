@@ -96,7 +96,7 @@ describe("network resolve", () => {
 
   test("resolveSandboxNetworkPolicy includes DNS resolvers in restricted cidr mode", async () => {
     const net = await resolveSandboxNetworkPolicy(
-      [{ target: "opencode", kind: "group" }],
+      [{ target: "anthropic", kind: "group" }],
       undefined,
     )
     expect(net.cidrs).toContain("1.1.1.1/32")

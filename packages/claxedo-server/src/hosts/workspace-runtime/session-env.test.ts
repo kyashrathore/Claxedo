@@ -222,7 +222,7 @@ describe("createClaxedoSessionEnvFactory", () => {
     mockEmbeddedResponse(jsonResponse({ exists: true }))
 
     await expect(env.exists("README.md")).resolves.toBe(true)
-    expect(lastEmbeddedCall().request.headers.get("x-opencode-directory")).toBe("C:\\workspace\\tree")
+    expect(lastEmbeddedCall().request.headers.get("x-claxedo-directory")).toBe("C:\\workspace\\tree")
     expect(new URL(lastEmbeddedCall().request.url).searchParams.get("path")).toBe("README.md")
   })
 

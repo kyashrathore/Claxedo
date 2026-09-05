@@ -5,7 +5,7 @@ import { PermissionProvider, usePermission } from "./permission"
 import { acceptKey } from "./permission-auto-respond"
 import { Persist, removePersisted, setPersisted } from "@/platform/persistence/persist"
 import { queryClient } from "@/platform/query/query-client"
-import { base64Encode } from "@/lib/encode"
+import { base64Encode } from "@opencode-ai/ui/utils/encode"
 
 type AskedEvent = { name: string; details: { type: "permission.asked"; properties: AgentPermission } }
 const transport = vi.hoisted(() => ({

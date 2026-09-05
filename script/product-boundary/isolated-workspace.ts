@@ -18,7 +18,9 @@ const ROOT_FILES = [
   // normalized manifest contract.
   "script/product-boundary/normalize-build-manifest.ts",
   "script/product-boundary/prepare-native.ts",
-  "packages/core/script/fix-node-pty.ts",
+  "script/fix-node-pty.ts",
+  // workspace-runtime's build stages the SDK patch installer for the sandbox image.
+  "script/apply-dependency-patches.ts",
 ]
 const STRIPPED_STUB_FIELDS = ["exports", "main", "module", "types", "bin", "scripts", "files"]
 
@@ -28,18 +30,37 @@ function copy(source: string, destination: string) {
   fs.cpSync(source, destination, { recursive: true })
 }
 
+/**
+ * Every workspace the root manifest declares, so the isolated install sees the
+ * same workspace set `bun install --frozen-lockfile` expects. Bun's workspace
+ * globs here are either `<parent>/*` or one literal package directory (the
+ * SDK's nested `packages/sdk/js` shape); a declared workspace that is missing
+ * from the stub set fails the frozen install with "Workspace not found".
+ */
 function workspacePackageDirs(root: string): string[] {
-  const dirs: string[] = []
-  for (const parent of ["packages", "examples"]) {
-    const absolute = path.join(root, parent)
-    if (!fs.existsSync(absolute)) continue
-    for (const item of fs.readdirSync(absolute, { withFileTypes: true })) {
-      if (!item.isDirectory()) continue
-      const relative = `${parent}/${item.name}`
-      if (fs.existsSync(path.join(root, relative, "package.json"))) dirs.push(relative)
-    }
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+    workspaces?: string[] | { packages?: string[] }
   }
-  if (fs.existsSync(path.join(root, "packages/sdk/js/package.json"))) dirs.push("packages/sdk/js")
+  const patterns = Array.isArray(manifest.workspaces)
+    ? manifest.workspaces
+    : manifest.workspaces?.packages ?? ["packages/*"]
+  const dirs: string[] = []
+  for (const pattern of patterns) {
+    const normalized = pattern.replace(/\/+$/, "")
+    if (normalized.endsWith("/*")) {
+      const parent = normalized.slice(0, -2)
+      const absolute = path.join(root, parent)
+      if (!fs.existsSync(absolute)) continue
+      for (const item of fs.readdirSync(absolute, { withFileTypes: true })) {
+        if (!item.isDirectory()) continue
+        const relative = `${parent}/${item.name}`
+        if (fs.existsSync(path.join(root, relative, "package.json"))) dirs.push(relative)
+      }
+      continue
+    }
+    if (normalized.includes("*")) throw new Error(`unsupported workspace pattern in root package.json: ${pattern}`)
+    if (fs.existsSync(path.join(root, normalized, "package.json"))) dirs.push(normalized)
+  }
   return [...new Set(dirs)].sort()
 }
 
@@ -259,7 +280,7 @@ export function verifyIsolatedWorkspace(policy: Policy, runner: IsolatedRunner =
           // Linux prebuild — the binary exists only as the HOST repo's
           // node-gyp output. Hand the host root over so fix-node-pty can copy
           // that build in; without it the native probe below can never load.
-          return { cwd: temporary, command: ["bun", "packages/core/script/fix-node-pty.ts", "--native-source", root] }
+          return { cwd: temporary, command: ["bun", "script/fix-node-pty.ts", "--native-source", root] }
         }
         return {
           cwd: temporary,

@@ -121,4 +121,3 @@ Implemented in:
 - `packages/agent-event-runtime/src/harnesses/claude/adapter.ts`
 - `packages/agent-event-runtime/src/harnesses/codex/adapter.ts`
 - `packages/agent-event-runtime/src/harnesses/cursor/adapter.ts`
-- `packages/agent-event-runtime/src/projections/opencode-compat/projection.ts`

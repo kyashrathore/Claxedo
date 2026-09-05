@@ -281,7 +281,7 @@ function requestHeaders(
   const headers = new Headers(init?.headers)
   const extra = new Headers(extraHeaders?.())
   extra.forEach((value, key) => headers.set(key, value))
-  headers.set("x-opencode-directory", directory)
+  headers.set("x-claxedo-directory", directory)
   headers.set("accept-encoding", "identity")
   return headers
 }

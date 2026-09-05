@@ -1,7 +1,7 @@
 # Claxedo Docs
 
 Status: retained docs index
-Last updated: 2026-08-30
+Last updated: 2026-09-05
 
 This directory is intentionally small. A doc belongs here only when it is still
 used by current code, public docs, package READMEs, or an active architecture
@@ -26,5 +26,8 @@ it to an index.
   Dated plans that are still referenced by live packages or source comments.
 - [Tech Docs](./tech-docs/)
   Current architecture, public-doc support material, and docs used by tests.
+- [Chat, tools, and coding environments](./guides/chat-tools-and-coding-environments.md)
+  Draft user guide for the active workerd-agent architecture proposal. Explains
+  machines as tools and extended Pi in workerd; not current-release setup documentation.
 
 Operational runbooks for the deployed control plane and relay live in [`public-docs/`](../public-docs/README.md), not here.

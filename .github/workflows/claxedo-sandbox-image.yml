@@ -11,11 +11,6 @@ on:
       - packages/claxedo-server/src/hosts/workspace-runtime/host-entry.ts
       - packages/agent-sdk-runtime/**
       - packages/workspace-runtime/**
-      - packages/opencode/**
-      - packages/core/**
-      - packages/protocol/**
-      - packages/schema/**
-      - packages/server/**
       - .github/actions/setup-bun/action.yml
       - .github/workflows/claxedo-sandbox-image.yml
   workflow_dispatch:

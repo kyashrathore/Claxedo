@@ -1,6 +1,6 @@
 import { queryOptions, skipToken } from "@tanstack/solid-query"
 import { showToast } from "@opencode-ai/ui/toast"
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import { formatServerError } from "@/lib/server-errors"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import { authFetch } from "@/platform/api/api"

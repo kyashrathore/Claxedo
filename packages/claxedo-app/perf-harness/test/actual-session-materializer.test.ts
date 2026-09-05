@@ -31,31 +31,36 @@ describe("actual OpenCode session materialization", () => {
       expect(JSON.stringify(result)).not.toContain("source-session-")
       const control = result.readinessTargets.get("control")
       expect(control?.expectedPartIds).toHaveLength(2)
-      expect(control?.eventualFullPartIds).toHaveLength(4)
+      // The SDK stores user text as one part, including its trailing whitespace.
+      expect(control?.eventualFullPartIds).toHaveLength(3)
       expect(control?.expectedPartIds.every((id) => control.eventualFullPartIds.includes(id))).toBe(true)
-      expect(control?.expectedPartIds.every((id) => id.startsWith("prt_actual_"))).toBe(true)
+      expect(control?.expectedPartIds.every((id) => id.startsWith("msg_actual_"))).toBe(true)
 
       const destination = new Database(path.join(root, "state", "data", "opencode-engine", "opencode.db"), {
         readonly: true,
       })
-      const identities = destination.query("SELECT id, title, directory FROM session ORDER BY id").all() as Array<{
+      const identities = destination.query("SELECT id, title, directory FROM session_v2 ORDER BY id").all() as Array<{
         id: string
         title: string
         directory: string
       }>
-      const messageData = destination.query("SELECT data FROM message ORDER BY id").all() as Array<{ data: string }>
+      const messageData = destination.query("SELECT data FROM session_message ORDER BY id").all() as Array<{
+        data: string
+      }>
       destination.close()
       expect(identities).toHaveLength(41)
-      expect(identities.every((row) => row.id.startsWith("ses_actual_") && row.title.startsWith("Actual session "))).toBe(true)
-      expect(messageData.every((row) => !row.data.includes("source-message-") && !row.data.includes("/private/source"))).toBe(true)
+      expect(
+        identities.every((row) => row.id.startsWith("ses_actual_") && row.title.startsWith("Actual session ")),
+      ).toBe(true)
+      expect(
+        messageData.every((row) => !row.data.includes("source-message-") && !row.data.includes("/private/source")),
+      ).toBe(true)
       expect(await readFile(sourcePath)).toHaveLength(before.size)
 
       const source = new Database(sourcePath)
-      source.prepare("UPDATE part SET data = replace(data, ?, ?) WHERE id = ?").run(
-        "actual user payload 0",
-        "actual user payload 9",
-        "source-part-user-a-0",
-      )
+      source
+        .prepare("UPDATE part SET data = replace(data, ?, ?) WHERE id = ?")
+        .run("actual user payload 0", "actual user payload 9", "source-part-user-a-0")
       source.close()
       const changed = await materializeActualSessions({
         sourceDatabasePath: sourcePath,
@@ -68,7 +73,7 @@ describe("actual OpenCode session materialization", () => {
     } finally {
       await rm(root, { recursive: true, force: true })
     }
-  })
+  }, 30_000)
 })
 
 function writeSourceDatabase(databasePath: string) {
@@ -99,36 +104,44 @@ function writeSourceDatabase(databasePath: string) {
     );
   `)
   let now = 1_700_000_000_000
-  for (const [directory, count] of [["/private/source/a", 21], ["/private/source/b", 20]] as const) {
+  for (const [directory, count] of [
+    ["/private/source/a", 21],
+    ["/private/source/b", 20],
+  ] as const) {
     for (let index = 0; index < count; index += 1) {
       const sessionId = `source-session-${directory.at(-1)}-${index}`
       const userId = `source-message-user-${directory.at(-1)}-${index}`
       const assistantId = `source-message-assistant-${directory.at(-1)}-${index}`
-      database.prepare("INSERT INTO session VALUES (?, ?, NULL, NULL, ?, ?)")
-        .run(sessionId, directory, now, now + 4)
-      database.prepare("INSERT INTO message VALUES (?, ?, ?, ?, ?)").run(
-        userId,
-        sessionId,
-        now,
-        now + 1,
-        JSON.stringify({ role: "user", time: { created: now }, path: { cwd: directory, root: directory } }),
-      )
-      database.prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)").run(
-        `source-part-user-${directory.at(-1)}-${index}`,
-        userId,
-        sessionId,
-        now,
-        now + 1,
-        JSON.stringify({ type: "text", text: `actual user payload ${index}` }),
-      )
-      database.prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)").run(
-        `source-part-user-empty-${directory.at(-1)}-${index}`,
-        userId,
-        sessionId,
-        now + 1,
-        now + 1,
-        JSON.stringify({ type: "text", text: "  " }),
-      )
+      database.prepare("INSERT INTO session VALUES (?, ?, NULL, NULL, ?, ?)").run(sessionId, directory, now, now + 4)
+      database
+        .prepare("INSERT INTO message VALUES (?, ?, ?, ?, ?)")
+        .run(
+          userId,
+          sessionId,
+          now,
+          now + 1,
+          JSON.stringify({ role: "user", time: { created: now }, path: { cwd: directory, root: directory } }),
+        )
+      database
+        .prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)")
+        .run(
+          `source-part-user-${directory.at(-1)}-${index}`,
+          userId,
+          sessionId,
+          now,
+          now + 1,
+          JSON.stringify({ type: "text", text: `actual user payload ${index}` }),
+        )
+      database
+        .prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)")
+        .run(
+          `source-part-user-empty-${directory.at(-1)}-${index}`,
+          userId,
+          sessionId,
+          now + 1,
+          now + 1,
+          JSON.stringify({ type: "text", text: "  " }),
+        )
       database.prepare("INSERT INTO message VALUES (?, ?, ?, ?, ?)").run(
         assistantId,
         sessionId,
@@ -136,28 +149,35 @@ function writeSourceDatabase(databasePath: string) {
         now + 4,
         JSON.stringify({
           role: "assistant",
+          agent: "build",
+          providerID: "benchmark",
+          modelID: "deterministic",
           parentID: userId,
           finish: "stop",
           time: { created: now + 2, completed: now + 4 },
           path: { cwd: directory, root: directory },
         }),
       )
-      database.prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)").run(
-        `source-part-assistant-${directory.at(-1)}-${index}`,
-        assistantId,
-        sessionId,
-        now + 3,
-        now + 4,
-        JSON.stringify({ type: "text", text: `actual assistant payload ${index}` }),
-      )
-      database.prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)").run(
-        `source-part-assistant-reasoning-${directory.at(-1)}-${index}`,
-        assistantId,
-        sessionId,
-        now + 3,
-        now + 4,
-        JSON.stringify({ type: "reasoning", text: `private reasoning ${index}` }),
-      )
+      database
+        .prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)")
+        .run(
+          `source-part-assistant-${directory.at(-1)}-${index}`,
+          assistantId,
+          sessionId,
+          now + 3,
+          now + 4,
+          JSON.stringify({ type: "text", text: `actual assistant payload ${index}` }),
+        )
+      database
+        .prepare("INSERT INTO part VALUES (?, ?, ?, ?, ?, ?)")
+        .run(
+          `source-part-assistant-reasoning-${directory.at(-1)}-${index}`,
+          assistantId,
+          sessionId,
+          now + 3,
+          now + 4,
+          JSON.stringify({ type: "reasoning", text: `private reasoning ${index}` }),
+        )
       now += 10
     }
   }

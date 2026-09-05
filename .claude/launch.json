@@ -4,21 +4,34 @@
     {
       "name": "storybook",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "storybook", "--", "--no-open"],
+      "runtimeArgs": [
+        "run",
+        "storybook",
+        "--",
+        "--no-open"
+      ],
       "cwd": "packages/storybook",
       "port": 6006
     },
     {
       "name": "claxedo-app",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "cwd": "packages/claxedo-app",
       "port": 4444
     },
     {
       "name": "claxedo-app-verify",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["PORT=4446", "bun", "run", "dev"],
+      "runtimeArgs": [
+        "PORT=4446",
+        "bun",
+        "run",
+        "dev"
+      ],
       "cwd": "packages/claxedo-app",
       "port": 4446,
       "autoPort": false
@@ -26,7 +39,11 @@
     {
       "name": "claxedo-server",
       "runtimeExecutable": "env",
-      "runtimeArgs": ["npm", "run", "dev"],
+      "runtimeArgs": [
+        "npm",
+        "run",
+        "dev"
+      ],
       "cwd": "packages/claxedo-server",
       "port": 2593,
       "autoPort": false
@@ -39,35 +56,113 @@
     {
       "name": "claxedo-web-local",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "web:dev:local"],
+      "runtimeArgs": [
+        "run",
+        "web:dev:local"
+      ],
       "port": 4444
     },
     {
       "name": "opencode-engine",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 4096
     },
     {
       "name": "claxedo-web-astro",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["astro", "dev", "--port", "4610"],
+      "runtimeArgs": [
+        "astro",
+        "dev",
+        "--port",
+        "4610"
+      ],
       "cwd": "packages/claxedo-web",
       "port": 4610
     },
     {
       "name": "claxedo-web-verify",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["astro", "dev", "--port", "4612"],
+      "runtimeArgs": [
+        "astro",
+        "dev",
+        "--port",
+        "4612"
+      ],
       "cwd": "packages/claxedo-web",
       "port": 4612
     },
     {
       "name": "claxedo-docs",
       "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "mintlify@latest", "dev", "--port", "3333"],
+      "runtimeArgs": [
+        "--yes",
+        "mintlify@latest",
+        "dev",
+        "--port",
+        "3333"
+      ],
       "cwd": "packages/claxedo-docs",
       "port": 3333
+    },
+    {
+      "name": "claxedo-app-local-plugins",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "VITE_CLAXEDO_ONBOARDING_V1=true",
+        "CLAXEDO_AGENT_PLUGINS=1",
+        "VITE_CLAXEDO_SERVER_URL=http://127.0.0.1:2593",
+        "PORT=4448",
+        "bun",
+        "run",
+        "dev:local"
+      ],
+      "cwd": "/Users/yashvardhansingh/test/opencode/.worktrees/codex/refactor-agent-plugins/packages/claxedo-app",
+      "port": 4448,
+      "autoPort": false
+    },
+    {
+      "name": "claxedo-server-embedded-auth",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "CLAXEDO_EMBEDDED_AUTH=1",
+        "BETTER_AUTH_URL=https://localhost:4449",
+        "CLAXEDO_SERVER_PORT=2597",
+        "CLAXEDO_DATA_DIR=/private/tmp/claude-501/-Users-yashvardhansingh-test-opencode/ae42f2bd-5cef-4c80-aa37-e666aee810af/scratchpad/embedded-auth-data",
+        "GITHUB_CLIENT_ID=Ov23lidDsgSi8fNVhErm",
+        "CLAXEDO_AGENT_PLUGINS=1",
+        "npm",
+        "run",
+        "dev"
+      ],
+      "cwd": "/Users/yashvardhansingh/test/opencode/.worktrees/codex/refactor-agent-plugins/packages/claxedo-server",
+      "port": 2597,
+      "autoPort": false
+    },
+    {
+      "name": "claxedo-app-signed-local",
+      "runtimeExecutable": "env",
+      "runtimeArgs": [
+        "CLAXEDO_DEV_TLS=1",
+        "CLAXEDO_DEV_PROXY_TARGET=http://127.0.0.1:2597",
+        "VITE_SANDBOX_ENABLED=true",
+        "VITE_AUTH_ENABLED=true",
+        "VITE_CLAXEDO_ACCOUNT_SIGN_IN_ENABLED=true",
+        "VITE_CLAXEDO_SERVER_URL=https://localhost:4449",
+        "VITE_CLAXEDO_ONBOARDING_V1=true",
+        "CLAXEDO_AGENT_PLUGINS=1",
+        "PORT=4449",
+        "bun",
+        "run",
+        "dev"
+      ],
+      "cwd": "/Users/yashvardhansingh/test/opencode/.worktrees/codex/refactor-agent-plugins/packages/claxedo-app",
+      "port": 4449,
+      "url": "https://localhost:4449",
+      "autoPort": false
     }
   ]
 }

@@ -1,12 +1,39 @@
 # Claxedo Plans
 
 Status: retained plans index
-Last updated: 2026-08-19
+Last updated: 2026-09-05
 
 This directory keeps active plans and concise dated references that still help
 explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
+
+- [OpenCode v2 worker runtime on workerd with a credential gateway](./2026-09-05-003-opencode-v2-worker-runtime-plan.md)
+  - Supersedes 002. Worker sessions run the OpenCode v2 workerd profile in a
+    per-tenant Durable Object on its SQLite, with upstream persistence,
+    compaction, eviction recovery, tools, fork, transfer and subagents.
+    Claxedo owns the object class, one `WorkspaceDriver` over the sandbox
+    manager (a spawner over an exec channel is the whole tool bridge), the
+    credential gateway, and first-party plugins for GitHub pull requests
+    without a machine and `request_machine`. Promotion is `SessionTransfer`.
+    Pi is a sandbox harness among peers. Gated on a Miniflare execution spike;
+    eight units with Definition of Done.
+
+- [Pi worker runtime and credential gateway on workerd](./2026-09-05-002-pi-worker-runtime-and-gateway-plan.md)
+  - Superseded by 003 and kept as its fallback. Same tier built on
+    `pi-agent-core` with a Claxedo-owned persistence, compaction and tool
+    layer, forked child sessions for machine work, and one-way promotion.
+
+- [workerd agents: bootless chat with coding environments on demand](./2026-09-05-001-agent-worker-chat-and-coding-design.md)
+  - Original architecture and UX grounded in current Pi execution, session
+    authority, frontend routing and sandbox lifecycle code. Separates harness
+    placement, working files and compute; preserves workspace-less chat, adds
+    coding environments on demand, and defines capability gates for embedded
+    OpenCode and extended Pi in workerd through the existing extension lifecycle,
+    isolated module bundles, scoped bindings and durable session coordination.
+    Runtime/extension/machine-work proposals are superseded by reviewed 002;
+    retain its current-code analysis and composer/defaults design. The user
+    guide follows 002. No runtime implementation yet.
 
 - [OpenCode is just another harness — workstream index](./2026-08-19-000-opencode-just-another-harness-index.md)
   - Strategic index for demoting the vendored OpenCode engine from privileged

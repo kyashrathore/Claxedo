@@ -1,5 +1,5 @@
 import { bundledLanguagesInfo } from "shiki"
-import { getFilename } from "@opencode-ai/core/util/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import type { AgentFilePart } from "@claxedo/agent-runtime-contract"
 
 export function attached(part: AgentFilePart) {

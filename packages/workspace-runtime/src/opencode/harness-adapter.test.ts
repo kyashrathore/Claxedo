@@ -70,20 +70,15 @@ function runtime() {
     })),
     command: mock(async () => {}),
   }
-  const mcp = new Map<string, unknown>()
-  const configuration = {
-    mcpStatus: mock(async () => Object.fromEntries([...mcp.keys()].map((name) => [name, "connected"]))),
-    addMcp: mock(async (_scope: unknown, name: string, config: unknown) => {
-      mcp.set(name, config)
-      return Object.fromEntries([...mcp.keys()].map((key) => [key, "connected"]))
-    }),
-    removeMcp: mock(async (_scope: unknown, name: string) => { mcp.delete(name) }),
-  }
+  const launchWrites: unknown[] = []
+  const launchStore = { read: mock(async () => launchWrites.at(-1)), write: mock(async (document: unknown) => { launchWrites.push(document) }) }
+  const launch = mock(async () => launchStore)
   const value = {
     sessions,
     catalog: { commands: mock(async () => []), agents: mock(async () => []), models: mock(async () => []) },
     interactions: { permissions: mock(async () => []), forms: mock(async () => []) },
-    configuration,
+    configuration: {},
+    launch,
     events: {
       start() {},
       ready: async () => {},
@@ -96,7 +91,7 @@ function runtime() {
     host: { status: () => ({ lifecycle: "ready", events: "healthy" }) },
     close: async () => {},
   } as unknown as OpenCodeRuntime
-  return { value, sessions, configuration, mcp }
+  return { value, sessions, launch, launchWrites }
 }
 
 function adapterFor(fake: ReturnType<typeof runtime>, directory: string) {
@@ -181,23 +176,42 @@ describe("OpenCodeSdkHarnessAdapter", () => {
     expect(events).toEqual([expect.objectContaining({ type: "error", harness: "opencode" })])
   })
 
-  test("reconciles the runtime snapshot's MCP servers into the SDK registry", async () => {
+  test("applies the runtime snapshot and Agent Plugins launch document through the launch policy", async () => {
     const fake = runtime()
     const directory = workspace()
     const adapter = adapterFor(fake, directory)
     const harness = { id: "opencode", access: "native" as const }
 
-    await adapter.applyConfig({ mcp: { docs: { transport: "remote", url: "https://mcp.example" } }, auth: {}, harness, launch: {} })
-    expect([...fake.mcp.keys()]).toEqual(["docs"])
-    expect(fake.configuration.addMcp).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceID: "ws_1", directory }),
-      "docs",
-      { transport: "remote", url: "https://mcp.example" },
-    )
+    await adapter.applyConfig({
+      mcp: {
+        docs: { type: "remote", url: "https://mcp.example", headers: { authorization: "Bearer t" } },
+        files: { type: "stdio", command: "mcp-files", args: ["--root", "."], env: { HOME: "/tmp" }, disabled: true },
+      },
+      auth: {},
+      harness,
+      launch: {
+        config: {
+          skills: ["/plugins/review/skills"],
+          mcp: { "review-1234abcd-tools": { type: "local", command: ["node", "tools.js"], cwd: "/plugins/review" } },
+        },
+      },
+    })
+    expect(fake.launch).toHaveBeenCalledWith(expect.objectContaining({ workspaceID: "ws_1", directory }))
+    // Snapshot servers are translated to the SDK shape; plugin servers already are.
+    expect(fake.launchWrites).toEqual([{
+      skills: ["/plugins/review/skills"],
+      mcp: {
+        docs: { type: "remote", url: "https://mcp.example", headers: { authorization: "Bearer t" } },
+        files: { type: "local", command: ["mcp-files", "--root", "."], environment: { HOME: "/tmp" }, disabled: true },
+        "review-1234abcd-tools": { type: "local", command: ["node", "tools.js"], cwd: "/plugins/review" },
+      },
+    }])
 
-    // A server the next snapshot no longer names is removed; a renamed one is re-added.
-    await adapter.applyConfig({ mcp: { files: { transport: "stdio", command: "mcp-files" } }, auth: {}, harness, launch: {} })
-    expect([...fake.mcp.keys()]).toEqual(["files"])
-    expect(fake.configuration.removeMcp).toHaveBeenCalledWith(expect.anything(), "docs")
+    // The next snapshot replaces the document wholesale: nothing lingers from the last write.
+    await adapter.applyConfig({ mcp: {}, auth: {}, harness, launch: {} })
+    expect(fake.launchWrites.at(-1)).toEqual({ skills: [], mcp: {} })
+
+    await expect(adapter.applyConfig({ mcp: { broken: { type: "stdio" } }, auth: {}, harness, launch: {} }))
+      .rejects.toThrow("OpenCode MCP server broken")
   })
 })

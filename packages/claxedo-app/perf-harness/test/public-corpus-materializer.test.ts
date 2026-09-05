@@ -4,11 +4,15 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
+import { buildWorkspaceFixtureManifest, generateWorkspaceFileBytes } from "agent-app-benchmark/workspace-fixture"
 import {
-  buildWorkspaceFixtureManifest,
-  generateWorkspaceFileBytes,
-} from "agent-app-benchmark/workspace-fixture"
-import { materializeClaxedoPublicCorpus, distinctSyntheticSessionTitle, distinctSyntheticSessionCreatedAt, distinctSyntheticSessionUpdatedAt, SYNTHETIC_SESSION_TIME_BASE_MS, workspaceListRanks } from "../src/public-corpus-materializer"
+  materializeClaxedoPublicCorpus,
+  distinctSyntheticSessionTitle,
+  distinctSyntheticSessionCreatedAt,
+  distinctSyntheticSessionUpdatedAt,
+  SYNTHETIC_SESSION_TIME_BASE_MS,
+  workspaceListRanks,
+} from "../src/public-corpus-materializer"
 
 describe("distinct synthetic session identity", () => {
   test("prefixes a per-list serial and rewrites any prior serial", () => {
@@ -18,16 +22,22 @@ describe("distinct synthetic session identity", () => {
     expect(distinctSyntheticSessionTitle("3. Synthetic benchmark latency", 2, "latency")).toBe(
       "3. Synthetic benchmark latency",
     )
-    expect(distinctSyntheticSessionTitle("99. Old global serial", 0, "local")).toBe(
-      "1. Old global serial",
-    )
+    expect(distinctSyntheticSessionTitle("99. Old global serial", 0, "local")).toBe("1. Old global serial")
   })
 
   test("staggers created and updated times so list order is stable", () => {
-    expect(distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 0)).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 60_000)
-    expect(distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 1)).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 120_000)
-    expect(distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 0)).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 60_000)
-    expect(distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 1)).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 120_000)
+    expect(distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 0)).toBe(
+      SYNTHETIC_SESSION_TIME_BASE_MS + 60_000,
+    )
+    expect(distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 1)).toBe(
+      SYNTHETIC_SESSION_TIME_BASE_MS + 120_000,
+    )
+    expect(distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 0)).toBe(
+      SYNTHETIC_SESSION_TIME_BASE_MS + 60_000,
+    )
+    expect(distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, 1)).toBe(
+      SYNTHETIC_SESSION_TIME_BASE_MS + 120_000,
+    )
   })
 
   test("ranks sessions per workspace so created_desc serials stay contiguous", () => {
@@ -69,20 +79,22 @@ describe("public OpenCode corpus materialization", () => {
       const database = new Database(path.join(root, "state", "data", "opencode-engine", "opencode.db"), {
         readonly: true,
       })
-      const session = database.query("SELECT title, time_created, time_updated FROM session WHERE id = ?").get("ses_bench_control") as {
+      const session = database
+        .query("SELECT title, time_created, time_updated FROM session_v2 WHERE id = ?")
+        .get("ses_bench_control") as {
         title: string
         time_created: number
         time_updated: number
       }
-      const messages = database.query("SELECT id, data FROM message ORDER BY time_created").all() as Array<{
+      const messages = database.query("SELECT id, type FROM session_message ORDER BY time_created").all() as Array<{
         id: string
-        data: string
+        type: string
       }>
       database.close()
       expect(session.title).toBe("1. Control")
       expect(session.time_created).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 60_000)
       expect(session.time_updated).toBe(SYNTHETIC_SESSION_TIME_BASE_MS + 100 + 60_000)
-      expect(messages.map((row) => ({ id: row.id, role: JSON.parse(row.data).role }))).toEqual([
+      expect(messages.map((row) => ({ id: row.id, role: row.type }))).toEqual([
         { id: "msg_user", role: "user" },
         { id: "msg_assistant", role: "assistant" },
       ])
@@ -115,16 +127,19 @@ describe("public OpenCode corpus materialization", () => {
     try {
       const corpus = await writeCorpus(root)
       await addSecondWorkspace(corpus.manifestPath, corpus.directory)
-      const fixture = buildWorkspaceFixtureManifest({
-        generator: "agent-app-workspace-v1",
-        directoryCount: 3,
-        sourceFileCount: 9,
-        sourceFileBytes: 4096,
-        changedFileCount: 3,
-        diffHunksPerFile: 2,
-        diffLinesPerHunk: 8,
-        openFileTabCount: 2,
-      }, "public-workspace-seed")
+      const fixture = buildWorkspaceFixtureManifest(
+        {
+          generator: "agent-app-workspace-v1",
+          directoryCount: 3,
+          sourceFileCount: 9,
+          sourceFileBytes: 4096,
+          changedFileCount: 3,
+          diffHunksPerFile: 2,
+          diffLinesPerHunk: 8,
+          openFileTabCount: 2,
+        },
+        "public-workspace-seed",
+      )
       const workspaceDirectory = path.join(root, "workspaces")
 
       const result = await materializeClaxedoPublicCorpus({
@@ -141,18 +156,22 @@ describe("public OpenCode corpus materialization", () => {
       expect(result.workspaceFixtureDigestSha256).toBe(fixture.manifestDigestSha256)
       for (const workspaceId of ["workspace-a", "workspace-b"]) {
         const workspace = path.join(workspaceDirectory, workspaceId)
-        expect(splitLines(await gitOutput(["-C", workspace, "ls-tree", "-r", "--name-only", "HEAD"])).sort())
-          .toEqual(fixture.files.map((file) => file.path).sort())
-        expect(splitLines(await gitOutput(["-C", workspace, "diff", "--name-only", "--no-renames", "--"])).sort())
-          .toEqual([...fixture.changedFilePaths].sort())
+        expect(splitLines(await gitOutput(["-C", workspace, "ls-tree", "-r", "--name-only", "HEAD"])).sort()).toEqual(
+          fixture.files.map((file) => file.path).sort(),
+        )
+        expect(
+          splitLines(await gitOutput(["-C", workspace, "diff", "--name-only", "--no-renames", "--"])).sort(),
+        ).toEqual([...fixture.changedFilePaths].sort())
 
         for (const file of fixture.files) {
           const initial = await gitBytes(["-C", workspace, "show", `HEAD:${file.path}`])
           const current = new Uint8Array(await readFile(path.join(workspace, file.path)))
-          expect(Buffer.from(initial).toString("hex"))
-            .toBe(Buffer.from(generateWorkspaceFileBytes(fixture.seed, file, "initial")).toString("hex"))
-          expect(Buffer.from(current).toString("hex"))
-            .toBe(Buffer.from(generateWorkspaceFileBytes(fixture.seed, file, "current")).toString("hex"))
+          expect(Buffer.from(initial).toString("hex")).toBe(
+            Buffer.from(generateWorkspaceFileBytes(fixture.seed, file, "initial")).toString("hex"),
+          )
+          expect(Buffer.from(current).toString("hex")).toBe(
+            Buffer.from(generateWorkspaceFileBytes(fixture.seed, file, "current")).toString("hex"),
+          )
         }
       }
     } finally {
@@ -164,27 +183,32 @@ describe("public OpenCode corpus materialization", () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-public-workspace-digest-"))
     try {
       const corpus = await writeCorpus(root)
-      const fixture = buildWorkspaceFixtureManifest({
-        generator: "agent-app-workspace-v1",
-        directoryCount: 1,
-        sourceFileCount: 3,
-        sourceFileBytes: 4096,
-        changedFileCount: 1,
-        diffHunksPerFile: 2,
-        diffLinesPerHunk: 8,
-        openFileTabCount: 1,
-      }, "public-workspace-seed")
+      const fixture = buildWorkspaceFixtureManifest(
+        {
+          generator: "agent-app-workspace-v1",
+          directoryCount: 1,
+          sourceFileCount: 3,
+          sourceFileBytes: 4096,
+          changedFileCount: 1,
+          diffHunksPerFile: 2,
+          diffLinesPerHunk: 8,
+          openFileTabCount: 1,
+        },
+        "public-workspace-seed",
+      )
 
-      await expect(materializeClaxedoPublicCorpus({
-        corpusDirectory: corpus.directory,
-        corpusManifestPath: corpus.manifestPath,
-        expectedCorpusDigestSha256: corpus.corpusDigestSha256,
-        expectedEventSchemaDigestSha256: corpus.eventSchemaDigestSha256,
-        dataDirectory: path.join(root, "state", "data"),
-        workspaceDirectory: path.join(root, "workspaces"),
-        workspaceFixtureManifest: fixture,
-        expectedWorkspaceFixtureDigestSha256: "f".repeat(64),
-      })).rejects.toThrow(/wrong workspace fixture digest/)
+      await expect(
+        materializeClaxedoPublicCorpus({
+          corpusDirectory: corpus.directory,
+          corpusManifestPath: corpus.manifestPath,
+          expectedCorpusDigestSha256: corpus.corpusDigestSha256,
+          expectedEventSchemaDigestSha256: corpus.eventSchemaDigestSha256,
+          dataDirectory: path.join(root, "state", "data"),
+          workspaceDirectory: path.join(root, "workspaces"),
+          workspaceFixtureManifest: fixture,
+          expectedWorkspaceFixtureDigestSha256: "f".repeat(64),
+        }),
+      ).rejects.toThrow(/wrong workspace fixture digest/)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

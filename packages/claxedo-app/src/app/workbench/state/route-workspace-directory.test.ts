@@ -4,7 +4,7 @@ import { controlPlaneCatalogProjects } from "@/features/workspaces/data/workspac
 
 describe("resolveWorkspaceRouteDirectory", () => {
   // The route bridge hands this value to every session read the pane makes
-  // (`?directory=`, `x-opencode-directory`). For a workspace served by another
+  // (`?directory=`, `x-claxedo-directory`). For a workspace served by another
   // machine that value must be the workspace's own address; the host's path
   // names a directory that does not exist on whichever server answers.
   test("scopes a relay-backed route by the workspace address, never the host's path", () => {

@@ -1,5 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 
 import type { ContentMeta } from "../state/index"
 import type { ProjectItem } from "./domain-types"

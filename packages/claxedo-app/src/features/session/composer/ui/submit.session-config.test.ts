@@ -20,7 +20,10 @@ beforeEach(() => h.resetSubmitHarness())
 afterAll(() => h.restoreSubmitMocks(mock))
 
 describe("Existing-session config persistence (rubric C1 dedupe)", () => {
-  test("existing sessions persist submitted model and agent config", async () => {
+  // An existing session's binding (harness + model) is authoritative: the
+  // composer's local model picker never re-binds it on submit. Only a
+  // submitted agent override changes the persisted config.
+  test("existing sessions persist a submitted agent override on the persisted binding", async () => {
     state.demoMode = false
     state.harnessMode = false
     state.localCurrentModel = { id: "new-model", provider: { id: "new-provider" } }
@@ -39,28 +42,24 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
 
     expect(calls.create).toBe(0)
     expect(unsignedCalls).toContainEqual(expect.objectContaining({
-      url: "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&nativeHarness=pi",
+      url: "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain",
       method: "PATCH",
       authorization: null,
     }))
-    expect(JSON.parse(unsignedCalls.find((call) =>
-      call.url === "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain&nativeHarness=pi" && call.method === "PATCH"
-    )?.body ?? "{}")).toEqual({
-      harness: { id: "opencode", access: "native" },
+    const persisted = {
+      harness: { id: "pi", access: "native" },
       agent: "review",
-      model: { providerID: "new-provider", modelID: "new-model" },
-    })
+      model: { providerID: "provider", modelID: "model" },
+    }
+    expect(JSON.parse(unsignedCalls.find((call) =>
+      call.url === "http://localhost:3001/session/session-existing/config?directory=%2Frepo%2Fmain" && call.method === "PATCH"
+    )?.body ?? "{}")).toEqual(persisted)
     expect(queryClient.getQueryData(sessionConfigRawQueryKey({
       sessionID: "session-existing",
       directory: "/repo/main",
       serverUrl: "http://localhost:3001",
-    }))).toEqual({
-      harness: { id: "pi", access: "native" },
-      agent: "review",
-      model: { providerID: "new-provider", modelID: "new-model" },
-    })
+    }))).toEqual(persisted)
   })
-
 
   test("rubric C1: second submit with unchanged config does NOT re-PATCH", async () => {
     state.demoMode = false
@@ -78,7 +77,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
 
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
-    const configUrl = "http://localhost:3001/session/session-c1-dedup/config?directory=%2Frepo%2Fmain&nativeHarness=pi"
+    const configUrl = "http://localhost:3001/session/session-c1-dedup/config?directory=%2Frepo%2Fmain"
     const firstCount = unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH").length
     expect(firstCount).toBe(1)
 
@@ -90,8 +89,7 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
     expect(secondCount).toBe(1) // still 1 — dedup blocked the second PATCH
   })
 
-
-  test("rubric C1: changed model triggers a fresh PATCH after the dedup hit", async () => {
+  test("the local model picker never re-binds an existing session on submit", async () => {
     state.demoMode = false
     state.harnessMode = false
     state.localCurrentModel = { id: "model-a", provider: { id: "prov" } }
@@ -107,17 +105,17 @@ describe("Existing-session config persistence (rubric C1 dedupe)", () => {
 
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
-    const configUrl = "http://localhost:3001/session/session-c1-change/config?directory=%2Frepo%2Fmain&nativeHarness=pi"
+    const configUrl = "http://localhost:3001/session/session-c1-change/config?directory=%2Frepo%2Fmain"
     expect(unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH").length).toBe(1)
 
-    // Mid-session model change.
+    // A mid-session local picker change is not a session re-binding.
     state.localCurrentModel = { id: "model-b", provider: { id: "prov" } }
     promptValue.splice(0, promptValue.length, { type: "text", content: "next", start: 0, end: 4 })
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
     const matches = unsignedCalls.filter((call) => call.url === configUrl && call.method === "PATCH")
-    expect(matches.length).toBe(2)
-    expect(JSON.parse(matches.at(-1)?.body ?? "{}").model).toEqual({ providerID: "prov", modelID: "model-b" })
+    expect(matches.length).toBe(1)
+    expect(JSON.parse(matches.at(-1)?.body ?? "{}").model).toEqual({ providerID: "provider", modelID: "model" })
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ model: { providerID: "provider", modelID: "model" } })
   })
-
 })

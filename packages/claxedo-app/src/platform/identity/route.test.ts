@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { base64Encode } from "@/lib/encode"
+import { base64Encode } from "@opencode-ai/ui/utils/encode"
 import {
   legacyDirectoryFromRouteKey,
   legacyDirectoryRouteKey,

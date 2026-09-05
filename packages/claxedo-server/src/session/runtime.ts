@@ -1310,18 +1310,6 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     subagentToolForSession: (sessionId: string) => dispatchToolsForSession(sessionId)[0]!,
     terminateSubagent,
     listSubagents: (parentSessionId: string) => subagentStore.listSubagents(parentSessionId),
-    updateSessionModel: async (sessionId: string, model: { providerID: string; modelID: string }) => {
-      if (!(await ensureCentralRuntimeSession(sessionId))) throw new Error(`No central session ${sessionId}`)
-      const session = runtimeStore.getSession(sessionId)
-      if (!session) throw new Error(`No central session ${sessionId}`)
-      await adapter.updateSessionConfig(centralExecutionBinding(sessionId), { model })
-      runtimeStore.updateSessionConfig(sessionId, {
-        harness: { id: "pi", access: "native" },
-        model,
-        variant: null,
-        agent: null,
-      })
-    },
     invalidateSession: (sessionId: string) => {
       sessionPlacements.delete(sessionId)
       subagentChildren.delete(sessionId)

@@ -1,5 +1,5 @@
 import { makePersisted, type AsyncStorage, type SyncStorage } from "@solid-primitives/storage"
-import { checksum } from "@/lib/encode"
+import { checksum } from "@opencode-ai/ui/utils/encode"
 import { scopeUrl } from "@/lib/url"
 import { createSignal, type Accessor } from "solid-js"
 import type { SetStoreFunction, Store } from "solid-js/store"

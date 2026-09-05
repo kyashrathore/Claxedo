@@ -8,8 +8,8 @@ import type {
 import { useData } from "../context"
 import { useFileComponent } from "@opencode-ai/ui/context/file"
 
-import { Binary } from "@opencode-ai/core/util/binary"
-import { getDirectory, getFilename } from "@opencode-ai/core/util/path"
+import { Binary } from "@opencode-ai/ui/utils/binary"
+import { getDirectory, getFilename } from "@opencode-ai/ui/utils/path"
 import { createEffect, createMemo, createSignal, For, on, ParentProps, Show } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dynamic } from "solid-js/web"

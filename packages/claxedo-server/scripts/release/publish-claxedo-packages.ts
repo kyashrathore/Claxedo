@@ -1,8 +1,8 @@
 /**
- * Publisher for the 12 public `@claxedo/*` packages.
+ * Publisher for the 13 public `@claxedo/*` packages.
  *
  * Why this exists alongside `publish-runtime-packages.ts`: that script only
- * knows the six-package runtime family, and it takes the release version as a
+ * knows the seven-package runtime family, and it takes the release version as a
  * CLI argument and stamps it into every package.json as a side effect of
  * publishing. The other six (channels, connections, mcp, sandbox-contract,
  * sandbox-manager, wakes) had no automation at all — they were published by a human
@@ -52,17 +52,19 @@ export type ClaxedoPackage = {
 }
 
 /**
- * All 13 public packages, in dependency order (`@claxedo/*` edges only).
+ * All 12 public packages, in dependency order (`@claxedo/*` edges only).
  * Tier 0 has no `@claxedo/*` dependencies; tier 1 depends on tier 0; tier 2 on
- * tiers 0 and 1. Publishing out of this order can leave a package on npm whose
+ * tiers 0 and 1. `agent-runtime-contract` is tier 0 because `agent-event-runtime`
+ * now re-exports its canonical session/event contracts. Publishing out of this order can leave a package on npm whose
  * exact `@claxedo/*` pin does not resolve yet.
  */
 export const claxedoPackages: readonly ClaxedoPackage[] = [
   // Tier 0
-  { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime", track: "runtime", runtimeFamily: true },
+  { name: "@claxedo/agent-runtime-contract", dir: "packages/agent-runtime-contract", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/workspace-relay-protocol", dir: "packages/workspace-relay-protocol", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/sandbox-contract", dir: "packages/sandbox-contract", track: "runtime", runtimeFamily: false },
   // Tier 1
+  { name: "@claxedo/agent-event-runtime", dir: "packages/agent-event-runtime", track: "runtime", runtimeFamily: true },
   { name: "@claxedo/sandbox-manager", dir: "packages/sandbox-manager", track: "runtime", runtimeFamily: false },
   { name: "@claxedo/channels", dir: "packages/claxedo-channels", track: "apps", runtimeFamily: false },
   { name: "@claxedo/connections", dir: "packages/claxedo-connections", track: "apps", runtimeFamily: false },

@@ -1,4 +1,4 @@
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import type {
   AgentAgentPartInput as AgentPartInput,
   AgentContentPart as Part,

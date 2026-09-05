@@ -40,7 +40,13 @@ const result = await build({
     "@lydell/node-pty",
     "better-sqlite3",
     // The public SDK remains an external runtime dependency because its native
-    // PTY and platform packages cannot be folded into this JavaScript bundle.
+    // PTY and platform packages (node-pty, ffi-rs) cannot be folded into this
+    // JavaScript bundle; `@claxedo/workspace-runtime` declares it as a
+    // dependency, so the self-hosted install resolves it at runtime.
+    "@opencode-ai/sdk",
+    "@opencode-ai/sdk/*",
+    "@opencode-ai/plugin",
+    "@opencode-ai/plugin/*",
   ],
 })
 

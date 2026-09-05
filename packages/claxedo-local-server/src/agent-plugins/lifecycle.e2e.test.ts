@@ -140,10 +140,10 @@ describe("local Agent Plugins lifecycle", () => {
     const launch = await composition.harnessLaunch()
     expect(Object.keys(launch).toSorted()).toEqual([...SUPPORTED_AGENT_PLUGIN_HARNESSES].toSorted())
 
-    // OpenCode: `applyOpenCodeManagedConfig` receives `launch.config` verbatim.
-    const openCode = launch.opencode!.config as { skills?: { paths?: string[] }; mcp?: Record<string, unknown> }
-    expect(openCode.skills?.paths).toHaveLength(1)
-    await expect(fs.readFile(path.join(openCode.skills!.paths![0]!, "code-review", "SKILL.md"), "utf8"))
+    // OpenCode: the SDK harness adapter receives `launch.config` verbatim (embedded SDK config shape).
+    const openCode = launch.opencode!.config as { skills?: string[]; mcp?: Record<string, unknown> }
+    expect(openCode.skills).toHaveLength(1)
+    await expect(fs.readFile(path.join(openCode.skills![0]!, "code-review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
     expect(Object.keys(openCode.mcp ?? {})).toHaveLength(1)
 
@@ -212,7 +212,7 @@ describe("local Agent Plugins lifecycle", () => {
 
     const afterDisable = await composition.harnessLaunch()
     expect((afterDisable.claude?.pluginRoots as string[] | undefined) ?? []).toEqual([])
-    expect((afterDisable.opencode!.config as { skills?: { paths?: string[] } }).skills?.paths).toHaveLength(1)
+    expect((afterDisable.opencode!.config as { skills?: string[] }).skills).toHaveLength(1)
 
     const finalCatalog = await readCatalog(app)
     const row = finalCatalog.candidates[0]!
@@ -252,7 +252,7 @@ describe("local Agent Plugins lifecycle", () => {
     expect(retainedRow.updateAvailable).toBe(false)
 
     const launch = await second.composition.harnessLaunch()
-    const skills = (launch.opencode!.config as { skills: { paths: string[] } }).skills.paths[0]!
+    const skills = (launch.opencode!.config as { skills: string[] }).skills[0]!
     await expect(fs.readFile(path.join(skills, "code-review", "SKILL.md"), "utf8"))
       .resolves.toContain("name: code-review")
 

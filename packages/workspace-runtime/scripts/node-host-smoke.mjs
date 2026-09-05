@@ -30,13 +30,13 @@ const request = (url, body) => app.request("http://localhost" + url, body === un
 })
 try {
   const id = "ses_embedded_node_smoke"
-  const response = await request("/session?harness=opencode", {
+  const response = await request("/session?nativeHarness=opencode", {
     id, title: "Node host smoke",
     model: { providerID: "missing-provider", modelID: "missing-model" },
   })
   assert.equal(response.status, 201, await response.clone().text())
   assert.equal((await response.json()).id, id)
-  const prompt = await request("/session/" + id + "/prompt_async?harness=opencode", {
+  const prompt = await request("/session/" + id + "/prompt_async?nativeHarness=opencode", {
     messageID: "msg_embedded_node_failure",
     parts: [{ type: "text", text: "Exercise a deliberate pre-provider failure." }],
     model: { providerID: "missing-provider", modelID: "missing-model" },

@@ -13,9 +13,12 @@ export type CredentialResolution = {
   defaultModel: CredentialResolvedModel | undefined
 }
 
-const anthropicProviders = ["anthropic", "claude"]
+// Credential registry provider ids (`@claxedo/server-core/credentials`):
+// `claude-sdk` / `codex-app-server` are the subscription OAuth credentials of
+// the Claude and Codex harnesses; the bare ids are API keys.
+const anthropicProviders = ["anthropic", "claude-sdk"]
 const openAIProviders = ["openai"]
-const codexProviders = ["openai-codex", "codex"]
+const codexProviders = ["openai-codex", "codex-app-server"]
 const cursorProviders = ["cursor"]
 
 export function resolveVerifiedCredentials(input: {
@@ -29,16 +32,13 @@ export function resolveVerifiedCredentials(input: {
   const cursor = [...verified].some((provider) => cursorProviders.includes(provider))
   const runnable = new Set<HarnessId>()
 
-  if (anthropic) {
-    runnable.add("claude")
-  }
-  if (openai || codex) {
-    runnable.add("codex")
-  }
-  if (cursor) {
-    runnable.add("cursor")
-  }
+  if (anthropic) runnable.add("claude")
+  if (openai || codex) runnable.add("codex")
+  if (cursor) runnable.add("cursor")
   if (anthropic || openai || codex) runnable.add("pi")
+  // The OpenCode harness reads provider keys through the SDK credential
+  // bridge, which carries Anthropic and OpenAI API credentials only.
+  if (anthropic || openai) runnable.add("opencode")
 
   const preferred = openai || codex
     ? { harness: "codex" as const, providerID: codex ? "openai-codex" : "openai" }

@@ -185,8 +185,8 @@ describe("materializeAgentPluginGeneration", () => {
     const configFile = materialized.projections.opencode?.configFile
     expect(configFile).toBeTruthy()
     const config = JSON.parse(await fs.readFile(configFile!, "utf8"))
-    expect(config.skills.paths[0]).toContain(materialized.root)
-    await expect(fs.stat(config.skills.paths[0])).resolves.toMatchObject({})
+    expect(config.skills[0]).toContain(materialized.root)
+    await expect(fs.stat(config.skills[0])).resolves.toMatchObject({})
 
     const restored = await readMaterializedAgentPluginGeneration(runtimeRoot)
     expect(restored?.revision).toBe(1)

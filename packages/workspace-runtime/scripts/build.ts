@@ -41,6 +41,7 @@ const EXTERNALS = [
   // asset-relative module graph that cannot be folded into this bundle.
   "@opencode-ai/sdk",
   "@opencode-ai/sdk/*",
+  "@opencode-ai/schema/*",
   "@opencode-ai/plugin",
   "koffi",
   "@agentclientprotocol/sdk",

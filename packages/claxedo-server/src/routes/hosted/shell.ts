@@ -277,7 +277,7 @@ export function signedShellProjects(workspaces: unknown[], now: number) {
  * a user-hosted workspace) and only stands in when no id was sent.
  */
 function directoryInput(c: Context) {
-  return c.req.query("workspaceId") ?? c.req.query("directory") ?? c.req.header("x-opencode-directory") ?? ""
+  return c.req.query("workspaceId") ?? c.req.query("directory") ?? c.req.header("x-claxedo-directory") ?? ""
 }
 
 async function signedAuth(c: Context, options: HostedShellRouteOptions) {
@@ -404,7 +404,7 @@ async function harnessRelayFetch(
       headers: {
         accept: "application/json",
         authorization: `Bearer ${token.token}`,
-        "x-opencode-directory": `workspace:${input.workspaceId}`,
+        "x-claxedo-directory": `workspace:${input.workspaceId}`,
       },
     },
   )

@@ -228,11 +228,11 @@ vi.mock("@/platform/sync/keys", () => ({
   },
 }))
 
-vi.mock("@/lib/encode", () => ({
+vi.mock("@opencode-ai/ui/utils/encode", () => ({
   base64Encode: (input: string) => input,
 }))
 
-vi.mock("@/lib/encode", () => ({
+vi.mock("@opencode-ai/ui/utils/encode", () => ({
   base64Decode: (input: string) => input,
   base64Encode: (input: string) => input,
 }))

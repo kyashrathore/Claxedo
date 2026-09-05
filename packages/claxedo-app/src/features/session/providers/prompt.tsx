@@ -11,7 +11,7 @@ import type {
 } from "@/ui/session-kit"
 import type { FileSelection } from "@/platform/files/types"
 import { Persist, persisted } from "@/platform/persistence/persist"
-import { checksum } from "@/lib/encode"
+import { checksum } from "@opencode-ai/ui/utils/encode"
 import { useServer } from "@/features/session/app-ports"
 import { createRefCountedLruResourceCache } from "@/platform/sync/live-resource-cache"
 import { promptScopeKey } from "@/platform/identity/session-view-key"

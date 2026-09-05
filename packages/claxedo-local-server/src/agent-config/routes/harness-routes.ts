@@ -12,7 +12,6 @@ export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) 
   return new Hono()
     .get("/harness", (c) => harnessStatusResponse(c, options))
     .post("/harness", (c) => updateHarnessResponse(c, options))
-    .post("/harness/model", (c) => updateHarnessModelResponse(c, options))
     .get("/harness/options", (c) => harnessOptionsResponse(c, options))
 }
 
@@ -56,15 +55,6 @@ async function updateHarnessResponse(c: Context, options: AgentConfigRouteOption
   if (next instanceof Error) return c.json(errorBody("agent_config_connection_unavailable", next.message), 409)
   await saveUserConfig(next)
   return c.json({ ok: true, ...statusBody(selection, { status: "configured", ready: false }) })
-}
-
-async function updateHarnessModelResponse(c: Context, options: AgentConfigRouteOptions) {
-  const denied = await localOnly(c, options)
-  if (denied) return denied
-  return c.json(errorBody(
-    "agent_config_session_model_required",
-    "Models belong to a persisted session binding; update /session/:id/config instead",
-  ), 409)
 }
 
 async function harnessOptionsResponse(c: Context, options: AgentConfigRouteOptions) {

@@ -1,4 +1,4 @@
-import { checksum } from "@/lib/encode"
+import { checksum } from "@opencode-ai/ui/utils/encode"
 
 // Pure decision/derivation helpers for the session review surface (the one
 // canonical review UI). Kept dependency-light so the diff-validation, comment

@@ -46,9 +46,9 @@ describe("what gets scanned", () => {
 
     const withChunk = inspectEmittedBundle([
       ...cleanBundle(),
-      { name: "assets/index-aaaa.js", text: "const c=createAuthClient()" },
+      { name: "assets/index-aaaa.js", text: 'const c=atom("better-auth:online-manager")' },
     ])
-    expect(withChunk.identityLeaks).toEqual([{ marker: "createAuthClient", file: "assets/index-aaaa.js" }])
+    expect(withChunk.identityLeaks).toEqual([{ marker: "better-auth:online-manager", file: "assets/index-aaaa.js" }])
   })
 })
 
@@ -137,10 +137,10 @@ describe("marker detectability", () => {
     // Handed a bundle that contains ONE marker, the control must report the
     // rest as undetected — that is how a marker list that has stopped matching
     // the library gets found, instead of quietly passing forever.
-    const control = verifyMarkersAreDetectable([{ name: "assets/vendor-eeee.js", text: "createAuthClient" }])
+    const control = verifyMarkersAreDetectable([{ name: "assets/vendor-eeee.js", text: "better-auth:online-manager" }])
 
     expect(control.checked).toBe(IDENTITY_PROVIDER_MARKERS.length)
-    expect(control.undetected).toEqual(IDENTITY_PROVIDER_MARKERS.filter((m) => m !== "createAuthClient"))
+    expect(control.undetected).toEqual(IDENTITY_PROVIDER_MARKERS.filter((m) => m !== "better-auth:online-manager"))
   })
 
   test("reports nothing undetected when every marker is present", () => {

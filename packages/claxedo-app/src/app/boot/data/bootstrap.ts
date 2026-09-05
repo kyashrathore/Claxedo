@@ -1,7 +1,7 @@
 import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoConfig as Config, ClaxedoAgentProfile, ClaxedoCommand, ClaxedoVcsInfo } from "@/platform/api/claxedo-api-types"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { retry } from "@/lib/retry"
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import { showToast } from "@opencode-ai/ui/toast"
 import { formatServerError } from "@/lib/server-errors"
 import { queryClient } from "@/platform/query/query-client"

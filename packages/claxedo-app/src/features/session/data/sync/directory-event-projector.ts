@@ -5,7 +5,7 @@ import type {
   AgentSnapshotFileDiff as SnapshotFileDiff,
   AgentTodo as Todo,
 } from "@claxedo/agent-runtime-contract"
-import { Binary } from "@/lib/binary"
+import { Binary } from "@opencode-ai/ui/utils/binary"
 import { diffs as list } from "@/lib/diffs"
 import { queryClient } from "@/platform/query/query-client"
 import {

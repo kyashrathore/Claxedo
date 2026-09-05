@@ -48,7 +48,7 @@ packages that collide with the published closure:
 
 | Local package       | Local name              | In pinned closure?       |
 | ------------------- | ----------------------- | ------------------------ |
-| `packages/sdk/js`   | `@opencode-ai/sdk`      | yes                      |
+| upstream `sdk/js`   | `@opencode-ai/sdk`      | yes                      |
 | `packages/core`     | `@opencode-ai/core`     | yes                      |
 | `packages/server`   | `@opencode-ai/server`   | yes                      |
 | `packages/plugin`   | `@opencode-ai/plugin`   | yes                      |
@@ -192,8 +192,8 @@ The public SDK has TWO entrypoints and they differ deliberately:
 
 | Entrypoint                   | `workspaceProviders` | Source                                                                                           |
 | ---------------------------- | -------------------- | ------------------------------------------------------------------------------------------------ |
-| `@opencode-ai/sdk` (promise) | **omitted**          | `packages/sdk/src/promise.ts:8` — `Omit<EmbeddedHost.CreateOptions, "workspaceProviders">`       |
-| `@opencode-ai/sdk/effect`    | **accepted**         | `packages/sdk/src/effect/opencode.ts` — `export type CreateOptions = EmbeddedHost.CreateOptions` |
+| `@opencode-ai/sdk` (promise) | **omitted**          | upstream `sdk/src/promise.ts:8` — `Omit<EmbeddedHost.CreateOptions, "workspaceProviders">`       |
+| `@opencode-ai/sdk/effect`    | **accepted**         | upstream `sdk/src/effect/opencode.ts` — `export type CreateOptions = EmbeddedHost.CreateOptions` |
 
 `./effect` is a documented public export, so using it is not a Decision 15
 violation. Through it, with a local driver built on the published
@@ -206,7 +206,7 @@ sessions.create       OK  with location { directory, workspaceID }
 ```
 
 That is exactly the setup the SDK's own tests use
-(`packages/sdk/test/embedded.test.ts:545`). So workspace provisioning is
+(upstream `sdk/test/embedded.test.ts:545`). So workspace provisioning is
 available and works — the earlier `ProviderNotFound` was my failure to use the
 entrypoint that exposes it, not an upstream defect.
 
@@ -227,7 +227,7 @@ resolving to workspace source, run under Bun):
 - `config.get`, `agent.list`, `provider.list`, `plugin.list` all succeed with a
   **bare temp directory** — no workspace provisioning, no overrides, no
   schema-constructed location.
-- The same is true calling a locally built `packages/sdk/dist/effect/index.js`
+- The same is true calling a locally built upstream `sdk/dist/effect/index.js`
   (its dependencies still resolve to source).
 
 **Observed, isolated npm install of the published packages** (same runtime,
@@ -259,11 +259,11 @@ it was built from.**
 
 **And their pipeline cannot see it.** Two facts explain how this ships green:
 
-1. No SDK test imports `dist`. `packages/sdk/test/*.ts` all import `../src/...`,
+1. No SDK test imports `dist`. upstream `sdk/test/*.ts` all import `../src/...`,
    so the entire suite — including the 15 embedded tests that pass — exercises
    TypeScript source, never build output.
 2. The one script that does test real tarballs,
-   `packages/sdk/script/verify-package.ts`, packs every package and builds a
+   upstream `sdk/script/verify-package.ts`, packs every package and builds a
    consumer whose only assertion is `opencode.health.get()`. That is precisely
    the call that still works in the published install, because it resolves no
    location.
@@ -273,7 +273,7 @@ or packed output. `health.get` passes, everything behind it is untested there,
 and the failure reaches consumers untouched.
 
 **Splitting/identity hypothesis — tested and ELIMINATED.**
-`packages/core/script/build.ts` is the only build in the family using
+upstream `core/script/build.ts` is the only build in the family using
 `Bun.build({ splitting: true })`, and splitting can duplicate a module across
 chunks. Effect's `Context.Service` tags are identity-bearing, so duplication
 would produce exactly this shape: service lookup fails, handler 500s, nothing
@@ -383,7 +383,7 @@ A bundled namespace object yields `undefined` for a not-yet-initialised binding
 rather than throwing a TDZ `ReferenceError`, so the hole is captured silently
 and survives into every consumer of every published build.
 
-**D. Why it ships green.** `packages/sdk/script/verify-package.ts` packs real
+**D. Why it ships green.** upstream `sdk/script/verify-package.ts` packs real
 tarballs and installs them, but the consumer it builds asserts only
 `opencode.health.get()` — the one call that resolves no location. None of
 upstream's 15 embedded tests imports `dist`; they all run against `src`, where
@@ -435,10 +435,10 @@ dramatic defect I claimed. Do not report the Effect-object version; it is false.
 
 ### What the source does explain
 
-`packages/core/src/location.ts:18` — `export const node =
+upstream `core/src/location.ts:18` — `export const node =
 LayerNode.unbound(Service, tags.values.location)`. The location service is
 unbound by design and bound per request. `Config.layer`
-(`packages/core/src/config.ts:101`) requires `Location.Service`, which is why
+(upstream `core/src/config.ts:101`) requires `Location.Service`, which is why
 config, agents, providers and prompting share one failure: they all resolve a
 location. `createEmbeddedRoutes` includes `LocationServiceMap.node` on the same
 service set as `createRoutes` (`packages/server/src/routes.ts:89`), so the
@@ -734,7 +734,7 @@ VERIFIED: `sessions.export({ sessionID })` returns exactly
 
 which matches `SessionTransferData = { info: SessionInfo; messages: SessionMessageInfo[] }`
 (READ) and matches the legacy fork's CLI exporter envelope
-(`packages/opencode/src/cli/cmd/export.ts` writes `{ info: sessionInfo, messages }`).
+(upstream `opencode/src/cli/cmd/export.ts` writes `{ info: sessionInfo, messages }`).
 The transfer envelope is therefore structurally aligned across V1 and V2; only
 the inner types differ.
 
@@ -749,11 +749,11 @@ import — most of Unit 6's semantic validation list.
 ### 6.1 The legacy side has no bulk exporter
 
 Confirmed by search: the fork has **no** session transfer surface. There is no
-`transfer.ts` under `packages/core/src/session/`, no export/import in the
+`transfer.ts` under upstream `core/src/session/`, no export/import in the
 fork's own V2 gen client, no export route in `packages/server/src`, and no
 `SessionTransfer` symbol anywhere in `packages/`.
 
-The only exporter is `packages/opencode/src/cli/cmd/export.ts` — a **CLI
+The only exporter is upstream `opencode/src/cli/cmd/export.ts` — a **CLI
 command**, **single-session**, **interactive when no ID is passed**, writing to
 **stdout**. It composes `Session.Service.list/get/messages`, so the primitives
 for a bulk exporter exist, but the bulk exporter itself is new code that

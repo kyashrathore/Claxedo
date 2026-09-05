@@ -2,8 +2,7 @@ import { createHash } from "node:crypto"
 import { mkdir, realpath, stat } from "node:fs/promises"
 import path from "node:path"
 import { Database as SQLiteDatabase } from "bun:sqlite"
-import { Database as CoreDatabase } from "@opencode-ai/core/database/database"
-import { Effect } from "effect"
+import { OpenCodeCorpus } from "./opencode-corpus"
 import type { SessionReadinessTarget } from "./agent-browser-observer"
 import {
   initializeWorkspace,
@@ -100,9 +99,8 @@ export async function materializeActualSessions(input: {
       source.query<{ name: string }, []>("SELECT name FROM pragma_table_info('part') WHERE name = 'ordinal'").get(),
     )
     const workspaces = await createWorkspaces(input)
-    const destinationPath = await initializeDestination(input.dataDirectory)
-    const destination = new SQLiteDatabase(destinationPath)
-    destination.exec("PRAGMA foreign_keys = ON; BEGIN IMMEDIATE")
+    const destinationPath = path.join(input.dataDirectory, "opencode-engine", "opencode.db")
+    const destination = new OpenCodeCorpus()
     const readinessTargets = new Map<
       string,
       SessionReadinessTarget & {
@@ -115,26 +113,20 @@ export async function materializeActualSessions(input: {
     let messageCount = 0
     let transcriptBytes = 0
     let payloadBytes = 0
-    try {
-      insertProjects(destination, workspaces)
-      for (const [index, assignment] of assignments.entries()) {
-        const workspace = workspaces.get(assignment.workspaceId)
-        if (!workspace) throw new Error("actual-session benchmark workspace preparation failed")
-        const copied = copySession({ source, sourceHasPartOrdinal, destination, assignment, workspace, index })
-        readinessTargets.set(assignment.logicalSessionId, copied.readinessTarget)
-        contentDigests.set(assignment.logicalSessionId, copied.contentDigestSha256)
-        materializedSessions.push(copied.session)
-        messageCount += copied.messageCount
-        transcriptBytes += copied.transcriptBytes
-        payloadBytes += copied.payloadBytes
-      }
-      destination.exec("COMMIT")
-    } catch (error) {
-      destination.exec("ROLLBACK")
-      destination.close()
-      throw error
+    for (const [index, assignment] of assignments.entries()) {
+      const workspace = workspaces.get(assignment.workspaceId)
+      if (!workspace) throw new Error("actual-session benchmark workspace preparation failed")
+      const copied = copySession({ source, sourceHasPartOrdinal, destination, assignment, workspace, index })
+      readinessTargets.set(assignment.logicalSessionId, copied.readinessTarget)
+      contentDigests.set(assignment.logicalSessionId, copied.contentDigestSha256)
+      materializedSessions.push(copied.session)
+      messageCount += copied.messageCount
+      transcriptBytes += copied.transcriptBytes
+      payloadBytes += copied.payloadBytes
     }
-    destination.close()
+
+    await destination.persist(destinationPath)
+    for (const [id, target] of readinessTargets) readinessTargets.set(id, destination.remapReadiness(target))
 
     await registerSessionInventory({ dataDirectory: input.dataDirectory, workspaces, sessions: materializedSessions })
     await seedSessionMeta({ dataDirectory: input.dataDirectory, workspaces, sessions: materializedSessions })
@@ -281,34 +273,10 @@ async function createWorkspaces(input: { dataDirectory: string; workspaceDirecto
   return workspaces
 }
 
-async function initializeDestination(dataDirectory: string) {
-  const databasePath = path.join(dataDirectory, "opencode-engine", "opencode.db")
-  const initialize = Effect.provide(
-    CoreDatabase.Service as unknown as Effect.Effect<unknown, never, never>,
-    CoreDatabase.layerFromPath(databasePath) as never,
-  )
-  await Effect.runPromise(Effect.scoped(initialize))
-  return databasePath
-}
-
-function insertProjects(database: SQLiteDatabase, workspaces: Map<string, Workspace>) {
-  const now = 1_700_000_000_000
-  for (const [workspaceId, workspace] of workspaces) {
-    database
-      .prepare(
-        `
-      INSERT INTO project (id, worktree, name, time_created, time_updated, time_initialized, sandboxes)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-      )
-      .run(workspace.projectId, workspace.directory, `Actual load ${workspaceId}`, now, now, now, "[]")
-  }
-}
-
 function copySession(input: {
   source: SQLiteDatabase
   sourceHasPartOrdinal: boolean
-  destination: SQLiteDatabase
+  destination: OpenCodeCorpus
   assignment: TargetAssignment
   workspace: Workspace
   index: number
@@ -355,26 +323,14 @@ function copySession(input: {
     parts.map((part, index) => [part.id, canonicalOrderedId("prt", assignment.logicalSessionId, index)]),
   )
 
-  input.destination
-    .prepare(
-      `
-    INSERT INTO session (
-      id, project_id, slug, directory, title, version, cost,
-      tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write,
-      time_created, time_updated
-    ) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?)
-  `,
-    )
-    .run(
-      sessionId,
-      input.workspace.projectId,
-      assignment.logicalSessionId,
-      input.workspace.directory,
-      title,
-      "actual-load-v1",
-      assignment.source.time_created,
-      assignment.source.time_updated,
-    )
+  input.destination.addSession({
+    id: sessionId,
+    projectId: input.workspace.projectId,
+    directory: input.workspace.directory,
+    title,
+    created: assignment.source.time_created,
+    updated: assignment.source.time_updated,
+  })
 
   let latestAssistant: { messageId: string; createdAt: number; finished: boolean } | undefined
   let payloadBytes = 0
@@ -388,14 +344,7 @@ function copySession(input: {
     const serialized = JSON.stringify(data)
     payloadBytes += Buffer.byteLength(serialized)
     const id = messageIds.get(message.id)!
-    input.destination
-      .prepare(
-        `
-      INSERT INTO message (id, session_id, time_created, time_updated, data)
-      VALUES (?, ?, ?, ?, ?)
-    `,
-      )
-      .run(id, sessionId, message.time_created, message.time_updated, serialized)
+    input.destination.addMessage(id, sessionId, data)
     const time = data.time as { completed?: number } | undefined
     if (data.role === "assistant" && data.finish !== undefined) {
       latestAssistant = { messageId: id, createdAt: message.time_created, finished: time?.completed !== undefined }
@@ -415,14 +364,7 @@ function copySession(input: {
     const id = partIds.get(part.id)!
     const messageId = messageIds.get(part.message_id)
     if (!messageId) throw new Error("actual-session part references an unknown message")
-    input.destination
-      .prepare(
-        `
-      INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `,
-      )
-      .run(id, messageId, sessionId, part.ordinal, part.time_created, part.time_updated, serialized)
+    input.destination.setPart(id, messageId, part.ordinal, data)
     if (latestTurnMessageIds.has(messageId)) eventualFullPartIds.push(id)
     const retainedSurfaceMessage = messageId === latestUserMessageId || messageId === latestAssistant.messageId
     if (!retainedSurfaceMessage || data.type !== "text" || typeof data.text !== "string" || !data.text.trim()) continue

@@ -99,7 +99,6 @@ describe("desktop-local product contract", () => {
       "/api/claxedo/agent-config/connections",
       "/api/claxedo/agent-config/connections/:connectionId",
       "/api/claxedo/agent-config/harness",
-      "/api/claxedo/agent-config/harness/model",
       "/api/claxedo/agent-config/harness/options",
       "/api/claxedo/agent-config/mcp",
       "/api/claxedo/agent-config/mcp/:name",

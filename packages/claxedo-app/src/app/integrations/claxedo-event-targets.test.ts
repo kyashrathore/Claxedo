@@ -491,7 +491,7 @@ describe("eventStreamFetch", () => {
       seen.push({
         url,
         auth: headers.get("authorization"),
-        xdir: headers.get("x-opencode-directory"),
+        xdir: headers.get("x-claxedo-directory"),
       })
       return new Response("data: {\"type\":\"heartbeat\"}\n\n", {
         status: 200,

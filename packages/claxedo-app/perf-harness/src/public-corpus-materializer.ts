@@ -3,9 +3,7 @@ import { createReadStream } from "node:fs"
 import { mkdir, readFile, realpath, writeFile } from "node:fs/promises"
 import path from "node:path"
 import { createInterface } from "node:readline"
-import { Database as SQLiteDatabase } from "bun:sqlite"
-import { Database as CoreDatabase } from "@opencode-ai/core/database/database"
-import { Effect } from "effect"
+import { OpenCodeCorpus } from "./opencode-corpus"
 import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
 import {
   attestWorkspaceFixture,
@@ -125,13 +123,8 @@ export async function materializeClaxedoPublicCorpus(input: {
   }
 
   const dbPath = path.join(input.dataDirectory, "opencode-engine", "opencode.db")
-  const initialize = Effect.provide(
-    CoreDatabase.Service as unknown as Effect.Effect<unknown, never, never>,
-    CoreDatabase.layerFromPath(dbPath) as never,
-  )
-  await Effect.runPromise(Effect.scoped(initialize))
 
-  const database = new SQLiteDatabase(dbPath)
+  const database = new OpenCodeCorpus()
   const readinessTargets = new Map<
     string,
     SessionReadinessTarget & { logicalSessionId: string; workspaceDirectory: string }
@@ -139,69 +132,42 @@ export async function materializeClaxedoPublicCorpus(input: {
   const materializedSessions: MaterializedSession[] = []
   let expectedMessageCount = 0
   let expectedTranscriptBytes = 0
-  database.exec("PRAGMA foreign_keys = ON; BEGIN IMMEDIATE")
-  try {
-    const baseTime = 1_700_000_000_000
-    for (const [workspaceId, workspace] of workspaces) {
-      database
-        .prepare(
-          "INSERT INTO project (id, worktree, name, time_created, time_updated, time_initialized, sandboxes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run(
-          workspace.projectId,
-          workspace.directory,
-          `Benchmark ${manifest.corpusId} ${workspaceId}`,
-          baseTime,
-          baseTime,
-          baseTime,
-          "[]",
-        )
-    }
-    // Serial titles + created stamps are per-workspace, not global corpus index.
-    // A global index left workspace-a as 53…42 then a gap to 21…1 under created_desc.
-    const workspaceSessionOrdinal = new Map<string, number>()
-    for (const session of manifest.sessions) {
-      const workspace = workspaces.get(session.workspaceId)
-      if (!workspace) throw new Error(`Claxedo has no workspace for ${session.logicalSessionId}`)
-      const listIndex = workspaceSessionOrdinal.get(session.workspaceId) ?? 0
-      workspaceSessionOrdinal.set(session.workspaceId, listIndex + 1)
-      const parsed = await materializeSession({
-        database,
-        corpusDirectory: input.corpusDirectory,
-        session,
-        workspace,
-        sessionIndex: listIndex,
-      })
-      readinessTargets.set(session.logicalSessionId, parsed.readinessTarget)
-      materializedSessions.push(parsed.session)
-      expectedMessageCount += parsed.messageCount
-      expectedTranscriptBytes += parsed.transcriptBytes
-    }
-    database.exec("COMMIT")
-  } catch (error) {
-    database.exec("ROLLBACK")
-    database.close()
-    throw error
+  const baseTime = 1_700_000_000_000
+
+  // Serial titles + created stamps are per-workspace, not global corpus index.
+  // A global index left workspace-a as 53…42 then a gap to 21…1 under created_desc.
+  const workspaceSessionOrdinal = new Map<string, number>()
+  for (const session of manifest.sessions) {
+    const workspace = workspaces.get(session.workspaceId)
+    if (!workspace) throw new Error(`Claxedo has no workspace for ${session.logicalSessionId}`)
+    const listIndex = workspaceSessionOrdinal.get(session.workspaceId) ?? 0
+    workspaceSessionOrdinal.set(session.workspaceId, listIndex + 1)
+    const parsed = await materializeSession({
+      database,
+      corpusDirectory: input.corpusDirectory,
+      session,
+      workspace,
+      sessionIndex: listIndex,
+    })
+    readinessTargets.set(session.logicalSessionId, parsed.readinessTarget)
+    materializedSessions.push(parsed.session)
+    expectedMessageCount += parsed.messageCount
+    expectedTranscriptBytes += parsed.transcriptBytes
   }
 
-  const sessionCount = Number(
-    (database.prepare("SELECT COUNT(*) AS count FROM session").get() as { count: number }).count,
+  await database.persist(dbPath)
+  for (const [id, target] of readinessTargets) readinessTargets.set(id, database.remapReadiness(target))
+  const messageCount = database.messages.size
+  const transcriptBytes = [...database.parts.values()].reduce(
+    (sum, part) => sum + partPayloadBytes(part.data as CanonicalPart),
+    0,
   )
-  const messageCount = Number(
-    (database.prepare("SELECT COUNT(*) AS count FROM message").get() as { count: number }).count,
-  )
-  let transcriptBytes = 0
-  for (const row of database.prepare("SELECT data FROM part").iterate() as Iterable<{ data: string }>) {
-    const part = JSON.parse(row.data) as CanonicalPart
-    transcriptBytes += partPayloadBytes(part)
-  }
-  database.close()
   if (
-    sessionCount !== manifest.sessions.length ||
+    database.sessions.size !== manifest.sessions.length ||
     messageCount !== expectedMessageCount ||
     transcriptBytes !== expectedTranscriptBytes
   ) {
-    throw new Error("Claxedo native OpenCode database readback does not match the public corpus")
+    throw new Error("Claxedo corpus readback does not match the public corpus")
   }
 
   await registerSessionInventory({ dataDirectory: input.dataDirectory, workspaces, sessions: materializedSessions })
@@ -222,7 +188,7 @@ export async function materializeClaxedoPublicCorpus(input: {
 }
 
 async function materializeSession(input: {
-  database: SQLiteDatabase
+  database: OpenCodeCorpus
   corpusDirectory: string
   session: ManifestSession
   workspace: Workspace
@@ -255,23 +221,21 @@ async function materializeSession(input: {
       // Authoritative display identity for the rail/page: per-workspace serial +
       // recent staggered times. Applied after corpus file digest verification.
       // created_desc then shows contiguous N…1 top→bottom inside one workspace.
-      const displayTitle = distinctSyntheticSessionTitle(sessionInfo.title, input.sessionIndex, input.session.logicalSessionId)
+      const displayTitle = distinctSyntheticSessionTitle(
+        sessionInfo.title,
+        input.sessionIndex,
+        input.session.logicalSessionId,
+      )
       const displayCreated = distinctSyntheticSessionCreatedAt(SYNTHETIC_SESSION_TIME_BASE_MS, input.sessionIndex)
       const displayUpdated = distinctSyntheticSessionUpdatedAt(SYNTHETIC_SESSION_TIME_BASE_MS + 100, input.sessionIndex)
-      input.database
-        .prepare(
-          "INSERT INTO session (id, project_id, slug, directory, title, version, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?)",
-        )
-        .run(
-          sessionInfo.id,
-          input.workspace.projectId,
-          sessionInfo.slug,
-          input.workspace.directory,
-          displayTitle,
-          sessionInfo.version,
-          displayCreated,
-          displayUpdated,
-        )
+      input.database.addSession({
+        id: sessionInfo.id,
+        projectId: input.workspace.projectId,
+        directory: input.workspace.directory,
+        title: displayTitle,
+        created: displayCreated,
+        updated: displayUpdated,
+      })
       sessionInfo = {
         ...sessionInfo,
         title: displayTitle,
@@ -282,9 +246,7 @@ async function materializeSession(input: {
       const info = event.data.info as MessageInfo
       if (info.sessionID !== sessionInfo.id) throw new Error("Claxedo received a message for another session")
       const { id, sessionID: _, ...data } = info
-      input.database
-        .prepare("INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)")
-        .run(id, sessionInfo.id, info.time.created, info.time.completed ?? info.time.created, JSON.stringify(data))
+      input.database.addMessage(id, sessionInfo.id, data)
       currentMessage = info
       messageCount += 1
     } else if (event.type === "message.part.updated.1") {
@@ -302,21 +264,7 @@ async function materializeSession(input: {
         typeof event.data.time === "number"
           ? event.data.time
           : (currentMessage.time.completed ?? currentMessage.time.created)
-      input.database
-        .prepare(
-          `INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON CONFLICT(id) DO UPDATE SET data = excluded.data, time_updated = excluded.time_updated`,
-        )
-        .run(
-          id,
-          currentMessage.id,
-          sessionInfo.id,
-          expectedSequence,
-          currentMessage.time.created,
-          updatedAt,
-          JSON.stringify(data),
-        )
+      input.database.setPart(id, currentMessage.id, expectedSequence, data)
       transcriptBytes += partPayloadBytes(part)
       if (currentMessage.role === "assistant" && part.type === "text" && typeof part.text === "string") {
         latestAssistant = {
@@ -365,8 +313,10 @@ function partPayloadBytes(part: CanonicalPart): number {
     return Buffer.byteLength(part.text, "utf8")
   }
   if (part.type === "tool") {
-    return Buffer.byteLength(JSON.stringify(part.state?.input ?? null), "utf8") +
+    return (
+      Buffer.byteLength(JSON.stringify(part.state?.input ?? null), "utf8") +
       Buffer.byteLength(part.state?.output ?? "", "utf8")
+    )
   }
   return 0
 }
@@ -427,11 +377,7 @@ function verifyRequestedWorkspaceFixture(input: {
   return manifest
 }
 
-export async function initializeWorkspace(
-  directory: string,
-  workspaceId: string,
-  fixture?: WorkspaceFixtureManifest,
-) {
+export async function initializeWorkspace(directory: string, workspaceId: string, fixture?: WorkspaceFixtureManifest) {
   await runGit(["init", "--initial-branch=main", directory])
   if (fixture) {
     await writeWorkspaceRevision(directory, fixture, "initial")
@@ -462,16 +408,22 @@ async function writeWorkspaceRevision(
   fixture: WorkspaceFixtureManifest,
   revision: "initial" | "current",
 ) {
-  await Promise.all(fixture.files.map(async (file) => {
-    const target = workspaceFixturePath(directory, file.path)
-    await mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
-    await writeFile(target, generateWorkspaceFileBytes(fixture.seed, file, revision), { mode: 0o600 })
-  }))
+  await Promise.all(
+    fixture.files.map(async (file) => {
+      const target = workspaceFixturePath(directory, file.path)
+      await mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
+      await writeFile(target, generateWorkspaceFileBytes(fixture.seed, file, revision), { mode: 0o600 })
+    }),
+  )
 }
 
 async function attestMaterializedWorkspace(directory: string, fixture: WorkspaceFixtureManifest) {
   const tracked = splitGitPaths(await runGit(["-C", directory, "ls-tree", "-r", "--name-only", "HEAD"]))
-  assertExactPaths(tracked, fixture.files.map((file) => file.path), "tracked files")
+  assertExactPaths(
+    tracked,
+    fixture.files.map((file) => file.path),
+    "tracked files",
+  )
 
   const changed = splitGitPaths(await runGit(["-C", directory, "diff", "--name-only", "--no-renames", "--"]))
   assertExactPaths(changed, fixture.changedFilePaths, "changed files")
@@ -589,7 +541,6 @@ export async function registerSessionInventory(input: {
         update: { harness: { id: "opencode"; access: "native" }; variant: null; agent: null },
         input: { directory: string },
       ): unknown
-      markSessionInventoryImported(directory: string): void
       flush(): void
       close(): void
     }
@@ -614,7 +565,6 @@ export async function registerSessionInventory(input: {
           { directory: workspace.directory },
         )
       }
-      store.markSessionInventoryImported(workspace.directory)
       store.flush()
     } finally {
       store.close()

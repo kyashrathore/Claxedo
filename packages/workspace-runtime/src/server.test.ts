@@ -865,9 +865,14 @@ describe("createWorkspaceRuntimeApp assembly (characterization)", () => {
   })
 
   test("creates a native session before its initial config exists", async () => {
+    // The session store is durable under `storeRoot`; the kit default is the
+    // machine-wide runtime store, where a fixed session id from an earlier run
+    // would already be bound to another throwaway directory.
+    const dir = await pinTempWorkspaceDirectory()
     const runtime = createWorkspaceRuntimeApp({
       exposure: loopbackWorkspaceRuntimeExposure(),
       harness: { kind: "native", harnessId: "pi" },
+      storeRoot: path.join(dir, "state"),
     })
     try {
       const created = await runtime.app.request("http://localhost/session?nativeHarness=pi", {

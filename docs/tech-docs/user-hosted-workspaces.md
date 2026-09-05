@@ -182,12 +182,12 @@ streams pass through unchanged.
 
 **F.4 Projection** — the runtime-events lane is projected by
 `src/app/providers/global-sdk/runtime-event-projection.ts` through
-`createOpencodeCompatProjection` (`packages/agent-event-runtime/src/projections/opencode-compat/projection.ts`).
+`createClientPresentationProjection` (`packages/agent-event-runtime/src/client-presentation.ts`).
 For a viewer attached to a turn another client drives, the projection announces
 the assistant row before its first part, parented on the user message the turn
 message-id convention names (`packages/agent-event-runtime/src/contracts/turn-message-ids.ts`,
 the one owner of `${userMessageId}_r`, used by every minter and resolver). The
-OpenCode publisher (`packages/agent-sdk-runtime/src/harnesses/opencode/events.ts`)
+OpenCode event pump (`packages/workspace-runtime/src/opencode/event-pump.ts`)
 stamps every frame with the turn's stable reply id, carries the prompt as a
 user-message delta, and closes the turn it opened. A retarget restarts only the
 session-scoped lane; the workspace-wide cursor survives.

@@ -60,8 +60,6 @@ export const MEMORY_RUNTIME_REQUIRED_PACKAGES = {
   "@claxedo/app": "packages/claxedo-app",
   "@opencode-ai/session-ui": "packages/session-ui",
   "@opencode-ai/ui": "packages/ui",
-  "@opencode-ai/core": "packages/core",
-  "@opencode-ai/sdk": "packages/sdk/js",
   "@claxedo/agent-event-runtime": "packages/agent-event-runtime",
   "@claxedo/usage-contract": "packages/usage-contract",
 } as const
@@ -122,8 +120,10 @@ function isGeneratedFile(name: string, relativeName: string) {
   if (name === ".env" || name === ".env.local" || /^\.env\..*\.local$/u.test(name)) return true
   if (name === "skills-lock.json" && relativeName.startsWith("packages/claxedo-app/")) return true
   if (relativeName === "packages/claxedo-app/.claude/settings.local.json") return true
-  return relativeName === "packages/claxedo-app/.opencode/processes.schema.json" ||
+  return (
+    relativeName === "packages/claxedo-app/.opencode/processes.schema.json" ||
     relativeName === "packages/claxedo-app/.opencode/processes.jsonc"
+  )
 }
 
 export function digestNamedBytes(entries: readonly { name: string; bytes: Uint8Array | string }[]) {
@@ -169,17 +169,20 @@ async function strictFiles(input: {
     if (entry.isSymbolicLink()) throw new Error(`memory provenance does not follow nested symlink: ${relativeName}`)
     if (entry.isDirectory()) {
       if (input.excludeGenerated && isGeneratedDirectory(entry.name, relativeName)) continue
-      result.push(...await strictFiles({
-        ...input,
-        absoluteDirectory: absoluteName,
-        relativeDirectory: relativeName,
-      }))
+      result.push(
+        ...(await strictFiles({
+          ...input,
+          absoluteDirectory: absoluteName,
+          relativeDirectory: relativeName,
+        })),
+      )
       continue
     }
     if (input.excludeGenerated && isGeneratedFile(entry.name, relativeName)) continue
     if (!entry.isFile()) throw new Error(`unsupported memory provenance entry: ${relativeName}`)
     const resolved = await realpath(absoluteName)
-    if (!isWithin(input.repositoryReal, resolved)) throw new Error(`memory provenance file escapes repository: ${relativeName}`)
+    if (!isWithin(input.repositoryReal, resolved))
+      throw new Error(`memory provenance file escapes repository: ${relativeName}`)
     result.push({ name: relativeName, bytes: new Uint8Array(await Bun.file(resolved).arrayBuffer()) })
   }
   return result
@@ -191,7 +194,11 @@ type WorkspacePackage = {
   manifest: Record<string, unknown>
 }
 
-async function packageManifestPaths(repository: string, absoluteDirectory: string, relativeDirectory: string): Promise<string[]> {
+async function packageManifestPaths(
+  repository: string,
+  absoluteDirectory: string,
+  relativeDirectory: string,
+): Promise<string[]> {
   const entries = await readdir(absoluteDirectory, { withFileTypes: true })
   const result: string[] = []
   for (const entry of entries.toSorted((a, b) => a.name.localeCompare(b.name))) {
@@ -199,7 +206,7 @@ async function packageManifestPaths(repository: string, absoluteDirectory: strin
     if (entry.isSymbolicLink()) throw new Error(`workspace package discovery does not follow symlink: ${relativeName}`)
     if (entry.isDirectory()) {
       if (!isGeneratedDirectory(entry.name, relativeName)) {
-        result.push(...await packageManifestPaths(repository, path.join(absoluteDirectory, entry.name), relativeName))
+        result.push(...(await packageManifestPaths(repository, path.join(absoluteDirectory, entry.name), relativeName)))
       }
       continue
     }
@@ -213,11 +220,14 @@ async function workspacePackages(repository: string) {
   const manifests = await packageManifestPaths(repository, packagesRoot.absolute, "packages")
   const packages = new Map<string, WorkspacePackage>()
   for (const manifestPath of manifests) {
-    const manifest = await Bun.file(path.join(repository, manifestPath)).json() as Record<string, unknown>
+    const manifest = (await Bun.file(path.join(repository, manifestPath)).json()) as Record<string, unknown>
     if (typeof manifest.name !== "string") continue
     const relativeDirectory = path.posix.dirname(manifestPath)
     const existing = packages.get(manifest.name)
-    if (existing) throw new Error(`duplicate workspace package ${manifest.name}: ${existing.relativeDirectory}, ${relativeDirectory}`)
+    if (existing)
+      throw new Error(
+        `duplicate workspace package ${manifest.name}: ${existing.relativeDirectory}, ${relativeDirectory}`,
+      )
     packages.set(manifest.name, { name: manifest.name, relativeDirectory, manifest })
   }
   return packages
@@ -256,7 +266,9 @@ export async function resolveMemorySourceRoots(repository = repoRoot) {
   for (const [name, expectedDirectory] of Object.entries(MEMORY_RUNTIME_REQUIRED_PACKAGES)) {
     const owner = packages.get(name)
     if (!owner || owner.relativeDirectory !== expectedDirectory) {
-      throw new Error(`runtime source owner mismatch for ${name}: expected ${expectedDirectory}, received ${owner?.relativeDirectory ?? "missing"}`)
+      throw new Error(
+        `runtime source owner mismatch for ${name}: expected ${expectedDirectory}, received ${owner?.relativeDirectory ?? "missing"}`,
+      )
     }
     if (!closure.has(name)) throw new Error(`runtime dependency closure omitted required package: ${name}`)
   }
@@ -270,12 +282,14 @@ export async function scanMemorySource(repository = repoRoot): Promise<SourceDig
   const entries: NamedBytes[] = []
   for (const relativeDirectory of roots) {
     const root = await requiredDirectory(repository, relativeDirectory)
-    entries.push(...await strictFiles({
-      repositoryReal,
-      absoluteDirectory: root.absolute,
-      relativeDirectory,
-      excludeGenerated: true,
-    }))
+    entries.push(
+      ...(await strictFiles({
+        repositoryReal,
+        absoluteDirectory: root.absolute,
+        relativeDirectory,
+        excludeGenerated: true,
+      })),
+    )
   }
   if (entries.length === 0) throw new Error("memory provenance source closure is empty")
   return { sha256: digestNamedBytes(entries), files: entries.length, roots }
@@ -312,7 +326,9 @@ export async function captureSourceControl(directory = repoRoot): Promise<Source
   const fingerprint = await rawSyncFingerprint(directory)
   if (fingerprint) return { sourceControlMode: "crabbox-raw", rawSyncFingerprint: fingerprint }
 
-  const hasGitMetadata = await lstat(path.join(directory, ".git")).then(() => true).catch(() => false)
+  const hasGitMetadata = await lstat(path.join(directory, ".git"))
+    .then(() => true)
+    .catch(() => false)
   if (!hasGitMetadata) throw new Error("memory provenance requires Git metadata or a Crabbox raw sync fingerprint")
   const [commit, gitTree, status] = await Promise.all([
     git(directory, ["rev-parse", "HEAD"]).then((value) => value.trim()),
@@ -365,8 +381,12 @@ export function memoryProvenanceStable(start: MemoryProvenance, end: MemoryProve
     return start.rawSyncFingerprint === end.rawSyncFingerprint
   }
   if (start.sourceControlMode === "git" && end.sourceControlMode === "git") {
-    return start.commit === end.commit && start.gitTree === end.gitTree && start.dirty === end.dirty &&
+    return (
+      start.commit === end.commit &&
+      start.gitTree === end.gitTree &&
+      start.dirty === end.dirty &&
       start.statusSha256 === end.statusSha256
+    )
   }
   return false
 }

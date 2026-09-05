@@ -13,9 +13,14 @@ than this internal diagnostic harness: it measures application start, four sessi
 process-family CPU/RSS while loading completed 1–32 MiB historical transcripts. It does not measure
 Web Vitals, streaming, live agent runs, or terminal coding agents.
 
-`src/public-corpus-materializer.ts` streams the pinned OpenCode event corpus into Claxedo's production
-native OpenCode database, workspace inventory, and session metadata path, then reads the database back
-before timing. `src/public-agent-app-driver.ts` owns packaged Electron automation and reports one raw
+`src/public-corpus-materializer.ts` validates the pinned OpenCode event corpus and converts it through
+`src/opencode-corpus.ts` to the current SDK session-import format. Workspace-runtime owns the published
+SDK import, closes it, and reopens it to verify durable session and message readback before timing.
+The materializers also populate Claxedo's workspace inventory and session metadata. Transcript part
+identities follow the live runtime projection; multiple user text parts become the SDK's single user
+text field. Step and patch records map to the SDK's assistant snapshot fields; usage stays on the
+assistant message. Shapes the current SDK/runtime cannot represent are rejected before import rather than
+written into obsolete tables. `src/public-agent-app-driver.ts` owns packaged Electron automation and reports one raw
 duration per action; the public framework owns ordering, repetitions, resources, aggregation, and the
 comparison website.
 

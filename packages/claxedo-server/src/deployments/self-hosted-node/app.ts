@@ -1083,7 +1083,6 @@ export function createSelfHostedApp(
     "/api/claxedo/agent-config",
     AgentConfigRoutes({
       services,
-      updateCentralSessionModel: centralControl.runtime.updateSessionModel,
       invalidateCentralSession: centralControl.runtime.invalidateSession,
       ...authRouteOptions(services),
     }),

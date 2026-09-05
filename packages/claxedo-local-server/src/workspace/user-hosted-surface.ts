@@ -14,7 +14,7 @@
  *     workspace, not the host that happens to run it.
  *   - the root-level Claxedo client-presentation and credential routes that
  *     answers provider auth, OAuth connect, and project metadata for
- *     whichever workspace a `?directory=`/`x-opencode-directory` names.
+ *     whichever workspace a `?directory=`/`x-claxedo-directory` names.
  *     Provider auth from a browser is a desktop capability with no other
  *     owner, so a relayed caller needs exactly what a loopback one gets.
  *   - the workspace-scoped surface `/workspaces/:id/*`, where the embedded

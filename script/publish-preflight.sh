@@ -28,6 +28,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PKG_DIR="$ROOT/packages"
 
 DEFAULT_PACKAGES=(
+  agent-runtime-contract
   agent-event-runtime
   agent-sdk-runtime
   sandbox-contract

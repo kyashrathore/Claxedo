@@ -10,7 +10,7 @@ describe("agent harness process catalog", () => {
       new Set(AGENT_HARNESS_DEFINITIONS.map((row) => `${row.id}:${row.access}`)).size,
     ).toBe(AGENT_HARNESS_DEFINITIONS.length)
     expect(new Set(AGENT_HARNESS_DEFINITIONS.map((row) => row.id))).toEqual(
-      new Set(["claude", "codex", "cursor", "pi"]),
+      new Set(["claude", "codex", "cursor", "pi", "opencode"]),
     )
   })
 })

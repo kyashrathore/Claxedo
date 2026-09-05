@@ -1,91 +1,84 @@
-import { createHash } from "node:crypto";
-import { mkdir, readFile, realpath } from "node:fs/promises";
-import path from "node:path";
-import { Database as SQLiteDatabase } from "bun:sqlite";
-import { Database as CoreDatabase } from "@opencode-ai/core/database/database";
-import { Identifier } from "@opencode-ai/core/id/id";
-import { Effect } from "effect";
-import type { AgentAppProfile } from "./agent-driver-contract";
-import { withClaxedoDataDirectory } from "./with-claxedo-data-directory";
+import { createHash } from "node:crypto"
+import { mkdir, readFile, realpath } from "node:fs/promises"
+import path from "node:path"
+import { OpenCodeCorpus } from "./opencode-corpus"
+import { createOpenCodeFixtureIds } from "@claxedo/workspace-runtime/testing"
+import type { AgentAppProfile } from "./agent-driver-contract"
+import { withClaxedoDataDirectory } from "./with-claxedo-data-directory"
 
 export type CorpusPart = {
-  id: string;
-  order: number;
-  type: string;
-  [key: string]: unknown;
-};
+  id: string
+  order: number
+  type: string
+  [key: string]: unknown
+}
 export type CorpusMessage = {
-  id: string;
-  order: number;
-  role: "system" | "user" | "assistant";
-  parts: CorpusPart[];
-};
+  id: string
+  order: number
+  role: "system" | "user" | "assistant"
+  parts: CorpusPart[]
+}
 export type CorpusTurn = {
-  id: string;
-  index: number;
-  anchor?: string;
-  messages: CorpusMessage[];
-};
+  id: string
+  index: number
+  anchor?: string
+  messages: CorpusMessage[]
+}
 export type CorpusSession = {
-  id: string;
-  title: string;
-  order: number;
-  workspaceId?: string;
-  turns: CorpusTurn[];
-  events: Array<Record<string, unknown>>;
-  terminalStreams: Array<Record<string, unknown>>;
-};
+  id: string
+  title: string
+  order: number
+  workspaceId?: string
+  turns: CorpusTurn[]
+  events: Array<Record<string, unknown>>
+  terminalStreams: Array<Record<string, unknown>>
+}
 export type AgentAppCorpus = {
-  schemaVersion: 1;
-  kind: "agent-app-corpus";
-  corpusId: string;
-  source: "generated-public" | "opencode-local";
-  seed: string;
-  sessions: CorpusSession[];
+  schemaVersion: 1
+  kind: "agent-app-corpus"
+  corpusId: string
+  source: "generated-public" | "opencode-local"
+  seed: string
+  sessions: CorpusSession[]
   manifest: {
-    counts: Record<string, number>;
+    counts: Record<string, number>
     hashes: {
-      corpusSha256: string;
-      semanticSha256: string;
-      terminalSha256: string;
-    };
-  };
-};
+      corpusSha256: string
+      semanticSha256: string
+      terminalSha256: string
+    }
+  }
+}
 
 export type MaterializedCorpusPart = {
-  corpusPartId: string;
-  corpusMessageId: string;
-  partId: string;
-  messageId: string;
-  sessionId: string;
-  payload: Record<string, unknown>;
-};
+  corpusPartId: string
+  corpusMessageId: string
+  partId: string
+  messageId: string
+  sessionId: string
+  payload: Record<string, unknown>
+}
 
 export async function readCanonicalCorpusDigest(corpusPath: string) {
-  const corpus = parseCorpus(JSON.parse(await readFile(corpusPath, "utf8")));
-  const digest = corpusDigest(corpus);
+  const corpus = parseCorpus(JSON.parse(await readFile(corpusPath, "utf8")))
+  const digest = corpusDigest(corpus)
   if (digest !== corpus.manifest.hashes.corpusSha256) {
-    throw new Error("corpus manifest digest does not match the canonical v1 payload");
+    throw new Error("corpus manifest digest does not match the canonical v1 payload")
   }
-  return digest;
+  return digest
 }
 
 export async function materializeClaxedoCorpus(input: {
-  corpusPath: string;
-  corpusDigestSha256: string;
-  dataDirectory: string;
-  workspaceDirectory: string;
-  profiles: AgentAppProfile[];
+  corpusPath: string
+  corpusDigestSha256: string
+  dataDirectory: string
+  workspaceDirectory: string
+  profiles: AgentAppProfile[]
 }) {
-  const corpus = parseCorpus(
-    JSON.parse(await readFile(input.corpusPath, "utf8")),
-  );
-  const computedDigest = corpusDigest(corpus);
-  if (
-    computedDigest !== input.corpusDigestSha256 ||
-    computedDigest !== corpus.manifest.hashes.corpusSha256
-  ) {
-    throw new Error("corpus digest does not match the canonical v1 payload");
+  const corpus = parseCorpus(JSON.parse(await readFile(input.corpusPath, "utf8")))
+  const computedDigest = corpusDigest(corpus)
+  if (computedDigest !== input.corpusDigestSha256 || computedDigest !== corpus.manifest.hashes.corpusSha256) {
+    throw new Error("corpus digest does not match the canonical v1 payload")
   }
   await Promise.all([
     mkdir(path.join(input.dataDirectory, "opencode-engine"), {
@@ -93,278 +86,170 @@ export async function materializeClaxedoCorpus(input: {
       mode: 0o700,
     }),
     mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 }),
-  ]);
-  const workspaceDirectory = await realpath(input.workspaceDirectory);
+  ])
+  const workspaceDirectory = await realpath(input.workspaceDirectory)
   // Multi-workspace corpora carry a per-session workspace assignment; give
   // each its own git-rooted directory and registration so warm switching
   // crosses REAL workspace boundaries. The root commit message embeds the
   // workspace id — the deterministic commit would otherwise produce the SAME
   // sha (= project id) for every workspace.
-  const workspaceIds = [
-    ...new Set(
-      corpus.sessions.map((session) => session.workspaceId ?? ""),
-    ),
-  ].sort();
-  const workspaces = new Map<
-    string,
-    { directory: string; projectId: string }
-  >();
+  const workspaceIds = [...new Set(corpus.sessions.map((session) => session.workspaceId ?? ""))].sort()
+  const workspaces = new Map<string, { directory: string; projectId: string }>()
   for (const workspaceId of workspaceIds) {
-    const directory = workspaceId
-      ? path.join(workspaceDirectory, workspaceId)
-      : workspaceDirectory;
-    if (workspaceId) await mkdir(directory, { recursive: true, mode: 0o700 });
-    const projectId = await initializeWorkspace(directory, workspaceId);
+    const directory = workspaceId ? path.join(workspaceDirectory, workspaceId) : workspaceDirectory
+    if (workspaceId) await mkdir(directory, { recursive: true, mode: 0o700 })
+    const projectId = await initializeWorkspace(directory, workspaceId)
     await registerWorkspace({
       dataDirectory: input.dataDirectory,
       workspaceDirectory: directory,
       projectId,
-      projectName: workspaceId
-        ? `Benchmark ${corpus.corpusId} ${workspaceId}`
-        : `Benchmark ${corpus.corpusId}`,
-    });
-    workspaces.set(workspaceId, { directory, projectId });
+      projectName: workspaceId ? `Benchmark ${corpus.corpusId} ${workspaceId}` : `Benchmark ${corpus.corpusId}`,
+    })
+    workspaces.set(workspaceId, { directory, projectId })
   }
-  const dbPath = path.join(
-    input.dataDirectory,
-    "opencode-engine",
-    "opencode.db",
-  );
-  // @opencode-ai/core and this standalone harness can resolve separate Effect
-  // type identities in a workspace install. They share the same runtime API;
-  // keep the cast at this one package boundary while using the canonical
-  // database layer to create and migrate the engine database.
-  const initialize = Effect.provide(
-    CoreDatabase.Service as unknown as Effect.Effect<unknown, never, never>,
-    CoreDatabase.layerFromPath(dbPath) as never,
-  );
-  await Effect.runPromise(Effect.scoped(initialize));
+  const dbPath = path.join(input.dataDirectory, "opencode-engine", "opencode.db")
+  const { createId } = await createOpenCodeFixtureIds()
 
-  const database = new SQLiteDatabase(dbPath);
-  database.exec("PRAGMA foreign_keys = ON; BEGIN IMMEDIATE");
-  const expectedMessages = new Map<string, string>();
-  const expectedParts = new Map<string, string>();
-  const materializedSessions = new Map<string, string>();
-  const materializedParts = new Map<string, MaterializedCorpusPart>();
+  const database = new OpenCodeCorpus()
+  const materializedSessions = new Map<string, string>()
+  const materializedParts = new Map<string, MaterializedCorpusPart>()
   const readinessTargets: Array<{
-    sessionId: string;
-    title: string;
-    expectedMessageIds: string[];
-    expectedContentSha256: Record<string, string>;
-    expectedTextPartSha256: Record<string, string>;
-    expectedPartIds: string[];
-  }> = [];
-  try {
-    const baseTime = Date.parse("2020-01-01T00:00:00.000Z");
-    for (const [workspaceId, workspace] of workspaces) {
-      database
-        .prepare(
-          "INSERT INTO project (id, worktree, name, time_created, time_updated, time_initialized, sandboxes) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run(
-          workspace.projectId,
-          workspace.directory,
-          workspaceId
-            ? `Benchmark ${corpus.corpusId} ${workspaceId}`
-            : `Benchmark ${corpus.corpusId}`,
-          baseTime,
-          baseTime,
-          baseTime,
-          "[]",
-        );
-    }
-    for (const session of corpus.sessions.toSorted(
-      (a, b) => a.order - b.order,
-    )) {
-      const sessionTime = baseTime + session.order * 1_000_000;
-      const sessionId = canonicalOpenCodeId("ses", sessionTime);
-      materializedSessions.set(session.id, sessionId);
-      const home = workspaces.get(session.workspaceId ?? "");
-      if (!home)
-        throw new Error(
-          `corpus session ${session.id} names an unmaterialized workspace`,
-        );
-      let latestTurnMessageIds: string[] = [];
-      let latestTurnContentSha256: Record<string, string> = {};
-      let latestTurnTextPartSha256: Record<string, string> = {};
-      let latestTurnPartIds: string[] = [];
-      const displayTitle = /^\d+\.\s/.test(session.title)
-        ? session.title
-        : `${session.order + 1}. ${session.title}`;
-      database
-        .prepare(
-          "INSERT INTO session (id, project_id, slug, directory, title, version, cost, tokens_input, tokens_output, tokens_reasoning, tokens_cache_read, tokens_cache_write, time_created, time_updated) VALUES (?, ?, ?, ?, ?, ?, 0, 0, 0, 0, 0, 0, ?, ?)",
-        )
-        .run(
-          sessionId,
-          home.projectId,
-          session.id,
-          home.directory,
-          displayTitle,
-          "agent-app-v1",
-          sessionTime,
-          sessionTime + 999_999 + session.order * 60_000,
-        );
-      for (const turn of session.turns.toSorted((a, b) => a.index - b.index)) {
-        let parentId: string | undefined;
-        const turnMessageIds: string[] = [];
-        const turnPartIds: string[] = [];
-        const turnTextPartSha256: Record<string, string> = {};
-        const turnContentSha256: Record<string, string> = {};
-        for (const message of turn.messages.toSorted(
-          (a, b) => a.order - b.order,
-        )) {
-          if (message.role === "system") continue;
-          const at = sessionTime + turn.index * 10_000 + message.order * 1_000;
-          const messageId = canonicalOpenCodeId("msg", at);
-          const data =
-            message.role === "user"
-              ? {
-                  role: "user",
-                  time: { created: at },
-                  agent: "build",
-                  model: { providerID: "benchmark", modelID: "deterministic" },
-                  summary: { diffs: [] },
-                }
-              : {
-                  role: "assistant",
-                  time: { created: at, completed: at + 999 },
-                  parentID: parentId ?? messageId,
-                  agent: "build",
-                  providerID: "benchmark",
-                  modelID: "deterministic",
-                  mode: "build",
-                  path: { cwd: home.directory, root: home.directory },
-                  cost: 0,
-                  tokens: {
-                    input: 0,
-                    output: 0,
-                    reasoning: 0,
-                    cache: { read: 0, write: 0 },
-                  },
-                  finish: "stop",
-                };
-          const encodedMessage = JSON.stringify(data);
-          database
-            .prepare(
-              "INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?)",
-            )
-            .run(messageId, sessionId, at, at + 999, encodedMessage);
-          expectedMessages.set(messageId, encodedMessage);
-          if (message.role === "user") parentId = messageId;
-          for (const part of message.parts.toSorted(
-            (a, b) => a.order - b.order,
-          )) {
-            const partId = canonicalOpenCodeId("prt", at + part.order);
-            if (materializedParts.has(part.id))
-              throw new Error(`duplicate corpus part id: ${part.id}`);
-            const payload = toOpenCodePart(part, at);
-            if (
-              message.role === "assistant" &&
-              turnMessageIds.length === 0 &&
-              payload.type === "text" &&
-              typeof payload.text === "string" &&
-              payload.text.trim()
-            ) {
-              turnMessageIds.push(messageId);
-              // A message-level content sha only when the payload is an
-              // ORIGINAL plain-text corpus part — converted markdown/code/
-              // table/diff parts render transformed, so their raw text can
-              // never hash-match painted text. The anchor itself does not
-              // need the sha: rows carry part identity for verification.
-              if (part.type === "text") {
-                turnContentSha256[messageId] = createHash("sha256")
-                  .update(payload.text.trim())
-                  .digest("hex");
+    sessionId: string
+    title: string
+    expectedMessageIds: string[]
+    expectedContentSha256: Record<string, string>
+    expectedTextPartSha256: Record<string, string>
+    expectedPartIds: string[]
+  }> = []
+  const baseTime = Date.parse("2020-01-01T00:00:00.000Z")
+
+  for (const session of corpus.sessions.toSorted((a, b) => a.order - b.order)) {
+    const sessionTime = baseTime + session.order * 1_000_000
+    const sessionId = createId("ses", sessionTime)
+    materializedSessions.set(session.id, sessionId)
+    const home = workspaces.get(session.workspaceId ?? "")
+    if (!home) throw new Error(`corpus session ${session.id} names an unmaterialized workspace`)
+    let latestTurnMessageIds: string[] = []
+    let latestTurnContentSha256: Record<string, string> = {}
+    let latestTurnTextPartSha256: Record<string, string> = {}
+    let latestTurnPartIds: string[] = []
+    const displayTitle = /^\d+\.\s/.test(session.title) ? session.title : `${session.order + 1}. ${session.title}`
+    database.addSession({
+      id: sessionId,
+      projectId: home.projectId,
+      directory: home.directory,
+      title: displayTitle,
+      created: sessionTime,
+      updated: sessionTime + 999_999 + session.order * 60_000,
+    })
+    for (const turn of session.turns.toSorted((a, b) => a.index - b.index)) {
+      let parentId: string | undefined
+      const turnMessageIds: string[] = []
+      const turnPartIds: string[] = []
+      const turnTextPartSha256: Record<string, string> = {}
+      const turnContentSha256: Record<string, string> = {}
+      for (const message of turn.messages.toSorted((a, b) => a.order - b.order)) {
+        if (message.role === "system") continue
+        const at = sessionTime + turn.index * 10_000 + message.order * 1_000
+        const messageId = createId("msg", at)
+        const data =
+          message.role === "user"
+            ? {
+                role: "user",
+                time: { created: at },
+                agent: "build",
+                model: { providerID: "benchmark", modelID: "deterministic" },
+                summary: { diffs: [] },
               }
+            : {
+                role: "assistant",
+                time: { created: at, completed: at + 999 },
+                parentID: parentId ?? messageId,
+                agent: "build",
+                providerID: "benchmark",
+                modelID: "deterministic",
+                mode: "build",
+                path: { cwd: home.directory, root: home.directory },
+                cost: 0,
+                tokens: {
+                  input: 0,
+                  output: 0,
+                  reasoning: 0,
+                  cache: { read: 0, write: 0 },
+                },
+                finish: "stop",
+              }
+        database.addMessage(messageId, sessionId, data)
+        if (message.role === "user") parentId = messageId
+        for (const part of message.parts.toSorted((a, b) => a.order - b.order)) {
+          const partId = createId("prt", at + part.order)
+          if (materializedParts.has(part.id)) throw new Error(`duplicate corpus part id: ${part.id}`)
+          const payload = toOpenCodePart(part, at)
+          if (
+            message.role === "assistant" &&
+            turnMessageIds.length === 0 &&
+            payload.type === "text" &&
+            typeof payload.text === "string" &&
+            payload.text.trim()
+          ) {
+            turnMessageIds.push(messageId)
+            // A message-level content sha only when the payload is an
+            // ORIGINAL plain-text corpus part — converted markdown/code/
+            // table/diff parts render transformed, so their raw text can
+            // never hash-match painted text. The anchor itself does not
+            // need the sha: rows carry part identity for verification.
+            if (part.type === "text") {
+              turnContentSha256[messageId] = createHash("sha256").update(payload.text.trim()).digest("hex")
             }
-            turnPartIds.push(partId);
-            // Only ORIGINAL plain-text corpus parts get an exact-content sha:
-            // markdown/code/table/diff corpus parts are converted into "text"
-            // payloads whose markdown SOURCE the renderer transforms, so their
-            // rendered innerText can never hash-match the raw payload. Those
-            // verify by part identity + painted text, like tool parts.
-            if (
-              part.type === "text" &&
-              payload.type === "text" &&
-              typeof payload.text === "string"
-            ) {
-              turnTextPartSha256[partId] = createHash("sha256")
-                .update(payload.text.trim())
-                .digest("hex");
-            }
-            const encodedPart = JSON.stringify(payload);
-            database
-              .prepare(
-                "INSERT INTO part (id, message_id, session_id, ordinal, time_created, time_updated, data) VALUES (?, ?, ?, ?, ?, ?, ?)",
-              )
-              .run(
-                partId,
-                messageId,
-                sessionId,
-                part.order,
-                at + part.order,
-                at + 999,
-                encodedPart,
-              );
-            expectedParts.set(partId, encodedPart);
-            materializedParts.set(part.id, {
-              corpusPartId: part.id,
-              corpusMessageId: message.id,
-              partId,
-              messageId,
-              sessionId,
-              payload,
-            });
           }
+          turnPartIds.push(partId)
+          // Only ORIGINAL plain-text corpus parts get an exact-content sha:
+          // markdown/code/table/diff corpus parts are converted into "text"
+          // payloads whose markdown SOURCE the renderer transforms, so their
+          // rendered innerText can never hash-match the raw payload. Those
+          // verify by part identity + painted text, like tool parts.
+          if (part.type === "text" && payload.type === "text" && typeof payload.text === "string") {
+            turnTextPartSha256[partId] = createHash("sha256").update(payload.text.trim()).digest("hex")
+          }
+          database.setPart(partId, messageId, part.order, payload)
+          materializedParts.set(part.id, {
+            corpusPartId: part.id,
+            corpusMessageId: message.id,
+            partId,
+            messageId,
+            sessionId,
+            payload,
+          })
         }
-        latestTurnMessageIds = turnMessageIds;
-        latestTurnContentSha256 = turnContentSha256;
-        latestTurnTextPartSha256 = turnTextPartSha256;
-        latestTurnPartIds = turnPartIds;
       }
-      if (latestTurnMessageIds.length === 0) {
-        throw new Error(
-          `Benchmark session ${session.id} latest turn has no canonical assistant text`,
-        );
-      }
-      readinessTargets.push({
-        expectedTextPartSha256: latestTurnTextPartSha256,
-        expectedPartIds: latestTurnPartIds,
-        sessionId,
-        title: displayTitle,
-        expectedMessageIds: latestTurnMessageIds,
-        expectedContentSha256: latestTurnContentSha256,
-      });
+      latestTurnMessageIds = turnMessageIds
+      latestTurnContentSha256 = turnContentSha256
+      latestTurnTextPartSha256 = turnTextPartSha256
+      latestTurnPartIds = turnPartIds
     }
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
+    if (latestTurnMessageIds.length === 0) {
+      throw new Error(`Benchmark session ${session.id} latest turn has no canonical assistant text`)
+    }
+    readinessTargets.push({
+      expectedTextPartSha256: latestTurnTextPartSha256,
+      expectedPartIds: latestTurnPartIds,
+      sessionId,
+      title: displayTitle,
+      expectedMessageIds: latestTurnMessageIds,
+      expectedContentSha256: latestTurnContentSha256,
+    })
   }
 
-  const actualMessages = new Map(
-    (
-      database
-        .prepare("SELECT id, data FROM message ORDER BY id")
-        .all() as Array<{ id: string; data: string }>
-    ).map((row) => [row.id, row.data]),
-  );
-  const actualParts = new Map(
-    (
-      database.prepare("SELECT id, data FROM part ORDER BY id").all() as Array<{
-        id: string;
-        data: string;
-      }>
-    ).map((row) => [row.id, row.data]),
-  );
-  database.close();
+  await database.persist(dbPath)
+  for (let index = 0; index < readinessTargets.length; index++)
+    readinessTargets[index] = database.remapReadiness(readinessTargets[index]!)
+  for (const part of materializedParts.values()) part.partId = database.partIds.get(part.partId)!
   await registerSessionInventory({
     dataDirectory: input.dataDirectory,
     workspaces,
     sessions: corpus.sessions,
     materializedSessions,
-  });
+  })
   // Finish the control-plane inventory import at materialization time. The
   // rail lists sessions from `claxedo_session_meta` (claxedo.db), and a
   // workspace's sessions are imported only when ITS runtime first starts —
@@ -377,21 +262,18 @@ export async function materializeClaxedoCorpus(input: {
     workspaces,
     sessions: corpus.sessions,
     materializedSessions,
-  });
-  const readbackPassed =
-    sameMap(expectedMessages, actualMessages) &&
-    sameMap(expectedParts, actualParts);
+  })
   const coverage = input.profiles.map((profile) => {
-    const unsupportedShapes = profileCoverageFailures(corpus, profile);
+    const unsupportedShapes = profileCoverageFailures(corpus, profile)
     return {
       profile,
       corpusDigestSha256: computedDigest,
       counts: corpus.manifest.counts,
       semanticSha256: corpus.manifest.hashes.semanticSha256,
-      passed: readbackPassed && unsupportedShapes.length === 0,
+      passed: unsupportedShapes.length === 0,
       unsupportedShapes,
-    };
-  });
+    }
+  })
   return {
     corpus,
     dbPath,
@@ -404,11 +286,11 @@ export async function materializeClaxedoCorpus(input: {
     readinessTargets,
     materializedSessions,
     materializedParts,
-  };
+  }
 }
 
 async function initializeWorkspace(workspaceDirectory: string, marker = "") {
-  await runGit(["init", "--initial-branch=main", workspaceDirectory]);
+  await runGit(["init", "--initial-branch=main", workspaceDirectory])
   await runGit(
     [
       "-C",
@@ -417,9 +299,7 @@ async function initializeWorkspace(workspaceDirectory: string, marker = "") {
       "--allow-empty",
       "--no-gpg-sign",
       "-m",
-      marker
-        ? `Agent app benchmark corpus ${marker}`
-        : "Agent app benchmark corpus",
+      marker ? `Agent app benchmark corpus ${marker}` : "Agent app benchmark corpus",
     ],
     {
       GIT_AUTHOR_NAME: "Agent App Benchmark",
@@ -429,19 +309,10 @@ async function initializeWorkspace(workspaceDirectory: string, marker = "") {
       GIT_COMMITTER_EMAIL: "benchmark@localhost",
       GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
     },
-  );
-  const rootCommit = (
-    await runGit([
-      "-C",
-      workspaceDirectory,
-      "rev-list",
-      "--max-parents=0",
-      "HEAD",
-    ])
-  ).trim();
-  if (!/^[0-9a-f]{40}$/u.test(rootCommit))
-    throw new Error("git did not produce a canonical root commit project ID");
-  return rootCommit;
+  )
+  const rootCommit = (await runGit(["-C", workspaceDirectory, "rev-list", "--max-parents=0", "HEAD"])).trim()
+  if (!/^[0-9a-f]{40}$/u.test(rootCommit)) throw new Error("git did not produce a canonical root commit project ID")
+  return rootCommit
 }
 
 async function runGit(args: string[], env?: Record<string, string>) {
@@ -450,36 +321,32 @@ async function runGit(args: string[], env?: Record<string, string>) {
     env: env ? { ...process.env, ...env } : process.env,
     stdout: "pipe",
     stderr: "pipe",
-  });
+  })
   const [stdout, stderr, exitCode] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
     child.exited,
-  ]);
-  if (exitCode !== 0)
-    throw new Error(
-      `benchmark git preparation failed: ${(stderr || stdout).trim()}`,
-    );
-  return stdout;
+  ])
+  if (exitCode !== 0) throw new Error(`benchmark git preparation failed: ${(stderr || stdout).trim()}`)
+  return stdout
 }
 
 async function registerWorkspace(input: {
-  dataDirectory: string;
-  workspaceDirectory: string;
-  projectId: string;
-  projectName: string;
+  dataDirectory: string
+  workspaceDirectory: string
+  projectId: string
+  projectName: string
 }) {
-  const workspaceStoreModule =
-    "../../../claxedo-server-core/src/workspace/store/index.ts";
+  const workspaceStoreModule = "../../../claxedo-server-core/src/workspace/store/index.ts"
   const { ensureWorkspace } = (await import(workspaceStoreModule)) as {
     ensureWorkspace(input: {
-      workspaceId: string;
-      project_id: string;
-      project_name: string;
-      workspace_name: string;
-      directory: string;
-    }): Promise<{ id: string } | undefined>;
-  };
+      workspaceId: string
+      project_id: string
+      project_name: string
+      workspace_name: string
+      directory: string
+    }): Promise<{ id: string } | undefined>
+  }
   await withClaxedoDataDirectory(input.dataDirectory, async () => {
     const workspace = await ensureWorkspace({
       workspaceId: input.projectId,
@@ -487,48 +354,40 @@ async function registerWorkspace(input: {
       project_name: input.projectName,
       workspace_name: "main",
       directory: input.workspaceDirectory,
-    });
-    if (!workspace)
-      throw new Error(
-        "production workspace store rejected the benchmark workspace",
-      );
-  });
+    })
+    if (!workspace) throw new Error("production workspace store rejected the benchmark workspace")
+  })
 }
 
 async function seedSessionMeta(input: {
-  dataDirectory: string;
-  workspaces: Map<string, { directory: string; projectId: string }>;
-  sessions: CorpusSession[];
-  materializedSessions: Map<string, string>;
+  dataDirectory: string
+  workspaces: Map<string, { directory: string; projectId: string }>
+  sessions: CorpusSession[]
+  materializedSessions: Map<string, string>
 }) {
-  const metaModule = "../../../claxedo-server-core/src/session/meta/index.ts";
+  const metaModule = "../../../claxedo-server-core/src/session/meta/index.ts"
   const { putSessionMeta } = (await import(metaModule)) as {
     putSessionMeta(
       sessionID: string,
       value: {
-        ws?: { id: string; project_id: string; directory: string };
-        workspaceID?: string | null;
-        directory?: string | null;
-        host?: "central" | "workspace";
-        title?: string | null;
-        createdAt?: number;
-        updatedAt?: number;
+        ws?: { id: string; project_id: string; directory: string }
+        workspaceID?: string | null
+        directory?: string | null
+        host?: "central" | "workspace"
+        title?: string | null
+        createdAt?: number
+        updatedAt?: number
       },
-    ): Promise<unknown>;
-  };
+    ): Promise<unknown>
+  }
   await withClaxedoDataDirectory(input.dataDirectory, async () => {
-    const baseTime = Date.parse("2020-01-01T00:00:00.000Z");
-    for (const session of input.sessions.toSorted(
-      (left, right) => left.order - right.order,
-    )) {
-      const workspace = input.workspaces.get(session.workspaceId ?? "");
-      const sessionId = input.materializedSessions.get(session.id);
-      if (!workspace || !sessionId)
-        throw new Error(`session meta seed is missing ${session.id}`);
-      const createdAt = baseTime + session.order * 1_000_000;
-      const displayTitle = /^\d+\.\s/.test(session.title)
-        ? session.title
-        : `${session.order + 1}. ${session.title}`;
+    const baseTime = Date.parse("2020-01-01T00:00:00.000Z")
+    for (const session of input.sessions.toSorted((left, right) => left.order - right.order)) {
+      const workspace = input.workspaces.get(session.workspaceId ?? "")
+      const sessionId = input.materializedSessions.get(session.id)
+      if (!workspace || !sessionId) throw new Error(`session meta seed is missing ${session.id}`)
+      const createdAt = baseTime + session.order * 1_000_000
+      const displayTitle = /^\d+\.\s/.test(session.title) ? session.title : `${session.order + 1}. ${session.title}`
       await putSessionMeta(sessionId, {
         // The project-scoped rail query filters on project_id, which only
         // input.ws carries.
@@ -543,72 +402,62 @@ async function seedSessionMeta(input: {
         title: displayTitle,
         createdAt,
         updatedAt: createdAt + 999_999 + session.order * 60_000,
-      });
+      })
     }
-  });
+  })
 }
 
 async function registerSessionInventory(input: {
-  dataDirectory: string;
-  workspaces: Map<string, { directory: string; projectId: string }>;
-  sessions: CorpusSession[];
-  materializedSessions: Map<string, string>;
+  dataDirectory: string
+  workspaces: Map<string, { directory: string; projectId: string }>
+  sessions: CorpusSession[]
+  materializedSessions: Map<string, string>
 }) {
-  const runtimeStoreModule = "../../../workspace-runtime/src/store.ts";
+  const runtimeStoreModule = "../../../workspace-runtime/src/store.ts"
   const { RuntimeStore } = (await import(runtimeStoreModule)) as {
     RuntimeStore: new (root: string) => {
       bindSession(input: {
-        sessionId: string;
-        directory: string;
-        title: string;
-        agentSessionId: string;
-        createdAt: number;
-        updatedAt?: number;
-      }): void;
+        sessionId: string
+        directory: string
+        title: string
+        agentSessionId: string
+        createdAt: number
+        updatedAt?: number
+      }): void
       updateSessionConfig(
         id: string,
         update: {
-          harness: { id: "opencode"; access: "native" };
-          variant: null;
-          agent: null;
+          harness: { id: "opencode"; access: "native" }
+          variant: null
+          agent: null
         },
         input: { directory: string },
-      ): unknown;
-      markSessionInventoryImported(directory: string): void;
-      flush(): void;
-      close(): void;
-    };
-  };
-  const baseTime = Date.parse("2020-01-01T00:00:00.000Z");
+      ): unknown
+      flush(): void
+      close(): void
+    }
+  }
+  const baseTime = Date.parse("2020-01-01T00:00:00.000Z")
   // One runtime store per workspace: the inventory is project-scoped, and a
   // multi-workspace corpus binds every session inside its own workspace so
   // warm switching crosses real project boundaries.
   for (const [workspaceId, workspace] of input.workspaces) {
-    const store = new RuntimeStore(
-      path.join(input.dataDirectory, "agent-core", workspace.projectId),
-    );
+    const store = new RuntimeStore(path.join(input.dataDirectory, "agent-core", workspace.projectId))
     try {
       // Reverse order makes corpus item zero the most recently updated row and
       // therefore present in Claxedo's initial five-row sidebar page.
-      for (const session of input.sessions.toSorted(
-        (left, right) => right.order - left.order,
-      )) {
-        if ((session.workspaceId ?? "") !== workspaceId) continue;
-        const sessionId = input.materializedSessions.get(session.id);
-        if (!sessionId)
-          throw new Error(
-            `session inventory is missing materialized ID for ${session.id}`,
-          );
+      for (const session of input.sessions.toSorted((left, right) => right.order - left.order)) {
+        if ((session.workspaceId ?? "") !== workspaceId) continue
+        const sessionId = input.materializedSessions.get(session.id)
+        if (!sessionId) throw new Error(`session inventory is missing materialized ID for ${session.id}`)
         store.bindSession({
           sessionId,
           directory: workspace.directory,
-          title: /^\d+\.\s/.test(session.title)
-            ? session.title
-            : `${session.order + 1}. ${session.title}`,
+          title: /^\d+\.\s/.test(session.title) ? session.title : `${session.order + 1}. ${session.title}`,
           agentSessionId: sessionId,
           createdAt: baseTime + session.order * 1_000_000,
           updatedAt: baseTime + session.order * 1_000_000 + 999_999 + session.order * 60_000,
-        });
+        })
         store.updateSessionConfig(
           sessionId,
           {
@@ -617,46 +466,33 @@ async function registerSessionInventory(input: {
             agent: null,
           },
           { directory: workspace.directory },
-        );
+        )
       }
-      store.markSessionInventoryImported(workspace.directory);
-      store.flush();
+      store.flush()
     } finally {
-      store.close();
+      store.close()
     }
   }
 }
 
-function profileCoverageFailures(
-  corpus: AgentAppCorpus,
-  profile: AgentAppProfile,
-) {
-  const failures: string[] = [];
+function profileCoverageFailures(corpus: AgentAppCorpus, profile: AgentAppProfile) {
+  const failures: string[] = []
   if (profile === "workspace-core-v1") {
-    if (corpus.sessions.length !== 20) failures.push("workspace-session-count");
-    if (corpus.sessions.some((session) => session.turns.length === 0))
-      failures.push("workspace-empty-session");
+    if (corpus.sessions.length !== 20) failures.push("workspace-session-count")
+    if (corpus.sessions.some((session) => session.turns.length === 0)) failures.push("workspace-empty-session")
   }
-  if (profile === "resource-core-v1" && corpus.sessions.length !== 20)
-    failures.push("resource-sweep-session-count");
+  if (profile === "resource-core-v1" && corpus.sessions.length !== 20) failures.push("resource-sweep-session-count")
   if (profile === "conversation-rich-v1") {
     if (
       corpus.sessions.some((session) =>
-        session.turns.some((turn) =>
-          turn.messages.some((message) => message.role === "system"),
-        ),
+        session.turns.some((turn) => turn.messages.some((message) => message.role === "system")),
       )
     ) {
-      failures.push("system-message");
+      failures.push("system-message")
     }
-    if (!corpus.sessions.some((session) => session.turns.length >= 3))
-      failures.push("history-anchor-count");
-    if (
-      !corpus.sessions.some((session) =>
-        session.events.some((event) => event.type === "message-part-revision"),
-      )
-    ) {
-      failures.push("controlled-stream-events");
+    if (!corpus.sessions.some((session) => session.turns.length >= 3)) failures.push("history-anchor-count")
+    if (!corpus.sessions.some((session) => session.events.some((event) => event.type === "message-part-revision"))) {
+      failures.push("controlled-stream-events")
     }
   }
   if (
@@ -671,24 +507,22 @@ function profileCoverageFailures(
       ),
     )
   ) {
-    failures.push("terminal-stream");
+    failures.push("terminal-stream")
   }
-  return failures;
+  return failures
 }
 
 function toOpenCodePart(part: CorpusPart, at: number): Record<string, unknown> {
-  if (part.type === "text")
-    return { type: "text", text: String(part.text ?? "") };
-  if (part.type === "markdown")
-    return { type: "text", text: String(part.markdown ?? "") };
+  if (part.type === "text") return { type: "text", text: String(part.text ?? "") }
+  if (part.type === "markdown") return { type: "text", text: String(part.markdown ?? "") }
   if (part.type === "code")
     return {
       type: "text",
       text: `\`\`\`${String(part.language)}\n${String(part.code)}\n\`\`\``,
-    };
+    }
   if (part.type === "table") {
-    const headers = part.headers as string[];
-    const rows = part.rows as string[][];
+    const headers = part.headers as string[]
+    const rows = part.rows as string[][]
     return {
       type: "text",
       text: [
@@ -696,33 +530,30 @@ function toOpenCodePart(part: CorpusPart, at: number): Record<string, unknown> {
         `| ${headers.map(() => "---").join(" | ")} |`,
         ...rows.map((row) => `| ${row.join(" | ")} |`),
       ].join("\n"),
-    };
+    }
   }
   if (part.type === "diff")
     return {
       type: "text",
       text: `### ${String(part.path)}\n\n\`\`\`diff\n${String(part.patch)}\n\`\`\``,
-    };
+    }
   if (part.type === "reasoning")
     return {
       type: "reasoning",
       text: String(part.text ?? ""),
       time: { start: at, end: at + 999 },
-    };
+    }
   if (part.type === "attachment") {
     return {
       type: "file",
       mime: String(part.mediaType),
       filename: String(part.name),
       url: TRANSPARENT_PNG,
-    };
+    }
   }
   if (part.type === "tool") {
-    const input = JSON.parse(String(part.inputJson || "{}")) as Record<
-      string,
-      unknown
-    >;
-    const status = String(part.state);
+    const input = JSON.parse(String(part.inputJson || "{}")) as Record<string, unknown>
+    const status = String(part.state)
     const state =
       status === "completed"
         ? {
@@ -742,68 +573,45 @@ function toOpenCodePart(part: CorpusPart, at: number): Record<string, unknown> {
             }
           : status === "running"
             ? { status, input, time: { start: at } }
-            : { status: "pending", input, raw: String(part.inputJson ?? "{}") };
+            : { status: "pending", input, raw: String(part.inputJson ?? "{}") }
     return {
       type: "tool",
       callID: String(part.callId),
       tool: String(part.toolName),
       state,
-    };
+    }
   }
-  throw new Error(`unsupported corpus part: ${part.type}`);
-}
-
-function canonicalOpenCodeId(prefix: "ses" | "msg" | "prt", timestamp: number) {
-  // Production OpenCode message and part IDs begin with a 48-bit, ascending
-  // millisecond clock. Claxedo intentionally sorts those IDs lexically in its
-  // conversation registry. A plain content hash breaks that contract and can
-  // make the benchmark render arbitrary old turns as the latest history fold.
-  // Use the production owner rather than maintaining a benchmark-only clone
-  // of the time encoding. The random suffix is intentionally opaque; corpus
-  // identity is carried by the materialization maps and digest, not by IDs.
-  return Identifier.create(prefix, "ascending", timestamp);
+  throw new Error(`unsupported corpus part: ${part.type}`)
 }
 
 function parseCorpus(value: unknown): AgentAppCorpus {
-  if (!value || typeof value !== "object" || Array.isArray(value))
-    throw new Error("corpus must be an object");
-  const corpus = value as AgentAppCorpus;
-  if (
-    corpus.schemaVersion !== 1 ||
-    corpus.kind !== "agent-app-corpus" ||
-    !Array.isArray(corpus.sessions)
-  ) {
-    throw new Error("unsupported agent-app corpus");
+  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("corpus must be an object")
+  const corpus = value as AgentAppCorpus
+  if (corpus.schemaVersion !== 1 || corpus.kind !== "agent-app-corpus" || !Array.isArray(corpus.sessions)) {
+    throw new Error("unsupported agent-app corpus")
   }
-  return corpus;
+  return corpus
 }
 
 function corpusDigest(corpus: AgentAppCorpus) {
-  const { manifest: _, ...payload } = corpus;
+  const { manifest: _, ...payload } = corpus
   return createHash("sha256")
     .update(JSON.stringify(sortJson(payload)))
-    .digest("hex");
+    .digest("hex")
 }
 
 function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJson);
+  if (Array.isArray(value)) return value.map(sortJson)
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value)
         .filter(([, item]) => item !== undefined)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, item]) => [key, sortJson(item)]),
-    );
+    )
   }
-  return value;
-}
-
-function sameMap(expected: Map<string, string>, actual: Map<string, string>) {
-  return (
-    expected.size === actual.size &&
-    [...expected].every(([key, value]) => actual.get(key) === value)
-  );
+  return value
 }
 
 const TRANSPARENT_PNG =
-  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XwP4WQAAAABJRU5ErkJggg==";
+  "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M/wHwAF/gL+XwP4WQAAAABJRU5ErkJggg=="

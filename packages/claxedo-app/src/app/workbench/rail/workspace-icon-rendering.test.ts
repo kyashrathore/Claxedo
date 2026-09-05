@@ -8,7 +8,7 @@
  * Pattern: packages/app/src/components/prompt-input/editor-dom.test.ts
  */
 import { describe, expect, test, afterEach } from "bun:test"
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 
 // ── Types (match rail-sidebar.tsx) ──
 

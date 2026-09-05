@@ -49,28 +49,17 @@
       "passThroughEnv": ["*"]
     },
     "@claxedo/workspace-relay#test": {
-      // Also after opencode#test: the relay bun adapter suite is pure
+      // After the runtime suite: the relay bun adapter suite is pure
       // socket/timer choreography and a DIFFERENT test hangs at the ceiling
-      // each run whenever it shares the 2-core runner with opencode's 13k-test
-      // bun process — isolation, not timeouts, is the fix (same reasoning as
+      // each run whenever it shares the 2-core runner with another large bun
+      // test process — isolation, not timeouts, is the fix (same reasoning as
       // the runtime edge above).
-      "dependsOn": ["@claxedo/workspace-runtime#test", "opencode#test"],
+      "dependsOn": ["@claxedo/workspace-runtime#test"],
       "outputs": [".artifacts/unit/junit.xml", ".artifacts/unit/junit-bun-adapter.xml", ".artifacts/unit/junit-workerd.xml"],
       "passThroughEnv": ["*"]
     },
-    // The five suites that were already wired before this file grew a generic
-    // `test` task. They keep `^build` so their behaviour is unchanged; none of
-    // them reaches `opencode#build` through its dependency graph.
-    "opencode#test": {
-      "dependsOn": ["^build"],
-      "outputs": [".artifacts/unit/junit.xml"],
-      "passThroughEnv": ["*"]
-    },
-    "@opencode-ai/core#test": {
-      "dependsOn": ["^build"],
-      "outputs": [".artifacts/unit/junit.xml"],
-      "passThroughEnv": ["*"]
-    },
+    // The suites that were already wired before this file grew a generic
+    // `test` task. They keep `^build` so their behaviour is unchanged.
     "@opencode-ai/ui#test": {
       "dependsOn": ["^build"],
       "outputs": [".artifacts/unit/junit.xml"],

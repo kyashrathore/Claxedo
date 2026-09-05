@@ -13,10 +13,11 @@ import type {
 import type { AgentHarnessAdapter, AgentMessagePage, AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/adapters"
 import { harnessCapabilities } from "@claxedo/agent-sdk-runtime/capabilities"
 import type { AgentExecutionBinding, AgentQuestionAnswer } from "@claxedo/agent-runtime-contract"
+import type { Mcp } from "@opencode-ai/plugin"
 import type { OpenCodeRuntime } from "./runtime"
 import { authorizeWorkspace, type WorkspaceScope } from "./scope"
 import type { ProjectedEvent } from "./event-pump"
-import type { SessionMessage, SessionSummary } from "./session-port"
+import { openCodePartId, type SessionMessage, type SessionSummary } from "./session-port"
 
 type AdapterOptions = Readonly<{
   runtime: OpenCodeRuntime
@@ -42,7 +43,7 @@ function contentPart(sessionID: string, messageID: string, item: unknown, ordina
   const row = item as Record<string, unknown>
   return {
     ...row,
-    id: typeof row.id === "string" ? row.id : `${messageID}:${String(ordinal).padStart(6, "0")}`,
+    id: openCodePartId(messageID, "assistant", row, ordinal),
     sessionID,
     messageID,
   }
@@ -50,7 +51,7 @@ function contentPart(sessionID: string, messageID: string, item: unknown, ordina
 
 function message(sessionID: string, row: SessionMessage): AgentMessage {
   const parts = row.type === "user"
-    ? [{ id: `${row.id}:text`, sessionID, messageID: row.id, type: "text", text: row.text ?? "" }]
+    ? [{ id: openCodePartId(row.id, "user", {}, 0), sessionID, messageID: row.id, type: "text", text: row.text ?? "" }]
     : (row.content ?? []).map((part, index) => contentPart(sessionID, row.id, part, index))
   return {
     info: {
@@ -71,6 +72,55 @@ function message(sessionID: string, row: SessionMessage): AgentMessage {
 
 function record(input: unknown): Record<string, unknown> {
   return input && typeof input === "object" && !Array.isArray(input) ? input as Record<string, unknown> : {}
+}
+
+function stringList(input: unknown): string[] {
+  return Array.isArray(input) ? input.filter((value): value is string => typeof value === "string" && value.length > 0) : []
+}
+
+function stringRecord(input: unknown): Record<string, string> | undefined {
+  const row = record(input)
+  const entries = Object.entries(row).filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  return entries.length === Object.keys(row).length && entries.length > 0 ? Object.fromEntries(entries) : undefined
+}
+
+/**
+ * The runtime snapshot's MCP servers (`type: "stdio" | "remote"`, the
+ * `UserMcpServer` shape every harness receives) in the SDK's own config
+ * shape. A snapshot entry of neither type is a contract violation, not a
+ * server to skip silently.
+ */
+function snapshotMcpServers(input: Record<string, unknown>): Record<string, Mcp.ServerConfig> {
+  const servers: Record<string, Mcp.ServerConfig> = {}
+  for (const [name, value] of Object.entries(input)) {
+    const row = record(value)
+    const disabled = row.disabled === true ? { disabled: true } : {}
+    const environment = stringRecord(row.env)
+    const headers = stringRecord(row.headers)
+    if (row.type === "stdio" && typeof row.command === "string" && row.command.length > 0) {
+      servers[name] = { type: "local", command: [row.command, ...stringList(row.args)], ...(environment ? { environment } : {}), ...disabled }
+      continue
+    }
+    if (row.type === "remote" && typeof row.url === "string" && row.url.length > 0) {
+      servers[name] = { type: "remote", url: row.url, ...(headers ? { headers } : {}), ...disabled }
+      continue
+    }
+    throw new Error(`OpenCode MCP server ${name} must be a stdio server with a command or a remote server with a url`)
+  }
+  return servers
+}
+
+/** Agent Plugins already project their servers in the SDK config shape; only the discriminator is checked. */
+function pluginMcpServers(input: Record<string, unknown>): Record<string, Mcp.ServerConfig> {
+  const servers: Record<string, Mcp.ServerConfig> = {}
+  for (const [name, value] of Object.entries(input)) {
+    const row = record(value)
+    const local = row.type === "local" && stringList(row.command).length > 0
+    const remote = row.type === "remote" && typeof row.url === "string" && row.url.length > 0
+    if (!local && !remote) throw new Error(`Agent Plugins OpenCode MCP server ${name} must be a local or remote server`)
+    servers[name] = row as unknown as Mcp.ServerConfig
+  }
+  return servers
 }
 
 function eventSessionID(event: ProjectedEvent): string | undefined {
@@ -182,7 +232,8 @@ class EventQueue {
  * public embedded SDK. There is no URL, server process, raw router, or retry
  * transport in this rail, and no OpenCode-specific route surface beside it —
  * the host talks to it through the same adapter contract as every other
- * harness, including `applyConfig` for the runtime snapshot's MCP servers.
+ * harness, including `applyConfig` for the runtime snapshot's MCP servers and
+ * the Agent Plugins launch document.
  */
 export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   /** Session config is durable in the Claxedo store; the SDK receives it per turn. */
@@ -191,8 +242,6 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   private readonly workspaceID: string
   private readonly directory: string
   private readonly configs = new Map<string, SessionConfig>()
-  /** MCP server names this adapter registered from the last applied snapshot. */
-  private managedMcp = new Set<string>()
 
   constructor(options: AdapterOptions) {
     this.runtime = options.runtime
@@ -402,28 +451,21 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   /**
-   * The runtime snapshot's MCP servers, reconciled into the SDK's own MCP
-   * registry for this workspace. Servers this adapter registered earlier and
-   * that the snapshot no longer names are removed; everything the snapshot
-   * names is (re)added. Auth is not applied here: the SDK reads credentials
-   * through Claxedo's credential bridge, and per-harness launch options have
-   * no SDK projection yet.
+   * The workspace's launch document, enforced in the engine's per-workspace
+   * skill and MCP registries through the launch policy: the runtime
+   * snapshot's MCP servers plus Agent Plugins' OpenCode config
+   * (`launch.config`: skill directories and plugin MCP servers). Auth is not
+   * applied here: the SDK reads credentials through Claxedo's credential
+   * bridge.
    */
   async applyConfig(config: Record<string, unknown>) {
     const scope = this.scope(this.directory)
-    const desired = record(config.mcp)
-    const status = await this.runtime.configuration.mcpStatus(scope)
-    for (const name of this.managedMcp) {
-      if (name in desired) continue
-      await this.runtime.configuration.removeMcp(scope, name)
-    }
-    const next = new Set<string>()
-    for (const [name, server] of Object.entries(desired)) {
-      if (name in status) await this.runtime.configuration.removeMcp(scope, name)
-      await this.runtime.configuration.addMcp(scope, name, record(server))
-      next.add(name)
-    }
-    this.managedMcp = next
+    const plugins = record(record(config.launch).config)
+    const store = await this.runtime.launch(scope)
+    await store.write({
+      skills: stringList(plugins.skills),
+      mcp: { ...snapshotMcpServers(record(config.mcp)), ...pluginMcpServers(record(plugins.mcp)) },
+    })
   }
 
   readRuntimeHealth() {

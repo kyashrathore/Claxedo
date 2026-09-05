@@ -121,10 +121,8 @@ migration.**
    — which is exactly what the Better Auth + D1 deployment wants, because its own
    OAuth server serves them.
 
-3. Teach the CLI and desktop descriptor parsers your adapter id. Both accept
-   only `"better-auth"` today:
-   [`packages/opencode/src/account/native-auth.ts`](../packages/opencode/src/account/native-auth.ts)
-   (`NativeAuthAdapter = Schema.Literals(["better-auth"])`) and
+3. Teach the desktop descriptor parser your adapter id. It accepts only
+   `"better-auth"` today:
    [`packages/claxedo-desktop/src/main/account/auth-descriptor.ts`](../packages/claxedo-desktop/src/main/account/auth-descriptor.ts)
    (`if (adapter !== "better-auth") return fail("invalid_descriptor", ...)`).
    Add your id — and the native flow plus revocation shape your descriptor
@@ -207,10 +205,9 @@ adapter runs.
 4. Write a `.cf.ts` (or Node) entrypoint that calls it, and register the
    artifact in `certified-worker-artifacts.ts`.
 5. Add the profile to `CERTIFIED_ADAPTER_PROFILES` and the profile union.
-6. Clients: add your adapter id to the CLI descriptor schema
-   (`packages/opencode/src/account/native-auth.ts`) and the desktop descriptor
-   parser (`packages/claxedo-desktop/src/main/account/auth-descriptor.ts`).
-   Both hard-reject anything but `"better-auth"` today.
+6. Clients: add your adapter id to the desktop descriptor parser
+   (`packages/claxedo-desktop/src/main/account/auth-descriptor.ts`). It
+   hard-rejects anything but `"better-auth"` today.
 7. Browser: add the adapter id, the adapter module, and the build selector
    branch.
 8. Run `bun run typecheck` and `bun run test:architecture-ratchets`. The

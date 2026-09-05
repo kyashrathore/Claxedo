@@ -41,7 +41,7 @@ describe("OpenCode Agent Plugins projection", () => {
     })
 
     const config = JSON.parse(await fs.readFile(projection.configFile!, "utf8"))
-    expect(config.skills.paths).toEqual([path.join(root, "skills")])
+    expect(config.skills).toEqual([path.join(root, "skills")])
     expect(Object.values(config.mcp)).toEqual([{
       type: "local",
       command: ["./bin/server", `${dataRoot}/state`],

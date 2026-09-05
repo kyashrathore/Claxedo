@@ -23,18 +23,7 @@ const repoRoot = path.resolve(import.meta.dir, "../../../..")
  * Unit 8; until then they are excluded rather than pretended clean.
  */
 const PENDING_DELETION = [
-  "packages/opencode",
-  "packages/server",
-  "packages/sdk-next",
-  "packages/core",
-  "packages/plugin",
-  "packages/schema",
-  "packages/protocol",
-  "packages/codemode",
-  "packages/tui",
   "packages/ui",
-  "packages/cli",
-  "packages/sdk",
 ]
 
 /**

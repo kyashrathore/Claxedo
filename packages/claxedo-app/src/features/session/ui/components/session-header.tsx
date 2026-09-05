@@ -1,7 +1,7 @@
 // Session titlebar: project search + Share (central sessions only when signed in).
 import { Button } from "@opencode-ai/ui/button"
 import { Keybind } from "@opencode-ai/ui/keybind"
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import { createMemo, Show } from "solid-js"
 import { Portal } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"

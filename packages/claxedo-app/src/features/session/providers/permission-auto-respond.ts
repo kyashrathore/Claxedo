@@ -1,4 +1,4 @@
-import { base64Encode } from "@/lib/encode"
+import { base64Encode } from "@opencode-ai/ui/utils/encode"
 import {
   ACP_SAFE_TOOL_KINDS,
   IN_PROJECT_WRITE_PERMISSIONS,

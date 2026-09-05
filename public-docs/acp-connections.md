@@ -191,7 +191,7 @@ connection unselectable. It must not install a compatibility string encoding.
 - Generic CRUD route:
   `packages/claxedo-local-server/src/agent-config/routes/connection-routes.ts`
 - Browser decoder/store:
-  `packages/claxedo-app/src/platform/runtime/agent/connection-catalog.ts`
+  `packages/claxedo-app/src/platform/query/connection-catalog.ts`
 - External OpenCode descriptor and adapter:
   `packages/opencode-server-adapter/src/config.ts` and
   `packages/opencode-server-adapter/src/adapter.ts`

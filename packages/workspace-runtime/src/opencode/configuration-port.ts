@@ -1,5 +1,4 @@
 import type { OpenCodeHost } from "./host"
-import type { WorkspaceScope } from "./scope"
 
 export type IntegrationConnection = Readonly<{ type: "credential" | "env"; id: string; label?: string }>
 export type IntegrationEntry = Readonly<{
@@ -10,11 +9,6 @@ export type IntegrationEntry = Readonly<{
 }>
 
 export type OpenCodeConfigurationPort = Readonly<{
-  mcpStatus(scope: WorkspaceScope): Promise<Readonly<Record<string, unknown>>>
-  addMcp(scope: WorkspaceScope, name: string, config: Readonly<Record<string, unknown>>): Promise<Readonly<Record<string, unknown>>>
-  removeMcp(scope: WorkspaceScope, name: string): Promise<void>
-  connectMcp(scope: WorkspaceScope, name: string): Promise<boolean>
-  disconnectMcp(scope: WorkspaceScope, name: string): Promise<boolean>
   integrations(): Promise<readonly IntegrationEntry[]>
   connectKey(input: { integrationID: string; key: string; label?: string }): Promise<void>
   removeCredential(credentialID: string): Promise<void>
@@ -36,35 +30,7 @@ function record(response: unknown): Readonly<Record<string, unknown>> {
 }
 
 export function createConfigurationPort(host: OpenCodeHost): OpenCodeConfigurationPort {
-  async function mcpStatus(scope: WorkspaceScope) {
-    const value = data(await (await host.client()).mcp.list({ location: { directory: scope.directory } }))
-    if (!Array.isArray(value)) throw new Error("OpenCode returned an invalid MCP list")
-    return Object.fromEntries(value.map((item) => {
-      const row = item as Record<string, unknown>
-      return [String(row.name), row.status]
-    }))
-  }
   return {
-    mcpStatus,
-    async addMcp(scope, name, config) {
-      await (await host.client()).mcp.add({
-        location: { directory: scope.directory },
-        server: name,
-        config: config as never,
-      })
-      return mcpStatus(scope)
-    },
-    async removeMcp(scope, name) {
-      await (await host.client()).mcp.remove({ location: { directory: scope.directory }, server: name })
-    },
-    async connectMcp(scope, name) {
-      await (await host.client()).mcp.connect({ location: { directory: scope.directory }, server: name })
-      return true
-    },
-    async disconnectMcp(scope, name) {
-      await (await host.client()).mcp.disconnect({ location: { directory: scope.directory }, server: name })
-      return true
-    },
     async integrations() {
       const value = data(await (await host.client()).integration.list())
       if (!Array.isArray(value)) throw new Error("OpenCode returned an invalid integration list")

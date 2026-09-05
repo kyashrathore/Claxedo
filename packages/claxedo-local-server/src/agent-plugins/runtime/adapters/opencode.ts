@@ -37,8 +37,11 @@ function openCodeMcpServer(plugin: GenerationPluginRoot, server: AgentPluginMcpS
 
 /**
  * OpenCode has native Agent Skills and MCP configuration, but not an Agent
- * Plugins root loader. Generate one module-owned config instead of writing to
- * the project or the user's global OpenCode configuration.
+ * Plugins root loader. Generate one module-owned config document (the embedded
+ * SDK's config shape: `skills` is a list of skill directories, `mcp` its server
+ * map) instead of writing to the project or the user's global OpenCode
+ * configuration. The workspace runtime's OpenCode adapter applies it per
+ * workspace through the SDK's plugin surface.
  */
 export function openCodeAgentPluginAdapter(): AgentPluginHarnessProjectionAdapter {
   return {
@@ -56,7 +59,7 @@ export function openCodeAgentPluginAdapter(): AgentPluginHarnessProjectionAdapte
       ))
       const configFile = path.join(root, "opencode.json")
       await fs.writeFile(configFile, `${JSON.stringify({
-        ...(skills.length ? { skills: { paths: skills } } : {}),
+        ...(skills.length ? { skills } : {}),
         ...(Object.keys(mcp).length ? { mcp } : {}),
       }, null, 2)}\n`)
       return {

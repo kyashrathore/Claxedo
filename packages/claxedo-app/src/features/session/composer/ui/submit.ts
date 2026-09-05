@@ -349,14 +349,22 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         phase: "sending",
       })
     }
+    // The composer's local-provider variant rides the next prompt; a persisted
+    // session variant is only the fallback for an unset picker. In harness
+    // mode the harness model key owns the variant (thought level), so the
+    // local picker's value must not leak into a connection-backed session.
+    const selectedVariant = selectedHarnessMode(scope) ? undefined : input.variant?.()
     const submittedConfig = existingSessionConfig?.model
       ? {
           model: existingSessionConfig.model,
           agent: input.agent?.() || existingSessionConfig.agent || local.agent.current()?.name || "build",
-          ...(existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
+          ...(selectedVariant ?? existingSessionConfig.variant
+            ? { variant: selectedVariant ?? existingSessionConfig.variant }
+            : {}),
         }
       : resolveSubmittedConfig({
           harnessModelKey: harnessController.modelKeyForSubmit(scope),
+          ...(selectedVariant ? { variant: selectedVariant } : {}),
           currentAgent: local.agent.current(),
           defaultAgent: local.agent.list()[0] ?? (usesWorkspaceRuntimeSession(sessionDirectory) ? { name: "build" } : undefined),
           agentOverride: input.agent?.(),

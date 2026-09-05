@@ -20,7 +20,7 @@ mistake that has actually bitten this repo.
 
 | Track | Packages | Previous | This release |
 |---|---|---|---|
-| runtime | `agent-event-runtime`, `agent-sdk-runtime`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.6.0 | **0.7.0** |
+| runtime | `agent-runtime-contract`, `agent-event-runtime`, `agent-sdk-runtime`, `sandbox-contract`, `sandbox-manager`, `workspace-relay`, `workspace-relay-protocol`, `workspace-runtime` | 0.6.0 | **0.7.0** |
 | apps | `channels`, `connections`, `mcp` | 0.3.0 | **0.4.0** |
 | wakes | `wakes` | 0.2.0 | **0.3.0** |
 
@@ -47,7 +47,7 @@ Riding their track with no shipped-content change of their own:
 
 ```
 Tier 0 — no @claxedo/* dependencies
-  agent-event-runtime
+  agent-runtime-contract
   workspace-relay-protocol
   sandbox-contract
   channels
@@ -56,13 +56,14 @@ Tier 0 — no @claxedo/* dependencies
   mcp
 
 Tier 1
+  agent-event-runtime -> agent-runtime-contract
   sandbox-manager    -> sandbox-contract
-  agent-sdk-runtime  -> agent-event-runtime
+  agent-sdk-runtime  -> agent-event-runtime, agent-runtime-contract
   workspace-relay    -> workspace-relay-protocol
 
 Tier 2
-  workspace-runtime  -> agent-sdk-runtime, agent-event-runtime, workspace-relay,
-                        workspace-relay-protocol
+  workspace-runtime  -> agent-sdk-runtime, agent-event-runtime, agent-runtime-contract,
+                        workspace-relay, workspace-relay-protocol
 
 ```
 

@@ -1,4 +1,4 @@
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import { parseOwnerRepo } from "./rail-git-remote"
 import type { ProjectItem, RuntimeKind } from "./domain-types"
 import { resolveSessionTitle } from "@/features/session/lib/session-title-sync"

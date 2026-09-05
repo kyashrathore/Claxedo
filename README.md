@@ -53,12 +53,12 @@ All 11 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 - `packages/claxedo-app` — web app (Solid); `packages/claxedo-desktop` — Electron shell
 - `packages/workspace-runtime`, `workspace-relay*`, `sandbox-manager` — session execution + routing
 - `packages/{channels,connections,wakes,mcp,agent-*}` — first-party `@claxedo/*` capabilities
-- `packages/{opencode,core,server,protocol,schema,plugin,llm,codemode,tui,ui,session-ui,sdk,http-recorder}` — vendored OpenCode engine + shared UI (load-bearing dependencies)
+- `packages/{ui,session-ui}` — shared OpenCode UI used by the app and desktop
 - `packages/cli` — the `claxedo deploy` CLI (`lildax`)
 
 ## OpenCode heritage
 
-Claxedo is a hard fork of [OpenCode](https://github.com/anomalyco/opencode) — the engine and shared UI packages are vendored in-repo as first-party source; everything else (control plane, workspace runtime, relay, channels, connections, web/desktop apps) is Claxedo's own.
+Claxedo is a hard fork of [OpenCode](https://github.com/anomalyco/opencode). Session execution uses the pinned published OpenCode SDK through `packages/workspace-runtime`; shared UI remains in-repo, while benchmark imports use the same published SDK. The control plane, workspace runtime, relay, channels, connections, and web/desktop apps are Claxedo's own.
 
 ## Contributing
 

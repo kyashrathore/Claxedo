@@ -2009,7 +2009,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const url = new URL(request.url())
     const workspaceScoped = url.pathname.startsWith("/workspaces/") ||
       url.searchParams.has("directory") ||
-      request.headers()["x-opencode-directory"]?.startsWith("workspace:") === true
+      request.headers()["x-claxedo-directory"]?.startsWith("workspace:") === true
     const cursor = workspaceStreamCursor(route, busWrEvents)
     const batch = await busWrEvents.drain(sseIdleTimeoutMs, cursor)
     const now = Date.now()

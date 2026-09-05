@@ -1,14 +1,14 @@
-import { createHash } from "node:crypto";
-import { mkdtemp, readFile, realpath, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
-import { describe, expect, test } from "bun:test";
-import { Database } from "bun:sqlite";
-import { materializeClaxedoCorpus, readCanonicalCorpusDigest } from "../src/agent-corpus-materializer";
+import { createHash } from "node:crypto"
+import { mkdtemp, readFile, realpath, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import path from "node:path"
+import { describe, expect, test } from "bun:test"
+import { Database } from "bun:sqlite"
+import { materializeClaxedoCorpus, readCanonicalCorpusDigest } from "../src/agent-corpus-materializer"
 
 describe("Claxedo agent-app corpus materializer", () => {
   test("writes reasoning and rich content into the production OpenCode database schema", async () => {
-    const root = await mkdtemp(path.join(tmpdir(), "claxedo-agent-corpus-"));
+    const root = await mkdtemp(path.join(tmpdir(), "claxedo-agent-corpus-"))
     try {
       const payload = {
         schemaVersion: 1 as const,
@@ -32,9 +32,7 @@ describe("Claxedo agent-app corpus materializer", () => {
                     id: "message-user",
                     order: 0,
                     role: "user" as const,
-                    parts: [
-                      { id: "prompt", order: 0, type: "text", text: "hello" },
-                    ],
+                    parts: [{ id: "prompt", order: 0, type: "text", text: "hello" }],
                   },
                   {
                     id: "message-assistant",
@@ -70,10 +68,10 @@ describe("Claxedo agent-app corpus materializer", () => {
             ],
           },
         ],
-      };
+      }
       const digest = createHash("sha256")
         .update(JSON.stringify(sortJson(payload)))
-        .digest("hex");
+        .digest("hex")
       const corpus = {
         ...payload,
         manifest: {
@@ -101,66 +99,60 @@ describe("Claxedo agent-app corpus materializer", () => {
             terminalSha256: "c".repeat(64),
           },
         },
-      };
-      const corpusPath = path.join(root, "corpus.json");
-      await Bun.write(corpusPath, JSON.stringify(corpus));
-      expect(await readCanonicalCorpusDigest(corpusPath)).toBe(digest);
-      expect(createHash("sha256").update(await readFile(corpusPath)).digest("hex")).not.toBe(digest);
+      }
+      const corpusPath = path.join(root, "corpus.json")
+      await Bun.write(corpusPath, JSON.stringify(corpus))
+      expect(await readCanonicalCorpusDigest(corpusPath)).toBe(digest)
+      expect(
+        createHash("sha256")
+          .update(await readFile(corpusPath))
+          .digest("hex"),
+      ).not.toBe(digest)
       const result = await materializeClaxedoCorpus({
         corpusPath,
         corpusDigestSha256: digest,
         dataDirectory: path.join(root, "data"),
         workspaceDirectory: path.join(root, "workspace"),
         profiles: ["resource-core-v1"],
-      });
+      })
       expect(result.coverage).toEqual([
         expect.objectContaining({
           profile: "resource-core-v1",
           passed: false,
           unsupportedShapes: ["resource-sweep-session-count"],
         }),
-      ]);
-      expect(await Bun.file(result.dbPath).exists()).toBe(true);
-      const database = new Database(result.dbPath, { readonly: true });
-      const sessionId = result.materializedSessions.get("session-1")!;
-      expect(sessionId).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/);
+      ])
+      expect(await Bun.file(result.dbPath).exists()).toBe(true)
+      const database = new Database(result.dbPath, { readonly: true })
+      const sessionId = result.materializedSessions.get("session-1")!
+      expect(sessionId).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
       expect(result.readinessTargets).toEqual([
         {
           sessionId,
           title: "1. Fixture",
-          expectedMessageIds: [
-            expect.stringMatching(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/),
-          ],
+          expectedMessageIds: [expect.stringMatching(/^msg_[0-9a-f]{12}[0-9A-Za-z]{14}$/)],
           expectedContentSha256: expect.any(Object),
           expectedTextPartSha256: expect.any(Object),
           expectedPartIds: expect.any(Array),
         },
-      ]);
+      ])
       expect(
-        (database.query("SELECT title FROM session WHERE id = ?").get(sessionId) as { title: string }).title,
-      ).toBe("1. Fixture");
+        (database.query("SELECT title FROM session_v2 WHERE id = ?").get(sessionId) as { title: string }).title,
+      ).toBe("1. Fixture")
       const chronologicalMessageIds = database
-        .query("SELECT id FROM message ORDER BY time_created ASC, id ASC")
+        .query("SELECT id FROM session_message ORDER BY time_created ASC, id ASC")
         .all()
-        .map((row) => (row as { id: string }).id);
+        .map((row) => (row as { id: string }).id)
       const lexicalMessageIds = database
-        .query("SELECT id FROM message ORDER BY id ASC")
+        .query("SELECT id FROM session_message ORDER BY id ASC")
         .all()
-        .map((row) => (row as { id: string }).id);
-      expect(lexicalMessageIds).toEqual(chronologicalMessageIds);
-      expect(
-        database
-          .query("SELECT workspace_id FROM session WHERE id = ?")
-          .get(sessionId),
-      ).toEqual({
+        .map((row) => (row as { id: string }).id)
+      expect(lexicalMessageIds).toEqual(chronologicalMessageIds)
+      expect(database.query("SELECT workspace_id FROM session_v2 WHERE id = ?").get(sessionId)).toEqual({
         workspace_id: null,
-      });
-      database.close();
-      expect(
-        JSON.parse(
-          await readFile(path.join(root, "data", "workspaces.json"), "utf8"),
-        ),
-      ).toMatchObject({
+      })
+      database.close()
+      expect(JSON.parse(await readFile(path.join(root, "data", "workspaces.json"), "utf8"))).toMatchObject({
         version: 4,
         workspaces: [
           {
@@ -171,31 +163,31 @@ describe("Claxedo agent-app corpus materializer", () => {
             kind: "local",
           },
         ],
-      });
+      })
       expect(result.materializedParts.get("reason")).toMatchObject({
-        partId: expect.stringMatching(/^prt_/),
+        partId: expect.stringMatching(/^msg_.*:000000$/),
         messageId: expect.stringMatching(/^msg_/),
         sessionId,
         payload: { type: "reasoning", text: "think" },
-      });
+      })
       expect(result.materializedParts.get("tool")?.payload).toMatchObject({
         type: "tool",
         callID: "call",
         tool: "read",
-      });
+      })
     } finally {
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true })
     }
-  });
-});
+  })
+})
 
 function sortJson(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortJson);
+  if (Array.isArray(value)) return value.map(sortJson)
   if (value && typeof value === "object")
     return Object.fromEntries(
       Object.entries(value)
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([key, item]) => [key, sortJson(item)]),
-    );
-  return value;
+    )
+  return value
 }

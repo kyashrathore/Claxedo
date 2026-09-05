@@ -16,6 +16,7 @@ describe("publish-runtime-packages", () => {
 
   test("publishes runtime packages in dependency order", () => {
     expect(runtimePackages.map((item) => item.name)).toEqual([
+      "@claxedo/agent-runtime-contract",
       "@claxedo/workspace-relay-protocol",
       "@claxedo/workspace-relay",
       "@claxedo/agent-event-runtime",
@@ -100,8 +101,8 @@ describe("publish-runtime-packages", () => {
       "--tag",
       "latest",
     ])
-    expect(calls.filter((call) => call[0] === "npm" && call[1] === "publish")).toHaveLength(4)
-    expect(calls.filter((call) => call[0] === "npm" && call[1] === "run" && call[2] === "build")).toHaveLength(5)
+    expect(calls.filter((call) => call[0] === "npm" && call[1] === "publish")).toHaveLength(5)
+    expect(calls.filter((call) => call[0] === "npm" && call[1] === "run" && call[2] === "build")).toHaveLength(6)
     expect(published).toEqual(new Set(runtimePackages.map((item) => `${item.name}@0.5.1`)))
   })
 
@@ -121,8 +122,8 @@ describe("publish-runtime-packages", () => {
 
     expect(result).toEqual(runtimePackages.map((item) => `${item.name}@0.5.1`))
     expect(published).toEqual(new Set(runtimePackages.map((item) => `${item.name}@0.5.1`)))
-    // Two re-reads per package after the initial miss, all five packages.
-    expect(waits).toHaveLength(10)
+    // Two re-reads per package after the initial miss, all six packages.
+    expect(waits).toHaveLength(12)
   })
 
   test("still fails when a publish never becomes visible", async () => {
@@ -143,7 +144,7 @@ describe("publish-runtime-packages", () => {
           vi.setSystemTime(Date.now() + ms)
         },
       }),
-    ).rejects.toThrow(/npm did not expose @claxedo\/workspace-relay-protocol@0\.5\.1 within 120s of publish/)
+    ).rejects.toThrow(/npm did not expose @claxedo\/agent-runtime-contract@0\.5\.1 within 120s of publish/)
     expect(elapsed).toBeGreaterThanOrEqual(120_000)
   })
 })

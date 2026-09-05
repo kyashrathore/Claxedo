@@ -38,8 +38,12 @@ export type EmittedFile = { name: string; text: string }
  */
 export const IDENTITY_PROVIDER_MARKERS: readonly string[] = [
   "claxedo-browser-auth:better-auth",
-  "createAuthClient",
-  "better-auth/client",
+  // Better Auth's client body names its nanostore atoms with these literals;
+  // they survive minification, unlike export names (`createAuthClient`) and
+  // import specifiers (`better-auth/client`), which a hidden-sourcemap build
+  // never emits into a chunk.
+  "better-auth:broadcast-channel",
+  "better-auth:online-manager",
 ]
 
 /**

@@ -1,6 +1,6 @@
 import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { getFilename } from "@/lib/path"
+import { getFilename } from "@opencode-ai/ui/utils/path"
 import {
   projectWorkspaceDirectories,
   projectWorkspaceForRef,
