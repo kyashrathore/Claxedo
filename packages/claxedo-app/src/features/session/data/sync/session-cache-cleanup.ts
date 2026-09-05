@@ -83,13 +83,6 @@ if (typeof window !== "undefined") {
   }).__claxedoSessionCachePolicy = { isSurfaceQueryKey: isSessionSurfaceQueryKey }
 }
 
-function removeSessionSurfaceQueries(sessionID: string) {
-  queryClient.removeQueries({
-    queryKey: shellDataKeys.sessionId(sessionID),
-    predicate: (query) => isSessionSurfaceQueryKey(query.queryKey),
-  })
-}
-
 export function droppedSessionIDs(previous: Session[], next: Session[]) {
   const keep = new Set(next.map((item) => item.id))
   return previous.map((item) => item.id).filter((sessionId) => !keep.has(sessionId))

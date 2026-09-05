@@ -16,16 +16,7 @@
  * └────────┴────────────────────────────────────────────────────┘
  */
 
-import {
-  createMemo,
-  createSignal,
-  lazy,
-  onCleanup,
-  onMount,
-  Show,
-  type ParentProps,
-  type JSX,
-} from "solid-js"
+import { createSignal, lazy, onCleanup, onMount, Show, type ParentProps, type JSX } from "solid-js"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import { useClaxedoState, type ContentMeta } from "./workbench/state/index"
 import type { ProjectItem } from "./workbench/rail/domain-types"

@@ -1,4 +1,4 @@
-import { ControlPlaneAuthError, localControlPlaneAuth, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import type { ClaxedoRegion } from "@claxedo/server-core/platform/runtime/region/index"

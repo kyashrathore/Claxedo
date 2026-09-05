@@ -4926,23 +4926,6 @@ export async function waitForTranscript(page: Page, fixture: ReturnType<typeof f
   recordVisualFailure(fixture, `seeded transcript text did not render for ${sessionID}: ${text}`)
 }
 
-async function waitForSessionSurface(page: Page, sessionID: string, title: string) {
-  await page.waitForFunction(({ id, expected }) => {
-    const visible = (node: HTMLElement) => {
-      const rect = node.getBoundingClientRect()
-      const style = getComputedStyle(node)
-      return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
-    }
-    return Array.from(document.querySelectorAll<HTMLElement>(
-      "[data-testid='session-page-root'], [data-testid='session-content'], main, [role='main']",
-    )).some((node) => {
-      if (!visible(node)) return false
-      if (node.dataset.sessionId && node.dataset.sessionId !== id) return false
-      return (node.textContent ?? "").includes(expected)
-    })
-  }, { id: sessionID, expected: title }, { timeout: 10_000 }).catch(() => undefined)
-}
-
 async function showSessionInventory(
   page: Page,
   fixture: ReturnType<typeof fixtureFor>,
@@ -4957,7 +4940,7 @@ async function showSessionInventory(
     return
   }
   await waitForText(page, fixture.sessions[0]?.title ?? "session", 10_000)
-  const loadedMore = await clickLoadMoreUntil(page, fixture, expected)
+  await clickLoadMoreUntil(page, fixture, expected)
   const found = await countTitlesInBody(page, fixture.sessions.slice(0, expected).map((session) => session.title))
   if (found < expected) {
     recordVisualFailure(fixture, `only ${found} of ${expected} seeded sessions were visible in the session inventory`)
@@ -4971,31 +4954,6 @@ async function showSessionInventory(
   }
   if ((options.settle ?? "video") === "video") await settleForVideo(page)
   else await waitForAnimationFrame(page, 1)
-}
-
-async function clickVisibleSession(
-  page: Page,
-  fixture: ReturnType<typeof fixtureFor>,
-  session: ReturnType<typeof fixtureFor>["sessions"][number],
-  options: { settle?: "video" | "frame" } = {},
-) {
-  const settle = options.settle ?? "video"
-  const row = await sessionLocator(page, session)
-  if (await row.isVisible({ timeout: 1_500 }).catch(() => false)) {
-    await row.scrollIntoViewIfNeeded().catch(() => undefined)
-    if (settle === "video") await settleForVideo(page)
-    else await waitForAnimationFrame(page, 1)
-    await row.click({ timeout: 5_000 })
-    if (settle === "video") await settleForVideo(page)
-    else await waitForAnimationFrame(page, 2)
-    return
-  }
-  await page.goto(`${new URL(page.url()).origin}${sessionPath(session, session.id)}`, { waitUntil: "domcontentloaded" })
-  const visibleOutcome = page.url().includes(`/s/${session.id}`) || page.url().includes(`/session/${session.id}`)
-    || await page.getByText(session.title, { exact: false }).first()
-      .isVisible({ timeout: 5_000 })
-      .catch(() => false)
-  if (!visibleOutcome) recordVisualFailure(fixture, `session row was not clickable in the visible UI: ${session.title}`)
 }
 
 async function measureInPageSessionFirstFoldSwitch(
@@ -5799,11 +5757,6 @@ function workspaceLabel(fixture: ReturnType<typeof fixtureFor>, directory: strin
 
 function escapeRegExp(value: string) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
-}
-
-async function scrollMain(page: Page, deltaY: number) {
-  await page.mouse.wheel(0, deltaY)
-  await waitForAnimationFrame(page, 2)
 }
 
 async function waitForAnimationFrame(page: Page, count: number) {

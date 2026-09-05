@@ -98,7 +98,6 @@ packages/workspace-runtime-bundle.tar.gz
 *.rpm
 *.exe
 *.msi
-packages/opencode/src/provider/models-snapshot.ts
 .collaborator
 .vercel
 .env*.local

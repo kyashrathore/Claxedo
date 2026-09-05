@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test"
+import { afterEach, describe, expect, test } from "bun:test"
 import { notificationApiAvailable, requestNotificationPermission } from "./notification-permission"
 
 // Bug A: the browser's permission prompt was appearing on EVERY turn

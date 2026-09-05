@@ -401,12 +401,6 @@ function envRecord(value: unknown): Record<string, string> | undefined {
   return entries.length ? Object.fromEntries(entries) : undefined
 }
 
-function sameEnv(left: Record<string, string> | undefined, right: Record<string, string> | undefined) {
-  const a = Object.entries(left ?? {}).toSorted()
-  const b = Object.entries(right ?? {}).toSorted()
-  return a.length === b.length && a.every(([key, value], index) => b[index]![0] === key && b[index]![1] === value)
-}
-
 export async function ensureWorkspace(input: EnsureWorkspaceInput) {
   await boot()
   if ((input.kind ?? "local") !== "local") return ensureWorkspaceUncoalesced(input)
@@ -805,4 +799,3 @@ export async function upsertProjectRecord(input: { id: string; name: string; env
 export async function projectEnv(projectId: string | undefined): Promise<Record<string, string> | undefined> {
   return (await getProjectRecord(projectId))?.env
 }
-

@@ -29,10 +29,6 @@ class HostedControlError extends Error {
   }
 }
 
-function num(input: unknown) {
-  return typeof input === "number" && Number.isFinite(input) ? input : undefined
-}
-
 function errorResponse(error: unknown) {
   if (error instanceof HostedControlError) {
     return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status })

@@ -480,7 +480,6 @@ function analyzeProfile(
   attributor: Attributor,
   window: { startTime: number; endTime: number },
 ) {
-  const byId = new Map(profile.nodes.map((node) => [node.id, node]))
   const parent = new Map<number, number>()
   for (const node of profile.nodes) {
     for (const child of node.children ?? []) parent.set(child, node.id)

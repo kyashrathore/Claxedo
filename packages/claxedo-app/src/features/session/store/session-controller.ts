@@ -7,7 +7,7 @@ import type {
 } from "@claxedo/agent-runtime-contract"
 import { useGlobalSDK, useSDK } from "@/features/session/app-ports"
 import { diffs as list } from "@/lib/diffs"
-import { idleSessionStatus, isSessionTurnActive, mergeBusySessionStatus, pickSessionPermissions, pickSessionQuestions } from "./session-store"
+import { idleSessionStatus, isSessionTurnActive } from "./session-store"
 import { dispatchSessionStatusEvent, dispatchSessionTodoEvent } from "./session-status-dispatcher"
 import { hydrateConversationPage, resolveStoredMessages, resolveStoredParts } from "../conversation/conversation-hydrator"
 import { createActiveConversationSnapshot } from "../conversation/conversation-registry"
@@ -39,7 +39,12 @@ import {
 } from "../data/sync/queries"
 import { removeSessionInventoryQueryData } from "../data/sync/session-inventory"
 import { removeSessionListQueryData } from "../data/query/session-list"
-import { getSessionPrefetch, getSessionPrefetchPromise, sessionHistoryPageRequest, type SessionPrefetchMeta, type SessionPrefetchPage } from "@/platform/sync/session-prefetch"
+import {
+  getSessionPrefetch,
+  getSessionPrefetchPromise,
+  sessionHistoryPageRequest,
+  type SessionPrefetchPage,
+} from "@/platform/sync/session-prefetch"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { SessionMessagePageRequest } from "@/platform/runtime/session"
 import { queryClient } from "@/platform/query/query-client"
@@ -135,7 +140,6 @@ export function isSessionNotFoundError(error: unknown) {
       : JSON.stringify(error)
   return value.includes("session_not_found") || value.includes("Session not found") || value.includes("Request failed: 404")
 }
-
 
 export function shouldHydrateSession(input: {
   sessionID?: string
@@ -325,26 +329,34 @@ export function createSessionController(input: {
   const { meta: historyMeta, setValue: setHistoryMetaValue } = createHistoryMetaState()
   const [missingSessions, setMissingSessions] = createSignal<Record<string, boolean | undefined>>({})
   let sessionActivationEpoch = 0
-  const { statusQuery, requestQuery, todoQuery, diffQuery, capabilitiesQuery, goalQuery, directorySessionCacheQuery, sessionRowQuery } =
-    createSessionPaneQueries({
-      active: paneActive,
-      sessionID: input.sessionID,
-      directory: input.directory,
-      serverUrl: () => globalSDK.url,
-      signedControlPlane: input.signedControlPlane,
-      workspaceId: input.workspaceId,
-      workspaceKind: input.workspaceKind,
-      sessionRef: input.sessionRef,
-      fetchSessionRow: async (sessionID) => (await fetchSessionByTransport({
-        directory: input.directory(),
-        sessionID,
-        claxedoServerUrl: globalSDK.url,
-        signedControlPlane: input.signedControlPlane?.() ?? false,
-        workspaceId: input.signedControlPlane?.() ? input.workspaceId?.() : undefined,
-        workspaceKind: input.signedControlPlane?.() ? input.workspaceKind?.() : undefined,
-        sessionRef: input.sessionRef?.(),
-      })).data,
-    })
+  const {
+    statusQuery,
+    requestQuery,
+    todoQuery,
+    diffQuery,
+    capabilitiesQuery,
+    goalQuery,
+    directorySessionCacheQuery,
+    sessionRowQuery,
+  } = createSessionPaneQueries({
+    active: paneActive,
+    sessionID: input.sessionID,
+    directory: input.directory,
+    serverUrl: () => globalSDK.url,
+    signedControlPlane: input.signedControlPlane,
+    workspaceId: input.workspaceId,
+    workspaceKind: input.workspaceKind,
+    sessionRef: input.sessionRef,
+    fetchSessionRow: async (sessionID) => (await fetchSessionByTransport({
+      directory: input.directory(),
+      sessionID,
+      claxedoServerUrl: globalSDK.url,
+      signedControlPlane: input.signedControlPlane?.() ?? false,
+      workspaceId: input.signedControlPlane?.() ? input.workspaceId?.() : undefined,
+      workspaceKind: input.signedControlPlane?.() ? input.workspaceKind?.() : undefined,
+      sessionRef: input.sessionRef?.(),
+    })).data,
+  })
 
   const sourceInfo = createMemo(() => {
     const sessionID = input.sessionID()

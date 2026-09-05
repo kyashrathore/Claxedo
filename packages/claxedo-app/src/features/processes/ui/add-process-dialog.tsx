@@ -26,12 +26,6 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 
 type ProcessConfig = Process.ProcessConfig
 
-const RESTART_POLICIES = [
-  { value: "never" as const, label: "Never" },
-  { value: "on-failure" as const, label: "On failure" },
-  { value: "always" as const, label: "Always" },
-]
-
 const CONFLICT_OPTIONS = [
   { value: "ask" as const, label: "Ask me" },
   { value: "pick-new" as const, label: "Pick new" },

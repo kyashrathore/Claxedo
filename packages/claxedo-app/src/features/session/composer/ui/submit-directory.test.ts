@@ -1,10 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { CloudStartupState } from "./submit-create-session"
-import {
-  resolvePreparedSubmitDirectory,
-  type SubmitDirectoryProvisionInput,
-  type SubmitToast,
-} from "./submit-directory"
+import { resolvePreparedSubmitDirectory, type SubmitToast } from "./submit-directory"
 
 describe("resolvePreparedSubmitDirectory", () => {
   test("provisions a cloud workspace, bootstraps, prepares runtime, and publishes loading handoff", async () => {

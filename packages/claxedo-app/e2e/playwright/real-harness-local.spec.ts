@@ -819,15 +819,6 @@ async function createHarnessSession(
   return (await response.json()) as { id: string }
 }
 
-async function updateSessionConfig(dir: string, sessionID: string, config: unknown) {
-  const response = await fetch(
-    `${BACKEND_URL}/session/${encodeURIComponent(sessionID)}/config?directory=${encodeURIComponent(dir)}`,
-    { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(config) },
-  )
-  if (!response.ok)
-    throw new Error(`GATING: failed to update session config (${response.status}): ${await response.text()}`)
-}
-
 async function createPiSession(dir: string) {
   const workspaceResponse = await fetch(
     `${BACKEND_URL}/api/workspace/resolve?directory=${encodeURIComponent(dir)}&create=true`,

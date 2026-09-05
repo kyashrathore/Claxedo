@@ -12,7 +12,7 @@ const reuse = process.env.PLAYWRIGHT_REUSE_EXISTING_SERVER === "1"
 // Keeping this at the Vite process boundary makes every spec in a run exercise
 // the same app composition; individual specs cannot accidentally drift back to
 // Test User because of Playwright's `navigator.webdriver` value.
-const authMode = resolveE2EAuthMode()
+resolveE2EAuthMode()
 // SUITE LANE REGISTRY — the single source of truth for `CLAXEDO_E2E_SUITE`.
 // A spec is only ever executed by a lane whose tag it carries, so a spec with no
 // recognised lane tag runs in NO lane and nobody notices: that is exactly how

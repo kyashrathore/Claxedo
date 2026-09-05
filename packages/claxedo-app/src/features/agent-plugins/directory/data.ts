@@ -144,12 +144,29 @@ function machineHarness(value: unknown): MachineInstalledHarness | undefined {
   return { harnessId, entries }
 }
 
-async function failure(response: Response, fallback: string) {
-  const body: unknown = await response.json().catch(() => undefined)
+export function directorySourceFailure(status: number, body: unknown, fallback: string): DirectorySourceError {
   const error = record(body) && record(body.error) ? body.error : undefined
-  const code = typeof error?.code === "string" ? error.code : `http_${response.status}`
-  const message = typeof error?.message === "string" ? error.message : `${fallback} (${response.status})`
+  const code = typeof error?.code === "string" ? error.code : `http_${status}`
+  const message = typeof error?.message === "string" ? error.message : `${fallback} (${status})`
   return new DirectorySourceError(code, message, diagnostics(error?.["diagnostics"]))
+}
+
+export function parseDirectorySourceList(body: unknown): { sources: DirectorySource[] } {
+  const rows = record(body) && Array.isArray(body.sources) ? body.sources : []
+  return { sources: rows.flatMap((row) => {
+    const source = directorySource(row)
+    return source ? [source] : []
+  }) }
+}
+
+export function parseDirectorySourceResponse(body: unknown): { source: DirectorySource } {
+  const source = record(body) ? directorySource(body.source) : undefined
+  if (!source) throw new DirectorySourceError("invalid_response", "The source response did not match its API contract")
+  return { source }
+}
+
+async function failure(response: Response, fallback: string) {
+  return directorySourceFailure(response.status, await response.json().catch(() => undefined), fallback)
 }
 
 /** The fetch-backed `DirectoryApi` half. Both rails serve the same paths. */
@@ -161,13 +178,7 @@ export function directoryApi(input: { baseUrl: string; request: RequestFn }): Di
         const response = await input.request(url("/sources"))
         if (!response.ok) throw await failure(response, "Sources request failed")
         const body: unknown = await response.json().catch(() => undefined)
-        const rows = record(body) && Array.isArray(body.sources) ? body.sources : []
-        return {
-          sources: rows.flatMap((row) => {
-            const source = directorySource(row)
-            return source ? [source] : []
-          }),
-        }
+        return parseDirectorySourceList(body)
       },
       async add(registration) {
         const response = await input.request(url("/sources"), {
@@ -177,9 +188,7 @@ export function directoryApi(input: { baseUrl: string; request: RequestFn }): Di
         })
         if (!response.ok) throw await failure(response, "Could not add source")
         const body: unknown = await response.json().catch(() => undefined)
-        const source = record(body) ? directorySource(body.source) : undefined
-        if (!source) throw new DirectorySourceError("invalid_response", "The source response did not match its API contract")
-        return { source }
+        return parseDirectorySourceResponse(body)
       },
       async remove(id) {
         const response = await input.request(url(`/sources/${encodeURIComponent(id)}`), { method: "DELETE" })

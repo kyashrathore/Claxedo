@@ -11,7 +11,6 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { usePermission } from "@/features/session/providers/permission"
 import { useSDK } from "@/features/session/app-ports"
 import { useSessionParams } from "@/features/session/providers/session-params"
-import { queryClient } from "@/platform/query/query-client"
 import {
   directorySessionCacheQueryOptions,
   sessionRequestsCacheQueryOptions,

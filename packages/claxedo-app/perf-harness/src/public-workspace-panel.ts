@@ -835,7 +835,7 @@ async function waitForOpenFiles(page: Page, fixture: FixtureEvidence, requireAct
         const style = getComputedStyle(element)
         return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
       }
-      const frame = (at: number) => {
+      const frame = () => {
         const trace = (window as any).__claxedoPublicPanelTrace
         if (requireActiveTrace) {
           if (!trace?.active) return reject(new Error("Claxedo prearmed Files readiness observer lost its active trace"))
@@ -1048,7 +1048,7 @@ export async function waitForPanelOwner(
         resolve(at)
       }
       if (observerToken) observers.set(observerToken, () => fail(new Error("Claxedo panel owner observer was cancelled")))
-      const frame = (at: number) => {
+      const frame = () => {
         const trace = (window as any).__claxedoPublicPanelTrace
         if (trace?.active && !Number.isFinite(trace.trustedInputAt)) {
           frameRequest = requestAnimationFrame(frame)

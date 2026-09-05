@@ -1,6 +1,6 @@
 // Claxedo keeps this general settings override for analytics events and hosted account controls.
 
-import { Component, createMemo, createSignal, createUniqueId, onMount, Show, type JSX } from "solid-js"
+import { Component, createMemo, createSignal, createUniqueId, onMount, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Button } from "@opencode-ai/ui/button"
 import { Select } from "@opencode-ai/ui/select"

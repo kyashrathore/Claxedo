@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test"
 import {
-  cloudWorkspaceStartup,
   prepareUserHostedRuntime,
   prepareWorkspaceRuntime,
   resetWorkspaceRuntimeEnsureCache,

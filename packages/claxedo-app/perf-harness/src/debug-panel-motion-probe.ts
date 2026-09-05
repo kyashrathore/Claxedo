@@ -39,10 +39,8 @@ import {
 import { environmentProfile } from "./environment-profile"
 import { settleBeforeNextInteraction } from "./isolated-interaction"
 import { seedForScenario } from "./seed"
-import { WORKSPACE_LIFECYCLE_CLOSE_DWELL_MS } from "./workspace-lifecycle-contract"
 
 const SCENARIO = "workspace-lifecycle" as const
-const TOGGLE = "[data-testid='workspace-panel-toggle']"
 const COLUMN = "[data-testid='workbench-column']"
 const SHELL = "[data-testid='workspace-panel-shell']"
 

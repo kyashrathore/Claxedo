@@ -174,7 +174,7 @@ describe("credential registry", () => {
       secret: "old-key",
     })
 
-    const updated = await putCredential({
+    await putCredential({
       provider_id: "update-test",
       kind: "api_key",
       source: "managed",

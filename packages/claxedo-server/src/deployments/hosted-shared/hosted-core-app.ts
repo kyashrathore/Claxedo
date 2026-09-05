@@ -5,11 +5,7 @@ import { cors } from "hono/cors"
 import { allowedOriginPatterns } from "@claxedo/server-core/platform/http/cors-origins"
 import { securityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { browserAuthHttpSecurity } from "@claxedo/server-core/platform/http/browser-auth-security"
-import {
-  ControlPlaneAuthError,
-  controlPlaneAuthErrorBody,
-  type SignedControlPlaneAuth,
-} from "@claxedo/server-core/platform/auth/auth"
+import { type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { RequestAuthenticationAdapter } from "@claxedo/server-core/platform/auth/authentication"
 import {
   DEPLOYMENT_MODE_ENV,

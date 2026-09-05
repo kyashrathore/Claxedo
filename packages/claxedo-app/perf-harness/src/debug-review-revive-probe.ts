@@ -65,13 +65,13 @@
 //     startApp() rebuild the dist for whatever port you pass instead.
 //
 // The probe never touches application source; it only drives the built app.
-import { chromium, type Locator, type Page } from "@playwright/test"
+import { chromium, type Page } from "@playwright/test"
 // Causal attribution (script/style/layout + the trusted-window trace) is
 // opt-in inside frame-sampler, read at call time. The probe exists to print
 // that attribution, so it turns the flag on for itself unless overridden.
 process.env.CLAXEDO_PERF_CAUSAL ??= "1"
 
-import { frameSamplingLaunchArgs, type FrameMetric } from "./frame-sampler"
+import { frameSamplingLaunchArgs } from "./frame-sampler"
 import {
   fixtureFor,
   installMockApi,
@@ -84,209 +84,13 @@ import {
   waitForTranscript,
 } from "./browser-runner"
 import { environmentProfile } from "./environment-profile"
-import {
-  ISOLATED_INTERACTION_TIMEOUT_MS,
-  measureIsolatedInteraction,
-  prepareTrustedInteraction,
-  settleBeforeNextInteraction,
-} from "./isolated-interaction"
 import { seedForScenario } from "./seed"
-import {
-  SESSION_SWITCH_SUBSTANTIAL_FILE_PATH,
-  sessionSwitchCellPrefix,
-  type SessionSwitchBlock,
-  type SessionSwitchScope,
-  type SessionSwitchTemperature,
-  RETAINED_PANEL_BODY_HOST_SELECTOR,
-  RETAINED_PANEL_BODY_INERT_ATTRIBUTE,
-  type OldWorkspaceRelease,
-  type StabilityRequestCounts,
-} from "./session-switch-workspace-contract"
+import { SESSION_SWITCH_SUBSTANTIAL_FILE_PATH } from "./session-switch-workspace-contract"
 
 const SCENARIO = "session-switch-workspace" as const
-const RENDERER_DEADLINE_MS = 16.67
 const WORKSPACE_PANEL_TOGGLE_SELECTOR = "[data-testid='workspace-panel-toggle']"
-const PANEL_CONTENT_SELECTOR = "[data-testid='review-pane-root']"
 const REVIEW_TAB_SELECTOR =
   "[data-testid='workspace-panel-shell'][data-open='true'] [data-slot='workspace-tab'][data-workspace-tab-kind='review'] > button"
-
-/**
- * The session-ready gate is a conjunction. `stageMs` records when each of its
- * clauses FIRST held, so a slow cell names the clause that is still false
- * instead of leaving the whole gate as one opaque number.
- */
-const READY_STAGES = [
-  "root",
-  "firstFoldReady",
-  "messagesReady",
-  "messageCount",
-  "timelineRoot",
-  "revealReady",
-  "progressiveReady",
-  "visible",
-  "keyCount",
-  "rowText",
-] as const
-type ReadyStage = (typeof READY_STAGES)[number]
-
-type ProbeObservation = {
-  completionMs: number
-  acknowledgedMs?: number
-  timedOut: boolean
-  sessionReadyMs?: number
-  oldWorkspaceReleasedMs?: number
-  oldWorkspaceRelease?: OldWorkspaceRelease
-  destinationWorkspaceReadyMs?: number
-  stageMs?: Partial<Record<ReadyStage, number>>
-  activationMarks?: Array<{ name: string; atMs: number }>
-  requests?: Array<{ name: string; startMs: number; durationMs: number }>
-}
-
-/**
- * In-page readiness loop. One serialized copy of the two loops the driver
- * uses (`observeSessionSwitchReady` and `observeCrossWorkspaceSessionSwitch`
- * in browser-runner.ts, both module-private): `cross: false` waits only on the
- * destination session's own clock, `cross: true` additionally runs the old-
- * surface-disposal and destination-workspace clocks. Keep in sync with the
- * driver — this probe is only useful while it measures the same thing.
- */
-const observeSwitch = async (params: {
-  mark: string
-  timeoutMs: number
-  sessionId: string
-  cross: boolean
-  newDirectory: string
-  oldDirectory: string
-  expectedTotal: number
-  bodyHostSelector: string
-  bodyInertAttribute: string
-}): Promise<ProbeObservation> => {
-  const started = performance.getEntriesByName(params.mark, "mark").at(-1)?.startTime
-  if (started === undefined) throw new Error(`Trusted session switch did not emit pointerdown for ${params.sessionId}`)
-  const visible = (element: Element) => {
-    if (element.closest("[aria-hidden='true']")) return false
-    const rect = element.getBoundingClientRect()
-    const style = getComputedStyle(element)
-    return rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden"
-  }
-  const root = () =>
-    document.querySelector<HTMLElement>(`[data-testid="session-page-root"][data-session-id="${CSS.escape(params.sessionId)}"]`)
-  const stageMs: Partial<Record<ReadyStage, number>> = {}
-  const stage = (name: ReadyStage, held: boolean, elapsed: number) => {
-    if (held && stageMs[name] === undefined) stageMs[name] = elapsed
-    return held
-  }
-  const sessionReady = (elapsed: number) => {
-    const target = root()
-    if (!stage("root", !!target && !target.closest("[aria-hidden='true']"), elapsed) || !target) return false
-    const foldReady = stage("firstFoldReady", target.dataset.sessionFirstFoldReady === "true", elapsed)
-    const messagesReady = stage("messagesReady", target.dataset.sessionMessagesReady === "true", elapsed)
-    const counted = stage(
-      "messageCount",
-      Number(target.dataset.sessionMessageCount ?? target.dataset.sessionConversationCount ?? "0") > 0,
-      elapsed,
-    )
-    const timeline = target.querySelector<HTMLElement>("[data-session-timeline-root]")
-    if (!stage("timelineRoot", !!timeline, elapsed) || !timeline) return false
-    const revealReady = stage("revealReady", timeline.dataset.sessionTimelineRevealReady === "true", elapsed)
-    const progressiveReady = stage("progressiveReady", timeline.dataset.sessionTimelineProgressiveReady === "true", elapsed)
-    const shown = stage("visible", getComputedStyle(timeline).visibility !== "hidden", elapsed)
-    const keyed = stage("keyCount", Number(timeline.dataset.sessionTimelineKeyCount ?? "0") > 0, elapsed)
-    const texted = stage(
-      "rowText",
-      Array.from(timeline.querySelectorAll<HTMLElement>("[data-timeline-key]")).some((row) => (row.textContent ?? "").trim()),
-      elapsed,
-    )
-    return foldReady && messagesReady && counted && revealReady && progressiveReady && shown && keyed && texted
-  }
-  const shell = () => document.querySelector<HTMLElement>("[data-testid='workspace-panel-shell']")
-  const oldContent = (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
-  const readOldWorkspaceRelease = (): OldWorkspaceRelease | undefined => {
-    if (!oldContent) return undefined
-    if (!oldContent.isConnected) return "disposed"
-    const host = oldContent.closest<HTMLElement>(params.bodyHostSelector)
-    if (!host) return undefined
-    const inert = host.getAttribute(params.bodyInertAttribute) === "true" &&
-      host.getAttribute("aria-hidden") === "true" &&
-      getComputedStyle(host).contentVisibility === "hidden"
-    return inert ? "retained-inert" : undefined
-  }
-  const destinationReady = () => {
-    const current = shell()
-    if (!current || current.dataset.open !== "true" || !visible(current)) return false
-    const dir = current.dataset.stateWorkspaceDir ?? ""
-    if (dir === params.oldDirectory || !dir.includes(params.newDirectory)) return false
-    const reviewRoot = Array.from(current.querySelectorAll<HTMLElement>("[data-testid='review-pane-root']")).find(visible)
-    if (!reviewRoot) return false
-    const corpus = reviewRoot.querySelector<HTMLElement>("[data-review-rendered-files][data-review-total-files]")
-    const reviewReady = !!corpus && Number(corpus.dataset.reviewTotalFiles ?? "0") === params.expectedTotal &&
-      Array.from(reviewRoot.querySelectorAll<HTMLElement>("[data-review-file]")).some(visible)
-    const fileReady = Array.from(current.querySelectorAll<HTMLElement>("[data-testid='tab-file-root'][data-tab-file-state='ready']"))
-      .some(visible)
-    const navigator = Array.from(current.querySelectorAll<HTMLElement>("[data-testid='workspace-files-navigator']")).find(visible)
-    const navigatorReady = navigator?.getAttribute("data-file-tree-data-ready") === "true" ||
-      !!navigator?.querySelector("[data-file-tree-path]")
-    return reviewReady || fileReady || navigatorReady
-  }
-  let acknowledgedMs: number | undefined
-  let sessionReadyMs: number | undefined
-  let oldWorkspaceReleasedMs: number | undefined
-  let oldWorkspaceRelease: OldWorkspaceRelease | undefined
-  let destinationWorkspaceReadyMs: number | undefined
-  let stableFrames = 0
-  const completionMs = await new Promise<number>((resolve) => {
-    const tick = () => {
-      const elapsed = performance.now() - started
-      if (acknowledgedMs === undefined && root()) acknowledgedMs = elapsed
-      if (sessionReadyMs === undefined && sessionReady(elapsed)) sessionReadyMs = elapsed
-      if (params.cross) {
-        if (oldWorkspaceReleasedMs === undefined) {
-          const release = readOldWorkspaceRelease()
-          if (release) {
-            oldWorkspaceRelease = release
-            oldWorkspaceReleasedMs = elapsed
-          }
-        }
-        if (destinationWorkspaceReadyMs === undefined && destinationReady()) destinationWorkspaceReadyMs = elapsed
-      }
-      const done = params.cross
-        ? sessionReadyMs !== undefined && oldWorkspaceReleasedMs !== undefined && destinationWorkspaceReadyMs !== undefined
-        : sessionReadyMs !== undefined
-      stableFrames = done ? stableFrames + 1 : 0
-      if (stableFrames >= 2 || elapsed >= params.timeoutMs) return resolve(elapsed)
-      requestAnimationFrame(tick)
-    }
-    requestAnimationFrame(tick)
-  })
-  const requests = performance.getEntriesByType("resource")
-    .filter((entry) => entry.startTime >= started && !entry.name.startsWith("data:"))
-    .map((entry) => {
-      const url = new URL(entry.name)
-      return { name: `${url.pathname}${url.search}`.slice(0, 110), startMs: entry.startTime - started, durationMs: entry.duration }
-    })
-  const activationMarks = performance.getEntriesByType("mark")
-    // The app's own activation marks (renderer-trace.ts): when the rail issued
-    // the session's message prefetch, when it landed, and when the destination
-    // timeline mounted. They are what separate transport wait from render work.
-    .filter((entry) => (entry.name.startsWith("sessionActivate.") || entry.name.startsWith("timeline.")) && entry.startTime >= started)
-    .map((entry) => ({ name: entry.name, atMs: entry.startTime - started }))
-  for (const entry of activationMarks) performance.clearMarks(entry.name)
-  performance.clearMarks(params.mark)
-  delete (window as unknown as { __claxedoPerfOldPanelContent?: HTMLElement }).__claxedoPerfOldPanelContent
-  return {
-    completionMs,
-    acknowledgedMs,
-    timedOut: completionMs >= params.timeoutMs,
-    sessionReadyMs,
-    stageMs,
-    activationMarks,
-    requests,
-    ...(params.cross ? { oldWorkspaceReleasedMs, oldWorkspaceRelease, destinationWorkspaceReadyMs } : {}),
-  }
-}
-
-const round = (value: number) => Math.round(value * 100) / 100
-const ms = (value: number | undefined) => (value === undefined ? "n/a" : `${round(value)}ms`)
 
 async function syntheticVisibleClick(page: Page, selector: string) {
   await page.evaluate((selector) => {
@@ -367,27 +171,6 @@ async function openWorkspaceFileTab(page: Page, filePath: string) {
       `[data-testid='tab-file-root'][data-tab-file-path="${CSS.escape(filePath)}"][data-tab-file-state='ready']`,
     )
   }, filePath, { timeout: 10_000 })
-}
-
-/** Same precondition the driver's Block C establishes: first diff expanded. */
-async function openFirstReviewDiff(page: Page) {
-  const item = page.locator("#review-panel [data-review-file]").first()
-  await item.waitFor({ state: "visible", timeout: 5_000 })
-  const trigger = item.locator('[data-testid$="-trigger"]').first()
-  const renderedBefore = await page.evaluate(() => Number(
-    Array.from(document.querySelectorAll<HTMLElement>("[data-review-rendered-hunks]"))
-      .find((node) => !node.closest("[aria-hidden='true']"))
-      ?.dataset.reviewRenderedHunks ?? "0",
-  ))
-  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click({ timeout: 5_000 })
-  await page.waitForFunction((before) =>
-    Array.from(document.querySelectorAll<HTMLElement>("[data-review-rendered-hunks]"))
-      .some((node) => !node.closest("[aria-hidden='true']") && Number(node.dataset.reviewRenderedHunks ?? "0") > before),
-  renderedBefore, { timeout: 10_000 })
-  await page.waitForFunction(() => {
-    const review = document.querySelector("#review-panel [data-review-diff-style]")
-    return !!review?.getAttribute("data-review-diff-style") && Number(review.getAttribute("data-review-rendered-hunks") ?? "0") > 0
-  }, undefined, { timeout: 10_000 })
 }
 
 const app = await startApp()

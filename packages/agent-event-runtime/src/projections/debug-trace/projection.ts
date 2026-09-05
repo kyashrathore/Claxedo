@@ -1,4 +1,3 @@
-import type { AgentRuntimeEvent } from "../../contracts/agent-runtime-event"
 import type { RuntimeProjection } from "../../core/projection"
 import { projectionSnapshot, type ProjectionSnapshot } from "../../core/state"
 

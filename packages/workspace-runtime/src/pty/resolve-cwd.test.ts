@@ -74,10 +74,6 @@ describe("resolveCwd", () => {
       try {
         // On Windows, the temp dir uses a drive letter
         expect(resolveCwd(tmp, undefined)).toBe(tmp)
-        // Forward-slash variant should also work as absolute
-        const forward = tmp.replaceAll("\\", "/")
-        // This won't match the regex (needs backslash), so it's treated as relative
-        // unless the path happens to start with / which is also absolute
       } finally {
         fs.rmSync(tmp, { recursive: true, force: true })
       }

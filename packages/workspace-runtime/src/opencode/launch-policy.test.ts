@@ -27,7 +27,7 @@ test("launch policy exposes skill directories and MCP servers to one workspace a
   fs.mkdirSync(path.join(skills, "code-review"), { recursive: true })
   fs.writeFileSync(path.join(skills, "code-review", "SKILL.md"), "---\nname: code-review\ndescription: Review code\n---\nReview the diff.\n")
   const scopeA = authorizeWorkspace({ workspaceID: "a", directory: a })
-  const scopeB = authorizeWorkspace({ workspaceID: "b", directory: b })
+  authorizeWorkspace({ workspaceID: "b", directory: b })
   const runtime = createOpenCodeRuntime({ databasePath: path.join(root, "opencode.db") })
   const client = await runtime.host.client()
   const skillIds = async (directory: string) =>

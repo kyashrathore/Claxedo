@@ -8,8 +8,6 @@ import { useNavigate } from "@solidjs/router"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { formatRelativeTime } from "@/lib/relative-time"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { useConfigOptional } from "@/app/providers/config"
 import { useServer } from "@/app/connection/server"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -25,12 +23,10 @@ export default function Home() {
   const globalSDK = useGlobalSDK()
   const layout = useLayout()
   const platform = usePlatform()
-  const dialog = useDialog()
   const navigate = useNavigate()
   const server = useServer()
   const language = useLanguage()
   const projectsQuery = useQuery(() => queryOptions.projects())
-  const config = useConfigOptional()
   const pathQuery = useQuery(() => queryOptions.path(null))
   const homedir = createMemo(() => pathQuery.data?.home ?? "")
   const recent = createMemo(() => {

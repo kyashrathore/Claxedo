@@ -115,14 +115,6 @@ const routeParamBoundary = new Set([
 // import the @/app/providers/command and @/platform/runtime/platform-provider owner aliases. Post-
 // divorce those aliases resolve to the same claxedo-owned context modules, so
 // these imports are correct; new claxedo code should still use relative paths.
-const vendoredCommandAliasBoundary = new Set([
-  "features/settings/ui/keybinds.tsx",
-])
-
-const vendoredPlatformAliasBoundary = new Set([
-  "app/controls/link.tsx",
-  "features/review/providers/highlights.tsx",
-])
 
 const sessionRenderBoundary = new Set(["features/session/ui/content/session-content.tsx"])
 
@@ -185,7 +177,6 @@ const railWorkbenchShell = "app/workbench/rail/rail-workbench-shell.tsx"
 const railSidebar = "app/workbench/rail/rail-sidebar.tsx"
 const layoutContext = "app/providers/layout.tsx"
 const dialogEditProject = "features/workspaces/ui/dialog-edit-project.tsx"
-const appShell = "app/app-shell.tsx"
 const appShellState = "app/app-shell-state.ts"
 const appShellRouteSync = "app/app-shell-route-sync.ts"
 const claxedoSessionActions = "features/session/actions/session-actions.tsx"
@@ -259,10 +250,6 @@ async function upstreamAppText(file: string) {
   const upstream = Bun.file(path.join(upstreamAppRoot, file))
   if (await upstream.exists()) return await upstream.text()
   return await Bun.file(path.join(root, file)).text()
-}
-
-async function upstreamAppFileExists(file: string) {
-  return await Bun.file(path.join(upstreamAppRoot, file)).exists()
 }
 
 describe("workspace runtime route audit", () => {
@@ -2708,8 +2695,13 @@ describe("workspace runtime route audit", () => {
   })
 
   test("forced session cache refreshes use the shell data boundary", async () => {
+    // The screen delegates refreshes to its controller; it no longer owns
+    // cache actions left over from its removed title/archive handlers.
+    const screen = await Bun.file(path.join(root, sessionPage)).text()
+    expect(screen).toMatch(/createSessionController\(/)
+    expect(screen).not.toMatch(/globalSync\.refreshDirectory\(/)
     const texts = await Promise.all(
-      [sessionPage, sessionController, promptSubmit, claxedoSessionActions, directoryScope].map(async (file) =>
+      [sessionController, promptSubmit, claxedoSessionActions, directoryScope].map(async (file) =>
         Bun.file(path.join(root, file)).text(),
       ),
     )
@@ -3746,12 +3738,10 @@ describe("workspace runtime route audit", () => {
 
     expect(text).toMatch(/createSessionScreenCacheProjection\(\{ active: paneActive, directory: dir \}\)/)
     expect(cacheProjection).toMatch(/directorySessionCacheQueryOptions\(\{ directory: input\.directory\(\) \}\)/)
-    expect(text).toMatch(/directorySessions\(\)\.find\(\(session\) => session\.id === sessionID\)/)
     expect(text).toMatch(/createActiveConversationSnapshot\(\{ directory: dir, sessionID, active: paneActive \}\)/)
     expect(text).toMatch(/SessionConversationOwner/)
     expect(text).toMatch(/sessionController\.status/)
-    expect(text).toMatch(/sessionController\.diffsReady\(\)/)
-    expect(text).toMatch(/updateDirectorySession\(dir\(\), sessionID/)
+    expect(text).toMatch(/const diffs = sessionController\.diffs/)
     expect(controller).toMatch(/createSessionPaneQueries\(\{/)
     expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "todo"\)/)
     expect(paneQueries).toMatch(/shellDataKeys\.sessionId\(sessionID, "diff"\)/)

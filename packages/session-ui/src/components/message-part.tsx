@@ -397,7 +397,7 @@ function getDirectory(path: string | undefined) {
 }
 
 import type { IconProps } from "@opencode-ai/ui/icon"
-import { normalize, resolveFileDiff } from "./session-diff"
+import { resolveFileDiff } from "./session-diff"
 
 export type ToolInfo = {
   icon: IconProps["name"]

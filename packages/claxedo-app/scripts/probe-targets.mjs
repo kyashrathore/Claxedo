@@ -10,13 +10,6 @@ if (!TARGETS.length) {
   process.exit(1)
 }
 
-function matchTarget(id, t) {
-  // match npm package boundary node_modules/<t>/ or node_modules/<t>@
-  return id.includes("node_modules/" + t + "/") || id.includes("/" + t + "/") && id.includes("node_modules")
-    ? id.includes(t)
-    : id.includes(t)
-}
-
 await build({
   configFile: CONFIG,
   root: ROOT,

@@ -5,7 +5,7 @@
  * request/response path without registering against a real MCP server.
  * A fake `fetch` implementation simulates the desktop HTTP bridge.
  */
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { describe, expect, test } from "vitest"
 import { z } from "zod"
 
 import {

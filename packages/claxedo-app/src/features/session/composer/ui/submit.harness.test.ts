@@ -43,7 +43,6 @@ import type { HarnessSubmitController } from "../../harness/controller"
 import type { HarnessType } from "../../harness/profile"
 
 const PI = { kind: "native", harnessId: "pi" } as const
-const CLAUDE_CONNECTION = { kind: "connection", connectionId: "claude-team" } as const
 
 /** Structural view of `bun:test`'s `mock`, so this file needs no bun:test value type. */
 type ModuleMocker = { module: (specifier: string, factory: () => unknown) => void }

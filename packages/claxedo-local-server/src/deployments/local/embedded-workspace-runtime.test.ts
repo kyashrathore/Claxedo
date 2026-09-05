@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -572,7 +572,6 @@ describe("embedded workspace runtime", () => {
       await removeWorkspaceRoot(root)
     }
   })
-
 
   test("projects canonical runtime title events without publishing conversation events to the control plane", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")

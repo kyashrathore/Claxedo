@@ -3,7 +3,6 @@ import type { BuiltinHarnessId, HarnessId } from "@/platform/identity/session-re
 import { harnessDisplayLabel } from "@/ui/harness-display"
 import { harnessUsesClaxedoPermissionPicker } from "@/features/session/permission/mechanisms"
 import {
-  CLAXEDO_ALLOW_SAFE_ID,
   defaultPermissionSelection,
   findPermissionModeOption,
   permissionModeOptions,

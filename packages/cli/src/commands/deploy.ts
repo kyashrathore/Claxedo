@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process"
 import { existsSync } from "node:fs"
-import { mkdir, readFile, writeFile } from "node:fs/promises"
+import { mkdir, writeFile } from "node:fs/promises"
 import path from "node:path"
 import readline from "node:readline/promises"
 
@@ -107,7 +107,7 @@ async function ask(rl: readline.Interface, question: string, fallback: string): 
 async function select(rl: readline.Interface, title: string, choices: SelectChoice[], fallback: string): Promise<string> {
   console.log(`\n${title}`)
   const selectable = choices.filter((c) => !c.disabledReason)
-  for (const [index, choice] of choices.entries()) {
+  for (const choice of choices) {
     if (choice.disabledReason) {
       console.log(`     x ${choice.label} — ${choice.disabledReason}`)
     } else {

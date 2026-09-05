@@ -22,7 +22,7 @@ const oc = await OpenCode.create({ database: { path: path.join(root, "c.db") } }
 const seen = []
 const stream = await oc.events.subscribe()
 let done = false
-const pump = (async () => {
+void (async () => {
   for await (const event of stream) {
     if (event?.type === "plugin.added") continue
     seen.push(event)

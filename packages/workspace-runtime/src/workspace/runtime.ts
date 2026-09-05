@@ -10,7 +10,6 @@ import {
   type AgentRuntime,
   type AgentHarnessFactory,
   type AgentRuntimeStore,
-  type AgentHarnessId,
   type AgentSession,
   type AgentMessage,
   type AgentPermission,
@@ -298,7 +297,6 @@ export class WorkspaceHarnessUnavailableError extends Error {
     this.name = "WorkspaceHarnessUnavailableError"
   }
 }
-
 
 function authSlotValue(auth: Record<string, string>, slot: AuthSlot) {
   const candidates = AGENT_HARNESS_DEFINITIONS
@@ -668,10 +666,6 @@ function runtimeAuth(auth: Record<string, string>): RuntimeAuth {
     openai: runtimeAuthKey(runtimeAuthInput(auth, "openai")),
     cursor: runtimeAuthKey(runtimeAuthInput(auth, "cursor")),
   }
-}
-
-function sameRuntimeAuth(a: RuntimeAuth, b: RuntimeAuth) {
-  return a.anthropic === b.anthropic && a.openai === b.openai && a.cursor === b.cursor
 }
 
 function sameRuntimeMcp(a: Record<string, unknown>, b: Record<string, unknown>) {

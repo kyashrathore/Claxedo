@@ -143,7 +143,7 @@ describe("the reported authority is the one the composition builds", () => {
   test("a blank authority URL is not a remote authority", async () => {
     // A blank URL is absent; a posture that read the variable itself would
     // refuse a deploy over whitespace.
-    const { composed, posture } = await compose("   ")
+    const { composed } = await compose("   ")
 
     expect(composed).toEqual(["sqlite"])
   })

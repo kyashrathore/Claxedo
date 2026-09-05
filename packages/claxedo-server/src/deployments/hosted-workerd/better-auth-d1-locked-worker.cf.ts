@@ -21,7 +21,6 @@ import {
   requireDeploymentReleaseState,
   type DeploymentReleaseIdentity,
 } from "./better-auth-d1-release-state.cf"
-import { deploymentAdmissionBinding } from "./better-auth-d1-cutover-gate.cf"
 import { requirePairedD1RecoveryEpoch } from "./paired-d1-recovery.cf"
 import {
   betterAuthD1ReleaseIdentity,

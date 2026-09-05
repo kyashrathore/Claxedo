@@ -14,7 +14,6 @@ import {
   planProjectColorAssignment,
   projectCatalog,
   resolveSandboxRootActions,
-  shouldStoreOpenedProject,
   sidebarProjectsMissingFromApi,
   syncApiProjectsToSidebar,
 } from "@/app/providers/layout-projects"

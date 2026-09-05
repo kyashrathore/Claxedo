@@ -2,7 +2,7 @@ import { useFile } from "@/app/providers/file"
 import { encodeFilePath } from "@/platform/files/path"
 import { Collapsible } from "@opencode-ai/ui/collapsible"
 import { FileIcon } from "@opencode-ai/ui/file-icon"
-import { ClaxedoIcon as Icon, ClaxedoIconV2 as IconV2 } from "@/ui/controls/claxedo-icon"
+import { ClaxedoIconV2 as IconV2 } from "@/ui/controls/claxedo-icon"
 import {
   createEffect,
   createMemo,

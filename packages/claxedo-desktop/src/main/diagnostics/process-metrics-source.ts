@@ -1,5 +1,4 @@
 import { readFileSync } from "node:fs"
-import { fileURLToPath } from "node:url"
 
 import type { LocalDiagnostics } from "@claxedo/app/process-diagnostics-contract"
 

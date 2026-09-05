@@ -21,7 +21,6 @@ import {
   MAX_DIAGNOSTICS_PIDS,
   type ProcessMetricSample,
   type ProcessMetricsWorker,
-  type ProcessTreeEntry,
   uniqueEntries,
 } from "./process-metrics-worker"
 

@@ -1,6 +1,6 @@
 import { cleanString as clean } from "@claxedo/server-core/platform/runtime/lib/strings"
 import { randomUUID } from "crypto"
-import { type RuntimeConfigSnapshot, loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
+import { loadUserConfig, sandboxDriverConfig } from "@claxedo/server-core/agent-config/index"
 import {
   createSandboxManager,
   type SandboxBootSource,
@@ -560,7 +560,6 @@ function runtimeEnvForHost(state: WorkspaceRuntimeState, driverId: SandboxDriver
 function missingSandboxDriverAuth(driverId: SandboxDriverID, fields: string) {
   return new Error(`Sandbox driver ${driverId} is not configured; missing ${fields}`)
 }
-
 
 function bootSourceForAction(action: SandboxDecision): SandboxBootSource {
   if (action.action === "restore_snapshot") return { kind: "driver-snapshot", snapshotId: action.snapshot_id }

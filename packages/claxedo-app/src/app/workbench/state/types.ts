@@ -13,8 +13,6 @@ import type {
 } from "../../../features/workspaces/ui/panel/workspace-panel-state"
 import type { SessionRef } from "@/platform/identity/session-ref"
 
-type WorkspaceDirectoryRef = string
-
 // ── Content type vocabulary ───────────────────────────────────────────────
 export const CONTENT_TYPES = [
   "session",

@@ -37,7 +37,6 @@ import {
   type NewSessionWorkspaceKind,
   type ProjectWorkspace,
 } from "./session-new-workspace-options"
-import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { validWorktree } from "@/platform/sync/worktree"
@@ -107,7 +106,6 @@ export function NewSessionDesignView(props: {
   children: JSX.Element
 }) {
   const queryOptions = useQueryOptions()
-  const language = useLanguage()
   const layout = useLayout()
   const navigate = useNavigate()
   const sdk = useSDK()
@@ -213,7 +211,6 @@ export function NewSessionDesignView(props: {
   }
   const worktreeLabel = (value: string) => {
     if (value === MAIN_WORKTREE) {
-      const workspace = workspaces()[projectRoot()]
       return "main"
     }
     const workspace = workspaces()[value]

@@ -14,7 +14,6 @@ import {
   messageUpdated,
   sessionError,
   sessionStatus,
-  sessionUpdated,
   type CompatEvent,
 } from "../../compat-events"
 import { listCommands } from "../../command-discovery"
@@ -38,7 +37,6 @@ import type {
   AgentHarnessAdapter,
   AgentHarnessAdapterHealth,
   AgentHarnessAdapterHealthContext,
-  AgentInteractionResult,
   AgentPermissionModeState,
   AgentTurnWriteContext,
 } from "../../adapter-contract"
@@ -80,7 +78,6 @@ import type {
   SdkRuntimeTurnInput,
 } from "./sdk-runtime-driver"
 import { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
-import { Log } from "../../log"
 import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
 import {
   admissibleSubagentObservation,
@@ -110,8 +107,6 @@ export type {
   SdkRuntimeTurnInput,
 } from "./sdk-runtime-driver"
 export { errorMessage, extractTextFromParts, record, text } from "./sdk-runtime-values"
-
-const log = Log.create({ service: "sdk-runtime-adapter" })
 
 function missingStore(): SdkRuntimeStore {
   throw new Error("SdkRuntimeAdapter requires a runtime store from the host")

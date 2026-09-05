@@ -1,4 +1,3 @@
-import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import { Dialog } from "@opencode-ai/ui/dialog"
 import { showToast } from "@opencode-ai/ui/toast"
 import { createStore } from "solid-js/store"

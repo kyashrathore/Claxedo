@@ -17,7 +17,7 @@
 // Run:
 //   cd packages/claxedo-app/perf-harness
 //   CLAXEDO_PERF_SKIP_BUILD=1 CLAXEDO_PERF_MOCK_PORT=<baked> bun src/debug-selector-stats.ts
-import { chromium, type Page } from "@playwright/test"
+import { chromium } from "@playwright/test"
 
 import { frameSamplingLaunchArgs } from "./frame-sampler"
 import {

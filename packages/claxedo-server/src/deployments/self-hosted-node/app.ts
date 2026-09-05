@@ -4,7 +4,6 @@ import os from "node:os"
 import { createHash } from "node:crypto"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
-import Database from "better-sqlite3"
 import { Hono } from "hono"
 import type { MiddlewareHandler } from "hono"
 import { cors } from "hono/cors"
@@ -31,7 +30,7 @@ import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
-import { configureAgentConfig, defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
+import { configureAgentConfig } from "@claxedo/server-core/agent-config/index"
 import {
   mountControlPlaneRouteContributions,
   type ControlPlaneRouteContribution,
@@ -47,7 +46,7 @@ import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalProjectRoutes, ShellRoutes, githubCloneAuthorization } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
-import { AGENT_HARNESS_IDS, createAcpConnectionProvider, type CompatEnvelope } from "@claxedo/agent-sdk-runtime"
+import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import { createWorkspaceRuntimeProxy } from "@claxedo/local-server/self-hosted-execution"
@@ -62,7 +61,6 @@ import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
   readEmbeddedWorkspaceSessionConfig,
-  releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "@claxedo/local-server/self-hosted-execution"
 import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
@@ -102,7 +100,6 @@ import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay
 import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { hostTunnelTokenSigner, runtimeAccessTokenSigner } from "@claxedo/server-core/platform/auth/runtime-access-token"
 import { createControlPlaneRelayProvider } from "@claxedo/server-core/adapters/relay/index"
-import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { WorkspaceCheckpointRoutes } from "../../workspace/routes/checkpoints"
 import {
   authorizeRuntimeSessionStream,
@@ -121,8 +118,6 @@ import type { PrivateSessionAuthority } from "@claxedo/server-core/platform/auth
 import { relayRole } from "../../workspace/route-support"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
 import {
-  ensureWorkspace,
-  getWorkspaceByDirectory,
   listProjects,
   listWorkspaces,
   resolveWorkspace,
@@ -144,13 +139,15 @@ import { setDocumentChangedSink } from "../../documents/backend"
 import { LocalInstallationDocumentBroker } from "../../documents/backends/local/installation-broker"
 
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
-import { llmTurnRecord } from "../../platform/telemetry/product/metering"
 import { ClaxedoDB } from "../../platform/db"
 import { RemoteAccessRoutes } from "../../routes/remote-access"
 import { createRemoteAccessService, unavailableRemoteAccessService } from "./remote-access-service"
 import { localHostIdentity, signHostPayload } from "../../workspace/local-host"
 import { hasUserHostedMachineTunnel, startUserHostedMachineTunnel, stopUserHostedMachineTunnel } from "../../user-hosted-tunnel"
-import { DEFAULT_CLAXEDO_SERVER_PORT, embeddedWorkspaceRuntimeSessionAuthority } from "@claxedo/local-server/self-hosted-execution"
+import {
+  DEFAULT_CLAXEDO_SERVER_PORT,
+  embeddedWorkspaceRuntimeSessionAuthority,
+} from "@claxedo/local-server/self-hosted-execution"
 import { createSqliteUsageLedger } from "@claxedo/server-core/usage/adapters/sqlite-usage-ledger"
 import { createSqliteUsageSourceCoverageStore, type UsageSourceCoverageStore } from "@claxedo/server-core/usage/adapters/sqlite-usage-provenance"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"

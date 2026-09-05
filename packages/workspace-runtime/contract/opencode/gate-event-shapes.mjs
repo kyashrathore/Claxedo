@@ -23,7 +23,7 @@ const oc = await OpenCode.create({ database: { path: path.join(root, "c.db") } }
 
 const seen = []
 const stream = await oc.events.subscribe()
-const pump = (async () => {
+void (async () => {
   for await (const event of stream) {
     // `plugin.added` fires ~56 times at boot and would swamp the buffer before
     // any execution event arrives. It is not interesting to the projector.

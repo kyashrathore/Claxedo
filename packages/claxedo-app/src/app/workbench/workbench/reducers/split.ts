@@ -1,12 +1,10 @@
 import type { Edge, Pane, SplitNode, WorkbenchState } from "../types"
 import {
   appendLeafAtRoot,
-  leafIdsInOrder,
   makeSplitTree,
   nextPaneId,
   nodeAtPath,
   removeLeaf,
-  replaceLeaf,
   setSizeAtPath,
   splitAt,
   validRoot,

@@ -107,12 +107,7 @@ import {
   setDefaultServerUrl,
   setWslConfig,
 } from "./server"
-import {
-  createMainWindow,
-  isTrustedMainRendererUrl,
-  loadMainWindow,
-  setDockIcon,
-} from "./windows"
+import { createMainWindow, isTrustedMainRendererUrl, setDockIcon } from "./windows"
 import { createStartAtLogin } from "./start-at-login"
 import {
   matchesDiagnosticsBinding,

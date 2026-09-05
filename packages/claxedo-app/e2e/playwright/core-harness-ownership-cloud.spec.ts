@@ -174,10 +174,6 @@ const WORKSPACE_ID = "ws_core_harness_cloud"
 const WORKSPACE_PROJECT_NAME = "core-harness-cloud-workspace"
 const RELAY_ORIGIN = "https://relay.core-harness-ownership-cloud.test"
 
-function slug(value: string) {
-  return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
-}
-
 async function seedProjects(page: Page) {
   await page.addInitScript(
     (input: { dir: string; workspaceId: string }) => {

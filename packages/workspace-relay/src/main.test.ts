@@ -130,7 +130,7 @@ describe("createCachedRevocationClient", () => {
   test("cache is keyed by jti", async () => {
     let calls = 0
     const clock = makeFakeNow(1_000_000)
-    const inner = async (args: Args): Promise<RuntimeAccessTokenActiveResult> => {
+    const inner = async (): Promise<RuntimeAccessTokenActiveResult> => {
       calls++
       return { active: true }
     }

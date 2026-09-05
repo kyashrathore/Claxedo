@@ -292,7 +292,6 @@ export async function measureSessionActivation(
     ({
       id,
       expectedMessageIds,
-      expectedContentSha256,
     }: {
       id: string;
       expectedMessageIds: string[];

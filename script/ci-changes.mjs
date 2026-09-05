@@ -17,7 +17,6 @@ const DOC_PREFIXES = [
   ".github/ISSUE_TEMPLATE/",
   ".github/PULL_REQUEST_TEMPLATE/",
   "docs/",
-  "packages/claxedo-docs/",
   "public-docs/",
 ]
 
@@ -226,7 +225,7 @@ function writeGitHubOutputs(result, outputFile) {
 
 function printSummary(result) {
   const selected = Object.entries(result)
-    .filter(([key, value]) => typeof value === "boolean" && value)
+    .filter(([, value]) => typeof value === "boolean" && value)
     .map(([key]) => key)
   console.log(`CI change selection: ${selected.join(", ") || "no product gates"}`)
   console.log(`Comparison: ${result.reason}`)

@@ -20,16 +20,10 @@ import { queryKeys } from "@/platform/query/keys"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
-import { harnessProfile, isCatalogHarness, pickHarness } from "@/features/session/harness/profile"
+import { harnessProfile, isCatalogHarness } from "@/features/session/harness/profile"
 import { cloudSubmitMissingModel } from "./submit-model-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
-import {
-  recordPromptSubmission,
-  resolveSubmitMode,
-  resolveSubmittedConfig,
-  setPromptSessionStatus,
-  type SubmitMode,
-} from "../../submit/index"
+import { resolveSubmitMode, resolveSubmittedConfig, setPromptSessionStatus, type SubmitMode } from "../../submit/index"
 import { cloudWorkspaceCreateInput, knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-machine"
 import { createSubmitAbort } from "./submit-abort"
@@ -78,7 +72,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const events = useClaxedoEventsOptional()
 
   const harnessController = input.harnessController ?? createHarnessSubmitController(undefined)
-  const { selectedHarnessMode, selectedHarnessType, selectedHarnessRef, selectedHarnessDisplayName } =
+  const { selectedHarnessMode, selectedHarnessType } =
     createSubmitHarnessSelection({ composerMode: input.composerMode, harnessController })
 
   let claxedoState: ReturnType<typeof useClaxedoState> | undefined
@@ -544,7 +538,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     markBusy()
 
-    const promptClient = sessionClient(sessionDirectory, sessionHarnessType)
     const runtimePromptClient = transport.createRuntimePromptClient({
       signedControlPlane,
       sessionDirectory,

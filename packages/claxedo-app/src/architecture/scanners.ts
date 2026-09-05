@@ -189,7 +189,6 @@ export function unguardedHistoryUrlWrites(files: SourceFile[]): Finding[] {
     .flatMap((file) => findMatches(file, historyUrlWriteRe))
 }
 
-
 // Standalone drift guard: the app/entry/app.tsx route spine, ordering, and negatives.
 //
 // override-batch-contract.test.ts (retired as snapshot theater) encoded ONE
@@ -326,21 +325,6 @@ function runtimeGatewayOutsideTransportMetric(): Metric {
     description: "`RuntimeGateway.` references outside runtime gateway and transport seam",
     scan: (files) =>
       files.filter((file) => !allowed.has(file.path)).flatMap((file) => findMatches(file, /RuntimeGateway\./g)),
-  }
-}
-
-function lineMetric(name: MetricName, description: string, pattern: RegExp): Metric {
-  return {
-    name,
-    description,
-    scan: (files) =>
-      files.flatMap((file) =>
-        file.text
-          .split("\n")
-          .flatMap((line, index) =>
-            pattern.test(line) ? [{ file: file.path, line: index + 1, match: line.trim() }] : [],
-          ),
-      ),
   }
 }
 

@@ -3,7 +3,6 @@ import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import { createSubmitTransportAdapter, submitWorkspaceBacking } from "./submit-transport"
 
-const PI = { kind: "native", harnessId: "pi" } as const
 const CODEX = { kind: "native", harnessId: "codex" } as const
 const EXTERNAL_OPENCODE = { kind: "connection", connectionId: "external-opencode" } as const
 

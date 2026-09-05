@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Query, SDKActiveGoalMessage } from "@anthropic-ai/claude-agent-sdk"
+import type { Query } from "@anthropic-ai/claude-agent-sdk"
 import { createSessionTurnLifecycle } from "../shared/turn-lifecycle"
 import type { SdkRuntimeTurnInput } from "../shared/sdk-runtime-adapter"
 import { nativeGoalCommand } from "../shared/native-goal-store"

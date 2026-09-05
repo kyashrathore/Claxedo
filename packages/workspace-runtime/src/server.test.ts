@@ -5,7 +5,6 @@ import path from "path"
 import { serve } from "@hono/node-server"
 import type { RelayHostAuthOptions } from "./workspace-host-service-auth"
 import { WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER, type WorkspaceRuntimeManagementAuth } from "./management-auth"
-import { AcpHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
 import {
   assertWorkspaceRuntimeListenPolicy,
   createWorkspaceRuntimeApp,

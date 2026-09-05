@@ -190,8 +190,7 @@ export async function putSessionMeta(
       : contentChanged
         ? stamp
         : prev?.updated_at ?? stamp
-    db.insert(ClaxedoSessionMetaTable).values({
-      session_ref: sessionRef,
+    const update = {
       session_id: sessionID,
       workspace_id: workspaceID,
       project_id: projectID,
@@ -203,24 +202,15 @@ export async function putSessionMeta(
       title,
       parent_session_id: parentSessionID,
       archived_at: archivedAt,
-      created_at: createdAt,
       updated_at: updatedAt,
+    }
+    db.insert(ClaxedoSessionMetaTable).values({
+      ...update,
+      session_ref: sessionRef,
+      created_at: createdAt,
     }).onConflictDoUpdate({
       target: ClaxedoSessionMetaTable.session_ref,
-      set: {
-        session_id: sessionID,
-        workspace_id: workspaceID,
-        project_id: projectID,
-        host: hostValue,
-        directory,
-        tool_sandbox: toolSandbox,
-        model_provider_id: modelProviderID,
-        model_id: modelID,
-        title,
-        parent_session_id: parentSessionID,
-        archived_at: archivedAt,
-        updated_at: updatedAt,
-      },
+      set: update,
     }).run()
 
     if (input.tags) {
@@ -447,8 +437,7 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
     )
     for (const item of all) {
       const prev = old.get(item.session_ref)
-      db.insert(ClaxedoSessionMetaTable).values({
-        session_ref: item.session_ref,
+      const update = {
         session_id: item.session_id,
         workspace_id: item.workspace_id ?? prev?.workspace_id ?? null,
         project_id: item.project_id ?? prev?.project_id ?? null,
@@ -460,24 +449,15 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
         title: item.title ?? prev?.title ?? null,
         parent_session_id: item.parent_session_id ?? prev?.parent_session_id ?? null,
         archived_at: item.archived_at,
-        created_at: prev?.created_at ?? item.created_at,
         updated_at: Math.max(item.updated_at, prev?.updated_at ?? 0),
+      }
+      db.insert(ClaxedoSessionMetaTable).values({
+        ...update,
+        session_ref: item.session_ref,
+        created_at: prev?.created_at ?? item.created_at,
       }).onConflictDoUpdate({
         target: ClaxedoSessionMetaTable.session_ref,
-        set: {
-          session_id: item.session_id,
-          workspace_id: item.workspace_id ?? prev?.workspace_id ?? null,
-          project_id: item.project_id ?? prev?.project_id ?? null,
-          host: item.host ?? host(prev?.host) ?? "workspace",
-          directory: item.directory ?? prev?.directory ?? null,
-          tool_sandbox: item.tool_sandbox ?? prev?.tool_sandbox ?? null,
-          model_provider_id: item.model_provider_id ?? prev?.model_provider_id ?? null,
-          model_id: item.model_id ?? prev?.model_id ?? null,
-          title: item.title ?? prev?.title ?? null,
-          parent_session_id: item.parent_session_id ?? prev?.parent_session_id ?? null,
-          archived_at: item.archived_at,
-          updated_at: Math.max(item.updated_at, prev?.updated_at ?? 0),
-        },
+        set: update,
       }).run()
     }
   })

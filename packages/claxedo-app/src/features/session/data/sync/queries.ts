@@ -1,7 +1,6 @@
 import { queryOptions, skipToken } from "@tanstack/solid-query"
 import type {
   AgentPermission as PermissionRequest,
-  AgentPresentationSession as Session,
   AgentQuestion as QuestionRequest,
   AgentRuntimeStatus as SessionStatus,
   AgentSnapshotFileDiff as SnapshotFileDiff,
@@ -183,7 +182,6 @@ export function deriveSessionInventoryIndexes<TSession extends SessionInventoryI
   const byWorkspace: Record<string, SessionInventoryWorkspaceGroup<TSession>> = {}
   const workspaceMeta: Record<string, SessionInventoryWorkspaceMeta> = { ...(input.workspaceMeta ?? {}) }
   const workspaceOrder = [...input.workspaceOrder]
-  const sessionIds = new Set(sessions.map((session) => session.id))
 
   for (const session of sessions) {
     if (sessionIsGlobalChat(session)) continue

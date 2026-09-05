@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test, vi } from "vitest"
 import { workbenchDrag, useDragSource, type DropZone } from "./pointer-drag"
 
 // The hand-rolled pointer-events drag engine (WP-C3): one controller that

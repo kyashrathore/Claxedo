@@ -13,7 +13,7 @@ import {
   getShellArgs,
   getCommandShellArgs,
 } from "./core/shell"
-import { BIN_DIR, CLAXEDO_DIR, SHELL_DIR, SHELL_MARKER, BASH_DIR } from "./core/constants"
+import { BIN_DIR, CLAXEDO_DIR, SHELL_DIR, SHELL_MARKER } from "./core/constants"
 
 const TEST_ROOT = path.join(os.tmpdir(), `claxedo-shell-test-${process.pid}-${Date.now()}`)
 

@@ -25,13 +25,6 @@ type RequestLog = {
   atMs: number
 }
 
-type SessionRow = {
-  sessionId: string
-  workspaceDir: string
-  active: boolean
-  text: string
-}
-
 type BackendSession = {
   id: string
   title?: string

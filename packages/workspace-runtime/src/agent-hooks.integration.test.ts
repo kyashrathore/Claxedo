@@ -64,7 +64,7 @@ describe("agent-hooks real-world execution", () => {
 
     // 3. Generate scripts directly into temp dir (no setupAgentHooks needed)
     notifyPath = path.join(hooksDir, "notify.sh")
-    await fs.writeFile(notifyPath, generateNotifyScript(serverPort, rootDir), { mode: 0o755 })
+    await fs.writeFile(notifyPath, generateNotifyScript(serverPort), { mode: 0o755 })
     await fs.writeFile(path.join(hooksDir, "gemini-hook.sh"), generateGeminiHook(notifyPath), { mode: 0o755 })
     await fs.writeFile(path.join(binDir, "claude"), generateClaudeWrapper(notifyPath), { mode: 0o755 })
   })

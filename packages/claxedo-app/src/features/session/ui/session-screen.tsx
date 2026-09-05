@@ -1,18 +1,39 @@
 // Claxedo sessions can render inside independent Workbench panes, so this override uses pane-scoped params, cloud runtime gates, and the inline new-session composer.
-import { onCleanup, onMount, Show, Match, Switch, Suspense, createMemo, createEffect, createComputed, createSignal, on, untrack } from "solid-js"
+import {
+  onCleanup,
+  onMount,
+  Show,
+  Match,
+  Switch,
+  Suspense,
+  createMemo,
+  createEffect,
+  createComputed,
+  on,
+  untrack,
+} from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { useLocal } from "@/features/session/providers/session-selection"
 import { createStore } from "solid-js/store"
 import { createAutoScroll } from "@opencode-ai/ui/hooks"
-import { isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional, useGlobalSDK, useLayout, usePaneId, useSDK, useServer, useTerminal } from "@/features/session/app-ports"
+import {
+  isWorkspaceReady,
+  useClaxedoState,
+  useConfigOptional,
+  useGlobalSDK,
+  useLayout,
+  usePaneId,
+  useSDK,
+  useServer,
+  useTerminal,
+} from "@/features/session/app-ports"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useLocation, useNavigate } from "@solidjs/router"
 import type { AgentRuntimeStatus as SessionStatus, AgentSnapshotFileDiff as SnapshotFileDiff, AgentUserMessage as UserMessage } from "@claxedo/agent-runtime-contract"
 import { usePrompt } from "@/features/session/providers/prompt"
 import { useComments } from "@/platform/comments/provider"
-import { showToast } from "@opencode-ai/ui/toast"
 import { pickProjectFolderWith } from "./components/session-pick-project-folder"
 import { NewSessionDesignView, SessionHeader, type NewSessionWorkspaceKind } from "@/features/session/ui/components"
 import { createNewSessionWorkspaceState, type ProjectWorkspace } from "@/features/session/ui/components/session-new-workspace-options"
@@ -60,23 +81,17 @@ import { SessionConversationOwner } from "@/features/session/conversation/sessio
 import { resumeSessionScroll } from "@/features/session/ui/session-message-scroll-position"
 import { createActiveConversationSnapshot } from "@/features/session/conversation/conversation-registry"
 import {
-  scheduleDirectorySessionHydration, shouldScheduleDirectorySessionHydration,
-  removeDirectorySession,
-  updateDirectorySession,
-  useDirectorySessionCacheActions,
+  scheduleDirectorySessionHydration,
+  shouldScheduleDirectorySessionHydration,
 } from "@/features/session/data/sync/directory-session-cache"
 import { queryClient } from "@/platform/query/query-client"
-import { mergeCanonicalSessionUpdate } from "@/features/session/data/sync/session-list-events"
 import { dispatchSessionStatusEvent } from "@/features/session/store/session-status-dispatcher"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { createSessionComposerModes } from "@/features/session/ui/composer/session-composer-mode"
 import { createNewSessionDeepLinkPromptSeed } from "@/features/session/ui/composer/deep-link-prompt"
-import { assistantMessageIdForUserMessage, type ClaxedoSession } from "@/features/session/data/session-types"
+import { assistantMessageIdForUserMessage } from "@/features/session/data/session-types"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
-import { emptyTitleEditorState, openTitleEditorPatch, resolveTitleSave } from "@/features/session/ui/session-title-editor"
-import { nextSiblingAfterRemoval, sessionRemovalNavigation } from "@/features/session/ui/session-archive"
 import { previewPromptText } from "@/features/session/ui/prompt-preview"
-import { buildDiffKindTree } from "@/features/session/ui/diff-kind-tree"
 import { computeScrollState, pickAnchorMessageId } from "@/features/session/ui/scroll-anchor"
 import { createPromptDockResizeHandler } from "@/features/session/ui/resize-observer-scroll"
 import { createSessionScreenKeydownHandler } from "@/features/session/ui/session-screen-keydown"
@@ -188,13 +203,8 @@ export default function SessionPage() {
   const projects = cacheProjection.projects
   const routeSessionWorkspaceId = createMemo(() => signedRouteSessionWorkspaceId(paneLocation().pathname, projects()))
   const directorySessions = cacheProjection.sessions
-  const directorySession = (sessionID: string | undefined) =>
-    sessionID ? directorySessions().find((session) => session.id === sessionID) : undefined
-  const updateDirectorySessionCacheRow = (sessionID: string, update: (session: ClaxedoSession) => ClaxedoSession) => updateDirectorySession(dir(), sessionID, update)
-  const directorySessionCacheActions = useDirectorySessionCacheActions()
   const principal = usePrincipal()
   const platform = usePlatform()
-  const events = useClaxedoEventsOptional()
   const sameDirectory = (left?: string, right?: string) => sameWorkspaceDirectory(left, right)
   const activeProject = createMemo(() => {
     const cwd = dir()
@@ -471,9 +481,6 @@ export default function SessionPage() {
     initial: undefined,
   })
   const diffs = sessionController.diffs
-  const todos = sessionController.todos
-  const reviewCount = createMemo(() => Math.max(info()?.summary?.files ?? 0, diffs().length))
-  const hasReview = createMemo(() => reviewCount() > 0)
 
   const isDesktop = createMediaQuery("(min-width: 768px)")
   const centered = createMemo(() => isDesktop())
@@ -553,15 +560,6 @@ export default function SessionPage() {
     if (!id) return false
     return sessionController.historyLoading()
   })
-  const [title, setTitle] = createStore({
-    draft: "",
-    editing: false,
-    saving: false,
-    menuOpen: false,
-    pendingRename: false,
-  })
-  let titleRef: HTMLInputElement | undefined
-
   const errorMessage = (err: unknown) => {
     if (err && typeof err === "object" && "data" in err) {
       const data = (err as { data?: { message?: string } }).data
@@ -569,101 +567,6 @@ export default function SessionPage() {
     }
     if (err instanceof Error) return err.message
     return language.t("common.requestFailed")
-  }
-
-  createEffect(
-    on(
-      sessionKey,
-      () => setTitle(emptyTitleEditorState()),
-      { defer: true },
-    ),
-  )
-
-  const openTitleEditor = () => {
-    const patch = openTitleEditorPatch({ hasSession: !!sessionID(), currentTitle: info()?.title })
-    if (!patch) return
-    setTitle(patch)
-    requestAnimationFrame(() => {
-      titleRef?.focus()
-      titleRef?.select()
-    })
-  }
-
-  const closeTitleEditor = () => {
-    if (title.saving) return
-    setTitle({ editing: false, saving: false })
-  }
-
-  const saveTitleEditor = async () => {
-    const currentSessionID = sessionID()
-    if (!currentSessionID) return
-    if (title.saving) return
-
-    const decision = resolveTitleSave({ draft: title.draft, currentTitle: info()?.title })
-    if (!decision.commit) {
-      setTitle({ editing: false, saving: false })
-      return
-    }
-    const next = decision.title
-    const baseline = directorySession(currentSessionID)
-
-    setTitle("saving", true)
-    await sdk.client.session
-      .update({ sessionID: currentSessionID, title: next })
-      .then((result) => {
-        if (result.data) {
-          updateDirectorySessionCacheRow(currentSessionID, (session) => mergeCanonicalSessionUpdate(session, result.data, baseline))
-          sessionTitles.publishCanonical({
-            sessionId: currentSessionID,
-            directory: dir(),
-            ...(activeSessionRef() ? { sessionRef: activeSessionRef() } : {}),
-            title: result.data.title,
-            updatedAt: result.data.time.updated,
-          })
-        }
-        setTitle({ editing: false, saving: false })
-      })
-      .catch((err) => {
-        setTitle("saving", false)
-        showToast({
-          title: language.t("common.requestFailed"),
-          description: errorMessage(err),
-        })
-      })
-  }
-
-  async function archiveSession(targetSessionID: string) {
-    const session = directorySession(targetSessionID)
-    if (!session) return
-
-    const nextSession = nextSiblingAfterRemoval(directorySessions(), targetSessionID)
-
-    await sdk.client.session
-      .update({ sessionID: targetSessionID, time: { archived: Date.now() } })
-      .then(() => {
-        removeDirectorySession(dir(), targetSessionID)
-
-        const nav = sessionRemovalNavigation({
-          currentSessionID: sessionID(),
-          targetSessionID,
-          parentID: session.parentID,
-          nextSessionID: nextSession?.id,
-        })
-        if (nav.kind === "parent" || nav.kind === "next") {
-          groupNavigate(sessionRoute(nav.sessionID))
-          return
-        }
-        if (nav.kind === "root") {
-          const workspaceId = routeIdForDirectory(dir())
-          if (workspaceId) groupNavigate(workspaceSessionRoute(workspaceId), dir())
-        }
-      })
-      .catch((err) => {
-        showToast({
-          title: language.t("common.requestFailed"),
-          description: errorMessage(err),
-        })
-      })
   }
 
   const userMessages = createMemo(
@@ -841,17 +744,12 @@ export default function SessionPage() {
     scrollToMessage(msgs[targetIndex], "auto")
   }
 
-  const kinds = createMemo(() => buildDiffKindTree(diffs()))
   const emptyDiffFiles: string[] = []
   const diffFiles = createMemo(
     () => diffs().map((d: SnapshotFileDiff) => d.file).filter((file): file is string => !!file),
     emptyDiffFiles,
     { equals: same },
   )
-  const diffsReady = createMemo(() => {
-    if (!hasReview()) return true
-    return sessionController.diffsReady()
-  })
 
   const scrollGestureWindowMs = 250
 

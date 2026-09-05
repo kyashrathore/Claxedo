@@ -1,6 +1,5 @@
 import {
   DialogDeleteWorkspace,
-  DialogSelectDirectory,
   DialogSettings,
   directorySessionCacheQueryOptions,
   ensureDirectorySessionCache,
@@ -16,7 +15,7 @@ import type { WorkspaceBarItem } from "../../../app/workbench/rail/workspace-too
 import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId as routeIdFromProjects } from "@/platform/identity/workspace-route"
-import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
+import { createLocalWorkspace } from "./workspace-recovery"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"

@@ -1,18 +1,39 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { queryClient } from "@/platform/query/query-client"
 import { promptScopeKey } from "./submit-prompt-scope"
 import * as h from "./submit.harness.test"
 
 const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
+  createSubmit,
+  createPromptSubmit,
+  submitEvent,
+  settleSubmitEffects,
+  waitForSubmitEffect,
+  seedProjectCatalog,
+  sessionStatusFor,
+  promptLengthForTest,
+  promptValue,
+  state,
+  calls,
+  apiCalls,
+  fetchCalls,
+  runtimeCalls,
+  transportPromptAsyncCalls,
+  sessionCreateCalls,
+  navCalls,
+  flowEvents,
+  handoffCalls,
+  toasts,
   sessionPromotionCalls,
   harnessClaimCalls,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  promptCalls,
+  optimisticAdds,
+  optimisticRemoves,
+  promptContextItems,
+  promptContextAdds,
+  promptContextRemoves,
+  refreshCalls,
+  bootstrapCalls,
+  worktreeCreateCalls,
   hostedOperationCalls,
 } = h
 
@@ -84,7 +105,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(sessionPromotionCalls).toEqual([{ sessionID: "session-1", configWrites: 0 }])
     expect(stateAtSubmit).toEqual([{ resetCount: 2, optimisticCount: 1 }])
   })
-
 
   test("unattached drafts refuse to create a session from the sdk directory fallback", async () => {
     state.demoMode = false
@@ -161,7 +181,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     })
   })
 
-
   test("cloud new button creates a cloud workspace before the first prompt and reports startup", async () => {
     state.demoMode = false
     const startup: Array<{ status?: string; id?: string; err?: string }> = []
@@ -221,7 +240,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(startup.at(-1)).toEqual({ status: undefined, id: undefined, err: undefined })
     expect(resetCalls).toBe(0)
   })
-
 
   test("a cloud draft without a harness cannot provision using stale provider state", async () => {
     const submit = createSubmit({
@@ -288,7 +306,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     })
   })
 
-
   // `fix(composer): require explicit model selection and fail loud` removed the
   // provider-catalog substitution this used to assert: submit now takes ONLY
   // the harness controller's explicit model key, and
@@ -349,7 +366,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
       description: "prompt.toast.modelAgentRequired.description",
     })
   })
-
 
   test("cloud create retargets the active new-session tab to the created workspace", async () => {
     state.demoMode = false
@@ -438,7 +454,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(flowEvents.indexOf("optimistic:session-1")).toBeLessThan(flowEvents.indexOf("navigate:/w/ws_1/session/session-1"))
   })
 
-
   test("cloud startup stays open with the relay error when the first prompt fails", async () => {
     state.demoMode = false
     state.transportPromptAsyncError = new Error("Workspace connection failed: 401")
@@ -523,7 +538,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(promptCalls.set.at(-1)?.cursor).toBe(5)
   })
 
-
   test("cloud create resolves project id from global project catalog when directory sync is not attached yet", async () => {
     state.demoMode = false
     state.syncProject = undefined
@@ -567,7 +581,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     })
     expect(toasts.find((toast) => toast.title === "Failed to create cloud workspace")).toBeUndefined()
   })
-
 
   test("local create selection creates a worktree before the first prompt", async () => {
     state.demoMode = false
@@ -613,7 +626,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await new Promise<void>((r) => setTimeout(r, 0))
   })
 
-
   test("local existing-worktree selection stays local and never calls cloud create", async () => {
     state.demoMode = false
     state.syncProject = {
@@ -642,7 +654,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(worktreeCreateCalls).toEqual([])
     expect(optimisticAdds.map((item) => item.directory)).toContain("/repo/local-feature")
   })
-
 
   test("cloud main selection does not submit to local main when no cloud workspace is selected", async () => {
     state.demoMode = false
@@ -683,7 +694,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(optimisticAdds.map((item) => item.directory)).toContain("ws_1")
     expect(optimisticAdds.map((item) => item.directory)).not.toContain("/repo/main")
   })
-
 
   test("cloud existing-workspace selection reuses that cloud directory instead of creating another one", async () => {
     state.demoMode = false
@@ -727,7 +737,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(apiCalls.some((item) => new URL(item.url).pathname === "/api/workspace/create")).toBe(false)
     expect(optimisticAdds.map((item) => item.directory)).toContain("workspace:ws_cloud")
   })
-
 
   test("reuses the active new-session tab when the first prompt creates a real session", async () => {
     state.demoMode = false
@@ -803,7 +812,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     ])
   })
 
-
   test("navigates and refreshes when a workbench-scoped new session creates a real session", async () => {
     state.demoMode = false
     state.mockSessionParams = {
@@ -876,7 +884,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(refreshCalls).toEqual([{ directory: "/repo/main", harnessType: "pi" }])
   })
 
-
   test("draft-backed create leaves Workbench surface handoff to lifecycle events", async () => {
     state.demoMode = false
 
@@ -944,7 +951,6 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(closeCalls).toEqual([])
     expect(navCalls).toEqual(["/w/project-1/session/session-1"])
   })
-
 
   test("split-mode handoff still patches the draft tab even if focus shifts before the microtask", async () => {
     state.demoMode = false

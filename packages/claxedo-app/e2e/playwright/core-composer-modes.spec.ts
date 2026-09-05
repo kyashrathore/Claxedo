@@ -202,24 +202,6 @@ async function openDraftPrompt(page: Page, dir: string) {
   return editor
 }
 
-/** Opens the composer for an ALREADY-CREATED session (`GET /session/:id` in the mock
- * always resolves regardless of whether `POST /session` ever ran) instead of a fresh
- * draft. Shell-mode tests use this so a submission never has to create-and-navigate a
- * session first — that create/navigate handoff (`src/session/submit/handoff.ts`)
- * remounts the composer component and resets its in-memory `store.mode` to "normal"
- * regardless of what a subsequent `restoreInput()` call does, which is a confound
- * belonging to the session-creation flow (`core-first-prompt-local`'s territory), not
- * this spec's shell-mode-restore behavior. */
-async function openExistingSessionPrompt(page: Page, dir: string, sessionId: string) {
-  await page.goto(`/${slug(dir)}/session/${sessionId}`)
-  await page.waitForLoadState("domcontentloaded")
-  await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
-  const editor = page.locator('[data-component="prompt-input"]').last()
-  await expect(editor).toBeVisible({ timeout: 20_000 })
-  await expect(editor).toHaveAttribute("contenteditable", "true")
-  return editor
-}
-
 /** Overrides the mock's default @-mention agent catalog (which only has the "primary"
  * `build` agent, filtered OUT of @-mention options) with two selectable, non-primary
  * agents. Registered AFTER installMockRuntime so it takes precedence. */

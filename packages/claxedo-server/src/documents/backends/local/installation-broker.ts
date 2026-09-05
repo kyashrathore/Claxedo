@@ -222,7 +222,7 @@ async function verifyJob(context: Context, env?: NodeJS.ProcessEnv) {
 }
 
 async function entryFor(backend: DocumentsBackend, context: Context) {
-  const orgId = required(context.req.query("org_id"))
+  required(context.req.query("org_id"))
   const projectId = required(context.req.query("project_id"))
   const entry = await backend.index.find("__local__", context.req.param("id"))
   return entry?.project_id === projectId ? entry : undefined

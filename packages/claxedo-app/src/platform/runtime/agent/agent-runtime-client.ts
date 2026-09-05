@@ -14,7 +14,6 @@ import type {
   AgentRuntimePermissionMode,
   AgentRuntimePermissionModeState,
   AgentRuntimePromptPayload,
-  RuntimeSession,
   SessionMessagePageRequest,
 } from "@/platform/runtime/session"
 import {
@@ -223,10 +222,6 @@ export function createAgentRuntimeClient(options: {
       request,
       relayRequest: request,
     })
-  }
-
-  async function workspaceId(directory: AgentRuntimeDirectory) {
-    return (await workspaceTarget(directory)).workspaceId
   }
 
   async function fetchPath(directory: AgentRuntimeDirectory, url: URL, init?: RequestInit) {

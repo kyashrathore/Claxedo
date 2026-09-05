@@ -1,5 +1,4 @@
 import { getFilename } from "@opencode-ai/ui/utils/path"
-import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 
 export { workspaceRouteIdentity } from "@/platform/identity/workspace-route"
 
@@ -76,7 +75,6 @@ export function workspaceIsCloud(
 export function workspaceDisplayName(
   project: WorkspaceDisplayProject,
   directory: string,
-  input?: { mainIsCloud?: boolean; cloud?: boolean },
 ) {
   const workspace = projectWorkspace(project, directory)
   const raw = directory === project.worktree

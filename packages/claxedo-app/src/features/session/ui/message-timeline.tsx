@@ -21,7 +21,6 @@ import { createVirtualizer, defaultRangeExtractor, elementScroll, type VirtualIt
 import { observeElementOffsetReconnectAware, observeElementRectDeduped } from "./message-timeline-observe-offset"
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import { Button } from "@opencode-ai/ui/button"
-import { Card } from "@opencode-ai/ui/card"
 import {
   ContextToolGroup,
   MessageNav,
@@ -65,7 +64,6 @@ import { useSettings } from "@/platform/settings/provider"
 import { useSDK } from "@/features/session/app-ports"
 import { messageAgentColor } from "@/features/session/ui/agent-color"
 import { sessionTitle } from "@/features/session/data/session-title"
-import type { SessionTurnOutcome } from "@/features/session/data/session-types"
 import { createActivePaneProjection } from "../store/active-pane-projection"
 import { createTimelineWorkingStatus } from "./timeline-working-status"
 import {

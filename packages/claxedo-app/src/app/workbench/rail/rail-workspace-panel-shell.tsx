@@ -1,4 +1,4 @@
-import { createEffect, onCleanup, type Accessor } from "solid-js"
+import { createEffect, type Accessor } from "solid-js"
 
 import { WorkspacePanel } from "../../../features/workspaces/ui/panel/workspace-panel"
 import type { ShellSettleMotion } from "../../../features/workspaces/ui/panel/workspace-panel-shell-settle"
@@ -11,7 +11,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useSDK } from "@/features/review/app-ports"
 import { createReviewDiffClient, fetchReviewVcsDiffSummary } from "@/features/review/ui/review-vcs-load"
 import type { useClaxedoState } from "../state/index"
-import { WorkspacePanelChrome, WorkspacePanelHeader } from "./workbench-shell-header"
+import { WorkspacePanelHeader } from "./workbench-shell-header"
 import { PANEL_REVIEW_MODE, panelReviewWorkingSetKey, WorkspacePanelBody } from "./workspace-panel-body"
 import { warmWorkspacePanelReview } from "./workspace-panel-review-load"
 

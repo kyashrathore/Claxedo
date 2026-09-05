@@ -38,13 +38,7 @@ import {
 } from "../shared/permission-modes"
 import { requireCodexExecutable } from "./executable"
 import { CodexAppServerProcess } from "./app-server-process"
-import {
-  codexChatgptAuthTokens,
-  readCodexAuthFile,
-  refreshCodexChatgptAuth,
-  sourceAuthValue,
-  sourceCodexAuthValue,
-} from "./auth-file"
+import { codexChatgptAuthTokens, refreshCodexChatgptAuth, sourceAuthValue, sourceCodexAuthValue } from "./auth-file"
 import { codexConfigOptions, fetchCodexModels } from "./model-options"
 import { handleCodexServerRequest } from "./server-request"
 import { CodexGoalController } from "./goal"

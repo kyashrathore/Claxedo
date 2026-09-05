@@ -1,15 +1,21 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { queryClient } from "@/platform/query/query-client"
 import * as h from "./submit.harness.test"
 
 const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  createSubmit,
+  submitEvent,
+  seedCommandList,
+  sessionStatusFor,
+  promptValue,
+  state,
+  calls,
+  transportPromptAsyncCalls,
+  buildRequestPartCalls,
+  commandCalls,
+  toasts,
+  promptCalls,
+  promptContextItems,
+  promptContextRemoves,
 } = h
 
 beforeAll(async () => {
@@ -64,7 +70,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     expect(promptContextRemoves).toEqual(["file-comment", "page-comment"])
   })
 
-
   test("normalizes a persisted shell choice and submits through the runtime", async () => {
     const modes: string[] = []
     const submit = createSubmit({
@@ -90,7 +95,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     })
     expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "idle" })
   })
-
 
   test("runtime failure restores the draft and persisted edit mode after normalization", async () => {
     state.transportPromptAsyncError = new Error("runtime exploded")
@@ -120,7 +124,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     expect(modes.at(-1)).toBe("shell")
   })
 
-
   test("slash-looking text uses the generic runtime prompt path", async () => {
     state.commandListResponse = [{ name: "build" }]
     await seedCommandList("/repo/main")
@@ -147,7 +150,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
     expect(buildRequestPartCalls).toHaveLength(1)
     expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "idle" })
   })
-
 
   test("runtime failure for slash-looking text restores the draft", async () => {
     state.commandListResponse = [{ name: "build" }]

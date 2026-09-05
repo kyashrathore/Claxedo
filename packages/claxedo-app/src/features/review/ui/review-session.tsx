@@ -28,7 +28,6 @@ import {
   createReviewWindowSegments,
   rememberReviewRowHeight,
   reviewEstimatedRowHeight,
-  reviewExpandedRowHeight,
   reviewWindowRowCount,
   reviewWindowRowHeight,
   sameReviewWindowSegments,
@@ -584,7 +583,6 @@ export const ClaxedoSessionReview = (props: SessionReviewProps) => {
       </div>
     )
   }
-
 
   const selectionSide = (range: SelectedLineRange) => range.endSide ?? range.side ?? "additions"
 

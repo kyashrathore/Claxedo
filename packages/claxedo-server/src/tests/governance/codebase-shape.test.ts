@@ -1,7 +1,6 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
-import { getHarnessMode, getSessionWriteMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import { architectureOwnershipEntries, OwnershipStatus } from "./architecture-ownership"
 import { routeOwnership, RouteHandler } from "@claxedo/server-core/platform/governance/route-ownership"
 import { importPattern, walk } from "../../test-support/guards"
@@ -82,7 +81,6 @@ describe("architecture boundaries", () => {
     ).toBe("ok")
   })
 
-
   test("keeps the server host bridge out of harness adapter execution", () => {
     // The runtime-dispatch directory is walked rather than listed: W11.2b split
     // proxy.ts into internals + two entrypoints, and naming one file left the
@@ -120,7 +118,6 @@ describe("architecture boundaries", () => {
     expect(hits).toEqual([])
   })
 
-
   test("keeps workspace-runtime from importing claxedo-server", () => {
     const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../../../workspace-runtime/src")
     const forbidden = ["@claxedo/server", "@opencode-ai/claxedo-server", "@claxedo/claxedo-server", "claxedo-server"]
@@ -136,7 +133,6 @@ describe("architecture boundaries", () => {
 
     expect(offenders).toEqual([])
   })
-
 
   test("keeps product strings and ambient policy env reads out of the workspace-runtime kit", () => {
     const workspaceRuntimeSrc = path.resolve(import.meta.dirname, "../../../../workspace-runtime/src")
@@ -202,7 +198,6 @@ describe("architecture boundaries", () => {
     expect(fs.readFileSync(path.join(sdkOwner, "host.ts"), "utf8")).toMatch(/from\s+["']@opencode-ai\/sdk/)
   })
 
-
   test("keeps production source from importing legacy host-control modules", () => {
     const serverSrc = path.resolve(import.meta.dirname, "../..")
     const forbiddenModules = [
@@ -231,7 +226,6 @@ describe("architecture boundaries", () => {
     expect(offenders).toEqual([])
   })
 
-
   test("keeps SandboxDriver focused on host lifecycle", () => {
     const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/index.ts"), "utf8")
     const start = text.indexOf("export type SandboxDriver = {")
@@ -255,7 +249,6 @@ describe("architecture boundaries", () => {
     expect(forbidden.filter((term) => new RegExp(`\\b${term}\\b`).test(driverContract))).toEqual([])
   })
 
-
   test("keeps sandbox-manager public types from becoming sandbox handles", () => {
     const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/index.ts"), "utf8")
     const forbidden = [
@@ -274,7 +267,6 @@ describe("architecture boundaries", () => {
     expect(forbidden.filter((term) => text.includes(term))).toEqual([])
   })
 
-
   test("keeps SandboxManager wired to a driver, not a provider object", () => {
     const text = fs.readFileSync(path.resolve(import.meta.dirname, "../../../../sandbox-manager/src/index.ts"), "utf8")
     const start = text.indexOf("export type SandboxManagerOptions = {")
@@ -286,7 +278,6 @@ describe("architecture boundaries", () => {
     expect(optionsContract).toContain("driver: SandboxDriver")
     expect(optionsContract).not.toContain("provider: SandboxDriver")
   })
-
 
   test("keeps SandboxManager storage/auth pluggable", () => {
     const serverSrc = path.resolve(import.meta.dirname, "../..")
@@ -319,7 +310,6 @@ describe("architecture boundaries", () => {
     expect(offenders).toEqual([])
   })
 
-
   test("keeps API error response bodies structured", () => {
     const files = [
       path.resolve(import.meta.dirname, "../../deployments/self-hosted-node/app.ts"),
@@ -339,7 +329,6 @@ describe("architecture boundaries", () => {
 
     expect(rawScalarErrorBodies).toEqual([])
   })
-
 
   test("keeps test-support/ out of production modules", () => {
     // test-support/ is the ONE home for test-only in-process helpers. A

@@ -240,8 +240,6 @@ export function optionsResponse(value: unknown): OptionsResponse {
 
 function record(value: unknown): Record<string, unknown> | undefined { return value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : undefined }
 
-function stringOrNull(value: unknown): string | null | undefined { return typeof value === "string" || value === null ? value : undefined }
-
 function decodeChoice(value: unknown): { value: string; name: string; description?: string } | undefined {
   const raw = record(value)
   if (!raw || typeof raw.value !== "string" || typeof raw.name !== "string") return undefined

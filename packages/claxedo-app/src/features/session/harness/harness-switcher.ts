@@ -3,7 +3,6 @@ import {
   failedHarness,
   harnessHasConfigOptions,
   harnessSelectionId,
-  sessionHarnessIdentity,
   type HarnessState,
   type HarnessType,
 } from "./profile"

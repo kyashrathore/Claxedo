@@ -443,23 +443,6 @@ async function runtimeMcp(
   }).mcp
 }
 
-function codexCompatible(input: string | undefined): input is string {
-  if (!input) return false
-  try {
-    const value = JSON.parse(input) as Record<string, unknown>
-    if (typeof value.OPENAI_API_KEY === "string" && value.OPENAI_API_KEY) return true
-    if (value.type === "codex_auth") return true
-    if (
-      typeof value.auth_mode === "string"
-      && value.tokens
-      && typeof value.tokens === "object"
-    ) return true
-    return false
-  } catch {
-    return true
-  }
-}
-
 export async function getRuntimeConfigSnapshot(
   current?: RuntimeHarnessSelection,
   options: {

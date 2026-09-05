@@ -24,8 +24,6 @@ export function createElectronRenderer(mode: string): UserConfig {
   // document for `.env.local`).
   const hostedActivationEnabled =
     (env.VITE_AUTH_ENABLED ?? process.env.VITE_AUTH_ENABLED)?.trim() === "true"
-  const viteFlag = (name: string) =>
-    (env[name] ?? process.env[name])?.trim() === "true" ? "true" : ""
   const localServerUrl = env.VITE_CLAXEDO_SERVER_URL?.trim() || "http://127.0.0.1:2593"
   // The hosted app a PHONE must open, baked per build.
   //

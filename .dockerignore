@@ -31,9 +31,6 @@ packages/claxedo-web/public/core.js
 **/*.mp4
 **/*.dmg
 
-# Prebuilt engine output (built inside the image)
-packages/opencode/dist
-
 # Workspace dists — built fresh in the image (Dockerfile build stage) so the
 # image never silently depends on a locally-built dist. Excluding them forces
 # the fresh-clone reproducibility path.
@@ -50,10 +47,6 @@ packages/claxedo-desktop/dist
 packages/claxedo-desktop/resources
 packages/claxedo-desktop/out
 packages/claxedo-desktop/test-results
-packages/desktop/dist
-packages/opencode/dist-js
-packages/opencode/dist-web
-packages/opencode/dist-serve
 packages/claxedo-app/dist-desktop
 packages/claxedo-app/dist-opencode
 packages/claxedo-app/dist-selfhost

@@ -27,10 +27,6 @@ const harnesses = harnessFilter
 
 const evidence = { runId, appBase, apiBase, directory, workspaceId, harnesses: [] }
 
-function safeName(input) {
-  return input.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "")
-}
-
 function expectedTurnText(harness, turn) {
   return `CLAXEDO-${harness.proofPrefix ?? harness.key.replace(/[^a-z0-9]/gi, "").toUpperCase()}-${turn}`
 }
@@ -245,7 +241,7 @@ function assistantVisible(message) {
   return assistantError(message) || assistantText(message).trim()
 }
 
-function assistantOk(output, expectedText) {
+function assistantOk(output) {
   return !output.error &&
     output.partCount > 0 &&
     output.domVisible === true &&
@@ -259,7 +255,7 @@ function authPageFailure(run) {
   if (consoleError) return consoleError.text
 }
 
-async function waitForAssistant(sessionId, count, expectedText) {
+async function waitForAssistant(sessionId, count) {
   const started = Date.now()
   let failedAt
   let noVisibleSettledAt
@@ -414,13 +410,13 @@ async function sendTurn(page, run, harness, turn, expectedSessionId) {
     request.url.includes(`/session/${sessionId}/message`)
   )
   const promptBody = promptRequest?.postData ? JSON.parse(promptRequest.postData) : undefined
-  const output = await waitForAssistant(sessionId, turn, expectedText)
+  const output = await waitForAssistant(sessionId, turn)
   const domOutput = output.ok ? await waitForDomAssistant(page, expectedText, turn) : await readDomAssistant(page, expectedText, turn)
   Object.assign(output, domOutput)
   const state = await readState(page)
-  await setAnnotation(page, `${harness.label}: TURN ${turn} ${assistantOk(output, expectedText) ? "OK" : "ERROR"}`, [
+  await setAnnotation(page, `${harness.label}: TURN ${turn} ${assistantOk(output) ? "OK" : "ERROR"}`, [
     `Session: ${sessionId}`,
-    `usable assistant content: ${assistantOk(output, expectedText)}`,
+    `usable assistant content: ${assistantOk(output)}`,
     `expected marker: ${expectedText}`,
     `DOM-visible assistant text: ${output.domVisible}`,
     `assistant outputs: ${output.visibleAssistantCount}/${output.assistantCount}`,
@@ -435,7 +431,7 @@ async function sendTurn(page, run, harness, turn, expectedSessionId) {
     `providerID: ${promptBody?.model?.providerID ?? "not captured"}`,
     `modelID: ${promptBody?.model?.modelID ?? "not captured"}`,
     `variant: ${promptBody?.variant ?? "absent"}`,
-    `usable assistant content: ${assistantOk(output, expectedText)}`,
+    `usable assistant content: ${assistantOk(output)}`,
     `expected marker: ${expectedText}`,
     `DOM-visible assistant text: ${output.domVisible}`,
     `assistant outputs: ${output.visibleAssistantCount}/${output.assistantCount}`,
@@ -618,4 +614,4 @@ for (const harness of harnesses) {
 }
 
 writeFileSync(join(outDir, "evidence.json"), JSON.stringify(evidence, null, 2))
-console.log(JSON.stringify({ runId, outDir, evidencePath: join(outDir, "evidence.json"), harnesses: evidence.harnesses.map((item) => ({ label: item.label, turns: item.turns.length, ok: item.turns.length === 3 && item.turns.every((turn, index) => assistantOk(turn, expectedTurnText(item, index + 1))) && !item.error, error: item.error?.split("\n")[0], rawVideo: item.rawVideo })) }, null, 2))
+console.log(JSON.stringify({ runId, outDir, evidencePath: join(outDir, "evidence.json"), harnesses: evidence.harnesses.map((item) => ({ label: item.label, turns: item.turns.length, ok: item.turns.length === 3 && item.turns.every(assistantOk) && !item.error, error: item.error?.split("\n")[0], rawVideo: item.rawVideo })) }, null, 2))

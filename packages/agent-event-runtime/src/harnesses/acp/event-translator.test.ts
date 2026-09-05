@@ -19,6 +19,56 @@ function runtime(
 }
 
 describe("createAcpEventTranslator", () => {
+  test("keeps shell input, display, and metadata fields consistent without leaking presentation-only fields", () => {
+    const events = runtime().ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "tool_call",
+        toolCallId: "shell-1",
+        title: "Terminal",
+        kind: "execute",
+        rawInput: { command: "printf hi", custom: true },
+        locations: [{ path: "/repo/main.ts", line: 4 }],
+      },
+    }).events
+    const start = events.find((event) => event.type === "tool-start")
+    const input = events.find((event) => event.type === "tool-input")
+    expect(start).toMatchObject({ display: {
+      intent: "shell", command: "printf hi", description: "printf hi",
+      locations: [{ path: "/repo/main.ts", line: 4 }],
+      input: { command: "printf hi", custom: true },
+    } })
+    expect(input).toMatchObject({ input: {
+      intent: "shell", command: "printf hi", description: "printf hi", custom: true,
+    } })
+    const metadata = start?.metadata?.acp as Record<string, unknown>
+    expect(metadata).toMatchObject({ intent: "shell", command: "printf hi", rawInput: { command: "printf hi", custom: true } })
+    expect(metadata).not.toHaveProperty("description")
+    expect(metadata).not.toHaveProperty("input")
+  })
+
+  test("keeps the move operation source separate from the displayed file path", () => {
+    const events = runtime().ingest({
+      source: "acp.jsonrpc",
+      method: "session/update",
+      payload: {
+        sessionUpdate: "tool_call",
+        toolCallId: "move-1",
+        title: "Move file",
+        kind: "move",
+        rawInput: { filePath: "/repo/display.ts", sourcePath: "/repo/from.ts", targetPath: "/repo/to.ts" },
+      },
+    }).events
+    expect(events.find((event) => event.type === "tool-input")).toMatchObject({
+      input: { filePath: "/repo/from.ts", sourcePath: "/repo/from.ts", targetPath: "/repo/to.ts" },
+    })
+    expect(events.find((event) => event.type === "tool-start")).toMatchObject({
+      display: { filePath: "/repo/display.ts", sourcePath: "/repo/from.ts", targetPath: "/repo/to.ts" },
+      metadata: { acp: { filePath: "/repo/display.ts", sourcePath: "/repo/from.ts", targetPath: "/repo/to.ts" } },
+    })
+  })
+
   test("emits assistant message boundaries and text deltas", () => {
     const agent = runtime()
 

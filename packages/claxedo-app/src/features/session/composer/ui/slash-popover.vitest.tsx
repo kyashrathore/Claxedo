@@ -8,7 +8,7 @@
  * top "[critical]" a11y finding).
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { afterEach, describe, expect, test } from "vitest"
 import { cleanup, render } from "@solidjs/testing-library"
 import {
   PromptPopover,

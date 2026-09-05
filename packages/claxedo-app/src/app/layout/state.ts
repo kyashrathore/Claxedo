@@ -7,7 +7,7 @@ import {
   workspacePanelVisibilityCommand,
   type LayoutCommand,
 } from "./commands"
-import { layoutConfigFromLiveChromeState, type LayoutConfig, type LayoutTarget } from "./config"
+import { layoutConfigFromLiveChromeState, type LayoutTarget } from "./config"
 
 const HOT_ZONE_WIDTH = 48
 const HOT_ZONE_HEIGHT = 48

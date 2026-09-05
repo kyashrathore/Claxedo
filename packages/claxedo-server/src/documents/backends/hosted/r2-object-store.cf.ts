@@ -12,11 +12,7 @@
  * suffix records the runtime it TARGETS, not a compile-time dependency.
  */
 
-import {
-  DocumentInvalidEntryError,
-  DocumentTooLargeError,
-  DocumentVersionConflictError,
-} from "../../errors"
+import { DocumentInvalidEntryError, DocumentTooLargeError } from "../../errors"
 import {
   DEFAULT_MAX_DOCUMENT_BYTES,
   DEFAULT_MAX_LIST_OBJECTS,

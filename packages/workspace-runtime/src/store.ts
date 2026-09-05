@@ -3344,7 +3344,6 @@ export class RuntimeStore {
       if (!contiguous) {
         throw new AgentMessagePageError(409, `Latest turn projection is not contiguous for session: ${sessionId}`)
       }
-      const final = turn.at(-1)!
       const older = this.db
         .prepare("SELECT 1 AS present FROM message WHERE session_id = ? AND ord < ? LIMIT 1")
         .get(sessionId, boundary.ord) as { present: number } | null

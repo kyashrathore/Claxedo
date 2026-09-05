@@ -230,7 +230,7 @@ describe("remote access service", () => {
   })
 
   test("status reports enrollment, tunnel liveness, and second-device proof from the authority", async () => {
-    const { authority, service, machineTunnelActive } = setup()
+    const { service, machineTunnelActive } = setup()
     await expect(service.status(undefined)).resolves.toEqual({ enrolled: false, enabled: false, secondDeviceOpen: false })
     await expect(service.status(auth)).resolves.toEqual({ enrolled: false, enabled: false, secondDeviceOpen: false })
 

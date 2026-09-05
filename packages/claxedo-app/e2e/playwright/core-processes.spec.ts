@@ -345,8 +345,7 @@ type ProcessMockHandle = {
   nextPort: () => number
 }
 
-async function installProcessMock(page: Page, opts: { directory?: string } = {}): Promise<ProcessMockHandle> {
-  const directory = opts.directory ?? DIR
+async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
   let nextId = 1
   let portCounter = 4100
   const configs: MockConfig[] = []
@@ -685,7 +684,7 @@ test.describe("core processes @core", () => {
 
   test("empty state shows no-processes copy with an inline Add affordance — behavior 1", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    await installProcessMock(page, { directory: DIR })
+    await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -696,7 +695,7 @@ test.describe("core processes @core", () => {
 
   test("Add Process dialog gates submit on name+command and supports env-var rows — behavior 2", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    await installProcessMock(page, { directory: DIR })
+    await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -733,7 +732,7 @@ test.describe("core processes @core", () => {
 
   test("submitting Add creates the config and lists it in the navigator — behavior 3", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -747,7 +746,7 @@ test.describe("core processes @core", () => {
 
   test("selecting a process opens its dedicated panel and keeps the navigator open — behavior 4", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    await installProcessMock(page, { directory: DIR })
+    await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -770,7 +769,7 @@ test.describe("core processes @core", () => {
 
   test("start flips status to running and shows the assigned URL; stop reverts it — behaviors 5,6", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -795,7 +794,7 @@ test.describe("core processes @core", () => {
 
   test("restart calls /restart when running, and /start when stopped or crashed — behavior 7", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -819,7 +818,7 @@ test.describe("core processes @core", () => {
 
   test("start-all runs sequentially, stop-all runs concurrently, button relabels — behavior 8", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -858,7 +857,7 @@ test.describe("core processes @core", () => {
 
   test("start-triggered crash shows Failed to start, auto-opens the panel, and lights the attention dot — behavior 9", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -879,7 +878,7 @@ test.describe("core processes @core", () => {
 
   test("a reconciled process crash shows its exit code and lights the toolbar attention dot — behavior 10", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -916,7 +915,7 @@ test.describe("core processes @core", () => {
 
   test("a late start-response never clobbers a crash the client already learned about via SSE — behavior 19 (BUG B regression)", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
 
     // Reproduces the real-world race behind BUG B: a launched command that
@@ -1066,7 +1065,7 @@ test.describe("core processes @core", () => {
 
   test("port conflict overlay resolves via pick-new and via kill-existing — behavior 11", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -1096,7 +1095,7 @@ test.describe("core processes @core", () => {
 
   test("route conflict overlay resolves via pick-new — behavior 12", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -1116,13 +1115,13 @@ test.describe("core processes @core", () => {
 
   test("edit dialog pre-fills existing values and Save updates the config — behavior 13", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "build-watcher", command: "npm run watch" })
-    const panel = await openProcessPanel(page, overlay, "build-watcher")
+    await openProcessPanel(page, overlay, "build-watcher")
 
     await processHeader(page).getByRole("button", { name: "Edit process" }).click()
     const dialog = page.getByRole("dialog")
@@ -1142,13 +1141,13 @@ test.describe("core processes @core", () => {
 
   test("delete requires an inline confirm; cancel restores the form, confirm removes the config — behavior 14", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    const mock = await installProcessMock(page, { directory: DIR })
+    const mock = await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "to-delete", command: "echo delete-me" })
-    const panel = await openProcessPanel(page, overlay, "to-delete")
+    await openProcessPanel(page, overlay, "to-delete")
 
     await processHeader(page).getByRole("button", { name: "Edit process" }).click()
     const dialog = page.getByRole("dialog")
@@ -1235,7 +1234,7 @@ test.describe("core processes @core", () => {
 
   test("a process-owned PTY never duplicates as a terminal tab — behavior 15", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    await installProcessMock(page, { directory: DIR })
+    await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -1254,7 +1253,7 @@ test.describe("core processes @core", () => {
 
   test("reload re-fetches from the backend and renders the same configs/processes — behavior 16", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    await installProcessMock(page, { directory: DIR })
+    await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 
@@ -1278,7 +1277,7 @@ test.describe("core processes @core", () => {
   // the zero-project recovery surface and the account menu after a project is loaded.
   test("Diagnostics is absent from the web platform — behavior 17", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    await installProcessMock(page, { directory: DIR })
+    await installProcessMock(page)
     await page.addInitScript(() => localStorage.clear())
     await page.goto("/")
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
@@ -1298,7 +1297,7 @@ test.describe("core processes @core", () => {
 
   test("mutation controls are present for a local (unconditionally-mutable) workspace — behavior 18", async ({ page }) => {
     await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
-    await installProcessMock(page, { directory: DIR })
+    await installProcessMock(page)
     await seedOneProject(page, DIR)
     await openWorkspace(page, DIR)
 

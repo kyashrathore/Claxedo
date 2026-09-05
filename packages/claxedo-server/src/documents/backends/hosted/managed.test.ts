@@ -868,7 +868,7 @@ describe("hosted managed documents and session write-back", () => {
             : null
         },
         put: async (key, body, options) => {
-          const current = await storage.store.get(key)
+          await storage.store.get(key)
           const condition = options?.onlyIf?.etagMatches
             ? { etag: options.onlyIf.etagMatches }
             : { absent: true as const }

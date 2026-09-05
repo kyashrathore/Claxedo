@@ -186,7 +186,6 @@ export function providerErrorDetail(
   // is no generic-shrug branch. A real HTTP status supports a provider-level
   // diagnosis; a status-less error does not prove the provider was unreachable.
   const summary = (() => {
-    const who = provider ?? "the model provider"
     if (status !== undefined) {
       const head = statusSummary(status)
       const named = provider ? head.replace(/^The model provider/, provider) : head

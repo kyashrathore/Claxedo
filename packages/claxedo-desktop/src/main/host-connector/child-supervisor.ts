@@ -2,7 +2,6 @@ import type { LocalWorkspaceDescription } from "./local-workspace-description"
 import {
   parseHostConnectorChildMessage,
   type HostConnectorBootstrapIdentity,
-  type HostConnectorChildMessage,
   type HostConnectorChildState,
   type HostConnectorParentMessage,
   type HostConnectorSharedWorkspace,

@@ -1,6 +1,5 @@
 import { expect, test } from "bun:test"
 import * as fs from "node:fs"
-import { createRequire } from "node:module"
 import * as path from "node:path"
 
 import { resolveLocalServerEntry } from "./local-server"
@@ -64,7 +63,6 @@ function walk(entry: string): Closure {
     } catch {
       continue
     }
-    const require = createRequire(file)
     for (const specifier of specifiers(source)) {
       if (specifier.startsWith(".") || specifier.startsWith("/")) {
         const base = path.resolve(path.dirname(file), specifier)

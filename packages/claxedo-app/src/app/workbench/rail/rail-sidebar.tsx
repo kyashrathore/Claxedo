@@ -1,7 +1,6 @@
 import {
   SIDEBAR_SESSION_STATUS_FRESH_MS,
   abortSidebarSessionStatusBatches,
-  dropSidebarSessionStatusBatches,
   invalidateSidebarSessionStatusGroupsForSession,
   relativeTime,
   mergeRailRequestRead,
@@ -51,7 +50,6 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { ClaxedoIconButton as IconButton } from "@/ui/controls/claxedo-icon-button"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { DropdownMenu } from "@opencode-ai/ui/dropdown-menu"
-import { showToast } from "@opencode-ai/ui/toast"
 import { useLanguage } from "@/platform/i18n/provider"
 import { useServer } from "@/app/connection/server"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
@@ -76,7 +74,6 @@ import {
   sessionProjectSort,
   sessionRowTitle,
   shouldAutoOpenWorkspaceSection,
-  shouldHydrateSidebarRuntime,
   workspaceRowId,
   workspaceRuntimeKind,
   mergedSessionStatusType,
@@ -98,11 +95,15 @@ import { subscribeSessionActivity } from "@/features/session/store/session-statu
 import { focusComposerWhenReady } from "@/features/session/composer/ui/composer-focus"
 import { applyDirectorySessionMeta } from "@/features/session/store/directory-session-meta"
 import { useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspaces"
-import { Can, can } from "@/platform/auth/role"
+import { can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
-import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
-import { isRelayBackedWorkspaceKind, USER_HOSTED_WORKSPACE_KIND, workspaceKind as toWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import {
+  centralSessionRef,
+  sessionRefForWorkspaceSession,
+  type WorkspaceSessionBacking,
+} from "@/platform/identity/session-ref"
+import { isRelayBackedWorkspaceKind, workspaceKind as toWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
@@ -126,7 +127,6 @@ import {
   deriveTerminalSurfaceRows,
   terminalMetaMatchesPlacement,
   type SessionNavigationRow,
-  type TerminalSurfaceRow,
 } from "../../../features/session/ui/navigation/session-navigation"
 import {
   SessionNavigation,
@@ -501,13 +501,6 @@ export function RailSidebar(props: RailSidebarProps) {
     saveView(view())
   })
 
-  const sessionFilter = createMemo(() => ({
-    archived: view().archived,
-    status: view().status,
-    environment: view().environment,
-    git: view().git,
-  }))
-
   const hasFreshMessagePrefetch = (directory: SessionPrefetchDirectory, sessionID: string) => {
     const info = getSessionPrefetch(directory, sessionID)
     return !!info?.page?.messages.length && Date.now() - info.at < SESSION_PREFETCH_TTL
@@ -529,7 +522,7 @@ export function RailSidebar(props: RailSidebarProps) {
       })
 
   const workspaceName = (dir: string, project: ProjectItem) => {
-    return workspaceDisplayName(project, dir, { cloud: sectionCloud(project, dir) })
+    return workspaceDisplayName(project, dir)
   }
 
   const projectLabel = (project: ProjectItem) => railProjectLabel(project)
@@ -685,16 +678,6 @@ export function RailSidebar(props: RailSidebarProps) {
       }),
       project,
     }
-  }
-
-  const uniqueRows = (rows: Row[]) => {
-    const seen = new Set<string>()
-    return rows.filter((session) => {
-      const key = sessionNavigationRefForRow(session)
-      if (seen.has(key)) return false
-      seen.add(key)
-      return true
-    })
   }
 
   const allRows = createMemo(() => [...rows(), ...globalRows()])
@@ -1049,12 +1032,6 @@ export function RailSidebar(props: RailSidebarProps) {
   const handleRailMenuOpenChange = (open: boolean) => {
     props.onRailLockChange(open)
   }
-
-  const activeDirectory = createMemo(() => {
-    if (props.activeDirectory) return props.activeDirectory
-    const activeProject = props.projects.find((project) => projectMatches(project))
-    return activeProject?.worktree ?? props.projects[0]?.worktree
-  })
 
   const sessionStatus = (session: Row): SwitcherStatus => {
     const directory = session.directory ?? session.project.worktree
@@ -1860,7 +1837,6 @@ export function RailSidebar(props: RailSidebarProps) {
     const [_open, setOpen] = createSignal(section.rows.length > 0)
     const [autoOpened, setAutoOpened] = createSignal(section.rows.length > 0)
     const [manuallyToggled, setManuallyToggled] = createSignal(false)
-    const [runtimeRequested, setRuntimeRequested] = createSignal(false)
     const open = createMemo(() => _open())
     const list = createRailSectionSessionList({
       baseUrl: () => globalSDK.url,
@@ -1886,11 +1862,6 @@ export function RailSidebar(props: RailSidebarProps) {
       registerVisibleSessionRows(visibleRowsKey, visibleRows)
     })
     onCleanup(() => clearVisibleSessionRows(visibleRowsKey, visibleRows))
-    const shouldHydrateRuntime = () => shouldHydrateSidebarRuntime({
-      open: open(),
-      active: active(),
-      requested: runtimeRequested(),
-    })
 
     createEffect(() => {
       if (active()) setOpen(true)
@@ -1930,7 +1901,6 @@ export function RailSidebar(props: RailSidebarProps) {
             {...headerEngagement.handlers}
             onClick={() => {
               setOpen(true)
-              setRuntimeRequested(true)
               openWorkspacePanel(section.workspaceDir)
             }}
           >
@@ -1940,12 +1910,10 @@ export function RailSidebar(props: RailSidebarProps) {
               onClick={(e: MouseEvent) => {
                 e.stopPropagation()
                 setManuallyToggled(true)
-                setRuntimeRequested(true)
                 setOpen(!_open())
               }}
               onKeyDown={(e: KeyboardEvent) => activateDisclosureFromKeyboard(e, () => {
                 setManuallyToggled(true)
-                setRuntimeRequested(true)
                 setOpen(!_open())
               })}
             >

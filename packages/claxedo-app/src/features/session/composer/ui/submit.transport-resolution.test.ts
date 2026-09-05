@@ -1,15 +1,22 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { queryClient } from "@/platform/query/query-client"
 import * as h from "./submit.harness.test"
 
 const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  createSubmit,
+  createPromptSubmit,
+  submitEvent,
+  settleSubmitEffects,
+  waitForSubmitEffect,
+  localSessionRef,
+  promptLengthForTest,
+  state,
+  calls,
+  runtimeCalls,
+  transportPromptAsyncCalls,
+  transportClients,
+  harnessSetCalls,
+  toasts,
+  refreshCalls,
 } = h
 
 beforeAll(async () => {
@@ -50,11 +57,12 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(calls.async).toBe(0)
     expect(calls.transportAsync).toBe(1)
     expect(harnessSetCalls).toEqual([])
-    expect(transportClients.length).toBeGreaterThanOrEqual(2)
+    expect(transportClients).toHaveLength(1)
     expect(transportClients.every((item) => item.directory === cloudDir)).toBe(true)
+    expect(runtimeCalls.filter((call) => call.input.includes("/prompt_async") && call.method === "POST")).toHaveLength(1)
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "session-1", directory: cloudDir })
     expect(refreshCalls).toEqual([{ directory: cloudDir, harnessType: "pi" }])
   })
-
 
   test("a draft without an authoritative model key cannot submit", async () => {
     state.demoMode = false
@@ -95,7 +103,6 @@ describe("Workspace-runtime transport + model resolution", () => {
       description: "prompt.toast.modelAgentRequired.description",
     })
   })
-
 
   test("existing workspace sessions do not fall back to unrelated provider defaults while selection restores", async () => {
     state.demoMode = false
@@ -149,7 +156,6 @@ describe("Workspace-runtime transport + model resolution", () => {
     })
   })
 
-
   test("loopback resumed workspace sessions keep directory on prompt_async", async () => {
     state.demoMode = false
     state.harnessMode = false
@@ -184,7 +190,6 @@ describe("Workspace-runtime transport + model resolution", () => {
       directory: "ws_resumed",
     })
   })
-
 
   test("signed control-plane existing normal submit reuses canonical config on runtime transport", async () => {
     state.demoMode = false

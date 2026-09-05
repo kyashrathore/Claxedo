@@ -1,17 +1,29 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, mock, test } from "bun:test"
-import { queryClient } from "@/platform/query/query-client"
 import type { Prompt } from "@/features/session/providers/prompt"
 import * as h from "./submit.harness.test"
 
 const {
-  createSubmit, createPromptSubmit, submitEvent, settleSubmitEffects, waitForSubmitEffect,
-  seedProjectCatalog, seedCommandList, sessionStatusFor, localSessionRef, promptLengthForTest,
-  repoMainPromptScope, promptValue, state, calls, boots, apiCalls, fetchCalls, unsignedCalls,
-  runtimeCalls, transportPromptAsyncCalls, sessionCreateCalls, transportClients, harnessSetCalls,
+  createSubmit,
+  createPromptSubmit,
+  submitEvent,
+  settleSubmitEffects,
+  waitForSubmitEffect,
+  sessionStatusFor,
+  promptValue,
+  state,
+  calls,
+  boots,
+  apiCalls,
+  unsignedCalls,
+  runtimeCalls,
+  transportPromptAsyncCalls,
+  sessionCreateCalls,
+  transportClients,
   harnessClaimCalls,
-  buildRequestPartCalls, shellCalls, commandCalls, navCalls, flowEvents, handoffCalls, toasts,
-  promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
-  promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  handoffCalls,
+  toasts,
+  promptCalls,
+  optimisticAdds,
 } = h
 
 beforeAll(async () => {
@@ -179,7 +191,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.async).toBe(0)
   })
 
-
   test("harness draft submit claims its session with the complete initial config", async () => {
     state.demoMode = false
     state.harnessMode = true
@@ -230,14 +241,13 @@ describe("Harness + demo dispatch and abort", () => {
     })
     expect(transportClients.length).toBeGreaterThanOrEqual(1)
     expect(transportClients.every((client) => client.directory === "/repo/main")).toBe(true)
-    expect(transportClients.some((client) => client.fetch !== undefined)).toBe(true)
+    expect(runtimeCalls.filter((call) => call.input.includes("/prompt_async") && call.method === "POST")).toHaveLength(1)
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       sessionID: "session-1",
       directory: "/repo/main",
       model: { providerID: "claude-sdk", modelID: "opus" },
     })
   })
-
 
   test("harness submit uses the harness-selected model instead of stale local provider state", async () => {
     state.demoMode = false
@@ -261,7 +271,6 @@ describe("Harness + demo dispatch and abort", () => {
     })
   })
 
-
   test("connection-backed submit does not leak an unrelated local-provider variant", async () => {
     state.demoMode = false
     state.harnessMode = true
@@ -284,7 +293,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(transportPromptAsyncCalls.at(-1)).not.toHaveProperty("variant")
     expect(JSON.parse(unsignedCalls.at(-1)?.body ?? "{}")).not.toHaveProperty("variant")
   })
-
 
   test("existing harness follow-up preserves its persisted harness variant", async () => {
     state.demoMode = false
@@ -322,7 +330,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(unsignedCalls.filter((call) => call.url.includes("/config") && call.method === "PATCH")).toHaveLength(0)
   })
 
-
   test("harness draft submit refuses unresolved provider/model state", async () => {
     state.demoMode = false
     state.harnessMode = true
@@ -343,7 +350,6 @@ describe("Harness + demo dispatch and abort", () => {
       description: "prompt.toast.modelAgentRequired.description",
     })
   })
-
 
   test("stale harness boot callbacks do not update a newer composer scope", async () => {
     state.demoMode = false
@@ -369,7 +375,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.transportAsync).toBe(1)
   })
 
-
   test("harness claim failure does not invoke an alternate direct-create path", async () => {
     state.demoMode = false
     state.harnessMode = true
@@ -387,7 +392,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(boots).toEqual([{ phase: "booting", harness: "Claude", sessionID: undefined }, undefined])
     expect(toasts).toEqual([{ title: "prompt.toast.sessionCreateFailed.title", description: "Failed to create session" }])
   })
-
 
   test("signed harness draft submit uses Workspace Runtime transport instead of old session compatibility", async () => {
     state.demoMode = false
@@ -435,7 +439,6 @@ describe("Harness + demo dispatch and abort", () => {
     }))
     expect(toasts).toEqual([])
   })
-
 
   test("signed harness submit ignores stale shell mode and sends a chat prompt", async () => {
     state.demoMode = false
@@ -485,7 +488,6 @@ describe("Harness + demo dispatch and abort", () => {
     }))
   })
 
-
   test("signed harness existing session sends from its canonical runtime config when session hydration misses", async () => {
     state.demoMode = false
     state.harnessMode = true
@@ -525,7 +527,6 @@ describe("Harness + demo dispatch and abort", () => {
     expect(toasts).toEqual([])
   })
 
-
   test("signed control-plane abort reaches the workspace runtime transport", async () => {
     state.demoMode = false
 
@@ -562,7 +563,6 @@ describe("Harness + demo dispatch and abort", () => {
       questions: [],
     })
   })
-
 
   test("empty active submit aborts without history or send side effects", async () => {
     state.demoMode = false

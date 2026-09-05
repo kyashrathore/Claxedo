@@ -12,12 +12,8 @@ import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
-import {
-  startWorkspaceRelayHostTunnel,
-  type WorkspaceRelayHostTunnel,
-  type WorkspaceRelayHostTunnelOptions,
-} from "./workspace-relay-host-tunnel"
-import { ConfigRoutes, type RuntimeHarnessSelection } from "./routes/config"
+import { startWorkspaceRelayHostTunnel, type WorkspaceRelayHostTunnelOptions } from "./workspace-relay-host-tunnel"
+import { ConfigRoutes } from "./routes/config"
 import { SessionEnvRoutes } from "./routes/session-env"
 import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
 import { LocalDocumentBrokerRoutes } from "./routes/local-document-broker"
@@ -34,9 +30,6 @@ import {
   assertWorkspaceRuntimeExposure,
   createWorkspaceRuntimeExposureMiddleware,
   exposureBoundaryName,
-  loopbackWorkspaceRuntimeExposure,
-  privateNetworkDevUnsafeWorkspaceRuntimeExposure,
-  relayWorkspaceRuntimeExposure,
   type WorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText, workspaceRuntimeStoreDir } from "./env"

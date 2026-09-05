@@ -13,7 +13,7 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { Pane, PaneRect, WorkbenchState } from "./types"
+import type { PaneRect, WorkbenchState } from "./types"
 import { useWorkbench, useWorkbenchContext } from "./provider"
 import { computePaneRects } from "./reducers/tree-helpers"
 import { computeDropEdge } from "./drag-drop"

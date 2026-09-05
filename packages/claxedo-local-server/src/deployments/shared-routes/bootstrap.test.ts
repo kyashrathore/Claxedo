@@ -1,4 +1,3 @@
-import { mkdtempSync } from "node:fs"
 import fs from "node:fs/promises"
 import os from "node:os"
 import path from "node:path"
@@ -21,8 +20,6 @@ afterAll(async () => {
   else process.env.CLAXEDO_STATE_DIR = previous.CLAXEDO_STATE_DIR
   await fs.rm(root, { recursive: true, force: true })
 })
-
-const catalogCacheDir = mkdtempSync(path.join(os.tmpdir(), "claxedo-bootstrap-catalog-"))
 
 describe("BootstrapRoutes", () => {
   test("returns only Claxedo-owned bootstrap fields", async () => {

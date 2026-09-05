@@ -16,7 +16,6 @@ import { AddProcessDialog } from "@/features/processes/ui"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import type { ProcessPaneSliceApi } from "@/features/processes/state/process-pane-slice"
 
-type ProcessConfig = Process.ProcessConfig
 type ManagedProcess = Process.ManagedProcess
 type ProcessStatus = Process.Status
 type LaunchResult = Process.LaunchResult
