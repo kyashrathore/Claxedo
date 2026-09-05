@@ -101,7 +101,7 @@ import { useSharedWorkspaceIds } from "@/features/workspaces/data/shared-workspa
 import { Can, can } from "@/platform/auth/role"
 import { isWorkspaceReady, workspacePlacement } from "../../../features/workspaces/data/workspace-connection"
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
-import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
+import { sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { isRelayBackedWorkspaceKind, USER_HOSTED_WORKSPACE_KIND, workspaceKind as toWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { shellDataKeys } from "@/platform/sync/keys"
@@ -1111,9 +1111,7 @@ export function RailSidebar(props: RailSidebarProps) {
   const sessionDirectory = (session: Row) => session.directory ?? session.project.worktree
   const sessionWorkbenchRef = (session: Row) => {
     const directory = sessionDirectory(session)
-    if (sessionNavigationRefForRow(session).startsWith("central:")) {
-      return centralSessionRef({ sessionId: session.id, workspaceId: session.workspaceId })
-    }
+
     return sessionRefForWorkspaceSession({
       sessionId: session.id,
       directory,

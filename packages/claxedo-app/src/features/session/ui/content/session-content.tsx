@@ -4,7 +4,7 @@ import { useClaxedoState } from "@/features/session/app-ports"
 import type { PaneCtx } from "@/features/session/app-ports"
 import { SessionPaneScope } from "../components/session-pane-scope"
 import SessionPage from "@/features/session/ui/session-screen"
-import { hasBacking, isDirectorylessPiSession, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
+import { hasBacking, localSessionRefForDirectory, retargetSessionRef } from "@/platform/identity/session-ref"
 import { getSessionPrefetchPromise } from "@/platform/sync/session-prefetch"
 import { SessionLoadingRoot, SessionLoadingSurface } from "./session-loading-surface"
 import { createSessionMountSettle } from "./session-mount-settle"
@@ -141,22 +141,9 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
   })
   const paneDirectory = createMemo(() => {
     const ref = effectiveSessionRef()
-    if (ref?.host === "central") {
-      const value = directory() ?? fallbackDirectory()
-      if (value !== undefined) return { value }
-      if (isDirectorylessPiSession({ sessionRef: ref })) return { value: "" }
-      return
-    }
+
     if (canRenderWorkspaceScope() && directory() !== undefined) return { value: directory()! }
     return undefined
-  })
-  const [centralFallbackExpired, setCentralFallbackExpired] = createSignal(false)
-  createEffect(() => {
-    const waitingForRealSession = requiresSessionRef() && !effectiveSessionRef() && !!fallbackDirectory()
-    setCentralFallbackExpired(false)
-    if (!waitingForRealSession) return
-    const timer = setTimeout(() => setCentralFallbackExpired(true), 1_200)
-    onCleanup(() => clearTimeout(timer))
   })
   const realSessionLoading = () => (
     <SessionLoadingSurface
@@ -164,47 +151,6 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
       sessionId={sessionId()}
       directory={directory() ?? fallbackDirectory()}
     />
-  )
-  const noWorkspaceBacking = () => (
-    <div
-      class="flex h-full items-center justify-center text-text-weak"
-      data-testid="central-session-content"
-      data-session-id={sessionId() ?? ""}
-    >
-      {requiresSessionRef() ? "Session unavailable" : "No workspace backing"}
-    </div>
-  )
-  const centralSessionFallback = () =>
-    fallbackDirectory() && !centralFallbackExpired() ? realSessionLoading() : noWorkspaceBacking()
-  const fallbackDraftComposer = () => (
-    <Show when={!sessionId() || sessionId() === "new"} fallback={centralSessionFallback()}>
-      <Show
-        when={fallbackDirectory()}
-        fallback={noWorkspaceBacking()}
-      >
-        {(dir) => (
-          <SessionPaneScope
-            directory={dir()}
-            workspaceId={workspaceRouteId}
-            active={activeForHydration}
-            sessionId={() => "new"}
-            paneId={() => props.ctx.paneId}
-            surfaceId={() => meta().id}
-          leafId={() => meta().id}
-        >
-          <div
-            class="size-full"
-            data-testid="session-content-fallback-draft"
-            data-session-id="new"
-            data-session-directory={dir()}
-            data-recovered-from-session-id={sessionId() ?? ""}
-          >
-            {sessionPage()}
-          </div>
-        </SessionPaneScope>
-      )}
-      </Show>
-    </Show>
   )
   return (
     // Pane-local suspense boundary. Session surfaces create session-scoped
@@ -222,14 +168,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
         >
           <Show
             when={paneDirectory()}
-            fallback={
-              <Show
-                when={effectiveSessionRef()?.host === "central"}
-                fallback={<div class="flex items-center justify-center h-full text-text-weak">Missing workspace</div>}
-              >
-                {fallbackDraftComposer()}
-              </Show>
-            }
+            fallback={<div class="flex items-center justify-center h-full text-text-weak">Missing workspace</div>}
           >
             {(dir) => (
               <SessionPaneScope

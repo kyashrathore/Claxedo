@@ -50,13 +50,13 @@ describe("session config selection", () => {
     )
   })
 
-  test("does not merge central and workspace-backed refs with the same visible placement", () => {
-    const central = {
+  test("does not merge user-hosted and cloud refs with the same visible placement", () => {
+    const userHosted = {
       sessionId: "shared",
-      host: "central",
+      host: "workspace",
       workspaceId: "ws_1",
-      toolSandbox: { kind: "virtual" },
-      harness: { id: "opencode" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted", hostId: "host_local" },
+      harness: { kind: "native", harnessId: "opencode" },
     } satisfies SessionRef
     const workspace = {
       sessionId: "shared",
@@ -68,7 +68,7 @@ describe("session config selection", () => {
         hosting: "cloud",
         hostId: "host_1",
       },
-      harness: { id: "opencode" },
+      harness: { kind: "native", harnessId: "opencode" },
     } satisfies SessionRef
     const scope = {
       sessionID: "shared",
@@ -77,10 +77,10 @@ describe("session config selection", () => {
       serverUrl: "https://one.example",
     }
 
-    expect(sessionConfigRawQueryKey({ ...scope, sessionRef: central })).not.toEqual(
+    expect(sessionConfigRawQueryKey({ ...scope, sessionRef: userHosted })).not.toEqual(
       sessionConfigRawQueryKey({ ...scope, sessionRef: workspace }),
     )
-    expect(sessionConfigSelectionQueryKey({ ...scope, sessionRef: central })).not.toEqual(
+    expect(sessionConfigSelectionQueryKey({ ...scope, sessionRef: userHosted })).not.toEqual(
       sessionConfigSelectionQueryKey({ ...scope, sessionRef: workspace }),
     )
   })

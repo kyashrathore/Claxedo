@@ -49,7 +49,6 @@ import {
   presentSubagents,
   type HostSubagentRow,
 } from "../../../features/session/subagents/subagent-presentation"
-import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
 import {
   createDeferredDirectoryResourceGate,
   DIRECTORY_RESOURCE_FIRST_PAINT_DELAY_MS,
@@ -95,7 +94,7 @@ function DirectoryDataProvider(props: ParentProps<{
 
   const ensureSubagents = (parentSessionId: string, callerSignal: AbortSignal) => {
     const query = new URLSearchParams({ directory: props.directory })
-    const path = centralRuntimePath(`/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`, props.sessionRef?.())
+    const path = `/session/${encodeURIComponent(parentSessionId)}/subagents?${query}`
     return subagents.ensureHydrated(
       parentSessionId,
       async (signal) => {

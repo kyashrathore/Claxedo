@@ -50,7 +50,7 @@ mock.module("@/platform/api/api", () => ({
         },
       })
     }
-    if (request.url.includes("/api/control/session/fa751c3c-50ff-46dd-b600-eb8b9caf7443?")) {
+    if (request.url.includes("/session/fa751c3c-50ff-46dd-b600-eb8b9caf7443?")) {
       return new Response(JSON.stringify({
         id: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
         parentID: "parent-session-1",
@@ -129,7 +129,7 @@ beforeEach(() => {
 })
 
 describe("session transport split", () => {
-  test("hydrates central child metadata through its canonical session ref", async () => {
+  test("hydrates native child metadata through its canonical session ref", async () => {
     const client = {
       get: mock(async () => ({ data: { id: "wrong-upstream-session" } })),
       messages: mock(async () => ({ data: [], response: new Response(null) })),
@@ -137,17 +137,18 @@ describe("session transport split", () => {
     }
     const getSession = createSessionInfoHydrationGetter({
       client,
-      claxedoServerUrl: "http://test.local",
+      claxedoServerUrl: "http://127.0.0.1:3001",
       sessionRef: {
         sessionId: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
-        host: "central",
-        harness: { id: "pi" },
-        toolSandbox: { kind: "virtual" },
+        host: "workspace",
+        harness: { id: "pi", access: "native" },
+        toolSandbox: { kind: "local", cwd: "/repo" },
       },
     })
 
     const session = await getSession({
       directory: "/repo",
+      claxedoServerUrl: "http://127.0.0.1:3001",
       sessionID: "fa751c3c-50ff-46dd-b600-eb8b9caf7443",
     })
 
@@ -157,7 +158,7 @@ describe("session transport split", () => {
       parentID: "parent-session-1",
     })
     expect(calls).toEqual([{
-      url: "http://test.local/api/control/session/fa751c3c-50ff-46dd-b600-eb8b9caf7443?directory=%2Frepo",
+      url: "http://127.0.0.1:3001/session/fa751c3c-50ff-46dd-b600-eb8b9caf7443?directory=%2Frepo",
       method: "GET",
     }])
   })
@@ -236,26 +237,30 @@ describe("session transport split", () => {
   test("uses claxedo-server for uuid session and todo reads", async () => {
     await fetchSessionByTransport({
       directory: "/repo",
+      claxedoServerUrl: "http://127.0.0.1:3001",
       sessionID: "3aca2eef-6d50-4366-9600-a7ebb9852a58",
     })
     await fetchSessionTodoByTransport({
       directory: "/repo",
+      claxedoServerUrl: "http://127.0.0.1:3001",
       sessionID: "3aca2eef-6d50-4366-9600-a7ebb9852a58",
     })
 
     expect(calls.map((item) => item.url)).toEqual([
-      "http://test.local/session/3aca2eef-6d50-4366-9600-a7ebb9852a58?directory=%2Frepo",
-      "http://test.local/session/3aca2eef-6d50-4366-9600-a7ebb9852a58/todo?directory=%2Frepo",
+      "http://127.0.0.1:3001/session/3aca2eef-6d50-4366-9600-a7ebb9852a58?directory=%2Frepo",
+      "http://127.0.0.1:3001/session/3aca2eef-6d50-4366-9600-a7ebb9852a58/todo?directory=%2Frepo",
     ])
   })
 
   test("reads capabilities from claxedo-server for scoped sessions", async () => {
     const opaque = await fetchSessionCapabilitiesByTransport({
       directory: "/repo",
+      claxedoServerUrl: "http://127.0.0.1:3001",
       sessionID: "ses_123",
     })
     const scoped = await fetchSessionCapabilitiesByTransport({
       directory: "/repo",
+      claxedoServerUrl: "http://127.0.0.1:3001",
       sessionID: "0251fd86-2f35-4efe-a802-b2fd6d473992",
     })
 
@@ -272,10 +277,10 @@ describe("session transport split", () => {
       configOptions: true,
     })
     expect(calls).toEqual([{
-      url: "http://test.local/session/ses_123/capabilities?directory=%2Frepo",
+      url: "http://127.0.0.1:3001/session/ses_123/capabilities?directory=%2Frepo",
       method: "GET",
     }, {
-      url: "http://test.local/session/0251fd86-2f35-4efe-a802-b2fd6d473992/capabilities?directory=%2Frepo",
+      url: "http://127.0.0.1:3001/session/0251fd86-2f35-4efe-a802-b2fd6d473992/capabilities?directory=%2Frepo",
       method: "GET",
     }])
   })

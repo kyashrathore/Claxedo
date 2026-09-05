@@ -36,6 +36,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
   const startedTurn = new Promise<void>((resolve) => { started = resolve })
   const heldTurn = new Promise<void>((resolve) => { release = resolve })
   const controls: Array<{ instance: number; action: string }> = []
+  const configurations: unknown[] = []
   const storeLifecycle = { opened: 0, recovered: 0, closed: 0 }
   const capabilities = {
     abort: !!options.hold, reconnect: false, replay: true, permissions: !!options.hold, questions: false,
@@ -67,7 +68,7 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
         return upstream.get(binding.upstreamSessionId) ?? null
       }
       return {
-        ...(options.configurable ? { adapterCapabilities: ["runtime-config"] as const, setAuth() {}, setModel() {}, async applyConfig() { if (dead) throw new Error("disposed adapter") } } : {}),
+        ...(options.configurable ? { adapterCapabilities: ["runtime-config"] as const, setAuth() {}, setModel() {}, async applyConfig(config: unknown) { if (dead) throw new Error("disposed adapter"); configurations.push(config) } } : {}),
         sessionConfigOwner: options.runtimeConfig ? "runtime" : "adapter",
         async createSession(_directory, title, id) {
           if (options.holdCreate) { started(); await heldTurn }
@@ -156,10 +157,21 @@ async function fixture(options: { runtimeConfig?: boolean; configurable?: boolea
       ))
     return { host, request }
   }
-  return { ...open(), open, snapshot, target, storeRoot, upstream, executions, disposed, resolvedDirectories, startedTurn, release, controls, storeLifecycle, creates: () => creates, adapters: () => adapters }
+  return { ...open(), open, snapshot, target, storeRoot, upstream, executions, disposed, resolvedDirectories, startedTurn, release, controls, configurations, storeLifecycle, creates: () => creates, adapters: () => adapters }
 }
 
 describe("workspace runtime public lifecycle", () => {
+  test("lazy native admission applies an empty configuration once before creating the session", async () => {
+    const f = await fixture({ native: true, configurable: true })
+    const snapshot = f.snapshot()
+    delete snapshot.defaultHarness
+    await f.host.apply(snapshot)
+    expect(f.adapters()).toBe(0)
+    expect((await f.request("/session", "POST", { id: "first" }, "&nativeHarness=pi")).status).toBe(201)
+    expect(f.configurations).toEqual([{ auth: {}, mcp: {}, launch: {}, harness: { id: "pi", access: "native" } }])
+    expect((await f.request("/session", "POST", { id: "second" }, "&nativeHarness=pi")).status).toBe(201)
+    expect(f.configurations).toHaveLength(1)
+  })
   test("shutdown unblocks a pending create through adapter teardown before closing the store", async () => {
     const f = await fixture({ runtimeConfig: true, holdCreate: true, releaseOnDispose: true })
     await f.host.apply(f.snapshot())

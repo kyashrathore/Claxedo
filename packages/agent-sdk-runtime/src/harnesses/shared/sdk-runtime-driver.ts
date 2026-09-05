@@ -90,6 +90,7 @@ export type SdkRuntimeDriverHost = {
    * finds no binding routes exactly as it did before asking.
    */
   getSessionForAgentSession(agentSessionId: string): AgentSessionBinding | null
+  getGoal(sessionId: string): RuntimeGoalSnapshot | null
   getSessionConfig(sessionId: string): SessionConfig | null | undefined
   publishGoal(input: {
     sessionId: string
@@ -142,11 +143,11 @@ export type SdkRuntimeDriver = {
   }
   setAuth(keys: SdkRuntimeAuth): void
   applyConfig(config: Record<string, unknown>): void | Promise<void>
-  createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<string>
+  createAgentSession(input: { directory: string; title?: string; model: string; system?: string }): Promise<{ id: string; model?: { providerID: string; modelID: string } }>
   createRuntime(threadId: string): AgentEventRuntime
   runTurn(input: SdkRuntimeTurnInput): Promise<void>
   deleteAgentSession?(sessionId: string, agentSessionId: string, directory: string): void | Promise<void>
-  dispose?(): void
+  dispose?(): void | Promise<void>
   readRuntimeHealth(directory: string): AgentHarnessAdapterHealth
   configOptions(currentModel: string, directory?: string): Promise<AgentConfigOption[]>
   peekConfigOptions(currentModel: string, directory?: string): AgentConfigOption[]

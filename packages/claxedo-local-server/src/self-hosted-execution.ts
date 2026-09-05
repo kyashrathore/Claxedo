@@ -88,3 +88,6 @@ export {
 } from "./app/local-daemon-lifecycle"
 export { createLocalControlPlaneServices, localSessionProjectionStore } from "./app/local-services"
 export { isLocalCredentialPath, localCorsOrigin } from "./app/local-app"
+
+// Verified caller stamping for an embedded machine request.
+export { embeddedRelayHostAuthFromActor, EMBEDDED_RELAY_HOST_AUTH_HEADER } from "./workspace/runtime-dispatch/embedded-relay-host-auth"

@@ -29,7 +29,7 @@ import {
 } from "../subagent-admission"
 
 type SessionRow = {
-  scope?: "workspace" | "central"
+  scope?: "workspace"
   id: string
   parentID?: string | null
   directory: string
@@ -208,10 +208,6 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
   getExecutionBinding(id: string): AgentExecutionBinding | null {
     const session = this.sessions.get(id)
     if (!session?.connectionId || !session.agentSessionId) return null
-    if (session.scope === "central") {
-      if (session.workspaceId || session.directory !== "") return null
-      return { scope: "central", sessionId: id, directory: "", connectionId: session.connectionId, upstreamSessionId: session.agentSessionId }
-    }
     if (!session.workspaceId) return null
     return {
       sessionId: id,
@@ -686,6 +682,12 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
       case "message.updated": return this.applyMessageUpdated(sessionId, event)
       case "message.part.updated": return this.applyPartUpdated(sessionId, event)
       case "message.part.delta": return this.applyPartDelta(sessionId, event)
+      case "message.completed": {
+        const message = this.ensureMessage(sessionId, event.properties.messageID)
+        const time = message.info.time as { created?: number } | undefined
+        this.upsertMessage(sessionId, { ...message, info: { ...message.info, time: { ...time, completed: Date.now() } } })
+        return
+      }
       case "permission.asked": return this.applyPermissionAsked(sessionId, event)
       case "permission.replied": return this.removePermission(event.properties.requestID)
       case "question.asked": return this.applyQuestionAsked(sessionId, event)

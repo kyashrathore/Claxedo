@@ -108,8 +108,7 @@ export function createSessionPaneQueries(input: {
   const sessionRowQuery = useQuery<ClaxedoSession | null>(() => {
     if (!input.active()) return parkedPaneQueryOptions<ClaxedoSession | null>("session-row", "inactive")
     const sessionID = input.sessionID()
-    const sessionRef = input.sessionRef?.()
-    if (!sessionID || sessionID === "new" || sessionRef?.host !== "central" || !input.fetchSessionRow) {
+    if (!sessionID || sessionID === "new" || !input.fetchSessionRow) {
       return parkedPaneQueryOptions<ClaxedoSession | null>("session-row", "no-session")
     }
     return paneQueryOptions<ClaxedoSession | null>({

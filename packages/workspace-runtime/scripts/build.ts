@@ -22,7 +22,7 @@ import { stageOpenCodePatches } from "./stage-opencode-patches"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
-const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "session-env-contract", "testing", "opencode"] as const
+const PUBLIC_ENTRIES = ["index", "relay", "client", "host", "exposure", "config", "routes", "http", "route-contribution", "testing", "opencode"] as const
 type PublicEntry = typeof PUBLIC_ENTRIES[number]
 
 // Dependencies that stay external (consumers install them)

@@ -51,14 +51,12 @@ export function activeRailSessionStatusTarget(input: {
   targets: readonly RailSessionStatusTarget[]
   sessionID?: string
   directory?: string
-  host?: "central" | "workspace"
+  host?: "workspace"
   workspaceId?: string
 }) {
   return input.targets.find((target) =>
     target.sessionID === input.sessionID &&
-    (input.host === "central"
-      ? target.key.startsWith("central:") && target.directory === input.directory
-      : input.workspaceId
+    (input.workspaceId
         ? target.workspaceId === input.workspaceId
         : target.directory === input.directory))
 }

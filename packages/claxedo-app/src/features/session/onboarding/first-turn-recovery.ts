@@ -20,12 +20,11 @@ export function nextHarnessRecoveryModel(
   const current = selection.selectedModelKey
   const next = selection.models.find((model) => {
     if (model.id !== current?.modelID) return true
-    if (selection.harness?.kind !== "native" || selection.harness.harnessId !== "pi") return false
-    return model.providerID !== current.providerID
+    return selection.harness?.kind === "connection" && !!model.providerID && model.providerID !== current.providerID
   })
   if (!next) return
-  const providerID = selection.harness?.kind === "native" && selection.harness.harnessId === "pi"
-    ? next.providerID
+  const providerID = selection.harness?.kind === "connection"
+    ? next.providerID ?? harnessSelectionValue(selection.harness)
     : selection.harness ? harnessSelectionValue(selection.harness) : undefined
   if (!providerID) return
   return { providerID, modelID: next.id }

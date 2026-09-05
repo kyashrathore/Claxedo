@@ -86,14 +86,14 @@ function question(id: string, sessionID: string): QuestionRequest {
 }
 
 describe("session controller helpers", () => {
-  test("session hydration authority changes when a provisional route resolves centrally", () => {
+  test("session hydration authority changes when a provisional route resolves to a machine", () => {
     expect(sessionHydrationAuthorityKey(undefined)).toBe("unresolved")
     expect(sessionHydrationAuthorityKey({
       sessionId: "ses_child",
-      host: "central",
+      host: "workspace",
       workspaceId: "ws_1",
-      toolSandbox: { kind: "virtual" },
-      harness: { id: "pi" },
+      toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted", hostId: "host_local" },
+      harness: { kind: "native", harnessId: "pi" },
     })).not.toBe("unresolved")
   })
 

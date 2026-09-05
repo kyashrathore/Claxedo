@@ -106,12 +106,12 @@ export async function stopChild(child: ChildProcess | undefined) {
 export async function startSignedFixture(input: {
   access: SignedFixtureAccess
   claudeScriptedEnv: (url: string, configDir: string) => Record<string, string>
-  startScriptedModelServer: () => Promise<{ url: string; v1Url: string }>
+  startScriptedModelServer: () => Promise<{ url: string; v1Url: string; piEnv: { PI_CODING_AGENT_DIR: string; OPENAI_API_KEY: string } }>
   logLabel: string
   hostHeartbeatDelayMs?: number
 }): Promise<{
   info: SignedFixtureInfo
-  scriptedModel: { url: string; v1Url: string }
+  scriptedModel: { url: string; v1Url: string; piEnv: { PI_CODING_AGENT_DIR: string; OPENAI_API_KEY: string } }
   log: () => string
   close: () => Promise<void>
 }> {
@@ -136,6 +136,7 @@ export async function startSignedFixture(input: {
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
         CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: input.access,
         CLAXEDO_E2E_HOST_HEARTBEAT_DELAY_MS: String(input.hostHeartbeatDelayMs ?? 0),
+        ...scriptedModel.piEnv,
         CLAXEDO_E2E_SCRIPTED_MODEL_URL: scriptedModel.v1Url,
         ...input.claudeScriptedEnv(
           scriptedModel.url,

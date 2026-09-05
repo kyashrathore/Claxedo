@@ -4,7 +4,7 @@ import type { AgentPermissionModeState } from "@claxedo/agent-sdk-runtime/adapte
 import { PERMISSION_MECHANISMS } from "./mechanisms"
 import {
   CLAXEDO_ALLOW_SAFE_ID,
-  SANDBOXED_NO_POLICY_REASON,
+  NATIVE_NO_POLICY_REASON,
   claxedoPermissionModes,
   classifyToolKind,
   defaultPermissionSelection,
@@ -29,7 +29,7 @@ const report = (input: Partial<HarnessModeReport> = {}): HarnessModeReport => ({
  * options it does not.
  */
 const POLICY_HARNESS_IDS = HARNESS_IDS.filter(
-  (id) => PERMISSION_MECHANISMS[id].kind !== "sandboxed-no-policy",
+  (id) => PERMISSION_MECHANISMS[id].kind !== "native-no-policy",
 )
 
 const THREE_MODES: HarnessModeReport = report({
@@ -84,27 +84,16 @@ describe("harness modes are shown in the harness's own words", () => {
     }
   })
 
-  /*
-   * pi is the exception to both tests above, and deliberately so.
-   *
-   * Its tools cannot reach anything real — `harnesses/pi/index.ts:176` defaults
-   * the session env to just-bash over an InMemoryFs — so there is no policy for
-   * an option to express. Offering "Auto" there previously meant flipping a
-   * browser-local boolean that gated a permission request pi only emits when the
-   * prompt literally starts with `permission:`; every other prompt executed
-   * unchecked. The control described a policy that did not exist.
-   */
-  test("a sandboxed harness gets no options at all, and says why", () => {
+  test("native Pi has no policy options and explains its real machine access", () => {
     expect(claxedoPermissionModes({ harness: "pi" })).toEqual([])
     expect(claxedoPermissionModes({ harness: "pi", report: THREE_MODES })).toEqual([])
     expect(harnessPermissionModes({ harness: "pi", report: THREE_MODES }).modes).toEqual([])
-    expect(harnessPermissionModes({ harness: "pi" }).unavailable).toBe(SANDBOXED_NO_POLICY_REASON)
-    // Names both facts, so an empty menu never reads as broken or still loading.
-    expect(SANDBOXED_NO_POLICY_REASON).toMatch(/just-bash/i)
-    expect(SANDBOXED_NO_POLICY_REASON).toMatch(/cloud/i)
+    expect(harnessPermissionModes({ harness: "pi" }).unavailable).toBe(NATIVE_NO_POLICY_REASON)
+    expect(NATIVE_NO_POLICY_REASON).toMatch(/permissions of the selected Local machine or Cloud sandbox/)
+    expect(NATIVE_NO_POLICY_REASON).not.toMatch(/simulated|nothing reaches|virtual/i)
     // Never the loading or the not-reported copy: pi is not slow and will not
     // report later.
-    expect(SANDBOXED_NO_POLICY_REASON).not.toMatch(/loading|has not reported/i)
+    expect(NATIVE_NO_POLICY_REASON).not.toMatch(/loading|has not reported/i)
   })
 
   test("Claxedo-owned fallback modes are answered locally", () => {

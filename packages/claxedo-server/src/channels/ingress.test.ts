@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test, vi } from "vitest"
+import { beforeEach, afterEach, describe, expect, test, vi } from "vitest"
 import { Hono } from "hono"
 import {
   createMemoryChannelAccessStore,
@@ -8,13 +8,33 @@ import {
 import { createSelfHostedApp } from "../deployments/self-hosted-node/app"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
-import { createCentralControlApp } from "../central-runtime"
+import { createMachineSessionDispatch } from "../session/machine-dispatch"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "./control-plane"
 import { ensureWorkspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthConfig } from "@claxedo/server-core/platform/auth/auth"
 import type { ChannelRunAuditInput, ChannelRunAuditRecord } from "./run-audit"
 import { testRequestAuthenticationAdapter } from "../test-support/request-authentication"
 import { testManagedSessionAuthority } from "../test-support/managed-session-authority"
+
+// Ingress tests own channel policy and binding races. Machine HTTP admission is
+// exercised against the real dispatch implementation in machine-dispatch.test.ts.
+vi.mock("../session/machine-dispatch", () => ({
+  createMachineSessionDispatch: (services: ControlPlaneServices) => ({
+    async create(input: { workspaceId: string; title?: string }) {
+      const id = `ses_${crypto.randomUUID()}`
+      await services.projectionStore.put_session_meta(id, { host: "workspace", workspaceID: input.workspaceId, directory: "/workspace", title: input.title, tags: ["harness:pi"] })
+      return { id, directory: "/workspace" }
+    },
+    async *prompt(sessionId: string, body: { parts: Array<{ text: string }> }) {
+      yield { type: "message.part.updated", properties: { part: { id: "reply", messageID: "assistant", sessionID: sessionId, type: "text", text: body.parts.map(part => part.text).join("\n") } } }
+      yield { type: "session.idle", properties: { sessionID: sessionId } }
+    },
+    async request() { return Response.json({ ok: true, status: "cancelled" }) },
+  }),
+}))
+beforeEach(async () => {
+  await registeredRepoWorkspace({ workspaceId: "ws_channel_fixture", projectId: "channel_fixture", owner: "channel-fixture", name: "repo" })
+})
 
 afterEach(() => {
   vi.useRealTimers()
@@ -51,14 +71,15 @@ function services(input: {
     created_at: 1,
     updated_at: 1,
   }))
+  const metadata = new Map<string, any>()
   return {
     projectionStore: {
       sync_session_meta: vi.fn(async () => {}),
       sync_session_metas: vi.fn(async () => {}),
       sync_session_messages: vi.fn(async () => {}),
-      put_session_meta: vi.fn(async () => {}),
+      put_session_meta: vi.fn(async (id, value) => { metadata.set(id, { ...metadata.get(id), ...value }) }),
       delete_session_meta: vi.fn(async () => {}),
-      session_meta: vi.fn(async () => undefined),
+      session_meta: vi.fn(async (id) => metadata.get(id)),
       session_metas: vi.fn(async () => new Map()),
       list_session_metas: vi.fn(async () => []),
       tagged_session_metas: vi.fn(async () => []),
@@ -137,12 +158,12 @@ describe("channels ingress", () => {
     const revokeChannelIdentity = vi.fn(async () => ({ revoked: true }))
     const svc = services({ signed: true })
     Object.assign(svc.authority!, { bindChannelIdentity, revokeChannelIdentity })
-    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const machineRuntime = createMachineSessionDispatch(svc, {})
     const accessStore = createMemoryChannelAccessStore()
     const identityBindingStore = createMemoryChannelIdentityBindingStore()
     const channels = createControlPlaneChannels({
       services: svc,
-      runtime: centralControl.runtime,
+      runtime: machineRuntime,
       env: { CLAXEDO_CHANNEL_DM_POLICY: "pairing" },
       includeFake: false,
       accessStore,
@@ -157,7 +178,7 @@ describe("channels ingress", () => {
     const app = new Hono()
     mountControlPlaneChannels(app, {
       services: svc,
-      runtime: centralControl.runtime,
+      runtime: machineRuntime,
       env: { CLAXEDO_CHANNEL_DM_POLICY: "pairing" },
       channels,
       authentication: testRequestAuthenticationAdapter(),
@@ -212,7 +233,7 @@ describe("channels ingress", () => {
     })
   })
 
-  test("fake channel ingress can drive the central runtime locally", async () => {
+  test("fake channel ingress dispatches to a registered machine", async () => {
     const svc = services()
     const { app } = createSelfHostedApp(svc)
     const res = await app.request("http://127.0.0.1/api/channels/fake", {
@@ -224,6 +245,7 @@ describe("channels ingress", () => {
         threadKey: "telegram:test:chat:thread",
         idempotencyKey: "delivery-1",
         text: "hello",
+        repo: { owner: "channel-fixture", name: "repo" },
       }),
     })
 
@@ -250,7 +272,7 @@ describe("channels ingress", () => {
       channel: "telegram",
       externalUserId: "owner",
       threadKey: "telegram:test:chat:thread",
-      workspaceId: null,
+      workspaceId: "ws_channel_fixture",
       cost: null,
     })
     expect(svc.projectionStore.record_channel_run_audit).toHaveBeenCalledWith({
@@ -258,7 +280,7 @@ describe("channels ingress", () => {
       channel: "telegram",
       externalUserId: "owner",
       threadKey: "telegram:test:chat:thread",
-      workspaceId: null,
+      workspaceId: "ws_channel_fixture",
       cost: null,
     })
   })
@@ -288,10 +310,10 @@ describe("channels ingress", () => {
         if (!input.sessionId || active.get(input.threadKey) === input.sessionId) active.delete(input.threadKey)
       }),
     })
-    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const machineRuntime = createMachineSessionDispatch(svc, {})
     const channels = createControlPlaneChannels({
       services: svc,
-      runtime: centralControl.runtime,
+      runtime: machineRuntime,
       includeFake: true,
     })
     const threadKey = "telegram:test:reset:thread"
@@ -308,6 +330,7 @@ describe("channels ingress", () => {
         idempotencyKey,
         text,
         intent,
+        repo: { owner: "channel-fixture", name: "repo" },
         trustedSource: true,
         raw: {},
       }, {
@@ -364,7 +387,7 @@ describe("channels ingress", () => {
       clear_channel_thread_session: clearChannelThreadSession,
     })
     let completeCreate: ((session: { id: string }) => void) | undefined
-    const createHybridSession = vi.fn()
+    const createMachineSession = vi.fn()
       .mockImplementationOnce(() => new Promise<{ id: string }>((resolve) => {
         completeCreate = resolve
       }))
@@ -372,8 +395,9 @@ describe("channels ingress", () => {
     const channels = createControlPlaneChannels({
       services: svc,
       runtime: {
-        createHybridSession,
-        eventHub: { subscribeGlobal: () => () => {} },
+        create: createMachineSession,
+        prompt: async function* () {},
+        request: async () => Response.json({ ok: true }),
         routes: {
           fetch: vi.fn(async () => Response.json({
             id: "message-race",
@@ -398,6 +422,7 @@ describe("channels ingress", () => {
         idempotencyKey,
         text,
         intent,
+        repo: { owner: "channel-fixture", name: "repo" },
         trustedSource: true,
         raw: {},
       }, {
@@ -409,15 +434,15 @@ describe("channels ingress", () => {
     }
 
     const firstSend = send("slow message", "race-delivery-1")
-    await vi.waitFor(() => expect(createHybridSession).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(createMachineSession).toHaveBeenCalledTimes(1))
     await send("/new", "race-delivery-new", { kind: "new_session" })
     const nextSend = send("after reset", "race-delivery-2")
     await Promise.resolve()
-    expect(createHybridSession).toHaveBeenCalledTimes(1)
+    expect(createMachineSession).toHaveBeenCalledTimes(1)
     completeCreate?.({ id: "session-late" })
     await Promise.all([firstSend, nextSend])
 
-    expect(createHybridSession).toHaveBeenCalledTimes(2)
+    expect(createMachineSession).toHaveBeenCalledTimes(2)
     expect(active.get(threadKey)).toBe("session-after-race")
     expect(audits.map((audit) => audit.sessionId)).toEqual(["session-after-race"])
     expect(clearChannelThreadSession).toHaveBeenCalledTimes(1)
@@ -439,7 +464,7 @@ describe("channels ingress", () => {
       }),
     })
     let rejectCreate: ((error: Error) => void) | undefined
-    const createHybridSession = vi.fn()
+    const createMachineSession = vi.fn()
       .mockImplementationOnce(() => new Promise<{ id: string }>((_resolve, reject) => {
         rejectCreate = reject
       }))
@@ -447,8 +472,9 @@ describe("channels ingress", () => {
     const channels = createControlPlaneChannels({
       services: svc,
       runtime: {
-        createHybridSession,
-        eventHub: { subscribeGlobal: () => () => {} },
+        create: createMachineSession,
+        prompt: async function* () {},
+        request: async () => Response.json({ ok: true }),
         routes: {
           fetch: vi.fn(async () => Response.json({
             id: "message-after-rejection",
@@ -468,12 +494,13 @@ describe("channels ingress", () => {
         idempotencyKey,
         text,
         intent,
+        repo: { owner: "channel-fixture", name: "repo" },
         trustedSource: true,
         raw: {},
       }, { reply() {} })
 
     const firstSend = send("slow failure", "rejection-delivery-1", { kind: "message" })
-    await vi.waitFor(() => expect(createHybridSession).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(createMachineSession).toHaveBeenCalledTimes(1))
     await send("/new", "rejection-delivery-new", { kind: "new_session" })
     const nextSend = send("after failure", "rejection-delivery-2", { kind: "message" })
     const createFailure = new Error("session creation failed")
@@ -481,7 +508,7 @@ describe("channels ingress", () => {
     rejectCreate?.(createFailure)
 
     await Promise.all([rejected, nextSend])
-    expect(createHybridSession).toHaveBeenCalledTimes(2)
+    expect(createMachineSession).toHaveBeenCalledTimes(2)
     expect(active.get(threadKey)).toBe("session-after-rejection")
   })
 
@@ -494,10 +521,10 @@ describe("channels ingress", () => {
     svc.projectionStore.clear_channel_thread_session = vi.fn(async () => {
       throw bindingFailure
     })
-    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const machineRuntime = createMachineSessionDispatch(svc, {})
     const channels = createControlPlaneChannels({
       services: svc,
-      runtime: centralControl.runtime,
+      runtime: machineRuntime,
       includeFake: true,
     })
     const envelope = {
@@ -774,10 +801,10 @@ describe("channels ingress", () => {
       },
       sendMessage() {},
     } satisfies WhatsAppBaileysSocket
-    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const machineRuntime = createMachineSessionDispatch(svc, {})
     const channels = createControlPlaneChannels({
       services: svc,
-      runtime: centralControl.runtime,
+      runtime: machineRuntime,
       env: {
         CLAXEDO_CHANNEL_WHATSAPP_ENABLED: "true",
         CLAXEDO_CHANNEL_WHATSAPP_MODE: "personal",
@@ -833,10 +860,10 @@ describe("channels ingress", () => {
       }),
     })
     const posts: string[] = []
-    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const machineRuntime = createMachineSessionDispatch(svc, {})
     const channels = createControlPlaneChannels({
       services: svc,
-      runtime: centralControl.runtime,
+      runtime: machineRuntime,
       env: { CLAXEDO_CHANNEL_SLACK_ENABLED: "true" },
       chatBot: {
         webhooks: {},
@@ -882,10 +909,10 @@ describe("channels ingress", () => {
       release_channel_delivery: vi.fn(async () => {}),
     })
     const posts: Array<{ threadKey: string; text: string }> = []
-    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const machineRuntime = createMachineSessionDispatch(svc, {})
     const channels = createControlPlaneChannels({
       services: svc,
-      runtime: centralControl.runtime,
+      runtime: machineRuntime,
       env: {
         CLAXEDO_CHANNEL_SLACK_ENABLED: "true",
         CLAXEDO_CHANNEL_ALLOW_FROM: "slack:U-OWNER-NOTIFY,slack:U-OTHER-ALLOWLISTED",
@@ -965,12 +992,12 @@ describe("channel repo authorization fails closed", () => {
 
   function harness(input: { signed?: boolean } = {}) {
     const svc = services({ signed: input.signed === true })
-    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const machineRuntime = createMachineSessionDispatch(svc, {})
     return {
       svc,
       channels: createControlPlaneChannels({
         services: svc,
-        runtime: centralControl.runtime,
+        runtime: machineRuntime,
         includeFake: true,
       }),
     }
@@ -999,10 +1026,10 @@ describe("channel repo authorization fails closed", () => {
     // meaningless; the refusal is structural.
     const authorizeChannelProject = vi.fn(async () => ({ ok: true as const, role: "editor" as const, orgId: "org_1" }))
     const svc = services({ signed: true, authorizeChannelProject })
-    const centralControl = createCentralControlApp(svc, { authConfig: svc.auth.config })
+    const machineRuntime = createMachineSessionDispatch(svc, {})
     const channels = createControlPlaneChannels({
       services: svc,
-      runtime: centralControl.runtime,
+      runtime: machineRuntime,
       includeFake: true,
     })
 
@@ -1051,17 +1078,17 @@ describe("channel repo authorization fails closed", () => {
     expect(svc.projectionStore.record_channel_run_audit).toHaveBeenCalled()
   })
 
-  test("a message with no repo target runs a turn in unsigned mode", async () => {
+  test("a message with no machine target is refused in unsigned mode", async () => {
     // Only a NAMED repo triggers the new check; an ordinary message still
     // resolves through the thread's own binding.
     const { svc, channels } = harness()
 
     const chunks = await send({ channels, threadKey: "github:test:failclosed:norepo" })
 
-    expect(chunks).not.toContainEqual(expect.objectContaining({
+    expect(chunks).toContainEqual(expect.objectContaining({
       text: expect.stringContaining("No registered workspace"),
     }))
-    expect(svc.projectionStore.record_channel_run_audit).toHaveBeenCalled()
+    expect(svc.projectionStore.record_channel_run_audit).not.toHaveBeenCalled()
   })
 
   test("a no-repo message in signed mode keeps its own distinct refusal", async () => {

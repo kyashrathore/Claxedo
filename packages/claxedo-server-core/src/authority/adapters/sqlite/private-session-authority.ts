@@ -216,9 +216,8 @@ export function createSqlitePrivateSessionAuthority(input: {
     })()
   }
 
-  const reserveSession = async (auth: SignedControlPlaneAuth, value: ReservePrivateSessionInput) => {
+  const reserveForActor = async (actor: AuthorityUser, value: ReservePrivateSessionInput) => {
     const db = input.database()
-    const actor = actorForAuth(auth)
     const intent = reserveIntent(value)
     workspaceAccess(db, actor, intent.workspaceId, "write")
     if (intent.kind === "fork") {
@@ -257,7 +256,8 @@ export function createSqlitePrivateSessionAuthority(input: {
   }
 
   return {
-    reserveSession,
+    reserveSession: (auth, value) => reserveForActor(actorForAuth(auth), value),
+    reserveRuntimeSession: (principal, value) => reserveForActor(runtimeActor(input.database(), principal), value),
     async acquireSessionTurn(value) {
       const db = input.database()
       const actor = runtimeActor(db, value)

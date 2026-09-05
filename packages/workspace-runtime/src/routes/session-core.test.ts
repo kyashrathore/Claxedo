@@ -1225,7 +1225,7 @@ describe("createSessionRoutes directory-less sessions", () => {
     expect(calls).toEqual([{ directory: undefined, parentSessionId: "parent_1" }])
   })
 
-  test("uses session id as legacy event scope when directory is absent", async () => {
+  test("rejects a binding without its required machine directory before publishing prompt events", async () => {
     const events: CompatEnvelope[] = []
     const busEvents: RuntimeSessionBusEvent[] = []
     const res = await routes({
@@ -1273,15 +1273,9 @@ describe("createSessionRoutes directory-less sessions", () => {
       }),
     })
 
-    expect(res.status).toBe(200)
-    expect(events.map((event) => event.directory)).toEqual(["session_1", "session_1", "session_1", "session_1"])
-    expect(events.map((event) => event.payload.type).slice(0, 2)).toEqual(["message.updated", "message.part.updated"])
-    expect(busEvents).toEqual([
-      { type: "process.status", directory: "session_1", configId: "session_1", status: "streaming" },
-      { type: "process.status", directory: "session_1", configId: "session_1", status: "streaming" },
-      { type: "process.status", directory: "session_1", configId: "session_1", status: "streaming" },
-      { type: "process.status", directory: "session_1", configId: "session_1", status: "streaming" },
-    ])
+    expect(res.status).toBe(500)
+    expect(events).toEqual([])
+    expect(busEvents).toEqual([])
   })
 
   test("can run message turns through the agent runtime facade", async () => {

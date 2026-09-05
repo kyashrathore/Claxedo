@@ -196,11 +196,33 @@ function registerTool<Shape extends Record<string, z.ZodTypeAny>>(
     inputSchema: Shape
     _meta?: Record<string, unknown>
   },
-  handler: (args: z.infer<z.ZodObject<Shape>>) => Promise<unknown>,
+  handler: (args: z.infer<z.ZodObject<Shape>>, extra: { requestId: string | number }) => Promise<unknown>,
 ) {
   // The SDK types a handler's return as its full CallToolResult union, which our handlers
   // satisfy structurally but do not declare; only the return position needs bridging.
   server.registerTool(name, config, handler as Parameters<typeof server.registerTool>[2])
+}
+
+const toolConnectionId = crypto.randomUUID()
+
+if (!READ_ONLY) {
+registerTool("schedule_followup", {
+  description: "Schedule a follow-up in this existing machine session. Requires CLAXEDO_WAKES on the server.",
+  inputSchema: { when: z.string(), intent: z.unknown().optional() },
+}, async (args, extra) => {
+  if (!DEFAULT_SESSION_ID || !DEFAULT_DIR) return { isError: true, content: [{ type: "text" as const, text: "A machine session and workspace are required" }] }
+  const result = await httpRequest<{ ok: boolean; text: string }>(`/api/control/sessions/${encodeURIComponent(DEFAULT_SESSION_ID)}/wakes`, { method: "POST", body: JSON.stringify({ name: "schedule_followup", toolCallId: `${toolConnectionId}:${extra.requestId}`, input: args }) })
+  return { isError: !result.ok, content: [{ type: "text" as const, text: result.text }] }
+})
+registerTool("cancel_wake", {
+  description: "Cancel a pending follow-up belonging to this machine session.",
+  inputSchema: { wake_id: z.string() },
+}, async (args, extra) => {
+  if (!DEFAULT_SESSION_ID || !DEFAULT_DIR) return { isError: true, content: [{ type: "text" as const, text: "A machine session and workspace are required" }] }
+  const result = await httpRequest<{ ok: boolean; text: string }>(`/api/control/sessions/${encodeURIComponent(DEFAULT_SESSION_ID)}/wakes`, { method: "POST", body: JSON.stringify({ name: "cancel_wake", toolCallId: `${toolConnectionId}:${extra.requestId}`, input: args }) })
+  return { isError: !result.ok, content: [{ type: "text" as const, text: result.text }] }
+})
+
 }
 
 registerDocumentTools(registerTool, (path, init) => httpRequest(path, init, "json"), {
@@ -504,34 +526,27 @@ if (!READ_ONLY) {
   registerTool(
     "spawn_session",
     {
-      description:
-        "[Dispatch] Spawn a background Claxedo session on the control plane. Creates a hybrid central session " +
-        "(model turns run centrally; tool side-effects run in the target workspace runtime or a virtual sandbox) " +
-        "and optionally fires an initial prompt without waiting for the turn to finish. " +
-        "Returns the new session id and app URL. Use session_messages later to check progress.",
+      description: "[Dispatch] Create a native agent session in an explicit machine workspace. An initial prompt waits for the workspace runtime's admission receipt. Read session_messages to follow its progress.",
       inputSchema: {
-        title: z.string().optional().describe("Session title shown in the app."),
-        prompt: z.string().optional().describe("Initial prompt to send to the new session (fire-and-forget)."),
-        workspace_id: z.string().optional().describe("Workspace whose runtime hosts the session's tools. Omit for a virtual (tools-only) sandbox."),
-        harness: z.enum(["pi"]).optional().describe("Harness for the session. Only 'pi' (central model-backed) is dispatchable today; other harnesses require workspace dispatch."),
+        title: z.string().optional(),
+        prompt: z.string().optional(),
+        workspace_id: z.string().min(1).describe("Registered machine workspace to run the complete harness in."),
+        harness: z.enum(["pi", "claude", "codex", "cursor", "opencode"]),
       },
     },
-    async (args) => {
+    async (args, extra) => {
       const workspaceId = clean(args.workspace_id)
       const sessionTitle = clean(args.title) || "Background Session"
       const prompt = clean(args.prompt)
       try {
-        const created = await httpRequest<{ session?: { id?: string }; placement?: unknown }>(
+        const created = await httpRequest<{ session?: { id?: string } }>(
           "/api/control/sessions",
           {
             method: "POST",
             body: JSON.stringify({
-              mode: "hybrid",
+              harness: args.harness,
               title: sessionTitle,
-              ...(workspaceId ? {
-                workspaceId,
-                toolSandbox: { kind: "workspace-runtime", workspaceId },
-              } : {}),
+              workspaceId,
             }),
           },
           "json",
@@ -541,20 +556,13 @@ if (!READ_ONLY) {
         if (!sessionId) {
           return { content: [{ type: "text" as const, text: "Session creation returned no id." }], isError: true }
         }
+        let delivery: unknown
         if (prompt) {
-          // Fire-and-forget: the message route runs the WHOLE turn before
-          // responding; the spawner must not block on the background session.
-          void httpRequest(
-            `/api/control/session/${encodeURIComponent(sessionId)}/message`,
-            {
-              method: "POST",
-              body: JSON.stringify({ parts: [{ type: "text", text: prompt }] }),
-            },
-            "json",
-            workspaceId ? workspaceRef(workspaceId) : undefined,
-          ).catch((err) => {
-            console.error(`[claxedo-mcp] spawn_session initial prompt failed for ${sessionId}:`, err)
-          })
+          delivery = await httpRequest(
+            `/session/${encodeURIComponent(sessionId)}/prompt_async`,
+            { method: "POST", body: JSON.stringify({ messageID: `mcp:${toolConnectionId}:${extra.requestId}`, parts: [{ type: "text", text: prompt }] }) },
+            "json", workspaceRef(workspaceId!),
+          )
         }
         return {
           content: [{
@@ -563,7 +571,7 @@ if (!READ_ONLY) {
               session_id: sessionId,
               app_url: `/s/${encodeURIComponent(sessionId)}`,
               workspace_id: workspaceId || null,
-              prompt_dispatched: !!prompt,
+              delivery: prompt ? delivery : { status: "not_requested" },
             }, null, 2),
           }],
         }

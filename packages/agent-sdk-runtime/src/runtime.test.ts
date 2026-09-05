@@ -2,7 +2,7 @@ import { mkdtempSync } from "fs"
 import { removeTestTempDir } from "./harnesses/shared/test-temp-dir"
 import { tmpdir } from "os"
 import path from "path"
-import { describe, expect, test } from "bun:test"
+import { afterAll, beforeAll, describe, expect, test } from "bun:test"
 import { createAgentRuntime } from "./runtime"
 import type { AgentHarnessFactory, AgentRuntimeAbortResult } from "./runtime"
 import { AgentRuntimeStaleTurnError } from "./adapters"
@@ -11,6 +11,10 @@ import { goalCapabilities } from "./capabilities"
 import { agentRuntimeEvent, type RuntimeGoalSnapshot } from "@claxedo/agent-event-runtime"
 import type { RuntimeEventHub } from "./runtime-event-hub"
 import { claude, pi } from "./harnesses"
+import { installFakePiRpc } from "./test-utils/fake-pi-rpc.mjs"
+let nativePi: Awaited<ReturnType<typeof installFakePiRpc>>
+beforeAll(async () => { nativePi = await installFakePiRpc() })
+afterAll(async () => { await nativePi.dispose() })
 import { createMemoryRuntimeStore } from "./stores/memory"
 import { createSqliteRuntimeStore } from "./stores/sqlite"
 import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated, permissionAsked, questionAsked, sessionError, sessionIdle, sessionUpdated, sessionUsage } from "./compat-events"
@@ -30,7 +34,7 @@ async function collectUntilFinish<T extends { payload: { type: string } }>(event
   const out: T[] = []
   for await (const event of events) {
     out.push(event)
-    if (event.payload.type === "finish" || event.payload.type === "session.error") return out
+    if (event.payload.type === "finish" || event.payload.type === "session.idle" || event.payload.type === "session.error") return out
   }
   return out
 }
@@ -744,7 +748,7 @@ describe("createAgentRuntime", () => {
       harnesses: [testHarness()],
       subscriberBufferSize: 1,
     })
-    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: undefined, harness: { id: "pi", access: "native" } })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
     const iterator = runtime.events.subscribe({ sessionId: session.id })[Symbol.asyncIterator]()
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_overflow", text: "hello" })
@@ -922,21 +926,21 @@ describe("createAgentRuntime", () => {
   test("keeps the runtime inventory current after adapter-backed update and delete", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
-      harnesses: [pi()],
+      harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       id: "ses_inventory",
-      directory: undefined,
+      directory: nativePi.directory,
       harness: { id: "pi", access: "native" },
       title: "Before",
     })
 
     await expect(runtime.sessions.update(session.id, { title: "After" })).resolves.toMatchObject({ title: "After" })
-    await expect(runtime.sessions.list(undefined)).resolves.toMatchObject([{ id: session.id, title: "After" }])
+    await expect(runtime.sessions.list(nativePi.directory)).resolves.toMatchObject([{ id: session.id, title: "After" }])
 
     await runtime.sessions.delete(session.id)
-    await expect(runtime.sessions.list(undefined)).resolves.toEqual([])
-    runtime.dispose()
+    await expect(runtime.sessions.list(nativePi.directory)).resolves.toEqual([])
+    await runtime.dispose()
   })
 
   test("persists adapter-accepted config updates through both public namespaces", async () => {
@@ -1239,12 +1243,12 @@ describe("createAgentRuntime", () => {
   test("creates a session, starts a turn, and publishes events", async () => {
     const runtime = createAgentRuntime({
       store: createMemoryRuntimeStore(),
-      harnesses: [pi()],
+      harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
-      directory: "/repo",
+      directory: nativePi.directory,
       harness: { id: "pi", access: "native" },
-      model: { providerID: "pi", modelID: "virtual" },
+      model: { providerID: "pi", modelID: "test/model" },
       title: "Facade",
     })
     const events = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
@@ -1256,7 +1260,7 @@ describe("createAgentRuntime", () => {
     })
 
     const published = await events
-    expect(published.map((event) => event.payload.type)).toContain("finish")
+    expect(published.map((event) => event.payload.type)).toContain("session.idle")
     const opening = published.flatMap((event) => {
       if (event.payload.type === "session.status" && event.payload.properties.status.type === "busy") return ["busy"]
       if (event.payload.type !== "message.updated") return []
@@ -1411,7 +1415,7 @@ describe("createAgentRuntime", () => {
         },
       })],
     })
-    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: undefined, harness: { id: "pi", access: "native" } })
+    const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
     const author = { id: "actor_public_alice", name: "Alice", avatarUrl: "https://images.example.test/alice.png", kind: "human" as const }
 
     await runtime.turns.start({ sessionId: session.id, messageId: "msg_authored", text: "hello", author })
@@ -1748,22 +1752,15 @@ describe("createAgentRuntime", () => {
     runtime.dispose()
   })
 
-  test("lists sessions created without a directory", async () => {
-    const runtime = createAgentRuntime({
-      store: createMemoryRuntimeStore(),
-      harnesses: [pi()],
-    })
-
-    const session = await runtime.sessions.create({ workspaceId: "workspace-test",
-      directory: undefined,
-      harness: { id: "pi", access: "native" },
-      title: "Central",
-    })
-
-    await expect(runtime.sessions.list(undefined)).resolves.toMatchObject([{ id: session.id, title: "Central" }])
-    await expect(runtime.sessions.get(session.id)).resolves.toMatchObject({ status: null })
-    expect((await runtime.sessions.get(session.id))?.lastTurn).toBeUndefined()
-    runtime.dispose()
+  test("rejects directoryless sessions before native session creation", async () => {
+    let created = false
+    const runtime = createAgentRuntime({ store: createMemoryRuntimeStore(), harnesses: [testHarness({ createSession: async () => { created = true; return { id: "unwanted" } } })] })
+    try {
+      // @ts-expect-error Exercise a malformed external caller without a directory.
+      await expect(runtime.sessions.create({ workspaceId: "workspace-test", harness: { id: "pi", access: "native" } })).rejects.toThrow("directory is required")
+      expect(created).toBe(false)
+      expect(await runtime.sessions.list("/repo")).toEqual([])
+    } finally { await runtime.dispose() }
   })
 
   test("records compat idle as a completed turn outcome", async () => {
@@ -1861,7 +1858,7 @@ describe("createAgentRuntime", () => {
     const runtime = createAgentRuntime({ store, harnesses: [harness] })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
       id: "ses_fenced",
-      directory: undefined,
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
 
@@ -2084,7 +2081,7 @@ describe("createAgentRuntime", () => {
       })],
     })
     const session = await runtime.sessions.create({ workspaceId: "workspace-test",
-      directory: undefined,
+      directory: "/repo",
       harness: { id: "pi", access: "native" },
     })
 
@@ -2224,11 +2221,11 @@ describe("createAgentRuntime", () => {
     try {
       const first = createAgentRuntime({
         store: createSqliteRuntimeStore({ root }),
-        harnesses: [pi()],
+        harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
       })
       const session = await first.sessions.create({
         workspaceId: "workspace-test",
-        directory: "/repo",
+        directory: nativePi.directory,
         harness: { id: "pi", access: "native" },
         title: "Durable",
       })
@@ -2240,10 +2237,10 @@ describe("createAgentRuntime", () => {
 
       const second = createAgentRuntime({
         store: createSqliteRuntimeStore({ root }),
-        harnesses: [pi()],
+        harnesses: [pi({ binary: nativePi.binary, agentDir: nativePi.agentDir })],
       })
       await expect(second.sessions.get(session.id)).resolves.toMatchObject({ id: session.id, title: "Durable" })
-      await expect(second.sessions.list("/repo")).resolves.toMatchObject([{
+      await expect(second.sessions.list(nativePi.directory)).resolves.toMatchObject([{
         id: session.id,
         title: "Durable",
         status: null,

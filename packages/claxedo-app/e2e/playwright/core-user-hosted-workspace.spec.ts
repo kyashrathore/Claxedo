@@ -698,7 +698,7 @@ async function installUserHostedRuntimeMock(
       if (runtimePath === "/permission/modes") {
         return json(route, {
           modes: [],
-          unsupported: "Pi runs in a virtual sandbox and has no permission policy",
+          unsupported: "Pi runs tools on the selected machine and exposes no permission policy",
           appliesFrom: "next-turn",
         })
       }
@@ -779,7 +779,7 @@ async function installUserHostedRuntimeMock(
       if (/^\/session\/[^/]+\/permission-mode$/.test(runtimePath)) {
         return json(route, {
           modes: [],
-          unsupported: "Pi runs in a virtual sandbox and has no permission policy",
+          unsupported: "Pi runs tools on the selected machine and exposes no permission policy",
           appliesFrom: "next-turn",
         })
       }

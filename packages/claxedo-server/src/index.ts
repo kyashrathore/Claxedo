@@ -15,7 +15,6 @@ export {
  */
 export { startSelfHostedServer, selfHostedPosture } from "./deployments/self-hosted-node/start"
 export { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-execution"
-export { createCentralSessionRuntime } from "./session/runtime"
 export {
   ControlPlaneCompositionError,
   createControlPlaneServices,

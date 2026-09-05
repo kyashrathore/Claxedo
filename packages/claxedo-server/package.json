@@ -34,13 +34,6 @@
       "development": "./src/index.ts",
       "import": "./src/index.ts",
       "default": "./src/index.ts"
-    },
-    "./central-runtime": {
-      "types": "./src/central-runtime.ts",
-      "bun": "./src/central-runtime.ts",
-      "development": "./src/central-runtime.ts",
-      "import": "./src/central-runtime.ts",
-      "default": "./src/central-runtime.ts"
     }
   },
   "engines": {

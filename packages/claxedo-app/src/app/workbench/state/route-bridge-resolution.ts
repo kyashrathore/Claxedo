@@ -4,7 +4,7 @@
 
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { nonCanonicalWorkspaceRouteRedirect } from "@/platform/identity/route"
-import { centralSessionRef, retargetSessionRef, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
+import { retargetSessionRef, sessionRefForWorkspaceSession, type SessionRef } from "@/platform/identity/session-ref"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import { sameWorkspaceDirectory, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { routeSessionHarness } from "./route-session-harness"
@@ -80,22 +80,8 @@ export function routeKnownSessionDirectory(sessionDirectory: string | undefined,
   return cacheDirectories.find((directory) => sameWorkspaceDirectory(sessionDirectory, directory)) ?? sessionDirectory
 }
 
-export function routeSessionMetaIsCentral(input: unknown) {
-  if (!input || typeof input !== "object") return false
-  const row = input as { host?: unknown; sessionRef?: unknown; session_ref?: unknown }
-  return row.host === "central" ||
-    (typeof row.sessionRef === "string" && row.sessionRef.startsWith("central:")) ||
-    (typeof row.session_ref === "string" && row.session_ref.startsWith("central:"))
-}
 
-type CachedRouteSessionRow = {
-  id: string
-  directory?: string
-  host?: unknown
-  sessionRef?: unknown
-  session_ref?: unknown
-  time?: { archived?: unknown }
-}
+type CachedRouteSessionRow = { id: string; directory?: string; host?: unknown; sessionRef?: unknown; session_ref?: unknown; time?: { archived?: unknown } }
 
 export function routeCachedWorkspaceSessionCandidate<T extends CachedRouteSessionRow>(
   sessionId: string,
@@ -106,7 +92,6 @@ export function routeCachedWorkspaceSessionCandidate<T extends CachedRouteSessio
       .filter((session) => session.id === sessionId && !session.time?.archived)
       .map((session) => ({ cacheDirectory: directory, session })),
   )
-  if (matches.some(({ session }) => routeSessionMetaIsCentral(session))) return
   return matches[0]
 }
 
@@ -154,21 +139,6 @@ export function routeLifecycleSessionRef(input: {
     sessionId: input.sessionId,
     directory: input.directory,
     ...(workspace ? { workspace } : {}),
-  })
-}
-
-export function routeCentralSessionRef(sessionId: string, source: unknown) {
-  const row = source && typeof source === "object" && !Array.isArray(source)
-    ? source as Record<string, unknown>
-    : undefined
-  const workspaceId = typeof row?.workspaceId === "string"
-    ? row.workspaceId
-    : typeof row?.workspaceID === "string" ? row.workspaceID : undefined
-  const harness = routeSessionHarness(source)
-  return centralSessionRef({
-    sessionId,
-    ...(workspaceId ? { workspaceId } : {}),
-    ...(harness ? { harness } : {}),
   })
 }
 

@@ -131,56 +131,8 @@ describe("session meta", () => {
     ])
   })
 
-  test("persists and reads a first-class tool sandbox ref verbatim, including a divergent workspace", async () => {
-    await fs.mkdir(root, { recursive: true })
-    // Session lives in ws_A; its tools run in ws_B (bug (a) coverage).
-    await putSessionMeta("divergent", {
-      host: "central",
-      workspaceID: "ws_A",
-      title: "Divergent",
-      toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_B", directory: "pkg" },
-    })
 
-    expect(await sessionMeta("divergent")).toMatchObject({
-      sessionID: "divergent",
-      host: "central",
-      workspaceID: "ws_A",
-      toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_B", directory: "pkg" },
-    })
-  })
 
-  test("a tags-only put does not clobber a previously stored tool sandbox (bug (b))", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("placed", {
-      host: "central",
-      workspaceID: "ws_A",
-      title: "Placed",
-      toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_B" },
-    })
-
-    // A real writer rewrites tags with delete-all-reinsert
-    // semantics — this must NOT wipe the placement.
-    await putSessionMeta("placed", { tags: ["page"] })
-
-    expect(await sessionMeta("placed")).toMatchObject({
-      tags: ["page"],
-      toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_B" },
-    })
-  })
-
-  test("explicit null clears a stored tool sandbox", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("clearable", {
-      host: "central",
-      workspaceID: "ws_A",
-      toolSandbox: { kind: "workspace-runtime", workspaceId: "ws_B" },
-    })
-    expect((await sessionMeta("clearable"))?.toolSandbox).toBeTruthy()
-
-    await putSessionMeta("clearable", { host: "central", workspaceID: "ws_A", toolSandbox: null })
-
-    expect((await sessionMeta("clearable"))?.toolSandbox).toBeUndefined()
-  })
 
   test("deletes a session metadata tree and its associations transactionally", async () => {
     await fs.mkdir(root, { recursive: true })
@@ -204,76 +156,33 @@ describe("session meta", () => {
     expect(await sessionMeta("unrelated")).toBeTruthy()
   })
 
-  test("stores central sessions without workspace or directory", async () => {
+
+
+  test("persists a native Pi model and preserves it across projection sync", async () => {
     await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("central", {
-      host: "central",
-      title: "Central",
-    })
-
-    expect(await sessionMeta("central")).toMatchObject({
-      sessionID: "central",
-      host: "central",
-      title: "Central",
-    })
-    expect((await sessionMeta("central"))?.directory).toBeUndefined()
-    expect((await sessionMeta("central"))?.workspaceID).toBeUndefined()
-  })
-
-  test("keeps workspace-sandboxed central sessions under central identity", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("central-workspace", {
-      host: "central",
-      workspaceID: "ws_1",
-      directory: "/tmp/repo",
-      title: "Central workspace",
-    })
-
-    expect((await listSessionNavigationMetas({ limit: 10 })).map((item) => item.sessionRef))
-      .toContain("central:central-workspace")
-  })
-
-  test("persists a central Pi model and preserves it across projection sync", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("central-model", {
-      host: "central",
+    await putSessionMeta("pi-model", {
+      host: "workspace",
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
     })
 
-    expect((await sessionMeta("central-model"))?.model).toEqual({
+    expect((await sessionMeta("pi-model"))?.model).toEqual({
       providerID: "anthropic",
       modelID: "claude-sonnet-4-5",
     })
 
-    await putSessionMeta("central-model", { title: "Renamed" })
-    expect(await sessionMeta("central-model")).toMatchObject({
+    await putSessionMeta("pi-model", { title: "Renamed" })
+    expect(await sessionMeta("pi-model")).toMatchObject({
       title: "Renamed",
       model: { providerID: "anthropic", modelID: "claude-sonnet-4-5" },
     })
 
     ClaxedoDB.close()
-    expect((await sessionMeta("central-model"))?.model).toEqual({
+    expect((await sessionMeta("pi-model"))?.model).toEqual({
       providerID: "anthropic",
       modelID: "claude-sonnet-4-5",
     })
   })
 
-  test("explicit null clears central session workspace scope", async () => {
-    await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("central", {
-      host: "central",
-      workspaceID: "ws_central",
-      title: "Central",
-    })
-    expect((await sessionMeta("central"))?.workspaceID).toBe("ws_central")
-
-    await putSessionMeta("central", {
-      host: "central",
-      workspaceID: null,
-    })
-
-    expect((await sessionMeta("central"))?.workspaceID).toBeUndefined()
-  })
 
   test("syncSessionMetas treats a workspace snapshot as authoritative", async () => {
     await fs.mkdir(root, { recursive: true })
@@ -305,49 +214,6 @@ describe("session meta", () => {
     })
   })
 
-  test("syncSessionMetas sweeps stale engine sessions but never central ones", async () => {
-    await fs.mkdir(root, { recursive: true })
-    const ws = {
-      id: "ws_1",
-      project_id: "proj_1",
-      directory: "/tmp/repo",
-      kind: "local" as const,
-      created_at: 1,
-      updated_at: 1,
-    }
-
-    // Two engine sessions, as the embedded runtime's `GET /session?directory=…`
-    // reports them.
-    await syncSessionMetas(ws, [
-      { id: "engine_keep", title: "Keep", time: { created: 10, updated: 12 } },
-      { id: "engine_gone", title: "Gone", time: { created: 10, updated: 12 } },
-    ])
-    // A central/hybrid Pi session in the same workspace, written exactly as
-    // `session/runtime.ts` writes one: host "central", null directory.
-    await putSessionMeta("pi", {
-      host: "central",
-      workspaceID: "ws_1",
-      directory: null,
-      title: "Pi",
-      tags: ["global", "global:default", "source-channel:telegram"],
-      attachments: [{ kind: "page", targetID: "page_1" }],
-    })
-
-    await syncSessionMetas(ws, [
-      { id: "engine_keep", title: "Keep", time: { created: 10, updated: 20 } },
-    ])
-
-    // The snapshot is authoritative for the engine's own sessions only.
-    expect(await sessionMeta("engine_keep")).toBeTruthy()
-    expect(await sessionMeta("engine_gone")).toBeUndefined()
-    expect(await sessionMeta("pi")).toMatchObject({
-      sessionRef: "central:pi",
-      host: "central",
-      title: "Pi",
-      tags: ["global", "global:default", "source-channel:telegram"],
-      attachments: [{ kind: "page", targetID: "page_1" }],
-    })
-  })
 
   test("syncSessionMetas refuses to sweep on an empty snapshot", async () => {
     await fs.mkdir(root, { recursive: true })
@@ -525,17 +391,17 @@ describe("session meta", () => {
   test("counts source-channel sessions by UTC week for demand gates", async () => {
     await fs.mkdir(root, { recursive: true })
     await putSessionMeta("telegram-1", {
-      host: "central",
+      host: "workspace",
       title: "Telegram 1",
       tags: ["source-channel:telegram"],
     })
     await putSessionMeta("telegram-2", {
-      host: "central",
+      host: "workspace",
       title: "Telegram 2",
       tags: ["source-channel:telegram"],
     })
     await putSessionMeta("github-1", {
-      host: "central",
+      host: "workspace",
       title: "GitHub 1",
       tags: ["source-channel:github"],
     })
@@ -690,7 +556,7 @@ describe("session meta", () => {
     ["model_id", "claude-sonnet-4-5"],
   ])("reports partial model configuration when only %s is stored", async (column, value) => {
     await fs.mkdir(root, { recursive: true })
-    await putSessionMeta("partial-model", { host: "central" })
+    await putSessionMeta("partial-model", { host: "workspace" })
     ClaxedoDB.raw().prepare(`UPDATE claxedo_session_meta SET ${column} = ? WHERE session_id = ?`).run(value, "partial-model")
 
     await expect(sessionMeta("partial-model")).rejects.toThrow("incomplete model configuration")

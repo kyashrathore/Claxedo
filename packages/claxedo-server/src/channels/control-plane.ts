@@ -1,5 +1,3 @@
-import { eventSessionId } from "@claxedo/agent-sdk-runtime/compat-events"
-import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import {
   ChannelSessionResolutionError,
   createBaileysWhatsAppSocket,
@@ -29,10 +27,10 @@ import {
 } from "@claxedo/channels"
 import { createSqliteChannelAccessStore, createSqliteChannelIdentityBindingStore } from "./access-store"
 import type { Hono as HonoType } from "hono"
-import type { createCentralControlApp } from "../central-runtime"
+import type { MachineSessionDispatch } from "../session/machine-dispatch"
 import { createProjectionDedupStore } from "./dedup"
 import type { ControlPlaneServices } from "../authority/services"
-import type { ProjectAction } from "@claxedo/server-core/platform/auth/authority"
+import type { ChannelMachineIdentity, ProjectAction } from "@claxedo/server-core/platform/auth/authority"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { ControlPlaneAuthError, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
@@ -41,21 +39,7 @@ import { signedOrError } from "../workspace/route-support"
 import { resolveWorkspace, resolveWorkspaceByRepo, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { createCredentialWhatsAppBaileysAuthStateStore } from "./whatsapp-baileys-auth-state"
 
-type CentralRuntime = ReturnType<typeof createCentralControlApp>["runtime"]
-
-function centralRuntimeRequest(pathname: string, body?: unknown) {
-  return new Request(`http://claxedo.local${pathname}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-}
-
-function assistantMessageUpdate(input: unknown) {
-  if (!input || typeof input !== "object") return false
-  const event = input as { type?: unknown; properties?: { info?: { role?: unknown } } }
-  return event.type === "message.updated" && event.properties?.info?.role === "assistant"
-}
+type ChannelMachineRuntime = MachineSessionDispatch
 
 function channelDataMinimization(env: Record<string, string | undefined>): ChannelTextMinimizationOptions {
   const maxLength = Number(env.CLAXEDO_CHANNEL_REPLY_MAX_LENGTH)
@@ -164,55 +148,6 @@ async function authorizeInbound(input: {
   }))
 }
 
-async function* centralSessionRouteEvents(input: {
-  sessionId: string
-  request: Promise<Response>
-  subscribe: (fn: (event: CompatEnvelope) => void) => () => void
-}) {
-  const queue: unknown[] = []
-  let wake: (() => void) | undefined
-  let done = false
-  let emittedMessageUpdate = false
-  const unsubscribe = input.subscribe((event) => {
-    if (eventSessionId(event.payload) !== input.sessionId) return
-    if (assistantMessageUpdate(event.payload)) emittedMessageUpdate = true
-    queue.push(event.payload)
-    wake?.()
-  })
-  const response = input.request.finally(() => {
-    done = true
-    wake?.()
-  })
-
-  try {
-    while (!done || queue.length > 0) {
-      const event = queue.shift()
-      if (event) {
-        yield event
-        continue
-      }
-      await new Promise<void>((resolve) => {
-        wake = resolve
-      })
-      wake = undefined
-    }
-
-    const res = await response.catch(() => undefined)
-    if (!res) {
-      yield { type: "error", error: "Channel session message failed" }
-      return
-    }
-    const body = await res.json().catch(() => undefined)
-    if (!res.ok || !body) {
-      yield { type: "error", error: "Channel session message failed" }
-      return
-    }
-    if (!emittedMessageUpdate) yield { type: "message.updated", properties: body }
-  } finally {
-    unsubscribe()
-  }
-}
-
 /**
  * In-chat pairing administration requires an EXPLICIT env-seeded owner id —
  * NOT merely being on the allowlist (which may contain a wildcard, or paired
@@ -228,7 +163,7 @@ function seedAdmin(allowFrom: string[], channel: string, externalUserId: string)
 
 export function createControlPlaneChannels(input: {
   services: ControlPlaneServices
-  runtime: CentralRuntime
+  runtime: ChannelMachineRuntime
   env?: Record<string, string | undefined>
   includeFake?: boolean
   chatBot?: ChatSdkBot | Promise<ChatSdkBot>
@@ -252,6 +187,7 @@ export function createControlPlaneChannels(input: {
         "webhook updates are unauthenticated and forgeable. Set the secret and re-register the webhook.",
     )
   }
+  const caller = (identity: ChannelMachineIdentity) => signedChannelAuthRequired(input.services) ? { kind: "channel" as const, identity } : undefined
   const channelRuntime = {
     async createSession(request: {
       title: string
@@ -261,17 +197,17 @@ export function createControlPlaneChannels(input: {
       workspaceId?: string
     }) {
       const workspace = await channelWorkspace({ workspaceId: request.workspaceId })
-      if (request.workspaceId && !workspace) {
+      if (!workspace) {
         throw new ChannelSessionResolutionError(
           `No registered workspace for ${request.workspaceId}. Open or register this workspace in Claxedo, then retry. Auto-provisioning a workspace from a bare repo is not enabled.`,
         )
       }
-      const session = await input.runtime.createHybridSession({
+      const session = await input.runtime.create({
         title: request.title,
-        ...(workspace ? { workspaceId: workspace.id } : {}),
-        sourceChannel: request.channel,
-        sourceThreadKey: request.threadKey,
-      })
+        workspaceId: workspace.id,
+      }, caller(request))
+      const metadata = await input.services.projectionStore.session_meta(session.id)
+      await input.services.projectionStore.put_session_meta(session.id, { tags: [...(metadata?.tags ?? []), `source-channel:${request.channel}`, `source-thread:${request.threadKey}`] })
       return {
         sessionId: session.id,
         appUrl: `/s/${encodeURIComponent(session.id)}`,
@@ -284,34 +220,16 @@ export function createControlPlaneChannels(input: {
     async *sendMessage(request: {
       sessionId: string
       text: string
+      threadKey: string
       channel: ChannelId
       externalUserId: string
     }) {
-      yield* centralSessionRouteEvents({
-        sessionId: request.sessionId,
-        subscribe: input.runtime.eventHub.subscribeGlobal,
-        request: Promise.resolve(input.runtime.routes.fetch(centralRuntimeRequest(
-          `/session/${encodeURIComponent(request.sessionId)}/message`,
-          {
-            parts: [{
-              type: "text",
-              text: [
-                "Channel-sourced input",
-                `Source: ${request.channel}`,
-                `External user: ${request.externalUserId}`,
-                "Trust: external-untrusted",
-                "",
-                request.text,
-              ].join("\n"),
-            }],
-          },
-        ))),
-      })
+      yield* input.runtime.prompt(request.sessionId, {
+        parts: [{ type: "text", text: ["Channel-sourced input", `Source: ${request.channel}`, `External user: ${request.externalUserId}`, "Trust: external-untrusted", "", request.text].join("\n") }],
+      }, caller(request))
     },
-    async abortSession(request: { sessionId: string }) {
-      const res = await input.runtime.routes.fetch(centralRuntimeRequest(
-        `/session/${encodeURIComponent(request.sessionId)}/abort`,
-      ))
+    async abortSession(request: { sessionId: string } & ChannelMachineIdentity) {
+      const res = await input.runtime.request(request.sessionId, "abort", { method: "POST" }, caller(request))
       if (!res.ok) return { ok: false, status: "failed", message: "Session cancel failed" }
       const body = await res.json().catch(() => undefined) as { ok?: boolean; status?: string; message?: string } | undefined
       return {
@@ -560,10 +478,9 @@ export function createControlPlaneChannels(input: {
           }))
           if (auth.ok === false) return auth
         }
-        const res = await input.runtime.routes.fetch(centralRuntimeRequest(
-          `/session/${encodeURIComponent(request.sessionId)}/permissions/${encodeURIComponent(request.callId)}`,
-          { response: decision.approved ? "once" : "deny" },
-        ))
+        const res = await input.runtime.request(request.sessionId, `permissions/${encodeURIComponent(request.callId)}`, {
+          method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: decision.approved ? "once" : "deny" }),
+        }, channel && request.threadKey ? caller({ channel, externalUserId: decision.actorExternalUserId, threadKey: request.threadKey }) : undefined)
         if (res.ok) return { ok: true }
         return { ok: false, message: "Unable to record approval response." }
       },
@@ -688,7 +605,7 @@ export function createControlPlaneChannels(input: {
 
 export function mountControlPlaneChannels(app: HonoType, input: {
   services: ControlPlaneServices
-  runtime: CentralRuntime
+  runtime: ChannelMachineRuntime
   env?: Record<string, string | undefined>
   includeFake?: boolean
   requireLoopbackForFake?: boolean

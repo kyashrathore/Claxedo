@@ -11,22 +11,15 @@ const harness = vi.hoisted(() => ({
   }>,
 }))
 
-vi.mock("@/platform/api/api", async (importOriginal) => {
-  const original = await importOriginal<typeof import("@/platform/api/api")>()
-  return {
-    ...original,
-    authFetch: (_input: string | URL | Request, init?: RequestInit) => new Promise<Response>((resolve, reject) => {
-      const pending = { signal: init?.signal ?? undefined, resolve, reject }
-      pending.signal?.addEventListener(
-        "abort",
-        () => reject(new DOMException("Aborted", "AbortError")),
-        { once: true },
-      )
-      harness.pending.push(pending)
-    }),
-    apiBearerToken: async () => null,
-  }
-})
+// Query lifetime owns deduplication/cancellation; transport placement has its
+// own public-route tests. Control only the response timing at this boundary.
+vi.mock("./session-transport", () => ({
+  fetchSessionCapabilitiesByTransport: (input: { signal?: AbortSignal }) => new Promise<Response>((resolve, reject) => {
+    const pending = { signal: input.signal, resolve, reject }
+    pending.signal?.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true })
+    harness.pending.push(pending)
+  }).then(response => response.json()),
+}))
 
 import {
   sessionCapabilitiesTransportRequestKey,
@@ -248,11 +241,11 @@ describe("session capabilities query ownership", () => {
   test("isolates the same opaque session id across workspace placements", async () => {
     const firstRequest = {
       ...request,
-      sessionRef: { sessionId: request.sessionID, host: "central", workspaceId: "ws_1" } satisfies SessionRef,
+      sessionRef: { sessionId: request.sessionID, host: "workspace", workspaceId: "ws_1" } satisfies SessionRef,
     }
     const secondRequest = {
       ...request,
-      sessionRef: { sessionId: request.sessionID, host: "central", workspaceId: "ws_2" } satisfies SessionRef,
+      sessionRef: { sessionId: request.sessionID, host: "workspace", workspaceId: "ws_2" } satisfies SessionRef,
     }
     const first = syncSessionCapabilitiesData({
       request: firstRequest,
@@ -278,22 +271,22 @@ describe("session capabilities query ownership", () => {
     expect(queryClient.getQueryData(capabilityKey(secondRequest))).toEqual(secondCapabilities)
   })
 
-  test("isolates central and workspace-backed refs with the same visible placement", () => {
-    const centralRequest = {
+  test("isolates user-hosted and cloud refs with the same visible placement", () => {
+    const userHostedRequest = {
       ...request,
       workspaceId: "ws_1",
       signedControlPlane: true,
       workspaceKind: "cloud" as const,
       sessionRef: {
         sessionId: request.sessionID,
-        host: "central",
+        host: "workspace",
         workspaceId: "ws_1",
-        toolSandbox: { kind: "virtual" },
-        harness: { id: "opencode" },
+        toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted", hostId: "host_local" },
+        harness: { kind: "native", harnessId: "opencode" },
       } satisfies SessionRef,
     }
     const workspaceRequest = {
-      ...centralRequest,
+      ...userHostedRequest,
       sessionRef: {
         sessionId: request.sessionID,
         host: "workspace",
@@ -304,12 +297,12 @@ describe("session capabilities query ownership", () => {
           hosting: "cloud",
           hostId: "host_1",
         },
-        harness: { id: "opencode" },
+        harness: { kind: "native", harnessId: "opencode" },
       } satisfies SessionRef,
     }
 
-    expect(capabilityKey(centralRequest)).not.toEqual(capabilityKey(workspaceRequest))
-    expect(sessionCapabilitiesTransportRequestKey(centralRequest)).not.toEqual(
+    expect(capabilityKey(userHostedRequest)).not.toEqual(capabilityKey(workspaceRequest))
+    expect(sessionCapabilitiesTransportRequestKey(userHostedRequest)).not.toEqual(
       sessionCapabilitiesTransportRequestKey(workspaceRequest),
     )
   })

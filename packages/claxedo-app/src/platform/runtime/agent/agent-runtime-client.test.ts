@@ -432,63 +432,14 @@ describe("AgentRuntimeClient", () => {
     ])
   })
 
-  it("chats through typed central placement without workspace or directory resolution", async () => {
-    const calls: string[] = []
-    const bodies: unknown[] = []
-    const client = createAgentRuntimeClient({
-      serverUrl: "http://127.0.0.1:3001/",
-      sessionRef: {
-        sessionId: "ses_central",
-        host: "central",
-        harness: { kind: "native", harnessId: "pi" },
-        toolSandbox: { kind: "virtual" },
-      },
-      request: async (input, init) => {
-        const url = new URL(String(input))
-        if (url.pathname.startsWith("/api/workspace") || url.pathname.startsWith("/api/control/sessions")) {
-          throw new Error(`central chat should not resolve workspace scope: ${url.pathname}`)
-        }
-        calls.push(`${init?.method ?? "GET"} ${String(input)}`)
-        if (init?.body) bodies.push(JSON.parse(String(init.body)))
-        if (url.pathname.endsWith("/message")) return ok({ messages: [], maxEventOrdinal: 5 })
-        return ok({})
-      },
-    })
 
-    await client.sendMessage({
-      mode: "async",
-      directory: "",
-      sessionID: "ses_central",
-      agent: "build",
-      model: { providerID: "pi", modelID: "default" },
-      messageID: "message-1",
-      parts: [],
-    })
-
-    const page = await client.getMessages({
-      directory: "",
-      sessionID: "ses_central",
-      limit: 20,
-    })
-
-    expect(calls).toEqual([
-      "POST http://127.0.0.1:3001/api/control/session/ses_central/prompt_async?directory=",
-      "GET http://127.0.0.1:3001/api/control/session/ses_central/message?directory=&limit=20",
-    ])
-    expect(bodies).toEqual([expect.objectContaining({
-      directory: "",
-      sessionID: "ses_central",
-    })])
-    expect(page.maxEventOrdinal).toBe(5)
-  })
-
-  it("rejects directory-less central sessions on non-Pi harnesses", async () => {
+  it("rejects directoryless session prompts", async () => {
     const client = createAgentRuntimeClient({
       sessionRef: {
         sessionId: "ses_opencode",
-        host: "central",
+        host: "workspace",
         harness: { id: "opencode" },
-        toolSandbox: { kind: "virtual" },
+        toolSandbox: { kind: "local", cwd: "/repo" },
       },
     })
 
@@ -496,7 +447,7 @@ describe("AgentRuntimeClient", () => {
       directory: "",
       sessionID: "ses_opencode",
       limit: 20,
-    })).rejects.toThrow("Directory-less central sessions require the Pi harness")
+    })).rejects.toThrow("A machine workspace directory is required")
   })
 
   it("uses explicit workspace backing without inspecting directory string shape", async () => {

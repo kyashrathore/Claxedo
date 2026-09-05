@@ -454,7 +454,6 @@ export function createLocalDocumentsBackend(
         host: session.host,
         ...(session.workspaceID ? { workspaceId: session.workspaceID } : {}),
         ...(session.directory ? { directory: session.directory } : {}),
-        ...(session.toolSandbox ? { toolSandbox: session.toolSandbox } : {}),
         resolveWorkspace: (workspaceId) => dependencies.resolveWorkspace({ workspaceId }),
       })
       if (!placement) {

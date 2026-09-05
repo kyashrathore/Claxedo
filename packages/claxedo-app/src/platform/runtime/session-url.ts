@@ -8,15 +8,10 @@ type ResolveSessionUrlOptions = {
   fetch?: typeof globalThis.fetch
 }
 
-function gatewayBody(input: unknown): { gatewayUrl?: unknown; harnessHost?: unknown } {
+function gatewayBody(input: unknown): { gatewayUrl?: unknown } {
   if (!input || typeof input !== "object") return {}
   return {
     gatewayUrl: "gatewayUrl" in input ? input.gatewayUrl : undefined,
-    harnessHost: "harnessHost" in input
-      ? input.harnessHost
-      : "runnerHost" in input
-      ? input.runnerHost
-      : undefined,
   }
 }
 
@@ -38,7 +33,6 @@ export async function resolveSessionUrl(sessionId: string, options: ResolveSessi
   if (!response?.ok) return null
 
   const body = gatewayBody(await response.json().catch(() => undefined))
-  if (body.harnessHost === "central") return base
   if (typeof body.gatewayUrl !== "string") return null
   return normalizeUrl(body.gatewayUrl) ?? null
 }

@@ -205,7 +205,14 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
   }
 
   async reserveSession(auth: SignedControlPlaneAuth, input: ReserveSessionInput) {
-    const who = await this.requirePrincipal(auth)
+    return this.reserveForActor(await this.requirePrincipal(auth), input)
+  }
+
+  async reserveRuntimeSession(principal: PrivateSessionRuntimePrincipal, input: ReserveSessionInput) {
+    return this.reserveForActor(await this.requireRuntimeActor(principal), input)
+  }
+
+  private async reserveForActor(who: Principal, input: ReserveSessionInput) {
     const intent = normalizeReservation(input)
     const workspace = await this.requireWorkspaceAccess(who, intent.workspaceId, "write")
     if (intent.kind === "fork") {

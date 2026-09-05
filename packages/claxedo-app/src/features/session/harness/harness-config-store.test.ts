@@ -396,9 +396,9 @@ describe("harness config helpers", () => {
       expect(effectiveHarnessModel({ kind: "connection", connectionId: "acp:codex" }, "gpt-5.1")).toBe("gpt-5.1")
     })
 
-    test("does not invent a model for provider-backed Pi", () => {
+    test("uses the unselected native placeholder until Pi returns model options", () => {
       expect(effectiveHarnessModel(pi, "gpt-5.1")).toBe("gpt-5.1")
-      expect(effectiveHarnessModel(pi, undefined)).toBe("")
+      expect(effectiveHarnessModel(pi, undefined)).toBe("default")
     })
   })
 

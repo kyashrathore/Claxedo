@@ -14,6 +14,9 @@ export type WorkspaceRuntimeClientOptions = {
   loopbackRelayUrl?: string
   defaultHomeRegion?: ClaxedoRegion
   runtimeActor?: Pick<RelayTokenInput, "principalKind" | "actorId" | "actorKind" | "actorPublicId" | "actorName" | "actorAvatarUrl">
+  auth?: RelayTokenInput["auth"]
+  delegatedActor?: boolean
+  channelIdentity?: RelayTokenInput["channelIdentity"]
   orgId?: string
   role?: RelayTokenInput["role"]
   /** Inspect an already-ready runtime without waking or reprovisioning it. */
@@ -105,6 +108,9 @@ export function createWorkspaceRuntimeClient(input: {
   const principal = {
     ...(options.runtimeActor ?? CONTROL_PLANE_RUNTIME_ACTOR),
     role: options.role,
+    ...(options.delegatedActor ? { delegatedActor: true } : {}),
+    ...(options.auth ? { auth: options.auth } : {}),
+    ...(options.channelIdentity ? { channelIdentity: options.channelIdentity } : {}),
     orgId,
   }
   const defaultHomeRegion = options.defaultHomeRegion ?? "us-east"
@@ -305,4 +311,11 @@ function sandboxPath(requestPath: string) {
 
 function record(input: unknown): input is Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input)
+}
+
+export class WorkspaceRuntimeProtocolError extends Error {
+  constructor(operation: string, cause?: unknown) {
+    super(`workspace-runtime ${operation} returned an invalid response`, { cause })
+    this.name = "WorkspaceRuntimeProtocolError"
+  }
 }

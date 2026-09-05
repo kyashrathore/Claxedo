@@ -45,14 +45,14 @@ describe("session pane cache observers", () => {
     }
   })
 
-  test("central session rows use their authoritative transport query", async () => {
+  test("machine session rows use their authoritative transport query", async () => {
     const fetchSessionRow = vi.fn(async () => ({ id: "ses_1" } as never))
     const Probe = () => {
       createSessionPaneQueries({
         active: () => true,
         sessionID: () => "ses_1",
         directory: () => "/repo",
-        sessionRef: () => ({ sessionId: "ses_1", host: "central", toolSandbox: { kind: "virtual" } }),
+        sessionRef: () => ({ sessionId: "ses_1", host: "workspace", toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "user-hosted", hostId: "host_local" } }),
         fetchSessionRow,
       })
       return <div />

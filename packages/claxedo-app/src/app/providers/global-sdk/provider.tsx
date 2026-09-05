@@ -21,7 +21,7 @@ import {
   whenSessionEventStreamsOpen,
 } from "@/platform/runtime/session-event-scope"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
-import { openCentralRuntimeEventResponse, openWorkspaceRuntimeEventResponse, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
+import { openWorkspaceRuntimeEventResponse, workspaceEventTransport, type LiveSession } from "../global-sdk-event-fetch"
 import { createEventCoalescer } from "@/platform/sync/global-sdk/event-coalescer"
 import { createHeartbeatWatchdog } from "@/platform/sync/global-sdk/heartbeat-watchdog"
 import { RECONNECT_DELAY_MS, reconnectBackoffMs } from "@/platform/sync/global-sdk/reconnect-backoff"
@@ -119,9 +119,7 @@ const globalSDKContextInput = {
     // Without workspaceId/kind, hosted runtime events fall through to central
     // `/api/wr/runtime-events` and 404 instead of using the relay.
     const withRelayBacking = (session: LiveSession): LiveSession =>
-      session.host === "central"
-        ? session
-        : liveSessionWithRelayBacking(session, cachedProjectInventory(server.current?.http.url))
+      liveSessionWithRelayBacking(session, cachedProjectInventory(server.current?.http.url))
     const eventLiveSession = () => {
       if (liveSession) return withRelayBacking(liveSession)
       const directory = initialRouteDirectory()
@@ -300,22 +298,12 @@ const globalSDKContextInput = {
               cachedProjectInventory(currentServer.http.url),
               sessionEventScopeId(),
             )
-            if (!session || session.host !== "central" && !session.directory && !session.workspaceId) {
+            if (!session || !session.directory && !session.workspaceId) {
               await wait(RECONNECT_DELAY_MS)
               continue
             }
             const sessionWorkspaceKind = workspaceKind(session.workspaceKind)
-            const response = session.host === "central"
-              ? await openCentralRuntimeEventResponse({
-                  request,
-                  serverUrl: currentServer.http.url,
-                  sessionId: session.sessionID,
-                  lastEventId: lastRuntimeEventId,
-                  init,
-                  signal: runtimeAttempt.signal,
-                  accountState: account.state(),
-                })
-              : await openWorkspaceRuntimeEventResponse({
+            const response = await openWorkspaceRuntimeEventResponse({
               session,
               signedControlPlane: signedEventAccess(),
               init,
@@ -574,7 +562,7 @@ const globalSDKContextInput = {
       request: platform.fetch ?? authFetch,
     })
 
-    const setLiveSession = (sessionID: string, opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }) => {
+    const setLiveSession = (sessionID: string, opts?: { host?: "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }) => {
       const transition = liveSessionTransition(liveSession, sessionID, opts)
       liveSession = transition.next
       if (transition.workspaceScopeChanged) subagents.workspaceChanged()

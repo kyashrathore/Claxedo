@@ -17,7 +17,7 @@ describe("workspace draft defaults", () => {
   test("round trips each harness kind with its complete model identity", () => {
     const preferences = createDraftDefaultPreferences(storage)
     const cases = [
-      { harness: nativeHarness("pi"), model: { providerID: "openai-codex", modelID: "gpt-5.5", variant: "high" } },
+      { harness: nativeHarness("pi"), model: { providerID: "pi", modelID: "openai-codex/gpt-5.5", variant: "high" } },
       { harness: connectionHarness("codex-team"), model: { providerID: "codex-team", modelID: "gpt-5.5" } },
       { harness: connectionHarness("external-opencode"), model: { providerID: "anthropic", modelID: "claude-opus-4" } },
     ]
@@ -48,7 +48,7 @@ describe("workspace draft defaults", () => {
     const first = createDraftDefaultPreferences(storage)
     first.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_a" },
-      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "openai", modelID: "gpt-5.5" } },
+      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "pi", modelID: "openai/gpt-5.5" } },
     )
     first.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_b" },
@@ -65,7 +65,7 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "openai", modelID: "gpt-5.5" } },
+      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "pi", modelID: "openai/gpt-5.5" } },
     )
 
     const value = preferences.read({
@@ -73,7 +73,7 @@ describe("workspace draft defaults", () => {
       workspaceKey: "ws_1",
       fallbackWorkspaceKey: "/repo",
     })
-    expect(value?.model).toEqual({ providerID: "openai", modelID: "gpt-5.5" })
+    expect(value?.model).toEqual({ providerID: "pi", modelID: "openai/gpt-5.5" })
     expect(storage.getItem(draftDefaultStorageKey({ serverUrl: "http://localhost:4096", workspaceKey: "/repo" }))).toBeNull()
     expect(createDraftDefaultPreferences(storage).read({ serverUrl: "http://localhost:4096", workspaceKey: "ws_1" })).toEqual(value)
   })
@@ -82,7 +82,7 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "openai", modelID: "old" } },
+      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "pi", modelID: "openai/old" } },
     )
     preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
@@ -100,7 +100,7 @@ describe("workspace draft defaults", () => {
     const preferences = createDraftDefaultPreferences(storage)
     preferences.save(
       { serverUrl: "http://localhost:4096", workspaceKey: "/repo" },
-      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "openai", modelID: "gpt-5.5" } },
+      { harness: { kind: "native", harnessId: "pi" }, model: { providerID: "pi", modelID: "openai/gpt-5.5" } },
     )
     storage.failWrites = true
 
@@ -123,7 +123,7 @@ describe("workspace draft defaults", () => {
       JSON.stringify({ version: 1, harness: "pi", model: { providerID: "openai" } }),
       JSON.stringify({ version: 1, harness: "pi", model: { providerID: " ", modelID: "gpt" } }),
       JSON.stringify({ version: 1, harness: "pi", model: { providerID: " openai", modelID: "gpt" } }),
-      JSON.stringify({ version: 1, harness: "codex-app-server", model: { providerID: "openai", modelID: "gpt" } }),
+      JSON.stringify({ version: 1, harness: "codex-app-server", model: { providerID: "pi", modelID: "openai/gpt" } }),
       JSON.stringify({ version: 1, harness: "pi", labels: { model: "x".repeat(121) } }),
     ]
 
@@ -134,19 +134,19 @@ describe("workspace draft defaults", () => {
   test("keeps each harness's own model and opens on the one last used", () => {
     const preferences = createDraftDefaultPreferences(storage)
     const scope = { serverUrl: "http://localhost:4096", workspaceKey: "/repo" }
-    preferences.save(scope, { harness: nativeHarness("pi"), model: { providerID: "openai", modelID: "gpt-5.5" } })
+    preferences.save(scope, { harness: nativeHarness("pi"), model: { providerID: "pi", modelID: "openai/gpt-5.5" } })
     preferences.save(scope, { harness: connectionHarness("claude-team"), model: { providerID: "claude-team", modelID: "opus" } })
 
     expect(preferences.read(scope)).toEqual({
       harness: connectionHarness("claude-team"),
       model: { providerID: "claude-team", modelID: "opus" },
     })
-    expect(preferences.readHarness(scope, nativeHarness("pi"))).toEqual({ model: { providerID: "openai", modelID: "gpt-5.5" } })
+    expect(preferences.readHarness(scope, nativeHarness("pi"))).toEqual({ model: { providerID: "pi", modelID: "openai/gpt-5.5" } })
     expect(preferences.readHarness(scope, connectionHarness("claude-team"))).toEqual({ model: { providerID: "claude-team", modelID: "opus" } })
     expect(preferences.readHarness(scope, connectionHarness("external-opencode"))).toBeUndefined()
 
     // Switching back does not disturb the harness left behind.
-    preferences.save(scope, { harness: nativeHarness("pi"), model: { providerID: "openai", modelID: "gpt-5.5" } })
+    preferences.save(scope, { harness: nativeHarness("pi"), model: { providerID: "pi", modelID: "openai/gpt-5.5" } })
     expect(preferences.read(scope)?.harness).toEqual(nativeHarness("pi"))
     expect(preferences.readHarness(scope, connectionHarness("claude-team"))?.model?.modelID).toBe("opus")
   })

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import {
-  centralSessionRef,
   localSessionRef,
   workspaceBackedSessionRef,
 } from "@/platform/identity/session-ref"
@@ -15,25 +14,6 @@ describe("placementFor", () => {
     })).toBeUndefined()
   })
 
-  test("maps central refs to signed central placement", () => {
-    expect(placementFor({
-      ref: centralSessionRef({ sessionId: "ses_1" }),
-      hasSignedAccess: true,
-      serverUrl: "https://control.test",
-    })).toEqual({
-      hosting: "central",
-      transport: "signed-web",
-    })
-    expect(placementFor({
-      ref: centralSessionRef({ sessionId: "ses_1", workspaceId: "ws_authz" }),
-      hasSignedAccess: true,
-      serverUrl: "http://127.0.0.1:3001",
-    })).toEqual({
-      workspaceId: "ws_authz",
-      hosting: "central",
-      transport: "loopback",
-    })
-  })
 
   test("maps workspace refs to workspace relay placement", () => {
     expect(placementFor({
@@ -84,7 +64,7 @@ describe("placementFor", () => {
       serverUrl: "https://control.test",
       legacy: { directory: "/repo/.claxedo/user-hosted/workspaces/ws_1" },
     })).toEqual({
-      hosting: "central",
+      hosting: "control-plane",
       transport: "signed-web",
     })
     expect(placementFor({

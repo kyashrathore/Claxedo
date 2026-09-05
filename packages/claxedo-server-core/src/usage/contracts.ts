@@ -4,7 +4,7 @@ export type TurnUsageSettlement = "provisional" | "final" | "partial" | "unavail
 
 export type TurnUsageStatus = "running" | "completed" | "error" | "stopped" | "interrupted_by_steer" | "process_lost"
 
-export type TurnUsageLocation = "local" | "central" | "cloud-workspace" | "user-hosted"
+export type TurnUsageLocation = "local" | "cloud-workspace" | "user-hosted"
 
 export type TurnUsageQuality = {
   source: "provider" | "provider-message" | "lifecycle"

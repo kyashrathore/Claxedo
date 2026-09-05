@@ -7,7 +7,7 @@ import readline from "node:readline/promises"
 /**
  * `claxedo deploy` — self-host the control plane, end to end.
  *
- * Asks the few real questions (harness, tool placement, platform), derives
+ * Asks for the platform, app and region, derives
  * everything else from the platform constraint matrix, orchestrates the
  * platform's own CLI (flyctl v1 — never reimplements its API), and is only
  * "done" when the deployed instance answers its health check.
@@ -21,8 +21,6 @@ type DeployOptions = {
   yes: boolean
   app?: string
   region?: string
-  harness?: string
-  tools?: string
 }
 
 type SelectChoice = {
@@ -31,26 +29,6 @@ type SelectChoice = {
   hint?: string
   disabledReason?: string
 }
-
-const HARNESSES = ["pi", "opencode", "claude-code"]
-
-const TOOL_CHOICES: SelectChoice[] = [
-  {
-    value: "this-server",
-    label: "This server",
-    hint: "tool processes on the same machine — simplest, no extra accounts; agent workloads share the machine",
-  },
-  {
-    value: "daytona",
-    label: "Daytona",
-    hint: "fresh isolated container per session — needs a Daytona API key",
-  },
-  {
-    value: "cloudflare",
-    label: "Cloudflare sandboxes",
-    hint: "containers on your CF account — needs CF API token + sandbox worker URL",
-  },
-]
 
 const PLATFORM_CHOICES: SelectChoice[] = [
   { value: "fly", label: "Fly.io", hint: "always-on server with a disk; fits everything (recommended)" },
@@ -80,10 +58,7 @@ function parse(args: string[]): DeployOptions {
     else if (arg?.startsWith("--app=")) options.app = arg.slice("--app=".length)
     else if (arg === "--region") (options.region = args[i + 1]), (i += 1)
     else if (arg?.startsWith("--region=")) options.region = arg.slice("--region=".length)
-    else if (arg === "--harness") (options.harness = args[i + 1]), (i += 1)
-    else if (arg?.startsWith("--harness=")) options.harness = arg.slice("--harness=".length)
-    else if (arg === "--tools") (options.tools = args[i + 1]), (i += 1)
-    else if (arg?.startsWith("--tools=")) options.tools = arg.slice("--tools=".length)
+    else throw new Error(`Unknown deploy option: ${arg}`)
   }
   return options
 }
@@ -228,53 +203,11 @@ export async function deploy(args: string[]) {
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout })
   try {
-    const harness =
-      options.harness && HARNESSES.includes(options.harness)
-        ? options.harness
-        : options.yes
-          ? "pi"
-          : await select(
-              rl,
-              "Which harness will you run?",
-              HARNESSES.map((h) => ({ value: h, label: h })),
-              "pi",
-            )
-
-    // Only pi supports split tool execution (tools-only session env seam);
-    // other harnesses run brain+hands as one piece on the server.
-    let tools = "this-server"
-    if (harness === "pi") {
-      tools =
-        options.tools && TOOL_CHOICES.some((c) => c.value === options.tools)
-          ? options.tools
-          : options.yes
-            ? "this-server"
-            : await select(
-                rl,
-                "Where should tools execute? (the session itself runs on your server; this chooses where its commands run)",
-                TOOL_CHOICES,
-                "this-server",
-              )
-    }
-
     const platform = options.yes ? "fly" : await select(rl, "Deploy where?", PLATFORM_CHOICES, "fly")
     if (platform !== "fly") throw new Error(`platform "${platform}" is not available in v1`)
 
     const app = options.app ?? (options.yes ? "claxedo-selfhost" : await ask(rl, "App name (globally unique on Fly)", "claxedo-selfhost"))
     const region = options.region ?? (options.yes ? "sin" : await ask(rl, "Fly region", "sin"))
-
-    const secrets: Record<string, string> = {}
-    if (tools === "daytona") {
-      secrets.DAYTONA_API_KEY = await ask(rl, "Daytona API key (stored as a Fly secret)", "")
-      if (!secrets.DAYTONA_API_KEY) throw new Error("Daytona tool execution needs a Daytona API key")
-    }
-    if (tools === "cloudflare") {
-      secrets.CLOUDFLARE_API_TOKEN = await ask(rl, "Cloudflare API token (stored as a Fly secret)", "")
-      secrets.CLOUDFLARE_SANDBOX_WORKER_URL = await ask(rl, "Cloudflare sandbox worker URL", "")
-      if (!secrets.CLOUDFLARE_API_TOKEN || !secrets.CLOUDFLARE_SANDBOX_WORKER_URL) {
-        throw new Error("Cloudflare tool execution needs both the API token and the sandbox worker URL")
-      }
-    }
 
     const configPath = path.join(root, `${app}.fly.toml`)
     await mkdir(path.dirname(configPath), { recursive: true })
@@ -285,7 +218,6 @@ export async function deploy(args: string[]) {
       console.log(`\nGenerate-only. To deploy manually, from ${root}:`)
       console.log(`  fly apps create ${app}`)
       console.log(`  fly volumes create claxedo_data --app ${app} --region ${region} --size 10 --yes`)
-      for (const key of Object.keys(secrets)) console.log(`  fly secrets set ${key}=... --app ${app} --stage`)
       console.log(`  fly deploy -c ${path.basename(configPath)} --remote-only`)
       console.log(`  open https://${app}.fly.dev`)
       return
@@ -311,28 +243,13 @@ export async function deploy(args: string[]) {
       if (volume.code !== 0) throw new Error(`stage "volumes create" failed (see output above)`)
     }
 
-    // Stage 3: secrets required by the chosen tool placement (never model keys
-    // — those are configured in-app after first login).
-    const secretEntries = Object.entries(secrets)
-    if (secretEntries.length > 0) {
-      const staged = await quiet("flyctl", [
-        "secrets",
-        "set",
-        ...secretEntries.map(([key, value]) => `${key}=${value}`),
-        "--app",
-        app,
-        "--stage",
-      ])
-      if (staged.code !== 0) throw new Error(`stage "secrets set" failed:\n${staged.out}`)
-    }
-
-    // Stage 4: deploy (remote builder — no local Docker needed).
+    // Stage 3: deploy (remote builder — no local Docker needed).
     const deployed = await run("flyctl", ["deploy", "-c", configPath, "--remote-only"], { cwd: root })
     if (deployed.code !== 0) {
       throw new Error(`stage "deploy" failed — inspect with: fly logs --app ${app}`)
     }
 
-    // Stage 5: deployed means VERIFIED, not "commands ran".
+    // Stage 4: deployed means VERIFIED, not "commands ran".
     const url = `https://${app}.fly.dev`
     console.log(`\nWaiting for health at ${url}/api/claxedo/health ...`)
     const healthy = await pollHealth(`${url}/api/claxedo/health`, 36)
@@ -349,9 +266,7 @@ export async function deploy(args: string[]) {
         `private (Fly private networking / destroy after testing); do not treat\n` +
         `it as production until sign-in ships.`,
     )
-    if (tools === "this-server") {
-      console.log(`Tool execution: on the server itself (no per-session sandboxing in this mode).`)
-    }
+    console.log("Choose the session harness and machine workspace in Claxedo.")
   } finally {
     rl.close()
   }

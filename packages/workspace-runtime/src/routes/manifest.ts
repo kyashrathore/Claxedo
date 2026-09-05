@@ -17,7 +17,6 @@ export const WorkspaceRuntimeRoutes = {
   worktrees: `${WorkspaceRuntimeApiPrefix}/worktrees`,
   checkpoint: `${WorkspaceRuntimeApiPrefix}/checkpoint`,
   hook: `${WorkspaceRuntimeApiPrefix}/hook`,
-  sessionEnv: `${WorkspaceRuntimeApiPrefix}/session-env`,
 } as const
 
 export type WorkspaceRuntimeRouteFamily = keyof typeof WorkspaceRuntimeRoutes

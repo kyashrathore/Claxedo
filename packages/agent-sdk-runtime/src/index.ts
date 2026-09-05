@@ -167,23 +167,6 @@ export type {
   SessionHarnessId,
 } from "./harness-types"
 export {
-  createMemoryRunStore,
-  type RunStore,
-  type RunStoreAppendInput,
-  type RunStoreEvent,
-  type SessionEnv,
-  type SessionEnvExecOptions,
-  type SessionEnvExecResult,
-  type SessionEnvFactory,
-  type SessionEnvFactoryInput,
-  type SessionEnvFileStat,
-  type SessionHost,
-  type SessionStartMode,
-  type ResolvedSessionPlacement,
-  type SandboxRef,
-} from "./session-env"
-export { createVirtualSessionEnv } from "./virtual-session-env"
-export {
   AGENT_PROCESS_ATTRIBUTION_SCENARIOS,
   observeAgentProcess,
   safeAgentProcessDescriptor,

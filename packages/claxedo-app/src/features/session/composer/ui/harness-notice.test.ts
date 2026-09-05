@@ -6,7 +6,6 @@ const healthy: HarnessNoticeInput = {
   runtimeUnavailable: false,
   optionsFailed: false,
   noModels: false,
-  piModelMissing: false,
 }
 
 describe("resolveHarnessNotice", () => {
@@ -72,16 +71,15 @@ describe("resolveHarnessNotice", () => {
     })
   })
 
-  test("a provider-catalog error wins over the config error for the detail line", () => {
+  test("reports Pi model discovery errors from the native runtime", () => {
     expect(
       resolveHarnessNotice({
         ...healthy,
         harnessLabel: "Pi",
         optionsFailed: true,
-        providerError: "catalog unavailable",
-        configError: "stale",
+        configError: "Pi process unavailable",
       })?.detail,
-    ).toBe("catalog unavailable")
+    ).toBe("Pi process unavailable")
   })
 
   test("an error with an empty catalog reports as a load failure even when the list is not stale", () => {
@@ -105,10 +103,4 @@ describe("resolveHarnessNotice", () => {
     })
   })
 
-  test("a dropped pi model warns last, behind every harder failure", () => {
-    expect(resolveHarnessNotice({ ...healthy, piModelMissing: true })?.kind).toBe("pi-model-missing")
-    expect(
-      resolveHarnessNotice({ ...healthy, piModelMissing: true, savedModelUnavailable: "GPT-5.4 Codex" })?.kind,
-    ).toBe("saved-model-unavailable")
-  })
 })

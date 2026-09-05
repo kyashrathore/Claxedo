@@ -263,23 +263,25 @@ owner machine and that machine's durable session/message log is the source of
 truth. Hosts only need external pub/sub when they serve the same session live
 from multiple processes or machines.
 
-### Session Environment
+### Native Pi
 
-`src/session-env.ts` defines the host-provided hands/workspace boundary for a
-session.
+Pi runs as a child process in the session's machine directory, using the pinned
+0.85.0 RPC protocol. The shared adapter owns product session lifecycle; Pi owns
+its native session file, tools, extensions, compaction and context. Each active
+session has a separate process. Idle processes resume from the same native file.
+A missing native file is an error, never a replacement conversation.
 
-- `SessionEnv` abstracts command execution, file reads/writes, existence
-  checks, and cleanup for harnesses that need delegated workspace operations.
-- `SessionHost` and `SandboxRef` describe where the reasoning loop and tool
-  execution are placed without binding adapters to a concrete sandbox provider.
-- `createMemoryRunStore()` is a small in-memory run-event store for local
-  execution.
+Use `pi({ binary, agentDir })` to select the executable and isolated Pi profile.
+`PI_EXECUTABLE` also selects the executable. The host projects credentials into
+that profile and removes its auth file on disposal. It does not modify the
+user's own Pi profile. Model options come from `get_available_models` in Pi.
+Every session requires a real directory and workspace identity.
 
-This is primarily for built-in or central harnesses such as Pi, where the brain
-can run in a central process while the hands are supplied by the host. Native
-SDK harnesses can ignore `SessionEnv` when their upstream SDK already owns
-workspace access. `src/virtual-session-env.ts` provides an in-memory
-implementation for tests, demos, and central-only runs.
+Pi's extension questions use the shared question API. Extensions and native
+tools execute with the machine process's permissions, and project extensions
+remain subject to Pi's project trust policy. Pi does not provide a permission
+prompt or native subagent API. Host-provided MCP servers are not automatically
+loaded by upstream Pi; use a trusted Pi extension when that capability is needed.
 
 ### MCP Resolution
 
@@ -401,8 +403,6 @@ Entry point status:
 - Advanced: `@claxedo/agent-sdk-runtime/adapters`,
   `@claxedo/agent-sdk-runtime/subagent-admission`,
   `@claxedo/agent-sdk-runtime/message-page`
-  `@claxedo/agent-sdk-runtime/session-env`,
-  `@claxedo/agent-sdk-runtime/virtual-session-env`,
   `@claxedo/agent-sdk-runtime/runtime-event-hub`,
   `@claxedo/agent-sdk-runtime/sse`,
   `@claxedo/agent-sdk-runtime/mcp-resolver`

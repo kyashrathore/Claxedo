@@ -117,91 +117,11 @@ describe("SessionContent", () => {
     expect(calls.workspaceId).toBe("ws_cloud_route")
   })
 
-  test("does not invent a directory for workspace-less non-Pi central sessions", () => {
-    render(() => (
-      <SessionContent
-        meta={{
-          id: "central-surface",
-          type: "session",
-          scope: "global",
-          sessionId: "ses_central",
-          content: {
-            type: "session",
-            sessionId: "ses_central",
-            sessionRef: {
-              sessionId: "ses_central",
-              host: "central",
-              toolSandbox: { kind: "virtual" },
-            },
-          },
-        }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
-      />
-    ))
-
-    expect(screen.getByTestId("central-session-content")).toHaveTextContent("Session unavailable")
-    expect(screen.queryByTestId("session-pane-scope")).toBeNull()
+  test("does not execute an unresolved session in the fallback project", () => {
+    render(() => <SessionContent meta={{ id: "unresolved", type: "session", scope: "global", sessionId: "ses_pi", content: { type: "session", sessionId: "ses_pi" } }} ctx={{ paneId: "pane-1", isVisible: () => true }} fallbackDirectory={() => "/work/repo"} />)
+    expect(screen.getByText("Missing session identity")).toBeTruthy()
     expect(screen.queryByTestId("session-page")).toBeNull()
-    expect(calls.directoryScope).not.toHaveBeenCalled()
     expect(calls.sessionPage).not.toHaveBeenCalled()
-  })
-
-  test("renders a directory-less Pi central session without synthesizing a directory", () => {
-    render(() => (
-      <SessionContent
-        meta={{
-          id: "central-pi-surface",
-          type: "session",
-          scope: "global",
-          sessionId: "ses_pi",
-          content: {
-            type: "session",
-            sessionId: "ses_pi",
-            sessionRef: {
-              sessionId: "ses_pi",
-              host: "central",
-              harness: { kind: "native", harnessId: "pi" },
-              toolSandbox: { kind: "virtual" },
-            },
-          },
-        }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
-      />
-    ))
-
-    expect(screen.getByTestId("session-pane-scope")).toHaveAttribute("data-directory", "")
-    expect(screen.getByTestId("session-page")).toBeTruthy()
-    expect(calls.directoryScope).toHaveBeenCalledOnce()
-    expect(calls.sessionPage).toHaveBeenCalledOnce()
-  })
-
-  test("renders central sessions through their fallback project scope", () => {
-    render(() => (
-      <SessionContent
-        meta={{
-          id: "central-surface",
-          type: "session",
-          scope: "global",
-          sessionId: "ses_central",
-          content: {
-            type: "session",
-            sessionId: "ses_central",
-            sessionRef: {
-              sessionId: "ses_central",
-              host: "central",
-              toolSandbox: { kind: "virtual" },
-            },
-          },
-        }}
-        ctx={{ paneId: "pane-1", isVisible: () => true }}
-        fallbackDirectory={() => "/work/repo"}
-      />
-    ))
-
-    expect(screen.getByTestId("session-pane-scope")).toHaveAttribute("data-directory", "/work/repo")
-    expect(screen.getByTestId("session-page")).toBeTruthy()
-    expect(calls.directoryScope).toHaveBeenCalledOnce()
-    expect(calls.sessionPage).toHaveBeenCalledOnce()
   })
 
   test("keeps local legacy session routes on the real session composer path", () => {
@@ -275,7 +195,7 @@ describe("SessionContent", () => {
     expect(screen.getByTestId("session-page")).toBeTruthy()
   })
 
-  test("renders central sessions with a directory in that pane scope", () => {
+  test("renders machine sessions in their authorized workspace scope", () => {
     render(() => (
       <SessionContent
         meta={{
@@ -290,9 +210,9 @@ describe("SessionContent", () => {
             sessionId: "ses_authz",
             sessionRef: {
               sessionId: "ses_authz",
-              host: "central",
+              host: "workspace",
               workspaceId: "ws_authz",
-              toolSandbox: { kind: "virtual" },
+              toolSandbox: { kind: "workspace", workspaceId: "ws_authz", hosting: "cloud" },
             },
           },
         }}

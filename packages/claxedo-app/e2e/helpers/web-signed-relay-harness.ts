@@ -115,6 +115,7 @@ export async function startSignedRelayFixture(opts: {
         ...(opts.collaborativeOrg?.name
           ? { CLAXEDO_E2E_COLLABORATIVE_ORG_NAME: opts.collaborativeOrg.name }
           : {}),
+        ...opts.scripted.piEnv,
         CLAXEDO_E2E_SCRIPTED_MODEL_URL: opts.scripted.v1Url,
         ...(opts.browserUrl ? { CLAXEDO_E2E_RELAY_PUBLIC_URL: opts.browserUrl } : {}),
         ...claudeScriptedEnv(opts.scripted.url, opts.claudeConfigDir),

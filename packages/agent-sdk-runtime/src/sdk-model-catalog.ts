@@ -1,9 +1,11 @@
 import type { AgentConfigOption } from "./index"
 import type { AgentHarnessId } from "./harness-types"
 
-export type NativeSdkHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor">
+export type NativeSdkHarnessId = Extract<AgentHarnessId, "claude" | "codex" | "cursor" | "pi">
 
 export const SDK_MODEL_CATALOG = {
+  // Pi discovers models through its native RPC process; there is no static fallback.
+  pi: [],
   claude: [
     { id: "claude-sonnet-5", name: "Claude Sonnet 5" },
     { id: "claude-opus-4-8", name: "Claude Opus 4.8" },

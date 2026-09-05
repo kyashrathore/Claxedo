@@ -239,6 +239,7 @@ async function startFixture(): Promise<FixtureInfo> {
         CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: "cloud",
         // The injection seam: these reach the harness because harnessSpawnEnv
         // spreads process.env into every spawn (see HARNESS NOTES).
+        ...scripted.piEnv,
         CLAXEDO_E2E_SCRIPTED_MODEL_URL: scripted.v1Url,
         ...claudeScriptedEnv(scripted.url, path.join(REPO_ROOT, "node_modules", ".cache", "real-cloud-relay-claude")),
       },

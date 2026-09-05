@@ -91,7 +91,6 @@ lower-level helpers:
 | --- | --- |
 | `@claxedo/workspace-runtime` | Standalone bootstrap, host creation, exposure/management contracts, route manifest, and stable config types. |
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, PTY, and process routes. |
-| `@claxedo/workspace-runtime/session-env-contract` | Schemas, types, limits, errors, and frame decoding for the session-env wire protocol. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
 | `@claxedo/workspace-runtime/opencode` | Process-owned public embedded SDK host, workspace-scoped ports, and harness adapter (Node 24+). |
 | `@claxedo/workspace-runtime/exposure` | Explicit loopback, relay, private-network, and embedded exposure declarations. |
@@ -142,7 +141,6 @@ projection compose those concerns outside the OSS runtime boundary.
 | `GET  /api/wr/capabilities` | [`server.ts`](src/server.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/checkpoint/*` | [`routes/checkpoint.ts`](src/routes/checkpoint.ts) | workspace-runtime management auth |
 | `POST /api/wr/config` | [`routes/config.ts`](src/routes/config.ts) | workspace-runtime management auth |
-| `PATCH /api/wr/provider-config` | [`routes/provider-config.ts`](src/routes/provider-config.ts) | workspace-scoped provider selection |
 | `GET  /api/wr/harness-config-options` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth |
 | `GET  /api/wr/events`, `GET /api/wr/runtime-events` | [`routes/runtime-events.ts`](src/routes/runtime-events.ts), [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/file/*`, `GET /api/wr/find/file` | [`routes/file.ts`](src/routes/file.ts) | exposure-dependent runtime auth |
@@ -151,7 +149,6 @@ projection compose those concerns outside the OSS runtime boundary.
 | `*    /api/wr/process/*` | [`routes/process.ts`](src/routes/process.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/hook/*` | [`routes/agent-hook.ts`](src/routes/agent-hook.ts) | exposure-dependent runtime auth |
 | `GET  /api/wr/subagent-transcripts/*` | [`routes/transcript.ts`](src/routes/transcript.ts) | exposure-dependent runtime auth and parent-session authorization |
-| `*    /api/wr/session-env/*` | session-env routes (mounted by the host) | exposure-dependent runtime auth |
 | `*    /api/wr/worktrees/*` | [`routes/worktree.ts`](src/routes/worktree.ts) | exposure-dependent runtime auth |
 | `*    /session/*` | `SessionRoutes` (mounted via `mountWorkspaceCore`) | implicit (host-level) |
 | `*    /mcp/*` | MCP routes | implicit |
@@ -273,7 +270,7 @@ stop retrying after a bounded number of failed reconnect attempts.
 
 ## Workspace target and path containment
 
-`workspace-runtime` is a per-workspace host. Session, session-env, file, PTY,
+`workspace-runtime` is a per-workspace host. Session, file, PTY,
 process, OpenCode-compat, and diff/VCS routes are pinned to
 `WORKSPACE_RUNTIME_DIRECTORY` or the `WorkspaceTarget` passed to
 `createWorkspaceRuntimeApp()`. Callers may omit `directory` and use the pinned
@@ -281,7 +278,7 @@ workspace, pass that exact directory, or pass the synthetic
 `workspace:<workspaceId>` target. A request for any other directory is
 rejected.
 
-Filesystem route `path` values and PTY/session-env `cwd` overrides are relative
+Filesystem route `path` values and PTY `cwd` overrides are relative
 to the pinned workspace. Absolute paths, `..` escapes, null bytes, and symlinks
 that resolve outside the workspace are rejected before the route reads, writes,
 streams file content, or starts a subprocess. Client-provided subprocess env is

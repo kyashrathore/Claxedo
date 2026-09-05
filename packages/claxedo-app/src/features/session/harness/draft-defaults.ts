@@ -146,7 +146,7 @@ function decodeChoice(input: unknown): DraftDefaultHarnessChoice | undefined {
 
 function modelBelongsToHarness(model: ModelKey | undefined, harness: HarnessSelection) {
   if (!model) return true
-  if (harness.kind === "connection" || harness.harnessId === "pi") return true
+  if (harness.kind === "connection") return true
   return model.providerID === harness.harnessId
 }
 

@@ -10,10 +10,6 @@ export default defineConfig({
       "@claxedo/workspace-runtime/host": path.resolve(import.meta.dirname, "../workspace-runtime/src/host.ts"),
       "@claxedo/workspace-runtime/relay": path.resolve(import.meta.dirname, "../workspace-runtime/src/relay.ts"),
       "@claxedo/workspace-runtime/routes": path.resolve(import.meta.dirname, "../workspace-runtime/src/routes.ts"),
-      "@claxedo/workspace-runtime/session-env-contract": path.resolve(
-        import.meta.dirname,
-        "../workspace-runtime/src/session-env-contract.ts",
-      ),
       // Aliased alongside the rest so a test exercises the runtime SOURCE, not
       // a dist that may lag it. Without the alias a consumer resolving through
       // its own dist would pull a second copy of the runtime into the module

@@ -16,15 +16,15 @@ export function sdkHarnessCapabilities(driver: SdkRuntimeDriver): HarnessCapabil
     abort: true,
     reconnect: false,
     replay: true,
-    permissions: true,
+    permissions: driver.type !== "pi",
     questions: true,
-    todos: true,
+    todos: driver.type !== "pi",
     commands: false,
     fork: false,
     revert: false,
     unrevert: false,
     configOptions: true,
-    subagents: true,
+    subagents: driver.type !== "pi",
     goals: !!driver.goals || !!driver.nativeGoal,
   })
 }

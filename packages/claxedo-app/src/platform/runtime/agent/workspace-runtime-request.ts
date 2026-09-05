@@ -138,7 +138,6 @@ function workspaceRuntimeTarget(input: WorkspaceRuntimeSnapshotLike | undefined)
 
 export async function resolveRuntimeTarget(options: WorkspaceRuntimeRequestOptions): Promise<WorkspaceRuntimeTarget | undefined> {
   if (options.sessionRef) {
-    if (options.sessionRef.host === "central") return undefined
     if (options.sessionRef.toolSandbox?.kind === "workspace") {
       return {
         kind: options.sessionRef.toolSandbox.hosting,

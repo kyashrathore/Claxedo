@@ -138,7 +138,7 @@ describe("role policy", () => {
   test("models signed web central access separately from workspace-hosted placement", () => {
     expect(signedCentralPlacement({ workspaceId: "ws_authz", role: "viewer" })).toEqual({
       workspaceId: "ws_authz",
-      hosting: "central",
+      hosting: "control-plane",
       transport: "signed-web",
       role: "viewer",
     })

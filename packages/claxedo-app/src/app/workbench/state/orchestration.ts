@@ -17,7 +17,6 @@ import type { Edge, UseWorkbench } from "../workbench/index"
 import type { MetadataSliceApi } from "./metadata"
 import type { TerminalSliceApi } from "./terminal"
 import {
-  centralSessionRef,
   hasBacking,
   isLocalSessionDirectory,
   localSessionRefForDirectory,
@@ -32,11 +31,11 @@ export type ContentCloseReason = "user" | "panic" | "merge" | "evict"
 
 export type CleanupHook = (id: string, meta: ContentMeta | undefined, reason: ContentCloseReason) => void
 export type OpenSessionOptions = { focus?: boolean; sessionRef?: SessionRef; workspaceRouteId?: string }
-type OpenCentralSessionOptions = { focus?: boolean; authoritative?: boolean; sessionRef?: SessionRef }
+type OpenSessionByIdOptions = { focus?: boolean; authoritative?: boolean; sessionRef?: SessionRef }
 
 export type LayoutOrchestrationApi = {
   openSession(directory: string, sessionId: string, title?: string, opts?: OpenSessionOptions): string
-  openCentralSession(sessionId: string, title?: string, opts?: OpenCentralSessionOptions): string
+  openSessionById(sessionId: string, title?: string, opts?: OpenSessionByIdOptions): string
   openDraftSession(providerDirectory: string, draftId: string, opts?: { focus?: boolean }): string
   completeDraftSession(input: { draftId: string; directory: string; sessionId: string; title?: string; sessionRef?: SessionRef }): string | undefined
   openTerminal(
@@ -308,11 +307,8 @@ export function createLayoutOrchestration(input: {
       return contentId
     },
 
-    openCentralSession(sessionId, title, opts) {
-      const explicitSessionRef = opts?.sessionRef?.host === "central" && opts.sessionRef.sessionId === sessionId
-        ? opts.sessionRef
-        : undefined
-      const sessionRef = explicitSessionRef ?? centralSessionRef({ sessionId })
+    openSessionById(sessionId, title, opts) {
+      const sessionRef = opts?.sessionRef?.sessionId === sessionId ? opts.sessionRef : undefined
       const workspaceExisting = meta.find(
         (m) =>
           m.type === "session" &&
@@ -353,7 +349,7 @@ export function createLayoutOrchestration(input: {
           undefined,
           sessionId,
           title,
-          explicitSessionRef ?? existing.content?.sessionRef ?? sessionRef,
+          sessionRef ?? existing.content?.sessionRef,
         )
       }
       const contentId = showOrCreate(

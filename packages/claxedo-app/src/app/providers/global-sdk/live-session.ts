@@ -15,7 +15,7 @@ type WorkspaceProjects = Parameters<typeof signedWorkspaceFromProjects>[0]
 export function nextLiveSession(
   current: LiveSession | undefined,
   sessionID: string,
-  opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef },
+  opts?: { host?: "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef },
 ) {
   const sameScope = !!current &&
     (opts?.host === undefined || opts.host === current.host) &&
@@ -34,7 +34,7 @@ export function nextLiveSession(
 export function liveSessionTransition(
   current: LiveSession | undefined,
   sessionID: string,
-  opts?: { host?: "central" | "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef },
+  opts?: { host?: "workspace"; directory?: string; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef },
 ) {
   const next = nextLiveSession(current, sessionID, opts)
   const workspaceScopeChanged =
@@ -76,7 +76,6 @@ export function eventDirectoryForLiveSession(input: {
   liveSession?: LiveSession
 }): string {
   if (input.directory === "global") return input.directory
-  if (input.liveSession?.host === "central") return input.sessionId ?? input.liveSession.sessionID
   const legacyDirectory = input.liveSession?.directory
   const workspaceId = input.liveSession?.workspaceId
     ?? (legacyDirectory ? sessionWorkspaceRuntimeRef({ directory: legacyDirectory })?.workspaceId : undefined)
@@ -160,7 +159,5 @@ export function runtimeEventLiveSession(
   const sessionID = scopeSessionId?.trim()
     || (current.sessionID === "route" ? undefined : current.sessionID)
   if (!sessionID) return
-  return current.host === "central"
-    ? { ...current, sessionID }
-    : liveSessionWithRelayBacking({ ...current, sessionID }, projects)
+  return liveSessionWithRelayBacking({ ...current, sessionID }, projects)
 }

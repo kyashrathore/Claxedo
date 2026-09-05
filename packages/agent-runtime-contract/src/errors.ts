@@ -41,13 +41,12 @@ export function assertAgentExecutionBinding(
   if ((binding.scope ?? "workspace") !== (expected.scope ?? "workspace")) {
     throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "scope", message: "execution binding scope mismatch" })
   }
-  if (binding.scope === "central" && (binding.workspaceId !== undefined || binding.directory !== "")) {
-    throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "scope", message: "central execution cannot own a workspace directory" })
+  if (binding.scope !== undefined && binding.scope !== "workspace") {
+    throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "scope", message: "workspace execution scope is required" })
   }
   for (const field of BINDING_FIELDS) {
-    if (field === "workspaceId" && binding.scope === "central") continue
     const value = binding[field]
-    if (typeof value !== "string" || field !== "directory" && value.trim() === "") {
+    if (typeof value !== "string" || value.trim() === "") {
       throw new AgentRuntimeContractError({
         code: "invalid_execution_binding",
         field,

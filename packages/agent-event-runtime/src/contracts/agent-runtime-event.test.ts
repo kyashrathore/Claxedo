@@ -138,16 +138,16 @@ describe("AgentRuntimeEvent contract", () => {
       title: null,
       updatedAt: "2026-06-16T00:00:00.000Z",
       parentID: "parent-1",
-      sessionRef: "central:session-1",
-      host: "central",
+      sessionRef: "workspace:session-1",
+      host: "workspace",
       workspaceID: "workspace-1",
     })).toEqual({
       type: "session-info",
       title: null,
       updatedAt: "2026-06-16T00:00:00.000Z",
       parentID: "parent-1",
-      sessionRef: "central:session-1",
-      host: "central",
+      sessionRef: "workspace:session-1",
+      host: "workspace",
       workspaceID: "workspace-1",
     })
     expect(agentRuntimeEvent.toolStatus({ toolCallId: "tool-1", status: "pending" })).toEqual({

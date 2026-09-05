@@ -1,5 +1,5 @@
 import { createMemo, type Accessor } from "solid-js"
-import { centralSessionRef, localSessionRefForDirectory, type SessionRef } from "@/platform/identity/session-ref"
+import { localSessionRefForDirectory, type SessionRef } from "@/platform/identity/session-ref"
 import type { ComposerMode, DraftWorkspaceKind } from "@/features/session/composer/mode"
 import type { WorkspaceDirectory } from "@/features/session/composer/workspace-resolver"
 
@@ -66,9 +66,7 @@ export function sessionComposerMode(input: {
 }): ComposerMode {
   if (input.sessionRef) return { kind: "session", ref: input.sessionRef }
   if (!input.sessionId || input.sessionId === "new") return input.draft
-  return {
-    kind: "session",
-    ref: localSessionRefForDirectory({ sessionId: input.sessionId, directory: input.directory })
-      ?? centralSessionRef({ sessionId: input.sessionId, workspaceId: input.workspaceId })!,
-  }
+  const ref = localSessionRefForDirectory({ sessionId: input.sessionId, directory: input.directory })
+  if (!ref) throw new Error("Session workspace identity is not resolved")
+  return { kind: "session", ref }
 }

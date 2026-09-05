@@ -23,4 +23,5 @@ run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/harnesses/acp/index.ts 
 run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/harnesses/claude/index.ts --bundle --platform=browser --format=esm --outfile=${DIST}/harnesses/claude.mjs --target=es2022`)
 run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/harnesses/codex/index.ts --bundle --platform=browser --format=esm --outfile=${DIST}/harnesses/codex.mjs --target=es2022`)
 run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/harnesses/cursor/index.ts --bundle --platform=browser --format=esm --outfile=${DIST}/harnesses/cursor.mjs --target=es2022`)
+run(`${path.join(ROOT, "node_modules/.bin/esbuild")} src/harnesses/pi/index.ts --bundle --platform=browser --format=esm --outfile=${DIST}/harnesses/pi.mjs --target=es2022`)
 run(`${path.join(ROOT, "node_modules/.bin/tsc")} -p tsconfig.build.json`)

@@ -1915,7 +1915,7 @@ describe("workspace runtime route audit", () => {
     expect(identity).toMatch(/readonly toolSandbox\?: SandboxRef/)
     expect(identity).toMatch(/readonly workspaceId\?: string/)
     expect(identity).toMatch(/readonly cwd\?: string/)
-    expect(identity).toMatch(/centralSessionRef/)
+    expect(identity).not.toMatch(/centralSessionRef/)
     expect(identity).toMatch(/localSessionRef/)
     expect(identity).toMatch(/workspaceBackedSessionRef/)
     expect(identity).toMatch(/sessionRefForWorkspaceSession/)
@@ -1940,7 +1940,6 @@ describe("workspace runtime route audit", () => {
       /input\.sessionRef \?\? sessionRefForPayload\(input\.directory, input\.sessionId\)/,
     )
     expect(orchestration).toMatch(/input\.sessionRef \? \{ sessionRef: input\.sessionRef \} : \{\}/)
-    expect(orchestration).toMatch(/centralSessionRef\(\{ sessionId \}\)/)
     expect(persistence).toMatch(/missingRequiredSessionRef/)
     expect(persistence).not.toMatch(/backfillSessionRef/)
     expect(persistence).not.toMatch(/sessionRefForPane/)
@@ -3474,7 +3473,6 @@ describe("workspace runtime route audit", () => {
     ).text()
     expect(text).toMatch(/createRailSectionSessionList/)
     expect(text).toMatch(/sessionSourceForWorkspace/)
-    expect(text).toMatch(/centralSessionSource/)
     // A project section lists every workspace in it, so its source is the
     // composition of theirs — never the central server alone.
     expect(text).toMatch(/projectSessionSource/)

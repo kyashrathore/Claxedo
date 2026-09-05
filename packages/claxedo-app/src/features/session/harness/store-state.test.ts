@@ -207,17 +207,7 @@ describe("harness store state projectors", () => {
       harnessMode: "harness",
       readiness: "ready",
     })
-    expect(readyHarnessHydrationPatch(pi)).toEqual({
-      harness: pi,
-      harnessMode: "harness",
-      readiness: "ready",
-      dynamicModels: null,
-      thoughtLevels: null,
-      selectedThoughtLevel: undefined,
-      optionsSource: "empty",
-      optionsStale: false,
-      optionsLoading: false,
-    })
+    expect(readyHarnessHydrationPatch(pi)).toEqual({ harness: pi, harnessMode: "harness", readiness: "ready" })
     expect(pollingHarnessHydrationPatch({ kind: "connection", connectionId: "acp:claude" })).toEqual({
       harness: { kind: "connection", connectionId: "acp:claude" },
       harnessMode: "harness",

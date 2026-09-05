@@ -7,7 +7,6 @@ import {
   markRouteIntentClosed,
   resetRouteIntentClosedForTest,
   routeIntentClosedSizeForTest,
-  sessionInventoryCentralSession,
   sessionInventoryTarget,
   type RouteIntentStateApi,
   type RouteIntent,
@@ -25,7 +24,7 @@ import type { ClaxedoState, ContentMeta } from "./types"
 
 type OpenCall =
   | { name: "openSession"; directory: string; sessionId: string; title?: string; focus?: boolean; sessionRef?: SessionRef; workspaceRouteId?: string }
-  | { name: "openCentralSession"; sessionId: string; title?: string; focus?: boolean }
+  | { name: "openSessionById"; sessionId: string; title?: string; focus?: boolean }
   | { name: "openTerminal"; directory: string; terminalId: string; title?: string; focus?: boolean; workspaceRouteId?: string }
   | { name: "openPage"; pageId: string; title?: string; directory?: string; workspaceRouteId?: string }
   | { name: "openPagesIndex"; directory?: string; workspaceRouteId?: string }
@@ -50,30 +49,6 @@ beforeEach(() => {
   resetRouteIntentClosedForTest()
 })
 
-test("central inventory identity is explicit and is not reclassified as a workspace route", () => {
-  const inventory = {
-    loaded: true,
-    global: [{
-      id: "ses_central",
-      sessionRef: "central:ses_central",
-      title: "Central",
-      directory: "/repo/main",
-      workspaceId: "ws_1",
-      projectID: "project_1",
-      tags: [],
-      attachments: [],
-      time: { created: 1, updated: 1 },
-    }],
-    byWorkspace: {},
-    byProject: {},
-  }
-
-  expect(sessionInventoryCentralSession("ses_central", inventory)).toMatchObject({
-    id: "ses_central",
-    sessionRef: "central:ses_central",
-  })
-  expect(sessionInventoryTarget("ses_central", inventory)).toBeUndefined()
-})
 
 test("archived inventory rows are never direct-route targets", () => {
   expect(sessionInventoryTarget("ses_archived", {
@@ -232,12 +207,12 @@ function createHarness(input: {
         if (opts?.focus !== false) focused = id
         return id
       },
-      openCentralSession(
+      openSessionById(
         sessionId: string,
         title?: string,
         opts?: { focus?: boolean },
       ) {
-        opened.push({ name: "openCentralSession", sessionId, title, focus: opts?.focus })
+        opened.push({ name: "openSessionById", sessionId, title, focus: opts?.focus })
         const existing = findMeta(
           (item) =>
             item.type === "session" &&
@@ -598,7 +573,7 @@ describe("state route intent", () => {
     })
 
     expect(harness.opened).toEqual([{
-      name: "openCentralSession",
+      name: "openSessionById",
       sessionId: "ses-central",
       title: "Central session",
       focus: undefined,
@@ -1124,7 +1099,7 @@ describe("state route intent", () => {
     })
 
     expect(harness.opened).toEqual([{
-      name: "openCentralSession",
+      name: "openSessionById",
       sessionId: "ses-ambiguous",
       title: "Central fallback",
       focus: undefined,
@@ -1167,7 +1142,7 @@ describe("state route intent", () => {
     expect(harness.refreshCalls).toEqual(["/repo/main"])
   })
 
-  test("session route without workspace lets inventory supersede an existing central placeholder", () => {
+  test("session route without workspace lets inventory supersede an existing unresolved placeholder", () => {
     const harness = createHarness({
       focused: "central-session:ses-cloud",
       meta: [
@@ -1179,12 +1154,7 @@ describe("state route intent", () => {
           content: {
             type: "session",
             sessionId: "ses-cloud",
-            title: "Central placeholder",
-            sessionRef: {
-              sessionId: "ses-cloud",
-              host: "central",
-              toolSandbox: { kind: "virtual" },
-            },
+            title: "Unresolved session",
           },
         },
       ],
@@ -1246,7 +1216,7 @@ describe("state route intent", () => {
     })
 
     expect(harness.opened).toEqual([{
-      name: "openCentralSession",
+      name: "openSessionById",
       sessionId: "ses-ambiguous",
       title: "Central fallback",
       focus: undefined,

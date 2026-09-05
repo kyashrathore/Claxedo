@@ -52,29 +52,17 @@ describe("harness selection", () => {
     expect(harnessReadyForSubmit(state)).toBe(false)
   })
 
-  test("preserves Pi's backend provider ID independently of the harness ID", () => {
-    const state = {
-      ...base,
-      harness: { kind: "native", harnessId: "pi" },
-      selectedModel: "claude-sonnet-4-5",
-      selectedModelProvider: "anthropic",
-      dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5", providerID: "anthropic" }],
-    } satisfies HarnessSelectionState
-
-    expect(harnessModelKeyForSubmit(state)).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-5" })
+  test("submits the Pi runtime's provider-qualified model ID", () => {
+    const state = { ...base, harness: { kind: "native", harnessId: "pi" } as const,
+      selectedModel: "anthropic/claude-sonnet-4-5",
+      dynamicModels: [{ id: "anthropic/claude-sonnet-4-5", name: "Sonnet 4.5" }],
+    }
+    expect(harnessModelKeyForSubmit(state)).toEqual({ providerID: "pi", modelID: "anthropic/claude-sonnet-4-5" })
     expect(harnessModelNameForSubmit(state)).toBe("Sonnet 4.5")
-    expect(harnessReadyForSubmit(state)).toBe(true)
   })
 
-  test("does not submit a Pi model ID without its provider identity", () => {
-    expect(
-      harnessModelKeyForSubmit({
-        ...base,
-        harness: { kind: "native", harnessId: "pi" },
-        selectedModel: "claude-sonnet-4-5",
-        dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5" }],
-      }),
-    ).toBeUndefined()
+  test("does not submit Pi's unselected native placeholder", () => {
+    expect(harnessModelKeyForSubmit({ ...base, harness: { kind: "native", harnessId: "pi" }, selectedModel: "default" })).toBeUndefined()
   })
 
   test("blocks submit until live model options arrive", () => {

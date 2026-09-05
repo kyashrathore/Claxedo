@@ -37,7 +37,7 @@ describe("composer mode", () => {
       kind: "session",
       ref: {
         sessionId: "ses_1",
-        host: "central",
+        host: "workspace",
       },
     })).toBe(false)
   })
@@ -57,7 +57,7 @@ describe("composer mode", () => {
       kind: "session",
       ref: {
         sessionId: "ses_1",
-        host: "central",
+        host: "workspace",
         harness: { kind: "connection", connectionId: "acp:claude", binary: "claude" },
       },
     })).toEqual({ kind: "connection", connectionId: "acp:claude", binary: "claude" })

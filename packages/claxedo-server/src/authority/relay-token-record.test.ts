@@ -23,6 +23,8 @@ const minted = {
 
 function authority() {
   return {
+    recordActorRuntimeAccessToken: vi.fn(async () => ({})),
+    recordChannelRuntimeAccessToken: vi.fn(async () => ({})),
     recordRuntimeAccessToken: vi.fn(async () => ({})),
     recordRuntimeAccessTokenForService: vi.fn(async () => ({})),
   }
@@ -62,4 +64,21 @@ describe("recordRelayRuntimeToken", () => {
     await expect(recordRelayRuntimeToken(authority(), { ...minted, principalKind: "user" }))
       .rejects.toThrow("must be minted for a signed caller")
   })
+})
+
+ test("channel token recording retains the channel binding and never uses the service path", async () => {
+  const auth = authority()
+  const channelIdentity = { channel: "telegram", externalUserId: "external", threadKey: "telegram:thread" }
+  await recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", channelIdentity })
+  expect(auth.recordChannelRuntimeAccessToken).toHaveBeenCalledWith(channelIdentity, expect.objectContaining({ actorId: minted.actorId, workspaceId: minted.workspaceId }))
+  expect(auth.recordRuntimeAccessTokenForService).not.toHaveBeenCalled()
+  await expect(recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", channelIdentity, auth: signed })).rejects.toThrow("two caller identities")
+ })
+
+test("a scheduled user's token uses the canonical actor authority and rejects ambiguous identity", async () => {
+  const auth = authority()
+  await recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", delegatedActor: true })
+  expect(auth.recordActorRuntimeAccessToken).toHaveBeenCalledWith(expect.objectContaining({ actorId: minted.actorId, workspaceId: minted.workspaceId }))
+  expect(auth.recordRuntimeAccessTokenForService).not.toHaveBeenCalled()
+  await expect(recordRelayRuntimeToken(auth, { ...minted, principalKind: "user", delegatedActor: true, auth: signed })).rejects.toThrow("two caller identities")
 })

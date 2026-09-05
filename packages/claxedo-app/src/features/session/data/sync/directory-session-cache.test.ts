@@ -35,17 +35,11 @@ function session(input: { id: string; parentID?: string }): Session {
 }
 
 describe("directory session-cache shell-data boundary", () => {
-  test("does not project a central session's tool-sandbox directory into workspace inventory", () => {
-    expect(directorySessionCacheOwnsSession({
-      sessionId: "ses_central",
-      host: "central",
-      toolSandbox: { kind: "virtual" },
-    })).toBe(false)
+  test("does not hydrate an unresolved session without a machine backing", () => {
+    expect(directorySessionCacheOwnsSession({ sessionId: "ses_unresolved", host: "workspace" })).toBe(false)
     expect(shouldScheduleDirectorySessionHydration({
-      directory: "/workspace/project",
-      sessionID: "ses_central",
-      hasSessionInfo: false,
-      sessionRef: { sessionId: "ses_central", host: "central", toolSandbox: { kind: "virtual" } },
+      directory: "/workspace/project", sessionID: "ses_unresolved", hasSessionInfo: false,
+      sessionRef: { sessionId: "ses_unresolved", host: "workspace" },
     })).toBe(false)
   })
 

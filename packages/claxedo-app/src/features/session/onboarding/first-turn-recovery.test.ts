@@ -21,9 +21,9 @@ describe("first-turn recovery", () => {
     })).toEqual({ providerID: "claude", modelID: "opus" })
   })
 
-  test("uses provider identity when Pi exposes the same model id from multiple providers", () => {
+  test("uses provider identity when a connection exposes the same model id from multiple providers", () => {
     expect(nextHarnessRecoveryModel({
-      harness: { kind: "native", harnessId: "pi" },
+      harness: { kind: "connection", connectionId: "team-agent" },
       selectedModelKey: { providerID: "anthropic", modelID: "sonnet" },
       models: [
         { id: "sonnet", name: "Sonnet", providerID: "anthropic" },

@@ -824,7 +824,7 @@ const DEFAULT_HARNESS_MODELS: Record<Harness, HarnessModelOption[]> = {
   "claude-sdk": [{ id: "claude-sonnet-4-6", name: "Sonnet 4.6", description: "Sonnet 4.6 · Efficient for routine tasks" }],
   "codex-app-server": [{ id: "gpt-5.5", name: "GPT-5.5" }],
   "cursor-sdk": [{ id: "cursor-auto", name: "Cursor Auto" }],
-  pi: [{ id: "virtual", name: "Virtual" }],
+  pi: [{ id: "openai/gpt-5.5", name: "Pi GPT-5.5" }],
 }
 
 /**
@@ -2856,7 +2856,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
           fork: true,
           revert: true,
           unrevert: true,
-          configOptions: harness !== "opencode" && harness !== "pi",
+          configOptions: harness !== "opencode",
         })
       : r.continue(),
   )
@@ -3321,7 +3321,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         fork: true,
         revert: true,
         unrevert: true,
-        configOptions: cloudHarness !== "opencode" && cloudHarness !== "pi",
+        configOptions: cloudHarness !== "opencode",
       }),
     )
     await page.route(`${base}/session/*/todo**`, (r) => json(r, sessionTodos))

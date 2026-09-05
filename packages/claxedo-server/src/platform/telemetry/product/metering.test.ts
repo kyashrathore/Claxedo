@@ -18,8 +18,6 @@ import {
 } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { ControlPlaneServices } from "../../../authority/services"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
-import { createCentralSessionRuntime } from "../../../session/runtime"
-import { createConnectionTurnCredentials } from "../../../connections/turn-credentials"
 import {
   LLM_TURN_COMPLETED,
   SANDBOX_LEASE_CLOSED,
@@ -132,163 +130,9 @@ function completedTurn(input: {
 // ---------------------------------------------------------------------------
 
 describe("llm_turn_completed carries the provider's usage object verbatim", () => {
-  test("the runtime ingress commits provisional and final local revisions from canonical events", async () => {
-    const captured = captureSink()
-    const facts: TurnUsageRevision[] = []
-    const runtime = createCentralSessionRuntime(services(captured.sink), {
-      usageRevisionStore: {
-        writeRevision: async (fact) => {
-          facts.push(structuredClone(fact))
-          return { status: "accepted" }
-        },
-      },
-      resolveUsageHostIdentity: async () => ({ hostId: "host-stable" }),
-    })
-    const info = buildAssistantMessage({
-      id: "msg-runtime",
-      sessionID: "session-runtime",
-      parentID: "user-runtime",
-      agent: "build",
-      model: { providerID: "openai", modelID: "gpt-5.4" },
-      directory: "/must-not-persist",
-      created: 100,
-    })
-    runtime.publishGlobal({ directory: "/must-not-persist", payload: messageUpdated(info) })
-    runtime.publishGlobal({
-      directory: "/must-not-persist",
-      payload: sessionUsage({
-        sessionID: "session-runtime",
-        messageID: "msg-runtime",
-        contextSize: 100,
-        contextUsed: 12,
-        observation: {
-          kind: "cumulative",
-          tokens: { input: 10, output: 2, reasoning: null, cache: { read: 4, write: null } },
-        },
-      }),
-    })
-    runtime.publishGlobal({ directory: "/must-not-persist", payload: messageCompleted("session-runtime", "msg-runtime") })
-    await runtime.flushUsage()
 
-    expect(facts).toEqual([
-      expect.objectContaining({ revision: 1, settlement: "provisional", hostId: "host-stable", quality: expect.objectContaining({ source: "lifecycle" }) }),
-      expect.objectContaining({ revision: 2, settlement: "provisional", hostId: "host-stable", quality: expect.objectContaining({ source: "provider" }) }),
-      expect.objectContaining({ revision: 3, settlement: "final", status: "completed", hostId: "host-stable" }),
-    ])
-    expect(JSON.stringify(facts)).not.toContain("must-not-persist")
-  })
 
-  test("the emitted token fields equal the fake provider's usage, field for field", async () => {
-    const captured = captureSink()
-    const turnCredentials = createConnectionTurnCredentials()
-    const recorded: Array<Record<string, unknown>> = []
-    const ledger: UsageLedger = {
-      recordLlmTurn: async (input) => {
-        recorded.push(input)
-        return { activated: false }
-      },
-    }
-    const runtime = createCentralSessionRuntime(services(captured.sink), {
-      turnCredentials,
-      usageLedger: ledger,
-      productDeploymentMode: "cloud",
-    })
 
-    const credential = turnCredentials.mint({ sessionId: "s_1", subject: "user_sub_1", orgId: "org_1" })
-    turnCredentials.run(credential, () => publish(runtime, completedTurn({ sessionId: "s_1" })))
-    await vi.waitFor(() => expect(recorded).toHaveLength(1))
-
-    const event = captured.only(LLM_TURN_COMPLETED)[0]
-    expect(event).toBeDefined()
-    expect(event!.properties).toMatchObject({
-      input_tokens: FAKE_PROVIDER_USAGE.input,
-      output_tokens: FAKE_PROVIDER_USAGE.output,
-      reasoning_tokens: FAKE_PROVIDER_USAGE.reasoning,
-      cache_read_tokens: FAKE_PROVIDER_USAGE.cache.read,
-      cache_write_tokens: FAKE_PROVIDER_USAGE.cache.write,
-      session_id: "s_1",
-      harness: "pi",
-      provider_id: "anthropic",
-      model_id: "claude-sonnet-5",
-      turn_status: "ok",
-      latency_ms: 2_500,
-    })
-
-    // Product plane: the turn is attributed to the caller that authorized it.
-    expect(event!.distinctId).toBe("user_sub_1")
-    expect(event!.properties).toMatchObject({
-      org_id: "org_1",
-      user_id: "user_sub_1",
-      surface: "session",
-      deployment_mode: "cloud",
-      $groups: { org: "org_1" },
-    })
-
-    // Dual-write: the authoritative row carries the same numbers.
-    expect(recorded[0]).toMatchObject({
-      org_id: "org_1",
-      user_id: "user_sub_1",
-      input_tokens: FAKE_PROVIDER_USAGE.input,
-      output_tokens: FAKE_PROVIDER_USAGE.output,
-      reasoning_tokens: FAKE_PROVIDER_USAGE.reasoning,
-      cache_read_tokens: FAKE_PROVIDER_USAGE.cache.read,
-      cache_write_tokens: FAKE_PROVIDER_USAGE.cache.write,
-    })
-  })
-
-  test("retains the verified turn identity when later lifecycle events run outside its async scope", async () => {
-    const captured = captureSink()
-    const turnCredentials = createConnectionTurnCredentials()
-    const recorded: Array<TurnUsageRevision & { org_id: string; user_id: string }> = []
-    const runtime = createCentralSessionRuntime(services(captured.sink), {
-      turnCredentials,
-      usageLedger: {
-        recordLlmTurn: async () => ({ activated: false }),
-        recordTurnUsageRevision: async (fact) => {
-          recorded.push(fact)
-          return { status: "accepted", activated: false }
-        },
-      },
-    })
-    const info = buildAssistantMessage({
-      id: "msg-scope", sessionID: "session-scope", parentID: "user-scope", agent: "build",
-      model: { providerID: "anthropic", modelID: "claude-sonnet-5" }, directory: "/w", created: 1_000,
-    })
-    const credential = turnCredentials.mint({ sessionId: "session-scope", subject: "user-scope", orgId: "org-scope" })
-
-    turnCredentials.run(credential, () => runtime.publishGlobal({ directory: "/w", payload: messageUpdated(info) }))
-    runtime.publishGlobal({
-      directory: "/w",
-      payload: sessionUsage({
-        sessionID: "session-scope", messageID: "msg-scope", contextSize: 100, contextUsed: 10,
-        observation: { kind: "cumulative", tokens: FAKE_PROVIDER_USAGE },
-      }),
-    })
-    runtime.publishGlobal({ directory: "/w", payload: messageCompleted("session-scope", "msg-scope") })
-    await runtime.flushUsage()
-    await vi.waitFor(() => expect(recorded).toHaveLength(1))
-
-    expect(recorded[0]).toMatchObject({ org_id: "org-scope", user_id: "user-scope", messageId: "msg-scope" })
-  })
-
-  test("a turn with no verified tenant is still measured, on the ops plane", async () => {
-    const captured = captureSink()
-    const turnCredentials = createConnectionTurnCredentials()
-    const runtime = createCentralSessionRuntime(services(captured.sink), { turnCredentials })
-
-    // A personal-account sign-in: a subject, no org claim.
-    const credential = turnCredentials.mint({ sessionId: "s_2", subject: "user_sub_1" })
-    turnCredentials.run(credential, () => publish(runtime, completedTurn({ sessionId: "s_2" })))
-    await vi.waitFor(() => expect(captured.only(LLM_TURN_COMPLETED)).toHaveLength(1))
-
-    const event = captured.only(LLM_TURN_COMPLETED)[0]!
-    expect(event.distinctId).toBe("system")
-    expect(event.properties.system_reason).toBe("no_signed_tenant")
-    // No fabricated tenant: a placeholder org would corrupt every per-org
-    // aggregate downstream, which is the entire deliverable.
-    expect(event.properties.org_id).toBeUndefined()
-    expect(event.properties.input_tokens).toBe(FAKE_PROVIDER_USAGE.input)
-  })
 
   test("an in-flight assistant message and a user message are not turns", () => {
     expect(llmTurnRecord({ message: { role: "user", sessionID: "s", time: { completed: 1 } }, harness: "pi" }))
@@ -472,35 +316,3 @@ describe("sandbox lease events", () => {
     })).not.toThrow()
   })
 })
-
-describe("session_started is server-emitted", () => {
-  test("creating a central session emits it with the turn's tenant", async () => {
-    const captured = captureSink()
-    const turnCredentials = createConnectionTurnCredentials()
-    const runtime = createCentralSessionRuntime(services(captured.sink), {
-      turnCredentials,
-      productDeploymentMode: "cloud",
-    })
-
-    const credential = turnCredentials.mint({ sessionId: "seed", subject: "user_sub_1", orgId: "org_1" })
-    await turnCredentials.run(credential, () => runtime.createHybridSession({ title: "T" }))
-
-    const event = captured.only(SESSION_STARTED)[0]
-    expect(event).toBeDefined()
-    expect(event!.distinctId).toBe("user_sub_1")
-    expect(event!.properties).toMatchObject({ harness: "pi", host: "central", org_id: "org_1" })
-  })
-})
-
-/**
- * The compat-event ingress the message route calls once a turn's assistant
- * message is final (`session-core.ts` publishes `messageUpdated(assistant)`
- * there). Driving the real ingress is what makes this an integration test
- * rather than a unit test of the builders.
- */
-function publish(
-  runtime: ReturnType<typeof createCentralSessionRuntime>,
-  event: ReturnType<typeof completedTurn>,
-) {
-  runtime.publishGlobal(event as never)
-}

@@ -116,10 +116,10 @@ describe("harness hydrator", () => {
     })
   })
 
-  test("reads central session config without inventing workspace runtime backing", async () => {
+  test("reads native Pi config from its machine runtime", async () => {
     const subject = createSubject({
       local: false,
-      workspaceRuntime: false,
+      workspaceRuntime: true,
       sessionConfig: { harness: { id: "pi", access: "native" }, model: { modelID: "default" } },
     })
 
@@ -127,9 +127,9 @@ describe("harness hydrator", () => {
       directory: "/repo",
       sessionId: "ses_pi",
       sessionRef: {
-        host: "central",
+        host: "workspace",
         sessionId: "ses_pi",
-        toolSandbox: { kind: "virtual" },
+        toolSandbox: { kind: "local", cwd: "/repo" },
         harness: NATIVE_PI,
       },
     })).resolves.toMatchObject({ type: NATIVE_PI, model: "default", ready: true })
@@ -240,9 +240,9 @@ describe("harness hydrator", () => {
       directory: "/repo",
       sessionId: "ses_1",
       sessionRef: {
-        host: "central",
+        host: "workspace",
         sessionId: "ses_1",
-        toolSandbox: { kind: "virtual" },
+        toolSandbox: { kind: "local", cwd: "/repo" },
         harness: NATIVE_CODEX,
       },
     }
@@ -273,9 +273,9 @@ describe("harness hydrator", () => {
       directory: "/repo",
       sessionId: "ses_1",
       sessionRef: {
-        host: "central",
+        host: "workspace",
         sessionId: "ses_1",
-        toolSandbox: { kind: "virtual" },
+        toolSandbox: { kind: "local", cwd: "/repo" },
         harness: NATIVE_CODEX,
       },
     }
@@ -301,9 +301,9 @@ describe("harness hydrator", () => {
       directory: "/repo",
       sessionId: "ses_1",
       sessionRef: {
-        host: "central",
+        host: "workspace",
         sessionId: "ses_1",
-        toolSandbox: { kind: "virtual" },
+        toolSandbox: { kind: "local", cwd: "/repo" },
         harness: NATIVE_PI,
       },
     })
@@ -314,7 +314,7 @@ describe("harness hydrator", () => {
       "seed:scope",
       "apply:pi:default",
     ])
-    expect(subject.cache.seen.get("scope")).toContain("\ncentral\n")
+    expect(subject.cache.seen.get("scope")).toContain("\nworkspace\n")
     expect(subject.cache.seen.get("scope")).toEndWith(`\n${JSON.stringify(NATIVE_PI)}`)
   })
 

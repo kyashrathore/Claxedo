@@ -18,8 +18,8 @@ export type ChannelRuntime = {
     externalUserId: string
     workspaceId?: string
   }): Promise<{ sessionId: string; appUrl?: string; workspaceRef?: string }>
-  sendMessage(input: { sessionId: string; text: string; channel: ChannelId; externalUserId: string }): AsyncIterable<unknown>
-  abortSession(input: { sessionId: string }): Promise<{ ok: boolean; status: string; message?: string }>
+  sendMessage(input: { sessionId: string; text: string; channel: ChannelId; externalUserId: string; threadKey: string }): AsyncIterable<unknown>
+  abortSession(input: { sessionId: string; channel: ChannelId; externalUserId: string; threadKey: string }): Promise<{ ok: boolean; status: string; message?: string }>
 }
 
 export type SessionResolver = {

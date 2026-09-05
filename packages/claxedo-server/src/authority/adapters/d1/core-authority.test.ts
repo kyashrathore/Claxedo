@@ -402,12 +402,24 @@ describe("composed Better Auth + D1 authority", () => {
         action: "read",
       }),
     ).toEqual({ actorId: bob.principal!.actorId, actorKind: "human" })
+    const channelIdentity = { channel: "telegram", externalUserId: "telegram-user-7", threadKey: "telegram:thread-1" }
+    await expect(authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")).rejects.toMatchObject({ status: 403 })
+    await authority.addOrganizationMember(alice, { orgId: "org_channels", userId: bob.principal!.userId, role: "admin" })
+    const access = await authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")
+    expect(access).toMatchObject({ actorId: bob.principal!.actorId, orgId: "org_channels" })
+    const tokenScope = { jti: "channel-token", workspaceId: "ws_channels", hostId: "channel-host", actorId: access.actorId, actorKind: access.actorKind, role: access.role, expiresAt: Date.now() + 600_000 }
+    await expect(authority.recordChannelRuntimeAccessToken(channelIdentity, { ...tokenScope, actorId: alice.principal!.actorId })).rejects.toMatchObject({ status: 403 })
+    await authority.recordChannelRuntimeAccessToken(channelIdentity, tokenScope)
+    await expect(authority.reserveRuntimeSession({ actorId: access.actorId, actorKind: "human", principalKind: "user" }, { operationId: "channel-register", sessionId: "channel-session", workspaceId: "ws_channels", kind: "create" })).resolves.toMatchObject({ state: "reserved", sessionId: "channel-session" })
     expect(
       await authority.revokeChannelIdentity(bob, {
         channel: "telegram",
         externalUserId: "telegram-user-7",
       }),
     ).toEqual({ revoked: true })
+    await expect(authority.resolveChannelMachineAccess(channelIdentity, "ws_channels")).rejects.toMatchObject({ status: 403 })
+    await expect(authority.recordChannelRuntimeAccessToken(channelIdentity, { ...tokenScope, jti: "after-revoke" })).rejects.toMatchObject({ status: 403 })
+
     expect(
       await authority.revokeChannelIdentity(bob, {
         channel: "telegram",

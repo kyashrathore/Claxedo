@@ -4,7 +4,7 @@ import {
   isUserHostedWorkspaceDirectory,
   isWorkspaceIdRef,
 } from "@/platform/identity/legacy-resolver"
-import { centralSessionRef, localSessionRef, sessionRefForWorkspaceSession } from "@/platform/identity/session-ref"
+import { localSessionRef, sessionRefForWorkspaceSession } from "@/platform/identity/session-ref"
 import {
   createWorkspaceRuntimeRequest,
   isLoopbackHttpUrl,
@@ -571,12 +571,6 @@ describe("workspace runtime request", () => {
 })
 
 describe("resolveRuntimeTarget", () => {
-  test("keeps central session refs on the central control plane", async () => {
-    await expect(resolveRuntimeTarget({
-      serverUrl: "https://control.example.test",
-      sessionRef: centralSessionRef({ sessionId: "ses_central" }),
-    })).resolves.toBeUndefined()
-  })
 
   test("prefers explicit session ref backing over directory sniffing", async () => {
     await expect(resolveRuntimeTarget({

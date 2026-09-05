@@ -91,7 +91,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
     // local/workspace runtime classification, but harnessSessionFetch maps its
     // session resource request through the central runtime API.
     if (
-      params?.sessionRef?.host !== "central" &&
       !input.runtime.useLocalHarnessConfig(params) &&
       !(known?.workspaceRuntime ?? input.workspaceRuntime(params))
     ) return undefined

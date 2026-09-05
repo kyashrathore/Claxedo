@@ -35,14 +35,14 @@ afterAll(async () => {
 })
 
 describe("control-plane Pi catalog", () => {
-  test("serves actual models and only the signed tenant's connected credentials", async () => {
+  test("serves only the signed tenant's connected providers; machine runtime owns model discovery", async () => {
     const response = await app.request("/providers?nativeHarness=pi&workspaceId=org_b", { headers: { authorization: "Bearer org_a" } })
     expect(response.status).toBe(200)
     const body = await response.json()
     expect(body.connected).toEqual(["openai"])
     const openai = body.all.find((provider: { id: string }) => provider.id === "openai")
     expect(openai.source).toBe("api")
-    expect(openai.models["gpt-4.1"].id).toBe("gpt-4.1")
+    expect(openai.models).toEqual({})
     expect(JSON.stringify(body)).not.toContain("test-key")
     const other = await app.request("/providers?nativeHarness=pi", { headers: { authorization: "Bearer org_b" } })
     expect((await other.json()).connected).toEqual(["anthropic"])

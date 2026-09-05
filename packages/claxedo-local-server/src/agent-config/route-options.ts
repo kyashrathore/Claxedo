@@ -6,5 +6,4 @@ export type AgentConfigRouteOptions = {
   services?: ControlPlaneServicesContract
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
-  invalidateCentralSession?: (sessionId: string) => void
 }

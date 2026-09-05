@@ -43,7 +43,7 @@ function driverStub(capture: (host: SdkRuntimeDriverHost) => void): (host: SdkRu
       type: "codex",
       setAuth() {},
       applyConfig() {},
-      createAgentSession: async () => "thread-1",
+      createAgentSession: async () => ({ id: "thread-1" }),
       createRuntime() {
         const snapshot = () => runtimeSnapshot({ harness: "codex", threadId: "thread-1", adapterState: {} })
         return { ingest: () => ({ state: {}, events: [], snapshot: snapshot() }), snapshot }

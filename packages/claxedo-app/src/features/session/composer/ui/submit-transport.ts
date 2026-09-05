@@ -12,7 +12,6 @@ import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import { setSessionConfigRawQueryData } from "../../store/session-config-query-cache"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
-import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {
   centralTransportForServer,
@@ -139,20 +138,8 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     }).sdkFetch
   }
 
-  const usesWorkspaceRuntimeSession = (dir: SubmitDirectory) =>
-    sessionRef()?.host === "central" || runtimeTransport(dir).workspaceRuntimeSession
-
-  const centralSessionFetch = (): typeof fetch =>
-    ((resource: RequestInfo | URL, init?: RequestInit) => {
-      const current = new URL(resource instanceof Request ? resource.url : resource.toString(), input.serverUrl())
-      current.pathname = centralRuntimePath(current.pathname, sessionRef())
-      return input.request(resource instanceof Request ? new Request(current, resource) : current, init)
-    }) as typeof fetch
-
-  const sessionFetch = (dir: SubmitDirectory) =>
-    sessionRef()?.host === "central"
-      ? centralSessionFetch()
-      : usesWorkspaceRuntimeSession(dir) ? runtimeSessionFetch(dir) : localSessionFetch(dir)
+  const usesWorkspaceRuntimeSession = (dir: SubmitDirectory) => runtimeTransport(dir).workspaceRuntimeSession
+  const sessionFetch = (dir: SubmitDirectory) => usesWorkspaceRuntimeSession(dir) ? runtimeSessionFetch(dir) : localSessionFetch(dir)
 
   const sessionRequest = (dir: SubmitDirectory, path: string, init?: RequestInit) =>
     sessionFetch(dir)(usesWorkspaceRuntimeSession(dir) ? path : `${input.serverUrl()}${path}`, init)

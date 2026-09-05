@@ -44,7 +44,6 @@ import {
   createRouteIntentAdapter,
   isRouteIntentClosed,
   markRouteIntentClosed,
-  sessionInventoryCentralSession,
   sessionInventoryTarget,
 } from "./route-intent"
 import {
@@ -60,10 +59,8 @@ import {
   routeCachedWorkspaceSessionCandidate,
   routeKnownSessionDirectory,
   routeSessionMetaIsArchived,
-  routeSessionMetaIsCentral,
   routeSessionDirectory,
   routeLifecycleSessionRef,
-  routeCentralSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
   routeSessionPaneTitle,
@@ -418,7 +415,6 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           }),
         }
       }
-      if (sessionInventoryCentralSession(id, sessionInventory())) return
       const cached = cachedRouteSessionTarget(id)
       if (cached) return cached
       const session = await fetchRouteSessionMeta({
@@ -428,7 +424,6 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
       if (routeSessionMetaIsArchived(session)) {
         return { unavailable: true as const, redirect: unavailableSessionRedirect(session) }
       }
-      if (routeSessionMetaIsCentral(session)) return
       const sessionWorkspaceId =
         typeof session?.workspaceID === "string"
           ? session.workspaceID
@@ -495,7 +490,6 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
   const routeLocalSessionResolutionMisses = new Set<string>()
   const routeSessionMetaLookups = new Set<string>()
   const routeSessionMetaLookupDone = new Set<string>()
-  const routeCentralSessionMeta = new Map<string, SessionRef>()
   const [routeSessionMetaLookupVersion, setRouteSessionMetaLookupVersion] = createSignal(0)
   const markRouteSessionMetaLookupChanged = () => setRouteSessionMetaLookupVersion((version) => version + 1)
   const cachedDirectRouteSessionTarget = (sessionId: string, directories: string[]) => {
@@ -550,18 +544,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           navigate(unavailableSessionRedirect(session), { replace: true })
           return
         }
-        if (routeSessionMetaIsCentral(session)) {
-          const sessionRef = routeCentralSessionRef(sessionId, session)!
-          routeCentralSessionMeta.set(sessionId, sessionRef)
-          if (isRouteIntentClosed({ sessionId })) return
-          state.layout.openCentralSession(
-            sessionId,
-            typeof session?.title === "string" ? session.title : "Session",
-            { authoritative: true, sessionRef },
-          )
-          return
-        }
-        routeCentralSessionMeta.delete(sessionId)
+
         const workspaceId =
           typeof session?.workspaceID === "string"
             ? session.workspaceID
@@ -711,33 +694,11 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
         if (suppressedByFastSessionSwitch(sessionId)) return
         if (isRouteIntentClosed({ sessionId })) return
         const surface = activeSurface()
-        const centralRef = routeCentralSessionMeta.get(sessionId)
-        if (centralRef) {
-          if (activeSurfaceIsDirectSessionChild(sessionId, surface)) return
-          if (
-            surface?.type === "session" &&
-            surface.sessionId === sessionId &&
-            surface.content?.type === "session" &&
-            sameSessionRef(surface.content.sessionRef, centralRef)
-          ) return
-          state.layout.openCentralSession(sessionId, routeSessionPaneTitle(surface), {
-            authoritative: true,
-            sessionRef: centralRef,
-          })
-          return
-        }
+
         const inventory = sessionInventory()
         const target = sessionInventoryTarget(sessionId, inventory)
-        const centralInventorySession = sessionInventoryCentralSession(sessionId, inventory)
         const directories = routeResolutionDirectories()
-        if (centralInventorySession) {
-          resolveRouteSessionFromMeta(sessionId, directories)
-          state.layout.openCentralSession(sessionId, centralInventorySession.title || "Session", {
-            authoritative: true,
-            sessionRef: routeCentralSessionRef(sessionId, centralInventorySession),
-          })
-          return
-        }
+
         const cachedTarget = target ? undefined : cachedDirectRouteSessionTarget(sessionId, directories)
         const matchesActiveWorkspaceSurface =
           !!routeDirectory() &&
@@ -787,7 +748,7 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
           })
           return
         }
-        state.layout.openCentralSession(sessionId, "Session")
+        state.layout.openSessionById(sessionId, "Session")
       },
     ),
   )

@@ -209,7 +209,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
       observation.update({ lifecycle: "ready" })
       this.agents.set(agent.agentId, { directory: input.directory, agent, observation })
       this.processError = null
-      return agent.agentId
+      return { id: agent.agentId }
     } catch (cause) {
       observation.exit({ reason: "error" })
       throw cause

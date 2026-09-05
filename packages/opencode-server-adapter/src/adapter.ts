@@ -456,7 +456,6 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   private assertBinding(binding: AgentExecutionBinding) {
     try { assertAgentExecutionBinding(binding) } catch { throw this.error("invalid_binding", "OpenCode operation requires a complete execution binding") }
-    if (binding.scope === "central") throw this.error("invalid_binding", "OpenCode connections require a workspace execution binding")
     if (binding.connectionId !== `connection:${this.config.connectionId}`) throw this.error("invalid_binding", "Execution binding belongs to a different connection")
     this.assertSourceDirectory(binding.directory)
   }

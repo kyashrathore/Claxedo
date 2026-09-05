@@ -92,18 +92,18 @@ describe("managed document session hydration", () => {
     await fs.rm(root, { recursive: true, force: true })
   })
 
-  test("fails virtual and cloud placements closed while resolving local workspaces", async () => {
+  test("resolves local machines and refuses missing or cloud workspace placement", async () => {
     const resolveWorkspace = async (workspaceId: string) => workspaceId === "local"
       ? { kind: "local", directory: "/repo" }
       : { kind: "cloud", directory: "/workspace" }
     await expect(reachableLocalSessionWorkspace({
-      host: "central", toolSandbox: { kind: "virtual" }, resolveWorkspace,
+      host: "workspace", resolveWorkspace,
     })).resolves.toBeUndefined()
     await expect(reachableLocalSessionWorkspace({
-      host: "central", toolSandbox: { kind: "workspace-runtime", workspaceId: "cloud" }, resolveWorkspace,
+      host: "workspace", workspaceId: "cloud", directory: "/workspace", resolveWorkspace,
     })).resolves.toBeUndefined()
     await expect(reachableLocalSessionWorkspace({
-      host: "central", toolSandbox: { kind: "workspace-runtime", workspaceId: "local" }, resolveWorkspace,
+      host: "workspace", workspaceId: "local", resolveWorkspace,
     })).resolves.toEqual({ workspaceId: "local", root: "/repo" })
   })
 

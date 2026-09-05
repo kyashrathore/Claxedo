@@ -258,7 +258,7 @@ describe("submit transport adapter", () => {
     ])
   })
 
-  test("central session config reads use the authoritative control route", async () => {
+  test("native Pi config reads use the machine runtime", async () => {
     const centralCalls: string[] = []
     const adapter = createSubmitTransportAdapter({
       serverUrl: () => "http://127.0.0.1:3001",
@@ -267,9 +267,9 @@ describe("submit transport adapter", () => {
       workspaceKind: () => undefined,
       sessionRef: () => ({
         sessionId: "session-central",
-        host: "central",
+        host: "workspace",
         workspaceId: "ws_1",
-        toolSandbox: { kind: "virtual" },
+        toolSandbox: { kind: "local", cwd: "/repo/main" },
       }),
       request: async (input, init) => {
         const request = input instanceof Request ? input : new Request(String(input), init)
@@ -299,7 +299,7 @@ describe("submit transport adapter", () => {
       }),
     ).resolves.toMatchObject({ harness: { id: "pi" } })
     expect(centralCalls).toEqual([
-      "GET http://127.0.0.1:3001/api/control/session/session-central/config?directory=%2Frepo%2Fmain",
+      "GET http://127.0.0.1:3001/workspaces/ws_1/session/session-central/config",
     ])
     expect(toasts).toEqual([])
   })

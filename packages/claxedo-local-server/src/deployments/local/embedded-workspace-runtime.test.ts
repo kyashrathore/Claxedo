@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, test } from "vitest"
+import { afterAll, beforeAll, afterEach, beforeEach, describe, expect, test } from "vitest"
+import { installFakePiRpc } from "../../../../agent-sdk-runtime/src/test-utils/fake-pi-rpc.mjs"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -525,55 +526,6 @@ describe("embedded workspace runtime", () => {
     }
   })
 
-  test("passes the configured Pi model backend into embedded workspace sessions", async () => {
-    const { root, project } = await makeWorkspaceRoot("claxedo-embedded-pi-backend-")
-    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-
-    try {
-      const resolved: unknown[] = []
-      configureEmbeddedWorkspaceRuntime({
-        piModelBackend: (input) => {
-          resolved.push(input)
-          return undefined
-        },
-      })
-      const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_pi_backend", project), { config: "skip" })
-      const query = `directory=${encodeURIComponent(project)}&nativeHarness=pi`
-      const created = await runtime.app.request(`http://localhost/session?${query}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "Pi backend" }),
-      })
-      const session = await created.json() as { id: string }
-      const configured = await runtime.app.request(`http://localhost/session/${session.id}/config?${query}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ model: { providerID: "openai-codex", modelID: "gpt-5.5" } }),
-      })
-      const sent = await runtime.app.request(`http://localhost/session/${session.id}/message?${query}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          parts: [{ type: "text", text: "hello" }],
-          model: { providerID: "openai-codex", modelID: "gpt-5.5" },
-        }),
-      })
-
-      expect(created.status).toBe(201)
-      expect(configured.status).toBe(200)
-      expect(sent.status).toBe(200)
-      expect(resolved).toEqual([{
-        sessionId: session.id,
-        model: { providerID: "openai-codex", modelID: "gpt-5.5" },
-      }])
-    } finally {
-      configureEmbeddedWorkspaceRuntime({})
-      await shutdownTestRuntimes()
-      await removeWorkspaceRoot(root)
-    }
-  })
-
-
   test("projects canonical runtime title events without publishing conversation events to the control plane", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
@@ -666,4 +618,15 @@ describe("embedded runtime route ownership", () => {
       await removeWorkspaceRoot(root)
     }
   })
+})
+
+// These exercise host authorization/projection with a deterministic native wire
+// peer. The workspace HTTP proof separately uses the real pinned Pi binary.
+const originalPiExecutable = process.env.PI_EXECUTABLE
+let piFixture: Awaited<ReturnType<typeof installFakePiRpc>>
+beforeAll(async () => { piFixture = await installFakePiRpc(); process.env.PI_EXECUTABLE = piFixture.binary })
+afterAll(async () => {
+  if (originalPiExecutable === undefined) delete process.env.PI_EXECUTABLE
+  else process.env.PI_EXECUTABLE = originalPiExecutable
+  await piFixture.dispose()
 })

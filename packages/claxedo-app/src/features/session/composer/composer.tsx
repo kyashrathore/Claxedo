@@ -224,7 +224,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     worktree: props.newSessionWorktree,
   })
   const submitSessionDirectory = () => {
-    if (props.sessionRef?.()?.host === "central") return resolvedSessionDirectory() ?? sdk.directory
     const routeRef = sessionWorkspaceRuntimeRef({ directory: sessionParams.directory() })
     if (routeRef) return routeRef.workspaceId
     const directory = resolvedSessionDirectory() ?? sdk.directory
@@ -688,7 +687,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       active={() => sessionParams.active?.() ?? true}
       controlStyle={control}
       sessionLocked={() => harnessSessionId() !== undefined && harnessSessionId() !== "new"}
-      modelLocked={hasUserPrompt}
       showAgentSelector={toolbarState.showAgentSelector}
       agentNames={toolbarState.agentNames}
       currentAgentName={() => toolbarState.currentAgent()?.name ?? ""}

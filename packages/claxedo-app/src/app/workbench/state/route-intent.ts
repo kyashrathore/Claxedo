@@ -104,7 +104,7 @@ export type UnavailableSessionTarget = {
 type SessionRouteResolution =
   | { state: "resolving" }
   | { state: "workspace"; target: InventorySessionTarget }
-  | { state: "central" }
+  | { state: "unresolved" }
 
 export type RouteIntentStateApi = Pick<ClaxedoStateApi, "wb" | "meta" | "layout" | "workspacePanel" | "terminal">
 
@@ -133,8 +133,6 @@ function workspaceRootBacking(workspaceId: string, inventory: RouteIntentInvento
 }
 
 export function sessionInventoryTarget(sessionId: string, inventory: RouteIntentInventory) {
-  const central = sessionInventoryCentralSession(sessionId, inventory)
-  if (central) return
 
   const workspaceMatches = Object.entries(inventory.byWorkspace)
     .filter(([, group]) => group.sessions?.some((session) => session.id === sessionId && !session.archived))
@@ -212,17 +210,6 @@ export function sessionInventoryTarget(sessionId: string, inventory: RouteIntent
   return matches[0]
 }
 
-export function sessionInventoryCentralSession(sessionId: string, inventory: RouteIntentInventory) {
-  return [
-    ...(inventory.global ?? []),
-    ...Object.values(inventory.byWorkspace).flatMap((group) => group.sessions ?? []),
-    ...Object.values(inventory.byProject).flatMap((sessions) => sessions),
-  ].find((session) =>
-    !session.archived &&
-    session.id === sessionId &&
-    session.sessionRef?.startsWith("central:") === true
-  )
-}
 
 function resolvedSessionTarget(sessionId: string, target: ResolvedSessionTarget): InventorySessionTarget {
   return {
@@ -242,7 +229,7 @@ function resolvedSessionTarget(sessionId: string, target: ResolvedSessionTarget)
 function resolveCanonicalSessionRoute(sessionId: string, inventory: RouteIntentInventory | undefined): SessionRouteResolution {
   const target = inventory ? sessionInventoryTarget(sessionId, inventory) : undefined
   if (target) return { state: "workspace", target }
-  if (inventory?.loaded) return { state: "central" }
+  if (inventory?.loaded) return { state: "unresolved" }
   return { state: "resolving" }
 }
 
@@ -300,8 +287,8 @@ export function createRouteIntentAdapter(input: {
   const contentMatchesSessionRoute = (content: ContentMeta, sessionId: string) =>
     content.type === "session" &&
     contentSessionRef(content)?.sessionId === sessionId
-  const existingSessionRouteContent = (sessionId: string, host: "workspace" | "central") =>
-    findContent((m) => contentMatchesSessionRoute(m, sessionId) && contentSessionRef(m)?.host === host)
+  const existingSessionRouteContent = (sessionId: string) =>
+    findContent((m) => contentMatchesSessionRoute(m, sessionId))
   const inventorySessionTarget = (sessionId: string) => {
     const inventory = input.inventory?.()
     if (!inventory) return
@@ -365,9 +352,9 @@ export function createRouteIntentAdapter(input: {
           return
         }
         if (!input.inventory?.()?.loaded) return
-        const nextId = state.layout.openCentralSession(sessionId, title || "Session")
+        const nextId = state.layout.openSessionById(sessionId, title || "Session")
         if (focusedContentId() !== nextId) activate(nextId)
-        log("route intent resolved central decision", {
+        log("route intent unresolved session decision", {
           sessionId,
           contentId: nextId,
           focusedContentId: focusedContentId(),
@@ -427,7 +414,7 @@ export function createRouteIntentAdapter(input: {
     if (isRouteIntentClosed({ workspaceId, sessionId: intent.sessionId })) return
     if (!workspaceId) {
       if (!intent.sessionId) return
-      const existing = existingSessionRouteContent(intent.sessionId, "workspace")
+      const existing = existingSessionRouteContent(intent.sessionId)
       if (existing?.id) {
         if (focusedContentId() !== existing.id) activate(existing.id)
         log("route intent existing session decision", {
@@ -489,19 +476,9 @@ export function createRouteIntentAdapter(input: {
         return
       }
       if (tryResolveSession(intent.sessionId, intent.sessionTitle)) return
-      const central = existingSessionRouteContent(intent.sessionId, "central")
-      if (central?.id) {
-        if (focusedContentId() !== central.id) activate(central.id)
-        log("route intent existing central session decision", {
-          sessionId: intent.sessionId,
-          contentId: central.id,
-          focusedContentId: focusedContentId(),
-        })
-        return
-      }
-      const nextId = state.layout.openCentralSession(intent.sessionId, intent.sessionTitle || "Session")
+      const nextId = state.layout.openSessionById(intent.sessionId, intent.sessionTitle || "Session")
       if (focusedContentId() !== nextId) activate(nextId)
-      log("route intent central decision", {
+      log("route intent unresolved session decision", {
         sessionId: intent.sessionId,
         contentId: nextId,
         focusedContentId: focusedContentId(),

@@ -37,6 +37,9 @@
  * and "zero requests after idle" without touching the wire itself.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
+import fs from "node:fs/promises"
+import os from "node:os"
+import path from "node:path"
 import type {
   ContentBlock,
   Message,
@@ -77,6 +80,8 @@ export type ScriptedModelServer = {
   url: string
   /** `${url}/v1` — what OpenAI-shaped provider configs want as baseURL. */
   v1Url: string
+  /** Native Pi profile with model overrides pointing at this server. */
+  piEnv: { PI_CODING_AGENT_DIR: string; OPENAI_API_KEY: string }
   port: number
   requests: ScriptedModelRequest[]
   /** Requests per dialect since start (or last resetCounts). */
@@ -226,10 +231,21 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   const address = server.address()
   if (!address || typeof address !== "object") throw new Error("scripted model server failed to bind")
   const url = `http://127.0.0.1:${address.port}`
+  const piAgentDir = await fs.mkdtemp(path.join(os.tmpdir(), "claxedo-scripted-pi-"))
+  await fs.writeFile(path.join(piAgentDir, "models.json"), JSON.stringify({
+    providers: { openai: {
+      baseUrl: `${url}/v1`, api: "openai-completions", apiKey: "test-key",
+      models: [{ id: "gpt-4.1", input: ["text", "image"], reasoning: false, contextWindow: 32000, maxTokens: 4096 }],
+    } },
+  }))
+  await fs.writeFile(path.join(piAgentDir, "settings.json"), JSON.stringify({
+    defaultProvider: "openai", defaultModel: "gpt-4.1",
+  }))
 
   return {
     url,
     v1Url: `${url}/v1`,
+    piEnv: { PI_CODING_AGENT_DIR: piAgentDir, OPENAI_API_KEY: "test-key" },
     port: address.port,
     requests,
     counts: () => ({ ...counts }),
@@ -247,7 +263,10 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
     setTextStreamPacing: (pacing) => {
       textStreamPacing = pacing
     },
-    close: () => closeAll(server),
+    close: async () => {
+      await closeAll(server)
+      await fs.rm(piAgentDir, { recursive: true, force: true })
+    },
   }
 }
 
@@ -328,17 +347,6 @@ wire_api = "responses"
 env_key = "OPENAI_API_KEY"
 requires_openai_auth = false
 `
-}
-
-/** Redirects native Pi to the scripted HTTP endpoint without reading an ambient backend selection. */
-export function piScriptedEnv(v1Url: string) {
-  return {
-    OPENAI_BASE_URL: v1Url,
-    OPENAI_API_KEY: "test-key",
-    CLAXEDO_PI_MODEL_BACKEND: "",
-    CLAXEDO_PI_MODEL: "",
-    CLAXEDO_CF_KV_URL: "",
-  }
 }
 
 /** Isolates Claude CLI settings and redirects its actual provider traffic to the scripted server. */

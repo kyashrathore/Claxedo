@@ -246,7 +246,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   private currentEffort: string | undefined
 
   async createAgentSession() {
-    return `${CLAUDE_PENDING_PREFIX}${randomUUID()}`
+    return { id: `${CLAUDE_PENDING_PREFIX}${randomUUID()}` }
   }
 
   deleteAgentSession(sessionId: string) {

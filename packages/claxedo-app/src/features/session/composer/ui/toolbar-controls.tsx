@@ -55,7 +55,6 @@ export function PromptToolbarControls(props: {
   active: Accessor<boolean>
   controlStyle: Accessor<JSX.CSSProperties>
   sessionLocked: Accessor<boolean>
-  modelLocked: Accessor<boolean>
   showAgentSelector: Accessor<boolean>
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
@@ -140,11 +139,6 @@ export function PromptToolbarControls(props: {
               active={props.active()}
               triggerStyle={props.controlStyle()}
               sessionLocked={props.sessionLocked()}
-              modelLocked={props.modelLocked()}
-              providerModel={props.model}
-              providerVariants={props.variants}
-              providerVariant={props.currentVariant}
-              onProviderVariantSelect={props.onVariantSelect}
             />
           )}
         </Show>

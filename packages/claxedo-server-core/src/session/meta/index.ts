@@ -9,7 +9,6 @@ import type {
   SessionAttachment,
   SessionMeta,
   SessionMetaNavigationListInput,
-  SessionToolSandbox,
 } from "./types"
 import {
   host,
@@ -17,7 +16,6 @@ import {
   now,
   rec,
   root,
-  serializeToolSandbox,
   sessionMetaSyncRow,
   storedSessionRef,
   txt,
@@ -34,7 +32,6 @@ export type {
   SessionAttachment,
   SessionMeta,
   SessionMetaNavigationListInput,
-  SessionToolSandbox,
 } from "./types"
 export { parseSessionMeta } from "./shape"
 
@@ -53,13 +50,6 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
   await upsertRows(rows)
   if (!ws?.id) return
   const incoming = ids(rows.flatMap((item) => item?.session_ref ? [item.session_ref] : []))
-  // `host` is the authoritative discriminator, not the ref prefix or the null
-  // directory: `session/runtime.ts` writes central/hybrid Pi and hosted
-  // sessions with `host: "central"`, and `storedSessionRef` *derives* the
-  // `central:<id>` ref from that column while `directory: null` is a consequence
-  // of the same placement. Those sessions are not engine sessions, never appear
-  // in an engine snapshot, and were therefore swept — with their tags and
-  // attachments — by a sweep scoped to the workspace alone.
   const owned = ClaxedoDB.use((db) => db
     .select({
       session_ref: ClaxedoSessionMetaTable.session_ref,
@@ -68,7 +58,7 @@ export async function syncSessionMetas(ws: Workspace | undefined, input: unknown
     .from(ClaxedoSessionMetaTable)
     .where(eq(ClaxedoSessionMetaTable.workspace_id, ws.id))
     .all()
-    .filter((item) => host(item.host) !== "central")
+    .filter((item) => host(item.host) === "workspace")
     .map((item) => item.session_ref))
   // An empty snapshot is indistinguishable from "this engine has not listed its
   // sessions yet" — a restart, a race with the runtime's first apply, or a body
@@ -123,8 +113,7 @@ export async function putSessionMeta(
     ws?: Workspace
     workspaceID?: string | null
     directory?: string | null
-    host?: "central" | "workspace"
-    toolSandbox?: SessionToolSandbox | null
+    host?: "workspace"
     model?: { providerID: string; modelID: string } | null
     title?: string | null
     parentID?: string | null
@@ -139,19 +128,14 @@ export async function putSessionMeta(
   const stamp = now()
   ClaxedoDB.transaction((db) => {
     const prevByID = db.select().from(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_id, sessionID)).get()
+    if (prevByID && !host(prevByID.host)) throw new Error("Unsupported session metadata scope")
     const workspaceID = input.workspaceID === undefined
       ? input.ws?.id ?? prevByID?.workspace_id ?? null
       : input.workspaceID
+    if (input.host !== undefined && input.host !== "workspace") throw new Error("Unsupported session metadata scope")
     const hostValue = input.host ?? host(prevByID?.host) ?? "workspace"
     const directory = input.directory ?? input.ws?.directory ?? prevByID?.directory ?? null
-    // `Workspace.kind` is the authority, but most writers legitimately have no
-    // workspace to hand: `session/runtime.ts` puts central sessions by
-    // id/host/directory, and every tag- or title-only put (tab-sync, the
-    // HTTP tap, channel ingress) passes neither `ws` nor `workspaceID`. With no
-    // authority in the call, the stored ref *is* the record of the kind that
-    // produced it, so read the shape back rather than silently re-deriving a
-    // `workspace:` ref for a local workspace and re-keying the row on every
-    // other write.
+    // Preserve the registered workspace kind when changing title or tags.
     const workspaceKind = input.ws?.kind ?? (prevByID?.session_ref.startsWith("local:") ? "local" : undefined)
     const sessionRef = storedSessionRef({
       session_id: sessionID,
@@ -162,9 +146,7 @@ export async function putSessionMeta(
     })
     rekeySessionRef(db, { session_id: sessionID, workspace_id: workspaceID, session_ref: sessionRef })
     const prev = db.select().from(ClaxedoSessionMetaTable).where(eq(ClaxedoSessionMetaTable.session_ref, sessionRef)).get() ?? prevByID
-    const toolSandbox = input.toolSandbox === undefined
-      ? prev?.tool_sandbox ?? null
-      : serializeToolSandbox(input.toolSandbox)
+
     const modelProviderID = input.model === undefined ? prev?.model_provider_id ?? null : input.model?.providerID ?? null
     const modelID = input.model === undefined ? prev?.model_id ?? null : input.model?.modelID ?? null
     const title = input.title === undefined ? prev?.title ?? null : input.title
@@ -176,7 +158,6 @@ export async function putSessionMeta(
       || prev.project_id !== projectID
       || prev.host !== hostValue
       || prev.directory !== directory
-      || prev.tool_sandbox !== toolSandbox
       || prev.model_provider_id !== modelProviderID
       || prev.model_id !== modelID
       || prev.title !== title
@@ -197,7 +178,6 @@ export async function putSessionMeta(
       project_id: projectID,
       host: hostValue,
       directory,
-      tool_sandbox: toolSandbox,
       model_provider_id: modelProviderID,
       model_id: modelID,
       title,
@@ -213,7 +193,6 @@ export async function putSessionMeta(
         project_id: projectID,
         host: hostValue,
         directory,
-        tool_sandbox: toolSandbox,
         model_provider_id: modelProviderID,
         model_id: modelID,
         title,
@@ -454,7 +433,6 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
         project_id: item.project_id ?? prev?.project_id ?? null,
         host: item.host ?? host(prev?.host) ?? "workspace",
         directory: item.directory ?? prev?.directory ?? null,
-        tool_sandbox: item.tool_sandbox ?? prev?.tool_sandbox ?? null,
         model_provider_id: item.model_provider_id ?? prev?.model_provider_id ?? null,
         model_id: item.model_id ?? prev?.model_id ?? null,
         title: item.title ?? prev?.title ?? null,
@@ -470,7 +448,6 @@ async function upsertRows(rows: Array<ReturnType<typeof sessionMetaSyncRow>>) {
           project_id: item.project_id ?? prev?.project_id ?? null,
           host: item.host ?? host(prev?.host) ?? "workspace",
           directory: item.directory ?? prev?.directory ?? null,
-          tool_sandbox: item.tool_sandbox ?? prev?.tool_sandbox ?? null,
           model_provider_id: item.model_provider_id ?? prev?.model_provider_id ?? null,
           model_id: item.model_id ?? prev?.model_id ?? null,
           title: item.title ?? prev?.title ?? null,

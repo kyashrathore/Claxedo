@@ -100,7 +100,6 @@ export const PromptInputFrame: Component<{
   active: Accessor<boolean>
   controlStyle: Accessor<JSX.CSSProperties>
   sessionLocked: Accessor<boolean>
-  modelLocked: Accessor<boolean>
   showAgentSelector: Accessor<boolean>
   agentNames: Accessor<string[]>
   currentAgentName: Accessor<string>
@@ -373,7 +372,6 @@ export const PromptInputFrame: Component<{
           active={props.active}
           controlStyle={props.controlStyle}
           sessionLocked={props.sessionLocked}
-          modelLocked={props.modelLocked}
           showAgentSelector={props.showAgentSelector}
           agentNames={props.agentNames}
           currentAgentName={props.currentAgentName}

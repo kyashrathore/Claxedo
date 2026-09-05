@@ -656,7 +656,7 @@ function centralUsageFacts(value: unknown): { available: boolean; facts: TurnUsa
     "interrupted_by_steer",
     "process_lost",
   ])
-  const locations = new Set<TurnUsageRevision["location"]>(["local", "central", "cloud-workspace", "user-hosted"])
+  const locations = new Set<TurnUsageRevision["location"]>(["local", "cloud-workspace", "user-hosted"])
   const facts = rows.flatMap((raw): TurnUsageRevision[] => {
     if (!raw || typeof raw !== "object") return []
     const row = raw as Record<string, unknown>

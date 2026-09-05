@@ -5,7 +5,7 @@ import {
   ClaxedoSessionTagTable,
 } from "../meta.sql"
 import type { SessionAttachment, SessionMeta } from "./types"
-import { host, ids, root, toolSandbox } from "./shape"
+import { host, ids, root } from "./shape"
 
 type StoredSessionMeta = typeof ClaxedoSessionMetaTable.$inferSelect
 
@@ -80,6 +80,7 @@ function hydrateSessionRows(
   meta: StoredSessionMeta[],
   key: (item: StoredSessionMeta) => string,
 ) {
+  meta = meta.filter(item => host(item.host) === "workspace")
   const corrupt = meta.find((item) => Boolean(item.model_provider_id) !== Boolean(item.model_id))
   if (corrupt) throw new Error(`Session ${corrupt.session_id} has incomplete model configuration`)
   const refs = ids(meta.map((item) => item.session_ref))
@@ -103,9 +104,8 @@ function hydrateSessionRows(
         sessionID: item.session_id,
         ...(item.workspace_id ? { workspaceID: item.workspace_id } : {}),
         ...(item.project_id ? { projectID: item.project_id } : {}),
-        host: host(item.host) ?? "workspace",
+        host: "workspace" as const,
         ...(item.directory ? { directory: item.directory } : {}),
-        ...(toolSandbox(item.tool_sandbox) ? { toolSandbox: toolSandbox(item.tool_sandbox) } : {}),
         ...(item.model_provider_id && item.model_id
           ? { model: { providerID: item.model_provider_id, modelID: item.model_id } }
           : {}),

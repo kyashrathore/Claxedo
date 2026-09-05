@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createRoot, createSignal } from "solid-js"
 
-import { centralSessionRef } from "@/platform/identity/session-ref"
+import { localSessionRef } from "@/platform/identity/session-ref"
 import {
   admitPromptSubmission,
   initialPromptMachineState,
@@ -323,7 +323,7 @@ describe("prompt machine", () => {
 function existingSessionMode(sessionId: string) {
   return {
     kind: "session" as const,
-    ref: centralSessionRef({ sessionId })!,
+    ref: localSessionRef({ sessionId, cwd: "/repo" })!,
   }
 }
 

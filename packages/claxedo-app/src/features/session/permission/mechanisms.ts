@@ -108,19 +108,11 @@ export type PermissionMechanism =
    */
   | { kind: "cursor-local-agent-options" }
   /**
-   * `pi` — no policy surface, and none is needed.
-   *
-   * Pi's tools reach nothing real. `harnesses/pi/index.ts:176` defaults its
-   * session env to `createVirtualSessionEnv()` — `just-bash`, a simulated shell
-   * over an `InMemoryFs` — and `:303` records the placement as
-   * `toolSandbox: { kind: "virtual" }`. A command mutates a JavaScript object;
-   * there is no filesystem, process spawn or network to gate.
-   *
-   * The picker shows `SANDBOXED_NO_POLICY_REASON` and no options, the same shape
-   * a harness that could not start gets: an option that cannot change anything
-   * must not be offered.
+   * `pi` — the native RPC driver reports permissions as unsupported.
+   * Its file, shell and extension tools run on the selected machine.
+   * The picker explains that access and offers no unenforceable approval mode.
    */
-  | { kind: "sandboxed-no-policy" }
+  | { kind: "native-no-policy" }
   /**
    * `opencode` — the public embedded SDK asks per request.
    *
@@ -135,13 +127,13 @@ export const PERMISSION_MECHANISMS: Record<BuiltinHarnessId, PermissionMechanism
   claude: { kind: "claude-sdk-permission-mode" },
   codex: { kind: "codex-approval-policy" },
   cursor: { kind: "cursor-local-agent-options" },
-  pi: { kind: "sandboxed-no-policy" },
+  pi: { kind: "native-no-policy" },
   opencode: { kind: "opencode-sdk-request-permissions" },
 }
 
 /**
  * There is no generic `none` mechanism. A harness with no policy surface says
- * why it has none — `sandboxed-no-policy` names the reason — so a harness with a
+ * why it has none — `native-no-policy` names the reason — so a harness with a
  * surface nobody has looked for yet cannot be filed under "has nothing".
  */
 

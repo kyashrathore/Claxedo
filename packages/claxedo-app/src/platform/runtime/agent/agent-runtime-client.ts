@@ -27,7 +27,6 @@ import {
   resolveRuntimePlacement,
   resolveSessionResourceRoute,
 } from "@/platform/runtime/agent/placement-table"
-import { centralRuntimePath } from "./central-runtime-path"
 import { createAgentRuntimeGoalClient } from "./agent-runtime-goal-client"
 import { readRuntimeJson as readJson } from "./agent-runtime-json"
 import {
@@ -45,7 +44,6 @@ function appendHarnessSelection(query: URLSearchParams, selection: HarnessSelect
   if (selection) Object.entries(harnessSelectionQuery(selection)).forEach(([key, value]) => query.set(key, value))
 }
 
-export { centralRuntimePath } from "./central-runtime-path"
 export type { AgentRuntimeDirectory } from "./agent-runtime-urls"
 export type {
   AgentRuntimeGoalAction,
@@ -253,7 +251,7 @@ export function createAgentRuntimeClient(options: {
     query?: Record<string, string | number | undefined>
     init?: RequestInit
   }) {
-    if (!supportsSessionDirectory({ directory: input.directory, sessionRef: options.sessionRef })) throw new Error("Directory-less central sessions require the Pi harness")
+    if (!supportsSessionDirectory({ directory: input.directory, sessionRef: options.sessionRef })) throw new Error("A machine workspace directory is required")
     const init = await signedControlPlaneInit(input.init)
     const target = signed ? await workspaceTarget(input.directory) : undefined
     const directoryWorkspaceId = workspaceIdFromRef(input.directory) ?? (!signed ? options.workspaceId : undefined)
@@ -296,7 +294,7 @@ export function createAgentRuntimeClient(options: {
         return await runtimeTransport({
           directory: input.directory,
           sessionRef: options.sessionRef,
-        }).fetch(centralRuntimePath(runtimePath, options.sessionRef), init)
+        }).fetch(runtimePath, init)
       case "runtime-workspace":
         return await runtimeTransport({
           directory: input.directory,
@@ -335,7 +333,7 @@ export function createAgentRuntimeClient(options: {
   }
 
   async function fetchRuntimePath(input: { directory: AgentRuntimeDirectory; path: string; init?: RequestInit }) {
-    if (!supportsSessionDirectory({ directory: input.directory, sessionRef: options.sessionRef })) throw new Error("Directory-less central sessions require the Pi harness")
+    if (!supportsSessionDirectory({ directory: input.directory, sessionRef: options.sessionRef })) throw new Error("A machine workspace directory is required")
     const init = await signedControlPlaneInit(input.init)
     const method = init?.method?.toUpperCase() ?? "GET"
     const target = signed || options.sessionRef?.toolSandbox?.kind === "workspace" || options.sessionRef?.workspaceId || options.workspaceId || workspaceIdFromRef(input.directory)
@@ -354,7 +352,7 @@ export function createAgentRuntimeClient(options: {
         sessionRef,
         workspaceId: target?.workspaceId,
         preferRelayOnLoopback: signed,
-      }).fetch(centralRuntimePath(input.path, sessionRef), init)
+      }).fetch(input.path, init)
       span.end({ status: response.status, ok: response.ok, url: requestName(response.url || input.path) })
       return response
     } catch (error) {

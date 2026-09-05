@@ -123,7 +123,15 @@ export type SessionPeopleContext = {
  * pull-flow call site; the shapes are the structural contract the core relies
  * on and the adapter must satisfy.
  */
+/** Identity supplied only by authenticated channel ingress; authority resolves the linked actor afresh. */
+export type ChannelMachineIdentity = { channel: string; externalUserId: string; threadKey: string }
+
 export type WorkspaceAuthority = {
+  /** Internal host delegation; the authority rechecks the actor and current workspace role. */
+  resolveRuntimeMachineAccess: (actorId: string, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
+  recordActorRuntimeAccessToken: (args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => Promise<unknown>
+  resolveChannelMachineAccess: (identity: ChannelMachineIdentity, workspaceId: string) => Promise<RuntimeActorIdentity & { orgId: string; role: ProjectRole }>
+  recordChannelRuntimeAccessToken: (identity: ChannelMachineIdentity, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => Promise<unknown>
   // identity
   usersMe: (auth: SignedControlPlaneAuth) => Promise<unknown>
   listOrgs: (auth: SignedControlPlaneAuth) => Promise<unknown>

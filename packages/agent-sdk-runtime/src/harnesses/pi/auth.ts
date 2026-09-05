@@ -1,0 +1,80 @@
+import fs from "node:fs/promises"
+import path from "node:path"
+import { randomUUID } from "node:crypto"
+
+/** Project registry credentials without giving Pi a second refresh-token owner. */
+export function piAuthProjection(auth: Record<string, unknown>) {
+  const entries: Record<string, { type: "api_key"; key: string }> = {}
+  for (const provider of ["anthropic", "openai"] as const) {
+    const value = auth[provider]
+    if (typeof value === "string" && value) entries[provider] = { type: "api_key", key: value }
+  }
+  const source = auth["codex-app-server"]
+  if (typeof source === "string" && source) {
+    let value: Record<string, unknown>
+    try {
+      value = JSON.parse(source)
+    } catch {
+      throw new Error("Invalid Pi Codex credential JSON")
+    }
+    if (!value || typeof value !== "object" || Array.isArray(value))
+      throw new Error("Invalid Pi Codex credential object")
+    const tokens = value.tokens as Record<string, unknown> | undefined
+    const oauth = value.oauth as Record<string, unknown> | undefined
+    const access = tokens?.access_token ?? value.access ?? oauth?.access
+    const expires = value.expires ?? oauth?.expires
+    if (typeof access === "string" && access) {
+      if (typeof expires === "number" && expires <= Date.now())
+        throw new Error("Pi Codex credential expired; refresh the connected credential")
+      entries["openai-codex"] = { type: "api_key", key: access }
+    }
+  }
+  return entries
+}
+
+export async function writePiAuth(agentDir: string, entries: ReturnType<typeof piAuthProjection>) {
+  await fs.mkdir(agentDir, { recursive: true, mode: 0o700 })
+  const file = path.join(agentDir, "auth.json")
+  const temporary = `${file}.${randomUUID()}.tmp`
+  try {
+    await fs.writeFile(temporary, JSON.stringify(entries), { mode: 0o600, flag: "wx" })
+    await fs.rename(temporary, file)
+  } finally {
+    await fs.rm(temporary, { force: true })
+  }
+}
+
+const profiles = new Map<string, { owners: number; operations: number; pending: Promise<void> }>()
+
+/** Adapters in one host share a profile; only its final owner scrubs managed auth. */
+export function retainPiAuth(agentDir: string) {
+  const directory = path.resolve(agentDir)
+  const profile = profiles.get(directory) ?? { owners: 0, operations: 0, pending: Promise.resolve() }
+  profiles.set(directory, profile)
+  profile.owners++
+  let released: Promise<void> | undefined
+  const enqueue = (operation: () => Promise<void>) => {
+    profile.operations++
+    const result = profile.pending.then(operation).finally(() => {
+      profile.operations--
+      if (!profile.owners && !profile.operations) profiles.delete(directory)
+    })
+    profile.pending = result.catch(() => {})
+    return result
+  }
+  return {
+    write(entries: ReturnType<typeof piAuthProjection>) {
+      if (released) return Promise.reject(new Error("Pi auth profile is disposed"))
+      return enqueue(() => writePiAuth(directory, entries))
+    },
+    release() {
+      if (released) return released
+      profile.owners--
+      released = enqueue(async () => {
+        if (profile.owners) return
+        await fs.rm(path.join(directory, "auth.json"), { force: true })
+      })
+      return released
+    },
+  }
+}

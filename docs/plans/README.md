@@ -8,23 +8,31 @@ explain a maintained package or cross-package delivery contract.
 
 ## Retained Plans
 
-- [OpenCode v2 worker runtime on workerd with a credential gateway](./2026-09-05-003-opencode-v2-worker-runtime-plan.md)
-  - Supersedes 002. Worker sessions run the OpenCode v2 workerd profile in a
-    per-tenant Durable Object on its SQLite, with upstream persistence,
-    compaction, eviction recovery, tools, fork, transfer and subagents.
-    Claxedo owns the object class, one `WorkspaceDriver` over the sandbox
-    manager (a spawner over an exec channel is the whole tool bridge), the
-    credential gateway, and first-party plugins for GitHub pull requests
-    without a machine and `request_machine`. Promotion is `SessionTransfer`.
-    Pi is a sandbox harness among peers. Gated on a Miniflare execution spike;
-    eight units with Definition of Done.
+- [Pi is a native harness; remove the central/VM split](./2026-09-05-004-pi-native-harness-remove-central-plan.md) — **implemented in worktree; acceptance pending**.
+  - Standalone refactor. Pi uses the shared native adapter and its RPC process
+    on local or cloud machines. Removes the central/hybrid/tools-only execution
+    dimension, SessionEnv bridge and embedded Pi model backend. Includes
+    credentials, native configuration, composer defaults, channel/wake/MCP
+    consumer cutover and real local/cloud proof. This is a clean break: no
+    legacy adapters, old-session migration or backward compatibility.
+    Bootless agents remain a separate future feature. No Think dependency.
+  - Supersedes the placement proposals 001–003; no longer folded into 005.
+  - Native Pi, consumer cutover and Local browser checks pass. Packaged desktop,
+    live provider refresh and staging Cloud acceptance remain open; the browser
+    Cloud test is blocked by the existing account transport binding. See
+    [cutover evidence](../tech-docs/pi-native-harness-cutover.md). Plan 005 stays blocked.
 
-- [Pi worker runtime and credential gateway on workerd](./2026-09-05-002-pi-worker-runtime-and-gateway-plan.md)
-  - Superseded by 003 and kept as its fallback. Same tier built on
-    `pi-agent-core` with a Claxedo-owned persistence, compaction and tool
-    layer, forked child sessions for machine work, and one-way promotion.
+- [Claxedo agent base tier: durable agents on Cloudflare, machines on demand](./2026-09-05-005-think-agent-base-tier-plan.md) — **proposed; execute after 004 completes**.
+  - New durable work-session feature using Project Think, with memory,
+    workspace, scheduling, gateway and machine access. Code sessions retain
+    the native harness architecture delivered by 004. This feature neither
+    supersedes nor duplicates the Pi refactor, and its implementation does not
+    run concurrently with it. Resolve its design-review findings before execution.
 
-- [workerd agents: bootless chat with coding environments on demand](./2026-09-05-001-agent-worker-chat-and-coding-design.md)
+- [OpenCode v2 worker runtime on workerd with a credential gateway](./2026-09-05-003-opencode-v2-worker-runtime-plan.md) — superseded by 004.
+- [Pi worker runtime and credential gateway on workerd](./2026-09-05-002-pi-worker-runtime-and-gateway-plan.md) — superseded by 004.
+
+- [workerd agents: bootless chat with coding environments on demand](./2026-09-05-001-agent-worker-chat-and-coding-design.md) — superseded by 004.
   - Original architecture and UX grounded in current Pi execution, session
     authority, frontend routing and sandbox lifecycle code. Separates harness
     placement, working files and compute; preserves workspace-less chat, adds
@@ -152,7 +160,11 @@ explain a maintained package or cross-package delivery contract.
     two-backend conformance suite, a durable approval bridge (the memory `Map` is
     wrong once ack and execute are different isolates), the split itself, outbound
     replies via the unimplemented owner-notification seam, staging proof.
-    A channel routes a thread to ONE central agent session and decides nothing
+    Sequencing amendment: plan 004 removes this central-execution assumption;
+    machine-backed channel delivery must use its native session path. A durable
+    bootless channel agent belongs to the later plan 005. The original proposal
+    below describes the pre-cutover design: a channel routes a thread to ONE
+    central agent session and decides nothing
     else — no workspace, sandbox, or session lifetime; if work needs a repo the
     agent calls `spawn_session`, which is the acceptance loop `2026-07-07-002`
     already specifies. The in-request streaming generator is deleted on the

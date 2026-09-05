@@ -4,7 +4,6 @@ import type {
   SessionAttachment,
   SessionMeta,
   SessionMetaNavigationListInput,
-  SessionToolSandbox,
 } from "../session/meta/index"
 import type { ReplayMessage, SessionMessagePage } from "../session/message-replay"
 
@@ -34,8 +33,7 @@ export type SessionProjectionStore = {
       ws?: Workspace
       workspaceID?: string | null
       directory?: string | null
-      host?: "central" | "workspace"
-      toolSandbox?: SessionToolSandbox | null
+      host?: "workspace"
       model?: { providerID: string; modelID: string } | null
       title?: string | null
       parentID?: string | null

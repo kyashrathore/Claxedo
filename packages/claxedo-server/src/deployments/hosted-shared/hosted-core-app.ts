@@ -77,7 +77,6 @@ export type HostedCoreProductWorkspaceOptions = Pick<
 export type HostedCoreAppOptions = {
   authentication: RequestAuthenticationAdapter
   relayTargetLookup?: RelayTargetLookup
-  centralSessionRuntime?: boolean
   liveSyncRoom: LiveSyncRoomNamespace
   sharedRateLimitStore: SharedRateLimitStore
   serviceCatalog(auth: SignedControlPlaneAuth): Promise<FirstPartyServiceCatalog>
@@ -335,7 +334,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
     }),
   )
 
-  if (!options.centralSessionRuntime) mountSessionReadRoutes(app, plane, options.authentication)
+  mountSessionReadRoutes(app, plane, options.authentication)
 
   app.route(
     "/api/control",
@@ -520,7 +519,7 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       gatewayUrl: null,
       workspaceId: resolved.workspace_id,
       directory: null,
-      harnessHost: "central",
+      harnessHost: "workspace",
     })
   })
   app.get("/api/control/sessions/:sessionId/messages", async (context) => {

@@ -1,5 +1,3 @@
-import type { SessionMeta } from "./meta/index"
-
 export type SessionListScope = "global" | "project" | "workspace"
 export type SessionListGroupBy = "none" | "project" | "workspace"
 export type SessionListArchiveMode = "active" | "all" | "archived"
@@ -217,7 +215,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
   if (!sessionId) return
   const workspaceId = stringValue(item.workspaceID) ?? stringValue(item.workspace_id)
   const projectId = stringValue(item.projectID) ?? stringValue(item.project_id)
-  const host = item.host === "central" ? "central" : "workspace"
+  if (item.host !== undefined && item.host !== "workspace") return
   const directory = stringValue(item.directory) ?? workspaceId ?? "global"
   const createdAt = numberValue(item.createdAt) ?? numberValue(item.created_at) ?? 0
   const updatedAt = numberValue(item.updatedAt) ?? numberValue(item.updated_at) ?? createdAt
@@ -226,7 +224,7 @@ function sessionNavigationRow(session: unknown): SessionNavigationRow | undefine
   const git = record(item.git)
   return {
     type: "session",
-    sessionRef: stringValue(item.sessionRef) ?? stringValue(item.session_ref) ?? sessionRef({ sessionId, workspaceId, directory, host }),
+    sessionRef: stringValue(item.sessionRef) ?? stringValue(item.session_ref) ?? sessionRef({ sessionId, workspaceId, directory }),
     sessionId,
     title: stringValue(item.title) ?? "Untitled session",
     directory,
@@ -281,8 +279,7 @@ function ownerFromSession(item: Record<string, unknown>): { owner?: SessionNavig
   }
 }
 
-function sessionRef(input: { sessionId: string; workspaceId?: string; directory: string; host: SessionMeta["host"] }) {
-  if (input.host === "central") return `central:${input.sessionId}`
+function sessionRef(input: { sessionId: string; workspaceId?: string; directory: string }) {
   if (input.workspaceId) return `workspace:${input.workspaceId}:session:${input.sessionId}`
   return `local:${input.directory}:session:${input.sessionId}`
 }

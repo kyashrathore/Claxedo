@@ -2,6 +2,13 @@
 
 Date: 2026-08-05. Status: active implementation plan.
 
+Sequencing amendment, 2026-09-05: [plan 004](./2026-09-05-004-pi-native-harness-remove-central-plan.md)
+executes first and owns removal of central harness execution plus migration of
+its channel consumers to authorized machine sessions. References below to a
+central agent session describe the previous design and must not reintroduce
+that runtime. Keep this plan's delivery-ack/execution separation; durable
+bootless channel agents belong to the later [plan 005](./2026-09-05-005-think-agent-base-tier-plan.md).
+
 Makes GitHub / Slack / Telegram / Discord / WhatsApp-official channels work on
 the deployed hosted control plane (the Cloudflare Worker,
 `src/deployments/hosted-workerd/worker.ts`), which today serves no channel

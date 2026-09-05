@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, test } from "bun:test"
 import path from "path"
-import { getModel } from "@mariozechner/pi-ai"
+import fs from "node:fs/promises"
+import { installFakePiRpc } from "../test-utils/fake-pi-rpc.mjs"
 import {
   GoalCapabilityError,
   goalActionAvailable,
@@ -22,7 +23,6 @@ import { CodexHarnessAdapter } from "./codex"
 import { createClaudeSdkDriver } from "./claude/driver"
 import { createCursorSdkDriver } from "./cursor/driver"
 import { PiHarnessAdapter } from "./pi"
-import { piWorkerStream } from "./pi/test-worker-stream"
 import type { Query } from "@anthropic-ai/claude-agent-sdk"
 
 const objective = "Ship when verification passes"
@@ -133,38 +133,21 @@ async function cursorHarness(): Promise<ConformanceHarness> {
 }
 
 async function piHarness(): Promise<ConformanceHarness> {
-  const model = getModel("openai-codex", "gpt-5.1-codex-mini")
-  let evaluationStarted = false
-  const adapter = new PiHarnessAdapter({
-    modelBackend: () => ({
-      model,
-      getApiKey: () => "test-key",
-      streamFn: piWorkerStream(["work", "more work", "still working"], []),
-    }),
-    // Every evaluation blocks until interrupted, so the Goal stays active and
-    // quiescent while the suite exercises pause, resume, stop, and delete.
-    evaluateGoal: async ({ signal }) => {
-      evaluationStarted = true
-      await new Promise<void>((_resolve, reject) => {
-        signal.addEventListener("abort", () => reject(new Error("evaluation aborted")), { once: true })
-      })
-      return { met: false, reason: "unreachable" }
-    },
-  })
-  await adapter.bindSession({ id: "session-conformance", directory: "/repo" })
-  await adapter.updateSessionConfig(executionBinding("session-conformance", "/repo", "native:pi"), {
-    model: { providerID: "openai-codex", modelID: "gpt-5.1-codex-mini" },
-  })
+  const fake = await installFakePiRpc()
+  tempDirs.push(fake.directory)
+  await fs.writeFile(path.join(fake.directory, "hold-evaluator"), "yes")
+  const store = storeRows(createMemoryRuntimeStore())
+  const adapter = new PiHarnessAdapter({ binary: fake.binary, agentDir: fake.agentDir, store })
+  const session = await adapter.createSession(fake.directory)
+  const nativeId = store.getAgentSessionId(session.id)
+  store.updateSessionConfig(session.id, await adapter.updateSessionConfig({ sessionId: session.id, directory: fake.directory, workspaceId: "workspace", connectionId: "native:pi", upstreamSessionId: nativeId! }, { model: { providerID: "pi", modelID: "test/model" } }))
   return {
-    goals: adapter.goals,
-    sessionId: "session-conformance",
-    directory: "/repo",
+    goals: adapter.goals!, sessionId: session.id, directory: fake.directory,
     settle: async () => {
-      const deadline = Date.now() + 2_000
-      while (!evaluationStarted) {
-        if (Date.now() > deadline) throw new Error("Timed out waiting for pi evaluation")
-        await new Promise((resolve) => setTimeout(resolve, 5))
-        evaluationStarted ||= false
+      const deadline = Date.now() + 5000
+      while (!await fs.stat(path.join(fake.directory, "evaluating")).then(() => true, () => false)) {
+        if (Date.now() > deadline) throw new Error("Pi evaluator did not start")
+        await new Promise(resolve => setTimeout(resolve, 5))
       }
     },
     dispose: () => adapter.dispose(),

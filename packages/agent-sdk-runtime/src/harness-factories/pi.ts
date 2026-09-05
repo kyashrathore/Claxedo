@@ -1,22 +1,15 @@
 import type { AgentHarnessFactory } from "../runtime"
-import type { SessionEnvFactory, SessionEnvFactoryInput } from "../session-env"
 import { PiHarnessAdapter } from "../harnesses/pi"
-import { harnessFactory, type ProcessObservedFactoryOptions } from "./factory"
+import { harnessFactory, type NativeFactoryOptions } from "./factory"
 
-export type PiSessionPlacement = Omit<SessionEnvFactoryInput, "sessionId">
-export type PiFactoryOptions = ProcessObservedFactoryOptions & {
-  access?: "native"
-  createEnv?: SessionEnvFactory
-  defaultPlacement?: PiSessionPlacement | ((input: {
-    sessionId: string
-    directory: string | undefined
-  }) => PiSessionPlacement | Promise<PiSessionPlacement>)
-}
+export type PiFactoryOptions = NativeFactoryOptions & { agentDir?: string }
 
 export function pi(options: PiFactoryOptions = {}): AgentHarnessFactory {
   return harnessFactory("pi", "native", (context) => new PiHarnessAdapter({
-    ...options,
+    store: context.store,
+    ...(options.agentDir ? { agentDir: options.agentDir } : {}),
     eventHub: context.eventHub,
-    goalStore: context.store,
+    ...(options.binary ? { binary: options.binary } : {}),
+    ...(options.processObserver ? { processObserver: options.processObserver } : {}),
   }))
 }

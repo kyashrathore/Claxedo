@@ -704,8 +704,7 @@ function globalSessionEventType(event: RoutableEvent): SessionEventType | undefi
 }
 
 function isCentralLifecycleSession(input: LifecycleSession) {
-  return input.host === "central" ||
-    (typeof input.sessionRef === "string" && input.sessionRef.startsWith("central:"))
+  return (typeof input.sessionRef === "string" && input.sessionRef.startsWith("central:"))
 }
 
 function rec(input: unknown) {

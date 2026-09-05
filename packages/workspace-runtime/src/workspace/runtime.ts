@@ -35,7 +35,6 @@ import {
   type AgentMessagePage,
   type AgentMessagePageInput,
   type AgentRuntimeStoreWithRecovery,
-  type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
 import { OpenCodeSdkHarnessAdapter, authorizeWorkspace, type OpenCodeRuntime } from "../opencode/index"
@@ -154,8 +153,6 @@ export type WorkspaceHostOptions = {
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** Private-session authority selected by the host composition. */
   sessionAccessPolicy?: SessionAccessPolicy
-  /** Host-owned credential/model resolver for concrete Pi model turns. */
-  piModelBackend?: PiModelBackendResolver
   /**
    * The sole native OpenCode rail: the process-owned public embedded SDK. The
    * kit never constructs it — a host composes one SDK owner per process and
@@ -217,6 +214,7 @@ const NATIVE_HARNESS_ADAPTERS = {
   claude: ClaudeHarnessAdapter,
   codex: CodexHarnessAdapter,
   cursor: CursorHarnessAdapter,
+  pi: PiHarnessAdapter,
 } as const
 
 function configuredConnection(harness: RuntimeRunner) {
@@ -538,16 +536,6 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
       },
     },
     {
-      match: (runner) => runner.id === "pi",
-      create: ({ options, store }) => new PiHarnessAdapter({
-        goalStore: store,
-        ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
-        ...(options.eventHub ? { eventHub: options.eventHub } : {}),
-        ...(options.piModelBackend ? { modelBackend: options.piModelBackend } : {}),
-        ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
-      }),
-    },
-    {
       match: (runner) => runner.access === "native" && runner.id === "opencode",
       create: ({ options }) => {
         if (!options.opencodeRuntime) {
@@ -801,15 +789,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (!next.applyConfig) return
     const runtimeConfigurable = hasAdapterCapability(next, "runtime-config")
     const launch = currentHarnessLaunch[nextRunner.id] ?? {}
-    if (
-      Object.keys(currentAuthRaw).length === 0
-      && Object.keys(currentMcp).length === 0
-      && Object.keys(launch).length === 0
-      && adapterConfigStamps.get(next) === undefined
-    ) {
-      adapterConfigStamps.set(next, adapterConfigStamp(nextRunner, {}, {}, {}))
-      return
-    }
     const adapterAuth = configuredConnection(nextRunner) ? {} : currentAuthRaw
     const stamp = adapterConfigStamp(nextRunner, adapterAuth, currentMcp, launch)
     if (adapterConfigStamps.get(next) === stamp) return

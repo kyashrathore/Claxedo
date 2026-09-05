@@ -644,6 +644,21 @@ export function createSqliteWorkspaceAuthority(
     return { ok: true, role, orgId: project.org_id as OrgId }
   }
 
+  const recordUserRuntimeToken = (who: AuthorityUser, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) => {
+      const db = database()
+      const workspace = requireWorkspace(db, who, args.workspaceId, "read")
+      const currentRole = workspaceRoleForUser(db, workspace, who)
+      if (!currentRole || !roleAtLeast(currentRole, args.role)) denied()
+      const existing = db.prepare(`SELECT jti FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
+      if (existing) throw new Error("Runtime Access Token already recorded")
+      db.prepare(`
+        INSERT INTO runtime_access_tokens
+          (jti, workspace_id, host_id, principal_kind, actor_id, actor_kind, role, minted_for_token_identifier, expires_at, created_at)
+        VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?)
+      `).run(args.jti, args.workspaceId, args.hostId, args.actorId, args.actorKind, args.role, who.token_identifier, args.expiresAt, Date.now())
+      return { ok: true }
+  }
+
   const privateSessions = createSqlitePrivateSessionAuthority({ database, principal: user })
 
   const workspaceAuthority: Omit<WorkspaceAuthority, keyof PrivateSessionAuthority> & {
@@ -2039,21 +2054,41 @@ export function createSqliteWorkspaceAuthority(
       return { can_manage_shares: true, grants, participants, teams }
     },
     // --- runtime tokens ------------------------------------------------------
+    async resolveRuntimeMachineAccess(actorId, workspaceId) {
+      const db = database()
+      const who = db.prepare(`SELECT token_identifier, subject, kind, public_id, name, image_url FROM users WHERE token_identifier = ?`).get(actorId) as AuthorityUser | undefined
+      if (!who || who.kind !== "human") denied()
+      const workspace = requireWorkspace(db, who, workspaceId, "write")
+      const role = workspaceRoleForUser(db, workspace, who)
+      if (!role) denied()
+      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
+    },
+    async recordActorRuntimeAccessToken(args) {
+      const db = database()
+      const who = db.prepare(`SELECT token_identifier, subject, kind FROM users WHERE token_identifier = ?`).get(args.actorId) as AuthorityUser | undefined
+      if (!who || who.kind !== "human" || args.actorKind !== "human") denied()
+      return recordUserRuntimeToken(who, args)
+    },
+    async resolveChannelMachineAccess(identity, workspaceId) {
+      const db = database()
+      const who = linkedChannelUser(db, identity)
+      if (!who) denied()
+      const workspace = requireWorkspace(db, who, workspaceId, "write")
+      const role = workspaceRoleForUser(db, workspace, who)
+      if (!role || !workspace.org_id) denied()
+      return { actorId: who.token_identifier, actorKind: "human" as const, orgId: workspace.org_id, role, ...(who.public_id && who.name ? { actorPublicId: who.public_id, actorName: who.name, ...(who.image_url ? { actorAvatarUrl: who.image_url } : {}) } : {}) }
+    },
+    async recordChannelRuntimeAccessToken(identity, args) {
+      const db = database()
+      const who = linkedChannelUser(db, identity)
+      if (!who || who.token_identifier !== args.actorId || who.kind !== args.actorKind) denied()
+      return recordUserRuntimeToken(who, args)
+    },
     async recordRuntimeAccessToken(auth: SignedControlPlaneAuth, args) {
       const db = database()
       const who = user(auth)
       if (who.token_identifier !== args.actorId || who.kind !== args.actorKind) denied()
-      const workspace = requireWorkspace(db, who, args.workspaceId, "read")
-      const currentRole = workspaceRoleForUser(db, workspace, who)
-      if (!currentRole || !roleAtLeast(currentRole, args.role)) denied()
-      const existing = db.prepare(`SELECT jti FROM runtime_access_tokens WHERE jti = ?`).get(args.jti)
-      if (existing) throw new Error("Runtime Access Token already recorded")
-      db.prepare(`
-        INSERT INTO runtime_access_tokens
-          (jti, workspace_id, host_id, principal_kind, actor_id, actor_kind, role, minted_for_token_identifier, expires_at, created_at)
-        VALUES (?, ?, ?, 'user', ?, ?, ?, ?, ?, ?)
-      `).run(args.jti, args.workspaceId, args.hostId, args.actorId, args.actorKind, args.role, who.token_identifier, args.expiresAt, Date.now())
-      return { ok: true }
+      return recordUserRuntimeToken(who, args)
     },
     async recordRuntimeAccessTokenForService(args) {
       const db = database()

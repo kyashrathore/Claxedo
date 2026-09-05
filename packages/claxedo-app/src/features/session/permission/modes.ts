@@ -214,16 +214,9 @@ const CLAXEDO_LOCAL_AUTO: PermissionModeDelivery = {
 export const CLAXEDO_ALLOW_SAFE_ID = "claxedo-allow-safe"
 export const CLAXEDO_ASK_ALWAYS_ID = "claxedo-ask-always"
 
-/**
- * The whole picker, for a harness whose tools cannot reach anything real.
- *
- * States the two facts that make a permission mode unnecessary rather than
- * merely absent, so nobody reads the empty menu as something being broken or
- * still loading. See `sandboxed-no-policy` in mechanisms.ts for the file:line
- * evidence behind both clauses.
- */
-export const SANDBOXED_NO_POLICY_REASON =
-  "No permission mode applies — Pi's shell is simulated (just-bash, in memory) and its tools run in Pi's cloud, so nothing reaches your machine."
+/** Native Pi has real machine access but no selectable approval policy. */
+export const NATIVE_NO_POLICY_REASON =
+  "Pi does not expose a permission mode. Its tools run with the permissions of the selected Local machine or Cloud sandbox."
 
 /**
  * Claxedo's own two options, for the harnesses that have no modes of their own.
@@ -238,11 +231,8 @@ export function claxedoPermissionModes(input: {
   report?: HarnessModeReport
   hasSession?: boolean
 }): readonly PermissionModeOption[] {
-  // A harness whose tools cannot reach anything real gets NO options, not even
-  // Claxedo's own. Offering one would put a choosable control over a policy that
-  // does not exist — the same defect as offering an option under a harness that
-  // failed to start. `SANDBOXED_NO_POLICY_REASON` is shown in its place.
-  if (permissionMechanism(input.harness).kind === "sandboxed-no-policy") return []
+  // Do not offer a policy that native Pi cannot enforce.
+  if (permissionMechanism(input.harness).kind === "native-no-policy") return []
   // The harness reported modes, so it enforces its own policy and the picker is
   // its list alone. Claxedo previously added an "Auto" row above it that merely
   // pointed at whichever of those rows carried `level: "auto"` — on Claude that
@@ -345,10 +335,10 @@ export function harnessPermissionModes(input: {
 
   // Checked FIRST, ahead of the loading and empty-report branches, because
   // neither is true here: this harness is not slow to answer and has not merely
-  // failed to report — it has no policy surface and needs none. Saying "has not
+  // failed to report — it has no policy surface. Saying "has not
   // reported any permission modes" would imply it might later.
-  if (permissionMechanism(input.harness).kind === "sandboxed-no-policy") {
-    return { modes: [], unavailable: SANDBOXED_NO_POLICY_REASON }
+  if (permissionMechanism(input.harness).kind === "native-no-policy") {
+    return { modes: [], unavailable: NATIVE_NO_POLICY_REASON }
   }
 
   // Not yet fetched. Genuinely transient, and distinct from every case below.

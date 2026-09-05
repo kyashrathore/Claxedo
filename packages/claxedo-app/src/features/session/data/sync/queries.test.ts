@@ -22,9 +22,9 @@ import type { SessionRef } from "@/platform/identity/session-ref"
 
 const ref: SessionRef = {
   sessionId: "ses_shell",
-  host: "central",
+  host: "workspace",
   workspaceId: "ws_authz",
-  toolSandbox: { kind: "virtual" },
+  toolSandbox: { kind: "workspace", workspaceId: "ws_authz" },
   cwd: "/tmp/ignored",
 }
 
@@ -71,7 +71,7 @@ describe("shell data query factories", () => {
       "ws_authz",
       "inventory",
     ])
-    expect(() => shellDataKeys.workspaceForSession({ sessionId: "ses_no_ws", host: "central" }, "inventory"))
+    expect(() => shellDataKeys.workspaceForSession({ sessionId: "ses_no_ws", host: "workspace" }, "inventory"))
       .toThrow("workspace-scoped query requires workspaceId")
   })
 

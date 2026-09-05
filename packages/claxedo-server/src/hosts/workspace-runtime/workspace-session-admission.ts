@@ -2,9 +2,9 @@ import type { SandboxFetchOptions } from "@claxedo/server-core/workspace/http/sa
 import {
   createWorkspaceRuntimeClient,
   workspaceRuntimeRequestError,
+  WorkspaceRuntimeProtocolError,
 } from "@claxedo/server-core/workspace/http/workspace-runtime-client"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
-import { WorkspaceRuntimeProtocolError } from "@claxedo/workspace-runtime/session-env-contract"
 
 export type WorkspaceSessionAdmission = {
   directory: string

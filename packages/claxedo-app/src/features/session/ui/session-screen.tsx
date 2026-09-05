@@ -166,7 +166,7 @@ export default function SessionPage() {
     if (!sessionId) return
     const route = parseShellRoute(paneLocation().pathname)
     const sessionRef = activeSessionRef()
-    const central = sessionRef?.host === "central" || route.kind === "session"
+    const central = route.kind === "session"
     return {
       sessionId,
       ...(central ? {} : { directory: routeDirectory() }),

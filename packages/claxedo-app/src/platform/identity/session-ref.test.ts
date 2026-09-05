@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { centralRealToolSandboxAttachTicket, resolveWorkspaceRef } from "./resolve-workspace-ref"
+import { resolveWorkspaceRef } from "./resolve-workspace-ref"
 import {
-  centralSessionRef,
   hasBacking,
   HARNESS_IDS,
   localSessionRef,
@@ -30,9 +29,9 @@ describe("harness-id vocabulary (single source of truth)", () => {
 
 describe("SessionRef", () => {
   test("native and connection harnesses with the same ID remain distinct", () => {
-    const native = centralSessionRef({ sessionId: "ses_1", harness: { kind: "native", harnessId: "codex" } })
-    const connection = centralSessionRef({ sessionId: "ses_1", harness: { kind: "connection", connectionId: "codex" } })
-    const copiedConnection = centralSessionRef({
+    const native = localSessionRef({ cwd: "/repo",  sessionId: "ses_1", harness: { kind: "native", harnessId: "codex" } })
+    const connection = localSessionRef({ cwd: "/repo",  sessionId: "ses_1", harness: { kind: "connection", connectionId: "codex" } })
+    const copiedConnection = localSessionRef({ cwd: "/repo",
       sessionId: "ses_1",
       harness: { connectionId: "codex", kind: "connection" },
     })
@@ -43,44 +42,14 @@ describe("SessionRef", () => {
   })
 
   test("sameSessionRef includes authoritative harness identity", () => {
-    const base = centralSessionRef({ sessionId: "ses_1" })
-    const pi = centralSessionRef({ sessionId: "ses_1", harness: { kind: "native", harnessId: "pi" } })
+    const base = localSessionRef({ cwd: "/repo",  sessionId: "ses_1" })
+    const pi = localSessionRef({ cwd: "/repo",  sessionId: "ses_1", harness: { kind: "native", harnessId: "pi" } })
 
     expect(sameSessionRef(base, pi)).toBe(false)
     expect(sameSessionRef(pi, { ...pi })).toBe(true)
   })
 
-  test("loopback-local central sessions need no directory or workspace id", () => {
-    const ref: SessionRef = {
-      sessionId: "central-loop-1",
-      host: "central",
-      toolSandbox: { kind: "virtual" },
-    }
 
-    expect(sessionKey(ref)).toBe("central-loop-1")
-    expect(workspaceKey(ref)).toBeUndefined()
-    expect(hasBacking(ref)).toBe(false)
-    expect(resolveWorkspaceRef(ref)).toEqual({
-      kind: "none",
-      dependency: centralRealToolSandboxAttachTicket,
-    })
-  })
-
-  test("signed web central sessions may carry workspace authz scope without real backing", () => {
-    const ref: SessionRef = {
-      sessionId: "signed-central",
-      host: "central",
-      workspaceId: "ws_authz",
-      toolSandbox: { kind: "virtual" },
-    }
-
-    expect(workspaceKey(ref)).toBe("ws_authz")
-    expect(hasBacking(ref)).toBe(false)
-    expect(resolveWorkspaceRef(ref)).toEqual({
-      kind: "none",
-      dependency: centralRealToolSandboxAttachTicket,
-    })
-  })
 
   test("session identity is opaque and never depends on string shape", () => {
     const ref: SessionRef = {
@@ -139,34 +108,22 @@ describe("SessionRef", () => {
     expect(sessionRefForWorkspaceSession({ sessionId: "ses_central" })).toBeUndefined()
   })
 
-  test("central refs are explicit virtual sessions", () => {
-    const ref = centralSessionRef({ sessionId: "ses_central" })
-
-    expect(ref).toEqual({
-      sessionId: "ses_central",
-      host: "central",
-      toolSandbox: { kind: "virtual" },
-    })
-    expect(ref && resolveWorkspaceRef(ref)).toEqual({
-      kind: "none",
-      dependency: centralRealToolSandboxAttachTicket,
-    })
-  })
 
   test("session harness stays unresolved when no authority supplied one", () => {
-    const ref = centralSessionRef({ sessionId: "ses_central" })
+    const ref = localSessionRef({ cwd: "/repo",  sessionId: "ses_central" })
 
     expect(ref).toEqual({
       sessionId: "ses_central",
-      host: "central",
-      toolSandbox: { kind: "virtual" },
+      host: "workspace",
+      cwd: "/repo",
+      toolSandbox: { kind: "local", cwd: "/repo" },
     })
     expect(ref && sessionHarness(ref)).toBeUndefined()
   })
 
   test("constructors preserve explicit harness identity", () => {
     expect(
-      centralSessionRef({
+      localSessionRef({ cwd: "/repo",
         sessionId: "ses_central",
         harness: { id: "acp:claude", binary: "/tmp/claude-agent-acp" },
       }),

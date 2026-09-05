@@ -92,26 +92,17 @@ describe("SessionPaneScope directory identity", () => {
     })
   }
 
-  // The directoryless Pi case, where `session-content.tsx` resolves the pane
-  // directory to `""`. This is the case most likely to tempt a future
-  // re-derivation, because `""` looks like a missing value that ought to be
-  // filled in from `sessionRef.cwd` or the inventory. It must not be:
-  // `SessionPaneScope` keys its gate on `workspaceKey()`, which falls back to
-  // the sessionRef's id, so the pane mounts and BOTH sides see the same `""`.
-  // Substituting a "better" directory on one side is exactly the split this
-  // file exists to catch.
-  test("directoryless central session still shares the empty directory", () => {
+  test("a cloud session uses the resolved pane directory consistently", () => {
     render(() => (
       <SessionPaneScope
-        directory=""
-        sessionRef={() => ({ sessionId: "ses_pi", host: "central", harness: { id: "pi" }, toolSandbox: { kind: "virtual" } })}
+        directory="/workspace/repo"
+        sessionRef={() => ({ sessionId: "ses_pi", host: "workspace", workspaceId: "ws_pi", harness: { kind: "native", harnessId: "pi" }, toolSandbox: { kind: "workspace", workspaceId: "ws_pi", hosting: "cloud" } })}
         paneId={() => "pane-1"}
       >
         <RouteDirectoryProbe />
       </SessionPaneScope>
     ))
-
-    expect(screen.getByTestId("route-directory")).toHaveAttribute("data-value", "")
-    expect(calls.directoryScopeDirectory).toBe("")
+    expect(screen.getByTestId("route-directory")).toHaveAttribute("data-value", "/workspace/repo")
+    expect(calls.directoryScopeDirectory).toBe("/workspace/repo")
   })
 })

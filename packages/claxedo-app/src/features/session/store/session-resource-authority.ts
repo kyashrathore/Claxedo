@@ -51,7 +51,6 @@ export function sessionHydrationAuthorityKey(ref: SessionRef | undefined) {
 function sandboxAuthority(ref: SessionRef) {
   const sandbox = ref.toolSandbox
   if (!sandbox) return null
-  if (sandbox.kind === "virtual") return ["virtual"] as const
   if (sandbox.kind === "local") return ["local", sandbox.cwd] as const
   return ["workspace", sandbox.workspaceId, sandbox.hosting, sandbox.hostId ?? ""] as const
 }

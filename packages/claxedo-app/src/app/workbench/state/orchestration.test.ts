@@ -257,9 +257,9 @@ describe("state/orchestration", () => {
     expect(meta.get(b)?.content?.workspaceRouteId).toBe("ws_b")
   })
 
-  test("openCentralSession creates a global session surface without directory", () => {
+  test("openSessionById creates a global session surface without directory", () => {
     const { layout, meta, wb, getState } = makeFixture()
-    const id = layout.openCentralSession("ses_central", "Central")
+    const id = layout.openSessionById("ses_central", "Central")
 
     expect(meta.get(id)).toEqual({
       id,
@@ -270,18 +270,14 @@ describe("state/orchestration", () => {
         type: "session",
         sessionId: "ses_central",
         title: "Central",
-        sessionRef: {
-          sessionId: "ses_central",
-          host: "central",
-          toolSandbox: { kind: "virtual" },
-        },
+
       },
     })
     expect(getState().contentIds).toContain(id)
     expect(wb.selectors.focusedContent()).toBe(id)
   })
 
-  test("openCentralSession reuses existing global session and removes stale duplicates", () => {
+  test("openSessionById reuses existing global session and removes stale duplicates", () => {
     const { layout, meta, wb, getState } = makeFixture()
     meta.upsert({
       id: "stale-session",
@@ -293,8 +289,8 @@ describe("state/orchestration", () => {
     })
     wb.contents.add("stale-session")
 
-    const a = layout.openCentralSession("ses_central", "Central")
-    const b = layout.openCentralSession("ses_central", "Central updated")
+    const a = layout.openSessionById("ses_central", "Central")
+    const b = layout.openSessionById("ses_central", "Central updated")
 
     expect(a).toBe(b)
     expect(meta.get(a)?.content?.title).toBe("Central updated")
@@ -303,7 +299,7 @@ describe("state/orchestration", () => {
     expect(getState().contentIds).not.toContain("stale-session")
   })
 
-  test("openCentralSession repairs a global placeholder without a ref", () => {
+  test("openSessionById repairs a global placeholder without a ref", () => {
     const { layout, meta, wb } = makeFixture()
     meta.upsert({
       id: "central-placeholder",
@@ -314,52 +310,48 @@ describe("state/orchestration", () => {
     })
     wb.contents.add("central-placeholder")
 
-    expect(layout.openCentralSession("ses_central", "Central")).toBe("central-placeholder")
-    expect(meta.get("central-placeholder")?.content?.sessionRef).toEqual({
-      sessionId: "ses_central",
-      host: "central",
-      toolSandbox: { kind: "virtual" },
-    })
+    expect(layout.openSessionById("ses_central", "Central")).toBe("central-placeholder")
+    expect(meta.get("central-placeholder")?.content?.sessionRef).toBeUndefined()
   })
 
-  test("openCentralSession upgrades a central placeholder with its authoritative harness", () => {
+  test("openSessionById upgrades a central placeholder with its authoritative harness", () => {
     const { layout, meta } = makeFixture()
-    const id = layout.openCentralSession("ses_pi", "Pi session")
+    const id = layout.openSessionById("ses_pi", "Pi session")
 
-    layout.openCentralSession("ses_pi", "Pi session", {
+    layout.openSessionById("ses_pi", "Pi session", {
       authoritative: true,
       sessionRef: {
         sessionId: "ses_pi",
-        host: "central",
-        toolSandbox: { kind: "virtual" },
-        harness: { id: "pi" },
+        host: "workspace",
+        toolSandbox: { kind: "local", cwd: "/work/main" },
+        harness: { id: "pi", access: "native" },
       },
     })
 
-    expect(meta.get(id)?.content?.sessionRef?.harness).toEqual({ id: "pi" })
+    expect(meta.get(id)?.content?.sessionRef?.harness).toEqual({ id: "pi", access: "native" })
   })
 
-  test("openCentralSession does not downgrade an authoritative central harness", () => {
+  test("openSessionById does not downgrade an authoritative central harness", () => {
     const { layout, meta } = makeFixture()
-    const id = layout.openCentralSession("ses_pi", "Pi session", {
+    const id = layout.openSessionById("ses_pi", "Pi session", {
       authoritative: true,
       sessionRef: {
         sessionId: "ses_pi",
-        host: "central",
-        toolSandbox: { kind: "virtual" },
-        harness: { id: "pi" },
+        host: "workspace",
+        toolSandbox: { kind: "local", cwd: "/work/main" },
+        harness: { id: "pi", access: "native" },
       },
     })
 
-    layout.openCentralSession("ses_pi", "Pi session updated")
+    layout.openSessionById("ses_pi", "Pi session updated")
 
     expect(meta.get(id)?.content?.title).toBe("Pi session updated")
-    expect(meta.get(id)?.content?.sessionRef?.harness).toEqual({ id: "pi" })
+    expect(meta.get(id)?.content?.sessionRef?.harness).toEqual({ id: "pi", access: "native" })
   })
 
   test("openSession removes stale central placeholder for the same session", () => {
     const { layout, meta, getState } = makeFixture()
-    const central = layout.openCentralSession("ses_1", "Central placeholder")
+    const central = layout.openSessionById("ses_1", "Central placeholder")
 
     const workspace = layout.openSession("/work/main", "ses_1", "Workspace session", {
       sessionRef: localSessionRef("ses_1", "/work/main"),
@@ -373,7 +365,7 @@ describe("state/orchestration", () => {
     expect(getState().contentIds).toContain(workspace)
   })
 
-  test("openCentralSession preserves an existing workspace-backed session", () => {
+  test("openSessionById preserves an existing workspace-backed session", () => {
     const { layout, meta, wb, getState } = makeFixture()
     meta.upsert({
       id: "workspace-session",
@@ -390,7 +382,7 @@ describe("state/orchestration", () => {
     })
     wb.contents.add("workspace-session")
 
-    const id = layout.openCentralSession("ses_1", "Central fallback")
+    const id = layout.openSessionById("ses_1", "Central fallback")
 
     expect(id).toBe("workspace-session")
     expect(meta.get(id)?.directory).toBe("/work/main")
@@ -399,22 +391,8 @@ describe("state/orchestration", () => {
     expect(wb.selectors.focusedContent()).toBe("workspace-session")
   })
 
-  test("openCentralSession replaces a workspace placeholder when central metadata is authoritative", () => {
-    const { layout, meta, getState } = makeFixture()
-    const workspace = layout.openSession("/work/main", "ses_1", "Workspace placeholder", {
-      sessionRef: localSessionRef("ses_1", "/work/main"),
-    })
 
-    const central = layout.openCentralSession("ses_1", "Central session", { authoritative: true })
-
-    expect(central).not.toBe(workspace)
-    expect(meta.get(workspace)).toBeUndefined()
-    expect(getState().contentIds).not.toContain(workspace)
-    expect(meta.get(central)?.directory).toBeUndefined()
-    expect(meta.get(central)?.content).toMatchObject({ sessionRef: { host: "central", sessionId: "ses_1" } })
-  })
-
-  test("openCentralSession repairs a filesystem session surface without a ref", () => {
+  test("openSessionById repairs a filesystem session surface without a ref", () => {
     const { layout, meta, wb, getState } = makeFixture()
     meta.upsert({
       id: "workspace-session",
@@ -430,7 +408,7 @@ describe("state/orchestration", () => {
     })
     wb.contents.add("workspace-session")
 
-    const id = layout.openCentralSession("ses_1", "Central fallback")
+    const id = layout.openSessionById("ses_1", "Central fallback")
 
     expect(id).toBe("workspace-session")
     expect(meta.get(id)?.content?.sessionRef).toEqual(localSessionRef("ses_1", "/work/main"))
@@ -438,7 +416,7 @@ describe("state/orchestration", () => {
     expect(wb.selectors.focusedContent()).toBe("workspace-session")
   })
 
-  test("openCentralSession does not invent local backing for opaque workspace aliases", () => {
+  test("openSessionById does not invent local backing for opaque workspace aliases", () => {
     const { layout, meta } = makeFixture()
     meta.upsert({
       id: "workspace-session",
@@ -453,7 +431,7 @@ describe("state/orchestration", () => {
       },
     })
 
-    const id = layout.openCentralSession("ses_1", "Central fallback")
+    const id = layout.openSessionById("ses_1", "Central fallback")
 
     expect(id).toBe("workspace-session")
     expect(meta.get(id)?.content?.sessionRef).toBeUndefined()

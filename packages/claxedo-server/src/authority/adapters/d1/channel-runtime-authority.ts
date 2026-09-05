@@ -2,6 +2,7 @@ import type { D1Database } from "@cloudflare/workers-types"
 import { ControlPlaneAuthError, type SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { ClaxedoError } from "@claxedo/server-core/platform/errors/base"
 import type {
+  ChannelMachineIdentity,
   ProjectAction,
   ProjectRole,
   WorkspaceAuthority,
@@ -10,6 +11,10 @@ import type {
 const CONTROL_PLANE_SERVICE_ACTOR_ID = "control-plane"
 
 export const D1_CHANNEL_RUNTIME_AUTHORITY_METHODS = [
+  "resolveRuntimeMachineAccess",
+  "recordActorRuntimeAccessToken",
+  "resolveChannelMachineAccess",
+  "recordChannelRuntimeAccessToken",
   "authorizeChannelProject",
   "authorizeChannelWorkspace",
   "bindChannelIdentity",
@@ -169,6 +174,38 @@ export class D1ChannelRuntimeAuthority implements D1ChannelRuntimeAuthorityPort 
     const access = await this.workspaceAccess(binding.userId, workspaceId)
     if (!access || access.role_rank < actionRank(args.action)) throw denied()
     return { actorId: binding.actorId, actorKind: binding.actorKind }
+  }
+
+  private async requireActor(actorId: string): Promise<Principal> {
+    const actor = await this.database.prepare(`select a.actor_id, a.user_id from actors a join users u on u.user_id = a.user_id where a.actor_id = ? and a.kind = 'human' and a.state = 'active' and u.state = 'active'`).bind(requireText(actorId, "actorId")).first<{ actor_id: string; user_id: string }>()
+    if (!actor) throw denied("Canonical active machine actor is required")
+    return { actorId: actor.actor_id, userId: actor.user_id, actorKind: "human" }
+  }
+
+  async resolveRuntimeMachineAccess(actorId: string, workspaceId: string) {
+    const who = await this.requireActor(actorId)
+    const access = await this.workspaceAccess(who.userId, requireText(workspaceId, "workspaceId"))
+    if (!access || access.role_rank < actionRank("write")) throw denied()
+    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: rankRole(access.role_rank) }
+  }
+
+  async recordActorRuntimeAccessToken(args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) {
+    const who = await this.requireActor(args.actorId)
+    if (args.actorKind !== who.actorKind) throw denied()
+    return this.recordUserRuntimeToken(who, args)
+  }
+
+  async resolveChannelMachineAccess(identity: ChannelMachineIdentity, workspaceId: string) {
+    const who = await this.requireBinding(identity)
+    const access = await this.workspaceAccess(who.userId, requireText(workspaceId, "workspaceId"))
+    if (!access || access.role_rank < actionRank("write")) throw denied()
+    return { actorId: who.actorId, actorKind: who.actorKind, orgId: access.org_id, role: rankRole(access.role_rank) }
+  }
+
+  async recordChannelRuntimeAccessToken(identity: ChannelMachineIdentity, args: Parameters<WorkspaceAuthority["recordRuntimeAccessToken"]>[1]) {
+    const who = await this.requireBinding(identity)
+    if (args.actorId !== who.actorId || args.actorKind !== who.actorKind) throw denied("Runtime token actor does not match channel binding")
+    return this.recordUserRuntimeToken(who, args)
   }
 
   async recordRuntimeAccessToken(

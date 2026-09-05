@@ -12,7 +12,7 @@ import { centralTransportForServer, isLocalPersonalScope } from "@/platform/runt
 export type Placement = {
   workspaceId?: string
   hostId?: string
-  hosting: "central" | "workspace"
+  hosting: "control-plane" | "workspace"
   transport: "loopback" | "signed-web" | "workspace-relay" | "direct-runtime"
   role?: RelayRole
 }
@@ -24,7 +24,7 @@ export function signedCentralPlacement(input: {
 }): Placement {
   return {
     ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-    hosting: "central",
+    hosting: "control-plane",
     transport: input.transport ?? "signed-web",
     ...(input.role ? { role: input.role } : {}),
   }
@@ -58,12 +58,7 @@ export function placementFor(input: {
       transport: "workspace-relay",
     }
   }
-  if (input.ref?.host === "central") {
-    return signedCentralPlacement({
-      workspaceId: input.ref.workspaceId,
-      transport: centralTransportForServer(input.serverUrl),
-    })
-  }
+
   if (input.ref && hasBacking(input.ref)) {
     return { hosting: "workspace", transport: "loopback" }
   }
@@ -78,7 +73,7 @@ export function placementFor(input: {
       }
     }
     return {
-      hosting: "central",
+      hosting: "control-plane",
       transport: "signed-web",
     }
   }
@@ -93,7 +88,7 @@ export function placementFor(input: {
     return { hosting: "workspace", transport: "loopback" }
   }
   if (requiresSignedLegacyDirectory(input.legacy?.directory)) {
-    return { hosting: "central", transport: "signed-web" }
+    return { hosting: "control-plane", transport: "signed-web" }
   }
   return undefined
 }

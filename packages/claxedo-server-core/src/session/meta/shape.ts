@@ -1,4 +1,4 @@
-import type { SessionAttachment, SessionToolSandbox } from "./types"
+import type { SessionAttachment } from "./types"
 import type { Workspace } from "../../workspace/store"
 
 const KINDS = new Set(["review", "page"])
@@ -16,7 +16,7 @@ export function txt(input: unknown) {
 }
 
 export function host(input: unknown) {
-  return input === "central" || input === "workspace" ? input : undefined
+  return input === "workspace" ? input : undefined
 }
 
 function num(input: unknown) {
@@ -56,69 +56,6 @@ export function root(input: string, by: Map<string, { parentID?: string }>, seen
   return root(parentID, by, seen)
 }
 
-/**
- * Parse a stored tool-sandbox ref. Accepts a JSON string (as persisted in the
- * `tool_sandbox` column) or an already-parsed object. Returns `undefined` for
- * missing/malformed values so recovery falls back to the virtual env instead of
- * throwing. The stored ref is reproduced verbatim — including its own
- * `workspaceId`, which may differ from the session's workspace.
- */
-export function toolSandbox(input: unknown): SessionToolSandbox | undefined {
-  const row = typeof input === "string"
-    ? (() => {
-        const trimmed = input.trim()
-        if (!trimmed) return undefined
-        try {
-          return rec(JSON.parse(trimmed))
-        } catch {
-          return undefined
-        }
-      })()
-    : rec(input)
-  if (!row) return undefined
-  const kind = txt(row.kind)
-  if (kind === "workspace-runtime") {
-    const workspaceId = txt(row.workspaceId) ?? txt(row.workspace_id)
-    if (!workspaceId) return undefined
-    const directory = txt(row.directory)
-    const worktree = txt(row.worktree)
-    const baseCommit = txt(row.baseCommit) ?? txt(row.base_commit)
-    const leaseEpoch = num(row.leaseEpoch) ?? num(row.lease_epoch)
-    return {
-      kind: "workspace-runtime",
-      workspaceId,
-      ...(directory ? { directory } : {}),
-      ...(worktree ? { worktree } : {}),
-      ...(baseCommit ? { baseCommit } : {}),
-      ...(leaseEpoch !== undefined ? { leaseEpoch } : {}),
-    }
-  }
-  if (kind === "virtual") {
-    const id = txt(row.id)
-    return { kind: "virtual", ...(id ? { id } : {}) }
-  }
-  return undefined
-}
-
-/** Serialize a tool-sandbox ref for the `tool_sandbox` column (JSON, or null). */
-export function serializeToolSandbox(input: SessionToolSandbox | null | undefined): string | null {
-  if (!input) return null
-  if (input.kind === "workspace-runtime") {
-    return JSON.stringify({
-      kind: "workspace-runtime",
-      workspaceId: input.workspaceId,
-      ...(input.directory ? { directory: input.directory } : {}),
-      ...(input.worktree ? { worktree: input.worktree } : {}),
-      ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
-      ...(input.leaseEpoch !== undefined ? { leaseEpoch: input.leaseEpoch } : {}),
-    })
-  }
-  return JSON.stringify({
-    kind: "virtual",
-    ...(input.id ? { id: input.id } : {}),
-  })
-}
-
 export function sessionModel(input: unknown): { providerID: string; modelID: string } | undefined {
   const row = rec(input)
   const providerID = txt(row?.providerID) ?? txt(row?.provider_id)
@@ -134,7 +71,6 @@ export function storedSessionRef(input: {
   directory?: string | null
   host?: string | null
 }) {
-  if (input.host === "central") return `central:${input.session_id}`
   if (input.workspace_kind === "local") return `local:${input.directory ?? "global"}:session:${input.session_id}`
   if (input.workspace_id) return `workspace:${input.workspace_id}:session:${input.session_id}`
   return `local:${input.directory ?? "global"}:session:${input.session_id}`
@@ -143,7 +79,7 @@ export function storedSessionRef(input: {
 export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
   const item = rec(input)
   const session_id = txt(item?.id)
-  if (!session_id) return
+  if (!session_id || (item?.host !== undefined && !host(item.host))) return
   const time = stamp(item)
   const workspace_id = ws?.id ?? txt(item?.workspaceID) ?? null
   const hostValue = host(item?.host) ?? "workspace"
@@ -161,7 +97,6 @@ export function sessionMetaSyncRow(input: unknown, ws?: Workspace) {
     project_id: ws?.project_id ?? txt(item?.projectID) ?? null,
     host: hostValue,
     directory,
-    tool_sandbox: serializeToolSandbox(toolSandbox(item?.toolSandbox)),
     model_provider_id: sessionModel(item?.model)?.providerID ?? null,
     model_id: sessionModel(item?.model)?.modelID ?? null,
     title: txt(item?.title) ?? txt(item?.slug) ?? null,

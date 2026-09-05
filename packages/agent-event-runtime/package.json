@@ -89,6 +89,13 @@
       "development": "./dist/harnesses/cursor.mjs",
       "import": "./dist/harnesses/cursor.mjs",
       "default": "./dist/harnesses/cursor.mjs"
+    },
+    "./harnesses/pi": {
+      "types": "./dist/harnesses/pi/index.d.ts",
+      "bun": "./dist/harnesses/pi.mjs",
+      "development": "./dist/harnesses/pi.mjs",
+      "import": "./dist/harnesses/pi.mjs",
+      "default": "./dist/harnesses/pi.mjs"
     }
   },
   "files": [

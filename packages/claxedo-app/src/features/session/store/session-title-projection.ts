@@ -56,7 +56,6 @@ function centralTarget(
   directory: string | undefined,
   workspaceId: string | undefined,
 ) {
-  if (sessionRef?.host === "central") return true
   if (directory === "global") return true
   return !directory && !workspaceId && sessionRef?.host !== "workspace"
 }

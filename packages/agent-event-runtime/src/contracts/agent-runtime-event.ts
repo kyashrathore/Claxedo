@@ -183,7 +183,7 @@ export type AgentRuntimeEvent = RuntimeEventMeta & (
       parentID?: string
       /** Authoritative placement identity for non-workspace session hosts. */
       sessionRef?: string
-      host?: "central" | "workspace"
+      host?: "workspace"
       workspaceID?: string
     }
   | { type: "session-title"; title: string }

@@ -13,7 +13,6 @@ import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts
 import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "../../workspace-runtime/src/remote-session-authority.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
 import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/self-hosted-execution"
-import { requirePiModel } from "@claxedo/agent-sdk-runtime/adapters"
 import { putCredential } from "@claxedo/server-core/credentials/registry"
 import {
   createSelfHostedApp,
@@ -56,12 +55,8 @@ const role =
   requestedRole === "viewer" || requestedRole === "editor" || requestedRole === "owner" ? requestedRole : "editor"
 const backendPort = Number(process.env.CLAXEDO_E2E_BACKEND_PORT || 0)
 const scriptedModelUrl = process.env.CLAXEDO_E2E_SCRIPTED_MODEL_URL?.trim()
-const piModelBackend = scriptedModelUrl
-  ? ({ model = { providerID: "openai", modelID: "gpt-4.1" } }) => ({
-      model: { ...requirePiModel(model), baseUrl: scriptedModelUrl },
-      getApiKey: () => "test-key",
-    })
-  : undefined
+if (scriptedModelUrl && !process.env.PI_CODING_AGENT_DIR)
+  throw new Error("Scripted Pi requires the provider fixture's native PI_CODING_AGENT_DIR")
 
 function configureRuntimeSessionAuthorityUrl(controlPlaneUrl) {
   const normalized = controlPlaneUrl.replace(/\/+$/, "")
@@ -92,8 +87,6 @@ process.env.WORKSPACE_RUNTIME_CONFIG_TOKEN = runtimeConfigToken
 if (scriptedModelUrl) {
   // Scripted runs use only the fixture's encrypted credential store.
   delete process.env.CLAXEDO_CF_KV_URL
-  delete process.env.CLAXEDO_PI_MODEL_BACKEND
-  delete process.env.CLAXEDO_PI_MODEL
 }
 
 // A user-hosted tunnel and the control-plane Local Host Link are two views of
@@ -160,10 +153,8 @@ async function startCloudRuntime(input) {
     // since it is host-agnostic — which is exactly why this hid).
     hostId: workspaceId,
   }
-  const opencodeRuntime = createWorkspaceOpenCodeRuntime(workspaceDir)
   let runtime
   runtime = createWorkspaceRuntimeApp({
-    ...(piModelBackend ? { piModelBackend } : {}),
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     target: {
       workspaceId,
@@ -219,7 +210,6 @@ async function startCloudRuntime(input) {
     close: async () => {
       await closeHttp(server)
       runtime.dispose()
-      await opencodeRuntime.close()
     },
   }
 }
@@ -885,7 +875,6 @@ await authority.releaseSessionTurn({
 // before any tunnel request can create the runtime host.
 configureEmbeddedWorkspaceRuntime({
   sessionAccessPolicy: embeddedSessionPolicy,
-  ...(piModelBackend ? { piModelBackend } : {}),
 })
 
 const built = createSelfHostedApp(services, {

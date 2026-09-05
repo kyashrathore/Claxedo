@@ -11,12 +11,11 @@ export const HARNESS_IDS = NATIVE_HARNESS_IDS
 export type HarnessId = string
 export type BuiltinHarnessId = NativeHarnessId
 
-export type SessionHost = "central" | "workspace"
+export type SessionHost = "workspace"
 
 export type HarnessRef = HarnessSelection & { readonly binary?: string }
 
 export type SandboxRef =
-  | { readonly kind: "virtual" }
   | { readonly kind: "workspace"; readonly workspaceId: string; readonly hosting: "cloud" | "user-hosted"; readonly hostId?: string }
   | { readonly kind: "local"; readonly cwd: string }
 
@@ -76,29 +75,8 @@ export function sessionHarness(ref: SessionRef): HarnessRef | undefined {
   return ref.harness
 }
 
-export function isDirectorylessPiSession(input: { directory?: string | null; sessionRef?: SessionRef }) {
-  const harness = input.sessionRef ? sessionHarness(input.sessionRef) : undefined
-  return !input.directory && input.sessionRef?.host === "central" && harness?.kind === "native" && harness.harnessId === "pi"
-}
-
 export function supportsSessionDirectory(input: { directory?: string | null; sessionRef?: SessionRef }) {
-  return !!input.directory || input.sessionRef?.host !== "central" || isDirectorylessPiSession(input)
-}
-
-export function centralSessionRef(input: {
-  sessionId?: string
-  workspaceId?: string
-  harness?: HarnessRef
-}): SessionRef | undefined {
-  const sessionId = input.sessionId?.trim()
-  if (!sessionId) return undefined
-  return {
-    sessionId,
-    host: "central",
-    toolSandbox: { kind: "virtual" },
-    ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-    ...(input.harness ? { harness: input.harness } : {}),
-  }
+  return !!input.directory
 }
 
 export function workspaceBackedSessionRef(input: {
@@ -171,19 +149,7 @@ export function retargetSessionRef(input: {
 }): SessionRef | undefined {
   const sessionId = input.sessionId?.trim()
   if (!sessionId) return undefined
-  if (input.source?.host === "central") {
-    const ref = centralSessionRef({
-      sessionId,
-      workspaceId: input.source.workspaceId,
-    })
-    if (!ref) return undefined
-    return {
-      ...ref,
-      toolSandbox: input.source.toolSandbox ?? ref.toolSandbox,
-      ...(input.source.cwd ? { cwd: input.source.cwd } : {}),
-      ...(input.source.harness ? { harness: input.source.harness } : {}),
-    }
-  }
+
   if (input.source?.toolSandbox?.kind === "workspace") {
     return {
       sessionId,

@@ -6,31 +6,13 @@ export type SessionAttachment = {
   targetID: string
 }
 
-/**
- * First-class tools-only placement for a central/hybrid session. Persisted
- * verbatim so recovery reproduces the exact sandbox the session was created
- * with — including cases where the tool sandbox lives in a different workspace
- * than the session itself. Mirrors `SandboxRef` from `@claxedo/agent-sdk-runtime`.
- */
-export type SessionToolSandbox =
-  | { kind: "virtual"; id?: string }
-  | {
-      kind: "workspace-runtime"
-      workspaceId: string
-      directory?: string
-      worktree?: string
-      baseCommit?: string
-      leaseEpoch?: number
-    }
-
 export type SessionMeta = {
   sessionRef?: string
   sessionID: string
   workspaceID?: string
   projectID?: string
-  host: "central" | "workspace"
+  host: "workspace"
   directory?: string
-  toolSandbox?: SessionToolSandbox
   model?: { providerID: string; modelID: string }
   title?: string
   parentID?: string

@@ -11,10 +11,6 @@
     "deprecated": "Kept temporarily to avoid abrupt ecosystem breaks."
   },
   "entrypoints": {
-    "@claxedo/agent-sdk-runtime/pi-catalog": {
-      "status": "integration",
-      "purpose": "Build-generated Pi model metadata with no native runtime dependencies."
-    },
     "@claxedo/agent-sdk-runtime": {
       "status": "stable",
       "purpose": "AgentRuntime facade and shared runtime types."
@@ -59,14 +55,6 @@
       "status": "advanced",
       "purpose": "Public advanced adapter contracts and adapter helper types."
     },
-    "@claxedo/agent-sdk-runtime/session-env": {
-      "status": "integration",
-      "purpose": "Host-provided filesystem/process environment contract."
-    },
-    "@claxedo/agent-sdk-runtime/virtual-session-env": {
-      "status": "integration",
-      "purpose": "Virtual in-memory session environment."
-    },
     "@claxedo/agent-sdk-runtime/compat-events": {
       "status": "compatibility",
       "purpose": "Claxedo client-presentation event bridge."
@@ -105,27 +93,24 @@
     "recipes": "docs/recipes.md"
   },
   "declarationHashes": {
-    "@claxedo/agent-sdk-runtime/pi-catalog": "bdd9d23d8a6b9067a933dd8152de83c1f3f0047d844d23c00da31284eec41845",
-    "@claxedo/agent-sdk-runtime": "d0cbc28f64f578a853e961f4722019fe0b2a0152eecca5dca923e68cb0b5bab1",
+    "@claxedo/agent-sdk-runtime": "f4062ab50525a422e7b016e9b92935d6b1766a3ed86d3ad072ab5ac0d356b8e3",
     "@claxedo/agent-sdk-runtime/compat-events": "249c82ecd76368f43830fd415d244b06bb54cd798e155181f42ff7675278ad2c",
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
-    "@claxedo/agent-sdk-runtime/capabilities": "b6a3b68fbc31ab1e082027bbf6cc8628a119497d44db787ac1cdd6c696be0d50",
+    "@claxedo/agent-sdk-runtime/capabilities": "c1d12e7e7ce597ebfa324184889a70023585c19b09a25fe4d5de25e03a06d34f",
     "@claxedo/agent-sdk-runtime/runtime-event-hub": "fe78c092061dca900542af9c27afb862a44c980c625f15aabedc60df5b7c300b",
     "@claxedo/agent-sdk-runtime/sse": "bbb71767f0a9f6a46336f5f11ddafc79b94eb8302460681d26c1f3f5028b9757",
     "@claxedo/agent-sdk-runtime/mcp-resolver": "bab027282963a8bb9a8b379122b0164f6d42c58509c8f63c4eee7f47959ef6e4",
     "@claxedo/agent-sdk-runtime/subagent-admission": "fa6c050e07f8eee32decc98140c764669181e3429ccad8be98e3bbfd03a2d284",
-    "@claxedo/agent-sdk-runtime/session-env": "e93591203b0878939aa033e43705be4e1dd24083aad41e111ba752242aae2c65",
-    "@claxedo/agent-sdk-runtime/virtual-session-env": "912497932792ab10107c08c93d1a5b0ff869702ea9075d892edf494493fe7501",
-    "@claxedo/agent-sdk-runtime/harnesses": "f2cd29cfc69d8b86a08b0b671b95e13aff119cae4eeda15d47bdcb340efdfae8",
-    "@claxedo/agent-sdk-runtime/harnesses/acp": "80d7486638dd6270f9e5a6e085f1e14f0d31caf9e861b06ff6f7c6d2cb7290d5",
-    "@claxedo/agent-sdk-runtime/harnesses/claude": "a2e7e545b2ce1fb7d1a5d80fea8236531b11d7f2e123fede20b844d3e7695c5f",
-    "@claxedo/agent-sdk-runtime/harnesses/codex": "d866c49f0d8cefc9cce27797a0a55a5795d7ceb222cfd78348cb828d5b9685dc",
-    "@claxedo/agent-sdk-runtime/harnesses/cursor": "1fcbab164914dcc66f2132998edee75b0ae9af0755c5ff5e35d3d1318b82f872",
-    "@claxedo/agent-sdk-runtime/harnesses/pi": "fdb660f4f1752f55c6151d3215ecf73e5e5e23d5afd035a5ea66698fd3377950",
-    "@claxedo/agent-sdk-runtime/adapters": "cf18cadb148ed2e66d9c2b6bb60e3c5189669baec3e7c1481aadc63cd13e8e7a",
-    "@claxedo/agent-sdk-runtime/message-page": "d0cbc28f64f578a853e961f4722019fe0b2a0152eecca5dca923e68cb0b5bab1",
-    "@claxedo/agent-sdk-runtime/stores/memory": "c1a7260774778e59f02c9738ea3b2fd881aefb91ae41d2dc901236da3ae612c2",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "babbc1da441016271e566d67de73ef09c04f50dac4c5fcccf877bbf9e8d9833c"
+    "@claxedo/agent-sdk-runtime/harnesses": "a41cf584922e300e5060104331c22f8d3861f8fda6d520571fa020939788e925",
+    "@claxedo/agent-sdk-runtime/harnesses/acp": "b55f7df11e9dda8a6b73870841e8ee5b3b2c0ecffca33bca104e7df6e94defe6",
+    "@claxedo/agent-sdk-runtime/harnesses/claude": "974f9f8e3e4503b77c3336703f14dc8aadc9ac5cfc81276921a392fe807e0d0e",
+    "@claxedo/agent-sdk-runtime/harnesses/codex": "aabb5c181ba37f1ca353c8fd6c5a163684deb7c80c4f6de280e01476d2d455d8",
+    "@claxedo/agent-sdk-runtime/harnesses/cursor": "84bc5cf4525a76a011f72bce3964b229af0b3cbe9be3964b20d4e75bbe2d138e",
+    "@claxedo/agent-sdk-runtime/harnesses/pi": "6c5ce8ae3fb9d464ce072518d83e1d31e26f48229322b739b30786f6753d8116",
+    "@claxedo/agent-sdk-runtime/adapters": "8aca6f3fbe40de282a0ea658770dc49c16375b0f55980bd80718a894798a6b4c",
+    "@claxedo/agent-sdk-runtime/message-page": "f4062ab50525a422e7b016e9b92935d6b1766a3ed86d3ad072ab5ac0d356b8e3",
+    "@claxedo/agent-sdk-runtime/stores/memory": "ae5068febb130a9a20c83aca8ddd89031569638e68ce076f6316fdfee5f47f8d",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "f1253dcda5152439251e6351a4e435d9d43a76e8f133b7b3fa7629f2853ae759"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [
@@ -152,10 +137,8 @@
       "createAgentRuntime",
       "createConnectionProviderRegistry",
       "createLiveModelSource",
-      "createMemoryRunStore",
       "createMemorySubagentAdmissionStore",
       "createSubagentAdmissionBoundary",
-      "createVirtualSessionEnv",
       "defaultSessionModel",
       "firstTurnErrorData",
       "goalActionAvailable",
@@ -290,12 +273,6 @@
       "import": "@claxedo/agent-sdk-runtime/compat-events",
       "kind": "type",
       "purpose": "Claxedo client-presentation event bridge."
-    },
-    "createVirtualSessionEnv": {
-      "status": "integration",
-      "import": "@claxedo/agent-sdk-runtime/virtual-session-env",
-      "kind": "function",
-      "purpose": "Create an in-memory virtual session environment."
     }
   }
 }

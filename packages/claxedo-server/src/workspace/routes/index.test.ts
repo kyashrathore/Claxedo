@@ -218,6 +218,10 @@ function services(): ControlPlaneServices {
     telemetry: { capture: vi.fn() },
     localExecution: { enabled: true },
     authority: {
+      resolveRuntimeMachineAccess: vi.fn(),
+      resolveChannelMachineAccess: vi.fn(),
+      recordActorRuntimeAccessToken: vi.fn(async () => ({})),
+    recordChannelRuntimeAccessToken: vi.fn(),
       usersMe: vi.fn(async () => ({
         actor_id: "actor_1",
         actor_kind: "human" as const,

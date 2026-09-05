@@ -8,7 +8,6 @@ import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
 import type { OpenCodeRuntime } from "./opencode/index"
-import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
 import { createRelayHostAuthMiddleware, type RelayHostAuthOptions } from "./workspace-host-service-auth"
@@ -18,7 +17,6 @@ import {
   type WorkspaceRelayHostTunnelOptions,
 } from "./workspace-relay-host-tunnel"
 import { ConfigRoutes, type RuntimeHarnessSelection } from "./routes/config"
-import { SessionEnvRoutes } from "./routes/session-env"
 import { RuntimeDocumentHydrationRoutes } from "./routes/document-hydration"
 import { LocalDocumentBrokerRoutes } from "./routes/local-document-broker"
 import {
@@ -85,7 +83,6 @@ export type WorkspaceRuntimeServerOptions = {
   opencodeRuntime?: OpenCodeRuntime
   /** Standalone hosts close their injected SDK owner during process drain. */
   ownsOpenCodeRuntime?: boolean
-  piModelBackend?: PiModelBackendResolver
   harness?: WorkspaceHostOptions["harness"]
   connectionProviders?: WorkspaceHostOptions["connectionProviders"]
   resolveConnectionSecrets?: WorkspaceHostOptions["resolveConnectionSecrets"]
@@ -436,7 +433,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       : remoteWorkspaceSessionAccessPolicyFromEnv())
   const host = createWorkspaceHost({
     ...(options.opencodeRuntime ? { opencodeRuntime: options.opencodeRuntime } : {}),
-    ...(options.piModelBackend ? { piModelBackend: options.piModelBackend } : {}),
     ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),
     ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
@@ -554,7 +550,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   // Binding management inherits the workspace exposure/auth boundary. Tool
   // execution itself is only reachable through each Session's nonce-bound
   // loopback callback, which supplies the canonical Session identity.
-  app.route(WorkspaceRuntimeRoutes.sessionEnv, SessionEnvRoutes(options.processObserver))
   app.route("/", RuntimeDocumentHydrationRoutes({
     trustedTransport: options.exposure?.kind === "relay",
     ...(process.env.CLAXEDO_CONTROL_PLANE_URL ? { controlPlaneOrigin: process.env.CLAXEDO_CONTROL_PLANE_URL } : {}),

@@ -241,25 +241,25 @@ describe("session inventory writers", () => {
     expect(readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" }).sessions).toEqual([])
   })
 
-  test("lifecycle update projects canonical central identity and preserves unchanged row fields", () => {
+  test("lifecycle update projects canonical machine identity and preserves unchanged row fields", () => {
     updateSessionInventoryQueryData<SessionInventoryRow>({
       baseUrl: "http://test",
       mutate: (draft) => {
-        upsertSessionInventoryRow(draft, session("ses_central", 2, {
-          sessionRef: "central:ses_central",
+        upsertSessionInventoryRow(draft, session("ses_machine", 2, {
+          sessionRef: "workspace:ses_machine",
           workspaceId: "ws_1",
           tags: ["harness:pi"],
         }))
         applySessionInventoryLifecycle(
           draft,
           {
-            ...session("ses_central", 3, {
-              directory: "ses_central",
+            ...session("ses_machine", 3, {
+              directory: "ses_machine",
               projectID: "ws_1",
               title: "Canonical title",
             }),
             workspaceID: "ws_1",
-            metadata: { host: "central", sessionRef: "central:ses_central" },
+            metadata: { host: "workspace", sessionRef: "workspace:ses_machine" },
           },
           "updated",
         )
@@ -269,8 +269,8 @@ describe("session inventory writers", () => {
     const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
     expect(inventory.sessions).toHaveLength(1)
     expect(inventory.sessions[0]).toMatchObject({
-      id: "ses_central",
-      sessionRef: "central:ses_central",
+      id: "ses_machine",
+      sessionRef: "workspace:ses_machine",
       workspaceId: "ws_1",
       projectID: "ws_1",
       title: "Canonical title",

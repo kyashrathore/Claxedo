@@ -49,7 +49,6 @@ export function shouldUseRuntimeSessionTransport(input: {
   sessionRef?: SessionRef
 }): boolean {
   if (input.signed) return true
-  if (input.sessionRef?.host === "central") return true
   if (input.sessionRef?.toolSandbox?.kind === "workspace") return true
   return usesScopedSessionTransport(input.sessionID, input.directory)
 }
@@ -71,14 +70,7 @@ export function resolveRuntimePlacement(
   const loopback = centralTransportForServer(ctx.baseUrl) === "loopback"
   const workspaceTransport = input.preferRelayOnLoopback || !loopback ? "workspace-relay" : "loopback"
 
-  // A confirmed central-hosted ref: the control plane owns it, no workspace scope.
-  if (input.sessionRef?.host === "central") {
-    return {
-      ...(input.sessionRef.workspaceId ? { workspaceId: input.sessionRef.workspaceId } : {}),
-      hosting: "central",
-      transport: centralTransportForServer(ctx.serverUrl),
-    }
-  }
+
   // An explicit workspace tool-sandbox: route to that workspace's runtime.
   if (input.sessionRef?.toolSandbox?.kind === "workspace") {
     return {
@@ -92,10 +84,6 @@ export function resolveRuntimePlacement(
   if (input.sessionRef?.toolSandbox?.kind === "local") {
     return { hosting: "workspace", transport: "loopback" }
   }
-  // Any other resolved ref is central-hosted.
-  if (input.sessionRef) {
-    return { hosting: "central", transport: centralTransportForServer(ctx.serverUrl) }
-  }
   // A bare workspace id (no ref) routes to that workspace's runtime.
   if (input.workspaceId) {
     return {
@@ -108,8 +96,7 @@ export function resolveRuntimePlacement(
   if (isLocalPersonalScope({ serverUrl: ctx.serverUrl, directory: input.directory })) {
     return { hosting: "workspace", transport: "loopback" }
   }
-  // Default: central control plane.
-  return { hosting: "central", transport: centralTransportForServer(ctx.serverUrl) }
+  throw new Error("A machine workspace is required for session execution")
 }
 
 /**

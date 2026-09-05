@@ -14,11 +14,11 @@ const localSessionRef = (sessionId: string) => ({
   toolSandbox: { kind: "local" as const, cwd: "/repo/main" },
 })
 
-const centralSessionRef = (sessionId: string) => ({
+const cloudSessionRef = (sessionId: string) => ({
   sessionId,
-  host: "central" as const,
-  workspaceId: "ws_central",
-  toolSandbox: { kind: "virtual" as const },
+  host: "workspace" as const,
+  workspaceId: "ws_cloud",
+  toolSandbox: { kind: "workspace" as const, workspaceId: "ws_cloud", hosting: "cloud" as const },
 })
 
 // Rubric T2: per-phase tests for handoff.ts. Focused on the decision tree
@@ -505,31 +505,6 @@ describe("applyCreatedSessionTargetEffects", () => {
     expect(navigated).toBe("/s/ses_1")
   })
 
-  test("central-created sessions keep the global session route", async () => {
-    let navigated = ""
-    const result = applyCreatedSessionTargetEffects({
-      created: true,
-      session: { id: "ses_1" },
-      sourceScope: "scope-1",
-      sessionDirectory: "workspace:ws_central",
-      sessionRef: centralSessionRef("ses_1"),
-      shouldAutoAccept: false,
-      enableAutoAccept: () => undefined,
-      navigateOnCreate: true,
-      previousSessionId: "new",
-      setLayoutTabs: () => undefined,
-      navigate: (path) => {
-        navigated = path
-      },
-      publishCloudHandoff: () => undefined,
-    })
-
-    result.handoffCreatedSession?.()
-
-    expect(navigated).toBe("")
-    await Promise.resolve()
-    expect(navigated).toBe("/s/ses_1")
-  })
 
   test("publishCloudHandoff fires with opening_session message when navigation runs", () => {
     let handoffMsg = ""

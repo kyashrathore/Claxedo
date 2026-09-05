@@ -157,9 +157,7 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
       ownerKey: prepared.ownerKey ?? null,
     })
     const targetBinding: AgentExecutionBinding = {
-      ...(input.binding.scope === "central"
-        ? { ...input.binding, directory: "" as const }
-        : { ...input.binding, directory: targetDirectory ?? "" }),
+      ...input.binding, directory: targetDirectory ?? "",
       connectionId: connectionIdForHarness(input.update.harness),
       upstreamSessionId: prepared.agentSessionId ?? prepared.id,
     }

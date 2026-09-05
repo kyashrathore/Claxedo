@@ -9,7 +9,7 @@ export type DraftDefaultPair = {
 
 export type DraftDefaultResult = DraftDefaultPair & {
   readonly state: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement"
-  readonly source: "saved" | "harness-default" | "pi-provider-default" | "placement-default"
+  readonly source: "saved" | "harness-default" | "placement-default"
   readonly blockedModel?: ModelKey
 }
 
@@ -18,8 +18,6 @@ export type ResolveDraftDefaultInput = {
   readonly supportedHarnesses: readonly HarnessType[]
   readonly eligibleModels: readonly ModelKey[]
   readonly declaredDefaultModel?: ModelKey
-  readonly connectedProviderIDs?: readonly string[]
-  readonly providerDefaults?: Readonly<Record<string, string | undefined>>
   readonly placementDefault?: DraftDefaultPair
 }
 
@@ -60,27 +58,7 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
       source: "saved",
     }
   }
-  if (input.saved.harness.kind === "native" && input.saved.harness.harnessId === "pi") {
-    const defaults = [...new Set(input.connectedProviderIDs ?? [])]
-      .map((providerID) => {
-        const modelID = input.providerDefaults?.[providerID]
-        return modelID ? { providerID, modelID } : undefined
-      })
-      .filter((model): model is ModelKey => !!model)
-      .filter((model) => eligible(input.eligibleModels, model))
-    if (defaults.length === 1) {
-      return {
-        harness: input.saved.harness,
-        model: defaults[0],
-        state: "ready",
-        source: "pi-provider-default",
-      }
-    }
-  }
-  if (
-    !(input.saved.harness.kind === "native" && input.saved.harness.harnessId === "pi") &&
-    eligible(input.eligibleModels, input.declaredDefaultModel)
-  ) {
+  if (eligible(input.eligibleModels, input.declaredDefaultModel)) {
     return {
       harness: input.saved.harness,
       model: input.declaredDefaultModel,

@@ -4,7 +4,7 @@ import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
 
 const fact = (revision: number, input: number): TurnUsageRevision => ({
   hostId: "host", sessionRef: "central:s", sessionId: "s", messageId: "m", revision,
-  observedAt: Date.UTC(2026, 7, 8, 23, 30), settlement: "final", status: "completed", location: "central",
+  observedAt: Date.UTC(2026, 7, 8, 23, 30), settlement: "final", status: "completed", location: "cloud-workspace",
   harness: "pi", providerId: "anthropic", modelId: "m", tokens: { input, output: 2, reasoning: null, cache: { read: 0, write: null } },
   quality: { source: "provider", knownCategories: ["input", "output", "cache_read"] },
 })

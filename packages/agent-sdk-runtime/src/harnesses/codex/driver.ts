@@ -234,7 +234,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const thread = record(result.thread)
     const threadId = text(thread?.id)
     if (!threadId) throw new Error("Codex app-server did not return a thread id")
-    return threadId
+    return { id: threadId }
   }
 
   createRuntime(threadId: string): AgentEventRuntime {

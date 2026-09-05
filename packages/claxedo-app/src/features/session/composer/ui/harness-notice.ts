@@ -18,12 +18,8 @@ export type HarnessNoticeInput = {
   noModels: boolean
   /** The runtime's own error text, verbatim. */
   configError?: string
-  /** Provider-catalog error (pi only). */
-  providerError?: string
   /** Name of a saved default model that no longer resolves. */
   savedModelUnavailable?: string
-  /** A pi model is selected but has dropped out of the catalog. */
-  piModelMissing: boolean
   /** Credentials are missing and setup belongs in Settings → Providers. */
   setupRequired?: boolean
   openProviders?: () => void
@@ -72,7 +68,7 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       },
     }
   }
-  const failure = input.providerError ?? input.configError
+  const failure = input.configError
   if (input.optionsFailed || (failure && input.noModels)) {
     return {
       kind: "models-failed",
@@ -88,22 +84,6 @@ export function resolveHarnessNotice(input: HarnessNoticeInput): HarnessNotice |
       tone: "warning",
       message: `${input.savedModelUnavailable} is unavailable`,
       detail: "Reconnect its provider in Settings → Providers, or choose another model.",
-      retry: false,
-      ...(input.openProviders ? {
-        action: {
-          label: "Open Providers",
-          ariaLabel: "Open Settings Providers",
-          run: input.openProviders,
-        },
-      } : {}),
-    }
-  }
-  if (input.piModelMissing) {
-    return {
-      kind: "pi-model-missing",
-      tone: "warning",
-      message: "This Pi model is no longer available",
-      detail: "Choose another model, or reconnect its provider in Settings → Providers.",
       retry: false,
       ...(input.openProviders ? {
         action: {

@@ -49,7 +49,6 @@ import {
 } from "../helpers/rail-oracle"
 import {
   claudeScriptedEnv,
-  piScriptedEnv,
   startScriptedModelServer,
   type ScriptedModelServer,
 } from "../helpers/scripted-model-server"
@@ -497,7 +496,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     packaged = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
       env: {
-        ...piScriptedEnv(model.v1Url),
+        ...model.piEnv,
       },
       // The BrowserContext branch — see boot-observer.ts's doc on why a
       // Page-level install cannot see this app's real boot sequence at all.
@@ -923,7 +922,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const app = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
       env: {
-        ...piScriptedEnv(model.v1Url),
+        ...model.piEnv,
         ...extraEnv,
       },
     })
@@ -1231,7 +1230,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     packaged = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
       env: {
-        ...piScriptedEnv(scripted.v1Url),
+        ...scripted.piEnv,
         ...claudeScriptedEnv(scripted.url, claudeConfigDir),
         // A safety fuse, not the redirect mechanism. Localhost bypasses the
         // proxy; if a future Claude build ignores ANTHROPIC_BASE_URL, external

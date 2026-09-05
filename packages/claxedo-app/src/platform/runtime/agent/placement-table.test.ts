@@ -14,10 +14,6 @@ describe("shouldUseRuntimeSessionTransport", () => {
     expect(shouldUseRuntimeSessionTransport({ directory: "opencode", signed: true })).toBe(true)
   })
 
-  it("uses runtime transport for central-hosted refs", () => {
-    const sessionRef: SessionRef = { sessionId: "s", host: "central", toolSandbox: { kind: "virtual" } }
-    expect(shouldUseRuntimeSessionTransport({ directory: "", signed: false, sessionRef })).toBe(true)
-  })
 
   it("uses runtime transport for workspace tool-sandbox refs", () => {
     const sessionRef: SessionRef = {
@@ -39,20 +35,7 @@ describe("shouldUseRuntimeSessionTransport", () => {
 })
 
 describe("resolveRuntimePlacement", () => {
-  it("routes central-hosted refs to the control plane with the server's transport", () => {
-    const sessionRef: SessionRef = { sessionId: "s", host: "central", toolSandbox: { kind: "virtual" } }
-    expect(resolveRuntimePlacement({ sessionRef }, LOOPBACK)).toEqual({ hosting: "central", transport: "loopback" })
-    expect(resolveRuntimePlacement({ sessionRef }, SIGNED)).toEqual({ hosting: "central", transport: "signed-web" })
-  })
 
-  it("carries the workspaceId for central refs that have one", () => {
-    const sessionRef: SessionRef = { sessionId: "s", host: "central", workspaceId: "ws_c", toolSandbox: { kind: "virtual" } }
-    expect(resolveRuntimePlacement({ sessionRef }, SIGNED)).toEqual({
-      workspaceId: "ws_c",
-      hosting: "central",
-      transport: "signed-web",
-    })
-  })
 
   it("routes workspace tool-sandbox refs to the workspace relay", () => {
     const sessionRef: SessionRef = {
@@ -103,8 +86,8 @@ describe("resolveRuntimePlacement", () => {
     })
   })
 
-  it("defaults to the central control plane when nothing else matches", () => {
-    expect(resolveRuntimePlacement({ directory: "" }, SIGNED)).toEqual({ hosting: "central", transport: "signed-web" })
+  it("rejects execution when no machine workspace is available", () => {
+    expect(() => resolveRuntimePlacement({ directory: "" }, SIGNED)).toThrow("A machine workspace is required")
   })
 })
 

@@ -269,24 +269,24 @@ describe("http backend ports", () => {
 
     const backend = createHttpSessionBackend({
       request,
-      claxedoServerUrl: "http://claxedo.test",
+      claxedoServerUrl: "http://127.0.0.1:3001",
     })
 
     expect(backend.usesScopedTransport("ses_1")).toBe(false)
     expect(backend.usesScopedTransport("ses_1", "workspace:ws_1")).toBe(true)
     expect(backend.usesScopedTransport("uuid-1")).toBe(true)
 
-    await backend.getSession({ directory: "legacy-project", sessionID: "ses_1" })
-    const opaqueCapabilities = await backend.getCapabilities({ directory: "legacy-project", sessionID: "ses_1" })
+    await backend.getSession({ directory: "/legacy-project", sessionID: "ses_1" })
+    const opaqueCapabilities = await backend.getCapabilities({ directory: "/legacy-project", sessionID: "ses_1" })
     await backend.listMessages({ directory: "/repo", sessionID: "uuid-1", limit: 8, before: "cursor_0" })
     await backend.getCapabilities({ directory: "/repo", sessionID: "uuid-1" })
 
     expect(opaqueCapabilities).toMatchObject({ transport: "runtime", commands: true })
     expect(calls).toEqual([
-      "http://claxedo.test/session/ses_1?directory=legacy-project",
-      "http://claxedo.test/session/ses_1/capabilities?directory=legacy-project",
-      "http://claxedo.test/session/uuid-1/message?directory=%2Frepo&limit=8&before=cursor_0",
-      "http://claxedo.test/session/uuid-1/capabilities?directory=%2Frepo",
+      "http://127.0.0.1:3001/session/ses_1?directory=%2Flegacy-project",
+      "http://127.0.0.1:3001/session/ses_1/capabilities?directory=%2Flegacy-project",
+      "http://127.0.0.1:3001/session/uuid-1/message?directory=%2Frepo&limit=8&before=cursor_0",
+      "http://127.0.0.1:3001/session/uuid-1/capabilities?directory=%2Frepo",
     ])
   })
 

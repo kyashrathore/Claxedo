@@ -21,7 +21,7 @@ function minimalSdkRuntimeDriver(): SdkRuntimeDriver {
     type: "codex",
     setAuth() {},
     applyConfig() {},
-    createAgentSession: async () => "thread-1",
+    createAgentSession: async () => ({ id: "thread-1" }),
     deleteAgentSession() {},
     createRuntime() {
       const snapshot = () => runtimeSnapshot({ harness: "codex", threadId: "thread-1", adapterState: {} })
@@ -490,7 +490,7 @@ describe("SdkRuntimeAdapter", () => {
       store: storeRows(createMemoryRuntimeStore()),
       driver: () => ({
         ...minimalSdkRuntimeDriver(),
-        createAgentSession: async () => `thread-${++created}`,
+        createAgentSession: async () => ({ id: `thread-${++created}` }),
       }),
     })
 

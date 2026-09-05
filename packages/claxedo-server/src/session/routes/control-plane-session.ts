@@ -1,10 +1,10 @@
+import { errorBody as dispatchErrorBody, statusOf } from "@claxedo/server-core/platform/errors/base"
 import { Hono, type Context } from "hono"
 import type { ContentfulStatusCode } from "hono/utils/http-status"
-import { randomUUID } from "node:crypto"
-import type { SandboxRef } from "@claxedo/agent-sdk-runtime"
+import { AGENT_HARNESS_IDS } from "@claxedo/agent-sdk-runtime"
+import type { MachineSessionCreate } from "../machine-dispatch"
 import { AgentMessagePageError, type AgentMessagePageInput } from "@claxedo/agent-sdk-runtime/message-page"
 import type { ControlPlaneServices } from "../../authority/services"
-import type { SessionMeta } from "@claxedo/server-core/session/meta/index"
 import { resolveSessionGateway } from "../../authority/http"
 import {
   ControlPlaneAuthError,
@@ -32,7 +32,7 @@ type Options = {
   authConfig?: ControlPlaneAuthConfig
   verifier?: ControlPlaneTokenVerifier
   beforeLocalList?: () => Promise<void>
-  createHybridSession?: (input: { sessionId?: string; title?: string | null; workspaceId?: string | null; toolSandbox?: SandboxRef; harness?: string; model?: { providerID: string; modelID: string }; requireModel?: boolean }) => Promise<{ id: string }>
+  createMachineSession?: (input: MachineSessionCreate, auth?: SignedControlPlaneAuth) => Promise<{ id: string }>
   sessionShareChangedSink?: SessionShareChangedSink
 }
 
@@ -44,10 +44,6 @@ async function signedAuth(req: Request, options: Options) {
   if (auth?.mode === "signed") return auth
   throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
 }
-
-
-
-
 
 
 function hasBearerToken(req: Request) {
@@ -99,23 +95,6 @@ function projectedMessagePage(
   return read(sessionId, page)
 }
 
-async function authorizeCentralSessionRead(
-  services: ControlPlaneServices,
-  auth: Awaited<ReturnType<typeof signedAuth>>,
-  sessionId: string,
-  meta: SessionMeta,
-) {
-  const workspaceId = meta.workspaceID
-  if (!workspaceId) {
-    throw new ControlPlaneAuthError(
-      403,
-      "central_session_workspace_required",
-      "Signed central session access requires workspace scope",
-    )
-  }
-  await requireAuthority(services).authorizeSessionRead(auth, { sessionId, workspaceId })
-}
-
 function workspaceTransportCapabilities(transport: string) {
   return {
     transport,
@@ -131,110 +110,6 @@ function workspaceTransportCapabilities(transport: string) {
     unrevert: false,
     configOptions: false,
   } as const
-}
-
-function centralTransportCapabilities() {
-  return {
-    transport: "pi",
-    abort: true,
-    reconnect: true,
-    replay: true,
-    permissions: false,
-    questions: false,
-    todos: false,
-    commands: false,
-    fork: false,
-    revert: false,
-    unrevert: false,
-    configOptions: false,
-  } as const
-}
-
-async function sessionCreateBody(req: Request) {
-  try {
-    const body = await req.json()
-    return body && typeof body === "object" ? body as Record<string, unknown> : {}
-  } catch {
-    return {}
-  }
-}
-
-function title(input: unknown) {
-  return typeof input === "string" && input.trim().length > 0 ? input.trim() : undefined
-}
-
-function optionalText(input: unknown) {
-  return typeof input === "string" && input.trim().length > 0 ? input.trim() : undefined
-}
-
-function toolSandboxRef(input: unknown): SandboxRef | undefined {
-  if (input === undefined || input === null) return
-  if (!input || typeof input !== "object") {
-    throw new ControlPlaneAuthError(400, "invalid_tool_sandbox", "toolSandbox must be an object")
-  }
-  const item = input as Record<string, unknown>
-  if (item.kind === "virtual") {
-    return typeof item.id === "string" && item.id.length > 0 ? { kind: "virtual", id: item.id } : { kind: "virtual" }
-  }
-  if (item.kind === "workspace-runtime") {
-    if (typeof item.workspaceId !== "string" || item.workspaceId.trim().length === 0) {
-      throw new ControlPlaneAuthError(400, "invalid_tool_sandbox", "workspace-runtime toolSandbox requires workspaceId")
-    }
-    const directory = typeof item.directory === "string" && item.directory.trim().length > 0
-      ? item.directory.trim()
-      : undefined
-    const worktree = optionalText(item.worktree)
-    const baseCommit = optionalText(item.baseCommit) ?? optionalText(item.base_commit)
-    const leaseEpoch = typeof item.leaseEpoch === "number" && Number.isInteger(item.leaseEpoch) && item.leaseEpoch >= 0
-      ? item.leaseEpoch
-      : undefined
-    return {
-      kind: "workspace-runtime",
-      workspaceId: item.workspaceId.trim(),
-      ...(directory ? { directory } : {}),
-      ...(worktree ? { worktree } : {}),
-      ...(baseCommit ? { baseCommit } : {}),
-      ...(leaseEpoch !== undefined ? { leaseEpoch } : {}),
-    }
-  }
-  throw new ControlPlaneAuthError(400, "invalid_tool_sandbox", "toolSandbox kind is unsupported")
-}
-
-function centralHybridToolSandbox(input: unknown): SandboxRef {
-  return toolSandboxRef(input) ?? { kind: "virtual" as const }
-}
-
-function promptModel(input: unknown) {
-  if (input === undefined || input === null) return
-  if (!input || typeof input !== "object" || Array.isArray(input)) {
-    throw new ControlPlaneAuthError(400, "invalid_hybrid_model", "model must contain providerID and modelID")
-  }
-  const row = input as Record<string, unknown>
-  const providerID = optionalText(row.providerID)
-  const modelID = optionalText(row.modelID)
-  if (!providerID || !modelID) {
-    throw new ControlPlaneAuthError(400, "invalid_hybrid_model", "model must contain providerID and modelID")
-  }
-  return { providerID, modelID }
-}
-
-/**
- * Harnesses dispatchable on the central hybrid route today. `pi` is the
- * model-backed central harness; sandbox-backed harnesses join
- * when sandbox-session dispatch lands.
- */
-const HYBRID_HARNESSES = new Set(["pi"])
-
-function hybridHarness(input: unknown): string {
-  if (input === undefined || input === null) return "pi"
-  if (typeof input !== "string" || !HYBRID_HARNESSES.has(input)) {
-    throw new ControlPlaneAuthError(
-      400,
-      "unsupported_hybrid_harness",
-      `harness must be one of: ${[...HYBRID_HARNESSES].join(", ")}`,
-    )
-  }
-  return input
 }
 
 export function ControlPlaneSessionRoutes(services: ControlPlaneServices, options: Options = {}) {
@@ -278,69 +153,26 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
     })
     .post("/sessions", async (c) => {
       try {
-        let signedHostedAuth: SignedControlPlaneAuth | undefined
-        if (!isLoopbackLocalRequest(c.req.raw)) {
-          signedHostedAuth = await signedAuth(c.req.raw, options)
+        const auth = isLoopbackLocalRequest(c.req.raw) && !hasBearerToken(c.req.raw) ? undefined : await signedAuth(c.req.raw, options)
+        const body = await c.req.json().catch(() => undefined) as Record<string, unknown> | undefined
+        if (!body || typeof body !== "object" || Array.isArray(body) || Object.keys(body).some(key => !["workspaceId", "title", "harness", "model"].includes(key))) throw new ControlPlaneAuthError(400, "invalid_session_request", "Use workspaceId, title, harness and model for machine sessions")
+        if (typeof body.workspaceId !== "string" || !body.workspaceId.trim()) throw new ControlPlaneAuthError(400, "workspace_required", "Select a machine workspace first")
+        if (typeof body.harness !== "string" || !AGENT_HARNESS_IDS.includes(body.harness as never)) throw new ControlPlaneAuthError(400, "harness_required", "Select a supported native harness")
+        if (body.title !== undefined && typeof body.title !== "string") throw new ControlPlaneAuthError(400, "invalid_session_request", "title must be a string")
+        let model: MachineSessionCreate["model"]
+        if (body.model !== undefined) {
+          const value = body.model as Record<string, unknown> | null
+          if (!value || typeof value !== "object" || Array.isArray(value) || Object.keys(value).some(key => !["providerID", "modelID"].includes(key)) || typeof value.providerID !== "string" || !value.providerID.trim() || typeof value.modelID !== "string" || !value.modelID.trim()) throw new ControlPlaneAuthError(400, "invalid_session_request", "model requires providerID and modelID")
+          model = { providerID: value.providerID, modelID: value.modelID }
         }
-        const body = await sessionCreateBody(c.req.raw)
-        if (body.mode !== "hybrid") {
-          throw new ControlPlaneAuthError(400, "hybrid_mode_required", "Only mode=hybrid is supported by this route")
-        }
-        const sessionTitle = title(body.title) ?? "Hybrid Session"
-        const toolSandbox = centralHybridToolSandbox(body.toolSandbox)
-        const workspaceId = optionalText(body.workspaceId)
-        const harness = hybridHarness(body.harness)
-        const model = promptModel(body.model)
-        const sessionId = optionalText(body.sessionId) ?? optionalText(body.session_id)
-        if (signedHostedAuth) {
-          if (!workspaceId) {
-            throw new ControlPlaneAuthError(
-              400,
-              "workspace_id_required",
-              "Signed hosted session creation requires workspaceId",
-            )
-          }
-          await requireAuthority(services).authorizeWorkspaceOpen(signedHostedAuth, { workspaceId })
-        }
-        const session = options.createHybridSession
-          ? await options.createHybridSession({
-              ...(sessionId ? { sessionId } : {}),
-              title: sessionTitle,
-              ...(workspaceId ? { workspaceId } : {}),
-              toolSandbox,
-              harness,
-              requireModel: true,
-              ...(model ? { model } : {}),
-            })
-          : { id: randomUUID() }
-        if (!options.createHybridSession) {
-          await services.projectionStore.put_session_meta(session.id, {
-            host: "central",
-            ...(workspaceId ? { workspaceID: workspaceId } : {}),
-            directory: null,
-            title: sessionTitle,
-            ...(model ? { model } : {}),
-            tags: [`harness:${harness}`],
-          })
-        }
-        return c.json({
-          session: {
-            id: session.id,
-            title: sessionTitle,
-            host: "central",
-            workspaceId: workspaceId ?? null,
-          },
-          placement: {
-            sessionId: session.id,
-            mode: "hybrid",
-            host: "central",
-            workspaceId: workspaceId ?? null,
-            toolSandbox,
-          },
-        }, 201)
-      } catch (err) {
-        if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
-        throw err
+        if (!options.createMachineSession) throw new ControlPlaneAuthError(503, "machine_dispatch_unavailable", "Create this session through its workspace runtime")
+        if (auth) await requireAuthority(services).authorizeWorkspaceOpen(auth, { workspaceId: body.workspaceId })
+        const session = await options.createMachineSession({ workspaceId: body.workspaceId, ...(model ? { model } : {}), ...(typeof body.title === "string" ? { title: body.title } : {}), harness: { id: body.harness, access: "native" } }, auth)
+        return c.json({ session }, 201)
+      } catch (error) {
+        if (error instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(error), error.status)
+        if (statusOf(error) !== 500) return c.json(dispatchErrorBody(error), statusOf(error) as ContentfulStatusCode)
+        throw error
       }
     })
     .get("/sessions", async (c) => {
@@ -379,7 +211,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
             gatewayUrl: null,
             workspaceId: meta?.workspaceID ?? null,
             directory: null,
-            harnessHost: meta?.host ?? "central",
+            harnessHost: meta?.host ?? "workspace",
           })
         }
         const auth = await signedAuth(c.req.raw, options)
@@ -407,30 +239,6 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         }
         const auth = await signedAuth(c.req.raw, options)
         const meta = await services.projectionStore.session_meta(sessionId)
-        if (meta?.host === "central") {
-          await authorizeCentralSessionRead(services, auth, sessionId, meta)
-          if (page) {
-            const projected = projectedMessagePage(services, sessionId, page)
-            return messagePageJson(c, projected, projected.messages, maxEventOrdinal)
-          }
-          const workspaceId = c.req.query("workspaceId")
-          if (workspaceId) {
-            const body = await requireAuthority(services).readSessionMessages(auth, {
-              sessionId,
-              workspaceId,
-            })
-            const replayMessages = services.projectionStore.read_session_messages(sessionId)
-            const visibleMessages = authorityReadAllowed(body)
-              ? (replayMessages.length > 0 ? replayMessages : authorityMessages(body))
-              : []
-            return c.json({
-              ...(body && typeof body === "object" && !Array.isArray(body) ? body : {}),
-              messages: visibleMessages,
-              maxEventOrdinal,
-            })
-          }
-          return c.json({ messages: services.projectionStore.read_session_messages(sessionId), maxEventOrdinal })
-        }
         const workspaceId = requiredWorkspaceId(c.req.query("workspaceId"))
         const body = await requireAuthority(services).readSessionMessages(auth, {
           sessionId,
@@ -462,10 +270,6 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const auth = await signedAuth(c.req.raw, options)
         const sessionId = c.req.param("sessionId")
         const meta = await services.projectionStore.session_meta(sessionId)
-        if (meta?.host === "central") {
-          await authorizeCentralSessionRead(services, auth, sessionId, meta)
-          return c.json(centralTransportCapabilities())
-        }
         await requireAuthority(services).authorizeSessionRead(auth, {
           sessionId,
           workspaceId: requiredWorkspaceId(c.req.query("workspaceId")),

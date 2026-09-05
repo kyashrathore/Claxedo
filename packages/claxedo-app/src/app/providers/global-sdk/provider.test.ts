@@ -714,16 +714,6 @@ describe("global sdk event fetch", () => {
     })).toBe(sessionRowDirectory({ workspaceId, hostDirectory: "/host/machine/worktree" }))
   })
 
-  test("central events use the session address without acquiring a workspace", () => {
-    const session = { sessionID: "central-session", host: "central" as const }
-    expect(runtimeEventLiveSession(session, [], "active-central")).toEqual({
-      sessionID: "active-central",
-      host: "central",
-    })
-    expect(eventDirectoryForLiveSession({ directory: "", liveSession: session })).toBe("central-session")
-    expect(eventDirectoryForLiveSession({ directory: "", sessionId: "central-child", liveSession: session })).toBe("central-child")
-    expect(eventDirectoryForLiveSession({ directory: "global", liveSession: session })).toBe("global")
-  })
 
   test("runtime event transport sends the private parent and replay cursor through the relay", async () => {
     const calls: Request[] = []

@@ -324,6 +324,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
 function canSelectDraftModel(state: HarnessStoreState, model: ModelKey) {
   if (!state.harness) return false
-  if (isNativeHarness(state.harness, "pi") || state.harness.kind === "connection") return true
+  if (state.harness.kind === "connection") return true
   return model.providerID === state.harness.harnessId && !!state.dynamicModels?.some((item) => item.id === model.modelID)
 }

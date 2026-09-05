@@ -28,7 +28,6 @@ import {
   type ConnectionProvider,
   type ConnectionSecretResolver,
 } from "@claxedo/agent-sdk-runtime"
-import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { createLocalConnectionSecretResolver } from "@claxedo/server-core/agent-config/connection-secrets"
 import { getCredential, resolveSecretById } from "@claxedo/server-core/credentials/registry"
@@ -59,7 +58,6 @@ export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionI
   return config
 }
 
-let configuredPiModelBackend: PiModelBackendResolver | undefined
 /** The process-owned public embedded-SDK runtime every embedded host shares (the native `opencode` harness). */
 let configuredOpenCodeRuntime: OpenCodeRuntime | undefined
 let configuredConnectionProviders: readonly ConnectionProvider<unknown, unknown>[] = [
@@ -116,7 +114,6 @@ export function embeddedWorkspaceRuntimeSessionAuthority() {
 }
 
 export function configureEmbeddedWorkspaceRuntime(input: {
-  piModelBackend?: PiModelBackendResolver
   opencodeRuntime?: OpenCodeRuntime
   connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
   resolveConnectionSecrets?: ConnectionSecretResolver
@@ -129,7 +126,6 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
 }) {
-  configuredPiModelBackend = input.piModelBackend
   configuredOpenCodeRuntime = input.opencodeRuntime
   configuredConnectionProviders = input.connectionProviders ?? configuredConnectionProviders
   configuredConnectionSecretResolver = input.resolveConnectionSecrets ?? configuredConnectionSecretResolver
@@ -166,7 +162,6 @@ function options(
   exposure: WorkspaceRuntimeExposure
 } {
   return {
-    ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
     ...(configuredOpenCodeRuntime ? { opencodeRuntime: configuredOpenCodeRuntime } : {}),
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,

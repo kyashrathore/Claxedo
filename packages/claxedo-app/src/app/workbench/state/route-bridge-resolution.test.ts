@@ -8,10 +8,8 @@ import {
   routeCachedWorkspaceSessionCandidate,
   routeKnownSessionDirectory,
   routeSessionMetaIsArchived,
-  routeSessionMetaIsCentral,
   routeSessionDirectory,
   routeLifecycleSessionRef,
-  routeCentralSessionRef,
   routeSessionWorkspaceBacking,
   settledWorkspaceSessionRedirect,
   routeSessionPaneTitle,
@@ -57,41 +55,11 @@ describe("routeSessionDirectory", () => {
   })
 })
 
-describe("routeSessionMetaIsCentral", () => {
-  test("recognizes explicit host and serialized central identity", () => {
-    expect(routeSessionMetaIsCentral({ host: "central", workspaceID: "ws_1" })).toBe(true)
-    expect(routeSessionMetaIsCentral({ sessionRef: "central:ses_1" })).toBe(true)
-    expect(routeSessionMetaIsCentral({ session_ref: "central:ses_1" })).toBe(true)
-  })
-
-  test("does not reclassify workspace metadata", () => {
-    expect(routeSessionMetaIsCentral({ host: "workspace", sessionRef: "workspace:ws_1:session:ses_1" })).toBe(false)
-  })
-})
 
 describe("routeCachedWorkspaceSessionCandidate", () => {
-  test("does not turn an explicitly central cached row into a workspace target", () => {
-    expect(routeCachedWorkspaceSessionCandidate("ses_1", [{
-      directory: "/repo",
-      sessions: [{
-        id: "ses_1",
-        host: "central",
-        sessionRef: "central:ses_1",
-      }],
-    }])).toBeUndefined()
-  })
 
-  test("central identity wins over a duplicate workspace-looking cache row", () => {
-    expect(routeCachedWorkspaceSessionCandidate("ses_1", [{
-      directory: "/repo-a",
-      sessions: [{ id: "ses_1", directory: "/repo-a" }],
-    }, {
-      directory: "/repo-b",
-      sessions: [{ id: "ses_1", host: "central", sessionRef: "central:ses_1" }],
-    }])).toBeUndefined()
-  })
 
-  test("returns the first active workspace row when no central identity exists", () => {
+  test("returns the first active workspace row", () => {
     expect(routeCachedWorkspaceSessionCandidate("ses_1", [{
       directory: "/repo",
       sessions: [
@@ -311,28 +279,6 @@ describe("session probe single-flight", () => {
   })
 })
 
-describe("routeCentralSessionRef", () => {
-  test("builds a central identity from inventory workspace and harness fields", () => {
-    expect(routeCentralSessionRef("ses_central", {
-      workspaceId: "ws_1",
-      harness: { kind: "native", harnessId: "pi" },
-    })).toMatchObject({
-      sessionId: "ses_central",
-      host: "central",
-      workspaceId: "ws_1",
-      harness: { kind: "native", harnessId: "pi" },
-    })
-  })
-
-  test("reads camel and API workspace id spellings without inventing a harness", () => {
-    expect(routeCentralSessionRef("ses_meta", { workspaceID: "ws_api" })).toMatchObject({
-      sessionId: "ses_meta",
-      host: "central",
-      workspaceId: "ws_api",
-    })
-    expect(routeCentralSessionRef("ses_meta", { workspaceID: "ws_api" })?.harness).toBeUndefined()
-  })
-})
 
 describe("routeSessionPaneTitle", () => {
   test("keeps the title a surface already resolved", () => {

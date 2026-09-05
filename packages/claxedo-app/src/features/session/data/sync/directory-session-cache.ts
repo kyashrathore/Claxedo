@@ -1,3 +1,4 @@
+import { hasBacking } from "@/platform/identity/session-ref"
 import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
 import { useGlobalSync } from "@/features/session/app-ports"
 import { queryClient } from "@/platform/query/query-client"
@@ -100,7 +101,7 @@ export function directorySessions(directory: string, fallback?: Session) {
 }
 
 export function directorySessionCacheOwnsSession(sessionRef: SessionRef | undefined) {
-  return sessionRef?.host !== "central"
+  return !sessionRef || hasBacking(sessionRef)
 }
 
 export function shouldScheduleDirectorySessionHydration(input: {

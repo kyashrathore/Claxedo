@@ -307,24 +307,25 @@ describe("harness store facade", () => {
   test("explicit selection and promotion invalidate captured default work", () => {
     createDraftDefaultPreferences(storage).save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { harness: PI, model: { providerID: "openai", modelID: "gpt-5.5" } },
+      { harness: PI, model: { providerID: "pi", modelID: "openai/gpt-5.5" } },
     )
     const store = createHarnessStore(storage)
     const begun = store.beginDraftDefault("draft:one", {
       serverUrl: "http://localhost:4096",
       workspaceKey: "ws_1",
     })!
+    store.applyPatch("draft:one", { dynamicModels: [{ id: "anthropic/opus", name: "Opus" }] })
     expect(
       store.rememberDraftModel(
         "draft:one",
         { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-        { providerID: "anthropic", modelID: "opus" },
+        { providerID: "pi", modelID: "anthropic/opus" },
       ),
     ).toBe(true)
     expect(
       store.applyDraftDefault(begun.application, {
         supportedHarnesses: [EXTERNAL_OPENCODE, PI],
-        eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
+        eligibleModels: [{ providerID: "pi", modelID: "openai/gpt-5.5" }],
       }),
     ).toBe(false)
 
@@ -520,13 +521,13 @@ describe("harness store facade", () => {
   test("persists friendly recovery labels with an explicit model pair", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
-    store.applyPatch("draft:one", { harness: PI })
+    store.applyPatch("draft:one", { harness: PI, dynamicModels: [{ id: "openai-codex/gpt-5.5", name: "GPT-5.5" }] })
 
     expect(
       store.rememberDraftModel(
         "draft:one",
         identity,
-        { providerID: "openai-codex", modelID: "gpt-5.5" },
+        { providerID: "pi", modelID: "openai-codex/gpt-5.5" },
         { provider: "OpenAI Codex", model: "GPT-5.5" },
       ),
     ).toBe(true)

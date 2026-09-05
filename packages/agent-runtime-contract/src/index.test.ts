@@ -298,15 +298,13 @@ describe("agent runtime contract", () => {
     expect(() => assertAgentExecutionBinding({ ...binding, upstreamSessionId: "" })).toThrow(
       "execution binding upstreamSessionId is required",
     )
-    expect(assertAgentExecutionBinding({ ...binding, directory: "" })).toEqual({ ...binding, directory: "" })
+    expect(() => assertAgentExecutionBinding({ ...binding, directory: "" })).toThrow("execution binding directory is required")
   })
 
-  test("represents central execution without inventing a workspace", () => {
-    const binding: AgentExecutionBinding = {
-      scope: "central", sessionId: "central-1", directory: "", connectionId: "native:pi", upstreamSessionId: "pi-1",
-    }
+  test("rejects removed scopes and missing machine identity", () => {
+    const binding = { scope: "workspace" as const, sessionId: "session-1", workspaceId: "ws-1", directory: "/repo", connectionId: "native:pi", upstreamSessionId: "pi-1" }
     expect(assertAgentExecutionBinding(binding)).toBe(binding)
-    expect(() => assertAgentExecutionBinding(binding, { ...binding, scope: "workspace", workspaceId: "ws-1" })).toThrow("scope mismatch")
-    expect(() => assertAgentExecutionBinding({ ...binding, directory: "/tools-workspace" } as AgentExecutionBinding)).toThrow("central execution cannot own")
+    expect(() => assertAgentExecutionBinding({ ...binding, scope: "central" } as unknown as AgentExecutionBinding)).toThrow("workspace execution scope is required")
+    expect(() => assertAgentExecutionBinding({ ...binding, workspaceId: "" })).toThrow("workspaceId is required")
   })
 })

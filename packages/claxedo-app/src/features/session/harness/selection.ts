@@ -5,7 +5,6 @@ import {
   effectiveHarnessModel,
   harnessDisplayLabel,
   harnessSelectionId,
-  isNativeHarness,
   isClientDefaultPlaceholder,
   type HarnessModelOption,
   type HarnessType,
@@ -79,9 +78,7 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
   if (isClientDefaultPlaceholder(raw) && !state.dynamicModels?.some((item) => item.id === raw)) return undefined
   const match = harnessModels(state).find((item) => item.id === raw && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
   if (!match) return undefined
-  const providerID = isNativeHarness(state.harness, "pi")
-    ? state.selectedModelProvider
-    : state.selectedModelProvider ?? harnessSelectionId(state.harness)
+  const providerID = state.selectedModelProvider ?? harnessSelectionId(state.harness)
   if (!providerID) return undefined
   return {
     providerID,

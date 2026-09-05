@@ -6,40 +6,11 @@ import { workspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 export type LiveSession = {
   sessionID: string
-  host?: "central" | "workspace"
+  host?: "workspace"
   directory?: string
   workspaceId?: string
   workspaceKind?: string
   sessionRef?: SessionRef
-}
-
-export async function openCentralRuntimeEventResponse(input: {
-  request: typeof fetch
-  serverUrl: string
-  sessionId: string
-  lastEventId?: string
-  init: RequestInit
-  signal: AbortSignal
-  accountState: AccountState
-}) {
-  if (!accountStreamAvailable(input.accountState)) {
-    return input.request(
-      new URL(
-        `/api/control/session/${encodeURIComponent(input.sessionId)}/runtime-events?parentSessionId=${encodeURIComponent(input.sessionId)}`,
-        input.serverUrl,
-      ),
-      input.init,
-    )
-  }
-  return openAccountStreamResponse({
-    operation: "session.runtimeEvents",
-    params: {
-      sessionId: input.sessionId,
-      parentSessionId: input.sessionId,
-      ...(input.lastEventId ? { lastEventId: input.lastEventId } : {}),
-    },
-    signal: input.signal,
-  })
 }
 
 export function workspaceEventTransport(input: {

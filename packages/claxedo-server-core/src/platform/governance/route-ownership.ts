@@ -140,7 +140,7 @@ const ROUTE_RULES = [
     "Phase 2 moves canonical config ownership fully into Agent Config Registry.",
   ),
   prefix(
-    ["/api/wr/pty", "/api/wr/process", "/api/wr/diff", "/api/wr/git", "/api/wr/session-env", "/find", "/file"],
+    ["/api/wr/pty", "/api/wr/process", "/api/wr/diff", "/api/wr/git", "/find", "/file"],
     RouteDomain.SandboxRuntime,
     runtime,
   ),

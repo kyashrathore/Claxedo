@@ -54,7 +54,7 @@ function fact(input: {
     completedAt: input.observedAt + 10,
     settlement: input.settlement ?? "final",
     status: input.status ?? "completed",
-    location: input.hostId === "host-central" ? "central" : "local",
+    location: input.hostId === "host-central" ? "cloud-workspace" : "local",
     harness: input.harness,
     providerId: input.harness.startsWith("codex") ? "openai" : "anthropic",
     modelId: input.harness.startsWith("codex") ? "gpt-5.4" : "claude-sonnet-4-6",

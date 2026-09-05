@@ -2,7 +2,7 @@ import type { Wakes } from "./wakes"
 
 export interface Scheduler {
   start(): void
-  stop(): void
+  stop(): Promise<void>
 }
 
 /**
@@ -17,6 +17,9 @@ export function createScheduler(
   const intervalMs = opts?.intervalMs ?? 1000
   let handle: ReturnType<typeof setInterval> | null = null
   let running = false
+  let recovering = false
+  let pending: Promise<void> = Promise.resolve()
+  let generation = 0
 
   async function tick(): Promise<void> {
     if (running) return // never overlap ticks
@@ -33,17 +36,28 @@ export function createScheduler(
   return {
     start() {
       if (handle) return
-      void wakes
+      const current = ++generation
+      recovering = true
+      pending = wakes
         .recover()
-        .then(tick)
+        .then(() => {
+          if (current === generation) return tick()
+        })
         .catch((e) => opts?.onError?.(e))
-      handle = setInterval(() => void tick(), intervalMs)
+        .finally(() => {
+          recovering = false
+        })
+      handle = setInterval(() => {
+        if (!running && !recovering) pending = tick()
+      }, intervalMs)
     },
-    stop() {
+    async stop() {
+      generation++
       if (handle) {
         clearInterval(handle)
         handle = null
       }
+      await pending
     },
   }
 }

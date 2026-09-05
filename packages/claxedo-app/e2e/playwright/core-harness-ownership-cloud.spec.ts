@@ -101,9 +101,8 @@
  *      (session create, relay lane) → reload → a second send — all dispatched through
  *      `/workspaces/:workspaceId/...`, never the bare `/session/...` paths. The harness
  *      picker's Harness section is disabled once the session exists, identically to local.
- *   2. Pi uses its provider catalog on a cloud workspace, makes zero
- *      `/api/wr/harness-config-options` requests, and reuses the exact eligible
- *      OpenCode pair when that is the unambiguous configured choice.
+ *   2. Pi requests `/api/wr/harness-config-options` through the cloud workspace
+ *      relay and submits the machine's native provider/model option.
  *   3. `/api/wr/harness-config-options` requests are scoped per harness: switching the
  *      draft harness selection re-issues the request with `harness=<the newly selected
  *      type>`, and the model resolved into `[data-action="prompt-harness-model"]` always
@@ -364,7 +363,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     })
   }
 
-  test("Pi reuses the configured OpenCode pair on a cloud workspace without relay options requests — behavior 2", async ({ page }) => {
+  test("Pi loads native model options from the cloud workspace relay — behavior 2", async ({ page }) => {
     const mock = await installMockRuntime(page, {
       dir: DIR,
       projectId: PROJECT_ID,
@@ -380,7 +379,7 @@ test.describe("core harness ownership (cloud) @core", () => {
 
     await switchDraftHarness(page, /^Pi$/, 0)
     await expect(visibleHarnessTrigger(page, "pi")).toHaveCount(1, { timeout: 20_000 })
-    await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
+    await expectOnlyHarnessModelControl(page, /Pi GPT-5\.5/i)
     await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
     await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
 
@@ -392,11 +391,11 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
-    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "pi", modelID: "virtual" })
+    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "pi", modelID: "openai/gpt-5.5" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${first}`)
 
-    // Zero relay config-options requests for the entire scenario — pi has no config options.
-    expect(mock.requests.cloudHarnessOptionsCount).toBe(0)
+    // The selected machine is the authority for Pi model discovery.
+    expect(mock.requests.cloudHarnessOptionsHarnesses).toContain("pi")
   })
 
   test("relay harness-config-options requests are scoped per harness — switching resolves each harness's own model, never a stale one — behavior 3", async ({ page }) => {

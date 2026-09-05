@@ -20,13 +20,6 @@
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
-    "./pi-catalog": {
-      "types": "./dist/pi-catalog.d.ts",
-      "bun": "./dist/pi-catalog.mjs",
-      "development": "./dist/pi-catalog.mjs",
-      "import": "./dist/pi-catalog.mjs",
-      "default": "./dist/pi-catalog.mjs"
-    },
     ".": {
       "types": "./dist/index.d.ts",
       "bun": "./dist/index.mjs",
@@ -82,20 +75,6 @@
       "development": "./dist/subagent-admission.mjs",
       "import": "./dist/subagent-admission.mjs",
       "default": "./dist/subagent-admission.mjs"
-    },
-    "./session-env": {
-      "types": "./dist/session-env.d.ts",
-      "bun": "./dist/session-env.mjs",
-      "development": "./dist/session-env.mjs",
-      "import": "./dist/session-env.mjs",
-      "default": "./dist/session-env.mjs"
-    },
-    "./virtual-session-env": {
-      "types": "./dist/virtual-session-env.d.ts",
-      "bun": "./dist/virtual-session-env.mjs",
-      "development": "./dist/virtual-session-env.mjs",
-      "import": "./dist/virtual-session-env.mjs",
-      "default": "./dist/virtual-session-env.mjs"
     },
     "./harnesses": {
       "types": "./dist/harnesses/index.d.ts",
@@ -196,10 +175,6 @@
     "@claxedo/agent-event-runtime": "0.7.0",
     "@claxedo/agent-runtime-contract": "0.7.0",
     "@cursor/sdk": "1.0.24",
-    "@mariozechner/pi-agent-core": "0.73.1",
-    "@mariozechner/pi-ai": "0.73.1",
-    "@sinclair/typebox": "^0.34.41",
-    "just-bash": "3.0.1",
     "smol-toml": "1.7.1"
   },
   "optionalDependencies": {

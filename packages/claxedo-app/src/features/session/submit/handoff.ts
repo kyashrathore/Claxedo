@@ -14,7 +14,6 @@ import type {
 } from "./types"
 
 function createdSessionRoute(input: { sessionID: string; workspaceRouteId?: string; sessionRef?: SessionRef }) {
-  if (input.sessionRef?.host === "central") return sessionRoute(input.sessionID)
   const workspaceId = (input.sessionRef ? workspaceKey(input.sessionRef) : undefined) ?? input.workspaceRouteId
   return workspaceId
     ? workspaceSessionRoute(workspaceId, input.sessionID)

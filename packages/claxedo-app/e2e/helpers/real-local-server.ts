@@ -9,7 +9,6 @@ import {
   claudeScriptedEnv,
   codexScriptedConfigJson,
   codexScriptedConfigToml,
-  piScriptedEnv,
   startScriptedModelServer,
   type ScriptedModelServer,
 } from "./scripted-model-server"
@@ -109,7 +108,7 @@ export async function startRealLocalServer(label: string, options: { port?: numb
       HOME: dataDir,
       CLAXEDO_DATA_DIR: dataDir,
       CLAXEDO_SERVER_PORT: String(port),
-      ...piScriptedEnv(scripted.v1Url),
+      ...scripted.piEnv,
       CODEX_HOME: codexHome,
       CODEX_CONFIG: codexScriptedConfigJson(scripted.v1Url),
       CODEX_THREAD_ID: undefined,

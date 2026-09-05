@@ -2,7 +2,7 @@ export { acp, type AcpFactoryOptions } from "../harness-factories/acp"
 export { claude, type ClaudeFactoryOptions } from "../harness-factories/claude"
 export { codex, type CodexFactoryOptions } from "../harness-factories/codex"
 export { cursor, type CursorFactoryOptions } from "../harness-factories/cursor"
-export { pi, type PiFactoryOptions, type PiSessionPlacement } from "../harness-factories/pi"
+export { pi, type PiFactoryOptions } from "../harness-factories/pi"
 
 export {
   createProcessLifecycle,

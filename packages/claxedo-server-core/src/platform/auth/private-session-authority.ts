@@ -149,6 +149,9 @@ export function privateSessionRuntimeProof(claims: RelayHostPrivateSessionClaims
  * registration; definitive denial enters compensation and can never register.
  */
 export type PrivateSessionAuthority = {
+  /** Internal runtime principal, already authenticated by the host; never a public HTTP admission. */
+  reserveRuntimeSession: (principal: PrivateSessionRuntimePrincipal, input: ReservePrivateSessionInput) => Promise<PrivateSessionRegistrationResult>
+
   reserveSession: (
     auth: SignedControlPlaneAuth,
     input: ReservePrivateSessionInput,
@@ -219,6 +222,7 @@ export type PrivateSessionAuthority = {
 
 export const PRIVATE_SESSION_AUTHORITY_METHODS = [
   "reserveSession",
+  "reserveRuntimeSession",
   "registerRuntimeSession",
   "markSessionRegistrationAmbiguous",
   "beginSessionCompensation",

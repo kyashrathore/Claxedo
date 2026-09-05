@@ -60,7 +60,7 @@ describe("session composer mode", () => {
     expect(sessionComposerMode({ directory: "/repo", sessionId: "new", sessionRef: undefined, draft })).toBe(draft)
   })
 
-  test("constructs local or central session mode without route params or providers", () => {
+  test("requires resolved machine identity for existing session mode", () => {
     const local = sessionComposerMode({
       directory: "/repo",
       sessionId: "ses_local",
@@ -83,27 +83,14 @@ describe("session composer mode", () => {
       },
     })
 
-    expect(sessionComposerMode({
+    expect(() => sessionComposerMode({
       directory: "workspace:ws_1",
       sessionId: "ses_remote",
       sessionRef: undefined,
       workspaceId: "ws_1",
-      draft: newSessionComposerMode({
-        directory: "workspace:ws_1",
-        signedControlPlane: true,
-        workspaceId: "ws_1",
-        workspaceKind: "cloud",
-        worktree: "main",
-      }),
-    })).toEqual({
-      kind: "session",
-      ref: {
-        sessionId: "ses_remote",
-        host: "central",
-        workspaceId: "ws_1",
-        toolSandbox: { kind: "virtual" },
-      },
-    })
+      draft: newSessionComposerMode({ directory: "workspace:ws_1", signedControlPlane: true, workspaceId: "ws_1", workspaceKind: "cloud", worktree: "main" }),
+    })).toThrow("Session workspace identity is not resolved")
+
   })
 
   test("derives draft and current composer modes in isolation", () => {

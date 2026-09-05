@@ -83,7 +83,7 @@ export function localOnly(request: Request): PostureResult {
   if (!isLoopbackLocalRequest(request)) {
     throw new ControlPlaneAuthError(
       403,
-      "hybrid_loopback_only",
+      "loopback_only",
       "this route is loopback-only and is not available through signed/team Control Plane access",
     )
   }

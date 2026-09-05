@@ -55,21 +55,15 @@ type HydrateSessionDocumentInput = {
 }
 
 export async function reachableLocalSessionWorkspace(input: {
-  host: "central" | "workspace"
+  host: "workspace"
   workspaceId?: string
   directory?: string
-  toolSandbox?:
-    | { kind: "virtual"; id?: string }
-    | { kind: "workspace-runtime"; workspaceId: string; directory?: string }
   resolveWorkspace: (workspaceId: string) => Promise<{ kind: string; directory: string } | undefined>
 }) {
-  if (input.toolSandbox?.kind === "virtual") return undefined
-  if (input.host === "central" && input.toolSandbox?.kind !== "workspace-runtime") return undefined
-  const workspaceId =
-    input.toolSandbox?.kind === "workspace-runtime" ? input.toolSandbox.workspaceId : input.workspaceId
+  const workspaceId = input.workspaceId
   const workspace = workspaceId ? await input.resolveWorkspace(workspaceId) : undefined
   if (workspace?.kind === "local") return { workspaceId, root: workspace.directory }
-  if (input.host === "workspace" && input.directory) return { workspaceId, root: input.directory }
+  if (!workspace && !workspaceId && input.directory) return { workspaceId, root: input.directory }
   return undefined
 }
 

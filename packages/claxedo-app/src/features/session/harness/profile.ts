@@ -46,7 +46,7 @@ export function pickHarness(input?: unknown): HarnessType | undefined {
 
 /** Harnesses whose model list is a Claxedo-owned provider catalog rather than harness config options. */
 function catalogHarness(type: HarnessType) {
-  return type.kind === "native" && (type.harnessId === "pi" || type.harnessId === "opencode")
+  return type.kind === "native" && type.harnessId === "opencode"
 }
 
 export function harnessHasConfigOptions(type: HarnessType) {
@@ -73,7 +73,7 @@ export function effectiveHarnessModel(type: HarnessType, selected?: string | nul
 
 /** Native SDK harnesses that can be backstopped with a static catalog when live listing fails. */
 export function isNativeSdkHarness(type: HarnessType) {
-  return type.kind === "native" && !catalogHarness(type)
+  return type.kind === "native" && ["claude", "codex", "cursor"].includes(type.harnessId)
 }
 
 export function isNativeHarness(type: HarnessType, id: NativeHarnessId): boolean {

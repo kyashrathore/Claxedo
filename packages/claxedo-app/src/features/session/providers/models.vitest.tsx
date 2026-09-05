@@ -5,7 +5,7 @@
  * catalog, so a model hidden on one machine was hidden on every machine and no
  * non-OpenCode model was ever in it. These render the real `ModelsProvider` and
  * pin the three consequences: the bucket is the workspace, the harness keys the
- * maps inside it, and the replaced global entry migrates exactly once.
+ * maps inside it, and obsolete global preferences are not adopted.
  */
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
@@ -82,6 +82,7 @@ function mount(input: { workspaceKey: string; harness: () => string }) {
       <ModelsProvider
         workspaceKey={() => input.workspaceKey}
         harness={input.harness}
+        nativeHarness={input.harness}
         serverUrl={() => SERVER}
       >
         <Probe />
@@ -105,7 +106,7 @@ function mountPair(workspaceKey: string) {
     return <div data-testid={`mounted-${props.index}`} />
   }
   const Surface = (props: { index: number }) => (
-    <ModelsProvider workspaceKey={() => workspaceKey} harness={() => "opencode"} serverUrl={() => SERVER}>
+    <ModelsProvider workspaceKey={() => workspaceKey} harness={() => "opencode"} nativeHarness={() => "opencode"} serverUrl={() => SERVER}>
       <Probe index={props.index} />
     </ModelsProvider>
   )
@@ -202,7 +203,7 @@ describe("the model store is per (server, workspace, harness)", () => {
     expect(state.requests.every((request) => !!request.harness)).toBe(true)
   })
 
-  test("the replaced global store migrates into the first workspace bucket that reads it, once", async () => {
+  test("obsolete global preferences cannot override a machine workspace bucket", async () => {
     localStorage.setItem("opencode.global.dat:model", JSON.stringify({
       user: [{ ...OPUS, visibility: "hide" }],
       recent: [OPUS],
@@ -210,10 +211,8 @@ describe("the model store is per (server, workspace, harness)", () => {
     }))
 
     const first = mount({ workspaceKey: nextWorkspaceKey("ws"), harness: () => "opencode" })
-    await waitFor(() => expect(first().variant.get(OPUS)).toBe("thinking"))
-    expect(first().visible(OPUS)).toBe(false)
-    expect(first().recent.list()).toEqual([OPUS])
-    expect(localStorage.getItem("opencode.global.dat:model")).toBeNull()
+    expect(first().variant.get(OPUS)).toBeUndefined()
+    expect(first().recent.list()).toEqual([])
     cleanup()
 
     const second = mount({ workspaceKey: nextWorkspaceKey("ws"), harness: () => "opencode" })

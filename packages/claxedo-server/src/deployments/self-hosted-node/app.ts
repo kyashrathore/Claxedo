@@ -1,3 +1,5 @@
+import { createMachineWakes } from "../../session/machine-wakes"
+import { SqliteWakeStore } from "@claxedo/wakes/sqlite"
 import fs from "node:fs"
 import path from "node:path"
 import os from "node:os"
@@ -94,7 +96,8 @@ import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBro
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
-import { createCentralControlApp } from "../../central-runtime"
+import { createControlPlaneApp } from "../../control-plane-app"
+import { createMachineSessionDispatch } from "../../session/machine-dispatch"
 import { JwksRoutes } from "../../authority/routes/jwks"
 import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
@@ -131,12 +134,7 @@ import {
 import { defaultHomeRegion, relayEndpointsFromEnv } from "@claxedo/server-core/platform/runtime/region/index"
 import { createControlPlaneChannels, mountControlPlaneChannels } from "../../channels/control-plane"
 import { mountWorkspaceRuntimePtyWebSocketProxy } from "@claxedo/local-server/self-hosted-execution"
-import {
-  createClaxedoSessionEnvFactory,
-  prepareWorkspaceRuntimeSession,
-} from "../../hosts/workspace-runtime/session-env"
 import { getLocalUsageLimits } from "@claxedo/local-server/self-hosted-execution"
-import { centralModelBackend } from "../../session/runtime"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { createLocalDocumentsBackend } from "../../documents/backends/local/backend"
@@ -828,34 +826,24 @@ export function createSelfHostedApp(
           telemetry: services.telemetry,
         })
     : undefined)
-  const centralControl = createCentralControlApp(services, {
+  const machineSessions = createMachineSessionDispatch(services, runtimeProxyOptions)
+  const controlPlane = createControlPlaneApp(services, {
     ...authRouteOptions(services),
-    // Central Pi sessions run tools in the placement selected at session
-    // creation: virtual (in-memory) by default, or a workspace runtime via
-    // /api/wr/session-env/* when toolSandbox.kind === "workspace-runtime".
-    createEnv: createClaxedoSessionEnvFactory({ fetchOptions: runtimeProxyOptions, turnCredentials }),
-    admitWorkspaceSession: async (input) => {
-      const workspace = await resolveWorkspace({ workspaceId: input.workspaceId })
-      if (!workspace) throw new Error(`workspace not found: ${input.workspaceId}`)
-      return prepareWorkspaceRuntimeSession({
-        workspace,
-        sessionId: input.sessionId,
-        ...(input.baseCommit ? { baseCommit: input.baseCommit } : {}),
-        fetchOptions: runtimeProxyOptions,
-      })
-    },
-    turnCredentials,
-    ...(options.usageRevisionStore ? { usageRevisionStore: options.usageRevisionStore } : {}),
+    createMachineSession: machineSessions.create,
     ...(options.usageLedger ? { usageLedger: options.usageLedger } : {}),
-    ...(options.resolveUsageHostIdentity ? { resolveUsageHostIdentity: options.resolveUsageHostIdentity } : {}),
-    ...(usageOutbox ? { onUsageTerminal: () => { void usageOutbox.notify() } } : {}),
     mountPublicUsageRoute: !options.usageRevisionStore,
     ...(options.beforeLocalSessionList ? { beforeLocalSessionList: options.beforeLocalSessionList } : {}),
     sessionShareChangedSink: (event) => claxedoBus.publish(event),
   })
+  const wakeStore = process.env.CLAXEDO_WAKES === "1" ? new SqliteWakeStore({ path: process.env.CLAXEDO_WAKE_DB_PATH ?? path.join(dataDir(), "machine-wakes.sqlite") }) : undefined
+  const machineWakes = wakeStore ? createMachineWakes({ services, runtime: machineSessions, store: wakeStore }) : undefined
+  if (machineWakes) {
+    controlPlane.app.route("/api/control", machineWakes.routes)
+    machineWakes.start()
+  }
   const controlPlaneChannels = createControlPlaneChannels({
     services,
-    runtime: centralControl.runtime,
+    runtime: machineSessions,
     includeFake: true,
   })
   const connectionsHost = createConnectionsHost({
@@ -1083,7 +1071,6 @@ export function createSelfHostedApp(
     "/api/claxedo/agent-config",
     AgentConfigRoutes({
       services,
-      invalidateCentralSession: centralControl.runtime.invalidateSession,
       ...authRouteOptions(services),
     }),
   )
@@ -1148,7 +1135,7 @@ export function createSelfHostedApp(
     ...authRouteOptions(services),
     services,
   }))
-  app.route("/", centralControl.app)
+  app.route("/", controlPlane.app)
   app.route(
     "/api/claxedo/credentials",
     CredentialRoutes(services.credentials, {
@@ -1232,7 +1219,7 @@ export function createSelfHostedApp(
   }
   mountControlPlaneChannels(app, {
     services,
-    runtime: centralControl.runtime,
+    runtime: machineSessions,
     includeFake: true,
     channels: controlPlaneChannels,
   })
@@ -1274,10 +1261,12 @@ export function createSelfHostedApp(
     )
   }
 
+  let disposal: Promise<void> | undefined
   return {
     app,
     injectWebSocket,
     channels: controlPlaneChannels,
+    dispose: () => disposal ??= (async () => { await machineWakes?.stop(); wakeStore?.close() })(),
     /**
      * This composition's route ledger — every prefix it claimed, and under
      * which owner. Exposed for the same reason `createRouteOwnership` records
@@ -1490,7 +1479,6 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   const opencodeRuntime = openCodeSdkRuntime()
   configureEmbeddedWorkspaceRuntime({
     opencodeRuntime,
-    piModelBackend: centralModelBackend().modelBackend,
     connectionProviders,
     ...(services.auth.config.enabled && services.authority
       ? { sessionAccessPolicy: embeddedManagedPrivateSessionPolicy(services.authority) }
@@ -1581,11 +1569,12 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   })
   built.injectWebSocket(server)
   const stopServer = async () => {
-    await shutdownControlPlaneRuntime()
     server.close()
-    process.exit(0)
+    await built.dispose()
+    await shutdownControlPlaneRuntime()
   }
-  server.on("close", () => {
+  server.on("close", async () => {
+    await built.dispose()
     process.off("SIGTERM", stopServer)
     process.off("SIGINT", stopServer)
     process.off("exit", releaseDataDirOwner)

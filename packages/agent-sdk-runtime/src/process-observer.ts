@@ -64,7 +64,7 @@ const attributionScenarioByHarness = {
   claude: { root: "direct-pid", probe: "direct-pid", mcp: "stdio-and-remote" },
   codex: { root: "direct-pid", probe: "shared-process", mcp: "stdio-and-remote" },
   cursor: { root: "inferred-local", probe: "remote", mcp: "stdio-and-remote" },
-  pi: { root: "in-process", probe: "unsupported", mcp: "unsupported" },
+  pi: { root: "direct-pid", probe: "direct-pid", mcp: "unsupported" },
   // The public embedded SDK runs inside the host process; its MCP servers are
   // its own child processes and remote connections.
   opencode: { root: "in-process", probe: "unsupported", mcp: "stdio-and-remote" },

@@ -16,14 +16,14 @@ function makeProjection() {
 }
 
 describe("createOpencodeCompatProjection", () => {
-  test("preserves authoritative central identity on session-info compatibility events", () => {
+  test("preserves authoritative workspace identity on session-info compatibility events", () => {
     expect(makeProjection().ingest({
       type: "session-info",
       title: "Pi session",
       updatedAt: "2026-06-16T00:00:00.000Z",
       parentID: "parent-session-1",
-      sessionRef: "central:session-1",
-      host: "central",
+      sessionRef: "workspace:workspace-1:session-1",
+      host: "workspace",
       workspaceID: "workspace-1",
     })[0]?.payload).toMatchObject({
       type: "session.updated",
@@ -31,8 +31,8 @@ describe("createOpencodeCompatProjection", () => {
         info: {
           id: "session-1",
           parentID: "parent-session-1",
-          sessionRef: "central:session-1",
-          host: "central",
+          sessionRef: "workspace:workspace-1:session-1",
+          host: "workspace",
           workspaceID: "workspace-1",
         },
       },
@@ -191,7 +191,7 @@ describe("createOpencodeCompatProjection", () => {
       type: "runtime.diagnostic",
       properties: {
         sessionID: "session-1",
-        projection: "opencode-compat",
+        projection: "client-presentation",
         code: "projection.opencode_compat.reply_id_outside_turn_convention",
         severity: "error",
         raw: "msg_engine_named_this",
@@ -990,3 +990,9 @@ describe("createOpencodeCompatProjection", () => {
     }])
   })
 })
+
+ test("does not announce a successful compaction after an abort or error", () => {
+   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed", metadata: { aborted: true } })).toEqual([])
+   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed", metadata: { error: "provider failed" } })).toEqual([])
+   expect(makeProjection().ingest({ type: "session-compaction", phase: "completed" })[0]?.payload.type).toBe("session.compacted")
+ })

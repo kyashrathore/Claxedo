@@ -60,7 +60,7 @@ describe("harness profile", () => {
     const external = { kind: "connection", connectionId: "opencode" } as const
     expect(effectiveHarnessModel(external, "")).toBe("default")
     expect(effectiveHarnessModel(external, "gpt-5.5")).toBe("gpt-5.5")
-    expect(effectiveHarnessModel({ kind: "native", harnessId: "pi" }, undefined)).toBe("")
+    expect(effectiveHarnessModel({ kind: "native", harnessId: "pi" }, undefined)).toBe("default")
   })
 
   test("extracts model options with selectOptions precedence", () => {
@@ -315,10 +315,10 @@ describe("harness profile", () => {
     })
   })
 
-  test("profiles Pi as a catalog-backed harness", () => {
+  test("profiles Pi as a native harness with process config options", () => {
     expect(harnessProfile({ kind: "native", harnessId: "pi" })).toEqual({
       displayName: "Pi",
-      hasConfigOptions: false,
+      hasConfigOptions: true,
     })
   })
 

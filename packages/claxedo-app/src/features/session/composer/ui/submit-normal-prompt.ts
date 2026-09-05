@@ -26,7 +26,7 @@ type PromptContextItem = Parameters<typeof preparePromptRequest>[0]["contextItem
 type PromptClient = Parameters<typeof sendPromptRequest>[0]["client"]
 type GlobalEvents = {
   event: {
-    setLiveSession(sessionID: string, input: { host?: "central" | "workspace"; directory: SubmitDirectory; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }): void
+    setLiveSession(sessionID: string, input: { host?: "workspace"; directory: SubmitDirectory; workspaceId?: string; workspaceKind?: string; sessionRef?: SessionRef }): void
     ready(): void | Promise<void>
   }
 }

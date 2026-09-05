@@ -73,7 +73,6 @@ export function sessionSignedTransportAuthority(input: {
 }) {
   if (input.routeWorkspaceAuthorityId) return true
   if (input.workspaceKind === "cloud" || input.workspaceKind === USER_HOSTED_WORKSPACE_KIND) return true
-  if (input.sessionRef?.host === "central") return true
   if (input.sessionRef?.toolSandbox?.kind === "workspace") return true
   return input.principalHasSignedAccess && centralTransportForServer(input.serverUrl) !== "loopback"
 }

@@ -381,7 +381,7 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
   const binding = assertAgentExecutionBinding(input.binding, {
     ...input.binding,
     sessionId: input.sessionId,
-    directory: input.binding.scope === "central" ? "" : input.directory ?? "",
+    directory: input.directory ?? "",
   })
   const promptInput = await promptForSession(input.adapter, binding, input.body)
   const scope = compatScope(input.directory, input.sessionId)

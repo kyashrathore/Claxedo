@@ -198,7 +198,7 @@ export function createChannelCore(input: {
         // Preempt, don't enqueue: a recovery command that queues behind a
         // wedged turn never runs. Abort any active turn, then drop the binding
         // so the NEXT message opens a fresh session.
-        if (existingRef) await input.runtime.abortSession({ sessionId: existingRef.sessionId }).catch(() => undefined)
+        if (existingRef) await input.runtime.abortSession({ sessionId: existingRef.sessionId, channel: envelope.channel, externalUserId: envelope.externalUserId, threadKey: envelope.threadKey }).catch(() => undefined)
         await input.resetSession?.(envelope.threadKey)
         await handlers.reply({
           kind: "text",
@@ -328,7 +328,7 @@ export function createChannelCore(input: {
           await handlers.reply({ kind: "text", text: "Session id does not match this channel thread.", final: true })
           return
         }
-        const result = await input.runtime.abortSession({ sessionId: existingRef.sessionId })
+        const result = await input.runtime.abortSession({ sessionId: existingRef.sessionId, channel: envelope.channel, externalUserId: envelope.externalUserId, threadKey: envelope.threadKey })
         await handlers.reply({
           kind: "text",
           text: result.ok ? `Session ${result.status}.` : result.message ?? "Unable to cancel session.",
@@ -371,6 +371,7 @@ export function createChannelCore(input: {
         events: input.runtime.sendMessage({
           sessionId: ref.sessionId,
           text: envelope.text,
+          threadKey: envelope.threadKey,
           channel: envelope.channel,
           externalUserId: envelope.externalUserId,
         }),

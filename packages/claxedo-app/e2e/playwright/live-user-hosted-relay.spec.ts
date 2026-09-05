@@ -413,6 +413,7 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
         // Redirect only the real Pi model backend's HTTP endpoint.
+        ...scripted.piEnv,
         CLAXEDO_E2E_SCRIPTED_MODEL_URL: scripted.v1Url,
         // The relay's browser-origin allowlist, in its real deployment form.
         // This spec serves the app from a front-door hostname (see

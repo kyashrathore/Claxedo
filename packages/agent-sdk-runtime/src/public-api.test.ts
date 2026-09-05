@@ -5,7 +5,6 @@ import * as rootApi from "./index"
 import * as harnessApi from "./harnesses"
 import * as memoryApi from "./stores/memory"
 import * as sqliteApi from "./stores/sqlite"
-import * as virtualSessionEnvApi from "./virtual-session-env"
 
 const root = path.resolve(import.meta.dirname, "..")
 const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
@@ -26,7 +25,6 @@ const modules: Record<string, Record<string, unknown>> = {
   [`${pkg.name}/harnesses`]: harnessApi,
   [`${pkg.name}/stores/memory`]: memoryApi,
   [`${pkg.name}/stores/sqlite`]: sqliteApi,
-  [`${pkg.name}/virtual-session-env`]: virtualSessionEnvApi,
 }
 
 describe("agent-sdk-runtime public API manifest", () => {

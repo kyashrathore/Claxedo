@@ -370,7 +370,7 @@ function buildSession(input: {
   updated: number
   parentID?: string
   sessionRef?: string
-  host?: "central" | "workspace"
+  host?: "workspace"
   workspaceID?: string
 }) {
   return {
@@ -1016,7 +1016,7 @@ function translateRuntimeEventToCompat(chunk: AgentRuntimeEvent, ctx: CompatCont
       return [withDir(ctx.directory, sessionStatus(ctx.sessionId, { type: chunk.status }))]
 
     case "session-compaction":
-      return chunk.phase === "completed"
+      return chunk.phase === "completed" && chunk.metadata?.aborted !== true && !chunk.metadata?.error
         ? [withDir(ctx.directory, sessionCompacted(ctx.sessionId))]
         : []
 

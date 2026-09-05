@@ -1,4 +1,3 @@
-import { resolveHarnessHostForRequest } from "@claxedo/server-core/session/harness/resolution"
 import { resolveWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { ControlPlaneAuthContext, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
@@ -17,53 +16,22 @@ export async function resolveSessionGateway(
   auth?: SignedControlPlaneAuth,
 ) {
   const meta = await services.projectionStore.session_meta(sessionId)
-  if (!meta) {
-    return {
-      gatewayUrl: null,
-      workspaceId: null,
-      directory: null,
-      harnessHost: "central" as const,
-    }
-  }
+  if (!meta || meta.host !== "workspace") throw new ControlPlaneProtocolError(404, "session_not_found", "Machine session not found")
   const ws = meta.workspaceID
     ? await resolveWorkspace({ workspaceId: meta.workspaceID })
     : meta.directory
       ? await resolveWorkspace({ directory: meta.directory })
       : undefined
-  const harnessHost =
-    meta.host ??
-    (await resolveHarnessHostForRequest({
-      workspaceId: meta.workspaceID ?? undefined,
-      directory: meta.directory ?? undefined,
-      sessionId,
-    }))
-  if (!ws || ws.kind !== "cloud") {
-    return {
-      gatewayUrl: null,
-      workspaceId: meta.workspaceID ?? null,
-      directory: auth ? null : meta.directory,
-      harnessHost,
-    }
-  }
   if (auth) {
-    await requireAuthority(services).authorizeSessionRead(auth, {
-      sessionId,
-      workspaceId: ws.id,
-    })
-  }
-  if (harnessHost === "central") {
-    return {
-      gatewayUrl: null,
-      workspaceId: ws.id,
-      directory: auth ? null : meta.directory,
-      harnessHost,
-    }
+    const workspaceId = ws?.id ?? meta.workspaceID
+    if (!workspaceId) throw new ControlPlaneProtocolError(404, "workspace_not_found", "Machine workspace not found")
+    await requireAuthority(services).authorizeSessionRead(auth, { sessionId, workspaceId })
   }
   return {
     gatewayUrl: null,
-    workspaceId: ws.id,
+    workspaceId: ws?.id ?? meta.workspaceID ?? null,
     directory: auth ? null : meta.directory,
-    harnessHost,
+    harnessHost: "workspace" as const,
   }
 }
 

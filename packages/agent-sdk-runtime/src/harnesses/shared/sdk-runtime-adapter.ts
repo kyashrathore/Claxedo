@@ -160,6 +160,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       bindSession: (input) => this.bindStoreSession(input),
       getAgentSessionId: (sessionId) => this.store.getAgentSessionId(sessionId),
       getSessionForAgentSession: (agentSessionId) => this.agentSessionIndex.get(agentSessionId),
+      getGoal: (sessionId) => this.store.getGoal?.(sessionId) ?? null,
       getSessionConfig: (sessionId) => this.store.getSessionConfig(sessionId),
       publishGoal: (input) => this.publishGoal(input.sessionId, input.directory, input.goal),
       runProviderTurn: (input, execute) => this.runProviderTurn(input.sessionId, input.directory, execute),
@@ -294,7 +295,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     try {
       directory = requireWorkspaceDirectory(directory)
       if (this.store.getSession(sessionId)) return { id: sessionId }
-      const agentSessionId = await this.driver.createAgentSession({
+      const { id: agentSessionId, model: nativeModel } = await this.driver.createAgentSession({
         directory,
         title,
         model: this.currentModel,
@@ -311,7 +312,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
           access: "native",
           ...(this.options.binary ? { connection: { kind: "process" as const, binary: this.options.binary } } : {}),
         },
-        ...(this.currentModel ? { model: { providerID: this.driver.type, modelID: this.currentModel } } : {}),
+        ...(nativeModel ? { model: nativeModel } : this.currentModel ? { model: { providerID: this.driver.type, modelID: this.currentModel } } : {}),
         variant: null,
         agent: null,
       })
@@ -323,7 +324,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     const complete = this.producers.begin()
     try {
       directory = requireWorkspaceDirectory(directory)
-      const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
+      const { id: agentSessionId } = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
       this.bindStoreSession({ sessionId, directory, title, agentSessionId })
       let rolledBack = false
       return {

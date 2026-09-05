@@ -18,22 +18,12 @@ export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & {
   upstreamSessionId: string
 }
 
-/** Central execution owns no filesystem workspace, even when its tools target one. */
-export type AgentCentralExecutionBinding = {
-  scope: "central"
-  workspaceId?: never
-  directory: ""
-  sessionId: string
-  connectionId: string
-  upstreamSessionId: string
-}
-
-export type AgentExecutionBinding = AgentWorkspaceExecutionBinding | AgentCentralExecutionBinding
+export type AgentExecutionBinding = AgentWorkspaceExecutionBinding
 
 export type AgentExecutionBindingField = keyof AgentExecutionBinding
 
 export type AgentExecutionBindingExpectation = Readonly<{
-  scope?: "workspace" | "central"
+  scope?: "workspace"
   sessionId: string
   workspaceId?: string
   directory: string

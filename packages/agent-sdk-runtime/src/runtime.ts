@@ -654,6 +654,9 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             message: "execution binding workspaceId is required",
           })
         }
+        if (typeof create.directory !== "string" || !create.directory.trim()) {
+          throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "directory", message: "execution binding directory is required" })
+        }
         if (create.id) assertCreateBindingScope(create.id, create)
         const adapter = await adapterFor(create.harness)
         if (create.model && hasAdapterCapability(adapter, "runtime-config")) {
@@ -676,9 +679,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           title: create.title,
           agentSessionId: upstreamSessionId,
         })
+        const model = create.model ?? store.getSessionConfig(session.id)?.model
         const config: SessionConfig = {
           harness: create.harness,
-          ...(create.model ? { model: create.model } : {}),
+          ...(model ? { model } : {}),
           variant: create.variant ?? null,
           agent: create.agent ?? null,
         }

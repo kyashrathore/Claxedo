@@ -205,17 +205,6 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/workspace-runtime/src/git.ts", callee: "execFile", calls: 1 },
   }),
   product({
-    id: "session-shell",
-    family: "Session and tool shell",
-    classification: "registered-root",
-    owner: "session",
-    linkage: "session",
-    observation: "host-tree",
-    stop: "supported",
-    kill: "supported",
-    source: { file: "packages/workspace-runtime/src/routes/session-env.ts", callee: "spawn", calls: 1 },
-  }),
-  product({
     id: "terminal-pty",
     family: "Terminal PTY",
     classification: "registered-root",
@@ -305,28 +294,26 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts", callee: "agentCreate", calls: 2 },
   }),
   product({
-    id: "pi-session-shells",
-    family: "Pi tool and model-backend commands",
+    id: "pi-rpc",
+    family: "Pi native RPC",
+    classification: "registered-root",
     owner: "harness",
     linkage: "session",
     observation: "host-tree",
     stop: "supported",
     kill: "owner-dependent",
-    source: { file: "packages/agent-sdk-runtime/src/harnesses/pi/index.ts", callee: "sessionExec", calls: 1 },
+    source: { file: "packages/agent-sdk-runtime/src/harnesses/pi/rpc-process.ts", callee: "spawn", calls: 1 },
   }),
   product({
-    id: "pi-model-shells",
-    family: "Pi model backend command",
+    id: "pi-goal-evaluator",
+    family: "Pi goal evaluator",
+    classification: "registered-root",
     owner: "harness",
     linkage: "session",
     observation: "host-tree",
     stop: "supported",
     kill: "owner-dependent",
-    source: {
-      file: "packages/agent-sdk-runtime/src/harnesses/pi/model-backend.ts",
-      callee: "environmentExec",
-      calls: 1,
-    },
+    source: { file: "packages/agent-sdk-runtime/src/harnesses/pi/driver.ts", callee: "execFile", calls: 1 },
   }),
   product({
     id: "harness-windows-tree-kill",
@@ -389,7 +376,7 @@ export function harnessInventory<
               ? "claude-sdk-cli"
               : definition.id === "cursor"
                 ? "cursor-sdk-cli"
-                : "pi-session-shells"
+                : "pi-rpc"
     return [
       { key: definition.key, role: "harness", process },
       { key: definition.key, role: "probe", process },

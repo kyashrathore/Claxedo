@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { getModel } from "@mariozechner/pi-ai"
+import { storeRows } from "../test-utils/store-internals"
+import { createMemoryRuntimeStore } from "../stores/memory"
 import type { WithInternals } from "../test-utils/class-internals"
-import { executionBinding } from "../test-utils/execution-binding"
 import { AcpHarnessAdapter } from "./acp/index"
 import { ClaudeHarnessAdapter } from "./claude/index"
 import { CodexHarnessAdapter } from "./codex/index"
@@ -110,39 +110,14 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
     ]
 
     expect(unsupported.every((item) => item.goals === false)).toBe(true)
-    expect((await new PiHarnessAdapter().readHarnessCapabilities(undefined)).goals).toBe(true)
+    expect((await new PiHarnessAdapter({ store: storeRows(createMemoryRuntimeStore()) }).readHarnessCapabilities()).goals).toBe(true)
   })
 
-  test("bare and virtual-only Pi adapters do not advertise subagents", async () => {
-    const bare = new PiHarnessAdapter()
-    const session = await bare.createSession(undefined, "Virtual")
-
-    const capabilities = await bare.readHarnessCapabilities(undefined, { sessionId: session.id })
-    expect(capabilities.subagents).toBe(false)
-    assertCompleteShape(capabilities)
-  })
-
-  test("model-backed Pi advertises subagents only with the configured tool-extension provider", async () => {
-    const model = getModel("openai-codex", "gpt-5.1-codex-mini")
-    const configured = new PiHarnessAdapter({
-      modelBackend: () => ({
-        model,
-        getApiKey: () => "test-key",
-        extraTools: [{ name: "subagent" } as never],
-      }),
-      toolExtensionProvider: { providesSubagentTool: () => true },
-    })
-    const withoutProvider = new PiHarnessAdapter({
-      modelBackend: () => ({ model, getApiKey: () => "test-key" }),
-    })
-    const configuredSession = await configured.createSession(undefined, "Configured")
-    const unconfiguredSession = await withoutProvider.createSession(undefined, "Unconfigured")
-    const update = { model: { providerID: model.provider, modelID: model.id } }
-    await configured.updateSessionConfig(executionBinding(configuredSession.id, undefined, "pi"), update)
-    await withoutProvider.updateSessionConfig(executionBinding(unconfiguredSession.id, undefined, "pi"), update)
-
-    expect((await configured.readHarnessCapabilities(undefined, { sessionId: configuredSession.id })).subagents).toBe(true)
-    expect((await withoutProvider.readHarnessCapabilities(undefined, { sessionId: unconfiguredSession.id })).subagents).toBe(false)
+  test("native Pi reports questions and goals but no permission or subagent emulation", () => {
+    const adapter = new PiHarnessAdapter({ store: storeRows(createMemoryRuntimeStore()) })
+    const caps = adapter.readHarnessCapabilities()
+    assertCompleteShape(caps)
+    expect(caps).toMatchObject({ harness: "pi", goals: true, subagents: false, permissions: false, questions: true, replay: true, configOptions: true })
   })
 
   test("configOptions declares ACP model probing", () => {

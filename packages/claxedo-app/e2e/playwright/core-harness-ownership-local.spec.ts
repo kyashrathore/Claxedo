@@ -3,7 +3,7 @@
  *
  * PURPOSE — a local session can run on one of several agent "harnesses" instead of
  * plain OpenCode: Claude and Codex each via an ACP subprocess or a native SDK
- * integration, Cursor via ACP or its native SDK, and Pi with provider-backed models.
+ * integration, Cursor via ACP or its native SDK, and Pi via its native RPC process.
  * Whichever harness is selected must own the session's model, agent, and
  * submit payload end to end — a user picking "Claude" must never have their prompt
  * silently routed through plain OpenCode, and switching harnesses must never leave two
@@ -95,9 +95,8 @@
  *     `"polling"` — it clears the hydrator's per-scope "seen" stamp and re-hydrates on an
  *     interval until the harness settles, or gives up after a hard cap and transitions to
  *     "Unavailable" (never infinite, never silent). See BEHAVIORS #6 / #6b.
- *   - Pi reads provider/model choices from its Pi-scoped provider catalog. Switching
- *     to Pi never fetches `/harness/options`; submission waits for an exact connected
- *     provider/model pair selected by the user or the unambiguous default policy.
+ *   - Pi reads model choices from the selected machine's `/harness/options`.
+ *     Submission uses the Pi harness namespace and the native provider/model option.
  *   - Abort capability — `PromptSubmitControl`'s busy icon/behavior is driven by
  *     `stoppable = working() && canAbort()` (`src/components/prompt-input/
  *     submit-ui-state.ts:18`), where `canAbort` is the session's
@@ -155,9 +154,8 @@
  *      complementary manual-switch path (a).
  *   3. Once a session exists, the unified picker's Harness section is disabled — the
  *      harness cannot be changed mid-session.
- *   4. Pi issues zero `/api/claxedo/agent-config/harness/options` requests, resolves a
- *      concrete model from its configured provider catalog, persists that exact pair
- *      for the next workspace draft, and submits the selected provider/model identity.
+ *   4. Pi requests native `/api/claxedo/agent-config/harness/options`, resolves the
+ *      machine's model option and submits that selection through the shared path.
  *   5. A workspace hydrated onto an unavailable/auth-error harness renders exactly one
  *      notice row stating the failure and its error message in words, keeps the submit
  *      control disabled, and sends zero session/prompt requests even after the user
@@ -775,7 +773,7 @@ test.describe("core harness ownership (local) @core", () => {
     await expect(control).not.toContainText(/Select model/i)
   })
 
-  test("Pi selects a configured provider model without harness options and owns the payload — behavior 4", async ({
+  test("Pi loads machine model options and owns the native prompt payload — behavior 4", async ({
     page,
   }) => {
     const sessionId = "ses_core_harness_pi"
@@ -787,20 +785,8 @@ test.describe("core harness ownership (local) @core", () => {
 
     await switchDraftHarness(page, /^Pi$/, 0)
     await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
-    await expectOnlyHarnessModelControl(page, /Big Pickle|big-pickle/i)
-    await expect.poll(() => page.evaluate(() => {
-      const value = Object.entries(localStorage).find(([key]) => key.includes("session.draft-default.v1"))?.[1]
-      return value ? JSON.parse(value) : undefined
-    })).toMatchObject({
-      version: 3,
-      lastHarness: { kind: "native", harnessId: "pi" },
-      byHarness: {
-        [JSON.stringify({ kind: "native", harnessId: "pi" })]: {
-          model: { providerID: "opencode", modelID: "big-pickle-1" },
-        },
-      },
-    })
-    // Pi obtains models from its provider catalog rather than harness config options.
+    await expectOnlyHarnessModelControl(page, /Pi GPT-5\.5/i)
+    await expect.poll(() => mock.requests.harnessOptionsHarnesses.includes("pi")).toBe(true)
     await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
     await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
 
@@ -812,8 +798,8 @@ test.describe("core harness ownership (local) @core", () => {
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
     expect(mock.requests.promptBodies[0]).toMatchObject({
       text: first,
-      providerID: "opencode",
-      modelID: "big-pickle-1",
+      providerID: "pi",
+      modelID: "openai/gpt-5.5",
     })
     await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
     await expectAssistantReplyVisible(page, `ack 1: ${first}`)
@@ -823,11 +809,9 @@ test.describe("core harness ownership (local) @core", () => {
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     await expect(page.getByRole("textbox", { name: /Ask anything/i }).last()).toBeVisible({ timeout: 20_000 })
     await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
-    await expectOnlyHarnessModelControl(page, /Big Pickle|big-pickle/i)
+    await expectOnlyHarnessModelControl(page, /Pi GPT-5\.5/i)
 
-    // Pi itself issues no config-options request. The preceding OpenCode
-    // connection is configurable and may refresh independently.
-    expect(mock.requests.harnessOptionsHarnesses).not.toContain("pi")
+    expect(mock.requests.harnessOptionsHarnesses).toContain("pi")
   })
 
   test(

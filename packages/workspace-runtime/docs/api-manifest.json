@@ -11,7 +11,6 @@
     "./relay",
     "./route-contribution",
     "./routes",
-    "./session-env-contract",
     "./testing"
   ],
   "rootRuntimeExports": [
@@ -69,7 +68,6 @@
     "/api/wr/diff",
     "/api/wr/git",
     "/api/wr/hook",
-    "/api/wr/session-env",
     "/api/wr/worktrees"
   ]
 }

@@ -43,10 +43,5 @@ describe("Claxedo behavior", () => {
     expect(await Bun.file(new URL("./session-url.ts", import.meta.url)).text()).not.toContain("RuntimeGateway")
   })
 
-  test("uses the control-plane base for central sessions and normalizes returned URLs", async () => {
-    await expect(resolveSessionUrl("session-1", {
-      claxedoServerUrl: "https://control.example.com/",
-      fetch: async () => Response.json({ harnessHost: "central", gatewayUrl: "https://ignored.example.com/" }),
-    })).resolves.toBe("https://control.example.com")
-  })
+
 })
