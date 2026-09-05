@@ -78,6 +78,10 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
 
   return {
     async permissions(scope) {
+      // A pending request exists only inside a turn, and turns run only on a
+      // serving host. Reading before the host is ready must answer empty
+      // instead of booting the engine on a read path.
+      if (host.status().lifecycle !== "ready") return []
       const client = await host.client()
       const response = await client.permission.request.list({ location: { directory: scope.directory } })
       return rows(response).map((row) => {
@@ -105,6 +109,7 @@ export function createInteractionPort(host: OpenCodeHost): OpenCodeInteractionPo
     },
 
     async forms(scope) {
+      if (host.status().lifecycle !== "ready") return []
       const client = await host.client()
       const response = await client.form.request.list({ location: { directory: scope.directory } })
       return rows(response).map((row) => {

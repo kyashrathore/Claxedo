@@ -2243,6 +2243,34 @@ describe("RuntimeStore", () => {
 
 })
 
+describe("RuntimeStore session projection cost", () => {
+  it("resolves lastTurn through the terminal-row partial index instead of walking the journal", () => {
+    const root = tmp()
+    const store = new RuntimeStoreImpl(root)
+    const db = (store as unknown as { db: { prepare(sql: string): { all(...params: unknown[]): unknown[] } } }).db
+    // The same statement `lastTurn` runs. If the predicate drifts from the
+    // index predicate the planner silently falls back to the primary key and
+    // every session read scans that session's whole journal again.
+    const plan = db.prepare(`
+      EXPLAIN QUERY PLAN
+      SELECT seq, type, created_at, payload_json
+      FROM runtime_journal
+      WHERE session_id = ?
+        AND (
+          (kind = 'control' AND type = 'turn.finish')
+          OR (kind = 'event' AND type IN ('message.completed', 'session.error'))
+        )
+      ORDER BY seq DESC
+      LIMIT 1
+    `).all("s1") as Array<{ detail: string }>
+    assert.ok(
+      plan.some((row) => row.detail.includes("runtime_journal_turn_outcome_idx")),
+      `lastTurn does not use runtime_journal_turn_outcome_idx: ${plan.map((row) => row.detail).join(" | ")}`,
+    )
+    store.close()
+  })
+})
+
 describe("canonical execution binding", () => {
   it("persists the complete binding and never derives it from provider inventory", () => {
     const root = tmp()

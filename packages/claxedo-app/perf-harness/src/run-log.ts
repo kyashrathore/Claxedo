@@ -1,10 +1,9 @@
 import { appendFile, mkdir } from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import { dataRoot } from "./storage"
 import type { PerfRecord } from "./perf-record"
 import type { MetricComparison } from "./baseline-store"
-import type { AuthoritativeSourceIdentity } from "./memory-provenance"
+import type { AuthoritativeSourceIdentity } from "./measurement-provenance"
 
 /**
  * The durable experiment log.
@@ -31,31 +30,9 @@ import type { AuthoritativeSourceIdentity } from "./memory-provenance"
  * reads, and it is a few hundred bytes.
  */
 
-/** The physical machine. What `profile` emulates ON, and cannot identify. */
-export type HostFingerprint = {
-  platform: string
-  cpu: string
-  cores: number
-  memoryGb: number
-}
-
-/**
- * Identify the machine well enough to notice when two runs are not from one.
- *
- * Deliberately coarse: exact clock speeds and load averages vary run to run and
- * would make every line look unique. Model, core count and memory are stable
- * for a given machine and different between machines, which is the only
- * question this field has to answer.
- */
-export function hostFingerprint(): HostFingerprint {
-  const cpus = os.cpus()
-  return {
-    platform: `${process.platform}-${process.arch}`,
-    cpu: cpus[0]?.model ?? "unknown",
-    cores: cpus.length,
-    memoryGb: Math.round(os.totalmem() / 1024 ** 3),
-  }
-}
+import { hostFingerprint, type HostFingerprint, type MeasurementEvidence } from "./measurement-context"
+export { hostFingerprint } from "./measurement-context"
+export type { HostFingerprint } from "./measurement-context"
 
 export type RunLogEntry = {
   at: string
@@ -70,6 +47,7 @@ export type RunLogEntry = {
   stack: string
   /** Headline values, one per metric in the portable vocabulary. */
   metrics: Record<string, number | null>
+  measurements: Record<string, MeasurementEvidence | null>
   /** Movement against the tracked baseline, when there was one. */
   verdicts?: Record<string, string>
   /**
@@ -129,6 +107,7 @@ export function runLogEntry(input: {
     // fact about the run, and dropping it makes an absent metric look like one
     // that was never part of the vocabulary.
     metrics: Object.fromEntries(input.records.map((record) => [record.metric, record.value ?? null])),
+    measurements: Object.fromEntries(input.records.map((record) => [record.metric, record.evidence ?? null])),
     ...(input.comparison?.length
       ? { verdicts: Object.fromEntries(input.comparison.map((item) => [item.metric, item.verdict])) }
       : {}),

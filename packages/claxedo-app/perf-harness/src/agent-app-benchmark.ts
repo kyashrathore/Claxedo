@@ -243,7 +243,7 @@ export async function runAgentAppBenchmark(options: Options) {
       if (!existing.has(metric)) samples.push(invalidInfrastructureSample(runId, profile, scenario, metric, failure ?? "incomplete-metric-coverage"));
     }
   }
-  const summary = summarize(samples, targets);
+  const summary = summarizeAgentMetrics(samples, options.profiles, targets);
   const validity = !failure && survivorCount === 0 && samples.length === selectedMetrics(options.profiles).length && samples.every((sample) => sample.validity.status === "valid") ? "valid" : "invalid";
   const manifest = { schemaVersion: 1, runId, application: "Claxedo", startedAt, completedAt: new Date().toISOString(), validity, failure, provenance: { ...provenance, postflight: hostAfter }, processOwnership: { rootPid, snapshots: ownershipSnapshots, shutdown, survivorCount }, samples, summary };
   await Promise.all([
@@ -326,8 +326,8 @@ function invalidInfrastructureSample(runId: string, profile: AgentAppProfile, sc
 }
 function selectedMetricTriples(profiles: AgentAppProfile[]) { return profiles.flatMap((profile) => PROFILE_SCENARIOS[profile].flatMap((scenario) => SCENARIO_METRICS[scenario].map((metric) => [profile, scenario, metric] as const))); }
 function selectedMetrics(profiles: AgentAppProfile[]) { return selectedMetricTriples(profiles).map((item) => item[2]); }
-function summarize(samples: RawMetricSample[], targets?: Awaited<ReturnType<typeof loadAgentBenchmarkTargets>>) {
-  return PRIMARY_AGENT_APP_METRICS.map((metric) => {
+export function summarizeAgentMetrics(samples: RawMetricSample[], profiles: AgentAppProfile[], targets?: Awaited<ReturnType<typeof loadAgentBenchmarkTargets>>) {
+  return selectedMetrics(profiles).map((metric) => {
     const raw = samples.filter((sample) => sample.metric === metric);
     const valid = raw.filter((sample) => sample.validity.status === "valid" && (sample.observation.state === "exact" || sample.observation.state === "bounded"));
     const values = valid.flatMap((sample) => sample.observation.state === "exact" ? [sample.observation.value] : sample.observation.state === "bounded" ? [sample.observation.upperBound] : []);
@@ -336,7 +336,7 @@ function summarize(samples: RawMetricSample[], targets?: Awaited<ReturnType<type
     return { metric, target, totalSamples: raw.length, validSamples: valid.length, excludedInvalidSamples: raw.length - valid.length, value, passed: value !== undefined && !!target && evaluateTarget(target, value) };
   });
 }
-function markdownSummary(manifest: { runId: string; validity: string; failure?: string; summary: ReturnType<typeof summarize> }) {
+function markdownSummary(manifest: { runId: string; validity: string; failure?: string; summary: ReturnType<typeof summarizeAgentMetrics> }) {
   const lines = [`# Claxedo agent-app benchmark ${manifest.runId}`, "", `Attempt validity: **${manifest.validity}**`, ...(manifest.failure ? [`Failure: \`${manifest.failure}\``] : []), "", "| Metric | Valid / total | Result | Target | Gate |", "|---|---:|---:|---:|---|"];
   for (const item of manifest.summary) lines.push(`| \`${item.metric}\` | ${item.validSamples} / ${item.totalSamples} | ${item.value ?? "—"} | ${item.target ? `${item.target.direction} ${item.target.value} ${item.target.unit}` : "—"} | ${item.passed ? "pass" : "fail"} |`);
   lines.push("", "Invalid samples are retained in `attempt.json` and never enter the result column.", "");

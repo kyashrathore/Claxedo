@@ -1,5 +1,6 @@
 // target-layer: data — Phase 1/2 will absorb
 import { createEffect, createMemo, createSignal, on, onCleanup, type ParentProps } from "solid-js"
+import { sessionPerf } from "@/platform/performance/session-perf"
 import { useLocation, useNavigate, useParams } from "@solidjs/router"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLayout, type LocalProject } from "@/app/providers/layout"
@@ -719,6 +720,15 @@ export function ClaxedoRouteStateBridge(props: ParentProps) {
               : !cachedTarget && sessionInventory().loaded && directories.length === 0))
         if (matchesActiveSurface) return
         const metaLookupInFlight = cachedTarget ? false : resolveRouteSessionFromMeta(sessionId, directories)
+        sessionPerf.event("route.direct-session", {
+          sessionId,
+          inventoryLoaded: inventory.loaded,
+          target: target?.directory ?? "",
+          cachedTarget: cachedTarget?.directory ?? "",
+          metaLookupInFlight,
+          surface: surface ? `${surface.type}:${surface.sessionId ?? ""}:${surface.directory ?? ""}` : "",
+          directories: directories.join("|"),
+        })
         if (metaLookupInFlight) return
         if (target) {
           void directorySessionCacheActions.ensure({ directory: target.directory })

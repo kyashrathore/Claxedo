@@ -21,8 +21,8 @@ import { createHash } from "node:crypto";
 import {
   materializeClaxedoCorpus,
   readCanonicalCorpusDigest,
-  type SessionReadinessTarget,
 } from "../src/agent-corpus-materializer";
+import type { SessionReadinessTarget } from "../src/agent-browser-observer";
 import { launchPackagedClaxedo } from "../src/agent-claxedo-launcher";
 import { measureSessionActivation, warmSwitchPlan } from "../src/agent-browser-observer";
 

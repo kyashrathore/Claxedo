@@ -2,7 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { parseAgentBenchmarkOptions, runAgentAppBenchmark } from "../src/agent-app-benchmark";
+import { parseAgentBenchmarkOptions, runAgentAppBenchmark, summarizeAgentMetrics } from "../src/agent-app-benchmark";
+import { rawMetricSample, rendererClock } from "../src/agent-samples";
 import { AGENT_APP_PROFILES } from "../src/agent-driver-contract";
 import { captureHostState, validateHostTransition, type HostCommands } from "../src/agent-host-preflight";
 import { isT3Process, parseProcessTable, processFamily, processLineage } from "../src/agent-process-family";
@@ -93,4 +94,25 @@ describe("authoritative Claxedo agent-app benchmark infrastructure", () => {
       expect(persisted.samples).toHaveLength(9);
     } finally { await rm(root, { recursive: true, force: true }); }
   });
+});
+
+
+test("selected profiles score only their required metrics and still fail missing selected evidence", async () => {
+  const targets = await loadAgentBenchmarkTargets(targetsPath);
+  const samples = [
+    ["app-cold-ready-v1", "app.cold_ready_ms"],
+    ["work-item-cold-open-v1", "work_item.cold_open_ms"],
+    ["work-item-warm-switch-v1", "work_item.warm_switch_p95_ms"],
+  ] as const;
+  const measured = samples.map(([scenario, metric]) => rawMetricSample({
+    attemptId: "selected-profile", profile: "workspace-core-v1", scenario, metric,
+    observation: { state: "exact", value: 1, unit: "ms" },
+    evidence: [rendererClock({ name: "test-window", startTimestamp: 0, endTimestamp: 1, observerMethod: "test" })],
+    validityEvidence: [{ check: "ready", passed: true }],
+  }));
+  const summary = summarizeAgentMetrics(measured, ["workspace-core-v1"], targets);
+  expect(summary).toHaveLength(3);
+  expect(summary.every((entry) => entry.passed)).toBe(true);
+  expect(summarizeAgentMetrics(measured.slice(1), ["workspace-core-v1"], targets)[0]!.passed).toBe(false);
+  expect(summarizeAgentMetrics([], [...AGENT_APP_PROFILES], targets)).toHaveLength(9);
 });

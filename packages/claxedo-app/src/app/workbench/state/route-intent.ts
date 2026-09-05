@@ -27,6 +27,7 @@
  *     in-flight context view isn't stolen by a background URL update.
  */
 import type { Accessor } from "solid-js"
+import { sessionPerf } from "@/platform/performance/session-perf"
 import { workspaceSessionRoute, workspaceTerminalRoute } from "@/platform/identity/route"
 import { sameSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import type { ClaxedoStateApi } from "./provider"
@@ -546,6 +547,11 @@ export function createRouteIntentAdapter(input: {
         return
       }
 
+      sessionPerf.event("route.workspace-root-draft", {
+        workspaceId,
+        routeId: intent.workspaceRouteId ?? "",
+        focused: focused ? `${focused.type}:${focused.sessionId ?? ""}:${focused.directory ?? ""}` : "",
+      })
       state.layout.openSession(workspaceId, "new", "New Session", {
         sessionRef: workspaceRootSessionRef(workspaceId, intent.workspaceBacking),
         workspaceRouteId: intent.workspaceRouteId,

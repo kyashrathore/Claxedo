@@ -39,7 +39,7 @@ const NATIVE_MODULES = [
 // better-sqlite3's deps/ holds the sqlite3.c build source: only needed for
 // node-gyp rebuilds, never at runtime.
 const NATIVE_PLATFORM_FILES = [
-  `**/node_modules/better-sqlite3/prebuilds/${targetOsArch}.node`,
+  `node_modules/better-sqlite3/prebuilds/${targetOsArch}.node`,
 ]
 
 // Absolute directory of `@lydell/node-pty-<platform>-<arch>` for the build
@@ -152,7 +152,10 @@ const getBase = (): Configuration => ({
     // a local `package:*` run must not ship them either.
     "!out/**/*.map",
     "!**/node_modules/**",
-    ...NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
+    // Only the app's native modules belong in asar. Recursive positive globs
+    // also admit private SDK copies under otherwise excluded parent packages;
+    // that SDK graph is staged separately through extraResources below.
+    ...NATIVE_MODULES.map((name) => `node_modules/${name}/**`),
     "!**/node_modules/better-sqlite3/deps/**",
     "!**/node_modules/better-sqlite3/prebuilds/**",
     ...NATIVE_PLATFORM_FILES,

@@ -15,7 +15,7 @@ function binding(directory: string, sessionId: string): AgentExecutionBinding {
   return { workspaceId: "ws_1", directory, sessionId, connectionId: "native:opencode", upstreamSessionId: sessionId }
 }
 
-function runtime() {
+function runtime(options: { lifecycle?: "cold" | "ready" } = {}) {
   const listeners = new Set<(event: ProjectedEvent) => void>()
   const sessions = {
     list: mock(async (scope: { directory: string }) => ({
@@ -88,7 +88,7 @@ function runtime() {
       },
       checkpoint: () => undefined,
     },
-    host: { status: () => ({ lifecycle: "ready", events: "healthy" }) },
+    host: { status: () => ({ lifecycle: options.lifecycle ?? "ready", events: "healthy" }) },
     close: async () => {},
   } as unknown as OpenCodeRuntime
   return { value, sessions, launch, launchWrites }
@@ -196,6 +196,9 @@ describe("OpenCodeSdkHarnessAdapter", () => {
         },
       },
     })
+    // Configuration only records the document; the first engine operation applies it.
+    expect(fake.launch).not.toHaveBeenCalled()
+    await adapter.listAgents(directory)
     expect(fake.launch).toHaveBeenCalledWith(expect.objectContaining({ workspaceID: "ws_1", directory }))
     // Snapshot servers are translated to the SDK shape; plugin servers already are.
     expect(fake.launchWrites).toEqual([{
@@ -209,9 +212,61 @@ describe("OpenCodeSdkHarnessAdapter", () => {
 
     // The next snapshot replaces the document wholesale: nothing lingers from the last write.
     await adapter.applyConfig({ mcp: {}, auth: {}, harness, launch: {} })
+    expect(fake.launchWrites).toHaveLength(1)
+    await adapter.listCommands(directory)
     expect(fake.launchWrites.at(-1)).toEqual({ skills: [], mcp: {} })
 
     await expect(adapter.applyConfig({ mcp: { broken: { type: "stdio" } }, auth: {}, harness, launch: {} }))
       .rejects.toThrow("OpenCode MCP server broken")
+  })
+
+  test("defers the launch document until the first engine operation", async () => {
+    const fake = runtime({ lifecycle: "cold" })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    const harness = { id: "opencode", access: "native" as const }
+
+    await adapter.applyConfig({ mcp: {}, auth: {}, harness, launch: { config: { skills: ["/plugins/a/skills"] } } })
+    // Configuring a read path must not boot the engine's per-location setup.
+    expect(fake.launch).not.toHaveBeenCalled()
+    expect(fake.launchWrites).toEqual([])
+    expect(adapter.readHarnessCapabilities().harness).toBe("opencode")
+    expect(await adapter.getSessionConfig(binding(directory, "ses_1"))).toMatchObject({ harness: { id: "opencode" } })
+    expect(fake.launch).not.toHaveBeenCalled()
+
+    // Pending-interaction reads reach the engine but never apply the document:
+    // a request can only exist inside a turn that already launched.
+    expect(await adapter.listPermissions(directory)).toEqual([])
+    expect(await adapter.listQuestions(directory)).toEqual([])
+    expect(fake.value.interactions.permissions).toHaveBeenCalledWith(expect.objectContaining({ directory }))
+    expect(fake.value.interactions.forms).toHaveBeenCalledWith(expect.objectContaining({ directory }))
+    expect(fake.launch).not.toHaveBeenCalled()
+
+    // The first engine operation applies the accepted document exactly once, before it runs.
+    await adapter.listAgents(directory)
+    expect(fake.launch).toHaveBeenCalledTimes(1)
+    expect(fake.launchWrites).toEqual([{ skills: ["/plugins/a/skills"], mcp: {} }])
+    await adapter.listCommands(directory)
+    await adapter.getSession(binding(directory, "ses_1"))
+    expect(fake.launch).toHaveBeenCalledTimes(1)
+
+    // A newer document supersedes the applied one on the next engine operation.
+    await adapter.applyConfig({ mcp: {}, auth: {}, harness, launch: { config: { skills: ["/plugins/b/skills"] } } })
+    expect(fake.launchWrites).toHaveLength(1)
+    await adapter.listAgents(directory)
+    expect(fake.launchWrites.at(-1)).toEqual({ skills: ["/plugins/b/skills"], mcp: {} })
+    expect(fake.launch).toHaveBeenCalledTimes(2)
+  })
+
+  test("a failed deferred launch is retried by the next engine operation", async () => {
+    const fake = runtime({ lifecycle: "cold" })
+    const directory = workspace()
+    const adapter = adapterFor(fake, directory)
+    const harness = { id: "opencode", access: "native" as const }
+    await adapter.applyConfig({ mcp: {}, auth: {}, harness, launch: {} })
+    fake.launch.mockImplementationOnce(async () => { throw new Error("engine boot failed") })
+    await expect(adapter.listAgents(directory)).rejects.toThrow("engine boot failed")
+    await adapter.listAgents(directory)
+    expect(fake.launchWrites).toEqual([{ skills: [], mcp: {} }])
   })
 })

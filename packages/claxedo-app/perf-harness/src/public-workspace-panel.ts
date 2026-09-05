@@ -47,46 +47,23 @@ export type SessionNavigationCase = {
   destinationSessionId: string
 }
 
-export type WorkspacePanelV2Action =
-  | "open-panel"
-  | "close-panel"
-  | "files-to-review"
-  | "review-to-files"
-  | "open-file"
-  | "switch-file-tab"
-  | "expand-all"
-  | "collapse-all"
+export const WORKSPACE_PANEL_ACTIONS = [
+  "open-panel",
+  "close-panel",
+  "files-to-review",
+  "review-to-files",
+  "open-file",
+  "switch-file-tab",
+  "expand-all",
+  "collapse-all",
+] as const
+export type WorkspacePanelAction = (typeof WORKSPACE_PANEL_ACTIONS)[number]
 
-export type WorkspacePanelV2Case = {
+export type WorkspacePanelCase = {
   caseId: string
   workload: "workspace-panel-interaction"
-  action: WorkspacePanelV2Action
+  action: WorkspacePanelAction
   loadProfile: PublicPanelLoadProfile
-}
-
-export type PanelActionCase = {
-  caseId: string
-  workload: "workspace-panel-action"
-  action:
-    | "open-cold"
-    | "toggle-open-close"
-    | "toggle-close-open"
-    | "open-warm-data"
-    | "switch-surface"
-    | "open-file"
-    | "switch-file-tab"
-    | "toggle-diff-view"
-    | "collapse-all"
-    | "expand-all"
-}
-
-export type PanelSwitchCase = {
-  caseId: string
-  workload: "panel-session-switch"
-  sessionState: "cold" | "warm"
-  panelProfile: PanelProfile
-  sourceSessionId: string
-  destinationSessionId: string
 }
 
 export type PanelTarget = SessionReadinessTarget & {
@@ -221,68 +198,7 @@ export function fixtureEvidence(manifest: WorkspaceFixtureManifest): FixtureEvid
 
 export async function executeWorkspacePanelAction(input: {
   page: Page
-  benchmarkCase: PanelActionCase
-  fixture: FixtureEvidence
-}) {
-  const { page, benchmarkCase, fixture } = input
-  switch (benchmarkCase.action) {
-    case "open-cold":
-      await assertPanelNeverMounted(page)
-      return measurePanelOpen(page, fixture, true)
-    case "toggle-open-close":
-      await ensurePanelClosed(page)
-      return measureTogglePair(page, fixture, "closed")
-    case "toggle-close-open":
-      await ensureFilesOpen(page, fixture)
-      return measureTogglePair(page, fixture, "open")
-    case "open-warm-data":
-      await ensurePanelClosed(page, true)
-      return measurePanelOpen(page, fixture, false)
-    case "switch-surface":
-      await ensureFilesOpen(page, fixture)
-      return measureSettledAction(page, async () => clickVisible(page, "button[aria-label='Open Changes']"), async () => {
-        await waitForPanelProfile(page, "diff", fixture)
-      })
-    case "open-file": {
-      await ensureFilesOpen(page, fixture)
-      await revealFileInNavigator(page, fixture.openFiles[0]!)
-      return measureSettledAction(page, async () => clickFileRow(page, fixture.openFiles[0]!), async () => {
-        await waitForPaintedFile(page, fixture.openFiles[0]!)
-      })
-    }
-    case "switch-file-tab": {
-      await prepareOpenFileTabs(page, fixture)
-      const [first, second] = fixture.openFiles
-      await clickFileTab(page, first!)
-      await waitForPaintedFile(page, first!)
-      return measureSettledAction(page, async () => clickFileTab(page, second!), async () => {
-        await waitForPaintedFile(page, second!)
-      })
-    }
-    case "toggle-diff-view":
-      await prepareDiffActions(page, fixture)
-      await ensureDiffStyle(page, "unified")
-      return measureSettledAction(page, async () => clickVisible(page, "[data-testid='review-diff-style-toggle'][data-review-next-diff-style='split']"), async () => {
-        await waitForDiffState(page, fixture, { style: "split" })
-      })
-    case "collapse-all":
-      await prepareDiffActions(page, fixture)
-      await ensureAllDiffs(page, fixture, true)
-      return measureSettledAction(page, async () => clickVisible(page, COLLAPSE_ALL_SELECTOR), async () => {
-        await waitForDiffState(page, fixture, { openCount: 0 })
-      })
-    case "expand-all":
-      await prepareDiffActions(page, fixture)
-      await ensureAllDiffs(page, fixture, false)
-      return measureSettledAction(page, async () => clickVisible(page, "button[aria-label='Expand all']"), async () => {
-        await waitForDiffState(page, fixture, { openCount: fixture.changed.length })
-      })
-  }
-}
-
-export async function executeWorkspacePanelActionV2(input: {
-  page: Page
-  benchmarkCase: WorkspacePanelV2Case
+  benchmarkCase: WorkspacePanelCase
   fixture: FixtureEvidence
   preset: PublicPanelLoadPreset
 }) {
@@ -292,7 +208,7 @@ export async function executeWorkspacePanelActionV2(input: {
     case "open-panel":
       await ensureFilesOpen(page, fixture)
       await ensurePanelClosed(page, true)
-      return measurePanelOpen(page, fixture, false)
+      return measurePanelOpen(page, fixture)
     case "close-panel":
       await ensureFilesOpen(page, fixture)
       return measurePrearmedSettledAction(
@@ -407,51 +323,10 @@ export async function executeSessionNavigation(input: {
   })
 }
 
-export async function executeWorkspacePanelSwitch(input: {
-  page: Page
-  benchmarkCase: PanelSwitchCase
-  source: PanelTarget
-  destination: PanelTarget
-  fixture: FixtureEvidence
-}) {
-  const { page, benchmarkCase, source, destination, fixture } = input
-  await ensurePanelProfile(page, benchmarkCase.panelProfile, fixture)
-  if (benchmarkCase.sessionState === "warm") {
-    await activateExact(page, destination)
-    await ensurePanelProfile(page, benchmarkCase.panelProfile, fixture)
-    await waitForPanelOwner(page, benchmarkCase.panelProfile, destination, fixture)
-  }
-  await activateExact(page, source)
-  // A previously visited session may restore its own focus/working-set state
-  // after activation. Establish the requested workbench presentation on the
-  // actual source session so the timed click starts from the declared profile,
-  // rather than from a stale surface that happened to be visible pre-switch.
-  await ensurePanelProfile(page, benchmarkCase.panelProfile, fixture)
-  await waitForPanelOwner(page, benchmarkCase.panelProfile, source, fixture)
-
-  const recording = await beginTrace(page)
-  try {
-    const session = await activateExact(page, destination)
-    const sessionReady = session.paintedAtMs
-    const panelReady = await waitForPanelOwner(page, benchmarkCase.panelProfile, destination, fixture)
-    await addMilestones(page, [
-      { id: "session-ready", at: sessionReady },
-      { id: "panel-ready", at: panelReady },
-      { id: "content-identity", at: sessionReady },
-      { id: "above-fold-painted", at: Math.max(sessionReady, panelReady) },
-    ])
-    return await finishMeasuredTrace(page, recording)
-  } catch (error) {
-    await abortTrace(page, recording)
-    throw error
-  }
-}
-
-async function measurePanelOpen(page: Page, fixture: FixtureEvidence, cold: boolean) {
+async function measurePanelOpen(page: Page, fixture: FixtureEvidence) {
   const recording = await beginTrace(page, { openFilesExpectedCount: fixture.files.length })
   try {
-    if (cold) await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']")
-    else await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']")
+    await clickVisible(page, "[data-testid='workspace-panel-toggle'][aria-label='Open workspace panel']")
     const readiness = await waitForTracedOpenFiles(page)
     await addMilestones(page, [
       { id: "shell-visible", at: readiness.shellVisible },
@@ -459,43 +334,6 @@ async function measurePanelOpen(page: Page, fixture: FixtureEvidence, cold: bool
       { id: "data-ready", at: readiness.dataReady },
       { id: "above-fold-painted", at: readiness.aboveFoldPainted },
     ])
-    return await finishMeasuredTrace(page, recording)
-  } catch (error) {
-    await abortTrace(page, recording)
-    throw error
-  }
-}
-
-async function measureTogglePair(page: Page, fixture: FixtureEvidence, initial: "open" | "closed") {
-  const recording = await beginTrace(page)
-  try {
-    const first = `[data-testid='workspace-panel-toggle'][aria-label='${initial === "open" ? "Close" : "Open"} workspace panel']`
-    const second = `[data-testid='workspace-panel-toggle'][aria-label='${initial === "open" ? "Open" : "Close"} workspace panel']`
-    await clickVisible(page, first)
-    await waitForVisibleSelector(page, second)
-    await clickVisible(page, second)
-    const finalState = initial === "closed"
-      ? await waitForPanelClosed(page)
-      : (await waitForOpenFiles(page, fixture)).aboveFoldPainted
-    const secondInput = await readLastTrustedInput(page)
-    await addMilestones(page, [
-      { id: "second-toggle-input", at: secondInput },
-      { id: "final-state-presented", at: finalState },
-      { id: "animation-settled", at: finalState },
-    ])
-    return await finishMeasuredTrace(page, recording)
-  } catch (error) {
-    await abortTrace(page, recording)
-    throw error
-  }
-}
-
-async function measureSettledAction(page: Page, click: () => Promise<void>, ready: () => Promise<void>) {
-  const recording = await beginTrace(page)
-  try {
-    await click()
-    await ready()
-    await addMilestones(page, [{ id: "action-painted", at: await twoPresentationTimestamp(page) }])
     return await finishMeasuredTrace(page, recording)
   } catch (error) {
     await abortTrace(page, recording)
@@ -725,12 +563,6 @@ async function ensureReviewExpansionCount(page: Page, fixture: FixtureEvidence, 
   )
 }
 
-async function ensurePanelProfile(page: Page, profile: PanelProfile, fixture: FixtureEvidence) {
-  if (profile === "closed") return ensurePanelClosed(page)
-  if (profile === "files") return ensureFilesOpen(page, fixture)
-  return ensureDiffOpen(page, fixture)
-}
-
 /**
  * Session activation restores the destination's remembered panel, which can
  * leave the shell mounted mid-close (`data-open="false"`, `shellSettled`
@@ -797,14 +629,6 @@ async function ensurePanelClosed(page: Page, requireDisposed = false) {
     const owned = await page.evaluate(() => document.querySelectorAll("[data-testid='workspace-panel-shell'] [data-testid='workspace-files-navigator'], [data-testid='workspace-panel-shell'] [data-testid='review-pane-root']").length)
     if (owned !== 0) throw new Error(`Claxedo closed panel retained ${owned} heavy surface roots`)
   }
-}
-
-async function assertPanelNeverMounted(page: Page) {
-  const state = await page.evaluate(() => ({
-    shell: !!document.querySelector("[data-testid='workspace-panel-shell']"),
-    heavy: !!document.querySelector("[data-testid='workspace-files-navigator'], [data-testid='review-pane-root']"),
-  }))
-  if (state.shell || state.heavy) throw new Error("Claxedo cold panel precondition found an already-mounted panel surface")
 }
 
 async function panelState(page: Page) {
@@ -1313,16 +1137,6 @@ async function waitForTreePath(page: Page, expected: string) {
   }
 }
 
-async function prepareOpenFileTabs(page: Page, fixture: FixtureEvidence) {
-  await ensureFilesOpen(page, fixture)
-  for (const file of fixture.openFiles) {
-    if (await hasFileTab(page, file)) continue
-    await revealFileInNavigator(page, file)
-    await clickFileRow(page, file)
-    await waitForPaintedFile(page, file)
-  }
-}
-
 async function hasFileTab(page: Page, file: string) {
   const basename = file.slice(file.lastIndexOf("/") + 1)
   return (await indexByText(page, "[data-slot='workspace-tab'][data-workspace-tab-kind='file']", basename)) !== -1
@@ -1334,21 +1148,6 @@ async function clickFileTab(page: Page, file: string) {
   const index = await indexByText(page, selector, basename, true)
   if (index < 0) throw new Error(`Claxedo has no visible file tab for ${file}`)
   await page.locator(selector).nth(index).locator("button").click()
-}
-
-async function prepareDiffActions(page: Page, fixture: FixtureEvidence) {
-  await ensureDiffOpen(page, fixture)
-  const reviewTab = await optionalVisibleLocator(page, "[data-slot='workspace-tab'][data-workspace-tab-kind='review'] > button")
-  if (reviewTab) await reviewTab.click()
-  await waitForPanelProfile(page, "diff", fixture)
-}
-
-async function ensureDiffStyle(page: Page, style: "unified" | "split") {
-  const current = await page.evaluate(() => document.querySelector<HTMLElement>("[data-testid='review-pane-root'] [data-review-diff-style]")?.dataset.reviewDiffStyle)
-  if (current !== style) {
-    await clickVisible(page, `[data-testid='review-diff-style-toggle'][data-review-next-diff-style='${style}']`)
-    await page.waitForFunction((expected) => document.querySelector<HTMLElement>("[data-testid='review-pane-root'] [data-review-diff-style]")?.dataset.reviewDiffStyle === expected, style, { polling: "raf", timeout: READINESS_TIMEOUT_MS })
-  }
 }
 
 async function ensureAllDiffs(page: Page, fixture: FixtureEvidence, expanded: boolean) {
@@ -1668,12 +1467,6 @@ async function addMilestones(page: Page, milestones: Array<{ id: string; at: num
     if (!trace?.active) throw new Error("No active Claxedo public renderer trace")
     trace.milestones.push(...items)
   }, milestones)
-}
-
-async function readLastTrustedInput(page: Page) {
-  const at = await page.evaluate(() => (window as any).__claxedoPublicPanelTrace?.lastTrustedInputAt ?? Number.NaN)
-  if (!Number.isFinite(at)) throw new Error("Claxedo trace did not observe the second trusted input")
-  return at
 }
 
 async function finishMeasuredTrace(page: Page, recording: TraceRecording) {

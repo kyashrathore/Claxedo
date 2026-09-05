@@ -23,7 +23,7 @@ function corpus(directory: string) {
   return value
 }
 
-test("imported corpus history is readable through the live runtime's session port", async () => {
+test("the native SDK copy preserves transcript content and migrated snapshot metadata", async () => {
   const directory = await realpath(await mkdtemp(path.join(os.tmpdir(), "claxedo-corpus-port-")))
   const databasePath = path.join(directory, "opencode.db")
   const runtime = createOpenCodeRuntime({ databasePath, configContent: "{}" })
@@ -43,11 +43,6 @@ test("imported corpus history is readable through the live runtime's session por
     expect(page.messages.map((row) => row.id)).toEqual(["msg_user", "msg_assistant"])
     expect(page.messages[0]?.text).toBe("hello")
     expect(page.messages[1]?.content).toEqual([{ type: "text", text: "answer" }])
-    expect(
-      value.remapReadiness({ eventualFullPartIds: ["prt_start", "prt_answer", "prt_patch", "prt_finish"] })
-        .eventualFullPartIds,
-    ).toEqual(["msg_assistant:000000"])
-    expect(value.remapReadiness({ expectedPartIds: ["prt_answer"] }).expectedPartIds).toEqual(["msg_assistant:000000"])
   } finally {
     await runtime.close()
     await rm(directory, { recursive: true, force: true })

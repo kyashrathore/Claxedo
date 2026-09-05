@@ -79,11 +79,11 @@ export function compareHeavyWorkspaceNoninferiority(
     "workspace_closed_navigators_after_dwell",
     "workspace_closed_review_roots_after_dwell",
     "workspace_closed_review_files_after_dwell",
-    "workspace_reopen_inactive_review_roots",
-    "workspace_reopen_inactive_review_files",
+    "workspace_file_restore_inactive_review_roots",
+    "workspace_file_restore_inactive_review_files",
     "workspace_review_resume_inactive_file_roots",
   ]) exact(metric, "max", 0)
-  exact("workspace_reopen_file_roots", "max", 1)
+  exact("workspace_file_restore_file_roots", "max", 1)
 
   return {
     status: checks.every((check) => check.pass) ? "pass" as const : "fail" as const,

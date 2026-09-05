@@ -15,14 +15,14 @@ export function trackSessionOpen(input: {
   messageCount: Accessor<number>
 }) {
   createEffect(on(input.sessionId, (id) => {
-    if (id) sessionPerf.openPhase(id, "screen-mounted", { directory: input.directory() })
+    if (!id) return
+    sessionPerf.openStart(id, "route")
+    sessionPerf.openPhase(id, "screen-mounted", { directory: input.directory() })
+    // Readiness belongs to this open. Recreate its observer after the start
+    // when the session changes, including switches to already-ready sessions.
+    createEffect(() => {
+      if (input.messagesReady()) sessionPerf.openPhase(id, "messages-ready", { messages: input.messageCount() })
+      if (input.firstFoldReady()) sessionPerf.openPhase(id, "first-fold-ready", { messages: input.messageCount() })
+    })
   }))
-  createEffect(() => {
-    const id = input.sessionId()
-    if (id && input.messagesReady()) sessionPerf.openPhase(id, "messages-ready", { messages: input.messageCount() })
-  })
-  createEffect(() => {
-    const id = input.sessionId()
-    if (id && input.firstFoldReady()) sessionPerf.openPhase(id, "first-fold-ready", { messages: input.messageCount() })
-  })
 }

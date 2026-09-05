@@ -4,6 +4,8 @@ import { tmpdir } from "node:os"
 import path from "node:path"
 import { Database } from "bun:sqlite"
 import { describe, expect, test } from "bun:test"
+import { createWorkspaceRuntimeApp, loopbackWorkspaceRuntimeExposure } from "@claxedo/workspace-runtime"
+import { authorizeWorkspace, type OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import { buildWorkspaceFixtureManifest, generateWorkspaceFileBytes } from "agent-app-benchmark/workspace-fixture"
 import {
   materializeClaxedoPublicCorpus,
@@ -13,6 +15,7 @@ import {
   SYNTHETIC_SESSION_TIME_BASE_MS,
   workspaceListRanks,
 } from "../src/public-corpus-materializer"
+import { withClaxedoDataDirectory } from "../src/with-claxedo-data-directory"
 
 describe("distinct synthetic session identity", () => {
   test("prefixes a per-list serial and rewrites any prior serial", () => {
@@ -57,7 +60,7 @@ describe("distinct synthetic session identity", () => {
 })
 
 describe("public OpenCode corpus materialization", () => {
-  test("streams pinned durable events into the native OpenCode database and reads them back", async () => {
+  test("the native SDK owner and actual message API read the imported corpus after reopening", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "claxedo-public-corpus-"))
     try {
       const corpus = await writeCorpus(root)
@@ -75,8 +78,69 @@ describe("public OpenCode corpus materialization", () => {
       expect(result.readinessTargets.get("control")?.expectedMessageIds).toEqual(["msg_assistant"])
       expect(result.readinessTargets.get("control")?.title).toBe("1. Control")
       expect(result.mappingDigestSha256).toMatch(/^[0-9a-f]{64}$/)
+      const target = result.readinessTargets.get("control")!
+      expect(target.expectedPartIds).toEqual(["prt_assistant"])
 
-      const database = new Database(path.join(root, "state", "data", "opencode-engine", "opencode.db"), {
+      // Use the production host composition to choose its own SDK path. Passing
+      // the fixture's path to another SDK instance would validate the same bug.
+      const runtimeModule = "../../../claxedo-server-core/src/opencode/sdk-runtime.ts"
+      const { openCodeSdkRuntime, drainOpenCodeSdkRuntime } = (await import(runtimeModule)) as {
+        openCodeSdkRuntime(): OpenCodeRuntime
+        drainOpenCodeSdkRuntime(): Promise<void>
+      }
+      const dataDirectory = path.join(root, "state", "data")
+      await withClaxedoDataDirectory(dataDirectory, async () => {
+        const sdk = openCodeSdkRuntime()
+        const metadata = new Database(path.join(dataDirectory, "claxedo.db"), { readonly: true })
+        const { workspace_id: workspaceId } = metadata
+          .query("SELECT workspace_id FROM claxedo_session_meta WHERE session_id = ?")
+          .get(target.sessionId) as { workspace_id: string }
+        metadata.close()
+        const runtime = createWorkspaceRuntimeApp({
+          target: { workspaceId, directory: target.workspaceDirectory },
+          storeRoot: path.join(dataDirectory, "agent-core", workspaceId),
+          opencodeRuntime: sdk,
+          exposure: loopbackWorkspaceRuntimeExposure(),
+        })
+        try {
+          const scope = authorizeWorkspace({ workspaceID: workspaceId, directory: target.workspaceDirectory })
+          expect((await sdk.sessions.get(scope, target.sessionId)).title).toBe(target.title)
+          expect((await sdk.sessions.messages(scope, target.sessionId)).messages).toHaveLength(2)
+          for (const query of ["view=latest-turn", "snapshot=1"]) {
+            const response = await runtime.app.request(
+              `http://localhost/session/${target.sessionId}/message?${query}`,
+            )
+            expect(response.status).toBe(200)
+            type Message = { info: { id: string }; parts: Array<{ id: string; text?: string }> }
+            const body = await response.json() as Message[] | { messages: Message[] }
+            const messages = query === "snapshot=1" ? (body as { messages: Message[] }).messages : body as Message[]
+            expect(messages.map((row) => row.info.id)).toEqual(["msg_user", "msg_assistant"])
+            const assistant = messages.find((row) => row.info.id === "msg_assistant")!
+            expect(assistant.parts).toEqual([expect.objectContaining({ id: "prt_assistant", text: "world" })])
+            expect(assistant.parts.map((part) => part.id)).toEqual([...target.expectedPartIds!])
+          }
+          const journal = new Database(path.join(dataDirectory, "agent-core", workspaceId, "state.db"), { readonly: true })
+          try {
+            expect(journal.query("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'part' ORDER BY name").all()).toEqual([
+              { name: "part_session_message_ord_idx" },
+              { name: "sqlite_autoindex_part_1" },
+            ])
+            const rows = journal.query("SELECT payload_json FROM runtime_journal WHERE kind = 'event' ORDER BY seq").all() as Array<{ payload_json: string }>
+            const source = (await readFile(path.join(corpus.directory, "sessions/control.ndjson"), "utf8"))
+              .trim().split("\n").map((line) => JSON.parse(line)).slice(1)
+            expect(rows.map((row) => JSON.parse(row.payload_json))).toEqual(source.map((event) => ({
+              id: event.id, type: event.type.replace(/\.1$/, ""), properties: event.data,
+            })))
+          } finally {
+            journal.close()
+          }
+        } finally {
+          await runtime.dispose()
+          await drainOpenCodeSdkRuntime()
+        }
+      })
+
+      const database = new Database(path.join(root, "state", "data", "opencode-runtime", "opencode.db"), {
         readonly: true,
       })
       const session = database

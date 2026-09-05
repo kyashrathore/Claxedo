@@ -9,6 +9,7 @@
  * coordinated via claxedo layout state and rendered through multi-pane leaves.
  */
 
+import { sessionPerf } from "@/platform/performance/session-perf"
 import { markRendererPhase } from "@/platform/performance/renderer-trace"
 import "./styles/app-shell.css"
 import { createEffect, createMemo, lazy, type ParentProps } from "solid-js"
@@ -60,7 +61,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
     })
   })
   createEffect(() => {
-    applyStaleWorkspaceSweep({
+    const swept = applyStaleWorkspaceSweep({
       inventoryReady: shell.inventoryReady(),
       inventory: shell.inventory(),
       activeSurfaceId: shell.state.wb.selectors.focusedContent,
@@ -68,6 +69,13 @@ function ClaxedoAppShellContent(props: ParentProps) {
       closeContent: shell.state.layout.closeContent,
       navigate,
     })
+    if (swept.length > 0) {
+      sessionPerf.event("shell.stale-workspace-sweep", {
+        swept: swept.join(","),
+        inventory: shell.inventory().map((project) => project.worktree ?? "").join("|"),
+        surfaces: shell.state.meta.all().map((surface) => `${surface.type}:${surface.directory ?? ""}`).join("|"),
+      })
+    }
   })
   const productUi = createMemo(() => resolveProductUiFlags(shell.config))
   const diagnosticSession = createMemo(() => {

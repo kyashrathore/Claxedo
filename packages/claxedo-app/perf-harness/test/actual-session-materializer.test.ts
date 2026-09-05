@@ -31,12 +31,12 @@ describe("actual OpenCode session materialization", () => {
       expect(JSON.stringify(result)).not.toContain("source-session-")
       const control = result.readinessTargets.get("control")
       expect(control?.expectedPartIds).toHaveLength(2)
-      // The SDK stores user text as one part, including its trailing whitespace.
-      expect(control?.eventualFullPartIds).toHaveLength(3)
+      // Claxedo's journal preserves each source part, including whitespace-only parts.
+      expect(control?.eventualFullPartIds).toHaveLength(4)
       expect(control?.expectedPartIds.every((id) => control.eventualFullPartIds.includes(id))).toBe(true)
-      expect(control?.expectedPartIds.every((id) => id.startsWith("msg_actual_"))).toBe(true)
+      expect(control?.expectedPartIds.every((id) => id.startsWith("prt_actual_"))).toBe(true)
 
-      const destination = new Database(path.join(root, "state", "data", "opencode-engine", "opencode.db"), {
+      const destination = new Database(path.join(root, "state", "data", "opencode-runtime", "opencode.db"), {
         readonly: true,
       })
       const identities = destination.query("SELECT id, title, directory FROM session_v2 ORDER BY id").all() as Array<{

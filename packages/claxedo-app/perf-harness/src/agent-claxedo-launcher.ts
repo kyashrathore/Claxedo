@@ -2,7 +2,8 @@ import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import net from "node:net";
 import { installAgentBrowserObserver, measureSessionActivation, type PaintedMessage, type SessionReadinessTarget } from "./agent-browser-observer";
-import { processFamily, readProcessTable, sameProcessIdentity, type ProcessSnapshot } from "./agent-process-family";
+import { readProcessTable, sameProcessIdentity, toIdleRows, type ProcessSnapshot } from "./agent-process-family";
+import { IdleProcessFamilyTracker } from "./idle-process-family";
 import { connectCdpPage, type BenchmarkPage } from "./agent-cdp-page";
 import { AGENT_APP_WINDOW } from "./agent-display-contract";
 import { writeJson } from "./storage";
@@ -318,7 +319,63 @@ export async function launchPackagedClaxedo(input: {
   void drain(application.stderr, startupClockEnabled() ? path.join(runDirectory, "app-stderr.log") : undefined);
 
   let page: BenchmarkPage | undefined;
+  const ownership = new IdleProcessFamilyTracker(application.pid);
+  const known = new Map<string, ProcessSnapshot>();
+  const refreshKnown = async () => {
+    const table = await readProcessTable();
+    const ids = new Set(ownership.survivors(toIdleRows(table)).map((item) => item.pid));
+    const family = table.filter((item) => ids.has(item.pid));
+    for (const item of family) known.set(`${item.pid}:${item.startTimeMs}`, item);
+    return family;
+  };
+  let ownershipTimer: ReturnType<typeof setInterval> | undefined;
+  const ownedRecord = (item: ProcessSnapshot): OwnedProcess => ({
+    pid: item.pid,
+    startTimeMs: item.startTimeMs,
+    owner: "application",
+    category: item.pid === application.pid ? "claxedo-root" : "claxedo-descendant",
+  });
+  const shutdown = async () => {
+    if (ownershipTimer) clearInterval(ownershipTimer);
+    // Stop the owned root even if inspection fails, while retaining the error
+    // instead of claiming that an unverified process family was cleaned.
+    const trackingFailure = await refreshKnown().then(() => undefined, (error: unknown) => error);
+    await page?.evaluate(() => (window as Window & { api?: { quit?: () => void } }).api?.quit?.()).catch(() => undefined);
+    await Promise.race([application.exited, Bun.sleep(5_000)]);
+    if (application.exitCode === null) application.kill("SIGTERM");
+    await Promise.race([application.exited, Bun.sleep(3_000)]);
+    if (application.exitCode === null) {
+      application.kill("SIGKILL");
+      await Promise.race([application.exited, Bun.sleep(3_000)]);
+    }
+    page?.close();
+    const forced = new Map<string, OwnedProcess>();
+    const deadline = performance.now() + 3_000;
+    let survivors = await refreshKnown();
+    while (survivors.length && performance.now() < deadline) {
+      for (const item of survivors) {
+        forced.set(`${item.pid}:${item.startTimeMs}`, ownedRecord(item));
+        try { process.kill(item.pid, "SIGKILL"); } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== "ESRCH") throw error;
+        }
+      }
+      await Bun.sleep(50);
+      survivors = await refreshKnown();
+    }
+    if (trackingFailure) throw trackingFailure;
+    return {
+      terminated: [...known.values()].filter((item) => !survivors.some((alive) => sameProcessIdentity(alive, item))).map(ownedRecord),
+      survivors: survivors.map(ownedRecord),
+      forced: [...forced.values()],
+    };
+  };
   try {
+    // Capture descendants throughout startup, including a failed readiness check.
+    // A daemon may outlive/reparent away from the Electron root while flushing
+    // its compile cache; disposable state cannot be removed until it exits.
+    await refreshKnown();
+    ownershipTimer = setInterval(() => void refreshKnown().catch(() => undefined), 100);
+    ownershipTimer.unref();
     page = await connectCdpPage({
       port: debugPort,
       process: application,
@@ -472,16 +529,6 @@ export async function launchPackagedClaxedo(input: {
       owner: "application",
       category: "claxedo-root",
     };
-    const known = new Map<string, ProcessSnapshot>();
-    const refreshKnown = async () => {
-      const family = processFamily(await readProcessTable(), application.pid);
-      for (const item of family) known.set(`${item.pid}:${item.startTimeMs}`, item);
-      return family;
-    };
-    await refreshKnown();
-    const ownershipTimer = setInterval(() => void refreshKnown().catch(() => undefined), 100);
-    ownershipTimer.unref();
-
     return {
       application,
       page: connectedPage,
@@ -509,49 +556,14 @@ export async function launchPackagedClaxedo(input: {
         ]);
         return { surface, processes };
       },
-      async shutdown() {
-        clearInterval(ownershipTimer);
-        await refreshKnown().catch(() => []);
-        await connectedPage
-          .evaluate(() =>
-            (window as Window & { api?: { quit?: () => void } }).api?.quit?.(),
-          )
-          .catch(() => undefined);
-        await Promise.race([application.exited, Bun.sleep(5_000)]);
-        if (application.exitCode === null) application.kill("SIGTERM");
-        await Promise.race([application.exited, Bun.sleep(3_000)]);
-        if (application.exitCode === null) {
-          application.kill("SIGKILL");
-          await Promise.race([application.exited, Bun.sleep(3_000)]);
-        }
-        connectedPage.close();
-        const beforeCleanup = await readProcessTable();
-        const forced: OwnedProcess[] = [];
-        for (const item of known.values()) {
-          const alive = beforeCleanup.find((candidate) => sameProcessIdentity(candidate, item));
-          if (!alive) continue;
-          forced.push({ pid: item.pid, startTimeMs: item.startTimeMs, owner: "application", category: item.pid === application.pid ? "claxedo-root" : "claxedo-descendant" });
-          try { process.kill(item.pid, "SIGKILL"); } catch {}
-        }
-        await Bun.sleep(100);
-        const finalTable = await readProcessTable();
-        const survivors = [...known.values()]
-          .filter((item) => finalTable.some((candidate) => sameProcessIdentity(candidate, item)))
-          .map((item) => ({ pid: item.pid, startTimeMs: item.startTimeMs, owner: "application" as const, category: item.pid === application.pid ? "claxedo-root" : "claxedo-descendant" }));
-        const survivorKeys = new Set(survivors.map((item) => `${item.pid}:${item.startTimeMs}`));
-        const terminated = [...known.values()]
-          .filter((item) => !survivorKeys.has(`${item.pid}:${item.startTimeMs}`))
-          .map((item) => ({ pid: item.pid, startTimeMs: item.startTimeMs, owner: "application" as const, category: item.pid === application.pid ? "claxedo-root" : "claxedo-descendant" }));
-        return { terminated, survivors, forced };
-      },
+      shutdown,
     };
   } catch (error) {
-    page?.close();
-    if (application.exitCode === null) application.kill("SIGTERM");
-    await Promise.race([application.exited, Bun.sleep(3_000)]);
-    if (application.exitCode === null) {
-      application.kill("SIGKILL");
-      await Promise.race([application.exited, Bun.sleep(3_000)]);
+    try {
+      const result = await shutdown();
+      if (result.survivors.length) throw new Error(`Claxedo failed launch left ${result.survivors.length} application processes`);
+    } catch (cleanupError) {
+      throw new AggregateError([error, cleanupError], `Claxedo launch failed: ${String(error)}; cleanup failed: ${String(cleanupError)}`);
     }
     throw error;
   }

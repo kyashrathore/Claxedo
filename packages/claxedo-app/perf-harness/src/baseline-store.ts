@@ -1,19 +1,12 @@
 import path from "node:path"
+import { contextKey, evidenceMatches, type MeasurementEvidence } from "./measurement-context"
 import { dataRoot, readJson, writeJson } from "./storage"
 import { METRICS, type PerfRecord } from "./perf-record"
-import type { AuthoritativeSourceIdentity } from "./memory-provenance"
+import type { AuthoritativeSourceIdentity } from "./measurement-provenance"
 
-/**
- * Committed baselines, and the comparison an experiment is judged by.
- *
- * Baselines live under `data/baselines/<profile>/<stack>/<lane>/<flow>.json` and
- * are TRACKED IN GIT. That is the difference between a baseline and a scratch
- * file: an untracked one is derived from whichever machine happened to run
- * first, so two people — or the same person on two days — cannot compare
- * anything. The path is keyed by profile AND stack precisely so the two can
- * never be silently mixed; comparing a throttled run to an unthrottled one, or
- * Solid 2 to Solid 1 on different hardware, has to be impossible by
- * construction rather than by remembering.
+/** Accepted measurements live under profile/stack/lane/suite/flow paths.
+ * Comparisons additionally require matching metric evidence; path identity alone
+ * cannot distinguish different hosts, workloads or measurement methods.
  */
 
 export type Baseline = {
@@ -21,27 +14,19 @@ export type Baseline = {
   stack: string
   lane: string
   flow: string
+  suite: string
   accepted_at: string
   commit?: string
   /** Exact source authority that produced this baseline; absent only on legacy files. */
   sourceIdentity?: AuthoritativeSourceIdentity
-  metrics: Record<string, { value?: number; samples: number[]; absentReason?: string }>
+  metrics: Record<string, { value?: number; samples: number[]; absentReason?: string; evidence?: MeasurementEvidence }>
 }
 
-/** The commit a baseline describes, so a move can be attributed to a change. */
-export function currentCommit() {
-  try {
-    return Bun.spawnSync(["git", "rev-parse", "--short", "HEAD"]).stdout.toString().trim() || undefined
-  } catch {
-    return undefined
-  }
+export function baselineFile(input: { profile: string; stack: string; lane: string; flow: string; suite: string }) {
+  return path.join(dataRoot, "baselines", input.profile, input.stack, input.lane, input.suite, `${input.flow}.json`)
 }
 
-export function baselineFile(input: { profile: string; stack: string; lane: string; flow: string }) {
-  return path.join(dataRoot, "baselines", input.profile, input.stack, input.lane, `${input.flow}.json`)
-}
-
-export async function readBaselineFor(input: { profile: string; stack: string; lane: string; flow: string }) {
+export async function readBaselineFor(input: { profile: string; stack: string; lane: string; flow: string; suite: string }) {
   return readJson<Baseline | undefined>(baselineFile(input), undefined)
 }
 
@@ -52,17 +37,27 @@ export function baselineFromRecords(
 ) {
   const first = records[0]
   if (!first) return undefined
+  if (records.some((record) => record.lane !== first.lane || record.flow !== first.flow || record.profile !== first.profile || record.stack !== first.stack)) {
+    throw new Error("Cannot accept records from different flows or implementations")
+  }
+  for (const record of records) {
+    if (!record.evidence || record.evidence.context.suite === "attribution") throw new Error("Cannot accept baseline without comparable measurement evidence")
+    if (contextKey(record.evidence.context) !== contextKey(first.evidence!.context)) throw new Error("Cannot accept mixed measurement contexts")
+    if ((record.value !== undefined && !Number.isFinite(record.value)) || record.samples.some((sample) => !Number.isFinite(sample))) throw new Error("Cannot accept non-finite baseline values")
+  }
   const baseline: Baseline = {
     profile: first.profile,
     stack: first.stack,
     lane: first.lane,
     flow: first.flow,
+    suite: first.evidence!.context.suite,
     accepted_at: new Date().toISOString(),
     ...(commit ? { commit } : {}),
     ...(sourceIdentity ? { sourceIdentity } : {}),
     metrics: Object.fromEntries(records.map((record) => [record.metric, {
       ...(record.value === undefined ? {} : { value: record.value }),
       samples: record.samples,
+      evidence: record.evidence,
       ...(record.absentReason ? { absentReason: record.absentReason } : {}),
     }])),
   }
@@ -116,7 +111,8 @@ export type MetricComparison = {
   current?: number
   deltaPct?: number
   tolerancePct: number
-  verdict: "improved" | "regressed" | "unchanged" | "absent" | "new"
+  reason?: string
+  verdict: "improved" | "regressed" | "unchanged" | "absent" | "new" | "incompatible"
 }
 
 /**
@@ -133,6 +129,9 @@ export function compareToBaseline(records: readonly PerfRecord[], baseline: Base
     const previous = baseline?.metrics[record.metric]
     const tolerance = toleranceFor(previous?.samples ?? record.samples)
     const base = { metric: record.metric, tolerancePct: tolerance * 100 }
+    if (previous && (!baseline || baseline.profile !== record.profile || baseline.stack !== record.stack || baseline.lane !== record.lane || baseline.flow !== record.flow || !evidenceMatches(record.evidence, previous.evidence))) {
+      return { ...base, baseline: previous.value, current: record.value, verdict: "incompatible", reason: "measurement definition, method, host, workload, environment or suite differs or is unknown" }
+    }
     if (record.value === undefined || previous?.value === undefined) {
       return {
         ...base,
@@ -141,10 +140,13 @@ export function compareToBaseline(records: readonly PerfRecord[], baseline: Base
         verdict: (previous ? "absent" : "new") as MetricComparison["verdict"],
       }
     }
-    const deltaPct = ((record.value - previous.value) / previous.value) * 100
+    if (!Number.isFinite(record.value) || !Number.isFinite(previous.value)) {
+      return { ...base, verdict: "incompatible", reason: "non-finite measurement" }
+    }
+    const deltaPct = previous.value === 0 ? (record.value === 0 ? 0 : undefined) : ((record.value - previous.value) / Math.abs(previous.value)) * 100
     const direction = METRICS[record.metric]?.direction ?? "lower"
-    const moved = Math.abs(deltaPct) > tolerance * 100
-    const better = direction === "lower" ? deltaPct < 0 : deltaPct > 0
+    const moved = deltaPct === undefined || Math.abs(deltaPct) > tolerance * 100
+    const better = direction === "lower" ? record.value < previous.value : record.value > previous.value
     return {
       ...base,
       baseline: previous.value,

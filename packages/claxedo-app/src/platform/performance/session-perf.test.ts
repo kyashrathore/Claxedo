@@ -41,7 +41,10 @@ describe("session perf", () => {
       { sessionId: "ses_a", from: "rail", startedAt: 1000, phases: { "screen-mounted": 120, "messages-ready": 420, "first-fold-ready": 500 } },
     ])
     expect(h.measures.map(([name]) => name)).toEqual([
-      "claxedo:session.screen-mounted", "claxedo:session.messages-ready", "claxedo:session.first-fold-ready", "claxedo:session.messages-ready",
+      expect.stringMatching(/^claxedo:session\.screen-mounted\./),
+      expect.stringMatching(/^claxedo:session\.messages-ready\./),
+      expect.stringMatching(/^claxedo:session\.first-fold-ready\./),
+      expect.stringMatching(/^claxedo:session\.messages-ready\./),
     ])
   })
 
@@ -65,11 +68,120 @@ describe("session perf", () => {
     ])
   })
 
-  test("a phase without a recorded start attributes the open to the route", () => {
+  test("a phase without a recorded start does not invent an open", () => {
     const h = harness()
     h.perf.openPhase("ses_url", "screen-mounted")
-    expect(h.perf.summary()[0]).toMatchObject({ sessionId: "ses_url", from: "route" })
-    expect(h.log[0]).toMatchObject({ kind: "phase", name: "started", attrs: { from: "route" } })
+    expect(h.perf.summary()).toEqual([])
+    expect(h.perf.events()).toEqual([])
+    expect(h.marks).toEqual([])
+  })
+
+  test("completed zero-duration opens can be reopened while duplicate pending starts keep the original start", () => {
+    const h = harness()
+    h.perf.openStart("ses_a", "rail")
+    h.tick(50)
+    h.perf.openStart("ses_a", "route")
+    expect(h.perf.summary()).toEqual([
+      { sessionId: "ses_a", from: "rail", startedAt: 1000, phases: {} },
+    ])
+    h.perf.openPhase("ses_a", "messages-ready")
+    h.perf.openStart("ses_a", "rail")
+    h.perf.openPhase("ses_a", "messages-ready")
+    h.perf.openStart("ses_a", "rail")
+    expect(h.perf.summary()).toHaveLength(3)
+    expect(h.perf.summary()[1]!.phases).toEqual({ "messages-ready": 0 })
+  })
+
+  test("returning to an abandoned open starts a fresh measurement", () => {
+    const h = harness()
+    h.perf.openStart("ses_a", "rail")
+    h.tick(100)
+    h.perf.openStart("ses_b", "rail")
+    h.tick(100)
+    h.perf.openStart("ses_a", "rail")
+    h.tick(25)
+    h.perf.openPhase("ses_a", "messages-ready")
+    expect(h.perf.summary()).toHaveLength(3)
+    expect(h.perf.summary()[0]).toMatchObject({
+      sessionId: "ses_a", previousSessionId: "ses_b", startedAt: 1200, phases: { "messages-ready": 25 },
+    })
+  })
+
+  test("completed and abandoned opens release their User Timing entries when evicted", () => {
+    const before = new Set(performance.getEntries().map((entry) => entry.name))
+    const entries = () => performance.getEntries().filter((entry) => !before.has(entry.name))
+    const perf = createSessionPerf({ logEnabled: () => false })
+    try {
+      for (let i = 0; i < 1000; i += 1) {
+        perf.openStart(`ses_${i}`, "rail")
+        if (i % 2 === 0) continue
+        perf.openPhase(`ses_${i}`, "screen-mounted")
+        perf.openPhase(`ses_${i}`, "messages-ready")
+        perf.openPhase(`ses_${i}`, "first-fold-ready")
+        perf.openPhase(`ses_${i}`, "timeline-mounted")
+      }
+      expect(perf.summary(1000)).toHaveLength(400)
+      expect(perf.summary(1000).at(-1)!.sessionId).toBe("ses_600")
+      expect(entries().filter((entry) => entry.entryType === "mark")).toHaveLength(1200)
+      expect(entries().filter((entry) => entry.entryType === "measure")).toHaveLength(800)
+
+      const retained = perf.events()
+      perf.openPhase("ses_0", "messages-ready")
+      expect(perf.events()).toEqual(retained)
+      expect(entries()).toHaveLength(2000)
+
+      // Eviction must also remove the incomplete open from the live lookup.
+      perf.openStart("ses_0", "route")
+      expect(perf.summary()[0]).toMatchObject({ sessionId: "ses_0", from: "route", phases: {} })
+      expect(perf.summary(1000)).toHaveLength(400)
+    } finally {
+      perf.clear()
+    }
+    expect(entries()).toEqual([])
+  })
+
+  test("evicting an earlier visit keeps the latest open of the same session active", () => {
+    const h = harness()
+    h.perf.openStart("ses_a", "rail")
+    h.perf.openPhase("ses_a", "messages-ready")
+    for (let i = 0; i < 399; i += 1) h.perf.openStart(`ses_other_${i}`, "rail")
+    h.perf.openStart("ses_a", "rail")
+    h.tick(25)
+    h.perf.openPhase("ses_a", "messages-ready")
+    expect(h.perf.summary()[0]).toMatchObject({ sessionId: "ses_a", phases: { "messages-ready": 25 } })
+  })
+
+  test("clear releases only its recorder's entries and ignores work started before the reset", () => {
+    const otherName = `claxedo:session.unrelated.${crypto.randomUUID()}`
+    performance.mark(otherName)
+    performance.measure(otherName, otherName, otherName)
+    const other = createSessionPerf({ logEnabled: () => false })
+    const perf = createSessionPerf({ logEnabled: () => false })
+    other.openStart("ses_shared", "rail")
+    other.openPhase("ses_shared", "messages-ready")
+    const otherEntries = performance.getEntries()
+    try {
+      perf.openStart("ses_shared", "rail")
+      perf.openPhase("ses_shared", "messages-ready")
+      const request = perf.span("request.runtime")
+      perf.clear()
+      request.end({ status: 200 })
+      perf.openPhase("ses_shared", "first-fold-ready")
+      expect(perf.summary()).toEqual([])
+      expect(perf.events()).toEqual([])
+      expect(performance.getEntries()).toEqual(otherEntries)
+
+      perf.openStart("ses_shared", "route")
+      perf.openPhase("ses_shared", "messages-ready")
+      expect(perf.summary()[0]).toMatchObject({ sessionId: "ses_shared", from: "route" })
+      expect(perf.summary()[0]!.previousSessionId).toBeUndefined()
+      expect(perf.events()).toHaveLength(2)
+    } finally {
+      perf.clear()
+      other.clear()
+      performance.clearMarks(otherName)
+      performance.clearMeasures(otherName)
+    }
   })
 
   test("spans record duration and outcome; the ring keeps the newest records", async () => {

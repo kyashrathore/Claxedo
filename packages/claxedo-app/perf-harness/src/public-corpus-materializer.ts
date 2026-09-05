@@ -1,17 +1,14 @@
 import { createHash } from "node:crypto"
 import { createReadStream } from "node:fs"
-import { mkdir, readFile, realpath, writeFile } from "node:fs/promises"
+import { mkdir, readFile, realpath } from "node:fs/promises"
 import path from "node:path"
 import { createInterface } from "node:readline"
 import { OpenCodeCorpus } from "./opencode-corpus"
 import type { WorkspaceFixtureManifest } from "agent-app-benchmark/driver-sdk"
-import {
-  attestWorkspaceFixture,
-  generateWorkspaceFileBytes,
-  verifyWorkspaceFixtureManifest,
-} from "agent-app-benchmark/workspace-fixture"
+import { verifyWorkspaceFixtureManifest } from "agent-app-benchmark/workspace-fixture"
 import type { SessionReadinessTarget } from "./agent-browser-observer"
-import { withClaxedoDataDirectory } from "./with-claxedo-data-directory"
+import { initializeWorkspace, type MaterializedWorkspace } from "./workspace-fixture"
+import { persistClaxedoCorpus, registerWorkspace } from "./fixture-registration"
 
 type ManifestSession = {
   logicalSessionId: string
@@ -66,7 +63,6 @@ type SerializedEvent = {
   data: Record<string, unknown>
 }
 
-export type Workspace = { directory: string; projectId: string }
 export type MaterializedSession = {
   logicalSessionId: string
   nativeSessionId: string
@@ -108,23 +104,23 @@ export async function materializeClaxedoPublicCorpus(input: {
     throw new Error("Claxedo received an OpenCode event schema with the wrong digest")
   }
   const workspaceFixture = verifyRequestedWorkspaceFixture(input)
-  await Promise.all([
-    mkdir(path.join(input.dataDirectory, "opencode-engine"), { recursive: true, mode: 0o700 }),
-    mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 }),
-  ])
+  await mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 })
   const workspaceRoot = await realpath(input.workspaceDirectory)
-  const workspaces = new Map<string, Workspace>()
+  const workspaces = new Map<string, MaterializedWorkspace>()
   for (const workspaceId of [...new Set(manifest.sessions.map((session) => session.workspaceId))].sort()) {
     const directory = path.join(workspaceRoot, workspaceId)
     await mkdir(directory, { recursive: true, mode: 0o700 })
     const projectId = await initializeWorkspace(directory, workspaceId, workspaceFixture)
-    await registerWorkspace({ dataDirectory: input.dataDirectory, directory, projectId, workspaceId })
+    await registerWorkspace({
+      dataDirectory: input.dataDirectory,
+      directory,
+      projectId,
+      projectName: `Benchmark ${workspaceId}`,
+    })
     workspaces.set(workspaceId, { directory, projectId })
   }
 
-  const dbPath = path.join(input.dataDirectory, "opencode-engine", "opencode.db")
-
-  const database = new OpenCodeCorpus()
+  const database = new OpenCodeCorpus("recorded-events")
   const readinessTargets = new Map<
     string,
     SessionReadinessTarget & { logicalSessionId: string; workspaceDirectory: string }
@@ -154,8 +150,6 @@ export async function materializeClaxedoPublicCorpus(input: {
     expectedTranscriptBytes += parsed.transcriptBytes
   }
 
-  await database.persist(dbPath)
-  for (const [id, target] of readinessTargets) readinessTargets.set(id, database.remapReadiness(target))
   const messageCount = database.messages.size
   const transcriptBytes = [...database.parts.values()].reduce(
     (sum, part) => sum + partPayloadBytes(part.data as CanonicalPart),
@@ -169,8 +163,7 @@ export async function materializeClaxedoPublicCorpus(input: {
     throw new Error("Claxedo corpus readback does not match the public corpus")
   }
 
-  await registerSessionInventory({ dataDirectory: input.dataDirectory, workspaces, sessions: materializedSessions })
-  await seedSessionMeta({ dataDirectory: input.dataDirectory, workspaces, sessions: materializedSessions })
+  await persistClaxedoCorpus({ dataDirectory: input.dataDirectory, corpus: database })
   const sessionMapping = Object.fromEntries(
     materializedSessions.map((session) => [session.logicalSessionId, session.nativeSessionId]),
   )
@@ -190,7 +183,7 @@ async function materializeSession(input: {
   database: OpenCodeCorpus
   corpusDirectory: string
   session: ManifestSession
-  workspace: Workspace
+  workspace: MaterializedWorkspace
   sessionIndex: number
 }) {
   const root = path.resolve(input.corpusDirectory)
@@ -246,6 +239,7 @@ async function materializeSession(input: {
       if (info.sessionID !== sessionInfo.id) throw new Error("Claxedo received a message for another session")
       const { id, sessionID: _, ...data } = info
       input.database.addMessage(id, sessionInfo.id, data)
+      input.database.recordEvent({ id: event.id, type: "message.updated", properties: event.data })
       currentMessage = info
       messageCount += 1
     } else if (event.type === "message.part.updated.1") {
@@ -260,6 +254,7 @@ async function materializeSession(input: {
       }
       const { id, sessionID: _, messageID: __, ...data } = part
       input.database.setPart(id, currentMessage.id, expectedSequence, data)
+      input.database.recordEvent({ id: event.id, type: "message.part.updated", properties: event.data })
       transcriptBytes += partPayloadBytes(part)
       if (currentMessage.role === "assistant" && part.type === "text" && typeof part.text === "string") {
         latestAssistant = {
@@ -370,238 +365,6 @@ function verifyRequestedWorkspaceFixture(input: {
     throw new Error("Claxedo received the wrong workspace fixture digest")
   }
   return manifest
-}
-
-export async function initializeWorkspace(directory: string, workspaceId: string, fixture?: WorkspaceFixtureManifest) {
-  await runGit(["init", "--initial-branch=main", directory])
-  if (fixture) {
-    await writeWorkspaceRevision(directory, fixture, "initial")
-    await runGit(["-C", directory, "add", "--all"])
-  }
-  await runGit(
-    ["-C", directory, "commit", "--allow-empty", "--no-gpg-sign", "-m", `Agent app benchmark corpus ${workspaceId}`],
-    {
-      GIT_AUTHOR_NAME: "Agent App Benchmark",
-      GIT_AUTHOR_EMAIL: "benchmark@localhost",
-      GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
-      GIT_COMMITTER_NAME: "Agent App Benchmark",
-      GIT_COMMITTER_EMAIL: "benchmark@localhost",
-      GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
-    },
-  )
-  const projectId = (await runGit(["-C", directory, "rev-list", "--max-parents=0", "HEAD"])).trim()
-  if (!/^[0-9a-f]{40}$/u.test(projectId)) throw new Error("Claxedo did not create a canonical workspace project id")
-  if (fixture) {
-    await writeWorkspaceRevision(directory, fixture, "current")
-    await attestMaterializedWorkspace(directory, fixture)
-  }
-  return projectId
-}
-
-async function writeWorkspaceRevision(
-  directory: string,
-  fixture: WorkspaceFixtureManifest,
-  revision: "initial" | "current",
-) {
-  await Promise.all(
-    fixture.files.map(async (file) => {
-      const target = workspaceFixturePath(directory, file.path)
-      await mkdir(path.dirname(target), { recursive: true, mode: 0o700 })
-      await writeFile(target, generateWorkspaceFileBytes(fixture.seed, file, revision), { mode: 0o600 })
-    }),
-  )
-}
-
-async function attestMaterializedWorkspace(directory: string, fixture: WorkspaceFixtureManifest) {
-  const tracked = splitGitPaths(await runGit(["-C", directory, "ls-tree", "-r", "--name-only", "HEAD"]))
-  assertExactPaths(
-    tracked,
-    fixture.files.map((file) => file.path),
-    "tracked files",
-  )
-
-  const changed = splitGitPaths(await runGit(["-C", directory, "diff", "--name-only", "--no-renames", "--"]))
-  assertExactPaths(changed, fixture.changedFilePaths, "changed files")
-
-  const status = splitGitPaths(await runGit(["-C", directory, "status", "--porcelain=v1", "--untracked-files=all"]))
-  const expectedStatus = fixture.changedFilePaths.map((file) => ` M ${file}`)
-  assertExactPaths(status, expectedStatus, "working-tree status")
-
-  const digest = await attestWorkspaceFixture(fixture, async (file, revision) => {
-    if (revision === "initial") return runGitBytes(["-C", directory, "show", `HEAD:${file}`])
-    return new Uint8Array(await readFile(workspaceFixturePath(directory, file)))
-  })
-  if (digest !== fixture.manifestDigestSha256) {
-    throw new Error("Claxedo workspace fixture attested to the wrong digest")
-  }
-}
-
-function workspaceFixturePath(directory: string, relative: string) {
-  const root = path.resolve(directory)
-  const target = path.resolve(root, relative)
-  if (!target.startsWith(`${root}${path.sep}`)) throw new Error("Claxedo workspace fixture path escapes its root")
-  return target
-}
-
-function splitGitPaths(output: string) {
-  return output.split("\n").filter((item) => item.length > 0)
-}
-
-function assertExactPaths(actual: readonly string[], expected: readonly string[], label: string) {
-  const left = [...actual].sort()
-  const right = [...expected].sort()
-  if (left.length !== right.length || left.some((item, index) => item !== right[index])) {
-    throw new Error(`Claxedo workspace fixture ${label} do not match the public manifest`)
-  }
-}
-
-async function runGit(args: string[], env?: Record<string, string>) {
-  const child = Bun.spawn({
-    cmd: ["git", ...args],
-    env: env ? { ...process.env, ...env } : process.env,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (exitCode !== 0) throw new Error(`Claxedo workspace preparation failed: ${(stderr || stdout).trim()}`)
-  return stdout
-}
-
-async function runGitBytes(args: string[]) {
-  const child = Bun.spawn({
-    cmd: ["git", ...args],
-    env: process.env,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).arrayBuffer(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (exitCode !== 0) throw new Error(`Claxedo workspace preparation failed: ${stderr.trim()}`)
-  return new Uint8Array(stdout)
-}
-
-export async function registerWorkspace(input: {
-  dataDirectory: string
-  directory: string
-  projectId: string
-  workspaceId: string
-}) {
-  const workspaceStoreModule = "../../../claxedo-server-core/src/workspace/store/index.ts"
-  const { ensureWorkspace } = (await import(workspaceStoreModule)) as {
-    ensureWorkspace(input: {
-      workspaceId: string
-      project_id: string
-      project_name: string
-      workspace_name: string
-      directory: string
-    }): Promise<{ id: string } | undefined>
-  }
-  await withClaxedoDataDirectory(input.dataDirectory, async () => {
-    const workspace = await ensureWorkspace({
-      workspaceId: input.projectId,
-      project_id: input.projectId,
-      project_name: `Benchmark ${input.workspaceId}`,
-      workspace_name: "main",
-      directory: input.directory,
-    })
-    if (!workspace) throw new Error("Claxedo production workspace store rejected the benchmark workspace")
-  })
-}
-
-export async function registerSessionInventory(input: {
-  dataDirectory: string
-  workspaces: Map<string, Workspace>
-  sessions: MaterializedSession[]
-}) {
-  const runtimeStoreModule = "../../../workspace-runtime/src/store.ts"
-  const { RuntimeStore } = (await import(runtimeStoreModule)) as {
-    RuntimeStore: new (root: string) => {
-      bindSession(input: {
-        sessionId: string
-        directory: string
-        title: string
-        agentSessionId: string
-        createdAt: number
-        updatedAt?: number
-      }): void
-      updateSessionConfig(
-        id: string,
-        update: { harness: { id: "opencode"; access: "native" }; variant: null; agent: null },
-        input: { directory: string },
-      ): unknown
-      flush(): void
-      close(): void
-    }
-  }
-  for (const [workspaceId, workspace] of input.workspaces) {
-    const store = new RuntimeStore(path.join(input.dataDirectory, "agent-core", workspace.projectId))
-    try {
-      for (const session of input.sessions
-        .filter((candidate) => candidate.workspaceId === workspaceId)
-        .toSorted((left, right) => right.createdAt - left.createdAt)) {
-        store.bindSession({
-          sessionId: session.nativeSessionId,
-          directory: workspace.directory,
-          title: session.title,
-          agentSessionId: session.nativeSessionId,
-          createdAt: session.createdAt,
-          updatedAt: session.updatedAt,
-        })
-        store.updateSessionConfig(
-          session.nativeSessionId,
-          { harness: { id: "opencode", access: "native" }, variant: null, agent: null },
-          { directory: workspace.directory },
-        )
-      }
-      store.flush()
-    } finally {
-      store.close()
-    }
-  }
-}
-
-export async function seedSessionMeta(input: {
-  dataDirectory: string
-  workspaces: Map<string, Workspace>
-  sessions: MaterializedSession[]
-}) {
-  const sessionMetaModule = "../../../claxedo-server-core/src/session/meta/index.ts"
-  const { putSessionMeta } = (await import(sessionMetaModule)) as {
-    putSessionMeta(
-      sessionID: string,
-      value: {
-        ws: { id: string; project_id: string; directory: string }
-        workspaceID: string
-        directory: string
-        host: "workspace"
-        title: string
-        createdAt?: number
-        updatedAt?: number
-      },
-    ): Promise<unknown>
-  }
-  await withClaxedoDataDirectory(input.dataDirectory, async () => {
-    for (const session of input.sessions) {
-      const workspace = input.workspaces.get(session.workspaceId)
-      if (!workspace) throw new Error(`Claxedo session meta is missing ${session.logicalSessionId}`)
-      await putSessionMeta(session.nativeSessionId, {
-        ws: { id: workspace.projectId, project_id: workspace.projectId, directory: workspace.directory },
-        workspaceID: workspace.projectId,
-        directory: workspace.directory,
-        host: "workspace",
-        title: session.title,
-        createdAt: session.createdAt,
-        updatedAt: session.updatedAt,
-      })
-    }
-  })
 }
 
 function canonicalJson(value: unknown): string {

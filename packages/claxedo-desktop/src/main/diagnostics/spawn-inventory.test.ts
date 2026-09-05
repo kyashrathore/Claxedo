@@ -129,7 +129,7 @@ function childProcessNames(text: string) {
 
 /**
  * Seams this scanner structurally cannot find: a child spawned inside an SDK
- * (`query()`, `Agent.create()`), a PTY, or a sandbox `exec`. There is no
+ * (`query()`, `Agent.create()`) or a PTY. There is no
  * `child_process` import to key on, so the KEYS are declared here.
  *
  * The counts are not. They come from the inventory row and are measured against
@@ -143,8 +143,6 @@ function specialSeams(classified: Map<string, number>): Array<readonly [string, 
     "packages/workspace-runtime/src/pty/index.ts:ptySpawn",
     "packages/agent-sdk-runtime/src/harnesses/claude/driver.ts:sdkQuery",
     "packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts:agentCreate",
-    "packages/agent-sdk-runtime/src/harnesses/pi/index.ts:sessionExec",
-    "packages/agent-sdk-runtime/src/harnesses/pi/model-backend.ts:environmentExec",
   ].map((key) => [key, classified.get(key) ?? 0] as const)
 }
 
@@ -157,8 +155,6 @@ function expression(callee: string) {
   // inline default is counted as the callsite it is.
   if (callee === "sdkQuery") return /\bquery\s*\(|\?\?\s*query\s*\)\s*\(/g
   if (callee === "agentCreate") return /\bAgent\.create\s*\(/g
-  if (callee === "sessionExec") return /\bsession\.env\.exec\s*\(/g
-  if (callee === "environmentExec") return /\benv\.exec\s*\(/g
   return new RegExp(`\\b${escape(callee)}\\s*\\(`, "g")
 }
 

@@ -1,13 +1,9 @@
 import { expect, test } from "bun:test"
-import {
-  browserScenarioFailure,
-  changedFilesForVcs,
-  claxedoStateSeed,
-  diagnosticsPairModeOrder,
-  fixtureFor,
-  mergeDiagnosticsRuns,
-  missingSessionMessageRequest,
-} from "../src/browser-runner"
+import { browserScenarioFailure, diagnosticsPairModeOrder } from "../src/browser-runner"
+import { changedFilesForVcs, fixtureFor } from "../src/browser/fixtures"
+import { claxedoStateSeed } from "../src/browser/state"
+import { mergeDiagnosticsRuns } from "../src/browser/diagnostics"
+import { missingSessionMessageRequest } from "../src/browser/page-validation"
 import { scenarioIds } from "../src/cli-options"
 import {
   FRAME_120HZ_MS,

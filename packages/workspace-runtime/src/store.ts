@@ -561,6 +561,19 @@ export class RuntimeStore {
       ON runtime_journal (session_id, part_id, seq)
       WHERE kind = 'event' AND type = 'message.part.updated' AND part_id IS NOT NULL
     `)
+    // `lastTurn` projects a session's outcome from its newest terminal journal
+    // row. Without this partial index the query walks the session's whole
+    // journal backwards through the primary key (tens of thousands of
+    // `message.part.updated` rows for a long session) on every session read
+    // and every session listing; with it the walk touches only terminal rows.
+    // The predicate must stay textually identical to the one in `lastTurn` so
+    // the planner can prove the index covers the query.
+    this.db.exec(`
+      CREATE INDEX IF NOT EXISTS runtime_journal_turn_outcome_idx
+      ON runtime_journal (session_id, seq)
+      WHERE (kind = 'control' AND type = 'turn.finish')
+        OR (kind = 'event' AND type IN ('message.completed', 'session.error'))
+    `)
     this.db.exec(`
       CREATE TABLE IF NOT EXISTS session (
         id TEXT PRIMARY KEY,
@@ -2690,6 +2703,7 @@ export class RuntimeStore {
     agent_session_id?: string | null
   }) {
     const harness = sessionHarness(row)
+    const lastTurn = this.lastTurn(row.id)
     return {
       id: row.id,
       ...(row.workspace_id ? { workspaceId: row.workspace_id } : {}),
@@ -2717,7 +2731,7 @@ export class RuntimeStore {
       ...(row.agent_session_id ? { agent_session_id: row.agent_session_id } : {}),
       ...(row.parent_id ? { parentID: row.parent_id } : {}),
       ...(row.process_key ? { process_key: row.process_key } : {}),
-      ...(this.lastTurn(row.id) ? { lastTurn: this.lastTurn(row.id) } : {}),
+      ...(lastTurn ? { lastTurn } : {}),
     }
   }
 

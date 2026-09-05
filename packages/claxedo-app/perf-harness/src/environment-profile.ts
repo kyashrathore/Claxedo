@@ -111,11 +111,11 @@ export async function applyCpuProfile(cdp: CDPSession, profile: EnvironmentProfi
  * Network emulation.
  *
  * Reaches only requests that actually traverse the network stack. This harness
- * fulfils every API and SSE route in-process from fixtures (`route.fulfill`),
+ * fulfils ordinary API routes in-process from fixtures (`route.fulfill`),
  * and a fulfilled response never leaves the client, so emulation cannot slow
- * it — `profile.mockLatencyMs` is what covers those. What emulation DOES shape
- * is the part that matters most for load vitals: the real asset requests that
- * fall through to the preview server, which is the whole JS/CSS bundle.
+ * it — `profile.mockLatencyMs` covers those. SSE continues to the real loopback
+ * fixture stream server. The load-vitals evidence below covers asset requests
+ * that fall through to the preview server, including the JS/CSS bundle.
  *
  * Verified rather than assumed, because Playwright's interception plausibly
  * bypasses the network stack. Loading the real bundle at three bandwidths, with

@@ -17,6 +17,12 @@ describe("routeOwnership", () => {
 
   test("classifies workspace-runtime routes", () => {
     expect(routeOwnership("/session").handler).toBe(RouteHandler.SandboxRuntime)
+    // The typed workspace-runtime client requests the `/api/wr` mount of the
+    // file and search routes; the root-surface proxy must dispatch that mount
+    // exactly like the bare `/file` and `/find` compatibility paths.
+    for (const path of ["/api/wr/file", "/api/wr/file/status", "/api/wr/file/content", "/api/wr/find/file", "/file", "/find/file"]) {
+      expect(routeOwnership(path).handler, path).toBe(RouteHandler.SandboxRuntime)
+    }
     expect(routeOwnership("/api/claxedo/agent-config/providers").handler).toBe(RouteHandler.CentralServer)
   })
 

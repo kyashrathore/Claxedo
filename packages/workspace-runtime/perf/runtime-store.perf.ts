@@ -82,6 +82,46 @@ describe("RuntimeStore performance", () => {
     reopened.close()
   })
 
+  it("keeps session reads flat as a session's non-terminal journal grows", () => {
+    const root = tmp()
+    const store = new RuntimeStore(root)
+    store.bindSession({
+      sessionId: "s1",
+      directory: "/work",
+      agentSessionId: "a1",
+      createdAt: 1,
+    })
+    // 100k streaming rows and no terminal row: the worst case for `lastTurn`,
+    // which must find "nothing" without reading them. Distinct part ids keep
+    // the snapshot collapse from shrinking the journal.
+    const payload = JSON.stringify(messagePartUpdated({
+      id: "p",
+      sessionID: "s1",
+      messageID: "m1",
+      type: "text",
+      text: "x",
+    }))
+    // The managed wrapper finalizes a statement after one use; prepare per row
+    // like the checkpoint test above.
+    database(store).exec("BEGIN")
+    for (const seq of Array.from({ length: 100_000 }, (_, index) => index + 2)) {
+      database(store).prepare(`
+        INSERT INTO runtime_journal (session_id, seq, kind, type, created_at, part_id, payload_json)
+        VALUES (?, ?, 'event', 'message.part.updated', ?, ?, ?)
+      `).run("s1", seq, seq, `p${seq}`, payload)
+    }
+    database(store).exec("COMMIT")
+
+    const started = performance.now()
+    for (let index = 0; index < 20; index++) {
+      assert.equal(store.getSession("s1")?.id, "s1")
+      assert.equal(store.listSessions("/work").length, 1)
+    }
+    const elapsed = performance.now() - started
+    assert(elapsed < 40, `20 session read+list rounds over a 100k-row journal took ${elapsed.toFixed(1)}ms`)
+    store.close()
+  })
+
   it("bounds repeated full-snapshot journal storage to the latest part state", () => {
     const root = tmp()
     const store = new RuntimeStore(root)

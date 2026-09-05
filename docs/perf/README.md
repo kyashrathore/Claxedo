@@ -1,5 +1,7 @@
 # Making Claxedo lighter
 
+For current commands, ownership and measurement contracts, use the [performance tools guide](../../packages/claxedo-app/perf-harness/README.md) and `bun run --cwd packages/claxedo-app/perf-harness catalog`. The narrative below records earlier product work.
+
 In August 2026 we tried to make Claxedo feel light. The product is a coding-agent workbench that ships as a signed web app and a packaged Electron desktop. Both were heavy in ways that were easy to feel and hard to name: a long first download, a slow first session, a desktop that sat well above a gigabyte, a switch between two already-open chats that rebuilt the world.
 
 This is not the experiment log. Hundreds of agents ran packaged builds, ablations, and false wins. Most of that work was thrown away. What follows is what actually changed, and what we learned about making a workbench like this cheaper to hold.
