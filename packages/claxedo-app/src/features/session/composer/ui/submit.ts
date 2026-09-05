@@ -20,7 +20,7 @@ import { queryKeys } from "@/platform/query/keys"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
-import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
+import { harnessProfile, isCatalogHarness, pickHarness } from "@/features/session/harness/profile"
 import { cloudSubmitMissingModel } from "./submit-model-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import {
@@ -272,7 +272,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),
       }).then((x) => x.data),
       markLocalWorktreePending: (directory) => WorktreeState.pending(directory),
-      bootstrap: () => globalBootstrapActions.bootstrap({ force: true }),
+      // A created worktree is a new workspace row: the global bootstrap
+      // re-registers it, and the project catalog — the authority the create
+      // handoff routes the new session by (`workspaceRouteId`) — is fetched
+      // fresh before that handoff runs, not at the next stale-time expiry.
+      bootstrap: async () => {
+        await globalBootstrapActions.bootstrap({ force: true })
+        await queryClient.fetchQuery({ ...queryOptions.projects(), staleTime: 0 })
+      },
       showToast: (toast) => showToast(toast),
       errorMessage,
       text: {
@@ -352,8 +359,12 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // The composer's local-provider variant rides the next prompt; a persisted
     // session variant is only the fallback for an unset picker. In harness
     // mode the harness model key owns the variant (thought level), so the
-    // local picker's value must not leak into a connection-backed session.
-    const selectedVariant = selectedHarnessMode(scope) ? undefined : input.variant?.()
+    // local picker's value must not leak into a connection-backed session —
+    // except for a catalog harness, whose effort IS the provider picker's
+    // variant (the selector shows `providerVariant` there, never a thought level).
+    const harnessType = selectedHarnessType(scope)
+    const providerVariantOwnsEffort = !selectedHarnessMode(scope) || (harnessType !== undefined && isCatalogHarness(harnessType))
+    const selectedVariant = providerVariantOwnsEffort ? input.variant?.() : undefined
     const submittedConfig = existingSessionConfig?.model
       ? {
           model: existingSessionConfig.model,

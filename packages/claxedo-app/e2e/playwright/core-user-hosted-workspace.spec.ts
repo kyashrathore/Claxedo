@@ -786,7 +786,9 @@ async function installUserHostedRuntimeMock(
       if (/^\/session\/[^/]+\/todo$/.test(runtimePath)) return json(route, [])
       if (/^\/session\/[^/]+\/message$/.test(runtimePath)) {
         requests.messageFetchCount += 1
-        return json(route, messages)
+        // The real route answers a page envelope (`{ messages, maxEventOrdinal }`),
+        // never a bare array — see mock-runtime's `**/session/*/message**`.
+        return json(route, { messages, maxEventOrdinal: 0 })
       }
       if (/^\/session\/[^/]+\/prompt_async$/.test(runtimePath)) {
         promptCount += 1
@@ -893,6 +895,13 @@ async function installUserHostedRuntimeMock(
         })()
         return
       }
+      // `GET /session/:id/goal/state` (workspace-runtime `session-core.ts`): the
+      // session view reads the Goal capabilities and the goal in one round trip
+      // on activation; a harness without Goals answers "not implemented" with a
+      // null goal.
+      if (/^\/session\/[^/]+\/goal\/state$/.test(runtimePath)) {
+        return json(route, { capabilities: { implemented: false, available: false, actions: [] }, goal: null })
+      }
       if (runtimePath === "/file" || runtimePath.startsWith("/file/")) return json(route, [])
       if (runtimePath === "/api/wr/diff/refs") return json(route, { branches: [], tags: [], recent: [] })
       if (runtimePath === "/api/wr/diff/targets") return json(route, {})
@@ -907,16 +916,18 @@ async function installUserHostedRuntimeMock(
 
     // ---- Control-plane provider catalog (bare origin) ----
     // Production's unscoped `GET /provider` is empty (`emptyProvider()`); the
-    // workspace catalog is a relay read. The Pi composer list, however,
-    // is `useProviders("pi")` → `GET /provider?harness=pi&directory=…`, and
-    // until that request is rewritten onto `/workspaces/:id/provider` the
-    // picker is fed this bare response. Serving the same catalog the relay
-    // lane returns keeps the draft selectable without inventing an app
-    // auto-seed. Unscoped (no harness) stays empty so the control-plane
-    // contract is still exercised.
-    if (url.pathname === "/provider") {
-      const harness = url.searchParams.get("harness")
-      if (harness === "pi") {
+    // workspace catalog is a relay read. A catalog harness's composer list,
+    // however, is `useProviders(<pi|opencode>)` →
+    // `GET /api/claxedo/agent-config/providers?nativeHarness=…&directory=…`
+    // (`providerListQuery`, src/platform/query/control-plane.ts), and until
+    // that request is rewritten onto `/workspaces/:id/...` the picker is fed
+    // this bare response. Serving the same catalog the relay lane returns
+    // keeps the draft selectable without inventing an app auto-seed. Unscoped
+    // (no harness) stays empty so the control-plane contract is still
+    // exercised.
+    if (url.pathname === "/provider" || url.pathname === "/api/claxedo/agent-config/providers") {
+      const harness = url.searchParams.get("nativeHarness") ?? url.searchParams.get("harness")
+      if (harness === "pi" || harness === "opencode") {
         return json(route, {
           all: [{ id: "opencode", name: "opencode", env: [], models: { [BIG_PICKLE.id]: { id: BIG_PICKLE.id, name: BIG_PICKLE.name, release_date: "2026-01-01", attachment: true, reasoning: true, temperature: true, tool_call: true, limit: { context: 200000, output: 8192 }, cost: { input: 0, output: 0 }, options: {} } } }],
           default: { opencode: BIG_PICKLE.id },
@@ -925,7 +936,7 @@ async function installUserHostedRuntimeMock(
       }
       return json(route, { all: [], connected: [], default: {} })
     }
-    if (url.pathname === "/provider/auth") return json(route, {})
+    if (url.pathname === "/provider/auth" || url.pathname === "/api/claxedo/agent-config/providers/auth") return json(route, {})
 
     // ---- Central boot reads (bare origin, ALWAYS) ----
     // Each of these is issued by a mount, not by a workspace: the shell's
@@ -945,6 +956,11 @@ async function installUserHostedRuntimeMock(
       return json(route, { state: "", config: "", worktree: DIR, directory: DIR, home: "/tmp" })
     }
     if (url.pathname === "/global/health") return json(route, { healthy: true, version: "1.0.0-test" })
+    // The central's own health document (`claxedoHealthUrl`, `checkServerHealth`):
+    // the composer reads `localExecution` from it to decide which environments
+    // it offers — a central read, and one this loopback central answers with
+    // `localExecution: true` exactly as the real local server does.
+    if (url.pathname === "/api/claxedo/health") return json(route, { healthy: true, version: "1.0.0-test", localExecution: true })
     // The central is up; nothing has been published from this surface.
     if (url.pathname === "/api/claxedo/remote-access/devices") return json(route, { devices: [] })
     // An empty outbox syncs to zeros. Same contract mock-runtime serves.
@@ -1222,7 +1238,7 @@ test.describe("core user-hosted workspace @core", () => {
         return route.fulfill({ status: 200, contentType: "text/event-stream", body: `data: ${JSON.stringify({ directory: "global", payload: { type: "server.connected", properties: {} } })}\n\n` }).catch(() => {})
       }
       if (url.pathname === "/provider") return json(route, { all: [], connected: [], default: {} })
-      if (url.pathname === "/provider/auth") return json(route, {})
+      if (url.pathname === "/provider/auth" || url.pathname === "/api/claxedo/agent-config/providers/auth") return json(route, {})
       if (url.pathname === "/path") return json(route, { worktree: DIR })
       if (url.pathname === "/config") return json(route, { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } })
       if (url.pathname === "/agent" || url.pathname === "/app/agents") return json(route, [{ id: "build", name: "build", description: "Build agent" }])

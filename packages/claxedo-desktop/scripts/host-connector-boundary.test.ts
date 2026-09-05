@@ -79,11 +79,19 @@ function walk(entry: string): Closure {
       // Only workspace packages are followed: node_modules cannot import a
       // private workspace package, and following them would walk all of npm.
       if (!specifier.startsWith("@claxedo/") && !specifier.startsWith("@opencode-ai/")) continue
+      let resolved: string
       try {
-        pending.push(require.resolve(specifier))
+        // ESM resolution: the embedded OpenCode SDK ships `exports` without a
+        // `require` condition, which `require.resolve` reports as unexported.
+        resolved = Bun.resolveSync(specifier, path.dirname(file))
       } catch {
         unresolved.push(`${specifier} (from ${file})`)
+        continue
       }
+      // A package installed from npm (the public SDK) is a dependency the
+      // bundle externalizes, not a workspace module whose closure this walk owns.
+      if (resolved.includes(`${path.sep}node_modules${path.sep}`)) continue
+      pending.push(resolved)
     }
   }
 

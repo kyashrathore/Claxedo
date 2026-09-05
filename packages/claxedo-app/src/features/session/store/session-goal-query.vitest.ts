@@ -43,7 +43,7 @@ const sessionRef = {
   sessionId: "ses_1",
   host: "workspace",
   workspaceId: "ws_1",
-  harness: { id: "codex" },
+  harness: { kind: "native", harnessId: "codex" },
   toolSandbox: { kind: "workspace", workspaceId: "ws_1", hosting: "cloud", hostId: "host_1" },
 } satisfies SessionRef
 
@@ -118,7 +118,7 @@ describe("session Goal authority", () => {
   test("keys isolate harness, host, and workspace authority for the same visible session", () => {
     const cursor = sessionGoalKey({
       ...authorityScope,
-      sessionRef: { ...sessionRef, harness: { id: "cursor" } },
+      sessionRef: { ...sessionRef, harness: { kind: "native", harnessId: "cursor" } },
     })
     const otherHost = sessionGoalKey({
       ...authorityScope,
@@ -140,7 +140,7 @@ describe("session Goal authority", () => {
 
   test("runtime events update only the exact authority and reject older snapshots", () => {
     queryClient.setQueryData<SessionGoalData>(sessionGoalKey(authorityScope), { capabilities, goal: activeGoal })
-    const otherScope = { ...authorityScope, sessionRef: { ...sessionRef, harness: { id: "cursor" } } satisfies SessionRef }
+    const otherScope = { ...authorityScope, sessionRef: { ...sessionRef, harness: { kind: "native", harnessId: "cursor" } } satisfies SessionRef }
     queryClient.setQueryData<SessionGoalData>(sessionGoalKey(otherScope), { capabilities, goal: null })
 
     expect(applySessionGoalRuntimeEvent({

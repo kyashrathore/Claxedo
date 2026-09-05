@@ -8,7 +8,6 @@ import {
   message,
 } from "@/features/workspaces/app-ports"
 import { showToast } from "@opencode-ai/ui/toast"
-import { validWorktree } from "@/platform/sync/worktree"
 
 import { api, apiBearerToken, getDefaultBaseUrl } from "@/platform/api/api"
 import { hostedControlCall } from "@/platform/account/hosted-control-call"
@@ -141,15 +140,9 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
       routeSession: props.params.id,
     })
 
-    if (!validWorktree(workspaceDir)) {
-      showToast({
-        title: "Invalid project path",
-        description: workspaceDir,
-        variant: "error",
-      })
-      return
-    }
-
+    // Validity is the composer's to refuse (its Project chip keeps the create
+    // panel open on a bad checkout); by the time a project reaches here it is
+    // one the composer accepted.
     const projects = await refreshProjectInventory(props.projectInventoryActions.query()).catch(() => undefined)
     const routeId = (Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : undefined)
       ?? props.workspaceRouteId(workspaceDir)

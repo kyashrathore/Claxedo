@@ -6,7 +6,7 @@ Date: 2026-09-05. Compared against the Pi-based worker in [the worker runtime pl
 
 `@opencode-ai/sdk/workerd` exports `OpenCodeWorkerd.create({ storage, config, plugins, instances })`. It boots the full v2 application graph inside a Cloudflare Durable Object and returns the same interface as the Node SDK: typed session operations plus a live event stream, served over an in-process fetch transport. The docs mark the v2 SDK as beta and say the API may change.
 
-The profile is defined in `packages/server/src/workerd.ts` as a replacement graph applied on top of the standard server:
+The profile is defined in the upstream SDK's `server/src/workerd.ts` as a replacement graph applied on top of the standard server:
 
 | Service | Workerd profile |
 |---|---|
@@ -26,7 +26,7 @@ The seam that matters most: `EmbeddedHost.CreateOptions.workspaceProviders`, a r
 
 ## 2. Bundle spike
 
-`bun build --target=node --conditions=workerd` on the published dev SDK, the way upstream's own `packages/server/script/workerd-probe.ts` does it:
+`bun build --target=node --conditions=workerd` on the published dev SDK, the way upstream's own `server/script/workerd-probe.ts` does it:
 
 | Measure | Result |
 |---|---|

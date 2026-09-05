@@ -1,5 +1,17 @@
 export const NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 
+/**
+ * Native harnesses whose models come from the control plane's provider catalog
+ * (`/api/claxedo/agent-config/providers?nativeHarness=<id>`) rather than from
+ * harness config options: Pi and the embedded OpenCode SDK both run against
+ * Claxedo-held provider credentials.
+ */
+export const CATALOG_HARNESS_IDS = ["pi", "opencode"] as const
+
+export function isCatalogHarnessId(id: string | undefined): id is (typeof CATALOG_HARNESS_IDS)[number] {
+  return (CATALOG_HARNESS_IDS as readonly string[]).includes(id ?? "")
+}
+
 export type NativeHarnessId = (typeof NATIVE_HARNESS_IDS)[number]
 
 export type HarnessSelection =

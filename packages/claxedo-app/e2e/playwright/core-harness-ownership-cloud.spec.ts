@@ -55,8 +55,8 @@
  *     not exist in `src/` any more — do not re-cite it. What isolates the two drafts now
  *     is the draft-default record's STORAGE SCOPE: `createDraftDefaultPreferences`
  *     (`src/features/session/harness/draft-defaults.ts`) keys every record by
- *     `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v2")`, i.e.
- *     `claxedo.server.<server>.<sum>.workspace.<dirHead>.<dirSum>.dat:workspace:session.draft-default.v2`
+ *     `Persist.serverWorkspace(serverUrl, workspaceKey, "session.draft-default.v1")`, i.e.
+ *     `claxedo.server.<server>.<sum>.workspace.<dirHead>.<dirSum>.dat:workspace:session.draft-default.v1`
  *     (`src/platform/persistence/persist.ts:223-233,382-384`) — a DIFFERENT localStorage
  *     key per (server, workspaceKey) pair. `rememberDraftHarness`
  *     (`src/features/session/harness/harness-store.ts:171-199`) writes that record when the
@@ -164,7 +164,7 @@
  */
 import { expect, test, type Page } from "@playwright/test"
 import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
-import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
+import { installMockRuntime, type Harness, type MockRuntimeHandles } from "../helpers/mock-runtime"
 import { decodeDraftDefaultRecord } from "../../src/features/session/harness/draft-defaults"
 
 const DIR = "/tmp/e2e-core-harness-ownership-cloud"
@@ -208,6 +208,17 @@ async function seedProjects(page: Page) {
 
 function workspaceRoute(sessionId?: string) {
   return sessionId ? `/w/${encodeURIComponent(WORKSPACE_ID)}/session/${sessionId}` : `/w/${encodeURIComponent(WORKSPACE_ID)}/session`
+}
+
+/**
+ * The signed lane reserves the session id it is about to create
+ * (`reservePrivateSession`) and the mock creates the session under that id, so
+ * the route the app lands on names the reservation, not a mock-chosen id.
+ */
+function reservedSessionId(mock: MockRuntimeHandles) {
+  const sessionId = mock.requests.sessionReservations.at(-1)?.sessionId
+  if (!sessionId) throw new Error("no session reservation reached the mock before the URL assertion")
+  return sessionId
 }
 
 function sessionUrlPattern(sessionId: string) {
@@ -339,7 +350,7 @@ test.describe("core harness ownership (cloud) @core", () => {
       await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
       expect(mock.requests.cloudSessionCreateCount).toBe(1)
       expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: harnessCase.providerID, modelID: harnessCase.modelID })
-      await expect(page).toHaveURL(sessionUrlPattern(`ses_cloud_${WORKSPACE_ID}`), { timeout: 20_000 })
+      await expect(page).toHaveURL(sessionUrlPattern(reservedSessionId(mock)), { timeout: 20_000 })
       await expectAssistantReplyVisible(page, `cloud ack 1: ${first}`)
       await expectOnlyHarnessModelControl(page, harnessCase.modelLabel)
 
@@ -380,7 +391,9 @@ test.describe("core harness ownership (cloud) @core", () => {
 
     await switchDraftHarness(page, /^Pi$/, 0)
     await expect(visibleHarnessTrigger(page, "pi")).toHaveCount(1, { timeout: 20_000 })
-    await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
+    // Pi reads the provider catalog, not harness config options: the one
+    // connected catalog model (the OpenCode pair) is adopted as its model.
+    await expectOnlyHarnessModelControl(page, /Big Pickle/i)
     await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
     await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)
 
@@ -392,7 +405,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.locator(SELECTORS.submitControl).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
-    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "pi", modelID: "virtual" })
+    expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text: first, providerID: "opencode", modelID: "big-pickle-1" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${first}`)
 
     // Zero relay config-options requests for the entire scenario — pi has no config options.
@@ -464,7 +477,7 @@ test.describe("core harness ownership (cloud) @core", () => {
   // NOT change this outcome and does NOT contradict the "keep the user's choice" contract:
   // the cloud pane shows the WORKSPACE's own default, while nothing clobbers the local
   // selection. A prompt sent through the cloud workspace therefore still carries OpenCode.
-  test("a cloud workspace draft keeps its own OpenCode default while the local draft's Claude choice is preserved per-directory — behavior 5", async ({ page }) => {
+  test("a cloud workspace draft starts on its own, unchosen state while the local draft's Claude choice is preserved per-directory — behavior 5", async ({ page }) => {
     await page.addInitScript(() => {
       const writes: string[] = []
       const pushState = window.history.pushState.bind(window.history)
@@ -518,10 +531,11 @@ test.describe("core harness ownership (cloud) @core", () => {
     await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
 
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
-    // The cloud workspace draft shows its OWN OpenCode default — exactly one plain model
-    // control, no relay options ever fetched for a carried-over "claude-sdk".
-    await expectOnlyHarnessModelControl(page, /Big Pickle/i)
-    await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
+    // The cloud workspace draft has its OWN state — nothing chosen yet (behavior 1's
+    // rule: a draft never invents an agent), and never the local pane's "claude-sdk";
+    // no relay options are fetched for a carried-over Claude.
+    await expectNoAgentSelected(page)
+    await expect(visibleHarnessTrigger(page, "claude-sdk")).toHaveCount(0)
     expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-sdk")).toBe(false)
 
     // ...and the user's local Claude choice is NOT lost — it stays under the LOCAL
@@ -550,19 +564,24 @@ test.describe("core harness ownership (cloud) @core", () => {
     await openProjectFromChip(page, DIR, PROJECT_NAME)
     // Project-chip navigation resolves the local directory through project inventory
     // before the first history write. The physical path never appears and then swaps;
-    // `/w/` is keyed by the opaque project/workspace ID from the start.
-    await expect(page).toHaveURL(new RegExp(`/w/${PROJECT_ID}/session$`), { timeout: 20_000 })
+    // `/w/` is keyed by the opaque workspace ID from the start — the project's root
+    // workspace row (`workspaceRouteIdentity` prefers a workspace id over the
+    // project id when the inventory carries both for one directory).
+    await expect(page).toHaveURL(new RegExp(`/w/${mock.session.workspaceId}/session$`), { timeout: 20_000 })
     const historyWrites = await page.evaluate(
       () => (window as Window & { __claxedoHistoryWrites?: string[] }).__claxedoHistoryWrites ?? [],
     )
-    expect(historyWrites).toEqual([`/w/${PROJECT_ID}/session`])
+    expect(historyWrites).toEqual([`/w/${mock.session.workspaceId}/session`])
     expect(historyWrites.join("\n")).not.toContain(encodeURIComponent(DIR))
     await expect(visibleHarnessTrigger(page, "claude-sdk")).toHaveCount(1, { timeout: 20_000 })
     await expectOnlyHarnessModelControl(page, /Sonnet 4\.6|claude-sonnet-4-6/i)
 
     await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
-    await expectOnlyHarnessModelControl(page, /Big Pickle/i)
+    await expectNoAgentSelected(page)
+    await expect(visibleHarnessTrigger(page, "claude-sdk")).toHaveCount(0)
+    // The cloud draft's own choice: OpenCode, picked here the way a user would.
+    await switchDraftHarness(page, /^OpenCode$/, 0)
     await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
 
     // `filter({visible: true})`, not `.last()`: the round trip above leaves the prior
@@ -570,8 +589,8 @@ test.describe("core harness ownership (cloud) @core", () => {
     // one is last.
     const cloudInput = page.getByRole("textbox", { name: /Ask anything/i }).filter({ visible: true })
     await expect(cloudInput).toHaveCount(1, { timeout: 20_000 })
-    // Cloud draft keeps OpenCode as harness (asserted above) but does not invent a
-    // catalog model default — pick Big Pickle the same way a user would before send.
+    // The cloud draft is on OpenCode (picked above) but does not invent a catalog
+    // model default — pick Big Pickle the same way a user would before send.
     const text = "core harness cloud own-default turn"
     await cloudInput.click()
     await cloudInput.fill(text)
@@ -580,7 +599,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await page.locator(`${SELECTORS.submitControl}:visible`).last().click()
 
     await expect.poll(() => mock.requests.cloudPromptCount, { timeout: 15_000 }).toBe(1)
-    // The cloud workspace draft dispatches its own OpenCode default, never the local pane's
+    // The cloud workspace draft dispatches its own OpenCode choice, never the local pane's
     // "claude-sdk" selection (which is preserved for the local directory, not carried here).
     expect(mock.requests.cloudPromptBodies[0]).toMatchObject({ text, providerID: "opencode", modelID: "big-pickle-1" })
     await expectAssistantReplyVisible(page, `cloud ack 1: ${text}`)

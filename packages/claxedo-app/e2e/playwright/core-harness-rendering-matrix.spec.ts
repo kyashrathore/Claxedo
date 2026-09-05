@@ -209,7 +209,9 @@ async function primeHarness(
         ? "Cursor"
         : harness === "pi"
           ? "Pi"
-          : harness
+          : harness === "opencode"
+            ? "OpenCode"
+            : harness
   await selectComposerAgent(page, agentName)
 
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()

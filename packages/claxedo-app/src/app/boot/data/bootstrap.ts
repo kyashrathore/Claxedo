@@ -371,11 +371,15 @@ export async function bootstrapDirectory(input: {
           // to leave the rail on the engine-shaped payload — worktree basename
           // for a name, and no sessions — until the user opened a surface.
           // Refetch only when the catalog really is missing this workspace, so
-          // the common warm boot stays a no-op.
+          // the common warm boot stays a no-op. `refetchType: "all"` because
+          // the catalog query need not have an observer at this moment (a
+          // worktree created at first send bootstraps before any pane mounts
+          // on it) and an inactive query would otherwise only be marked stale,
+          // leaving the create-session handoff without a route for it.
           const queryKey = queryKeys.controlPlane.projects(input.baseUrl)
           const cached = queryClient.getQueryData<Array<Project & { workspaces?: Record<string, unknown> }>>(queryKey)
           if (!projectCatalogMissingWorkspace(cached, input.directory)) return
-          await queryClient.invalidateQueries({ queryKey })
+          await queryClient.invalidateQueries({ queryKey, refetchType: "all" })
         }),
         workspace,
       ])

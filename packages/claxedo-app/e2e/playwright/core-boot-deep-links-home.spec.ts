@@ -314,7 +314,7 @@ async function installSessionListMock(page: Page) {
  * fall through to a real, non-existent backend at 127.0.0.1:3001 and hung every
  * caller on the `ConnectionError` screen — see finding in this spec's PR notes). */
 async function createSessionViaFirstSend(page: Page, promptText: string) {
-  await installMockRuntime(page, {
+  const mock = await installMockRuntime(page, {
     dir: DIR,
     projectId: PROJECT_ID,
     sessionId: SESSION_ID,
@@ -331,7 +331,7 @@ async function createSessionViaFirstSend(page: Page, promptText: string) {
   await page.locator(SELECTORS.submitControl).last().click()
   await expect(page).toHaveURL(new RegExp(`(?:/s/${SESSION_ID}|/w/[^/]+/session/${SESSION_ID})$`), { timeout: 20_000 })
   await expectAssistantReplyVisible(page, `ack 1: ${promptText}`)
-  return page.url()
+  return { url: page.url(), workspaceId: mock.session.workspaceId }
 }
 
 async function readPersistedLayout(page: Page) {
@@ -639,8 +639,11 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("workspace-scoped deep link materializes the pane and a fresh nav discards stale tabs — behaviors 5,6", async ({ page }) => {
-    const primaryUrl = await createSessionViaFirstSend(page, "core boot workspace deep link turn")
-    expect(primaryUrl).toContain(workspaceSessionUrl(PROJECT_ID, SESSION_ID))
+    const created = await createSessionViaFirstSend(page, "core boot workspace deep link turn")
+    // A local workspace the server knows by id is addressed by that id, the
+    // same way its session rows and runtime ref carry it — not by its project.
+    const primaryUrl = created.url
+    expect(primaryUrl).toContain(workspaceSessionUrl(created.workspaceId, SESSION_ID))
 
     // Behavior 6 needs a stale tab to actually exist before the fresh nav, so open one
     // DELIBERATELY. The precondition is pinned STRICTLY `> 1`: with the previous
@@ -726,7 +729,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("a session that 404s on fetch shows session-unavailable and is pruned from the sidebar — behavior 8", async ({ page }) => {
-    const primaryUrl = await createSessionViaFirstSend(page, "core boot missing session turn")
+    const primaryUrl = (await createSessionViaFirstSend(page, "core boot missing session turn")).url
 
     // Installed only after the send settles (not inside createSessionViaFirstSend):
     // registering it earlier makes the control-plane list advertise the session
@@ -814,7 +817,7 @@ test.describe("core boot, deep links, and home @core", () => {
   })
 
   test("session routes reveal the shell immediately while server health is failing — behavior 9", async ({ page }) => {
-    const primaryUrl = await createSessionViaFirstSend(page, "core boot startup gate turn")
+    const primaryUrl = (await createSessionViaFirstSend(page, "core boot startup gate turn")).url
 
     // From here on /api/claxedo/health always fails. revealBeforeHealth means this
     // must NOT block the session pane from rendering.

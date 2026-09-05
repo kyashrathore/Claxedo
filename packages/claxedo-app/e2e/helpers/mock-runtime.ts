@@ -105,13 +105,18 @@ import {
  * Two families, and they are NOT interchangeable:
  *   - native built-ins, addressed by their legacy composite strings
  *     (`claude-sdk`, `codex-app-server`, `cursor-sdk`) or bare id (`opencode`,
- *     `pi`) — `normalizeHarnessIdentity` resolves them to `{id, access:"native"}`;
- *   - open ACP connections, addressed by the canonical `acp:<slug>`
- *     presentation — resolved to `{id: slug, access: "acp"}`.
+ *     `pi`) — `harnessSelectionFor` resolves them to `{kind:"native", harnessId}`;
+ *   - operator ACP connections. The FIXTURE key stays `acp:<slug>` (every
+ *     recorded trace, mode table and spec names them that way), but the
+ *     identity the product speaks is the operator's connection id —
+ *     `connectionIdFor` maps `acp:claude` to `claude-acp`, the id the mocked
+ *     connections catalog advertises, the app selects, and the session config
+ *     round-trips as `{id: "claude-acp", access: "connection"}`.
  *
- * `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts) accepts
- * nothing else, and the server runs that same validator — a fixture outside
- * this vocabulary would name a harness the product cannot produce.
+ * `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts) is the
+ * server's own validator: a native id, or a connection id matching
+ * `ACP_CONNECTION_ID_PATTERN` (`^[a-z][a-z0-9-]{0,63}$`). A colon-form
+ * `acp:claude` is NOT a connection id the product can produce.
  */
 export type Harness =
   | "opencode"
@@ -583,7 +588,7 @@ export type MockRuntimeHandles = {
    */
   setSessionStatus: (sessionId: string, status?: LiveSessionStatus) => void
 
-  session: { id: string; dir: string; projectId: string }
+  session: { id: string; dir: string; projectId: string; workspaceId: string }
 }
 
 // ---------------------------------------------------------------------------
@@ -827,15 +832,19 @@ const DEFAULT_HARNESS_MODELS: Record<Harness, HarnessModelOption[]> = {
   pi: [{ id: "virtual", name: "Virtual" }],
 }
 
+/** The operator connection id behind an ACP fixture key (`acp:claude` -> `claude-acp`). */
+export function connectionIdFor(harness: Harness): string {
+  return harness.startsWith("acp:") ? `${harness.slice("acp:".length)}-acp` : harness
+}
+
 /**
  * The provider id a harness's models are catalogued under.
  *
- * The app is the producer here: `harnessModels()`
- * (`src/features/session/harness/selection.ts:75`) and the options loader
- * (`harness-options-loader.ts:112`) both stamp `providerID` with the harness
- * TYPE — so an open ACP connection's provider id is its `acp:<slug>` key, which
- * is also what the runtime store round-trips (`workspace-runtime/src/store.test.ts`
- * pins `providerID: "acp:openclaw"` beside `harness: {id:"openclaw", access:"acp"}`).
+ * The app is the producer here: `harnessModelKeyForSubmit`
+ * (`src/features/session/harness/selection.ts`) stamps `providerID` with
+ * `harnessSelectionId(harness)` — the native id, or the connection id for an
+ * operator connection — so an ACP connection's provider id is its connection
+ * id (`claude-acp`), never the fixture key.
  */
 function providerIdFor(harness: Harness): string {
   const selection = harnessSelectionFor(harness)
@@ -861,7 +870,9 @@ function harnessSelectionFor(harness: Harness) {
   if (harness === "codex-app-server") return { kind: "native" as const, harnessId: "codex" as const }
   if (harness === "cursor-sdk") return { kind: "native" as const, harnessId: "cursor" as const }
   if (harness === "pi") return { kind: "native" as const, harnessId: "pi" as const }
-  return { kind: "connection" as const, connectionId: harness }
+  // OpenCode is a native harness again (the embedded SDK), not a connection.
+  if (harness === "opencode") return { kind: "native" as const, harnessId: "opencode" as const }
+  return { kind: "connection" as const, connectionId: connectionIdFor(harness) }
 }
 
 function harnessFixtureFromUrl(input: string | URL, fallback: Harness): Harness {
@@ -871,9 +882,12 @@ function harnessFixtureFromUrl(input: string | URL, fallback: Harness): Harness 
   if (nativeHarness === "codex") return "codex-app-server"
   if (nativeHarness === "cursor") return "cursor-sdk"
   if (nativeHarness === "pi") return "pi"
+  if (nativeHarness === "opencode") return "opencode"
   const connectionId = url.searchParams.get("connectionId")
-  if (connectionId && connectionId in DEFAULT_HARNESS_MODELS) {
-    return connectionId as Harness
+  if (connectionId) {
+    const fixture = (Object.keys(DEFAULT_HARNESS_MODELS) as Harness[]).find((candidate) =>
+      harnessSelectionFor(candidate).kind === "connection" && connectionIdFor(candidate) === connectionId)
+    if (fixture) return fixture
   }
   return fallback
 }
@@ -941,7 +955,14 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const MOCK_ORG_ID = "org_mock_runtime"
   const createdLocalWorktrees: Array<{ directory: string; name: string; branch: string }> = []
   const localProjectRow = () => {
-    const createdWorkspaces = Object.fromEntries(createdLocalWorktrees.map((worktree) => [worktree.directory, {
+    // A created worktree is a workspace row of its own, with the id the app
+    // routes it by (`/w/<workspace id>`, `workspaceRouteIdentity`): without
+    // one, the first send's navigation into the new worktree's session has
+    // no route to go to.
+    const createdWorkspaces = Object.fromEntries(createdLocalWorktrees.map((worktree) => [`ws_local_${worktree.name}`, {
+      id: `ws_local_${worktree.name}`,
+      workspaceId: `ws_local_${worktree.name}`,
+      project_id: PROJECT_ID,
       kind: "local" as const,
       available: true,
       directory: worktree.directory,
@@ -2632,7 +2653,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       if (selection.kind !== "connection") return []
       return [{
         connectionId: selection.connectionId,
-        label: candidate,
+        label: selection.connectionId,
         enabled: true,
         readiness: "ready",
         capabilities: {
@@ -2860,6 +2881,18 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         })
       : r.continue(),
   )
+
+  // `GET /session/:id/goal/state` (workspace-runtime `session-core.ts`): one
+  // read composes the Goal capabilities with the goal itself, which is `null`
+  // whenever the harness does not implement Goals — the shape every harness
+  // this mock models answers with. Matches the local lane and the relay lane
+  // (`/workspaces/:id/session/...`) alike; without it the read escaped to the
+  // network and surfaced as a page error.
+  await page.route("**/session/*/goal/state**", (route) => {
+    if (!api(route)) return route.continue()
+    if (route.request().method() !== "GET") return route.fallback()
+    return json(route, { capabilities: { implemented: false, available: false, actions: [] }, goal: null })
+  })
 
   await contractRoute(page, "**/session/*/prompt_async**", async (route) => {
     if (!api(route)) return route.continue()
@@ -3266,8 +3299,9 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         const draftId = parseDraftIdHeader(route.request().headers(), url)
         const body = parseSessionCreateRequest(route.request().postDataJSON?.() ?? undefined, url)
         requests.cloudSessionCreateBodies.push({ draftId, body })
-        const sessionHarness = new URL(url).searchParams.get("harness")
-        if (sessionHarness && sessionHarness in harnessModels) cloudHarness = sessionHarness as Harness
+        // The app names the session's harness the way the real route reads it
+        // (`?nativeHarness=<id>` or `?connectionId=<id>`), never by fixture key.
+        cloudHarness = harnessFixtureFromUrl(url, cloudHarness)
         // The signed lane reserves its session id first and hands it over here;
         // the real route creates the session UNDER that id (see `cloudSessionId`).
         cloudSessionId = typeof body.id === "string" ? body.id : CLOUD_SESSION_ID
@@ -3399,6 +3433,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     releaseAbort: () => releaseAbort(),
     setSessionStatus,
 
-    session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID },
+    session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID, workspaceId: LOCAL_WORKSPACE_ID },
   }
 }

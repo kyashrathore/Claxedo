@@ -380,7 +380,7 @@ test.describe("core harness ownership (local) @core", () => {
       option: /^claude-acp$/,
       optionIndex: 0,
       modelLabel: /Sonnet 4\.6|claude-sonnet-4-6/i,
-      providerID: "acp:claude",
+      providerID: "claude-acp",
       modelID: "claude-sonnet-4-6",
     },
     {
@@ -398,7 +398,7 @@ test.describe("core harness ownership (local) @core", () => {
       option: /^codex-acp$/,
       optionIndex: 0,
       modelLabel: /GPT-5\.2 Codex|gpt-5\.2-codex/i,
-      providerID: "acp:codex",
+      providerID: "codex-acp",
       modelID: "gpt-5.2-codex",
     },
     {
@@ -416,7 +416,7 @@ test.describe("core harness ownership (local) @core", () => {
       option: /^cursor-acp$/,
       optionIndex: 0,
       modelLabel: /Cursor Auto|cursor-auto/i,
-      providerID: "acp:cursor",
+      providerID: "cursor-acp",
       modelID: "cursor-auto",
     },
     {
@@ -1051,7 +1051,7 @@ test.describe("core harness ownership (local) @core", () => {
       await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
       expect(mock.requests.promptBodies[0]).toMatchObject({
         text: "core harness polling settled turn",
-        providerID: "acp:claude",
+        providerID: "claude-acp",
         modelID: "claude-sonnet-4-6",
       })
     },
@@ -1183,7 +1183,7 @@ test.describe("core harness ownership (local) @core", () => {
     await expect.poll(() => mock.requests.promptCount, { timeout: 15_000 }).toBe(1)
     expect(mock.requests.promptBodies[0]).toMatchObject({
       text,
-      providerID: "acp:claude",
+      providerID: "claude-acp",
       modelID: "claude-sonnet-4-6",
     })
     await expect(page).toHaveURL(sessionUrlPattern(sessionId), { timeout: 20_000 })
@@ -1210,13 +1210,13 @@ test.describe("core harness ownership (local) @core", () => {
       await expect
         .poll(() =>
           page.evaluate(
-            () => Object.entries(localStorage).find(([key]) => key.includes("session.draft-default.v2"))?.[1],
+            () => Object.entries(localStorage).find(([key]) => key.includes("session.draft-default.v1"))?.[1],
           ),
         )
-        // Same v2 record as behavior 4 above: the picked harness is `lastHarness`.
-        // Deliberately prefix-loose — the picker row is "Claude", and which Claude
-        // harness backs it is the picker's business, not this behavior's.
-        .toContain('"lastHarness":"claude')
+        // Same v1 record as behavior 4 above: the picked harness is `lastHarness`,
+        // a harness selection (`{kind:"native",harnessId}`); the picker row is
+        // "Claude" and the native Claude harness backs it.
+        .toContain('"lastHarness":{"kind":"native","harnessId":"claude"')
 
       // Reload the same draft route — the selection is kept, never force-reset to OpenCode.
       await openDraftPrompt(page, DIR)

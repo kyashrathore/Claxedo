@@ -7,6 +7,7 @@ import { popularProviders } from "@/platform/query/provider-list"
 import { loadProviderDetailsOnce, updateProviderQueryData } from "@/platform/query/provider-cache"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { providerAuthQuery, providerDetailsQuery } from "@/platform/query/control-plane"
+import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 
 export { popularProviders } from "@/platform/query/provider-list"
 
@@ -95,7 +96,7 @@ export function useProviderAuth(harnessType: HarnessInput, scope?: ScopeInput) {
       harnessType: harness(),
       request: authFetch,
     }),
-    enabled: harness() === "pi",
+    enabled: isCatalogHarnessId(harness()),
   }))
 }
 
@@ -105,7 +106,7 @@ export function useProviders(harnessType: HarnessInput, scope?: ScopeInput) {
   const providerOptions = () => queryOptions.providers(dir() || null, harness())
   const providerQuery = useQuery(() => ({
     ...providerOptions(),
-    enabled: harness() === "pi",
+    enabled: isCatalogHarnessId(harness()),
   }))
   const state = (): NormalizedProviderListResponse => providerQuery.data ?? {
     all: new Map(),
@@ -119,7 +120,7 @@ export function useProviders(harnessType: HarnessInput, scope?: ScopeInput) {
     return [...all().values()].filter((provider) => connectedSet.has(provider.id))
   })
   const load = (providerId: string) => {
-    if (harness() !== "pi") return Promise.reject(new Error("Provider credentials are managed by this harness externally"))
+    if (!isCatalogHarnessId(harness())) return Promise.reject(new Error("Provider credentials are managed by this harness externally"))
     const queryKey = providerOptions().queryKey
     return loadProviderDetailsOnce(queryKey, providerId, async () => {
       const detail = await providerDetailsQuery({

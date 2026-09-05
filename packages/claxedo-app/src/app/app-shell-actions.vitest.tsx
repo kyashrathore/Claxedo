@@ -1,7 +1,6 @@
 import { createRoot } from "solid-js"
 import { describe, expect, test, vi } from "vitest"
 import type { CommandOption } from "@/app/providers/command"
-import { ADD_PROJECT_COMMAND_ID } from "@/features/session/ui/components/session-add-project-action"
 import { useAppShellActions } from "./app-shell-actions"
 
 const stubs = vi.hoisted(() => ({
@@ -37,7 +36,10 @@ const registeredCommands = () =>
 
 describe("useAppShellActions", () => {
   test("registers project.open so the desktop menu and the new-session chip can reach handleNewProject", () => {
-    const open = registeredCommands().find((option) => option.id === ADD_PROJECT_COMMAND_ID)
+    // The id `app-shell-actions.ts` registers (and `app/entry/desktop-menu.ts`
+    // declares); the composer-native create flow retired the chip module that
+    // used to export it as a constant.
+    const open = registeredCommands().find((option) => option.id === "project.open")
 
     expect(open).toBeDefined()
     expect(open?.title).toBe("t:command.project.open")

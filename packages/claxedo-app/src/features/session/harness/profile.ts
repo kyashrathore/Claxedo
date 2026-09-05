@@ -1,4 +1,6 @@
 import {
+  CATALOG_HARNESS_IDS,
+  isCatalogHarnessId,
   isHarnessSelection,
   type HarnessSelection,
   type NativeHarnessId,
@@ -44,13 +46,20 @@ export function pickHarness(input?: unknown): HarnessType | undefined {
   return undefined
 }
 
-/** Harnesses whose model list is a Claxedo-owned provider catalog rather than harness config options. */
-function catalogHarness(type: HarnessType) {
-  return type.kind === "native" && (type.harnessId === "pi" || type.harnessId === "opencode")
+export { CATALOG_HARNESS_IDS, isCatalogHarnessId }
+
+/** Whether a harness selection reads the Claxedo provider catalog (see `CATALOG_HARNESS_IDS`). */
+export function isCatalogHarness(type: HarnessType | undefined): boolean {
+  return type?.kind === "native" && isCatalogHarnessId(type.harnessId)
+}
+
+/** The catalog a harness selection reads, when it reads one. */
+export function catalogHarnessId(type: HarnessType | undefined) {
+  return type?.kind === "native" && isCatalogHarnessId(type.harnessId) ? type.harnessId : undefined
 }
 
 export function harnessHasConfigOptions(type: HarnessType) {
-  return !catalogHarness(type)
+  return !isCatalogHarness(type)
 }
 
 export function harnessProfile(id: HarnessType) {
@@ -67,13 +76,13 @@ export function sessionHarnessIdentity(type: HarnessType) {
 }
 
 export function effectiveHarnessModel(type: HarnessType, selected?: string | null) {
-  if (catalogHarness(type)) return selected || ""
+  if (isCatalogHarness(type)) return selected || ""
   return selected || DEFAULT_HARNESS_MODEL.id
 }
 
 /** Native SDK harnesses that can be backstopped with a static catalog when live listing fails. */
 export function isNativeSdkHarness(type: HarnessType) {
-  return type.kind === "native" && !catalogHarness(type)
+  return type.kind === "native" && !isCatalogHarness(type)
 }
 
 export function isNativeHarness(type: HarnessType, id: NativeHarnessId): boolean {

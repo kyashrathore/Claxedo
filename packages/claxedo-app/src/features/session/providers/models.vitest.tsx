@@ -4,8 +4,9 @@
  * It used to be one `Persist.global("model")` bucket fed by the OpenCode
  * catalog, so a model hidden on one machine was hidden on every machine and no
  * non-OpenCode model was ever in it. These render the real `ModelsProvider` and
- * pin the three consequences: the bucket is the workspace, the harness keys the
- * maps inside it, and the replaced global entry migrates exactly once.
+ * pin the two consequences: the bucket is the workspace, and the harness keys
+ * the maps inside it. (The one-time migration of the replaced global entry was
+ * retired with the OpenCode-only catalog.)
  */
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
@@ -71,7 +72,7 @@ function stored(workspaceKey: string) {
 }
 
 /** Mounts the store for one (workspace, harness) and hands the API to the test. */
-function mount(input: { workspaceKey: string; harness: () => string }) {
+function mount(input: { workspaceKey: string; harness: () => string; nativeHarness?: () => string | undefined }) {
   let api: ReturnType<typeof useModels> | undefined
   const Probe = () => {
     api = useModels()
@@ -82,6 +83,7 @@ function mount(input: { workspaceKey: string; harness: () => string }) {
       <ModelsProvider
         workspaceKey={() => input.workspaceKey}
         harness={input.harness}
+        nativeHarness={input.nativeHarness ?? input.harness}
         serverUrl={() => SERVER}
       >
         <Probe />
@@ -196,28 +198,10 @@ describe("the model store is per (server, workspace, harness)", () => {
   test("the store reads the catalog of the harness it is shown for, not an OpenCode-only list", () => {
     const [harness, setHarness] = createSignal("opencode")
     mount({ workspaceKey: nextWorkspaceKey("ws"), harness })
-    setHarness("claude-sdk")
+    setHarness("claude")
 
-    expect(state.requests.map((request) => request.harness)).toContain("claude-sdk")
+    expect(state.requests.map((request) => request.harness)).toContain("claude")
     expect(state.requests.every((request) => !!request.harness)).toBe(true)
   })
 
-  test("the replaced global store migrates into the first workspace bucket that reads it, once", async () => {
-    localStorage.setItem("opencode.global.dat:model", JSON.stringify({
-      user: [{ ...OPUS, visibility: "hide" }],
-      recent: [OPUS],
-      variant: { "anthropic/opus": "thinking" },
-    }))
-
-    const first = mount({ workspaceKey: nextWorkspaceKey("ws"), harness: () => "opencode" })
-    await waitFor(() => expect(first().variant.get(OPUS)).toBe("thinking"))
-    expect(first().visible(OPUS)).toBe(false)
-    expect(first().recent.list()).toEqual([OPUS])
-    expect(localStorage.getItem("opencode.global.dat:model")).toBeNull()
-    cleanup()
-
-    const second = mount({ workspaceKey: nextWorkspaceKey("ws"), harness: () => "opencode" })
-    expect(second().variant.get(OPUS)).toBeUndefined()
-    expect(second().recent.list()).toEqual([])
-  })
 })

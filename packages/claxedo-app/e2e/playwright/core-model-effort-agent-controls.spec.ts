@@ -25,7 +25,7 @@
  *     the MODEL CATALOG's "recent" list (`useModels()`, `src/features/session/providers/models.tsx`,
  *     persisted under `.recent` in that (server, workspace)'s bucket —
  *     `Persist.serverWorkspace(server, workspace, "model")`, localStorage key
- *     `opencode.server.<serverhash>.workspace.<dirhash>.dat:workspace:model`): picking
+ *     `claxedo.server.<serverhash>.workspace.<dirhash>.dat:workspace:model`): picking
  *     a model calls `model.set(item, {recent:true})`, which pushes it onto
  *     `models.recent.list()`; on the next load, `currentModelKey()`'s fallback chain
  *     (`fallback = savedModel() ?? recentModel() ?? configuredModel() ?? defaultModel()`,
@@ -332,9 +332,12 @@ async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) 
       models: Object.fromEntries(Object.entries(provider.models).filter(([id]) => defaults[provider.id] === id)),
     })),
   }
-  await page.route("**/provider**", (route) => {
+  // The OpenCode harness is a native catalog harness: its models come from the
+  // control plane's provider catalog (`/api/claxedo/agent-config/providers`),
+  // not from an engine `/provider` route.
+  await page.route("**/api/claxedo/agent-config/providers**", (route) => {
     if (!isApiRequest(route)) return route.continue()
-    if (new URL(route.request().url()).pathname !== "/provider") return route.fallback()
+    if (new URL(route.request().url()).pathname !== "/api/claxedo/agent-config/providers") return route.fallback()
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) })
   })
   await page.route("**/api/claxedo/bootstrap**", (route) => {
@@ -358,9 +361,12 @@ async function installPaidProviderFixture(page: Page, mock: MockRuntimeHandles) 
 /** Zero connected providers at all — no model is resolvable, selected or fallback. */
 async function installNoModelFixture(page: Page, mock: MockRuntimeHandles) {
   const body = { all: [], default: {}, connected: [] }
-  await page.route("**/provider**", (route) => {
+  // The OpenCode harness is a native catalog harness: its models come from the
+  // control plane's provider catalog (`/api/claxedo/agent-config/providers`),
+  // not from an engine `/provider` route.
+  await page.route("**/api/claxedo/agent-config/providers**", (route) => {
     if (!isApiRequest(route)) return route.continue()
-    if (new URL(route.request().url()).pathname !== "/provider") return route.fallback()
+    if (new URL(route.request().url()).pathname !== "/api/claxedo/agent-config/providers") return route.fallback()
     return route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) })
   })
   await page.route("**/api/claxedo/bootstrap**", (route) => {
@@ -501,14 +507,14 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     // The pick is persisted into the model store's "recent" list. That store is
     // per (server, workspace): `Persist.serverWorkspace(server, workspace,
     // "model")` names the bucket
-    // `opencode.server.<…>.workspace.<…>.dat:workspace:model`. Wait for the
+    // `claxedo.server.<…>.workspace.<…>.dat:workspace:model`. Wait for the
     // actual localStorage write (deterministic poll, not a sleep) before
     // reloading.
     await expect
       .poll(async () =>
         page.evaluate(() => {
           const name = Object.keys(localStorage).find(
-            (key) => key.startsWith("opencode.server.") && key.endsWith(":workspace:model"),
+            (key) => key.startsWith("claxedo.server.") && key.endsWith(":workspace:model"),
           )
           const raw = name ? localStorage.getItem(name) : null
           if (!raw) return null
@@ -622,10 +628,12 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
           code: "unsupported_operation",
           operation: "harness_switch",
           capability: "session_harness",
-          harness: "pi",
-          transport: "pi",
+          // The fixture's session runs on the embedded OpenCode harness
+          // (`installMockRuntime`'s default), so the rejection names it.
+          harness: "opencode",
+          transport: "opencode",
           reason: "harness_switch_not_supported",
-          message: "pi sessions cannot switch to claude through session config patch",
+          message: "opencode sessions cannot switch to claude through session config patch",
         },
       },
     })
@@ -700,6 +708,11 @@ test.describe("core model, effort/variant, and agent controls @core", () => {
     const dialog = page.locator('[data-slot="dialog-container"]')
     await expect(dialog).toBeVisible({ timeout: 10_000 })
     await page.getByRole("tab", { name: "Models" }).click()
+    // Settings reads under an explicit (workspace, harness); nothing is
+    // remembered for a draft that never switched, so choose OpenCode — the
+    // harness the composer's draft is on.
+    await page.locator('[data-action="settings-scope-harness"]').click()
+    await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22opencode%22%7D"]').click()
 
     const toggle = page.getByRole("switch", { name: "Haiku 3 (legacy)" })
     await expect(toggle).toBeVisible({ timeout: 10_000 })

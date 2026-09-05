@@ -179,15 +179,19 @@ function useDirectorySearch(args: {
   }
 
   const scoped = (value: string) => {
+    const raw = normalizeDriveRoot(value)
+    // A root-anchored path names its own scope: it must not wait on the home
+    // lookup (`start`), which can still be in flight when the user has already
+    // typed an absolute path — that used to answer "No folders found" with no
+    // request made.
+    const root = rootOf(raw)
+    if (root) return { directory: trimTrailing(root), path: raw.slice(root.length) }
     const base = args.start()
     if (!base) return
-    const raw = normalizeDriveRoot(value)
     if (!raw) return { directory: trimTrailing(base), path: "" }
     const home = args.home()
     if (raw === "~") return { directory: trimTrailing(home || base), path: "" }
     if (raw.startsWith("~/")) return { directory: trimTrailing(home || base), path: raw.slice(2) }
-    const root = rootOf(raw)
-    if (root) return { directory: trimTrailing(root), path: raw.slice(root.length) }
     return { directory: trimTrailing(base), path: raw }
   }
 

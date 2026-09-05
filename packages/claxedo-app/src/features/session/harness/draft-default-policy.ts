@@ -1,6 +1,7 @@
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/platform/identity/harness-selection"
+import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 
 export type DraftDefaultPair = {
   readonly harness: HarnessType
@@ -60,7 +61,7 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
       source: "saved",
     }
   }
-  if (input.saved.harness.kind === "native" && input.saved.harness.harnessId === "pi") {
+  if (input.saved.harness.kind === "native" && isCatalogHarnessId(input.saved.harness.harnessId)) {
     const defaults = [...new Set(input.connectedProviderIDs ?? [])]
       .map((providerID) => {
         const modelID = input.providerDefaults?.[providerID]
@@ -78,7 +79,7 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
     }
   }
   if (
-    !(input.saved.harness.kind === "native" && input.saved.harness.harnessId === "pi") &&
+    !(input.saved.harness.kind === "native" && isCatalogHarnessId(input.saved.harness.harnessId)) &&
     eligible(input.eligibleModels, input.declaredDefaultModel)
   ) {
     return {

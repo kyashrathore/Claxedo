@@ -92,10 +92,10 @@ export const SESSION_CONFIG_PATCH_FIELDS = {
         return `harness must be an object, got ${typeOf(value)}`
       }
       const harness = value as Record<string, unknown>
-      // `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts:108-123)
-      // accepts EITHER `id` or the legacy `type` alias (:116) and resolves the
-      // canonical open-ACP presentation "acp:claude" -> { id: "claude", access: "acp" },
-      // plus the native legacy strings ("claude-sdk", "codex-app-server", "cursor-sdk").
+      // `normalizeHarnessIdentity` (agent-sdk-runtime/src/harness-types.ts)
+      // accepts a native id, or `{ id: <connection id>, access: "connection" }`
+      // for an operator connection (`claude-acp`); the retired `type` alias and
+      // the colon-form `acp:<slug>` presentation resolve to nothing.
       // With neither, it returns undefined, `normalizeSessionHarness` returns undefined
       // (session-config.ts:26-27), and the whole `harness` key is dropped from the
       // update object (session-config.ts:91) — a silent no-op, not an error.

@@ -13,7 +13,7 @@ import {
   enableShippedCompileCaches,
   parseCompileCacheManifest,
   seedShippedCompileCaches,
-} from "./claxedo-compile-cache"
+} from "./compile-cache"
 
 /**
  * The end-to-end proof that the seeded cache is actually READ lives in

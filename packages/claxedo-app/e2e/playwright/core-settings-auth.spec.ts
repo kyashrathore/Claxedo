@@ -1508,6 +1508,11 @@ test.describe("core settings + auth @core", () => {
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "models")
+      // Settings reads under an explicit (workspace, harness); a workspace with
+      // nothing remembered selects no harness and requests no catalog until one
+      // is chosen (settings-scope.tsx, providers.vitest.tsx). Choose OpenCode.
+      await page.locator('[data-action="settings-scope-harness"]').click()
+      await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22opencode%22%7D"]').click()
 
       const modelsPanel = page.locator('[data-slot="tabs-content"]:not([hidden])')
       await expect(modelsPanel.getByText("OpenCode Zen")).toBeVisible({ timeout: 15_000 })

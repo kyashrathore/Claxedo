@@ -17,6 +17,7 @@ import { useSDK } from "@/app/providers/sdk/sdk"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { LocalProvider } from "@/features/session/providers/session-selection"
 import { ModelsProvider } from "@/features/session/providers/models"
+import { modelStoreWorkspaceKey } from "@/platform/identity/workspace-address"
 import { harnessSelectionKey, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { TerminalProvider } from "@/features/terminal/providers/provider"
@@ -157,7 +158,10 @@ function DirectoryDataProvider(props: ParentProps<{
   // The persisted model store belongs to this pane's (server, workspace) and
   // keys its maps by harness — the pane's own harness id, the same one Settings
   // names when it edits the store for this workspace.
-  const modelsWorkspaceKey = createMemo(() => sdk.workspace(props.directory)?.workspaceId || props.directory)
+  const modelsWorkspaceKey = createMemo(() => {
+    const workspace = sdk.workspace(props.directory)
+    return modelStoreWorkspaceKey({ kind: workspace?.kind, workspaceId: workspace?.workspaceId, hostDirectory: props.directory })
+  })
   const modelsSelection = createMemo(() => props.harnessSelection?.() ?? props.sessionRef?.()?.harness)
   const modelsHarness = createMemo(() => {
     const selection = modelsSelection()

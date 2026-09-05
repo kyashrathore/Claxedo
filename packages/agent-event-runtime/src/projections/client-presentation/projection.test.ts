@@ -15,7 +15,7 @@ function makeProjection() {
   })
 }
 
-describe("createOpencodeCompatProjection", () => {
+describe("createClientPresentationProjection", () => {
   test("preserves authoritative central identity on session-info compatibility events", () => {
     expect(makeProjection().ingest({
       type: "session-info",
@@ -191,7 +191,7 @@ describe("createOpencodeCompatProjection", () => {
       type: "runtime.diagnostic",
       properties: {
         sessionID: "session-1",
-        projection: "opencode-compat",
+        projection: "client-presentation",
         code: "projection.opencode_compat.reply_id_outside_turn_convention",
         severity: "error",
         raw: "msg_engine_named_this",

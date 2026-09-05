@@ -12,6 +12,13 @@
     "directory": "packages/claxedo-local-server"
   },
   "exports": {
+    "./agent-plugins/local-composition": {
+      "types": "./src/agent-plugins/local-composition.ts",
+      "bun": "./src/agent-plugins/local-composition.ts",
+      "development": "./src/agent-plugins/local-composition.ts",
+      "import": "./src/agent-plugins/local-composition.ts",
+      "default": "./src/agent-plugins/local-composition.ts"
+    },
     "./self-hosted-execution": {
       "types": "./src/self-hosted-execution.ts",
       "bun": "./src/self-hosted-execution.ts",

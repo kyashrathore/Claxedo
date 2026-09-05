@@ -135,10 +135,11 @@ export function createBetterAuthBrowserAdapter(
   }
 
   const signIn = async (options?: BrowserAuthSignInOptions) => {
-    if (!client && (testBrowserAuth().token || testBrowserAuth().user)) {
-      recordBrowserAuthTestSignIn(options?.redirectUrl)
-      return
-    }
+    // The e2e seam records every invocation with the redirect it was given,
+    // whether or not this deployment can sign anyone in: a lane that disables
+    // the bypass still proves the click reached sign-in.
+    recordBrowserAuthTestSignIn(options?.redirectUrl)
+    if (!client && (testBrowserAuth().token || testBrowserAuth().user)) return
     // The deployment has no sign-in flow, or its startup could not reach one.
     // Say which, rather than posting credentials at a client that is not there.
     const reason = unavailable()
