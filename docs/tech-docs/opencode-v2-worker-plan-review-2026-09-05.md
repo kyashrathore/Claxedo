@@ -85,7 +85,7 @@ Even between compatible v2 hosts, `SessionTransfer.export()` exports session inf
 
 **Required change:** pin a compatible v2 sandbox target for v2 promotion, or explicitly defer promotion. Treat OpenCode-to-Pi continuation as a separate conversion/new-session feature unless a real format contract exists. Keep each transport until its actual callers migrate. Add idle/fenced staging, target validation, parent-graph handling, idempotent import reconciliation, app/native identity mapping and one authoritative placement cutover.
 
-Evidence: pinned core `dist/session/transfer.js`; repository [core version](../../packages/core/package.json), [v1 adapter callers](../../packages/agent-sdk-runtime/src/harnesses/opencode/index.ts).
+Evidence: pinned core `dist/session/transfer.js`; the pinned `@opencode-ai/sdk` version in `packages/workspace-runtime/package.json`, and the retired v1 adapter callers (the SDK harness is now `packages/workspace-runtime/src/opencode/harness-adapter.ts`).
 
 ### R7 — P1: tenant keying is a data and authorization decision, not a later key rename
 

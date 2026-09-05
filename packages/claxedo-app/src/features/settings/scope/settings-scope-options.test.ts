@@ -27,7 +27,10 @@ const catalog: CatalogProject[] = [
 ]
 
 describe("settingsWorkspaceOptions", () => {
-  test("one row per catalog workspace, addressed by the scope a pane would use", () => {
+  // The key is the model document's workspace half (`modelStoreWorkspaceKey`):
+  // a local workspace is its directory even when the inventory gives it an id,
+  // because that is what a pane on that directory keys its model store by.
+  test("one row per catalog workspace, keyed the way a pane's model store keys it", () => {
     expect(settingsWorkspaceOptions(catalog).map((option) => ({
       key: option.key,
       scope: option.scope,
@@ -35,7 +38,7 @@ describe("settingsWorkspaceOptions", () => {
       label: option.label,
       project: option.project,
     }))).toEqual([
-      { key: "ws_local", scope: "workspace:ws_local", kind: "local", label: "main", project: "acme/app" },
+      { key: "/repo", scope: "workspace:ws_local", kind: "local", label: "main", project: "acme/app" },
       { key: "ws_cloud", scope: "workspace:ws_cloud", kind: "cloud", label: "sandbox", project: "acme/api" },
       { key: "/other", scope: "/other", kind: "local", label: "/other", project: "/other" },
     ])
@@ -69,7 +72,7 @@ describe("defaultSettingsWorkspace", () => {
   test("without a focus, a local workspace is chosen before anything remote", () => {
     const cloudFirst = settingsWorkspaceOptions([catalog[1]!, catalog[0]!])
     expect(cloudFirst[0]!.key).toBe("ws_cloud")
-    expect(defaultSettingsWorkspace(cloudFirst)?.key).toBe("ws_local")
+    expect(defaultSettingsWorkspace(cloudFirst)?.key).toBe("/repo")
   })
 
   test("with no local workspace, the first catalog row is chosen", () => {
@@ -90,6 +93,6 @@ describe("resolveSettingsWorkspace", () => {
   })
 
   test("a selection the catalog no longer carries falls back to a present row, never to nothing", () => {
-    expect(resolveSettingsWorkspace({ options, selected: "ws_gone" })?.key).toBe("ws_local")
+    expect(resolveSettingsWorkspace({ options, selected: "ws_gone" })?.key).toBe("/repo")
   })
 })

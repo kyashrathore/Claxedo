@@ -49,7 +49,7 @@ import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
 import { markShellRevealed, shellRevealedOnce } from "@/app/shell-revealed"
 import { useConfigOptional } from "@/app/providers/config"
-import { centralTransportForDeployment } from "@/platform/runtime/transport"
+import { centralTransportForDeployment, centralTransportForServer } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
 import { AccountPortProvider, useAccountPort } from "@/platform/account/account-provider"
@@ -375,8 +375,16 @@ function CloudAuthGate(props: ParentProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const authEnabled = () => config?.authEnabled === true
-  const needsSignedAuth = () =>
-    centralTransportForDeployment({ serverUrl: server.url, authEnabled: authEnabled() }) !== "loopback"
+  const needsSignedAuth = () => {
+    if (centralTransportForDeployment({ serverUrl: server.url, authEnabled: authEnabled() }) === "loopback") return false
+    // An auth-enabled build against this machine's own server is signed web
+    // only when that server advertises an identity provider (the self-hosted
+    // embedded issuer publishes a descriptor). A loopback server that settled
+    // without one has no sign-in to complete: the visitor is the machine's
+    // user, and sending them to `/login` would gate the shell behind nothing.
+    if (centralTransportForServer(server.url) === "loopback" && session.status() === "anonymous" && session.descriptor() === null) return false
+    return true
+  }
   const canRender = () => !needsSignedAuth() || session.status() === "signed"
 
   createEffect(() => {

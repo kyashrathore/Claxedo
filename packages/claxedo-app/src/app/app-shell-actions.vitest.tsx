@@ -36,6 +36,9 @@ const registeredCommands = () =>
 
 describe("useAppShellActions", () => {
   test("registers project.open so the desktop menu and the new-session chip can reach handleNewProject", () => {
+    // The id `app-shell-actions.ts` registers (and `app/entry/desktop-menu.ts`
+    // declares); the composer-native create flow retired the chip module that
+    // used to export it as a constant.
     const open = registeredCommands().find((option) => option.id === "project.open")
 
     expect(open).toBeDefined()

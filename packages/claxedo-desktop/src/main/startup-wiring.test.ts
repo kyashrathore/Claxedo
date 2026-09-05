@@ -30,9 +30,14 @@ describe("desktop cold startup wiring", () => {
     expect(initialize).not.toContain("createMainWindow(globals, { deferLoad: true })")
   })
 
-  test("keeps first-run migrations on their progress-window path", () => {
-    expect(initialize).toContain("needsMigration ? createLoadingWindow(globals) : undefined")
-    expect(initialize).toContain("await loadingComplete.promise")
+  test("publishes the server URL only after the renderer origin is trusted", () => {
+    const trustOrigin = initialize.indexOf("trustMainRendererOrigin({")
+    const publish = initialize.indexOf("serverReady.resolve({ url: serverConnection.url, password: null })")
+    const stamp = initialize.indexOf('recordStartupClock("main-server-ready-published")')
+
+    expect(trustOrigin).toBeGreaterThan(-1)
+    expect(publish).toBeGreaterThan(trustOrigin)
+    expect(stamp).toBeGreaterThan(publish)
   })
 
   test("waits for the exact listener message and verifies health without polling", () => {

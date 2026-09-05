@@ -27,10 +27,10 @@ import { fileURLToPath } from "node:url"
 const repoFile = (relative: string) =>
   readFileSync(fileURLToPath(new URL(relative, import.meta.url)), "utf8")
 
-/** Every path `claxedo-local-server` answers the central bus on. */
+/** Every path `claxedo-local-server` answers the central bus on (`shell/routes.ts`). */
 function centralStreamPaths() {
-  const source = repoFile("../../../claxedo-local-server/src/opencode/compat-routes/index.ts")
-  const paths = [...source.matchAll(/\.get\("([^"]+)",\s*\(c\)\s*=>\s*streamGlobalEvents\(c\)\)/g)]
+  const source = repoFile("../../../claxedo-local-server/src/shell/routes.ts")
+  const paths = [...source.matchAll(/\.get\("([^"]+)",\s*\(c\)\s*=>\s*stream\(c\)\)/g)]
     .map((match) => match[1]!)
   return [...new Set(paths)]
 }

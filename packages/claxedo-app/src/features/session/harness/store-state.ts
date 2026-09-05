@@ -13,6 +13,7 @@ import { harnessMode, type HarnessReadiness } from "./selection"
 import { initialHarness } from "./store-policy"
 import type { DraftDefault } from "./draft-defaults"
 import type { DraftDefaultAuthority, DraftDefaultResult } from "./draft-default-policy"
+import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 
 export type HarnessStoreState = {
   harnessMode: "harness" | "unknown"
@@ -55,7 +56,7 @@ export function initialHarnessStoreState(input: {
     harnessMode: harnessMode(type),
     harness: type,
     selectedModel: type ? effectiveHarnessModel(type, "") : "",
-    selectedModelProvider: type?.kind === "native" ? type.harnessId : undefined,
+    selectedModelProvider: type?.kind === "native" && !isCatalogHarnessId(type.harnessId) ? type.harnessId : undefined,
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,
@@ -193,9 +194,18 @@ export function harnessHealthReadiness(input: {
 }
 
 function emptyOptionsPatch(type: HarnessType) {
+  // A catalog harness's model list is provider-backed, not harness-config-
+  // backed. A saved draft model may be resolved before this hydration patch
+  // lands, so it must not erase that canonical provider/model pair merely
+  // because it has no harness config-options endpoint.
+  const model = type.kind === "native" && isCatalogHarnessId(type.harnessId)
+    ? {}
+    : {
+        selectedModel: type.kind === "connection" ? "default" : "",
+        selectedModelProvider: undefined,
+      }
   return {
-    selectedModel: type.kind === "connection" ? "default" : "",
-    selectedModelProvider: undefined,
+    ...model,
     dynamicModels: type.kind === "connection" ? [] : null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,

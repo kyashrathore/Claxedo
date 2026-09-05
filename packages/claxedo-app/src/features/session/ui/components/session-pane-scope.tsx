@@ -55,9 +55,15 @@ export function SessionPaneScope(props: ParentProps<{
   const projects = createMemo(() => projectsQuery.data ?? [])
   const sessionId = createMemo(() => props.sessionRef?.()?.sessionId ?? props.sessionId?.())
   const harnessControllers = usePromptHarnessControllersOptional()
+  // A session ref names the harness when it carries one (a remote session's
+  // identity). A draft's local ref carries none, so the pane's own harness
+  // store — the same scope the composer's selector writes — is the authority
+  // there; reading only the ref left a draft's model store keyed by no harness.
   const harnessSelection = createMemo(() => {
     const ref = props.sessionRef?.()
-    return ref ? sessionHarness(ref) : harnessControllers.submit.harness(paneHarnessScope({
+    const fromRef = ref ? sessionHarness(ref) : undefined
+    if (fromRef) return fromRef
+    return harnessControllers.submit.harness(paneHarnessScope({
       directory: props.directory,
       sessionId: sessionId(),
       surfaceId: props.surfaceId?.(),

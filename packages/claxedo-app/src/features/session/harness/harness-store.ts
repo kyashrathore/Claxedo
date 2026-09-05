@@ -2,7 +2,7 @@ import { batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
-import { harnessHasConfigOptions, isNativeHarness, type HarnessType } from "./profile"
+import { harnessHasConfigOptions, isCatalogHarness, type HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/platform/identity/harness-selection"
 import {
   harnessDisplayName,
@@ -324,6 +324,6 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
 function canSelectDraftModel(state: HarnessStoreState, model: ModelKey) {
   if (!state.harness) return false
-  if (state.harness.kind === "connection") return true
+  if (isCatalogHarness(state.harness) || state.harness.kind === "connection") return true
   return model.providerID === state.harness.harnessId && !!state.dynamicModels?.some((item) => item.id === model.modelID)
 }

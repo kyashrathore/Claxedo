@@ -12,7 +12,7 @@ become one running product. Three roles, three directories:
 
 Everything else is a feature domain, flat at `src/` root — `documents/`,
 `billing/`, `channels/`, `session/`, `workspace/`, `credentials/`, `sandbox/`,
-`connections/`, `agent-config/`, `opencode/` — plus `authority/`, the
+`connections/`, `agent-config/` — plus `authority/`, the
 identity/authorization/tenancy layer.
 
 ## Vocabulary that is easy to get wrong

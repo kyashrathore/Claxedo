@@ -1,6 +1,7 @@
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { HarnessType } from "./profile"
 import { sameHarnessSelection } from "@/platform/identity/harness-selection"
+import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 
 export type DraftDefaultPair = {
   readonly harness: HarnessType
@@ -9,7 +10,7 @@ export type DraftDefaultPair = {
 
 export type DraftDefaultResult = DraftDefaultPair & {
   readonly state: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement"
-  readonly source: "saved" | "harness-default" | "placement-default"
+  readonly source: "saved" | "harness-default" | "catalog-provider-default" | "placement-default"
   readonly blockedModel?: ModelKey
 }
 
@@ -18,6 +19,8 @@ export type ResolveDraftDefaultInput = {
   readonly supportedHarnesses: readonly HarnessType[]
   readonly eligibleModels: readonly ModelKey[]
   readonly declaredDefaultModel?: ModelKey
+  readonly connectedProviderIDs?: readonly string[]
+  readonly providerDefaults?: Readonly<Record<string, string | undefined>>
   readonly placementDefault?: DraftDefaultPair
 }
 
@@ -58,7 +61,27 @@ export function resolveDraftDefault(input: ResolveDraftDefaultInput): DraftDefau
       source: "saved",
     }
   }
-  if (eligible(input.eligibleModels, input.declaredDefaultModel)) {
+  if (input.saved.harness.kind === "native" && isCatalogHarnessId(input.saved.harness.harnessId)) {
+    const defaults = [...new Set(input.connectedProviderIDs ?? [])]
+      .map((providerID) => {
+        const modelID = input.providerDefaults?.[providerID]
+        return modelID ? { providerID, modelID } : undefined
+      })
+      .filter((model): model is ModelKey => !!model)
+      .filter((model) => eligible(input.eligibleModels, model))
+    if (defaults.length === 1) {
+      return {
+        harness: input.saved.harness,
+        model: defaults[0],
+        state: "ready",
+        source: "catalog-provider-default",
+      }
+    }
+  }
+  if (
+    !(input.saved.harness.kind === "native" && isCatalogHarnessId(input.saved.harness.harnessId)) &&
+    eligible(input.eligibleModels, input.declaredDefaultModel)
+  ) {
     return {
       harness: input.saved.harness,
       model: input.declaredDefaultModel,

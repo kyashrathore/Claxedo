@@ -16,6 +16,16 @@
  * The signed `ws_*` id is what separates the two: a row that has one is
  * addressed by workspace, a row without one names a path on this machine.
  */
+/**
+ * The workspace half of a model document's key: a signed (cloud or
+ * user-hosted) workspace is its id, a local one is its host directory. A pane
+ * and the Settings Models page must derive it the same way or they edit two
+ * documents while believing they share one.
+ */
+export function modelStoreWorkspaceKey(input: { kind?: string; workspaceId?: string; hostDirectory: string }) {
+  return input.kind && input.kind !== "local" && input.workspaceId ? input.workspaceId : input.hostDirectory
+}
+
 export function sessionRowDirectory(input: {
   workspaceId: string | undefined
   /** The path the producing runtime reported — its OWN machine's, always. */

@@ -5,6 +5,7 @@ import {
   effectiveHarnessModel,
   harnessDisplayLabel,
   harnessSelectionId,
+  isCatalogHarness,
   isClientDefaultPlaceholder,
   type HarnessModelOption,
   type HarnessType,
@@ -78,7 +79,11 @@ export function harnessModelKeyForSubmit(state: HarnessSelectionState): ModelKey
   if (isClientDefaultPlaceholder(raw) && !state.dynamicModels?.some((item) => item.id === raw)) return undefined
   const match = harnessModels(state).find((item) => item.id === raw && (!state.selectedModelProvider || !item.providerID || item.providerID === state.selectedModelProvider))
   if (!match) return undefined
-  const providerID = state.selectedModelProvider ?? harnessSelectionId(state.harness)
+  // A catalog harness submits a provider/model pair from the catalog; a bare
+  // model id with no provider (a hydrated harness status) is not yet a key.
+  const providerID = isCatalogHarness(state.harness)
+    ? state.selectedModelProvider
+    : state.selectedModelProvider ?? harnessSelectionId(state.harness)
   if (!providerID) return undefined
   return {
     providerID,

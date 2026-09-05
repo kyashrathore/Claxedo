@@ -18,6 +18,7 @@ import {
   settingsModelCatalogProviders,
   visibleModelsForProvider,
 } from "./models-settings-logic"
+import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 
 type ModelItem = {
   id: string
@@ -242,7 +243,7 @@ export const SettingsModels: Component = () => {
             <p class="text-12-regular text-text-weak">{language.t("settings.models.description")}</p>
           </div>
           <SettingsScopeSelector />
-          <Show when={scope.harnessSelection() && scope.nativeHarness() !== "pi"}>
+          <Show when={scope.harnessSelection() && !isCatalogHarnessId(scope.nativeHarness())}>
             <p class="text-12-regular text-text-weak" data-component="providers-externally-managed">
               {language.t("settings.providers.externallyManaged", { harness: harnessLabel() })}
             </p>

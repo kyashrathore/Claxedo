@@ -139,6 +139,10 @@ export function PromptToolbarControls(props: {
               active={props.active()}
               triggerStyle={props.controlStyle()}
               sessionLocked={props.sessionLocked()}
+              providerModel={props.model}
+              providerVariants={props.variants}
+              providerVariant={props.currentVariant}
+              onProviderVariantSelect={props.onVariantSelect}
             />
           )}
         </Show>

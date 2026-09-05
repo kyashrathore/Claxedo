@@ -8,6 +8,7 @@ import { providerErrorDetail, providerUsageLimitDetail } from "./provider-error-
 import type { HarnessSelectionSnapshot } from "@/features/session/harness/controller"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
+import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 
 export type SessionErrorClass = "credential" | "harness" | "model" | "usage_limit" | "workspace" | "session" | "unknown"
 export type FirstTurnMessage =
@@ -20,11 +21,14 @@ export function nextHarnessRecoveryModel(
   const current = selection.selectedModelKey
   const next = selection.models.find((model) => {
     if (model.id !== current?.modelID) return true
-    return selection.harness?.kind === "connection" && !!model.providerID && model.providerID !== current.providerID
+    if (selection.harness?.kind === "connection") return !!model.providerID && model.providerID !== current.providerID
+    return selection.harness?.kind === "native" && isCatalogHarnessId(selection.harness.harnessId) && model.providerID !== current.providerID
   })
   if (!next) return
   const providerID = selection.harness?.kind === "connection"
     ? next.providerID ?? harnessSelectionValue(selection.harness)
+    : selection.harness?.kind === "native" && isCatalogHarnessId(selection.harness.harnessId)
+    ? next.providerID
     : selection.harness ? harnessSelectionValue(selection.harness) : undefined
   if (!providerID) return
   return { providerID, modelID: next.id }

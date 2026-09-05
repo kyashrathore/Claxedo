@@ -40,6 +40,8 @@ import {
 import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { workspaceSessionRoute } from "@/platform/identity/route"
+import { validWorktree } from "@/platform/sync/worktree"
+import { showToast } from "@opencode-ai/ui/toast"
 import { workspaceRouteId } from "@/platform/identity/workspace-route"
 import type { NewSessionBranchChoice, NewSessionBranchState } from "./session-new-branch-source"
 
@@ -335,8 +337,19 @@ export function NewSessionDesignView(props: {
                 })
               }
               onCreated={(project) => {
+                // A checkout the app cannot open as a local worktree (the
+                // cloud container's own `/workspace`, a root, a relative
+                // path) is refused here, where the create lands: the panel
+                // stays open so the user can pick again, and nothing opens.
+                if (project.checkoutDirectory && !validWorktree(project.checkoutDirectory)) {
+                  showToast({ title: "Invalid project path", description: project.checkoutDirectory, variant: "error" })
+                  return
+                }
                 close()
                 if (project.checkoutDirectory) void openCreatedProject(project.checkoutDirectory)
+                // A repository project with no checkout yet (a hosted plane)
+                // executes nothing at creation; it only has to list here.
+                else void projectsQuery.refetch()
               }}
               onCancel={back}
             />

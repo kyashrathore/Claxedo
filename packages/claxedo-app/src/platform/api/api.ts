@@ -278,13 +278,30 @@ function apiFetchDebugEnabled(route: string) {
  * — while the relay was up, the host tunnel was connected, and the laptop was
  * answering every request that actually reached it.
  *
- * So the cookie goes to the control plane and to loopback, and nowhere else.
- * Other origins keep whatever the caller asked for, which defaults to
- * `same-origin`.
+ * So the cookie goes to the control plane, and nowhere else. Other origins
+ * keep whatever the caller asked for, which defaults to `same-origin`.
+ *
+ * A loopback control plane is the one more case: the local daemon and the
+ * self-hosted Node entry authenticate locally and their CORS deliberately
+ * never grants a credentialed cross-origin read (no
+ * `Access-Control-Allow-Credentials`). The cookie therefore rides a loopback
+ * request only when the page is served from that same origin (the dev TLS
+ * proxy in front of a signed self-host); from any other origin an `include`
+ * fetch is refused by the browser before it leaves — the rule `bootstrapData`
+ * already applies to the bootstrap read.
  */
+function sameOriginAsPage(url: string) {
+  if (typeof window === "undefined") return false
+  try {
+    return new URL(url, window.location.origin).origin === window.location.origin
+  } catch {
+    return false
+  }
+}
+
 function credentialsFor(url: string, requested: RequestCredentials | undefined): RequestCredentials | undefined {
   if (!cfg.browserCredentials) return requested
-  if (localUrl(url)) return cfg.browserCredentials
+  if (localUrl(url)) return sameOriginAsPage(url) ? cfg.browserCredentials : "omit"
   try {
     const target = new URL(url, typeof window === "undefined" ? undefined : window.location.origin)
     // `getClaxedoServerUrl()`, NOT the page's own origin. On a hosted

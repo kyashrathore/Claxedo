@@ -441,7 +441,7 @@ unbound by design and bound per request. `Config.layer`
 (upstream `core/src/config.ts:101`) requires `Location.Service`, which is why
 config, agents, providers and prompting share one failure: they all resolve a
 location. `createEmbeddedRoutes` includes `LocationServiceMap.node` on the same
-service set as `createRoutes` (`packages/server/src/routes.ts:89`), so the
+service set as `createRoutes` (upstream `server/src/routes.ts:89`), so the
 binding machinery is present — it is the binding or its error surface that
 misbehaves, not its absence.
 
@@ -750,7 +750,7 @@ import — most of Unit 6's semantic validation list.
 
 Confirmed by search: the fork has **no** session transfer surface. There is no
 `transfer.ts` under upstream `core/src/session/`, no export/import in the
-fork's own V2 gen client, no export route in `packages/server/src`, and no
+fork's own V2 gen client, no export route in the upstream server package, and no
 `SessionTransfer` symbol anywhere in `packages/`.
 
 The only exporter is upstream `opencode/src/cli/cmd/export.ts` — a **CLI

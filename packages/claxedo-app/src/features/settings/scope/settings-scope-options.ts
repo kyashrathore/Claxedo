@@ -7,7 +7,7 @@
  * pickable rows, and choosing which row a freshly opened dialog starts on.
  */
 
-import { sessionRowDirectory } from "@/platform/identity/workspace-address"
+import { sessionRowDirectory, modelStoreWorkspaceKey } from "@/platform/identity/workspace-address"
 
 
 /** A workspace row as the catalog carries it inside a project. */
@@ -73,7 +73,9 @@ export function settingsWorkspaceOptions(projects: readonly CatalogProject[]): S
       const workspaceId = workspace.workspaceId ?? workspace.id
       const directory = workspace.directory ?? ref
       return {
-        key: workspaceId ?? directory,
+        // The model document's key — the same rule a pane on this workspace
+        // applies, so Settings edits the document the composer reads.
+        key: modelStoreWorkspaceKey({ kind: workspace.kind ?? "local", workspaceId, hostDirectory: directory }),
         scope: sessionRowDirectory({ workspaceId, hostDirectory: directory }),
         ...(workspaceId ? { workspaceId } : {}),
         kind: workspace.kind ?? "local",

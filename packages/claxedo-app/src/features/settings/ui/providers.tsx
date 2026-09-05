@@ -13,6 +13,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { claxedoCredentialRequest } from "@/platform/api/credential-request"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 import { queryClient } from "@/platform/query/query-client"
+import { hasManagedProviderCredentials } from "@/platform/identity/harness-selection"
 import {
   canDisconnectProvider,
   disconnectProvider,
@@ -174,13 +175,13 @@ export const SettingsProviders: Component = () => {
             )}
           </Show>
 
-          <Show when={scope.harnessSelection() && scope.nativeHarness() !== "pi"}>
+          <Show when={scope.harnessSelection() && !hasManagedProviderCredentials(scope.nativeHarness())}>
             <p class="text-12-regular text-text-weak" data-component="providers-externally-managed">
               {language.t("settings.providers.externallyManaged", { harness: harnessLabel() })}
             </p>
           </Show>
 
-          <Show when={scope.nativeHarness() === "pi" && !providers.error() && !providers.loading() && providerItems().length === 0}>
+          <Show when={hasManagedProviderCredentials(scope.nativeHarness()) && !providers.error() && !providers.loading() && providerItems().length === 0}>
             <p class="text-12-regular text-text-weak" data-component="providers-catalog-empty">
               {language.t("settings.providers.catalog.empty", {
                 harness: harnessLabel(),

@@ -538,7 +538,7 @@ function opacityOf(locator: ReturnType<Page["locator"]>) {
 
 test.describe("core sidebar tree @core", () => {
   test("project-header disclosure caret toggles collapse only, never navigates — behavior 2", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "root" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -568,7 +568,7 @@ test.describe("core sidebar tree @core", () => {
     // project-header body click on a bare draft route no longer treats the draft
     // as a reusable session and navigates to the malformed `/s/new`. It routes
     // to `workspaceSessionRoute(workspaceId)` (`/w/<workspaceId>/session`).
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "primary" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -588,7 +588,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("workspace-header disclosure caret toggles collapse only, never navigates — behavior 1", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "ws" }) })
     await seedProject(page, { dir: DIR, view: { group: "workspace" } })
     await openTree(page, DIR)
@@ -644,7 +644,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("hover reveals header actions and the session-row archive button — behavior 3", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "hover" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -679,7 +679,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("status dot: idle has no dot — behavior 4 (partial)", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "status" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -715,7 +715,7 @@ test.describe("core sidebar tree @core", () => {
     // below therefore keep the mock honest rather than papering over a live
     // race here; where the map IS decisive is the reload scenario in the next
     // test, which has no SSE frame to lean on at all.
-    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    const mock = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "live" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -791,7 +791,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("clicking a session row activates it; a rapid second click resolves onto the last row — behavior 5", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "race" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -816,7 +816,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("load more paginates in pages of 5, appending without duplicates — behavior 6", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(7, { prefix: "page" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -843,7 +843,7 @@ test.describe("core sidebar tree @core", () => {
     // server reports no further pages — instead of keeping the stale first-page
     // cursor. So once the final page loads, `nextCursor` clears, `more()` goes
     // falsy, the "Load more" button disappears and `doneLoaded()` fires.
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(7, { prefix: "done" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -864,7 +864,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("view options: Group by restructures the tree; Archived radio changes the fetched set — behavior 7", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "viewopt" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -891,7 +891,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("account footer exposes utilities and restores focus across nested panels — behavior 16", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "account" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -929,7 +929,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("view state persists to localStorage across reload; malformed JSON falls back to defaults — behavior 8", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "persist" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -950,7 +950,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("malformed view JSON is caught and replaced by defaults, not a broken tree — behavior 8", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "malformed" }) })
     await seedProject(page, { dir: DIR, view: "malformed" })
     await openTree(page, DIR)
@@ -961,7 +961,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("loading/error/empty notices render with stable testids; Retry re-fires the query — behavior 9", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: [] })
     await seedProject(page, { dir: DIR })
 
@@ -991,7 +991,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("archive hover button removes the row; a failed archive is a silent no-op — behavior 10", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "archive" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -1025,7 +1025,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("archiving the only active session leaves its URL for the project root — behavior 10", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     const fixtures = await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "only-archive" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -1135,7 +1135,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("sidebar-toggle button un-docks the rail (docked state flips) — behavior 13 (partial)", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "toggle" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -1152,7 +1152,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("sidebar-toggle collapses/expands the rail's width — behavior 13", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "width" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -1182,7 +1182,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("hot-zone peek expands an unpinned collapsed sidebar; leaving the rail auto-collapses it — behavior 11", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "peek" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -1211,7 +1211,7 @@ test.describe("core sidebar tree @core", () => {
   })
 
   test("drag-resizing the sidebar handle changes width live and persists across reload — behavior 12", async ({ page }) => {
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(1, { prefix: "drag" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)
@@ -1243,7 +1243,7 @@ test.describe("core sidebar tree @core", () => {
     // a session pick (the session's own navigation is owned by activateSession,
     // so the shell wrapper only dismisses the drawer — it never re-navigates).
     await page.setViewportSize({ width: 390, height: 844 })
-    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, projectName: "sidebar-tree" })
+    await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID, projectId: PROJECT_ID, workspaceId: PROJECT_ID, projectName: "sidebar-tree" })
     await installSessionTreeFixtures(page, { dir: DIR, projectId: PROJECT_ID, sessions: makeSessions(2, { prefix: "drawer" }) })
     await seedProject(page, { dir: DIR })
     await openTree(page, DIR)

@@ -101,7 +101,13 @@ export const serverSelfHosted: Policy = {
     ],
     packageExports: [{
       packageDir: "packages/claxedo-local-server",
-      exports: ["./self-hosted-execution"],
+      exports: [
+        "./self-hosted-execution",
+        // `deployments/self-hosted-node/start.ts` mounts the local Agent
+        // Plugins module behind CLAXEDO_AGENT_PLUGINS=1, the same composition
+        // the desktop server entry uses.
+        "./agent-plugins/local-composition",
+      ],
     }],
     native: ["better-sqlite3", "node-pty"],
     commands: [

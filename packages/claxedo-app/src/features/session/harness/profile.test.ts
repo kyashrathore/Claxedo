@@ -51,7 +51,7 @@ describe("harness profile", () => {
   })
 
   test("covers exactly the native display names without vendor-specific connection aliases", () => {
-    expect(HARNESS_DISPLAY_NAMES).toEqual({ claude: "Claude", codex: "Codex", cursor: "Cursor", pi: "Pi" })
+    expect(HARNESS_DISPLAY_NAMES).toEqual({ claude: "Claude", codex: "Codex", cursor: "Cursor", pi: "Pi", opencode: "OpenCode" })
     expect(harnessDisplayLabel("my-agent")).toBe("My Agent")
     expect(harnessDisplayLabel("acp:literal-id")).toBe("Acp:literal Id")
   })

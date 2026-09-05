@@ -3,6 +3,12 @@ import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
 import { createSignal, createMemo, For } from "solid-js"
 import type { HarnessSelection, SessionRef } from "@/platform/identity/session-ref"
 
+type CatalogProvider = {
+  id: string
+  name: string
+  models: Record<string, { id: string; name: string }>
+}
+
 const dialogState = vi.hoisted(() => ({
   show: vi.fn(),
 }))
@@ -38,11 +44,29 @@ let selectedModelProvider: string | undefined
 let configError: string | undefined
 let optionsStale = false
 let optionsLoading = false
+let catalogLoading = false
+let catalogError: string | undefined
+let catalogConnected: string[] = []
+let catalogProviders = new Map<string, CatalogProvider>()
+let catalogRefreshCalls = 0
+let catalogDefaults: Record<string, string> = {}
 let draftDefaultState: "ready" | "choose-model" | "saved-model-unavailable" | "unsupported-placement" | undefined = "ready"
 let draftDefaultLabels: { provider?: string; model?: string } | undefined
 let harnessMode = true
 
 vi.mock("@/features/session/app-ports", () => ({
+  useProviders: () => ({
+    resolved: () => true,
+    all: () => catalogProviders,
+    connected: () => catalogConnected.flatMap((id) => {
+      const provider = catalogProviders.get(id)
+      return provider ? [provider] : []
+    }),
+    loading: () => catalogLoading,
+    error: () => catalogError,
+    refresh: async () => { catalogRefreshCalls += 1 },
+    default: () => catalogDefaults,
+  }),
   openSettingsProviders,
 }))
 
@@ -217,6 +241,12 @@ beforeEach(() => {
   configError = undefined
   optionsStale = false
   optionsLoading = false
+  catalogLoading = false
+  catalogError = undefined
+  catalogConnected = []
+  catalogProviders = new Map()
+  catalogRefreshCalls = 0
+  catalogDefaults = {}
   draftDefaultState = "ready"
   draftDefaultLabels = undefined
   dialogState.show.mockClear()
@@ -382,6 +412,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Codex")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Cursor")
     expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("Pi")
+    expect(container.querySelector("[data-testid='select-group-Native SDK']")?.textContent).toContain("OpenCode")
     expect(container.querySelector("[data-testid='select-option-opencode']")).not.toBeNull()
     expect(container.querySelector("[data-testid='select-group-Connections']")).toBeNull()
     expect(container.querySelector("[data-testid='select-option-claude-acp']")).toBeNull()
@@ -748,4 +779,115 @@ describe("AgentHarnessSelector — native Pi models", () => {
     expect(noticeRow(failed.container)?.textContent).toContain("Pi process unavailable")
     expect(failed.getByRole("button", { name: "Retry loading harness models" })).toBeTruthy()
   })
+})
+
+describe("AgentHarnessSelector — OpenCode provider catalog", () => {
+  test("applies provider visibility preferences to the authoritative OpenCode catalog", () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    catalogConnected = ["pi"]
+    catalogProviders.set("pi", {
+      id: "pi",
+      name: "OpenCode",
+      models: {
+        virtual: { id: "virtual", name: "Virtual" },
+        legacy: { id: "legacy", name: "Legacy" },
+      },
+    })
+
+    const { container } = render(() => (
+      <TestAgentHarnessSelector
+        providerModel={() => ({
+          list: () => [],
+          current: () => undefined,
+          visible: ({ modelID }) => modelID !== "legacy",
+          set: () => undefined,
+        })}
+      />
+    ))
+
+    expect(container.querySelector("[data-testid='model-option-virtual']")).not.toBeNull()
+    expect(container.querySelector("[data-testid='model-option-legacy']")).toBeNull()
+  })
+
+  test("evaluates OpenCode visibility against the OpenCode-scoped provider defaults", () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    catalogConnected = ["pi"]
+    catalogDefaults = { pi: "virtual" }
+    catalogProviders.set("pi", {
+      id: "pi",
+      name: "OpenCode",
+      models: { virtual: { id: "virtual", name: "Virtual" } },
+    })
+    const visible = vi.fn((_model, defaults?: Record<string, string>) => defaults?.pi === "virtual")
+
+    const { container } = render(() => (
+      <TestAgentHarnessSelector
+        providerModel={() => ({
+          list: () => [],
+          current: () => undefined,
+          visible,
+          set: () => undefined,
+        })}
+      />
+    ))
+
+    expect(container.querySelector("[data-testid='model-option-virtual']")).not.toBeNull()
+    expect(visible).toHaveBeenCalledWith(
+      { providerID: "pi", modelID: "virtual" },
+      { pi: "virtual" },
+    )
+  })
+
+  test("projects the selected OpenCode model into the provider catalog used by submit", async () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    selectedModel = "virtual"
+    selectedModelProvider = "pi"
+    catalogConnected = ["pi"]
+    catalogProviders.set("pi", {
+      id: "pi",
+      name: "OpenCode",
+      models: { virtual: { id: "virtual", name: "Virtual" } },
+    })
+    const setProviderModel = vi.fn()
+
+    render(() => (
+      <TestAgentHarnessSelector
+        providerModel={() => ({
+          // A remote workspace's directory-scoped picker list can still be
+          // empty; the explicit OpenCode catalog above remains authoritative.
+          list: () => [],
+          current: () => undefined,
+          visible: () => true,
+          set: setProviderModel,
+        })}
+      />
+    ))
+
+    await waitFor(() => expect(setProviderModel).toHaveBeenCalledWith(
+      { providerID: "pi", modelID: "virtual" },
+      { recent: false },
+    ))
+  })
+
+  test("resolves an unresolved OpenCode workspace default from connected provider models", async () => {
+    harnessType = { kind: "native", harnessId: "opencode" }
+    draftDefaultState = undefined
+    catalogConnected = ["openai-codex"]
+    catalogDefaults = { "openai-codex": "gpt-5.5" }
+    catalogProviders.set("openai-codex", {
+      id: "openai-codex",
+      name: "OpenAI Codex",
+      models: { "gpt-5.5": { id: "gpt-5.5", name: "GPT-5.5" } },
+    })
+
+    render(() => <TestAgentHarnessSelector directory="/repo" sessionId="new" />)
+
+    await waitFor(() => expect(resolveDefaultCalls).toContainEqual({
+      supportedHarnesses: expect.arrayContaining([{ kind: "native", harnessId: "opencode" }]),
+      eligibleModels: [{ providerID: "openai-codex", modelID: "gpt-5.5" }],
+      connectedProviderIDs: ["openai-codex"],
+      providerDefaults: { "openai-codex": "gpt-5.5" },
+    }))
+  })
+
 })

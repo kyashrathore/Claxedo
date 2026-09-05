@@ -1,5 +1,22 @@
 export const NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 
+/**
+ * Native harnesses whose models come from the control plane's provider catalog
+ * (`/api/claxedo/agent-config/providers?nativeHarness=<id>`) rather than from
+ * harness config options. The embedded OpenCode SDK uses this catalog; native
+ * Pi reports its own models through RPC config options.
+ */
+export const CATALOG_HARNESS_IDS = ["opencode"] as const
+
+export function isCatalogHarnessId(id: string | undefined): id is (typeof CATALOG_HARNESS_IDS)[number] {
+  return (CATALOG_HARNESS_IDS as readonly string[]).includes(id ?? "")
+}
+
+/** Registry credentials can be managed without owning the harness's runtime model list. */
+export function hasManagedProviderCredentials(id: string | undefined) {
+  return id === "pi" || isCatalogHarnessId(id)
+}
+
 export type NativeHarnessId = (typeof NATIVE_HARNESS_IDS)[number]
 
 export type HarnessSelection =

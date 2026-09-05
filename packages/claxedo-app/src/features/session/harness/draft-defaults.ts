@@ -2,6 +2,7 @@ import type { ModelKey } from "@/features/session/composer/model-strategy"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import { Persist } from "@/platform/persistence/persist"
 import { harnessSelectionKey, isHarnessSelection, type HarnessSelection } from "@/platform/identity/harness-selection"
+import { isCatalogHarnessId } from "@/platform/identity/harness-selection"
 
 const VERSION = 3
 const KEY = "session.draft-default.v1"
@@ -146,7 +147,7 @@ function decodeChoice(input: unknown): DraftDefaultHarnessChoice | undefined {
 
 function modelBelongsToHarness(model: ModelKey | undefined, harness: HarnessSelection) {
   if (!model) return true
-  if (harness.kind === "connection") return true
+  if (harness.kind === "connection" || isCatalogHarnessId(harness.harnessId)) return true
   return model.providerID === harness.harnessId
 }
 

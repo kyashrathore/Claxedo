@@ -3,6 +3,7 @@ export const HARNESS_DISPLAY_NAMES: Record<string, string> = {
   codex: "Codex",
   cursor: "Cursor",
   pi: "Pi",
+  opencode: "OpenCode",
 }
 
 /**

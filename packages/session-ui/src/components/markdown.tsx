@@ -272,6 +272,23 @@ const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console",
  */
 let mermaidRenderer: ((source: string) => Promise<string>) | undefined
 let mermaidViewer: ((source: string) => void) | undefined
+/**
+ * Renders in flight, by source. A rich pass can replace a fenced block's
+ * wrapper while its first render is still pending (the SVG cache is only
+ * populated on completion), so the replacement wrapper joins the pending
+ * render instead of asking the renderer for the same diagram again.
+ */
+const mermaidInFlight = new Map<string, Promise<string>>()
+
+function renderMermaidSource(source: string): Promise<string> {
+  const pending = mermaidInFlight.get(source)
+  if (pending) return pending
+  const started = mermaidRenderer!(source).finally(() => {
+    if (mermaidInFlight.get(source) === started) mermaidInFlight.delete(source)
+  })
+  mermaidInFlight.set(source, started)
+  return started
+}
 let markdownTableViewer: ((table: HTMLTableElement) => void) | undefined
 
 export function setMermaidRenderer(fn: ((source: string) => Promise<string>) | undefined) {
@@ -413,7 +430,7 @@ function renderMermaidBlocks(root: HTMLElement) {
     wrapper.setAttribute("data-mermaid-source", source)
     traceMermaid("render", source)
     const renderStarted = rendererClock()
-    void mermaidRenderer(source)
+    void renderMermaidSource(source)
       .then((svg) => {
         traceMermaid("generate", source, renderStarted)
         // Guard against streaming: skip if the source changed while rendering.

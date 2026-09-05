@@ -52,10 +52,11 @@
  *     a standalone probe against this exact dev server (see HARNESS NOTES); this
  *     spec pins the observed runtime text since that is what the test must interact
  *     with, not the static source string. Either way, the copy and the action are
- *     deliberately mismatched: clicking it opens `DialogSelectDirectory`, which
- *     REGISTERS a project, not `DialogNewProject`'s Local/Cloud workspace picker (see
- *     BEHAVIOR 8 for why that dialog is currently unreachable from here despite the
- *     label suggesting otherwise).
+ *     deliberately mismatched: clicking it raises `layout.projects.requestCreate()`
+ *     and the mounted draft composer's Project chip opens its "Create project…"
+ *     panel (`ProjectCreateForm`, `[data-slot="project-create-form"]`: a name, then
+ *     a folder on this machine via "Select project" or a repository URL). There is
+ *     no New Project dialog (docs/plans/2026-09-05-003).
  *   `DialogSelectDirectory` (`src/components/dialog-select-directory.tsx`) — title
  *     defaults to `language.t("command.project.open")`, which the cloud-branding
  *     extension override (see HARNESS NOTES) renders as "New Project", not the
@@ -72,12 +73,12 @@
  *     fixing upstream, not a suite flake). This search
  *     drives a fuzzy recent-projects + live filesystem search; each result is a
  *     `button[data-slot="list-item"][data-key="<absolute path>"]`; selecting one calls
- *     `onSelect(absolute)` → `handleNewProject`'s `handleProjectSelected`
- *     (`claxedo-layout-actions/project-actions.tsx:96`): `!validWorktree(dir)` → toast
- *     "Invalid project path" (description = the rejected path) and returns before any
- *     network call; on `platform !== "web"` a failed `ensureLocalProject()` (not a git
- *     repo) → toast "Not a git repository"; otherwise the project opens and a new
- *     session draft is navigated to.
+ *     `onSelect(absolute)` → the form's folder (`[data-slot="project-create-folder"]`);
+ *     "Create project" → `POST /api/claxedo/projects` `{name, source: {kind:
+ *     "directory", directory}}`; the created checkout is refused by the composer's
+ *     `onCreated` when `!validWorktree(dir)` → toast "Invalid project path"
+ *     (description = the rejected path) with the panel left open; otherwise the
+ *     project opens and a new session draft is navigated to.
  *   rail account menu → "View options" submenu with a "Group by" radio (`Project` /
  *     `Workspace`). "Project" (default) renders one row per project
  *     (`[data-testid="project-header"]`, always the MAIN worktree). "Workspace" renders
@@ -326,7 +327,10 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
   await page.route("**/experimental/project", handleProjectList)
   await page.route("**/experimental/project?**", handleProjectList)
 
-  await page.route("**/health**", (r) => (api(r.request()) ? json(r, { healthy: true }) : r.continue()))
+  // The real local server's health document reports `localExecution: true`
+  // (`local-app.ts`), which is what lets the folder picker browse this
+  // machine (`useDirectorySearch`'s gate).
+  await page.route("**/health**", (r) => (api(r.request()) ? json(r, { healthy: true, localExecution: true }) : r.continue()))
   // `DialogSelectDirectory`'s search box (behavior 1) fires an initial empty-query
   // lookup against `/find/file` the instant it opens, before any typing — a
   // DIFFERENT endpoint from `/file` (which only the "contains a path segment"
@@ -559,6 +563,27 @@ test.describe("core workspace lifecycle @core", () => {
       return json(r, [{ name: "workspace", absolute: "/workspace", type: "directory" }])
     })
 
+    // The server accepts the folder (this Tier M mock stands in for a server whose
+    // filesystem has it); what is under test is the APP's refusal of a checkout it
+    // can never open as a local worktree.
+    const createBodies: unknown[] = []
+    await page.route("**/api/claxedo/projects**", (r) => {
+      if (!api(r.request())) return r.continue()
+      if (r.request().method() !== "POST") return r.fallback()
+      createBodies.push(r.request().postDataJSON?.() ?? undefined)
+      return json(r, {
+        project: {
+          id: "prj_blocked_workspace",
+          name: "workspace",
+          env: {},
+          directory: "/workspace",
+          repoUrl: null,
+          created_at: 1,
+          updated_at: 1,
+        },
+      }, 201)
+    })
+
     let createSessionCount = 0
     await page.route("**/session", async (r) => {
       if (!api(r.request())) return r.continue()
@@ -568,12 +593,17 @@ test.describe("core workspace lifecycle @core", () => {
 
     await openApp(page)
 
-    // Both this button's label AND the dialog's title render "New Project" — the
-    // `cloudStrings` extension override (src/i18n/cloud-strings.ts, see HARNESS
-    // NOTES) overrides `workspace.new` AND `command.project.open` to the SAME
-    // literal string, not the "New workspace"/"Open project" `src/i18n/en.ts`
-    // defines standalone.
+    // "New Project" is an intent, not a dialog: the rail button raises
+    // `layout.projects.requestCreate()` and the mounted draft composer's Project
+    // chip answers by opening its "Create project…" panel (the same
+    // `ProjectCreateForm` the empty canvas hosts).
     await page.getByRole("button", { name: "New Project", exact: true }).click()
+    const form = page.locator('[data-slot="project-create-form"]')
+    await expect(form).toBeVisible({ timeout: 10_000 })
+
+    // The folder source opens the server's directory browser — `DialogSelectDirectory`,
+    // still titled by `command.project.open` ("New Project", see HARNESS NOTES).
+    await form.getByRole("button", { name: "Select project" }).click()
     await expect(page.locator('[data-slot="dialog-title"]')).toHaveText("New Project")
 
     // NOT `[data-slot="list-search-input"]` — `TextField`
@@ -589,12 +619,21 @@ test.describe("core workspace lifecycle @core", () => {
     await expect(row.first()).toBeVisible({ timeout: 10_000 })
     await row.first().click()
 
+    // The picker hands the choice back to the form; nothing is created yet.
+    await expect(form.locator('[data-slot="project-create-folder"]')).toHaveText("/workspace")
+    expect(createBodies).toEqual([])
+
+    await form.getByRole("button", { name: "Create project" }).click()
+    await expect.poll(() => createBodies.length, { timeout: 10_000 }).toBe(1)
+    expect(createBodies[0]).toEqual({ name: "workspace", source: { kind: "directory", directory: "/workspace" } })
+
     await expect(toastTitle(page)).toHaveText("Invalid project path", { timeout: 10_000 })
     await expect(page.getByText("/workspace", { exact: true }).last()).toBeVisible()
 
-    // Dialog closed on the toast path? No — handleProjectSelected returns before
-    // calling dialog.close(); the picker stays open so the user can pick again. Prove
-    // no project was ever registered/session created as a result of the bad selection.
+    // Panel closed on the toast path? No — the composer refuses the checkout where the
+    // create lands and keeps its panel open so the user can pick again. Prove no
+    // session was ever created as a result of the bad selection.
+    await expect(form).toBeVisible()
     expect(createSessionCount).toBe(0)
   })
 

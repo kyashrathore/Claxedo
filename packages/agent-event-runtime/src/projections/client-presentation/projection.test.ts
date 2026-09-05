@@ -15,7 +15,7 @@ function makeProjection() {
   })
 }
 
-describe("createOpencodeCompatProjection", () => {
+describe("createClientPresentationProjection", () => {
   test("preserves authoritative workspace identity on session-info compatibility events", () => {
     expect(makeProjection().ingest({
       type: "session-info",

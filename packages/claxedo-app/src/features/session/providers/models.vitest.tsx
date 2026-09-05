@@ -71,7 +71,7 @@ function stored(workspaceKey: string) {
 }
 
 /** Mounts the store for one (workspace, harness) and hands the API to the test. */
-function mount(input: { workspaceKey: string; harness: () => string }) {
+function mount(input: { workspaceKey: string; harness: () => string; nativeHarness?: () => string | undefined }) {
   let api: ReturnType<typeof useModels> | undefined
   const Probe = () => {
     api = useModels()
@@ -82,7 +82,7 @@ function mount(input: { workspaceKey: string; harness: () => string }) {
       <ModelsProvider
         workspaceKey={() => input.workspaceKey}
         harness={input.harness}
-        nativeHarness={input.harness}
+        nativeHarness={input.nativeHarness ?? input.harness}
         serverUrl={() => SERVER}
       >
         <Probe />
@@ -197,9 +197,9 @@ describe("the model store is per (server, workspace, harness)", () => {
   test("the store reads the catalog of the harness it is shown for, not an OpenCode-only list", () => {
     const [harness, setHarness] = createSignal("opencode")
     mount({ workspaceKey: nextWorkspaceKey("ws"), harness })
-    setHarness("claude-sdk")
+    setHarness("claude")
 
-    expect(state.requests.map((request) => request.harness)).toContain("claude-sdk")
+    expect(state.requests.map((request) => request.harness)).toContain("claude")
     expect(state.requests.every((request) => !!request.harness)).toBe(true)
   })
 

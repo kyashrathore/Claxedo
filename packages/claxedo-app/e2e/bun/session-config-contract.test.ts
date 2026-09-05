@@ -8,7 +8,7 @@ describe("session config contract", () => {
   test("preserves the canonical native harness identity", () => {
     expect(
       parseSessionConfigPatch(
-        { harness: { type: "claude-sdk" }, agent: "build" },
+        { harness: { id: "claude", access: "native" }, agent: "build" },
         "http://localhost/session/session-1/config",
       ),
     ).toEqual({
@@ -40,8 +40,8 @@ describe("session config contract", () => {
     expect(() =>
       assertSessionConfigPatchResponse(
         {
-          harness: { id: "claude", access: "acp" },
-          model: { providerID: "acp:claude", modelID: "opus" },
+          harness: { id: "claude-acp", access: "connection" },
+          model: { providerID: "claude-acp", modelID: "opus" },
           variant: "high",
           agent: "build",
         },

@@ -232,7 +232,8 @@ journey into a passing acceptance run.
 
 ## Measured maintenance change
 
-Measured against `ca3e488f7a`, including untracked additions exactly once:
+Measured at cutover commit `0c81512804` against `ca3e488f7a`, including
+new additions exactly once. Subsequent dev integration is not included:
 
 | Category | Added lines | Removed lines | Net |
 | --- | ---: | ---: | ---: |
@@ -248,8 +249,9 @@ separately; a lower test count is not itself a quality claim.
 
 Final source closures: app local 958 modules/37 packages; local server 53/21;
 self-hosted server 125/36; unsigned desktop renderer 1,008/56. No closure ceiling
-was increased. The app effect-state-write allowance decreased from 92 to the
-measured 90 after removing Pi catalog effects.
+was increased. The app effect-state-write allowance decreased from dev's 92 to the
+measured 91 after removing Pi catalog effects while retaining the OpenCode
+catalog admission owner introduced on dev.
 
 The architectural reduction is one execution path: workspace admission → native
 adapter → Pi process → shared events. The cost is that every current harness
@@ -272,3 +274,13 @@ pending actions, approvals and split SDK payloads have no supported read/resume
 contract. They are not converted into native Pi sessions. No bulk data deletion,
 historical reader, dual-write path or legacy compatibility adapter is included.
 No deployment, push or package publication was performed by this task.
+
+## Dev integration verification
+
+The merge with `ffdd2577f5` retains OpenCode provider-catalog selection and
+keeps native Pi on runtime config options. Registry credential management is a
+separate capability, so Pi Settings still connects and disconnects credentials.
+The merge passes 5,967 app Bun tests, 1,051 app Vitest tests, the complete app
+`bun run typecheck`, the client-presentation projection tests, app
+`bun run verify:closure`, and root `bun run test:architecture-ratchets`.
+These logs use the `merge-` prefix in `.artifacts/pi-native/`.

@@ -221,7 +221,7 @@ describe("Settings → Providers reads under the selected (workspace, harness)",
 
   test("opens on the selected native Pi catalog", async () => {
     mount()
-    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("ws_local"))
+    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("/repo"))
     expect(select("settings-scope-harness").value).toBe(encodeURIComponent(harnessSelectionKey(nativeHarness("pi"))))
     await waitFor(() => expect(renderedProviderIds()).toEqual(["anthropic", "openai"]))
     expect(state.requests).toEqual([{ scope: "workspace:ws_local", harness: "pi" }])
@@ -253,14 +253,14 @@ describe("Settings → Providers reads under the selected (workspace, harness)",
     choose("settings-scope-workspace", "ws_cloud")
     await waitFor(() => expect(renderedProviderIds()).toEqual(["cloud-backend"]))
     expect(state.requests.at(-1)).toEqual({ scope: "workspace:ws_cloud", harness: "pi" })
-    choose("settings-scope-workspace", "ws_local")
+    choose("settings-scope-workspace", "/repo")
     await waitFor(() => expect(renderedProviderIds()).toEqual(["anthropic", "openai"]))
   })
 
   test("a workspace with nothing remembered performs no catalog request until a harness is selected", async () => {
     state.rememberedHarness = undefined
     mount()
-    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("ws_local"))
+    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("/repo"))
     expect(select("settings-scope-harness").value).toBe("")
     expect(renderedProviderIds()).toEqual([])
     expect(document.querySelector('[data-component="providers-catalog-empty"]')).toBeNull()
@@ -273,7 +273,7 @@ describe("Settings → Providers reads under the selected (workspace, harness)",
   test("an unavailable remembered connection stays unselected instead of substituting a native harness", async () => {
     state.rememberedHarness = connectionHarness("removed-connection")
     mount()
-    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("ws_local"))
+    await waitFor(() => expect(select("settings-scope-workspace").value).toBe("/repo"))
     expect(select("settings-scope-harness").value).toBe("")
     expect(state.requests).toEqual([])
   })
