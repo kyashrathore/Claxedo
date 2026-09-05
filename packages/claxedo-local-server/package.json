@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "type": "module",
   "private": true,
+  "engines": { "node": ">=24" },
   "description": "The desktop-local Claxedo server: local project, file, diff, PTY, process, session, provider, configuration, credential, and harness-dispatch routes over an embedded Workspace Runtime",
   "license": "MIT",
   "repository": {

@@ -1,4 +1,6 @@
-FROM node:22-bookworm-slim
+# better-sqlite3 13's Linux ARM64 prebuild requires glibc >= 2.38.
+# Trixie supplies it; Bookworm's 2.36 cannot load the runtime store.
+FROM node:24.18.0-trixie-slim
 
 LABEL org.opencontainers.image.source="https://github.com/kyashrathore/Claxedo"
 

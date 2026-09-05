@@ -4,6 +4,7 @@ import path from "node:path"
 export default defineConfig({
   resolve: {
     alias: [
+      { find: "@claxedo/workspace-runtime/opencode", replacement: path.resolve(import.meta.dirname, "../workspace-runtime/src/opencode.ts") },
       // The runtime is reached from several packages; aliasing it to SOURCE
       // keeps one copy in the module graph and exercises the code a change
       // touches rather than a dist that may lag it.

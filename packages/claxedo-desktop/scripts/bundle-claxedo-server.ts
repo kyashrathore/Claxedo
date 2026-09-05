@@ -3,10 +3,13 @@ import { createRequire } from "node:module"
 import * as path from "node:path"
 
 import { resolveLocalServerMigrationJournal } from "./local-server"
+import { stageOpenCodeSdk } from "../../workspace-runtime/scripts/stage-opencode-sdk"
+import { resolveTargetOsArch } from "./target-platform"
 
-// Native modules cannot be bundled — they ship as the app's only node_modules
-// content (see electron-builder.config.ts). Everything else is inlined.
-const EXTERNAL = ["@lydell/node-pty", "better-sqlite3"]
+// Native modules cannot be bundled — they ship as node_modules content, and the
+// public OpenCode SDK's asset-relative graph is staged separately under
+// resources/node_modules (see electron-builder.config.ts). Everything else is inlined.
+const EXTERNAL = ["@lydell/node-pty", "better-sqlite3", "@opencode-ai/sdk"]
 
 const require = createRequire(import.meta.url)
 
@@ -84,6 +87,8 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   // Bun inlines the entry into chunks/index-*.js but does not emit those siblings,
   // so cursor-sdk session create fails at runtime until they sit beside the entry.
   copyCursorSdkLazyChunks(path.join(pending, "chunks"))
+  const [platform, arch] = resolveTargetOsArch().split("-")
+  stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform!, arch: arch! })
 
   fs.rmSync(destination, { recursive: true, force: true })
   fs.renameSync(pending, destination)

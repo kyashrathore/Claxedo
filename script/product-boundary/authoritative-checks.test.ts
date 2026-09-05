@@ -50,7 +50,6 @@ describe("product boundary authoritative checks", () => {
     expect(AUTHORITATIVE_CHECKS["@claxedo/server"]?.map((check) => check.label)).toEqual([
       "hosted workerd production build",
       "hosted workerd built entry smoke",
-      "self-hosted OpenCode resource build",
       "self-hosted production build",
       "self-hosted built process smoke",
       "cloud and self-hosted deployment closures",

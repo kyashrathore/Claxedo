@@ -34,7 +34,7 @@ describe("harness profile", () => {
       "claude-sdk",
       "opencode",
       "acp:codex",
-      { id: "opencode", access: "native" },
+      { id: "legacy-engine", access: "native" },
       { id: "claude", access: "acp" },
       { id: "codex" },
       { binary: "/tmp/codex-acp" },
@@ -42,6 +42,8 @@ describe("harness profile", () => {
       { kind: "native", harnessId: "unknown" },
     ])
       expect(pickHarness(value)).toBeUndefined()
+    // The embedded-SDK OpenCode harness is a closed native id again.
+    expect(pickHarness({ id: "opencode", access: "native" })).toEqual({ kind: "native", harnessId: "opencode" })
     expect(pickHarness({ id: "my-agent", access: "connection", binary: "/tmp/codex" })).toEqual({
       kind: "connection",
       connectionId: "my-agent",

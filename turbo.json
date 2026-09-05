@@ -25,17 +25,10 @@
     // package's `test` script); .github/workflows/test.yml publishes them via
     // packages/*/.artifacts/unit/junit.xml.
     //
-    // Deliberately NO `dependsOn: ["^build"]` here. `@claxedo/server` depends
-    // on `@opencode-ai/sdk-next`, which depends on `opencode`, and
-    // `opencode#build` is broken repo-wide: packages/opencode/script/build.ts
-    // builds an embedded web UI from `packages/app`, a directory the Claxedo
-    // hard fork renamed to `packages/claxedo-app`, so it dies with
-    // `ENOENT: Could not change directory to .../packages/app`. A `^build` here
-    // drags that dead task into the graph and every test task fails on a build
-    // error instead of on tests. Packages that need workspace deps built get
-    // them from the explicit scoped `bun turbo build --filter=...` step in
-    // .github/workflows/test.yml -- the same list typecheck.yml and the e2e
-    // jobs already use.
+    // Deliberately NO `dependsOn: ["^build"]` here. Test packages that consume
+    // dist-only workspace exports build those inputs in CI's explicit scoped
+    // build step; making every test recursively build the entire monorepo adds
+    // unrelated product builds and hides the suite's own failures.
     "test": {
       "outputs": [".artifacts/unit/junit.xml"],
       "passThroughEnv": ["*"]

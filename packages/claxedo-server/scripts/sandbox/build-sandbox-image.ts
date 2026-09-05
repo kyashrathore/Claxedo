@@ -6,6 +6,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { isBuiltin } from "node:module"
 import { build as esbuildBuild, type Metafile } from "esbuild"
+import { stageOpenCodePatches } from "../../../workspace-runtime/scripts/stage-opencode-patches"
 import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
 import {
   claxedoAgentPluginsWorkspaceRuntimeEntry,
@@ -297,11 +298,18 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
   assertHostBundleDependencies(result.metafile!, dependencies)
   const bundlePath = path.join(outDir, HOST_BUNDLE_FILENAME)
   const packageJsonPath = path.join(outDir, "package.json")
+  // The public OpenCode SDK behind the native `opencode` harness is an
+  // install-time dependency: its exact-version Node patches ship beside the
+  // bundle and the image's npm postinstall applies them.
+  const stagedPatches = await stageOpenCodePatches(outDir)
   const packageJson = JSON.stringify({
     name: "claxedo-workspace-runtime-host",
     private: true,
     type: "module",
+    engines: { node: ">=24" },
     dependencies,
+    scripts: { postinstall: `node ${stagedPatches.installer}` },
+    claxedoDependencyPatches: stagedPatches.patches,
   }, null, 2)
   fs.writeFileSync(packageJsonPath, packageJson)
   const smokePath = path.join(outDir, IMAGE_SMOKE_FILENAME)
@@ -315,6 +323,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(
     .update(fs.readFileSync(versionFile))
     .update(packageJson)
     .update(fs.readFileSync(smokePath))
+    .update(stagedPatches.digest)
     .digest("hex")
     .slice(0, 10)
   return {

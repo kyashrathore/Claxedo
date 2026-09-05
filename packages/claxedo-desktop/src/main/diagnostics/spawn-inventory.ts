@@ -273,6 +273,16 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/agent-sdk-runtime/src/harnesses/codex/app-server-process.ts", callee: "spawn", calls: 1 },
   }),
   product({
+    id: "opencode-embedded",
+    family: "Embedded OpenCode SDK",
+    classification: "in-process",
+    owner: "opencode-runtime",
+    linkage: "session",
+    observation: "none",
+    stop: "supported",
+    kill: "unsupported",
+  }),
+  product({
     id: "claude-sdk-cli",
     family: "Claude SDK-owned CLI",
     classification: "registered-root",
@@ -373,7 +383,9 @@ export function harnessInventory<
         ? "acp-cli"
         : definition.id === "codex"
           ? "codex-app-server"
-          : definition.id === "claude"
+          : definition.id === "opencode"
+            ? "opencode-embedded"
+            : definition.id === "claude"
               ? "claude-sdk-cli"
               : definition.id === "cursor"
                 ? "cursor-sdk-cli"

@@ -66,6 +66,8 @@ Host decision seams (all default to decision-free kit behavior):
 `corsOrigin` (origin policy; kit default = loopback dev origins only, no
 product domains), generic `connectionProviders` plus a strict v3 runtime
 snapshot (operator-owned process/remote descriptors and secret references),
+`opencodeRuntime` (the process-owned public embedded SDK runtime behind the
+native `opencode` harness, composed by `@claxedo/workspace-runtime/opencode`),
 and `startServer`'s third argument `{ signals: true }` (process
 signal/exit handling; kit default makes no process-global claims). Claxedo
 supplies all of these from `claxedo-server` (`runtime-boot.ts`, embedded
@@ -91,6 +93,7 @@ lower-level helpers:
 | `@claxedo/workspace-runtime/client` | Manual typed HTTP client for health, capabilities, config apply, events, files, diff/git, PTY, and process routes. |
 | `@claxedo/workspace-runtime/session-env-contract` | Schemas, types, limits, errors, and frame decoding for the session-env wire protocol. |
 | `@claxedo/workspace-runtime/host` | Low-level host construction and route mounting. |
+| `@claxedo/workspace-runtime/opencode` | Process-owned public embedded SDK host, workspace-scoped ports, and harness adapter (Node 24+). |
 | `@claxedo/workspace-runtime/exposure` | Explicit loopback, relay, private-network, and embedded exposure declarations. |
 | `@claxedo/workspace-runtime/relay` | Relay-host auth and host tunnel helpers. |
 | `@claxedo/workspace-runtime/config` | Runtime config snapshot and management-auth contracts. |
@@ -106,7 +109,7 @@ Root runtime value exports:
 `WorkspaceRuntimeRouteManifest`, `WorkspaceWorktreeManager`,
 `WorkspaceRuntimeRoutes`, `createMemoryTranscriptHandleStore`,
 `createPersistentTranscriptHandleStore`, `createProcessObserver`,
-`createTranscriptResolver`, `createWorkspaceHost`,
+`createTranscriptResolver`, `createWorkspaceHost`, `createWorkspaceOpenCodeRuntime`,
 `createWorkspaceRuntimeApp`, `createWorkspaceRuntimeJwtManagementAuth`,
 `defaultWorkspaceHarnessRegistry`, `embeddedWorkspaceRuntimeExposure`,
 `isLoopbackHostname`, `loadWorkspaceRuntimeManagementVerificationKey`,
@@ -139,6 +142,7 @@ projection compose those concerns outside the OSS runtime boundary.
 | `GET  /api/wr/capabilities` | [`server.ts`](src/server.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/checkpoint/*` | [`routes/checkpoint.ts`](src/routes/checkpoint.ts) | workspace-runtime management auth |
 | `POST /api/wr/config` | [`routes/config.ts`](src/routes/config.ts) | workspace-runtime management auth |
+| `PATCH /api/wr/provider-config` | [`routes/provider-config.ts`](src/routes/provider-config.ts) | workspace-scoped provider selection |
 | `GET  /api/wr/harness-config-options` | [`workspace/runtime.ts`](src/workspace/runtime.ts) | exposure-dependent runtime auth |
 | `GET  /api/wr/events`, `GET /api/wr/runtime-events` | [`routes/runtime-events.ts`](src/routes/runtime-events.ts), [`routes/events.ts`](src/routes/events.ts) | exposure-dependent runtime auth |
 | `*    /api/wr/file/*`, `GET /api/wr/find/file` | [`routes/file.ts`](src/routes/file.ts) | exposure-dependent runtime auth |

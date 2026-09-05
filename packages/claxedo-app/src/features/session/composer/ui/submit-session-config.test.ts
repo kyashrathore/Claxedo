@@ -22,7 +22,7 @@ describe("existing session configuration", () => {
 
   test("missing or invalid binding does not synthesize a harness", () => {
     expect(parseExistingSessionConfig({})).toBeUndefined()
-    expect(parseExistingSessionConfig({ harness: { id: "opencode", access: "native" } })).toBeUndefined()
+    expect(parseExistingSessionConfig({ harness: { id: "legacy-engine", access: "native" } })).toBeUndefined()
     expect(parseExistingSessionConfig({ harness: { id: "claude", access: "acp" } })).toBeUndefined()
   })
 })

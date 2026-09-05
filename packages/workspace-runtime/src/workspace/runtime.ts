@@ -38,6 +38,7 @@ import {
   type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
+import { OpenCodeSdkHarnessAdapter, authorizeWorkspace, type OpenCodeRuntime } from "../opencode/index"
 import { attachSseFanout, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
@@ -155,6 +156,12 @@ export type WorkspaceHostOptions = {
   sessionAccessPolicy?: SessionAccessPolicy
   /** Host-owned credential/model resolver for concrete Pi model turns. */
   piModelBackend?: PiModelBackendResolver
+  /**
+   * The sole native OpenCode rail: the process-owned public embedded SDK. The
+   * kit never constructs it — a host composes one SDK owner per process and
+   * injects it here, and `opencode` selections fail loudly without it.
+   */
+  opencodeRuntime?: OpenCodeRuntime
   harness?: RuntimeHarnessSelection
   /** Installed generic connection providers. ACP is installed by default. */
   connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
@@ -540,6 +547,19 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
         ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
       }),
     },
+    {
+      match: (runner) => runner.access === "native" && runner.id === "opencode",
+      create: ({ options }) => {
+        if (!options.opencodeRuntime) {
+          throw new Error("Native OpenCode requires the process-owned public embedded SDK runtime")
+        }
+        return new OpenCodeSdkHarnessAdapter({
+          runtime: options.opencodeRuntime,
+          workspaceID: options.target?.workspaceId ?? "workspace-runtime",
+          directory: options.target?.directory ?? workspaceDir(),
+        })
+      },
+    },
   ]
 }
 
@@ -751,6 +771,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let activeCheckpointWrites = 0
   let reconciledCheckpointEpoch: number | undefined
   const checkpointWriteWaiters = new Set<() => void>()
+  const opencodeToolSessions = new Set<string>()
   const sessionToolPrompts = new Map<string, {
     harness?: string
     callbackUrl: string
@@ -1779,10 +1800,27 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     },
     async registerSessionTools(input) {
       if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+      const config = store().getSessionConfig(input.sessionId)
+      if (config?.harness.access === "native" && config.harness.id === "opencode") {
+        // The SDK owns tool dispatch for its sessions; the prompt-projection
+        // path below is for harnesses that receive tools as prompt context.
+        if (!hostOptions.opencodeRuntime) throw new Error("OpenCode SDK runtime is required for Session tool registration")
+        sessionToolPrompts.delete(input.sessionId)
+        const directory = options.target?.directory ?? workspaceDir()
+        await hostOptions.opencodeRuntime.tools.registerSession({
+          scope: authorizeWorkspace({ workspaceID: options.target?.workspaceId ?? "workspace-runtime", directory }),
+          sessionID: input.sessionId,
+          callbackUrl: input.callbackUrl,
+          tools: input.tools,
+        })
+        opencodeToolSessions.add(input.sessionId)
+        return
+      }
       sessionToolPrompts.set(input.sessionId, input)
     },
     async unregisterSessionTools(sessionId) {
       sessionToolPrompts.delete(sessionId)
+      if (opencodeToolSessions.delete(sessionId)) await hostOptions.opencodeRuntime?.tools.unregisterSession(sessionId)
     },
     checkpoint: {
       detail: checkpointDetail,
@@ -1855,6 +1893,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         cleanupCompatObserver()
         globalEvents.close()
         sessionToolPrompts.clear()
+        opencodeToolSessions.clear()
         sessionConfigStore?.close?.()
         sessionConfigStore = undefined
       })()

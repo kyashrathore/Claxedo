@@ -25,15 +25,16 @@ RUN apt-get update && \
 # SEGFAULTS on load (verified in-image: node20 `new Database(':memory:')`
 # crashes, the same install under node22 works) — workspace-runtime died
 # silently at boot and the image smoke burned its whole readiness ceiling.
-# Install Node 22 (same major as the node:22-bookworm-slim used by the ghcr
-# sandbox image) ahead of the base's node on PATH; the sandbox's own container
+# The public SDK also uses syntax unavailable on Node 22. Install Node 24
+# (the same major as Electron 43 and the ghcr image) ahead of the base's node
+# on PATH; the sandbox's own container
 # server is a self-contained binary and does not resolve node from PATH.
-RUN curl -fsSL https://nodejs.org/dist/v22.22.3/node-v22.22.3-linux-x64.tar.xz -o /tmp/node22.tar.xz && \
-    mkdir -p /opt/node-22 && \
-    tar -xJf /tmp/node22.tar.xz -C /opt/node-22 --strip-components=1 && \
-    rm /tmp/node22.tar.xz && \
-    /opt/node-22/bin/node --version
-ENV PATH=/opt/node-22/bin:$PATH
+RUN curl -fsSL https://nodejs.org/dist/v24.18.0/node-v24.18.0-linux-x64.tar.xz -o /tmp/node24.tar.xz && \
+    mkdir -p /opt/node-24 && \
+    tar -xJf /tmp/node24.tar.xz -C /opt/node-24 --strip-components=1 && \
+    rm /tmp/node24.tar.xz && \
+    /opt/node-24/bin/node --version
+ENV PATH=/opt/node-24/bin:$PATH
 
 # Global CLI tools used by direct terminal agents and materialized MCP configs.
 # tsx is always needed by the runtime; the agent set is configurable above.

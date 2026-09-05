@@ -81,11 +81,6 @@ ENV CLAXEDO_SERVER_HOST=0.0.0.0
 ENV CLAXEDO_SERVER_PORT=3001
 # Serve the in-image web UI bundle from the control plane (W2 parity).
 ENV CLAXEDO_APP_DIST_DIR=/app/packages/claxedo-app/dist-selfhost
-# The embedded engine runs in a worker thread. Worker threads get a small
-# default V8 heap in a container (unlike the main thread, which auto-sizes to
-# machine RAM), so the engine OOM-crash-loops without an explicit cap. This
-# propagates to the worker; keep it well under the machine memory. Verified:
-# /provider loads fine at 1536MB locally.
 ENV NODE_OPTIONS=--max-old-space-size=2048
 # Persistent state (SQLite central store + authority + runtime data). Mount a
 # volume here.

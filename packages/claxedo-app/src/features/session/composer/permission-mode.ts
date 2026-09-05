@@ -219,4 +219,5 @@ const HARNESS_GROUP_LABELS: Record<BuiltinHarnessId, string> = {
   codex: "Codex",
   cursor: "Cursor",
   pi: "Pi",
+  opencode: "OpenCode",
 }

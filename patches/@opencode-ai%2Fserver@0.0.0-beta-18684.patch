@@ -1,0 +1,691 @@
+diff --git a/dist/service-status.js b/dist/service-status.js
+--- a/dist/service-status.js
++++ b/dist/service-status.js
+@@ -1,4 +1,4 @@
+-export * as Status from "./service-status";
++export * as Status from "./service-status.js";
+ import { Effect, Ref } from "effect";
+ export const make = Effect.fnUntraced(function* (options = {}) {
+   const current = yield* Ref.make(options.initial ?? { type: "starting" }), beginStopping = Ref.update(current, (status) => status.type === "stopping" ? status : { type: "stopping" });
+diff --git a/dist/handlers.js b/dist/handlers.js
+--- a/dist/handlers.js
++++ b/dist/handlers.js
+@@ -1,34 +1,34 @@
+ import { Layer } from "effect";
+-import { GenerateHandler } from "./handlers/generate";
++import { GenerateHandler } from "./handlers/generate.js";
+-import { MessageHandler } from "./handlers/message";
++import { MessageHandler } from "./handlers/message.js";
+-import { ModelHandler } from "./handlers/model";
++import { ModelHandler } from "./handlers/model.js";
+-import { ProviderHandler } from "./handlers/provider";
++import { ProviderHandler } from "./handlers/provider.js";
+-import { SessionHandler } from "./handlers/session";
++import { SessionHandler } from "./handlers/session.js";
+-import { PermissionHandler } from "./handlers/permission";
++import { PermissionHandler } from "./handlers/permission.js";
+-import { FileSystemHandler } from "./handlers/fs";
++import { FileSystemHandler } from "./handlers/fs.js";
+-import { FormHandler } from "./handlers/form";
++import { FormHandler } from "./handlers/form.js";
+-import { CommandHandler } from "./handlers/command";
++import { CommandHandler } from "./handlers/command.js";
+-import { SkillHandler } from "./handlers/skill";
++import { SkillHandler } from "./handlers/skill.js";
+-import { EventHandler } from "./handlers/event";
++import { EventHandler } from "./handlers/event.js";
+-import { AgentHandler } from "./handlers/agent";
++import { AgentHandler } from "./handlers/agent.js";
+-import { PluginHandler } from "./handlers/plugin";
++import { PluginHandler } from "./handlers/plugin.js";
+-import { HealthHandler } from "./handlers/health";
++import { HealthHandler } from "./handlers/health.js";
+-import { ServerHandler } from "./handlers/server";
++import { ServerHandler } from "./handlers/server.js";
+-import { DebugHandler } from "./handlers/debug";
++import { DebugHandler } from "./handlers/debug.js";
+-import { PtyHandler } from "./handlers/pty";
++import { PtyHandler } from "./handlers/pty.js";
+-import { PersistentPtyHandler } from "./handlers/persistent-pty";
++import { PersistentPtyHandler } from "./handlers/persistent-pty.js";
+-import { ShellHandler } from "./handlers/shell";
++import { ShellHandler } from "./handlers/shell.js";
+-import { ReferenceHandler } from "./handlers/reference";
++import { ReferenceHandler } from "./handlers/reference.js";
+-import { LocationHandler } from "./handlers/location";
++import { LocationHandler } from "./handlers/location.js";
+-import { IntegrationHandler } from "./handlers/integration";
++import { IntegrationHandler } from "./handlers/integration.js";
+-import { WebSearchHandler } from "./handlers/websearch";
++import { WebSearchHandler } from "./handlers/websearch.js";
+-import { McpHandler } from "./handlers/mcp";
++import { McpHandler } from "./handlers/mcp.js";
+-import { CredentialHandler } from "./handlers/credential";
++import { CredentialHandler } from "./handlers/credential.js";
+-import { ProjectHandler } from "./handlers/project";
++import { ProjectHandler } from "./handlers/project.js";
+-import { WorktreeHandler } from "./handlers/worktree";
++import { WorktreeHandler } from "./handlers/worktree.js";
+-import { VcsHandler } from "./handlers/vcs";
++import { VcsHandler } from "./handlers/vcs.js";
+-import { EventFeed } from "./event-feed";
++import { EventFeed } from "./event-feed.js";
+-import { MigrationHandler } from "./handlers/migration";
++import { MigrationHandler } from "./handlers/migration.js";
+-import { ConfigHandler } from "./handlers/config";
++import { ConfigHandler } from "./handlers/config.js";
+-import { WorkspaceHandler } from "./handlers/workspace";
++import { WorkspaceHandler } from "./handlers/workspace.js";
+ export const handlers = Layer.mergeAll(HealthHandler, ServerHandler, DebugHandler, MigrationHandler, LocationHandler, AgentHandler, PluginHandler, SessionHandler, MessageHandler, ModelHandler, GenerateHandler, ProviderHandler, IntegrationHandler, WebSearchHandler, McpHandler, CredentialHandler, ProjectHandler, FormHandler, PermissionHandler, FileSystemHandler, CommandHandler, SkillHandler, EventHandler.pipe(Layer.provide(EventFeed.layer)), PtyHandler, PersistentPtyHandler, ShellHandler, ReferenceHandler, WorktreeHandler, WorkspaceHandler, VcsHandler, ConfigHandler);
+diff --git a/dist/server-info.js b/dist/server-info.js
+--- a/dist/server-info.js
++++ b/dist/server-info.js
+@@ -19,4 +19,4 @@
+   ];
+ }
+ 
+-export * as ServerInfo from "./server-info";
++export * as ServerInfo from "./server-info.js";
+diff --git a/dist/auth.js b/dist/auth.js
+--- a/dist/auth.js
++++ b/dist/auth.js
+@@ -1,4 +1,4 @@
+-export * as ServerAuth from "./auth";
++export * as ServerAuth from "./auth.js";
+ import { Context, Layer, Option, Redacted } from "effect";
+ 
+ export class Config extends Context.Service()("@opencode/ServerAuthConfig") {
+diff --git a/dist/fetch.js b/dist/fetch.js
+--- a/dist/fetch.js
++++ b/dist/fetch.js
+@@ -1,9 +1,9 @@
+-export * as ServerFetch from "./fetch";
++export * as ServerFetch from "./fetch.js";
+ import { Context, Effect, Layer } from "effect";
+ import { HttpEffect, HttpMiddleware, HttpRouter, HttpServer } from "effect/unstable/http";
+ import { SessionRestart } from "@opencode-ai/core/session/execution/restart";
+-import { isAllowedCorsOrigin } from "./cors";
++import { isAllowedCorsOrigin } from "./cors.js";
+-import { createRoutes } from "./routes";
++import { createRoutes } from "./routes.js";
+ export const make = Effect.fn("ServerFetch.make")(function* (options = {}, boot = {}) {
+   const context = yield* Layer.build(createRoutes(options, () => [], boot.overrides ?? []).pipe(Layer.provide(HttpServer.layerServices)));
+   yield* Effect.forkDetach(Context.get(context, SessionRestart.Service).resumeSuspendedSessions);
+diff --git a/dist/event-feed.js b/dist/event-feed.js
+--- a/dist/event-feed.js
++++ b/dist/event-feed.js
+@@ -1,4 +1,4 @@
+-export * as EventFeed from "./event-feed";
++export * as EventFeed from "./event-feed.js";
+ import { Bus } from "@opencode-ai/core/bus";
+ import { Event } from "@opencode-ai/schema/event";
+ import { isOpenCodeEvent } from "@opencode-ai/protocol/groups/event";
+diff --git a/dist/pty-environment.js b/dist/pty-environment.js
+--- a/dist/pty-environment.js
++++ b/dist/pty-environment.js
+@@ -1,4 +1,4 @@
+-export * as PtyEnvironment from "./pty-environment";
++export * as PtyEnvironment from "./pty-environment.js";
+ import { Context, Effect, Layer } from "effect";
+ import { makeGlobalNode } from "@opencode-ai/util/effect/app-node";
+ 
+diff --git a/dist/routes.js b/dist/routes.js
+--- a/dist/routes.js
++++ b/dist/routes.js
+@@ -33,17 +33,17 @@
+ import { HttpRouter } from "effect/unstable/http";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+ import { Context, Effect, Layer, Option } from "effect";
+-import { Api } from "./api";
++import { Api } from "./api.js";
+-import { ServerAuth } from "./auth";
++import { ServerAuth } from "./auth.js";
+-import { CorsConfig } from "./cors";
++import { CorsConfig } from "./cors.js";
+-import { handlers } from "./handlers";
++import { handlers } from "./handlers.js";
+-import { authorizationLayer } from "./middleware/authorization";
++import { authorizationLayer } from "./middleware/authorization.js";
+-import { schemaErrorLayer } from "./middleware/schema-error";
++import { schemaErrorLayer } from "./middleware/schema-error.js";
+-import { PtyEnvironment } from "./pty-environment";
++import { PtyEnvironment } from "./pty-environment.js";
+-import { layer } from "./location";
++import { layer } from "./location.js";
+-import { formLocationLayer } from "./middleware/form-location";
++import { formLocationLayer } from "./middleware/form-location.js";
+-import { sessionLocationLayer } from "./middleware/session-location";
++import { sessionLocationLayer } from "./middleware/session-location.js";
+-import { ServerInfo } from "./server-info";
++import { ServerInfo } from "./server-info.js";
+ const applicationServiceNodes = [
+   Global.node,
+   Database.node,
+diff --git a/dist/api.js b/dist/api.js
+--- a/dist/api.js
++++ b/dist/api.js
+@@ -1,7 +1,7 @@
+ import { makeDefaultApi } from "@opencode-ai/protocol/api";
+-import { LocationMiddleware } from "./location";
++import { LocationMiddleware } from "./location.js";
+-import { FormLocationMiddleware } from "./middleware/form-location";
++import { FormLocationMiddleware } from "./middleware/form-location.js";
+-import { SessionLocationMiddleware } from "./middleware/session-location";
++import { SessionLocationMiddleware } from "./middleware/session-location.js";
+ export const Api = makeDefaultApi({
+   locationMiddleware: LocationMiddleware,
+   formLocationMiddleware: FormLocationMiddleware,
+diff --git a/dist/process.js b/dist/process.js
+--- a/dist/process.js
++++ b/dist/process.js
+@@ -1,4 +1,4 @@
+-export * as ServerProcess from "./process";
++export * as ServerProcess from "./process.js";
+ import { NodeHttpServer } from "@effect/platform-node";
+ import { SessionRestart } from "@opencode-ai/core/session/execution/restart";
+ import { hasPtyConnectTicketURL } from "@opencode-ai/protocol/groups/pty";
+@@ -13,13 +13,13 @@
+   HttpServerResponse
+ } from "effect/unstable/http";
+ import { createServer } from "node:http";
+-import { ServerAuth } from "./auth";
++import { ServerAuth } from "./auth.js";
+-import { isAllowedCorsOrigin } from "./cors";
++import { isAllowedCorsOrigin } from "./cors.js";
+-import { authorizedRequest } from "./middleware/authorization";
++import { authorizedRequest } from "./middleware/authorization.js";
+-import { withoutParentSpan } from "./request-tracing";
++import { withoutParentSpan } from "./request-tracing.js";
+-import { createRoutes } from "./routes";
++import { createRoutes } from "./routes.js";
+-import { ServerInfo } from "./server-info";
++import { ServerInfo } from "./server-info.js";
+-import { Status } from "./service-status";
++import { Status } from "./service-status.js";
+ const errorResponseLogger = HttpMiddleware.make((app) => HttpMiddleware.logger(Effect.tap(app, (response) => response.status < 400 ? HttpMiddleware.withLoggerDisabled(Effect.void) : Effect.void)));
+ export const start = Effect.fn("ServerProcess.start")(function* (options, lifecycle, transform) {
+   const password = options.password;
+diff --git a/dist/workerd.js b/dist/workerd.js
+--- a/dist/workerd.js
++++ b/dist/workerd.js
+@@ -1,4 +1,4 @@
+-export * as ServerWorkerd from "./workerd";
++export * as ServerWorkerd from "./workerd.js";
+ import { Effect, Layer } from "effect";
+ import { ConfigPluginSource } from "@opencode-ai/core/config/plugin/source";
+ import { Database } from "@opencode-ai/core/database/database";
+@@ -10,7 +10,7 @@
+ import { Snapshot } from "@opencode-ai/core/snapshot";
+ import { Vcs } from "@opencode-ai/core/vcs";
+ import { CrossSpawnSpawner } from "@opencode-ai/util/cross-spawn-spawner";
+-import { ServerFetch } from "./fetch";
++import { ServerFetch } from "./fetch.js";
+ export function create(options) {
+   return ServerFetch.make(serverOptions(options), { overrides: replacements(options) });
+ }
+diff --git a/dist/middleware/session-location.js b/dist/middleware/session-location.js
+--- a/dist/middleware/session-location.js
++++ b/dist/middleware/session-location.js
+@@ -4,7 +4,7 @@
+ import { HttpRouter } from "effect/unstable/http";
+ import { HttpApiMiddleware } from "effect/unstable/httpapi";
+ import { InvalidRequestError, SessionNotFoundError } from "@opencode-ai/protocol/errors";
+-import { sessionRef } from "../location";
++import { sessionRef } from "../location.js";
+ 
+ export class SessionLocationMiddleware extends HttpApiMiddleware.Service()("@opencode/HttpApiSessionLocation", {
+   error: [InvalidRequestError, SessionNotFoundError]
+diff --git a/dist/middleware/form-location.js b/dist/middleware/form-location.js
+--- a/dist/middleware/form-location.js
++++ b/dist/middleware/form-location.js
+@@ -4,7 +4,7 @@
+ import { Effect, Layer } from "effect";
+ import { HttpRouter, HttpServerRequest } from "effect/unstable/http";
+ import { HttpApiMiddleware } from "effect/unstable/httpapi";
+-import { requestRef, sessionRef } from "../location";
++import { requestRef, sessionRef } from "../location.js";
+ 
+ export class FormLocationMiddleware extends HttpApiMiddleware.Service()("@opencode/HttpApiFormLocation", {
+   error: [InvalidRequestError, SessionNotFoundError]
+diff --git a/dist/middleware/authorization.js b/dist/middleware/authorization.js
+--- a/dist/middleware/authorization.js
++++ b/dist/middleware/authorization.js
+@@ -1,4 +1,4 @@
+-import { ServerAuth } from "../auth";
++import { ServerAuth } from "../auth.js";
+ import { UnauthorizedError } from "@opencode-ai/protocol/errors";
+ import { Authorization } from "@opencode-ai/protocol/middleware/authorization";
+ export { Authorization } from "@opencode-ai/protocol/middleware/authorization";
+diff --git a/dist/handlers/shell.js b/dist/handlers/shell.js
+--- a/dist/handlers/shell.js
++++ b/dist/handlers/shell.js
+@@ -4,8 +4,8 @@
+ import { Effect } from "effect";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+ import { ShellNotFoundError } from "@opencode-ai/protocol/errors";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+ export const ShellHandler = HttpApiBuilder.group(Api, "server.shell", (handlers) => Effect.gen(function* () {
+   return handlers.handle("shell.list", Effect.fn(function* () {
+     const shell = yield* Shell.Service;
+diff --git a/dist/handlers/health.js b/dist/handlers/health.js
+--- a/dist/handlers/health.js
++++ b/dist/handlers/health.js
+@@ -1,7 +1,7 @@
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { ServerInfo } from "../server-info";
++import { ServerInfo } from "../server-info.js";
+ export const HealthHandler = HttpApiBuilder.group(Api, "server.health", (handlers) => handlers.handle("health.get", () => Effect.gen(function* () {
+   return {
+     healthy: !0,
+diff --git a/dist/handlers/message.js b/dist/handlers/message.js
+--- a/dist/handlers/message.js
++++ b/dist/handlers/message.js
+@@ -2,9 +2,9 @@
+ import { Session } from "@opencode-ai/core/session";
+ import { Effect, Schema } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ import { InvalidCursorError } from "@opencode-ai/protocol/errors";
+-import { failedMessageDecode, missingSession } from "./session-error";
++import { failedMessageDecode, missingSession } from "./session-error.js";
+ const DefaultMessagesLimit = 50, Cursor = Schema.Struct({
+   id: SessionMessage.ID,
+   order: Schema.Union([Schema.Literal("asc"), Schema.Literal("desc")]),
+diff --git a/dist/handlers/session.js b/dist/handlers/session.js
+--- a/dist/handlers/session.js
++++ b/dist/handlers/session.js
+@@ -5,7 +5,7 @@
+ import { InstructionEntry } from "@opencode-ai/core/session/instruction-entry";
+ import { DateTime, Effect, Stream } from "effect";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ import { SessionsCursor } from "@opencode-ai/protocol/groups/session";
+ import {
+   ConflictError,
+@@ -20,7 +20,7 @@
+   UnknownError
+ } from "@opencode-ai/protocol/errors";
+ import { AbsolutePath } from "@opencode-ai/core/schema";
+-import { failedMessageDecode, missingSession } from "./session-error";
++import { failedMessageDecode, missingSession } from "./session-error.js";
+ const DefaultSessionsLimit = 50;
+ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) => Effect.gen(function* () {
+   const session = yield* Session.Service, transfer = yield* SessionTransfer.Service, busySession = (error) => new SessionBusyError({
+diff --git a/dist/handlers/event.js b/dist/handlers/event.js
+--- a/dist/handlers/event.js
++++ b/dist/handlers/event.js
+@@ -3,8 +3,8 @@
+ import { Effect, Stream } from "effect";
+ import { HttpServerResponse } from "effect/unstable/http";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { EventFeed } from "../event-feed";
++import { EventFeed } from "../event-feed.js";
+ export const EventHandler = HttpApiBuilder.group(Api, "server.event", (handlers) => Effect.gen(function* () {
+   const feed = yield* EventFeed.Service;
+   return handlers.handleRaw("event.subscribe", () => Effect.gen(function* () {
+diff --git a/dist/handlers/server.js b/dist/handlers/server.js
+--- a/dist/handlers/server.js
++++ b/dist/handlers/server.js
+@@ -1,7 +1,7 @@
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { ServerInfo } from "../server-info";
++import { ServerInfo } from "../server-info.js";
+ export const ServerHandler = HttpApiBuilder.group(Api, "server.server", (handlers) => handlers.handle("server.get", () => Effect.gen(function* () {
+   return { urls: (yield* ServerInfo.Service).urls() };
+ })));
+diff --git a/dist/handlers/skill.js b/dist/handlers/skill.js
+--- a/dist/handlers/skill.js
++++ b/dist/handlers/skill.js
+@@ -1,5 +1,5 @@
+ import { Skill } from "@opencode-ai/core/skill";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+ export const SkillHandler = HttpApiBuilder.group(Api, "server.skill", (handlers) => handlers.handle("skill.list", () => response(Skill.Service.use((skill) => skill.list()))));
+diff --git a/dist/handlers/permission.js b/dist/handlers/permission.js
+--- a/dist/handlers/permission.js
++++ b/dist/handlers/permission.js
+@@ -5,9 +5,9 @@
+ import { PermissionSaved } from "@opencode-ai/core/permission/saved";
+ import { Effect, Option } from "effect";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ import { PermissionNotFoundError, SessionNotFoundError } from "@opencode-ai/protocol/errors";
+-import { response, sessionRef, withLoadedLocationServices } from "../location";
++import { response, sessionRef, withLoadedLocationServices } from "../location.js";
+ function missingRequest(id) {
+   return new PermissionNotFoundError({ requestID: id, message: `Permission request not found: ${id}` });
+ }
+diff --git a/dist/handlers/generate.js b/dist/handlers/generate.js
+--- a/dist/handlers/generate.js
++++ b/dist/handlers/generate.js
+@@ -6,8 +6,8 @@
+ import { Global } from "@opencode-ai/util/global";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { pluginReadiness } from "./plugin-readiness";
++import { pluginReadiness } from "./plugin-readiness.js";
+ const flushPlugins = pluginReadiness(() => new ServiceUnavailableError({
+   message: "Model catalog initialization timed out",
+   service: "model.catalog"
+diff --git a/dist/handlers/provider.js b/dist/handlers/provider.js
+--- a/dist/handlers/provider.js
++++ b/dist/handlers/provider.js
+@@ -1,9 +1,9 @@
+ import { Catalog } from "@opencode-ai/core/catalog";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ import { ProviderNotFoundError } from "@opencode-ai/protocol/errors";
+-import { response } from "../location";
++import { response } from "../location.js";
+ export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (handlers) => Effect.gen(function* () {
+   return handlers.handle("provider.list", Effect.fn(function* () {
+     const catalog = yield* Catalog.Service;
+diff --git a/dist/handlers/config.js b/dist/handlers/config.js
+--- a/dist/handlers/config.js
++++ b/dist/handlers/config.js
+@@ -1,4 +1,4 @@
+ import { Config } from "@opencode-ai/core/config";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ export const ConfigHandler = HttpApiBuilder.group(Api, "server.config", (handlers) => handlers.handle("config.get", () => Config.Service.use((config) => config.entries())));
+diff --git a/dist/handlers/command.js b/dist/handlers/command.js
+--- a/dist/handlers/command.js
++++ b/dist/handlers/command.js
+@@ -1,5 +1,5 @@
+ import { Command } from "@opencode-ai/core/command";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+ export const CommandHandler = HttpApiBuilder.group(Api, "server.command", (handlers) => handlers.handle("command.list", () => response(Command.Service.use((command) => command.list()))));
+diff --git a/dist/handlers/migration.js b/dist/handlers/migration.js
+--- a/dist/handlers/migration.js
++++ b/dist/handlers/migration.js
+@@ -1,7 +1,7 @@
+ import { V1Migration } from "@opencode-ai/core/database/v1-migration";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+ import { Effect } from "effect";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ export const MigrationHandler = HttpApiBuilder.group(Api, "server.migration", (handlers) => handlers.handle("migration.v1.status", Effect.fn(function* () {
+   return yield* V1Migration.status();
+ })));
+diff --git a/dist/handlers/persistent-pty.js b/dist/handlers/persistent-pty.js
+--- a/dist/handlers/persistent-pty.js
++++ b/dist/handlers/persistent-pty.js
+@@ -10,8 +10,8 @@
+ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+ import { Socket } from "effect/unstable/socket";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { CorsConfig, isAllowedRequestOrigin } from "../cors";
++import { CorsConfig, isAllowedRequestOrigin } from "../cors.js";
+ export const PersistentPtyHandler = HttpApiBuilder.group(Api, "server.experimental", (handlers) => Effect.gen(function* () {
+   const tickets = yield* PtyTicket.Service, cors = yield* CorsConfig, pty = yield* PersistentPty.Service;
+   return handlers.handle("persistentPty.read", Effect.fn(function* (ctx) {
+diff --git a/dist/handlers/workspace.js b/dist/handlers/workspace.js
+--- a/dist/handlers/workspace.js
++++ b/dist/handlers/workspace.js
+@@ -2,7 +2,7 @@
+ import { ConflictError, ProviderNotFoundError, UnknownError } from "@opencode-ai/protocol/errors";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ export const WorkspaceHandler = HttpApiBuilder.group(Api, "server.workspace", (handlers) => Effect.gen(function* () {
+   const workspace = yield* Workspace.Service;
+   return handlers.handle("workspace.create", (ctx) => workspace.create(ctx.payload).pipe(Effect.map((workspaceID) => ({ data: workspaceID })), Effect.catchTags({
+diff --git a/dist/handlers/project.js b/dist/handlers/project.js
+--- a/dist/handlers/project.js
++++ b/dist/handlers/project.js
+@@ -2,7 +2,7 @@
+ import { Project } from "@opencode-ai/core/project";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ import { ProjectNotFoundError } from "@opencode-ai/protocol/errors";
+ export const ProjectHandler = HttpApiBuilder.group(Api, "server.project", (handlers) => handlers.handle("project.list", () => Project.Service.use((project) => project.list())).handle("project.update", (ctx) => Project.Service.use((project) => project.update({ ...ctx.payload, projectID: ctx.params.projectID }).pipe(Effect.mapError(() => new ProjectNotFoundError({
+   projectID: ctx.params.projectID,
+diff --git a/dist/handlers/credential.js b/dist/handlers/credential.js
+--- a/dist/handlers/credential.js
++++ b/dist/handlers/credential.js
+@@ -1,7 +1,7 @@
+ import { Integration } from "@opencode-ai/core/integration";
+ import { Effect } from "effect";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ export const CredentialHandler = HttpApiBuilder.group(Api, "server.credential", (handlers) => handlers.handle("credential.update", Effect.fn(function* (ctx) {
+   yield* (yield* Integration.Service).connection.update(ctx.params.credentialID, { label: ctx.payload.label });
+   return HttpApiSchema.NoContent.make();
+diff --git a/dist/handlers/websearch.js b/dist/handlers/websearch.js
+--- a/dist/handlers/websearch.js
++++ b/dist/handlers/websearch.js
+@@ -2,9 +2,9 @@
+ import { InvalidRequestError, ServiceUnavailableError } from "@opencode-ai/protocol/errors";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+-import { pluginReadiness } from "./plugin-readiness";
++import { pluginReadiness } from "./plugin-readiness.js";
+ const awaitPlugins = pluginReadiness(() => new ServiceUnavailableError({
+   message: "Web search provider initialization timed out",
+   service: "websearch"
+diff --git a/dist/handlers/mcp.js b/dist/handlers/mcp.js
+--- a/dist/handlers/mcp.js
++++ b/dist/handlers/mcp.js
+@@ -2,8 +2,8 @@
+ import { McpServerNotFoundError } from "@opencode-ai/protocol/errors";
+ import { Effect } from "effect";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+ const notFound = (effect) => effect.pipe(Effect.mapError((error) => new McpServerNotFoundError({ server: error.server, message: error.message })));
+ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) => Effect.gen(function* () {
+   return handlers.handle("mcp.list", Effect.fn(function* () {
+diff --git a/dist/handlers/form.js b/dist/handlers/form.js
+--- a/dist/handlers/form.js
++++ b/dist/handlers/form.js
+@@ -10,8 +10,8 @@
+ } from "@opencode-ai/protocol/errors";
+ import { Effect, Option } from "effect";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { requestRef, response, sessionRef, withLoadedLocationServices } from "../location";
++import { requestRef, response, sessionRef, withLoadedLocationServices } from "../location.js";
+ function missingForm(id) {
+   return new FormNotFoundError({ id, message: `Form not found: ${id}` });
+ }
+diff --git a/dist/handlers/location.js b/dist/handlers/location.js
+--- a/dist/handlers/location.js
++++ b/dist/handlers/location.js
+@@ -1,7 +1,7 @@
+ import { Location } from "@opencode-ai/core/location";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ export const LocationHandler = HttpApiBuilder.group(Api, "server.location", (handlers) => handlers.handle("location.get", Effect.fn(function* () {
+   const location = yield* Location.Service;
+   return new Location.Info({
+diff --git a/dist/handlers/model.js b/dist/handlers/model.js
+--- a/dist/handlers/model.js
++++ b/dist/handlers/model.js
+@@ -2,9 +2,9 @@
+ import { ServiceUnavailableError } from "@opencode-ai/protocol/errors";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+-import { pluginReadiness } from "./plugin-readiness";
++import { pluginReadiness } from "./plugin-readiness.js";
+ const flushPlugins = pluginReadiness(() => new ServiceUnavailableError({
+   message: "Model catalog initialization timed out",
+   service: "model.catalog"
+diff --git a/dist/handlers/integration.js b/dist/handlers/integration.js
+--- a/dist/handlers/integration.js
++++ b/dist/handlers/integration.js
+@@ -1,9 +1,9 @@
+ import { Integration } from "@opencode-ai/core/integration";
+ import { Effect } from "effect";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ import { InvalidRequestError } from "@opencode-ai/protocol/errors";
+-import { response } from "../location";
++import { response } from "../location.js";
+ import { WellKnown } from "@opencode-ai/core/wellknown";
+ const authorize = (effect) => effect.pipe(Effect.mapError((error) => new InvalidRequestError({
+   message: error.cause instanceof Error && error.cause.message.trim() ? error.cause.message : "Authentication failed",
+diff --git a/dist/handlers/reference.js b/dist/handlers/reference.js
+--- a/dist/handlers/reference.js
++++ b/dist/handlers/reference.js
+@@ -1,5 +1,5 @@
+ import { Reference } from "@opencode-ai/core/reference";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+ export const ReferenceHandler = HttpApiBuilder.group(Api, "server.reference", (handlers) => handlers.handle("reference.list", () => response(Reference.Service.use((reference) => reference.list()))));
+diff --git a/dist/handlers/worktree.js b/dist/handlers/worktree.js
+--- a/dist/handlers/worktree.js
++++ b/dist/handlers/worktree.js
+@@ -3,7 +3,7 @@
+ import { WorktreeError } from "@opencode-ai/protocol/groups/worktree";
+ import { Effect } from "effect";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+ export const WorktreeHandler = HttpApiBuilder.group(Api, "server.worktree", (handlers) => Effect.gen(function* () {
+   const worktrees = yield* Worktree.Service;
+   return handlers.handle("worktree.list", (ctx) => worktrees.list(ctx.params.projectID)).handle("worktree.create", (ctx) => badRequest(worktrees.create({ ...ctx.payload, projectID: ctx.params.projectID }))).handle("worktree.remove", (ctx) => badRequest(worktrees.remove({ ...ctx.payload, projectID: ctx.params.projectID })).pipe(Effect.as(HttpApiSchema.NoContent.make()))).handle("worktree.refresh", (ctx) => badRequest(worktrees.refresh({ projectID: ctx.params.projectID })).pipe(Effect.as(HttpApiSchema.NoContent.make())));
+diff --git a/dist/handlers/pty.js b/dist/handlers/pty.js
+--- a/dist/handlers/pty.js
++++ b/dist/handlers/pty.js
+@@ -7,16 +7,16 @@
+ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
+ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi";
+ import { Socket } from "effect/unstable/socket";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { CorsConfig, isAllowedRequestOrigin } from "../cors";
++import { CorsConfig, isAllowedRequestOrigin } from "../cors.js";
+ import { ForbiddenError, PtyNotFoundError } from "@opencode-ai/protocol/errors";
+ import {
+   PTY_CONNECT_TICKET_QUERY,
+   PTY_CONNECT_TOKEN_HEADER,
+   PTY_CONNECT_TOKEN_HEADER_VALUE
+ } from "@opencode-ai/protocol/groups/pty";
+-import { response } from "../location";
++import { response } from "../location.js";
+-import { PtyEnvironment } from "../pty-environment";
++import { PtyEnvironment } from "../pty-environment.js";
+ const ticketScope = Effect.gen(function* () {
+   const location = yield* Location.Service;
+   return { directory: location.directory, workspaceID: location.workspaceID };
+diff --git a/dist/handlers/plugin.js b/dist/handlers/plugin.js
+--- a/dist/handlers/plugin.js
++++ b/dist/handlers/plugin.js
+@@ -1,8 +1,8 @@
+ import { Plugin } from "@opencode-ai/core/plugin";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+ export const PluginHandler = HttpApiBuilder.group(Api, "server.plugin", (handlers) => handlers.handle("plugin.list", () => Effect.gen(function* () {
+   return yield* response(Plugin.Service.use((plugin) => plugin.list()));
+ })));
+diff --git a/dist/handlers/vcs.js b/dist/handlers/vcs.js
+--- a/dist/handlers/vcs.js
++++ b/dist/handlers/vcs.js
+@@ -2,9 +2,9 @@
+ import { ServiceUnavailableError } from "@opencode-ai/protocol/errors";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+-import { pluginReadiness } from "./plugin-readiness";
++import { pluginReadiness } from "./plugin-readiness.js";
+ const flushPlugins = pluginReadiness(() => new ServiceUnavailableError({ service: "vcs", message: "VCS initialization timed out" }));
+ export const VcsHandler = HttpApiBuilder.group(Api, "server.vcs", (handlers) => Effect.gen(function* () {
+   return handlers.handle("vcs.get", () => response(Effect.gen(function* () {
+diff --git a/dist/handlers/agent.js b/dist/handlers/agent.js
+--- a/dist/handlers/agent.js
++++ b/dist/handlers/agent.js
+@@ -1,8 +1,8 @@
+ import { Agent } from "@opencode-ai/core/agent";
+ import { Effect } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+ import { AgentNotFoundError } from "@opencode-ai/protocol/errors";
+ export const AgentHandler = HttpApiBuilder.group(Api, "server.agent", (handlers) => handlers.handle("agent.list", () => Effect.gen(function* () {
+   return yield* response(Agent.Service.use((agent) => agent.list()));
+diff --git a/dist/handlers/debug.js b/dist/handlers/debug.js
+--- a/dist/handlers/debug.js
++++ b/dist/handlers/debug.js
+@@ -1,8 +1,8 @@
+ import { LocationServiceMap } from "@opencode-ai/core/location-service-map";
+ import { Effect, Option, RcMap } from "effect";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { requestRef } from "../location";
++import { requestRef } from "../location.js";
+ export const DebugHandler = HttpApiBuilder.group(Api, "server.debug", (handlers) => handlers.handle("debug.location", Effect.fn(function* () {
+   const locations = Option.getOrThrow(yield* Effect.serviceOption(LocationServiceMap.Service));
+   return Array.from(yield* RcMap.keys(locations.rcMap));
+diff --git a/dist/handlers/fs.js b/dist/handlers/fs.js
+--- a/dist/handlers/fs.js
++++ b/dist/handlers/fs.js
+@@ -3,8 +3,8 @@
+ import { Effect } from "effect";
+ import { HttpServerResponse } from "effect/unstable/http";
+ import { HttpApiBuilder } from "effect/unstable/httpapi";
+-import { Api } from "../api";
++import { Api } from "../api.js";
+-import { response } from "../location";
++import { response } from "../location.js";
+ export const FileSystemHandler = HttpApiBuilder.group(Api, "server.fs", (handlers) => Effect.gen(function* () {
+   return handlers.handleRaw("fs.read", (ctx) => Effect.gen(function* () {
+     const file = yield* (yield* FileSystem.Service).read({

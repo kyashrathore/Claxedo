@@ -260,7 +260,7 @@ function draftDefaultHarness(raw: string | undefined) {
   const selection = raw === undefined ? undefined : decodeDraftDefaultRecord(raw)?.lastHarness
   if (!selection) return undefined
   if (selection.kind === "connection") return selection.connectionId
-  return { claude: "claude-sdk", codex: "codex-app-server", cursor: "cursor-sdk", pi: "pi" }[selection.harnessId]
+  return { claude: "claude-sdk", codex: "codex-app-server", cursor: "cursor-sdk", pi: "pi", opencode: "opencode" }[selection.harnessId]
 }
 
 function visibleHarnessTrigger(page: Page, harness: Harness) {

@@ -1,4 +1,5 @@
 import {
+  createWorkspaceOpenCodeRuntime,
   isLoopbackHostname,
   workspaceRuntimeListenHostname,
   type WorkspaceRuntimeServerOptions,
@@ -123,8 +124,15 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   assertRuntimePort(port, "WORKSPACE_RUNTIME_PORT")
   const hostname = workspaceRuntimeListenHostname(env)
   const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(env, port)
+  const targetDirectory = workspaceDir(env)
+  const harness = claxedoRuntimeHarnessFromEnv(env)
+  // A sandbox selecting the native OpenCode harness owns its public
+  // embedded-SDK runtime for the workspace and closes it during drain.
+  const opencodeRuntime = harness?.kind === "native" && harness.harnessId === "opencode"
+    ? createWorkspaceOpenCodeRuntime(targetDirectory)
+    : undefined
   const options: WorkspaceRuntimeServerOptions = {
-    target: { workspaceId: workspaceId(env), directory: workspaceDir(env) },
+    target: { workspaceId: workspaceId(env), directory: targetDirectory },
     ...relayOptions,
     // Relay-host gating must come from env so a runtime spawned as a
     // subprocess (sandbox image) rejects unauthenticated direct access
@@ -136,7 +144,8 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         : privateNetworkDevUnsafeWorkspaceRuntimeExposure(
           "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK local managed-cloud runtime",
         ),
-    harness: claxedoRuntimeHarnessFromEnv(env),
+    ...(harness ? { harness } : {}),
+    ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),
     connectionProviders: [createAcpConnectionProvider(), createOpenCodeServerConnectionProvider()],
     corsOrigin: claxedoCorsOrigin,
     // The host entry's route contributions (the Agent Plugins VM image mounts

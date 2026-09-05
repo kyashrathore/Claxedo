@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -613,7 +613,7 @@ describe("embedded workspace runtime", () => {
     }
   })
 
-  test("reconciles persisted runtime titles when rebuilding a workspace after restart", async () => {
+  test("reconciles persisted SDK runtime titles when rebuilding a workspace after restart", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-reconcile-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
 

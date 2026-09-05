@@ -121,12 +121,22 @@ export type PermissionMechanism =
    * must not be offered.
    */
   | { kind: "sandboxed-no-policy" }
+  /**
+   * `opencode` — the public embedded SDK asks per request.
+   *
+   * Every gated tool call surfaces as a permission request the user answers
+   * once/always/reject (`OpenCodeSdkHarnessAdapter.respondPermission`); the SDK
+   * exposes no selectable standing mode, so the harness reports no modes and
+   * the picker shows the runtime's own "unsupported" reason.
+   */
+  | { kind: "opencode-sdk-request-permissions" }
 
 export const PERMISSION_MECHANISMS: Record<BuiltinHarnessId, PermissionMechanism> = {
   claude: { kind: "claude-sdk-permission-mode" },
   codex: { kind: "codex-approval-policy" },
   cursor: { kind: "cursor-local-agent-options" },
   pi: { kind: "sandboxed-no-policy" },
+  opencode: { kind: "opencode-sdk-request-permissions" },
 }
 
 /**
@@ -186,6 +196,7 @@ export const HARNESS_LABELS: Record<BuiltinHarnessId, string> = {
   codex: "Codex (SDK)",
   cursor: "Cursor (SDK)",
   pi: "Pi",
+  opencode: "OpenCode (SDK)",
 }
 
 /**

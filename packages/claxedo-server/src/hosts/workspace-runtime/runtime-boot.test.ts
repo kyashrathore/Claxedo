@@ -95,6 +95,19 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(plain.options.routeContributions).toBeUndefined()
   })
 
+  test("owns a public embedded-SDK runtime only when the native OpenCode harness is selected", async () => {
+    const env = { WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_test", WORKSPACE_RUNTIME_DIRECTORY: process.cwd() }
+    const plain = await claxedoWorkspaceRuntimeBootFromEnv(env)
+    expect(plain.options.opencodeRuntime).toBeUndefined()
+    expect(plain.options.ownsOpenCodeRuntime).toBeUndefined()
+    const pi = await claxedoWorkspaceRuntimeBootFromEnv({ ...env, WORKSPACE_RUNTIME_NATIVE_HARNESS: "pi" })
+    expect(pi.options.opencodeRuntime).toBeUndefined()
+    const opencode = await claxedoWorkspaceRuntimeBootFromEnv({ ...env, WORKSPACE_RUNTIME_NATIVE_HARNESS: "opencode" })
+    expect(opencode.options.opencodeRuntime).toBeDefined()
+    expect(opencode.options.ownsOpenCodeRuntime).toBe(true)
+    await opencode.options.opencodeRuntime!.close()
+  })
+
   test("selects either an explicit native harness or a configured connection", () => {
     expect(claxedoRuntimeHarnessFromEnv({})).toBeUndefined()
     expect(claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_NATIVE_HARNESS: "codex" })).toEqual({ kind: "native", harnessId: "codex" })

@@ -21,6 +21,10 @@ import {
 const runtimeRoots = [path.resolve(import.meta.dirname, "../../../../workspace-runtime")]
 
 describe("build-sandbox-image", () => {
+  test("the Node image supports the SDK syntax and SQLite native prebuild", () => {
+    const dockerfile = fs.readFileSync(path.join(import.meta.dirname, "../Dockerfile"), "utf8")
+    expect(dockerfile).toContain("FROM node:24.18.0-trixie-slim")
+  })
   test("builds from the sandbox scripts context with no version build-arg", () => {
     expect(sandboxImageBuildArgs({
       tags: ["ghcr.io/example/claxedo-sandbox:workspace-runtime-0-5-1-v8"],
@@ -72,6 +76,9 @@ describe("build-sandbox-image", () => {
           "better-sqlite3": "12.10.0",
           "@lydell/node-pty": "1.2.0-beta.14",
           "@claxedo/agent-sdk-runtime": "0.5.1",
+          "@opencode-ai/plugin": "0.0.0-beta-18684",
+          "@opencode-ai/sdk": "0.0.0-beta-18684",
+          koffi: "3.1.6",
           hono: "4.12.12",
         },
       },
@@ -90,6 +97,9 @@ describe("build-sandbox-image", () => {
       "@lydell/node-pty": "1.2.0-beta.14",
       hono: "4.12.12",
       "just-bash": "3.0.1",
+      "@opencode-ai/plugin": "0.0.0-beta-18684",
+      "@opencode-ai/sdk": "0.0.0-beta-18684",
+      koffi: "3.1.6",
     })
   })
 
@@ -165,6 +175,7 @@ describe("build-sandbox-image", () => {
     ]))
     expect(deps["@anthropic-ai/claude-agent-sdk"]).toBe("0.3.220")
     expect(deps.zod).toBe("4.4.3")
+    expect(deps["@opencode-ai/sdk"]).toBe("0.0.0-beta-18684")
   })
 
   test("the enabled image adds the feature package root while the disabled image does not", () => {

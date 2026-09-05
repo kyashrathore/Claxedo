@@ -13,7 +13,7 @@ function record(input: unknown): Record<string, unknown> | undefined {
     : undefined
 }
 
-const NATIVE = new Set(["claude", "codex", "cursor", "pi"])
+const NATIVE = new Set(["claude", "codex", "cursor", "pi", "opencode"])
 
 export function parseHarnessConfigRequest(rawBody: unknown, url: string): {
   selection: RuntimeHarnessSelection

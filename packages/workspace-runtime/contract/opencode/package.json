@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "name": "@claxedo/opencode-sdk-contract",
+  "private": true,
+  "type": "module",
+  "description": "Executable contract probes for the pinned public OpenCode embedded SDK. Deliberately not a workspace member so the probe has an isolated dependency graph.",
+  "scripts": {
+    "probe": "bun run probe.mjs",
+    "probe:node": "bun run build-node-bundle.ts && node probe-node.mjs",
+    "check:node-import": "node node-loadability.mjs"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "0.0.0-beta-18684",
+    "playwright": "^1.62.1"
+  }
+}

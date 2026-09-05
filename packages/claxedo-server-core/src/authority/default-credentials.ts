@@ -40,6 +40,21 @@ async function mirrorRenewedLocalTokens(id: string, secret: string, org?: string
   }
 }
 
+/**
+ * Push registry state into the embedded OpenCode engine's own auth store after
+ * a mutation. The engine resolves auth from a store Claxedo does not otherwise
+ * write, so without this a key stored in the app never reaches an embedded
+ * turn. Scheduling is write-only-when-running: a cold embedded engine is never
+ * booted for an auth write — the bridge records the mutation and its boot hook
+ * reconciles when the engine actually starts. Lazy-imported like the rest of
+ * the fs-touching modules here: Worker hosts have no embedded engine and must
+ * keep it off their import graph.
+ */
+async function syncOpenCodeCredentials(org?: string) {
+  const bridge = await import("@claxedo/server-core/opencode/sdk-credential-bridge")
+  await bridge.syncCredentialsToSdk(org)
+}
+
 export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
   return {
     listCredentials: async (org) => (await credentialRegistry()).listCredentials(org),
@@ -48,13 +63,19 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
     resolveCredentialSecret: async (providerId, org) => (await credentialRegistry()).resolveSecret(providerId, undefined, org),
     resolveCredentialSecretById: async (id, org) => (await credentialRegistry()).resolveSecretById(id, org),
     putCredential: async (input, org) => {
-      return await (await credentialRegistry()).putCredential(input, org)
+      const stored = await (await credentialRegistry()).putCredential(input, org)
+      await syncOpenCodeCredentials(org)
+      return stored
     },
     deleteCredential: async (id, org) => {
-      return await (await credentialRegistry()).deleteCredential(id, org)
+      const deleted = await (await credentialRegistry()).deleteCredential(id, org)
+      if (deleted) await syncOpenCodeCredentials(org)
+      return deleted
     },
     deleteCredentialsByProvider: async (providerId, kind, org) => {
-      return await (await credentialRegistry()).deleteCredentialsByProvider(providerId, kind, org)
+      const count = await (await credentialRegistry()).deleteCredentialsByProvider(providerId, kind, org)
+      if (count > 0) await syncOpenCodeCredentials(org)
+      return count
     },
     updateCredentialStatus: async (id, status, error, org) => {
       const registry = await credentialRegistry()
@@ -71,14 +92,20 @@ export function defaultControlPlaneCredentials(): ControlPlaneCredentials {
       const stored = await registry.updateCredentialSecret(id, secret, expiresAt, org)
       if (stored) {
         await mirrorRenewedLocalTokens(id, secret, org)
+        // A renewed token is new auth material: the engine holds the old one.
+        await syncOpenCodeCredentials(org)
       }
       return stored
     },
     saveDiscoveredCredentials: async (input, org) => {
-      return await (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.save(input, org)
+      const saved = await (await import("@claxedo/server-core/credentials/operations/discovery")).credentialDiscovery.save(input, org)
+      await syncOpenCodeCredentials(org)
+      return saved
     },
     syncLocalCredentials: async (providerIds, org) => {
-      return await (await import("@claxedo/server-core/credentials/operations/sync")).syncLocalCredentials(providerIds, org)
+      const result = await (await import("@claxedo/server-core/credentials/operations/sync")).syncLocalCredentials(providerIds, org)
+      await syncOpenCodeCredentials(org)
+      return result
     },
   }
 }

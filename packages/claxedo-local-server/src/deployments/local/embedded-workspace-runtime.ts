@@ -12,6 +12,7 @@ import {
   type WorkspaceRuntimeServerOptions,
 } from "@claxedo/workspace-runtime"
 import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
+import type { OpenCodeRuntime } from "@claxedo/workspace-runtime/opencode"
 import type { WorkspaceRuntimeExposure } from "@claxedo/workspace-runtime/exposure"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { configureLocalWorkspaceRuntime } from "@claxedo/server-core/workspace/local-runtime-port"
@@ -59,6 +60,8 @@ export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionI
 }
 
 let configuredPiModelBackend: PiModelBackendResolver | undefined
+/** The process-owned public embedded-SDK runtime every embedded host shares (the native `opencode` harness). */
+let configuredOpenCodeRuntime: OpenCodeRuntime | undefined
 let configuredConnectionProviders: readonly ConnectionProvider<unknown, unknown>[] = [
   createAcpConnectionProvider(),
   createOpenCodeServerConnectionProvider(),
@@ -114,6 +117,7 @@ export function embeddedWorkspaceRuntimeSessionAuthority() {
 
 export function configureEmbeddedWorkspaceRuntime(input: {
   piModelBackend?: PiModelBackendResolver
+  opencodeRuntime?: OpenCodeRuntime
   connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
   resolveConnectionSecrets?: ConnectionSecretResolver
   routeContributions?: readonly WorkspaceRuntimeRouteContribution[]
@@ -126,6 +130,7 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
 }) {
   configuredPiModelBackend = input.piModelBackend
+  configuredOpenCodeRuntime = input.opencodeRuntime
   configuredConnectionProviders = input.connectionProviders ?? configuredConnectionProviders
   configuredConnectionSecretResolver = input.resolveConnectionSecrets ?? configuredConnectionSecretResolver
   configuredRouteContributions = input.routeContributions ?? []
@@ -162,6 +167,7 @@ function options(
 } {
   return {
     ...(configuredPiModelBackend ? { piModelBackend: configuredPiModelBackend } : {}),
+    ...(configuredOpenCodeRuntime ? { opencodeRuntime: configuredOpenCodeRuntime } : {}),
     connectionProviders: configuredConnectionProviders,
     resolveConnectionSecrets: configuredConnectionSecretResolver,
     ...(configuredRouteContributions.length ? { routeContributions: configuredRouteContributions } : {}),

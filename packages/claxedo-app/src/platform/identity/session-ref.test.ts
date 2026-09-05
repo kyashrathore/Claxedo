@@ -17,14 +17,14 @@ import { isHarnessSelection } from "./harness-selection"
 
 describe("harness-id vocabulary (single source of truth)", () => {
   test("HARNESS_IDS enumerates only supported native harnesses", () => {
-    expect([...HARNESS_IDS]).toEqual(["claude", "codex", "cursor", "pi"])
+    expect([...HARNESS_IDS]).toEqual(["claude", "codex", "cursor", "pi", "opencode"])
   })
 
   test("structured selection accepts closed native ids and opaque connections", () => {
     for (const harnessId of HARNESS_IDS) expect(isHarnessSelection({ kind: "native", harnessId })).toBe(true)
     expect(isHarnessSelection({ kind: "connection", connectionId: "team-opencode" })).toBe(true)
     expect(isHarnessSelection("opencode")).toBe(false)
-    expect(isHarnessSelection({ kind: "native", harnessId: "opencode" })).toBe(false)
+    expect(isHarnessSelection({ kind: "native", harnessId: "legacy-engine" })).toBe(false)
   })
 })
 

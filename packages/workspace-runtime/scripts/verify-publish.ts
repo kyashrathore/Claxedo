@@ -15,6 +15,7 @@ const pkg = readJson(path.join(root, "package.json")) as {
   bin?: Record<string, string>
   exports: Record<string, Record<string, string>>
   files?: string[]
+  scripts?: Record<string, string>
   repository?: { url?: string }
   homepage?: string
   bugs?: string | { url?: string }
@@ -74,6 +75,29 @@ if (!pkg.files?.includes("docs/api-manifest.json")) {
   failures.push("package.json files must include docs/api-manifest.json")
 }
 
+if (pkg.scripts?.postinstall !== "node scripts/install-opencode-node.mjs"
+  || !pkg.files?.includes("scripts/install-opencode-node.mjs")) {
+  failures.push("published package must run and include the Node SDK patch installer")
+}
+const patchRoot = path.join(root, "dist/opencode-node")
+const patchManifest = readJson(path.join(patchRoot, "package.json")) as {
+  claxedoDependencyPatches: Record<string, string>
+}
+const rootPatches = (readJson(path.join(repoRoot, "package.json")) as {
+  claxedoDependencyPatches: Record<string, string>
+}).claxedoDependencyPatches
+compareSet("published OpenCode patches vs canonical patches",
+  Object.keys(patchManifest.claxedoDependencyPatches),
+  Object.keys(rootPatches).filter((name) => name.startsWith("@opencode-ai/")))
+for (const [name, file] of Object.entries(patchManifest.claxedoDependencyPatches)) {
+  if (!fs.readFileSync(path.join(patchRoot, file)).equals(fs.readFileSync(path.join(repoRoot, rootPatches[name])))) {
+    failures.push(`published patch differs from canonical patch: ${name}`)
+  }
+}
+if (!fs.existsSync(path.join(patchRoot, "script/apply-dependency-patches.mjs"))) {
+  failures.push("published Node SDK patch runner is missing")
+}
+
 if (pkg.bin?.["workspace-runtime"] !== "./dist/cli.mjs") {
   failures.push("package.json must expose workspace-runtime at ./dist/cli.mjs")
 } else {
@@ -82,7 +106,7 @@ if (pkg.bin?.["workspace-runtime"] !== "./dist/cli.mjs") {
     failures.push("workspace-runtime bin points at a missing file")
   } else {
     const major = Number(process.versions.node.split(".")[0])
-    if (major < 22) failures.push(`workspace-runtime publish verification requires Node.js 22+, got ${process.version}`)
+    if (major < 24) failures.push(`workspace-runtime publish verification requires Node.js 24+, got ${process.version}`)
     const version = execFileSync(process.execPath, [cli, "--version"], { encoding: "utf8" }).trim()
     if (version !== pkg.version) failures.push(`workspace-runtime --version returned ${version}, expected ${pkg.version}`)
   }

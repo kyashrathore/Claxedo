@@ -2685,7 +2685,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       // cast ignored `binary`, `sessionId`, `directory`, and `workspaceId` entirely.
       const parsed = parseHarnessConfigRequest(body, r.request().url())
       const requested = parsed.selection.kind === "native"
-        ? ({ claude: "claude-sdk", codex: "codex-app-server", cursor: "cursor-sdk", pi: "pi" } as const)[parsed.selection.harnessId]
+        ? ({ claude: "claude-sdk", codex: "codex-app-server", cursor: "cursor-sdk", pi: "pi", opencode: "opencode" } as const)[parsed.selection.harnessId]
         : parsed.selection.connectionId
       if (requested in harnessModels) harness = requested as Harness
       // CONTRACT: the real switch endpoint returns `{ ok: true }` and NOTHING else

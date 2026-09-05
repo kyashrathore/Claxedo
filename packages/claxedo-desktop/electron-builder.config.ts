@@ -171,6 +171,17 @@ const getBase = (): Configuration => ({
   asarUnpack: NATIVE_MODULES.map((name) => `**/node_modules/${name}/**`),
   extraResources: [
     {
+      // Native/data-bearing SDK packages stay on the real filesystem.
+      // Node's ancestor lookup from app.asar/out/main reaches this directory.
+      from: "resources/claxedo-server/node_modules/",
+      to: "node_modules/",
+      filter: ["**/*"],
+    },
+    {
+      from: "resources/claxedo-server/opencode-sdk-inventory.json",
+      to: "opencode-sdk-inventory.json",
+    },
+    {
       from: `resources/rich-content/${targetOsArch}/`,
       to: "rich-content/",
       filter: [targetOsArch.startsWith("win32-") ? "claxedo-rich-content-renderer.exe" : "claxedo-rich-content-renderer"],

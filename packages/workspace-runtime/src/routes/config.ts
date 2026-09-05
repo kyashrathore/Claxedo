@@ -9,7 +9,7 @@ import { WorkspaceRuntimeRoutes } from "./manifest"
 
 const log = Log.create({ service: "config-route" })
 
-export const RUNTIME_NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi"] as const
+export const RUNTIME_NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 export type RuntimeNativeHarnessId = (typeof RUNTIME_NATIVE_HARNESS_IDS)[number]
 export type RuntimeHarnessSelection =
   | { kind: "native"; harnessId: RuntimeNativeHarnessId }

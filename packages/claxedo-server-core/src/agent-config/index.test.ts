@@ -105,13 +105,24 @@ describe("agent config", () => {
     })
   })
 
-  test("rejects OpenCode as a native default", async () => {
+  test("accepts the embedded-SDK OpenCode harness as a native default", async () => {
     await fs.mkdir(root, { recursive: true })
     await fs.writeFile(cfgFile(), JSON.stringify({
       version: 3,
       connections: {},
       mcp: {},
       defaultHarness: { kind: "native", harnessId: "opencode" },
+    }))
+    expect((await mod.loadUserConfig()).defaultHarness).toEqual({ kind: "native", harnessId: "opencode" })
+  })
+
+  test("still rejects an unknown native default", async () => {
+    await fs.mkdir(root, { recursive: true })
+    await fs.writeFile(cfgFile(), JSON.stringify({
+      version: 3,
+      connections: {},
+      mcp: {},
+      defaultHarness: { kind: "native", harnessId: "mystery" },
     }))
     await expect(mod.loadUserConfig()).rejects.toMatchObject({ code: "user_agent_config_invalid_schema" })
   })

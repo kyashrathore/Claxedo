@@ -31,9 +31,19 @@ export const AGENT_HARNESS_DEFINITIONS = [
     authEnv: null,
     authSlot: null,
   },
+  {
+    // The public embedded OpenCode SDK, composed by `@claxedo/workspace-runtime/opencode`.
+    // Credentials reach it through Claxedo's credential bridge, not an auth slot.
+    key: "opencode",
+    id: "opencode",
+    access: "native",
+    label: "OpenCode",
+    authEnv: null,
+    authSlot: null,
+  },
 ] as const
 
-export const AGENT_HARNESS_IDS = ["claude", "codex", "cursor", "pi"] as const
+export const AGENT_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 export const AGENT_HARNESS_ACCESSES = ["connection", "native"] as const
 export const AGENT_HARNESS_KEYS = AGENT_HARNESS_DEFINITIONS.map((item) => item.key)
 

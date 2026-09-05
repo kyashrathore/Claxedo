@@ -16,6 +16,7 @@ import {
 } from "./exposure"
 import { runtimeEnvText } from "./env"
 import { RUNTIME_NATIVE_HARNESS_IDS, type RuntimeNativeHarnessId } from "./routes/config"
+import { createWorkspaceOpenCodeRuntime } from "./opencode-runtime"
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }
 
@@ -38,8 +39,12 @@ if (nativeHarness && connectionId) throw new Error("Select either WORKSPACE_RUNT
 if (nativeHarness && !RUNTIME_NATIVE_HARNESS_IDS.some((id) => id === nativeHarness)) {
   throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarness}`)
 }
+// A standalone runtime selecting the native OpenCode harness owns its public
+// embedded-SDK runtime and closes it during process drain.
+const directory = workspaceDir(process.env)
+const opencodeRuntime = nativeHarness === "opencode" ? createWorkspaceOpenCodeRuntime(directory) : undefined
 const server = startServer(port, {
-  target: { workspaceId: workspaceId(process.env), directory: workspaceDir(process.env) },
+  target: { workspaceId: workspaceId(process.env), directory },
   ...relay,
   exposure: relay.relayHostAuth
     ? relayWorkspaceRuntimeExposure(relay.relayHostAuth)
@@ -50,6 +55,7 @@ const server = startServer(port, {
       ),
   ...(nativeHarness ? { harness: { kind: "native" as const, harnessId: nativeHarness as RuntimeNativeHarnessId } }
     : connectionId ? { harness: { kind: "connection" as const, connectionId } } : {}),
+  ...(opencodeRuntime ? { opencodeRuntime, ownsOpenCodeRuntime: true } : {}),
   // The kit CLI mounts NO route contributions. Host-supplied tool brokers are a
   // hosted capability supplied by a host launcher
   // (`claxedoWorkspaceRuntimeBootFromEnv`), not something a generic runtime

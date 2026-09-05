@@ -470,6 +470,9 @@ const codexNative = codex({
 })
 ```
 
+Embedded OpenCode is composed by `@claxedo/workspace-runtime/opencode`.
+It has no HTTP-engine factory in this package.
+
 Pi:
 
 ```ts

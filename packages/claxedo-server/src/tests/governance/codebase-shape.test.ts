@@ -160,6 +160,10 @@ describe("architecture boundaries", () => {
 
   test("keeps backend products free of OpenCode runtime and generated-client coupling", () => {
     const packageRoot = path.resolve(import.meta.dirname, "../../../..")
+    // The one place the public embedded SDK may be imported: the SDK owner
+    // behind the native `opencode` harness. Every other backend product reaches
+    // OpenCode only through `@claxedo/workspace-runtime/opencode`'s typed ports.
+    const sdkOwner = path.join(packageRoot, "workspace-runtime/src/opencode") + path.sep
     const sourceRoots = [
       "agent-sdk-runtime/src",
       "workspace-runtime/src",
@@ -183,6 +187,7 @@ describe("architecture boundaries", () => {
       return walk(root)
         .filter((file) => /\.(?:ts|tsx|mts|cts|mjs)$/.test(file))
         .filter((file) => !file.endsWith(".test.ts") && !file.endsWith(".test.tsx"))
+        .filter((file) => !file.startsWith(sdkOwner))
         .flatMap((file) => {
           const source = fs.readFileSync(file, "utf8")
           return forbidden.flatMap((pattern) => pattern.test(source)
@@ -192,6 +197,9 @@ describe("architecture boundaries", () => {
     })
 
     expect(offenders).toEqual([])
+    // Positive control: the owner really is where the SDK lives, so an empty
+    // offender list means the boundary held rather than the import vanished.
+    expect(fs.readFileSync(path.join(sdkOwner, "host.ts"), "utf8")).toMatch(/from\s+["']@opencode-ai\/sdk/)
   })
 
 

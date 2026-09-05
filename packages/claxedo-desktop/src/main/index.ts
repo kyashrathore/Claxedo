@@ -175,7 +175,17 @@ const diagnosticsSource = createProcessMetricsSource({
 const diagnosticsProfiler = createProfiler({ source: diagnosticsSource })
 const scanSessionMemory = createSessionMemoryScanner({
   workerPath: join(import.meta.dirname, "session-memory-worker.js"),
-  paths: { databases: [] },
+  paths: {
+    databases: [
+      ...(["prod", "beta", "dev"] as const).map((channel) => ({
+        path: join(resolveDesktopServerDataDir({ channel, home: app.getPath("home") }), "opencode-runtime", "opencode.db"),
+        profile: channel,
+      })),
+      ...(process.env.CLAXEDO_DATA_DIR
+        ? [{ path: join(process.env.CLAXEDO_DATA_DIR, "opencode-runtime", "opencode.db"), profile: "configured" }]
+        : []),
+    ].filter((database, index, all) => all.findIndex((candidate) => candidate.path === database.path) === index),
+  },
 })
 const diagnosticsSmokeFixtures = createPackagedDiagnosticsFixtures()
 
@@ -301,7 +311,7 @@ async function startClaxedoServer(serverDataDir: string): Promise<{ url: string;
   const claxedoPort = await findFreePort(resolveBaseServerPort())
   const serverPath = getClaxedoServerPath()
   const claxedoServerCompileCachePath = getClaxedoServerCompileCachePath()
-  logger.log("starting claxedo-server", { serverPath, claxedoPort })
+  logger.log("starting claxedo-server with embedded OpenCode SDK", { serverPath, claxedoPort })
 
   if (!existsSync(serverPath)) {
     throw new Error(`Claxedo server bundle was not found at ${serverPath}. Rebuild the desktop app and try again.`)

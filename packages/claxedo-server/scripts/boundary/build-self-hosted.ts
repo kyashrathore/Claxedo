@@ -39,6 +39,8 @@ const result = await build({
     "@cursor/sdk/*",
     "@lydell/node-pty",
     "better-sqlite3",
+    // The public SDK remains an external runtime dependency because its native
+    // PTY and platform packages cannot be folded into this JavaScript bundle.
   ],
 })
 

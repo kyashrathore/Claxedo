@@ -14,6 +14,23 @@ risk: HIGH
 
 ## Overview
 
+### Current implementation decisions (2026-09-05)
+
+The user's later decisions supersede the separate-package and legacy-transfer
+units below: the SDK owner now lives in `workspace-runtime/src/opencode`,
+exported as `@claxedo/workspace-runtime/opencode`. There is no separate runtime
+package, legacy importer, or fallback engine. The historical transfer work in
+Unit 6 is cancelled, not an unmet compatibility gate.
+
+Keep Electron 43.2.0. Execute the embedded SDK on Node 24 or newer, with the
+version-pinned ESM/process-lock patches in `patches/README.opencode-node.md`.
+The original Unit 1 diagnostic fixture moved to
+`packages/workspace-runtime/contract/opencode`; product acceptance uses the
+Node/Electron smoke scripts and desktop packaging tests.
+
+The remaining sections record the original migration analysis; where they
+conflict with these decisions, this subsection and the live code take priority.
+
 Replace every OpenCode execution path with the public V2 embedded SDK and make
 that invariant true in source, dependency graphs, packaged artifacts, and
 runtime process inventories. The final product directly installs one exact
@@ -229,7 +246,7 @@ event-authority, and SQLite lessons once the cutover is proven.
    published beta inspected during planning. If it fails a required contract
    gate, stop and re-plan against a later exact beta; do not silently move to
    `@dev` or retain the old runtime.
-2. **Create `@claxedo/opencode-runtime` as the sole SDK owner.** It names one
+2. **Create `@claxedo/workspace-runtime/opencode` as the sole SDK owner.** It names one
    real responsibility: construct, configure, observe, and close the embedded
    OpenCode host. Generic runtime and UI packages consume Claxedo ports/DTOs,
    not SDK internals.
@@ -408,7 +425,7 @@ flowchart LR
   UI[Claxedo UI / relay] --> WR[WorkspaceRuntime routes]
   WR --> AD[OpenCodeHarnessAdapter]
   AD --> PORT[Claxedo OpenCode runtime port]
-  PORT --> HOST[@claxedo/opencode-runtime]
+  PORT --> HOST[@claxedo/workspace-runtime/opencode]
   HOST --> SDK[Public OpenCode embedded SDK host]
   HOST --> PLUGIN[Claxedo SDK plugin]
   PLUGIN --> CREDS[Credential registry]
@@ -445,7 +462,7 @@ the runtime, using the exact selected beta and real current entrypoints.
 
 - Create: `docs/architecture/opencode-embedded-sdk-contract.md`
 - Create: public-SDK contract fixtures/tests beside the future
-  `packages/opencode-runtime`
+  `packages/workspace-runtime/src/opencode`
 - Modify: existing OpenCode adapter, workspace-runtime, desktop, and sandbox
   contract test manifests only as needed to record expected behavior
 
@@ -542,7 +559,7 @@ that Unit 1 proved collide with the selected public dependency closure.
 **Files:**
 
 - Modify: root `package.json`, `bun.lock`, and workspace package manifests
-- Create: `packages/opencode-runtime/package.json` and the minimal owned host
+- Create: `packages/workspace-runtime/package.json` and the minimal owned host
   needed to contract-test the exact public SDK
 - Modify: `packages/claxedo-app/src/**`, `packages/session-ui/**`,
   `packages/agent-event-runtime/**`, `packages/agent-sdk-runtime/**`, and
@@ -566,7 +583,7 @@ that Unit 1 proved collide with the selected public dependency closure.
 - Create the minimal lifecycle owner against the exact public SDK before
   removing the old namespace.
 - Add a dependency rule that reserved `@opencode-ai/*` runtime imports are
-  allowed only in `@claxedo/opencode-runtime` and explicit upstream type
+  allowed only in `@claxedo/workspace-runtime/opencode` and explicit upstream type
   boundary files.
 
 **Execution note:** Use three green checkpoints: (2a) add and contract-test the
@@ -603,7 +620,7 @@ persistence, plugins, readiness, events, and `close()`.
 
 **Files:**
 
-- Modify: `packages/opencode-runtime/src/**` for complete host lifecycle, typed port
+- Modify: `packages/workspace-runtime/src/opencode/**` for complete host lifecycle, typed port
   implementation, location validation, event pump/projector, plugin
   composition, health, and tests
 - Modify: `packages/agent-sdk-runtime/src/harnesses/opencode/**` to define the
@@ -824,7 +841,7 @@ readiness/recovery observable without a compatibility runtime.
   Claxedo-owned archive ledger from the projection, and publish the completed
   manifest atomically.
 - Create: migration/backup/readiness code and tests under
-  `packages/opencode-runtime/src/**`
+  `packages/workspace-runtime/src/opencode/**`
 - Modify: local/self-hosted health and startup sequencing
 - Modify: desktop data diagnostics and token-history database discovery where
   paths or schema ownership change

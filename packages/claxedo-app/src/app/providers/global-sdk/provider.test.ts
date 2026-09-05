@@ -333,7 +333,7 @@ describe("global sdk event fetch", () => {
     projectRuntimeEventEnvelope({
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/first",
-      sessionId: "runtime-session-1",
+      sessionId: "ses_sdk_1",
       assistantMessageId: "assistant-1",
       payload: { type: "text-delta", delta: "hello" },
     }, projections)
@@ -341,7 +341,7 @@ describe("global sdk event fetch", () => {
     const events = projectRuntimeEventEnvelope({
       contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
       directory: "/repo/alias",
-      sessionId: "runtime-session-1",
+      sessionId: "ses_sdk_1",
       assistantMessageId: "assistant-1",
       payload: { type: "text-delta", delta: " again" },
     }, projections)

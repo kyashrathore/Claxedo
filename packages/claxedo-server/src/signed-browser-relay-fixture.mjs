@@ -160,6 +160,7 @@ async function startCloudRuntime(input) {
     // since it is host-agnostic — which is exactly why this hid).
     hostId: workspaceId,
   }
+  const opencodeRuntime = createWorkspaceOpenCodeRuntime(workspaceDir)
   let runtime
   runtime = createWorkspaceRuntimeApp({
     ...(piModelBackend ? { piModelBackend } : {}),
@@ -215,7 +216,11 @@ async function startCloudRuntime(input) {
   return {
     url,
     stats,
-    close: () => closeHttp(server),
+    close: async () => {
+      await closeHttp(server)
+      runtime.dispose()
+      await opencodeRuntime.close()
+    },
   }
 }
 

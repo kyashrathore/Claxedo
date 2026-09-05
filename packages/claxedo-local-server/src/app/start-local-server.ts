@@ -35,6 +35,7 @@ import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/data-dir-owner"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/supervisor-port"
+import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
@@ -110,6 +111,9 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     createAcpConnectionProvider(),
     createOpenCodeServerConnectionProvider(),
   ] as const
+  // One process-owned public embedded-SDK runtime, shared by every embedded
+  // workspace runtime this server creates; it is the native `opencode` harness.
+  const opencodeRuntime = openCodeSdkRuntime()
 
   let consumeRuntimeEvent = (event: CompatEnvelope) => {
     if (event.payload.type === "session.updated") {
@@ -118,6 +122,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   }
   configureEmbeddedWorkspaceRuntime({
     connectionProviders,
+    opencodeRuntime,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: hosted capabilities contribute routes, and their
     // absence from an unsigned desktop is this line rather than a runtime flag.
@@ -150,7 +155,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
 
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  const usageSourceCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "pi"])
+  const usageSourceCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
   const usageOutbox = createUsageOutboxSync({ local: usageRevisionStore, telemetry: services.telemetry })
   const turnMeter = createTurnMeter({
     writer: usageRevisionStore,
@@ -301,6 +306,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       } finally {
         await listenerClosed
         disposeAgentConfig()
+        await drainOpenCodeSdkRuntime()
         ClaxedoDB.close()
         process.off("exit", release)
         release()
@@ -312,6 +318,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
   log.info("local server listening", {
     port,
     hostname,
+    opencode: "embedded-sdk",
     // Stated at boot: a supervisor here would mean cloud provisioning, which
     // this product does not do.
     supervisor: workspaceSupervisorInstalled(),

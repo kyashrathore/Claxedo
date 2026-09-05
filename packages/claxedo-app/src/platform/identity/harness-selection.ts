@@ -1,4 +1,4 @@
-export const NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi"] as const
+export const NATIVE_HARNESS_IDS = ["claude", "codex", "cursor", "pi", "opencode"] as const
 
 export type NativeHarnessId = (typeof NATIVE_HARNESS_IDS)[number]
 

@@ -15,6 +15,7 @@ import {
   requiredPackagedBoundaryEntries,
 } from "./package-structure"
 import { verifyPackageContents } from "./verify-package-contents"
+import { embeddedSdkPins, verifyOpenCodeSdkResources } from "./opencode-sdk-resources"
 
 /**
  * The packaged app contains only declared structural resources.
@@ -126,12 +127,22 @@ function withAsar(
     includeHostConnector?: boolean
     corruptHostConnector?: boolean
     includeRichContent?: boolean
+    includeSdk?: boolean
   } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-asar-"))
   const packaged = options.includeBoundary === false ? files : [...files, ...requiredPackagedBoundaryEntries(files)]
   const resources = path.join(root, "dist/mac/Claxedo.app/Contents/Resources")
   fakeAsar(path.join(resources, "app.asar"), packaged)
+  if (options.includeSdk !== false) {
+    const inventory = Object.entries(embeddedSdkPins()).map(([name, version]) => ({ name, version, directory: name }))
+    for (const entry of inventory) {
+      const directory = path.join(resources, "node_modules", entry.directory)
+      fs.mkdirSync(directory, { recursive: true })
+      fs.writeFileSync(path.join(directory, "package.json"), JSON.stringify(entry))
+    }
+    fs.writeFileSync(path.join(resources, "opencode-sdk-inventory.json"), JSON.stringify(inventory))
+  }
   if (options.includeHostConnector !== false) {
     const child = path.join(resources, "host-connector")
     const contents = "host connector child"
@@ -171,6 +182,34 @@ test("a package of declared output and native modules passes", () => {
       "node_modules/@lydell/node-pty/index.js",
     ]),
   ).toEqual([])
+})
+
+test("a packaged app must carry the external embedded SDK", () => {
+  expect(withAsar(["package.json", "out/main/index.js"], { includeSdk: false }))
+    .toContainEqual(expect.stringContaining("embedded SDK resources"))
+})
+
+test("the SDK verifier rejects escaped paths, duplicate engines, drift, and checkout links", () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "claxedo-sdk-verifier-"))
+  try {
+    const directory = path.join(root, "node_modules/@opencode-ai/core")
+    fs.mkdirSync(directory, { recursive: true })
+    const entry = { name: "@opencode-ai/core", version: "1", directory: "@opencode-ai/core" }
+    fs.writeFileSync(path.join(directory, "package.json"), JSON.stringify(entry))
+    const inventory = (entries: unknown[]) => fs.writeFileSync(path.join(root, "opencode-sdk-inventory.json"), JSON.stringify(entries))
+    inventory([entry])
+    expect(() => verifyOpenCodeSdkResources(root, { "@opencode-ai/core": "1" })).not.toThrow()
+    expect(() => verifyOpenCodeSdkResources(root, { "@opencode-ai/core": "2" })).toThrow("pinned")
+    inventory([entry, entry])
+    expect(() => verifyOpenCodeSdkResources(root, {})).toThrow("package path")
+    inventory([{ ...entry, directory: "../escape" }])
+    expect(() => verifyOpenCodeSdkResources(root, {})).toThrow("package path")
+    inventory([{ ...entry, version: "2" }])
+    expect(() => verifyOpenCodeSdkResources(root, {})).toThrow("match inventory")
+    inventory([entry])
+    fs.symlinkSync(path.join(directory, "package.json"), path.join(directory, "checkout-link"))
+    expect(() => verifyOpenCodeSdkResources(root, {})).toThrow("symlinks")
+  } finally { fs.rmSync(root, { recursive: true, force: true }) }
 })
 
 test("a packaged app must carry the verified Host Connector sidecar", () => {

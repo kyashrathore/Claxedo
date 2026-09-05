@@ -7,6 +7,7 @@ import { Pty } from "./pty/index"
 import * as ProcessManager from "./managed-processes/manager"
 import { withWorkspaceTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "./target"
 import { WorkspaceWorktreeManager } from "./worktree"
+import type { OpenCodeRuntime } from "./opencode/index"
 import type { PiModelBackendResolver } from "@claxedo/agent-sdk-runtime/adapters"
 import { createWorkspaceHost, type WorkspaceHostOptions } from "./workspace"
 import { setupAgentHooks } from "./agent-hooks"
@@ -80,6 +81,10 @@ export type WorkspaceRuntimeServerOptions = {
   configToken?: string
   managementAuth?: WorkspaceRuntimeManagementAuth
   managementTarget?: WorkspaceRuntimeManagementTarget
+  /** The process-owned public embedded-SDK runtime behind the native `opencode` harness. */
+  opencodeRuntime?: OpenCodeRuntime
+  /** Standalone hosts close their injected SDK owner during process drain. */
+  ownsOpenCodeRuntime?: boolean
   piModelBackend?: PiModelBackendResolver
   harness?: WorkspaceHostOptions["harness"]
   connectionProviders?: WorkspaceHostOptions["connectionProviders"]
@@ -280,6 +285,7 @@ type WorkspaceRuntimeDrainOptions = {
   hostTunnel?: { close(): unknown }
   processDispose?: (directory: string) => Promise<void>
   ptyDispose?: () => Promise<void>
+  openCodeDispose?: () => Promise<void>
 }
 
 type WorkspaceRuntimeShutdownReason = NodeJS.Signals | "unhandledRejection" | "uncaughtException"
@@ -304,6 +310,7 @@ export async function drainWorkspaceRuntime(options: WorkspaceRuntimeDrainOption
         await drainStep(errors, () => (options.processDispose ?? ProcessManager.dispose)(options.directory))
         await drainStep(errors, () => (options.ptyDispose ?? Pty.dispose)())
         await drainStep(errors, () => options.runtime.host.dispose())
+        await drainStep(errors, () => options.openCodeDispose?.())
         if (errors.length) {
           throw new AggregateError(errors, "Workspace runtime drain failed")
         }
@@ -428,6 +435,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
       ? managedWorkspaceSessionAccessPolicy()
       : remoteWorkspaceSessionAccessPolicyFromEnv())
   const host = createWorkspaceHost({
+    ...(options.opencodeRuntime ? { opencodeRuntime: options.opencodeRuntime } : {}),
     ...(options.piModelBackend ? { piModelBackend: options.piModelBackend } : {}),
     ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),
     ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
@@ -691,6 +699,9 @@ export function startServer(
         directory: options.target?.directory ?? workspaceDir(),
         drainTimeoutMs,
         ...(hostTunnel ? { hostTunnel } : {}),
+        ...(options.ownsOpenCodeRuntime && options.opencodeRuntime
+          ? { openCodeDispose: () => options.opencodeRuntime!.close() }
+          : {}),
       }),
     exit: (code) => process.exit(code),
   })

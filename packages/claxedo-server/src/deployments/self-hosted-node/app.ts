@@ -30,6 +30,7 @@ import { capture, initPostHog, shutdownPostHog } from "../../platform/telemetry/
 import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
+import { drainOpenCodeSdkRuntime, openCodeSdkRuntime } from "@claxedo/server-core/opencode/sdk-runtime"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
 import {
   mountControlPlaneRouteContributions,
@@ -141,6 +142,7 @@ import { withDataDirOwnership } from "@claxedo/server-core/platform/runtime/lib/
 import { createLocalDocumentsBackend } from "../../documents/backends/local/backend"
 import { setDocumentChangedSink } from "../../documents/backend"
 import { LocalInstallationDocumentBroker } from "../../documents/backends/local/installation-broker"
+
 import { sessionMeta } from "@claxedo/server-core/session/meta/index"
 import { llmTurnRecord } from "../../platform/telemetry/product/metering"
 import { ClaxedoDB } from "../../platform/db"
@@ -1209,7 +1211,7 @@ export function createSelfHostedApp(
             startedAt: 0,
           }] : []
         })
-        const completeSources = ["claude", "codex", "cursor", "pi"]
+        const completeSources = ["claude", "codex", "cursor", "opencode", "pi"]
           .filter((source) => !incompleteSources.has(source))
         const classificationKey = createHash("sha256").update(JSON.stringify({
           entries: entries.toSorted((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b))),
@@ -1410,6 +1412,7 @@ function localRelayFromEnv(
 
 export async function shutdownControlPlaneRuntime() {
   await shutdownEmbeddedWorkspaceRuntimes()
+  await drainOpenCodeSdkRuntime()
   await shutdownWorkspaceSupervisor()
   await shutdownPostHog()
 }
@@ -1442,7 +1445,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   ] as const
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "pi"])
+  const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
   const usageLedger: UsageLedger | undefined = undefined
   const usageOutbox = createUsageOutboxSync({
     local: usageRevisionStore,
@@ -1484,7 +1487,10 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   // events carry unit=server + deployment_mode). See observability/node.ts.
   initNodeObservability(process.env)
   mirrorProcessEvents()
+  // One process-owned public embedded-SDK runtime: the native `opencode` harness.
+  const opencodeRuntime = openCodeSdkRuntime()
   configureEmbeddedWorkspaceRuntime({
+    opencodeRuntime,
     piModelBackend: centralModelBackend().modelBackend,
     connectionProviders,
     ...(services.auth.config.enabled && services.authority
@@ -1566,6 +1572,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       })
     },
   })
+
   // Loopback by default (safe for local dev); containers/self-host set
   // CLAXEDO_SERVER_HOST=0.0.0.0 to accept external traffic.
   const server = serve({

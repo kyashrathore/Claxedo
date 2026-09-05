@@ -11,8 +11,8 @@ describe("route session harness", () => {
   })
 
   test("rejects incomplete identities and removed builtin engines", () => {
-    expect(routeSessionHarness({ config: { harness: { type: "opencode" } } })).toBeUndefined()
-    expect(routeSessionHarness({ harness: { id: "opencode", access: "native" } })).toBeUndefined()
+    expect(routeSessionHarness({ config: { harness: { type: "legacy-engine" } } })).toBeUndefined()
+    expect(routeSessionHarness({ harness: { id: "legacy-engine", access: "native" } })).toBeUndefined()
     expect(routeSessionHarness({ harness: { id: "claude" } })).toBeUndefined()
   })
 
