@@ -2,7 +2,6 @@ import { expect, test } from "@playwright/test"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
 import {
   claudeScriptedEnv,
-  opencodeScriptedProviderConfig,
   startScriptedModelServer,
 } from "../helpers/scripted-model-server"
 import { startForwardedForProxy, startSignedFixture } from "../helpers/desktop-signed-server"
@@ -22,7 +21,6 @@ test.describe("desktop signed embedded-shared @core @tier-real @surface-desktop"
     const fixture = await startSignedFixture({
       access: "user-hosted",
       claudeScriptedEnv,
-      opencodeScriptedProviderConfig,
       startScriptedModelServer,
       logLabel: "desktop-signed-embedded-shared",
     })

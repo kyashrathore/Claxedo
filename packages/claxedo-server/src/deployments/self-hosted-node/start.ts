@@ -85,5 +85,5 @@ export function startSelfHostedServer(options: SelfHostedStartOptions) {
   // where a refusal costs nothing. The one inside the composition catches a
   // caller that reaches it another way.
   assertSelfHostedPosture(selfHostedPosture(env))
-  return startServer(options.port, options.opencodeUrl)
+  return startServer(options.port)
 }

@@ -7,8 +7,6 @@ import { applyHarnessOptionsResponse } from "./options-state"
 import type { OptionsResponse } from "./profile"
 
 let storage: MemoryStorage
-const CODEX = { kind: "connection", connectionId: "codex-team" } as const
-const CLAUDE = { kind: "connection", connectionId: "claude-team" } as const
 const NATIVE_CODEX = { kind: "native", harnessId: "codex" } as const
 const PI = { kind: "native", harnessId: "pi" } as const
 const EXTERNAL_OPENCODE = { kind: "connection", connectionId: "external-opencode" } as const
@@ -24,7 +22,7 @@ describe("harness store facade", () => {
     expect(store.state("session:ses_1")).toBeUndefined()
     for (const scope of ["session:ses_1", "session:ses_2"]) {
       expect(store.read(scope)).toMatchObject({
-        harness: "opencode",
+        harness: undefined,
         selectedModel: "",
       })
     }
@@ -49,17 +47,17 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
     const state = store.touch("draft:one")
 
-    expect(state.harness).toBe("opencode")
+    expect(state.harness).toBeUndefined()
     expect(store.state("draft:one")).toBe(state)
 
     store.applyPatch("draft:one", {
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       selectedModel: "opus",
     })
     store.seed("draft:one")
 
     expect(store.read("draft:one")).toMatchObject({
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       selectedModel: "opus",
     })
   })
@@ -78,7 +76,7 @@ describe("harness store facade", () => {
 
     store.seed("draft:/repo:route")
     store.applyPatch("draft:/repo:route", {
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       harnessMode: "harness",
       selectedModel: "opus",
       dynamicModels: [{ id: "opus", name: "Opus" }],
@@ -86,7 +84,7 @@ describe("harness store facade", () => {
       readiness: "ready",
     })
 
-    expect(store.harness("draft:/repo:route")).toBe("acp:claude")
+    expect(store.harness("draft:/repo:route")).toEqual({ kind: "connection", connectionId: "acp:claude" })
     expect(store.selectedModel("draft:/repo:route")).toBe("opus")
     expect(store.models("draft:/repo:route")).toEqual([{ id: "opus", name: "Opus" }])
     expect(store.harnessModelKeyForSubmit("draft:/repo:route")).toEqual({
@@ -101,7 +99,7 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
 
     store.applyPatch("draft:/repo:route", {
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       harnessMode: "harness",
       selectedModel: "opus",
       dynamicModels: [{ id: "opus", name: "Opus" }],
@@ -118,7 +116,7 @@ describe("harness store facade", () => {
     })
 
     expect(store.read("draft:/repo:route")).toMatchObject({
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       selectedModel: "",
       dynamicModels: null,
       optionsLoading: false,
@@ -132,7 +130,7 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
 
     store.applyPatch("draft:/repo:route", {
-      harness: "acp:codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       harnessMode: "harness",
       selectedModel: "",
       optionsLoading: false,
@@ -141,7 +139,7 @@ describe("harness store facade", () => {
     })
 
     expect(store.state("draft:/repo:route")).toMatchObject({
-      harness: "acp:codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       selectedModel: "",
       optionsLoading: false,
       optionsStale: false,
@@ -155,9 +153,8 @@ describe("harness store facade", () => {
 
     store.seed("draft:one")
     store.applyPatch("draft:one", {
-      harness: "acp:codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       harnessMode: "harness",
-      harnessBinary: "/bin/codex",
       selectedModel: "gpt-5.5",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       readiness: "error",
@@ -175,8 +172,7 @@ describe("harness store facade", () => {
     // recurse the nested dynamicModels array (a nested solid proxy otherwise
     // trips the matcher — the promoted content itself is correct).
     expect(unwrap(store.read("session:ses_1"))).toMatchObject({
-      harness: "acp:codex",
-      harnessBinary: "/bin/codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       selectedModel: "gpt-5.5",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       readiness: "error",
@@ -191,7 +187,10 @@ describe("harness store facade", () => {
   test("restores a saved pair only through its captured exact-eligibility revision", () => {
     createDraftDefaultPreferences(storage).save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { harness: "acp:codex", model: { providerID: "acp:codex", modelID: "gpt-5.5" } },
+      {
+        harness: { kind: "connection", connectionId: "acp:codex" },
+        model: { providerID: "acp:codex", modelID: "gpt-5.5" },
+      },
     )
     const store = createHarnessStore(storage)
     const begun = store.beginDraftDefault("draft:one", {
@@ -200,7 +199,7 @@ describe("harness store facade", () => {
     })!
 
     expect(store.read("draft:one")).toMatchObject({
-      harness: "acp:codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       selectedModel: "gpt-5.5",
       draftDefaultAuthority: "unresolved",
       optionsLoading: true,
@@ -209,10 +208,12 @@ describe("harness store facade", () => {
       providerID: "acp:codex",
       modelID: "gpt-5.5",
     })
-    expect(store.applyDraftDefault(begun.application, {
-      supportedHarnesses: ["opencode", "acp:codex"],
-      eligibleModels: [{ providerID: "acp:codex", modelID: "gpt-5.5" }],
-    })).toBe(true)
+    expect(
+      store.applyDraftDefault(begun.application, {
+        supportedHarnesses: [EXTERNAL_OPENCODE, { kind: "connection", connectionId: "acp:codex" }],
+        eligibleModels: [{ providerID: "acp:codex", modelID: "gpt-5.5" }],
+      }),
+    ).toBe(true)
     expect(store.read("draft:one")).toMatchObject({
       draftDefaultAuthority: "defaulted",
       draftDefaultState: "ready",
@@ -243,7 +244,7 @@ describe("harness store facade", () => {
     createDraftDefaultPreferences(storage).save(
       { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
       {
-        harness: "acp:claude",
+        harness: { kind: "connection", connectionId: "acp:claude" },
         model: { providerID: "acp:claude", modelID: "removed" },
         labels: { model: "Claude Opus" },
       },
@@ -255,11 +256,11 @@ describe("harness store facade", () => {
     })!
 
     store.applyDraftDefault(begun.application, {
-      supportedHarnesses: ["opencode", "acp:claude"],
+      supportedHarnesses: [EXTERNAL_OPENCODE, { kind: "connection", connectionId: "acp:claude" }],
       eligibleModels: [{ providerID: "acp:claude", modelID: "sonnet" }],
     })
     expect(store.read("draft:one")).toMatchObject({
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       selectedModel: "removed",
       draftDefaultState: "saved-model-unavailable",
       configError: "Saved model unavailable",
@@ -268,11 +269,13 @@ describe("harness store facade", () => {
     expect(store.harnessReadyForSubmit("draft:one")).toBe(false)
 
     store.applyPatch("draft:one", { dynamicModels: [{ id: "sonnet", name: "Sonnet" }] })
-    expect(store.rememberDraftModel(
-      "draft:one",
-      { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { providerID: "acp:claude", modelID: "sonnet" },
-    )).toBe(true)
+    expect(
+      store.rememberDraftModel(
+        "draft:one",
+        { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
+        { providerID: "acp:claude", modelID: "sonnet" },
+      ),
+    ).toBe(true)
     expect(store.read("draft:one")).toMatchObject({
       draftDefaultState: "ready",
       draftDefaultAuthority: "explicit",
@@ -311,15 +314,19 @@ describe("harness store facade", () => {
       serverUrl: "http://localhost:4096",
       workspaceKey: "ws_1",
     })!
-    expect(store.rememberDraftModel(
-      "draft:one",
-      { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
-      { providerID: "anthropic", modelID: "opus" },
-    )).toBe(true)
-    expect(store.applyDraftDefault(begun.application, {
-      supportedHarnesses: [EXTERNAL_OPENCODE, PI],
-      eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
-    })).toBe(false)
+    expect(
+      store.rememberDraftModel(
+        "draft:one",
+        { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" },
+        { providerID: "anthropic", modelID: "opus" },
+      ),
+    ).toBe(true)
+    expect(
+      store.applyDraftDefault(begun.application, {
+        supportedHarnesses: [EXTERNAL_OPENCODE, PI],
+        eligibleModels: [{ providerID: "openai", modelID: "gpt-5.5" }],
+      }),
+    ).toBe(false)
 
     store.promote("draft:one", "session:ses_1")
     expect(store.read("session:ses_1").draftDefaultAuthority).toBe("server")
@@ -337,7 +344,7 @@ describe("harness store facade", () => {
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     // The live selection is the default `acp:codex` resolved for itself.
     store.applyPatch("draft:one", {
-      harness: "acp:codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       selectedModel: "gpt-5.5",
       selectedModelProvider: "acp:codex",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
@@ -345,9 +352,11 @@ describe("harness store facade", () => {
 
     // Pi routes to any provider, so nothing but the rule stops the codex model
     // from being filed as a Pi choice.
-    expect(store.rememberDraftHarness("draft:one", identity, "pi")).toBe(true)
+    expect(store.rememberDraftHarness("draft:one", identity, { kind: "native", harnessId: "pi" })).toBe(true)
 
-    expect(createDraftDefaultPreferences(storage).read(identity)).toEqual({ harness: "pi" })
+    expect(createDraftDefaultPreferences(storage).read(identity)).toEqual({
+      harness: { kind: "native", harnessId: "pi" },
+    })
     expect(store.draftDefaultModel("draft:one")).toBeUndefined()
     expect(store.protectDraftModel("draft:one")).toBe(false)
   })
@@ -362,17 +371,19 @@ describe("harness store facade", () => {
   test("a harness-resolved model is shown, never remembered, and never reported unavailable", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
-    store.beginDraftHarnessChoice("draft:one", identity, "claude-sdk")
+    store.beginDraftHarnessChoice("draft:one", identity, { kind: "native", harnessId: "claude" })
     // What `harnessSwitchStartPatch` writes alongside the choice.
-    store.applyPatch("draft:one", { harness: "claude-sdk", harnessMode: "harness" })
-    expect(store.rememberDraftHarness("draft:one", identity, "claude-sdk")).toBe(true)
+    store.applyPatch("draft:one", { harness: { kind: "native", harnessId: "claude" }, harnessMode: "harness" })
+    expect(store.rememberDraftHarness("draft:one", identity, { kind: "native", harnessId: "claude" })).toBe(true)
 
     // The options load answers: `default` is the harness's own current value.
     store.applyPatch("draft:one", optionsPatch(store, "draft:one", ["default", "sonnet"], "default"))
 
     expect(store.read("draft:one").selectedModel).toBe("default")
     expect(store.draftDefaultModel("draft:one")).toBeUndefined()
-    expect(createDraftDefaultPreferences(storage).read(identity)).toEqual({ harness: "claude-sdk" })
+    expect(createDraftDefaultPreferences(storage).read(identity)).toEqual({
+      harness: { kind: "native", harnessId: "claude" },
+    })
 
     // The harness stops offering `default`: the next load resolves the harness's
     // new default instead of reporting the old one unavailable.
@@ -385,17 +396,19 @@ describe("harness store facade", () => {
     // whatever the harness resolves now.
     const reloaded = createHarnessStore(storage)
     const begun = reloaded.beginDraftDefault("draft:two", identity)!
-    expect(begun.saved).toEqual({ harness: "claude-sdk" })
-    expect(reloaded.applyDraftDefault(begun.application, {
-      supportedHarnesses: ["opencode", "claude-sdk"],
-      eligibleModels: [
-        { providerID: "claude-sdk", modelID: "sonnet" },
-        { providerID: "claude-sdk", modelID: "haiku" },
-      ],
-      declaredDefaultModel: { providerID: "claude-sdk", modelID: "sonnet" },
-    })).toBe(true)
+    expect(begun.saved).toEqual({ harness: { kind: "native", harnessId: "claude" } })
+    expect(
+      reloaded.applyDraftDefault(begun.application, {
+        supportedHarnesses: [EXTERNAL_OPENCODE, { kind: "native", harnessId: "claude" }],
+        eligibleModels: [
+          { providerID: "claude", modelID: "sonnet" },
+          { providerID: "claude", modelID: "haiku" },
+        ],
+        declaredDefaultModel: { providerID: "claude", modelID: "sonnet" },
+      }),
+    ).toBe(true)
     expect(reloaded.read("draft:two")).toMatchObject({
-      harness: "claude-sdk",
+      harness: { kind: "native", harnessId: "claude" },
       selectedModel: "sonnet",
       draftDefaultState: "ready",
     })
@@ -407,26 +420,24 @@ describe("harness store facade", () => {
     const workspaceOne = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     const workspaceTwo = { serverUrl: "http://localhost:4096", workspaceKey: "ws_2" }
     store.applyPatch("draft:one", {
-      harness: "acp:codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
     })
 
-    expect(store.rememberDraftModel(
-      "draft:one",
-      workspaceOne,
-      { providerID: "acp:codex", modelID: "gpt-5.5" },
-    )).toBe(true)
+    expect(store.rememberDraftModel("draft:one", workspaceOne, { providerID: "acp:codex", modelID: "gpt-5.5" })).toBe(
+      true,
+    )
     expect(store.protectDraftModel("draft:one")).toBe(true)
 
     // Another workspace remembers nothing, so it opens on the placement default.
     expect(store.beginDraftDefault("draft:two", workspaceTwo)?.saved).toBeUndefined()
-    expect(store.read("draft:two")).toMatchObject({ harness: "opencode", selectedModel: "" })
+    expect(store.read("draft:two")).toMatchObject({ harness: undefined, selectedModel: "" })
 
     // The pick outlives the store that made it.
     const reloaded = createHarnessStore(storage)
     reloaded.beginDraftDefault("draft:three", workspaceOne)
     expect(reloaded.read("draft:three")).toMatchObject({
-      harness: "acp:codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       selectedModel: "gpt-5.5",
       selectedModelProvider: "acp:codex",
     })
@@ -438,10 +449,16 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     const preferences = createDraftDefaultPreferences(storage)
-    preferences.save(identity, { harness: "acp:codex", model: { providerID: "acp:codex", modelID: "gpt-5.5" } })
-    preferences.save(identity, { harness: "acp:claude", model: { providerID: "acp:claude", modelID: "opus" } })
+    preferences.save(identity, {
+      harness: { kind: "connection", connectionId: "acp:codex" },
+      model: { providerID: "acp:codex", modelID: "gpt-5.5" },
+    })
+    preferences.save(identity, {
+      harness: { kind: "connection", connectionId: "acp:claude" },
+      model: { providerID: "acp:claude", modelID: "opus" },
+    })
 
-    store.beginDraftHarnessChoice("draft:one", identity, "acp:codex")
+    store.beginDraftHarnessChoice("draft:one", identity, { kind: "connection", connectionId: "acp:codex" })
 
     expect(store.read("draft:one")).toMatchObject({
       draftDefaultAuthority: "explicit",
@@ -451,18 +468,20 @@ describe("harness store facade", () => {
     })
     expect(store.draftDefaultModel("draft:one")).toEqual({ providerID: "acp:codex", modelID: "gpt-5.5" })
     // The harness left behind keeps its own model.
-    expect(preferences.readHarness(identity, "acp:claude")?.model?.modelID).toBe("opus")
+    expect(preferences.readHarness(identity, { kind: "connection", connectionId: "acp:claude" })?.model?.modelID).toBe(
+      "opus",
+    )
   })
 
   test("a harness with nothing remembered opens unresolved rather than on another harness's model", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     createDraftDefaultPreferences(storage).save(identity, {
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       model: { providerID: "acp:claude", modelID: "opus" },
     })
 
-    store.beginDraftHarnessChoice("draft:one", identity, "acp:codex")
+    store.beginDraftHarnessChoice("draft:one", identity, { kind: "connection", connectionId: "acp:codex" })
 
     expect(store.read("draft:one").selectedModel).toBe("")
     expect(store.draftDefaultModel("draft:one")).toBeUndefined()
@@ -476,17 +495,22 @@ describe("harness store facade", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     const preferences = createDraftDefaultPreferences(storage)
-    preferences.save(identity, { harness: "acp:codex", model: { providerID: "acp:codex", modelID: "gpt-5.5" } })
+    preferences.save(identity, {
+      harness: { kind: "connection", connectionId: "acp:codex" },
+      model: { providerID: "acp:codex", modelID: "gpt-5.5" },
+    })
     store.applyPatch("draft:one", {
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       selectedModel: "opus",
       selectedModelProvider: "acp:claude",
       dynamicModels: [{ id: "opus", name: "Opus" }],
     })
 
-    expect(store.rememberDraftHarness("draft:one", identity, "acp:codex")).toBe(true)
+    expect(store.rememberDraftHarness("draft:one", identity, { kind: "connection", connectionId: "acp:codex" })).toBe(
+      true,
+    )
 
-    expect(preferences.readHarness(identity, "acp:codex")?.model).toEqual({
+    expect(preferences.readHarness(identity, { kind: "connection", connectionId: "acp:codex" })?.model).toEqual({
       providerID: "acp:codex",
       modelID: "gpt-5.5",
     })
@@ -498,34 +522,59 @@ describe("harness store facade", () => {
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     store.applyPatch("draft:one", { harness: PI })
 
-    expect(store.rememberDraftModel(
-      "draft:one",
-      identity,
-      { providerID: "openai-codex", modelID: "gpt-5.5" },
-      { provider: "OpenAI Codex", model: "GPT-5.5" },
-    )).toBe(true)
+    expect(
+      store.rememberDraftModel(
+        "draft:one",
+        identity,
+        { providerID: "openai-codex", modelID: "gpt-5.5" },
+        { provider: "OpenAI Codex", model: "GPT-5.5" },
+      ),
+    ).toBe(true)
     expect(createDraftDefaultPreferences(storage).read(identity)?.labels).toEqual({
       provider: "OpenAI Codex",
       model: "GPT-5.5",
     })
   })
 
-  test("rejects a model that does not belong to the current config harness", () => {
+  test("rejects a model belonging to a different provider for a native SDK harness", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
     store.applyPatch("draft:one", {
-      harness: "acp:codex",
+      harness: NATIVE_CODEX,
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
       draftDefaultState: "choose-model",
     })
 
-    expect(store.rememberDraftModel(
-      "draft:one",
-      identity,
-      { providerID: "anthropic", modelID: "gpt-5.5" },
-    )).toBe(false)
+    expect(store.rememberDraftModel("draft:one", identity, { providerID: "anthropic", modelID: "gpt-5.5" })).toBe(false)
     expect(store.read("draft:one").draftDefaultState).toBe("choose-model")
     expect(createDraftDefaultPreferences(storage).read(identity)).toBeUndefined()
+  })
+
+  test("persists backend model identity without conflating a connection with a same-named native harness", () => {
+    const identity = { serverUrl: "https://control.example", workspaceKey: "ws_1" }
+    const connection = { kind: "connection", connectionId: "codex" } as const
+    const preferences = createDraftDefaultPreferences(storage)
+    preferences.save(identity, { harness: NATIVE_CODEX, model: { providerID: "codex", modelID: "native-model" } })
+    const store = createHarnessStore(storage)
+    store.applyPatch("draft:connection", {
+      harness: connection,
+      dynamicModels: [{ id: "upstream-model", name: "Upstream model", providerID: "upstream-provider" }],
+    })
+    expect(
+      store.rememberDraftModel("draft:connection", identity, {
+        providerID: "upstream-provider",
+        modelID: "upstream-model",
+      }),
+    ).toBe(true)
+
+    const reloaded = createHarnessStore(storage)
+    reloaded.beginDraftHarnessChoice("draft:connection", identity, { ...connection })
+    reloaded.beginDraftHarnessChoice("draft:native", identity, NATIVE_CODEX)
+    expect(reloaded.draftDefaultModel("draft:connection")).toEqual({
+      providerID: "upstream-provider",
+      modelID: "upstream-model",
+    })
+    expect(reloaded.draftDefaultModel("draft:native")).toEqual({ providerID: "codex", modelID: "native-model" })
   })
 
   /**
@@ -538,9 +587,9 @@ describe("harness store facade", () => {
   test("an explicit pick outranks the model the harness resolved, for this scope and the next draft", () => {
     const store = createHarnessStore(storage)
     const identity = { serverUrl: "http://localhost:4096", workspaceKey: "ws_1" }
-    store.beginDraftHarnessChoice("draft:one", identity, "claude-sdk")
+    store.beginDraftHarnessChoice("draft:one", identity, { kind: "native", harnessId: "claude" })
     // What `harnessSwitchStartPatch` writes alongside the choice.
-    store.applyPatch("draft:one", { harness: "claude-sdk", harnessMode: "harness" })
+    store.applyPatch("draft:one", { harness: { kind: "native", harnessId: "claude" }, harnessMode: "harness" })
     // The live options answer: five rows, `default` resolved by the harness.
     store.applyPatch("draft:one", {
       selectedModel: "default",
@@ -550,13 +599,15 @@ describe("harness store facade", () => {
         { id: "haiku", name: "Haiku" },
       ],
     })
-    expect(store.rememberDraftModel(
-      "draft:one",
-      identity,
-      { providerID: "claude-sdk", modelID: "sonnet" },
-      { provider: "Claude", model: "Sonnet" },
-    )).toBe(true)
-    store.setSelectedModel("draft:one", { providerID: "claude-sdk", modelID: "sonnet" })
+    expect(
+      store.rememberDraftModel(
+        "draft:one",
+        identity,
+        { providerID: "claude", modelID: "sonnet" },
+        { provider: "Claude", model: "Sonnet" },
+      ),
+    ).toBe(true)
+    store.setSelectedModel("draft:one", { providerID: "claude", modelID: "sonnet" })
     expect(store.read("draft:one")).toMatchObject({
       selectedModel: "sonnet",
       draftDefaultAuthority: "explicit",
@@ -567,22 +618,21 @@ describe("harness store facade", () => {
     // A fresh scope on the same workspace — what a reload produces.
     store.beginDraftDefault("draft:two", identity)
     expect(store.read("draft:two")).toMatchObject({
-      harness: "claude-sdk",
+      harness: { kind: "native", harnessId: "claude" },
       selectedModel: "sonnet",
-      selectedModelProvider: "claude-sdk",
+      selectedModelProvider: "claude",
     })
 
     // ...and choosing for one harness leaves the other's slot untouched.
     const preferences = createDraftDefaultPreferences(storage)
-    expect(preferences.readHarness(identity, "codex-app-server")).toBeUndefined()
-    store.beginDraftHarnessChoice("draft:two", identity, "codex-app-server")
+    expect(preferences.readHarness(identity, NATIVE_CODEX)).toBeUndefined()
+    store.beginDraftHarnessChoice("draft:two", identity, NATIVE_CODEX)
     expect(store.read("draft:two").selectedModel).toBe("")
-    expect(preferences.readHarness(identity, "claude-sdk")?.model).toEqual({
-      providerID: "claude-sdk",
+    expect(preferences.readHarness(identity, { kind: "native", harnessId: "claude" })?.model).toEqual({
+      providerID: "claude",
       modelID: "sonnet",
     })
   })
-
 })
 
 /**
@@ -600,14 +650,16 @@ function optionsPatch(
   const payload: OptionsResponse = {
     source: "harness",
     stale: false,
-    options: [{
-      id: "model",
-      name: "Model",
-      category: "model",
-      type: "select",
-      currentValue,
-      selectOptions: models.map((id) => ({ id, name: id })),
-    }],
+    options: [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue,
+        selectOptions: models.map((id) => ({ id, name: id })),
+      },
+    ],
   }
   return applyHarnessOptionsResponse({
     type: store.harness(scope),

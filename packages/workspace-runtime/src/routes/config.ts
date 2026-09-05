@@ -1,6 +1,7 @@
 import { Hono } from "hono"
+import { HTTPException } from "hono/http-exception"
 import { Log } from "../log"
-import type { HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
+import type { HarnessConnectionDescriptor, SessionHarness } from "@claxedo/agent-sdk-runtime"
 import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { boundedJsonBody, errorBody, isRequestBodyTooLarge, requestBodyTooLargeBody } from "./http"
 import type { WorkspaceRuntimeManagementAuth, WorkspaceRuntimeManagementTarget } from "../management-auth"
@@ -15,6 +16,27 @@ export type RuntimeHarnessSelection =
   | { kind: "connection"; connectionId: string }
 
 export type RuntimeConnectionDescriptor = HarnessConnectionDescriptor
+
+export function requestedSessionHarness(req: { query(name: string): string | undefined }): SessionHarness | undefined {
+  const nativeHarness = req.query("nativeHarness")
+  const connectionId = req.query("connectionId")
+  if (req.query("harness") !== undefined || req.query("runner") !== undefined) {
+    throw new HTTPException(400, { message: "Use nativeHarness or connectionId to select a harness" })
+  }
+  if (nativeHarness !== undefined && connectionId !== undefined) {
+    throw new HTTPException(400, { message: "Select either nativeHarness or connectionId" })
+  }
+  if (nativeHarness !== undefined) {
+    if (!RUNTIME_NATIVE_HARNESS_IDS.some((id) => id === nativeHarness)) {
+      throw new HTTPException(400, { message: "Unknown native harness" })
+    }
+    return { id: nativeHarness, access: "native" }
+  }
+  if (connectionId !== undefined) {
+    if (!connectionId.trim()) throw new HTTPException(400, { message: "connectionId must not be empty" })
+    return { id: connectionId, access: "connection" }
+  }
+}
 
 export type RuntimeCommandItem = {
   name: string

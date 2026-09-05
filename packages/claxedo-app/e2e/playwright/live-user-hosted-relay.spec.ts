@@ -312,7 +312,6 @@ import { fileURLToPath } from "node:url"
 import { e2eAppViteEnvironment } from "../auth-mode"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import {
-  opencodeScriptedProviderConfig,
   startScriptedModelServer,
   type ScriptedModelServer,
 } from "../helpers/scripted-model-server"
@@ -361,10 +360,9 @@ type RunningFixture = {
   log: () => string
   /**
    * The ONE fake thing in this spec: an HTTP endpoint standing where
-   * api.openai.com would, wired into the fixture's embedded engine through
-   * `OPENCODE_CONFIG_CONTENT` exactly as Tier R does (`real-cloud-relay`,
-   * `real-harness-local`). Everything the assertions ride — relay, host tunnel,
-   * workspace runtime, engine, browser — stays real, and the scripted endpoint
+   * api.openai.com would, wired into the fixture's real Pi model backend.
+   * Everything the assertions ride — relay, host tunnel,
+   * workspace runtime, agent, browser — stays real, and the scripted endpoint
    * is what makes a turn's timing scriptable instead of provider-dependent.
    */
   scripted: ScriptedModelServer
@@ -414,12 +412,8 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
       env: {
         ...process.env,
         CLAXEDO_E2E_BACKEND_PORT: String(backendPort),
-        // The model injection seam, identical to `real-cloud-relay`'s: the
-        // fixture's embedded engine reads `OPENCODE_CONFIG_CONTENT` at import
-        // and the provider block points its baseURL at the scripted endpoint.
-        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
-        TIER_REAL_API_KEY: "test-key",
-        OPENCODE_DISABLE_MODELS_FETCH: "true",
+        // Redirect only the real Pi model backend's HTTP endpoint.
+        CLAXEDO_E2E_SCRIPTED_MODEL_URL: scripted.v1Url,
         // The relay's browser-origin allowlist, in its real deployment form.
         // This spec serves the app from a front-door hostname (see
         // `startFrontend`), which the relay's built-in default list — loopback
@@ -550,10 +544,10 @@ async function startFixture(extraEnv: Record<string, string> = {}): Promise<Runn
     if (!res.ok) throw new Error(`GATING: /__fixture/tunnel/resume failed: ${res.status} ${await res.text()}`)
   }
 
-  return { info, log: () => log, scripted, close, mintRole, opencodeRequests, pauseTunnel, resumeTunnel }
+  return { info, log: () => log, scripted, close, mintRole, pauseTunnel, resumeTunnel }
 }
 
-const SCRIPTED_MODEL = { providerID: "tier-real", modelID: "scripted-model" } as const
+const SCRIPTED_MODEL = { providerID: "openai", modelID: "gpt-4" } as const
 
 /**
  * Creates a session ON THE HOST, through the real two-halves private-session
@@ -575,7 +569,7 @@ async function createHostSession(fixture: RunningFixture, title: string) {
   })
   if (!reserved.ok) throw new Error(`GATING: session reservation failed: ${reserved.status} ${await reserved.text()}`)
   const created = await fetch(
-    `${fixture.info.relayUrl}/workspaces/${encodeURIComponent(fixture.info.workspaceId)}/session`,
+    `${fixture.info.relayUrl}/workspaces/${encodeURIComponent(fixture.info.workspaceId)}/session?nativeHarness=pi`,
     {
       method: "POST",
       headers: {
@@ -1272,7 +1266,7 @@ test.describe("live user-hosted relay @live", () => {
       timeout: 60_000,
     })
     expect(
-      fixture.scripted.counts().chat,
+      fixture.scripted.counts().responses,
       `the scripted model endpoint was never reached, so no real turn ran: ${JSON.stringify(fixture.scripted.counts())}`,
     ).toBeGreaterThan(0)
   })

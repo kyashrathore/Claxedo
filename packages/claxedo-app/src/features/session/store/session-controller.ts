@@ -447,7 +447,6 @@ export function createSessionController(input: {
     active: paneActive,
     sessionID: input.sessionID,
     directory: input.directory,
-    client: sdk.client.session,
     serverUrl: () => globalSDK.url,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,

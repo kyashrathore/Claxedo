@@ -207,7 +207,6 @@ const networkPolicySettings = "features/settings/ui/network-policy.tsx"
 // setup page renders the same surfaces the dialogs do. The dialogs are now
 // shells; these invariants belong to the files that hold the logic.
 const dialogConnectProvider = "app/dialogs/provider-connect-form.tsx"
-const dialogCustomProvider = "app/dialogs/custom-provider.tsx"
 const dialogSelectProvider = "app/dialogs/provider-list.tsx"
 const dialogManageModels = "app/dialogs/manage-models.tsx"
 const dialogSelectModel = "features/session/ui/model/select-model.tsx"
@@ -510,15 +509,13 @@ describe("workspace runtime route audit", () => {
 
   test("credential entry surfaces do not persist raw secrets client-side", async () => {
     const connect = await Bun.file(path.join(root, dialogConnectProvider)).text()
-    const custom = await Bun.file(path.join(root, dialogCustomProvider)).text()
     const sandbox = await Bun.file(path.join(root, settingsSandboxSection)).text()
 
-    for (const text of [connect, custom, sandbox]) {
+    for (const text of [connect, sandbox]) {
       expect(text).not.toMatch(/\b(?:localStorage|sessionStorage)\b/)
       expect(text).not.toMatch(/\b(?:Persist\.global|persisted|setPersisted)\b/)
     }
     expect(connect).toMatch(/claxedoCredentialRequest/)
-    expect(custom).toMatch(/claxedoCredentialRequest/)
     expect(sandbox).toMatch(/createSignal<Record<string, Record<string, string>>>/)
     expect(sandbox).toMatch(/workspaceSandboxDriverAuthUrl/)
     expect(sandbox).not.toMatch(/RuntimeGateway/)
@@ -962,7 +959,6 @@ describe("workspace runtime route audit", () => {
     const general = await Bun.file(path.join(root, settingsGeneral)).text()
     const settings = await Bun.file(path.join(root, settingsProviders)).text()
     const connect = await Bun.file(path.join(root, dialogConnectProvider)).text()
-    const custom = await Bun.file(path.join(root, dialogCustomProvider)).text()
     const select = await Bun.file(path.join(root, dialogSelectProvider)).text()
     const manageModels = await Bun.file(path.join(root, dialogManageModels)).text()
     const selectModel = await Bun.file(path.join(root, dialogSelectModel)).text()
@@ -972,7 +968,6 @@ describe("workspace runtime route audit", () => {
       [
         settingsProviders,
         dialogConnectProvider,
-        dialogCustomProvider,
         dialogSelectProvider,
         dialogManageModels,
         dialogSelectModel,
@@ -1010,23 +1005,19 @@ describe("workspace runtime route audit", () => {
       expect(text).not.toMatch(/["']\/hooks\/use-providers["']/)
     }
     // Settings reads the catalog of the workspace and harness its scope selector names.
-    expect(settings).toMatch(/useProviders\(scope\.harness, scope\.scopeRef\)/)
+    expect(settings).toMatch(/useProviders\(\(\) => scope\.nativeHarness\(\) \?\? "", scope\.scopeRef\)/)
     expect(settings).not.toMatch(/useProviders\("opencode"\)|useProviders\("pi"\)/)
     expect(settings).toMatch(/providers\.queryKey\(\)/)
     expect(settings).toMatch(/removeProviderAuthEntry/)
     expect(settings).toMatch(/disconnectProvider/)
-    // Provider config is the workspace runtime's file, not a server global:
-    // Settings reads no `/global/config` and PATCHes no disabled-provider list
-    // there. A config-declared row disconnects through the scoped
-    // `PATCH /api/wr/provider-config` for the (workspace, harness) the scope
-    // selector names, and that writer is the only one in the app.
+    // External configuration is not mutated through a native credential UI.
     expect(settings).not.toMatch(/globalConfig/)
     expect(settings).not.toMatch(/disabled_providers/)
-    expect(settings).toMatch(/setProviderDisabled/)
+    expect(settings).not.toMatch(/setProviderDisabled/)
     const providerSettingsLogic = await Bun.file(
       path.join(root, "features/settings/provider-settings-logic.ts"),
     ).text()
-    expect(providerSettingsLogic).toMatch(/["']\/api\/wr\/provider-config["']/)
+    expect(providerSettingsLogic).not.toMatch(/["']\/api\/wr\/provider-config["']/)
     expect(providerSettingsLogic).not.toMatch(/\/global\/config/)
     expect(settings).toMatch(/provider-settings-logic/)
     expect(settings).toMatch(/claxedoCredentialRequest\(\{ providerId: id \}/)
@@ -1058,24 +1049,13 @@ describe("workspace runtime route audit", () => {
     expect(connect).toMatch(/claxedoCredentialRequest/)
     expect(connect).not.toMatch(/globalSync\.data\.(?:provider|provider_auth)/)
     expect(connect).not.toMatch(/globalSync\.set\("provider"/)
-    expect(custom).not.toMatch(/globalConfig/)
-    expect(custom).toMatch(/useProviders\("opencode", \(\) => props\.scope\)/)
-    expect(custom).toMatch(/claxedoCredentialRequest/)
-    expect(custom).toMatch(/globalSDK\.client\.global\.config[\s\S]{0,80}\.update/)
-    expect(custom).not.toMatch(/@\/app\/dialogs\/select-provider/)
-    expect(custom).not.toMatch(/@\/components\/dialogs\/select-provider/)
-    expect(custom).not.toMatch(/\.\/dialog-select-provider/)
-    expect(custom).not.toMatch(/globalSDK\.client\.auth\.set/)
-    expect(custom).not.toMatch(/auth:\s*\{[\s\S]{0,120}key:/)
-    expect(custom).not.toMatch(/useGlobalSync/)
-    expect(custom).not.toMatch(/globalSync\.data\.(?:provider|config)/)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-connect-provider.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-custom-provider.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-manage-models.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-model.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, "overrides/components/dialog-select-provider.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, dialogConnectProvider)).exists()).toBe(true)
-    expect(await Bun.file(path.join(root, dialogCustomProvider)).exists()).toBe(true)
+    expect(await Bun.file(path.join(root, "app/dialogs/custom-provider.tsx")).exists()).toBe(false)
     expect(await Bun.file(path.join(root, dialogManageModels)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, dialogSelectModel)).exists()).toBe(true)
     expect(await Bun.file(path.join(root, dialogSelectProvider)).exists()).toBe(true)
@@ -1086,9 +1066,8 @@ describe("workspace runtime route audit", () => {
     const providerSetupRow = await Bun.file(path.join(root, "features/settings/ui/provider-setup-row.tsx")).text()
     expect(providerSetupRow).toMatch(/ProviderConnectForm/)
     expect(settings).toMatch(/ProviderSetupRow/)
-    expect(settings).toMatch(/DialogCustomProvider/)
+    expect(settings).not.toMatch(/DialogCustomProvider/)
     expect(settings).toMatch(/@\/features\/settings\/app-ports/)
-    expect(settingsPorts).toMatch(/import type \* as CustomProvider from "@\/app\/dialogs\/custom-provider"/)
     expect(settings).not.toMatch(/DialogConnectProvider/)
     expect(settings).not.toMatch(/DialogAIConnect/)
     expect(settings).not.toMatch(/DialogSelectProvider/)
@@ -1104,7 +1083,7 @@ describe("workspace runtime route audit", () => {
     const selectShell = await Bun.file(path.join(root, "app/dialogs/select-provider.tsx")).text()
     expect(selectShell).toMatch(/@\/app\/dialogs\/connect-provider/)
     expect(selectShell).not.toMatch(/@\/components\/dialogs?\/connect-provider|@\/components\/dialog-connect-provider/)
-    expect(selectShell).toMatch(/@\/app\/dialogs\/custom-provider/)
+    expect(selectShell).not.toMatch(/@\/app\/dialogs\/custom-provider/)
     expect(selectShell).not.toMatch(/@\/components\/dialogs?\/custom-provider|@\/components\/dialog-custom-provider/)
     expect(selectShell).not.toMatch(/\.\/dialog-connect-provider/)
     expect(selectShell).not.toMatch(/\.\/dialog-custom-provider/)
@@ -1541,7 +1520,8 @@ describe("workspace runtime route audit", () => {
 
     expect(await Bun.file(path.join(root, "overrides/context/local.tsx")).exists()).toBe(false)
     expect(local).toMatch(/agentListQuery/)
-    expect(local).toMatch(/configQuery/)
+    expect(local).not.toMatch(/\bconfigQuery\b/)
+    expect(local).toMatch(/getSessionConfig/)
     expect(local).toMatch(/useQuery/)
     expect(local).toMatch(/localSelectionHandoffQueryKey/)
     expect(local).toMatch(/resolveExplicitSelection|materializeModel/)
@@ -1574,7 +1554,7 @@ describe("workspace runtime route audit", () => {
     expect(fileRequestCache).toMatch(/fileRequestRuntimeQueryKey/)
     expect(fileRequestCache).toMatch(/createRefCountedResourceCache/)
     expect(local).toMatch(/agentListQuery\(\{/)
-    expect(local).toMatch(/configQuery\(\{[\s\S]*baseUrl: sdk\.url,[\s\S]*directory: sdk\.directory/)
+    expect(local).toMatch(/sessionConfigRawOptions/)
     expect(local).not.toMatch(/sync\.data\.agent/)
     expect(local).not.toMatch(/sync\.data\.config/)
   })
@@ -1625,16 +1605,13 @@ describe("workspace runtime route audit", () => {
     expect(input).toMatch(/createModelSelectionPicker/)
     expect(input).toMatch(/write:\s*local\.model\.set/)
     expect(input).not.toMatch(/writeOpenCodeDraftModel/)
-    expect(input).toMatch(/selectedModelForSubmit:\s*toolbarState\.currentModel/)
     expect(input).not.toMatch(/fallbackModel/)
     expect(strategy).toMatch(/export function selectRuntimeModel/)
     expect(submit).toMatch(/resolveSubmittedConfig/)
-    expect(submit).toMatch(/const harnessModelMode = true/)
     expect(submit).toMatch(/harnessController\.modelKeyForSubmit\(scope\)/)
     expect(submit).not.toMatch(/local\.model\.current\(\)/)
     expect(submit).not.toMatch(/allowModelFallback/)
     expect(submit).not.toMatch(/fallbackModel/)
-    expect(submit).not.toMatch(/selectedModelForSubmit\?\.\(\)/)
     expect(submit).not.toMatch(/function selectRuntimeModel\(/)
     expect(submit).not.toMatch(/function runtimeProviders\(/)
     expect(submit).not.toMatch(/id: "big-pickle"/)
@@ -1653,9 +1630,8 @@ describe("workspace runtime route audit", () => {
     expect(harness).not.toMatch(/harnessModelForSubmit/)
 
     expect(submit).toMatch(
-      /harnessModelKey:\s*harnessModelMode\s*\?\s*harnessController\.modelKeyForSubmit\(scope\)\s*:\s*undefined/,
+      /harnessModelKey:\s*harnessController\.modelKeyForSubmit\(scope\)/,
     )
-    expect(submit).toMatch(/const harnessModelMode = true/)
     expect(submit).not.toMatch(/harnessModel:\s*/)
     expect(submit).not.toMatch(/submitModelFromModelKey/)
 
@@ -2054,7 +2030,8 @@ describe("workspace runtime route audit", () => {
     expect(api).not.toMatch(/queryKeys/)
     expect(globalSdk).not.toMatch(/createGlobalSdkFetch/)
     expect(globalSdk).toMatch(/createTransport/)
-    expect(globalSdk).toMatch(/signedWorkspaceFromProjects/)
+    const liveSession = await Bun.file(path.join(root, "app/providers/global-sdk/live-session.ts")).text()
+    expect(liveSession).toMatch(/signedWorkspaceFromProjects/)
   })
 
   test("session status telemetry is keyed by root session id", async () => {
@@ -2211,13 +2188,13 @@ describe("workspace runtime route audit", () => {
     const signedWorkspace = await Bun.file(path.join(root, "platform/runtime/agent/signed-workspace.ts")).text()
 
     expect(await Bun.file(path.join(root, "overrides/app/providers/global-sdk/provider.tsx")).exists()).toBe(false)
-    expect(globalSdk).toMatch(/sameWorkspaceDirectory/)
+    const routeScope = await Bun.file(path.join(root, "app/providers/global-sdk/route-event-scope.ts")).text()
+    expect(routeScope).toMatch(/sameWorkspaceDirectory/)
     expect(globalSdk).toMatch(/sessionWorkspaceRuntimeRef/)
     expect(globalSdk).toMatch(/const placement = globalSdkClientPlacement\(workspaceId\)/)
     expect(globalSdk).toMatch(/request: placement[\s\S]{0,100}createTransport\(\{[\s\S]{0,80}placement,/)
     expect(globalSdk).not.toMatch(/transport: principalHasSignedAccess\(principal\(\)\) \|\| centralTransportForServer\(s\.http\.url\)/)
-    expect(runtimeProjection).toMatch(/function runtimeSessionKey\(sessionID: string\)/)
-    expect(runtimeProjection).toMatch(/return sessionID/)
+    expect(runtimeProjection).toMatch(/createClientPresentationProjection/)
     expect(runtimeProjection).toMatch(/const key = `\$\{input\.sessionId\}:\$\{assistantMessageId \?\? ""\}`/)
     expect(runtimeProjection).toMatch(/directory: input\.directory/)
     expect(globalSdk).toMatch(/return `session\.status:\$\{payload\.properties\.sessionID\}`/)
@@ -2957,7 +2934,8 @@ describe("workspace runtime route audit", () => {
 
     expect(await Bun.file(path.join(root, "components/session-context-usage.tsx")).exists()).toBe(false)
     expect(text).toMatch(/createActiveConversationSnapshot/)
-    expect(text).toMatch(/const readProviders = \(\) => Array\.from\(providers\.all\(\)\.values\(\)\)/)
+    expect(text).toMatch(/local\.model\.current\(\)\?\.provider/)
+    expect(text).not.toMatch(/useProviders\(/)
     expect(text).toMatch(/getSessionContextMetrics\(messages\(\), activeProviders\(\)\)/)
     expect(text).not.toMatch(/\buseSync\b/)
     expect(text).not.toMatch(/sync\.data\.message/)
@@ -3718,19 +3696,11 @@ describe("workspace runtime route audit", () => {
     const autoResponseCache = await Bun.file(
       path.join(root, "features/session/providers/permission-auto-response-cache.ts"),
     ).text()
-    const configHelper = await Bun.file(path.join(root, "platform/query/directory-config-cache.ts")).text()
-
-    expect(configHelper).toMatch(/queryKeys\.directory\.config\(baseUrl, directory, workspaceQueryKey\(workspace\)\)/)
-    // as-any: regex asserts upstream text still contains this compatibility cast.
-    expect(configHelper).toMatch(/queryFn: async \(\) => undefined as unknown as Config/)
+    expect(await Bun.file(path.join(root, "platform/query/directory-config-cache.ts")).exists()).toBe(false)
     expect(autoResponseCache).toMatch(/"permission-auto-respond"/)
     expect(autoResponseCache).toMatch(/permissionAutoRespondedQueryKey/)
     expect(autoResponseCache).toMatch(/permissionAutoAcceptVersionQueryKey/)
-    expect(text).toMatch(/directoryConfigQuery\(globalSDK\.url, dir, workspaceFor\(dir\)\)/)
-    expect(text).toMatch(/const permissionConfig = createMemo\(\(\) => configQuery\.data\?\.permission\)/)
-    expect(text).toMatch(/hasPermissionPromptRules\(permissionConfig\(\)\)/)
-    expect(text).toMatch(/const perm = permissionConfig\(\)/)
-    expect(text).toMatch(/directoryConfig\(globalSDK\.url, directory, workspaceFor\(directory\)\)\?\.permission/)
+    expect(text).not.toMatch(/directoryConfig|permissionConfig|hasPermissionPromptRules|configQuery/)
     expect(text).toMatch(/const session = directory \? directorySessions\(directory\) : \[\]/)
     expect(text).toMatch(/autoRespondsPermission\(store\.autoAccept, session, \{ sessionID \}, directory\)/)
     expect(text).toMatch(/autoRespondsPermission\(store\.autoAccept, session, permission, directory\)/)
@@ -3842,10 +3812,7 @@ describe("workspace runtime route audit", () => {
     expect(text).not.toMatch(/sync\.data\.session_diff\[sessionID\]/)
     expect(text).not.toMatch(/sync\.data\.agent/)
     expect(text).not.toMatch(/sync\.data\.message\[sessionID\]/)
-    expect(submit).toMatch(/resolveSubmitMode/)
-    expect(submit).toMatch(/dispatchCommandPromptSubmit/)
-    expect(submit).toMatch(/commandListQuery\(/)
-    expect(submit).toMatch(/queryClient\s*\.\s*fetchQuery\(/)
+    expect(submit).not.toMatch(/commandListQuery\(/)
     expect(shellQuery).toMatch(/export function commandListQuery/)
     expect(submitUiState).toMatch(/addRegisteredConversationMessage\(item\)/)
     expect(submitUiState).toMatch(/removeRegisteredConversationMessage\(item\)/)

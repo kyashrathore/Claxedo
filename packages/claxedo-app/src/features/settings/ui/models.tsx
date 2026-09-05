@@ -150,7 +150,7 @@ export const SettingsModels: Component = () => {
   // The catalog of the (workspace, harness) this page is showing, read through
   // the same hook instance the hydration below writes into.
   const scope = useSettingsScope()
-  const providers = useProviders(scope.harness, scope.scopeRef)
+  const providers = useProviders(() => scope.nativeHarness() ?? "", scope.scopeRef)
   const [hydrating, setHydrating] = createSignal(true)
   const [hydrateKey, setHydrateKey] = createSignal("")
 
@@ -242,6 +242,11 @@ export const SettingsModels: Component = () => {
             <p class="text-12-regular text-text-weak">{language.t("settings.models.description")}</p>
           </div>
           <SettingsScopeSelector />
+          <Show when={scope.harnessSelection() && scope.nativeHarness() !== "pi"}>
+            <p class="text-12-regular text-text-weak" data-component="providers-externally-managed">
+              {language.t("settings.providers.externallyManaged", { harness: harnessLabel() })}
+            </p>
+          </Show>
           <div class="flex items-center gap-2 px-3 h-9 rounded-lg bg-surface-base">
             <Icon name="magnifying-glass" class="text-icon-weak-base flex-shrink-0" />
             <TextField

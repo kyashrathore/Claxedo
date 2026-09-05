@@ -54,15 +54,15 @@ describe("hosted shell marketplace routes", () => {
     expect(machineItemsFromJson(body)).toEqual([])
   })
 
-  test("acp-connections refuses an anonymous caller", async () => {
-    const res = await app.fetch(new Request("http://cp.test/api/claxedo/agent-config/harness/acp-connections"))
+  test("connections refuses an anonymous caller", async () => {
+    const res = await app.fetch(new Request("http://cp.test/api/claxedo/agent-config/connections"))
     expect(res.status).toBe(401)
     await expect(res.json()).resolves.toEqual({
       error: { code: "missing_bearer_token", message: "Authorization: Bearer token is required" },
     })
   })
 
-  test("acp-connections returns the valid empty shape once signed (no local machine)", async () => {
+  test("connections reports unsupported once signed (operator local configuration)", async () => {
     const signed = HostedShellRoutes({
       authConfig: { enabled: true, issuer: "https://auth.test", jwksUrl: "custom:test" },
       verifier: async (token) => ({
@@ -72,18 +72,13 @@ describe("hosted shell marketplace routes", () => {
       }),
     })
     const res = await signed.fetch(
-      new Request("http://cp.test/api/claxedo/agent-config/harness/acp-connections", {
+      new Request("http://cp.test/api/claxedo/agent-config/connections", {
         headers: { authorization: "Bearer hosted-token" },
       }),
     )
     expect(res.status).toBe(200)
     const body = await res.json()
-    // The app's `decodeAcpConnectionRows` accepts only `{ connections: [...] }`
-    // (a bare [] or a 404 body both decode to "no rows", which is why the 404
-    // was invisible in the UI and loud in the console). It is NOT imported
-    // here: unlike install-flow.ts it reaches for the app's `@/` alias, which
-    // this package cannot resolve — the header above is the rule.
-    expect(body).toEqual({ connections: [] })
+    expect(body).toEqual({ status: "unsupported", reason: "operator_local_configuration" })
   })
 
   test("installed-extensions list parses through the app's marketplace parser", async () => {

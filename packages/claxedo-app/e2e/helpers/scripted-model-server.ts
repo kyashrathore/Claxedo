@@ -251,61 +251,6 @@ export async function startScriptedModelServer(port = 0): Promise<ScriptedModelS
   }
 }
 
-/**
- * Provider block the embedded OpenCode engine consumes via
- * OPENCODE_CONFIG_CONTENT (v1 config schema, auto-migrated by the engine —
- * same shape Tier R has always used). `options.baseURL` and
- * `options.apiKey` are exactly the two keys the engine's provider layer reads.
- *
- * NOTE FOR ANY FUTURE SCRIPTED MODEL: the composer's model picker HIDES models
- * by default. `resolveModelVisibility`
- * (`src/features/session/providers/models.tsx`) shows a model only when the
- * user explicitly unhid it, or it IS the provider's default model —
- * `providers.default()[providerID] === modelID`, served by `/provider` from
- * `Provider.defaultModelIDs` (`sort(models)[0]`). The picker lists CONNECTED
- * providers only, so a scripted provider reaches it through exactly the one
- * model that sort picks: keep this block at ONE model and the question never
- * arises.
- *
- * `release_date` is irrelevant to that rule and is omitted only because nothing
- * here needs it. (It used to be load-bearing: visibility was once derived from
- * a "released within 6 months" set, so a real-but-old date made the model
- * invisible and the search truthfully reported "No model results". That rule is
- * gone — do not spend a debugging session on the date again.)
- */
-export function opencodeScriptedProviderConfig(v1Url: string) {
-  return {
-    formatter: false,
-    lsp: false,
-    model: "tier-real/scripted-model",
-    permission: { task: "allow" },
-    provider: {
-      "tier-real": {
-        name: "Tier R Scripted",
-        id: "tier-real",
-        env: ["TIER_REAL_API_KEY"],
-        npm: "@ai-sdk/openai-compatible",
-        models: {
-          "scripted-model": {
-            id: "scripted-model",
-            name: "Scripted Model",
-            attachment: false,
-            reasoning: false,
-            temperature: false,
-            tool_call: true,
-            // No release_date: nothing in the picker or the engine reads one
-            // for this fixture — see this function's doc.
-            variants: { high: {} },
-            limit: { context: 100_000, output: 10_000 },
-            cost: { input: 0, output: 0 },
-            options: {},
-          },
-        },
-        options: { apiKey: "test-key", baseURL: v1Url },
-      },
-    },
-  }
-}
 
 /**
  * CODEX_CONFIG env value that redirects codex at the scripted endpoint.
@@ -385,16 +330,18 @@ requires_openai_auth = false
 `
 }
 
-/**
- * Env vars that point the claude CLI (ACP and native SDK) at the endpoint.
- *
- * `configDir` is REQUIRED and must be a scratch directory: the CLI's own
- * `settings.json` `env` block overrides the process environment, so a
- * developer whose global settings set `ANTHROPIC_BASE_URL` (a local proxy, a
- * gateway) would silently hijack the turn — the scripted server sees zero
- * requests while the test goes green against the wrong backend. Isolating
- * `CLAUDE_CONFIG_DIR` is what makes the redirect trustworthy.
- */
+/** Redirects native Pi to the scripted HTTP endpoint without reading an ambient backend selection. */
+export function piScriptedEnv(v1Url: string) {
+  return {
+    OPENAI_BASE_URL: v1Url,
+    OPENAI_API_KEY: "test-key",
+    CLAXEDO_PI_MODEL_BACKEND: "",
+    CLAXEDO_PI_MODEL: "",
+    CLAXEDO_CF_KV_URL: "",
+  }
+}
+
+/** Isolates Claude CLI settings and redirects its actual provider traffic to the scripted server. */
 export function claudeScriptedEnv(url: string, configDir: string) {
   return {
     ANTHROPIC_BASE_URL: url,

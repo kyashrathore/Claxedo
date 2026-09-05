@@ -17,6 +17,8 @@ import { ClaxedoDB } from "@claxedo/server-core/platform/db/index"
 import { closeAuthorityDatabases } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
 import { managedWorkspaceSessionAccessPolicy } from "@claxedo/workspace-runtime"
 import { EMBEDDED_RELAY_HOST_AUTH_HEADER } from "@claxedo/workspace-runtime/exposure"
+import { createAcpConnectionProvider, type ConnectionProvider } from "@claxedo/agent-sdk-runtime"
+import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 
 /**
  * Delete workspace roots AFTER releasing the module-scoped sqlite handles:
@@ -78,8 +80,8 @@ const previous = {
   CURSOR_DATA_DIR: process.env.CURSOR_DATA_DIR,
 }
 
-function shutdownTestRuntimes() {
-  shutdownEmbeddedWorkspaceRuntimes()
+async function shutdownTestRuntimes() {
+  await shutdownEmbeddedWorkspaceRuntimes()
   // Direct embedded-runtime tests own the default agent-config authority that
   // runtime configuration opens lazily; no LocalServer exists to dispose it.
   disposeAgentConfig()
@@ -91,7 +93,7 @@ function shutdownTestRuntimes() {
 }
 
 afterEach(async () => {
-  shutdownTestRuntimes()
+  await shutdownTestRuntimes()
   if (previous.CLAXEDO_DATA_DIR === undefined) delete process.env.CLAXEDO_DATA_DIR
   else process.env.CLAXEDO_DATA_DIR = previous.CLAXEDO_DATA_DIR
   if (previous.CLAXEDO_AGENT_TYPE === undefined) delete process.env.CLAXEDO_AGENT_TYPE
@@ -101,6 +103,151 @@ afterEach(async () => {
 })
 
 describe("embedded workspace runtime", () => {
+  test.each(["directory", "release", "shutdown", "shutdown-waiter"] as const)("%s retirement drains the old producer before the same store root is reopened", async (mode) => {
+    const { root, project } = await makeWorkspaceRoot("embedded-runtime-drain-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    const ws = workspace("ws_drain", project)
+    const moved = path.join(root, "moved")
+    await fs.mkdir(moved)
+    const deferred = () => {
+      let resolve!: () => void
+      const promise = new Promise<void>((done) => { resolve = done })
+      return { promise, resolve }
+    }
+    const started = deferred()
+    const stopped = deferred()
+    const tail = deferred()
+    const producerDone = deferred()
+    const capabilities = {
+      abort: false, reconnect: false, replay: true, permissions: false, questions: false,
+      todos: false, commands: false, fork: false, revert: false, unrevert: false,
+      configOptions: false, subagents: false,
+    }
+    const provider: ConnectionProvider<Record<string, never>> = {
+      providerKey: "held-producer",
+      validateConfig: () => ({}),
+      project: () => ({ label: "Held producer", readiness: "ready", capabilities }),
+      resolve: () => ({ config: {} }),
+      createAdapter: () => {
+        let ownsProducer = false
+        return {
+          sessionConfigOwner: "runtime",
+          async createSession(_directory, _title, id) { return { id: id!, agentSessionId: "upstream-held" } },
+          async getSession() { return null },
+          async getMessages() { return [] },
+          async updateSession() { return null },
+          async deleteSession() {},
+          async getSessionConfig() { throw new Error("runtime-owned config") },
+          async updateSessionConfig() { throw new Error("runtime-owned config") },
+          readHarnessCapabilities: () => ({ ...capabilities, goals: false, harness: "held" }),
+          async *executeTurn(binding) {
+            ownsProducer = true
+            started.resolve()
+            try {
+              await stopped.promise
+              await tail.promise
+              yield { type: "text-delta", delta: "final producer text" }
+              yield { type: "finish", sessionId: binding.sessionId }
+            } finally { producerDone.resolve() }
+          },
+          dispose() {
+            if (!ownsProducer) return
+            stopped.resolve()
+            return producerDone.promise
+          },
+        }
+      },
+    }
+    configureEmbeddedWorkspaceRuntime({ connectionProviders: [provider] })
+    let prompt: Promise<Response> | undefined
+    try {
+      const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      await first.host.apply({ version: 3, mcp: {}, auth: {}, connections: [{
+        connectionId: "held", providerKey: "held-producer", configRevision: 1, enabled: true, config: {},
+      }], defaultHarness: { kind: "connection", connectionId: "held" } })
+      const request = (pathname: string, body: unknown) => Promise.resolve(first.app.request(
+        `http://runtime.test${pathname}?directory=${encodeURIComponent(project)}&connectionId=held`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+      ))
+      expect((await request("/session", { id: "held-session", title: "Held" })).status).toBe(201)
+      prompt = request("/session/held-session/message", { parts: [{ type: "text", text: "wait" }] })
+      await started.promise
+      const target = mode === "directory" || mode === "shutdown-waiter" ? workspace(ws.id, moved) : ws
+      let retirement = mode === "release" ? releaseEmbeddedWorkspaceRuntime(ws.id)
+        : mode === "shutdown" ? shutdownEmbeddedWorkspaceRuntimes() : undefined
+      let reopened = false
+      const replacement = ensureEmbeddedWorkspaceRuntime(target, { config: "skip" }).then((runtime) => {
+        reopened = true
+        return runtime
+      })
+      const concurrent = ensureEmbeddedWorkspaceRuntime(target, { config: "skip" })
+      const acquisitions = Promise.allSettled([replacement, concurrent])
+      await stopped.promise
+      await Promise.resolve()
+      expect(reopened).toBe(false)
+      expect((await first.app.request(`http://runtime.test/session?directory=${encodeURIComponent(project)}`)).status).toBe(503)
+      if (mode === "shutdown-waiter") retirement = shutdownEmbeddedWorkspaceRuntimes()
+      let retired = false
+      if (retirement) void retirement.then(() => { retired = true })
+      await Promise.resolve()
+      expect(retired).toBe(false)
+      tail.resolve()
+      if (mode === "shutdown-waiter") {
+        expect(await acquisitions).toEqual([
+          { status: "rejected", reason: expect.objectContaining({ message: "Embedded workspace runtime was shut down during acquisition" }) },
+          { status: "rejected", reason: expect.objectContaining({ message: "Embedded workspace runtime was shut down during acquisition" }) },
+        ])
+        await retirement
+        expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).not.toBe(first)
+        return
+      }
+      const next = await replacement
+      expect(await concurrent).toBe(next)
+      expect(next).not.toBe(first)
+      await retirement
+      await prompt
+      if (mode !== "directory") {
+        const history = await next.app.request(`http://runtime.test/session/held-session/message?directory=${encodeURIComponent(project)}`)
+        expect(history.status).toBe(200)
+        expect(await history.text()).toContain("final producer text")
+      }
+    } finally {
+      stopped.resolve()
+      tail.resolve()
+      await prompt
+      await shutdownEmbeddedWorkspaceRuntimes()
+      configureEmbeddedWorkspaceRuntime({ connectionProviders: [createAcpConnectionProvider(), createOpenCodeServerConnectionProvider()] })
+      await removeWorkspaceRoot(root)
+    }
+  })
+
+  test("an acquisition waiting for metadata never returns a concurrently released runtime", async () => {
+    const { root, project } = await makeWorkspaceRoot("embedded-acquisition-release-")
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
+    let started!: () => void
+    let release!: () => void
+    const reading = new Promise<void>((resolve) => { started = resolve })
+    const snapshot = new Promise<void>((resolve) => { release = resolve })
+    try {
+      const ws = workspace("ws_acquisition", project)
+      const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      configureEmbeddedWorkspaceRuntime({ onSessionMetaSnapshot: () => { started(); return snapshot } })
+      const acquisition = ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
+      await reading
+      const retirement = releaseEmbeddedWorkspaceRuntime(ws.id)
+      release()
+      const replacement = await acquisition
+      await retirement
+      expect(replacement).not.toBe(first)
+      expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).toBe(replacement)
+    } finally {
+      release()
+      configureEmbeddedWorkspaceRuntime({})
+      await shutdownTestRuntimes()
+      await removeWorkspaceRoot(root)
+    }
+  })
+
   test("reports the composition its runtimes are actually mounted with", async () => {
     // A host that shares these runtimes must DECLARE this to the control
     // plane, which mints every client's event-stream scope from the
@@ -111,7 +258,6 @@ describe("embedded workspace runtime", () => {
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
 
     configureEmbeddedWorkspaceRuntime({
-      opencodeRequest: async () => new Response(null, { status: 404 }),
       sessionAccessPolicy: managedWorkspaceSessionAccessPolicy({
         authority: {
           authorizeSessionRead: () => true,
@@ -141,7 +287,7 @@ describe("embedded workspace runtime", () => {
     try {
       expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("managed-private")
     } finally {
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
+      configureEmbeddedWorkspaceRuntime({})
     }
     expect(embeddedWorkspaceRuntimeSessionAuthority()).toBe("local")
   })
@@ -213,9 +359,10 @@ describe("embedded workspace runtime", () => {
           headers: {
             "content-type": "application/json",
             authorization: "Bearer alice-proof",
+            "x-claxedo-session-registration-operation": "reserve-private-session",
             [EMBEDDED_RELAY_HOST_AUTH_HEADER]: embeddedClaims("actor_alice", "Alice"),
           },
-          body: JSON.stringify({ title: "Private" }),
+          body: JSON.stringify({ id: "private-session", title: "Private" }),
         },
       )
       expect(created.status, await created.clone().text()).toBe(201)
@@ -243,7 +390,7 @@ describe("embedded workspace runtime", () => {
       ])
     } finally {
       configureEmbeddedWorkspaceRuntime({})
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -303,7 +450,7 @@ describe("embedded workspace runtime", () => {
         },
       })
 
-    shutdownTestRuntimes()
+    await shutdownTestRuntimes()
     await removeWorkspaceRoot(root)
   })
 
@@ -327,7 +474,7 @@ describe("embedded workspace runtime", () => {
       // fresh one is created.
       expect(moved).not.toBe(first)
     } finally {
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -351,7 +498,7 @@ describe("embedded workspace runtime", () => {
       expect(await workspaceIsClean(skip.project)).toEqual([])
       expect(await workspaceIsClean(sync.project)).toEqual([])
     } finally {
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(skip.root, sync.root)
     }
   })
@@ -378,7 +525,7 @@ describe("embedded workspace runtime", () => {
       expect(fresh).not.toBe(first)
     } finally {
       configureEmbeddedWorkspaceRuntime({})
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
       await fs.rm(project + "-new", { recursive: true, force: true }).catch(() => {})
     }
@@ -392,14 +539,14 @@ describe("embedded workspace runtime", () => {
       const ws = workspace("ws_shutdown", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
 
-      shutdownEmbeddedWorkspaceRuntimes()
+      await shutdownEmbeddedWorkspaceRuntimes()
 
       // After shutdown the cache is empty, so the next ensure builds a fresh
       // runtime rather than returning the disposed one.
       const rebuilt = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
       expect(rebuilt).not.toBe(first)
     } finally {
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -421,7 +568,7 @@ describe("embedded workspace runtime", () => {
       )
       expect(unauthorized.status).toBe(403)
     } finally {
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -451,10 +598,10 @@ describe("embedded workspace runtime", () => {
     try {
       const ws = workspace("ws_release", project)
       const first = await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
-      releaseEmbeddedWorkspaceRuntime(ws.id)
+      await releaseEmbeddedWorkspaceRuntime(ws.id)
       expect(await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })).not.toBe(first)
     } finally {
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -502,98 +649,47 @@ describe("embedded workspace runtime", () => {
       }])
     } finally {
       configureEmbeddedWorkspaceRuntime({})
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
 
 
-  // ── Regression: a harness session's async auto-title (e.g. an ACP
-  //    harness's post-turn `maybeEmitTitle`, or opencode's own LLM-driven
-  //    rename) is published ONLY as an SSE event on this runtime's own
-  //    `/global/event` stream (`RuntimeEventHub.publishGlobal`), never an
-  //    HTTP `PATCH /session/:id`. Before this fix nothing tapped that
-  //    per-workspace stream, so `services.projectionStore` never learned the
-  //    title and it reverted to "Untitled" after a restart. This proves the
-  //    tap itself: a `session.updated` event on `/global/event` reaches the
-  //    `onSessionMetaEvent` callback claxedo-server wires to
-  //    `projectLocalSessionMetaFromEvent` (see `session-meta-bridge.test.ts`
-  //    for that write path proven against the real SQLite projection store).
-  test("starts the metadata tap on the first engine mutation and propagates SSE-only title events", async () => {
+  test("projects canonical runtime title events without publishing conversation events to the control plane", async () => {
     const { root, project } = await makeWorkspaceRoot("claxedo-embedded-title-")
     process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
-    process.env.CLAXEDO_AGENT_TYPE = "opencode"
-    process.env.OPENCODE_URL = "http://opencode.test"
-
+    const { globalBus } = await import("@claxedo/server-core/platform/runtime/lib/bus")
+    const events: import("@claxedo/agent-sdk-runtime").CompatEnvelope[] = []
+    const controlPlaneEvents: unknown[] = []
+    const unsubscribe = globalBus.subscribe((event) => controlPlaneEvents.push(event))
+    configureEmbeddedWorkspaceRuntime({ onSessionMetaEvent: (event) => events.push(event) })
     try {
-      const events: OpencodeEvent[] = []
-      const requests: string[] = []
-      let resolveSeen: (() => void) | undefined
-      const seen = new Promise<void>((resolve) => {
-        resolveSeen = resolve
-      })
-
-      // Stands in for the real opencode process: claxedo-server rides this
-      // injected transport in embedded mode (see `configureEmbeddedWorkspaceRuntime`
-      // in `server.ts`), so the workspace runtime's `/global/event` route
-      // proxies straight through it — exactly as it would a real opencode
-      // subprocess's own SSE stream.
-      const fakeOpencodeRequest: OpenCodeRequestFn = async (req) => {
-        const url = new URL(req.url)
-        requests.push(`${req.method} ${url.pathname}`)
-        if (url.pathname !== "/global/event") return Response.json({ id: "s_mutation", directory: project })
-        const body = new ReadableStream<Uint8Array>({
-          start(controller) {
-            const envelope = {
-              directory: project,
-              payload: {
-                id: "session.updated:s_auto_title",
-                type: "session.updated",
-                properties: {
-                  sessionID: "s_auto_title",
-                  info: { id: "s_auto_title", title: "Auto-generated title", directory: project },
-                },
-              },
-            }
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(envelope)}\n\n`))
-            // Deliberately never closed: closing would trigger the SSE
-            // client's reconnect-with-backoff loop, which would otherwise
-            // keep firing after this test's assertions complete.
-          },
-        })
-        return new Response(body, { status: 200, headers: { "content-type": "text/event-stream" } })
-      }
-
-      configureEmbeddedWorkspaceRuntime({
-        opencodeRequest: fakeOpencodeRequest,
-        onSessionMetaEvent: (event) => {
-          events.push(event)
-          resolveSeen?.()
-        },
-      })
-
       const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_title", project), { config: "skip" })
-      expect(requests).not.toContain("GET /global/event")
-      await runtime.app.request(`http://localhost/session?directory=${encodeURIComponent(project)}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: "{}",
+      const created = await runtime.app.request(`http://runtime.test/session?directory=${encodeURIComponent(project)}&nativeHarness=pi`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Initial title" }),
       })
-      await seen
-
-      expect(requests.indexOf("GET /global/event")).toBeLessThan(requests.indexOf("POST /session"))
-
-      expect(events).toHaveLength(1)
-      const [event] = events
-      expect(event?.payload.type).toBe("session.updated")
-      const info = event?.payload.properties?.info as { id?: string; title?: string } | undefined
-      expect(info?.id).toBe("s_auto_title")
-      expect(info?.title).toBe("Auto-generated title")
+      expect(created.status, await created.clone().text()).toBe(201)
+      const session = await created.json() as { id: string }
+      events.length = 0
+      controlPlaneEvents.length = 0
+      const updated = await runtime.app.request(`http://runtime.test/session/${session.id}?directory=${encodeURIComponent(project)}`, {
+        method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ title: "Canonical title" }),
+      })
+      expect(updated.status, await updated.clone().text()).toBe(200)
+      expect(events).toContainEqual(expect.objectContaining({
+        directory: project,
+        payload: expect.objectContaining({
+          type: "session.updated",
+          properties: expect.objectContaining({ info: expect.objectContaining({ id: session.id, title: "Canonical title" }) }),
+        }),
+      }))
+      expect(controlPlaneEvents).not.toContainEqual(expect.objectContaining({
+        payload: expect.objectContaining({ type: "session.updated" }),
+      }))
     } finally {
-      // Reset the module singleton so later tests in this file don't inherit
-      // this test's callback or fake transport.
-      configureEmbeddedWorkspaceRuntime({ opencodeRequest: async () => new Response(null, { status: 404 }) })
-      shutdownTestRuntimes()
+      unsubscribe()
+      configureEmbeddedWorkspaceRuntime({})
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
@@ -622,7 +718,7 @@ describe("embedded workspace runtime", () => {
       )
       expect(created.status).toBe(201)
       snapshots.length = 0
-      shutdownEmbeddedWorkspaceRuntimes()
+      await shutdownEmbeddedWorkspaceRuntimes()
       await ensureEmbeddedWorkspaceRuntime(ws, { config: "skip" })
 
       expect(snapshots).toEqual([[
@@ -632,85 +728,22 @@ describe("embedded workspace runtime", () => {
       ]])
     } finally {
       configureEmbeddedWorkspaceRuntime({})
-      shutdownTestRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })
 })
 
-describe("compat hub -> globalBus bridge", () => {
-  // The regression this pins: an ACP harness turn's message/error compat
-  // events published on the embedded runtime's hub never reached globalBus,
-  // and the central `/global/event` + `/api/wr/events` stream — a LOCAL
-  // workspace's only live channel into claxedo-app — carried lifecycle and
-  // process frames only. A live turn's reply (and its error card) rendered in
-  // an already-open timeline only after a manual refresh.
-  test("publishes hub envelopes to globalBus in the engine bridge's wire shape", async () => {
-    const { globalBus } = await import("@claxedo/server-core/platform/runtime/lib/bus")
-    const { bridgeCompatEventToGlobalBus } = await import("./embedded-workspace-runtime")
-    const seen: unknown[] = []
-    const unsubscribe = globalBus.subscribe((event) => seen.push(event))
-    try {
-      bridgeCompatEventToGlobalBus({
-        directory: "/repo/main",
-        payload: {
-          type: "message.part.delta",
-          // A part's deltas all carry ONE stable payload id — it must be
-          // stripped before the wire so it can never become the SSE frame id.
-          id: "message.part.delta:msg_1:part_1",
-          properties: { sessionID: "ses_1", messageID: "msg_1", partID: "part_1", field: "text", delta: "API Error: 503" },
-        } as { type: string; properties?: unknown },
-      })
-      bridgeCompatEventToGlobalBus({
-        payload: { type: "session.error", properties: { sessionID: "ses_1", error: "auth_unavailable" } },
-      })
-    } finally {
-      unsubscribe()
-    }
-
-    expect(seen).toEqual([
-      {
-        directory: "/repo/main",
-        payload: {
-          type: "message.part.delta",
-          properties: { sessionID: "ses_1", messageID: "msg_1", partID: "part_1", field: "text", delta: "API Error: 503" },
-        },
-      },
-      // Directory defaults to "global" like the engine bridge, never undefined:
-      // the central handler keys frames by directory for the app's router.
-      {
-        directory: "global",
-        payload: { type: "session.error", properties: { sessionID: "ses_1", error: "auth_unavailable" } },
-      },
-    ])
-  })
-})
-
-
-/**
- * The seam is only worth anything if the composition root's hook actually
- * reaches the runtime that answers `/provider`. This drives a real embedded
- * runtime and asks it for a non-opencode catalog.
- */
-describe("embedded runtime provider catalog", () => {
-  test("a workspace-scoped /provider for a non-opencode harness answers the host's catalog", async () => {
+describe("embedded runtime route ownership", () => {
+  test("does not expose the removed OpenCode provider proxy", async () => {
     const { root, project } = await makeWorkspaceRoot("embedded-provider-")
-    const asked: string[] = []
-    configureEmbeddedWorkspaceRuntime({
-      opencodeRequest: async () => new Response(null, { status: 404 }),
-      providerCatalog: async ({ harnessId }) => {
-        asked.push(harnessId)
-        return { all: [{ id: "anthropic", name: "Anthropic", models: {} }], default: {}, connected: [] }
-      },
-    })
+    process.env.CLAXEDO_DATA_DIR = path.join(root, "data")
     try {
       const runtime = await ensureEmbeddedWorkspaceRuntime(workspace("ws_provider", project), { config: "skip" })
-      const res = await runtime.app.request("http://runtime.test/provider?harness=claude-sdk")
-      expect(res.status).toBe(200)
-      expect(await res.json()).toMatchObject({ all: [{ id: "anthropic" }] })
-      expect(asked).toEqual(["claude-sdk"])
+      const response = await runtime.app.request("http://runtime.test/provider")
+      expect(response.status).toBe(404)
     } finally {
-      await shutdownEmbeddedWorkspaceRuntimes()
+      await shutdownTestRuntimes()
       await removeWorkspaceRoot(root)
     }
   })

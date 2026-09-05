@@ -51,14 +51,8 @@ function directorySdk(input: Partial<DirectorySdk> = {}): DirectorySdk {
     project: {
       current: async () => ({ data: project() }),
     },
-    provider: {
-      list: async () => ({ data: providers() }),
-    },
     app: {
       agents: async () => ({ data: [] }),
-    },
-    config: {
-      get: async () => ({ data: emptyConfig }),
     },
     path: {
       get: async () => ({ data: defaultPath }),
@@ -126,9 +120,7 @@ const agentNames = (baseUrl: string, directory: string, harnessType?: string, wo
 const directoryPath = (baseUrl: string, directory: string) =>
   queryClient.getQueryData<Path>(queryKeys.directory.path(baseUrl, directory))
 
-// The directory bootstrap always fetches with a `?harness=`, so its catalog is
-// cached under that harness. OpenCode keeps its own key (not the unqualified
-// one) because unqualified `/provider` follows the workspace default harness.
+// Catalog cache identity includes the explicit native harness and workspace scope.
 const directoryProviders = (baseUrl: string, harnessType?: string, scope?: string) =>
   queryClient.getQueryData<NormalizedProviderListResponse>(
     queryKeys.controlPlane.providers(baseUrl, scope, harnessType),
@@ -137,10 +129,9 @@ const directoryProviders = (baseUrl: string, harnessType?: string, scope?: strin
 const directoryProject = (baseUrl: string, directory: string) =>
   queryClient.getQueryData<string>(queryKeys.directory.project(baseUrl, directory))
 
-function harnessProviderUrl(harness = "claude", base = "http://localhost:4096", directory = "/tmp/ws") {
-  const url = new URL("/provider", base)
-  url.searchParams.set("harness", harness)
-  url.searchParams.set("directory", directory)
+function harnessProviderUrl(harness = "pi", base = "http://localhost:4096") {
+  const url = new URL("/api/claxedo/agent-config/providers", base)
+  url.searchParams.set("nativeHarness", harness)
   return url.toString()
 }
 
@@ -281,7 +272,7 @@ describe("bootstrapGlobal", () => {
       translate: (key: string) => key,
       formatMoreCount: String,
       setGlobalState: (patch) => Object.assign(globalState, patch),
-      harnessType: "opencode",
+      harnessType: "pi",
     })
 
     expect(urls.some((url) => url.includes("/api/claxedo/bootstrap"))).toBe(false)
@@ -329,8 +320,6 @@ describe("override bootstrapDirectory", () => {
   test("critical path is inventory hydration only", async () => {
     const returned = {
       project: 0,
-      config: 0,
-      provider: 0,
       agent: 0,
       path: 0,
       workspace: 0,
@@ -347,25 +336,11 @@ describe("override bootstrapDirectory", () => {
           return { data: project() }
         },
       },
-      provider: {
-        list: async () => {
-          await pending
-          returned.provider++
-          return { data: providers() }
-        },
-      },
       app: {
         agents: async () => {
           await pending
           returned.agent++
           return { data: [] }
-        },
-      },
-      config: {
-        get: async () => {
-          await pending
-          returned.config++
-          return { data: emptyConfig }
         },
       },
       path: {
@@ -398,8 +373,6 @@ describe("override bootstrapDirectory", () => {
 
     expect(returned).toEqual({
       project: 0,
-      config: 0,
-      provider: 0,
       agent: 0,
       path: 0,
       workspace: 0,
@@ -424,33 +397,34 @@ describe("override bootstrapDirectory", () => {
     expect(directoryProject("default", "/tmp/ws")).toBe("existing")
   })
 
-  test("marks provider ready without bootstrapping removed mcp/lsp state", async () => {
-    let mcp = 0
-    let lsp = 0
-    const sdk = directorySdk({
-      provider: {
-        list: async () => ({
-          data: providers({
-            all: [provider({ id: "anthropic", name: "Anthropic" })],
-            connected: ["anthropic"],
-            default: {},
-          }),
-        }),
-      },
-    })
-
+  test("warms only canonical directory resources without an implicit provider catalog", async () => {
+    const calls: string[] = []
     await bootstrapDirectory({
       directory: "/tmp/ws",
-      sdk,
+      sdk: directorySdk(),
       loadSessions: async () => {},
       translate: (key) => key,
+      baseUrl: "https://app.claxedo.test",
+      fetch: async (input) => {
+        const url = input instanceof Request ? input.url : String(input)
+        calls.push(url)
+        if (url === "https://app.claxedo.test/api/workspace/resolve?directory=%2Ftmp%2Fws") {
+          return new Response("not found", { status: 404 })
+        }
+        if (url.startsWith("https://app.claxedo.test/api/claxedo/agent-config/agents?") ||
+            url === "https://app.claxedo.test/api/claxedo/agent-config/commands") return Response.json([])
+        throw new Error(`Unexpected bootstrap request: ${url}`)
+      },
     })
     await warmup()
     await idle()
 
-    expect(mcp).toBe(0)
-    expect(lsp).toBe(0)
-    expect(Array.from(directoryProviders("default", undefined, "/tmp/ws")?.all.values() ?? []).map((item) => item.id)).toEqual(["anthropic"])
+    expect(calls).toEqual([
+      "https://app.claxedo.test/api/workspace/resolve?directory=%2Ftmp%2Fws",
+      "https://app.claxedo.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws",
+      "https://app.claxedo.test/api/claxedo/agent-config/commands",
+    ])
+    expect(directoryProviders("https://app.claxedo.test", undefined, "/tmp/ws")).toBeUndefined()
   })
 
   /**
@@ -570,7 +544,7 @@ describe("override bootstrapDirectory", () => {
         loadSessions: async () => {},
         translate: (key) => key,
         baseUrl: "http://localhost:4096",
-        harnessType: "claude",
+        harnessType: "pi",
         fetch: async (input, init) => {
           const req = input instanceof Request ? input : new Request(String(input), init)
           urls.push(req.url)
@@ -600,12 +574,12 @@ describe("override bootstrapDirectory", () => {
     }
 
     expect(urls).toContain("http://localhost:4096/api/claxedo/workspace/resolve?directory=%2Ftmp%2Fws")
-    expect(urls).toContain("http://localhost:4096/provider?harness=claude&directory=%2Ftmp%2Fws")
+    expect(urls).toContain("http://localhost:4096/api/claxedo/agent-config/providers?nativeHarness=pi")
     expect(localUrls).toContain("GET http://localhost:4096/api/claxedo/agent-config/commands")
     expect(localUrls.some((item) => item.includes("/api/claxedo/agent-config/agents"))).toBe(true)
     expect([...urls, ...localUrls].some((item) => new URL(item.replace(/^GET /, "")).pathname === "/agent")).toBe(false)
-    expect(agentNames("http://localhost:4096", "/tmp/ws", "claude")).toEqual([])
-    expect(Array.from(directoryProviders("http://localhost:4096", "claude", "/tmp/ws")?.all.values() ?? []).map((item) => item.id))
+    expect(agentNames("http://localhost:4096", "/tmp/ws", "pi")).toEqual([])
+    expect(Array.from(directoryProviders("http://localhost:4096", "pi", "/tmp/ws")?.all.values() ?? []).map((item) => item.id))
       .toEqual(["claude"])
     // ...and NOT under the global key, which serves every harness-less picker.
     expect(directoryProviders("http://localhost:4096")).toBeUndefined()
@@ -639,7 +613,7 @@ describe("override bootstrapDirectory", () => {
         loadSessions: async () => {},
         translate: (key) => key,
         baseUrl: "http://localhost:4096",
-        harnessType: "claude",
+        harnessType: "pi",
         fetch: async (input, init) => {
           const req = input instanceof Request ? input : new Request(String(input), init)
           if (req.url.includes("/workspace/resolve")) {
@@ -662,7 +636,7 @@ describe("override bootstrapDirectory", () => {
         },
       })
 
-      expect(agentNames("http://localhost:4096", "/tmp/ws", "claude")).toBeUndefined()
+      expect(agentNames("http://localhost:4096", "/tmp/ws", "pi")).toBeUndefined()
 
       await warmup()
       await idle()
@@ -670,9 +644,9 @@ describe("override bootstrapDirectory", () => {
       globalThis.fetch = previousFetch
     }
 
-    expect(agentNames("http://localhost:4096", "/tmp/ws", "claude")).toEqual([])
+    expect(agentNames("http://localhost:4096", "/tmp/ws", "pi")).toEqual([])
   })
-  test("signed cloud opencode bootstrap fetches metadata through workspace relay", async () => {
+  test("signed cloud bootstrap keeps native credentials central and metadata on its relay", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
       project: {
@@ -680,19 +654,9 @@ describe("override bootstrapDirectory", () => {
           throw new Error("expected signed cloud project metadata")
         },
       },
-      provider: {
-        list: async () => {
-          throw new Error("expected relay provider fetch")
-        },
-      },
       app: {
         agents: async () => {
           throw new Error("expected relay agent fetch")
-        },
-      },
-      config: {
-        get: async () => {
-          throw new Error("expected signed cloud config metadata")
         },
       },
       path: {
@@ -711,7 +675,7 @@ describe("override bootstrapDirectory", () => {
       loadSessions: async () => {},
       translate: (key) => key,
       baseUrl: "https://app.claxedo.test",
-      harnessType: "opencode",
+      harnessType: "pi",
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
@@ -731,17 +695,17 @@ describe("override bootstrapDirectory", () => {
             relayUrl: "http://relay.test",
             role: "owner",
             runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
+            tokenExpiresAt: Date.now() + 30 * 60_000,
           }), { status: 200, headers: { "Content-Type": "application/json" } })
         }
-        if (req.url === "http://relay.test/workspaces/ws_cloud/provider?harness=opencode") {
+        if (req.url === "https://app.claxedo.test/api/claxedo/agent-config/providers?nativeHarness=pi") {
           return new Response(JSON.stringify({
             all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
             connected: ["opencode"],
             default: { opencode: "big-pickle" },
           }), { status: 200, headers: { "Content-Type": "application/json" } })
         }
-        if (req.url === "http://relay.test/workspaces/ws_cloud/agent?harness=opencode") {
+        if (req.url === "http://relay.test/workspaces/ws_cloud/agent?harness=pi") {
           return new Response(JSON.stringify([{ name: "plan", mode: "primary" }]), {
             status: 200,
             headers: { "Content-Type": "application/json" },
@@ -759,10 +723,10 @@ describe("override bootstrapDirectory", () => {
     await warmup()
 
     expect(urls.some((url) => url.includes("/workspace/resolve"))).toBe(true)
-    expect(urls).toContain("http://relay.test/workspaces/ws_cloud/provider?harness=opencode")
-    expect(urls).toContain("http://relay.test/workspaces/ws_cloud/agent?harness=opencode")
+    expect(urls).toContain("https://app.claxedo.test/api/claxedo/agent-config/providers?nativeHarness=pi")
+    expect(urls).toContain("http://relay.test/workspaces/ws_cloud/agent?harness=pi")
     expect(urls).toContain("http://relay.test/workspaces/ws_cloud/command")
-    expect(directoryProviders("https://app.claxedo.test", "opencode", "workspace:ws_cloud")?.default.opencode).toBe("big-pickle")
+    expect(directoryProviders("https://app.claxedo.test", "pi", "workspace:ws_cloud")?.default.opencode).toBe("big-pickle")
     expect(
       queryClient.getQueryData<Command[]>(
         queryKeys.shell.commands("https://app.claxedo.test", "workspace:ws_cloud", undefined, "cloud:ws_cloud"),
@@ -772,7 +736,7 @@ describe("override bootstrapDirectory", () => {
     expect(directoryPath("https://app.claxedo.test", "workspace:ws_cloud")?.directory).toBe("workspace:ws_cloud")
   })
 
-  test("rejects a relay catalog that lacks OpenCode models without substituting another producer", async () => {
+  test("a failed central catalog is not replaced with relay or bootstrap data", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
       project: {
@@ -780,19 +744,9 @@ describe("override bootstrapDirectory", () => {
           throw new Error("expected signed cloud project metadata")
         },
       },
-      provider: {
-        list: async () => {
-          throw new Error("expected relay or bootstrap provider fetch")
-        },
-      },
       app: {
         agents: async () => {
           throw new Error("expected relay agent fetch")
-        },
-      },
-      config: {
-        get: async () => {
-          throw new Error("expected signed cloud config metadata")
         },
       },
       path: {
@@ -811,7 +765,7 @@ describe("override bootstrapDirectory", () => {
       loadSessions: async () => {},
       translate: (key) => key,
       baseUrl: "http://127.0.0.1:3001",
-      harnessType: "opencode",
+      harnessType: "pi",
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
@@ -831,20 +785,13 @@ describe("override bootstrapDirectory", () => {
             relayUrl: "http://relay.test",
             role: "owner",
             runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
+            tokenExpiresAt: Date.now() + 30 * 60_000,
           }), { status: 200, headers: { "Content-Type": "application/json" } })
         }
-        if (req.url === "http://127.0.0.1:3001/workspaces/ws_cloud/provider?harness=opencode") {
-          return new Response(JSON.stringify({
-            all: [{ id: "claude-acp", name: "Claude", env: [], models: { sonnet: { id: "sonnet", name: "Sonnet" } } }],
-            connected: [],
-            default: { "claude-acp": "sonnet" },
-          }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" },
-          })
+        if (req.url === "http://127.0.0.1:3001/api/claxedo/agent-config/providers?nativeHarness=pi") {
+          return Response.json({ error: "catalog unavailable" }, { status: 503 })
         }
-        if (req.url === "http://127.0.0.1:3001/workspaces/ws_cloud/agent?harness=opencode") {
+        if (req.url === "http://127.0.0.1:3001/workspaces/ws_cloud/agent?harness=pi") {
           return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } })
         }
         if (req.url === "http://127.0.0.1:3001/workspaces/ws_cloud/command") {
@@ -855,9 +802,10 @@ describe("override bootstrapDirectory", () => {
     })
     await warmup()
 
-    expect(urls).toContain("http://127.0.0.1:3001/workspaces/ws_cloud/provider?harness=opencode")
+    expect(urls).toContain("http://127.0.0.1:3001/api/claxedo/agent-config/providers?nativeHarness=pi")
     expect(urls.some((url) => url.includes("/api/claxedo/bootstrap"))).toBe(false)
-    expect(directoryProviders("http://127.0.0.1:3001")).toBeUndefined()
+    expect(directoryProviders("http://127.0.0.1:3001", "pi", "workspace:ws_cloud")).toBeUndefined()
+    expect(urls.some((url) => /\/workspaces\/[^/]+\/provider/.test(url))).toBe(false)
   })
 
   test("signed cloud bootstrap uses known workspace identity without resolving a directory alias", async () => {
@@ -868,19 +816,9 @@ describe("override bootstrapDirectory", () => {
           throw new Error("expected signed cloud bootstrap to skip project.current")
         },
       },
-      config: {
-        get: async () => {
-          throw new Error("expected signed cloud bootstrap to skip config.get")
-        },
-      },
       path: {
         get: async () => {
           throw new Error("expected signed cloud bootstrap to skip path.get")
-        },
-      },
-      provider: {
-        list: async () => {
-          throw new Error("expected signed cloud bootstrap to fetch provider through relay")
         },
       },
       app: {
@@ -907,7 +845,7 @@ describe("override bootstrapDirectory", () => {
       loadSessions: async () => {},
       translate: (key) => key,
       baseUrl: "https://app.claxedo.test",
-      harnessType: "opencode",
+      harnessType: "pi",
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
@@ -922,17 +860,17 @@ describe("override bootstrapDirectory", () => {
             relayUrl: "http://relay.test",
             role: "owner",
             runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
+            tokenExpiresAt: Date.now() + 30 * 60_000,
           })
         }
-        if (req.url === "http://relay.test/workspaces/ws_known_bootstrap/provider?harness=opencode") {
+        if (req.url === "https://app.claxedo.test/api/claxedo/agent-config/providers?nativeHarness=pi") {
           return Response.json({
             all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
             connected: ["opencode"],
             default: { opencode: "big-pickle" },
           })
         }
-        if (req.url === "http://relay.test/workspaces/ws_known_bootstrap/agent?harness=opencode") {
+        if (req.url === "http://relay.test/workspaces/ws_known_bootstrap/agent?harness=pi") {
           return Response.json([{ name: "plan", mode: "primary" }])
         }
         if (req.url === "http://relay.test/workspaces/ws_known_bootstrap/command") {
@@ -944,8 +882,8 @@ describe("override bootstrapDirectory", () => {
     await warmup()
 
     expect(urls).not.toContain("https://app.claxedo.test/api/workspace/resolve?directory=%2Ftmp%2Fcloud-alias")
-    expect(urls).toContain("http://relay.test/workspaces/ws_known_bootstrap/provider?harness=opencode")
-    expect(urls).toContain("http://relay.test/workspaces/ws_known_bootstrap/agent?harness=opencode")
+    expect(urls).toContain("https://app.claxedo.test/api/claxedo/agent-config/providers?nativeHarness=pi")
+    expect(urls).toContain("http://relay.test/workspaces/ws_known_bootstrap/agent?harness=pi")
     expect(urls).toContain("http://relay.test/workspaces/ws_known_bootstrap/command")
     expect(directoryPath("https://app.claxedo.test", "/tmp/cloud-alias")?.directory).toBe("/tmp/cloud-alias")
   })
@@ -953,11 +891,6 @@ describe("override bootstrapDirectory", () => {
   test("does not invent a harness for signed cloud workspace refs", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
-      provider: {
-        list: async () => {
-          throw new Error("expected relay provider fetch")
-        },
-      },
       app: {
         agents: async () => {
           throw new Error("expected relay agent fetch")
@@ -995,14 +928,7 @@ describe("override bootstrapDirectory", () => {
             relayUrl: "http://relay.test",
             role: "owner",
             runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
-          }), { status: 200, headers: { "Content-Type": "application/json" } })
-        }
-        if (req.url === "http://relay.test/workspaces/ws_default/provider") {
-          return new Response(JSON.stringify({
-            all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
-            connected: ["opencode"],
-            default: { opencode: "big-pickle" },
+            tokenExpiresAt: Date.now() + 30 * 60_000,
           }), { status: 200, headers: { "Content-Type": "application/json" } })
         }
         if (req.url === "http://relay.test/workspaces/ws_default/agent") {
@@ -1022,19 +948,14 @@ describe("override bootstrapDirectory", () => {
     })
     await warmup()
 
-    expect(urls).toContain("http://relay.test/workspaces/ws_default/provider")
-    expect(directoryProviders("https://app.claxedo.test", undefined, "workspace:ws_default")?.default.opencode).toBe("big-pickle")
+    expect(urls.some((url) => url.includes("provider"))).toBe(false)
+    expect(directoryProviders("https://app.claxedo.test", undefined, "workspace:ws_default")).toBeUndefined()
     expect(agentNames("https://app.claxedo.test", "workspace:ws_default", undefined, "cloud:ws_default")).toEqual(["build"])
   })
 
-  test("raw workspace id bootstrap resolves before fetching OpenCode provider", async () => {
+  test("raw workspace id bootstrap resolves identity before caching its native catalog", async () => {
     const urls: string[] = []
     const sdk = directorySdk({
-      provider: {
-        list: async () => {
-          throw new Error("expected relay provider fetch")
-        },
-      },
       app: {
         agents: async () => {
           throw new Error("expected relay agent fetch")
@@ -1053,7 +974,7 @@ describe("override bootstrapDirectory", () => {
       loadSessions: async () => {},
       translate: (key) => key,
       baseUrl: "https://app.claxedo.test",
-      harnessType: "opencode",
+      harnessType: "pi",
       fetch: async (input, init) => {
         const req = input instanceof Request ? input : new Request(String(input), init)
         urls.push(req.url)
@@ -1073,17 +994,17 @@ describe("override bootstrapDirectory", () => {
             relayUrl: "http://relay.test",
             role: "owner",
             runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 60_000,
+            tokenExpiresAt: Date.now() + 30 * 60_000,
           }), { status: 200, headers: { "Content-Type": "application/json" } })
         }
-        if (req.url === "http://relay.test/workspaces/ws_raw/provider?harness=opencode") {
+        if (req.url === "https://app.claxedo.test/api/claxedo/agent-config/providers?nativeHarness=pi") {
           return new Response(JSON.stringify({
             all: [{ id: "opencode", name: "OpenCode", env: [], models: { "big-pickle": { id: "big-pickle", name: "Big Pickle" } } }],
             connected: ["opencode"],
             default: { opencode: "big-pickle" },
           }), { status: 200, headers: { "Content-Type": "application/json" } })
         }
-        if (req.url === "http://relay.test/workspaces/ws_raw/agent?harness=opencode") {
+        if (req.url === "http://relay.test/workspaces/ws_raw/agent?harness=pi") {
           return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } })
         }
         if (req.url === "http://relay.test/workspaces/ws_raw/command") {
@@ -1095,7 +1016,7 @@ describe("override bootstrapDirectory", () => {
     await warmup()
 
     expect(urls).toContain("https://app.claxedo.test/api/workspace/resolve?workspaceId=ws_raw")
-    expect(urls).toContain("http://relay.test/workspaces/ws_raw/provider?harness=opencode")
-    expect(directoryProviders("https://app.claxedo.test", "opencode", "workspace:ws_raw")?.default.opencode).toBe("big-pickle")
+    expect(urls).toContain("https://app.claxedo.test/api/claxedo/agent-config/providers?nativeHarness=pi")
+    expect(directoryProviders("https://app.claxedo.test", "pi", "workspace:ws_raw")?.default.opencode).toBe("big-pickle")
   })
 })

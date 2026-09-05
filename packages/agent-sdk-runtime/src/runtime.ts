@@ -34,8 +34,10 @@ import { resolveSessionModel } from "./session-model"
 import { createRuntimeSubscription, type RuntimeSubscriber } from "./runtime/subscription"
 import { isTerminalRuntimePayload, mergeOutcome, outcomeFromPayload } from "./runtime/turn-outcome"
 import { turnStartRecord } from "./runtime/turn-record"
-import { assertSessionCreateBindingScope, requireExecutionBinding } from "./runtime/execution-binding"
+import { assertSessionCreateBindingScope, normalizeDirectory as runtimeDirectory, requireExecutionBinding } from "./runtime/execution-binding"
 import { executeHandoffTransaction } from "./runtime/handoff-transaction"
+import { createRuntimeLifecycle } from "./runtime/lifecycle"
+import { createGoalStartAdmission } from "./runtime/goal-start-admission"
 
 export {
   AGENT_RUNTIME_TURN_CONFLICT_CODE,
@@ -90,16 +92,11 @@ import type {
 
 export type AgentRuntime = ReturnType<typeof createAgentRuntime>
 
-const CENTRAL_DIRECTORY = ""
-
-function runtimeDirectory(directory: RuntimeDirectory) {
-  return directory ?? CENTRAL_DIRECTORY
-}
-
 function isProjectableRuntimeEvent(payload: AgentRuntimeStreamEvent): payload is AgentRuntimeEvent {
   return !toCompatEvent(payload) && payload.type !== "server.heartbeat"
 }
 
+/** The caller owns input.store and closes it after every sharing runtime is disposed. */
 export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   const eventHub = createRuntimeEventHub()
   const store = input.store as unknown as RuntimeStoreInternal
@@ -110,25 +107,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   ]))
   const resolvingAdapters = new Map<string, Promise<AgentHarnessAdapter>>()
   const subscribers = new Set<RuntimeSubscriber>()
+  const lifecycle = createRuntimeLifecycle()
+  const { resource, track } = lifecycle
   // Prompt admission belongs to the runtime, not to a downstream harness
   // iterator. Claim the session before persisting the user/assistant rows so a
   // rejected concurrent prompt cannot manufacture a failed turn or overwrite
   // the status of the turn that is actually running.
   const activeTurnAdmissions = new Map<string, object>()
   const activeTurnLeases = new Map<string, string>()
-  const goalStartAdmissions = new Map<string, Promise<void>>()
-
-  const withGoalStartAdmission = async <T>(sessionId: string, operation: () => Promise<T>): Promise<T> => {
-    const previous = goalStartAdmissions.get(sessionId) ?? Promise.resolve()
-    const run = previous.catch(() => {}).then(operation)
-    const settled = run.then(() => {}, () => {})
-    goalStartAdmissions.set(sessionId, settled)
-    try {
-      return await run
-    } finally {
-      if (goalStartAdmissions.get(sessionId) === settled) goalStartAdmissions.delete(sessionId)
-    }
-  }
+  const goalStartAdmissions = createGoalStartAdmission()
 
   const adapterFor = async (harness: SessionHarness) => {
     const harnessKey = key(harness)
@@ -139,7 +126,11 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     if (pending) return await pending
     const resolution = Promise.resolve()
       .then(() => input.resolveHarness!(harness))
-      .then((resolved) => {
+      .then(async (resolved) => {
+        if (lifecycle.closing) {
+          if (input.adapterOwnership !== "caller") await resolved.dispose()
+          throw new Error("AgentRuntime is disposed")
+        }
         adapters.set(harnessKey, resolved)
         return resolved
       })
@@ -512,7 +503,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     const changingHarness = !!current && !!update.harness && key(current.harness) !== key(update.harness)
     if (!changingHarness) {
       const adapter = await adapterForSession(sessionId)
-      const configured = await adapter.updateSessionConfig(executionBinding(sessionId, directory), update)
+      const binding = executionBinding(sessionId, directory)
+      const configured = adapter.sessionConfigOwner === "runtime"
+        ? { ...current!, ...update }
+        : await adapter.updateSessionConfig(binding, update)
       const persisted = store.updateSessionConfig(sessionId, configured)
       if (!persisted) throw new Error(`Session ${sessionId} has no runtime config`)
       return persisted
@@ -651,7 +645,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
   }
 
   return {
-    sessions: {
+    sessions: resource({
       async create(create: AgentRuntimeSessionCreateInput): Promise<AgentSession> {
         if (typeof create.workspaceId !== "string" || create.workspaceId.trim() === "") {
           throw new AgentRuntimeContractError({
@@ -721,8 +715,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         store.deleteSession(sessionId)
         publishedGoalSignatures.delete(sessionId)
       },
-    },
-    turns: {
+    }),
+    turns: resource({
       async start(turn: AgentRuntimeTurnStartInput): Promise<AgentRuntimeTurnStartResult> {
         if ((turn.actorId === undefined) !== (turn.actorKind === undefined)) {
           throw new Error("Turn actor id and kind must be provided together")
@@ -733,6 +727,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
           throw new Error("Durable session turn admission is no longer valid")
         }
         const { adapter, config } = await runtimeForSession(turn.sessionId)
+        if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
         const directory = session.directory ?? undefined
         const userMessageId = turn.messageId ?? `msg_${randomUUID()}`
         const assistantMessageId = turn.assistantMessageId ?? assistantMessageIdForTurn(userMessageId)
@@ -769,8 +764,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         activeTurnLeases.set(turn.sessionId, leaseId)
         const releaseAdmission = () => {
-          if (activeTurnLeases.get(turn.sessionId) === leaseId) activeTurnLeases.delete(turn.sessionId)
-          store.releaseTurnLease(turn.sessionId, leaseId)
+          if (activeTurnLeases.get(turn.sessionId) === leaseId) {
+            activeTurnLeases.delete(turn.sessionId)
+            store.releaseTurnLease(turn.sessionId, leaseId)
+          }
           if (activeTurnAdmissions.get(turn.sessionId) === admission) {
             activeTurnAdmissions.delete(turn.sessionId)
           }
@@ -787,8 +784,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             payload.type === "message.updated"
             && payload.properties.info.role === "user"
             && payload.properties.info.id === userMessageId)
-          void runTurn(executionBinding(turn.sessionId, directory), prompt, adapter, admission, !!handoff, openingUserPublished, turn.admission)
-            .finally(releaseAdmission)
+          void track(() => runTurn(executionBinding(turn.sessionId, directory), prompt, adapter, admission, !!handoff, openingUserPublished, turn.admission)
+            .finally(releaseAdmission)).catch((error) => console.error("AgentRuntime turn finalization failed", error))
         } catch (error) {
           releaseAdmission()
           throw error
@@ -819,8 +816,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         }
         return result
       },
-    },
-    goals: {
+    }),
+    goals: resource({
       async capabilities(sessionId: string, directory?: RuntimeDirectory): Promise<GoalCapabilities> {
         return (await goalResourceContext(sessionId, directory)).capabilities
       },
@@ -839,7 +836,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
             "Goal objective must contain between 1 and 4,000 characters",
           )
         }
-        return await withGoalStartAdmission(input.sessionId, async () => {
+        return await goalStartAdmissions.run(input.sessionId, async () => {
           const context = await availableGoalContext(input.sessionId, directory)
           if (await context.resource.read(input.sessionId, context.directory)) {
             throw new AgentRuntimeGoalError("goal_already_exists", `Session ${input.sessionId} already has a Goal`)
@@ -861,18 +858,21 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async delete(sessionId: string, directory?: RuntimeDirectory) {
         return await runGoalMutation(sessionId, "delete", directory) as AgentGoalMutationResult<null>
       },
-    },
+    }),
     events: {
       subscribe(subscribe: AgentRuntimeSubscribeInput = {}) {
+        if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
         return createRuntimeSubscription(subscribers, subscribe, input.subscriberBufferSize ?? 256, input.eventDelivery)
       },
+      ...resource({
       async list(sessionId: string, directory?: RuntimeDirectory): Promise<AgentMessage[]> {
         await adapterForSession(sessionId)
         executionBinding(sessionId, directory)
         return store.getMessages(sessionId) as AgentMessage[]
       },
+      }),
     },
-    permissions: {
+    permissions: resource({
       async list(directory: RuntimeDirectory): Promise<AgentPermission[]> {
         return merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as Promise<AgentPermission[]>
       },
@@ -886,8 +886,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         publishInteractionEvents(result?.events, directory)
         return result
       },
-    },
-    questions: {
+    }),
+    questions: resource({
       async list(directory: RuntimeDirectory): Promise<AgentQuestion[]> {
         return merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as Promise<AgentQuestion[]>
       },
@@ -911,15 +911,15 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         publishInteractionEvents(result?.events, directory)
         return result
       },
-    },
-    todos: {
+    }),
+    todos: resource({
       async list(sessionId: string, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)
         if (!adapter.getTodos) throw new Error("This harness does not support todos")
         return await adapter.getTodos(executionBinding(sessionId, directory))
       },
-    },
-    commands: {
+    }),
+    commands: resource({
       async list(directory: RuntimeDirectory) {
         return merge(adapters, (adapter) => adapter.listCommands?.(directory))
       },
@@ -928,8 +928,8 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         if (!adapter.executeCommand) throw new Error("This harness does not support commands")
         return await adapter.executeCommand(executionBinding(sessionId, directory), command)
       },
-    },
-    config: {
+    }),
+    config: resource({
       async read(sessionId: string, _directory?: RuntimeDirectory) {
         return await configForSession(sessionId)
       },
@@ -939,28 +939,34 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       async options(directory: RuntimeDirectory) {
         return merge(adapters, async (adapter) => (await adapter.probeConfigOptions?.(directory))?.options)
       },
-    },
+    }),
     health: {
       read(directory: RuntimeDirectory): AgentRuntimeHealth[] {
+        if (lifecycle.closing) throw new Error("AgentRuntime is disposed")
         return [...adapters.values()]
           .map((adapter) => adapter.readRuntimeHealth?.(directory))
           .filter((item): item is AgentRuntimeHealth => !!item)
       },
     },
-    capabilities: {
+    capabilities: resource({
       async read(sessionId: string, directory?: RuntimeDirectory): Promise<HarnessCapabilities> {
         const adapter = await adapterForSession(sessionId)
         return await adapter.readHarnessCapabilities(directory, { sessionId })
       },
-    },
+    }),
     dispose() {
-      activeTurnAdmissions.clear()
-      goalStartAdmissions.clear()
-      publishedGoalSignatures.clear()
-      unsubscribeGoalBridge()
-      for (const subscriber of subscribers) subscriber.close()
-      for (const adapter of adapters.values()) adapter.dispose()
-      store.close?.()
+      return lifecycle.dispose(
+        () => Promise.all(input.adapterOwnership === "caller"
+          ? []
+          : [...new Set(adapters.values())].map((adapter) => Promise.resolve().then(() => adapter.dispose()))),
+        () => {
+          activeTurnAdmissions.clear()
+          goalStartAdmissions.clear()
+          publishedGoalSignatures.clear()
+          unsubscribeGoalBridge()
+          for (const subscriber of subscribers) subscriber.close()
+        },
+      )
     },
   }
 }

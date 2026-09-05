@@ -11,7 +11,7 @@ import {
   sessionResourceAuthorityKey,
   sessionResourceAuthorityScope,
 } from "../store/session-resource-authority"
-import { DEFAULT_HARNESS_ID, type SessionRef } from "@/platform/identity/session-ref"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import {
   harnessHasConfigOptions,
   pickHarness,
@@ -30,13 +30,8 @@ export type HarnessScopeInput = {
 export const harnessScope = panePreferenceScope
 export const isDraftScope = isDraftPaneScope
 
-/**
- * The harness a scope's transient state starts on: the product default. Every
- * real answer — the workspace's draft default or the session's own config —
- * replaces it during hydration.
- */
-export function initialHarness(): HarnessType {
-  return DEFAULT_HARNESS_ID
+export function initialHarness(): HarnessType | undefined {
+  return undefined
 }
 
 /**

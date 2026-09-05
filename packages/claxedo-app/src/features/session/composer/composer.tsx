@@ -54,7 +54,7 @@ import { createPromptToolbarState } from "./toolbar-state"
 import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
 import { firstConnectedModel } from "./model-strategy"
-import { openCodeDraftLabels, restoreOpenCodeDraftDefault, writeOpenCodeDraftModel, writeOpenCodeDraftVariant } from "./open-code-draft-default"
+import { harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { createComposerEngine } from "./v2/engine"
 import { createComposerSubmitBlockWiring } from "./submit-block-wiring"
 import { createComposerPermissionSurface } from "./permission-mode-wiring"
@@ -71,7 +71,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const comments = useComments()
   const sessionParams = useSessionParams()
   const dialog = useDialog()
-  const providers = useProviders("opencode")
   const command = useCommand()
   const permission = usePermission()
   const language = useLanguage()
@@ -128,6 +127,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
   const resolvedDraftId = () => modeSnapshot().draftId
   const scope = () => modeSnapshot().scope
+  const providers = useProviders(() => {
+    const selection = currentHarnessType(scope())
+    return selection?.kind === "native" ? selection.harnessId : ""
+  })
   const selectedModelKey = () => {
     const model = local.model.current()
     if (!model) return undefined
@@ -149,16 +152,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       write: local.model.set,
     }),
     hydrate: () => { void local.model.hydrate() },
-  }))
-  // The model OpenCode itself would run: the default of the highest-ranked
-  // connected provider. A draft in a workspace that remembers nothing opens on
-  // it, so a fresh profile reads a concrete model instead of "Select model".
-  const openCodeResolvedDefault = createMemo(() =>
-    firstConnectedModel({ connected: providers.connected(), defaults: providers.default() }))
-  createEffect(() => restoreOpenCodeDraftDefault({
-    controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
-    newSession: isNewSessionVariant(), ready: local.model.ready(), models: local.model.list(),
-    resolvedDefault: openCodeResolvedDefault(), write: local.model.set, writeVariant: local.model.variant.set,
   }))
   const harnessPending = createMemo(() => {
     const nextScope = scope()
@@ -182,7 +175,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         directory,
         // The command set is the HARNESS's, for this worktree: OpenCode's slash
         // commands are not the ones a Codex or Claude pane can run.
-        harnessType: currentHarnessType(scope()),
+        harnessType: currentHarnessType(scope()) ? harnessSelectionValue(currentHarnessType(scope())!) : undefined,
         request: platform.fetch ?? fetch,
         workspace: sdk.workspace(directory),
         client: sdk.createClient({ directory }),
@@ -251,7 +244,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   })
   const goalController = createComposerGoalController({
     isNewSession: newSession, harness: () => currentHarnessType(scope()), harnessPending,
-    client: sdk.client.session, directory: submitSessionDirectory,
+    directory: submitSessionDirectory,
     serverUrl: () => getClaxedoServerUrl(), signedControlPlane,
     workspaceId: () => props.workspaceId?.(), workspaceKind: () => props.workspaceKind?.(),
     sessionRef: () => props.sessionRef?.(),
@@ -269,13 +262,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     focus: () => editorRef?.focus(),
   })
   const { selectable: goalSelectable, armed: goalArmed, arm: armGoal, toggle: toggleGoal } = goalController
-  const signedWorkspaceRuntimeFallback = createSignedWorkspaceRuntimeFallback({
-    serverUrl: getClaxedoServerUrl,
-    directory: () => resolvedSessionDirectory() ?? sdk.directory,
-    signedControlPlane,
-    workspaceId: props.workspaceId,
-    workspaceKind: props.workspaceKind,
-  })
   const info = createMemo(() => {
     const sid = resolvedSessionId()
     return sid ? directorySessionCacheQuery.data?.session.find((session) => session.id === sid) : undefined
@@ -465,12 +451,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     addPart: engine.addPart,
     readClipboardImage: platform.readClipboardImage,
   })
-  const setScopedVariant = (value: string | undefined) => writeOpenCodeDraftVariant({
-    controller: harnessSelectionController, scope: scope(), directory: harnessDirectory(), sessionId: resolvedSessionId(),
-    newSession: isNewSessionVariant(), variant: value, model: selectedModelKey(),
-    labels: openCodeDraftLabels(selectedModelKey(), local.model.list()),
-    write: () => local.model.variant.set(value),
-  })
+  const setScopedVariant = (value: string | undefined) => {
+    local.model.variant.set(value)
+    const model = selectedModelKey()
+    if (isNewSessionVariant() && model) harnessSelectionController?.rememberDraftModel(scope(), { ...model, variant: value }, { directory: harnessDirectory() })
+  }
   const composerBootScope = createMemo(() => [
     props.variant ?? "dock",
     resolvedSessionDirectory() ?? sdk.directory,
@@ -520,10 +505,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     resolvedSessionId,
     directory: () => resolvedSessionDirectory() ?? sdk.directory,
     harness: permissionHarness,
+    harnessSelection: () => currentHarnessType(scope()),
     harnessUnavailable: () =>
       harnessModesUnavailable({ isHarness: isHarnessMode(scope()), readiness: harnessReadiness(scope()),
         configError: !!harnessSelectionController?.read(scope())?.configError, harness: permissionHarness() }),
-    client: sdk.client,
     claxedoServerUrl: getClaxedoServerUrl,
     signedControlPlane,
     workspace: () => {
@@ -597,7 +582,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     signedControlPlane,
     workspaceId: props.workspaceId,
     workspaceKind: props.workspaceKind,
-    selectedModelForSubmit: toolbarState.currentModel,
     harnessController,
     ...goalController.submitInput(props.goal, props.stopGoal),
   })

@@ -49,6 +49,8 @@ export type Workspace = {
   org_id?: string
   project_id?: string
   project_name?: string
+  project_icon?: { color?: string; override?: string }
+  project_commands?: { start?: string }
   workspace_name?: string
   directory: string
   kind: "local" | "cloud"
@@ -83,6 +85,7 @@ const localFirstTouch = new Map<string, Promise<Workspace | undefined>>()
 
 let ready: Promise<void> | undefined
 let loaded: string | undefined
+let saving = Promise.resolve()
 
 export function subscribeLocalWorkspaceChanges(listener: () => void | Promise<void>) {
   listeners.add(listener)
@@ -220,8 +223,11 @@ async function load(target: string) {
       const kind = item.kind === "cloud" ? "cloud" : "local"
       const ws: Workspace = {
         id,
+        org_id: trim(item.org_id),
         project_id: trim(item.project_id) || id,
         project_name: trim(item.project_name),
+        project_icon: item.project_icon,
+        project_commands: item.project_commands,
         workspace_name: trim(item.workspace_name),
         directory: kind === "cloud" ? storedCloudDirectory(item) : directoryKey(item.directory),
         kind,
@@ -246,12 +252,23 @@ async function load(target: string) {
 
 async function save() {
   const target = loaded ?? file()
-  await fs.mkdir(path.dirname(target), { recursive: true })
   const state: State = {
     version: 4,
     workspaces: [...byId.values()].sort((a, b) => a.created_at - b.created_at),
   }
-  await fs.writeFile(target, JSON.stringify(state, null, 2) + "\n")
+  const contents = JSON.stringify(state, null, 2) + "\n"
+  const pending = saving.catch(() => undefined).then(async () => {
+    await fs.mkdir(path.dirname(target), { recursive: true })
+    const temporary = `${target}.${randomUUID()}.tmp`
+    try {
+      await fs.writeFile(temporary, contents)
+      await fs.rename(temporary, target)
+    } finally {
+      await fs.unlink(temporary).catch(() => undefined)
+    }
+  })
+  saving = pending
+  await pending
 }
 
 async function boot() {
@@ -534,6 +551,41 @@ export async function updateWorkspace(
   return next
 }
 
+export type ProjectMetadataUpdate = {
+  name?: string
+  icon?: { color?: string; override?: string }
+  commands?: { start?: string }
+}
+
+function projectMetadata(root: Workspace): ProjectMetadataUpdate {
+  return {
+    ...(root.project_name ? { name: root.project_name } : {}),
+    ...(root.project_icon ? { icon: root.project_icon } : {}),
+    ...(root.project_commands ? { commands: root.project_commands } : {}),
+  }
+}
+
+export async function getProjectMetadata(projectId: string) {
+  const root = await getProjectWorkspace(projectId)
+  return root ? projectMetadata(root) : undefined
+}
+
+export async function updateProjectMetadata(projectId: string, patch: ProjectMetadataUpdate) {
+  const workspace = await getProjectWorkspace(projectId)
+  const root = workspace && byId.get(workspace.id)
+  if (!root) return
+  upsert({
+    ...root,
+    ...(patch.name !== undefined ? { project_name: trim(patch.name) } : {}),
+    ...(patch.icon ? { project_icon: { ...root.project_icon, ...patch.icon } } : {}),
+    ...(patch.commands ? { project_commands: { ...root.project_commands, ...patch.commands } } : {}),
+    updated_at: Date.now(),
+  })
+  await save()
+  notifyWorkspaceChanges()
+  return (await listProjects()).find((project) => project.id === projectId)
+}
+
 export async function deleteWorkspace(id: string) {
   await boot()
   const ws = byId.get(id)
@@ -642,7 +694,8 @@ export async function listProjects() {
       return {
         id,
         worktree: projectWorktree(root),
-        name: root.project_name || root.repo_name || root.workspace_name || (root.kind === "cloud" ? root.id : path.basename(root.directory)) || root.directory,
+        name: root.repo_name || root.workspace_name || (root.kind === "cloud" ? root.id : path.basename(root.directory)) || root.directory,
+        ...projectMetadata(root),
         kind: root.kind,
         driver: root.driver ?? null,
         git: {

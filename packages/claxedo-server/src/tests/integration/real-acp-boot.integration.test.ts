@@ -91,7 +91,7 @@ describe.skipIf(!existsSync(realBinary))("real claude ACP boot", () => {
   })
 
   beforeEach(async () => {
-    embedded.shutdownEmbeddedWorkspaceRuntimes()
+    await embedded.shutdownEmbeddedWorkspaceRuntimes()
     await supervisor.shutdownWorkspaceSupervisor()
     await agent.saveUserConfig({
       version: 3,
@@ -115,7 +115,7 @@ describe.skipIf(!existsSync(realBinary))("real claude ACP boot", () => {
   })
 
   afterAll(async () => {
-    embedded.shutdownEmbeddedWorkspaceRuntimes()
+    await embedded.shutdownEmbeddedWorkspaceRuntimes()
     await supervisor.shutdownWorkspaceSupervisor()
     server?.close()
     for (const [k, v] of Object.entries(prev)) {

@@ -1,4 +1,4 @@
-import type { ClaxedoServerClient } from "@/platform/api/server-client-contract"
+import type { ClaxedoServerClient, ServerScope } from "@/platform/api/server-client-contract"
 import { queryClient } from "@/platform/query/query-client"
 
 export const globalSyncServerClientQueryRoot = ["shell", "global-sync-server-client"] as const
@@ -12,7 +12,7 @@ function normalized(url: string | undefined) {
 export function globalSyncServerClientQueryKey(input: {
   owner: string
   serverUrl?: string
-  directory: string
+  directory: NonNullable<ServerScope["directory"]>
   workspaceId?: string
 }) {
   return [
@@ -27,7 +27,7 @@ export function globalSyncServerClientQueryKey(input: {
 export function cachedGlobalSyncServerClient<T extends ClaxedoServerClient>(input: {
   owner: string
   serverUrl?: string
-  directory: string
+  directory: NonNullable<ServerScope["directory"]>
   workspaceId?: string
   create: () => T
 }) {
@@ -39,7 +39,7 @@ export function cachedGlobalSyncServerClient<T extends ClaxedoServerClient>(inpu
   return next
 }
 
-export function clearGlobalSyncServerClientsForDirectory(input: { owner: string; directory: string }) {
+export function clearGlobalSyncServerClientsForDirectory(input: { owner: string; directory: NonNullable<ServerScope["directory"]> }) {
   for (const query of queryClient.getQueryCache().findAll({ queryKey: globalSyncServerClientQueryRoot })) {
     const key = query.queryKey
     if (key[2] !== input.owner) continue

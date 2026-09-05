@@ -7,7 +7,6 @@ import * as path from "node:path"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
 import {
   claudeScriptedEnv,
-  opencodeScriptedProviderConfig,
   startScriptedModelServer,
 } from "../helpers/scripted-model-server"
 import { startForwardedForProxy, startSignedFixture } from "../helpers/desktop-signed-server"
@@ -166,7 +165,6 @@ test.describe("U8 packaged product boundary @core @tier-real @surface-desktop", 
     const fixture = await startSignedFixture({
       access: "user-hosted",
       claudeScriptedEnv,
-      opencodeScriptedProviderConfig,
       startScriptedModelServer,
       logLabel: "desktop-u8-package-boundary",
     })

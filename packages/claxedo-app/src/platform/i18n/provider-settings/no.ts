@@ -1,4 +1,5 @@
 export const dict = {
+  "settings.providers.externallyManaged": "{{harness}} administrerer leverandører og påloggingsinformasjon utenfor Claxedo. Konfigurer dem i agenten eller serveren; tilgjengelige modeller vises i øktens modellvelger.",
   "command.openProviders": "Åpne tilbydere",
   "settings.models.previewCount": "Vis {{count}} flere",
   "settings.models.providerSearch.empty": "Ingen modeller samsvarer med «{{query}}».",

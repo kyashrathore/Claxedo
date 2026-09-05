@@ -28,7 +28,6 @@ import { promisify } from "node:util"
 import {
   claudeScriptedEnv,
   codexScriptedConfigJson,
-  opencodeScriptedProviderConfig,
   startScriptedModelServer,
   type ScriptedModelServer,
 } from "./scripted-model-server"
@@ -36,6 +35,39 @@ import {
 const execFileAsync = promisify(execFile)
 const repository = path.resolve(import.meta.dirname, "../../../..")
 const only = process.env.ONLY
+
+/** Configuration belongs to the standalone OpenCode CLI probe, not Claxedo. */
+function externalOpenCodeProbeConfig(v1Url: string) {
+  return {
+    formatter: false,
+    lsp: false,
+    model: "tier-real/scripted-model",
+    permission: { task: "allow" },
+    provider: {
+      "tier-real": {
+        name: "Tier R Scripted",
+        id: "tier-real",
+        env: ["TIER_REAL_API_KEY"],
+        npm: "@ai-sdk/openai-compatible",
+        models: {
+          "scripted-model": {
+            id: "scripted-model",
+            name: "Scripted Model",
+            attachment: false,
+            reasoning: false,
+            temperature: false,
+            tool_call: true,
+            variants: { high: {} },
+            limit: { context: 100_000, output: 10_000 },
+            cost: { input: 0, output: 0 },
+            options: {},
+          },
+        },
+        options: { apiKey: "test-key", baseURL: v1Url },
+      },
+    },
+  }
+}
 
 async function main() {
   const scripted = await startScriptedModelServer()
@@ -76,7 +108,7 @@ async function probeEngine(scripted: ScriptedModelServer) {
   const workdir = fs.realpathSync(dir)
   await execFileAsync("git", ["init"], { cwd: workdir })
   const port = 40000 + Math.floor((Date.now() % 10_000))
-  const config = opencodeScriptedProviderConfig(scripted.v1Url)
+  const config = externalOpenCodeProbeConfig(scripted.v1Url)
 
   const engine: ChildProcess = spawn(
     "bun",

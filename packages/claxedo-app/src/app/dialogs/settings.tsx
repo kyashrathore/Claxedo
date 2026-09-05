@@ -46,6 +46,7 @@ function SettingsModelsScope(props: ParentProps) {
         <ModelsProvider
           workspaceKey={() => workspaceKey}
           harness={scope.harness}
+          nativeHarness={scope.nativeHarness}
           serverUrl={scope.serverUrl}
           scope={scope.scopeRef}
         >

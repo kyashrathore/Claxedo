@@ -7,12 +7,14 @@ import { promisify } from "node:util"
 import { once } from "node:events"
 import { serve } from "@hono/node-server"
 import { Hono } from "hono"
-import { createRemoteJWKSet, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
+import { createRemoteJWKSet, errors as joseErrors, exportJWK, exportPKCS8, exportSPKI, generateKeyPair, jwtVerify } from "jose"
 import { mintHostTunnelToken, mintRuntimeAccessToken } from "@claxedo/workspace-relay"
 import { createWorkspaceRuntimeApp } from "../../workspace-runtime/src/server.ts"
 import { WORKSPACE_RUNTIME_SESSION_AUTHORITY_URL } from "../../workspace-runtime/src/remote-session-authority.ts"
 import { relayWorkspaceRuntimeExposure } from "../../workspace-runtime/src/exposure.ts"
 import { configureEmbeddedWorkspaceRuntime } from "@claxedo/local-server/self-hosted-execution"
+import { requirePiModel } from "@claxedo/agent-sdk-runtime/adapters"
+import { putCredential } from "@claxedo/server-core/credentials/registry"
 import {
   createSelfHostedApp,
   embeddedManagedPrivateSessionPolicy,
@@ -21,16 +23,8 @@ import { createControlPlaneServices } from "./authority/services.ts"
 import { createSqliteCentralStore } from "./authority/adapters/sqlite/central-store.ts"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { upsertUser, openAuthorityDb } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority-store"
-import { customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
+import { ControlPlaneAuthError, customVerifierAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import { startLocalJwksIssuer } from "./e2e-local-jwks-issuer.mjs"
-// PRE-EXISTING BREAKAGE, fixed in passing: `refactor(server): group the
-// workspace supervisor and store into directories` (78d734a70) moved this
-// module to `index.ts`, then `refactor(server): W7.1-7.5` (7776fc9f1) deleted
-// the old `supervisor.ts` outright — but never updated this import, so this
-// fixture 500'd at module-resolution time (`ERR_MODULE_NOT_FOUND`) before
-// this line was fixed, independent of and prior to the Phase 3 control-plane
-// swap. Verified: `find packages/claxedo-server/src -name supervisor.ts`
-// returns nothing; `workspace/supervisor/index.ts` exports every symbol below.
 import {
   configureWorkspaceSupervisor,
   createWorkspaceSupervisorSandboxManager,
@@ -61,6 +55,13 @@ const requestedRole = process.env.CLAXEDO_E2E_RELAY_FIXTURE_ROLE?.trim()
 const role =
   requestedRole === "viewer" || requestedRole === "editor" || requestedRole === "owner" ? requestedRole : "editor"
 const backendPort = Number(process.env.CLAXEDO_E2E_BACKEND_PORT || 0)
+const scriptedModelUrl = process.env.CLAXEDO_E2E_SCRIPTED_MODEL_URL?.trim()
+const piModelBackend = scriptedModelUrl
+  ? ({ model = { providerID: "openai", modelID: "gpt-4.1" } }) => ({
+      model: { ...requirePiModel(model), baseUrl: scriptedModelUrl },
+      getApiKey: () => "test-key",
+    })
+  : undefined
 
 function configureRuntimeSessionAuthorityUrl(controlPlaneUrl) {
   const normalized = controlPlaneUrl.replace(/\/+$/, "")
@@ -88,6 +89,12 @@ let localHostHeartbeatPromise = Promise.resolve()
 process.env.CLAXEDO_DATA_DIR = dataDir
 process.env.CLAXEDO_RELAY_JWT_ALG = "EdDSA"
 process.env.WORKSPACE_RUNTIME_CONFIG_TOKEN = runtimeConfigToken
+if (scriptedModelUrl) {
+  // Scripted runs use only the fixture's encrypted credential store.
+  delete process.env.CLAXEDO_CF_KV_URL
+  delete process.env.CLAXEDO_PI_MODEL_BACKEND
+  delete process.env.CLAXEDO_PI_MODEL
+}
 
 // A user-hosted tunnel and the control-plane Local Host Link are two views of
 // the same machine identity. Use the product's canonical persisted identity
@@ -155,6 +162,7 @@ async function startCloudRuntime(input) {
   }
   let runtime
   runtime = createWorkspaceRuntimeApp({
+    ...(piModelBackend ? { piModelBackend } : {}),
     exposure: relayWorkspaceRuntimeExposure(relayHostAuth),
     target: {
       workspaceId,
@@ -321,6 +329,7 @@ const relay = await startRelayFixture({
   relayHostPrivateKeyJwk: await exportJWK(relayHost.privateKey),
 })
 const relayUrl = relay.url
+const publicRelayUrl = process.env.CLAXEDO_E2E_RELAY_PUBLIC_URL?.trim() || relayUrl
 const backendUrl = `http://127.0.0.1:${backendPort || 0}`
 if (backendPort) configureRuntimeSessionAuthorityUrl(backendUrl)
 configureWorkspaceSupervisor({
@@ -411,9 +420,16 @@ const controlPlaneVerifier = async (token, config) => {
   const { payload } = await jwtVerify(token, controlPlaneJwks, {
     issuer: config.issuer,
     ...(config.audience ? { audience: config.audience } : {}),
+  }).catch((error) => {
+    if (error instanceof joseErrors.JWTInvalid || error instanceof joseErrors.JWSInvalid
+      || error instanceof joseErrors.JWTClaimValidationFailed || error instanceof joseErrors.JWTExpired
+      || error instanceof joseErrors.JWSSignatureVerificationFailed) {
+      throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is invalid")
+    }
+    throw error
   })
   const subject = typeof payload.sub === "string" ? payload.sub : undefined
-  if (!subject) throw new Error("e2e control-plane JWT is missing a subject claim")
+  if (!subject) throw new ControlPlaneAuthError(401, "invalid_bearer_token", "Bearer token is missing a subject claim")
   return {
     mode: "signed",
     user: {
@@ -440,6 +456,12 @@ const browserAuth = {
     tokenIdentifier: `${jwksIssuer.issuer}|${browserSubject}`,
     issuer: jwksIssuer.issuer,
   },
+}
+if (scriptedModelUrl) {
+  await putCredential(
+    { provider_id: "openai", kind: "api_key", source: "local_only", secret: "test-key" },
+    browserAuth.user.subject,
+  )
 }
 // A real, signed control-plane bearer token for that identity — printed in
 // this fixture's stdout JSON (below) as `controlPlaneToken` so a spec can
@@ -671,7 +693,7 @@ const services = createControlPlaneServices(
     // and touched no store.
     authority,
     relay: {
-      relayUrl,
+      relayUrl: publicRelayUrl,
       runtimeAccessTokenSigner,
       // `proxy.ts`'s `localWorkspaceRelayProxy` is the path the
       // app actually takes for a relay-backed workspace on a LOOPBACK server URL
@@ -857,9 +879,8 @@ await authority.releaseSessionTurn({
 // therefore calls the same canonical authority-policy factory explicitly
 // before any tunnel request can create the runtime host.
 configureEmbeddedWorkspaceRuntime({
-  opencodeRequest,
-  opencodeCompat: true,
   sessionAccessPolicy: embeddedSessionPolicy,
+  ...(piModelBackend ? { piModelBackend } : {}),
 })
 
 const built = createSelfHostedApp(services, {
@@ -1106,11 +1127,7 @@ const server = serve({
 })
 attachHttpServerErrorHandlers(server)
 built.injectWebSocket(server)
-const address = server.address()
-if ((!address || typeof address === "string") && !backendPort) {
-  throw new Error("Signed browser relay backend did not bind")
-}
-const boundPort = typeof address === "object" && address ? address.port : backendPort
+const boundPort = await serverPort(server, "Signed browser relay backend")
 configureRuntimeSessionAuthorityUrl(`http://127.0.0.1:${boundPort}`)
 
 console.log(

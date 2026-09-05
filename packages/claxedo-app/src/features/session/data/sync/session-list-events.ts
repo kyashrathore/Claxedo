@@ -101,15 +101,7 @@ export function applySessionListEvent(input: {
       }
       if (idx.found) {
         const session = input.cache.session.slice()
-        // MERGE, never replace. A `session.updated` frame is a partial view of
-        // the row — the runtime's auto-title publishes `buildSession(...)`,
-        // which carries id/slug/directory/title/version/time and NO `config`.
-        // Replacing wholesale erased `config.model` from the cached session,
-        // and the composer reads exactly that (`submit.ts`,
-        // `parseExistingSessionConfig(input.info()?.config)`): with the model
-        // gone it refused every subsequent prompt in an EXISTING session with
-        // the "Select an agent and model" toast. Spreading the previous row
-        // first keeps any field the sender did not speak to.
+        // Session updates are partial: preserve fields omitted by the producer.
         session[idx.index] = mergeCanonicalSessionUpdate(session[idx.index], info)
         return { ...input.cache, session }
       }

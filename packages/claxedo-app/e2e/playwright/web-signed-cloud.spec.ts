@@ -112,11 +112,13 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
     fixture = await startSignedRelayFixture({
       access: "cloud",
       backendPort: BACKEND_PORT,
+      browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
       scripted,
       claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "web-signed-cloud-claude"),
     })
     webApp = await buildAndServeWebApp({
       backendUrl: fixture.info.backendUrl,
+      relayUrl: fixture.info.relayUrl,
       outDir: OUT_DIR,
       previewPort: PREVIEW_PORT,
     })

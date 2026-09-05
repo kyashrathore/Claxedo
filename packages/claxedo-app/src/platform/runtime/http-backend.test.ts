@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, mock, test } from "bun:test"
 import type { AgentPresentationSession as Session } from "@claxedo/agent-runtime-contract"
-import type { ClaxedoCommand as Command, ClaxedoProject as Project, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoCommand as Command, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
   createHttpSessionBackend,
   createHttpWorkspaceRuntimeBackend,
@@ -45,18 +45,10 @@ function requestUrl(input: RequestInfo | URL, init?: RequestInit) {
 
 describe("http backend ports", () => {
   test("shell backend delegates to sdk-style clients", async () => {
-    const providerList = {
-      all: [{ id: "openai", name: "OpenAI", source: "api", env: [], options: {}, models: {} }],
-      connected: [],
-      default: {},
-    } satisfies ProviderListResponse
     const backend = createHttpShellBackend({
       client: {
         project: {
           list: async () => ({ data: [project("p1", "/tmp/p1")] }),
-        },
-        provider: {
-          list: async () => ({ data: providerList }),
         },
         command: {
           list: async () => ({ data: [command("build")] }),
@@ -65,7 +57,6 @@ describe("http backend ports", () => {
     })
 
     expect(await backend.listProjects()).toMatchObject([{ id: "p1" }])
-    expect(await backend.listProviders()).toMatchObject({ all: [{ id: "openai" }] })
     expect(await backend.listCommands({ directory: "/tmp/p1" })).toMatchObject([{ name: "build" }])
   })
 

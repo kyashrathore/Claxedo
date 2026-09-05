@@ -56,6 +56,7 @@ import {
 import {
   configureEmbeddedWorkspaceRuntime,
   ensureEmbeddedWorkspaceRuntime,
+  readEmbeddedWorkspaceSessionConfig,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
 } from "@claxedo/local-server/self-hosted-execution"
@@ -151,7 +152,6 @@ import { createUsageOutboxSync, type UsageOutboxSync } from "@claxedo/local-serv
 import { LocalUsageRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { scanTokenTrackerLocalHistory } from "@claxedo/local-server/self-hosted-execution"
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
-import { resolveHarnessForRequest } from "@claxedo/server-core/session/harness/resolution"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
 import { recordRelayRuntimeToken } from "../../authority/relay-token-record"
 
@@ -1007,9 +1007,8 @@ export function createSelfHostedApp(
   // call. Shared with the desktop-local composition rather than duplicated.
   app.use(sessionMetaProjectionTap(services.projectionStore))
 
-  // Route workspace-owned traffic before route matching. This keeps scoped
-  // `/api/claxedo/events` and `/api/wr/runtime-events` remain per-workspace
-  // runtime streams. `/global/event` remains central control-plane traffic.
+  // Route execution traffic to the workspace runtime. `/api/wr/runtime-events`
+  // is workspace-owned; `/api/claxedo/events` and `/global/event` stay central.
   app.use(workspaceRuntimeProxy)
 
   if (services.localExecution.enabled) {
@@ -1028,18 +1027,8 @@ export function createSelfHostedApp(
       }),
     )
 
-    // Runtime-owned local routes are dispatched through the embedded
-    // workspace-runtime host by workspaceRuntimeProxy above.
-    //
-    // Claxedo events SSE lives on `OpenCodeCompatRoutes` above, not here: that
-    // router answers `/global/event`, `/api/wr/events`, and `/api/claxedo/events`
-    // itself (its own three spellings of the central bus stream, gated by the
-    // same control-plane bearer via `controlPlaneRouteAuth`), so a second
-    // `/api/claxedo/events` mounted after it here would never be reached —
-    // Hono resolves the first-registered handler for an exact path.
-    // `createSelfHostedApp` requires `services.localExecution.enabled`
-    // (asserted above) before this point is ever reached, so this composition
-    // never runs without that router mounted.
+    // ShellRoutes owns control-plane SSE; workspaceRuntimeProxy dispatches
+    // execution routes to the embedded workspace runtime.
   }
 
   const documentsBackend = localDocumentsBackend()
@@ -1351,7 +1340,7 @@ function localRelayFromEnv(
 }
 
 export async function shutdownControlPlaneRuntime() {
-  shutdownEmbeddedWorkspaceRuntimes()
+  await shutdownEmbeddedWorkspaceRuntimes()
   await shutdownWorkspaceSupervisor()
   await shutdownPostHog()
 }
@@ -1384,7 +1373,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
   ] as const
   const usageRevisionStore = createSqliteUsageLedger()
   const usageSourceCoverage = createSqliteUsageSourceCoverageStore()
-  const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "opencode", "pi"])
+  const usageCoverageReady = usageSourceCoverage.ensure(["claude", "codex", "cursor", "pi"])
   const usageLedger: UsageLedger | undefined = undefined
   const usageOutbox = createUsageOutboxSync({
     local: usageRevisionStore,
@@ -1405,39 +1394,21 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
       if (!meta?.sessionRef || !meta.workspaceID) {
         throw new Error(`usage metering requires canonical workspace session metadata for ${sessionId}`)
       }
-      const harness = await resolveHarnessForRequest({ sessionId, workspaceId: meta.workspaceID })
+      const config = readEmbeddedWorkspaceSessionConfig(meta.workspaceID, sessionId)
       return {
         sessionRef: meta.sessionRef,
         workspaceId: meta.workspaceID,
         hostId: host.hostId,
         location: "local",
-        harness: meteringHarnessId(harness),
-        ...(meta.model?.providerID ? { providerId: meta.model.providerID } : {}),
-        ...(meta.model?.modelID ? { modelId: meta.model.modelID } : {}),
+        harness: meteringHarnessId(config.harness),
+        ...(config.model?.providerID ? { providerId: config.model.providerID } : {}),
+        ...(config.model?.modelID ? { modelId: config.model.modelID } : {}),
       }
     },
     onTerminal: async () => { await usageOutbox.notify() },
     onDegraded: (error) => reportError(error, { tags: { source: "local_usage_metering" } }),
   })
   void localTurnMeter.start()
-  configureOpenCodeAuth(options.opencodePassword)
-  configureOpenCodeEmbedPath(options.opencodeEmbedPath)
-  configureOpenCodeWorkerPath(options.opencodeWorkerPath)
-  if (options.opencodeUrl) {
-    configureOpenCodeEngine({ url: options.opencodeUrl, headers: opencodeHeaders() })
-  } else {
-    configureOpenCodeEngine({ embedded: true })
-    // Stored AI credentials live in Claxedo's registry; the engine resolves
-    // auth from its own store. Arm the bridge's boot hook so every embedded
-    // engine boot reconciles the registry into the engine — an already-stored
-    // key powers the first embedded turn — WITHOUT booting the engine at
-    // server start just to deliver auth (see opencode/engine-auth-bridge.ts).
-    // Mutations after this keep the two in step through the same gate.
-    void import("@claxedo/server-core/opencode/engine-auth-bridge")
-      .then((bridge) => bridge.armEngineAuthSyncOnBoot())
-      .catch(() => {})
-  }
-  configureOpenCodeApplicationTools(undefined)
   initPostHog()
   // Error tracking rides the client initPostHog just built — no-op unless a
   // PostHog key is configured (release = git SHA via CLAXEDO_RELEASE/GIT_SHA;
@@ -1564,8 +1535,6 @@ export function startServer(
   port = DEFAULT_CLAXEDO_SERVER_PORT,
   options: {
     processObserver?: ProcessObserver
-    opencodeEmbedPath?: string
-    opencodeWorkerPath?: string
   } = {},
 ) {
   return startControlPlaneStack({

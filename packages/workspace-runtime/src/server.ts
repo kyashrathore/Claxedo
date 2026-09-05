@@ -50,7 +50,7 @@ type Host = ReturnType<typeof createWorkspaceHost>
 export type WorkspaceRuntimeApp = {
   app: Hono
   host: Host
-  dispose: () => void
+  dispose: () => Promise<void>
   injectWebSocket: (server: Parameters<ReturnType<typeof createNodeWebSocket>["injectWebSocket"]>[0]) => void
   upgradeWebSocket: UpgradeWebSocket
 }
@@ -81,10 +81,9 @@ export type WorkspaceRuntimeServerOptions = {
   managementAuth?: WorkspaceRuntimeManagementAuth
   managementTarget?: WorkspaceRuntimeManagementTarget
   piModelBackend?: PiModelBackendResolver
-  harness?: RuntimeRunner
-  opencodeCompat?: boolean
-  /** Host-owned catalog for non-opencode harnesses. See {@link WorkspaceHostOptions.providerCatalog}. */
-  providerCatalog?: WorkspaceHostOptions["providerCatalog"]
+  harness?: WorkspaceHostOptions["harness"]
+  connectionProviders?: WorkspaceHostOptions["connectionProviders"]
+  resolveConnectionSecrets?: WorkspaceHostOptions["resolveConnectionSecrets"]
   /** Persist host-owned session metadata before the created lifecycle event is published. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** Explicit private-session authority. Relay-hosted runtimes default to the remote oracle. */
@@ -435,8 +434,6 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     ...(options.connectionProviders ? { connectionProviders: options.connectionProviders } : {}),
     ...(options.resolveConnectionSecrets ? { resolveConnectionSecrets: options.resolveConnectionSecrets } : {}),
     ...(options.harness ? { harness: options.harness } : {}),
-    ...(options.opencodeCompat !== undefined ? { opencodeCompat: options.opencodeCompat } : {}),
-    ...(options.providerCatalog ? { providerCatalog: options.providerCatalog } : {}),
     ...(options.afterCreateSession ? { afterCreateSession: options.afterCreateSession } : {}),
     sessionAccessPolicy,
     ...(options.target ? { target: options.target } : {}),
@@ -620,10 +617,9 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
   app.get(WorkspaceRuntimeRoutes.capabilities, (c) => c.json(host.capabilities()))
   host.mount(app, { core: { upgradeWebSocket }, exposure: options.exposure! })
 
-  let disposed = false
+  let disposal: Promise<void> | undefined
   const dispose = () => {
-    if (disposed) return
-    disposed = true
+    if (disposal) return disposal
     if (options.target && options.processObserver) {
       options.processObserver.detachWorkspace(options.target.workspaceId)
       if (options.target.directory !== options.target.workspaceId) {
@@ -633,7 +629,8 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     }
     routeContributions.dispose()
     worktrees?.close()
-    host.dispose()
+    disposal = host.dispose()
+    return disposal
   }
   return { app, host: { ...host, dispose }, dispose, injectWebSocket, upgradeWebSocket }
 }

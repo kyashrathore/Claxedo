@@ -9,6 +9,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { createInMemoryCliSessionTokenRegistry } from "@claxedo/server-core/platform/auth/cli-session-registry"
 import { STATIC_PRODUCT_DESCRIPTORS } from "./deployment-profile"
 import { testRequestAuthenticationAdapter } from "../../test-support/request-authentication"
+import { hostedOrgCredentials } from "../../credentials/worker"
 
 const ROOT = path.resolve(import.meta.dirname, "../../..")
 
@@ -86,6 +87,65 @@ const options = {
     })),
   },
 }
+
+describe("hosted production Pi and connection discovery", () => {
+  const catalogPath = "/api/claxedo/agent-config/providers?nativeHarness=pi"
+  const headers = (subject = "alice") => ({ authorization: `Bearer ${subject}`, "content-type": "application/json" })
+
+  test("credentials disabled still exposes canonical disconnected models and refuses writes", async () => {
+    const app = createHostedCoreApp(plane(), options) as unknown as Hono
+    expect((await app.request(catalogPath)).status).toBe(401)
+    const response = await app.request(catalogPath, { headers: headers() })
+    expect(response.status).toBe(200)
+    const catalog = await response.json()
+    expect(catalog.all.map((provider: { id: string }) => provider.id).sort()).toEqual(["anthropic", "openai", "openai-codex"])
+    expect(catalog.all.every((provider: { models: object }) => Object.keys(provider.models).length > 0)).toBe(true)
+    expect(catalog.connected).toEqual([])
+    expect((await app.request("/auth/openai?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "secret" } }) })).status).toBe(503)
+    const connections = "/api/claxedo/agent-config/connections"
+    expect((await app.request(connections)).status).toBe(401)
+    expect(await (await app.request(connections, { headers: headers() })).json()).toEqual({ status: "unsupported", reason: "operator_local_configuration" })
+    expect((await app.request("/api/claxedo/agent-config/harness/acp-connections", { headers: headers() })).status).toBe(404)
+  })
+
+  test("enabled catalog and mutations use authority orgs and encrypted credentials; failures remain errors", async () => {
+    const base = plane()
+    base.env = { ...base.env, CLAXEDO_HOSTED_CREDENTIALS_ENABLED: "1", CLAXEDO_CREDENTIALS_KEK: Buffer.alloc(32, 3).toString("base64"), CLAXEDO_CF_KV_URL: "https://kv.test/ns", CLAXEDO_CF_KV_TOKEN: "kv-test" }
+    base.services.authority!.resolveOrgId = vi.fn(async (auth) => `internal-${auth.user.subject}` as never)
+    const kv = new Map<string, string>()
+    let broken = false
+    const originalFetch = globalThis.fetch
+    globalThis.fetch = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      if (broken) return new Response("unavailable", { status: 503 })
+      const key = decodeURIComponent(new URL(String(input)).pathname.split("/values/")[1] ?? "")
+      if (init?.method === "PUT") { kv.set(key, String(init.body)); return new Response("ok") }
+      if (init?.method === "DELETE") { kv.delete(key); return new Response("ok") }
+      return kv.has(key) ? new Response(kv.get(key)) : new Response("missing", { status: 404 })
+    }) as unknown as typeof fetch
+    try {
+      const app = createHostedCoreApp(base, options) as unknown as Hono
+      const connected = async (subject: string) => (await (await app.request(catalogPath, { headers: headers(subject) })).json()).connected
+      expect((await app.request("/auth/openai?harness=pi&orgId=internal-bob", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "alice-key" } }) })).status).toBe(200)
+      expect(await connected("alice")).toEqual(["openai"])
+      expect(await connected("bob")).toEqual([])
+      const credentials = hostedOrgCredentials("internal-alice", base.env)
+      await credentials.putCredential({ provider_id: "codex-app-server", kind: "oauth_token", source: "managed", secret: "oauth-secret" })
+      expect((await connected("alice")).sort()).toEqual(["openai", "openai-codex"])
+      expect((await app.request("/auth/openai-codex?harness=pi", { method: "PUT", headers: headers(), body: JSON.stringify({ auth: { key: "not-oauth" } }) })).status).toBe(400)
+      await credentials.updateCredentialStatus("codex-app-server", "revoked")
+      expect(await connected("alice")).toEqual(["openai"])
+      expect((await app.request("/auth/openai?harness=pi", { method: "DELETE", headers: headers("bob") })).status).toBe(200)
+      expect(await connected("alice")).toEqual(["openai"])
+      expect((await app.request("/auth/openai?harness=pi", { method: "DELETE", headers: headers() })).status).toBe(200)
+      expect(await connected("alice")).toEqual([])
+      expect([...kv.values()].every((value) => !value.includes("oauth-secret"))).toBe(true)
+      broken = true
+      expect((await app.request(catalogPath, { headers: headers() })).status).toBe(500)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+})
 
 describe("resource-closed hosted core app", () => {
   test("mounts core multiplayer routes and no optional-service or billing route", () => {
@@ -550,7 +610,7 @@ describe("hosted-core session-list", () => {
       const url = String(input)
       if (url.endsWith("/workspaces/ws_1/global/health")) return Response.json({ workspaceId: "ws_1" })
       if (url.endsWith("/workspaces/ws_1/api/wr/health?sessionId=ses_1")) {
-        return Response.json({ ok: true, status: "ready", agentType: "claude", acpBinary: null, harnessHealth: { status: "ok" } })
+        return Response.json({ ok: true, status: "ready", harness: { kind: "native", harnessId: "claude" }, activeHarness: { kind: "native", harnessId: "claude" }, harnessHealth: { status: "ok" } })
       }
       return new Response("not found", { status: 404 })
     }) as unknown as typeof globalThis.fetch
@@ -566,9 +626,8 @@ describe("hosted-core session-list", () => {
         sessionId: "ses_1",
         status: "ready",
         ready: true,
-        harness: { id: "claude", access: "native" },
-        activeHarness: { id: "claude", access: "native" },
-        activeType: "claude",
+        harness: { kind: "native", harnessId: "claude" },
+        activeHarness: { kind: "native", harnessId: "claude" },
       })
     } finally {
       globalThis.fetch = originalFetch

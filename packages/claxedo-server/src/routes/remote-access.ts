@@ -43,6 +43,17 @@ export type RemoteAccessRouteOptions<Service extends RemoteAccessOwnerService> =
   service: Service
 }
 
+async function authenticateRemoteAccess(options: RemoteAccessRouteOptions<RemoteAccessOwnerService>, request: Request) {
+  try {
+    return await options.authenticate(request)
+  } catch (error) {
+    if (error instanceof ControlPlaneAuthError) {
+      return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
+    }
+    throw error
+  }
+}
+
 /**
  * Remote access has two sides. The OWNER's side — which machines are enrolled,
  * what they serve, when they were last seen, revoke one, record a second-device
@@ -55,16 +66,6 @@ export type RemoteAccessRouteOptions<Service extends RemoteAccessOwnerService> =
 export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<RemoteAccessOwnerService>) {
   const app = new Hono()
   const available = options.deviceLoginConfigured && options.relayConfigured
-  const signed = async (request: Request) => {
-    try {
-      return await options.authenticate(request)
-    } catch (error) {
-      if (error instanceof ControlPlaneAuthError) {
-        return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
-      }
-      throw error
-    }
-  }
 
   app.get("/", async (c) => {
     // Per-caller enrollment/enabled state — refuse the anonymous remote
@@ -72,8 +73,10 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
     // second-device route below do. `RemoteAccessService.status` still
     // accepts an absent auth for its own direct callers/tests; this route
     // simply never reaches it without one.
-    const auth = await signed(c.req.raw)
-    if (auth instanceof Response) return auth
+    const auth = await authenticateRemoteAccess(options, c.req.raw)
+    // Node's HTTP adapter replaces Response, while Response.json can return the
+    // original constructor. Discriminate the trusted auth result by its shape.
+    if (!("user" in auth)) return auth
     const result = await options.service.status(auth)
     return c.json({
       device_login_configured: options.deviceLoginConfigured,
@@ -86,8 +89,8 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
   })
 
   app.get("/devices", async (c) => {
-    const auth = await signed(c.req.raw)
-    if (auth instanceof Response) return auth
+    const auth = await authenticateRemoteAccess(options, c.req.raw)
+    if (!("user" in auth)) return auth
     return c.json({
       devices: (await options.service.devices(auth)).map((device) => ({
         host_id: device.hostId,
@@ -99,8 +102,8 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
   })
 
   app.delete("/devices/:hostId", async (c) => {
-    const auth = await signed(c.req.raw)
-    if (auth instanceof Response) return auth
+    const auth = await authenticateRemoteAccess(options, c.req.raw)
+    if (!("user" in auth)) return auth
     return c.json(await options.service.revoke(auth, c.req.param("hostId")))
   })
 
@@ -114,8 +117,8 @@ export function RemoteAccessOwnerRoutes(options: RemoteAccessRouteOptions<Remote
         },
       }, 400)
     }
-    const auth = await signed(c.req.raw)
-    if (auth instanceof Response) return auth
+    const auth = await authenticateRemoteAccess(options, c.req.raw)
+    if (!("user" in auth)) return auth
     return c.json(await options.service.markSecondDeviceOpen(auth, c.req.param("workspaceId")))
   })
 
@@ -132,16 +135,6 @@ function blockerMessage(deviceLoginConfigured: boolean, relayConfigured: boolean
 export function RemoteAccessRoutes(options: RemoteAccessRouteOptions<RemoteAccessService>) {
   const app = RemoteAccessOwnerRoutes(options)
   const available = options.deviceLoginConfigured && options.relayConfigured
-  const signed = async (request: Request) => {
-    try {
-      return await options.authenticate(request)
-    } catch (error) {
-      if (error instanceof ControlPlaneAuthError) {
-        return Response.json(controlPlaneAuthErrorBody(error), { status: error.status })
-      }
-      throw error
-    }
-  }
   app.post("/enable", async (c) => {
     if (!available) {
       return c.json({
@@ -153,8 +146,8 @@ export function RemoteAccessRoutes(options: RemoteAccessRouteOptions<RemoteAcces
     }
     const body = enableBody.safeParse(await c.req.json().catch(() => ({})))
     if (!body.success) return c.json({ error: { code: "remote_access_invalid_body", message: "Invalid remote access settings" } }, 400)
-    const auth = await signed(c.req.raw)
-    if (auth instanceof Response) return auth
+    const auth = await authenticateRemoteAccess(options, c.req.raw)
+    if (!("user" in auth)) return auth
     const result = await options.service.enable(auth, {
       displayName: body.data.display_name,
       startAtLogin: body.data.start_at_login,

@@ -782,57 +782,21 @@ describe("session prompt route", () => {
     }
   })
 
-  it("proxies session status for any adapter with http-proxy capability", async () => {
+  it("reads session status from the host-owned inventory", async () => {
     const directory = process.cwd()
-    const urls: string[] = []
-    const originalFetch = globalThis.fetch
-    globalThis.fetch = fetchDouble((async (input, init) => {
-      const req = input instanceof Request ? input : new Request(String(input), init)
-      urls.push(req.url)
-      expect(req.headers.get("x-opencode-directory")).toBe(directory)
-      return new Response(JSON.stringify({ status: "proxied" }), {
-        status: 202,
-        headers: { "Content-Type": "application/json" },
-      })
-    }))
-
-    try {
-      const app = SessionRoutes(() => ({
-        ...adapter({}),
-        adapterCapabilities: ["http-proxy"],
-        readHarnessCapabilities: () => ({
-          harness: "codex",
-          abort: true,
-          reconnect: false,
-          replay: true,
-          permissions: true,
-          questions: true,
-          todos: true,
-          commands: false,
-          fork: false,
-          revert: false,
-          unrevert: false,
-          configOptions: true,
-          subagents: true,
-          goals: false,
-        }),
-        getServerUrl: async () => "http://proxy-capable.test",
-        // `http-proxy` is a two-method capability; the double has to satisfy
-        // both or it is not the thing the route dispatches through.
-        getRequestFn: async () => (async (input: Request) => fetch(input)) as never,
-        listSessions: async () => {
-          throw new Error("status route should proxy through http-proxy capability")
-        },
-      } satisfies AgentHarnessAdapter & HttpProxyAdapter))
-
-      const res = await app.request(`http://localhost/session/status?directory=${encodeURIComponent(directory)}`)
-
-      expect(res.status).toBe(202)
-      expect(await res.json()).toEqual({ status: "proxied" })
-      expect(urls).toEqual(["http://proxy-capable.test/session/status"])
-    } finally {
-      globalThis.fetch = originalFetch
-    }
+    const app = SessionRoutes(() => { throw new Error("inventory reads must not resolve a harness") }, {
+      listSessions: async (_c, scope) => {
+        expect(scope).toBe(directory)
+        return [{ id: "status-session", directory, status: "busy" }]
+      },
+      getStatus: async (_c, scope) => {
+        expect(scope).toBe(directory)
+        return { "status-session": { type: "busy" } }
+      },
+    })
+    const response = await app.request(`http://localhost/session/status?directory=${encodeURIComponent(directory)}`)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ "status-session": { type: "busy" } })
   })
 
   it("returns the final JSON reply and forwards prompt fields", async () => {
@@ -1570,7 +1534,7 @@ describe("session prompt route", () => {
     await Bun.sleep(0)
     expect(executions).toBe(1)
 
-    const restored = make([{ info: { id: "msg-generic", role: "user" }, parts: [] }])
+    const restored = make([{ info: { id: "msg-generic", sessionID: "generic", role: "user" }, parts: [] }])
     expect((await request(restored, true)).status).toBe(204)
     await Bun.sleep(0)
     expect(executions).toBe(1)

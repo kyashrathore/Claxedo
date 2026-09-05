@@ -49,10 +49,12 @@ import {
 } from "../helpers/rail-oracle"
 import {
   claudeScriptedEnv,
-  opencodeScriptedProviderConfig,
+  piScriptedEnv,
   startScriptedModelServer,
   type ScriptedModelServer,
 } from "../helpers/scripted-model-server"
+import { configureScriptedPi } from "../helpers/real-local-server"
+import { composeText, selectScriptedModel } from "../helpers/web-signed-relay-harness"
 import { expectAssistantReplyVisible as expectAssistantReplyVisibleOracle } from "../helpers/turn-oracle"
 
 const execFileAsync = promisify(execFile)
@@ -495,9 +497,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
     packaged = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
       env: {
-        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(model.v1Url)),
-        TIER_REAL_API_KEY: "test-key",
-        OPENCODE_DISABLE_MODELS_FETCH: "true",
+        ...piScriptedEnv(model.v1Url),
       },
       // The BrowserContext branch — see boot-observer.ts's doc on why a
       // Page-level install cannot see this app's real boot sequence at all.
@@ -756,50 +756,6 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
    * the always-correct fallback; mirrors `real-harness-local.spec.ts`'s
    * `composePrompt`.
    */
-  async function composeText(page: Page, input: Locator, text: string) {
-    await input.click()
-    await input.fill(text)
-    if (!((await input.textContent()) ?? "").includes(text)) {
-      await page.keyboard.press(process.platform === "darwin" ? "Meta+A" : "Control+A")
-      await page.keyboard.type(text)
-    }
-    await expect(input).toContainText(text, { timeout: 10_000 })
-  }
-
-  /**
-   * Picks "Scripted Model" in the composer's combined harness+model picker
-   * (`[data-action="prompt-harness-model"]`, `aria-label="Select harness and
-   * model"`), the canonical control shared by desktop and web surfaces.
-   *
-   * REQUIRED before the first send in every draft, not optional. Verified
-   * live 2026-08-06: a fresh draft's harness+model control defaults to a REAL
-   * bundled catalog model ("Laguna S 2.1 Free") wired to a real network
-   * endpoint, not to this file's `OPENCODE_CONFIG_CONTENT` pin — a run that
-   * skipped this step rendered a correctly-worded reply while the scripted
-   * server's own request log stayed at zero, i.e. a real external provider
-   * silently answered instead. That is exactly the false-green owner decision
-   * 1 ("only the AI endpoint may be faked") exists to prevent — the same
-   * finding `real-harness-local.spec.ts`'s `selectScriptedModel` records for
-   * the web lane.
-   */
-  async function selectScriptedModel(page: Page) {
-    const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
-    await expect(control, "the composer's harness+model control never appeared").toBeVisible({ timeout: 20_000 })
-    await control.click()
-    const search = page.getByRole("textbox", { name: /Search models/i }).last()
-    await expect(search, "the harness/model picker's search box never appeared").toBeVisible({ timeout: 10_000 })
-    await search.fill("Scripted")
-    const option = page.getByText(/^Scripted Model$/i).last()
-    await expect(
-      option,
-      '"Scripted Model" is missing from the picker — see opencodeScriptedProviderConfig\'s doc on release_date visibility gating',
-    ).toBeVisible({ timeout: 15_000 })
-    await option.click()
-    await expect(control, 'harness+model control never adopted "Scripted Model"').toContainText(/Scripted Model/i, {
-      timeout: 10_000,
-    })
-  }
-
   async function selectNativeClaudeHarness(page: Page) {
     const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
     await expect(control).toBeEnabled({ timeout: 20_000 })
@@ -959,7 +915,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     }
   }
 
-  /** Boots the packaged app with the scripted `opencode` provider wired in via `OPENCODE_CONFIG_CONTENT`. */
+  /** Boots the packaged app with native Pi and fixture-local provider credentials. */
   async function launchScriptedApp(
     extraEnv: Record<string, string> = {},
   ): Promise<{ app: PackagedApp; model: ScriptedModelServer }> {
@@ -967,15 +923,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     const app = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
       env: {
-        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(model.v1Url)),
-        TIER_REAL_API_KEY: "test-key",
-        // Hermeticity, not speed: without this the embedded engine fetches
-        // the live models.dev catalog at boot — a real network call this
-        // lane must never make (`real-harness-local.spec.ts`'s own note).
-        OPENCODE_DISABLE_MODELS_FETCH: "true",
+        ...piScriptedEnv(model.v1Url),
         ...extraEnv,
       },
     })
+    await configureScriptedPi(new URL(await expectServerReachable(app, 45_000)).origin)
     return { app, model }
   }
 
@@ -1076,11 +1028,11 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
       scenario: "b4-second-turn",
     })
 
-    // Both turns actually reached the scripted endpoint (title + turn1 + turn2).
+    // Both native Pi turns must reach the scripted provider exactly once.
     expect(
-      scripted.counts().chat,
-      "fewer scripted chat calls than expected — a turn silently answered from elsewhere",
-    ).toBeGreaterThanOrEqual(3)
+      scripted.counts().responses,
+      "each rendered turn must correspond to one real Responses request",
+    ).toBe(2)
   })
 
   test("B5/B6: re-prompting an older row bumps it to the top, and its row stays unique", async () => {
@@ -1279,8 +1231,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     packaged = await launchPackagedApp({
       timeoutMs: BOOT_TIMEOUT,
       env: {
-        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
-        OPENCODE_DISABLE_MODELS_FETCH: "true",
+        ...piScriptedEnv(scripted.v1Url),
         ...claudeScriptedEnv(scripted.url, claudeConfigDir),
         // A safety fuse, not the redirect mechanism. Localhost bypasses the
         // proxy; if a future Claude build ignores ANTHROPIC_BASE_URL, external
@@ -1329,7 +1280,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     expect(config.status).toBe(200)
     expect(await config.json()).toMatchObject({
       harness: { id: "claude", access: "native" },
-      model: { providerID: "claude-sdk" },
+      model: { providerID: "claude" },
     })
     await expectGuardedClaudeTraffic(
       "real Claude native harness never reached the redirected Anthropic Messages endpoint",

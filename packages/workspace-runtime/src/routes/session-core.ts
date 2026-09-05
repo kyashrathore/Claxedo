@@ -32,6 +32,7 @@ import {
   questionReplied,
   sessionError,
   sessionStatus,
+  sessionUpdated,
   withDir,
   type CompatEvent,
   type CompatEnvelope,
@@ -124,10 +125,9 @@ async function readSession(
   sessionId: string,
   adapter?: AgentHarnessAdapter,
 ) {
+  if (opts.getSession) return await opts.getSession(c, directory, sessionId) ?? undefined
   const resolvedAdapter = adapter ?? await opts.resolveAdapter(c, { sessionId, directory })
-  const session = opts.getSession
-    ? await opts.getSession(c, directory, sessionId, resolvedAdapter)
-    : await resolvedAdapter.getSession(await requireExecutionBinding(opts, c, directory, sessionId, resolvedAdapter))
+  const session = await resolvedAdapter.getSession(await requireExecutionBinding(opts, c, directory, sessionId, resolvedAdapter))
   return session ?? undefined
 }
 
@@ -179,10 +179,16 @@ function messagePageInput(c: Ctx): AgentMessagePageInput | undefined {
 }
 
 function messagePageResponse(c: Ctx, page: AgentMessagePage) {
+  const exposed: string[] = []
   if (page.nextCursor !== undefined) {
-    c.header("Access-Control-Expose-Headers", "X-Next-Cursor")
+    exposed.push("X-Next-Cursor")
     c.header("X-Next-Cursor", page.nextCursor)
   }
+  if (page.maxEventOrdinal !== undefined) {
+    exposed.push("X-Max-Event-Ordinal")
+    c.header("X-Max-Event-Ordinal", String(page.maxEventOrdinal))
+  }
+  if (exposed.length) c.header("Access-Control-Expose-Headers", exposed.join(", "))
   return noStoreJson(c, page.messages)
 }
 
@@ -243,10 +249,10 @@ type Opts = {
   createSession?: (c: Ctx, directory: RuntimeDirectory, title?: string, id?: string) => Promise<{ id: string }>
   listPermissions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentPermission[]>
   listQuestions?: (c: Ctx, directory: RuntimeDirectory) => Promise<AgentQuestion[]>
-  getStatus?: (c: Ctx, directory: RuntimeDirectory, adapter: AgentHarnessAdapter) => Promise<unknown | Response> | unknown | Response
+  getStatus?: (c: Ctx, directory: RuntimeDirectory) => Promise<unknown | Response> | unknown | Response
   afterListSessions?: (c: Ctx, directory: RuntimeDirectory, sessions: AgentSession[]) => Promise<void> | void
   afterCreateSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
-  getSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) => Promise<AgentSession | null> | AgentSession | null
+  getSession?: (c: Ctx, directory: RuntimeDirectory, sessionId: string) => Promise<AgentSession | null> | AgentSession | null
   afterGetSession?: (c: Ctx, directory: RuntimeDirectory, session: unknown) => Promise<void> | void
   getSessionConfig?: (c: Ctx, directory: RuntimeDirectory, sessionId: string, adapter: AgentHarnessAdapter) => Promise<SessionConfig>
   requestedSessionHarness?: (c: Ctx) => SessionConfig["harness"] | undefined
@@ -607,12 +613,13 @@ async function stopLostTurn(
   adapter: AgentHarnessAdapter,
   sessionId: string,
   directory: RuntimeDirectory,
+  binding: () => Promise<AgentExecutionBinding>,
 ) {
   if (runtime) {
     await runtime.turns.abort(sessionId, directory).catch(() => undefined)
     return
   }
-  await adapter.abort?.(sessionId, directory).catch(() => undefined)
+  await adapter.abort?.(await binding()).catch(() => undefined)
 }
 
 function lostTurnResponse(sessionId: string) {
@@ -669,7 +676,7 @@ async function compensateRegistration(input: {
   const begun = await policy.beginRegistrationCompensation({ ...registration, reason: input.reason })
   if (!begun.allowed) throw new Error(`Session compensation was denied: ${begun.code}`)
   try {
-    await input.adapter.deleteSession(input.sessionId, input.directory)
+    await input.adapter.deleteSession(await requireExecutionBinding(input.opts, input.c, input.directory, input.sessionId, input.adapter))
     await input.opts.afterDeleteSession?.(input.c, input.directory, input.sessionId)
   } catch (error) {
     throw new AggregateError([error], "Session compensation could not delete runtime state")
@@ -1031,8 +1038,7 @@ export function createSessionRoutes(opts: Opts) {
     })
     .get("/session/status", async (c) => {
       const directory = await opts.resolveDirectory(c)
-      const adapter = await opts.resolveAdapter(c)
-      const status = await opts.getStatus?.(c, directory, adapter)
+      const status = await opts.getStatus?.(c, directory)
       if (status instanceof Response) {
         if (!opts.sessionAccessPolicy) return status
         const data = await status.clone().json().catch(() => undefined)
@@ -1074,6 +1080,15 @@ export function createSessionRoutes(opts: Opts) {
           adapter.setModel(config.model.modelID === "default" ? "" : config.model.modelID)
         }
         const existing = body.id ? await readSession(opts, c, directory, body.id, adapter) : undefined
+        const requestedHarness = opts.requestedSessionHarness?.(c)
+        if (existing && requestedHarness) {
+          const currentConfig = opts.getSessionConfig
+            ? await opts.getSessionConfig(c, directory, existing.id, adapter)
+            : await adapter.getSessionConfig(await requireExecutionBinding(opts, c, directory, existing.id, adapter))
+          if (!sameSessionHarness(currentConfig.harness, requestedHarness)) {
+            throw new HTTPException(409, { message: "Session already belongs to another harness" })
+          }
+        }
         const session = existing ?? (opts.createSession
           ? await opts.createSession(c, directory, body.title, body.id)
           : await adapter.createSession(directory, body.title, body.id))
@@ -1225,8 +1240,7 @@ export function createSessionRoutes(opts: Opts) {
       const guarded = await sessionOperationGuard(opts, c, sessionId, "session_meta_read")
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
-      const adapter = await opts.resolveAdapter(c, { sessionId, directory })
-      const session = await readSession(opts, c, directory, sessionId, adapter)
+      const session = await readSession(opts, c, directory, sessionId)
       if (!session) return noStoreJson(c, sessionNotFound(), 404)
       await after(opts.afterGetSession?.(c, directory, session))
       return noStoreJson(c, normalizeSession(session, directory))
@@ -1252,6 +1266,7 @@ export function createSessionRoutes(opts: Opts) {
       const session = await adapter.updateSession(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body)
       if (!session) return c.json(sessionNotFound(), 404)
       await after(opts.afterUpdateSession?.(c, directory, session, body))
+      opts.publishGlobal(withDir(compatScope(directory, sessionId), sessionUpdated(session)))
       return c.json(normalizeSession(session, directory))
     })
     .patch("/session/:id/config", async (c) => {
@@ -1310,10 +1325,10 @@ export function createSessionRoutes(opts: Opts) {
         c,
         sessionId: id,
         turnId: body.messageID,
-        onLost: () => stopLostTurn(runtime, adapter, id, directory),
+        onLost: () => stopLostTurn(runtime, adapter, id, directory, () => requireExecutionBinding(opts, c, directory, id, adapter)),
       })
       if (turnAdmission.rejected) return turnAdmission.rejected
-      if (!runtime) await applyTurnPermissionMode({ adapter, sessionId: id, directory, modeId: body.permissionMode })
+      if (!runtime) await applyTurnPermissionMode({ adapter, binding: await requireExecutionBinding(opts, c, directory, id, adapter), modeId: body.permissionMode })
       const activeTurn = runtime && opts.createActiveTurnScope
         ? turnScope(opts.createActiveTurnScope({ c, adapter, directory, sessionId: id }), turnAdmission.lease)
         : undefined
@@ -1335,6 +1350,7 @@ export function createSessionRoutes(opts: Opts) {
               })
             : await runSessionPromptTurn({
                 adapter,
+                binding: await requireExecutionBinding(opts, c, directory, id, adapter),
                 sessionId: id,
                 directory,
                 body,
@@ -1376,15 +1392,16 @@ export function createSessionRoutes(opts: Opts) {
       if (guarded) return guarded
       const directory = await opts.resolveDirectory(c, { sessionId })
       const snapshotRequested = c.req.query("snapshot") === "1"
-      if (snapshotRequested) {
+      const pageInput = snapshotRequested ? undefined : messagePageInput(c)
+      if (!pageInput) {
         const snapshot = await opts.getMessageSnapshot?.(c, directory, sessionId)
         if (snapshot) {
+          if (!snapshotRequested) return messagePageResponse(c, snapshot)
           const session = await readSession(opts, c, directory, sessionId)
           if (!session) return noStoreJson(c, sessionNotFound(), 404)
           return noStoreJson(c, { ...snapshot, session: normalizeSession(session, directory) })
         }
       }
-      const pageInput = snapshotRequested ? undefined : messagePageInput(c)
       if (pageInput) {
         const adapter = await opts.resolveAdapter(c, { sessionId, directory })
         try {
@@ -1579,7 +1596,7 @@ export function createSessionRoutes(opts: Opts) {
           "Managed session forks require a preassigned child session id and reservation operation",
         ), 400)
       }
-      const child = await adapter.forkSession!(sessionId, body.messageId ?? "", directory, body.id)
+      const child = await adapter.forkSession!(await requireExecutionBinding(opts, c, directory, sessionId, adapter), body.messageId ?? "", body.id)
       const registration = await registerCreatedSession(opts, c, child.id, operationId)
       if (registration.kind === "ambiguous") return registration.response
       if (registration.kind === "denied") {
@@ -1691,9 +1708,7 @@ export function createSessionRoutes(opts: Opts) {
             const projected = messages.some((message) => rec(message.info)?.id === body.messageID)
             const session = projected
               ? undefined
-              : await (opts.getSession
-                  ? opts.getSession(c, directory, id, adapter)
-                  : adapter.getSession(await requireExecutionBinding(opts, c, directory, id, adapter)))
+              : await readSession(opts, c, directory, id, adapter)
             if (
               projected
               || session?.status === "busy"
@@ -1713,7 +1728,7 @@ export function createSessionRoutes(opts: Opts) {
         c,
         sessionId: id,
         turnId: body.messageID,
-        onLost: () => stopLostTurn(runtime, adapter, id, directory),
+        onLost: () => stopLostTurn(runtime, adapter, id, directory, () => requireExecutionBinding(opts, c, directory, id, adapter)),
       })
       if (turnAdmission.rejected) {
         if (body.messageID) {
@@ -1790,7 +1805,12 @@ export function createSessionRoutes(opts: Opts) {
           const leaseLost = turnAdmission.lease?.lost() ?? false
           if (!leaseLost) {
             await flushDocumentsAfterTurn(opts, id)
-            await after(opts.afterMessageCheckpoint?.(c, directory, id, await adapter.getMessages(id, directory)))
+            if (opts.afterMessageCheckpoint) {
+              const messages = runtime
+                ? await runtime.events.list(id, directory)
+                : await adapter.getMessages(await requireExecutionBinding(opts, c, directory, id, adapter))
+              await after(opts.afterMessageCheckpoint(c, directory, id, messages))
+            }
           }
           await turnAdmission.lease?.release().catch(() => undefined)
         }

@@ -55,7 +55,9 @@ export const serverSelfHosted: Policy = {
   // host composition, the self-hosted capability seam, and the service package
   // with its transitive pins out of the single binary. Re-measured, no
   // headroom: 123 modules and 32 packages.
-  ceilings: { modules: 123, packages: 32 },
+  // The self-hosted composition registers @claxedo/opencode-server-adapter for
+  // operator-configured external connections; no OpenCode engine is bundled.
+  ceilings: { modules: 123, packages: 33 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -71,12 +73,13 @@ export const serverSelfHosted: Policy = {
   },
 
   isolation: {
-    additionalPackageDirs: ["packages/opencode"],
     additionalFiles: [".github/TEAM_MEMBERS"],
     buildPackages: [
+      { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
       { packageDir: "packages/agent-extensions" },
       { packageDir: "packages/agent-sdk-runtime" },
+      { packageDir: "packages/opencode-server-adapter" },
       { packageDir: "packages/workspace-relay-protocol" },
       { packageDir: "packages/sandbox-contract" },
       { packageDir: "packages/sandbox-manager" },
@@ -85,17 +88,7 @@ export const serverSelfHosted: Policy = {
       { packageDir: "packages/claxedo-channels" },
       { packageDir: "packages/wakes" },
       { packageDir: "packages/workspace-runtime" },
-      { packageDir: "packages/claxedo-mcp" },
       { packageDir: "packages/claxedo-local-server" },
-      {
-        packageDir: "packages/opencode",
-        script: "build:node",
-        inputOnly: true,
-        environment: {
-          OPENCODE_CHANNEL: "selfhost-boundary",
-          OPENCODE_VERSION: "0.0.0-boundary",
-        },
-      },
     ],
     packageExports: [{
       packageDir: "packages/claxedo-local-server",

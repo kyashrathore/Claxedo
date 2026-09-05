@@ -9,7 +9,7 @@ import {
   claudeScriptedEnv,
   codexScriptedConfigJson,
   codexScriptedConfigToml,
-  opencodeScriptedProviderConfig,
+  piScriptedEnv,
   startScriptedModelServer,
   type ScriptedModelServer,
 } from "./scripted-model-server"
@@ -18,11 +18,11 @@ const execFileAsync = promisify(execFile)
 const REPO_ROOT = path.resolve(import.meta.dirname, "../../../..")
 const SERVER_DIR = path.join(REPO_ROOT, "packages/claxedo-server")
 
-async function freePort() {
+async function freePort(requested = 0) {
   const server = net.createServer()
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject)
-    server.listen(0, "127.0.0.1", () => resolve())
+    server.listen(requested, "127.0.0.1", () => resolve())
   })
   const address = server.address()
   if (!address || typeof address === "string") throw new Error("could not reserve a Tier R server port")
@@ -69,13 +69,28 @@ export type RealLocalServer = {
   close: () => Promise<void>
 }
 
+export async function configureScriptedPi(url: string) {
+  const credential = await fetch(`${url}/api/claxedo/credentials`, {
+    method: "PUT",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ provider_id: "openai", kind: "api_key", source: "local_only", secret: "test-key" }),
+  })
+  if (!credential.ok) throw new Error(`Scripted Pi credential setup failed: ${credential.status} ${await credential.text()}`)
+  const selection = await fetch(`${url}/api/claxedo/agent-config/harness`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ harness: { kind: "native", harnessId: "pi" } }),
+  })
+  if (!selection.ok) throw new Error(`Scripted Pi default setup failed: ${selection.status} ${await selection.text()}`)
+}
+
 /**
  * One production self-host process for focused Tier R contract journeys.
  * The scripted model endpoint is the only fake; all HTTP routes, embedded
  * runtimes, SQLite projections, PTYs, and managed processes are real owners.
  */
-export async function startRealLocalServer(label: string): Promise<RealLocalServer> {
-  const port = await freePort()
+export async function startRealLocalServer(label: string, options: { port?: number } = {}): Promise<RealLocalServer> {
+  const port = await freePort(options.port)
   const url = `http://127.0.0.1:${port}`
   const dataDir = await fs.mkdtemp(path.join(os.tmpdir(), `claxedo-tier-real-${label}-`))
   const scripted = await startScriptedModelServer()
@@ -91,14 +106,19 @@ export async function startRealLocalServer(label: string): Promise<RealLocalServ
     cwd: SERVER_DIR,
     env: {
       ...process.env,
+      HOME: dataDir,
       CLAXEDO_DATA_DIR: dataDir,
       CLAXEDO_SERVER_PORT: String(port),
-      OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
-      OPENCODE_DISABLE_MODELS_FETCH: "true",
-      TIER_REAL_API_KEY: process.env.TIER_REAL_API_KEY ?? "test-key",
-      OPENAI_API_KEY: process.env.TIER_REAL_API_KEY ?? "test-key",
+      ...piScriptedEnv(scripted.v1Url),
       CODEX_HOME: codexHome,
       CODEX_CONFIG: codexScriptedConfigJson(scripted.v1Url),
+      CODEX_THREAD_ID: undefined,
+      CODEX_INTERNAL_ORIGINATOR_OVERRIDE: undefined,
+      CODEX_CI: undefined,
+      CODEX_SANDBOX: undefined,
+      CODEX_SANDBOX_NETWORK_DISABLED: undefined,
+      CURSOR_API_KEY: undefined,
+      IS_SANDBOX: undefined,
       ...claudeScriptedEnv(scripted.url, claudeConfigDir),
     },
     stdio: ["ignore", "pipe", "pipe"],
@@ -107,6 +127,7 @@ export async function startRealLocalServer(label: string): Promise<RealLocalServ
   child.stderr?.on("data", (chunk) => (output += chunk.toString()))
   try {
     await waitForHealth(url, child, () => output)
+    await configureScriptedPi(url)
   } catch (error) {
     await stopChild(child)
     await scripted.close()

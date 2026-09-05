@@ -26,14 +26,3 @@ function record(input: unknown) {
 function string(input: unknown) {
   return typeof input === "string" && input.length > 0 ? input : undefined
 }
-
-function runtimeHarnessType(input: Record<string, unknown> | undefined) {
-  const id = string(input?.id)
-  if (!id) return
-  // Canonical runtime identity records are `{ id, access }` (`access` is
-  // "acp" | "native"). `pickHarness` owns that translation — ACP records map
-  // to their access-qualified `acp:<slug>` key, native records to the
-  // built-in harness ids. Anything unrecognized yields undefined so the
-  // caller's fallback chain can try the next config shape.
-  return pickHarness(id, null, string(input?.access))
-}

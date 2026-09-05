@@ -4,7 +4,8 @@ import { createHash } from "node:crypto"
 import fs from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
-import { build as esbuildBuild } from "esbuild"
+import { isBuiltin } from "node:module"
+import { build as esbuildBuild, type Metafile } from "esbuild"
 import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
 import { claxedoWorkspaceRuntimeEntry, workspaceRuntimeRoot, workspaceRuntimeVersion } from "../../src/hosts/workspace-runtime/startup"
 
@@ -16,6 +17,7 @@ const IMAGE_REQUIRED_DEPENDENCIES = [
 ]
 
 export const HOST_BUNDLE_FILENAME = "workspace-runtime-host.mjs"
+export const IMAGE_SMOKE_FILENAME = "workspace-runtime-image-smoke.mjs"
 export const WORKSPACE_RUNTIME_VERSION_FILENAME = "workspace-runtime-version"
 
 function defaultExec(cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) {
@@ -31,16 +33,17 @@ function packagesRoot() {
 }
 
 /**
- * Merge the external (non-@claxedo) runtime dependencies of workspace-runtime
- * and every @claxedo workspace package it transitively depends on. The
+ * Merge external runtime dependencies of the host's workspace package roots. The
  * @claxedo code itself ships inside the esbuild bundle; everything else is
  * npm-installed in the image from these exact pins.
  */
-export function hostBundleDependencies(readPackageJson: (dir: string) => { name?: string; dependencies?: Record<string, string> } = (dir) =>
-  JSON.parse(fs.readFileSync(path.join(dir, "package.json"), "utf8"))) {
+export function hostBundleDependencies(
+  readPackageJson: (dir: string) => PackageJson = readPackageJsonFromDisk,
+  roots = hostBundlePackageRoots(),
+) {
   const dependencies: Record<string, string> = {}
   const visited = new Set<string>()
-  const queue = [workspaceRuntimeRoot()]
+  const queue = [...roots].reverse()
   while (queue.length) {
     const dir = queue.shift()!
     if (visited.has(dir)) continue
@@ -79,15 +82,12 @@ const readPackageJsonFromDisk = (dir: string): PackageJson =>
 /**
  * Roots of the host-bundle package closure.
  *
- * Everything the sandbox host bundle imports is reachable from
- * workspace-runtime, so it is the single seed of the walk. A root that is
- * missed here would be left out of the build order, and since every `dist/`
- * here is gitignored, a fresh checkout would bundle against a missing or stale
- * dist. That failure is silent in the worst way — esbuild resolves whatever
- * happens to be on disk.
+ * The host registers the external adapter itself; workspace-runtime does not
+ * depend on it. Keep runtime last for builds and first for dependency-pin priority.
+ * Pure server-core source helpers are bundled directly, not package build roots.
  */
 function hostBundlePackageRoots() {
-  return [workspaceRuntimeRoot()]
+  return [path.join(packagesRoot(), "opencode-server-adapter"), workspaceRuntimeRoot()]
 }
 
 /**
@@ -100,6 +100,7 @@ function hostBundlePackageRoots() {
  */
 export function workspacePackageBuildOrder(
   readPackageJson: (dir: string) => PackageJson = readPackageJsonFromDisk,
+  roots = hostBundlePackageRoots(),
 ): string[] {
   const order: string[] = []
   const visited = new Set<string>()
@@ -122,7 +123,7 @@ export function workspacePackageBuildOrder(
     visited.add(dir)
     order.push(dir)
   }
-  for (const root of hostBundlePackageRoots()) visit(root)
+  for (const root of roots) visit(root)
   return order
 }
 
@@ -154,40 +155,6 @@ export function writeWorkspaceRuntimeVersion(outDir: string) {
   return versionFile
 }
 
-/**
- * Build the exact OpenCode server used by hosted workspaces.
- *
- * The hosted workspace depends on the checkout's durable Session V2
- * `/api/session` contract. The public `opencode-ai` package in the image is
- * useful as a terminal CLI, but it can lag that contract and fall through to
- * its HTML app shell. Shipping this checkout's compiled server binary keeps the workspace
- * runtime and its proxied Session API on one content-addressed build.
- *
- * This build used to pass `--skip-embed-web-ui`. That flag did more than keep
- * the binary off an app shell: the embed path it skipped pointed at upstream's
- * `packages/app`, which the hard fork removed, so any build without the flag
- * died on ENOENT. The fork no longer embeds a web UI at all, so the flag is
- * gone from packages/opencode/script/build.ts and the binary is UI-less by
- * default.
- */
-export function buildSandboxOpenCodeBinary(outDir: string, exec: Exec = defaultExec) {
-  if (process.platform !== "linux" || process.arch !== "x64") {
-    throw new Error("sandbox OpenCode binary builds require a linux/x64 builder")
-  }
-  exec("bun", ["run", "build", "--", "--single", "--skip-install"], {
-    cwd: opencodeRoot(),
-    env: {
-      ...process.env,
-      OPENCODE_VERSION: `0.0.0-claxedo-${process.env.GITHUB_SHA?.slice(0, 12) ?? "sandbox"}`,
-    },
-  })
-  const source = path.join(opencodeRoot(), "dist", "opencode-linux-x64", "bin", "opencode")
-  if (!fs.existsSync(source)) throw new Error(`sandbox OpenCode build did not emit ${source}`)
-  const target = path.join(outDir, OPENCODE_BINARY_FILENAME)
-  fs.copyFileSync(source, target)
-  fs.chmodSync(target, 0o755)
-  return target
-}
 
 // Bundle only @claxedo workspace code; every npm dependency stays external and
 // is installed in the image from the generated package.json. (Several runtime
@@ -206,6 +173,7 @@ export function esbuildHostBundleOptions(input: { entry: string; outfile: string
   return {
     entryPoints: [input.entry],
     bundle: true,
+    metafile: true,
     platform: "node" as const,
     format: "esm" as const,
     outfile: input.outfile,
@@ -220,6 +188,19 @@ export function esbuildHostBundleOptions(input: { entry: string; outfile: string
     },
     logLevel: "warning" as const,
   }
+}
+
+/** Every emitted npm import must be installable from the image's manifest. */
+export function assertHostBundleDependencies(metafile: Metafile, dependencies: Record<string, string>) {
+  const missing = new Set<string>()
+  for (const output of Object.values(metafile.outputs)) {
+    for (const imported of output.imports) {
+      if (!imported.external || isBuiltin(imported.path)) continue
+      const name = imported.path.startsWith("@") ? imported.path.split("/").slice(0, 2).join("/") : imported.path.split("/")[0]!
+      if (!dependencies[name]) missing.add(imported.path)
+    }
+  }
+  if (missing.size) throw new Error(`Host bundle has undeclared external dependencies: ${[...missing].sort().join(", ")}`)
 }
 
 /**
@@ -241,19 +222,23 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   // one. workspace-runtime is the last package built.
   buildClaxedoWorkspacePackages(exec)
   const versionFile = writeWorkspaceRuntimeVersion(outDir)
-  await esbuildBuild(esbuildHostBundleOptions({
+  const dependencies = hostBundleDependencies()
+  const result = await esbuildBuild(esbuildHostBundleOptions({
     entry: claxedoWorkspaceRuntimeEntry(),
     outfile: path.join(outDir, HOST_BUNDLE_FILENAME),
   }))
+  assertHostBundleDependencies(result.metafile!, dependencies)
   const bundlePath = path.join(outDir, HOST_BUNDLE_FILENAME)
   const packageJsonPath = path.join(outDir, "package.json")
   const packageJson = JSON.stringify({
     name: "claxedo-workspace-runtime-host",
     private: true,
     type: "module",
-    dependencies: hostBundleDependencies(),
+    dependencies,
   }, null, 2)
   fs.writeFileSync(packageJsonPath, packageJson)
+  const smokePath = path.join(outDir, IMAGE_SMOKE_FILENAME)
+  fs.copyFileSync(new URL(`./${IMAGE_SMOKE_FILENAME}`, import.meta.url), smokePath)
   // Content build-id: sha256 over the emitted bundle + generated package.json,
   // truncated to 10 hex chars. Distinguishes two builds at the same core
   // version (the npm-publish immutability gate is gone), so a rebuilt image
@@ -262,6 +247,7 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
     .update(fs.readFileSync(bundlePath))
     .update(fs.readFileSync(versionFile))
     .update(packageJson)
+    .update(fs.readFileSync(smokePath))
     .digest("hex")
     .slice(0, 10)
   return {

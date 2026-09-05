@@ -1338,8 +1338,11 @@ describe("AcpHarnessAdapter event fan-out", () => {
     const persisted: string[] = []
     const global: string[] = []
     /** Only `session.updated` carries a session row, so the title has to be read behind that check. */
-    const titleOrType = (payload: CompatEvent) =>
-      payload.type === "session.updated" ? payload.properties.info.title : payload.type
+    const titleOrType = (payload: CompatEvent) => {
+      if (payload.type !== "session.updated") return payload.type
+      expect(typeof payload.properties.info.title).toBe("string")
+      return payload.properties.info.title!
+    }
     const store = {
       getSession() {
         return null

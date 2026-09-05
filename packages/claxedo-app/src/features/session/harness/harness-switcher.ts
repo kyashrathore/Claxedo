@@ -2,6 +2,7 @@ import {
   decodeHarnessState,
   failedHarness,
   harnessHasConfigOptions,
+  harnessSelectionId,
   sessionHarnessIdentity,
   type HarnessState,
   type HarnessType,
@@ -17,7 +18,7 @@ import {
 } from "./store-policy"
 import { sessionResourceUrl } from "./harness-config-routes"
 import type { WorkspaceBoot } from "./harness-config-runtime"
-import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
+import { harnessSelectionQuery } from "@/platform/identity/harness-selection"
 
 export type HarnessSwitcherCache = {
   getPending(key: string): Promise<void> | undefined
@@ -117,28 +118,23 @@ export function createHarnessSwitcher<ScopeInput extends HarnessScopeInput>(inpu
   ) => {
     await input.runtime.workspace(params).catch(() => undefined)
     if (!active()) return false
-    const status = useLocalHarnessConfig && !isRelayBackedWorkspaceKind(workspace?.kind)
-      ? await postHarnessConfig(scope, type, params, binary, undefined, active)
-      : true
-    if (!status || !active()) return false
-    if (!harnessHasConfigOptions(type)) {
+    const configOptions = await hasConfigOptions(scope, type)
+    if (configOptions === undefined || !active()) return false
+    if (!configOptions) {
       await input.refresh(params?.directory, undefined, { draft: true })
       if (!active()) return false
       input.applyPatch(scope, {
-        selectedModel: "default",
-        dynamicModels: [],
+        ...(type.kind === "connection" ? { selectedModel: "default", dynamicModels: [] } : {}),
         optionsSource: "empty",
         optionsStale: false,
         optionsLoading: false,
         configError: undefined,
       })
-      applyPostedStatus(scope, status)
       return true
     }
     input.fetchConfigOptions(scope, type, params)
     await input.refresh(params?.directory, undefined, { draft: true })
     if (!active()) return false
-    applyPostedStatus(scope, status)
     return true
   }
 

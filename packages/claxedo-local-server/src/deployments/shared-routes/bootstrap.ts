@@ -1,7 +1,7 @@
 import { Hono } from "hono"
 import os from "os"
 import { providerAuthMethods } from "../../credentials/provider-auth/service"
-import { listProjects } from "@claxedo/server-core/workspace/store/index"
+import { getProjectMetadata, listProjects } from "@claxedo/server-core/workspace/store/index"
 import { dataDir, stateDir } from "@claxedo/server-core/platform/runtime/lib/paths"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
@@ -129,11 +129,12 @@ export function signedBootstrapProjects(workspaces: unknown[]) {
 
 async function signedBootstrapBody(auth: SignedControlPlaneAuth, options: Options) {
   const workspaces = await requireAuthority(options.services).listWorkspaces(auth)
+  const projects = signedBootstrapProjects(Array.isArray(workspaces) ? workspaces : [])
   return {
     healthy: true,
     version: version(options),
     path: { home: "", state: "", config: "", worktree: "", directory: "" },
-    project: signedBootstrapProjects(Array.isArray(workspaces) ? workspaces : []),
+    project: await Promise.all(projects.map(async (project) => ({ ...project, ...await getProjectMetadata(project.id) }))),
     provider_auth: providerAuthMethods(),
   }
 }

@@ -16,13 +16,10 @@ import { createModelSelectionController, modelKeyFromPickerSelection } from "@/f
 import { openSettingsProviders, useProviders } from "@/features/session/app-ports"
 import { resolveDraftDefault as resolveDraftDefaultPolicy } from "@/features/session/harness/draft-default-policy"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
-import { connectionHarness, nativeHarness, sameHarnessSelection } from "@/platform/identity/harness-selection"
-import { createHarnessConnectionsCatalog } from "@/platform/runtime/agent/connection-catalog"
+import { NATIVE_HARNESS_IDS, connectionHarness, nativeHarness, sameHarnessSelection } from "@/platform/identity/harness-selection"
+import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
-// The static picker portion: the finite built-ins. Claude, Codex, and Cursor
-// appear once each (Native SDK). Generic connections join this list only after
-// the controller can carry the discriminated connection target end to end.
-const BUILTIN_HARNESS_OPTIONS: HarnessType[] = [nativeHarness("claude"), nativeHarness("codex"), nativeHarness("cursor"), nativeHarness("pi")]
+const BUILTIN_HARNESS_OPTIONS: HarnessType[] = NATIVE_HARNESS_IDS.map(nativeHarness)
 
 function label(input: string) {
   return HARNESS_DISPLAY_NAMES[input] ?? harnessDisplayLabel(input)
@@ -95,6 +92,10 @@ interface AgentHarnessSelectorProps {
 export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const dialog = useDialog()
   const connections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
+  const connectionRows = createMemo(() => {
+    const catalog = connections.data()
+    return catalog?.status === "supported" ? catalog.connections : []
+  })
   const refreshConnections = () => {
     let cancelled = false
     let attempts = 0
@@ -117,10 +118,10 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   })
   const harnessOptions = createMemo<HarnessType[]>(() => [
     ...BUILTIN_HARNESS_OPTIONS,
-    ...connections.rows().filter((row) => row.enabled).map((row) => connectionHarness(row.connectionId)),
+    ...connectionRows().filter((row) => row.enabled).map((row) => connectionHarness(row.connectionId)),
   ])
   const harnessOptionLabel = (input: HarnessType) => {
-    if (input.kind === "connection") return connections.rows().find((row) => row.connectionId === input.connectionId)?.label ?? harnessDisplayLabel(input.connectionId)
+    if (input.kind === "connection") return connectionRows().find((row) => row.connectionId === input.connectionId)?.label ?? harnessDisplayLabel(input.connectionId)
     return label(input.harnessId)
   }
   const sessionId = createMemo(() => {

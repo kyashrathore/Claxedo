@@ -57,7 +57,6 @@
     "/api/wr/checkpoint",
     "/api/wr/config",
     "/api/wr/harness-config-options",
-    "/api/wr/provider-config",
     "/api/wr/pty",
     "/api/wr/process",
     "/api/wr/events",

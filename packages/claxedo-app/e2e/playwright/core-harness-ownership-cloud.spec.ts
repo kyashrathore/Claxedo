@@ -163,7 +163,7 @@
  * The shared runtime models the cloud session lane, so every behavior below executes.
  */
 import { expect, test, type Page } from "@playwright/test"
-import { expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
+import { ensureComposerModelSelected, expectAssistantReplyVisible, expectTurnCounts, SELECTORS } from "../helpers/turn-oracle"
 import { installMockRuntime, type Harness } from "../helpers/mock-runtime"
 import { decodeDraftDefaultRecord } from "../../src/features/session/harness/draft-defaults"
 
@@ -257,7 +257,10 @@ function readDraftDefaults(page: Page) {
  * shape rather than the fact this test means to prove.
  */
 function draftDefaultHarness(raw: string | undefined) {
-  return raw === undefined ? undefined : decodeDraftDefaultRecord(raw)?.record.lastHarness
+  const selection = raw === undefined ? undefined : decodeDraftDefaultRecord(raw)?.lastHarness
+  if (!selection) return undefined
+  if (selection.kind === "connection") return selection.connectionId
+  return { claude: "claude-sdk", codex: "codex-app-server", cursor: "cursor-sdk", pi: "pi" }[selection.harnessId]
 }
 
 function visibleHarnessTrigger(page: Page, harness: Harness) {
@@ -517,7 +520,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
     // The cloud workspace draft shows its OWN OpenCode default — exactly one plain model
     // control, no relay options ever fetched for a carried-over "claude-sdk".
-    await expectOnlyOpenCodeModelControl(page)
+    await expectOnlyHarnessModelControl(page, /Big Pickle/i)
     await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
     expect(mock.requests.cloudHarnessOptionsHarnesses.includes("claude-sdk")).toBe(false)
 
@@ -559,7 +562,7 @@ test.describe("core harness ownership (cloud) @core", () => {
 
     await openProjectFromChip(page, WORKSPACE_ID, WORKSPACE_PROJECT_NAME)
     await expect(page).toHaveURL(new RegExp(`/w/${WORKSPACE_ID}/session$`), { timeout: 20_000 })
-    await expectOnlyOpenCodeModelControl(page)
+    await expectOnlyHarnessModelControl(page, /Big Pickle/i)
     await expect(visibleHarnessTrigger(page, "opencode")).toHaveCount(1, { timeout: 20_000 })
 
     // `filter({visible: true})`, not `.last()`: the round trip above leaves the prior

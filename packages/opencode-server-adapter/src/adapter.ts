@@ -1,7 +1,8 @@
 import { assertAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { AgentExecutionBinding, AgentMessage, AgentSession, PromptInput } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "@claxedo/agent-sdk-runtime/adapters"
-import type { AgentRuntimeStreamEvent, HarnessCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
+import type { HarnessCapabilities, SessionConfig, SessionConfigUpdate } from "@claxedo/agent-sdk-runtime"
+import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { OPENCODE_SERVER_CONNECTION_CAPABILITIES, type ResolvedOpenCodeServerConnection } from "./config"
 import { OpenCodeServerAdapterError } from "./errors"
 import { serverSentEvents } from "./sse"
@@ -9,9 +10,9 @@ import {
   isUnsupportedInteractiveEvent,
   openCodeEventSessionId,
   record,
-  translateOpenCodeEvent,
   type OpenCodeLeafEvent,
 } from "./translate"
+import { OpenCodeTurn } from "./turn"
 
 const ERROR_BODY_BYTES = 4_096
 const JSON_BODY_BYTES = 16 * 1024 * 1024
@@ -101,11 +102,11 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   async abort(binding: AgentExecutionBinding) {
     this.assertBinding(binding)
-    try {
-      return await this.abortUpstream(binding)
-    } finally {
+    const result = await this.abortUpstream(binding)
+    if (result.ok && result.status === "cancelled") {
       this.streams.get(binding.upstreamSessionId)?.abort(new DOMException("Turn aborted", "AbortError"))
     }
+    return result
   }
 
   getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {
@@ -118,7 +119,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     return Promise.reject(this.error("unsupported_operation", "External OpenCode servers do not expose authoritative session configuration", "session.config.update"))
   }
 
-  executeTurn(binding: AgentExecutionBinding, input: PromptInput): AsyncIterable<AgentRuntimeStreamEvent> {
+  executeTurn(binding: AgentExecutionBinding, input: PromptInput): AsyncIterable<AgentRuntimeEvent> {
     this.assertBinding(binding)
     return this.streamTurn(binding, input)
   }
@@ -130,7 +131,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     this.streams.clear()
   }
 
-  private async *streamTurn(binding: AgentExecutionBinding, input: PromptInput): AsyncIterable<AgentRuntimeStreamEvent> {
+  private async *streamTurn(binding: AgentExecutionBinding, input: PromptInput): AsyncIterable<AgentRuntimeEvent> {
     this.assertUsable()
     await this.ensureCompatible()
     const controller = new AbortController()
@@ -138,32 +139,51 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
       throw this.error("invalid_binding", "The bound OpenCode session already has an active turn", "events.connect")
     }
     this.streams.set(binding.upstreamSessionId, controller)
-    const content = new Map<string, string>()
     let sent = false
     let reconnects = 0
     try {
+      const history = await this.getMessages(binding)
+      const turn = new OpenCodeTurn(history.map((message) => message.info.id))
       while (!controller.signal.aborted) {
+        let response: Response | undefined
         try {
-          const response = await this.eventResponse(controller.signal)
+          response = await this.eventResponse(controller.signal)
           if (!sent) {
-            await this.prompt(binding, input, controller.signal)
+            await this.prompt(binding, input, turn.userMessageId, controller.signal)
             sent = true
+          } else {
+            // Subscribe before the snapshot so completion cannot fall between them.
+            const reconciliation = await this.reconcile(binding, turn)
+            for (const value of reconciliation.events) yield value
+            if (reconciliation.terminal) return
           }
+          let reconcileAt = performance.now() + this.config.deadlines.streamIdleMs
           for await (const frame of serverSentEvents(response, {
             signal: controller.signal,
             idleTimeoutMs: this.config.deadlines.streamIdleMs,
             maxFrameBytes: SSE_FRAME_BYTES,
           })) {
             const event = this.parseBoundEvent(frame.data, binding)
+            // Global heartbeats keep transport reads alive, but cannot defer
+            // authoritative completion checks for this bound session forever.
+            if (event?.type === "session.idle" || performance.now() >= reconcileAt) {
+              const reconciliation = await this.reconcile(binding, turn, event?.type === "session.idle" ? "recover" : "completion")
+              for (const value of reconciliation.events) yield value
+              if (reconciliation.terminal) return
+              reconcileAt = performance.now() + this.config.deadlines.streamIdleMs
+              if (event?.type === "session.idle") continue
+            }
             if (!event) continue
             if (isUnsupportedInteractiveEvent(event)) {
               await this.abortUpstream(binding).catch(() => undefined)
               throw this.error("unsupported_interaction", `OpenCode emitted unsupported ${event.type}`, "events.read")
             }
-            const translated = this.projectEvent(translateOpenCodeEvent(event, content), binding)
-            if (translated?.type === "error") translated.error = this.redact(translated.error)
-            if (translated) yield translated
-            if (event.type === "session.idle" || event.type === "session.error") return
+            for (const value of turn.translate(event)) {
+              const translated = this.projectEvent(value, binding)
+              if (translated.type === "error") translated.error = this.redact(translated.error)
+              yield translated
+              if (translated.type === "finish" || translated.type === "error") return
+            }
           }
         } catch (error) {
           if (controller.signal.aborted || isAbortError(error)) return
@@ -173,12 +193,15 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
             || error.code === "unsupported_interaction"
           )) throw error
           if (!sent) throw error
+        } finally {
+          // Reconciliation may finish before the SSE iterator owns the body.
+          await response?.body?.cancel().catch(() => undefined)
         }
 
-        const reconciliation = await this.reconcile(binding, content)
-        for (const event of reconciliation.events) yield event
-        if (reconciliation.terminal) return
         if (reconnects >= this.config.reconnect.maxAttempts) {
+          const reconciliation = await this.reconcile(binding, turn)
+          for (const event of reconciliation.events) yield event
+          if (reconciliation.terminal) return
           throw this.error("reconciliation_gap", "OpenCode stream disconnected while the bound session remained active", "events.reconcile")
         }
         reconnects += 1
@@ -190,13 +213,13 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     }
   }
 
-  private async prompt(binding: AgentExecutionBinding, input: PromptInput, signal: AbortSignal) {
+  private async prompt(binding: AgentExecutionBinding, input: PromptInput, messageID: string, signal: AbortSignal) {
     const response = await this.request("session.prompt", `/session/${encodeURIComponent(binding.upstreamSessionId)}/prompt_async`, {
       method: "POST",
       signal,
       body: JSON.stringify({
         parts: input.parts,
-        ...(input.userMessageId ? { messageID: input.userMessageId } : {}),
+        messageID,
         agent: input.agent,
         // External OpenCode owns its default model. This provider advertises
         // modelSelection=unsupported, so Claxedo's internal `default`
@@ -220,43 +243,40 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     return { ok: true as const, status: "cancelled" as const }
   }
 
-  private async reconcile(binding: AgentExecutionBinding, content: Map<string, string>) {
-    let messages: unknown
+  private async reconcile(binding: AgentExecutionBinding, turn: OpenCodeTurn, mode: "recover" | "completion" = "recover") {
     let statuses: unknown
     try {
-      messages = await this.json("session.messages", `/session/${encodeURIComponent(binding.upstreamSessionId)}/message`)
       statuses = await this.json("session.status", "/session/status")
+    } catch {
+      throw this.error("reconciliation_gap", "OpenCode authoritative reconciliation snapshots were unavailable", "events.reconcile")
+    }
+    const statusesMap = record(statuses)
+    if (!statusesMap) throw this.error("reconciliation_gap", "OpenCode status snapshot was invalid", "events.reconcile")
+    const status = statusesMap[binding.upstreamSessionId]
+    const type = record(status)?.type
+    if (status !== undefined && type !== "idle" && type !== "busy" && type !== "retry") {
+      throw this.error("reconciliation_gap", "OpenCode status snapshot contained an unknown bound-session state", "events.reconcile")
+    }
+    if (mode === "completion" && (type === "busy" || type === "retry")) return { events: [], terminal: false }
+    let messages: unknown
+    try {
+      messages = await this.json("session.messages", `/session/${encodeURIComponent(binding.upstreamSessionId)}/message`)
     } catch {
       throw this.error("reconciliation_gap", "OpenCode authoritative reconciliation snapshots were unavailable", "events.reconcile")
     }
     if (!Array.isArray(messages)) throw this.error("reconciliation_gap", "OpenCode message reconciliation snapshot was invalid", "events.reconcile")
     this.validateMessages(messages, binding.upstreamSessionId)
-    const events: AgentRuntimeStreamEvent[] = []
-    for (const message of messages) {
-      const row = record(message)!
-      const info = record(row.info)!
-      if (info.role !== "assistant") continue
-      for (const part of row.parts as unknown[]) {
-        const translated = this.projectEvent(translateOpenCodeEvent({ type: "message.part.updated", properties: { part: record(part)! } }, content), binding)
-        if (translated) events.push(translated)
-      }
+    const result = turn.reconcile(messages as Array<{ info: Record<string, unknown>; parts: Record<string, unknown>[] }>)
+    if (type === "busy" || type === "retry") return { events: result.events, terminal: false }
+    // Idle sessions are absent from OpenCode's active-status map. Require both
+    // the bound session and this prompt's terminal assistant message to exist.
+    if (!await this.getSession(binding) || (!result.failure && !result.finished)) {
+      throw this.error("reconciliation_gap", "OpenCode snapshots did not establish completion of the current prompt", "events.reconcile")
     }
-    const status = record(record(statuses)?.[binding.upstreamSessionId])
-    if (!status || typeof status.type !== "string") {
-      throw this.error("reconciliation_gap", "OpenCode status snapshot omitted the bound upstream session", "events.reconcile")
-    }
-    if (status.type === "idle") {
-      events.push({ type: "finish", sessionId: binding.sessionId })
-      return { events, terminal: true }
-    }
-    if (status.type === "error") {
-      events.push({ type: "error", error: "OpenCode session failed during stream reconciliation" })
-      return { events, terminal: true }
-    }
-    if (status.type !== "busy" && status.type !== "recovering") {
-      throw this.error("reconciliation_gap", "OpenCode status snapshot contained an unknown bound-session state", "events.reconcile")
-    }
-    return { events, terminal: false }
+    result.events.push(result.failure
+      ? { type: "error", error: this.redact(result.failure) }
+      : { type: "finish", sessionId: binding.sessionId })
+    return { events: result.events, terminal: true }
   }
 
   private async ensureCompatible() {
@@ -369,8 +389,8 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     }
   }
 
-  private projectEvent(event: AgentRuntimeStreamEvent | undefined, binding: AgentExecutionBinding) {
-    if (event?.type !== "finish") return event
+  private projectEvent(event: AgentRuntimeEvent, binding: AgentExecutionBinding) {
+    if (event.type !== "finish") return event
     return { ...event, sessionId: binding.sessionId }
   }
 
@@ -393,7 +413,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     const headers = this.headers(init.headers)
     if (init.body !== undefined && !headers.has("content-type")) headers.set("Content-Type", "application/json")
     try {
-      return await this.requestFn(new URL(`${this.config.baseUrl}${path}`), { ...init, signal, headers })
+      return await this.requestFn(new URL(`${this.config.baseUrl}${path}`), { ...init, signal, headers, redirect: "error" })
     } catch (error) {
       if (init.signal?.aborted) throw init.signal.reason ?? error
       if (timeout.signal.aborted) throw this.error("deadline_exceeded", `OpenCode ${operation} request deadline exceeded`, operation)
@@ -436,6 +456,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
 
   private assertBinding(binding: AgentExecutionBinding) {
     try { assertAgentExecutionBinding(binding) } catch { throw this.error("invalid_binding", "OpenCode operation requires a complete execution binding") }
+    if (binding.scope === "central") throw this.error("invalid_binding", "OpenCode connections require a workspace execution binding")
     if (binding.connectionId !== `connection:${this.config.connectionId}`) throw this.error("invalid_binding", "Execution binding belongs to a different connection")
     this.assertSourceDirectory(binding.directory)
   }

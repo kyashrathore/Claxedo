@@ -9,7 +9,6 @@ import {
 } from "./store-state"
 import { connectionHarness, nativeHarness } from "@/platform/identity/harness-selection"
 
-const claude = nativeHarness("claude")
 const codex = nativeHarness("codex")
 const pi = nativeHarness("pi")
 const openCode = connectionHarness("opencode")
@@ -21,10 +20,10 @@ describe("harness store state projectors", () => {
   test("builds the same empty initial state for a draft and a session scope", () => {
     for (const scope of ["session:ses_1", "draft:/repo:route"]) {
       expect(initialHarnessStoreState({ scope })).toMatchObject({
-        harnessMode: "opencode",
-        harness: "opencode",
+        harnessMode: "unknown",
+        harness: undefined,
         selectedModel: "",
-        readiness: "ready",
+        readiness: "unresolved",
         optionsSource: "empty",
       })
     }
@@ -39,20 +38,20 @@ describe("harness store state projectors", () => {
   })
 
   test("projects harness status onto current state", () => {
-    expect(harnessStatusPatch({
-      current: initialHarnessStoreState({ scope: "draft:/repo:route" }),
-      data: {
-        type: "acp:claude",
-        activeType: "acp:claude",
-        activeBinary: "/bin/claude",
-        model: "sonnet",
-        modelProviderID: "claude",
-        workspaceId: "ws_1",
-      },
-    })).toMatchObject({
+    expect(
+      harnessStatusPatch({
+        current: initialHarnessStoreState({ scope: "draft:/repo:route" }),
+        data: {
+          type: { kind: "connection", connectionId: "acp:claude" },
+          activeType: { kind: "connection", connectionId: "acp:claude" },
+          model: "sonnet",
+          modelProviderID: "claude",
+          workspaceId: "ws_1",
+        },
+      }),
+    ).toMatchObject({
       harnessMode: "harness",
-      harnessBinary: "/bin/claude",
-      harness: "acp:claude",
+      harness: { kind: "connection", connectionId: "acp:claude" },
       selectedModel: "sonnet",
       selectedModelProvider: "claude",
       readiness: "ready",
@@ -60,13 +59,15 @@ describe("harness store state projectors", () => {
       workspaceId: "ws_1",
     })
 
-    expect(harnessStatusPatch({
-      data: {
-        type: openCode,
-        activeType: openCode,
-        error: "runner failed",
-      },
-    })).toMatchObject({
+    expect(
+      harnessStatusPatch({
+        data: {
+          type: openCode,
+          activeType: openCode,
+          error: "runner failed",
+        },
+      }),
+    ).toMatchObject({
       harnessMode: "harness",
       harness: openCode,
       readiness: "error",
@@ -77,79 +78,110 @@ describe("harness store state projectors", () => {
     // CONNECTING, not failed — it must report "polling" so the selector shows a
     // "Connecting" pill instead of a red "Unavailable" at startup (bug: the
     // error/ready binary made the polling UI unreachable).
-    expect(harnessStatusPatch({
-      data: {
-        type: codex,
-        status: "configured",
-        ready: false,
-      },
-    })).toMatchObject({
+    expect(
+      harnessStatusPatch({
+        data: {
+          type: codex,
+          status: "configured",
+          ready: false,
+        },
+      }),
+    ).toMatchObject({
       harnessMode: "harness",
       harness: codex,
       readiness: "polling",
     })
-    expect(harnessStatusPatch({
-      data: {
-        type: codex,
-        status: "applying",
-        ready: false,
-      },
-    })).toMatchObject({ readiness: "polling" })
+    expect(
+      harnessStatusPatch({
+        data: {
+          type: codex,
+          status: "applying",
+          ready: false,
+        },
+      }),
+    ).toMatchObject({ readiness: "polling" })
 
     // A hard failure (status "error" or an error message) stays "error".
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "error" },
-    })).toMatchObject({ readiness: "error" })
-    expect(harnessStatusPatch({
-      data: { type: codex, error: "spawn failed", ready: false },
-    })).toMatchObject({ readiness: "error" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, status: "error" },
+      }),
+    ).toMatchObject({ readiness: "error" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, error: "spawn failed", ready: false },
+      }),
+    ).toMatchObject({ readiness: "error" })
 
     // `settled: true` marks a COMPLETED switch response (not a startup/in-flight
     // probe). A completed response that still reports ready:false is a definitive
     // failure — the harness finished configuring and came back unavailable — so
     // it is "error", not "polling". This is the harness-switcher applyPostedStatus
     // path (core-harness-ownership-local, harness-switcher.test.ts:144).
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "configured", ready: false },
-      settled: true,
-    })).toMatchObject({ readiness: "error" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, status: "configured", ready: false },
+        settled: true,
+      }),
+    ).toMatchObject({ readiness: "error" })
     // Without `settled`, the same frame is an in-flight probe → still "polling".
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "configured", ready: false },
-    })).toMatchObject({ readiness: "polling" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, status: "configured", ready: false },
+      }),
+    ).toMatchObject({ readiness: "polling" })
     // A settled ready:true response is still "ready".
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "ready", ready: true },
-      settled: true,
-    })).toMatchObject({ readiness: "ready" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, status: "ready", ready: true },
+        settled: true,
+      }),
+    ).toMatchObject({ readiness: "ready" })
 
     // A ready harness is ready.
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "ready", ready: true },
-    })).toMatchObject({ readiness: "ready" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, status: "ready", ready: true },
+      }),
+    ).toMatchObject({ readiness: "ready" })
 
     // A live-but-degraded harness (`/api/wr/health` reports ok:true while
     // harnessHealth.status is degraded/unavailable — process lost + recovering)
     // maps to the "degraded" readiness that drives the composer health peek +
     // Send gate (T4). This finally exercises the union member at selection.ts:9.
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "ready", ready: true, harnessHealth: { status: "degraded", reason: "harness_process_lost" } },
-    })).toMatchObject({ harness: codex, readiness: "degraded" })
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "ready", ready: true, harnessHealth: { status: "unavailable" } },
-    })).toMatchObject({ readiness: "degraded" })
+    expect(
+      harnessStatusPatch({
+        data: {
+          type: codex,
+          status: "ready",
+          ready: true,
+          harnessHealth: { status: "degraded", reason: "harness_process_lost" },
+        },
+      }),
+    ).toMatchObject({ harness: codex, readiness: "degraded" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, status: "ready", ready: true, harnessHealth: { status: "unavailable" } },
+      }),
+    ).toMatchObject({ readiness: "degraded" })
     // A healthy harnessHealth report does not degrade a ready harness.
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "ready", ready: true, harnessHealth: { status: "ok" } },
-    })).toMatchObject({ readiness: "ready" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, status: "ready", ready: true, harnessHealth: { status: "ok" } },
+      }),
+    ).toMatchObject({ readiness: "ready" })
     // A hard failure still wins over degraded health.
-    expect(harnessStatusPatch({
-      data: { type: codex, status: "error", harnessHealth: { status: "degraded" } },
-    })).toMatchObject({ readiness: "error" })
+    expect(
+      harnessStatusPatch({
+        data: { type: codex, status: "error", harnessHealth: { status: "degraded" } },
+      }),
+    ).toMatchObject({ readiness: "error" })
     // Connection-backed harnesses use the same health contract as native SDKs.
-    expect(harnessStatusPatch({
-      data: { type: openCode, ready: true, harnessHealth: { status: "degraded" } },
-    })).toMatchObject({ harnessMode: "harness", readiness: "degraded" })
+    expect(
+      harnessStatusPatch({
+        data: { type: openCode, ready: true, harnessHealth: { status: "degraded" } },
+      }),
+    ).toMatchObject({ harnessMode: "harness", readiness: "degraded" })
   })
 
   test("derives the standing health-probe readiness transition (T4)", () => {
@@ -170,7 +202,8 @@ describe("harness store state projectors", () => {
   })
 
   test("keeps hydration and switch patches aligned with options policy", () => {
-    expect(readyHarnessHydrationPatch("acp:claude")).toEqual({
+    expect(readyHarnessHydrationPatch({ kind: "connection", connectionId: "acp:claude" })).toEqual({
+      harness: { kind: "connection", connectionId: "acp:claude" },
       harnessMode: "harness",
       readiness: "ready",
     })
@@ -185,8 +218,8 @@ describe("harness store state projectors", () => {
       optionsStale: false,
       optionsLoading: false,
     })
-    expect(pollingHarnessHydrationPatch("acp:claude")).toEqual({
-      harness: "acp:claude",
+    expect(pollingHarnessHydrationPatch({ kind: "connection", connectionId: "acp:claude" })).toEqual({
+      harness: { kind: "connection", connectionId: "acp:claude" },
       harnessMode: "harness",
       selectedModel: "",
       selectedModelProvider: undefined,
@@ -199,10 +232,12 @@ describe("harness store state projectors", () => {
       optionsLoading: false,
       configError: undefined,
     })
-    expect(harnessSwitchStartPatch({
-      type: "acp:claude",
-    })).toMatchObject({
-      harness: "acp:claude",
+    expect(
+      harnessSwitchStartPatch({
+        type: { kind: "connection", connectionId: "acp:claude" },
+      }),
+    ).toMatchObject({
+      harness: { kind: "connection", connectionId: "acp:claude" },
       harnessMode: "harness",
       selectedModel: "",
       optionsLoading: true,

@@ -3,6 +3,7 @@
 import { execSync } from "child_process"
 import fs from "fs"
 import path from "path"
+import { piModelCatalog } from "../src/harnesses/pi/catalog"
 
 const ROOT = path.resolve(import.meta.dirname, "..")
 const DIST = path.join(ROOT, "dist")
@@ -67,4 +68,8 @@ run([
   ...EXTERNALS.map((item) => `--external:${item}`),
 ].join(" "))
 run(`${path.join(ROOT, "node_modules/.bin/tsc")} -p tsconfig.build.json`)
+// Materialize metadata at build time: importing pi-ai at runtime also loads its
+// native provider graph. This published entry has no runtime dependencies.
+fs.writeFileSync(path.join(DIST, "pi-catalog.mjs"),
+  `// Generated from src/harnesses/pi/catalog.ts; rebuild to update.\nconst catalog=${JSON.stringify(piModelCatalog())};\nexport function piModelCatalog(){return structuredClone(catalog)}\n`)
 run("bun scripts/check-package.ts")

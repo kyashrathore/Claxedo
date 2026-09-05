@@ -1,5 +1,6 @@
 import { agentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
+import { OpenCodeServerAdapterError } from "./errors"
 
 export type OpenCodeLeafEvent = { type: string; properties: Record<string, unknown> }
 
@@ -15,10 +16,80 @@ export function isUnsupportedInteractiveEvent(event: OpenCodeLeafEvent) {
   return event.type === "permission.asked" || event.type === "question.asked"
 }
 
-export function translateOpenCodeEvent(
-  event: OpenCodeLeafEvent,
-  content: Map<string, string>,
-): AgentRuntimeEvent | undefined {
+type TextState = { type: "text" | "reasoning"; text: string }
+type ToolState = { input?: string; status?: string; snapshot: string }
+
+export class OpenCodeEventTranslator {
+  private readonly text = new Map<string, TextState>()
+  private readonly tools = new Map<string, ToolState>()
+
+  translate(event: OpenCodeLeafEvent): AgentRuntimeEvent[] {
+    if (event.type === "message.part.delta") return this.delta(event.properties)
+    if (event.type === "message.part.updated") {
+      const part = record(event.properties.part)
+      if (!part) return []
+      if (part.type === "text" || part.type === "reasoning") return this.snapshot(part, part.type)
+      if (part.type === "tool") return this.tool(part)
+      return []
+    }
+    const translated = translateSessionEvent(event)
+    return translated ? [translated] : []
+  }
+
+  private delta(properties: Record<string, unknown>): AgentRuntimeEvent[] {
+    if (properties.field !== "text") return []
+    const delta = string(properties.delta)
+    if (!delta) return []
+    const state = this.text.get(partKey(properties.messageID, properties.partID))
+    if (!state) throw new OpenCodeServerAdapterError("reconciliation_gap", "OpenCode text delta arrived without its part snapshot")
+    state.text += delta
+    return [textDelta(state.type, delta)]
+  }
+
+  private snapshot(part: Record<string, unknown>, type: TextState["type"]): AgentRuntimeEvent[] {
+    const key = partKey(part.messageID, part.id)
+    const value = typeof part.text === "string" ? part.text : ""
+    const previous = this.text.get(key)?.text ?? ""
+    if (!value.startsWith(previous)) {
+      throw new OpenCodeServerAdapterError("reconciliation_gap", "OpenCode replaced already emitted text; the runtime stream cannot represent this edit")
+    }
+    this.text.set(key, { type, text: value })
+    return value.length > previous.length ? [textDelta(type, value.slice(previous.length))] : []
+  }
+
+  private tool(part: Record<string, unknown>): AgentRuntimeEvent[] {
+    const state = record(part.state)
+    if (!state || !["pending", "running", "completed", "error"].includes(String(state.status))) return []
+    const key = partKey(part.messageID, part.id)
+    const previous = this.tools.get(key)
+    const snapshot = JSON.stringify(state)
+    if (previous?.snapshot === snapshot) return []
+    const toolCallId = string(part.callID)
+    const toolName = string(part.tool)
+    if (!toolCallId || !toolName) throw new OpenCodeServerAdapterError("invalid_event", "OpenCode tool part omitted its call ID or tool name")
+    const metadata = { ...record(part.metadata), ...record(state.metadata) }
+    const detail = { ...(Object.keys(metadata).length ? { metadata } : {}), ...(typeof state.title === "string" ? { display: { summary: state.title } } : {}) }
+    const events: AgentRuntimeEvent[] = []
+    if (!previous) events.push(agentRuntimeEvent.toolStart({ toolCallId, toolName, ...detail }))
+    const input = state.input === undefined ? undefined : JSON.stringify(state.input)
+    if (state.status !== "pending" && input !== undefined && previous?.input !== input) {
+      events.push(agentRuntimeEvent.toolInput({ toolCallId, input: state.input, ...detail }))
+    }
+    if (state.status === "completed") events.push(agentRuntimeEvent.toolOutput({ toolCallId, output: state.output, ...detail }))
+    else if (state.status === "error") events.push(agentRuntimeEvent.toolError({ toolCallId, error: errorText(state.error), ...detail }))
+    else if (previous?.status !== state.status || previous?.snapshot !== snapshot) {
+      events.push(agentRuntimeEvent.toolStatus({ toolCallId, status: state.status === "pending" ? "pending" : "running", ...detail }))
+    }
+    this.tools.set(key, { snapshot, status: String(state.status), ...(state.status !== "pending" && input !== undefined ? { input } : {}) })
+    return events
+  }
+}
+
+function textDelta(type: TextState["type"], delta: string) {
+  return type === "reasoning" ? agentRuntimeEvent.thinkingDelta({ delta }) : agentRuntimeEvent.textDelta({ delta })
+}
+
+function translateSessionEvent(event: OpenCodeLeafEvent): AgentRuntimeEvent | undefined {
   if (event.type === "session.status") {
     const status = statusType(event.properties.status)
     return status ? agentRuntimeEvent.sessionStatus({ status }) : undefined
@@ -26,43 +97,6 @@ export function translateOpenCodeEvent(
   if (event.type === "session.idle") return agentRuntimeEvent.finish({ sessionId: string(event.properties.sessionID) ?? "" })
   if (event.type === "session.error") return agentRuntimeEvent.error({ error: errorText(event.properties.error) })
   if (event.type === "session.compacted") return agentRuntimeEvent.sessionCompaction({ phase: "completed" })
-  if (event.type === "message.part.delta") {
-    const delta = String(event.properties.delta ?? "")
-    if (!delta) return
-    if (event.properties.field === "thinking") return agentRuntimeEvent.thinkingDelta({ delta })
-    if (event.properties.field !== "text") return
-    return content.get(partTypeKey(event.properties.messageID, event.properties.partID)) === "reasoning"
-      ? agentRuntimeEvent.thinkingDelta({ delta })
-      : agentRuntimeEvent.textDelta({ delta })
-  }
-  if (event.type === "message.part.updated") {
-    const part = record(event.properties.part)
-    if (!part) return
-    if (part.type === "text" || part.type === "reasoning") {
-      const key = partKey(part.messageID, part.id)
-      content.set(partTypeKey(part.messageID, part.id), String(part.type))
-      const value = string(part.text) ?? ""
-      const previous = content.get(key) ?? ""
-      content.set(key, value)
-      const delta = value.startsWith(previous) ? value.slice(previous.length) : value
-      if (!delta) return
-      return part.type === "reasoning"
-        ? agentRuntimeEvent.thinkingDelta({ delta })
-        : agentRuntimeEvent.textDelta({ delta })
-    }
-    if (part.type !== "tool") return
-    const state = record(part.state)
-    const callId = string(part.callID) ?? String(part.id)
-    const tool = string(part.tool) ?? callId
-    if (state?.status === "running") {
-      return state.input === undefined
-        ? agentRuntimeEvent.toolStart({ toolCallId: callId, toolName: tool })
-        : agentRuntimeEvent.toolInput({ toolCallId: callId, input: state.input })
-    }
-    if (state?.status === "completed") return agentRuntimeEvent.toolOutput({ toolCallId: callId, output: state.output })
-    if (state?.status === "error") return agentRuntimeEvent.toolError({ toolCallId: callId, error: errorText(state.error) })
-    return
-  }
   if (event.type === "todo.updated") {
     const todos = Array.isArray(event.properties.todos) ? event.properties.todos : []
     return agentRuntimeEvent.todoUpdate({
@@ -87,15 +121,18 @@ export function translateOpenCodeEvent(
   }
 }
 
-function partKey(messageId: unknown, partId: unknown) { return `${String(messageId)}:${String(partId)}` }
-function partTypeKey(messageId: unknown, partId: unknown) { return `part-type:${partKey(messageId, partId)}` }
+function partKey(messageId: unknown, partId: unknown) {
+  if (!string(messageId) || !string(partId)) throw new OpenCodeServerAdapterError("invalid_event", "OpenCode part omitted its message ID or part ID")
+  return `${messageId}:${partId}`
+}
 
 function statusType(input: unknown) {
   const value = string(record(input)?.type) ?? string(input)
+  if (value === "retry") return "recovering"
   return value === "busy" || value === "idle" || value === "error" || value === "recovering" ? value : undefined
 }
 
-function errorText(input: unknown) {
+export function errorText(input: unknown) {
   const value = record(input)
   return string(record(value?.data)?.message) ?? string(value?.message) ?? string(input) ?? "session error"
 }

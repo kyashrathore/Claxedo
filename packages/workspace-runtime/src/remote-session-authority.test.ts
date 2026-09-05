@@ -60,7 +60,6 @@ describe("remote workspace session authority", () => {
     }))).toEqual([
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "read" } },
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write" } },
-      { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "write" } },
       { authorization: "Bearer signed-rht", body: { sessionId: "ses_private", action: "register", operationId: "op_register_1" } },
     ])
   })

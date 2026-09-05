@@ -1,6 +1,6 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
-import type { Event, Message, Part, ToolState } from "@opencode-ai/sdk/v2/client"
-export type { Message } from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationEvent as Event, AgentPresentationMessage as Message, AgentContentPart as Part, AgentToolState as ToolState } from "@claxedo/agent-runtime-contract"
+export type { AgentPresentationMessage as Message } from "@claxedo/agent-runtime-contract"
 import type { MessagePart, UIMessage } from "@tanstack/ai"
 import { preserveMessageFields, withPreservedAuthor } from "./conversation-snapshot"
 

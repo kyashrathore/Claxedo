@@ -10,6 +10,7 @@ import { errorMessage } from "../shared/sdk-runtime-values"
 import {
   buildAssistantMessage,
   buildUserMessage,
+  buildUserPromptParts,
   messagePartUpdated,
   messageUpdated,
   sessionError,
@@ -118,7 +119,6 @@ function piUserMessage(sessionId: string, input: PromptInput): {
   parts: CompatPart[]
 } | undefined {
   if (!input.userMessageId) return
-  const prompt = promptText(input.parts)
   return {
     info: buildUserMessage({
       id: input.userMessageId,
@@ -131,7 +131,7 @@ function piUserMessage(sessionId: string, input: PromptInput): {
       ...(input.system ? { system: input.system } : {}),
       ...(input.variant ? { variant: input.variant } : {}),
     }),
-    parts: prompt ? [textPart({ sessionId, messageId: input.userMessageId, text: prompt, suffix: "input" })] : [],
+    parts: buildUserPromptParts(sessionId, input.userMessageId, input.parts),
   }
 }
 
@@ -724,7 +724,7 @@ export class PiHarnessAdapter implements AgentHarnessAdapter {
       if (user) {
         putMessage(session, user)
         yield emit(messageUpdated(user.info))
-        if (user.parts[0]) yield emit(messagePartUpdated(user.parts[0]))
+        for (const part of user.parts) yield emit(messagePartUpdated(part))
       }
       const info = buildAssistantMessage(assistant)
       putMessage(session, { info, parts: [] })

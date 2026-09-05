@@ -55,8 +55,8 @@ import {
   EXPLICIT_TURN_ABORT_REASON,
   type SessionTurnLifecycle,
 } from "../shared/turn-lifecycle"
-import { hasConcreteSessionTitle } from "../../session-title"
-import { deriveSessionTitle } from "../../session-title"
+import { commitSdkAutomaticTitle } from "./sdk-runtime-title"
+import { createSdkRuntimeProducers } from "./sdk-runtime-producers"
 import { requireWorkspaceDirectory } from "../../target"
 import { firstTurnErrorData } from "../../first-turn-error"
 import {
@@ -123,6 +123,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   private store: SdkRuntimeStore
   private ownsStore = false
   private storeClosed = false
+  private producers = createSdkRuntimeProducers()
   private currentModel = ""
   private driver: SdkRuntimeDriver
   private turnLifecycle = createSessionTurnLifecycle<ActiveTurn>()
@@ -289,47 +290,53 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
   }
 
   async createSession(directory: string, title?: string, sessionId: string = randomUUID()): Promise<{ id: string }> {
-    directory = requireWorkspaceDirectory(directory)
-    if (this.store.getSession(sessionId)) return { id: sessionId }
-    const agentSessionId = await this.driver.createAgentSession({
-      directory,
-      title,
-      model: this.currentModel,
-    })
-    this.bindStoreSession({
-      sessionId,
-      directory,
-      title,
-      agentSessionId,
-    })
-    this.store.updateSessionConfig(sessionId, {
-      harness: {
-        id: this.driver.type,
-        access: "native",
-        ...(this.options.binary ? { connection: { kind: "process" as const, binary: this.options.binary } } : {}),
-      },
-      ...(this.currentModel ? { model: { providerID: this.driver.type, modelID: this.currentModel } } : {}),
-      variant: null,
-      agent: null,
-    })
-    return { id: sessionId }
+    const complete = this.producers.begin()
+    try {
+      directory = requireWorkspaceDirectory(directory)
+      if (this.store.getSession(sessionId)) return { id: sessionId }
+      const agentSessionId = await this.driver.createAgentSession({
+        directory,
+        title,
+        model: this.currentModel,
+      })
+      this.bindStoreSession({
+        sessionId,
+        directory,
+        title,
+        agentSessionId,
+      })
+      this.store.updateSessionConfig(sessionId, {
+        harness: {
+          id: this.driver.type,
+          access: "native",
+          ...(this.options.binary ? { connection: { kind: "process" as const, binary: this.options.binary } } : {}),
+        },
+        ...(this.currentModel ? { model: { providerID: this.driver.type, modelID: this.currentModel } } : {}),
+        variant: null,
+        agent: null,
+      })
+      return { id: sessionId }
+    } finally { complete() }
   }
 
   async createHandoffSession(directory: string, title: string | undefined, sessionId: string, options: { system: string }) {
-    directory = requireWorkspaceDirectory(directory)
-    const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
-    this.bindStoreSession({ sessionId, directory, title, agentSessionId })
-    let rolledBack = false
-    return {
-      id: sessionId,
-      agentSessionId,
-      ownerKey: null,
-      rollback: async () => {
-        if (rolledBack) return
-        await this.driver.deleteAgentSession?.(sessionId, agentSessionId, directory)
-        rolledBack = true
-      },
-    }
+    const complete = this.producers.begin()
+    try {
+      directory = requireWorkspaceDirectory(directory)
+      const agentSessionId = await this.driver.createAgentSession({ directory, title, model: this.currentModel, system: options.system })
+      this.bindStoreSession({ sessionId, directory, title, agentSessionId })
+      let rolledBack = false
+      return {
+        id: sessionId,
+        agentSessionId,
+        ownerKey: null,
+        rollback: async () => {
+          if (rolledBack) return
+          await this.driver.deleteAgentSession?.(sessionId, agentSessionId, directory)
+          rolledBack = true
+        },
+      }
+    } finally { complete() }
   }
 
   async releaseHandoffSource(sessionId: string, agentSessionId: string, _ownerKey: string | null, directory: string) {
@@ -416,8 +423,10 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     execute: (turn: SdkRuntimeTurnInput) => Promise<void>,
     writeContext?: AgentTurnWriteContext,
   ): AsyncIterable<AgentRuntimeStreamEvent> {
+    const complete = this.producers.begin()
     const leaveBusy = this.lifecycle().enter(id)
     if (!leaveBusy) {
+      complete()
       yield sessionError("Session is already processing a message", id)
       return
     }
@@ -431,6 +440,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
       }
     } finally {
       leaveBusy()
+      complete()
     }
   }
 
@@ -693,7 +703,7 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
         while ((event = queue.shift())) {
           if (event.type === "session.idle" && !titleEmitted) {
             titleEmitted = true
-            const titleEvent = this.maybeAutoTitle(id, agentSessionId, directory, input.parts)
+            const titleEvent = commitSdkAutomaticTitle(this.store, id, agentSessionId, directory, input.parts)
             if (titleEvent) yield titleEvent
           }
           yield event
@@ -850,40 +860,19 @@ export class SdkRuntimeAdapter implements AgentHarnessAdapter {
     this.store.close?.()
   }
 
-  dispose(): void {
-    this.lifecycle().abortAll()
-    this.interactions.resolvePermissions()
-    this.interactions.rejectAllQuestions()
-    this.driver?.dispose?.()
-    this.closeStore()
+  dispose(): Promise<void> {
+    return this.producers.dispose(() => {
+      // Stop driver-owned Goal continuation before aborting its current turn.
+      const driverDone = this.driver?.dispose?.()
+      this.lifecycle().abortAll()
+      this.interactions.resolvePermissions()
+      this.interactions.rejectAllQuestions()
+      return driverDone
+    }, () => this.closeStore())
   }
 
   private resolvePendingPermissions(sessionId?: string, decision: "deny" | "reject_always" = "deny") {
     this.interactions.resolvePermissions(sessionId, decision)
-  }
-
-  private maybeAutoTitle(id: string, agentSessionId: string, directory: string, parts: unknown[]) {
-    const session = this.store.getSession(id) as { title?: string | null } | null
-    if (hasConcreteSessionTitle(session?.title)) return null
-    const text = extractTextFromParts(parts)
-    if (!text) return null
-    const now = Date.now()
-    const event = sessionUpdated({
-      id,
-      slug: id,
-      projectID: "",
-      directory,
-      title: deriveSessionTitle(text),
-      version: "local",
-      time: { created: now, updated: now },
-    })
-    this.store.appendEvent({
-      sessionId: id,
-      agentSessionId,
-      payload: event,
-      source: { dir: "in", method: "auto-title", frame: {} },
-    })
-    return event
   }
 
 }

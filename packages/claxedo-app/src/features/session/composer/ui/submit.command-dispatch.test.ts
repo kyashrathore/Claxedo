@@ -40,7 +40,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
-      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
     })
 
     await submit.handleSubmit(submitEvent())
@@ -66,42 +65,41 @@ describe("Comment routing, shell, and slash command dispatch", () => {
   })
 
 
-  test("shell mode dispatches through the shell command phase", async () => {
-    const submit = createSubmit({
-      info: () => ({ id: "session-existing" }),
-      sessionID: () => "session-existing",
-      sessionDirectory: () => "/repo/main",
-      mode: () => "shell",
-      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
-    })
-
-    await submit.handleSubmit(submitEvent())
-    await new Promise<void>((r) => setTimeout(r, 0))
-
-    expect(calls.shell).toBe(1)
-    expect(calls.async).toBe(0)
-    expect(calls.transportAsync).toBe(0)
-    expect(buildRequestPartCalls).toEqual([])
-    expect(shellCalls.at(-1)).toMatchObject({
-      sessionID: "session-existing",
-      directory: "/repo/main",
-      agent: "agent",
-      model: { providerID: "provider", modelID: "model" },
-      command: "hello",
-    })
-    expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "busy" })
-  })
-
-
-  test("shell dispatch failure restores the draft and clears busy status", async () => {
-    state.shellError = new Error("shell exploded")
+  test("normalizes a persisted shell choice and submits through the runtime", async () => {
     const modes: string[] = []
     const submit = createSubmit({
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
       mode: () => "shell",
-      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
+      setMode: (mode) => modes.push(mode),
+    })
+
+    await submit.handleSubmit(submitEvent())
+    await new Promise<void>((r) => setTimeout(r, 0))
+
+    expect(modes).toEqual(["normal", "normal"])
+    expect(calls.shell).toBe(0)
+    expect(calls.async).toBe(0)
+    expect(calls.transportAsync).toBe(1)
+    expect(buildRequestPartCalls).toHaveLength(1)
+    expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
+      sessionID: "session-existing",
+      agent: "agent",
+      model: { providerID: "provider", modelID: "model" },
+    })
+    expect(sessionStatusFor("/repo/main", "session-existing")).toEqual({ type: "idle" })
+  })
+
+
+  test("runtime failure restores the draft and persisted edit mode after normalization", async () => {
+    state.transportPromptAsyncError = new Error("runtime exploded")
+    const modes: string[] = []
+    const submit = createSubmit({
+      info: () => ({ id: "session-existing" }),
+      sessionID: () => "session-existing",
+      sessionDirectory: () => "/repo/main",
+      mode: () => "shell",
       setMode: (value) => {
         modes.push(value)
       },
@@ -131,7 +129,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
-      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
       imageAttachments: () => [{
         mime: "image/png",
         dataUrl: "data:image/png;base64,abc",
@@ -161,7 +158,6 @@ describe("Comment routing, shell, and slash command dispatch", () => {
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
       sessionDirectory: () => "/repo/main",
-      selectedModelForSubmit: () => ({ id: "model", provider: { id: "provider" } }),
     })
 
     await submit.handleSubmit(submitEvent())

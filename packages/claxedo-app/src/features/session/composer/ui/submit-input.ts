@@ -66,8 +66,6 @@ type PromptSubmitProvisioningInput = {
   signedControlPlane?: Accessor<boolean>
   workspaceId?: Accessor<string | undefined>
   workspaceKind?: Accessor<"cloud" | "user-hosted" | undefined>
-  /** Toolbar-resolved explicit model. Submit refuses when absent. */
-  selectedModelForSubmit?: Accessor<{ id: string; provider: { id: string } } | undefined>
 }
 
 type PromptSubmitStatusInput = {

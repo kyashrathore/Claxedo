@@ -103,7 +103,7 @@ import { isWorkspaceReady, workspacePlacement } from "../../../features/workspac
 import { getSessionPrefetch, SESSION_PREFETCH_TTL, type SessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import { centralSessionRef, sessionRefForWorkspaceSession, type SessionRef, type WorkspaceSessionBacking } from "@/platform/identity/session-ref"
 import { isRelayBackedWorkspaceKind, USER_HOSTED_WORKSPACE_KIND, workspaceKind as toWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
-import type { PermissionRequest, QuestionRequest, SessionStatus } from "@opencode-ai/sdk/v2/client"
+import type { AgentPermission as PermissionRequest, AgentQuestion as QuestionRequest, AgentRuntimeStatus as SessionStatus } from "@claxedo/agent-runtime-contract"
 import { shellDataKeys } from "@/platform/sync/keys"
 import {
   nextUnseenDone,

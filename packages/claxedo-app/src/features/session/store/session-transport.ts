@@ -88,7 +88,6 @@ export async function fetchSessionByTransport(input: {
  * a filesystem directory for tool execution.
  */
 export function createSessionInfoHydrationGetter(input: {
-  client: SessionClient
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
@@ -154,7 +153,7 @@ export async function fetchSessionPermissionModesByTransport(input: {
   directory: AgentRuntimeDirectory
   sessionID: string
   /** The harness being asked about — see the port doc; required on a draft. */
-  harness?: string
+  harness?: import("@/platform/identity/harness-selection").HarnessSelection
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
@@ -192,7 +191,7 @@ export async function setSessionPermissionModeByTransport(input: {
 export async function fetchSessionCapabilitiesByTransport(input: {
   directory: string
   sessionID?: string
-  harness?: string
+  harness?: import("@/platform/identity/harness-selection").HarnessSelection
   claxedoServerUrl?: string
   signedControlPlane?: boolean
   workspaceId?: string
@@ -210,7 +209,7 @@ export async function fetchSessionCapabilitiesByTransport(input: {
 }
 
 export type SessionGoalTransportScope = {
-  client: SessionClient
+  request?: typeof fetch
   directory: AgentRuntimeDirectory
   sessionID: string
   claxedoServerUrl?: string
@@ -223,7 +222,7 @@ export type SessionGoalTransportScope = {
 
 function sessionGoalBackend(input: SessionGoalTransportScope) {
   return createHttpSessionBackend({
-    client: input.client,
+    request: input.request,
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspaceId: input.workspaceId,

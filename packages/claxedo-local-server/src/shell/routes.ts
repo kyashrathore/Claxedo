@@ -1,13 +1,12 @@
 import { Hono } from "hono"
-import path from "node:path"
 import { randomUUID } from "node:crypto"
 import { listCommands } from "@claxedo/server-core/agent-config/index"
-import { listProjects, resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
+import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import {
   controlPlaneAuthContext,
-  type ClerkVerifier,
+  type ControlPlaneTokenVerifier,
   type ControlPlaneAuthConfig,
 } from "@claxedo/server-core/platform/auth/auth"
 import { resolveRuntimeActor } from "@claxedo/server-core/platform/auth/runtime-actor"
@@ -18,11 +17,12 @@ import { allFilesBody, directoryEntriesBody, fileContentBody, fileStatusBody, fi
 import { bootPath, workspaceInput } from "./request-context"
 import { createWorktree, deleteWorktree, listWorktreeDirectories, resetWorktree } from "./worktree-routes"
 import { sandboxFetchOptionsForRequest } from "../workspace/sandbox-fetch-options"
+import { projectRoutes } from "./project-routes"
 
 export type ShellRouteOptions = {
   env?: NodeJS.ProcessEnv
   authConfig?: ControlPlaneAuthConfig
-  verifier?: ClerkVerifier
+  verifier?: ControlPlaneTokenVerifier
   services?: ControlPlaneServicesContract
 }
 
@@ -114,6 +114,7 @@ function shellRoutes(options: ShellRouteOptions) {
   return new Hono()
     .get("/global/health", (c) => c.json({ healthy: true, version: options.env?.npm_package_version || "1.0.0" }))
     .get("/global/event", (c) => stream(c))
+    .get("/api/claxedo/events", (c) => stream(c))
     .get("/api/wr/events", (c) => stream(c))
     .get("/path", async (c) => {
       const input = workspaceInput(c)
@@ -145,21 +146,7 @@ function shellRoutes(options: ShellRouteOptions) {
       return new Response(response.body, { status: response.status, headers: response.headers })
     })
     .get("/command", async (c) => c.json(await listCommands()))
-    .get("/project", async (c) => c.json(await listProjects()))
-    .get("/project/current", async (c) => {
-      const input = workspaceInput(c)
-      const ws = await resolveWorkspace({ workspaceId: input.workspaceId, directory: input.directory, create: !!input.directory })
-      if (!ws) return c.json({ error: { code: "workspace_required", message: "Workspace is required" } }, 404)
-      const projectId = ws.project_id ?? ws.id
-      const hit = (await listProjects()).find((item) => item.id === projectId)
-      return c.json(hit ?? {
-        id: ws.id,
-        worktree: ws.directory,
-        name: path.basename(ws.directory) || ws.directory,
-        time: { created: ws.created_at, updated: ws.updated_at },
-        sandboxes: [],
-      })
-    })
+    .route("/", projectRoutes(options))
     .post("/experimental/worktree", createWorktree)
     .get("/experimental/worktree", listWorktreeDirectories)
     .delete("/experimental/worktree", deleteWorktree)

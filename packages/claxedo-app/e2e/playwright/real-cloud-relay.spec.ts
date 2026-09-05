@@ -89,8 +89,8 @@
  *     (`user-hosted-relay-fixture.mjs`'s `resolveTarget`). It spawns the relay
  *     as a real child process with `bun`, so bun must be on PATH.
  *   - Model injection reaches the harness because the fixture process carries
- *     `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` and the engine's
- *     `OPENCODE_CONFIG_CONTENT`, and `harnessSpawnEnv`
+ *     `ANTHROPIC_BASE_URL`/`ANTHROPIC_API_KEY` and the explicit Pi model
+ *     backend endpoint, and `harnessSpawnEnv`
  *     (`agent-sdk-runtime/src/harnesses/shared/spawn-env.ts`) spreads
  *     `process.env` into every harness spawn — its denylist covers only nine
  *     Claxedo-internal names. Verified directly: a real turn through this lane
@@ -163,12 +163,12 @@ import net from "node:net"
 import path from "node:path"
 import {
   claudeScriptedEnv,
-  opencodeScriptedProviderConfig,
   startScriptedModelServer,
   type ScriptedModelServer,
 } from "../helpers/scripted-model-server"
 import { expectAssistantReplyVisible, SELECTORS } from "../helpers/turn-oracle"
 import { expectLiveTurnsSettledAfterReload, expectLiveUserRowCount } from "../helpers/turn-oracle-extras"
+import { composeText, selectScriptedModel } from "../helpers/web-signed-relay-harness"
 
 const TIER_REAL = process.env.CLAXEDO_TIER_REAL_E2E === "1"
 const APP_DIR = path.resolve(import.meta.dirname, "../..")
@@ -239,9 +239,7 @@ async function startFixture(): Promise<FixtureInfo> {
         CLAXEDO_E2E_RELAY_FIXTURE_ACCESS: "cloud",
         // The injection seam: these reach the harness because harnessSpawnEnv
         // spreads process.env into every spawn (see HARNESS NOTES).
-        OPENCODE_CONFIG_CONTENT: JSON.stringify(opencodeScriptedProviderConfig(scripted.v1Url)),
-        TIER_REAL_API_KEY: "test-key",
-        OPENCODE_DISABLE_MODELS_FETCH: "true",
+        CLAXEDO_E2E_SCRIPTED_MODEL_URL: scripted.v1Url,
         ...claudeScriptedEnv(scripted.url, path.join(REPO_ROOT, "node_modules", ".cache", "real-cloud-relay-claude")),
       },
       // The fixture owns its lifetime through the stdin pipe: it resumes stdin
@@ -448,8 +446,9 @@ async function gateReachesReady(page: Page, timeoutMs = 60_000) {
 async function sendPrompt(page: Page, marker: string) {
   const input = page.getByRole("textbox", { name: /Ask anything/i }).last()
   const text = `Reply with exactly this one token and nothing else, no punctuation, no formatting: ${marker}`
-  await input.click()
-  await input.fill(text)
+  await composeText(page, input, text)
+  const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  if (await control.getAttribute("data-harness") !== "pi") await selectScriptedModel(page)
   await expect(input).toContainText(marker, { timeout: 10_000 })
   await page.locator(SELECTORS.submitControl).last().click()
 }
@@ -562,7 +561,7 @@ test.describe("real cloud relay @core @tier-real", () => {
     ).toBeGreaterThan(0)
     const counts = scripted!.counts()
     expect(
-      counts.chat,
+      counts.responses,
       `expected the scripted endpoint to carry both turns from behind the relay, saw ${JSON.stringify(counts)}`,
     ).toBeGreaterThanOrEqual(markers.length)
 
@@ -596,7 +595,7 @@ test.describe("real cloud relay @core @tier-real", () => {
     await pauseCloudRuntime()
     expect((await cloudRuntimeStats()).paused).toBe(true)
 
-    const beforePaused = scripted!.counts().chat
+    const beforePaused = scripted!.counts().responses
     const pausedMarker = `CLOUDDOWN-${runId}`
     await sendPrompt(page, pausedMarker)
 
@@ -610,7 +609,7 @@ test.describe("real cloud relay @core @tier-real", () => {
         "so every other assertion in this file proves less than it appears to",
     ).toHaveCount(0, { timeout: 20_000 })
     expect(
-      scripted!.counts().chat,
+      scripted!.counts().responses,
       "the scripted model endpoint was reached while the relay hop was paused — traffic found another path",
     ).toBe(beforePaused)
 

@@ -3,7 +3,6 @@ import { beforeEach, describe, expect, test, vi } from "vitest"
 const mocks = {
   broadcastRuntimeConfig: vi.fn(async () => {}),
   syncEmbeddedWorkspaceRuntimes: vi.fn(async () => {}),
-  syncOpencodeMcpConfig: vi.fn(async () => {}),
   log: {
     warn: vi.fn(),
   },
@@ -11,10 +10,6 @@ const mocks = {
 
 vi.mock("../deployments/local/embedded-workspace-runtime", () => ({
   syncEmbeddedWorkspaceRuntimes: mocks.syncEmbeddedWorkspaceRuntimes,
-}))
-
-vi.mock("../opencode/mcp-sync", () => ({
-  syncOpencodeMcpConfig: mocks.syncOpencodeMcpConfig,
 }))
 
 vi.mock("@claxedo/server-core/platform/runtime/lib/log", () => ({
@@ -40,7 +35,6 @@ beforeEach(() => {
   })
   mocks.broadcastRuntimeConfig.mockResolvedValue(undefined)
   mocks.syncEmbeddedWorkspaceRuntimes.mockResolvedValue(undefined)
-  mocks.syncOpencodeMcpConfig.mockResolvedValue(undefined)
 })
 
 describe("fanOutConfig", () => {
@@ -53,7 +47,6 @@ describe("fanOutConfig", () => {
 
     expect(mocks.broadcastRuntimeConfig).toHaveBeenCalledOnce()
     expect(mocks.syncEmbeddedWorkspaceRuntimes).toHaveBeenCalledOnce()
-    expect(mocks.syncOpencodeMcpConfig).toHaveBeenCalledOnce()
     expect(mocks.log.warn).toHaveBeenCalledOnce()
     expect(mocks.log.warn).toHaveBeenCalledWith("config fan-out target failed", {
       target: "deployments/local/embedded-workspace-runtime",

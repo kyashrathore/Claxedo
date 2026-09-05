@@ -3,7 +3,7 @@ import { createWorkspaceRuntimeClient, type WorkspaceRuntimeRequestOptions } fro
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { useQuery } from "@tanstack/solid-query"
 import { type Accessor, createEffect, createMemo, onCleanup, onMount } from "solid-js"
-import { isWorkspacePresentationEvent, useGlobalSDK, type GlobalSdkEvent } from "@/app/providers/global-sdk/provider"
+import { useGlobalSDK, type GlobalSdkEvent } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { cachedSdkRuntimeRequest, sdkWorkspaceTransport } from "./runtime-request"
 import { usePlatform } from "@/platform/runtime/platform-provider"
@@ -219,7 +219,6 @@ const sDKContextInput = {
     createEffect(() => {
       const dir = directory()
       const unsub = globalSDK.event.on(dir, (event) => {
-        if (!isWorkspacePresentationEvent(event)) return
         emitter.emit(event.type, event)
       })
       onCleanup(() => {})

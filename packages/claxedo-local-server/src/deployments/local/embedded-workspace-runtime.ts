@@ -51,14 +51,16 @@ type PtySocket = {
 }
 
 const hosts = new Map<string, EmbeddedRuntime>()
-// The embedded workspace-runtime host rides one injected opencode transport
-// (peer of the old opencodeUrl), threaded from the composition root. Defaults to
-// the shared engine transport (embedded engine unless a composition root selects
-// external-URL mode). In embedded mode this is the in-process engine handler; in
-// external-URL mode it rewrites onto the configured URL.
-let configuredOpencodeRequest: OpenCodeRequestFn = defaultOpencodeRequest
-let configuredOpencodeCompat = true
-let configuredProviderCatalog: WorkspaceRuntimeServerOptions["providerCatalog"] | undefined
+const retiring = new Map<string, Promise<void>>()
+let shutdownGeneration = 0
+
+/** Read the active workspace's committed session config without consulting operator defaults. */
+export function readEmbeddedWorkspaceSessionConfig(workspaceId: string, sessionId: string) {
+  const config = hosts.get(workspaceId)?.host.getSessionConfig(sessionId)
+  if (!config) throw new Error(`Workspace ${workspaceId} has no committed configuration for session ${sessionId}`)
+  return config
+}
+
 let configuredPiModelBackend: PiModelBackendResolver | undefined
 let configuredConnectionProviders: readonly ConnectionProvider<unknown, unknown>[] = [
   createAcpConnectionProvider(),
@@ -114,14 +116,6 @@ export function embeddedWorkspaceRuntimeSessionAuthority() {
 }
 
 export function configureEmbeddedWorkspaceRuntime(input: {
-  opencodeRequest: OpenCodeRequestFn
-  opencodeCompat?: boolean
-  /**
-   * The host's provider catalog for non-opencode harnesses, so a
-   * workspace-scoped `/provider` answers the same catalog the compat router
-   * serves unscoped. See `WorkspaceHostOptions.providerCatalog`.
-   */
-  providerCatalog?: WorkspaceRuntimeServerOptions["providerCatalog"]
   piModelBackend?: PiModelBackendResolver
   connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
   resolveConnectionSecrets?: ConnectionSecretResolver
@@ -134,13 +128,6 @@ export function configureEmbeddedWorkspaceRuntime(input: {
   onSessionMetaSnapshot?: (workspace: Workspace, sessions: unknown[]) => void | Promise<void>
   onTurnOutcome?: (input: { sessionId: string; assistantMessageId?: string; outcome: AgentTurnOutcome }) => void
 }) {
-  if (configuredOpencodeRequest !== input.opencodeRequest) {
-    engineSessionEvents?.close()
-    engineSessionEvents = undefined
-  }
-  configuredOpencodeRequest = input.opencodeRequest
-  configuredOpencodeCompat = input.opencodeCompat ?? true
-  configuredProviderCatalog = input.providerCatalog
   configuredPiModelBackend = input.piModelBackend
   configuredConnectionProviders = input.connectionProviders ?? configuredConnectionProviders
   configuredConnectionSecretResolver = input.resolveConnectionSecrets ?? configuredConnectionSecretResolver
@@ -220,10 +207,6 @@ function options(
     },
     agentExtensionStateRoot: extensionStateRoot(ws),
     corsOrigin: claxedoCorsOrigin,
-    // Claxedo host decision, injected via configureEmbeddedWorkspaceRuntime
-    // from the composition root (this module stays ambient-env-free).
-    opencodeCompat: configuredOpencodeCompat,
-    ...(configuredProviderCatalog ? { providerCatalog: configuredProviderCatalog } : {}),
     // `createSessionRoutes` awaits this before publishing `session.lifecycle`
     // "created", so the control-plane list can never be invalidated before
     // its canonical projection row exists.
@@ -263,9 +246,22 @@ function reconcileSessionMetadata(runtime: EmbeddedRuntime) {
   return runtime.reconcilingSessionMetadata
 }
 
-function disposeRuntime(runtime: EmbeddedRuntime) {
-  runtime.diagnosticsOwner?.exit({ reason: "disposed" })
-  runtime.host.dispose()
+function disposeRuntime(runtime: EmbeddedRuntime): Promise<void> {
+  const pending = retiring.get(runtime.workspace.id)
+  if (pending) return pending
+  if (hosts.get(runtime.workspace.id) === runtime) hosts.delete(runtime.workspace.id)
+  const disposed = runtime.host.dispose()
+  const done = Promise.all([
+    disposed,
+    // Config resolution and metadata projection begin outside the host's
+    // request scope. Their consumers must finish before shared DB cleanup.
+    Promise.allSettled([runtime.applying, runtime.reconcilingSessionMetadata]),
+  ]).then(() => { runtime.diagnosticsOwner?.exit({ reason: "disposed" }) })
+  retiring.set(runtime.workspace.id, done)
+  void done.then(() => {
+    if (retiring.get(runtime.workspace.id) === done) retiring.delete(runtime.workspace.id)
+  }, () => { /* A failed retirement keeps its store root fenced. */ })
+  return done
 }
 
 // A shared module needs a way to reach a LOCAL workspace's runtime, and this
@@ -291,15 +287,28 @@ export async function ensureEmbeddedWorkspaceRuntime(
   ws: Workspace,
   input: { config?: EmbeddedWorkspaceRuntimeConfigMode } = {},
 ) {
+  const generation = shutdownGeneration
+  const assertCurrent = () => {
+    if (generation !== shutdownGeneration) throw new Error("Embedded workspace runtime was shut down during acquisition")
+  }
+  const retirement = retiring.get(ws.id)
+  if (retirement) {
+    await retirement
+    assertCurrent()
+  }
   const config = input.config ?? "sync"
   const hit = hosts.get(ws.id)
   if (hit) {
     if (hit.workspace.directory !== ws.directory) {
-      disposeRuntime(hit)
-      hosts.delete(ws.id)
+      await disposeRuntime(hit)
+      assertCurrent()
+      return ensureEmbeddedWorkspaceRuntime(ws, input)
     } else {
       if (config === "sync") await configure(hit)
+      assertCurrent()
       await reconcileSessionMetadata(hit)
+      assertCurrent()
+      if (hosts.get(ws.id) !== hit) return ensureEmbeddedWorkspaceRuntime(ws, input)
       return hit
     }
   }
@@ -331,8 +340,11 @@ export async function ensureEmbeddedWorkspaceRuntime(
   activeHost = runtime.host
   hosts.set(ws.id, runtime)
   if (config === "sync") await configure(runtime)
+  assertCurrent()
   runtime.diagnosticsOwner?.update({ lifecycle: "ready" })
   await reconcileSessionMetadata(runtime)
+  assertCurrent()
+  if (hosts.get(ws.id) !== runtime) return ensureEmbeddedWorkspaceRuntime(ws, input)
   return runtime
 }
 
@@ -382,9 +394,12 @@ export async function syncEmbeddedWorkspaceRuntimeAgentExtensions(
   }))
 }
 
-export function shutdownEmbeddedWorkspaceRuntimes() {
+export function shutdownEmbeddedWorkspaceRuntimes(): Promise<void> {
+  shutdownGeneration++
   for (const runtime of hosts.values()) disposeRuntime(runtime)
-  hosts.clear()
+  const done = Promise.all([...retiring.values()]).then(() => {})
+  void done.catch(() => {})
+  return done
 }
 
 export function embeddedWorkspaceRuntimeActivity() {
@@ -400,9 +415,7 @@ export function embeddedWorkspaceRuntimeActivity() {
   return { hosts: hosts.size, activeTurns, activeWrites, checkpointing }
 }
 
-export function releaseEmbeddedWorkspaceRuntime(workspaceId: string) {
+export function releaseEmbeddedWorkspaceRuntime(workspaceId: string): Promise<void> {
   const runtime = hosts.get(workspaceId)
-  if (!runtime) return
-  disposeRuntime(runtime)
-  hosts.delete(workspaceId)
+  return runtime ? disposeRuntime(runtime) : retiring.get(workspaceId) ?? Promise.resolve()
 }

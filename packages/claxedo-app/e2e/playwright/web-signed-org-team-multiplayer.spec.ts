@@ -120,6 +120,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
     fixture = await startSignedRelayFixture({
       access: ACCESS,
       backendPort: BACKEND_PORT,
+      browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
       scripted,
       collaborativeOrg: { name: ORG_NAME },
       claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "web-signed-org-team-claude"),
@@ -131,6 +132,7 @@ test.describe("web signed org-team multiplayer @core @tier-real @surface-web", (
 
     webApp = await buildAndServeWebApp({
       backendUrl: fixture.info.backendUrl,
+      relayUrl: fixture.info.relayUrl,
       outDir: OUT_DIR,
       previewPort: PREVIEW_PORT,
     })

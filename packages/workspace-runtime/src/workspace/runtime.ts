@@ -39,10 +39,10 @@ import {
   type PiModelBackendResolver,
   type RuntimeConfigurableAdapter,
 } from "@claxedo/agent-sdk-runtime/adapters"
-import { sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
+import { attachSseFanout, encodeSseData, sseHeaders } from "@claxedo/agent-sdk-runtime/sse"
 import type { CompatEnvelope } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { SubagentAdmissionStore } from "@claxedo/agent-sdk-runtime/subagent-admission"
-import { eventSessionId, toCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
+import { eventSessionId, isTerminalCompatEvent } from "@claxedo/agent-sdk-runtime/compat-events"
 import type { Hono } from "hono"
 import { HTTPException } from "hono/http-exception"
 import { workspaceCapabilities } from "../capabilities"
@@ -51,14 +51,11 @@ import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hu
 import type { ProcessObserver } from "../managed-processes/process-observer"
 import { RuntimeStore } from "../store"
 import { assertTarget, workspaceDir, workspaceId, type WorkspaceTarget } from "../target"
-import { normalizeRuntimeSnapshot, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeRunner, type RuntimeSnapshot } from "../routes/config"
-import { harnessQueryParam } from "../routes/http"
+import { normalizeRuntimeSnapshot, requestedSessionHarness, RuntimeConfigApplyError, type AppliedRuntimeSnapshot, type RuntimeConnectionDescriptor, type RuntimeHarnessSelection, type RuntimeNativeHarnessId, type RuntimeSnapshot } from "../routes/config"
+import { AgentRuntimeContractError, assertAgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { assertWorkspaceRuntimeExposure } from "../exposure"
-import { OpenCodeCompatRoutes } from "../routes/opencode-compat"
-import { ProviderConfigRoutes, type ProviderConfigStore } from "../routes/provider-config"
 import { SessionRoutes } from "../routes/session"
 import { sessionStatusSnapshot } from "../routes/session-status-snapshot"
-import { sessionV2Proxy } from "../routes/session-v2-proxy"
 import {
   mountWorkspaceAgentHooks,
   mountWorkspaceCore,
@@ -70,8 +67,9 @@ import type { RuntimeEventAuthorization } from "../routes/events"
 import type { WorkspaceTranscriptRoutesOptions } from "./core"
 import {
   agentRuntimeEventDeliveryPolicy,
-  type EventDeliveryPolicy,
-  type EventDeliveryPrincipal,
+  createIdentityAwareEventSource,
+  eventDeliveryPrincipal,
+  sessionEventDeliveryPolicy,
 } from "../event-delivery"
 import {
   managedWorkspaceSessionAccessPolicy,
@@ -94,8 +92,8 @@ import {
  * the engine's own session-config store path relies on (`getSession`,
  * `getMessages`, and optional bounded `getMessagePage`), plus
  * `getSessionMaxSeq` (used by the message-snapshot route).
- * `recoverBusySessions` is optional: the engine calls it on the adapter-owned
- * store when present (R2), so a host-supplied factory need not implement it. A
+ * `recoverBusySessions` is optional: the host calls it once when opening its
+ * shared store, so a host-supplied factory need not implement it. A
  * host may back the runtime with any store that satisfies this shape — e.g. the
  * in-memory store from `@claxedo/agent-sdk-runtime/stores/memory`.
  */
@@ -135,11 +133,9 @@ export type WorkspaceRuntimeStore =
 /**
  * Seam: a host-injected factory producing the runtime store for a given
  * `storeRoot`. The kit default constructs the SQLite-backed `RuntimeStore`.
- * The engine — not the factory — owns `recoverBusySessions()` on the
- * adapter-owned store (capability-checked) and the lazy/recovery-free
- * session-config store path (R2). The factory must be a pure constructor: it
- * receives `{ storeRoot }` and returns a fresh store; it must not itself run
- * recovery.
+ * The host owns recovery and closing of the shared store. The factory must
+ * be a pure constructor: it receives `{ storeRoot }` and returns a fresh
+ * store; it must not itself run recovery.
  */
 export type WorkspaceRuntimeStoreFactory = (input: { storeRoot?: string }) => WorkspaceRuntimeStore
 
@@ -154,54 +150,6 @@ export type WorkspaceHostOptions = {
   runtimeEventAuthorization?: RuntimeEventAuthorization
   /** Host-mediated resolver endpoint for opaque file-backed transcript handles. */
   transcripts?: WorkspaceTranscriptRoutesOptions
-  opencodeUrl?: string
-  /**
-   * Injected in-process engine transport — a peer of `opencodeUrl`. When set,
-   * the OpenCode adapter and the compat proxy routes dispatch every request
-   * through this handler instead of a URL, and nothing spawns. The transport
-   * seam (URL vs injected handler vs spawn) is kit MECHANISM; WHICH transport a
-   * composition uses is a HOST decision — the kit never constructs an engine
-   * and takes no ambient env into account. If both are given, the injected
-   * handler wins.
-   */
-  opencodeRequest?: OpenCodeRequestFn
-  opencodeHeaders?: HeadersInit
-  /**
-   * OpenCode compatibility control. Two independent things are gated: the
-   * OpenCode adapter's own **mechanism** (its upstream `listSessions` /
-   * `getStatusSnapshot` proxying, which is how the adapter actually functions),
-   * and the root **compat route surface** (`/mcp`, `/provider`, `/vcs`,
-   * `/session/status` proxying to the upstream). Three states:
-   *
-   * - `undefined` (default): adapter mechanism **on**, route surface **off**.
-   *   The OpenCode adapter works (lists/statuses proxy upstream) but the
-   *   product-facing compat routes return local fallbacks — a HOST decision.
-   * - `true`: both on. Full OpenCode-compat, including the proxy route surface.
-   * - `false`: both off. Full kill switch — the adapter returns empty/local
-   *   results and never touches the upstream.
-   *
-   * HOST decision — the kit default is `undefined`; Claxedo decodes its compat
-   * env flags into `true`/`false`.
-   */
-  opencodeCompat?: boolean
-  /**
-   * Host-owned provider catalog for harnesses OTHER than opencode.
-   *
-   * `/provider` is served here for every workspace-scoped caller — the cloud
-   * control plane proxies it, and a relayed user-hosted request lands here
-   * too. The kit can answer it only for opencode (by proxying the engine);
-   * for `pi`, `claude-sdk`, `codex-app-server` and the rest the catalog is
-   * derived from credentials and env the HOST owns and the kit must not read.
-   * Without this seam those harnesses answered 502 on this route while the
-   * host's own compat router answered them fine — and once `/provider` is
-   * runtime-owned, the host's router is no longer in the path for a
-   * workspace-scoped request. This is how the kit stays a superset of what
-   * the host served before, without importing the host.
-   *
-   * Return the catalog body; `ok: false` in it is answered as 502, matching
-   * the host router. Absent, non-opencode harnesses keep the kit's 502.
-   */
-  providerCatalog?: (input: { harnessId: string; providerId?: string }) => Promise<unknown>
   /** Host-owned projection write that completes before the created lifecycle event. */
   afterCreateSession?: (input: { directory: string; session: unknown }) => Promise<void> | void
   /** Private-session authority selected by the host composition. */
@@ -238,10 +186,8 @@ export type WorkspaceHostOptions = {
   configApplyReceiptDir?: string
   eventHub?: RuntimeEventHub
   /**
-   * Host-supplied store factory. Both the adapter-owned store (via each
-   * adapter's `createStore`) and the lazy session-config store route through
-   * it. Defaults to the SQLite-backed `RuntimeStore`. See
-   * {@link WorkspaceRuntimeStoreFactory}.
+   * Host-supplied shared store factory. Defaults to the SQLite-backed
+   * `RuntimeStore`. See {@link WorkspaceRuntimeStoreFactory}.
    */
   storeFactory?: WorkspaceRuntimeStoreFactory
   subagentAdmission?: SubagentAdmissionStore
@@ -410,11 +356,6 @@ function harnessConfigOptionsErrorMessage(input: {
   cause: unknown
 }) {
   const message = errorMessage(input.cause)
-  if (input.harness.id === "codex" && input.harness.access === "connection" && message.startsWith("ACP connection closed")) {
-    const detail = message.replace(/^ACP connection closed:?\s*/, "").replace(/^Error:\s*/, "")
-    if (detail) return `Codex could not start: ${detail}. Run \`codex doctor\`, fix the reported Codex config/auth issue, then retry.`
-    return "Codex could not start. Run `codex doctor`, fix the reported Codex config/auth issue, then retry."
-  }
   return message
 }
 
@@ -575,26 +516,14 @@ function resolveStoreFactory(options: WorkspaceHostOptions): WorkspaceRuntimeSto
   }
 }
 
-/**
- * The `createStore` closure handed to each harness adapter. It routes store
- * construction through the already-resolved host store factory and, on the
- * adapter-owned path, runs `recoverBusySessions()` (capability-checked) as an
- * ENGINE step — the factory itself never needs to remember recovery (R2).
- */
-function adapterCreateStore(factory: WorkspaceRuntimeStoreFactory): (storeRoot?: string) => AgentRuntimeStoreWithRecovery {
-  return (storeRoot?: string) => {
-    const store = factory({ storeRoot })
-    store.recoverBusySessions?.()
-    return store
-  }
-}
-
 /** Input handed to a registry entry's `create` when the engine builds an adapter. */
 export type WorkspaceHarnessAdapterInput = {
   /** The runner the engine wants an adapter for. */
   runner: RuntimeRunner
   /** The host options the engine was constructed with. */
   options: WorkspaceHostOptions
+  /** Borrowed host store: adapters must not recover or close it. */
+  store: WorkspaceRuntimeStore
 }
 
 /**
@@ -606,7 +535,7 @@ export type WorkspaceHarnessRegistryEntry = {
   match: (runner: RuntimeRunner) => boolean
   /** Constructs the adapter. The engine owns everything around this call —
    *  caching (adapterKey), config-apply serialization, active-turn drain, and
-   *  `recoverBusySessions` on the adapter-owned store — regardless of the
+   *  `recoverBusySessions` on the shared host store — regardless of the
    *  registry (R2). */
   create: (input: WorkspaceHarnessAdapterInput) => AgentHarnessAdapter
 }
@@ -629,12 +558,12 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
   return [
     {
       match: (runner) => nativeSdk(runner),
-      create: ({ runner, options }) => {
+      create: ({ runner, options, store }) => {
         const Adapter = NATIVE_HARNESS_ADAPTERS[runner.id as keyof typeof NATIVE_HARNESS_ADAPTERS]
         const transcripts = options.transcripts
         const registerTranscript = transcripts?.resolver.register
         return new Adapter({
-          createStore: adapterCreateStore(resolveStoreFactory(options)),
+          store,
           ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
           ...(options.eventHub ? { eventHub: options.eventHub } : {}),
           ...(options.processObserver ? { processObserver: agentProcessObserver(options.processObserver) } : {}),
@@ -655,8 +584,8 @@ export function defaultWorkspaceHarnessRegistry(): WorkspaceHarnessRegistry {
     },
     {
       match: (runner) => runner.id === "pi",
-      create: ({ options }) => new PiHarnessAdapter({
-        createStore: adapterCreateStore(resolveStoreFactory(options)),
+      create: ({ options, store }) => new PiHarnessAdapter({
+        goalStore: store,
         ...(options.storeRoot ? { storeRoot: options.storeRoot } : {}),
         ...(options.eventHub ? { eventHub: options.eventHub } : {}),
         ...(options.piModelBackend ? { modelBackend: options.piModelBackend } : {}),
@@ -706,6 +635,7 @@ function createAdapter(
   harness: RuntimeRunner,
   options: WorkspaceHostOptions,
   registry: WorkspaceHarnessRegistry,
+  store: WorkspaceRuntimeStore,
 ): AgentHarnessAdapter {
   const entry = registry.find((item) => item.match(harness))
   if (!entry) {
@@ -714,318 +644,7 @@ function createAdapter(
     // runner must fail loudly here.
     throw new Error(`No workspace harness adapter registered for runner "${harness.id}:${harness.access}"`)
   }
-  return entry.create({ runner: harness, options })
-}
-
-function closedSse() {
-  return new Response(new ReadableStream<Uint8Array>({
-    start(ctrl) {
-      ctrl.close()
-    },
-  }), {
-    headers: sseHeaders(),
-  })
-}
-
-export function filterCompatEventStream(
-  response: Response,
-  principal: EventDeliveryPrincipal,
-  policy: EventDeliveryPolicy<CompatEnvelope>,
-  directory: string,
-) {
-  const decoder = new TextDecoder()
-  const encoder = new TextEncoder()
-  let buffered = ""
-  let renewalTimer: ReturnType<typeof setInterval> | undefined
-  let cleaned = false
-  const cleanup = () => {
-    if (cleaned) return
-    cleaned = true
-    if (renewalTimer) clearInterval(renewalTimer)
-    policy.release?.(principal)
-  }
-  const filtered = response.body!.pipeThrough(new TransformStream<Uint8Array, Uint8Array>({
-    start(controller) {
-      if (!policy.renew) return
-      renewalTimer = setInterval(() => {
-        void Promise.resolve(policy.renew!(principal)).then((decision) => {
-          if (decision !== "deliver") {
-            cleanup()
-            controller.terminate()
-          }
-        }).catch(() => {
-          cleanup()
-          controller.terminate()
-        })
-      }, 5_000)
-      ;(renewalTimer as { unref?: () => void }).unref?.()
-    },
-    async transform(chunk, controller) {
-      buffered += decoder.decode(chunk, { stream: true })
-      const blocks = buffered.split(/\r?\n\r?\n/)
-      buffered = blocks.pop() ?? ""
-      for (const block of blocks) {
-        const data = block.split(/\r?\n/).find((line) => line.startsWith("data:"))
-        if (!data) {
-          controller.enqueue(encoder.encode(`${block}\n\n`))
-          continue
-        }
-        const raw = data.slice("data:".length).trim()
-        if (!raw) {
-          if (principal.mode === "unmanaged-local") controller.enqueue(encoder.encode(`${block}\n\n`))
-          continue
-        }
-        const parsed = (() => {
-          try {
-            return JSON.parse(raw) as { payload?: unknown }
-          } catch {
-            return undefined
-          }
-        })()
-        const event = toCompatEvent(parsed?.payload ?? parsed)
-        if (!event) {
-          if (principal.mode === "unmanaged-local") controller.enqueue(encoder.encode(`${block}\n\n`))
-          continue
-        }
-        const decision = await policy({
-          principal,
-          event: { directory, payload: event },
-          sessionId: eventSessionId(event),
-          sensitive: eventSessionId(event) !== undefined,
-        })
-        if (decision === "terminate") {
-          cleanup()
-          controller.terminate()
-          return
-        }
-        if (decision === "deliver") controller.enqueue(encoder.encode(`${block}\n\n`))
-      }
-    },
-    flush() {
-      cleanup()
-    },
-  }))
-  const reader = filtered.getReader()
-  const body = new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      try {
-        const next = await reader.read()
-        if (next.done) {
-          cleanup()
-          controller.close()
-          return
-        }
-        controller.enqueue(next.value)
-      } catch (error) {
-        cleanup()
-        controller.error(error)
-      }
-    },
-    async cancel(reason) {
-      cleanup()
-      await reader.cancel(reason)
-    },
-  })
-  return new Response(body, { status: response.status, headers: response.headers })
-}
-
-function opencodeProxyHeaders(headers: HeadersInit, base?: HeadersInit) {
-  const next = new Headers(headers)
-  next.delete("host")
-  next.delete("connection")
-  // This is an in-process/internal transport boundary, not the browser's HTTP
-  // hop. Forwarding the browser's compression negotiation lets the embedded
-  // engine return compressed bytes to routes such as /provider that must read
-  // and validate the JSON before replying. A Response constructed around
-  // those bytes does not perform fetch-style decompression, so `.json()` sees
-  // gzip data and the canonical provider catalogue is reported as missing.
-  // The outer server owns response compression for the actual client hop.
-  next.delete("accept-encoding")
-  next.delete("authorization")
-  next.delete("Authorization")
-  next.delete("x-workspace-id")
-  next.delete("x-forwarded-by")
-  if (base) {
-    new Headers(base).forEach((value, key) => next.set(key, value))
-  }
-  return next
-}
-
-// Synthetic origin for proxy Requests. The adapter's RequestFn rewrites this to
-// the real server URL (URL/spawn mode) or routes on path only (injected mode).
-const OPENCODE_INTERNAL_BASE = "http://opencode.internal"
-
-async function proxyOpenCode(
-  c: any,
-  adapter: AgentHarnessAdapter,
-  baseHeaders?: HeadersInit,
-  queryPatch?: Record<string, string>,
-) {
-  if (!hasAdapterCapability(adapter, "http-proxy")) return
-  const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
-  const reqUrl = new URL(c.req.url)
-  const target = new URL(reqUrl.pathname + reqUrl.search, OPENCODE_INTERNAL_BASE)
-  Object.entries(queryPatch ?? {}).forEach(([key, value]) => target.searchParams.set(key, value))
-  const headers = opencodeProxyHeaders(c.req.raw.headers, baseHeaders)
-  const directory = c.req.query("directory") || c.req.header("x-opencode-directory")
-  if (directory) headers.set("x-opencode-directory", assertTarget(directory))
-  const req = new Request(target.toString(), {
-    method: c.req.method,
-    headers,
-    body: ["GET", "HEAD"].includes(c.req.method) ? undefined : c.req.raw.body,
-    // @ts-ignore
-    duplex: "half",
-  })
-  const res = await request(req)
-  return new Response(res.body, {
-    status: res.status,
-    statusText: res.statusText,
-    headers: res.headers,
-  })
-}
-
-/**
- * Whether an adapter's EMPTY session list was an answer rather than a swallowed
- * failure.
- *
- * `AgentHarnessAdapter.listSessions` returns `AgentSession[]`, so the only
- * failure it can report is a throw — and the OpenCode adapter does not throw:
- * it returns `[]` for ANY non-2xx. A transient 5xx from a server that has just
- * restarted is therefore byte-identical to a fresh install, and the one-time
- * inventory import would record itself as done on it, hiding every existing
- * session from generic listing forever with no retry and no error.
- *
- * The status is recoverable one layer down, on the proxy transport the adapter
- * itself uses, so an empty list from a proxy adapter is confirmed by asking the
- * same question with the status visible. Two gates keep this from costing
- * anything it should not:
- *
- *  - It runs only for an EMPTY list during the once-per-directory import, so
- *    the common path pays nothing and the confirmation never repeats.
- *  - It never starts a harness. `transportLive()` false means the adapter's own
- *    listing did not reach a transport either (compat off, nothing spawned), so
- *    there is nothing to confirm and the empty stands.
- */
-async function emptyListIsAnAnswer(
-  adapter: AgentHarnessAdapter,
-  directory: string,
-  options: { opencodeCompat?: boolean; opencodeHeaders?: HeadersInit },
-) {
-  if (!hasAdapterCapability(adapter, "http-proxy")) return true
-  // Mirrors how `defaultWorkspaceHarnessRegistry` maps the three-state host
-  // option onto the adapter's own `compat` flag: with the mechanism off the
-  // adapter answers `[]` locally without ever asking upstream, and confirming
-  // it against upstream would block the marker on a server the host has said
-  // not to consult.
-  if (options.opencodeCompat === false) return true
-  if ((adapter as HttpProxyAdapter).transportLive?.() !== true) return true
-  try {
-    const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
-    const headers = new Headers(options.opencodeHeaders)
-    headers.set("x-opencode-directory", directory)
-    const response = await request(new Request(`${OPENCODE_INTERNAL_BASE}/session`, { headers }))
-    return response.ok
-  } catch {
-    return false
-  }
-}
-
-function sessionV2CreatedId(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return
-  if (typeof (input as { id?: unknown }).id === "string") return (input as { id: string }).id
-  const data = (input as { data?: unknown }).data
-  if (!data || typeof data !== "object" || Array.isArray(data)) return
-  return typeof (data as { id?: unknown }).id === "string" ? (data as { id: string }).id : undefined
-}
-
-function sessionV2Collection(input: unknown) {
-  if (Array.isArray(input)) return { rows: input, rebuild: (rows: unknown[]) => rows }
-  if (!input || typeof input !== "object") return
-  const data = (input as { data?: unknown }).data
-  if (!Array.isArray(data)) return
-  return {
-    rows: data,
-    rebuild: (rows: unknown[]) => ({ ...input, data: rows }),
-  }
-}
-
-function sessionV2RowId(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return ""
-  const row = input as { id?: unknown; sessionId?: unknown; sessionID?: unknown }
-  if (typeof row.id === "string") return row.id
-  if (typeof row.sessionId === "string") return row.sessionId
-  return typeof row.sessionID === "string" ? row.sessionID : ""
-}
-
-function sessionV2JsonResponse(response: Response, body: unknown) {
-  const headers = new Headers(response.headers)
-  headers.delete("content-length")
-  return new Response(JSON.stringify(body), {
-    status: response.status,
-    statusText: response.statusText,
-    headers,
-  })
-}
-
-async function proxyOpenCodeOrJson(c: any, adapter: AgentHarnessAdapter, fallback: () => Promise<unknown> | unknown, baseHeaders?: HeadersInit) {
-  try {
-    const res = await proxyOpenCode(c, adapter, baseHeaders)
-    if (res?.ok) return res
-  } catch {}
-  return c.json(await fallback())
-}
-
-function providerListHasModels(input: unknown) {
-  if (!input || typeof input !== "object" || Array.isArray(input)) return false
-  const all = (input as { all?: unknown }).all
-  if (!Array.isArray(all)) return false
-  return all.some((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) return false
-    const models = (item as { models?: unknown }).models
-    return !!models && typeof models === "object" && !Array.isArray(models) && Object.keys(models).length > 0
-  })
-}
-
-function providerCatalogView(input: { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> }, providerId?: string) {
-  const connected = Array.isArray(input.connected)
-    ? input.connected.filter((item): item is string => typeof item === "string")
-    : []
-  const defaults = input.default && typeof input.default === "object" ? input.default : {}
-  return {
-    all: (input.all ?? []).flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) return []
-      const provider = item as Record<string, unknown>
-      if (typeof provider.id !== "string" || typeof provider.name !== "string") return []
-      if (providerId && provider.id !== providerId) return []
-      const models = provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
-        ? provider.models as Record<string, unknown>
-        : {}
-      if (providerId) return [{ ...provider, models }]
-      const configuredDefault = defaults[provider.id]
-      const defaultModel = typeof configuredDefault === "string" ? configuredDefault : undefined
-      return [{
-        id: provider.id,
-        name: provider.name,
-        models: connected.includes(provider.id) && defaultModel && models[defaultModel]
-          ? { [defaultModel]: models[defaultModel] }
-          : {},
-      }]
-    }),
-    connected,
-    default: defaults,
-  }
-}
-
-function providerUnavailable(harness: RuntimeRunner | string, message?: string) {
-  const harnessId = typeof harness === "string" ? harness : harness.id
-  return {
-    ok: false,
-    error: {
-      code: "provider_models_unavailable",
-      harness: harnessId,
-      message: message ?? `${harnessId} does not expose live provider model metadata`,
-    },
-  }
+  return entry.create({ runner: harness, options, store })
 }
 
 function scopedToolPrompt(
@@ -1125,6 +744,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   const cleanupCompatObserver = options.onCompatEvent
     ? eventHub.subscribeGlobal(options.onCompatEvent)
     : () => undefined
+  const globalEvents = createIdentityAwareEventSource<CompatEnvelope>({
+    subscribe: eventHub.subscribeGlobal,
+    policy: sessionEventDeliveryPolicy(options.sessionAccessPolicy ?? managedWorkspaceSessionAccessPolicy()),
+    sessionId: (event) => eventSessionId(event.payload),
+    isTerminal: (event) => isTerminalCompatEvent(event.payload),
+  })
+  globalEvents.open({ mode: "unmanaged-local", connectionId: "local-global-replay" })
   // `store()` is the host's own session-config store. Bound lazily: `store()`
   // opens SQLite on first use, and an idle host never opens it.
   const hostOptions = {
@@ -1159,12 +785,19 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     options.connectionProviders ?? [createAcpConnectionProvider()],
   )
   let sessionConfigStore: WorkspaceRuntimeStore | undefined
+  let closing = false
+  let disposal: Promise<void> | undefined
+  const pendingRequests = new Set<Promise<void>>()
+  const retiringAdapters = new Map<AgentHarnessAdapter, Promise<void>>()
+  const adapterTeardowns = new WeakMap<AgentHarnessAdapter, Promise<void>>()
   const sessionAdapters = new Map<string, AgentHarnessAdapter>()
   const sessionRuntimes = new Map<string, AgentRuntime>()
   const sessionAdapterRunners = new Map<string, RuntimeRunner>()
   const adapterRuntimeKeys = new WeakMap<AgentHarnessAdapter, string>()
+  const adapterDirectories = new WeakMap<AgentHarnessAdapter, string>()
   const adapterConfigStamps = new WeakMap<AgentHarnessAdapter, string>()
   const activeTurns = new Map<AgentHarnessAdapter, Set<ActiveTurn>>()
+  const activeSessionOwners = new Map<string, { adapter: AgentHarnessAdapter; runtime?: AgentRuntime; directory: string }>()
   let checkpointState: "active" | "freezing" | "frozen" = "active"
   let activeCheckpointWrites = 0
   let reconciledCheckpointEpoch: number | undefined
@@ -1251,19 +884,20 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return { id: next.id, access: "connection" }
   }
 
-  async function ensureSessionAdapter(requestedRunner: RuntimeRunner) {
+  async function ensureSessionAdapter(requestedRunner: RuntimeRunner, directory = options.target?.directory ?? workspaceDir()) {
+    if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
     const nextRunner = resolveAppliedRunner(requestedRunner)
     if (nextRunner.access === "connection") {
       const descriptor = appliedConnections.get(nextRunner.id)!
       const secretLease = descriptor.secretRefs && Object.keys(descriptor.secretRefs).length > 0
         ? await (options.resolveConnectionSecrets ?? resolveSnapshotConnectionSecrets)({
             descriptor,
-            directory: options.target?.directory ?? workspaceDir(),
+            directory,
           })
         : undefined
       const resolved = await connectionRegistry.resolve({
         descriptor: descriptor as HarnessConnectionDescriptor,
-        directory: options.target?.directory ?? workspaceDir(),
+        directory,
         context: {
           store: store(),
           eventHub,
@@ -1272,21 +906,28 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         ...(secretLease ? { secretLease } : {}),
       })
       const generation = `${resolved.connectionGeneration.configRevision}:${resolved.connectionGeneration.secretLeaseGeneration}`
-      const key = `${descriptor.providerKey}:${descriptor.connectionId}:${generation}`
+      if (closing) {
+        await disposeAdapter(resolved.adapter)
+        throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+      }
+      const key = JSON.stringify([descriptor.providerKey, descriptor.connectionId, directory, generation])
       const existing = sessionAdapters.get(key)
       if (existing) {
         adapterRuntimeKeys.set(existing, key)
-        resolved.adapter.dispose()
+        await resolved.adapter.dispose()
         await configureAdapter(existing, nextRunner)
         return existing
       }
       sessionAdapters.set(key, resolved.adapter)
       sessionAdapterRunners.set(key, nextRunner)
       adapterRuntimeKeys.set(resolved.adapter, key)
-      retireSupersededConnectionAdapters(nextRunner, key)
+      adapterDirectories.set(resolved.adapter, directory)
+      retireSupersededConnectionAdapters(nextRunner, key, directory)
       enabled = true
       await configureAdapter(resolved.adapter, nextRunner)
-      if (runner && harnessKey(nextRunner) === harnessKey(runner)) adapter = resolved.adapter
+      if (runner && harnessKey(nextRunner) === harnessKey(runner) && directory === (options.target?.directory ?? workspaceDir())) {
+        adapter = resolved.adapter
+      }
       return resolved.adapter
     }
     const key = adapterKey(nextRunner)
@@ -1297,7 +938,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       await configureAdapter(existing, nextRunner)
       return existing
     }
-    const next = createAdapter(nextRunner, hostOptions, harnessRegistry)
+    const next = createAdapter(nextRunner, hostOptions, harnessRegistry, store())
     sessionAdapters.set(key, next)
     sessionAdapterRunners.set(key, nextRunner)
     adapterRuntimeKeys.set(next, key)
@@ -1325,6 +966,12 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return config
   }
 
+  function readSessionConfig(sessionId: string) {
+    const config = store().getSessionConfig(sessionId)
+    if (!config) return undefined
+    return mergeRecoveredSessionConfig(config, sessionRowConfigPatch(store().getSession(sessionId)))
+  }
+
   function executionBindingForHarness(sessionId: string, directory: string, harness: SessionHarness) {
     const binding = store().getExecutionBinding(sessionId)
     if (!binding) {
@@ -1337,6 +984,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return assertAgentExecutionBinding(binding, {
       ...binding,
       sessionId,
+      scope: "workspace",
       workspaceId: workspaceId(),
       directory,
       connectionId: connectionIdForHarness(harness),
@@ -1356,30 +1004,40 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   }
 
   async function adapterForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
+    if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+    const active = input?.sessionId ? activeSessionOwners.get(input.sessionId) : undefined
+    if (active && (!input?.directory || input.directory === active.directory)) return active.adapter
+    const directory = input?.directory ?? (input?.sessionId ? store().getSession(input.sessionId)?.directory : undefined)
     if (!input?.sessionId) {
-      if (input?.harness) return await ensureSessionAdapter(input.harness)
-      return await ensureSessionAdapter(currentRunner())
+      if (input?.harness) return await ensureSessionAdapter(input.harness, directory)
+      return await ensureSessionAdapter(currentRunner(), directory)
     }
     const config = sessionConfigFor(input)
-    if (!config) return await ensureSessionAdapter(input?.harness ?? currentRunner())
-    return await ensureSessionAdapter(config.harness)
+    if (!config) return await ensureSessionAdapter(input?.harness ?? currentRunner(), directory)
+    return await ensureSessionAdapter(config.harness, directory)
   }
 
   async function runtimeForSession(input?: { sessionId?: string; directory?: string; harness?: RuntimeRunner }) {
+    if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+    const active = input?.sessionId ? activeSessionOwners.get(input.sessionId) : undefined
+    if (active?.runtime && (!input?.directory || input.directory === active.directory)) return active.runtime
     const config = sessionConfigFor(input)
     const nextRunner = config?.harness ?? input?.harness ?? currentRunner()
-    const nextAdapter = await ensureSessionAdapter(nextRunner)
+    const directory = input?.directory ?? (input?.sessionId ? store().getSession(input.sessionId)?.directory : undefined)
+    const nextAdapter = await ensureSessionAdapter(nextRunner, directory)
+    if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
     const key = adapterRuntimeKeys.get(nextAdapter) ?? adapterKey(nextRunner)
     const existing = sessionRuntimes.get(key)
     if (existing) return existing
     const runtime = createAgentRuntime({
       store: store() as unknown as AgentRuntimeStore,
+      adapterOwnership: "caller",
       harnesses: [{
         id: nextRunner.id,
         access: nextRunner.access,
         create: () => nextAdapter,
       } as unknown as AgentHarnessFactory],
-      resolveHarness: (target) => ensureSessionAdapter(target),
+      resolveHarness: (target) => ensureSessionAdapter(target, directory),
       ...(hostOptions.sessionAccessPolicy
         ? { eventDelivery: agentRuntimeEventDeliveryPolicy(hostOptions.sessionAccessPolicy) }
         : {}),
@@ -1388,155 +1046,48 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return runtime
   }
 
-  function retireSupersededConnectionAdapters(nextRunner: RuntimeRunner, keepKey: string) {
+  function disposeAdapter(target: AgentHarnessAdapter) {
+    const previous = adapterTeardowns.get(target)
+    if (previous) return previous
+    const done = Promise.resolve().then(() => target.dispose())
+    adapterTeardowns.set(target, done)
+    void done.catch((error) => Log.create({ service: "workspace-runtime" }).error("Adapter shutdown failed", { error }))
+    return done
+  }
+
+  function retireAdapter(key: string, target: AgentHarnessAdapter) {
+    const previous = retiringAdapters.get(target)
+    if (previous) return previous
+    const retire = async () => {
+      const turns = activeTurns.get(target)
+      if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
+      if (sessionAdapters.get(key) !== target) return
+      const runtime = sessionRuntimes.get(key)
+      sessionAdapters.delete(key)
+      sessionAdapterRunners.delete(key)
+      if (adapter === target) adapter = undefined
+      await runtime?.dispose()
+      await disposeAdapter(target)
+      sessionRuntimes.delete(key)
+      activeTurns.delete(target)
+    }
+    const pending = retire()
+    retiringAdapters.set(target, pending)
+    void pending.then(() => retiringAdapters.delete(target), () => {})
+    void pending.catch((error) => Log.create({ service: "workspace-runtime" }).error("Adapter retirement failed", { error }))
+    return pending
+  }
+
+  function retireSupersededConnectionAdapters(nextRunner: RuntimeRunner, keepKey: string, directory: string) {
     if (nextRunner.access !== "connection") return
     for (const [key, target] of sessionAdapters) {
-      if (key === keepKey || sessionAdapterRunners.get(key)?.id !== nextRunner.id) continue
-      const retire = () => {
-        if (sessionAdapters.get(key) !== target) return
-        const runtime = sessionRuntimes.get(key)
-        if (runtime) runtime.dispose()
-        else target.dispose()
-        sessionRuntimes.delete(key)
-        sessionAdapters.delete(key)
-        sessionAdapterRunners.delete(key)
-        activeTurns.delete(target)
-      }
-      const turns = activeTurns.get(target)
-      if (!turns?.size) {
-        retire()
-        continue
-      }
-      void Promise.all([...turns].map((turn) => turn.done)).then(retire)
+      if (key === keepKey || sessionAdapterRunners.get(key)?.id !== nextRunner.id || adapterDirectories.get(target) !== directory) continue
+      retireAdapter(key, target)
     }
   }
 
-  async function listSessions(input: {
-    req: { query: (k: string) => string | undefined }
-  }, directory: string) {
-    const requestedRunner = normalizeHarnessIdentity(harnessQueryParam(input.req))
-    if (requestedRunner) {
-      const target: RuntimeRunner = {
-        id: requestedRunner.id,
-        access: requestedRunner.access,
-      }
-      return await listSessionsForAdapter(await ensureSessionAdapter(target), target, directory)
-    }
-    // Generic listing is store-only. It is the read the empty shell performs on
-    // every launch, so it must not select, load, or start a harness adapter.
-    //
-    // The one exception is the first generic list for a directory. A profile
-    // that predates the store, or a fresh profile sitting on an existing
-    // harness install, has inventory that only the harnesses know about. That
-    // import runs once per directory and is recorded durably, so every later
-    // launch — and every later list — costs zero harness processes. Sessions
-    // created outside Claxedo after that point arrive through the explicit
-    // `?harness=` refresh above.
-    if (!store().sessionInventoryImported?.(directory)) {
-      // Mark imported only when EVERY adapter actually answered.
-      //
-      // "This adapter has no sessions" and "this adapter could not be asked"
-      // are different facts that both arrive as an empty array — the OpenCode
-      // adapter returns `[]` for any non-2xx, so a transient 5xx from a
-      // just-spawned server looks exactly like a fresh install. Writing the
-      // durable marker on that would hide a user's existing sessions from
-      // generic listing forever, with no retry and no error.
-      //
-      // A failed adapter still lets the healthy ones contribute; the directory
-      // simply stays unimported and tries again on the next list.
-      let complete = true
-      const rows = await Promise.all((await sessionListAdapters()).map(async (item) => {
-        try {
-          const listed = await listSessionsForAdapter(item.adapter, item.runner, directory)
-          // A throw is not the only way an adapter fails to answer. An empty
-          // array from a proxy adapter has to be confirmed as an ANSWER before
-          // it counts toward completeness — see `emptyListIsAnAnswer`.
-          if (!listed.length && !await emptyListIsAnAnswer(item.adapter, directory, hostOptions)) {
-            complete = false
-            sessionInventoryLog.warn("session inventory import could not confirm an empty adapter listing", {
-              directory,
-              harness: item.runner.id,
-            })
-          }
-          return listed
-        } catch (error) {
-          complete = false
-          sessionInventoryLog.warn("session inventory import skipped an adapter", {
-            directory,
-            harness: item.runner.id,
-            error: error instanceof Error ? error.message : String(error),
-          })
-          return [] as AgentSession[]
-        }
-      }))
-      if (complete) store().markSessionInventoryImported?.(directory)
-      return mergeSessionRows([
-        ...(store().listSessions(directory) as AgentSession[]),
-        ...rows.flat(),
-      ])
-    }
+  function listSessions(directory: string) {
     return mergeSessionRows(store().listSessions(directory) as AgentSession[])
-  }
-
-  async function sessionListAdapters() {
-    const seen = new Set<string>()
-    const add = (items: Array<{ adapter: AgentHarnessAdapter; runner: RuntimeRunner }>, next: {
-      adapter: AgentHarnessAdapter
-      runner: RuntimeRunner
-    }) => {
-      const key = adapterKey(next.runner)
-      if (seen.has(key)) return
-      seen.add(key)
-      items.push(next)
-    }
-    const items: Array<{ adapter: AgentHarnessAdapter; runner: RuntimeRunner }> = []
-    add(items, { adapter: await ensureSessionAdapter(runner), runner })
-    for (const [key, item] of sessionAdapters) {
-      add(items, { adapter: item, runner: sessionAdapterRunners.get(key) ?? runnerFromAdapterKey(key) })
-    }
-    if (runner.id !== "opencode") {
-      const opencode = { id: "opencode" as const, access: "native" as const }
-      add(items, { adapter: await ensureSessionAdapter(opencode), runner: opencode })
-    }
-    return items
-  }
-
-  async function listSessionsForAdapter(adapter: AgentHarnessAdapter, targetRunner: RuntimeRunner, directory: string) {
-    return (await adapter.listSessions(directory)).map((session) => bindDiscoveredSession(session, targetRunner, directory))
-  }
-
-  function bindDiscoveredSession(session: AgentSession, targetRunner: RuntimeRunner, directory: string) {
-    const id = typeof session.id === "string" ? session.id : undefined
-    if (!id) return session
-    const existing = store().getSession(id) as
-      | { directory?: string; time?: { updated?: number }; updated_at?: number }
-      | null
-    // "Already imported" means already imported INTO THIS DIRECTORY.
-    //
-    // Keying on session ID alone let a row belonging to another directory
-    // suppress the bind, so the session was never associated with the directory
-    // being listed and never appeared in its inventory — discovery silently
-    // imported nothing. That happens whenever an agent session ID is reachable
-    // from two workspace directories: a moved or re-cloned workspace, or sibling
-    // worktrees sharing a harness session.
-    if (!existing || existing.directory !== directory) {
-      store().bindSession({
-        sessionId: id,
-        directory,
-        title: typeof session.title === "string" ? session.title : undefined,
-        agentSessionId: id,
-        createdAt: sessionTime(session, "created") ?? Date.now(),
-        updatedAt: sessionTime(session, "updated") || undefined,
-      })
-    }
-    if (!store().getSessionConfig(id) && (!existing || sessionTime(session, "updated") >= sessionTime(existing, "updated"))) {
-      store().updateSessionConfig(id, {
-        harness: targetRunner,
-        variant: null,
-        agent: null,
-      }, { directory })
-    }
-    return session
   }
 
   function mergeSessionRows(rows: AgentSession[]) {
@@ -1561,7 +1112,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     req: { query: (k: string) => string | undefined }
   }, directory: string) {
     const sessionId = input.req.query("sessionId")
-    if (sessionId) return await (await adapterForSession({ sessionId })).listPermissions?.(directory) ?? []
+    if (sessionId) return await (await adapterForSession({ sessionId, directory })).listPermissions?.(directory) ?? []
     const seen = new Set<AgentHarnessAdapter>()
     return (await Promise.all(
       [adapter, ...sessionAdapters.values()]
@@ -1593,18 +1144,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     )).flat() as AgentQuestion[]
   }
 
-  function clear() {
-    adapter?.dispose()
-    if (adapter) activeTurns.delete(adapter)
+  async function clear() {
+    await Promise.all([...sessionAdapters].map(([key, target]) => retireAdapter(key, target)))
     adapter = undefined
-    sessionRuntimes.clear()
   }
 
   function store() {
-    // Recovery-free by design: the session-config store never runs
-    // recoverBusySessions (only the adapter-owned path does). Routes through
-    // the host-supplied factory, defaulting to the SQLite RuntimeStore.
-    sessionConfigStore ??= storeFactory({ storeRoot: options.storeRoot })
+    if (!sessionConfigStore) {
+      if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+      sessionConfigStore = storeFactory({ storeRoot: options.storeRoot })
+      sessionConfigStore.recoverBusySessions?.()
+    }
     return sessionConfigStore
   }
 
@@ -1638,10 +1188,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const turns = activeTurns.get(input.adapter) ?? new Set<ActiveTurn>()
     turns.add(turn)
     activeTurns.set(input.adapter, turns)
+    const key = adapterRuntimeKeys.get(input.adapter)
+    const owner = { adapter: input.adapter, runtime: key ? sessionRuntimes.get(key) : undefined, directory: input.directory }
+    if (!activeSessionOwners.has(input.sessionId)) activeSessionOwners.set(input.sessionId, owner)
     return {
       signal: turn.controller.signal,
       dispose() {
         turns.delete(turn)
+        if (activeSessionOwners.get(input.sessionId) === owner) activeSessionOwners.delete(input.sessionId)
         turn.finish()
         if (turns.size === 0) activeTurns.delete(input.adapter)
         notifyCheckpointWaiters()
@@ -1806,15 +1360,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       await persistRuntimeConfigApplyStatus({ receiptDir, status: configApply, snapshot: next })
 
       if (replacing) {
-        if (adapter) await drainActiveTurns(adapter)
-        const promoted = nextKey ? sessionAdapters.get(nextKey) : undefined
-        clear()
+        // Changing the default changes selection policy. Existing sessions
+        // still own their cached adapters and active turns.
+        adapter = undefined
         runner = nextRunner
-        if (promoted && nextKey) {
-          adapter = promoted
-          sessionAdapters.delete(nextKey)
-          sessionAdapterRunners.delete(nextKey)
-        }
+      }
+
+      for (const [key, target] of sessionAdapters) {
+        const selection = sessionAdapterRunners.get(key)!
+        if (selection.access === "connection" && !nextConnections.get(selection.id)?.enabled) retireAdapter(key, target)
       }
 
       currentMcp = next.mcp
@@ -1850,9 +1404,10 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
       }
       await Promise.all([...sessionAdapters.entries()].map(([key, nextAdapter]) => {
-        return activeTurns.get(nextAdapter)?.size
+        const selection = sessionAdapterRunners.get(key)!
+        return activeTurns.get(nextAdapter)?.size || (selection.access === "connection" && !nextConnections.get(selection.id)?.enabled)
           ? Promise.resolve()
-          : configureAdapter(nextAdapter, sessionAdapterRunners.get(key) ?? currentRunner())
+          : configureAdapter(nextAdapter, selection)
       }))
       await applyAgentExtensionsSnapshot(next.agent_extensions, directory, options.agentExtensionStateRoot)
       state = "ready"
@@ -1896,6 +1451,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
 
   return {
     mount(app: Hono, options: WorkspaceHostMountOptions) {
+      app.use("*", async (c, next) => {
+        if (closing) return c.json({ error: "Workspace runtime is disposed" }, 503)
+        let finish!: () => void
+        const request = new Promise<void>((resolve) => { finish = resolve })
+        pendingRequests.add(request)
+        try { await next() } finally { pendingRequests.delete(request); finish() }
+      })
       assertWorkspaceRuntimeExposure({ exposure: options.exposure, env: process.env })
       const sessionAccessPolicy = hostOptions.sessionAccessPolicy
         ?? (options.exposure.kind === "loopback" ? managedWorkspaceSessionAccessPolicy() : undefined)
@@ -1926,25 +1488,16 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         if (options.agentHooks) mountWorkspaceAgentHooks(app, sessionAccessPolicy)
       }
       app.get("/api/wr/harness-config-options", async (c) => {
-        const requestedHarness = normalizeHarnessIdentity(harnessQueryParam(c.req) || c.req.query("type"))
-        const targetRunner = requestedHarness
-          ? {
-              id: requestedHarness.id,
-              access: requestedHarness.access,
-              ...(c.req.query("binary") ? { connection: { kind: "process" as const, binary: c.req.query("binary")! } } : {}),
-            }
-          : runner
-        if (targetRunner.id === "opencode") {
-          return c.json({
-            ok: false,
-            error: {
-              code: "harness_config_options_unavailable",
-              harness: targetRunner.id,
-              message: "opencode model options are exposed through /provider, not harness config options",
-            },
-          }, 404)
+        let targetRunner: RuntimeRunner
+        try {
+          targetRunner = requestedSessionHarness(c.req) ?? currentRunner()
+        } catch (cause) {
+          if (cause instanceof WorkspaceHarnessUnavailableError) {
+            return c.json({ ok: false, error: { code: cause.code, message: cause.message } }, 409)
+          }
+          throw cause
         }
-        const directory = assertTarget(c.req.query("directory") || c.req.header("x-opencode-directory"))
+        const directory = assertTarget(c.req.query("directory") || workspaceDir())
         try {
           // Adapter selection is inside the guarded region because it is a
           // source of the very failure this route reports: an ACP identity with
@@ -1979,145 +1532,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         }
       })
 
-      app.get("/mcp", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json({})
-        return proxyOpenCodeOrJson(c, adapter, () => mcpStatus(currentMcp), hostOptions.opencodeHeaders)
-      })
-
-      app.post("/mcp/:name/connect", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(true)
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-      })
-
-      app.post("/mcp/:name/disconnect", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json(true)
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-      })
-
-      app.get("/lsp", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) return c.json([])
-        return proxyOpenCodeOrJson(c, adapter, () => [], hostOptions.opencodeHeaders)
-      })
-
-      // Cloud control plane proxies /provider through here so the session
-      // sidebar can list model metadata for both OpenCode and ACP runners.
-      app.get("/provider", async (c) => {
-        const requestedHarness = harnessQueryParam(c.req)
-        const harnessId = requestedHarness || runner.id
-        if (harnessId !== "opencode") {
-          // Not the kit's to answer: see `WorkspaceHostOptions.providerCatalog`.
-          if (!hostOptions.providerCatalog) return c.json(providerUnavailable(harnessId), 502)
-          const detail = c.req.query("provider")
-          const body = await hostOptions.providerCatalog({ harnessId, ...(detail ? { providerId: detail } : {}) })
-          const failed = !!body && typeof body === "object" && (body as { ok?: unknown }).ok === false
-          return c.json(body, failed ? 502 : 200)
-        }
-        if (hostOptions.opencodeCompat !== true) {
-          return c.json(
-            providerUnavailable(
-              "opencode",
-              "opencode provider metadata is unavailable because compatibility proxying is disabled",
-            ),
-            502,
-          )
-        }
-        const adapter = runner.id === "opencode"
-          ? await ensureSessionAdapter(runner)
-          : await ensureSessionAdapter({ id: "opencode", access: "native" })
-        try {
-          const detail = c.req.query("provider")
-          const res = await proxyOpenCode(
-            c,
-            adapter,
-            hostOptions.opencodeHeaders,
-            detail ? undefined : { view: "index" },
-          )
-          if (!res) {
-            return c.json(providerUnavailable("opencode", "opencode provider metadata proxy is unavailable"), 502)
-          }
-          if (!res.ok) {
-            return c.json(
-              providerUnavailable("opencode", `opencode provider metadata request failed with status ${res.status}`),
-              502,
-            )
-          }
-          const body = (await res.json().catch(() => undefined)) as
-            { all?: unknown[]; connected?: unknown[]; default?: Record<string, unknown> } | undefined
-          if (!body) {
-            return c.json(providerUnavailable("opencode", "opencode provider metadata returned invalid JSON"), 502)
-          }
-          if (providerListHasModels(body) || (!detail && Array.isArray(body.all))) {
-            return c.json(providerCatalogView(body, detail))
-          }
-          return c.json(
-            providerUnavailable("opencode", "opencode provider metadata did not include live model data"),
-            502,
-          )
-        } catch (cause) {
-          return c.json(providerUnavailable("opencode", errorMessage(cause)), 502)
-        }
-      })
-
-      // The write half of `GET /provider` above. A provider the harness config
-      // DECLARES has no credential to drop, so disconnecting it means naming it
-      // in that config's `disabled_providers` — and that config belongs to this
-      // workspace's runtime, never to a central server global. Same
-      // (workspace, harness) scope the catalog read carries, so the read
-      // reflects the write on the next fetch.
-      app.route("/", ProviderConfigRoutes({
-        defaultHarness: () => runner.id,
-        store: async (harnessId) => {
-          // Only opencode keeps a provider registry in config; every other
-          // harness answers `/provider` from the host-injected catalog, which
-          // has no per-workspace declaration to disable.
-          if (harnessId !== "opencode") return undefined
-          if (hostOptions.opencodeCompat !== true) {
-            throw new Error("opencode provider configuration is unavailable because compatibility proxying is disabled")
-          }
-          const adapter = runner.id === "opencode"
-            ? await ensureSessionAdapter(runner)
-            : await ensureSessionAdapter({ id: "opencode", access: "native" })
-          if (!hasAdapterCapability(adapter, "http-proxy")) {
-            throw new Error("opencode provider configuration is not reachable through this harness adapter")
-          }
-          const request = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getRequestFn()
-          const call = async (init?: RequestInit) => {
-            const headers = new Headers(hostOptions.opencodeHeaders)
-            headers.set("accept", "application/json")
-            if (init?.body) headers.set("content-type", "application/json")
-            const res = await request(new Request(`${OPENCODE_INTERNAL_BASE}/global/config`, { ...init, headers }))
-            if (!res.ok) throw new Error(`opencode configuration request failed with status ${res.status}`)
-            return await res.json() as Record<string, unknown>
-          }
-          const store: ProviderConfigStore = {
-            read: () => call(),
-            // The engine disposes every cached InstanceState when a config
-            // update actually changes the file, so the catalog `GET /provider`
-            // re-derives is the one this write produced.
-            write: (patch) => call({ method: "PATCH", body: JSON.stringify(patch) }),
-          }
-          return store
-        },
-      }))
-
-      app.get("/experimental/tool/ids", async (c) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
-          return c.json({
-            ok: false,
-            error: {
-              code: "tool_catalog_unavailable",
-              harness: runner.id,
-              message: `${runner.id} does not expose a live Tool catalog`,
-            },
-          }, 502)
-        }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-      })
+      app.get("/mcp", async (c) => c.json(mcpStatus(currentMcp)))
 
       app.get("/vcs", async (c) => {
         return c.json(await localVcsInfo(requestDirectory(c)))
@@ -2130,72 +1545,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           ? (event: CompatEnvelope) => compatEnvelopeSessionId(event) === scope.sessionId
           : (_event: CompatEnvelope) => true
         const principal = eventDeliveryPrincipal(c)
-        // Two changes meet here and BOTH are load-bearing.
-        //
-        // The shell opens this stream on every launch. Proxying it to OpenCode
-        // used to START OpenCode, so an idle desktop paid for a harness it was
-        // never asked to run. The compat proxy attaches only to a transport
-        // that is ALREADY live, and holds an activity lease for the stream's
-        // life so the idle reaper cannot cut it mid-delivery. When nothing is
-        // running the runtime's own hub answers — it is the authoritative
-        // producer of canonical events, and the adapter republishes upstream
-        // events into it once real work starts.
-        //
-        // Resolution goes through `ensureSessionAdapter` rather than `ensure()`
-        // so a session pinned to a non-default harness gets ITS adapter. That
-        // helper only creates and configures; it does not spawn, so it does not
-        // reintroduce the start this gate exists to prevent.
-        // A managed-private stream is served from the canonical hub so replay
-        // and live frames pass through one session filter. The raw upstream
-        // proxy cannot enforce that boundary.
-        const proxy = !scope.managed && runner.id === "opencode" && hostOptions.opencodeCompat === true
-          ? await ensureSessionAdapter(runner)
-          : undefined
-        const adapter = proxy && hasAdapterCapability(proxy, "http-proxy")
-          ? proxy as AgentHarnessAdapter & HttpProxyAdapter
-          : undefined
-        if (adapter && (adapter.transportLive?.() ?? true)) {
-          let lease: { release(): void } | undefined
-          try {
-            const acquired = await adapter.acquireRequestFn?.()
-            lease = acquired?.lease
-            const request = acquired?.request ?? await adapter.getRequestFn()
-            const headers = new Headers(hostOptions.opencodeHeaders)
-            headers.set("Accept", "text/event-stream")
-            const res = await request(new Request(`${OPENCODE_INTERNAL_BASE}/global/event`, {
-              headers,
-              signal: c.req.raw.signal,
-            }))
-            if (!res.ok || !res.body) {
-              lease?.release()
-              return closedSse()
-            }
-            // Released on BOTH ends of the stream's life. Wiring only the
-            // client's abort leaks the lease whenever the upstream ends first —
-            // an OpenCode restart on config change, or the child exiting — and
-            // a held lease stops the idle countdown from ever starting again,
-            // so the harness this change exists to reap could never be reaped.
-            // `ActivityLease.release` is idempotent, so both firing is fine.
-            // `flush` covers a clean end; a client-side cancel propagates back
-            // as an abort on the request signal, which the listener catches.
-            const release = () => lease?.release()
-            c.req.raw.signal.addEventListener("abort", release, { once: true })
-            const filtered = filterCompatEventStream(
-              res,
-              principal,
-              globalEventPolicy,
-              c.req.query("directory") ?? "global",
-            )
-            return new Response(
-              filtered.body?.pipeThrough(new TransformStream({ flush: release })),
-              { status: filtered.status, headers: filtered.headers },
-            )
-          } catch {
-            lease?.release()
-            return closedSse()
-          }
-        }
-
         let ctrl: ReadableStreamDefaultController<Uint8Array> | null = null
         let cleanup = () => {}
         let stopLeaseWatch = () => {}
@@ -2239,24 +1588,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         return new Response(body, { headers: sseHeaders() })
       })
 
-      // Session V2 and its model catalog are the durable agent-control
-      // contracts used by hosted compositions. Keep them on the authenticated
-      // workspace-runtime/relay path and proxy byte-for-byte to OpenCode.
-      const forwardSessionV2 = async (c: Context) => {
-        const adapter = await ensureSessionAdapter(runner)
-        if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true || !hasAdapterCapability(adapter, "http-proxy")) {
-          return c.json({ error: { code: "session_v2_unavailable", message: "Session V2 requires the OpenCode HTTP runtime" } }, 503)
-        }
-        return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-      }
-      const proxySessionV2 = sessionV2Proxy({
-        policy: sessionAccessPolicy,
-        forward: forwardSessionV2,
-      })
-      app.all("/api/model", proxySessionV2)
-      app.all("/api/session", proxySessionV2)
-      app.all("/api/session/*", proxySessionV2)
-
       app.route("/", SessionRoutes((input) => adapterForSession(input), {
         eventHub,
         sessionAccessPolicy,
@@ -2290,7 +1621,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           // silently creates the session on the wrong adapter — and when the
           // active runner is ACP, spawns a process the caller never asked for.
           const query = (c as { req: { query: (k: string) => string | undefined } }).req
-          const requested = normalizeHarnessIdentity(harnessQueryParam(query))
+          const requested = requestedSessionHarness(query)
           const adapter = await adapterForSession({
             ...(id ? { sessionId: id } : {}),
             directory,
@@ -2354,13 +1685,8 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           }
         },
         afterCreateSession: hostOptions.afterCreateSession,
-        listSessions: (c, directory) => listSessions(c as { req: { query: (k: string) => string | undefined } }, directory),
-        getStatus: async (c, directory, adapter) => {
-          if (runner.id !== "opencode" || hostOptions.opencodeCompat !== true) {
-            return sessionStatusSnapshot(await adapter.listSessions(directory))
-          }
-          return (await proxyOpenCode(c, adapter, hostOptions.opencodeHeaders))!
-        },
+        listSessions: async (_c, directory) => listSessions(directory),
+        getStatus: (_c, directory) => sessionStatusSnapshot(store().listSessions(directory)),
         listSubagents: ({ parentSessionId }) => store().listSubagents?.(parentSessionId) ?? [],
         listPermissions: (c, directory) => listPermissions(c as { req: { query: (k: string) => string | undefined } }, directory),
         listQuestions: (c, directory) => listQuestions(c as { req: { query: (k: string) => string | undefined } }, directory),
@@ -2382,12 +1708,14 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           if (!runtimeStore.getSession(sessionId)) throw new HTTPException(404, { message: "Session not found" })
           const getMessagePage = runtimeStore.getMessagePage
           if (!getMessagePage) throw new HTTPException(501, { message: "Bounded message history is unavailable" })
-          return getMessagePage.call(runtimeStore, sessionId, page) ?? { messages: [] }
+          return {
+            ...getMessagePage.call(runtimeStore, sessionId, page) ?? { messages: [] },
+            maxEventOrdinal: runtimeStore.getSessionMaxSeq(sessionId),
+          }
         },
         getMessageSnapshot: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) throw new HTTPException(404, { message: "Session not found" })
           const messages = store().getMessages(sessionId)
-          if (!messages.length) return undefined
           const fencingToken = store().getSessionFencingToken?.(sessionId) ?? 0
           return {
             messages,
@@ -2395,44 +1723,23 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             ...(fencingToken === 0 ? {} : { fencingToken }),
           }
         },
-        getSession: async ({ adapter, directory, sessionId }) => {
+        getSession: async ({ directory, sessionId }) => {
           const stored = store().getSession(sessionId) as { directory?: string } | null
           if (stored) return (stored.directory ?? "") === (directory ?? "") ? stored as AgentSession : null
-          return await adapter.getSession(sessionId, directory)
+          return null
         },
         getTodos: async ({ sessionId }) => {
           if (!store().getSession(sessionId)) return undefined
           return store().getTodos(sessionId)
         },
         getSessionConfig: async ({ sessionId }) => {
-          const config = store().getSessionConfig(sessionId)
+          const config = readSessionConfig(sessionId)
           if (!config) throw new HTTPException(404, { message: "Session not found" })
-          if (config.model && config.agent && config.variant !== undefined) return config
-          const session = store().getSession(sessionId)
-          const recovered = mergeRecoveredSessionConfig(
-            config,
-            sessionRowConfigPatch(session),
-          )
-          return recovered
+          return config
         },
-        // The store records what the harness ACCEPTED, never what the caller
-        // asked for.
-        //
-        // Writing the requested update first made the store the authority on a
-        // config no harness had agreed to: Pi refuses a model change on an
-        // active session, and the pre-write meant the refusal surfaced to the
-        // caller while the store already held — and kept serving — the model
-        // the session was not running. The adapter's returned config is a
-        // complete `SessionConfig` from every harness, so a single write after
-        // acceptance loses nothing.
-        updateSessionConfig: async ({ adapter, directory, sessionId, update }) => {
-          if (adapter.sessionConfigOwner === "runtime") {
-            const accepted = store().updateSessionConfig(sessionId, update, { directory })
-            if (!accepted) throw new HTTPException(404, { message: "Session not found" })
-            return accepted
-          }
-          const adapterConfig = await adapter.updateSessionConfig(canonicalExecutionBinding(sessionId, directory), update)
-          return store().updateSessionConfig(sessionId, adapterConfig, { directory }) ?? adapterConfig
+        updateSessionConfig: async ({ directory, sessionId, update }) => {
+          const runtime = await runtimeForSession({ sessionId, directory })
+          return runtime.sessions.updateConfig(sessionId, update, directory)
         },
         switchSessionHarness: async ({ directory, sessionId, update }) => {
           assertSessionDirectory(sessionId, directory)
@@ -2458,11 +1765,13 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     hasSession(sessionId: string) {
       return !!store().getSession(sessionId)
     },
+    getSessionConfig: readSessionConfig,
     parentSessionIdFor(sessionId: string) {
       const session = store().getSession(sessionId) as { parentID?: string | null } | null
       return session?.parentID ?? undefined
     },
     async apply(next: RuntimeSnapshot) {
+      if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
       const normalized = normalizeRuntimeSnapshot(next)
       if (!normalized) throw new RuntimeConfigApplyError("runtime_config_invalid", "Invalid runtime config snapshot", 409)
       const pending = applyQueue.then(() => applySnapshot(normalized), () => applySnapshot(normalized))
@@ -2493,6 +1802,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       }
     },
     async registerSessionTools(input) {
+      if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
       sessionToolPrompts.set(input.sessionId, input)
     },
     async unregisterSessionTools(sessionId) {
@@ -2524,20 +1834,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         // not changed. Drop the signature or the rebuilding apply would be
         // skipped as a no-op and leave the runtime unconfigured.
         appliedSignature = undefined
-        clear()
-        for (const next of sessionAdapters.values()) {
-          next.dispose()
-          activeTurns.delete(next)
-        }
-        sessionAdapters.clear()
-        sessionAdapterRunners.clear()
-        sessionRuntimes.clear()
+        await clear()
       },
       async resume() {
+        if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
         checkpointState = "active"
         return checkpointDetail()
       },
       async restoreReconcile(input) {
+        if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
         if (!Number.isSafeInteger(input.epoch) || input.epoch < 1 || !input.checkpointId) {
           throw new Error("workspace_checkpoint_reconcile_invalid")
         }
@@ -2547,17 +1852,38 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       },
     },
     dispose() {
-      cleanupCompatObserver()
-      clear()
-      for (const next of sessionAdapters.values()) {
-        next.dispose()
-        activeTurns.delete(next)
-      }
-      sessionAdapters.clear()
-      sessionRuntimes.clear()
-      sessionToolPrompts.clear()
-      sessionConfigStore?.close?.()
-      sessionConfigStore = undefined
+      if (disposal) return disposal
+      closing = true
+      checkpointState = "freezing"
+      for (const turns of activeTurns.values()) for (const turn of turns) turn.controller.abort()
+      disposal = (async () => {
+        // Initiate teardown now: a pending create or permission may only
+        // settle when its provider process is stopped.
+        const adaptersDone = [...new Set([...sessionAdapters.values(), ...retiringAdapters.keys()])].map(disposeAdapter)
+        // Existing handlers may be finishing creation or reading the final
+        // prompt snapshot. Keep their borrowed store alive through that work.
+        await Promise.allSettled([applyQueue, ...pendingRequests])
+        // Adapter teardown stops autonomous goals and interactions as well as
+        // prompts. Native adapters await their own committing producer tails.
+        await Promise.all([
+          ...adaptersDone,
+          ...retiringAdapters.values(),
+          ...new Set([...sessionRuntimes.values()].map((runtime) => runtime.dispose())),
+        ])
+        sessionAdapters.clear()
+        sessionAdapterRunners.clear()
+        sessionRuntimes.clear()
+        activeTurns.clear()
+        activeSessionOwners.clear()
+        adapter = undefined
+        cleanupCompatObserver()
+        globalEvents.close()
+        sessionToolPrompts.clear()
+        sessionConfigStore?.close?.()
+        sessionConfigStore = undefined
+      })()
+      void disposal.catch((error) => Log.create({ service: "workspace-runtime" }).error("Workspace shutdown failed", { error }))
+      return disposal
     },
   }
 }

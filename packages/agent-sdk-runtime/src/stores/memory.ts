@@ -29,6 +29,7 @@ import {
 } from "../subagent-admission"
 
 type SessionRow = {
+  scope?: "workspace" | "central"
   id: string
   parentID?: string | null
   directory: string
@@ -117,6 +118,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const now = Date.now()
     const prev = this.sessions.get(input.sessionId)
     this.sessions.set(input.sessionId, {
+      scope: input.scope ?? prev?.scope,
       id: input.sessionId,
       parentID: input.parentSessionId ?? prev?.parentID ?? null,
       directory: input.directory,
@@ -205,7 +207,12 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
 
   getExecutionBinding(id: string): AgentExecutionBinding | null {
     const session = this.sessions.get(id)
-    if (!session?.workspaceId || !session.connectionId || !session.agentSessionId) return null
+    if (!session?.connectionId || !session.agentSessionId) return null
+    if (session.scope === "central") {
+      if (session.workspaceId || session.directory !== "") return null
+      return { scope: "central", sessionId: id, directory: "", connectionId: session.connectionId, upstreamSessionId: session.agentSessionId }
+    }
+    if (!session.workspaceId) return null
     return {
       sessionId: id,
       workspaceId: session.workspaceId,

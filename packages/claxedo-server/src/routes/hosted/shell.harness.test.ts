@@ -24,6 +24,7 @@ import { HostedShellRoutes, hostedHarnessRuntimeStatus, type HostedHarnessProbe 
 import type { ControlPlaneAuthConfig, SignedControlPlaneAuth } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../../authority/services"
 import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
+import { workspaceRuntimeLivenessResponse } from "../../../../workspace-runtime/src/routes/health"
 
 const signedConfig: ControlPlaneAuthConfig = {
   enabled: true,
@@ -111,7 +112,7 @@ describe("GET /api/claxedo/agent-config/harness — auth and workspace resolutio
   })
 
   test("a workspaceId identifies the workspace even when the directory is the machine's path", async () => {
-    const harnessStatus = vi.fn(async () => ({ ok: true, agentType: "claude", acpBinary: null }) satisfies HostedHarnessProbe)
+    const harnessStatus = vi.fn(async () => ({ ok: true, harness: { kind: "native", harnessId: "claude" }, activeHarness: { kind: "native", harnessId: "claude" } }) satisfies HostedHarnessProbe)
     const app = HostedShellRoutes({ authConfig: signedConfig, verifier, harnessStatus })
     const res = await get(
       app,
@@ -125,8 +126,8 @@ describe("GET /api/claxedo/agent-config/harness — auth and workspace resolutio
   test("sessionId is forwarded and echoed back on a ready probe", async () => {
     const harnessStatus = vi.fn(async () => ({
       ok: true,
-      agentType: "claude",
-      acpBinary: null,
+      harness: { kind: "native", harnessId: "claude" },
+      activeHarness: { kind: "native", harnessId: "claude" },
       harnessHealth: { status: "ok" as const },
     }) satisfies HostedHarnessProbe)
     const app = HostedShellRoutes({ authConfig: signedConfig, verifier, harnessStatus })
@@ -144,11 +145,8 @@ describe("GET /api/claxedo/agent-config/harness — auth and workspace resolutio
       sessionId: "ses_42",
       status: "ready",
       ready: true,
-      harness: { id: "claude", access: "native" },
-      activeHarness: { id: "claude", access: "native" },
-      agentType: "claude",
-      activeType: "claude",
-      activeBinary: null,
+      harness: { kind: "native", harnessId: "claude" },
+      activeHarness: { kind: "native", harnessId: "claude" },
       harnessHealth: { status: "ok" },
     })
   })
@@ -167,7 +165,6 @@ describe("GET /api/claxedo/agent-config/harness — auth and workspace resolutio
       status: "error",
       ready: false,
       error: "workspace runtime pull failed: 503",
-      activeBinary: null,
     })
     expect(body.agentType).toBeUndefined()
   })
@@ -202,6 +199,24 @@ function fakeServices(authority: Partial<WorkspaceAuthority>): ControlPlaneServi
 }
 
 describe("hostedHarnessRuntimeStatus — the production relay call", () => {
+  test.each([
+    { kind: "native" as const, harnessId: "pi" },
+    { kind: "connection" as const, connectionId: "external-opencode" },
+  ])("preserves canonical runtime selection $kind through the hosted route", async (harness) => {
+    const services = fakeServices({ openWorkspace: vi.fn(async () => ({ role: "owner", workspace: { org_id: "org_1" } })) as never })
+    const health = workspaceRuntimeLivenessResponse({ state: "ready", harness, harnessHealth: { status: "ok" }, routeAuthBoundary: "loopback-only", serviceExposure: { source: "loopback", access: "private" } })
+    const harnessStatus = hostedHarnessRuntimeStatus(services, { runtimeFetch: async ({ path }) => Response.json(path === "/global/health" ? { workspaceId: "ws_1" } : health) })
+    const app = HostedShellRoutes({ authConfig: signedConfig, verifier, harnessStatus })
+    const body = await (await get(app, "/api/claxedo/agent-config/harness?workspaceId=ws_1", "token-a")).json()
+    expect(body).toMatchObject({ harness, activeHarness: harness, ready: true })
+    expect(body).not.toHaveProperty("agentType")
+  })
+
+  test("legacy health identity cannot reconstruct a canonical selection", async () => {
+    const services = fakeServices({ openWorkspace: vi.fn(async () => ({ role: "owner", workspace: { org_id: "org_1" } })) as never })
+    const probe = hostedHarnessRuntimeStatus(services, { runtimeFetch: async ({ path }) => Response.json(path === "/global/health" ? { workspaceId: "ws_1" } : { ok: true, agentType: "claude", acpBinary: "agent", harness: { kind: "native", harnessId: "unknown" } }) })
+    expect(await probe(signed, { workspaceId: "ws_1" })).toEqual({ ok: true })
+  })
   test("resolves the workspace, verifies runtime identity, and shapes /api/wr/health", async () => {
     const openWorkspace = vi.fn(async () => ({
       role: "editor",
@@ -215,8 +230,8 @@ describe("hostedHarnessRuntimeStatus — the production relay call", () => {
       return Response.json({
         ok: true,
         status: "ready",
-        agentType: "claude",
-        acpBinary: null,
+        harness: { kind: "native", harnessId: "claude" },
+        activeHarness: { kind: "native", harnessId: "claude" },
         model: null,
         harnessHealth: { status: "ok" },
       })
@@ -228,8 +243,8 @@ describe("hostedHarnessRuntimeStatus — the production relay call", () => {
     expect(result).toEqual({
       ok: true,
       status: "ready",
-      agentType: "claude",
-      acpBinary: null,
+      harness: { kind: "native", harnessId: "claude" },
+      activeHarness: { kind: "native", harnessId: "claude" },
       model: null,
       harnessHealth: { status: "ok" },
     })

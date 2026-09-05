@@ -572,13 +572,13 @@ describe("agent config", () => {
 
   // ── getEffectiveConfig ──────────────────────────────────────────────
 
-  test("effective config is empty when no user MCP servers exist", async () => {
+  test("effective config retains its canonical version when no user MCP servers exist", async () => {
     await mod.saveUserConfig({ version: 3, connections: {}, mcp: {}, auth: {} })
     const config = await mod.getEffectiveConfig()
-    expect(config).toEqual({})
+    expect(config).toEqual({ version: 3, mcp: {}, connections: [], auth: {} })
   })
 
-  test("effective config transforms stdio servers into local format", async () => {
+  test("effective config resolves stdio servers into the provider-neutral format", async () => {
     await mod.saveUserConfig({ version: 3, connections: {},
       mcp: {
         "my-tool": {
@@ -592,10 +592,7 @@ describe("agent config", () => {
     })
     const config = await mod.getEffectiveConfig()
     expect(config.mcp).toBeDefined()
-    const mcp = config.mcp as Record<string, { type: string; command: string[]; environment: Record<string, string> }>
-    expect(mcp["my-tool"].type).toBe("local")
-    expect(mcp["my-tool"].command).toEqual(["npx", "-y", "tool-server"])
-    expect(mcp["my-tool"].environment).toEqual({ TOOL_MODE: "test" })
+    expect(config.mcp).toEqual({ "my-tool": { name: "my-tool", source: "user", transport: "stdio", command: "npx", args: ["-y", "tool-server"], env: { TOOL_MODE: "test" } } })
   })
 
   test("effective config transforms remote servers", async () => {
@@ -610,10 +607,7 @@ describe("agent config", () => {
       auth: {},
     })
     const config = await mod.getEffectiveConfig()
-    const mcp = config.mcp as Record<string, { type: string; url: string; headers: Record<string, string> }>
-    expect(mcp["remote-tool"].type).toBe("remote")
-    expect(mcp["remote-tool"].url).toBe("https://mcp.example.com")
-    expect(mcp["remote-tool"].headers.Authorization).toBe("Bearer token")
+    expect(config.mcp).toEqual({ "remote-tool": { name: "remote-tool", source: "user", transport: "remote", url: "https://mcp.example.com", headers: { Authorization: "Bearer token" } } })
   })
 
   test("effective config excludes disabled servers", async () => {

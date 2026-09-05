@@ -127,7 +127,7 @@ export interface AgentHarnessAdapterCore {
   listCommands?(directory: RuntimeDirectory): Promise<AgentCommand[]>
   readRuntimeHealth?(directory: RuntimeDirectory, context?: AgentHarnessAdapterHealthContext): AgentHarnessAdapterHealth
 
-  dispose(): void
+  dispose(): void | Promise<void>
 }
 
 export interface SupportsAbort {

@@ -3,7 +3,6 @@ import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/a
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { configureWorkspaceStore, updateWorkspace, getWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { configureWorkspaceSupervisorPort } from "@claxedo/server-core/workspace/supervisor-port"
-import { createClaxedoRuntimeConfig } from "@claxedo/server-core/hosts/workspace-runtime/runtime-config"
 import { IDLE_MS, now } from "./clock"
 import {
   pushRuntimeConfig,
@@ -126,9 +125,7 @@ export async function syncWorkspaceRuntimeAgentExtensions(
   const entry = runtimes.get(workspaceId)
   if (!entry || entry.status !== "ready" || !entry.url) return
   try {
-    await pushRuntimeConfig(entry, await createClaxedoRuntimeConfig({
-      workspaceDir: runtimeWorkspaceDir(entry.ws),
-      workspaceId,
+    await pushRuntimeConfig(entry, await runtimeConfigSnapshot(entry, {
       workspaceInstalls: installs,
       ...(options.policyOverrides ? { policyOverrides: options.policyOverrides } : {}),
     }))
@@ -141,11 +138,10 @@ export async function syncWorkspaceRuntimeAgentExtensions(
 }
 
 export async function broadcastRuntimeConfig() {
-  const cfg = await runtimeConfigSnapshot()
   await Promise.allSettled(
     [...runtimes.values()]
       .filter((item) => item.status === "ready" && item.url)
-      .map((item) => pushRuntimeConfig(item, cfg)),
+      .map((item) => pushRuntimeConfig(item)),
   )
 }
 

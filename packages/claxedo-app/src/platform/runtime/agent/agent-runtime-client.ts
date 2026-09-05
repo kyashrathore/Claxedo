@@ -1,4 +1,4 @@
-import type { SessionPromptResponse, Todo } from "@opencode-ai/sdk/v2/client"
+import type { AgentContentPart, AgentPresentationMessage, AgentPresentationSession, AgentPromptResponse, AgentSession, AgentTodo, PromptModel } from "@claxedo/agent-runtime-contract"
 import { apiBearerToken, authFetch } from "@/platform/api/api"
 import { createControlPlaneAccountFetch } from "@/platform/account/control-plane-account-fetch"
 import { AgentRuntimeRequestError, runtimeRequestError } from "./agent-runtime-request-error"
@@ -40,6 +40,11 @@ import {
   type AgentRuntimeSessionResource,
 } from "./agent-runtime-urls"
 import { requestName, sessionPerf } from "@/platform/performance/session-perf"
+
+function appendHarnessSelection(query: URLSearchParams, selection: HarnessSelection | undefined) {
+  if (selection) Object.entries(harnessSelectionQuery(selection)).forEach(([key, value]) => query.set(key, value))
+}
+
 export { centralRuntimePath } from "./central-runtime-path"
 export type { AgentRuntimeDirectory } from "./agent-runtime-urls"
 export type {
@@ -57,43 +62,13 @@ export type {
 } from "@/platform/runtime/session"
 
 export type AgentRuntimeSessionCreateInput = {
+  id?: string
   directory: AgentRuntimeDirectory
   harness: HarnessSelection
   agent: string
   model: PromptModel
   variant?: string
   headers?: Record<string, string>
-}
-
-export type AgentRuntimeOpenCodeClient = {
-  session: {
-    create?: (input: { directory: AgentRuntimeDirectory }, init?: { headers?: Record<string, string> }) => Promise<{ data?: RuntimeSession; error?: unknown }>
-    get?: (input: { sessionID: string }) => Promise<{ data?: RuntimeSession }>
-    messages?: (input: {
-      sessionID: string
-      directory?: string
-    } & SessionMessagePageRequest, options?: { signal?: AbortSignal }) => Promise<{ data?: AgentRuntimeMessageRow[]; response: Response }>
-    todo?: (input: { sessionID: string }) => Promise<{ data?: Todo[] }>
-    prompt?: (input: AgentRuntimePromptPayload) => Promise<{ data?: SessionPromptResponse; error?: unknown }>
-    promptAsync?: (input: AgentRuntimePromptPayload) => Promise<unknown>
-    abort?: (input: { sessionID: string }) => Promise<unknown>
-  }
-}
-
-export const DEFAULT_AGENT_RUNTIME_CAPABILITIES: SessionTransportCapabilities = {
-  transport: "opencode",
-  abort: true,
-  reconnect: false,
-  replay: true,
-  permissions: true,
-  questions: true,
-  todos: true,
-  commands: true,
-  fork: true,
-  revert: true,
-  unrevert: true,
-  configOptions: false,
-  goals: true,
 }
 
 export function agentRuntimeWorkspaceTargetQueryKey(input: { serverUrl?: string; directory: AgentRuntimeDirectory }) {
@@ -425,7 +400,7 @@ export function createAgentRuntimeClient(options: {
       // its declaration above). Without this, that case fell through to the
       // central sessions list, which holds nothing for user-hosted workspaces.
       if ((target.workspace?.kind ?? options.workspaceKind) === "user-hosted") {
-        const url = sessionListUrl({
+        const url = agentRuntimeSessionListUrl({
           serverUrl: serverUrl(),
           scope: input.directory,
           roots: input.roots,
@@ -461,13 +436,12 @@ export function createAgentRuntimeClient(options: {
     listSessions,
     async createSession(input: AgentRuntimeSessionCreateInput) {
       const url = agentRuntimeSessionListUrl({ serverUrl: serverUrl(), scope: input.directory })
-      const selection = harnessSelectionQuery(input.harness)
-      if ("nativeHarness" in selection) url.searchParams.set("nativeHarness", selection.nativeHarness)
-      else url.searchParams.set("connectionId", selection.connectionId)
+      appendHarnessSelection(url.searchParams, input.harness)
       const res = await fetchRuntimePath({
         directory: input.directory,
         path: `${url.pathname}${url.search}`,
         init: jsonInit("POST", {
+          ...(input.id ? { id: input.id } : {}),
           agent: input.agent,
           model: input.model,
           ...(input.variant ? { variant: input.variant } : {}),
@@ -519,9 +493,10 @@ export function createAgentRuntimeClient(options: {
       })
       return await readJson<unknown>(res)
     },
-    async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string; harness?: string; signal?: AbortSignal }) {
-      if (!input.sessionID && !input.harness) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
-      if (input.sessionID && !shouldUseRuntimeSessionTransport(input)) return DEFAULT_AGENT_RUNTIME_CAPABILITIES
+    async getCapabilities(input: { directory: AgentRuntimeDirectory; sessionID?: string; harness?: HarnessSelection; signal?: AbortSignal }) {
+      const query = new URLSearchParams({ directory: input.directory })
+      const selection = input.harness
+      appendHarnessSelection(query, selection)
       const res = input.sessionID
         ? await fetchRuntimeSession({
           sessionID: input.sessionID,
@@ -531,7 +506,7 @@ export function createAgentRuntimeClient(options: {
         })
         : await fetchRuntimePath({
           directory: input.directory,
-          path: `/session/capabilities?directory=${encodeURIComponent(input.directory)}&harness=${encodeURIComponent(input.harness!)}`,
+          path: `/session/capabilities?${query}`,
           init: { headers: { Accept: "application/json" }, signal: input.signal },
         })
       return await readJson<SessionTransportCapabilities>(res)
@@ -579,32 +554,24 @@ export function createAgentRuntimeClient(options: {
     /**
      * Permission modes for a session, in the HARNESS's own vocabulary.
      */
-    async getPermissionModes(input: { directory: AgentRuntimeDirectory; sessionID: string; harness?: string }) {
+    async getPermissionModes(input: { directory: AgentRuntimeDirectory; sessionID: string; harness?: HarnessSelection }) {
       const init: RequestInit = { cache: "no-store", headers: { Accept: "application/json" } }
-      // A DRAFT has no session, so it asks the directory-scoped route instead of
-      // showing nothing until after the first message. Same payload either way;
-      // the difference is only which harness state can answer — a draft gets the
-      // static list where one exists, and an ACP agent honestly reports none
-      // until it has been asked.
-      //
-      // `harness` is REQUIRED on the draft path, not decoration. A draft has no
-      // session for the route to resolve an adapter from, so without it the
-      // runtime falls back to the directory's default harness and answers for
-      // THAT one — while the picker labels the group with the harness the
-      // composer actually targets. The visible symptom was a group headed
-      // "Codex" reading "opencode has no permission modes of its own".
-      const harnessQuery = input.harness ? `&harness=${encodeURIComponent(input.harness)}` : ""
+      // Existing sessions own their binding; drafts must name an explicit
+      // native harness or opaque connection before querying available modes.
+      const selection = input.harness ?? options.sessionRef?.harness
+      if (!input.sessionID && !selection) throw new Error("Draft permission modes require a harness selection")
+      const query = new URLSearchParams({ directory: input.directory })
+      appendHarnessSelection(query, selection)
       const res = input.sessionID
         ? await fetchRuntimeSession({
           sessionID: input.sessionID,
           directory: input.directory,
           suffix: "/permission-mode",
-          ...(input.harness ? { query: { harness: input.harness } } : {}),
           init,
         })
         : await fetchRuntimePath({
           directory: input.directory,
-          path: `/permission/modes?directory=${encodeURIComponent(input.directory)}${harnessQuery}`,
+          path: `/permission/modes?${query}`,
           init,
         })
       return { data: await readJson<AgentRuntimePermissionModeState>(res) }
@@ -684,13 +651,8 @@ export function createAgentRuntimeClient(options: {
       })
     },
     subscribeToEvents(input: { serverUrl?: string; sessionID?: string; workspaceId?: string }) {
-      if (!input.workspaceId) {
-        return claxedoEventsUrl({
-          serverUrl: input.serverUrl ?? serverUrl(),
-          ...(input.sessionID ? { sessionID: input.sessionID } : {}),
-        })
-      }
-      const url = new URL(`/workspaces/${encodeURIComponent(input.workspaceId)}/global/event`, input.serverUrl ?? serverUrl())
+      const path = input.workspaceId ? `/workspaces/${encodeURIComponent(input.workspaceId)}/global/event` : "/api/wr/events"
+      const url = new URL(path, input.serverUrl ?? serverUrl())
       if (input.sessionID) url.searchParams.set("sessionID", input.sessionID)
       return url
     },

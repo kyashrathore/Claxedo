@@ -558,7 +558,7 @@ test.describe("core harness ownership (local) @core", () => {
     await page.reload()
     await page.waitForLoadState("domcontentloaded")
     const reloaded = page.locator('[data-action="prompt-harness-model"]:visible').last()
-    await expect(reloaded).toHaveAttribute("data-harness", "claude-sdk", { timeout: 20_000 })
+    await expect(reloaded).toHaveAttribute("data-harness", "claude", { timeout: 20_000 })
     await expect(
       reloaded,
       "the harness-resolved default overwrote the model the user explicitly chose",
@@ -593,7 +593,7 @@ test.describe("core harness ownership (local) @core", () => {
     // deployment configures none — so the only Claude on offer is the native SDK.
     await switchDraftHarness(page, /^Claude$/, 0)
     const control = page.locator('[data-action="prompt-harness-model"]:visible').last()
-    await expect(control).toHaveAttribute("data-harness", "claude-sdk", { timeout: 20_000 })
+    await expect(control).toHaveAttribute("data-harness", "claude", { timeout: 20_000 })
     await expect(control).toHaveAttribute("data-model", "default", { timeout: 20_000 })
 
     await control.click()
@@ -787,13 +787,19 @@ test.describe("core harness ownership (local) @core", () => {
 
     await switchDraftHarness(page, /^Pi$/, 0)
     await expect(page.locator('[data-action="prompt-harness-model"][data-harness="pi"]').last()).toBeVisible({ timeout: 20_000 })
-    await expectOnlyHarnessModelControl(page, /Virtual|virtual/i)
-    // `createDraftDefaultPreferences` writes the v2 record
-    // (`{version:2, byHarness, lastHarness}` — `draft-defaults.ts`'s `save`), so the
-    // harness a new draft opens with is `lastHarness`, and the per-harness slot is
-    // keyed under `byHarness`.
-    await expect.poll(() => page.evaluate(() => Object.entries(localStorage)
-      .find(([key]) => key.includes("session.draft-default.v1"))?.[1])).toContain('"lastHarness":"pi"')
+    await expectOnlyHarnessModelControl(page, /Big Pickle|big-pickle/i)
+    await expect.poll(() => page.evaluate(() => {
+      const value = Object.entries(localStorage).find(([key]) => key.includes("session.draft-default.v1"))?.[1]
+      return value ? JSON.parse(value) : undefined
+    })).toMatchObject({
+      version: 3,
+      lastHarness: { kind: "native", harnessId: "pi" },
+      byHarness: {
+        [JSON.stringify({ kind: "native", harnessId: "pi" })]: {
+          model: { providerID: "opencode", modelID: "big-pickle-1" },
+        },
+      },
+    })
     // Pi obtains models from its provider catalog rather than harness config options.
     await expect(page.locator('[title="Agent runtime unreachable after timeout"]')).toHaveCount(0)
     await expect(page.locator('[title="Connecting to agent runtime..."]')).toHaveCount(0)

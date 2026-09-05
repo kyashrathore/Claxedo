@@ -1,11 +1,10 @@
 // Claxedo adds mobile settings navigation and Claxedo-owned terminal and sandbox tabs.
 import { Button } from "@opencode-ai/ui/button"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { Tag } from "@opencode-ai/ui/tag"
 import { TextField } from "@opencode-ai/ui/text-field"
 import { showToast } from "@opencode-ai/ui/toast"
-import { DialogCustomProvider, useProviders } from "@/features/settings/app-ports"
+import { useProviders } from "@/features/settings/app-ports"
 import { createEffect, createMemo, createSignal, type Component, For, Show } from "solid-js"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { popularProviders } from "@/platform/query/provider-list"
@@ -19,7 +18,6 @@ import {
   disconnectProvider,
   providerSourceTagKey,
   removeProviderAuthEntry,
-  setProviderDisabled,
 } from "@/features/settings/provider-settings-logic"
 import { ProviderSetupRow } from "@/features/settings/ui/provider-setup-row"
 import { SettingsScopeSelector } from "@/features/settings/ui/scope-selector"
@@ -47,12 +45,9 @@ const PROVIDER_NOTES = [
 ] as const
 
 export const SettingsProviders: Component = () => {
-  const dialog = useDialog()
   const language = useLanguage()
-  // The one question this surface answers: which harness, on which machine.
-  // Both come from the explicit selection above the list, never from a default.
   const scope = useSettingsScope()
-  const providers = useProviders(scope.harness, scope.scopeRef)
+  const providers = useProviders(() => scope.nativeHarness() ?? "", scope.scopeRef)
   const providerList = createMemo(() => providers.state())
   const providerItems = createMemo(() => Array.from(providerList().all.values()))
 
@@ -94,9 +89,6 @@ export const SettingsProviders: Component = () => {
   const type = (item: ProviderItem) => language.t(providerSourceTagKey(source(item)))
   const canDisconnect = (item: ProviderItem) => canDisconnectProvider(source(item))
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
-  // Custom providers are entries in the OpenCode provider registry; no other
-  // harness reads one.
-  const showCustom = () => scope.harness() === "opencode"
   const connectedIds = createMemo(() => new Set(providerList().connected))
   const harnessLabel = () => scope.harnesses().find((item) => item.id === scope.harness())?.label ?? scope.harness()
   const workspaceLabel = () => scope.workspace()?.label ?? ""
@@ -121,21 +113,13 @@ export const SettingsProviders: Component = () => {
         await claxedoCredentialRequest({ providerId: id }, { method: "DELETE" })
       },
       removeAuth: async (id) => {
+        const harness = scope.nativeHarness()
+        if (!harness) throw new Error("External connection credentials are not managed by Claxedo")
         await removeProviderAuthEntry({
           serverUrl: getClaxedoServerUrl(),
           providerId: id,
-          harness: scope.harness(),
+          harness,
           directory: scope.scopeRef(),
-          request: authFetch,
-        })
-      },
-      disableInConfig: async (id) => {
-        await setProviderDisabled({
-          serverUrl: getClaxedoServerUrl(),
-          providerId: id,
-          harness: scope.harness(),
-          directory: scope.scopeRef(),
-          disabled: true,
           request: authFetch,
         })
       },
@@ -190,7 +174,13 @@ export const SettingsProviders: Component = () => {
             )}
           </Show>
 
-          <Show when={!providers.error() && !providers.loading() && providerItems().length === 0}>
+          <Show when={scope.harnessSelection() && scope.nativeHarness() !== "pi"}>
+            <p class="text-12-regular text-text-weak" data-component="providers-externally-managed">
+              {language.t("settings.providers.externallyManaged", { harness: harnessLabel() })}
+            </p>
+          </Show>
+
+          <Show when={scope.nativeHarness() === "pi" && !providers.error() && !providers.loading() && providerItems().length === 0}>
             <p class="text-12-regular text-text-weak" data-component="providers-catalog-empty">
               {language.t("settings.providers.catalog.empty", {
                 harness: harnessLabel(),
@@ -199,11 +189,7 @@ export const SettingsProviders: Component = () => {
             </p>
           </Show>
 
-          {/* The custom-provider entry ADDS a provider to the OpenCode
-              registry, so it renders whenever this harness owns that registry.
-              An empty catalog is exactly when a user reaches for it, so it
-              cannot depend on the catalog already having rows. */}
-          <Show when={providerItems().length > 0 || showCustom()}>
+          <Show when={providerItems().length > 0}>
             <div class="flex flex-col gap-3" data-component="harness-providers-section">
               <h3 class="text-14-medium text-text-strong">
                 {language.t("settings.providers.section.harness", { harness: harnessLabel() })}
@@ -229,7 +215,7 @@ export const SettingsProviders: Component = () => {
                             name={item.name}
                             status="missing"
                             providerId={item.id}
-                            harness={scope.harness()}
+                            harness={scope.nativeHarness() ?? ""}
                             scope={scope.scopeRef()}
                             note={note(item.id) ? language.t(note(item.id)!) : undefined}
                             onConnected={async () => { await providers.refresh() }}
@@ -263,31 +249,6 @@ export const SettingsProviders: Component = () => {
                   }}
                 </For>
 
-                <Show when={showCustom()}>
-                  <div
-                    class="flex flex-wrap items-center justify-between gap-4 border-b border-border-weak-base py-3 last:border-none"
-                    data-component="custom-provider-section"
-                  >
-                    <div class="flex min-w-0 items-center gap-3">
-                      <ProviderIcon id="synthetic" class="size-5 shrink-0 icon-strong-base" />
-                      <div class="flex min-w-0 flex-col gap-0.5">
-                        <span class="text-14-medium text-text-strong">{language.t("provider.custom.title")}</span>
-                        <span class="text-12-regular text-text-weak">{language.t("settings.providers.custom.description")}</span>
-                      </div>
-                    </div>
-                    <div class="flex shrink-0 items-center gap-2">
-                      <Tag>{language.t("settings.providers.tag.custom")}</Tag>
-                      <Button
-                        size="large"
-                        variant="secondary"
-                        icon="plus-small"
-                        onClick={() => dialog.show(() => <DialogCustomProvider back="close" scope={scope.scopeRef()} />)}
-                      >
-                        {language.t("common.connect")}
-                      </Button>
-                    </div>
-                  </div>
-                </Show>
               </SettingsList>
             </div>
           </Show>

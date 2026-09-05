@@ -205,17 +205,17 @@ describe("@claxedo/local-server closure", () => {
     // The tenant-aware runtime principal composer adds one local module while
     // keeping the package closure unchanged and gives every runtime proxy the
     // same fail-closed identity path. A further rise means the desktop product
-    // gained surface, and a fall should lower the ceiling with it. The package
+    // gained surface, and a fall should lower the ceiling with it.
     // The explicit external OpenCode server provider adds the reviewed 22nd
     // package at the desktop composition root; it contains only the isolated
     // HTTP/SSE adapter and no embedded engine or generated client. The package
     // number is the reach that matters — a rise is a new dependency the
     // unsigned desktop now carries and is worth reading before it is bumped.
-    // The user-hosted serving surface (the machine-wide host tunnel: its
-    // routes, the serving loop, and the deny/root/workspace path map) and the
-    // user extension routes add four local modules with no new package.
+    // AgentConfigRoutes owns the authenticated Pi catalog in provider-routes.ts;
+    // shell project-routes owns authorized metadata edits and catalog replay.
+    // The reviewed closure contains exactly 57 modules.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(61)
-    expect(packages.size).toBeLessThanOrEqual(21)
+    expect(modules.size).toBeLessThanOrEqual(57)
+    expect(packages.size).toBeLessThanOrEqual(22)
   })
 })

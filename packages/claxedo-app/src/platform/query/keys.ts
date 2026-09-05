@@ -39,7 +39,7 @@ const CENTRAL_RUNTIME_SCOPE = "central"
  * A query that fires before workspace resolution answers from a different
  * authority than the same query after it, so the resolution is part of the key:
  * the pre-resolution answer is never served to a resolved reader. One builder
- * for every family that carries it (`agents`, `commands`, `config`,
+ * for every family that carries it (`agents`, `commands`,
  * `fileStatus`) so a reader and a writer cannot disagree about its shape.
  */
 export function workspaceQueryKey(
@@ -80,8 +80,6 @@ export const queryKeys = {
   directory: {
     project: (baseUrl: string | undefined, directory: string) =>
       ["directory", normalized(baseUrl), "project", directory] as const,
-    config: (baseUrl: string | undefined, directory: string, workspaceKey?: string) =>
-      ["directory", normalized(baseUrl), "config", directory, workspaceKey ?? ""] as const,
     // `workspaceKey` carries the RESOLVED workspace identity (kind:id). The
     // agents queryFn branches on `workspace?.kind` (central agent-config vs
     // workspace runtime) — keying on the resolution means a query that fired

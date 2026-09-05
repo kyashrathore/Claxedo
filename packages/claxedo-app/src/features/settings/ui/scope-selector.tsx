@@ -4,7 +4,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { useSettingsScope } from "@/features/settings/scope/settings-scope"
 
 type WorkspaceChoice = { value: string; label: string }
-type HarnessChoice = { value: string; label: string }
+type HarnessChoice = { value: string; selectionKey: string; label: string }
 
 /**
  * Which workspace and which harness these settings are about.
@@ -24,7 +24,7 @@ export const SettingsScopeSelector: Component = () => {
       label: option.project === option.label ? option.label : `${option.project} · ${option.label}`,
     })))
   const harnessChoices = createMemo<HarnessChoice[]>(() =>
-    scope.harnesses().map((option) => ({ value: option.id, label: option.label })))
+    scope.harnesses().map((option) => ({ value: encodeURIComponent(option.id), selectionKey: option.id, label: option.label })))
 
   return (
     <div class="flex flex-wrap items-end gap-4" data-component="settings-scope-selector">
@@ -64,12 +64,12 @@ export const SettingsScopeSelector: Component = () => {
           data-action="settings-scope-harness"
           placeholder={language.t("settings.scope.harness.label")}
           options={harnessChoices()}
-          current={harnessChoices().find((option) => option.value === scope.harness())}
+          current={harnessChoices().find((option) => option.selectionKey === scope.harness())}
           value={(option) => option.value}
           label={(option) => option.label}
           onSelect={(option) => {
             if (!option) return
-            scope.selectHarness(option.value)
+            scope.selectHarness(option.selectionKey)
           }}
           variant="secondary"
           size="small"

@@ -101,6 +101,8 @@ describe("route ownership", () => {
       "/provider/claude-acp/oauth/start",
       "/auth/openai",
       "/api/claxedo/agent-config",
+      "/api/claxedo/agent-config/providers",
+      "/api/claxedo/agent-config/providers/auth",
       "/api/claxedo/agent-config/harness",
       "/api/claxedo/agent-config/mcp/my-server",
       "/api/claxedo/agent-config/commands",
@@ -126,7 +128,6 @@ describe("route ownership", () => {
       "/mcp/local/disconnect",
       "/agent",
       "/command",
-      "/provider",
     ]
 
     for (const path of paths) {

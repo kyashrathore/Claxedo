@@ -51,20 +51,6 @@ describe("submit.ts architecture contract", () => {
   })
 
 
-  test("shell and slash dispatch stay in the command helper without slash re-parsing", async () => {
-    const submitSource = await Bun.file(new URL("./submit.ts", import.meta.url)).text()
-    const helperSource = await Bun.file(new URL("./submit-command-prompt.ts", import.meta.url)).text()
-
-    expect(submitSource).toContain("dispatchCommandPromptSubmit")
-    expect(submitSource).not.toContain("dispatchShellCommand")
-    expect(submitSource).not.toContain("dispatchSlashCommand")
-    expect(helperSource).toContain("dispatchShellCommand")
-    expect(helperSource).toContain("dispatchSlashCommand")
-    expect(helperSource).not.toContain("startsWith")
-    expect(helperSource).not.toContain("customCommandNames")
-  })
-
-
   test("created session finalization stays in the create-session helper", async () => {
     const submitSource = await Bun.file(new URL("./submit.ts", import.meta.url)).text()
     const helperSource = await Bun.file(new URL("./submit-create-session.ts", import.meta.url)).text()
@@ -92,7 +78,7 @@ describe("submit.ts architecture contract", () => {
     expect(submitSource).not.toContain("scheduleSessionProjectionPull")
     expect(helperSource).toContain("resolveSubmitSessionTarget")
     expect(helperSource).toContain("claimHarnessSession")
-    expect(helperSource).not.toContain("createSessionWithLifecycle")
+    expect(helperSource).toContain("createSessionWithLifecycle")
     expect(helperSource).toContain("applyCreatedSessionTargetEffects")
     expect(helperSource).toContain("scheduleSessionProjectionPull")
     expect(helperSource).toContain('idempotencyKey: `session-created:')

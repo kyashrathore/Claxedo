@@ -51,53 +51,7 @@ RUN cd /opt/workspace-runtime && \
     command -v workspace-runtime && \
     test "$(workspace-runtime --version)" = "$(cat /opt/workspace-runtime/workspace-runtime-version)"
 
-# Prove the exact production chain serves the durable Session V2 contract
-# through workspace-runtime, including a compressed history page.
-RUN set -eu; \
-    mkdir -p /tmp/opencode-session-v2-smoke; \
-    cd /tmp/opencode-session-v2-smoke; \
-    # Production session ids are derived from run ids carrying owner,
-    # operation, and work-item ids, so they run to ~250 characters.
-    # A short id here would pass against a router that silently refuses to match
-    # path parameters over 100 chars — which is exactly how that bug reached
-    # staging, creating Sessions that every later route reported as absent.
-    smoke_id="ses_image_smoke_$(printf 'w%.0s' $(seq 1 200))"; \
-    failure_id="ses_image_failure_$(printf 'f%.0s' $(seq 1 200))"; \
-    export smoke_id failure_id; \
-    setsid env OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true opencode serve --hostname=127.0.0.1 --port=4096 >/tmp/opencode-session-v2.log 2>&1 & \
-    engine_pid=$!; \
-    setsid env WORKSPACE_RUNTIME_PORT=2593 WORKSPACE_RUNTIME_HOSTNAME=127.0.0.1 WORKSPACE_RUNTIME_ID=image-smoke WORKSPACE_RUNTIME_DIRECTORY=/tmp/opencode-session-v2-smoke OPENCODE_URL=http://127.0.0.1:4096 workspace-runtime >/tmp/workspace-runtime-smoke.log 2>&1 & \
-    runtime_pid=$!; \
-    stop_runtime() { python3 -c 'import os,signal,sys; os.killpg(int(sys.argv[1]), signal.SIGKILL)' "$runtime_pid" 2>/dev/null || true; }; \
-    trap stop_runtime EXIT; \
-    ready=0; \
-    for attempt in $(seq 1 120); do \
-      if curl -fsS http://127.0.0.1:2593/api/wr/health >/tmp/workspace-runtime-health.json; then ready=1; break; fi; \
-      sleep 0.25; \
-    done; \
-    if [ "$ready" -ne 1 ]; then cat /tmp/opencode-session-v2.log /tmp/workspace-runtime-smoke.log; exit 1; fi; \
-    node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2.json','utf8'));const id=value.id||value.data?.id;if(id!==process.env.smoke_id)throw new Error('Session V2 create did not adopt the requested id')"; \
-    for sequence in $(seq 1 20); do \
-      curl -fsS -X POST -H 'content-type: application/json' \
-        -d "{\"id\":\"msg_image_smoke_$sequence\",\"prompt\":{\"text\":\"Durable image smoke prompt $sequence with enough repeated content to force response compression through the proxy boundary.\"},\"resume\":false}" \
-        "http://127.0.0.1:2593/api/session/$smoke_id/prompt" >/dev/null; \
-    done; \
-    curl -fsS -H 'accept-encoding: gzip' "http://127.0.0.1:2593/api/session/$smoke_id/history?limit=100&after=0" >/tmp/opencode-session-v2-history.json; \
-    node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2-history.json','utf8'));if(!Array.isArray(value.data)||value.data.length!==20)throw new Error('Session V2 history was truncated across workspace-runtime')"; \
-    curl -fsS -X POST -H 'content-type: application/json' \
-      -d "{\"id\":\"$failure_id\",\"agent\":\"build\",\"model\":{\"providerID\":\"missing-provider\",\"id\":\"missing-model\",\"variant\":\"invalid\"},\"location\":{\"directory\":\"/tmp/opencode-session-v2-smoke\"}}" \
-      http://127.0.0.1:2593/api/session >/dev/null; \
-    curl -fsS -X POST -H 'content-type: application/json' \
-      -d '{"id":"msg_image_failure","prompt":{"text":"Prove pre-provider failures are durable."},"resume":true}' \
-      "http://127.0.0.1:2593/api/session/$failure_id/prompt" >/dev/null; \
-    failed=0; \
-    for attempt in $(seq 1 40); do \
-      curl -fsS "http://127.0.0.1:2593/api/session/$failure_id/history?limit=100&after=0" >/tmp/opencode-session-v2-failure.json; \
-      if node -e "const fs=require('fs');const value=JSON.parse(fs.readFileSync('/tmp/opencode-session-v2-failure.json','utf8'));if(!value.data?.some((event)=>event.type.startsWith('session.next.step.failed')))process.exit(1)"; then failed=1; break; fi; \
-      sleep 0.25; \
-    done; \
-    if [ "$failed" -ne 1 ]; then cat /tmp/opencode-session-v2.log /tmp/workspace-runtime-smoke.log; exit 1; fi; \
-    stop_servers; \
-    trap - EXIT
+# Exercise the canonical session lifecycle without starting an agent server.
+RUN node /opt/workspace-runtime/workspace-runtime-image-smoke.mjs
 
 WORKDIR /workspace

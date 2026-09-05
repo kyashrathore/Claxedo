@@ -16,14 +16,8 @@ import {
 import { isHarnessSelection } from "./harness-selection"
 
 describe("harness-id vocabulary (single source of truth)", () => {
-  test("HARNESS_IDS enumerates all five canonical built-in harness kinds", () => {
-    expect([...HARNESS_IDS]).toEqual([
-      "claude-sdk",
-      "codex-app-server",
-      "cursor-sdk",
-      "opencode",
-      "pi",
-    ])
+  test("HARNESS_IDS enumerates only supported native harnesses", () => {
+    expect([...HARNESS_IDS]).toEqual(["claude", "codex", "cursor", "pi"])
   })
 
   test("structured selection accepts closed native ids and opaque connections", () => {
@@ -35,6 +29,19 @@ describe("harness-id vocabulary (single source of truth)", () => {
 })
 
 describe("SessionRef", () => {
+  test("native and connection harnesses with the same ID remain distinct", () => {
+    const native = centralSessionRef({ sessionId: "ses_1", harness: { kind: "native", harnessId: "codex" } })
+    const connection = centralSessionRef({ sessionId: "ses_1", harness: { kind: "connection", connectionId: "codex" } })
+    const copiedConnection = centralSessionRef({
+      sessionId: "ses_1",
+      harness: { connectionId: "codex", kind: "connection" },
+    })
+
+    expect(sameSessionRef(native, connection)).toBe(false)
+    expect(sameSessionRef(connection, copiedConnection)).toBe(true)
+    expect(sessionHarness(connection!)).toEqual({ kind: "connection", connectionId: "codex" })
+  })
+
   test("sameSessionRef includes authoritative harness identity", () => {
     const base = centralSessionRef({ sessionId: "ses_1" })
     const pi = centralSessionRef({ sessionId: "ses_1", harness: { kind: "native", harnessId: "pi" } })
@@ -120,10 +127,12 @@ describe("SessionRef", () => {
   })
 
   test("workspace refs avoid inventing backing for unknown directory-like scopes", () => {
-    expect(sessionRefForWorkspaceSession({
-      sessionId: "ses_unknown",
-      directory: "workspace:ws_missing_inventory",
-    })).toBeUndefined()
+    expect(
+      sessionRefForWorkspaceSession({
+        sessionId: "ses_unknown",
+        directory: "workspace:ws_missing_inventory",
+      }),
+    ).toBeUndefined()
   })
 
   test("workspace refs do not invent central virtual sessions when there is no backing", () => {
@@ -156,39 +165,47 @@ describe("SessionRef", () => {
   })
 
   test("constructors preserve explicit harness identity", () => {
-    expect(centralSessionRef({
-      sessionId: "ses_central",
-      harness: { id: "acp:claude", binary: "/tmp/claude-agent-acp" },
-    })).toMatchObject({
+    expect(
+      centralSessionRef({
+        sessionId: "ses_central",
+        harness: { id: "acp:claude", binary: "/tmp/claude-agent-acp" },
+      }),
+    ).toMatchObject({
       harness: { id: "acp:claude", binary: "/tmp/claude-agent-acp" },
     })
-    expect(sessionRefForWorkspaceSession({
-      sessionId: "ses_workspace",
-      directory: "opaque-directory",
-      workspace: { workspaceId: "ws_real", kind: "cloud" },
-      harness: { id: "acp:codex" },
-    })).toMatchObject({
+    expect(
+      sessionRefForWorkspaceSession({
+        sessionId: "ses_workspace",
+        directory: "opaque-directory",
+        workspace: { workspaceId: "ws_real", kind: "cloud" },
+        harness: { id: "acp:codex" },
+      }),
+    ).toMatchObject({
       harness: { id: "acp:codex" },
     })
-    expect(localSessionRef({
-      sessionId: "ses_local",
-      cwd: "/repo/main",
-      harness: { kind: "native", harnessId: "pi" },
-    })).toMatchObject({
+    expect(
+      localSessionRef({
+        sessionId: "ses_local",
+        cwd: "/repo/main",
+        harness: { kind: "native", harnessId: "pi" },
+      }),
+    ).toMatchObject({
       harness: { kind: "native", harnessId: "pi" },
     })
   })
 
   test("retargeting preserves workspace backing for adjacent session opens", () => {
-    expect(retargetSessionRef({
-      sessionId: "ses_next",
-      source: {
-        sessionId: "ses_current",
-        host: "workspace",
-        workspaceId: "ws_real",
-        toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud", hostId: "host_1" },
-      },
-    })).toEqual({
+    expect(
+      retargetSessionRef({
+        sessionId: "ses_next",
+        source: {
+          sessionId: "ses_current",
+          host: "workspace",
+          workspaceId: "ws_real",
+          toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud", hostId: "host_1" },
+        },
+      }),
+    ).toEqual({
       sessionId: "ses_next",
       host: "workspace",
       workspaceId: "ws_real",
@@ -197,31 +214,35 @@ describe("SessionRef", () => {
   })
 
   test("retargeting preserves source harness identity", () => {
-    expect(retargetSessionRef({
-      sessionId: "ses_next",
-      source: {
-        sessionId: "ses_current",
-        host: "workspace",
-        workspaceId: "ws_real",
-        toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud" },
-        harness: { id: "acp:cursor", binary: "/tmp/cursor-agent" },
-      },
-    })).toMatchObject({
+    expect(
+      retargetSessionRef({
+        sessionId: "ses_next",
+        source: {
+          sessionId: "ses_current",
+          host: "workspace",
+          workspaceId: "ws_real",
+          toolSandbox: { kind: "workspace", workspaceId: "ws_real", hosting: "cloud" },
+          harness: { id: "acp:cursor", binary: "/tmp/cursor-agent" },
+        },
+      }),
+    ).toMatchObject({
       sessionId: "ses_next",
       harness: { id: "acp:cursor", binary: "/tmp/cursor-agent" },
     })
   })
 
   test("retargeting preserves local backing for adjacent session opens", () => {
-    expect(retargetSessionRef({
-      sessionId: "ses_next",
-      source: {
-        sessionId: "ses_current",
-        host: "workspace",
-        cwd: "/repo/main",
-        toolSandbox: { kind: "local", cwd: "/repo/main" },
-      },
-    })).toEqual({
+    expect(
+      retargetSessionRef({
+        sessionId: "ses_next",
+        source: {
+          sessionId: "ses_current",
+          host: "workspace",
+          cwd: "/repo/main",
+          toolSandbox: { kind: "local", cwd: "/repo/main" },
+        },
+      }),
+    ).toEqual({
       sessionId: "ses_next",
       host: "workspace",
       cwd: "/repo/main",
@@ -230,8 +251,10 @@ describe("SessionRef", () => {
   })
 
   test("retargeting does not derive backing when no source ref exists", () => {
-    expect(retargetSessionRef({
-      sessionId: "ses_next",
-    })).toBeUndefined()
+    expect(
+      retargetSessionRef({
+        sessionId: "ses_next",
+      }),
+    ).toBeUndefined()
   })
 })

@@ -1,4 +1,8 @@
-import { describe, expect, test, vi } from "vitest"
+import { afterAll, describe, expect, test, vi } from "vitest"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { ClaxedoDB } from "../platform/db"
 import { Hono } from "hono"
 import { localOnlyAuthAdapter } from "@claxedo/server-core/platform/auth/auth"
 import type { ControlPlaneServices } from "../authority/services"
@@ -10,6 +14,16 @@ import { createCentralControlApp } from "../central-runtime"
 import { createConnectionTurnCredentials } from "../connections/turn-credentials"
 import { piProviderCatalog } from "@claxedo/server-core/credentials/pi-provider-catalog"
 import type { TurnUsageRevision } from "@claxedo/server-core/usage/contracts"
+
+const testData = mkdtempSync(join(tmpdir(), "central-runtime-test-"))
+const previousData = process.env.CLAXEDO_DATA_DIR
+process.env.CLAXEDO_DATA_DIR = testData
+afterAll(() => {
+  ClaxedoDB.close()
+  if (previousData === undefined) delete process.env.CLAXEDO_DATA_DIR
+  else process.env.CLAXEDO_DATA_DIR = previousData
+  rmSync(testData, { recursive: true, force: true })
+})
 
 function services(): ControlPlaneServices {
   return {
@@ -619,7 +633,7 @@ describe("createCentralSessionRuntime", () => {
       "finish",
     ])
     expect(events[0]).toMatchObject({
-      directory: session.id,
+      directory: "",
       sessionId: session.id,
       payload: {
         type: "session-info",
@@ -628,7 +642,7 @@ describe("createCentralSessionRuntime", () => {
       },
     })
     expect(events).toContainEqual(expect.objectContaining({
-      directory: session.id,
+      directory: "",
       sessionId: session.id,
       assistantMessageId: "user-1_r",
       payload: { type: "text-delta", delta: "hi" },
@@ -1127,7 +1141,7 @@ describe("createCentralSessionRuntime", () => {
     expect(replay.headers.get("content-type")).toContain("text/event-stream")
     expect(frame).toContain("id: 3")
     expect(frame).toContain(`"sessionId":"${session.id}"`)
-    expect(frame).toContain(`"directory":"${session.id}"`)
+    expect(frame).toContain('"directory":""')
     expect(frame).toContain(`"assistantMessageId":"user-replay_r"`)
     expect(frame).toContain(`"delta":"replayed"`)
     expect(frame).not.toContain(`"status":"busy"`)
@@ -1213,21 +1227,19 @@ describe("createCentralSessionRuntime", () => {
     expect(abort.status).toBe(200)
     await expect(abort.json()).resolves.toEqual({ ok: true, status: "cancelled" })
     expect(abortedMessage.status).toBe(200)
-    await expect(abortedMessage.json()).resolves.toMatchObject({
+    const cancelled = await abortedMessage.json()
+    expect(cancelled).toMatchObject({
       info: {
         id: "user-abort_r",
         role: "assistant",
-        error: {
-          name: "UnknownError",
-          data: { message: "central turn aborted" },
-        },
       },
     })
+    expect(cancelled.info.error).toBeUndefined()
     // An acknowledged abort releases the session's turn admission, so the
     // aborted generation's remaining harness frames — its `session-status:
     // error` and `error` — are fenced and never reach the hub. The turn still
     // settles: the abort answers `cancelled`, the prompt route returns the
-    // assistant message carrying the abort error, and the usage revision below
+    // assistant message without a failure, and the usage revision below
     // records the stop. What the hub sees is the session and its busy status.
     expect(events.map((event) => event.payload.type)).toEqual([
       "session-info",

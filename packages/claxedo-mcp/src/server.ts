@@ -44,7 +44,7 @@ const requestDirectory = (args: { directory?: string; workspace_id?: string }) =
 
 const ORIGIN = clean(process.env.CLAXEDO_SERVER_URL) || "http://127.0.0.1:3001"
 const DEFAULT_WORKSPACE_ID = clean(process.env.CLAXEDO_WORKSPACE_ID)
-const DEFAULT_DIR = clean(process.env.OPENCODE_API_DIR) || (DEFAULT_WORKSPACE_ID ? workspaceRef(DEFAULT_WORKSPACE_ID) : process.cwd())
+const DEFAULT_DIR = clean(process.env.CLAXEDO_API_DIR) || (DEFAULT_WORKSPACE_ID ? workspaceRef(DEFAULT_WORKSPACE_ID) : process.cwd())
 const DEFAULT_SESSION_ID = clean(process.env.CLAXEDO_SESSION_ID)
 const TOKEN = clean(process.env.CLAXEDO_AUTH_TOKEN)
 const READ_ONLY = claxedoMcpReadOnly()

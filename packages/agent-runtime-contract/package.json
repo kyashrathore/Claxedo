@@ -4,15 +4,21 @@
   "type": "module",
   "description": "Dependency-free canonical contracts for Claxedo agent sessions, content, execution, errors, and events",
   "license": "MIT",
-  "main": "./src/index.ts",
-  "types": "./src/index.ts",
+  "main": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "default": "./dist/index.mjs"
+    }
   },
   "files": [
-    "src"
+    "dist"
   ],
   "scripts": {
+    "build": "bun build src/index.ts --target=browser --format=esm --outfile=dist/index.mjs && tsc -p tsconfig.build.json",
+    "test:node": "node --test scripts/package.test.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "bun test src"
   },

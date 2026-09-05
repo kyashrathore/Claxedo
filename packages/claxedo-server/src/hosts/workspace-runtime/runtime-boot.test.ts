@@ -68,7 +68,7 @@ describe("claxedo workspace-runtime boot policy", () => {
       ...override,
     })).toThrow()
   })
-  test("defaults: port 3002, loopback exposure, opencode native runner", async () => {
+  test("defaults: port 3002, loopback exposure, no implicit harness", async () => {
     const boot = await claxedoWorkspaceRuntimeBootFromEnv({
       WORKSPACE_RUNTIME_WORKSPACE_ID: "ws-env",
       WORKSPACE_RUNTIME_DIRECTORY: process.cwd(),
@@ -86,22 +86,16 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.hostTunnel).toBeUndefined()
   })
 
-  test("runner parsing: acp alias, named harness, acp binary connection", () => {
-    expect(claxedoRuntimeRunnerFromEnv({ WORKSPACE_RUNTIME_RUNNER: "acp" })).toEqual({ id: "claude", access: "acp" })
-    expect(claxedoRuntimeRunnerFromEnv({ WORKSPACE_RUNTIME_RUNNER: "codex" })).toMatchObject({ id: "codex" })
-    expect(claxedoRuntimeRunnerFromEnv({
-      WORKSPACE_RUNTIME_RUNNER: "acp",
-      WORKSPACE_RUNTIME_ACP_BINARY: "/usr/local/bin/claude-agent-acp",
-    })).toEqual({
-      id: "claude",
-      access: "acp",
-      connection: { kind: "process", binary: "/usr/local/bin/claude-agent-acp" },
-    })
+  test("selects either an explicit native harness or a configured connection", () => {
+    expect(claxedoRuntimeHarnessFromEnv({})).toBeUndefined()
+    expect(claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_NATIVE_HARNESS: "codex" })).toEqual({ kind: "native", harnessId: "codex" })
+    expect(claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_CONNECTION_ID: "openclaw" })).toEqual({ kind: "connection", connectionId: "openclaw" })
+    expect(() => claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_CONNECTION_ID: "openclaw", WORKSPACE_RUNTIME_NATIVE_HARNESS: "pi" })).toThrow("Choose either")
   })
 
   test("rejects an unknown explicit runner", () => {
-    expect(() => claxedoRuntimeRunnerFromEnv({ WORKSPACE_RUNTIME_RUNNER: "mystery" })).toThrow(
-      "Unknown WORKSPACE_RUNTIME_RUNNER",
+    expect(() => claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_NATIVE_HARNESS: "mystery" })).toThrow(
+      "Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS",
     )
   })
 

@@ -7,7 +7,6 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useLanguage } from "@/platform/i18n/provider"
 import { createRefreshQueue } from "@/platform/sync/global-sync/queue"
 import { scheduleMarkdownPrewarm } from "@/ui/session-kit-loaders"
-import { sanitizeProject } from "./project-sanitize"
 import { projectForDirectory } from "./project-owner"
 import { initialRouteDirectory, workspaceDirectoryRef } from "./bootstrap-scope"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -16,7 +15,6 @@ import { wasRolledBackDraft } from "../../../features/session/submit/rolled-back
 import type { GlobalBootstrapState } from "@/app/boot/data/bootstrap"
 import { clearSessionPrefetchDirectory } from "@/platform/sync/session-prefetch"
 import type { ProjectMeta, SessionInventoryRow, SessionCacheValue, WorkspaceGroup } from "@/features/session/data/sync/global-sync-types"
-import type { Session } from "@opencode-ai/sdk/v2/client"
 import { GLOBAL_SESSION_PAGE_SIZE } from "@/platform/sync/global-sync/session-pagination"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
@@ -38,7 +36,6 @@ import {
   applyWorkspaceCatalog,
   readWorkspaceCatalog,
   refreshWorkspaceCatalog,
-  workspaceCatalogQueryKey,
 } from "@/features/workspaces/data/workspace-catalog"
 import { resolveWorkspaceRuntime } from "@/platform/runtime/workspace-runtime-record"
 import {
@@ -109,13 +106,6 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
   const [ready, setReady] = createSignal(false)
   const [error, setError] = createSignal<InitError | undefined>()
   const [reload, setReload] = createSignal<undefined | "pending" | "complete">()
-  migrateLegacyProjectInventoryToQueryCache<Project>({
-    cache: {
-      read: () => queryClient.getQueryData<Project[]>(workspaceCatalogQueryKey(globalSDK.url)),
-      write: (value) => applyWorkspaceCatalog({ baseUrl: globalSDK.url, next: value }),
-    },
-    sanitize: sanitizeProject,
-  })
   const projects = () => readWorkspaceCatalog(globalSDK.url)
   const catalogInput = () => ({
     baseUrl: globalSDK.url,

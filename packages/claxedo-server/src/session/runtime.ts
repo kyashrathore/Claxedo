@@ -5,7 +5,6 @@ import {
   type AgentHarnessFactory,
   type AgentMessage,
   type AgentRuntimeStore,
-  type AgentSession,
   type SandboxRef,
   type SessionConfigUpdate,
   type SessionEnvFactory,
@@ -106,7 +105,7 @@ function toolSandboxFromMeta(meta: SessionMeta): SandboxRef {
   return { kind: "virtual", id: "central-pi" }
 }
 
-function metaRow(meta: SessionMeta): AgentSession {
+function metaRow(meta: SessionMeta) {
   return {
     id: meta.sessionID,
     title: meta.title ?? null,
@@ -370,7 +369,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       markPublished: (parentSessionId, observationId) => subagentStore.markPublished(parentSessionId, observationId),
     },
     publish: (parentSessionId, event) => eventHub.publishRuntime({
-      directory: parentSessionId,
+      directory: "",
       sessionId: parentSessionId,
       payload: event,
     }),
@@ -535,8 +534,10 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
   }) {
     const currentModel = runtimeStore.getSessionConfig(input.id)?.model
     runtimeStore.bindSession({
+      scope: "central",
       sessionId: input.id,
-      directory: input.id,
+      directory: "",
+      connectionId: "native:pi",
       title: input.title ?? undefined,
       agentSessionId: input.id,
       ...(input.parentSessionId ? { parentSessionId: input.parentSessionId } : {}),
@@ -594,7 +595,11 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     // this router. Keeping an explicit policy here makes route composition
     // complete while the outer authority owns creator/participant checks.
     sessionAccessPolicy,
-    resolveAdapter: () => adapter,
+    resolveAdapter: async (_c, input) => {
+      if (input?.sessionId) await ensureCentralRuntimeSession(input.sessionId)
+      return adapter
+    },
+    resolveExecutionBinding: (_c, _directory, sessionId) => centralExecutionBinding(sessionId),
     beforeSessionOperation: async (_c, input) => {
       if (input.operation === "delete") await terminateBackgrounds(input.sessionId, "interrupted")
     },
@@ -610,10 +615,8 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
     getSession: async (_c, _directory, sessionId) => {
       const meta = await services.projectionStore.session_meta(sessionId)
       if (meta?.host !== "central") return null
-      const session = await adapter.getSession(sessionId, undefined)
-      if (session) return { ...session, ...metaRow(meta) }
       await ensureCentralRuntimeSession(sessionId)
-      const recovered = await adapter.getSession(sessionId, undefined)
+      const recovered = await adapter.getSession(centralExecutionBinding(sessionId))
       return recovered ? { ...recovered, ...metaRow(meta) } : metaRow(meta)
     },
     getMessages: async (_c, _directory, sessionId) => {
@@ -627,6 +630,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       return {
         messages: messages.filter(messageRow),
         ...(projected.nextCursor ? { nextCursor: projected.nextCursor } : {}),
+        maxEventOrdinal: services.projectionStore.read_session_max_event_ordinal(sessionId),
       }
     },
     getMessageSnapshot: async (_c, _directory, sessionId) => {
@@ -1005,7 +1009,7 @@ export function createCentralSessionRuntime(services: ControlPlaneServices, opti
       throw new Error(`Central session ${session.id} was persisted without an updated timestamp`)
     }
     eventHub.publishRuntime({
-      directory: session.id,
+      directory: "",
       sessionId: session.id,
       payload: {
         type: "session-info",

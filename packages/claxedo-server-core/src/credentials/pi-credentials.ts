@@ -1,27 +1,14 @@
 import { requireCredentialRegistryLookup } from "@claxedo/server-core/credentials/registry"
+import { piCredentialConnected, piCredentialProviderIDs } from "./pi-provider-projection"
+export { PI_LAUNCH_PROVIDERS, piCredentialProviderIDs } from "./pi-provider-projection"
 
-export const PI_LAUNCH_PROVIDERS = ["openai-codex", "anthropic", "openai"] as const
-
-const credentialProviders: Record<(typeof PI_LAUNCH_PROVIDERS)[number], readonly string[]> = {
-  "openai-codex": ["codex-app-server"],
-  anthropic: ["anthropic"],
-  openai: ["openai"],
-}
-
-export function piCredentialProviderIDs(providerID: string): readonly string[] {
-  return providerID in credentialProviders
-    ? credentialProviders[providerID as keyof typeof credentialProviders]
-    : []
-}
-
-export function piRegistryCredentialProvider(providerID: string) {
+export function piRegistryCredentialProvider(providerID: string, org?: string) {
   return piCredentialProviderIDs(providerID).find((id) => {
-    const credential = requireCredentialRegistryLookup(id)
-    if (credential?.status !== "available") return false
-    return providerID === "openai-codex" ? credential.kind === "oauth_token" : credential.kind === "api_key"
+    const credential = requireCredentialRegistryLookup(id, org)
+    return piCredentialConnected(providerID, credential)
   })
 }
 
-export function piRegistryProviderConnected(providerID: string) {
-  return piRegistryCredentialProvider(providerID) !== undefined
+export function piRegistryProviderConnected(providerID: string, org?: string) {
+  return piRegistryCredentialProvider(providerID, org) !== undefined
 }

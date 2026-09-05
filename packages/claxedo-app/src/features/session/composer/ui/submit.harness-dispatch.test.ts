@@ -54,7 +54,7 @@ describe("Harness + demo dispatch and abort", () => {
     })
     let accepted = 0
     state.localSessionConfig = {
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "pi", access: "native" },
       agent: "agent",
       model: { providerID: "provider", modelID: "model" },
     }
@@ -69,8 +69,8 @@ describe("Harness + demo dispatch and abort", () => {
     })
 
     await submit.handleSubmit(submitEvent())
-    await waitForSubmitEffect(() => unsignedCalls.some((call) =>
-      call.method === "POST" && new URL(call.url).pathname === "/session/session-1/goal"
+    await waitForSubmitEffect(() => runtimeCalls.some((call) =>
+      call.method === "POST" && call.input.startsWith("/session/session-1/goal?")
     ) || toasts.length > 0)
 
     const goalPosts = runtimeCalls.filter((call) =>
@@ -95,7 +95,7 @@ describe("Harness + demo dispatch and abort", () => {
       end: 23,
     })
     state.localSessionConfig = {
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "pi", access: "native" },
       agent: "agent",
       model: { providerID: "provider", modelID: "model" },
     }
@@ -210,9 +210,9 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.async).toBe(0)
     expect(calls.transportAsync).toBe(1)
     expect(boots).toEqual([
-      { phase: "booting", harness: "Claude SDK", sessionID: undefined },
-      { phase: "booting", harness: "Claude SDK", sessionID: "session-1" },
-      { phase: "sending", harness: "Claude SDK", sessionID: "session-1" },
+      { phase: "booting", harness: "Claude", sessionID: undefined },
+      { phase: "booting", harness: "Claude", sessionID: "session-1" },
+      { phase: "sending", harness: "Claude", sessionID: "session-1" },
       undefined,
     ])
     expect(apiCalls).toHaveLength(0)
@@ -220,7 +220,8 @@ describe("Harness + demo dispatch and abort", () => {
     expect(harnessClaimCalls).toContainEqual({
       directory: "/repo/main",
       sessionId: undefined,
-      harness: { kind: "connection", connectionId: "claude-team" },
+      headers: {},
+      harness: { kind: "native", harnessId: "claude" },
       sessionConfig: {
         agent: "agent",
         model: { providerID: "claude-sdk", modelID: "opus" },
@@ -364,7 +365,7 @@ describe("Harness + demo dispatch and abort", () => {
     await pending
     await settleSubmitEffects()
 
-    expect(boots).toEqual([{ phase: "booting", harness: "Claude SDK", sessionID: undefined }])
+    expect(boots).toEqual([{ phase: "booting", harness: "Claude", sessionID: undefined }])
     expect(calls.transportAsync).toBe(1)
   })
 
@@ -383,8 +384,8 @@ describe("Harness + demo dispatch and abort", () => {
     expect(calls.create).toBe(0)
     expect(calls.transportAsync).toBe(0)
     expect(optimisticAdds).toEqual([])
-    expect(boots).toEqual([{ phase: "booting", harness: "Claude SDK", sessionID: undefined }, undefined])
-    expect(toasts).toEqual([])
+    expect(boots).toEqual([{ phase: "booting", harness: "Claude", sessionID: undefined }, undefined])
+    expect(toasts).toEqual([{ title: "prompt.toast.sessionCreateFailed.title", description: "Failed to create session" }])
   })
 
 
@@ -490,7 +491,7 @@ describe("Harness + demo dispatch and abort", () => {
     state.harnessMode = true
     state.transportGetSession = false
     state.runtimeSessionConfig = {
-      harness: { id: "claude", access: "acp" },
+      harness: { id: "claude", access: "native" },
       model: { providerID: "claude-sdk", modelID: "opus" },
     }
 

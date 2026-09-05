@@ -17,6 +17,7 @@ import { useSDK } from "@/app/providers/sdk/sdk"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { LocalProvider } from "@/features/session/providers/session-selection"
 import { ModelsProvider } from "@/features/session/providers/models"
+import { harnessSelectionKey, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import { TerminalProvider } from "@/features/terminal/providers/provider"
 import { FileProvider } from "@/app/providers/file"
@@ -28,7 +29,7 @@ import { DataProvider } from "@/ui/session-kit-context"
 import { SessionSyncProvider } from "@/features/session/providers/session-sync"
 import { WorkspaceSDKProvider } from "./workspace-sdk-provider"
 import { sessionRoute } from "@/platform/identity/route"
-import { DEFAULT_HARNESS_ID, type SessionRef } from "@/platform/identity/session-ref"
+import type { SessionRef } from "@/platform/identity/session-ref"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import { isRelayBackedWorkspaceKind, type WorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 import {
@@ -62,6 +63,7 @@ function DirectoryDataProvider(props: ParentProps<{
   sessionId?: Accessor<string | undefined>
   sessionRef?: Accessor<SessionRef | undefined>
   harnessType?: Accessor<string | undefined>
+  harnessSelection?: Accessor<HarnessSelection | undefined>
   onNavigateToSession?: (sessionID: string) => void
   onSessionHref?: (sessionID: string) => string
   onSyncSession?: (sessionID: string) => void | Promise<void>
@@ -156,7 +158,15 @@ function DirectoryDataProvider(props: ParentProps<{
   // keys its maps by harness — the pane's own harness id, the same one Settings
   // names when it edits the store for this workspace.
   const modelsWorkspaceKey = createMemo(() => sdk.workspace(props.directory)?.workspaceId || props.directory)
-  const modelsHarness = createMemo(() => props.harnessType?.() ?? DEFAULT_HARNESS_ID)
+  const modelsSelection = createMemo(() => props.harnessSelection?.() ?? props.sessionRef?.()?.harness)
+  const modelsHarness = createMemo(() => {
+    const selection = modelsSelection()
+    return selection ? harnessSelectionKey(selection) : ""
+  })
+  const modelsNativeHarness = createMemo(() => {
+    const selection = modelsSelection()
+    return selection?.kind === "native" ? selection.harnessId : undefined
+  })
   const navigateToSession = (sessionID: string) => {
     props.onNavigateToSession?.(sessionID)
   }
@@ -189,6 +199,7 @@ function DirectoryDataProvider(props: ParentProps<{
       <ModelsProvider
         workspaceKey={modelsWorkspaceKey}
         harness={modelsHarness}
+        nativeHarness={modelsNativeHarness}
         serverUrl={() => sdk.url ?? getClaxedoServerUrl()}
       >
         <LocalProvider
@@ -212,6 +223,7 @@ export function DirectoryScope(props: ParentProps<{
   workspaceId?: Accessor<string | undefined>
   workspaceKind?: Accessor<WorkspaceKind>
   harnessType?: Accessor<string | undefined>
+  harnessSelection?: Accessor<HarnessSelection | undefined>
   active?: Accessor<boolean>
   sessionId?: Accessor<string | undefined>
   surfaceId?: Accessor<string | undefined>
@@ -357,6 +369,7 @@ export function DirectoryScope(props: ParentProps<{
           sessionId={props.sessionId}
           sessionRef={props.sessionRef}
           harnessType={dataProviderHarnessType}
+          harnessSelection={props.harnessSelection}
           onNavigateToSession={props.onNavigateToSession}
           onSessionHref={props.onSessionHref}
           onSyncSession={props.onSyncSession}

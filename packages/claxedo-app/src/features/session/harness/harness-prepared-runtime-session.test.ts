@@ -111,7 +111,7 @@ describe("prepared runtime session store", () => {
       },
       setPrepareError: () => {},
     })
-    await expect(failing.claim(scope, { directory: "/repo" })).rejects.toThrow("could not be started")
+    await expect(failing.claim(scope, { directory: "/repo" })).rejects.toThrow("boom")
   })
 
   test("reports create failure only while the sequence is current", async () => {
@@ -202,7 +202,7 @@ function storeFor(input: {
 } = {}) {
   return createPreparedRuntimeSessionStore<{ directory?: string }>({
     canUseRuntimeSession: (params) => input.canUseRuntimeSession?.(params) ?? !!params?.directory,
-    state: () => input.state ?? { harness: "claude-acp", selectedModel: "sonnet" },
+    state: () => input.state ?? { harness: claudeConnection, selectedModel: "sonnet" },
     create: (params) => input.create?.(params) ?? Promise.resolve("ses_created"),
     remove: (item) => input.remove?.(item) ?? Promise.resolve(),
     setPrepareError: (scope, err) => input.setPrepareError?.(scope, err),

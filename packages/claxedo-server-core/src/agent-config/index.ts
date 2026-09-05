@@ -21,7 +21,7 @@ import {
   resolveUserMcp,
   type ResolvedMcpServer,
 } from "@claxedo/workspace-runtime/config"
-import { resolveSecretsForScope } from "@claxedo/server-core/credentials/registry"
+import { resolveSecretsForScope, resolveCredentialReferencesForScope } from "@claxedo/server-core/credentials/registry"
 import {
   getRuntimeAgentExtensionsSnapshot,
   resolveProjectExtensionTrust,
@@ -585,6 +585,7 @@ export async function getRuntimeConfigSnapshot(
   current?: RuntimeHarnessSelection,
   options: {
     secretScope?: RuntimeConfigSecretScope
+    orgId?: string
     workspaceDir?: string
     workspaceId?: string
     workspaceInstalls?: WorkspaceAgentExtensionRecord[]
@@ -607,11 +608,16 @@ export async function getRuntimeConfigSnapshot(
   const configAuth = options.secretScope === "shared" ? {} : config.auth ?? {}
   let registryAuth: Record<string, string> = {}
   try {
-    registryAuth = await resolveSecretsForScope(scope)
+    registryAuth = await resolveSecretsForScope(scope, options.orgId)
   } catch {
     // Registry may not be initialized yet during early startup
   }
   const auth = { ...configAuth, ...registryAuth }
+  const references = Object.values(config.connections).filter((connection) => connection.enabled)
+    .flatMap((connection) => Object.values(connection.secretRefs ?? {}))
+  // Descriptor references are credential IDs, never keys supplied through config.auth.
+  for (const reference of references) delete auth[reference]
+  Object.assign(auth, await resolveCredentialReferencesForScope(references, scope, options.orgId))
   const codexAppServerAuth = auth.openai
   if (!auth["codex-app-server"] && codexAppServerAuth) auth["codex-app-server"] = codexAppServerAuth
   const workspaceInstalls = options.workspaceDir && options.workspaceId

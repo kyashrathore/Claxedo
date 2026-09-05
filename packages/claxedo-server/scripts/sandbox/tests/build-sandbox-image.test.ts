@@ -1,17 +1,22 @@
 import fs from "node:fs"
 import path from "node:path"
 import { describe, expect, test } from "vitest"
+import { build as esbuildBuild } from "esbuild"
 import { DEFAULT_WORKSPACE_RUNTIME_PORT } from "@claxedo/sandbox-manager"
 import {
   esbuildHostBundleOptions,
   HOST_BUNDLE_FILENAME,
+  IMAGE_SMOKE_FILENAME,
   WORKSPACE_RUNTIME_VERSION_FILENAME,
   hostBundleDependencies,
   sandboxImageBuildArgs,
   validateBuildFlags,
   writeWorkspaceRuntimeVersion,
   workspacePackageBuildOrder,
+  assertHostBundleDependencies,
 } from "../build-sandbox-image"
+
+const runtimeRoots = [path.resolve(import.meta.dirname, "../../../../workspace-runtime")]
 
 describe("build-sandbox-image", () => {
   test("builds from the sandbox scripts context with no version build-arg", () => {
@@ -44,6 +49,7 @@ describe("build-sandbox-image", () => {
     const options = esbuildHostBundleOptions({ entry: "/repo/host-entry.ts", outfile: `/out/${HOST_BUNDLE_FILENAME}` })
     expect(options.entryPoints).toEqual(["/repo/host-entry.ts"])
     expect(options.bundle).toBe(true)
+    expect(options.metafile).toBe(true)
     expect(options.platform).toBe("node")
     expect(options.outfile).toBe(`/out/${HOST_BUNDLE_FILENAME}`)
     // The workspace-only plugin externalizes every non-@claxedo import.
@@ -76,7 +82,7 @@ describe("build-sandbox-image", () => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))
       if (!key) throw new Error(`unexpected package dir: ${dir}`)
       return packages[key]!
-    })
+    }, runtimeRoots)
     expect(deps).toEqual({
       "better-sqlite3": "12.10.0",
       "@lydell/node-pty": "1.2.0-beta.14",
@@ -88,6 +94,19 @@ describe("build-sandbox-image", () => {
   test("missing image dependency pins fail loudly", () => {
     expect(() => hostBundleDependencies(() => ({ dependencies: { "better-sqlite3": "12.10.0" } })))
       .toThrow("missing image dependency")
+  })
+
+  test("external pins include every host root while the runtime keeps pin priority", () => {
+    const packages = {
+      adapter: { dependencies: { "remote-transport": "2.0.0", "better-sqlite3": "11.0.0" } },
+      runtime: { dependencies: { "better-sqlite3": "12.10.0", "@lydell/node-pty": "1.2.0-beta.14" } },
+    }
+    const dependencies = hostBundleDependencies((dir) => packages[path.basename(dir) as keyof typeof packages], ["/fixtures/adapter", "/fixtures/runtime"])
+    expect(dependencies).toEqual({
+      "remote-transport": "2.0.0",
+      "better-sqlite3": "12.10.0",
+      "@lydell/node-pty": "1.2.0-beta.14",
+    })
   })
 
   test("real workspace-runtime package.json satisfies the image dependency pins", () => {
@@ -103,8 +122,7 @@ describe("build-sandbox-image", () => {
   test("production image starts the checkout-built workspace-runtime host", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
-    expect(dockerfiles.every((dockerfile) => dockerfile.includes("setsid env WORKSPACE_RUNTIME_PORT=2593"))).toBe(true)
-    expect(dockerfiles.every((dockerfile) => dockerfile.includes("http://127.0.0.1:2593/api/wr/health"))).toBe(true)
+    expect(dockerfiles.every((dockerfile) => dockerfile.includes(`RUN node /opt/workspace-runtime/${IMAGE_SMOKE_FILENAME}`))).toBe(true)
     expect(dockerfiles.every((dockerfile) =>
       dockerfile.includes(`ln -sf /opt/workspace-runtime/${HOST_BUNDLE_FILENAME} /usr/local/bin/workspace-runtime`)
     )).toBe(true)
@@ -125,16 +143,10 @@ describe("build-sandbox-image", () => {
     const dockerfiles = ["../Dockerfile", "../cloudflare-worker/Dockerfile"]
       .map((file) => fs.readFileSync(path.resolve(import.meta.dirname, file), "utf8"))
     for (const dockerfile of dockerfiles) {
-      expect(dockerfile).toContain(`test -x /opt/workspace-runtime/${OPENCODE_BINARY_FILENAME}`)
-      expect(dockerfile).toContain(`install -m 0755 /opt/workspace-runtime/${OPENCODE_BINARY_FILENAME} /usr/local/bin/opencode`)
-      expect(dockerfile).toContain("http://127.0.0.1:2593/api/session")
-      expect(dockerfile).toContain("Session V2 create did not adopt the requested id")
-      expect(dockerfile).toContain("Session V2 history was truncated across workspace-runtime")
-      expect(dockerfile).toContain("ses_image_failure")
-      expect(dockerfile).toContain("session.next.step.failed")
-      expect(dockerfile).toContain("accept-encoding: gzip")
-      expect(dockerfile).toContain("setsid env OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER=true opencode serve")
-      expect(dockerfile).toContain("os.killpg")
+      expect(dockerfile).not.toContain("opencode serve")
+      expect(dockerfile).not.toContain("/api/session")
+      expect(dockerfile).not.toContain("/usr/local/bin/opencode")
+      expect(dockerfile).toContain(`RUN node /opt/workspace-runtime/${IMAGE_SMOKE_FILENAME}`)
     }
   })
 
@@ -176,7 +188,7 @@ describe("build-sandbox-image", () => {
       if (!key) throw new Error(`unexpected package dir: ${dir}`)
       return key
     }
-    const order = workspacePackageBuildOrder((dir) => packages[dirKey(dir)]!)
+    const order = workspacePackageBuildOrder((dir) => packages[dirKey(dir)]!, runtimeRoots)
     const names = order.map((dir) => packages[dirKey(dir)]!.name)
 
     // Every dependency comes before its dependent.
@@ -185,7 +197,7 @@ describe("build-sandbox-image", () => {
     expect(before("@claxedo/agent-sdk-runtime", "@claxedo/workspace-runtime")).toBe(true)
     expect(before("@claxedo/workspace-relay-protocol", "@claxedo/workspace-relay")).toBe(true)
     expect(before("@claxedo/workspace-relay", "@claxedo/workspace-runtime")).toBe(true)
-    // workspace-runtime is the single host-bundle root, so it closes the order.
+    // This graph has one root, so it closes the order.
     expect(names.at(-1)).toBe("@claxedo/workspace-runtime")
     expect(new Set(names).size).toBe(names.length)
   })
@@ -205,7 +217,7 @@ describe("build-sandbox-image", () => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))
       if (!key) throw new Error(`unexpected package dir: ${dir}`)
       return packages[key]!
-    })
+    }, runtimeRoots)
     const names = order.map((dir) => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))!
       return packages[key]!.name
@@ -224,7 +236,7 @@ describe("build-sandbox-image", () => {
         const key = Object.keys(packages).find((name) => dir.endsWith(name))
         if (!key) throw new Error(`unexpected package dir: ${dir}`)
         return packages[key]!
-      }),
+      }, runtimeRoots),
     ).toThrow("cycle")
   })
 
@@ -237,12 +249,28 @@ describe("build-sandbox-image", () => {
     // The host-bundle root is present. Every dist here is gitignored, so a
     // missing root would leave a fresh checkout bundling against a stale dist.
     expect(index("workspace-runtime")).toBeGreaterThanOrEqual(0)
+    expect(index("opencode-server-adapter")).toBeGreaterThanOrEqual(0)
+    expect(index("opencode-server-adapter")).toBeLessThan(index("workspace-runtime"))
+    expect(order.at(-1)).toBe(order[index("workspace-runtime")])
 
     // workspace-runtime's known @claxedo deps are all present and precede it.
     for (const dep of ["agent-event-runtime", "agent-sdk-runtime", "workspace-relay-protocol", "workspace-relay", "agent-extensions"]) {
       expect(index(dep), dep).toBeGreaterThanOrEqual(0)
       expect(index(dep), dep).toBeLessThan(index("workspace-runtime"))
     }
+  })
+
+  test("actual bundle metadata rejects undeclared external imports and allows builtins and declared subpaths", async () => {
+    const result = await esbuildBuild({
+      ...esbuildHostBundleOptions({ entry: "unused", outfile: "/unused/host.mjs" }),
+      entryPoints: undefined,
+      stdin: { contents: 'import "node:fs"; import "path"; import "@example/runtime/subpath"; import "drizzle-orm/node-postgres";' },
+      write: false,
+    })
+    expect(() => assertHostBundleDependencies(result.metafile!, { "@example/runtime": "1.0.0" }))
+      .toThrow("Host bundle has undeclared external dependencies: drizzle-orm/node-postgres")
+    expect(() => assertHostBundleDependencies(result.metafile!, { "@example/runtime": "1.0.0", "drizzle-orm": "0.44.0" }))
+      .not.toThrow()
   })
 
   test("validateBuildFlags rejects --out without --bundle-only", () => {

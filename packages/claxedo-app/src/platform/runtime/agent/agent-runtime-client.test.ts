@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "bun:test"
 import { queryClient } from "@/platform/query/query-client"
 import { apiBearerToken, configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
-import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient, DEFAULT_AGENT_RUNTIME_CAPABILITIES } from "./agent-runtime-client"
+import { agentRuntimeWorkspaceTargetQueryKey, createAgentRuntimeClient } from "./agent-runtime-client"
 import { AgentRuntimeRequestError } from "./agent-runtime-request-error"
 
 function ok(body: unknown, init?: ResponseInit) {
@@ -13,6 +13,29 @@ function ok(body: unknown, init?: ResponseInit) {
 }
 
 describe("AgentRuntimeClient", () => {
+  it("uses the session's permission owner and disambiguates native versus connection drafts", async () => {
+    const calls: URL[] = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001",
+      request: async (input) => {
+        calls.push(new URL(String(input)))
+        return ok({ modes: [], appliesFrom: "next-turn" })
+      },
+    })
+    await client.getPermissionModes({ directory: "/repo", sessionID: "session-1", harness: { kind: "native", harnessId: "pi" } })
+    await client.getPermissionModes({ directory: "/repo", sessionID: "", harness: { kind: "native", harnessId: "pi" } })
+    await client.getPermissionModes({ directory: "/repo", sessionID: "", harness: { kind: "connection", connectionId: "pi" } })
+    expect(calls[0]?.pathname).toBe("/session/session-1/permission-mode")
+    expect([...calls[0]!.searchParams]).toEqual([["directory", "/repo"]])
+    expect(calls[1]?.searchParams.get("nativeHarness")).toBe("pi")
+    expect(calls[1]?.searchParams.has("connectionId")).toBe(false)
+    expect(calls[2]?.searchParams.get("connectionId")).toBe("pi")
+    expect(calls[2]?.searchParams.has("nativeHarness")).toBe(false)
+    expect(calls.every((url) => !url.searchParams.has("harness"))).toBe(true)
+    await expect(client.getPermissionModes({ directory: "/repo", sessionID: "" })).rejects.toThrow("require a harness selection")
+    expect(calls).toHaveLength(3)
+  })
+
   afterEach(() => {
     queryClient.clear()
     delete (globalThis as typeof globalThis & {
@@ -220,15 +243,32 @@ describe("AgentRuntimeClient", () => {
       serverUrl: "http://127.0.0.1:3001/",
       request: async (input) => {
         seen.push(String(input))
-        return ok({ ...DEFAULT_AGENT_RUNTIME_CAPABILITIES, transport: "codex", goals: true })
+        return ok({ transport: "codex", goals: true })
       },
     })
 
-    const capabilities = await client.getCapabilities({ directory: "/repo/main", harness: "codex" })
+    const capabilities = await client.getCapabilities({ directory: "/repo/main", harness: { kind: "native", harnessId: "codex" } })
 
     expect(capabilities.goals).toBe(true)
     expect(seen).toEqual([
-      "http://127.0.0.1:3001/session/capabilities?directory=%2Frepo%2Fmain&harness=codex",
+      "http://127.0.0.1:3001/session/capabilities?directory=%2Frepo%2Fmain&nativeHarness=codex",
+    ])
+  })
+
+  it("keeps same-named native and connection draft capability requests distinct", async () => {
+    const seen: URL[] = []
+    const client = createAgentRuntimeClient({
+      serverUrl: "http://127.0.0.1:3001/",
+      request: async (input) => {
+        seen.push(new URL(String(input)))
+        return ok({ goals: seen.at(-1)?.searchParams.has("nativeHarness") })
+      },
+    })
+    expect((await client.getCapabilities({ directory: "/repo", harness: { kind: "native", harnessId: "pi" } })).goals).toBe(true)
+    expect((await client.getCapabilities({ directory: "/repo", harness: { kind: "connection", connectionId: "pi" } })).goals).toBe(false)
+    expect(seen.map((url) => Object.fromEntries(url.searchParams))).toEqual([
+      { directory: "/repo", nativeHarness: "pi" },
+      { directory: "/repo", connectionId: "pi" },
     ])
   })
 

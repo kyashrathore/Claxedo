@@ -10,6 +10,7 @@ import { applyPermissionMode } from "@/features/session/permission/apply"
 import { createComposerAutoAccept } from "./auto-accept"
 import { createComposerPermissionMode } from "./permission-mode"
 import type { HarnessId } from "@/platform/identity/session-ref"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import {
   CLAXEDO_ALLOW_SAFE_ID,
   CLAXEDO_ASK_ALWAYS_ID,
@@ -40,6 +41,7 @@ export function createComposerPermissionModeWiring(input: {
    * which reads as the switch not having worked.
    */
   harness: () => string | undefined
+  harnessSelection?: () => HarnessSelection | undefined
   /**
    * Why this harness cannot report, when it cannot.
    *
@@ -79,6 +81,7 @@ export function createComposerPermissionModeWiring(input: {
     sessionID: input.sessionId() ?? "",
     directory: input.directory(),
     harness: input.harness() ?? null,
+    selection: input.harnessSelection?.() ?? input.sessionRef()?.harness ?? null,
   })
   const answered = (unsupported: string): HarnessModeReport => ({
     modes: [],
@@ -122,7 +125,8 @@ export function createComposerPermissionModeWiring(input: {
     // `no-store` — nothing here caches a response.
     resourceKey,
     async (sourceKey) => {
-      const source = JSON.parse(sourceKey) as { sessionID: string; directory: AgentRuntimeDirectory; harness: string | null }
+      const source = JSON.parse(sourceKey) as { sessionID: string; directory: AgentRuntimeDirectory; selection: HarnessSelection | null }
+      if (!source.sessionID && !source.selection) return
       // Every new source/refetch cancels the previous wait. Owner cleanup also
       // resolves it false, so disposed surfaces never escape into transport I/O.
       const delay = fastSessionSwitchQuietDelay({ sessionId: source.sessionID })
@@ -132,12 +136,7 @@ export function createComposerPermissionModeWiring(input: {
           ...transportScope(),
           directory: source.directory,
           sessionID: source.sessionID,
-          // Was in the KEY but not in the REQUEST. Invalidation worked, so a
-          // harness switch refetched — and then asked the runtime a question
-          // with no harness in it, which the directory-scoped route answers for
-          // whatever harness the directory defaults to. The picker showed one
-          // harness's name over another harness's modes.
-          ...(source.harness ? { harness: source.harness } : {}),
+          ...(source.selection ? { harness: source.selection } : {}),
         })
       ).data
     },
@@ -292,8 +291,8 @@ export function createComposerPermissionSurface(input: {
   resolvedSessionId: () => string | undefined
   directory: () => AgentRuntimeDirectory
   harness: Accessor<HarnessId | undefined>
+  harnessSelection?: Accessor<HarnessSelection | undefined>
   harnessUnavailable: () => string | undefined
-  client: Parameters<typeof applyPermissionMode>[0]["client"] & { session: SessionClient }
   claxedoServerUrl: () => string
   signedControlPlane: () => boolean
   workspace: () => WorkspaceSessionBacking | undefined
@@ -305,8 +304,8 @@ export function createComposerPermissionSurface(input: {
     sessionId: input.sessionId,
     directory: input.directory,
     harness: input.harness,
+    harnessSelection: input.harnessSelection,
     harnessUnavailable: input.harnessUnavailable,
-    client: input.client.session,
     claxedoServerUrl: input.claxedoServerUrl,
     signedControlPlane: input.signedControlPlane,
     workspace: input.workspace,
@@ -318,27 +317,6 @@ export function createComposerPermissionSurface(input: {
     permission: input.permission,
     sessionId: input.sessionId,
     directory: input.directory,
-    harness: input.harness,
-    // Turning the switch on writes the grants into opencode's OWN persisted
-    // ruleset, so the engine stops asking rather than Claxedo answering the same
-    // prompts forever — and the grant survives Claxedo being closed. Turning it off
-    // withdraws them. Deliberately NOT `config.update`: that handler disposes the
-    // engine instance on every call, which would abort the running turn.
-    deliver: ({ delivery, sessionID }) => applyPermissionMode({ delivery, sessionID, client: input.client }),
-    // The local switch has already flipped, so a failed write must be visible.
-    // Silence here would mean the user believes the engine was told something it
-    // never received — and on the disabling side, that grants are withdrawn when
-    // they are still live.
-    onDeliveryError: ({ error, enabling }) => {
-      const detail = error instanceof Error ? error.message : String(error)
-      showToast({
-        variant: "error",
-        title: input.requestFailedTitle(),
-        description: enabling
-          ? `Claxedo will answer these prompts, but opencode was not told to allow them: ${detail}`
-          : `opencode may still allow these until the next successful change: ${detail}`,
-      })
-    },
   })
   // The permission-mode picker. Replaces the binary "Approve for me" switch: it is a
   // superset, because Claxedo's Manual mode IS the switch's off state, expressed as a

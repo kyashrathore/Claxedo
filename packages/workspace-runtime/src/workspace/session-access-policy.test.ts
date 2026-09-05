@@ -29,96 +29,14 @@ describe("managed workspace SessionAccessPolicy composition", () => {
     host.dispose()
   })
 
-  test("applies the prefix policy before the opaque Session V2 proxy", async () => {
-    const calls: Array<{ operation: string; method: string; path: string; sessionId?: string }> = []
-    const policy: SessionAccessPolicy = {
-      sessionAuthority: "managed-private",
-      authorize: async () => ({ allowed: true }),
-      filterSessions: async (input) => input.sessionIds,
-      authorizePrefix: async (input) => {
-        calls.push({
-          operation: input.operation,
-          method: input.method,
-          path: input.path,
-          ...(input.sessionId ? { sessionId: input.sessionId } : {}),
-        })
-        return { allowed: false, status: 403, code: "private_session", message: "denied" }
-      },
-    }
-    const host = createWorkspaceHost({ sessionAccessPolicy: policy })
+  test("does not expose removed OpenCode Session V2 proxy routes", async () => {
+    const host = createWorkspaceHost({ sessionAccessPolicy: managedWorkspaceSessionAccessPolicy() })
     const app = new Hono()
-    host.mount(app, { exposure })
-
-    const response = await app.request("http://localhost/api/session/ses_1/prompt", { method: "POST" })
-
-    expect(response.status).toBe(403)
-    expect(await response.json()).toEqual({ error: { code: "private_session", message: "denied" } })
-    expect(calls).toEqual([{
-      operation: "session_v2_proxy",
-      method: "POST",
-      path: "/api/session/ses_1/prompt",
-      sessionId: "ses_1",
-    }])
-    host.dispose()
-  })
-
-  test("rejects unfenced Session V2 creates and filters signed collection responses", async () => {
-    const registered: string[] = []
-    const filterCalls: string[][] = []
-    const policy: SessionAccessPolicy = {
-      sessionAuthority: "managed-private",
-      authorize: async () => ({ allowed: true }),
-      authorizePrefix: async () => ({ allowed: true }),
-      filterSessions: async (input) => {
-        filterCalls.push([...input.sessionIds])
-        return input.sessionIds.filter((sessionId) => sessionId === "ses_visible")
-      },
-      registerSession: async (input) => {
-        registered.push(input.sessionId)
-        return { allowed: true }
-      },
+    host.mount(app, { exposure: embeddedWorkspaceRuntimeExposure({ owner: "test", guard: () => true }) })
+    for (const pathname of ["/api/session", "/api/session/ses_1/prompt", "/api/model"]) {
+      expect((await app.request("http://localhost" + pathname)).status).toBe(404)
+      expect((await app.request("http://localhost" + pathname, { method: "POST" })).status).toBe(404)
     }
-    const host = createWorkspaceHost({
-      sessionAccessPolicy: policy,
-      opencodeCompat: true,
-      opencodeRequest: async (request) => request.method === "POST"
-        ? Response.json({ data: { id: "ses_created" } }, { status: 201 })
-        : Response.json({
-            data: [{ id: "ses_visible" }, { id: "ses_private" }],
-            cursor: { next: "opaque" },
-          }),
-    })
-    const app = new Hono()
-    app.use("*", async (c, next) => {
-      c.set("relayHostAuth" as never, {
-        workspace_id: "ws_1",
-        org_id: "org_1",
-        role: "editor",
-        actor_id: "actor_1",
-        actor_kind: "human",
-      } as never)
-      await next()
-    })
-    host.mount(app, { exposure })
-    await host.apply({ version: 1, runner: { type: "opencode" }, auth: {}, mcp: {} })
-
-    const created = await app.request("http://localhost/api/session", {
-      method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer signed-rht" },
-      body: JSON.stringify({ title: "Managed" }),
-    })
-    expect(created.status).toBe(503)
-    expect(await created.json()).toMatchObject({
-      error: { code: "session_v2_managed_creation_unavailable" },
-    })
-    expect(registered).toEqual([])
-
-    const listed = await app.request("http://localhost/api/session", {
-      headers: { authorization: "Bearer signed-rht" },
-    })
-    expect(listed.status).toBe(200)
-    expect(await listed.json()).toEqual({ data: [{ id: "ses_visible" }], cursor: { next: "opaque" } })
-    expect(filterCalls).toEqual([["ses_visible", "ses_private"]])
     host.dispose()
   })
 })

@@ -12,115 +12,111 @@ import {
   harnessProfile,
   optionsResponse,
   pickHarness,
-  type HarnessType,
 } from "./profile"
 
 describe("harness profile", () => {
-  test("infers harness from native access + type pairs", () => {
-    expect(pickHarness("claude", null, "native")).toBe("claude-sdk")
-    expect(pickHarness("codex", null, "native")).toBe("codex-app-server")
-    expect(pickHarness("cursor", null, "native")).toBe("cursor-sdk")
-    expect(pickHarness("opencode", null, "native")).toBe("opencode")
-    expect(pickHarness("pi", null, "native")).toBe("pi")
-  })
-
-  test("infers open acp:<slug> ids from acp access + type, and passes through an already-qualified id", () => {
-    expect(pickHarness("claude", null, "acp")).toBe("acp:claude")
-    expect(pickHarness("codex", null, "acp")).toBe("acp:codex")
-    expect(pickHarness("acp:claude")).toBe("acp:claude")
-    // access "acp" with a type that doesn't form a valid slug is rejected, not coerced.
-    expect(pickHarness("Not Valid", null, "acp")).toBeUndefined()
-  })
-
-  test("ignores the binary argument entirely — selection flows through type + access only", () => {
-    expect(pickHarness(undefined, "/tmp/codex-acp")).toBeUndefined()
-    expect(pickHarness("opencode", "/tmp/some/unrelated/binary-path.exe", "native")).toBe("opencode")
-    expect(pickHarness(undefined, "C:\\agents\\codex-acp.exe")).toBeUndefined()
-    // An explicit identity is honored regardless of what the binary looks like.
-    expect(pickHarness("claude-sdk", "/tmp/codex-acp")).toBe("claude-sdk")
-    expect(pickHarness("acp:codex", "/tmp/claude-agent-acp")).toBe("acp:codex")
-  })
-
-  test("covers display names for every builtin harness id", () => {
-    const types: HarnessType[] = [
-      "claude-sdk",
-      "codex-app-server",
-      "cursor-sdk",
-      "opencode",
-      "pi",
-    ]
-
-    for (const type of types) {
-      expect(type.kind === "native" ? HARNESS_DISPLAY_NAMES[type.harnessId] : undefined).toBeTruthy()
+  test("decodes explicit native and opaque connection identities", () => {
+    for (const harnessId of ["claude", "codex", "cursor", "pi"] as const) {
+      const selection = { kind: "native", harnessId } as const
+      expect(pickHarness({ id: harnessId, access: "native" })).toEqual(selection)
+      expect(pickHarness(selection)).toEqual(selection)
     }
-    expect(HARNESS_DISPLAY_NAMES["agent"]).toBe("Cursor")
-    expect(HARNESS_DISPLAY_NAMES["cursor-agent"]).toBe("Cursor")
-    // Operator ACP connections have no table row; their label is derived.
-    expect(harnessDisplayLabel("acp:claude")).toBe("Claude")
-    expect(harnessDisplayLabel("acp:my-agent")).toBe("My Agent")
+    for (const connectionId of ["team-codex", "openclaw", "opencode", "acp:literal-id"]) {
+      const selection = { kind: "connection", connectionId } as const
+      expect(pickHarness({ id: connectionId, access: "connection" })).toEqual(selection)
+      expect(pickHarness(selection)).toEqual(selection)
+    }
   })
 
-  test("resolves effective harness model", () => {
-    expect(effectiveHarnessModel("acp:codex", "")).toBe("default")
-    expect(effectiveHarnessModel("acp:claude", undefined)).toBe("default")
-    expect(effectiveHarnessModel("acp:codex", "gpt-5.5")).toBe("gpt-5.5")
-    expect(effectiveHarnessModel("opencode", "gpt-5.5")).toBe("")
-    expect(effectiveHarnessModel("pi", undefined)).toBe("")
+  test("rejects legacy identities and does not infer a harness from binaries", () => {
+    for (const value of [
+      "claude",
+      "claude-sdk",
+      "opencode",
+      "acp:codex",
+      { id: "opencode", access: "native" },
+      { id: "claude", access: "acp" },
+      { id: "codex" },
+      { binary: "/tmp/codex-acp" },
+      { kind: "connection", connectionId: "" },
+      { kind: "native", harnessId: "unknown" },
+    ])
+      expect(pickHarness(value)).toBeUndefined()
+    expect(pickHarness({ id: "my-agent", access: "connection", binary: "/tmp/codex" })).toEqual({
+      kind: "connection",
+      connectionId: "my-agent",
+    })
+  })
+
+  test("covers exactly the native display names without vendor-specific connection aliases", () => {
+    expect(HARNESS_DISPLAY_NAMES).toEqual({ claude: "Claude", codex: "Codex", cursor: "Cursor", pi: "Pi" })
+    expect(harnessDisplayLabel("my-agent")).toBe("My Agent")
+    expect(harnessDisplayLabel("acp:literal-id")).toBe("Acp:literal Id")
+  })
+
+  test("resolves selected models without treating external OpenCode specially", () => {
+    const external = { kind: "connection", connectionId: "opencode" } as const
+    expect(effectiveHarnessModel(external, "")).toBe("default")
+    expect(effectiveHarnessModel(external, "gpt-5.5")).toBe("gpt-5.5")
+    expect(effectiveHarnessModel({ kind: "native", harnessId: "pi" }, undefined)).toBe("")
   })
 
   test("extracts model options with selectOptions precedence", () => {
-    expect(extractModelsFromConfigOptions([
-      {
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: "opus",
-        options: [{ value: "sonnet", name: "Sonnet" }],
-        selectOptions: [{ id: "opus", name: "Opus" }],
-      },
-    ])).toEqual({
+    expect(
+      extractModelsFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "opus",
+          options: [{ value: "sonnet", name: "Sonnet" }],
+          selectOptions: [{ id: "opus", name: "Opus" }],
+        },
+      ]),
+    ).toEqual({
       currentModel: "opus",
       models: [{ id: "opus", name: "Opus" }],
     })
   })
 
-  test("normalizes Cursor ACP default model spelling", () => {
-    expect(extractModelsFromConfigOptions([
-      {
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: "default[]",
-        options: [
-          { value: "default[]", name: "Auto" },
-          { value: "gpt-5.5[reasoning=medium]", name: "GPT-5.5" },
-        ],
-      },
-    ])).toEqual({
-      currentModel: "default",
+  test("preserves opaque model IDs, including bracketed default values", () => {
+    expect(
+      extractModelsFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "default[]",
+          options: [
+            { value: "default[]", name: "Auto" },
+            { value: "gpt-5.5[reasoning=medium]", name: "GPT-5.5" },
+          ],
+        },
+      ]),
+    ).toEqual({
+      currentModel: "default[]",
       models: [
-        { id: "default", name: "Auto" },
+        { id: "default[]", name: "Auto" },
         { id: "gpt-5.5[reasoning=medium]", name: "GPT-5.5" },
       ],
     })
   })
 
   test("does not decode removed runner session config", () => {
-    expect(decodeSessionConfig({
-      runner: {
-        type: "codex-app-server",
-        binary: "/tmp/codex",
-      },
-      model: {
-        modelID: "gpt-5.5",
-      },
-    })).toEqual({
-      harness: {
-        type: "codex-app-server",
-        binary: "/tmp/codex",
-      },
+    expect(
+      decodeSessionConfig({
+        runner: {
+          type: "codex-app-server",
+          binary: "/tmp/codex",
+        },
+        model: {
+          modelID: "gpt-5.5",
+        },
+      }),
+    ).toEqual({
+      harness: {},
       model: {
         modelID: "gpt-5.5",
       },
@@ -128,55 +124,69 @@ describe("harness profile", () => {
   })
 
   test("requires access when decoding wire harness identities", () => {
-    expect(decodeSessionConfig({
-      harness: {
-        id: "claude-sdk",
-      },
-    }).harness?.type).toBe("claude-sdk")
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "claude-sdk",
+        },
+      }).harness?.type,
+    ).toBeUndefined()
 
-    expect(decodeSessionConfig({
-      harness: {
-        id: "acp:claude",
-      },
-    }).harness?.type).toBe("acp:claude")
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "acp:claude",
+        },
+      }).harness?.type,
+    ).toBeUndefined()
 
-    expect(decodeSessionConfig({
-      harness: {
-        id: "unknown",
-      },
-    }).harness?.type).toBeUndefined()
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "unknown",
+        },
+      }).harness?.type,
+    ).toBeUndefined()
   })
 
   test("decodes structured native and connection harness identities", () => {
-    expect(decodeSessionConfig({
-      harness: {
-        id: "codex",
-        access: "native",
-      },
-    }).harness).toEqual({
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "codex",
+          access: "native",
+        },
+      }).harness,
+    ).toEqual({
       type: { kind: "native", harnessId: "codex" },
       activeType: { kind: "native", harnessId: "codex" },
     })
 
-    expect(decodeSessionConfig({
-      harness: {
-        id: "remote-cursor",
-        access: "connection",
-      },
-    }).harness?.type).toBe("acp:cursor")
+    expect(
+      decodeSessionConfig({
+        harness: {
+          id: "remote-cursor",
+          access: "connection",
+        },
+      }).harness?.type,
+    ).toEqual({ kind: "connection", connectionId: "remote-cursor" })
   })
 
   test("decodes harness health forwarded from the health route (T4)", () => {
-    expect(decodeHarnessState({
-      harness: { kind: "native", harnessId: "codex" },
-      ready: true,
-      harnessHealth: { status: "degraded", reason: "harness_process_lost" },
-    })?.harnessHealth).toEqual({ status: "degraded", reason: "harness_process_lost" })
+    expect(
+      decodeHarnessState({
+        harness: { kind: "native", harnessId: "codex" },
+        ready: true,
+        harnessHealth: { status: "degraded", reason: "harness_process_lost" },
+      })?.harnessHealth,
+    ).toEqual({ status: "degraded", reason: "harness_process_lost" })
     // Unknown / malformed health status is dropped rather than carried through.
-    expect(decodeHarnessState({
-      harness: { kind: "native", harnessId: "codex" },
-      harnessHealth: { status: "bogus" },
-    })?.harnessHealth).toBeUndefined()
+    expect(
+      decodeHarnessState({
+        harness: { kind: "native", harnessId: "codex" },
+        harnessHealth: { status: "bogus" },
+      })?.harnessHealth,
+    ).toBeUndefined()
     expect(decodeHarnessState({ harness: { kind: "native", harnessId: "codex" } })?.harnessHealth).toBeUndefined()
   })
 
@@ -188,23 +198,25 @@ describe("harness profile", () => {
   })
 
   test("normalizes options response source and choices", () => {
-    expect(optionsResponse({
-      source: "live",
-      stale: true,
-      options: [
-        {
-          id: "model",
-          name: "Model",
-          category: "model",
-          type: "select",
-          currentValue: "sonnet",
-          options: [
-            { value: "sonnet", name: "Sonnet", description: "Balanced" },
-            { value: 1, name: "bad" },
-          ],
-        },
-      ],
-    })).toEqual({
+    expect(
+      optionsResponse({
+        source: "harness",
+        stale: true,
+        options: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "sonnet",
+            options: [
+              { value: "sonnet", name: "Sonnet", description: "Balanced" },
+              { value: 1, name: "bad" },
+            ],
+          },
+        ],
+      }),
+    ).toEqual({
       source: "harness",
       stale: true,
       options: [
@@ -220,32 +232,48 @@ describe("harness profile", () => {
     })
   })
 
+  test("does not trust removed or unknown model-option source aliases", () => {
+    for (const source of ["live", "unknown"]) {
+      expect(optionsResponse({ options: [], source, stale: true })).toEqual({
+        options: [],
+        source: "empty",
+        stale: true,
+      })
+    }
+  })
+
   // `/api/wr/harness-config-options` answers the adapter contract's
   // `AgentConfigOptions` verbatim: the options the harness published plus the
   // model it resolved for itself, and NO freshness bookkeeping of its own.
   test("reads the workspace runtime's bare config-options answer as a live harness answer", () => {
-    expect(optionsResponse({
-      options: [{
-        id: "thought_level",
-        name: "Thought level",
-        category: "thought_level",
-        type: "select",
-        currentValue: "adaptive",
-        options: [{ value: "adaptive", name: "Adaptive" }],
-      }],
-      resolvedModel: { id: "claude-opus-4-6", name: "Opus 4.6" },
-    })).toEqual({
+    expect(
+      optionsResponse({
+        options: [
+          {
+            id: "thought_level",
+            name: "Thought level",
+            category: "thought_level",
+            type: "select",
+            currentValue: "adaptive",
+            options: [{ value: "adaptive", name: "Adaptive" }],
+          },
+        ],
+        resolvedModel: { id: "claude-opus-4-6", name: "Opus 4.6" },
+      }),
+    ).toEqual({
       source: "harness",
       stale: false,
       resolvedModel: { id: "claude-opus-4-6", name: "Opus 4.6" },
-      options: [{
-        id: "thought_level",
-        name: "Thought level",
-        category: "thought_level",
-        type: "select",
-        currentValue: "adaptive",
-        options: [{ value: "adaptive", name: "Adaptive" }],
-      }],
+      options: [
+        {
+          id: "thought_level",
+          name: "Thought level",
+          category: "thought_level",
+          type: "select",
+          currentValue: "adaptive",
+          options: [{ value: "adaptive", name: "Adaptive" }],
+        },
+      ],
     })
   })
 
@@ -262,12 +290,14 @@ describe("harness profile", () => {
   // The daemon route wraps the same payload in its own freshness bookkeeping;
   // its `resolvedModel` rides through unchanged.
   test("keeps the daemon's own source and staleness while carrying its resolved model", () => {
-    expect(optionsResponse({
-      source: "catalog",
-      stale: true,
-      options: [],
-      resolvedModel: { id: "gpt-5.5-codex", name: "GPT-5.5 Codex" },
-    })).toEqual({
+    expect(
+      optionsResponse({
+        source: "catalog",
+        stale: true,
+        options: [],
+        resolvedModel: { id: "gpt-5.5-codex", name: "GPT-5.5 Codex" },
+      }),
+    ).toEqual({
       source: "catalog",
       stale: true,
       resolvedModel: { id: "gpt-5.5-codex", name: "GPT-5.5 Codex" },
@@ -276,8 +306,11 @@ describe("harness profile", () => {
   })
 
   test("drops a resolved model the producer did not label", () => {
-    expect(optionsResponse({ source: "harness", stale: false, options: [], resolvedModel: { id: "opus" } }))
-      .toEqual({ source: "harness", stale: false, options: [] })
+    expect(optionsResponse({ source: "harness", stale: false, options: [], resolvedModel: { id: "opus" } })).toEqual({
+      source: "harness",
+      stale: false,
+      options: [],
+    })
   })
 
   test("profiles Pi as a catalog-backed harness", () => {
@@ -311,28 +344,30 @@ describe("harness profile", () => {
  */
 describe("extractThoughtLevelFromConfigOptions", () => {
   test("reads codex-acp's reasoning-effort option", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      {
-        id: "model",
-        name: "Model",
-        category: "model",
-        type: "select",
-        currentValue: "gpt-5",
-        selectOptions: [{ id: "gpt-5", name: "GPT-5" }],
-      },
-      {
-        id: "reasoning_effort",
-        name: "Reasoning effort",
-        category: "thought_level",
-        type: "select",
-        currentValue: "medium",
-        options: [
-          { value: "low", name: "Low", description: "Fastest" },
-          { value: "medium", name: "Medium" },
-          { value: "high", name: "High" },
-        ],
-      },
-    ])).toEqual({
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "gpt-5",
+          selectOptions: [{ id: "gpt-5", name: "GPT-5" }],
+        },
+        {
+          id: "reasoning_effort",
+          name: "Reasoning effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "medium",
+          options: [
+            { value: "low", name: "Low", description: "Fastest" },
+            { value: "medium", name: "Medium" },
+            { value: "high", name: "High" },
+          ],
+        },
+      ]),
+    ).toEqual({
       current: "medium",
       levels: [
         { id: "low", name: "Low", description: "Fastest" },
@@ -343,53 +378,84 @@ describe("extractThoughtLevelFromConfigOptions", () => {
   })
 
   test("reads claude-agent-acp's effort option, default row included", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      {
-        id: "effort",
-        name: "Effort",
-        category: "thought_level",
-        type: "select",
-        currentValue: "default",
-        options: [
-          { value: "default", name: "Default" },
-          { value: "high", name: "High" },
-        ],
-      },
-    ])).toEqual({
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "default",
+          options: [
+            { value: "default", name: "Default" },
+            { value: "high", name: "High" },
+          ],
+        },
+      ]),
+    ).toEqual({
       current: "default",
-      levels: [{ id: "default", name: "Default" }, { id: "high", name: "High" }],
+      levels: [
+        { id: "default", name: "Default" },
+        { id: "high", name: "High" },
+      ],
     })
   })
 
   // The native SDK path supplies `selectOptions` (id/name) rather than ACP's
   // `options` (value/name), exactly as the model option does.
   test("reads a selectOptions-shaped effort option", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      {
-        id: "effort",
-        name: "Effort",
-        category: "thought_level",
-        type: "select",
-        currentValue: "high",
-        selectOptions: [{ id: "high", name: "High" }, { id: "max", name: "Max" }],
-      },
-    ])).toEqual({
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "high",
+          selectOptions: [
+            { id: "high", name: "High" },
+            { id: "max", name: "Max" },
+          ],
+        },
+      ]),
+    ).toEqual({
       current: "high",
-      levels: [{ id: "high", name: "High" }, { id: "max", name: "Max" }],
+      levels: [
+        { id: "high", name: "High" },
+        { id: "max", name: "Max" },
+      ],
     })
   })
 
   test("is null when the harness offers no thought-level option", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      { id: "model", name: "Model", category: "model", type: "select", currentValue: "opus", selectOptions: [{ id: "opus", name: "Opus" }] },
-    ])).toBeNull()
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "model",
+          name: "Model",
+          category: "model",
+          type: "select",
+          currentValue: "opus",
+          selectOptions: [{ id: "opus", name: "Opus" }],
+        },
+      ]),
+    ).toBeNull()
   })
 
   // A single choice is not a choice — offering it spends a whole disclosure
   // section on something the user cannot change.
   test("is null when only one level is offered", () => {
-    expect(extractThoughtLevelFromConfigOptions([
-      { id: "effort", name: "Effort", category: "thought_level", type: "select", currentValue: "high", options: [{ value: "high", name: "High" }] },
-    ])).toBeNull()
+    expect(
+      extractThoughtLevelFromConfigOptions([
+        {
+          id: "effort",
+          name: "Effort",
+          category: "thought_level",
+          type: "select",
+          currentValue: "high",
+          options: [{ value: "high", name: "High" }],
+        },
+      ]),
+    ).toBeNull()
   })
 })

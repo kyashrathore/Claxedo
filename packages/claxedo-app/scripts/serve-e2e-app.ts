@@ -17,11 +17,15 @@ const env = {
   ...process.env,
   ...e2eAppViteEnvironment(authMode),
 }
+const fixtureBackend = process.env.CLAXEDO_TIER_REAL_E2E === "1"
+  ? process.env.VITE_CLAXEDO_SERVER_URL
+  : undefined
+const fixtureOrigin = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${port}`
 
-async function run(command: string[]) {
+async function run(command: string[], overrides: Record<string, string> = {}) {
   const child = Bun.spawn(command, {
     cwd: appRoot,
-    env,
+    env: { ...env, ...overrides },
     stdin: "inherit",
     stdout: "inherit",
     stderr: "inherit",
@@ -30,7 +34,9 @@ async function run(command: string[]) {
 }
 
 if (mode === "build-preview") {
-  const exitCode = await run(["bun", "run", "build:e2e"])
+  const exitCode = await run(["bun", "run", "build:e2e"], fixtureBackend
+    ? { VITE_CLAXEDO_SERVER_URL: fixtureOrigin }
+    : {})
   if (exitCode !== 0) process.exit(exitCode)
 }
 
@@ -56,8 +62,15 @@ if (mode === "preview" || mode === "build-preview") {
     process.exit(2)
   }
   process.exit(
-    await run(["bun", "x", "vite", "preview", "--config", "vite.cloud.config.ts", "--port", port, "--strictPort"]),
+    await run(fixtureBackend
+      ? ["node", "./e2e/helpers/fixture-web-preview.mjs", "dist", port, fixtureBackend]
+      : ["bun", "x", "vite", "preview", "--config", "vite.cloud.config.ts", "--port", port, "--strictPort"]),
   )
 }
 
-process.exit(await run(["bun", "run", "dev", "--", "--port", port]))
+process.exit(fixtureBackend
+  ? await run(["node", "./e2e/helpers/fixture-web-preview.mjs", "dist", port, fixtureBackend], {
+    VITE_CLAXEDO_SERVER_URL: fixtureOrigin,
+    CLAXEDO_E2E_FIXTURE_DEV: "1",
+  })
+  : await run(["bun", "run", "dev", "--", "--port", port]))

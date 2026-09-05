@@ -22,7 +22,7 @@ export function agentConfigConnectionRoutes(options: AgentConfigRouteOptions = {
         label: "Local agent connections",
       })
       if (localOnly) return localOnly
-      return c.json({ connections: harnessConnectionRows(await loadUserConfig()) })
+      return c.json({ status: "supported" as const, connections: harnessConnectionRows(await loadUserConfig()) })
     })
 
     .put("/connections/:connectionId", async (c) => {

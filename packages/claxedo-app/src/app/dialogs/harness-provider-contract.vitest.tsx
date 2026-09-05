@@ -1,28 +1,7 @@
-/**
- * The UI half of the harness → provider-catalog contract.
- *
- * The server half (`packages/claxedo-server/src/agent-config/harness-provider-contract.test.ts`)
- * pins what `/provider?harness=` RETURNS. This file pins what the UI RENDERS for
- * each of those catalogs, and — the part that was never pinned — that the
- * catalog a dialog asks for is the one its harness context implies.
- *
- * `useProviders` is stubbed at the query seam so no network or SDK scope is
- * needed; the stub records the (scope, harness) pair it was called with, which
- * is how the inheritance assertions are made. Both halves of that pair are
- * inherited: a catalog belongs to a harness ON a machine, so a dialog opened
- * from a workspace surface must carry the workspace scope down with the
- * harness.
- */
+/** Renderer-only provider rows and dialog handoff; real transport tests live with useProviders. */
 import { cleanup, render, screen, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import {
-  contractProviderIds,
-  HARNESS_BINDING_HARNESS_IDS,
-  HARNESS_BINDING_PROVIDER_IDS,
-  OPENCODE_SAMPLE_PROVIDER_IDS,
-  PI_PROVIDER_IDS,
-  providerCatalogFixture,
-} from "./test-support/harness-provider-contract"
+const PI_PROVIDER_IDS = ["anthropic", "openai", "openai-codex"]
 
 const requestedHarnesses: Array<string | undefined> = []
 const requestedScopes: Array<string | undefined> = []
@@ -37,7 +16,7 @@ vi.mock("@/app/providers/use-providers", async () => {
       const harness = typeof harnessType === "function" ? harnessType() : harnessType
       requestedHarnesses.push(harness)
       requestedScopes.push(typeof scope === "function" ? scope() : scope)
-      const catalog = providerCatalogFixture(contractProviderIds(harness))
+      const catalog = { all: PI_PROVIDER_IDS.map((id) => ({ id, name: id, models: {} })) }
       const all = new Map(catalog.all.map((provider) => [provider.id, provider] as const))
       return {
         state: () => ({ all, connected: [], default: {} }),
@@ -83,7 +62,7 @@ vi.mock("@opencode-ai/ui/context/dialog", () => ({
   }),
 }))
 
-const { CUSTOM_PROVIDER_ID, ProviderList } = await import("./provider-list")
+const { ProviderList } = await import("./provider-list")
 const { DialogSelectProvider } = await import("./select-provider")
 
 /** The provider rows the list actually rendered, by id. `List` stamps each row
@@ -109,59 +88,11 @@ beforeEach(() => {
 
 afterEach(() => cleanup())
 
-describe("ProviderList renders the contracted catalog per harness", () => {
-  for (const harness of HARNESS_BINDING_HARNESS_IDS) {
-    test(`harness=${harness} lists exactly the five harness-binding providers`, async () => {
-      const { container } = render(() => <ProviderList harness={harness} onSelect={() => undefined} />)
-
-      expect((await renderedProviderIdsWhenSettled(container)).sort())
-        .toEqual([...HARNESS_BINDING_PROVIDER_IDS].sort())
-      expect(requestedHarnesses).toContain(harness)
-    })
-  }
-
-  test("harness=pi lists exactly pi's three launch providers", async () => {
+describe("ProviderList renderer", () => {
+  test("renders exactly the provided native catalog without a custom registry row", async () => {
     const { container } = render(() => <ProviderList harness="pi" onSelect={() => undefined} />)
-
     expect((await renderedProviderIdsWhenSettled(container)).sort()).toEqual([...PI_PROVIDER_IDS].sort())
-  })
-
-  test("harness=opencode lists the models.dev catalog and adds the Custom provider entry", async () => {
-    const { container } = render(() => <ProviderList harness="opencode" onSelect={() => undefined} />)
-
-    const ids = await renderedProviderIdsWhenSettled(container)
-    for (const id of OPENCODE_SAMPLE_PROVIDER_IDS) expect(ids, id).toContain(id)
-    // "Custom provider" is an OpenCode provider-registry entry; a harness
-    // catalog is a fixed set of bindings that a custom provider cannot join.
-    expect(ids).toContain(CUSTOM_PROVIDER_ID)
-    expect(requestedHarnesses).toContain("opencode")
-  })
-
-  // There is no unqualified catalog to fall into any more: every surface names
-  // the harness it is showing.
-  test("no catalog is ever requested without a harness", async () => {
-    render(() => <ProviderList harness="opencode" onSelect={() => undefined} />)
-    await waitFor(() => expect(requestedHarnesses.length).toBeGreaterThan(0))
-    expect(requestedHarnesses).not.toContain(undefined)
-  })
-
-  test("a harness catalog never offers the Custom provider entry", async () => {
-    const { container } = render(() => <ProviderList harness="pi" onSelect={() => undefined} />)
-
-    expect(await renderedProviderIdsWhenSettled(container)).not.toContain(CUSTOM_PROVIDER_ID)
-  })
-
-  // The bug this whole matrix exists for: pi's three-provider catalog appearing
-  // in a picker that is not pi's. Assert the sets are disjoint as rendered.
-  test("the pi and harness-binding catalogs share no rendered provider", async () => {
-    const pi = render(() => <ProviderList harness="pi" onSelect={() => undefined} />)
-    const piIds = new Set(await renderedProviderIdsWhenSettled(pi.container))
-    cleanup()
-
-    const binding = render(() => <ProviderList harness="claude-sdk" onSelect={() => undefined} />)
-    const bindingIds = await renderedProviderIdsWhenSettled(binding.container)
-
-    expect(bindingIds.some((id) => piIds.has(id))).toBe(false)
+    expect(container.querySelector('[data-key="_custom"]')).toBeNull()
   })
 })
 
@@ -172,37 +103,31 @@ describe("the connect dialog inherits the harness it was opened with", () => {
     expect(requestedHarnesses.every((harness) => harness === "pi")).toBe(true)
   })
 
-  test("DialogSelectProvider asks for the OpenCode catalog when that is the harness", async () => {
-    render(() => <DialogSelectProvider harness="opencode" />)
-    await waitFor(() => expect(requestedHarnesses.length).toBeGreaterThan(0))
-    expect(requestedHarnesses.every((harness) => harness === "opencode")).toBe(true)
-  })
-
   test("the workspace scope rides down with the harness", async () => {
-    render(() => <DialogSelectProvider harness="claude-sdk" scope="workspace:ws_1" />)
+    render(() => <DialogSelectProvider harness="pi" scope="workspace:ws_1" />)
     await waitFor(() => expect(requestedScopes.length).toBeGreaterThan(0))
     expect(requestedScopes.every((scope) => scope === "workspace:ws_1")).toBe(true)
   })
 
   test("selecting a provider carries the workspace scope into the connect dialog", async () => {
-    const { container } = render(() => <DialogSelectProvider harness="claude-sdk" scope="workspace:ws_1" />)
+    const { container } = render(() => <DialogSelectProvider harness="pi" scope="workspace:ws_1" />)
     await renderedProviderIdsWhenSettled(container)
 
-    container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="claude-sdk"]')!.click()
+    container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="anthropic"]')!.click()
 
     await waitFor(() => expect(dialogState.shown.length).toBe(1))
     expect(requestedScopes.at(-1)).toBe("workspace:ws_1")
   })
 
   test("selecting a provider carries the harness into the connect dialog", async () => {
-    const { container } = render(() => <DialogSelectProvider harness="claude-sdk" />)
+    const { container } = render(() => <DialogSelectProvider harness="pi" />)
     await renderedProviderIdsWhenSettled(container)
 
-    container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="claude-sdk"]')!.click()
+    container.querySelector<HTMLElement>('[data-slot="list-item"][data-key="anthropic"]')!.click()
 
     await waitFor(() => expect(dialogState.shown.length).toBe(1))
     // The rendered connect dialog re-queries the catalog; it must ask for the
     // SAME harness, not drop back to the global one.
-    expect(requestedHarnesses.at(-1)).toBe("claude-sdk")
+    expect(requestedHarnesses.at(-1)).toBe("pi")
   })
 })

@@ -1,4 +1,4 @@
-import { createSdkForServer } from "@/app/connection/server-client"
+import { createServerClient } from "@/app/connection/server-client"
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -72,9 +72,11 @@ export function liveSessionTransition(
  */
 export function eventDirectoryForLiveSession(input: {
   directory: string
+  sessionId?: string
   liveSession?: LiveSession
 }): string {
   if (input.directory === "global") return input.directory
+  if (input.liveSession?.host === "central") return input.sessionId ?? input.liveSession.sessionID
   const legacyDirectory = input.liveSession?.directory
   const workspaceId = input.liveSession?.workspaceId
     ?? (legacyDirectory ? sessionWorkspaceRuntimeRef({ directory: legacyDirectory })?.workspaceId : undefined)
@@ -158,5 +160,7 @@ export function runtimeEventLiveSession(
   const sessionID = scopeSessionId?.trim()
     || (current.sessionID === "route" ? undefined : current.sessionID)
   if (!sessionID) return
-  return liveSessionWithRelayBacking({ ...current, sessionID }, projects)
+  return current.host === "central"
+    ? { ...current, sessionID }
+    : liveSessionWithRelayBacking({ ...current, sessionID }, projects)
 }

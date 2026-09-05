@@ -41,6 +41,8 @@ export type AgentMessagePageInput =
 
 /** One chronological transcript page and the cursor for the next older page. */
 export type AgentMessagePage = {
+  /** Committed event-log position represented by a runtime-owned projection. */
+  maxEventOrdinal?: number
   messages: AgentMessage[]
   nextCursor?: string
 }

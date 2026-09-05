@@ -22,7 +22,8 @@ import { createMemoryRuntimeStore } from "@claxedo/agent-sdk-runtime/stores/memo
 // These fixtures carry only the fields the routes under test read; the cast
 // keeps them minimal rather than filling in a full UserMessage/AssistantMessage.
 import { messagePartUpdated, messageUpdated, sessionIdle, type CompatEnvelope } from "../compat-events"
-import type { Message } from "@opencode-ai/sdk/v2"
+import type { AgentMessageInfo as Message } from "@claxedo/agent-runtime-contract"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import { Hono } from "hono"
 import type { SessionAccessPolicy } from "../session-access-policy"
 
@@ -119,6 +120,7 @@ function managedRoutes(input: {
   const routes = createSessionRoutes({
     resolveAdapter: () => input.adapter,
     resolveDirectory: () => "/workspace",
+    resolveExecutionBinding: (_c, directory, sessionId) => ({ sessionId, directory: directory ?? "", workspaceId: "ws_1", connectionId: "native:codex", upstreamSessionId: sessionId }),
     ...(input.listSessions ? { listSessions: input.listSessions } : {}),
     ...(input.runtime ? { resolveRuntime: () => input.runtime } : {}),
     ...(input.afterMessageCheckpoint ? { afterMessageCheckpoint: input.afterMessageCheckpoint } : {}),
@@ -273,7 +275,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     const ambiguous: unknown[] = []
     const fixture = {
       ...adapter(),
-      getSession: async (id: string) => existing ? { id, title: "Private", time: { created: 1, updated: 1 } } : null,
+      getSession: async (binding: AgentExecutionBinding) => existing ? { id: binding.sessionId, title: "Private", time: { created: 1, updated: 1 } } : null,
       createSession: async (_directory: string, _title?: string, id?: string) => {
         creates += 1
         existing = true
@@ -351,8 +353,8 @@ describe("createSessionRoutes private-session lifecycle", () => {
     const fixture = {
       ...adapter(),
       getSession: async () => null,
-      forkSession: async (parentId: string, messageId: string, directory: RuntimeDirectory, childId?: string) => {
-        calls.push({ parentId, messageId, directory, childId })
+      forkSession: async (binding: AgentExecutionBinding, messageId: string, childId?: string) => {
+        calls.push({ parentId: binding.sessionId, messageId, directory: binding.directory, childId })
         return { id: childId! }
       },
     }
@@ -493,8 +495,8 @@ describe("createSessionRoutes private-session lifecycle", () => {
 })
 
 describe("createSessionRoutes message paging", () => {
-  const first = { info: { id: "message-1", role: "user" }, parts: [] } as AgentMessage
-  const second = { info: { id: "message-2", role: "assistant" }, parts: [] } as AgentMessage
+  const first = { info: { id: "message-1", sessionID: "session-1", role: "user" }, parts: [] } as AgentMessage
+  const second = { info: { id: "message-2", sessionID: "session-1", role: "assistant" }, parts: [] } as AgentMessage
 
   test("uses the route authority before an adapter page and forwards its opaque cursor", async () => {
     const calls: Array<{ sessionId: string; page: AgentMessagePageInput; directory: RuntimeDirectory }> = []

@@ -1,6 +1,6 @@
 import { createContext, createMemo, createSignal, useContext, type Accessor, type ParentProps } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
-import { BUILTIN_HARNESS_IDS, DEFAULT_HARNESS_ID } from "@/platform/identity/session-ref"
+import { NATIVE_HARNESS_IDS, harnessSelectionKey, nativeHarness, connectionHarness, type HarnessSelection, type NativeHarnessId } from "@/platform/identity/harness-selection"
 import { harnessDisplayLabel } from "@/ui/harness-display"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import {
@@ -18,6 +18,7 @@ import {
 export type SettingsHarnessOption = {
   id: string
   label: string
+  selection: HarnessSelection
 }
 
 export type SettingsScope = {
@@ -30,6 +31,8 @@ export type SettingsScope = {
   /** The harnesses offerable for the selected workspace. */
   harnesses: Accessor<SettingsHarnessOption[]>
   harness: Accessor<string>
+  harnessSelection: Accessor<HarnessSelection | undefined>
+  nativeHarness: Accessor<NativeHarnessId | undefined>
   selectHarness: (id: string) => void
   /** The scope string catalog and provider-auth reads are keyed by. */
   scopeRef: Accessor<string | undefined>
@@ -76,24 +79,26 @@ export function SettingsScopeProvider(props: ParentProps) {
     resolveSettingsWorkspace({ options: workspaces(), selected: selectedWorkspace(), focused }))
 
   const harnesses = createMemo<SettingsHarnessOption[]>(() => [
-    ...BUILTIN_HARNESS_IDS.map((id) => ({ id: id as string, label: harnessDisplayLabel(id) })),
-    ...acp().map((row) => ({ id: row.key, label: row.label })),
+    ...NATIVE_HARNESS_IDS.map((id) => {
+      const selection = nativeHarness(id)
+      return { id: harnessSelectionKey(selection), label: harnessDisplayLabel(id), selection }
+    }),
+    ...acp().map((row) => {
+      const selection = connectionHarness(row.key)
+      return { id: harnessSelectionKey(selection), label: row.label, selection }
+    }),
   ])
-  // Unselected, the surface opens on the harness this workspace was last used
-  // with — the same record a new draft in it opens on — and, with no history,
-  // on the same product default a new draft opens on. Settings and a pane on
-  // one workspace therefore name one harness between them, and edit one half of
-  // its per-harness model store.
-  const harness = createMemo(() => {
+  const selectedOption = createMemo(() => {
     const selected = selectedHarness()
-    if (selected && harnesses().some((option) => option.id === selected)) return selected
+    const explicit = harnesses().find((option) => option.id === selected)
+    if (explicit) return explicit
     const current = workspace()
     const remembered = current
       ? readWorkspaceHarnessDefault({ serverUrl: getClaxedoServerUrl(), workspaceKey: current.key })
       : undefined
-    if (remembered && harnesses().some((option) => option.id === remembered)) return remembered
-    return DEFAULT_HARNESS_ID
+    return remembered ? harnesses().find((option) => option.id === harnessSelectionKey(remembered)) : undefined
   })
+  const harnessSelection = () => selectedOption()?.selection
 
   const value: SettingsScope = {
     workspaces,
@@ -101,7 +106,12 @@ export function SettingsScopeProvider(props: ParentProps) {
     workspace,
     selectWorkspace: setSelectedWorkspace,
     harnesses,
-    harness,
+    harness: () => selectedOption()?.id ?? "",
+    harnessSelection,
+    nativeHarness: () => {
+      const selection = harnessSelection()
+      return selection?.kind === "native" ? selection.harnessId : undefined
+    },
     selectHarness: setSelectedHarness,
     scopeRef: () => workspace()?.scope,
     workspaceKey: () => workspace()?.key ?? "",

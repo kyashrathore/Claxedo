@@ -2,7 +2,8 @@ import { batch } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { PanePreferenceStorage } from "@/features/session/preferences/pane"
 import type { ModelKey } from "@/features/session/composer/model-strategy"
-import { harnessHasConfigOptions, type HarnessType } from "./profile"
+import { harnessHasConfigOptions, isNativeHarness, type HarnessType } from "./profile"
+import { sameHarnessSelection } from "@/platform/identity/harness-selection"
 import {
   harnessDisplayName,
   harnessModelKeyForSubmit,
@@ -89,7 +90,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
 
     const revision = (current.draftDefaultRevision ?? 0) + 1
     const saved = draftDefaults.read(identity)
-    const type = saved?.harness ?? "opencode"
+    const type = saved?.harness
     setStore(scope, {
       draftDefaultAuthority: "unresolved",
       draftDefaultRevision: revision,
@@ -253,7 +254,7 @@ export function createHarnessStore(storage: PanePreferenceStorage) {
   ) => {
     seed(scope)
     const current = read(scope)
-    if (!canSelectDraftModel(current, model)) return false
+    if (!current.harness || !canSelectDraftModel(current, model)) return false
     const persisted = draftDefaults.save(identity, { harness: current.harness, model, ...(labels ? { labels } : {}) })
     setStore(scope, {
       draftDefaultAuthority: "explicit",

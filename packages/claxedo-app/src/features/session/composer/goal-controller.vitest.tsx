@@ -8,11 +8,15 @@
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest"
-import { cleanup, render } from "@solidjs/testing-library"
+import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { createSignal } from "solid-js"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import { createComposerGoalController } from "./goal-controller"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
+import { fetchSessionCapabilitiesByTransport } from "@/features/session/store/session-transport"
+
+vi.mock("@/features/session/store/session-transport", () => ({ fetchSessionCapabilitiesByTransport: vi.fn() }))
 
 const available: AgentRuntimeGoalCapabilities = {
   implemented: true,
@@ -25,18 +29,17 @@ const available: AgentRuntimeGoalCapabilities = {
 function mountController(input: {
   capabilities: () => AgentRuntimeGoalCapabilities | undefined
   refreshGoal?: (opts?: { force?: boolean }) => Promise<boolean>
+  isNewSession?: boolean
+  harness?: () => HarnessSelection
 }) {
   const [armed, setArmed] = createSignal(false)
   const unavailable: Array<string | undefined> = []
   let controller!: ReturnType<typeof createComposerGoalController>
-  render(() => (
-    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      {(() => {
+  const Subject = () => {
         controller = createComposerGoalController({
-          isNewSession: () => false,
-          harness: () => "opencode",
+          isNewSession: () => input.isNewSession ?? false,
+          harness: input.harness ?? (() => ({ kind: "native", harnessId: "pi" })),
           harnessPending: () => false,
-          client: {} as never,
           directory: () => "/repo/main",
           serverUrl: () => "http://127.0.0.1:3001",
           signedControlPlane: () => false,
@@ -51,8 +54,11 @@ function mountController(input: {
           normalizeMode: () => {},
           focus: () => {},
         })
-        return null
-      })()}
+        return <span data-testid="goal-available">{String(controller.available())}</span>
+  }
+  render(() => (
+    <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+      <Subject />
     </QueryClientProvider>
   ))
   return { controller, armed, unavailable }
@@ -64,6 +70,22 @@ afterEach(() => {
 })
 
 describe("composer Goal toggle", () => {
+  test("isolates same-named native and connection capability caches when switching drafts", async () => {
+    const read = vi.mocked(fetchSessionCapabilitiesByTransport)
+    read.mockImplementation(async ({ harness }) => ({ goals: harness?.kind === "native" }) as never)
+    const [harness, setHarness] = createSignal<HarnessSelection>({ kind: "native", harnessId: "pi" })
+    const { controller } = mountController({ capabilities: () => undefined, isNewSession: true, harness })
+    await waitFor(() => expect(controller.available()).toBe(true))
+    setHarness({ kind: "connection", connectionId: "pi" })
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(2))
+    await waitFor(() => expect(controller.available()).toBe(false))
+    expect(read.mock.calls.map(([input]) => input.harness)).toEqual([
+      { kind: "native", harnessId: "pi" }, { kind: "connection", connectionId: "pi" },
+    ])
+    setHarness({ kind: "native", harnessId: "pi" })
+    await waitFor(() => expect(controller.available()).toBe(true))
+    expect(read).toHaveBeenCalledTimes(2)
+  })
   test("fetches capabilities on demand instead of refusing before hydration", async () => {
     const [capabilities, setCapabilities] = createSignal<AgentRuntimeGoalCapabilities | undefined>(undefined)
     let refreshes = 0

@@ -56,10 +56,11 @@ describe("Workspace-runtime transport + model resolution", () => {
   })
 
 
-  test("non-harness submit treats the signed-workspace placeholder as no model", async () => {
+  test("a draft without an authoritative model key cannot submit", async () => {
     state.demoMode = false
     state.harnessMode = false
     state.localCurrentModel = undefined
+    state.piSubmitModel = undefined
     state.localCurrentAgent = undefined
     state.localAgentList = [{ name: "build" }, { name: "plan" }]
 
@@ -142,8 +143,9 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(calls.transportAsync).toBe(0)
     expect(runtimeCalls.some((call) => call.input.startsWith("/provider"))).toBe(false)
     expect(toasts).toContainEqual({
-      title: "prompt.toast.modelAgentRequired.title",
-      description: "prompt.toast.modelAgentRequired.description",
+      title: "prompt.toast.promptSendFailed.title",
+      description: "The session configuration is not available yet. Try again after it loads.",
+      variant: "error",
     })
   })
 
@@ -155,7 +157,7 @@ describe("Workspace-runtime transport + model resolution", () => {
     const submit = createPromptSubmit({
       info: () => ({ id: "session-existing" }),
       sessionID: () => "session-existing",
-      sessionDirectory: () => "workspace:ws_resumed",
+      sessionDirectory: () => "ws_resumed",
       imageAttachments: () => [],
       commentCount: () => 0,
       autoAccept: () => false,
@@ -179,7 +181,7 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(calls.transportAsync).toBe(1)
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({
       sessionID: "session-existing",
-      directory: "workspace:ws_resumed",
+      directory: "ws_resumed",
     })
   })
 
@@ -209,7 +211,7 @@ describe("Workspace-runtime transport + model resolution", () => {
     expect(calls.transportAsync).toBe(1)
     expect(transportPromptAsyncCalls.at(-1)).toMatchObject({ sessionID: "signed-existing" })
     expect(runtimeCalls).toContainEqual(expect.objectContaining({
-      input: "/session/signed-existing/config?directory=%2Frepo%2Fmain&nativeHarness=pi",
+      input: "/session/signed-existing/config?directory=%2Frepo%2Fmain",
       method: "GET",
     }))
     expect(runtimeCalls.some((call) => call.method === "PATCH")).toBe(false)

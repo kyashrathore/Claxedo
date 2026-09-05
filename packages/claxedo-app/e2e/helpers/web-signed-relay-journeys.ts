@@ -39,6 +39,7 @@ import {
   ensureWorkspaceSectionExpanded,
   gateReachesReady,
   selectScriptedModel,
+  selectSignedHarness,
   seedWorkspace,
   sendSubsequentMessage,
   sessionRoute,
@@ -137,18 +138,9 @@ export async function journeyA2(ctx: JourneyCtx) {
   const input = await openReadyDraft(ctx)
   scripted.resetCounts()
   const m1 = marker("A2T1")
-  // Compose-then-select, NOT select-then-compose — measured live 2026-08-06:
-  // an earlier draft of this journey "fixed" this ordering to match `journeyA3`'s
-  // real bug (see that journey's own note), which turned out to be the WRONG
-  // generalization — this exact compose-then-select order is what the very
-  // first successful run of this whole suite used for A2 specifically, and
-  // switching it produced a NEW, reproducible failure (session creation
-  // never reaching the server at all, confirmed by an empty fixture request
-  // log at the moment of failure — not a UI timing flake). Left as the
-  // ORIGINAL, working order; A3's fix does not generalize here.
   await composeText(page, input, await promptText(m1))
   await selectScriptedModel(page)
-  await submitDraft(page)
+  const sessionId = await submitDraft(page)
   await expectAssistantReplyVisible(page, new RegExp(m1), { spec: ctx.spec, scenario: "a2-before-reload" })
 
   await page.reload({ waitUntil: "domcontentloaded" })
@@ -159,6 +151,21 @@ export async function journeyA2(ctx: JourneyCtx) {
   await composeText(page, composerInput(page), await promptText(m2))
   await sendSubsequentMessage(page)
   await expectAssistantReplyVisible(page, new RegExp(m2), { spec: ctx.spec, scenario: "a2-after-reload-turn2" })
+
+  const historyResponse = await fetch(
+    `${ctx.info.relayUrl}/workspaces/${ctx.info.workspaceId}/session/${sessionId}/message`,
+    { headers: { Authorization: `Bearer ${ctx.info.runtimeAccessToken}` } },
+  )
+  expect(historyResponse.status).toBe(200)
+  const history = await historyResponse.json() as Array<{
+    info: { role: string }
+    parts: Array<{ type: string; text?: string }>
+  }>
+  const userText = history.filter((message) => message.info.role === "user")
+    .flatMap((message) => message.parts.filter((part) => part.type === "text").map((part) => part.text))
+  expect(userText).toEqual([await promptText(m1), await promptText(m2)])
+  expect(scripted.requests.filter((request) => request.dialect === "responses"
+    && request.reply.kind === "text" && [m1, m2].includes(request.reply.text))).toHaveLength(2)
 }
 
 /**
@@ -228,8 +235,8 @@ export async function journeyB1toB4(ctx: JourneyCtx) {
   await expectAssistantReplyVisible(page, m2, { spec: ctx.spec, scenario: "b4-second-turn" })
 
   expect(
-    scripted.counts().chat,
-    "fewer scripted chat calls than expected — a turn silently answered from elsewhere",
+    scripted.counts().responses,
+    "fewer scripted Responses calls than expected — a Pi turn did not reach the configured endpoint",
   ).toBeGreaterThanOrEqual(3)
   void info
 }
@@ -421,9 +428,8 @@ export async function journeyC1(ctx: JourneyCtx) {
 /**
  * C4: switching harness survives a reload and completes a second turn.
  *
- * `selectScriptedModel` moves the draft onto the injected Tier R harness
- * through the unified picker. The selected harness is then locked to the
- * created session and must survive reload before the second turn.
+ * Select Pi first, then switch to Claude through the unified picker. Both
+ * turns must use Claude's Anthropic endpoint and retain that harness on reload.
  */
 export async function journeyC4(ctx: JourneyCtx) {
   const { page, scripted } = ctx
@@ -431,6 +437,9 @@ export async function journeyC4(ctx: JourneyCtx) {
   scripted.resetCounts()
 
   await selectScriptedModel(page)
+  await selectSignedHarness(page, "Claude", "claude")
+  const trigger = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(trigger).not.toContainText(/Select model|Loading models/i, { timeout: 45_000 })
 
   const m1 = marker("C4T1")
   await composeText(page, input, await promptText(m1))
@@ -438,6 +447,7 @@ export async function journeyC4(ctx: JourneyCtx) {
   await expectAssistantReplyVisible(page, m1, { spec: ctx.spec, scenario: "c4-turn1" })
 
   const harnessTriggerBefore = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(harnessTriggerBefore).toHaveAttribute("data-harness", "claude")
   const labelBefore = ((await harnessTriggerBefore.textContent()) ?? "").trim()
   expect(labelBefore, "harness+model trigger stuck on Loading models/blank before reload").not.toMatch(
     /Loading models|^$/,
@@ -450,6 +460,7 @@ export async function journeyC4(ctx: JourneyCtx) {
   // (open issue #15), matching `core-harness-ownership-*`'s "locked once a
   // session exists" contract, proven here against a real backend.
   const harnessTriggerAfter = page.locator('[data-action="prompt-harness-model"]:visible').last()
+  await expect(harnessTriggerAfter).toHaveAttribute("data-harness", "claude")
   await expect(harnessTriggerAfter, "harness+model trigger label changed across reload").toContainText(labelBefore, {
     timeout: 20_000,
   })
@@ -464,9 +475,11 @@ export async function journeyC4(ctx: JourneyCtx) {
   await expectAssistantReplyVisible(page, m2, { spec: ctx.spec, scenario: "c4-turn2" })
 
   expect(
-    scripted.counts().chat,
-    "second turn never reached the scripted endpoint — the harness silently fell back to another provider",
-  ).toBeGreaterThanOrEqual(1)
+    scripted.requests.filter((request) => request.dialect === "messages"
+      && request.reply.kind === "text" && (request.reply.text === m1 || request.reply.text === m2)).length,
+    "both switched-harness turns must reach the Anthropic endpoint",
+  ).toBe(2)
+  expect(scripted.counts().responses, "the draft must not execute on its previous Pi harness").toBe(0)
 
   await expectRailRowUnique({ page, sessionId })
   await expectRailTitleSettled({ page, sessionId })

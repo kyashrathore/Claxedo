@@ -31,8 +31,6 @@ beforeEach(() => {
   clearedTries = []
   workspace = { kind: "local" }
   postResponse = new Response(null, { status: 204 })
-  statusResponse = Response.json({ type: "acp:claude", status: "ready", ready: true })
-  postRelease = undefined
   workspaceCalls = 0
   remembered = []
   publishedConfigs = []
@@ -65,8 +63,8 @@ describe("harness switcher", () => {
       },
     })
 
-    const first = switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
-    const second = switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
+    const first = switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "new" })
+    const second = switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "new" })
 
     expect(second).toBe(Object.values(pending)[0])
     expect(workspaceCalls).toBe(1)
@@ -90,35 +88,31 @@ describe("harness switcher", () => {
       },
     })
 
-    const first = switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
-    await switcher.setHarness(scope, "acp:codex", { directory: "/repo", sessionId: "new" })
+    const first = switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "new" })
+    await switcher.setHarness(scope, connectionHarness("codex-team"), { directory: "/repo", sessionId: "new" })
     releaseFirst({ kind: "cloud" })
     await first
 
-    expect(remembered).toEqual([{ scope, type: "acp:codex", directory: "/repo" }])
-    expect(optionFetches).toEqual([{ scope, type: "acp:codex", directory: "/repo", sessionId: "new" }])
+    expect(remembered).toEqual([{ scope, type: connectionHarness("codex-team"), directory: "/repo" }])
+    expect(optionFetches).toEqual([{ scope, type: connectionHarness("codex-team"), directory: "/repo", sessionId: "new" }])
   })
 
   test("keeps a draft selection local until session creation", async () => {
     const switcher = switcherFor()
-    const selection = connectionHarness("team-claude")
 
-    await switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" }, "/bin/claude")
+    await switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "new" }, "/bin/claude")
 
     expect(dropped).toEqual([scope])
     expect(clearedTries).toEqual([scope])
     expect(patches[0]).toMatchObject({
-      harness: "acp:claude",
+      harness: connectionHarness("claude-team"),
       optionsLoading: true,
       readiness: "ready",
     })
-    expect(posts).toEqual([{
-      url: harnessConfigUrl({ serverUrl: "http://server" }),
-      body: { type: "acp:claude", binary: "/bin/claude", directory: "/repo" },
-    }])
-    expect(optionFetches).toEqual([{ scope, type: "acp:claude", directory: "/repo", sessionId: "new" }])
-    expect(refreshes).toEqual([{ directory: "/repo", type: "acp:claude", draft: true }])
-    expect(remembered).toEqual([{ scope, type: "acp:claude", directory: "/repo" }])
+    expect(posts).toEqual([])
+    expect(optionFetches).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo", sessionId: "new" }])
+    expect(refreshes).toEqual([{ directory: "/repo", type: undefined, draft: true }])
+    expect(remembered).toEqual([{ scope, type: connectionHarness("claude-team"), directory: "/repo" }])
   })
 
   // The acp:codex Tier R repro. `setHarnessOnce` opens with
@@ -147,13 +141,13 @@ describe("harness switcher", () => {
     // The first switch parks on its workspace boot; a second switch for a
     // different harness bumps the scope revision, so the first is abandoned the
     // moment it resumes.
-    const abandoned = switcher.setHarness(scope, "acp:codex", { directory: "/repo", sessionId: "new" })
-    void switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
+    const abandoned = switcher.setHarness(scope, connectionHarness("codex-team"), { directory: "/repo", sessionId: "new" })
+    void switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "new" })
     releaseWorkspace({ kind: "local" })
     await abandoned
 
-    expect(patches[0]).toMatchObject({ harness: "acp:codex", optionsLoading: true })
-    expect(optionFetches.some((item) => item.type === "acp:codex")).toBe(false)
+    expect(patches[0]).toMatchObject({ harness: connectionHarness("codex-team"), optionsLoading: true })
+    expect(optionFetches.some((item) => item.type === connectionHarness("codex-team"))).toBe(false)
     // The abandoned switch must release the flag it raised: the last word on
     // `optionsLoading` from any patch it emitted is `false`, never a dangling
     // `true` that nothing else will ever lower.
@@ -165,24 +159,24 @@ describe("harness switcher", () => {
     workspace = { kind: "cloud" }
     const switcher = switcherFor()
 
-    await switcher.setHarness(scope, "acp:codex", { directory: "/repo", sessionId: "new" })
+    await switcher.setHarness(scope, connectionHarness("codex-team"), { directory: "/repo", sessionId: "new" })
 
     expect(posts).toEqual([])
-    expect(optionFetches).toEqual([{ scope, type: "acp:codex", directory: "/repo", sessionId: "new" }])
-    expect(refreshes).toEqual([{ directory: "/repo", type: "acp:codex", draft: true }])
+    expect(optionFetches).toEqual([{ scope, type: connectionHarness("codex-team"), directory: "/repo", sessionId: "new" }])
+    expect(refreshes).toEqual([{ directory: "/repo", type: undefined, draft: true }])
   })
 
   test("switches non-local existing sessions through canonical session config", async () => {
     const switcher = switcherFor()
 
-    await switcher.setHarness("session:ses_1", "acp:cursor", { directory: "/repo", sessionId: "ses_1" })
+    await switcher.setHarness("session:ses_1", nativeHarness("cursor"), { directory: "/repo", sessionId: "ses_1" })
 
     expect(posts).toEqual([{
       url: `${sessionResourceUrl({ serverUrl: "http://server", resource: "config", sessionID: "ses_1", directory: "/repo" })}&nativeHarness=cursor`,
       body: {},
     }])
-    expect(optionFetches).toEqual([{ scope: "session:ses_1", type: "acp:cursor", directory: "/repo", sessionId: "ses_1" }])
-    expect(refreshes).toEqual([{ directory: "/repo", type: "acp:cursor", draft: undefined }])
+    expect(optionFetches).toEqual([{ scope: "session:ses_1", type: nativeHarness("cursor"), directory: "/repo", sessionId: "ses_1" }])
+    expect(refreshes).toEqual([{ directory: "/repo", type: undefined, draft: undefined }])
     expect(publishedConfigs).toEqual([{
       sessionId: "ses_1",
       directory: "/repo",
@@ -253,7 +247,7 @@ describe("harness switcher", () => {
     postResponse = Response.json({ error: { message: "binary missing" } }, { status: 500 })
     const switcher = switcherFor()
 
-    await switcher.setHarness(scope, "acp:claude", { directory: "/repo", sessionId: "new" })
+    await switcher.setHarness(scope, connectionHarness("claude-team"), { directory: "/repo", sessionId: "ses_1" })
 
     expect(patches.at(-1)).toEqual({
       configError: "binary missing",

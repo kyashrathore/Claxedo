@@ -1,29 +1,15 @@
-import type {
-  AgentPartInput,
-  FilePartInput,
-  Message,
-  OutputFormat,
-  Part,
-  Session,
-  TextPartInput,
-  Todo,
-} from "@opencode-ai/sdk/v2/client"
+import type { AgentPresentationMessage as Message, AgentContentPart as Part, AgentPresentationSession as Session, AgentTodo as Todo, PromptInput } from "@claxedo/agent-runtime-contract"
 import type { AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-urls"
 import type { SessionRef } from "@/platform/identity/session-ref"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import type { SessionTransportCapabilities } from "@/platform/runtime/capabilities"
 import type { AgentRuntimeGoalMutationResult } from "@/platform/runtime/agent/agent-runtime-client"
 import type { AgentRuntimeGoalState } from "@/platform/runtime/agent/agent-runtime-goal-client"
 
-export type SessionTurnOutcome = (
-  | { status: "completed"; completedAt: number; reason?: string }
-  | { status: "failed"; completedAt: number; error: string }
-  | { status: "cancelled"; completedAt: number; reason?: string }
-) & { assistantMessageId?: string }
+export type { AgentTurnOutcome as SessionTurnOutcome } from "@claxedo/agent-runtime-contract"
 
 export type RuntimeSession = Session & {
-  status?: string | null
   recovery_error?: string | null
-  lastTurn?: SessionTurnOutcome
 }
 
 export type SessionMessageRow = {
@@ -57,7 +43,7 @@ export type SessionBackend = {
   getCapabilities: (input: {
     directory: string
     sessionID?: string
-    harness?: string
+    harness?: HarnessSelection
     sessionRef?: SessionRef
     signal?: AbortSignal
   }) => Promise<SessionTransportCapabilities>
@@ -109,7 +95,7 @@ export type SessionBackend = {
      * the runtime answers for the directory's default harness instead of the
      * one the composer targets.
      */
-    harness?: string
+    harness?: HarnessSelection
   }) => Promise<{ data?: AgentRuntimePermissionModeState }>
   setPermissionMode: (input: {
     directory: AgentRuntimeDirectory
@@ -168,10 +154,10 @@ export type AgentRuntimePromptPayload = {
   agent: string
   model: { providerID: string; modelID: string }
   messageID: string
-  parts: Array<(TextPartInput | FilePartInput | AgentPartInput) & { id: string }>
+  parts: PromptInput["parts"]
   variant?: string
   system?: string
-  format?: OutputFormat
+  format?: PromptInput["format"]
   /**
    * The permission mode this turn should run under, applied by the runtime
    * BEFORE the prompt reaches the harness.

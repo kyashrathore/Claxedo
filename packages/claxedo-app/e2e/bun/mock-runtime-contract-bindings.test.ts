@@ -1,11 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import { driveEmptyRuntimeDiffRoute } from "../helpers/contracts/runtime-diff"
-import { createRuntimeProviderConfig } from "../helpers/contracts/provider-config"
+
 import { readyRuntimeHealthResponse } from "../helpers/contracts/runtime-health"
 import { emptySessionNavigationListResponse } from "../helpers/contracts/session-list"
 import { emptySessionInventoryResponse } from "../helpers/contracts/session-inventory"
 import {
-  localHarnessOptionsResponse,
   runtimeHarnessOptionsResponse,
   type BoundHarnessConfigOption,
 } from "../helpers/contracts/harness-options"
@@ -49,12 +48,7 @@ describe("mock-runtime canonical route bindings", () => {
     expect(central.endsWith('","type":"server.connected","properties":{}}}\n\n')).toBe(true)
   })
 
-  test("keeps local and runtime harness-option response contracts distinct", () => {
-    expect(localHarnessOptionsResponse([option])).toEqual({
-      source: "harness",
-      stale: false,
-      options: [option],
-    })
+  test("uses the runtime options response forwarded unchanged by the local control route", () => {
     expect(runtimeHarnessOptionsResponse([option])).toEqual({ options: [option] })
   })
 
@@ -127,7 +121,8 @@ describe("mock-runtime canonical route bindings", () => {
         access: "driver-authenticated",
       },
       exposure: { kind: "relay" },
-      agentType: "codex",
+      harness: { kind: "native", harnessId: "codex" },
+      activeHarness: { kind: "native", harnessId: "codex" },
       error: null,
       harnessHealth: { status: "ok" },
     })
@@ -186,46 +181,7 @@ describe("mock-runtime canonical route bindings", () => {
     })
   })
 
-  test("drives the real provider-config router, loopback and through the relay", async () => {
-    const config = createRuntimeProviderConfig({
-      harness: () => "opencode",
-      config: { provider: { "clinepass-2": { name: "Cline pass 2" } } },
-    })
 
-    await expect(config.handle({
-      url: "http://127.0.0.1:4455/api/wr/provider-config?harness=opencode",
-      method: "PATCH",
-      body: JSON.stringify({ provider: "clinepass-2", disabled: true }),
-    })).resolves.toEqual({
-      status: 200,
-      body: { harness: "opencode", disabled_providers: ["clinepass-2"] },
-    })
-    expect(config.disabled()).toEqual(["clinepass-2"])
-
-    await expect(config.handle({
-      url: "https://relay.test/workspaces/ws_1/api/wr/provider-config?harness=opencode",
-      method: "PATCH",
-      body: JSON.stringify({ provider: "clinepass-2", disabled: false }),
-    })).resolves.toEqual({
-      status: 200,
-      body: { harness: "opencode", disabled_providers: [] },
-    })
-    expect(config.disabled()).toEqual([])
-
-    // A harness this runtime does not hold configuration for answers the
-    // router's own 404, not a silent success.
-    await expect(config.handle({
-      url: "http://127.0.0.1:4455/api/wr/provider-config?harness=claude-sdk",
-      method: "PATCH",
-      body: JSON.stringify({ provider: "anthropic", disabled: true }),
-    })).resolves.toMatchObject({
-      status: 404,
-      body: { error: { code: "provider_config_unsupported_harness" } },
-    })
-
-    expect(config.requests.map((item) => `${item.harness} ${item.directory ?? "-"}`))
-      .toEqual(["opencode -", "opencode -", "claude-sdk -"])
-  })
 
   // The row LITERALS below are typed `ControlPlaneWorkspaceRow`, which is
   // derived from the authority's own `listWorkspaces` projection — so a field

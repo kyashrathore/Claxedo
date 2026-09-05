@@ -43,52 +43,8 @@ export type PromptDispatchInput = {
   onDemoReply: (reply: { info: Message; parts: Part[] }) => void
 }
 
-export type ShellDispatchPayload = {
-  sessionID: string
-  directory: SubmitDirectory
-  agent: string
-  model: { providerID: string; modelID: string }
-  command: string
-}
-
-export type ShellDispatchInput = {
-  client: {
-    session: {
-      shell(input: ShellDispatchPayload): Promise<unknown>
-    }
-  }
-  payload: ShellDispatchPayload
-}
-
-export type SlashCommandDispatchPayload = {
-  sessionID: string
-  directory: SubmitDirectory
-  command: string
-  arguments: string
-  agent: string
-  model: string
-  variant?: string
-  parts: FilePartInput[]
-}
-
-export type SlashCommandDispatchInput = {
-  client: {
-    session: {
-      command(input: SlashCommandDispatchPayload): Promise<unknown>
-    }
-  }
-  payload: SlashCommandDispatchPayload
-}
-
 export type PromptContextItem = ContextItem & { key: string }
-// `SubmitMode` is the user-facing input toggle — the prompt input only
-// exposes the "normal" / "shell" pair. The dispatcher branches on the
-// wider `ResolvedSubmitMode` returned by `resolveSubmitMode` (rubric A3),
-// which adds "slash" when the resolver detects a registered slash
-// command. Keeping the two types separate prevents the prompt-input
-// store types from leaking the resolver-only "slash" value.
 export type SubmitMode = "normal" | "shell"
-export type ResolvedSubmitMode = SubmitMode | "slash"
 
 export type PreparedPromptRequest = {
   messageID: string
@@ -123,8 +79,6 @@ export type SubmittedConfig = {
   variant?: string
 }
 
-export type SubmitModel = { id: string; name?: string; provider: { id: string } }
-
 export type PromptTimelineOptimisticStore = {
   add(input: { directory: SubmitDirectory; sessionID: string; message: Message; parts: Part[] }): void
   remove(input: { directory: SubmitDirectory; sessionID: string; messageID: string }): void
@@ -149,10 +103,7 @@ export type ResolveSubmitSessionTargetContext = {
   explicitSessionID?: string
   isNewSession: boolean
   replaceSession: boolean
-  harnessMode: boolean
-  signedControlPlane: boolean
   sessionDirectory: SubmitDirectory
-  client: SubmitSessionGetClient
   sessionClient: () => SubmitSessionGetClient
   createSessionTarget: () => Promise<SubmitSessionTarget | undefined>
 }
@@ -178,23 +129,11 @@ export type ResolveSubmitDirectoryContext = {
 }
 
 export type ResolveSubmittedConfigContext = {
-  harnessMode: boolean
   harnessModelKey?: ModelKey
-  selectedModel?: SubmitModel
   currentAgent?: SubmitAgent
   defaultAgent?: SubmitAgent
   agentOverride?: string
   variant?: string
-  modelForSubmit: (selected: SubmitModel | undefined) => Promise<SubmitModel | undefined>
-}
-
-export type ResolvePromptDispatchClientContext = {
-  harnessMode: boolean
-  signedControlPlane: boolean
-  loopbackWorkspaceBridge: boolean
-  sessionClient: () => PromptDispatchInput["client"]
-  hostedSessionClient: () => Promise<PromptDispatchInput["client"] | undefined>
-  fallbackClient: PromptDispatchInput["client"]
 }
 
 export type ApplyCreatedSessionTargetEffectsContext = {

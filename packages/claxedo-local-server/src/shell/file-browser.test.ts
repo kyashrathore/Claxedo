@@ -87,7 +87,7 @@ describe("the containment rejection is not swallowed by the fs catch", () => {
       status: 400,
       body: {
         error: {
-          code: "opencode_path_outside_workspace",
+          code: "claxedo_path_outside_workspace",
           message: "path resolves outside the workspace root",
         },
       },

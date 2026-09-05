@@ -1,5 +1,5 @@
 import { assistantMessageIdForTurn } from "@claxedo/agent-event-runtime/contracts"
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/projections/opencode-compat"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/projections/client-presentation"
 import type { AgentRuntimeEvent as ProjectionRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { defaultSessionModel, firstTurnErrorData, isAgentRuntimeTurnConflictError } from "@claxedo/agent-sdk-runtime"
 import { AgentRuntimeContractError, assertAgentExecutionBinding, type AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
@@ -279,6 +279,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
   let assistantMessagePublished = false
   let error: string | undefined
   let activeTurn = input.activeTurn
+  let messages!: AgentMessage[]
   let admissionSettled = false
   const settleAdmission = (admissionError?: unknown) => {
     if (admissionSettled) return
@@ -347,9 +348,13 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
     error = input.streamErrorMessage?.(err) ?? (err instanceof Error ? err.message : "Stream error")
     input.publishGlobal(withDir(scope, sessionError(error, input.sessionId)))
   } finally {
-    activeTurn?.dispose?.()
-    const returned = iterator.return?.()
-    if (returned) await Promise.resolve(returned).catch(() => {})
+    try {
+      const returned = iterator.return?.()
+      if (returned) await Promise.resolve(returned).catch(() => {})
+      if (turn) messages = await input.runtime.events.list(input.sessionId, input.directory)
+    } finally {
+      activeTurn?.dispose?.()
+    }
   }
 
   if (!turn) throw new Error(error ?? "Failed to start runtime turn")
@@ -361,7 +366,7 @@ export async function runRuntimePromptTurn(input: RuntimePromptTurnInput): Promi
     assistantId,
     assistantMessagePublished,
     ...(error ? { error } : {}),
-    messages: await input.runtime.events.list(input.sessionId, input.directory),
+    messages,
   }
 }
 
@@ -376,7 +381,7 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
   const binding = assertAgentExecutionBinding(input.binding, {
     ...input.binding,
     sessionId: input.sessionId,
-    directory: input.directory ?? "",
+    directory: input.binding.scope === "central" ? "" : input.directory ?? "",
   })
   const promptInput = await promptForSession(input.adapter, binding, input.body)
   const scope = compatScope(input.directory, input.sessionId)
@@ -395,7 +400,7 @@ export async function runSessionPromptTurn(input: SessionPromptTurnInput): Promi
   })
   let assistantMessagePublished = false
   try {
-    for await (const item of sendMessageWithAbort(input.adapter, input.sessionId, promptInput, input.directory, activeTurn?.signal)) {
+    for await (const item of sendMessageWithAbort(input.adapter, binding, promptInput, activeTurn?.signal)) {
       if (input.turnAdmission && !input.turnAdmission.valid()) break
       for (const event of events.events(item)) {
         if (input.turnAdmission && !input.turnAdmission.valid()) break

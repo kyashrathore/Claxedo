@@ -2,14 +2,14 @@ import { createMemo, type Accessor } from "solid-js"
 import { useQuery } from "@tanstack/solid-query"
 import type { AgentRuntimeGoalCapabilities } from "@/platform/runtime/agent/agent-runtime-client"
 import { fetchSessionCapabilitiesByTransport } from "@/features/session/store/session-transport"
+import { harnessSelectionKey, type HarnessSelection } from "@/platform/identity/harness-selection"
 
 type CapabilityRequest = Parameters<typeof fetchSessionCapabilitiesByTransport>[0]
 
 export function createComposerGoalController(input: {
   isNewSession: Accessor<boolean>
-  harness: Accessor<string>
+  harness: Accessor<HarnessSelection | undefined>
   harnessPending: Accessor<boolean>
-  client: CapabilityRequest["client"]
   directory: Accessor<CapabilityRequest["directory"]>
   serverUrl: Accessor<string | undefined>
   signedControlPlane: Accessor<boolean>
@@ -40,13 +40,12 @@ export function createComposerGoalController(input: {
         "session-goal-draft-capabilities-v1",
         input.serverUrl() ?? "",
         directory,
-        harness,
+        harness ? harnessSelectionKey(harness) : undefined,
         signed ? "signed" : "local",
         input.workspaceId() ?? "",
         input.workspaceKind() ?? "",
       ] as const,
       queryFn: ({ signal }: { signal: AbortSignal }) => fetchSessionCapabilitiesByTransport({
-        client: input.client,
         directory,
         harness,
         claxedoServerUrl: input.serverUrl(),
@@ -56,7 +55,7 @@ export function createComposerGoalController(input: {
         sessionRef: input.sessionRef(),
         signal,
       }),
-      enabled: input.isNewSession() && !input.harnessPending(),
+      enabled: input.isNewSession() && !!harness && !input.harnessPending(),
       staleTime: 30_000,
     }
   })

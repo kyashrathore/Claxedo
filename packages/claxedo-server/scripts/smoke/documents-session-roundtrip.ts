@@ -85,7 +85,7 @@ export async function runDocumentsSessionRoundtripSmoke() {
     }
   } finally {
     await disposeHydratedSessionDocuments(sessionId)
-    releaseEmbeddedWorkspaceRuntime(workspace.id)
+    await releaseEmbeddedWorkspaceRuntime(workspace.id)
     configureAgentConfig()
     ClaxedoDB.close()
     if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR

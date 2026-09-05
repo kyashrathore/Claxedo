@@ -4,7 +4,6 @@ import { AgentHarnessSelector } from "@/features/session/ui/controls/agent-harne
 import type { HarnessSelectionController } from "@/features/session/harness/controller"
 import { PromptAddMenu } from "@/features/session/composer/ui/add-menu"
 import { PromptPermissionControl } from "@/features/session/composer/ui/permission-control"
-import { openCodeDraftLabels } from "@/features/session/composer/open-code-draft-default"
 import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import type { PermissionModeGroups } from "@/features/session/composer/permission-mode"

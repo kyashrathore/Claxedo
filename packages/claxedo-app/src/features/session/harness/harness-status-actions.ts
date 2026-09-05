@@ -63,7 +63,14 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
     }
     if (failedHarness(data) && current?.harness && !sameHarnessSelection(want, current.harness)) return
     input.applyPatch(scope, harnessStatusPatch({ data, current }))
-    if (shouldFetchConfigOptionsForScope(want, hardFailedHarness(data), params)) {
+    let hasConfigOptions: boolean
+    try {
+      hasConfigOptions = input.hasConfigOptions ? await input.hasConfigOptions(want) : harnessHasConfigOptions(want)
+    } catch (error) {
+      input.applyPatch(scope, { configError: error instanceof Error ? error.message : "Failed to load connection capabilities", readiness: "error", optionsLoading: false })
+      return
+    }
+    if (hasConfigOptions && shouldFetchConfigOptionsForScope(want, hardFailedHarness(data), params)) {
       input.fetchConfigOptions(scope, want, params)
     } else if (hasConfigOptions && hardFailedHarness(data)) {
       // A HARD-FAILED harness that has config options is the one case where the
@@ -79,6 +86,8 @@ export function createHarnessStatusActions<ScopeInput extends HarnessScopeInput>
       // flag there races the real fetch and flickers the harness through a
       // false "no models" state.
       input.applyPatch(scope, { optionsLoading: false })
+    } else if (!hasConfigOptions && !hardFailedHarness(data)) {
+      input.applyPatch(scope, readyHarnessHydrationPatch(want, false))
     }
     if (params?.directory && shouldRefreshDirectoryAfterHarnessStatus(params)) {
       await refresh(params.directory, want.kind === "native" ? want.harnessId : undefined, { draft: true })

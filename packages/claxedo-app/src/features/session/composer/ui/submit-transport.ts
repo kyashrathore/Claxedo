@@ -1,28 +1,25 @@
 import { queryKeys } from "@/platform/query/keys"
 import { getClaxedoServerUrl } from "@/platform/api/api"
 import type { ProjectCatalogItem } from "../workspace-resolver"
-import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { sessionHarnessIdentity, type HarnessType } from "@/features/session/harness/profile"
 import { parseExistingSessionConfig } from "./submit-session-config"
 import { createTransport } from "@/platform/runtime/transport"
 import { harnessQueryFetch } from "@/platform/runtime/harness-query-fetch"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
 import type { SessionRef, WorkspaceSessionBacking } from "@/platform/identity/session-ref"
-import { harnessSelectionQuery, type HarnessSelection } from "@/platform/identity/harness-selection"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import { queryClient } from "@/platform/query/query-client"
 import { sessionConfigRawQueryKey } from "../../store/session-config-selection"
 import { setSessionConfigRawQueryData } from "../../store/session-config-query-cache"
 import { createAgentRuntimeClient } from "@/platform/runtime/agent/agent-runtime-client"
 import { centralRuntimePath } from "@/platform/runtime/agent/central-runtime-path"
-import { resolveSessionUrl } from "@/platform/runtime/session-url"
 import { workspaceResolveUrl } from "@/platform/runtime/agent/workspace-control-routes"
 import {
   centralTransportForServer,
   submitTransportForPlacement,
   unsignedLocalFetch,
 } from "@/platform/runtime/transport"
-import type { PromptDispatchInput, SubmitDirectory, SubmitModel, SubmitSessionGetClient } from "../../submit/index"
-import { sessionHarnessIdentity } from "@/features/session/harness/profile"
+import type { PromptDispatchInput, SubmitDirectory, SubmitSessionGetClient } from "../../submit/index"
 
 export type SubmitTransportClientFactoryInput = {
   readonly baseUrl: string
@@ -39,7 +36,6 @@ export type SubmitTransportPlacementInput<Client extends PromptDispatchInput["cl
   readonly sessionRef?: () => SessionRef | undefined
   readonly request: typeof fetch
   readonly localRequest: typeof fetch
-  readonly config: Parameters<typeof resolveSessionUrl>[1]
   readonly createClient: (input: SubmitTransportClientFactoryInput) => Client
   readonly showToast: (toast: { title: string; description?: string; variant?: "error" }) => void
   readonly formatError: (err: unknown) => string
@@ -161,14 +157,6 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
   const sessionRequest = (dir: SubmitDirectory, path: string, init?: RequestInit) =>
     sessionFetch(dir)(usesWorkspaceRuntimeSession(dir) ? path : `${input.serverUrl()}${path}`, init)
 
-  const modelForSubmit = async (dir: SubmitDirectory, selected: SubmitModel | undefined) => {
-    if (!workspaceRuntimeRef(dir)) return selected
-    if (centralTransportForServer(input.serverUrl()) === "loopback") {
-      return selected
-    }
-    return selected
-  }
-
   const sessionClient = (dir: string, harnessType?: HarnessSelection) =>
     input.createClient({
       baseUrl: input.serverUrl(),
@@ -179,18 +167,6 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
       directory: dir,
       throwOnError: true,
     })
-
-  const hostedSessionClient = async (dir: string, sessionID: string) => {
-    if (runtimeTransport(dir).loopbackWorkspaceBridge) return
-    const url = await resolveSessionUrl(sessionID, input.config)
-    if (!url) return
-    return input.createClient({
-      baseUrl: url,
-      fetch: input.localRequest,
-      directory: dir,
-      throwOnError: true,
-    })
-  }
 
   const createRuntimePromptClient = (clientInput: {
     readonly signedControlPlane: boolean
@@ -264,7 +240,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     }
   }
 
-  const readSessionConfig = async (configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) => {
+  const readSessionConfig = async (configInput: Pick<SaveSessionConfigInput, "sessionID" | "directory">) => {
     const queryKey = sessionConfigRawQueryKey({
       sessionID: configInput.sessionID,
       directory: configInput.directory,
@@ -291,9 +267,7 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
     usesSignedControlPlane,
     usesLoopbackWorkspaceBridge,
     usesWorkspaceRuntimeSession,
-    modelForSubmit,
     sessionClient,
-    hostedSessionClient,
     createRuntimePromptClient,
     readSessionConfig,
     saveSessionConfig,
@@ -302,13 +276,6 @@ export function createSubmitTransportAdapter<Client extends PromptDispatchInput[
 
 function sessionConfigBody(input: SessionConfigPayload) {
   return {
-    // Canonical `{ id, access }` wire identity — the same shape
-    // `harness-switcher.ts` already PATCHes to this very route. The old
-    // `{ type: <app harness key> }` form only worked because the runtime's
-    // `normalizeHarnessIdentity` carries a legacy string map for the built-in
-    // keys ("claude-sdk" → claude/native). An operator ACP key (`acp:<slug>`)
-    // has no such entry and no `access`, so the runtime dropped the harness
-    // from the update entirely — including the harness-switch guard.
     harness: sessionHarnessIdentity(input.harnessType),
     ...(input.agent ? { agent: input.agent } : {}),
     ...(input.model ? { model: input.model } : {}),
@@ -316,25 +283,13 @@ function sessionConfigBody(input: SessionConfigPayload) {
   }
 }
 
-function sessionConfigPath(input: Pick<SaveSessionConfigInput, "sessionID" | "directory" | "harnessType">) {
+function sessionConfigPath(input: Pick<SaveSessionConfigInput, "sessionID" | "directory">) {
   const url = new URL(`/session/${encodeURIComponent(input.sessionID)}/config`, "http://claxedo.local")
   url.searchParams.set("directory", input.directory)
-  for (const [key, value] of Object.entries(harnessSelectionQuery(input.harnessType))) {
-    url.searchParams.set(key, value)
-  }
   return `${url.pathname}${url.search}`
 }
 
-/**
- * The cached raw config, rendered as the PATCH body it would produce, so the
- * dedupe compares like with like.
- *
- * It reads through `parseExistingSessionConfig` — the one canonical reader of a
- * persisted session config — instead of re-deriving the shape here. The
- * hand-rolled version compared a persisted identity id ("claude") against the
- * app's harness key ("claude-sdk"), so the dedupe only ever matched for
- * OpenCode and every other harness re-PATCHed an unchanged config each submit.
- */
+/** Compare cached configuration and writes using the same canonical PATCH representation. */
 function sessionConfigSignature(input: unknown) {
   const parsed = parseExistingSessionConfig(input)
   if (!parsed) return

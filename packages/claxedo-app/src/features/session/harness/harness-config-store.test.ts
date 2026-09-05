@@ -8,9 +8,7 @@ import {
   effectiveHarnessModel,
   extractModelsFromConfigOptions,
   failedHarness,
-  harnessDisplayLabel,
   pickHarness,
-  type HarnessType,
 } from "./profile"
 import {
   harnessChangeKey,
@@ -42,9 +40,7 @@ import { syncHarnessSessionModel } from "./harness-query-cache"
 import { createHarnessConfigStore } from "./harness-config-store"
 import { connectionHarness, nativeHarness } from "@/platform/identity/harness-selection"
 
-const claude = nativeHarness("claude")
 const codex = nativeHarness("codex")
-const cursor = nativeHarness("cursor")
 const pi = nativeHarness("pi")
 const externalOpenCode = connectionHarness("external-opencode")
 
@@ -66,112 +62,57 @@ describe("harness config helpers", () => {
     })
   })
 
-  // ── pickHarness ───────────────────────────────────────────────────────
-
-  describe("pickHarness", () => {
-    test("infers a builtin harness id from native access + type", () => {
-      expect(pickHarness("claude", null, "native")).toBe("claude-sdk")
-      expect(pickHarness("codex", null, "native")).toBe("codex-app-server")
-      expect(pickHarness("cursor", null, "native")).toBe("cursor-sdk")
-      expect(pickHarness("opencode", null, "native")).toBe("opencode")
-      expect(pickHarness("pi", null, "native")).toBe("pi")
-    })
-
-    test("infers an open acp:<slug> id from acp access + type", () => {
-      expect(pickHarness("claude", null, "acp")).toBe("acp:claude")
-      expect(pickHarness("codex", null, "acp")).toBe("acp:codex")
-      expect(pickHarness("my-agent", null, "acp")).toBe("acp:my-agent")
-    })
-
-    test("passes through an already-qualified acp:<slug> id regardless of access", () => {
-      expect(pickHarness("acp:claude")).toBe("acp:claude")
-      expect(pickHarness("acp:cursor")).toBe("acp:cursor")
-    })
-
-    // ACP operator connections are fully generic: a binary name never selects
-    // a harness identity — only the explicit type/access pair does.
-    test("never infers a harness from binary names", () => {
-      expect(pickHarness(undefined, "/tmp/codex-acp")).toBeUndefined()
-      expect(pickHarness(undefined, "/usr/local/bin/claude-agent-acp")).toBeUndefined()
-      expect(pickHarness(undefined, "C:\\agents\\codex-acp.exe")).toBeUndefined()
-    })
-
-    test("ignores the binary argument entirely when an explicit type is present", () => {
-      expect(pickHarness("acp:claude", "/tmp/unknown-binary")).toBe("acp:claude")
-      expect(pickHarness("claude-sdk", "/tmp/codex-acp")).toBe("claude-sdk")
-      expect(pickHarness("opencode", "/tmp/unknown-binary")).toBe("opencode")
-    })
-
-    test("returns valid HarnessType from a bare builtin type string", () => {
-      expect(pickHarness("acp:claude")).toBe("acp:claude")
-      expect(pickHarness("acp:codex")).toBe("acp:codex")
-      expect(pickHarness("acp:cursor")).toBe("acp:cursor")
-      expect(pickHarness("claude-sdk")).toBe("claude-sdk")
-      expect(pickHarness("codex-app-server")).toBe("codex-app-server")
-      expect(pickHarness("cursor-sdk")).toBe("cursor-sdk")
-      expect(pickHarness("opencode")).toBe("opencode")
-      expect(pickHarness("pi")).toBe("pi")
-    })
-
-    test("returns undefined for unknown type without a matching access", () => {
-      expect(pickHarness("unknown")).toBeUndefined()
-      expect(pickHarness("opencode")).toBeUndefined()
-      expect(pickHarness({ kind: "connection", connectionId: "" })).toBeUndefined()
-      expect(pickHarness(undefined)).toBeUndefined()
-      expect(pickHarness(null)).toBeUndefined()
-    })
-  })
-
   // ── desiredHarness / activeHarness ─────────────────────────────────────
 
   describe("desiredHarness vs activeHarness during switch", () => {
     test("separates desired from active while a switch is in flight", () => {
       const data = {
-        type: "acp:codex",
+        type: { kind: "connection", connectionId: "acp:codex" },
         binary: "/tmp/codex-acp",
-        activeType: "acp:claude",
+        activeType: { kind: "connection", connectionId: "acp:claude" },
         activeBinary: "/tmp/claude-agent-acp",
       } as const
 
-      expect(desiredHarness(data)).toBe("acp:codex")
-      expect(activeHarness(data)).toBe("acp:claude")
+      expect(desiredHarness(data)).toEqual({ kind: "connection", connectionId: "acp:codex" })
+      expect(activeHarness(data)).toEqual({ kind: "connection", connectionId: "acp:claude" })
     })
 
     test("desired and active match when no switch is happening", () => {
       const data = {
-        type: "acp:claude",
+        type: { kind: "connection", connectionId: "acp:claude" },
         binary: "/tmp/claude-agent-acp",
-        activeType: "acp:claude",
+        activeType: { kind: "connection", connectionId: "acp:claude" },
         activeBinary: "/tmp/claude-agent-acp",
       } as const
 
-      expect(desiredHarness(data)).toBe("acp:claude")
-      expect(activeHarness(data)).toBe("acp:claude")
+      expect(desiredHarness(data)).toEqual({ kind: "connection", connectionId: "acp:claude" })
+      expect(activeHarness(data)).toEqual({ kind: "connection", connectionId: "acp:claude" })
     })
 
     test("activeHarness falls back to type when activeType is missing", () => {
       const data = {
-        type: "acp:codex",
+        type: { kind: "connection", connectionId: "acp:codex" },
         binary: "/tmp/codex-acp",
       } as const
 
-      expect(activeHarness(data)).toBe("acp:codex")
+      expect(activeHarness(data)).toEqual({ kind: "connection", connectionId: "acp:codex" })
     })
   })
 
   describe("session config runner state", () => {
     test("uses persisted session runner instead of falling back to workspace default", () => {
-      expect(harnessStateFromSessionConfig({
-        harness: { type: "acp:codex" },
-        model: { modelID: "gpt-5.5" },
-      })).toEqual({
-        type: "acp:codex",
+      expect(
+        harnessStateFromSessionConfig({
+          harness: { type: { kind: "connection", connectionId: "acp:codex" } },
+          model: { providerID: "remote-provider", modelID: "gpt-5.5" },
+        }),
+      ).toEqual({
+        type: { kind: "connection", connectionId: "acp:codex" },
         model: "gpt-5.5",
-        modelProviderID: "codex",
+        modelProviderID: "remote-provider",
         status: "ready",
         ready: true,
-        activeType: "acp:codex",
-        activeBinary: null,
+        activeType: { kind: "connection", connectionId: "acp:codex" },
       })
     })
   })
@@ -179,16 +120,18 @@ describe("harness config helpers", () => {
   describe("session model sync", () => {
     test("keys existing sessions by the authority that answers for them", () => {
       const server = "http://127.0.0.1:3001"
-      expect(sessionModelSyncKey({ serverUrl: server, directory: "/repo/a", sessionId: "ses_1" }))
-        .not.toBe(sessionModelSyncKey({ serverUrl: server, directory: "/repo/b", sessionId: "ses_1" }))
-      expect(sessionModelSyncKey({ serverUrl: server, directory: "/repo/a", sessionId: "ses_1" }))
-        .not.toBe(sessionModelSyncKey({
+      expect(sessionModelSyncKey({ serverUrl: server, directory: "/repo/a", sessionId: "ses_1" })).not.toBe(
+        sessionModelSyncKey({ serverUrl: server, directory: "/repo/b", sessionId: "ses_1" }),
+      )
+      expect(sessionModelSyncKey({ serverUrl: server, directory: "/repo/a", sessionId: "ses_1" })).not.toBe(
+        sessionModelSyncKey({
           serverUrl: server,
           directory: "/repo/a",
           sessionId: "ses_1",
           workspaceId: "ws_1",
           workspaceKind: "cloud",
-        }))
+        }),
+      )
       expect(sessionModelSyncKey({ serverUrl: server, directory: "/repo/a", sessionId: "new" })).toBeUndefined()
     })
 
@@ -256,28 +199,32 @@ describe("harness config helpers", () => {
         synced: "opus",
       })
     })
-
   })
 
   describe("harnessChangeKey", () => {
     const target = { serverUrl: "http://127.0.0.1:3001", directory: "/tmp/project" }
 
     test("uses the authority, harness type, and binary for in-flight dedupe", () => {
-      expect(harnessChangeKey(target, "acp:codex")).toBe(harnessChangeKey(target, "acp:codex"))
-      expect(harnessChangeKey(target, "acp:codex")).not.toBe(harnessChangeKey(target, "acp:codex", "/usr/local/bin/codex"))
-      expect(harnessChangeKey(target, "acp:codex")).not.toBe(harnessChangeKey(target, "acp:claude"))
-      expect(harnessChangeKey(target, "acp:codex"))
-        .not.toBe(harnessChangeKey({ ...target, serverUrl: "https://app.claxedo.test" }, "acp:codex"))
+      expect(harnessChangeKey(target, { kind: "connection", connectionId: "acp:codex" })).toBe(
+        harnessChangeKey(target, { kind: "connection", connectionId: "acp:codex" }),
+      )
+      expect(harnessChangeKey(target, { kind: "connection", connectionId: "acp:codex" })).not.toBe(
+        harnessChangeKey(target, { kind: "connection", connectionId: "acp:codex" }, "/usr/local/bin/codex"),
+      )
+      expect(harnessChangeKey(target, { kind: "connection", connectionId: "acp:codex" })).not.toBe(
+        harnessChangeKey(target, { kind: "connection", connectionId: "acp:claude" }),
+      )
+      expect(harnessChangeKey(target, { kind: "connection", connectionId: "acp:codex" })).not.toBe(
+        harnessChangeKey(
+          { ...target, serverUrl: "https://app.claxedo.test" },
+          { kind: "connection", connectionId: "acp:codex" },
+        ),
+      )
     })
 
     test("stores harness switch in-flight state under a Query request key", () => {
-      const key = harnessChangeKey(target, "acp:codex")
-      expect(harnessChangeRequestKey(key)).toEqual([
-        "shell",
-        "harness-config",
-        "harness-change",
-        key,
-      ])
+      const key = harnessChangeKey(target, { kind: "connection", connectionId: "acp:codex" })
+      expect(harnessChangeRequestKey(key)).toEqual(["shell", "harness-config", "harness-change", key])
     })
   })
 
@@ -360,19 +307,21 @@ describe("harness config helpers", () => {
 
   describe("failedHarness", () => {
     test("treats error status as terminal", () => {
-      expect(failedHarness({ type: "acp:codex", status: "error" })).toBe(true)
+      expect(failedHarness({ type: { kind: "connection", connectionId: "acp:codex" }, status: "error" })).toBe(true)
     })
 
     test("treats error message as terminal", () => {
-      expect(failedHarness({ type: "acp:claude", error: "binary not found" })).toBe(true)
+      expect(
+        failedHarness({ type: { kind: "connection", connectionId: "acp:claude" }, error: "binary not found" }),
+      ).toBe(true)
     })
 
     test("ready state is not failed", () => {
-      expect(failedHarness({ type: "acp:claude", status: "ready" })).toBe(false)
+      expect(failedHarness({ type: { kind: "connection", connectionId: "acp:claude" }, status: "ready" })).toBe(false)
     })
 
     test("no status and no error is not failed", () => {
-      expect(failedHarness({ type: "opencode" })).toBe(false)
+      expect(failedHarness({ type: externalOpenCode })).toBe(false)
     })
   })
 
@@ -424,7 +373,7 @@ describe("harness config helpers", () => {
 
   describe("draft defaults", () => {
     test("a scope's transient seed carries no remembered harness", () => {
-      expect(initialHarness()).toBe("opencode")
+      expect(initialHarness()).toBeUndefined()
     })
 
     test("recognizes draft scopes", () => {
@@ -435,12 +384,16 @@ describe("harness config helpers", () => {
 
   describe("runner model fallback", () => {
     test("uses default model for non-opencode harnesses with no selected model", () => {
-      expect(effectiveHarnessModel("acp:codex", "")).toBe(DEFAULT_HARNESS_MODEL.id)
-      expect(effectiveHarnessModel("acp:claude", undefined)).toBe(DEFAULT_HARNESS_MODEL.id)
+      expect(effectiveHarnessModel({ kind: "connection", connectionId: "acp:codex" }, "")).toBe(
+        DEFAULT_HARNESS_MODEL.id,
+      )
+      expect(effectiveHarnessModel({ kind: "connection", connectionId: "acp:claude" }, undefined)).toBe(
+        DEFAULT_HARNESS_MODEL.id,
+      )
     })
 
     test("preserves explicit runner model selections", () => {
-      expect(effectiveHarnessModel("acp:codex", "gpt-5.1")).toBe("gpt-5.1")
+      expect(effectiveHarnessModel({ kind: "connection", connectionId: "acp:codex" }, "gpt-5.1")).toBe("gpt-5.1")
     })
 
     test("does not invent a model for provider-backed Pi", () => {
@@ -451,36 +404,48 @@ describe("harness config helpers", () => {
 
   describe("config option fetching", () => {
     test("does not show the stale warning dot when cached models are usable", () => {
-      expect(shouldShowModelOptionsStaleWarning({
-        stale: true,
-        models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
-      })).toBe(false)
+      expect(
+        shouldShowModelOptionsStaleWarning({
+          stale: true,
+          models: [{ id: "gpt-5.5", name: "GPT-5.5" }],
+        }),
+      ).toBe(false)
     })
 
     test("keeps the stale warning for empty model options", () => {
-      expect(shouldShowModelOptionsStaleWarning({
-        stale: true,
-        models: [],
-      })).toBe(true)
+      expect(
+        shouldShowModelOptionsStaleWarning({
+          stale: true,
+          models: [],
+        }),
+      ).toBe(true)
     })
 
     test("loads selectable models when an active existing session hydrates", () => {
-      expect(shouldFetchConfigOptionsForScope("acp:claude", false, {
-        directory: "/tmp/project",
-        sessionId: "ses_1",
-      })).toBe(true)
+      expect(
+        shouldFetchConfigOptionsForScope({ kind: "connection", connectionId: "acp:claude" }, false, {
+          directory: "/tmp/project",
+          sessionId: "ses_1",
+        }),
+      ).toBe(true)
     })
 
     test("allows draft sessions to load selectable models", () => {
-      expect(shouldFetchConfigOptionsForScope("acp:claude", false, {
-        directory: "/tmp/project",
-        sessionId: "new",
-      })).toBe(true)
+      expect(
+        shouldFetchConfigOptionsForScope({ kind: "connection", connectionId: "acp:claude" }, false, {
+          directory: "/tmp/project",
+          sessionId: "new",
+        }),
+      ).toBe(true)
     })
 
-    test("does not fetch options for opencode or failed runners", () => {
-      expect(shouldFetchConfigOptionsForScope("opencode", false, { directory: "/tmp/project" })).toBe(false)
-      expect(shouldFetchConfigOptionsForScope("acp:claude", true, { directory: "/tmp/project" })).toBe(false)
+    test("fetches options for connections but not failed harnesses", () => {
+      expect(shouldFetchConfigOptionsForScope(externalOpenCode, false, { directory: "/tmp/project" })).toBe(true)
+      expect(
+        shouldFetchConfigOptionsForScope({ kind: "connection", connectionId: "acp:claude" }, true, {
+          directory: "/tmp/project",
+        }),
+      ).toBe(false)
     })
 
     test("retries stale model options only within the bounded retry budget", () => {
@@ -497,140 +462,141 @@ describe("harness config helpers", () => {
 
   describe("directory refresh after runner status", () => {
     test("does not bootstrap a directory just because an existing session selector hydrates", () => {
-      expect(shouldRefreshDirectoryAfterHarnessStatus({
-        directory: "/tmp/project",
-        sessionId: "ses_1",
-      })).toBe(false)
+      expect(
+        shouldRefreshDirectoryAfterHarnessStatus({
+          directory: "/tmp/project",
+          sessionId: "ses_1",
+        }),
+      ).toBe(false)
     })
 
     test("keeps draft session hydration able to refresh runner-scoped directory config", () => {
-      expect(shouldRefreshDirectoryAfterHarnessStatus({
-        directory: "/tmp/project",
-        sessionId: "new",
-      })).toBe(true)
+      expect(
+        shouldRefreshDirectoryAfterHarnessStatus({
+          directory: "/tmp/project",
+          sessionId: "new",
+        }),
+      ).toBe(true)
       expect(shouldRefreshDirectoryAfterHarnessStatus({ directory: "/tmp/project" })).toBe(true)
     })
 
     test("keeps native harness hints for workspace refresh", () => {
-      expect(refreshHarnessTypeForScope({
-        directory: "ws_123",
-        harness: codex,
-      })).toBe("codex")
+      expect(
+        refreshHarnessTypeForScope({
+          directory: "ws_123",
+          harness: codex,
+        }),
+      ).toBe("codex")
     })
 
     test("omits connection ids from native refresh hints", () => {
-      expect(refreshHarnessTypeForScope({
-        directory: "/tmp/project",
-        harness: externalOpenCode,
-      })).toBeUndefined()
+      expect(
+        refreshHarnessTypeForScope({
+          directory: "/tmp/project",
+          harness: externalOpenCode,
+        }),
+      ).toBeUndefined()
     })
 
-    test("keeps non-OpenCode runner hints unchanged", () => {
-      expect(refreshHarnessTypeForScope({
-        directory: "ws_123",
-        harness: "acp:cursor",
-      })).toBe("acp:cursor")
+    test("does not treat connection ids as native refresh hints", () => {
+      expect(
+        refreshHarnessTypeForScope({
+          directory: "ws_123",
+          harness: { kind: "connection", connectionId: "acp:cursor" },
+        }),
+      ).toBeUndefined()
     })
   })
 
   describe("draft runner status hydration", () => {
     test("uses loopback runner status for cloud and user-hosted draft selectors", () => {
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: true,
-        workspaceKind: "cloud",
-      })).toBe(true)
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: true,
-        workspaceKind: "user-hosted",
-      })).toBe(true)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: true,
+          workspaceKind: "cloud",
+        }),
+      ).toBe(true)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: true,
+          workspaceKind: "user-hosted",
+        }),
+      ).toBe(true)
     })
 
     test("skips runner status when the local bridge is not available", () => {
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: false,
-        workspaceKind: "cloud",
-      })).toBe(false)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: false,
+          workspaceKind: "cloud",
+        }),
+      ).toBe(false)
     })
 
     test("skips runner status for synthetic workspace-runtime drafts", () => {
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: false,
-        workspaceRuntime: true,
-      })).toBe(false)
-      expect(shouldHydrateDraftFromHarnessStatus({
-        useLocalHarnessConfig: true,
-        workspaceRuntime: true,
-      })).toBe(false)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: false,
+          workspaceRuntime: true,
+        }),
+      ).toBe(false)
+      expect(
+        shouldHydrateDraftFromHarnessStatus({
+          useLocalHarnessConfig: true,
+          workspaceRuntime: true,
+        }),
+      ).toBe(false)
     })
   })
 
   describe("local runner config API usage", () => {
     test("allows loopback filesystem workspaces to use unsigned local runner config", () => {
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "http://127.0.0.1:3001",
-        directory: "/tmp/project",
-      })).toBe(true)
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "https://localhost:3001",
-        directory: "/tmp/project",
-      })).toBe(true)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "http://127.0.0.1:3001",
+          directory: "/tmp/project",
+        }),
+      ).toBe(true)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "https://localhost:3001",
+          directory: "/tmp/project",
+        }),
+      ).toBe(true)
     })
 
     test("does not use local runner config for hosted control planes", () => {
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "https://claxedo.example.test",
-        directory: "/tmp/project",
-      })).toBe(false)
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "ftp://127.0.0.1:3001",
-        directory: "/tmp/project",
-      })).toBe(false)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "https://claxedo.example.test",
+          directory: "/tmp/project",
+        }),
+      ).toBe(false)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "ftp://127.0.0.1:3001",
+          directory: "/tmp/project",
+        }),
+      ).toBe(false)
     })
 
     test("does not use local runner config for synthetic workspace selectors", () => {
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "http://127.0.0.1:3001",
-        directory: "workspace:ws_1",
-      })).toBe(false)
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "http://127.0.0.1:3001",
+          directory: "workspace:ws_1",
+        }),
+      ).toBe(false)
     })
 
     test("does not use local runner config for user-hosted workspace directories", () => {
-      expect(shouldUseLocalHarnessConfigApi({
-        baseUrl: "http://127.0.0.1:3001",
-        directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
-        workspaceKind: "user-hosted",
-      })).toBe(false)
-    })
-
-  })
-
-  // ── HARNESS_DISPLAY_NAMES ───────────────────────────────────────────────
-
-  describe("HARNESS_DISPLAY_NAMES", () => {
-    test("maps all known keys to display names", () => {
-      expect(HARNESS_DISPLAY_NAMES["claude-sdk"]).toBe("Claude SDK")
-      expect(HARNESS_DISPLAY_NAMES["codex-app-server"]).toBe("Codex App Server")
-      expect(HARNESS_DISPLAY_NAMES["cursor-sdk"]).toBe("Cursor SDK")
-      expect(HARNESS_DISPLAY_NAMES["agent"]).toBe("Cursor")
-      expect(HARNESS_DISPLAY_NAMES["cursor-agent"]).toBe("Cursor")
-      expect(HARNESS_DISPLAY_NAMES["opencode"]).toBe("OpenCode")
-      expect(HARNESS_DISPLAY_NAMES["pi"]).toBe("Pi")
-    })
-
-    test("all built-in runner types have a display name", () => {
-      const types: HarnessType[] = ["claude-sdk", "codex-app-server", "cursor-sdk", "opencode", "pi"]
-      for (const t of types) {
-        expect(HARNESS_DISPLAY_NAMES[t]).toBeTruthy()
-      }
-    })
-
-    // The fixed ACP-id table entries (`claude-acp`, `codex-acp`, `cursor-acp`)
-    // were replaced by the open `acp:<slug>` scheme — an operator connection has
-    // no fixed table row, so its display name falls back to a title-cased slug.
-    test("title-cases an open acp:<slug> id that has no table entry", () => {
-      expect(harnessDisplayLabel("acp:claude")).toBe("Claude")
-      expect(harnessDisplayLabel("acp:codex")).toBe("Codex")
-      expect(harnessDisplayLabel("acp:my-custom-agent")).toBe("My Custom Agent")
+      expect(
+        shouldUseLocalHarnessConfigApi({
+          baseUrl: "http://127.0.0.1:3001",
+          directory: "/repo/.claxedo/user-hosted/workspaces/ws_1",
+          workspaceKind: "user-hosted",
+        }),
+      ).toBe(false)
     })
   })
 

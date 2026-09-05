@@ -1,20 +1,15 @@
-import type { Command, Project, ProviderAuthResponse, ProviderListResponse } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoCommand as Command, ClaxedoProject as Project, ClaxedoProviderAuth as ProviderAuthResponse, ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { cmp } from "@/platform/query/sort"
 import { mergeProviderIndexWithDetails, normalizeProviderList } from "@/platform/query/provider-list"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
 
 export type { ClaxedoProviderList as ProviderListResponse } from "@/platform/api/claxedo-api-types"
 
 type ProjectClient = {
   project: {
     list: () => Promise<{ data?: Project[] }>
-  }
-}
-
-type ProviderClient = {
-  provider: {
-    list: () => Promise<{ data?: ProviderListResponse }>
   }
 }
 
@@ -25,27 +20,17 @@ type CommandClient = {
 }
 
 export function createHttpShellBackend(input: {
-  client: Partial<ProjectClient & ProviderClient & CommandClient>
+  client: Partial<ProjectClient & CommandClient>
 }) {
   return {
     listProjects: async () => {
       if (!input.client.project) throw new Error("shell backend requires project client")
       return (await input.client.project.list()).data
     },
-    listProviders: async () => {
-      if (!input.client.provider) throw new Error("shell backend requires provider client")
-      return (await input.client.provider.list()).data
-    },
     listCommands: async (_input: { directory: string }) => {
       if (!input.client.command) throw new Error("shell backend requires command client")
       return (await input.client.command.list()).data
     },
-  }
-}
-
-type ProviderAuthClient = {
-  provider: {
-    auth: () => Promise<{ data?: ProviderAuthResponse }>
   }
 }
 
@@ -124,14 +109,10 @@ export function projectListQuery(input: {
 
 export function providerListQuery(input: {
   baseUrl?: string
-  client: ProviderClient
   directory?: string | null
   harnessType: string
   request?: typeof fetch
 }) {
-  const backend = createHttpShellBackend({
-    client: input.client,
-  })
   return {
     queryKey: queryKeys.controlPlane.providers(
       input.baseUrl,
@@ -150,13 +131,9 @@ export function providerListQuery(input: {
       index as Parameters<typeof mergeProviderIndexWithDetails>[1],
     ),
     queryFn: async () => {
-      if (!input.baseUrl || !input.request) {
-        return normalizeProviderList((await backend.listProviders()) ?? { all: [], connected: [], default: {} })
-      }
-      const url = new URL("/provider", input.baseUrl)
-      url.searchParams.set("harness", input.harnessType)
-      if (input.directory) url.searchParams.set("directory", input.directory)
-      const response = await input.request(url, { headers: { Accept: "application/json" } })
+      const url = new URL("/api/claxedo/agent-config/providers", input.baseUrl ?? getClaxedoServerUrl())
+      url.searchParams.set("nativeHarness", input.harnessType)
+      const response = await (input.request ?? authFetch)(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} models`)
       return normalizeProviderList(await response.json() as ProviderListResponse)
     },
@@ -164,16 +141,11 @@ export function providerListQuery(input: {
 }
 
 /**
- * Which credentials a harness holds, on the machine that serves this scope.
- *
- * Auth is the machine's, not the harness name's: the daemon and a cloud sandbox
- * can both run `claude-sdk` and hold different credentials for it, so the entry
- * carries the same (server, scope, harness) triple the catalog does. A
- * `directory` of `null`/`undefined` names the central server's own runtime.
+ * Native provider credentials are owned by the control plane. Workspace scope
+ * partitions presentation caches, but never routes credential reads to a VM.
  */
 export function providerAuthQuery(input: {
   baseUrl?: string
-  client?: ProviderAuthClient
   directory?: string | null
   harnessType: string
   request?: (url: URL, init?: RequestInit) => Promise<Response>
@@ -186,14 +158,9 @@ export function providerAuthQuery(input: {
     ),
     staleTime: 0,
     queryFn: async () => {
-      if (!input.baseUrl || !input.request) {
-        if (!input.client) throw new Error("Provider auth requires a client or an authenticated request")
-        return (await input.client.provider.auth()).data ?? {}
-      }
-      const url = new URL("/provider/auth", input.baseUrl)
-      url.searchParams.set("harness", input.harnessType)
-      if (input.directory) url.searchParams.set("directory", input.directory)
-      const response = await input.request(url, { headers: { Accept: "application/json" } })
+      const url = new URL("/api/claxedo/agent-config/providers/auth", input.baseUrl ?? getClaxedoServerUrl())
+      url.searchParams.set("nativeHarness", input.harnessType)
+      const response = await (input.request ?? authFetch)(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.harnessType} provider authentication`)
       return await response.json() as ProviderAuthResponse
     },
@@ -210,10 +177,9 @@ export function providerDetailsQuery(input: {
   return {
     queryKey: queryKeys.controlPlane.providers(input.baseUrl, input.directory ?? undefined, input.harnessType),
     queryFn: async () => {
-      const url = new URL("/provider", input.baseUrl)
+      const url = new URL("/api/claxedo/agent-config/providers", input.baseUrl)
       url.searchParams.set("provider", input.providerId)
-      url.searchParams.set("harness", input.harnessType)
-      if (input.directory) url.searchParams.set("directory", input.directory)
+      url.searchParams.set("nativeHarness", input.harnessType)
       const response = await input.request(url, { headers: { Accept: "application/json" } })
       if (!response.ok) throw new Error((await response.text()) || `Failed to load ${input.providerId} models`)
       return normalizeProviderList(await response.json() as ProviderListResponse)

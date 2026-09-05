@@ -15,6 +15,7 @@ export class AgentRuntimeStaleTurnError extends Error {
 }
 
 export type AgentRuntimeSessionBinding = {
+  scope?: "workspace" | "central"
   sessionId: string
   directory: string
   title?: string

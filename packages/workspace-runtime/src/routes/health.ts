@@ -24,9 +24,7 @@ export function workspaceRuntimeLivenessResponse(input: WorkspaceRuntimeLiveness
     exposure: input.exposure,
     // Harness-health detail is intentionally present on the lightweight probe;
     // diagnostics-only capabilities, directory, and process counts are not.
-    agentType: input.harness?.kind === "native"
-      ? input.harness.harnessId
-      : input.harness?.connectionId ?? null,
+    ...(input.harness ? { harness: input.harness, activeHarness: input.harness } : {}),
     error: input.error || null,
     harnessHealth: input.harnessHealth,
   }

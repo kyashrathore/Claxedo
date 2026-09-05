@@ -1,5 +1,7 @@
 import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
-import { lazy } from "solid-js"
+import { lazy, onMount } from "solid-js"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
 import { lazyDialog } from "@/lib/lazy-dialog"
 import { configureTerminalAppPorts } from "@/features/terminal/app-ports"
 import { configureSettingsAppPorts } from "@/features/settings/app-ports"
@@ -23,7 +25,6 @@ import * as LinkModule from "@/app/controls/link"
 import * as SandboxSectionLogic from "@/features/settings/ui/sandbox-section-logic"
 import * as Prompt from "@/features/session/providers/prompt"
 import * as PanePreferences from "@/features/session/preferences/pane"
-import * as HarnessControllers from "@/features/session/composer/ui/harness-controller"
 import * as DraftDefaults from "@/features/session/harness/draft-defaults"
 import { DialogConnectIntegration, useOnboardingFunnel } from "./feature-ports"
 
@@ -35,9 +36,6 @@ const DialogAIConnect = lazyDialog(() =>
 )
 const DialogSelectProvider = lazyDialog(() =>
   import("@/app/dialogs/select-provider").then((module) => ({ default: module.DialogSelectProvider })),
-)
-const DialogCustomProvider = lazyDialog(() =>
-  import("@/app/dialogs/custom-provider").then((module) => ({ default: module.DialogCustomProvider })),
 )
 const ProviderList = lazy(() =>
   import("@/app/dialogs/provider-list").then((module) => ({ default: module.ProviderList })),
@@ -73,7 +71,6 @@ configureSettingsAppPorts({
   DialogConnectProvider,
   DialogAIConnect,
   DialogSelectProvider,
-  DialogCustomProvider,
   useModels: SessionModels.useModels,
   formatKeybind: Command.formatKeybind,
   parseKeybind: Command.parseKeybind,
@@ -84,11 +81,16 @@ configureSettingsAppPorts({
   useSandboxOnboardingFunnel: useOnboardingFunnel,
   useSDK: SDK.useSDK,
   useEnabledAcpHarnesses: () => {
-    const selection = HarnessControllers.usePromptHarnessControllersOptional().selection
-    return () => selection ? selection.enabledAcpConnections() : []
+    const catalog = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
+    onMount(() => void catalog.refresh())
+    return () => {
+      const data = catalog.data()
+      return data?.status === "supported"
+        ? data.connections.filter((row) => row.enabled).map((row) => ({ key: row.connectionId, label: row.label }))
+        : []
+    }
   },
-  readWorkspaceHarnessDefault: (input) =>
-    DraftDefaults.createDraftDefaultPreferences(localStorage).read(input)?.harness,
+  readWorkspaceHarnessDefault: (input) => DraftDefaults.createDraftDefaultPreferences(localStorage).read(input)?.harness,
 })
 
 configureOnboardingAppPorts({

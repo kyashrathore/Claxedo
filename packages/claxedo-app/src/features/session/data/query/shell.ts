@@ -1,4 +1,4 @@
-import type { Command } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoCommand as Command } from "@/platform/api/claxedo-api-types"
 import { queryKeys, workspaceQueryKey } from "@/platform/query/keys"
 import { createHttpShellBackend } from "@/platform/query/control-plane"
 import { workspaceRuntimeRoutingRecord, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-runtime-record"

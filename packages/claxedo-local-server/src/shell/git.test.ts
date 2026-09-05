@@ -151,7 +151,7 @@ describe("DELETE /experimental/worktree keeps deletions inside the workspace", (
     expect(await exists(path.join(victim, "PRECIOUS.txt"))).toBe(true)
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({
-      error: { code: "opencode_worktree_outside_workspace" },
+      error: { code: "claxedo_worktree_outside_workspace" },
     })
   })
 
@@ -163,7 +163,7 @@ describe("DELETE /experimental/worktree keeps deletions inside the workspace", (
     expect(await exists(path.join(victim, "PRECIOUS.txt"))).toBe(true)
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({
-      error: { code: "opencode_worktree_outside_workspace" },
+      error: { code: "claxedo_worktree_outside_workspace" },
     })
   })
 
@@ -180,7 +180,7 @@ describe("DELETE /experimental/worktree keeps deletions inside the workspace", (
     expect(await exists(path.join(victim, "PRECIOUS.txt"))).toBe(true)
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({
-      error: { code: "opencode_worktree_outside_workspace" },
+      error: { code: "claxedo_worktree_outside_workspace" },
     })
   })
 
@@ -222,7 +222,7 @@ describe("POST /experimental/worktree/reset keeps `git reset --hard`/`clean -ffd
     )
     expect(res.status).toBe(400)
     expect(await res.json()).toMatchObject({
-      error: { code: "opencode_worktree_outside_workspace" },
+      error: { code: "claxedo_worktree_outside_workspace" },
     })
     // `resetWorktree` runs `git -C <target> reset --hard` then `clean -ffdx`,
     // which deletes untracked files. PRECIOUS.txt is untracked on purpose.

@@ -17,6 +17,15 @@ import { buildAssistantMessage, buildSession, messagePartUpdated, messageUpdated
 import type { AgentMessage, AgentRuntimeStreamEvent, PromptInput, RuntimeDirectory, SessionConfig } from "./index"
 import { storeRows } from "./test-utils/store-internals"
 
+test("disposing a runtime leaves its injected store open for its owner", () => {
+  let closed = 0
+  const store = createMemoryRuntimeStore()
+  Object.assign(store, { close() { closed++ } })
+  const runtime = createAgentRuntime({ store, harnesses: [] })
+  runtime.dispose()
+  expect(closed).toBe(0)
+})
+
 async function collectUntilFinish<T extends { payload: { type: string } }>(events: AsyncIterable<T>) {
   const out: T[] = []
   for await (const event of events) {
@@ -167,10 +176,12 @@ function handoffHarness(input: {
   messages?: AgentMessage[]
   turnError?: string
   configError?: string
+  sessionConfigOwner?: "adapter" | "runtime"
   onAdapter?: (adapter: AgentHarnessAdapter) => void
 }): AgentHarnessFactory {
   let config: SessionConfig = { harness: { id: input.id, access: "native" }, variant: null, agent: null }
   const adapter: AgentHarnessAdapter = {
+    sessionConfigOwner: input.sessionConfigOwner,
     async getSession(binding) { return { id: binding.sessionId } },
     async createSession(_directory, _title, id = "ses_handoff") { return { id } },
     async createHandoffSession(_directory, _title, id, options) {
@@ -210,6 +221,81 @@ function handoffHarness(input: {
 }
 
 describe("createAgentRuntime", () => {
+  test.each(["create", "turn"] as const)("disposal initiates owned adapter teardown to unblock a pending %s", async (phase) => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let started!: () => void
+    const entered = new Promise<void>((resolve) => { started = resolve })
+    let disposed = 0
+    const store = createMemoryRuntimeStore()
+    const factory = handoffHarness({ id: "pi", onAdapter(adapter) {
+      if (phase === "create") adapter.createSession = async (_directory, _title, id) => {
+        started(); await held; return { id: id! }
+      }
+      else adapter.executeTurn = async function* (binding) {
+        started(); await held; yield { type: "finish", sessionId: binding.sessionId }
+      }
+      adapter.dispose = () => { disposed++; release() }
+    } })
+    const runtime = createAgentRuntime({ store, harnesses: [factory] })
+    const create = runtime.sessions.create({ id: "stopping", workspaceId: "ws", directory: "/repo", harness: { id: "pi", access: "native" } })
+    if (phase === "turn") {
+      await create
+      await runtime.turns.start({ sessionId: "stopping", text: "wait" })
+    }
+    await entered
+    await runtime.dispose()
+    await create
+    expect(disposed).toBe(1)
+    const rows = storeRows(store)
+    const lease = rows.acquireTurnLease("stopping")
+    expect(lease).toBeDefined()
+    rows.releaseTurnLease("stopping", lease!)
+    await runtime.dispose()
+    expect(disposed).toBe(1)
+  })
+
+  test("borrowed adapters survive disposal after lazy handoff resolution", async () => {
+    let disposed = 0
+    let target!: AgentHarnessAdapter
+    handoffHarness({ id: "claude", onAdapter(adapter) { target = adapter; target.dispose = () => { disposed++ } } })
+    const runtime = createAgentRuntime({
+      store: createMemoryRuntimeStore(), harnesses: [handoffHarness({ id: "pi" })],
+      adapterOwnership: "caller", resolveHarness: () => target,
+    })
+    await runtime.sessions.create({ id: "handoff-owner", workspaceId: "ws", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.config.update("handoff-owner", { harness: { id: "claude", access: "native" } }, "/repo")
+    await runtime.dispose()
+    expect(disposed).toBe(0)
+  })
+
+  test("disposal waits for admitted producer finalization and refuses later work", async () => {
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let disposed = 0
+    const factory = handoffHarness({ id: "pi", onAdapter(adapter) {
+      adapter.executeTurn = async function* (binding) { await held; yield { type: "finish", sessionId: binding.sessionId } }
+      adapter.dispose = () => { disposed++ }
+    } })
+    const runtime = createAgentRuntime({ store, harnesses: [factory] })
+    await runtime.sessions.create({ id: "shutdown", workspaceId: "ws", directory: "/repo", harness: { id: "pi", access: "native" } })
+    await runtime.turns.start({ sessionId: "shutdown", text: "wait" })
+    let settled = false
+    const shutdown = Promise.resolve(runtime.dispose()).then(() => { settled = true })
+    try {
+      await tick()
+      expect(settled).toBe(false)
+      expect(disposed).toBe(1)
+    } finally { release(); await shutdown }
+    expect(disposed).toBe(1)
+    const lease = rows.acquireTurnLease("shutdown")
+    expect(lease).toBeDefined()
+    rows.releaseTurnLease("shutdown", lease!)
+    await expect(runtime.turns.start({ sessionId: "shutdown", text: "too late" })).rejects.toThrow("disposed")
+  })
+
   test("runs Goal operations through the dedicated resource without prompt fallback", async () => {
     const calls: string[] = []
     let goal: Awaited<ReturnType<AgentGoalResource["read"]>> = null
@@ -871,6 +957,33 @@ describe("createAgentRuntime", () => {
 
     await runtime.config.update(session.id, { agent: "review" }, "/repo")
     expect(rows.getSessionConfig(session.id)).toMatchObject({ variant: "high", agent: "review" })
+    runtime.dispose()
+  })
+
+  test("persists runtime-owned config through both namespaces without adapter writes", async () => {
+    const store = createMemoryRuntimeStore()
+    const factory = handoffHarness({
+      id: "pi",
+      sessionConfigOwner: "runtime",
+      onAdapter(adapter) {
+        adapter.updateSessionConfig = async () => { throw new Error("runtime owns config") }
+      },
+    })
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [factory],
+    })
+    const session = await runtime.sessions.create({
+      id: "runtime-owned-config",
+      workspaceId: "workspace-test",
+      directory: "/repo",
+      harness: { id: "pi", access: "native" },
+    })
+    await runtime.sessions.updateConfig(session.id, { variant: "high" }, "/repo")
+    await runtime.config.update(session.id, { agent: "review" }, "/repo")
+    expect(storeRows(store).getSessionConfig(session.id)).toMatchObject({ variant: "high", agent: "review" })
+    await expect(runtime.config.update(session.id, { agent: "wrong" }, "/other")).rejects.toThrow()
+    expect(storeRows(store).getSessionConfig(session.id)?.agent).toBe("review")
     runtime.dispose()
   })
 
@@ -1864,6 +1977,43 @@ describe("createAgentRuntime", () => {
       lastTurn: { status: "failed", error: "adapter exploded", assistantMessageId: "msg_1_r" },
     })
     runtime.dispose()
+  })
+
+  test.each(["error", "not_found"] as const)("a failed abort (%s) keeps admission until the executing turn finishes", async (failure) => {
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    const store = createMemoryRuntimeStore()
+    const rows = storeRows(store)
+    const runtime = createAgentRuntime({
+      store,
+      harnesses: [testHarness({
+        sendMessage: async function* (id, prompt) {
+          await held
+          yield messagePartUpdated({ id: "continued-part", sessionID: id, messageID: prompt.assistantMessageId, type: "text", text: "continued reply" })
+          yield { type: "finish", sessionId: id }
+        },
+        abort: async () => {
+          if (failure === "error") throw new Error("remote abort failed")
+          return { ok: false, status: "not_found", message: "Remote session not found" }
+        },
+      })],
+    })
+    try {
+      const session = await runtime.sessions.create({ workspaceId: "workspace-test", directory: "/repo", harness: { id: "pi", access: "native" } })
+      const completed = collectUntilFinish(runtime.events.subscribe({ sessionId: session.id }))
+      await runtime.turns.start({ sessionId: session.id, messageId: "kept-user", text: "hello" })
+      if (failure === "error") await expect(runtime.turns.abort(session.id)).rejects.toThrow("remote abort failed")
+      else await expect(runtime.turns.abort(session.id)).resolves.toMatchObject({ ok: false, status: "not_found" })
+      expect(rows.acquireTurnLease(session.id)).toBeUndefined()
+      await expect(runtime.turns.start({ sessionId: session.id, messageId: "rejected-user", text: "concurrent" })).rejects.toThrow()
+      expect(JSON.stringify(rows.getMessages(session.id))).not.toContain("rejected-user")
+      release()
+      await completed
+      expect(JSON.stringify(await runtime.events.list(session.id))).toContain("continued reply")
+    } finally {
+      release()
+      await runtime.dispose()
+    }
   })
 
   test("keeps a cancelled outcome when a late stream completion arrives", async () => {

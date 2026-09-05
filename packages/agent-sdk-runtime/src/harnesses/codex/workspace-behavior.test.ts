@@ -11,6 +11,10 @@ import { fakeRuntimeStore } from "../../test-utils/fake-runtime-store"
 import { createRuntimeEventHub, type RuntimeEventEnvelope } from "../../runtime-event-hub"
 import { createMemoryRuntimeStore } from "../../stores/memory"
 import { storeRows } from "../../test-utils/store-internals"
+import { createAgentRuntime, type AgentHarnessFactory } from "../../runtime"
+import type { AgentHarnessFactoryContext } from "../../runtime/contracts"
+import { createSqliteRuntimeStore } from "../../stores/sqlite"
+import { isTerminalRuntimePayload } from "../../runtime/turn-outcome"
 
 const tempDirs: string[] = []
 
@@ -248,6 +252,57 @@ async function runWithModels(input: {
 async function runWithModel(model: string) {
   return runWithModels({ globalModel: model })
 }
+
+test("public Codex first turn uses the created upstream thread and persists history under the local session", async () => {
+  const fake = await makeFakeCodex()
+  const root = path.join(fake.dir, "public-runtime-store")
+  const store = createSqliteRuntimeStore({ root })
+  const rows = storeRows(store)
+  const runtime = createAgentRuntime({
+    store,
+    harnesses: [{
+      id: "codex", access: "native",
+      create: ({ eventHub }: AgentHarnessFactoryContext) => new CodexHarnessAdapter({ store: rows, eventHub, binary: fake.binary, codexHome: fake.dir }),
+    } as unknown as AgentHarnessFactory],
+  })
+  const sessionId = "local-codex-session"
+  try {
+    await runtime.sessions.create({
+      id: sessionId, workspaceId: "workspace-codex", directory: fake.dir,
+      harness: { id: "codex", access: "native" }, model: { providerID: "codex", modelID: "gpt-5.5" },
+    })
+    expect(rows.getExecutionBinding(sessionId)).toMatchObject({
+      sessionId, workspaceId: "workspace-codex", directory: fake.dir,
+      connectionId: "native:codex", upstreamSessionId: "thread-1",
+    })
+    const completed = (async () => {
+      for await (const event of runtime.events.subscribe({ sessionId })) {
+        expect(event.sessionId).toBe(sessionId)
+        if (isTerminalRuntimePayload(event.payload)) {
+          expect(event.payload.type).toBe("session.idle")
+          break
+        }
+      }
+    })()
+    await runtime.turns.start({ sessionId, messageId: "local-user", text: "Hello" })
+    await completed
+    const history = await runtime.events.list(sessionId, fake.dir)
+    expect(history.every((message) => message.info.sessionID === sessionId)).toBe(true)
+    expect(JSON.stringify(history)).toContain("OK")
+    expect(rows.getSession("thread-1")).toBeNull()
+    const requests = fs.readFileSync(fake.log, "utf8").trim().split("\n").map((line) => JSON.parse(line))
+    expect(requests.filter((request) => request.method === "thread/start")).toHaveLength(1)
+    expect(requests.filter((request) => request.method === "turn/start")).toMatchObject([{ params: { threadId: "thread-1" } }])
+  } finally {
+    await runtime.dispose()
+    rows.close()
+  }
+  const reopened = storeRows(createSqliteRuntimeStore({ root }))
+  try {
+    expect(reopened.getExecutionBinding(sessionId)?.upstreamSessionId).toBe("thread-1")
+    expect(JSON.stringify(reopened.getMessages(sessionId))).toContain("OK")
+  } finally { reopened.close() }
+})
 
 describe("CodexHarnessAdapter", () => {
   test("shares one app-server startup across concurrent session creation and model discovery", async () => {

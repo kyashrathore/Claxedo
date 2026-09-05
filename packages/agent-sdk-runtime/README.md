@@ -172,6 +172,9 @@ Harness factories have individual entries and a convenience aggregate:
 - `@claxedo/agent-sdk-runtime/harnesses/cursor`
 - `@claxedo/agent-sdk-runtime/harnesses/pi`
 
+The browser-safe Pi provider/model catalog is available separately at
+`@claxedo/agent-sdk-runtime/pi-catalog`; it does not load a harness runtime.
+
 ```ts
 import { acp, claude, codex, cursor, pi } from "@claxedo/agent-sdk-runtime/harnesses"
 // Smaller single-harness graph:

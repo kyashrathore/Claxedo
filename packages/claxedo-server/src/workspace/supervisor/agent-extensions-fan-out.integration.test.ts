@@ -19,7 +19,10 @@
  */
 
 import http from "http"
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "vitest"
+import { mkdtemp, rm } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest"
 import { exportPKCS8, exportSPKI, generateKeyPair } from "jose"
 import {
   broadcastRuntimeConfig,
@@ -28,6 +31,10 @@ import {
 } from "./index"
 import { __registerReadyRuntimeForTest, __unregisterRuntimeForTest } from "./test-helper"
 import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
+import { ClaxedoDB } from "@claxedo/server-core/platform/db/db"
+import { setBackendOverride, createTestBackend } from "@claxedo/server-core/credentials/backend-registry"
+import { putCredential } from "@claxedo/server-core/credentials/registry"
+import { saveUserConfig, configureAgentConfig } from "@claxedo/server-core/agent-config/index"
 
 type RecordedRequest = {
   method: string
@@ -68,6 +75,8 @@ async function startRecordingServer(): Promise<{ url: string; received: Recorded
 }
 
 describe("agent-extensions fan-out reaches every connected workspace runtime", () => {
+  let dataRoot: string
+  const previousDataDir = process.env.CLAXEDO_DATA_DIR
   const previousRuntimeSigner = {
     privateKey: process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM,
     publicKey: process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM,
@@ -75,6 +84,11 @@ describe("agent-extensions fan-out reaches every connected workspace runtime", (
   }
 
   beforeAll(async () => {
+    dataRoot = await mkdtemp(join(tmpdir(), "scoped-runtime-fanout-"))
+    process.env.CLAXEDO_DATA_DIR = dataRoot
+    ClaxedoDB.close()
+    setBackendOverride(createTestBackend())
+    configureAgentConfig({ workspaceAuthority: { listWorkspaceAgentExtensionsForRuntime: async () => [], listAgentExtensionPolicyOverridesForRuntime: async () => [] } as never })
     const keyPair = await generateKeyPair("EdDSA", { extractable: true })
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = await exportPKCS8(keyPair.privateKey)
     process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM = await exportSPKI(keyPair.publicKey)
@@ -93,7 +107,17 @@ describe("agent-extensions fan-out reaches every connected workspace runtime", (
     } as any)
   })
 
-  afterAll(() => {
+  beforeEach(async () => {
+    await saveUserConfig({ version: 3, connections: {}, mcp: {} })
+  })
+
+  afterAll(async () => {
+    configureAgentConfig({})
+    setBackendOverride(undefined)
+    ClaxedoDB.close()
+    if (previousDataDir === undefined) delete process.env.CLAXEDO_DATA_DIR
+    else process.env.CLAXEDO_DATA_DIR = previousDataDir
+    await rm(dataRoot, { recursive: true, force: true })
     if (previousRuntimeSigner.privateKey === undefined) delete process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM
     else process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PRIVATE_KEY_PEM = previousRuntimeSigner.privateKey
     if (previousRuntimeSigner.publicKey === undefined) delete process.env.CLAXEDO_RUNTIME_ACCESS_TOKEN_PUBLIC_KEY_PEM
@@ -128,6 +152,35 @@ describe("agent-extensions fan-out reaches every connected workspace runtime", (
       expect(a.received[0]?.body).toEqual(b.received[0]?.body)
     } finally {
       await Promise.all([a.stop(), b.stop()])
+    }
+  })
+
+  test("broadcast and extension updates materialize secrets separately for local, cloud and other-org targets", async () => {
+    const servers = await Promise.all([startRecordingServer(), startRecordingServer(), startRecordingServer()])
+    try {
+      const local = await putCredential({ provider_id: "local", kind: "api_key", source: "managed", secret: "local-secret" }, "org-a")
+      const shared = await putCredential({ provider_id: "shared", kind: "api_key", source: "managed", scope: "shared", consent: { at: Date.now(), surface: "cli" }, secret: "shared-secret" }, "org-a")
+      await saveUserConfig({ version: 3, mcp: {}, connections: { external: { connectionId: "external", providerKey: "acp", configRevision: 1, enabled: true, config: { label: "External", connection: { kind: "process", command: "agent" } }, secretRefs: { local: local.id, shared: shared.id } } } })
+      for (const [index, id] of ["ws-scope-local", "ws-scope-cloud", "ws-scope-other"].entries()) {
+        const state = __registerReadyRuntimeForTest({ workspaceId: id, url: servers[index]!.url, directory: dataRoot, kind: index === 0 ? "local" : "cloud" })
+        state.ws.org_id = index === 2 ? "org-b" : "org-a"
+        trackedWorkspaceIds.push(id)
+      }
+      const authAt = (index: number) => (servers[index]!.received.at(-1)?.body as { auth: Record<string, string> }).auth
+      await broadcastRuntimeConfig()
+      expect(servers.map((server) => server.received.length)).toEqual([1, 1, 1])
+      expect(authAt(0)).toMatchObject({ [local.id]: "local-secret", [shared.id]: "shared-secret" })
+      expect(authAt(1)).toMatchObject({ [shared.id]: "shared-secret" })
+      expect(authAt(1)).not.toHaveProperty(local.id)
+      expect(authAt(1)).not.toHaveProperty("local")
+      expect(authAt(2)).toEqual({})
+      await syncWorkspaceRuntimeAgentExtensions("ws-scope-cloud", [], { policyOverrides: [] })
+      expect(servers.map((server) => server.received.length)).toEqual([1, 2, 1])
+      expect(authAt(1)).toMatchObject({ [shared.id]: "shared-secret" })
+      expect(authAt(1)).not.toHaveProperty(local.id)
+      expect(authAt(1)).not.toHaveProperty("local")
+    } finally {
+      await Promise.all(servers.map((server) => server.stop()))
     }
   })
 

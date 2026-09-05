@@ -29,7 +29,6 @@ import { controlPlaneAuthContext } from "@claxedo/server-core/platform/auth/auth
 import { createUsageProvenanceClassifier, tokenTrackerSourceForHarness } from "@claxedo/server-core/usage/provenance"
 import { createTurnMeter } from "@claxedo/server-core/usage/turn-meter"
 import { meteringHarnessId } from "@claxedo/server-core/session/harness/index"
-import { resolveHarnessForRequest } from "@claxedo/server-core/session/harness/resolution"
 import { createAcpConnectionProvider, type CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { dataDir } from "@claxedo/server-core/platform/runtime/lib/paths"
@@ -39,9 +38,7 @@ import { workspaceSupervisorInstalled } from "@claxedo/server-core/workspace/sup
 import { configureAgentConfig, disposeAgentConfig } from "@claxedo/server-core/agent-config/index"
 import { createLocalApp, type LocalAppOptions } from "./local-app"
 import { createLocalControlPlaneServices } from "./local-services"
-import { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
-import { configureOpencodeMcpSync } from "../opencode/mcp-sync"
-import { createOpencodeEvents, type OpencodeEvent } from "../opencode/events"
+import { configureEmbeddedWorkspaceRuntime, ensureEmbeddedWorkspaceRuntime, readEmbeddedWorkspaceSessionConfig, shutdownEmbeddedWorkspaceRuntimes } from "../deployments/local/embedded-workspace-runtime"
 import { projectLocalSessionMetaFromEvent, sessionMetaProjectionTap } from "../session/session-meta-tap"
 import { migrateCredentials } from "../credentials/operations/migrate"
 import { DEFAULT_CLAXEDO_SERVER_PORT } from "../deployments/local/port"
@@ -53,7 +50,6 @@ import { createUsageOutboxSync } from "../usage/outbox-sync"
 import { localUsageHostId } from "../usage/host-id"
 import { drainUsageEvents } from "../usage/usage-event-drain"
 import { createLocalWorkspaceRelayProxy } from "../workspace/runtime-dispatch/shared-workspace-endpoint"
-import { providerBody } from "../opencode/compat-routes/provider-config"
 
 const log = Log.create({ service: "local-server" })
 
@@ -119,14 +115,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     }
   }
   configureEmbeddedWorkspaceRuntime({
-    opencodeRequest,
-    opencodeCompat,
-    // The same `providerBody` the compat router serves unscoped, so a
-    // workspace-scoped `/provider` (embedded dispatch, or a relayed request
-    // from a phone) answers the same catalog. One implementation, two mount
-    // points by scope — the `/command` precedent in route-ownership.ts.
-    providerCatalog: ({ harnessId, providerId }) =>
-      providerBody(harnessId, { env: process.env, services }, providerId),
+    connectionProviders,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
     // No route contributions: hosted capabilities contribute routes, and their
     // absence from an unsigned desktop is this line rather than a runtime flag.
@@ -176,16 +165,16 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
       if (!meta?.sessionRef || !meta.workspaceID) {
         throw new Error(`usage metering requires canonical workspace session metadata for ${sessionId}`)
       }
-      const harness = await resolveHarnessForRequest({ sessionId, workspaceId: meta.workspaceID, directory: meta.directory })
-      const meteringHarness = meteringHarnessId(harness)
+      const config = readEmbeddedWorkspaceSessionConfig(meta.workspaceID, sessionId)
+      const meteringHarness = meteringHarnessId(config.harness)
       return {
         sessionRef: meta.sessionRef,
         workspaceId: meta.workspaceID,
         hostId,
         location: "local" as const,
         harness: meteringHarness,
-        ...(meta.model?.providerID ? { providerId: meta.model.providerID } : {}),
-        ...(meta.model?.modelID ? { modelId: meta.model.modelID } : {}),
+        ...(config.model?.providerID ? { providerId: config.model.providerID } : {}),
+        ...(config.model?.modelID ? { modelId: config.model.modelID } : {}),
         ...(meteringHarness === "pi" ? { nativeSessionId: sessionId } : {}),
       }
     },
@@ -276,7 +265,6 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     workspaceRelayProxy,
     refreshSessionProjection,
   })
-  const upstreamEvents = opencodeCompat ? createOpencodeEvents(opencodeRequest, { autoStart: false }) : undefined
 
   const hostname = options.hostname ?? (process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1")
   // The listening event resolves `ready` for callers that must not announce
@@ -308,7 +296,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     stopOperation = (async () => {
       try {
         options.daemon?.lifecycle.stop()
-        shutdownEmbeddedWorkspaceRuntimes()
+        await shutdownEmbeddedWorkspaceRuntimes()
         await drainUsageEvents(usageEventTail, turnMeter)
       } finally {
         await listenerClosed

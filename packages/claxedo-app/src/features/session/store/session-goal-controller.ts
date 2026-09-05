@@ -17,7 +17,6 @@ export function createSessionGoalController(input: {
   active: Accessor<boolean>
   sessionID: Accessor<string | undefined>
   directory: Accessor<string>
-  client: SessionGoalTransportScope["client"]
   serverUrl: Accessor<string | undefined>
   signedControlPlane?: Accessor<boolean | undefined>
   workspaceId?: Accessor<string | undefined>
@@ -34,7 +33,6 @@ export function createSessionGoalController(input: {
   const request = (sessionID: string, signal?: AbortSignal) => {
     const signedControlPlane = input.signedControlPlane?.() ?? false
     return {
-      client: input.client,
       directory: input.directory(),
       sessionID,
       claxedoServerUrl: input.serverUrl(),

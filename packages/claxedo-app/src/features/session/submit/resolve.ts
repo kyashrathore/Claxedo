@@ -3,11 +3,9 @@
 // helper is pure-ish in that it takes its dependencies via input rather than
 // reading global state.
 import type {
-  ResolvePromptDispatchClientContext,
   ResolveSubmitDirectoryContext,
   ResolveSubmitSessionTargetContext,
   ResolveSubmittedConfigContext,
-  ResolvedSubmitMode,
   SubmitDirectoryResult,
   SubmitMode,
   SubmitSessionTargetResult,
@@ -19,17 +17,16 @@ export async function resolveSubmitSessionTarget(
   input: ResolveSubmitSessionTargetContext,
 ): Promise<SubmitSessionTargetResult> {
   let session = input.session
-  let replaceSession = input.replaceSession
+  const replaceSession = input.replaceSession
 
   if (!session && input.explicitSessionID && !input.isNewSession) {
-    session = await (input.harnessMode || input.signedControlPlane ? input.sessionClient() : input.client).session
+    session = await input.sessionClient().session
       .get({ sessionID: input.explicitSessionID, directory: input.sessionDirectory })
       .then((x) => x.data ?? undefined)
       .catch(() => undefined)
-    if (!session && (input.harnessMode || input.signedControlPlane)) {
+    if (!session) {
       session = { id: input.explicitSessionID }
     }
-    if (!session) replaceSession = true
   }
 
   if (!session && replaceSession) {
@@ -99,80 +96,20 @@ export async function resolveSubmitDirectory(
   return { directory: sessionDirectory ?? input.defaultDirectory }
 }
 
-// Rubric A3: `handleSubmit` used to do inline `text.startsWith("/")` /
-// `mode === "shell"` checks at three different places to pick the dispatch
-// branch. The branching is now centralised here so callers only switch on
-// the returned mode. The slash-command list still has to be fetched by the
-// caller (it depends on SDK + workspace context); the resolver only needs
-// the resolved command name when one matches.
-export type ResolveSubmitModeInput = {
-  mode: SubmitMode
-  harnessMode: boolean
-  signedControlPlane: boolean
-  setMode: (mode: SubmitMode) => void
-  // Trimmed prompt text. Pass the raw user input here — the resolver checks
-  // `startsWith("/")` and parses the command head; callers should NOT
-  // pre-detect slashes themselves.
-  text?: string
-  // Names of available custom commands at the active directory. Pass an
-  // empty array if commands have not loaded yet (resolver will fall back
-  // to "normal"); pass `undefined` to skip the slash check entirely (used
-  // by callers that handle slash detection out-of-band, e.g. legacy paths).
-  customCommandNames?: readonly string[]
+export function resolveSubmitMode(input: { mode: SubmitMode; setMode: (mode: SubmitMode) => void }): "normal" {
+  if (input.mode === "shell") input.setMode("normal")
+  return "normal"
 }
 
-export type ResolveSubmitModeResult = {
-  mode: ResolvedSubmitMode
-  // Populated only when `mode === "slash"`. Contains the matched command
-  // name (without leading "/") and the argument tail so the caller does
-  // not have to re-split.
-  slash?: { command: string; arguments: string }
-}
-
-export function resolveSubmitMode(input: ResolveSubmitModeInput): ResolveSubmitModeResult {
-  // Shell mode falls back to normal under harness / signed control plane —
-  // those transports do not expose a shell channel.
-  if (input.mode === "shell" && (input.harnessMode || input.signedControlPlane)) {
-    input.setMode("normal")
-    return { mode: "normal" }
-  }
-
-  // Shell beats slash: an explicit shell toggle is a deliberate user
-  // intent and should not be overridden by a leading "/".
-  if (input.mode === "shell") return { mode: "shell" }
-
-  if (input.customCommandNames && input.text && input.text.startsWith("/")) {
-    const [cmdName, ...args] = input.text.split(" ")
-    const commandName = cmdName.slice(1)
-    if (input.customCommandNames.includes(commandName)) {
-      return { mode: "slash", slash: { command: commandName, arguments: args.join(" ") } }
-    }
-  }
-
-  return { mode: input.mode }
-}
-
-export async function resolveSubmittedConfig(
+export function resolveSubmittedConfig(
   input: ResolveSubmittedConfigContext,
-): Promise<SubmittedConfig | undefined> {
-  if (input.harnessMode) {
-    if (!input.harnessModelKey) return
-    const variant = input.variant ?? input.harnessModelKey.variant
-    return {
-      model: { modelID: input.harnessModelKey.modelID, providerID: input.harnessModelKey.providerID },
-      agent: resolveSubmitAgent(input),
-      ...(variant ? { variant } : {}),
-    }
-  }
-
-  const model = input.selectedModel
-  if (!model) return
-  const currentModel = await input.modelForSubmit(model)
-  if (!currentModel) return
+): SubmittedConfig | undefined {
+  if (!input.harnessModelKey) return
+  const variant = input.variant ?? input.harnessModelKey.variant
   return {
-    model: { modelID: currentModel.id, providerID: currentModel.provider.id },
+    model: { modelID: input.harnessModelKey.modelID, providerID: input.harnessModelKey.providerID },
     agent: resolveSubmitAgent(input),
-    ...(input.variant ? { variant: input.variant } : {}),
+    ...(variant ? { variant } : {}),
   }
 }
 
@@ -181,9 +118,4 @@ function resolveSubmitAgent(input: ResolveSubmittedConfigContext) {
   if (input.currentAgent?.name && input.currentAgent.name !== "default") return input.currentAgent.name
   if (input.defaultAgent?.name && input.defaultAgent.name !== "default") return input.defaultAgent.name
   return "build"
-}
-
-export async function resolvePromptDispatchClient(input: ResolvePromptDispatchClientContext) {
-  if (input.harnessMode || input.signedControlPlane || input.loopbackWorkspaceBridge) return input.sessionClient()
-  return (await input.hostedSessionClient()) ?? input.fallbackClient
 }

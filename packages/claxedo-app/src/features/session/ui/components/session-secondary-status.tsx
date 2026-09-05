@@ -17,6 +17,7 @@ export function DeferredSessionSecondaryStatus(props: {
   firstFoldReady: Accessor<boolean>
   directory: Accessor<string | undefined>
   sessionId: Accessor<string | undefined>
+  turnActive: Accessor<boolean>
   /** Workspace whose event stream carries this session, including local workspaces. */
   eventWorkspaceId: Accessor<string | undefined>
   delayMs?: number

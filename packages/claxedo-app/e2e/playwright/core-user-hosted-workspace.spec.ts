@@ -186,7 +186,7 @@ import {
 import { draftDefaultStorageKey } from "../../src/features/session/harness/draft-defaults"
 import { DEFAULT_LOCAL_CLAXEDO_SERVER_URL } from "../../src/platform/api/local-server"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime/contracts"
-import { createOpencodeCompatProjection } from "@claxedo/agent-event-runtime/opencode-compat"
+import { createClientPresentationProjection } from "@claxedo/agent-event-runtime/client-presentation"
 
 const PROJECT_ID = "proj_core_user_hosted_workspace"
 const WORKSPACE_ID = "ws_core_user_hosted_workspace"
@@ -575,7 +575,7 @@ async function installUserHostedRuntimeMock(
     if (isSessionInventoryPath(url.pathname)) return json(route, { sessions: [] })
     // Sanitized generic agent-connection discovery.
     if (url.pathname === "/api/claxedo/agent-config/connections") {
-      return json(route, { connections: [] })
+      return json(route, { status: "supported", connections: [] })
     }
     if (url.pathname === "/api/claxedo/agent-config/harness") {
       const selected = { kind: "native", harnessId: "pi" }
@@ -828,7 +828,7 @@ async function installUserHostedRuntimeMock(
         // inventing one. An invented id makes the settle look like a SECOND part of
         // the same reply beside the one the client streamed — a duplicate the real
         // runtime never produces.
-        const hostProjection = createOpencodeCompatProjection({
+        const hostProjection = createClientPresentationProjection({
           sessionId: SESSION_ID,
           directory: HOST_DIR,
           assistantMessageId: assistantID,

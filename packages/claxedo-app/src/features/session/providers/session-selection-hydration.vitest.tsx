@@ -37,7 +37,7 @@ vi.mock("@/platform/runtime/agent/agent-runtime-client", () => ({
         })
       }
       return {
-        harness: { id: "opencode", access: "native" },
+        harness: { kind: "connection", connectionId: "opencode" },
         agent: "build",
         model: { providerID: "opencode", modelID: "model-restored" },
         variant: null,
@@ -48,11 +48,6 @@ vi.mock("@/platform/runtime/agent/agent-runtime-client", () => ({
 }))
 
 vi.mock("../data/query/directory", () => ({
-  configQuery: () => ({
-    queryKey: ["directory-config"],
-    staleTime: Infinity,
-    queryFn: async () => ({}),
-  }),
   agentListQuery: () => ({
     queryKey: ["directory-agents"],
     staleTime: Infinity,

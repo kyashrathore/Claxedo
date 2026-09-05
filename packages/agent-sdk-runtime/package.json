@@ -20,6 +20,13 @@
   "main": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
   "exports": {
+    "./pi-catalog": {
+      "types": "./dist/pi-catalog.d.ts",
+      "bun": "./dist/pi-catalog.mjs",
+      "development": "./dist/pi-catalog.mjs",
+      "import": "./dist/pi-catalog.mjs",
+      "default": "./dist/pi-catalog.mjs"
+    },
     ".": {
       "types": "./dist/index.d.ts",
       "bun": "./dist/index.mjs",
@@ -99,26 +106,36 @@
     },
     "./harnesses/acp": {
       "types": "./dist/harness-factories/acp.d.ts",
+      "bun": "./dist/harness-factories/acp.mjs",
+      "development": "./dist/harness-factories/acp.mjs",
       "import": "./dist/harness-factories/acp.mjs",
       "default": "./dist/harness-factories/acp.mjs"
     },
     "./harnesses/claude": {
       "types": "./dist/harness-factories/claude.d.ts",
+      "bun": "./dist/harness-factories/claude.mjs",
+      "development": "./dist/harness-factories/claude.mjs",
       "import": "./dist/harness-factories/claude.mjs",
       "default": "./dist/harness-factories/claude.mjs"
     },
     "./harnesses/codex": {
       "types": "./dist/harness-factories/codex.d.ts",
+      "bun": "./dist/harness-factories/codex.mjs",
+      "development": "./dist/harness-factories/codex.mjs",
       "import": "./dist/harness-factories/codex.mjs",
       "default": "./dist/harness-factories/codex.mjs"
     },
     "./harnesses/cursor": {
       "types": "./dist/harness-factories/cursor.d.ts",
+      "bun": "./dist/harness-factories/cursor.mjs",
+      "development": "./dist/harness-factories/cursor.mjs",
       "import": "./dist/harness-factories/cursor.mjs",
       "default": "./dist/harness-factories/cursor.mjs"
     },
     "./harnesses/pi": {
       "types": "./dist/harness-factories/pi.d.ts",
+      "bun": "./dist/harness-factories/pi.mjs",
+      "development": "./dist/harness-factories/pi.mjs",
       "import": "./dist/harness-factories/pi.mjs",
       "default": "./dist/harness-factories/pi.mjs"
     },

@@ -24,11 +24,13 @@ import type {
   AdmittedSubagentObservation,
   AgentMessage,
   AgentTurnOutcome,
+  PromptFormat,
   SessionConfig,
   SessionConfigUpdate,
   SessionHarness,
   SubagentObservation,
 } from "@claxedo/agent-sdk-runtime"
+import type { AgentExecutionBinding } from "@claxedo/agent-runtime-contract"
 import type { SubagentUpdatedEvent } from "@claxedo/agent-event-runtime"
 import {
   type CompatEvent,
@@ -2185,13 +2187,13 @@ export class RuntimeStore {
 
       case "session.updated": {
         const info = event.properties.info
-        this.upsertSession({
-          id: info.id,
-          directory: info.directory,
-          title: info.title,
-          createdAt: info.time.created,
-          updatedAt: info.time.updated,
-        })
+        this.db.prepare(`
+          UPDATE session
+          SET title = COALESCE(?, title),
+              updated_at = COALESCE(?, updated_at),
+              archived_at = COALESCE(?, archived_at)
+          WHERE id = ?
+        `).run(info.title ?? null, info.time?.updated ?? null, info.time?.archived ?? null, info.id)
         return
       }
 
@@ -3083,7 +3085,7 @@ export class RuntimeStore {
 
   private hydrateMessages(sessionId: string, msgs: MessageProjectionRow[]): AgentMessage[] {
     if (msgs.length === 0) return []
-    const partsByMessage = new Map<string, Record<string, unknown>[]>()
+    const partsByMessage = new Map<string, AgentMessage["parts"]>()
     for (let offset = 0; offset < msgs.length; offset += MESSAGE_HYDRATION_BATCH_SIZE) {
       const batch = msgs.slice(offset, offset + MESSAGE_HYDRATION_BATCH_SIZE)
       const placeholders = batch.map(() => "?").join(", ")
@@ -3099,7 +3101,7 @@ export class RuntimeStore {
         .all(sessionId, ...batch.map((message) => message.id)) as Array<{ message_id: string; data_json: string }>
       for (const part of parts) {
         const current = partsByMessage.get(part.message_id) ?? []
-        current.push(JSON.parse(part.data_json) as Record<string, unknown>)
+        current.push(JSON.parse(part.data_json) as AgentMessage["parts"][number])
         partsByMessage.set(part.message_id, current)
       }
     }
@@ -3186,10 +3188,10 @@ export class RuntimeStore {
       `,
       )
       .all(sessionId, ...selectedIds) as Array<{ message_id: string; data_json: string }>
-    const partsByMessage = new Map<string, Record<string, unknown>[]>()
+    const partsByMessage = new Map<string, AgentMessage["parts"]>()
     for (const part of parts) {
       const current = partsByMessage.get(part.message_id) ?? []
-      current.push(JSON.parse(part.data_json) as Record<string, unknown>)
+      current.push(JSON.parse(part.data_json) as AgentMessage["parts"][number])
       partsByMessage.set(part.message_id, current)
     }
     return msgs.map((msg) => ({

@@ -48,11 +48,9 @@ describe("Agent Extension config scan", () => {
       { path: ".claude", kind: "harness-config-dir", state: "discovered" },
       { path: ".codex", kind: "harness-config-dir", state: "discovered" },
       { path: ".cursor", kind: "harness-config-dir", state: "discovered" },
-      { path: ".opencode", kind: "harness-config-dir", state: "discovered" },
       { path: ".agents/skills", kind: "skills-dir", state: "discovered" },
       { path: "AGENTS.md", kind: "instruction-file", state: "discovered" },
       { path: "CLAUDE.md", kind: "instruction-file", state: "discovered" },
-      { path: "opencode.json", kind: "opencode-config", state: "discovered" },
       { path: "mcp.json", kind: "mcp-config", state: "discovered" },
       { path: ".vscode/mcp.json", kind: "mcp-config", state: "discovered" },
     ])

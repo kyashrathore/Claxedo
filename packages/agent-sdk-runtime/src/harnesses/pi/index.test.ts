@@ -107,6 +107,23 @@ describe("PiHarnessAdapter", () => {
     ])
   })
 
+  test("preserves canonical input part identities instead of creating a second prompt part", async () => {
+    const adapter = new PiHarnessAdapter()
+    const session = await adapter.createSession(undefined)
+    const parts = [
+      { id: "submitted-part", type: "text", text: "exec: printf hi" },
+      { type: "text", text: "# second input part" },
+    ] satisfies PromptInput["parts"]
+    const events = await collect(executeTestTurn(adapter, session.id, prompt({ parts }), undefined))
+    const userParts = events.filter((event) => event.type === "message.part.updated")
+    expect(userParts).toMatchObject([
+      { properties: { part: { id: "submitted-part", messageID: "user-1", text: parts[0].text } } },
+      { properties: { part: { id: "user-1-part-1", messageID: "user-1", text: parts[1].text } } },
+    ])
+    const history = await adapter.getMessages(executionBinding(session.id, undefined, "pi"))
+    expect(history[0].parts.map((part) => part.id)).toEqual(["submitted-part", "user-1-part-1"])
+  })
+
   test("attributes in-process model and SessionEnv command lifecycles without shell text", async () => {
     const sentinel = "pi-observer-sentinel"
     const descriptors: AgentProcessDescriptor[] = []

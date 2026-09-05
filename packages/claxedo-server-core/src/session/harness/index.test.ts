@@ -52,8 +52,7 @@ describe("session harness", () => {
     mod.setSessionHarness("ws_1", "ses_1", connection("team-agent"))
     const runner = mod.getSessionHarness("ws_1", "ses_1")
     expect(runner).toBeDefined()
-    expect(runner).toEqual(acp("claude"))
-    expect(processBinary(runner!)).toBeUndefined()
+    expect(runner).toEqual(connection("team-agent"))
   })
 
   test("returns undefined for unbound session", () => {
@@ -117,10 +116,9 @@ describe("session harness", () => {
 
   // ── normalize ────────────────────────────────────────────────────────
 
-  test("normalize keeps ACP bindings logical when no connection is supplied", () => {
-    const runner = mod.normalize(acp("claude"))
-    expect(runner).toEqual(acp("claude"))
-    expect(processBinary(runner)).toBeUndefined()
+  test("normalize preserves the configured connection identity", () => {
+    const runner = mod.normalize(connection("team-agent"))
+    expect(runner).toEqual(connection("team-agent"))
   })
 
   test("normalize preserves native SDK harnesses", () => {

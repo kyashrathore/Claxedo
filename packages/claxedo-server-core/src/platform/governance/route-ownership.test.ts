@@ -17,12 +17,13 @@ describe("routeOwnership", () => {
 
   test("classifies workspace-runtime routes", () => {
     expect(routeOwnership("/session").handler).toBe(RouteHandler.SandboxRuntime)
-    expect(routeOwnership("/provider").handler).toBe(RouteHandler.SandboxRuntime)
+    expect(routeOwnership("/api/claxedo/agent-config/providers").handler).toBe(RouteHandler.CentralServer)
   })
 
   test("classifies central-server routes", () => {
     expect(routeOwnership("/api/claxedo/health").handler).toBe(RouteHandler.CentralServer)
     expect(routeOwnership("/global/dispose").handler).toBe(RouteHandler.CentralServer)
+    expect(routeOwnership("/api/claxedo/events").handler).toBe(RouteHandler.CentralServer)
     expect(routeOwnership("/provider/auth").handler).toBe(RouteHandler.CentralServer)
   })
 })

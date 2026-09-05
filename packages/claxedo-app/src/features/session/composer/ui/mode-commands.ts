@@ -1,5 +1,5 @@
 import type { Accessor } from "solid-js"
-import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
+import { harnessProfile } from "@/features/session/harness/profile"
 import type { createHarnessSubmitController } from "@/features/session/harness/controller"
 import { composerHarnessId, isComposerHarnessMode, type ComposerMode } from "../mode"
 
@@ -86,13 +86,12 @@ export function createSubmitHarnessSelection(input: {
     const mode = input.composerMode()
     if (mode.kind === "session") return composerHarnessId(mode)
     const harness = input.harnessController.harness(scope)
-    return harness === "opencode" ? composerHarnessId(mode) : harness
+    return harness ?? composerHarnessId(mode)
   }
-  const selectedHarnessRef = (scope: string) => {
-    const id = pickHarness(selectedHarnessType(scope))
-    return id && id !== "opencode" ? { id } : undefined
+  const selectedHarnessRef = selectedHarnessType
+  const selectedHarnessDisplayName = (scope: string) => {
+    const harness = selectedHarnessType(scope)
+    return harness ? harnessProfile(harness).displayName : "Select harness"
   }
-  const selectedHarnessDisplayName = (scope: string) =>
-    harnessProfile(pickHarness(selectedHarnessType(scope)) ?? "opencode").displayName
   return { selectedHarnessMode, selectedHarnessType, selectedHarnessRef, selectedHarnessDisplayName }
 }

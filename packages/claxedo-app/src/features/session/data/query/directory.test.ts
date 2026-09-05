@@ -1,8 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import type { ClaxedoAgentProfile as Agent, ClaxedoConfig as Config, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
+import type { ClaxedoAgentProfile as Agent, ClaxedoPath as Path, ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import {
   agentListQuery,
-  configQuery,
   pathQuery,
   projectCurrentQuery,
 } from "./directory"
@@ -42,28 +41,6 @@ describe("directory query factories", () => {
     expect(query.queryKey).toEqual(["directory", "http://example.test", "project", "/tmp/ws"])
     expect(query.staleTime).toBe(60 * 1000)
     expect(await query.queryFn()).toBe("project_1")
-  })
-
-  test("configQuery is scoped to the directory AND the workspace that resolved it", async () => {
-    const config = { model: "claude" } satisfies Config
-    const client = { config: { get: async () => ({ data: config }) } }
-    const query = configQuery({
-      baseUrl: "http://example.test",
-      directory: "/tmp/ws",
-      client,
-    })
-
-    expect(query.queryKey).toEqual(["directory", "http://example.test", "config", "/tmp/ws", ""])
-    // A read taken BEFORE the workspace resolved must not be served to a
-    // resolved reader — the same rule `agents` and `fileStatus` already follow.
-    expect(configQuery({
-      baseUrl: "http://example.test",
-      directory: "/tmp/ws",
-      workspace: { kind: "cloud", workspaceId: "ws_1" } as Parameters<typeof configQuery>[0]["workspace"],
-      client,
-    }).queryKey).toEqual(["directory", "http://example.test", "config", "/tmp/ws", "cloud:ws_1"])
-    expect(query.staleTime).toBe(60 * 1000)
-    expect(await query.queryFn()).toMatchObject({ model: "claude" })
   })
 
   test("pathQuery is directory-scoped", async () => {
@@ -148,14 +125,15 @@ describe("directory query factories", () => {
     expect(resolves).toBe(1)
   })
 
-  // An UNRESOLVED harness is unknown, not OpenCode: answering it with
-  // OpenCode's profiles is what put them under every other harness.
-  test("agentListQuery answers an unknown harness with no agent profiles", async () => {
+  test("agentListQuery preserves an unselected harness without guessing a default", async () => {
+    const calls: string[] = []
     const query = agentListQuery({
       baseUrl: "http://example.test",
       directory: "/tmp/ws",
-      request: (async () => {
-        throw new Error("agent profile request should not run for an unknown harness")
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      request: (async (input: string | URL | Request) => {
+        calls.push(input instanceof Request ? input.url : String(input))
+        return Response.json([])
       }) as typeof fetch,
       client: {
         app: {
@@ -166,17 +144,21 @@ describe("directory query factories", () => {
       },
     })
 
-    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "", ""])
+    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "", "local:ws_local"])
     expect(await query.queryFn()).toEqual([])
+    expect(calls).toEqual(["http://example.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws"])
   })
 
-  test("agentListQuery skips agent profiles for harness transports", async () => {
+  test("agentListQuery returns the authoritative profiles for a configured connection", async () => {
+    const calls: string[] = []
     const query = agentListQuery({
       baseUrl: "http://example.test",
       directory: "/tmp/ws",
       harnessType: "codex-acp",
-      request: (async () => {
-        throw new Error("agent profile request should not run for harness transports")
+      workspace: { workspaceId: "ws_local", directory: "/tmp/ws", kind: "local" },
+      request: (async (input: string | URL | Request) => {
+        calls.push(input instanceof Request ? input.url : String(input))
+        return Response.json([agent("connection-profile")])
       }) as typeof fetch,
       client: {
         app: {
@@ -187,8 +169,9 @@ describe("directory query factories", () => {
       },
     })
 
-    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "codex-acp", ""])
-    expect(await query.queryFn()).toEqual([])
+    expect(query.queryKey).toEqual(["directory", "http://example.test", "agents", "/tmp/ws", "codex-acp", "local:ws_local"])
+    expect(await query.queryFn()).toEqual([agent("connection-profile")])
+    expect(calls).toEqual(["http://example.test/api/claxedo/agent-config/agents?directory=%2Ftmp%2Fws&type=codex-acp"])
   })
 
   test("agentListQuery routes loopback cloud workspaces through Workspace Relay when request is supplied", async () => {

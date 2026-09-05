@@ -599,8 +599,7 @@ export async function resolveSecretsForScope(
 ): Promise<Record<string, string>> {
   const creds = preferredCredentialPerProvider(
     listCredentialsByProviderPreference(org)
-      .filter((c) => c.status === "available" && c.secure_ref && fanoutEligible(c))
-      .filter((c) => credentialSecretInScope({ source: c.source, scope: c.scope }, scope)),
+      .filter((c) => fanoutEligible(c) && credentialAvailableForScope(c, scope)),
   )
   const backend = getBackend()
   const result: Record<string, string> = {}
@@ -618,5 +617,32 @@ export async function resolveSecretsForScope(
     }
   }
 
+  return result
+}
+
+function credentialAvailableForScope(credential: CredentialMetadata, scope: CredentialSecretScope) {
+  return credential.status === "available" && !!credential.secure_ref
+    && credential.health !== "expired"
+    && (credential.expires_at == null || credential.expires_at > now())
+    && credentialSecretInScope(credential, scope)
+    && (scope !== "shared" || !!credential.consent)
+}
+
+/** Resolve explicitly referenced connection credentials without provider preference/deduplication. */
+export async function resolveCredentialReferencesForScope(
+  references: Iterable<string>,
+  scope: CredentialSecretScope,
+  org: CredentialOrgScope = SINGLE_TENANT_ORG,
+): Promise<Record<string, string>> {
+  const result: Record<string, string> = {}
+  for (const id of new Set(references)) {
+    const row = ClaxedoDB.use((db) => db.select().from(ClaxedoProviderCredentialTable)
+      .where(and(inOrg(org), eq(ClaxedoProviderCredentialTable.id, id))).get())
+    if (!row) continue
+    const credential = toMetadata(row)
+    if (!FANOUT_ELIGIBLE_KINDS.has(credential.kind) || !credentialAvailableForScope(credential, scope)) continue
+    const secret = await getBackend().get(credential.secure_ref!)
+    if (secret) result[id] = secret
+  }
   return result
 }

@@ -1,14 +1,11 @@
-import { createEffect, createMemo, createResource, onCleanup } from "solid-js"
+import { createMemo, createResource, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
-import { useQuery } from "@tanstack/solid-query"
 import { createSimpleContext } from "@opencode-ai/ui/context"
 import type { AgentPermission as PermissionRequest } from "@claxedo/agent-runtime-contract"
 import { Persist, persisted } from "@/platform/persistence/persist"
-import { useGlobalSDK, useShellQueryOptions } from "@/features/session/app-ports"
+import { useGlobalSDK } from "@/features/session/app-ports"
 import { useParams } from "@solidjs/router"
-import { signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 import { decode64 } from "@/lib/base64"
-import { directoryConfig, directoryConfigQuery } from "@/platform/query/directory-config-cache"
 import { directorySessions } from "@/features/session/data/sync/directory-session-cache"
 import {
   acceptKey,
@@ -37,53 +34,13 @@ type PermissionRespondFn = (input: {
 }) => Promise<void>
 type PermissionDirectory = string
 
-function isNonAllowRule(rule: unknown) {
-  if (!rule) return false
-  if (typeof rule === "string") return rule !== "allow"
-  if (typeof rule !== "object") return false
-  if (Array.isArray(rule)) return false
-
-  for (const action of Object.values(rule)) {
-    if (action !== "allow") return true
-  }
-
-  return false
-}
-
-function hasPermissionPromptRules(permission: unknown) {
-  if (!permission) return false
-  if (typeof permission === "string") return permission !== "allow"
-  if (typeof permission !== "object") return false
-  if (Array.isArray(permission)) return false
-
-  const config = permission as Record<string, unknown>
-  return Object.values(config).some(isNonAllowRule)
-}
-
 const permissionContextInput = {
   name: "Permission", gate: true,
   init: () => {
     const params = useParams()
     const globalSDK = useGlobalSDK()
-    const queryOptions = useShellQueryOptions()
-    const projectsQuery = useQuery(() => queryOptions.projects())
     const directory = createMemo(() => decode64(params.dir))
-    // Config belongs to the machine serving the route's workspace, so this read
-    // resolves the workspace the same way the pane SDK scope does — through the
-    // signed inventory — rather than reading a directory-only entry the writer
-    // no longer produces.
-    const workspaceFor = (dir: string) => signedWorkspaceFromProjects(projectsQuery.data ?? [], dir)
-    const configQuery = useQuery(() => {
-      const dir = directory() ?? ""
-      return directoryConfigQuery(globalSDK.url, dir, workspaceFor(dir))
-    })
-    const permissionConfig = createMemo(() => configQuery.data?.permission)
     const permissionClient = (target: string) => globalSDK.createClient({ directory: target }).permission
-
-    const permissionsEnabled = createMemo(() => {
-      if (!directory()) return false
-      return hasPermissionPromptRules(permissionConfig())
-    })
 
     const [store, setStore, _, ready] = persisted(
       {
@@ -108,24 +65,6 @@ const permissionContextInput = {
       }),
     )
     const [failedAutoResponses, setFailedAutoResponses] = createStore<Record<string, boolean>>({})
-
-    // When config has permission: "allow", auto-enable directory-level auto-accept
-    createEffect(() => {
-      if (!ready()) return
-      const currentDirectory = directory()
-      if (!currentDirectory) return
-      const perm = permissionConfig()
-      if (typeof perm === "string" && perm === "allow") {
-        const key = directoryAcceptKey(currentDirectory)
-        if (store.autoAccept[key] === undefined) {
-          setStore(
-            produce((draft) => {
-              draft.autoAccept[key] = true
-            }),
-          )
-        }
-      }
-    })
 
     const respond: PermissionRespondFn = async (input) => {
       try {
@@ -333,11 +272,6 @@ const permissionContextInput = {
       },
       disableAutoAccept(sessionID: string, directory?: string) {
         disable(sessionID, directory)
-      },
-      permissionsEnabled,
-      isPermissionAllowAll(directory: string) {
-        const perm = directoryConfig(globalSDK.url, directory, workspaceFor(directory))?.permission
-        return typeof perm === "string" && perm === "allow"
       },
     }
   },

@@ -1,16 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { dispatchPrompt, dispatchShellCommand, dispatchSlashCommand } from "./dispatch"
+import { dispatchPrompt } from "./dispatch"
 import type {
   PromptDispatchPayload,
-  ShellDispatchPayload,
-  SlashCommandDispatchPayload,
 } from "./types"
 
 // Rubric T2: per-phase test coverage for `session/submit/*`. The dispatch
 // phase is the thin boundary between phase orchestration and the chosen
 // session client. The contract is small but explicit: demo returns its
 // reply through `onDemoReply`, async (live) never does, and errors in
-// either the prompt or the shell/slash methods bubble.
+// the prompt methods bubble.
 
 const payload: PromptDispatchPayload = {
   sessionID: "ses_1",
@@ -18,24 +16,6 @@ const payload: PromptDispatchPayload = {
   agent: "build",
   model: { providerID: "anthropic", modelID: "sonnet" },
   messageID: "msg_1",
-  parts: [],
-}
-
-const shellPayload: ShellDispatchPayload = {
-  sessionID: "ses_1",
-  directory: "/repo/main",
-  agent: "build",
-  model: { providerID: "anthropic", modelID: "sonnet" },
-  command: "ls -la",
-}
-
-const slashPayload: SlashCommandDispatchPayload = {
-  sessionID: "ses_1",
-  directory: "/repo/main",
-  command: "build",
-  arguments: "--fast",
-  agent: "build",
-  model: "anthropic/sonnet",
   parts: [],
 }
 
@@ -159,60 +139,5 @@ describe("dispatchPrompt", () => {
       caught = err
     }
     expect((caught as Error).message).toBe("network blip")
-  })
-})
-
-describe("dispatchShellCommand", () => {
-  test("forwards the payload to session.shell exactly once", async () => {
-    let received: ShellDispatchPayload | undefined
-    await dispatchShellCommand({
-      client: {
-        session: {
-          shell: async (input) => {
-            received = input
-            return undefined
-          },
-        },
-      },
-      payload: shellPayload,
-    })
-    expect(received).toEqual(shellPayload)
-  })
-
-  test("bubbles shell errors", async () => {
-    let caught: unknown
-    try {
-      await dispatchShellCommand({
-        client: {
-          session: {
-            shell: async () => {
-              throw new Error("shell exploded")
-            },
-          },
-        },
-        payload: shellPayload,
-      })
-    } catch (err) {
-      caught = err
-    }
-    expect((caught as Error).message).toBe("shell exploded")
-  })
-})
-
-describe("dispatchSlashCommand", () => {
-  test("forwards the payload to session.command exactly once", async () => {
-    let received: SlashCommandDispatchPayload | undefined
-    await dispatchSlashCommand({
-      client: {
-        session: {
-          command: async (input) => {
-            received = input
-            return undefined
-          },
-        },
-      },
-      payload: slashPayload,
-    })
-    expect(received).toEqual(slashPayload)
   })
 })

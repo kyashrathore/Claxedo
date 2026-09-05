@@ -1,30 +1,12 @@
 import { Hono, type Context } from "hono"
 import type { RuntimeHarnessSelection, UserAgentConfig } from "@claxedo/server-core/agent-config/index"
-import { defaultHarness, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
+import { defaultHarness, isConnectionId, isNativeHarnessId, loadUserConfig, saveUserConfig } from "@claxedo/server-core/agent-config/index"
 import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
-import {
-  cloudRuntimeSessionHarness,
-  harnessBinary,
-  harnessConfigOptionsUnavailable,
-  harnessFromRequest,
-  harnessModelConfigurable,
-  isNativeSdkHarnessId,
-  sameHarness,
-  sandboxJson,
-  sandboxSessionExists,
-  type HarnessConfigOption,
-  type OptionsResponse,
-  isRuntimeHarnessConfigOptions,
-  liveHarnessOptionsResponse,
-  type SandboxHealth,
-  workspaceRuntimeHealthPath,
-} from "../harness"
+import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { localAgentConfigAllowed } from "../local-auth"
 import type { AgentConfigRouteOptions } from "../extension-support"
 import { sandboxFetchOptionsForRequest } from "../../workspace/sandbox-fetch-options"
-
-const NATIVE = new Set(["claude", "codex", "cursor", "pi"])
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {
   return new Hono()
@@ -44,24 +26,15 @@ async function harnessStatusResponse(c: Context, options: AgentConfigRouteOption
   const sessionId = c.req.query("sessionId") || c.req.query("session") || c.req.header("x-session-id")
   const url = new URL("/api/wr/health", "http://workspace-runtime.local")
   url.searchParams.set("directory", ws.kind === "cloud" ? ws.remote_directory || "/workspace" : ws.directory)
-  url.searchParams.set("harness", harnessKey(harness) ?? harness.id)
-  if (harnessBinary(harness)) url.searchParams.set("binary", harnessBinary(harness)!)
-  const live = await sandboxJson<unknown>(
+  appendSelection(url, selection)
+  if (sessionId) url.searchParams.set("sessionId", sessionId)
+  const response = await sandboxFetch(
     ws,
     `${url.pathname}${url.search}`,
     undefined,
     await sandboxFetchOptions(c, options, ws.id),
-  ).catch((cause) => {
-    const message = cause instanceof Error ? cause.message : String(cause)
-    return errorBody("harness_config_options_unavailable", harnessOptionsErrorMessage(harness, message))
-  })
-  if (live && typeof live === "object" && !Array.isArray(live) && (("ok" in live && live.ok === false) || "error" in live)) {
-    return catalogFallback() ?? c.json(live, 502)
-  }
-  if (isRuntimeHarnessConfigOptions(live) && live.options.length > 0) {
-    return c.json(liveHarnessOptionsResponse(live))
-  }
-  return catalogFallback() ?? c.json(errorBody("harness_config_options_unavailable", harnessConfigOptionsUnavailable(harness)), 502)
+  )
+  return new Response(response.body, { status: response.status, headers: response.headers })
 }
 
 async function updateHarnessResponse(c: Context, options: AgentConfigRouteOptions) {
@@ -120,19 +93,19 @@ function statusBody(selection: RuntimeHarnessSelection, extra: Record<string, un
 function selectionFromQuery(c: Context): RuntimeHarnessSelection | undefined {
   const nativeHarness = c.req.query("nativeHarness")
   const connectionId = c.req.query("connectionId")
-  if (nativeHarness && NATIVE.has(nativeHarness)) {
-    return { kind: "native", harnessId: nativeHarness as "claude" | "codex" | "cursor" | "pi" }
+  if (nativeHarness && isNativeHarnessId(nativeHarness)) {
+    return { kind: "native", harnessId: nativeHarness }
   }
-  if (connectionId?.trim()) return { kind: "connection", connectionId: connectionId.trim() }
+  if (connectionId !== undefined && isConnectionId(connectionId)) return { kind: "connection", connectionId: connectionId.trim() }
   return undefined
 }
 
 function parseSelection(input: unknown): RuntimeHarnessSelection | undefined {
   const row = record(input)
-  if (row?.kind === "native" && typeof row.harnessId === "string" && NATIVE.has(row.harnessId)) {
-    return { kind: "native", harnessId: row.harnessId as "claude" | "codex" | "cursor" | "pi" }
+  if (row?.kind === "native" && typeof row.harnessId === "string" && isNativeHarnessId(row.harnessId)) {
+    return { kind: "native", harnessId: row.harnessId }
   }
-  if (row?.kind === "connection" && typeof row.connectionId === "string" && row.connectionId.trim()) {
+  if (row?.kind === "connection" && typeof row.connectionId === "string" && isConnectionId(row.connectionId)) {
     return { kind: "connection", connectionId: row.connectionId.trim() }
   }
   return undefined

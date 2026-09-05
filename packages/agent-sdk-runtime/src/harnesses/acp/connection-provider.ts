@@ -1,4 +1,4 @@
-import type { AgentModel, ModelSelection } from "@claxedo/agent-runtime-contract"
+import { decodeModelSelection, type ModelSelection } from "@claxedo/agent-runtime-contract"
 import { ConnectionProviderError, type ConnectionProvider, type HarnessConnectionCapabilities } from "../../connection-provider"
 import { AcpHarnessAdapter } from "."
 import { validateACPConnection, type ACPConnection } from "./transport"
@@ -38,7 +38,7 @@ export function createAcpConnectionProvider(): ConnectionProvider<AcpConnectionP
       if (extra) throw new Error(`config cannot include ${extra}`)
       if (typeof config.label !== "string" || config.label.length === 0) throw new Error("label must be a non-empty string")
       const connection = validateACPConnection(config.connection)
-      const modelSelection = validateModelSelection(config.modelSelection)
+      const modelSelection = config.modelSelection === undefined ? undefined : decodeModelSelection(config.modelSelection)
       const secretBindings = validateSecretBindings(config.secretBindings, connection)
       return {
         label: config.label,
@@ -149,45 +149,4 @@ function materializedBindings(
   secrets: Readonly<Record<string, string>>,
 ) {
   return Object.fromEntries(Object.entries(bindings ?? {}).map(([target, name]) => [target, secrets[name]!]))
-}
-
-function validateModelSelection(input: unknown): ModelSelection | undefined {
-  if (input === undefined) return undefined
-  if (!input || typeof input !== "object" || Array.isArray(input)) throw new Error("modelSelection must be an object")
-  const selection = input as Record<string, unknown>
-  if (selection.status === "unsupported") {
-    if (selection.models !== undefined) throw new Error("unsupported modelSelection cannot include models")
-    return { status: "unsupported" }
-  }
-  if (selection.status !== "optional" && selection.status !== "required") {
-    throw new Error("modelSelection status must be required, optional, or unsupported")
-  }
-  if (selection.status === "required" && !Array.isArray(selection.models)) {
-    throw new Error("required modelSelection must include models")
-  }
-  const models = selection.models === undefined ? undefined : validateModels(selection.models)
-  if (selection.status === "required" && models?.length === 0) {
-    throw new Error("required modelSelection must include at least one model")
-  }
-  return selection.status === "required"
-    ? { status: "required", models: models ?? [] }
-    : { status: "optional", ...(models ? { models } : {}) }
-}
-
-function validateModels(input: unknown): AgentModel[] {
-  if (!Array.isArray(input)) throw new Error("models must be an array")
-  return input.map((item) => {
-    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error("model must be an object")
-    const model = item as Record<string, unknown>
-    if (typeof model.providerId !== "string" || !model.providerId) throw new Error("model.providerId must be a non-empty string")
-    if (typeof model.modelId !== "string" || !model.modelId) throw new Error("model.modelId must be a non-empty string")
-    if (typeof model.name !== "string" || !model.name) throw new Error("model.name must be a non-empty string")
-    if (model.description !== undefined && typeof model.description !== "string") throw new Error("model.description must be a string")
-    return {
-      providerId: model.providerId,
-      modelId: model.modelId,
-      name: model.name,
-      ...(typeof model.description === "string" ? { description: model.description } : {}),
-    }
-  })
 }

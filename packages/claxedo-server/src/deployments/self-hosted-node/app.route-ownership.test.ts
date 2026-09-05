@@ -145,8 +145,7 @@ describe("the guard on the composed app", () => {
 describe("the central events stream", () => {
   // `withRouteOwnership` above catches a second COMPOSITION claiming a prefix
   // another one owns; it does not see two handlers for one exact path inside
-  // a single composition. `OpenCodeCompatRoutes` answers `/api/claxedo/events`
-  // itself (one of its three spellings of the central bus stream), and Hono
+  // a single composition. `ShellRoutes` owns `/api/claxedo/events`, and Hono
   // resolves the first-registered handler for an exact path, so this
   // composition must register no other handler for it.
   test("exactly one handler is registered for GET /api/claxedo/events", () => {

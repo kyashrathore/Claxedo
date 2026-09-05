@@ -1,14 +1,5 @@
-import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
-
-/**
- * The explicit model selection a submit may carry: the signed-workspace
- * default sentinel is not an explicit choice and never rides a submit.
- */
-export function explicitSelectedModel<T extends { id: string; provider: { id: string } }>(
-  model: T | undefined,
-): T | undefined {
-  return model && !isSignedWorkspaceDefaultModel(model) ? model : undefined
-}
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
+import type { ModelKey } from "../model-strategy"
 
 /**
  * The directory-independent half of the explicit-model gate, evaluated BEFORE
@@ -21,10 +12,9 @@ export function explicitSelectedModel<T extends { id: string; provider: { id: st
 export function cloudSubmitMissingModel(input: {
   isNewSession: boolean
   workspaceKind: string
-  harnessMode: boolean
-  hasHarnessModelKey: boolean
-  hasSelectedModel: boolean
+  selection: HarnessSelection | undefined
+  modelKey: ModelKey | undefined
 }) {
   if (!input.isNewSession || input.workspaceKind !== "cloud") return false
-  return input.harnessMode ? !input.hasHarnessModelKey : !input.hasSelectedModel
+  return !input.selection || !input.modelKey
 }

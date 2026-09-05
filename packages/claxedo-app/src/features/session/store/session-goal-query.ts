@@ -1,6 +1,7 @@
 import type { Accessor } from "solid-js"
 import type { AgentRuntimeEvent } from "@claxedo/agent-event-runtime"
 import { queryClient } from "@/platform/query/query-client"
+import { authFetch } from "@/platform/api/api"
 import type { AgentRuntimeGoalMutationResult } from "@/platform/runtime/agent/agent-runtime-client"
 import { supportsAgentRuntimeGoalAction } from "@/platform/runtime/agent/agent-runtime-goal-client"
 import { shouldAcceptSessionTransportResult } from "./session-history-activation"
@@ -76,7 +77,7 @@ export async function syncSessionGoalData(input: {
     const revision = sessionGoalRevision(scope)
     const data = await leasedQueryRequest({
       scopeKey: requestScope(input.request),
-      authority: input.request.client,
+      authority: input.request.request ?? authFetch,
       signal: input.signal,
       queryFn: (signal) => readSessionGoal(input.request, signal),
     })

@@ -5,6 +5,7 @@ import { usePlatform } from "@/platform/runtime/platform-provider"
 import { useGlobalSDK } from "@/features/session/app-ports"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
 import { sessionHarness, type SessionRef } from "@/platform/identity/session-ref"
+import { harnessSelectionValue } from "@/platform/identity/harness-selection"
 import { paneHarnessScope } from "@/features/session/harness/store-policy"
 import { usePromptHarnessControllersOptional } from "@/features/session/composer/ui/harness-controller"
 import { useWorkspaceScopeRegistryOptional } from "@/features/session/app-ports"
@@ -52,30 +53,17 @@ export function SessionPaneScope(props: ParentProps<{
   const projects = createMemo(() => projectsQuery.data ?? [])
   const sessionId = createMemo(() => props.sessionRef?.()?.sessionId ?? props.sessionId?.())
   const harnessControllers = usePromptHarnessControllersOptional()
-  /**
-   * The pane's harness, as an id.
-   *
-   * An explicit prop or the session's own ref answers it directly. A DRAFT has
-   * no ref, and its harness is the one its scope resolved: the workspace's
-   * remembered choice, or the product default. That answer lives in the harness
-   * store the composer's picker writes, so the pane and its composer agree on
-   * which harness a draft is on.
-   *
-   * OpenCode is an id here like every other harness. The session-list wire
-   * spells OpenCode as an ABSENT harness, and the one read that speaks that
-   * wire applies the erasure itself — so this value keeps "OpenCode" and "no
-   * resolved harness" distinguishable for every harness-keyed read below.
-   */
-  const harnessType = createMemo(() => {
-    const explicit = props.harnessType?.()
-    if (explicit) return explicit
+  const harnessSelection = createMemo(() => {
     const ref = props.sessionRef?.()
-    if (ref) return sessionHarness(ref).id
-    return harnessControllers.submit.harness(paneHarnessScope({
+    return ref ? sessionHarness(ref) : harnessControllers.submit.harness(paneHarnessScope({
       directory: props.directory,
       sessionId: sessionId(),
       surfaceId: props.surfaceId?.(),
     }))
+  })
+  const harnessType = createMemo(() => {
+    const selection = harnessSelection()
+    return props.harnessType?.() ?? (selection ? harnessSelectionValue(selection) : undefined)
   })
   const refreshDirectory: Parameters<typeof DirectoryScope>[0]["refreshDirectory"] = (directory, harnessType, options) => {
     const current = connection()
@@ -116,6 +104,7 @@ export function SessionPaneScope(props: ParentProps<{
       directory={props.directory}
       sessionRef={props.sessionRef}
       harnessType={harnessType}
+      harnessSelection={harnessSelection}
       workspaceId={() => connection().workspaceId}
       workspaceKind={() => connection().kind}
       active={props.active}

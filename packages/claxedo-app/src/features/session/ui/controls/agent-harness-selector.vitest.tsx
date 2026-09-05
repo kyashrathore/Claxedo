@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { render, cleanup, fireEvent, waitFor } from "@solidjs/testing-library"
-import { createSignal } from "solid-js"
+import { createSignal, createMemo, For } from "solid-js"
 import type { HarnessSelection, SessionRef } from "@/platform/identity/session-ref"
 
 type PiProvider = {
@@ -13,6 +13,12 @@ const dialogState = vi.hoisted(() => ({
   show: vi.fn(),
 }))
 const openSettingsProviders = vi.hoisted(() => vi.fn())
+const discovery = vi.hoisted(() => vi.fn())
+vi.mock("@/platform/api/api", async (original) => ({
+  ...await original<typeof import("@/platform/api/api")>(),
+  authFetch: discovery,
+  getClaxedoServerUrl: () => "http://localhost",
+}))
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -31,7 +37,7 @@ vi.mock("@/platform/telemetry/analytics", () => ({
   identityProps: () => ({ org_id: "org_1", user_id: "user_1", deployment_mode: "self-host" }),
 }))
 let readiness = "ready"
-let harnessType = "acp:claude"
+let harnessType: HarnessSelection = { kind: "native", harnessId: "claude" }
 let models: Array<{ id: string; name: string }> = []
 let selectedModel = ""
 let selectedModelProvider: string | undefined
@@ -88,18 +94,17 @@ vi.mock("@/features/session/preferences/pane", () => ({
 // it composes one picker — so this is where the seam moved.
 vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
   HarnessModelPicker: (props: any) => {
-    const options: HarnessSelection[] = [...props.harnessOptions]
-    const groups = options.reduce((result, opt) => {
+    const groups = createMemo(() => props.harnessOptions.reduce((result, opt) => {
       const group = harnessGroupForTest(opt)
       result.set(group, [...(result.get(group) ?? []), opt])
       return result
-    }, new Map<string, string[]>())
+    }, new Map<string, HarnessSelection[]>()))
     return (
       <div data-testid="select" data-disabled={props.harnessDisabled?.() ? "true" : "false"}>
         <button data-testid="select-trigger" disabled={props.harnessDisabled?.()}>
           {props.harnessLabel?.(props.harness?.())}
         </button>
-        {[...groups.entries()].map(([group, opts]) => (
+        <For each={[...groups().entries()]}>{([group, opts]) => (
           <div data-testid={`select-group-${group}`}>
             <span>{group}</span>
             {opts.map((opt: HarnessSelection) => (
@@ -108,7 +113,7 @@ vi.mock("@/features/session/composer/ui/harness-model-picker", () => ({
               </button>
             ))}
           </div>
-        ))}
+        )}</For>
         <div data-testid="model-selector" data-disabled={props.modelDisabled?.() ? "true" : "false"}>
           <div
             data-testid="model-trigger-content"
@@ -226,9 +231,10 @@ afterEach(() => {
 })
 
 beforeEach(() => {
+  discovery.mockReset().mockImplementation(async () => Response.json({ status: "supported", connections: [] }))
   harnessMode = true
   readiness = "ready"
-  harnessType = "acp:claude"
+  harnessType = { kind: "native", harnessId: "claude" }
   models = []
   selectedModel = ""
   selectedModelProvider = undefined
@@ -252,6 +258,29 @@ beforeEach(() => {
 // ---------------------------------------------------------------------------
 
 describe("AgentHarnessSelector — existing session handoff", () => {
+  test("unsupported discovery does not create a connection group or schedule retries", async () => {
+    discovery.mockImplementation(async () => Response.json({ status: "unsupported", reason: "operator_local_configuration" }))
+    const timeout = vi.spyOn(globalThis, "setTimeout")
+    const { container } = render(() => <TestAgentHarnessSelector />)
+    await discovery.mock.results[0].value
+    await new Promise<void>((resolve) => queueMicrotask(resolve))
+    expect(container.querySelector("[data-testid='select-group-Connections']")).toBeNull()
+    expect(discovery).toHaveBeenCalledTimes(1)
+    expect(timeout.mock.calls.filter(([, delay]) => delay === 500 || delay === 1000)).toHaveLength(0)
+    timeout.mockRestore()
+  })
+
+  test("keeps native Pi and a connection named pi as separate choices", async () => {
+    discovery.mockImplementation(async () => Response.json({ status: "supported", connections: [{
+      connectionId: "pi", label: "Remote Pi", enabled: true, readiness: "ready",
+      capabilities: { abort: true, reconnect: false, replay: true, permissions: true, questions: false, todos: false, commands: false, fork: false, revert: false, unrevert: false, configOptions: true, subagents: false },
+    }] }))
+    const view = render(() => <TestAgentHarnessSelector />)
+    await waitFor(() => expect(view.getByText("Remote Pi")).toBeTruthy())
+    expect(view.container.querySelectorAll("[data-testid='select-option-pi']")).toHaveLength(2)
+    fireEvent.click(view.getByText("Remote Pi"))
+    await waitFor(() => expect(setHarnessCalls.at(-1)?.type).toEqual({ kind: "connection", connectionId: "pi" }))
+  })
   test("keeps harness selection enabled while disabling an unavailable model list", () => {
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked />)
 
@@ -411,7 +440,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
 
     fireEvent.click(container.querySelector("[data-testid='model-option-claude-opus-4-6']") as HTMLButtonElement)
 
-    expect(setModelCalls).toEqual([{ scope: "test-scope", model: { providerID: "acp:claude", modelID: "claude-opus-4-6" } }])
+    expect(setModelCalls).toEqual([{ scope: "test-scope", model: { providerID: "claude", modelID: "claude-opus-4-6" } }])
     expect(container.textContent).toContain("Opus 4.6")
   })
 
@@ -462,7 +491,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("surfaces runner config errors in the notice row, in words, with no hover needed", () => {
-    harnessType = "claude-sdk"
+    harnessType = { kind: "native", harnessId: "claude" }
     configError = "Authentication required. Please run 'agent login' first."
     models = []
     selectedModel = ""
@@ -481,7 +510,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("surfaces fresh option-discovery failures without waiting for stale", () => {
-    harnessType = "claude-sdk"
+    harnessType = { kind: "native", harnessId: "claude" }
     configError = "No model options available"
     optionsStale = false
     models = []
@@ -517,7 +546,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("never shows the client default placeholder for Cursor while options are unresolved", () => {
-    harnessType = "acp:cursor"
+    harnessType = { kind: "native", harnessId: "cursor" }
     optionsLoading = true
     selectedModel = ""
     models = []
@@ -558,7 +587,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("a dead runtime outranks the option-discovery failure it caused", () => {
-    harnessType = "claude-sdk"
+    harnessType = { kind: "native", harnessId: "claude" }
     readiness = "error"
     configError = "Failed to load model options"
 
@@ -577,7 +606,7 @@ describe("AgentHarnessSelector — existing session handoff", () => {
   })
 
   test("keeps the selected model label when runner config fails after model resolution", () => {
-    harnessType = "claude-sdk"
+    harnessType = { kind: "native", harnessId: "claude" }
     readiness = "error"
     configError = "Failed to initialize runner"
     models = [{ id: "default", name: "Default (recommended)" }]
@@ -966,7 +995,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("an existing non-Pi session keeps its model picker enabled", () => {
-    harnessType = "acp:claude"
+    harnessType = { kind: "native", harnessId: "claude" }
     models = [{ id: "sonnet", name: "Sonnet" }]
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked modelLocked />)
@@ -994,7 +1023,7 @@ describe("AgentHarnessSelector — selectable Pi models", () => {
   })
 
   test("an ACP Claude connection with no models still shows the Select model placeholder (unchanged)", () => {
-    harnessType = "acp:claude"
+    harnessType = { kind: "native", harnessId: "claude" }
     models = []
 
     const { container } = render(() => <TestAgentHarnessSelector sessionLocked={false} />)

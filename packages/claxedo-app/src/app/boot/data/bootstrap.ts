@@ -1,9 +1,4 @@
-import {
-  type Path,
-  type Project,
-  type ProviderListResponse,
-  createOpencodeClient,
-} from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoPath as Path, ClaxedoProject as Project, ClaxedoConfig as Config, ClaxedoAgentProfile, ClaxedoCommand, ClaxedoVcsInfo } from "@/platform/api/claxedo-api-types"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 import { retry } from "@/lib/retry"
 import { getFilename } from "@/lib/path"
@@ -12,16 +7,14 @@ import { formatServerError } from "@/lib/server-errors"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { setProviderQueryData } from "@/platform/query/provider-cache"
-import { projectCatalogMissingWorkspace } from "@/platform/query/control-plane"
+import { providerListQuery, projectCatalogMissingWorkspace } from "@/platform/query/control-plane"
 import { commandListQuery } from "../../../features/session/data/query/shell"
-import { agentListQuery, configQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
+import { agentListQuery, pathQuery, projectCurrentQuery } from "../../../features/session/data/query/directory"
 import { workspaceVcsQuery, type WorkspaceRuntimeSnapshot } from "@/platform/runtime/workspace-query"
 import { fastSessionSwitchAnyNetworkQuiet } from "@/platform/runtime/session-switch"
 import { cachedWorkspaceRuntimeRecord, workspaceRuntimeRoutingRecord } from "@/platform/runtime/workspace-runtime-record"
 import { workspaceRuntimeBlocksBootstrap } from "@/platform/runtime/workspace-runtime-record"
-import { normalizeProviderList } from "@/platform/query/provider-list"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
-import { createTransport } from "@/platform/runtime/transport"
 import type { DirectorySessionCacheRefreshOptions } from "@/features/session/data/sync/directory-session-cache"
 import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 import { centralTransportForServer } from "@/platform/runtime/transport"
@@ -39,17 +32,11 @@ export type GlobalBootstrapSdk = {
   }
   path: { get(): DataResponse<Path> }
   project: { list(): DataResponse<Project[]> }
-  provider: {
-    list(): DataResponse<ProviderListResponse>
-    auth(): DataResponse<ProviderAuthResponse>
-  }
 }
 
 export type DirectoryBootstrapSdk = {
   project: { current(): DataResponse<Project> }
-  provider: { list(): DataResponse<ProviderListResponse> }
   app: { agents(input?: { directory?: string }): DataResponse<ClaxedoAgentProfile[]> }
-  config: { get(): DataResponse<Config> }
   path: { get(): DataResponse<Path> }
   command: { list(): DataResponse<ClaxedoCommand[]> }
   vcs: { get(): DataResponse<ClaxedoVcsInfo> }
@@ -78,20 +65,8 @@ function record(input: unknown) {
   return isRecord(input) ? input : undefined
 }
 
-function isProviderListResponse(input: unknown): input is ProviderListResponse {
-  const row = record(input)
-  if (!row) return false
-  return Array.isArray(row.all) && Array.isArray(row.connected) && !!record(row.default)
-}
-
 function isBoot(input: unknown): input is Boot {
   return !!record(input)
-}
-
-async function providerListResponse(res: Response) {
-  const data: unknown = await res.json().catch(() => undefined)
-  if (!isProviderListResponse(data)) throw new Error("provider fetch returned invalid response")
-  return data
 }
 
 function normalizedServerUrl(serverUrl: string | undefined) {
@@ -102,20 +77,9 @@ function isLoopbackServer(serverUrl: string | undefined) {
   return centralTransportForServer(serverUrl) === "loopback"
 }
 
-function providerBaseUrl(input: { serverUrl?: string; harnessType?: string }) {
-  return input.serverUrl ?? getClaxedoServerUrl()
-}
-
 function claxedoBootstrapUrl(input: { serverUrl?: string; harnessType?: string }) {
   const url = new URL("/api/claxedo/bootstrap", normalizedServerUrl(input.serverUrl))
   if (input.harnessType) url.searchParams.set("harness", input.harnessType)
-  return url
-}
-
-function providerUrl(input: { serverUrl?: string; harnessType?: string; directory?: string }) {
-  const url = new URL("/provider", normalizedServerUrl(providerBaseUrl(input)))
-  if (input.harnessType) url.searchParams.set("harness", input.harnessType)
-  if (input.directory) url.searchParams.set("directory", input.directory)
   return url
 }
 
@@ -307,55 +271,6 @@ export async function bootstrapDirectory(input: {
   const harnessType = input.harnessType
   const providerHarnessType = harnessType
 
-  const runtimeRequest = (workspace: WorkspaceRuntimeSnapshot | null | undefined) => {
-    if (!input.baseUrl) return undefined
-    if (isRemoteWorkspace(workspace)) {
-      return createTransport({
-        placement: {
-          workspaceId: workspace.workspaceId,
-          hosting: "workspace",
-          transport: isLoopbackServer(input.baseUrl) ? "loopback" : "workspace-relay",
-        },
-        serverUrl: input.baseUrl,
-        directory: input.directory,
-        request: input.fetch,
-      })
-    }
-    // Signed workspace refs (`workspace:<id>` / `ws_<id>` directories) carry a
-    // relay connection even when the central cannot resolve the directory —
-    // hosted centrals have no workspace resolve route and no central harness.
-    // Route runtime-owned reads (the provider catalog) through the relay to the
-    // workspace runtime instead of the central global route. Only when the
-    // resolve produced nothing (a resolved `local` workspace stays central) and
-    // the server is not the loopback local server (which owns the provider route).
-    if (workspace) return undefined
-    if (isLoopbackServer(input.baseUrl)) return undefined
-    const ref = sessionWorkspaceRuntimeRef({ directory: input.directory })
-    if (!ref) return undefined
-    return createTransport({
-      placement: { workspaceId: ref.workspaceId, hosting: "workspace", transport: "workspace-relay" },
-      serverUrl: input.baseUrl,
-      directory: input.directory,
-      request: input.fetch,
-    })
-  }
-
-  const providerFetchError = async (response: Response) => {
-    const text = await response.text().catch(() => "")
-    if (!text.trim()) return `provider fetch failed: ${response.status}`
-    try {
-      const body = record(JSON.parse(text))
-      const error = record(body?.error)
-      const message = typeof error?.message === "string"
-        ? error.message
-        : typeof body?.message === "string"
-          ? body.message
-          : ""
-      if (message) return `${message} (${response.status})`
-    } catch {}
-    return `${text.trim()} (${response.status})`
-  }
-
   const fetchProvider = (workspace?: WorkspaceRuntimeSnapshot | null) => {
     const runtimeRef = sessionWorkspaceRuntimeRef({ directory: input.directory })
     const scope = isRemoteWorkspace(workspace)
@@ -363,7 +278,7 @@ export async function bootstrapDirectory(input: {
       : runtimeRef
         ? `workspace:${runtimeRef.workspaceId}`
         : input.directory
-    const providerQueryKey = queryKeys.controlPlane.providers(input.baseUrl, scope, providerHarnessType)
+    const providerQueryKey = queryKeys.controlPlane.providers(input.baseUrl, scope, providerHarnessType ?? "")
     const setProviderQuery = (data: NormalizedProviderListResponse) => {
       const empty = !data.all || data.all.size === 0
       if (empty) {
@@ -372,65 +287,25 @@ export async function bootstrapDirectory(input: {
       }
       setProviderQueryData(providerQueryKey, data)
     }
-    const baseUrl = input.baseUrl
-    const runtime = runtimeRequest(workspace)
-    if (runtime && baseUrl) {
-      const url = providerUrl({
-        serverUrl: baseUrl,
-        harnessType: providerHarnessType,
-        directory: scope,
-      })
-      return runtime.fetch(`${url.pathname}${url.search}`).then(async (r) => {
-        if (!r.ok) throw new Error(await providerFetchError(r))
-        return await providerListResponse(r)
-      }).then((data) => {
-        setProviderQuery(normalizeProviderList(data))
-      })
-    }
-    if (providerHarnessType && input.baseUrl) {
-      return (input.fetch ?? globalThis.fetch)(providerUrl({
-        serverUrl: input.baseUrl,
-        harnessType: providerHarnessType,
-        directory: scope,
-      })).then(async (r) => {
-        if (!r.ok) throw new Error(await providerFetchError(r))
-        return await providerListResponse(r)
-      }).then((data) => {
-        setProviderQuery(normalizeProviderList(data))
-      })
-    }
-    return input.sdk.provider.list().then((x) => {
-      setProviderQuery(normalizeProviderList(x.data!))
-    })
+    return providerListQuery({
+      baseUrl: input.baseUrl,
+      directory: scope,
+      harnessType: providerHarnessType!,
+      request: input.fetch,
+    }).queryFn().then(setProviderQuery)
   }
 
-  // The provider fetch now runs only behind the WorkspaceGate's `ready` branch
-  // (DirectoryScope mounts inside it) and through queries gated by the
-  // WorkspaceConnection authority — so it cannot fire while the workspace is
-  // offline. The connection-failure surface is owned ONCE by the authority/gate
-  // (access-denied / offline view), so the old per-call "Failed to load models"
-  // toast + 403-suppression dance is deleted (BUG-9). Failures here propagate
-  // silently to callers (all `.catch(() => undefined)`), with no toast spam.
-  //
-  // Fetch-once within this bootstrap: the pre-paint fetch below and the idle
-  // warmup both ask for the same catalog (`fetchProvider` is a raw fetch, not
-  // a cached query), which measured as two identical `GET /provider?harness=…`
-  // requests per boot on the launch-project perf lane. A successful fetch
-  // satisfies both; the warmup only refetches when the first attempt failed
-  // (e.g. the runtime was still coming up pre-paint).
+  // Pre-paint and idle warmup share one successful catalog read.
   let providerFetched = false
   const fetchProviderOrNotify = (workspace?: WorkspaceRuntimeSnapshot | null) => {
-    if (providerFetched) return Promise.resolve()
+    if (!providerHarnessType || providerFetched) return Promise.resolve()
     return fetchProvider(workspace).then(() => {
       providerFetched = true
     })
   }
 
-  // Everything below reads this record as ROUTING IDENTITY — which workspace
-  // backs the directory, so the provider catalog, config and VCS warm address
-  // the right runtime. None of them read `status`, so this must not be taken
-  // on the liveness path: that put a control-plane resolve on whatever the
-  // user was doing whenever the freshness window happened to elapse.
+  // Background catalog and VCS reads need workspace routing identity, not a
+  // liveness probe. Keep their resolution separate from interactive health checks.
   const resolveWorkspace = () => {
     if (input.workspace) return Promise.resolve(input.workspace)
     if (!workspaceDirectoryRef(input.directory)) return Promise.resolve(undefined)
@@ -502,14 +377,6 @@ export async function bootstrapDirectory(input: {
           if (!projectCatalogMissingWorkspace(cached, input.directory)) return
           await queryClient.invalidateQueries({ queryKey })
         }),
-        retry(() =>
-          queryClient.fetchQuery(configQuery({
-            baseUrl: input.baseUrl,
-            directory: input.directory,
-            workspace: ws,
-            client: input.sdk,
-          })),
-        ),
         workspace,
       ])
     })

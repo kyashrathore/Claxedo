@@ -72,6 +72,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     expect(harnessClaimCalls).toContainEqual({
       directory: "/repo/main",
       sessionId: "new",
+      headers: { "x-claxedo-draft-id": "draft-1" },
       harness: { kind: "native", harnessId: "pi" },
       sessionConfig: {
         agent: "agent",
@@ -219,9 +220,24 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
   })
 
 
+  test("a cloud draft without a harness cannot provision using stale provider state", async () => {
+    const submit = createSubmit({
+      sessionID: () => "new",
+      newSessionWorktree: () => "create",
+      newSessionWorkspaceKind: () => "cloud",
+      harnessController: { ...h.testHarnessController(), harness: () => undefined },
+    })
+    await submit.handleSubmit(submitEvent())
+    expect(apiCalls.some((call) => call.url.includes("/api/workspace/create"))).toBe(false)
+    expect(harnessClaimCalls).toEqual([])
+    expect(calls.transportAsync).toBe(0)
+    expect(toasts).toContainEqual({ title: "prompt.toast.modelAgentRequired.title", description: "prompt.toast.modelAgentRequired.description" })
+  })
+
   test("cloud create preserves selected model instead of replacing it with runtime fallback", async () => {
     state.demoMode = false
     state.localCurrentModel = { id: "gpt-5.5-pro", provider: { id: "openai" } }
+    state.piSubmitModel = { key: { providerID: "openai", modelID: "gpt-5.5-pro" }, name: "GPT-5.5 Pro" }
     state.runtimeProviderResponse = {
       all: [
         { id: "openai", models: { "gpt-5.5-pro": { id: "gpt-5.5-pro" } } },
@@ -272,11 +288,12 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
 
   // `fix(composer): require explicit model selection and fail loud` removed the
   // provider-catalog substitution this used to assert: submit now takes ONLY
-  // the composer's explicit selection (`selectedModelForSubmit`), and
+  // the harness controller's explicit model key, and
   // `model-strategy` pins "Explicit selection only — never substitute provider
   // defaults or placeholders". The cloud-create path is the last one that could
   // still reach a runtime `/provider` catalog, so it keeps its own gate.
   test("cloud create fails loud instead of resolving a model from workspace runtime providers", async () => {
+    state.piSubmitModel = undefined
     state.demoMode = false
     state.claxedoServerUrl = "https://claxedo.example"
     state.localCurrentModel = undefined
@@ -1004,7 +1021,7 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
             sessionRef: {
               sessionId: "session-1",
               host: "workspace",
-              harness: { id: "claude-sdk" },
+              harness: { kind: "native", harnessId: "claude" },
               cwd: "/repo/main",
               toolSandbox: { kind: "local", cwd: "/repo/main" },
             },

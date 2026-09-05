@@ -1,3 +1,4 @@
+import { connectionHarness, nativeHarness } from "@/platform/identity/harness-selection"
 import { beforeEach, describe, expect, test } from "bun:test"
 import { createHarnessOptionsLoader, type HarnessOptionsLoaderCache } from "./harness-options-loader"
 import type { HarnessOptionsStatePatch } from "./options-state"
@@ -75,7 +76,7 @@ describe("harness options loader", () => {
       selectedModel: "big-pickle-1",
       optionsLoading: false,
     })
-    expect(savedModels).toEqual(["big-pickle-1"])
+    expect(patches).toHaveLength(1)
   })
 
   test("keeps stale options loading and schedules bounded retry", async () => {

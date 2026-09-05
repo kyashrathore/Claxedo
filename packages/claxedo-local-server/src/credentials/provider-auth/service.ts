@@ -106,6 +106,7 @@ const DEFAULT_PENDING_TTL_MS = 15 * 60 * 1000
 
 export function providerAuthMethods(): ProviderAuthMethods {
   return {
+    anthropic: [{ type: "api", label: "API Key" }],
     "claude-sdk": [{ type: "api", label: "API Key" }],
     "codex-app-server": [
       { type: "oauth", label: "ChatGPT Pro/Plus (headless)" },

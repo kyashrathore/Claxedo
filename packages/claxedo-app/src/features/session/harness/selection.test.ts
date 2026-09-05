@@ -17,26 +17,28 @@ const base = {
 } satisfies Omit<HarnessSelectionState, "harness">
 
 describe("harness selection", () => {
-  test("resolves display names from harness ids and binaries", () => {
-    expect(harnessDisplayName({ harness: "acp:codex", harnessBinary: "" })).toBe("Codex")
-    expect(harnessDisplayName({ harness: "acp:claude", harnessBinary: "/tmp/claude-agent-acp" })).toBe("Claude")
-    expect(harnessDisplayName({ harness: "claude-sdk", harnessBinary: "" })).toBe("Claude SDK")
-    expect(harnessDisplayName({ harness: "opencode", harnessBinary: "custom-binary" })).toBe("custom-binary")
+  test("resolves display names from structured identities, not binaries", () => {
+    expect(harnessDisplayName({ harness: { kind: "native", harnessId: "codex" } })).toBe("Codex")
+    expect(harnessDisplayName({ harness: { kind: "native", harnessId: "claude" } })).toBe("Claude")
+    expect(harnessDisplayName({ harness: { kind: "connection", connectionId: "team-agent" } })).toBe("Team Agent")
+    expect(harnessDisplayName({})).toBe("Select agent")
   })
 
   test("classifies harness mode from harness type", () => {
-    expect(harnessMode("opencode")).toBe("opencode")
-    expect(harnessMode("acp:codex")).toBe("harness")
+    expect(harnessMode({ kind: "connection", connectionId: "opencode" })).toBe("harness")
+    expect(harnessMode({ kind: "connection", connectionId: "acp:codex" })).toBe("harness")
     expect(harnessMode()).toBe("unknown")
   })
 
   test("keeps selected model visible when options refresh without that row", () => {
-    expect(harnessModels({
-      ...base,
-      harness: "acp:claude",
-      selectedModel: "opus",
-      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
-    })).toEqual([
+    expect(
+      harnessModels({
+        ...base,
+        harness: { kind: "connection", connectionId: "acp:claude" },
+        selectedModel: "opus",
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+      }),
+    ).toEqual([
       { id: "opus", name: "opus" },
       { id: "sonnet", name: "Sonnet" },
     ])
@@ -65,21 +67,25 @@ describe("harness selection", () => {
   })
 
   test("does not submit a Pi model ID without its provider identity", () => {
-    expect(harnessModelKeyForSubmit({
-      ...base,
-      harness: { kind: "native", harnessId: "pi" },
-      selectedModel: "claude-sonnet-4-5",
-      dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5" }],
-    })).toBeUndefined()
+    expect(
+      harnessModelKeyForSubmit({
+        ...base,
+        harness: { kind: "native", harnessId: "pi" },
+        selectedModel: "claude-sonnet-4-5",
+        dynamicModels: [{ id: "claude-sonnet-4-5", name: "Sonnet 4.5" }],
+      }),
+    ).toBeUndefined()
   })
 
   test("blocks submit until live model options arrive", () => {
-    expect(harnessModelKeyForSubmit({
-      ...base,
-      harness: "acp:claude",
-      selectedModel: "",
-      dynamicModels: [],
-    })).toBeUndefined()
+    expect(
+      harnessModelKeyForSubmit({
+        ...base,
+        harness: { kind: "connection", connectionId: "acp:claude" },
+        selectedModel: "",
+        dynamicModels: [],
+      }),
+    ).toBeUndefined()
   })
 
   test("submits an operator ACP through its managed default without fabricating a model row", () => {
@@ -101,85 +107,105 @@ describe("harness selection", () => {
   })
 
   test("does not fabricate a default row after option discovery fails", () => {
-    expect(harnessModels({
-      ...base,
-      harness: "acp:claude",
-      selectedModel: "",
-      dynamicModels: [],
-      configError: "Authentication required. Please run 'agent login' first.",
-    })).toEqual([])
-    expect(harnessModels({
-      ...base,
-      harness: { kind: "native", harnessId: "cursor" },
-      selectedModel: "default",
-      dynamicModels: [],
-      configError: "Cursor SDK requires an explicit cursor-sdk API key.",
-    })).toEqual([])
-    expect(harnessModelKeyForSubmit({
-      ...base,
-      harness: "acp:claude",
-      selectedModel: "",
-      dynamicModels: [],
-      configError: "Authentication required. Please run 'agent login' first.",
-    })).toBeUndefined()
-    expect(harnessModelKeyForSubmit({
-      ...base,
-      harness: { kind: "native", harnessId: "cursor" },
-      selectedModel: "default",
-      dynamicModels: [{ id: "default", name: "Default (recommended)" }],
-    })).toEqual({ providerID: "cursor", modelID: "default" })
+    expect(
+      harnessModels({
+        ...base,
+        harness: { kind: "connection", connectionId: "acp:claude" },
+        selectedModel: "",
+        dynamicModels: [],
+        configError: "Authentication required. Please run 'agent login' first.",
+      }),
+    ).toEqual([])
+    expect(
+      harnessModels({
+        ...base,
+        harness: { kind: "native", harnessId: "cursor" },
+        selectedModel: "default",
+        dynamicModels: [],
+        configError: "Cursor SDK requires an explicit cursor-sdk API key.",
+      }),
+    ).toEqual([])
+    expect(
+      harnessModelKeyForSubmit({
+        ...base,
+        harness: { kind: "connection", connectionId: "acp:claude" },
+        selectedModel: "",
+        dynamicModels: [],
+        configError: "Authentication required. Please run 'agent login' first.",
+      }),
+    ).toBeUndefined()
+    expect(
+      harnessModelKeyForSubmit({
+        ...base,
+        harness: { kind: "native", harnessId: "cursor" },
+        selectedModel: "default",
+        dynamicModels: [{ id: "default", name: "Default (recommended)" }],
+      }),
+    ).toEqual({ providerID: "cursor", modelID: "default" })
   })
 
   test("blocks submit while model options are loading or errored", () => {
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "acp:claude",
-      selectedModel: "sonnet",
-      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
-      optionsLoading: true,
-    })).toBe(false)
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "acp:claude",
-      selectedModel: "sonnet",
-      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
-      readiness: "error",
-    })).toBe(false)
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: "acp:claude",
-      selectedModel: "sonnet",
-      dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
-      configError: "Authentication required. Please run 'agent login' first.",
-    })).toBe(false)
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: { kind: "native", harnessId: "codex" },
-      selectedModel: "gpt-5.5",
-      dynamicModels: [],
-      readiness: "error",
-    })).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: { kind: "connection", connectionId: "acp:claude" },
+        selectedModel: "sonnet",
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+        optionsLoading: true,
+      }),
+    ).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: { kind: "connection", connectionId: "acp:claude" },
+        selectedModel: "sonnet",
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+        readiness: "error",
+      }),
+    ).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: { kind: "connection", connectionId: "acp:claude" },
+        selectedModel: "sonnet",
+        dynamicModels: [{ id: "sonnet", name: "Sonnet" }],
+        configError: "Authentication required. Please run 'agent login' first.",
+      }),
+    ).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: { kind: "native", harnessId: "codex" },
+        selectedModel: "gpt-5.5",
+        dynamicModels: [],
+        readiness: "error",
+      }),
+    ).toBe(false)
     // A degraded harness (process lost / recovering) blocks Send (T4) even with a
     // valid model, so the composer health peek can name the condition first.
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: { kind: "native", harnessId: "codex" },
-      selectedModel: "gpt-5.5",
-      dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
-      readiness: "degraded",
-    })).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: { kind: "native", harnessId: "codex" },
+        selectedModel: "gpt-5.5",
+        dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
+        readiness: "degraded",
+      }),
+    ).toBe(false)
     // Connections do not bypass health gating.
-    expect(harnessReadyForSubmit({
-      ...base,
-      harness: { kind: "connection", connectionId: "external-opencode" },
-      readiness: "degraded",
-    })).toBe(false)
+    expect(
+      harnessReadyForSubmit({
+        ...base,
+        harness: { kind: "connection", connectionId: "external-opencode" },
+        readiness: "degraded",
+      }),
+    ).toBe(false)
   })
 
   test("returns canonical ModelKey for selectable harness models", () => {
     const state = {
       ...base,
-      harness: "acp:codex",
+      harness: { kind: "connection", connectionId: "acp:codex" },
       selectedModel: "gpt-5.5",
       dynamicModels: [{ id: "gpt-5.5", name: "GPT-5.5" }],
     } satisfies HarnessSelectionState
@@ -190,20 +216,14 @@ describe("harness selection", () => {
   })
 })
 
-/**
- * Effort travels on the provider-neutral `ModelKey.variant` field.
- * A harness turn is one `query()` and the Claude SDK takes `effort` per query,
- * so the chosen level rides the prompt rather than being pushed at the process.
- * That is why no new transport was needed for this.
- */
 describe("harnessModelKeyForSubmit — thought level", () => {
   const base = {
-    harness: "acp:claude" as const,
+    harness: { kind: "connection", connectionId: "acp:claude" },
     selectedModel: "opus",
     readiness: "ready" as const,
     optionsLoading: false,
     dynamicModels: [{ id: "opus", name: "Opus" }],
-  }
+  } satisfies HarnessSelectionState
 
   test("carries the selected level as the model key's variant", () => {
     expect(harnessModelKeyForSubmit({ ...base, selectedThoughtLevel: "high" })).toEqual({

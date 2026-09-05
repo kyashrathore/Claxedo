@@ -5,6 +5,7 @@ import {
 } from "@claxedo/workspace-runtime"
 import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
+import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
 import { workspaceDir, workspaceId } from "@claxedo/workspace-runtime/host"
 import {
   loopbackWorkspaceRuntimeExposure,
@@ -85,20 +86,14 @@ function text(env: NodeJS.ProcessEnv, key: string) {
  */
 export { claxedoCorsOrigin } from "@claxedo/server-core/hosts/workspace-runtime/cors-origin"
 
-export function claxedoRuntimeRunnerFromEnv(env: NodeJS.ProcessEnv = process.env): RuntimeRunner {
-  const raw = text(env, "WORKSPACE_RUNTIME_RUNNER")
-  const identity = raw === "acp"
-    ? { id: "claude" as const, access: "acp" as const }
-    : normalizeHarnessIdentity(raw ?? "opencode")
-  if (!identity) throw new Error(`Unknown WORKSPACE_RUNTIME_RUNNER: ${raw}`)
-  const acpBinary = text(env, "WORKSPACE_RUNTIME_ACP_BINARY")
-  return {
-    id: identity.id,
-    access: identity.access,
-    ...(acpBinary ? { connection: { kind: "process" as const, binary: acpBinary } } : {}),
+export function claxedoRuntimeHarnessFromEnv(env: NodeJS.ProcessEnv = process.env): WorkspaceRuntimeServerOptions["harness"] {
+  const nativeHarness = text(env, "WORKSPACE_RUNTIME_NATIVE_HARNESS")
+  const connectionId = text(env, "WORKSPACE_RUNTIME_CONNECTION_ID")
+  if (nativeHarness && connectionId) {
+    throw new Error("Choose either WORKSPACE_RUNTIME_NATIVE_HARNESS or WORKSPACE_RUNTIME_CONNECTION_ID")
   }
   if (nativeHarness) {
-    if (nativeHarness !== "claude" && nativeHarness !== "codex" && nativeHarness !== "cursor" && nativeHarness !== "pi") {
+    if (!isNativeHarnessId(nativeHarness)) {
       throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarness}`)
     }
     return { kind: "native", harnessId: nativeHarness }
@@ -126,7 +121,6 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
   assertRuntimePort(port, "WORKSPACE_RUNTIME_PORT")
   const hostname = workspaceRuntimeListenHostname(env)
   const relayOptions = await workspaceRelayRuntimeOptionsFromEnv(env, port)
-  const opencodeUrl = text(env, "OPENCODE_URL")
   const options: WorkspaceRuntimeServerOptions = {
     target: { workspaceId: workspaceId(env), directory: workspaceDir(env) },
     ...relayOptions,
@@ -140,8 +134,8 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
         : privateNetworkDevUnsafeWorkspaceRuntimeExposure(
           "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK local managed-cloud runtime",
         ),
-    ...(opencodeUrl ? { opencodeUrl } : {}),
-    harness: claxedoRuntimeRunnerFromEnv(env),
+    harness: claxedoRuntimeHarnessFromEnv(env),
+    connectionProviders: [createAcpConnectionProvider(), createOpenCodeServerConnectionProvider()],
     corsOrigin: claxedoCorsOrigin,
   }
   return { port, hostname, options }

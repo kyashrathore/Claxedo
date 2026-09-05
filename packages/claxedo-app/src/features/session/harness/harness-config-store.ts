@@ -35,11 +35,11 @@ import type { ResolveDraftDefaultInput } from "./draft-default-policy"
 import { sessionPaneWorkspaceKey } from "@/platform/runtime/session-workspace"
 import type { PreparedRuntimeSessionConfig } from "./prepared-session"
 import { setSessionConfigRawQueryData } from "../store/session-config-query-cache"
-import { createHarnessConnectionsCatalog } from "@/platform/runtime/agent/connection-catalog"
+import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
 import { harnessHasConfigOptions } from "./profile"
 
 type ScopeInput = HarnessScopeInput
-type ClaimInput = ScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }
+type ClaimInput = ScopeInput & { harness: HarnessType; sessionConfig: PreparedRuntimeSessionConfig; headers?: Record<string, string> }
 
 function record(value: unknown): Record<string, unknown> | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
@@ -65,12 +65,13 @@ export function createHarnessConfigStore() {
   let connectionRefresh: Promise<void> | undefined
   const hasConfigOptions = async (type: HarnessType) => {
     if (type.kind === "native") return harnessHasConfigOptions(type)
-    let row = connectionCatalog.rows().find((item) => item.connectionId === type.connectionId)
-    if (!row) {
+    if (!connectionCatalog.data()) {
       connectionRefresh ??= connectionCatalog.refresh().finally(() => { connectionRefresh = undefined })
       await connectionRefresh
-      row = connectionCatalog.rows().find((item) => item.connectionId === type.connectionId)
     }
+    const catalog = connectionCatalog.data()
+    if (catalog?.status === "unsupported") throw new Error(catalog.reason)
+    const row = catalog?.connections.find((item) => item.connectionId === type.connectionId)
     if (!row) {
       throw new Error(connectionCatalog.error() ?? `Connection ${type.connectionId} is unavailable`)
     }
@@ -266,30 +267,13 @@ export function createHarnessConfigStore() {
     return harnessStore.applyDraftDefault(application, input)
   }
 
-  // Standing harness-health probe (T4). Hydration/reprobe short-circuit an
-  // existing session on its stored session-config (`harnessStateFromSessionConfig`
-  // forces ready:true), so they never observe a harness that DIED after settling.
-  // This hits the harness route directly — which now forwards `/api/wr/health`'s
-  // `harnessHealth` (D1 fix) — and moves readiness ready<->degraded so the
-  // composer health peek + Send gate react. Deliberately does NOT re-fetch config
-  // options or touch harness/model identity: it only transitions readiness, and
-  // only when it owns that transition.
+  // Probe the bound runtime without changing persisted harness/model identity.
+  // Hydration alone cannot detect a runtime that exits after the session loads.
   const probeHarnessHealth = async (scope: string, input?: ScopeInput) => {
     if (!input?.directory) return
     const current = harnessStore.read(scope)
     if (!current.harness) return
-    const res = await harnessRuntime
-      .localHarnessConfigFetch(input)(
-        harnessConfigUrl({
-          serverUrl: base,
-          directory: input.directory,
-          ...(harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? [])?.workspaceId
-            ? { workspaceId: harnessWorkspaceRuntimeRef(input, projectsQuery.data ?? [])!.workspaceId }
-            : {}),
-          sessionId: input.sessionId,
-        }),
-      )
-      .catch(() => undefined)
+    const res = await harnessRuntime.harnessHealthFetch(input).catch(() => undefined)
     if (!res?.ok) return
     const data = decodeHarnessState(await res.json().catch(() => undefined))
     if (!data) return

@@ -3,6 +3,7 @@ import fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { randomUUID } from "crypto"
+import { Hono } from "hono"
 import type {
   AcpConnectionProviderConfig,
   HarnessConnectionDescriptor,
@@ -63,6 +64,12 @@ async function upsert(connectionId: string, body: unknown) {
 }
 
 describe("generic agent connection config API", () => {
+  test("the browser discovery URL exposes supported empty discovery", async () => {
+    const host = new Hono().route("/api/claxedo/agent-config", createAgentConfigRoutes())
+    const response = await host.request("/api/claxedo/agent-config/connections")
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status: "supported", connections: [] })
+  })
   test("persists a trusted descriptor and exposes only its sanitized public projection", async () => {
     const response = await upsert("conn-primary", descriptor("conn-primary"))
     expect(response.status).toBe(200)
@@ -71,6 +78,7 @@ describe("generic agent connection config API", () => {
     expect(listed.status).toBe(200)
     const body = await listed.json()
     expect(body).toEqual({
+      status: "supported",
       connections: [{
         connectionId: "conn-primary",
         label: "Agent conn-primary",

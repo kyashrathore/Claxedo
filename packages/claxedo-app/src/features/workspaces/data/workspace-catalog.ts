@@ -1,4 +1,4 @@
-import type { Project } from "@opencode-ai/sdk/v2/client"
+import type { ClaxedoProject as Project } from "@/platform/api/claxedo-api-types"
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"

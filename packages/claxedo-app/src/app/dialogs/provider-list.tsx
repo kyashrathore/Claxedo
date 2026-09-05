@@ -10,15 +10,12 @@ import { Tag } from "@opencode-ai/ui/tag"
 import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { useLanguage } from "@/platform/i18n/provider"
 
-export const CUSTOM_PROVIDER_ID = "_custom"
 
 export const ProviderList: Component<{
   /** The harness whose catalog this list shows. There is no catalog without one. */
   harness: string
   /** The workspace-or-directory scope that catalog belongs to. */
   scope?: string
-  /** Omits the "Custom provider" entry. Onboarding keeps the flow to one decision. */
-  hideCustom?: boolean
   onSelect: (providerId: string) => void
 }> = (props) => {
   const providers = useProviders(() => props.harness, () => props.scope)
@@ -26,9 +23,6 @@ export const ProviderList: Component<{
 
   const popularGroup = () => language.t("dialog.provider.group.popular")
   const otherGroup = () => language.t("dialog.provider.group.other")
-  const customLabel = () => language.t("settings.providers.tag.custom")
-  // A custom provider is an OpenCode provider-registry entry; no other harness reads one.
-  const showCustom = () => props.harness === "opencode" && !props.hideCustom
   const note = (id: string) => {
     if (id === "anthropic") return language.t("dialog.provider.anthropic.note")
     if (id === "openai") return language.t("dialog.provider.openai.note")
@@ -44,16 +38,11 @@ export const ProviderList: Component<{
       key={(x) => x?.id}
       items={() => {
         language.locale()
-        return [
-          ...(showCustom() ? [{ id: CUSTOM_PROVIDER_ID, name: customLabel() }] : []),
-          ...providers.all().values(),
-        ]
+        return [...providers.all().values()]
       }}
       filterKeys={["id", "name"]}
       groupBy={(x) => (popularProviders.includes(x.id) ? popularGroup() : otherGroup())}
       sortBy={(a, b) => {
-        if (a.id === CUSTOM_PROVIDER_ID) return -1
-        if (b.id === CUSTOM_PROVIDER_ID) return 1
         if (popularProviders.includes(a.id) && popularProviders.includes(b.id))
           return popularProviders.indexOf(a.id) - popularProviders.indexOf(b.id)
         return a.name.localeCompare(b.name)
@@ -76,9 +65,6 @@ export const ProviderList: Component<{
           <span>{i.name}</span>
           <Show when={i.id === "opencode"}>
             <div class="text-14-regular text-text-weak">{language.t("dialog.provider.opencode.tagline")}</div>
-          </Show>
-          <Show when={i.id === CUSTOM_PROVIDER_ID}>
-            <Tag>{language.t("settings.providers.tag.custom")}</Tag>
           </Show>
           <Show when={i.id === "opencode"}>
             <Tag>{language.t("dialog.provider.tag.recommended")}</Tag>

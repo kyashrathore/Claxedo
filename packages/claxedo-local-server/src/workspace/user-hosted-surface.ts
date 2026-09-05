@@ -3,11 +3,8 @@
  * host tunnel (`user-hosted-serving.ts`) may reach on this machine for the
  * workspace it is tunneled to, and where each admitted request lands.
  *
- * This daemon composes THREE surfaces on one HTTP server, and a relay-
- * delivered request arrives with none of that structure marked on it — the
- * relay's room already strips the `/workspaces/:id` prefix before handing
- * the request to the host tunnel, so `path` here is the bare app path the
- * browser asked for (`/provider?harness=opencode`, `/session`, ...):
+ * The relay strips `/workspaces/:id` before forwarding. This router selects
+ * one of three surfaces for the remaining path:
  *
  *   - the daemon's OWN root-level product routes — this machine's identity,
  *     credentials, and remote-access administration
@@ -15,26 +12,16 @@
  *     for a relayed caller: these describe the MACHINE, not the workspace it
  *     is serving, and the relay's Runtime Access Token authorizes exactly one
  *     workspace, not the host that happens to run it.
- *   - a small OpenCode-compat family mounted at that SAME root
- *     (`OpenCodeCompatRoutes`, `opencode/compat-routes/index.ts`) that
+ *   - the root-level Claxedo client-presentation and credential routes that
  *     answers provider auth, OAuth connect, and project metadata for
  *     whichever workspace a `?directory=`/`x-opencode-directory` names.
  *     Provider auth from a browser is a desktop capability with no other
  *     owner, so a relayed caller needs exactly what a loopback one gets.
  *   - the workspace-scoped surface `/workspaces/:id/*`, where the embedded
  *     workspace runtime answers everything else (`/session`, `/api/wr/*`,
- *     `/path`, `/provider`, its own `/global/health` identity probe, ...).
- *
- * The previous guard (`runtimeServesOnWorkspaceSurface`,
- * `server-core/platform/governance/route-ownership.ts`) modeled the daemon's
- * ROOT surface and admitted a path onto the workspace surface only if that
- * table called it runtime-owned. That is the wrong table for this question —
- * it refused `/path`, `/api/wr/worktrees`, `/api/wr/checkpoint/*`, and
- * everything else the runtime actually answers under `/workspaces/:id/*` but
- * the root table has never heard of. This module inverts the shape: DENY the
- * daemon's own families by name, and let everything else reach the workspace
- * runtime, which answers an honest 404 for what it does not implement rather
- * than a 403 from a list that was never trying to describe it.
+ *     `/path`, its own `/global/health` identity probe, ...).
+ * Unknown workspace routes reach the runtime and return 404. Control-plane
+ * families are denied regardless of the workspace token's permissions.
  */
 
 export type UserHostedSurfaceTarget =
@@ -47,7 +34,7 @@ export type UserHostedSurfaceTarget =
  * workspace the caller's connection is scoped to. Named against
  * `server-core/deployments/product-route-families.ts`'s family ids — every
  * entry below is owned there by `local-server` or `server`, and none of them
- * is part of the OpenCode-compat family this module admits at root instead.
+ * is part of the presentation family this module admits at root instead.
  *
  * Matched the same way `route-ownership.ts` matches prefixes: an exact hit,
  * or a path segment boundary (`entry + "/"`), so `/health` does not also
@@ -79,10 +66,7 @@ const DENY = [
   // that could ask this daemon `/api/runtime-authority/*` could ask a laptop
   // to adjudicate its own access).
   "/api/runtime-authority",
-  // Disposes every cached OpenCode InstanceState the daemon holds, for every
-  // workspace it serves — a daemon-wide operation, not this one workspace's
-  // to trigger from across a tunnel. (It IS part of the OpenCode-compat
-  // family root serves for a loopback caller; a relayed one does not get it.)
+  // Daemon-wide disposal is never authorized by a workspace token.
   "/global/dispose",
   // The workspace-relay family itself (`route-ownership.ts`:
   // `RouteDomain.WorkspaceRelay`). A relay-delivered `path` never legitimately
@@ -108,13 +92,9 @@ function denied(pathname: string): boolean {
 }
 
 /**
- * The OpenCode-compat family the daemon's ROOT router serves for a workspace
- * named by `?directory=`/`x-opencode-directory`
- * (`opencode/compat-routes/index.ts`), rather than the embedded workspace
- * runtime. `/provider` and `/provider/<id>` alone stay OFF this list and fall
- * through to the workspace surface below — the runtime serves the catalog
- * itself, host-injected for non-opencode harnesses — matching
- * `route-ownership.ts`'s own carve-out for the same path.
+ * Root presentation and credential routes retain their own authorization.
+ * Provider catalogs are control-plane agent-config routes and never traverse
+ * this workspace tunnel.
  */
 function isRootCompatPath(pathname: string): boolean {
   if (pathname === "/provider/auth") return true

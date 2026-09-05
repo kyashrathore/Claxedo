@@ -451,7 +451,7 @@ export default function SessionPage() {
     if (!sessionIDValue || !shouldScheduleDirectorySessionHydration({ directory, sessionID: sessionIDValue, hasSessionInfo: !!info(), sessionRef: activeSessionRef() })) return
     const cancel = scheduleDirectorySessionHydration({
       directory, sessionID: sessionIDValue,
-      getSession: createSessionInfoHydrationGetter({ client: sdk.client.session, claxedoServerUrl: globalSDK.url, signedControlPlane: signedControlPlane(), workspaceId: replayWorkspaceId(), workspaceKind: resolvedWorkspaceKind(), sessionRef: activeSessionRef() }),
+      getSession: createSessionInfoHydrationGetter({ claxedoServerUrl: globalSDK.url, signedControlPlane: signedControlPlane(), workspaceId: replayWorkspaceId(), workspaceKind: resolvedWorkspaceKind(), sessionRef: activeSessionRef() }),
     })
     onCleanup(cancel)
   })
@@ -1504,6 +1504,7 @@ export default function SessionPage() {
                   firstFoldReady={firstFoldReady}
                   directory={dir}
                   sessionId={sessionID}
+                  turnActive={sessionController.activeTurn}
                   eventWorkspaceId={replayWorkspaceId}
                 />
               }

@@ -3,12 +3,6 @@ import os from "node:os"
 import path from "node:path"
 import { afterAll, describe, expect, test } from "vitest"
 import { BootstrapRoutes, signedBootstrapProjects } from "./bootstrap"
-import { configureOpenCodeEngine } from "@claxedo/server-core/opencode/engine"
-
-// External-URL mode so the injected opencode transport routes to the test's
-// fake upstream (intercepted via globalThis.fetch below). Bootstrap no longer
-// takes an opencodeUrl option — it rides the shared engine transport.
-configureOpenCodeEngine({ url: "http://127.0.0.1:1" })
 
 const root = path.join(os.tmpdir(), `claxedo-bootstrap-route-${Date.now()}-${Math.random().toString(16).slice(2)}`)
 const previous = {

@@ -33,7 +33,7 @@ function claimFailureReason(status: PreparedHarnessSessionPlan["status"]) {
   }
 }
 
-export function createPreparedRuntimeSessionStore<ScopeInput extends { directory?: PreparedSessionDirectory }>(input: {
+export function createPreparedRuntimeSessionStore<ScopeInput extends { directory?: PreparedSessionDirectory; harness?: HarnessType; sessionConfig?: PreparedRuntimeSessionConfig }>(input: {
   canUseRuntimeSession(params?: ScopeInput): boolean
   state(scope: string): PreparedHarnessSessionState
   create(params: { input?: ScopeInput; directory: PreparedSessionDirectory; harness: HarnessType }): Promise<string | undefined>
@@ -127,6 +127,7 @@ export function createPreparedRuntimeSessionStore<ScopeInput extends { directory
   const claim = async (scope: string, params: ScopeInput): Promise<{ id: string } | undefined> => {
     const item = await prepare(scope, params)
     if (!item) {
+      if (prepareErrors.has(scope)) throw prepareErrors.get(scope)
       const plan = planPreparedHarnessSession({
         enabled: input.canUseRuntimeSession(params),
         directory: params.directory,

@@ -14,13 +14,12 @@ export {
   type PendingPrompt,
 } from "./pending"
 export { isPageCommentPath, preparePromptRequest, createPromptTimelineReconciliation } from "./prepare-request"
-export { dispatchPrompt, dispatchShellCommand, dispatchSlashCommand } from "./dispatch"
+export { dispatchPrompt } from "./dispatch"
 export {
   resolveSubmitSessionTarget,
   resolveSubmitDirectory,
   resolveSubmitMode,
   resolveSubmittedConfig,
-  resolvePromptDispatchClient,
 } from "./resolve"
 export { waitForPendingWorktree, rollbackPromptDispatch, sendPromptRequest } from "./send"
 export { applyCreatedSessionTargetEffects, applyOptimisticPromptHandoff } from "./handoff"

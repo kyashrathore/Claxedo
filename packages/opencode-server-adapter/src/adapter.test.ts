@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import type { AgentExecutionBinding, PromptInput } from "@claxedo/agent-runtime-contract"
+import type { AgentWorkspaceExecutionBinding, PromptInput } from "@claxedo/agent-runtime-contract"
 import { createConnectionProviderRegistry, type HarnessConnectionDescriptor } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider, OPENCODE_SERVER_CONNECTION_PROVIDER_KEY } from "./index"
 import type { OpenCodeServerConnectionConfig } from "./config"
@@ -44,7 +44,7 @@ async function connect(input: {
   return provider.createAdapter({ descriptor: input.descriptor, resolved, context: {} as never })
 }
 
-function binding(overrides: Partial<AgentExecutionBinding> = {}): AgentExecutionBinding {
+function binding(overrides: Partial<AgentWorkspaceExecutionBinding> = {}): AgentWorkspaceExecutionBinding {
   return {
     workspaceId: "ws_1",
     directory: SOURCE,
@@ -76,6 +76,35 @@ function envelope(directory: string, payload: Record<string, unknown>) {
 }
 
 describe("OpenCode server provider trust boundary", () => {
+  test.each([301, 302, 303, 307, 308])("rejects HTTP %s redirects before forwarding connection secrets", async (status) => {
+    let foreignRequests = 0
+    const foreign = serve(() => {
+      foreignRequests += 1
+      return Response.json({ id: "ses_upstream", directory: TARGET })
+    })
+    const received: Array<[string | null, string | null]> = []
+    const origin = serve((request) => {
+      received.push([request.headers.get("x-api-key"), request.headers.get("x-trusted")])
+      return new Response(null, { status, headers: { Location: `${foreign}/session/ses_upstream` } })
+    })
+    const item = descriptor(origin, {
+      auth: { type: "header", name: "X-API-Key", valueSecret: "apiKey" },
+      trustedHeaders: { "X-Trusted": "trusted" },
+    })
+    item.secretRefs = { apiKey: "credential-api", trusted: "credential-trusted" }
+    const adapter = await connect({
+      descriptor: item,
+      secrets: { apiKey: "test-api-secret", trusted: "test-trusted-secret" },
+    })
+    try {
+      await expect(adapter.getSession(binding())).rejects.toMatchObject({ code: "transport_error" })
+      expect(received).toEqual([["test-api-secret", "test-trusted-secret"]])
+      expect(foreignRequests).toBe(0)
+    } finally {
+      await adapter.dispose()
+    }
+  })
+
   test("projects the Claxedo workspace identity without trusting the upstream project ID", async () => {
     const baseUrl = serve(() => Response.json({
       id: "ses_upstream",
@@ -231,8 +260,9 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
 
   test("enforces the mapped directory and upstream session and reconciles a no-ID disconnect from snapshots", async () => {
     let streams = 0
+    let userMessageId = ""
     const lastEventIds: Array<string | null> = []
-    const baseUrl = serve((request) => {
+    const baseUrl = serve(async (request) => {
       const url = new URL(request.url)
       if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
       if (url.pathname === "/global/event") {
@@ -259,23 +289,26 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
           envelope(TARGET, { type: "session.idle", properties: { sessionID: "ses_upstream" } }),
         ].join(""), { headers: { "Content-Type": "text/event-stream" } })
       }
-      if (url.pathname === "/session/ses_upstream/prompt_async") return new Response(null, { status: 204 })
+      if (url.pathname === "/session/ses_upstream/prompt_async") {
+        userMessageId = (await request.json() as { messageID: string }).messageID
+        return new Response(null, { status: 204 })
+      }
       if (url.pathname === "/session/ses_upstream/message") {
         return Response.json([{
-          info: { id: "msg_assistant", sessionID: "ses_upstream", role: "assistant" },
-          parts: [{ id: "part_1", messageID: "msg_assistant", sessionID: "ses_upstream", type: "text", text: "hello" }],
+          info: { id: "msg_assistant", sessionID: "ses_upstream", role: "assistant", parentID: userMessageId, ...(streams > 1 ? { finish: "stop", time: { completed: 1 } } : {}) },
+          parts: [{ id: "part_1", messageID: "msg_assistant", sessionID: "ses_upstream", type: "text", text: streams > 1 ? "hello world" : "hello" }],
         }])
       }
-      if (url.pathname === "/session/status") return Response.json({ ses_upstream: { type: "busy" } })
+      if (url.pathname === "/session/status") return Response.json(streams > 1 ? {} : { ses_upstream: { type: "busy" } })
+      if (url.pathname === "/session/ses_upstream") return Response.json({ id: "ses_upstream", directory: TARGET })
       return new Response("missing", { status: 404 })
     })
     const adapter = await connect({ descriptor: descriptor(baseUrl) })
 
-    await expect(collect(adapter.executeTurn!(binding(), prompt()))).resolves.toEqual([
-      { type: "text-delta", delta: "hello" },
-      { type: "text-delta", delta: " world" },
-      { type: "finish", sessionId: "claxedo_ses_1" },
-    ])
+    const events = await collect(adapter.executeTurn!(binding(), prompt()))
+    expect(events.filter((event) => event.type === "text-delta").map((event) => event.delta).join("")).toBe("hello world")
+    expect(events.filter((event) => event.type !== "text-delta")).toEqual([{ type: "finish", sessionId: "claxedo_ses_1" }])
+    expect(events.at(-1)).toEqual({ type: "finish", sessionId: "claxedo_ses_1" })
     expect(lastEventIds).toEqual([null, null])
   })
 
@@ -283,6 +316,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     const baseUrl = serve((request) => {
       const url = new URL(request.url)
       if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
+      if (url.pathname.endsWith("/message")) return Response.json([])
       if (url.pathname === "/global/event") {
         return new Response(
           `data: ${JSON.stringify({ payload: { id: crypto.randomUUID(), type: "session.idle", properties: { sessionID: "ses_upstream" } } })}\n\n`,
@@ -322,6 +356,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     const baseUrl = serve((request) => {
       const url = new URL(request.url)
       if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
+      if (url.pathname.endsWith("/message")) return Response.json([])
       if (url.pathname === "/global/event") {
         return new Response(envelope(TARGET, {
           type: "permission.asked",
@@ -341,44 +376,72 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     expect(aborts).toBe(1)
   })
 
-  test("uses full bindings for todos and cancels the local stream when remote abort fails", async () => {
+  test.each([500, 404])("keeps observing the bound turn after remote abort returns HTTP %s", async (abortStatus) => {
     let promptAccepted!: () => void
     const prompted = new Promise<void>((resolve) => { promptAccepted = resolve })
-    const baseUrl = serve((request) => {
+    let events!: ReadableStreamDefaultController<Uint8Array>
+    let userMessageId = ""
+    let completed = false
+    const baseUrl = serve(async (request) => {
       const url = new URL(request.url)
       if (url.pathname === "/global/health") return Response.json({ healthy: true, version: "1.2.3" })
+      if (url.pathname.endsWith("/message")) return Response.json(completed ? [{
+        info: { id: "msg_assistant", sessionID: "ses_upstream", role: "assistant", parentID: userMessageId, finish: "stop", time: { completed: 1 } },
+        parts: [{ id: "part_1", messageID: "msg_assistant", sessionID: "ses_upstream", type: "text", text: "Still running" }],
+      }] : [])
+      if (url.pathname === "/session/status") return Response.json(completed ? {} : { ses_upstream: { type: "busy" } })
+      if (url.pathname === "/session/ses_upstream") return Response.json({ id: "ses_upstream", directory: TARGET })
       if (url.pathname === "/global/event") {
         return new Response(new ReadableStream({
           start(controller) {
+            events = controller
             controller.enqueue(new TextEncoder().encode(envelope(TARGET, { type: "server.connected", properties: {} })))
           },
         }), { headers: { "Content-Type": "text/event-stream" } })
       }
       if (url.pathname === "/session/ses_upstream/prompt_async") {
+        userMessageId = (await request.json() as { messageID: string }).messageID
         promptAccepted()
-        return new Response(null, { status: 204 })
+        // Bun's fixture server rejects a reused bodyless POST while this SSE is open.
+        return new Response(null, { status: 204, headers: { Connection: "close" } })
       }
       if (url.pathname === "/session/ses_upstream/todo") {
         return Response.json([{ content: "Run tests", status: "pending", priority: "high" }])
       }
-      if (url.pathname === "/session/ses_upstream/abort") return new Response("remote failed", { status: 500 })
+      if (url.pathname === "/session/ses_upstream/abort") {
+        return new Response("remote failed", { status: abortStatus })
+      }
       return new Response("missing", { status: 404 })
     })
     const adapter = await connect({ descriptor: descriptor(baseUrl) })
-    const next = adapter.executeTurn!(binding(), prompt())[Symbol.asyncIterator]().next()
-    await prompted
-
-    const getTodos = adapter.getTodos!.bind(adapter) as unknown as (value: AgentExecutionBinding) => Promise<unknown>
-    const abort = adapter.abort!.bind(adapter) as unknown as (value: AgentExecutionBinding) => Promise<unknown>
-    await expect(getTodos(binding())).resolves.toEqual([{ content: "Run tests", status: "pending", priority: "high" }])
-    await expect(abort(binding())).rejects.toMatchObject({ code: "http_error", status: 500 })
-    await expect(next).resolves.toEqual({ done: true, value: undefined })
+    const stream = adapter.executeTurn!(binding(), prompt())[Symbol.asyncIterator]()
+    const next = stream.next()
+    try {
+      await prompted
+      await expect(adapter.getTodos!(binding())).resolves.toEqual([{ content: "Run tests", status: "pending", priority: "high" }])
+      if (abortStatus === 500) {
+        await expect(adapter.abort!(binding())).rejects.toMatchObject({ code: "http_error", status: 500 })
+      } else {
+        await expect(adapter.abort!(binding())).resolves.toMatchObject({ ok: false, status: "not_found" })
+      }
+      completed = true
+      events.enqueue(new TextEncoder().encode(envelope(TARGET, {
+        type: "session.idle", properties: { sessionID: "ses_upstream" },
+      })))
+      await expect(next).resolves.toEqual({ done: false, value: { type: "text-delta", delta: "Still running" } })
+      await expect(stream.next()).resolves.toEqual({ done: false, value: { type: "finish", sessionId: "claxedo_ses_1" } })
+      await expect(stream.next()).resolves.toEqual({ done: true, value: undefined })
+    } finally {
+      await adapter.dispose()
+      await stream.return?.()
+    }
   })
 
   test("rejects cross-workspace bindings and does not fabricate session configuration", async () => {
     const adapter = await connect({ descriptor: descriptor("https://opencode.example.test") })
     await expect(adapter.getSession(binding({ directory: "/local/other" }))).rejects.toMatchObject({ code: "invalid_directory" })
     await expect(adapter.getSession(binding({ connectionId: "connection:other" }))).rejects.toMatchObject({ code: "invalid_binding" })
+    await expect(adapter.getSession({ scope: "central", directory: "", sessionId: "central", connectionId: "connection:external-opencode", upstreamSessionId: "ses_upstream" })).rejects.toMatchObject({ code: "invalid_binding" })
     await expect(adapter.getSessionConfig(binding())).rejects.toMatchObject({ code: "unsupported_operation" })
     await expect(adapter.updateSessionConfig(binding(), { agent: "build" })).rejects.toMatchObject({ code: "unsupported_operation" })
   })

@@ -23,9 +23,7 @@ function session(input: Partial<Session> = {}): Session {
 function directorySdk(calls: string[]): DirectorySdk {
   return {
     project: { current: async () => (calls.push("project"), { data: { id: "proj_1", worktree: "/tmp/ws", time: { created: 1, updated: 1 }, sandboxes: [] } }) },
-    provider: { list: async () => (calls.push("provider"), { data: { all: [], connected: [], default: {} } }) },
     app: { agents: async () => (calls.push("agent"), { data: [] }) },
-    config: { get: async () => (calls.push("config"), { data: {} }) },
     path: { get: async () => (calls.push("path"), { data: { state: "", config: "", worktree: "", directory: "/tmp/ws", home: "" } }) },
     command: { list: async () => (calls.push("command"), { data: [] }) },
     vcs: { get: async () => (calls.push("vcs"), { data: undefined }) },
@@ -81,22 +79,24 @@ describe("global sync bootstrap integration", () => {
       fetch: async (input) => {
         const req = input instanceof Request ? input : new Request(String(input))
         calls.push(req.url.includes("/api/workspace/resolve") ? "workspace_resolve" : req.url)
-        if (req.url === "http://claxedo.test/provider?harness=pi&directory=%2Ftmp%2Fws") {
+        if (req.url === "http://claxedo.test/api/claxedo/agent-config/providers?nativeHarness=pi") {
           return Response.json({ all: [], connected: [], default: {} })
         }
-        return new Response("{}", { headers: { "Content-Type": "application/json" } })
+        if (req.url.startsWith("http://claxedo.test/api/claxedo/agent-config/agents?") ||
+          req.url === "http://claxedo.test/api/claxedo/agent-config/commands") return Response.json([])
+        throw new Error(`Unexpected bootstrap request: ${req.url}`)
       },
     })
 
-    // The harness provider fetch is directory-scoped: the catalog can differ
-    // per workspace, so `providerListQuery` forwards the bootstrap directory.
-    expect(calls).toEqual(["inventory", "http://claxedo.test/provider?harness=opencode&directory=%2Ftmp%2Fws"])
+    expect(calls).toEqual(["inventory", "http://claxedo.test/api/claxedo/agent-config/providers?nativeHarness=pi"])
 
     await frames(60)
 
     expect(calls).toContain("vcs")
     expect(calls).not.toContain("mcp")
     expect(calls).not.toContain("lsp")
+    expect(calls.some((item) => item.endsWith("/config"))).toBe(false)
+    expect(queryClient.getQueryCache().getAll().some((query) => query.queryKey[2] === "config")).toBe(false)
     expect(calls.filter((item) => item === "inventory")).toHaveLength(1)
   })
 })

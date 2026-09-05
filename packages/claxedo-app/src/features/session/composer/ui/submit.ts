@@ -2,7 +2,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { submitErrorMessage } from "./submit-error-message"
 import { useNavigate } from "@solidjs/router"
 import {
-  createCloudWorkspace, isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState, useConfigOptional,
+  createCloudWorkspace, isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState,
   useGlobalBootstrapActions, useGlobalSDK, useLayout, useSDK, useShellQueryOptions as useQueryOptions,
 } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -19,23 +19,19 @@ import { queryClient } from "@/platform/query/query-client"
 import { queryKeys } from "@/platform/query/keys"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
-import { commandListQuery } from "../../data/query/shell"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
 import { harnessProfile, pickHarness } from "@/features/session/harness/profile"
-import { cloudSubmitMissingModel, explicitSelectedModel } from "./submit-model-gate"
+import { cloudSubmitMissingModel } from "./submit-model-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
 import {
   recordPromptSubmission,
-  resolvePromptDispatchClient,
   resolveSubmitMode,
   resolveSubmittedConfig,
   setPromptSessionStatus,
-  type ResolvedSubmitMode,
   type SubmitMode,
 } from "../../submit/index"
 import { knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-machine"
-import { dispatchCommandPromptSubmit } from "./submit-command-prompt"
 import { createSubmitAbort } from "./submit-abort"
 import { createSubmitHarnessSelection } from "./mode-commands"
 import { acquireSubmitSessionTarget, createCloudStartupController, finalizeSubmitSessionTarget, patchExistingSubmitSessionRef } from "./submit-create-session"
@@ -47,7 +43,6 @@ import { promptHarnessDirectory } from "./harness-directory"
 import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
 import {
   parseExistingSessionConfig,
-  preferAuthoritativeExistingSessionConfig,
   sameExistingSessionConfig,
 } from "./submit-session-config"
 import { createSubmitTransportAdapter, signedSubmitWorkspaceId, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
@@ -79,7 +74,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const layout = useLayout()
   const language = useLanguage()
   const platform = usePlatform()
-  const config = useConfigOptional()
   const events = useClaxedoEventsOptional()
 
   const harnessController = input.harnessController ?? createHarnessSubmitController(undefined)
@@ -106,7 +100,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     sessionRef: () => input.sessionRef?.(),
     request: platform.fetch ?? authFetch,
     localRequest: authFetch,
-    config,
     createClient: (options) => sdk.createClient({
       directory: options.directory,
       request: options.fetch,
@@ -123,10 +116,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     usesSignedControlPlane,
     usesLoopbackWorkspaceBridge,
     usesWorkspaceRuntimeSession,
-    modelForSubmit,
     readSessionConfig,
     sessionClient,
-    hostedSessionClient,
     saveSessionConfig,
   } = transport
   const abort = createSubmitAbort({
@@ -176,7 +167,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     // `resolveSubmitMode` runs. The two diverge when the resolver promotes
     // a leading "/" into a slash dispatch (rubric A3).
     const userMode: SubmitMode = input.mode()
-    let mode: ResolvedSubmitMode = userMode
+    let mode = userMode
     const projectDirectory = input.sessionDirectory?.(), explicitSessionID = input.sessionID?.(), draftId = input.draftId?.()
     const mountedConversationDirectory = input.conversationDirectory?.() ?? sdk.directory
 
@@ -249,9 +240,8 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       }),
       ...scopeIdentity,
     })
-    const submitSelectedModel = explicitSelectedModel(input.selectedModelForSubmit?.())
     // A model-less cloud submit must reject BEFORE directory resolution, which provisions a real workspace — see cloudSubmitMissingModel's contract.
-    const missingCloudModel = cloudSubmitMissingModel({ isNewSession, workspaceKind, harnessMode: selectedHarnessMode(sourceScope), hasHarnessModelKey: !!harnessController.modelKeyForSubmit(sourceScope), hasSelectedModel: !!submitSelectedModel })
+    const missingCloudModel = cloudSubmitMissingModel({ isNewSession, workspaceKind, selection: selectedHarnessType(sourceScope), modelKey: harnessController.modelKeyForSubmit(sourceScope) })
     if (missingCloudModel) return rejectModelRequired()
 
     const resolvedDirectory = await resolvePreparedSubmitDirectory({
@@ -310,9 +300,27 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       // Cloud workspace creation changes submit directory; carry draft harness ownership.
       harnessController.promote(sourceScope, scope)
     }
-    const infoSessionConfig = isNewSession ? undefined : parseExistingSessionConfig(input.info()?.config)
-    const requestedHarnessType = infoSessionConfig?.harnessType ?? selectedHarnessType(scope)
-    if (!requestedHarnessType) {
+    const existingSessionConfig = await (async () => {
+      if (isNewSession) return undefined
+      try {
+        const config = parseExistingSessionConfig(await readSessionConfig({
+          sessionID: explicitSessionID!,
+          directory: sessionDirectory,
+        }))
+        if (!config?.model) throw new Error("The session configuration is not available yet. Try again after it loads.")
+        return config
+      } catch (err) {
+        showToast({
+          title: language.t("prompt.toast.promptSendFailed.title"),
+          description: errorMessage(err),
+          variant: "error",
+        })
+        return undefined
+      }
+    })()
+    if (!isNewSession && !existingSessionConfig) return
+    const sessionHarnessType = isNewSession ? selectedHarnessType(scope) : existingSessionConfig?.harnessType
+    if (!sessionHarnessType) {
       showToast({
         title: language.t("prompt.toast.modelAgentRequired.title"),
         description: "Select an agent connection before starting a session.",
@@ -320,76 +328,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       })
       return
     }
-    const existingSessionConfig = await (async () => {
-      if (isNewSession) return undefined
-      // A fully persisted harness config owns follow-up model/variant. Incomplete
-      // session-list metadata (model without variant) still reads live `/config`
-      // so a later GET can beat stale inventory.
-      if (infoSessionConfig?.model && infoSessionConfig.variant) return infoSessionConfig
-      try {
-        return preferAuthoritativeExistingSessionConfig(
-          parseExistingSessionConfig(await readSessionConfig({
-            sessionID: explicitSessionID!,
-            directory: sessionDirectory,
-            harnessType: requestedHarnessType,
-          })),
-          infoSessionConfig,
-        )
-      } catch (err) {
-        showToast({
-          title: language.t("prompt.toast.promptSendFailed.title"),
-          description: errorMessage(err),
-          variant: "error",
-        })
-        return infoSessionConfig
-      }
-    })()
-    if (!isNewSession && usesWorkspaceRuntimeSession(sessionDirectory) && !existingSessionConfig) {
-      return
-    }
-    const sessionHarnessType = existingSessionConfig?.harnessType ?? requestedHarnessType
     // Every provider creates and sends through AgentRuntime, and the harness
     // controller is the one submitted-model authority for every harness. Pi's
     // provider catalog remains its picker/catalog source, but the selector
     // projects that choice into this same controller before Send is enabled.
-    const harnessModelMode = true
-    const harnessMode = true
     const signedControlPlane = usesSignedControlPlane(sessionDirectory)
     const signedWorkspaceId = signedControlPlane ? signedSubmitWorkspaceId(input.workspaceId?.(), sessionDirectory) : undefined
     const signedWorkspaceKind = knownWorkspaceKind(workspaceKind)
     const goalWorkspaceKind = signedWorkspaceKind === "local" ? undefined : signedWorkspaceKind
-    if (!harnessMode && !signedControlPlane && usesLoopbackWorkspaceBridge(sessionDirectory)) {
-      client = sessionClient(sessionDirectory, sessionHarnessType)
-    }
-    // Custom commands are directory-scoped, so resolve them only for inputs
-    // that can still enter the local slash-command channel.
-    let customCommandNames: string[] | undefined
-    if (goalIntent.kind !== "submit" && mode !== "shell" && !harnessMode && !signedControlPlane && text.startsWith("/")) {
-      const commands = await queryClient
-        .fetchQuery(
-          commandListQuery({
-            baseUrl: sdk.url,
-            directory: sessionDirectory,
-            // Reached only on the OpenCode slash-command channel (`!harnessMode`
-            // above), so the entry it shares with the composer is OpenCode's.
-            harnessType: "opencode",
-            request: platform.fetch,
-            workspace: sdk.workspace(sessionDirectory),
-            client: sdk.createClient({ directory: sessionDirectory }),
-          }),
-        )
-        .catch(() => [])
-      customCommandNames = commands.map((c) => c.name)
-    }
-    const resolvedMode = resolveSubmitMode({
-      mode,
-      harnessMode,
-      signedControlPlane,
-      setMode: input.setMode,
-      text,
-      customCommandNames,
-    })
-    mode = resolvedMode.mode
+    mode = resolveSubmitMode({ mode, setMode: input.setMode })
     const harness = harnessProfile(sessionHarnessType).displayName
     const boot = (sessionID?: string) => {
       setBooting({ harness, sessionID, phase: "booting" })
@@ -402,28 +349,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         phase: "sending",
       })
     }
-    const selectedVariant = harnessMode ? undefined : input.variant?.() ?? local.model.variant.current()
-    // An OpenCode picker change made after this surface restored its session
-    // config is a deliberate mid-session swap. Structured session info and
-    // harness sessions continue to own their persisted model.
-    const freshSelectedModel = harnessMode ? undefined : local.model.current()
-    const selectionOverridesExisting = !!freshSelectedModel && !infoSessionConfig && !!existingSessionConfig?.model &&
-      (freshSelectedModel.provider.id !== existingSessionConfig.model.providerID || freshSelectedModel.id !== existingSessionConfig.model.modelID)
-    const submittedConfig = existingSessionConfig?.model && !selectionOverridesExisting
+    const submittedConfig = existingSessionConfig?.model
       ? {
           model: existingSessionConfig.model,
           agent: input.agent?.() || existingSessionConfig.agent || local.agent.current()?.name || "build",
           ...(existingSessionConfig.variant ? { variant: existingSessionConfig.variant } : {}),
         }
-      : await resolveSubmittedConfig({
-          harnessMode: harnessModelMode,
-          harnessModelKey: harnessModelMode ? harnessController.modelKeyForSubmit(scope) : undefined,
-          selectedModel: undefined,
+      : resolveSubmittedConfig({
+          harnessModelKey: harnessController.modelKeyForSubmit(scope),
           currentAgent: local.agent.current(),
           defaultAgent: local.agent.list()[0] ?? (usesWorkspaceRuntimeSession(sessionDirectory) ? { name: "build" } : undefined),
           agentOverride: input.agent?.(),
-          variant: selectedVariant,
-          modelForSubmit: (selected) => modelForSubmit(sessionDirectory, selected),
         })
     if (!submittedConfig) {
       clearBoot()
@@ -451,13 +387,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       explicitSessionID,
       isNewSession,
       replaceSession,
-      harnessMode,
       signedControlPlane,
       workspaceId: signedWorkspaceId,
       serverUrl: getClaxedoServerUrl(),
       request: authFetch,
       sessionDirectory,
-      client,
       sessionClient: () => sessionClient(sessionDirectory, sessionHarnessType),
       scope,
       draftId,
@@ -469,12 +403,11 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       },
       events,
       boot,
-      createSessionClient: (targetInput) =>
-        sessionClient(targetInput.directory, targetInput.harnessType),
       claimHarnessSession: (targetInput) =>
         harnessController.claimSession(targetInput.scope, {
           directory: targetInput.directory,
           sessionId: targetInput.sessionID,
+          headers: targetInput.headers,
           harness: sessionHarnessType,
           sessionConfig: targetInput.sessionConfig,
         }),
@@ -592,14 +525,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     markBusy()
 
-    const promptClient = await resolvePromptDispatchClient({
-      harnessMode,
-      signedControlPlane,
-      loopbackWorkspaceBridge: usesLoopbackWorkspaceBridge(sessionDirectory),
-      sessionClient: () => sessionClient(sessionDirectory, sessionHarnessType),
-      hostedSessionClient: () => hostedSessionClient(sessionDirectory, session.id),
-      fallbackClient: client,
-    })
+    const promptClient = sessionClient(sessionDirectory, sessionHarnessType)
     const runtimePromptClient = transport.createRuntimePromptClient({
       signedControlPlane,
       sessionDirectory,
@@ -692,42 +618,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return
     }
 
-    // Rubric A3: slash detection is owned by `resolveSubmitMode`. The
-    // dispatcher only switches on the resolved mode and the matched
-    // command tuple — it never re-inspects the prompt text.
-    if (await dispatchCommandPromptSubmit({
-      mode,
-      slash: resolvedMode.slash,
-      text,
-      images,
-      session,
-      sessionDirectory,
-      agent,
-      model,
-      variant,
-      client,
-      record: recordPromptSubmissionContext,
-      refreshDirectory: refreshPromptDirectory,
-      clearInput,
-      restoreInput,
-      applyCreatedSessionHandoff,
-      clearBoot,
-      reportCloudStartupError,
-      showShellFailed: (err) => {
-        showToast({
-          title: language.t("prompt.toast.shellSendFailed.title"),
-          description: errorMessage(err),
-        })
-      },
-      showCommandFailed: (err) => {
-        showToast({
-          title: language.t("prompt.toast.commandSendFailed.title"),
-          description: formatServerError(err, language.t, language.t("common.requestFailed")),
-        })
-      },
-    })) {
-      return
-    }
     await dispatchNormalPromptSubmit({
       text,
       currentPrompt,
@@ -752,7 +642,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       format: input.format?.(),
       targetCreated: target.created,
       replaceSession,
-      harnessMode,
       explicitExistingSession: !!explicitSessionID && explicitSessionID !== "new" && session.id === explicitSessionID,
       draftId,
       handoffCreatedSession: !!handoffCreatedSession,

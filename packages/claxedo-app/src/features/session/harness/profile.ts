@@ -101,16 +101,16 @@ export function extractModelsFromConfigOptions(
   const opt = options.find((item) => item.category === "model" && item.type === "select")
   if (!opt) return null
   const models = opt.selectOptions?.length
-    ? opt.selectOptions.map((item) => ({ ...item, id: normalizeHarnessModelId(item.id) }))
+    ? opt.selectOptions
     : (opt.options ?? []).map((item) => ({
-        id: normalizeHarnessModelId(item.value),
+        id: item.value,
         name: item.name,
         ...(item.description ? { description: item.description } : {}),
       }))
   if (models.length === 0) return null
   return {
     models,
-    currentModel: typeof opt.currentValue === "string" ? normalizeHarnessModelId(opt.currentValue) : undefined,
+    currentModel: typeof opt.currentValue === "string" ? opt.currentValue : undefined,
   }
 }
 
@@ -211,7 +211,7 @@ export function optionsResponse(value: unknown): OptionsResponse {
   if (raw.source === undefined && raw.stale === undefined) {
     return { options, source: "harness", stale: false, ...model }
   }
-  const source = raw.source === "harness" || raw.source === "runner" || raw.source === "live"
+  const source = raw.source === "harness"
     ? "harness"
     : raw.source === "catalog" || raw.source === "empty"
     ? raw.source
@@ -227,10 +227,6 @@ export function optionsResponse(value: unknown): OptionsResponse {
 function record(value: unknown): Record<string, unknown> | undefined { return value && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : undefined }
 
 function stringOrNull(value: unknown): string | null | undefined { return typeof value === "string" || value === null ? value : undefined }
-
-function normalizeHarnessModelId(value: string) {
-  return value === "default[]" ? "default" : value
-}
 
 function decodeChoice(value: unknown): { value: string; name: string; description?: string } | undefined {
   const raw = record(value)

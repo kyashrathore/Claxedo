@@ -115,6 +115,25 @@ beforeEach(() => {
 })
 
 describe("credential writes require a verified signed identity", () => {
+  test("provider catalog uses the verified owner and explicit unavailable states", async () => {
+    const calls: string[] = []
+    const catalog = HostedShellRoutes({
+      authConfig: signedConfig,
+      verifier,
+      piProviderCatalog: async (auth) => {
+        calls.push(auth.user.orgId!)
+        return { all: [], connected: [auth.user.orgId], default: {} }
+      },
+    })
+    const route = "/api/claxedo/agent-config/providers?nativeHarness=pi"
+    expect((await catalog.request(route)).status).toBe(401)
+    const response = await catalog.request(`${route}&workspaceId=org_b`, { headers: { authorization: "Bearer token-a" } })
+    expect(response.status).toBe(200)
+    expect((await response.json()).connected).toEqual(["org_a"])
+    expect(calls).toEqual(["org_a"])
+    expect((await app().request(route, { headers: { authorization: "Bearer token-a" } })).status).toBe(503)
+    expect((await catalog.request("/api/claxedo/agent-config/providers?nativeHarness=claude", { headers: { authorization: "Bearer token-a" } })).status).toBe(400)
+  })
   test("PUT with no Authorization header is 401 and never reaches the credential store", async () => {
     const res = await put()
     expect(res.status).toBe(401)

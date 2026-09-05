@@ -151,13 +151,7 @@ describe("control-plane query helpers", () => {
     const query = providerListQuery({
       baseUrl: "http://example.test",
       harnessType: "opencode",
-      client: {
-        provider: {
-          list: async () => ({
-            data: providers,
-          }),
-        },
-      },
+      request: async () => Response.json(providers),
     })
 
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "central", "opencode"])
@@ -206,15 +200,7 @@ describe("control-plane query helpers", () => {
     const query = providerAuthQuery({
       baseUrl: "http://example.test",
       harnessType: "opencode",
-      client: {
-        provider: {
-          auth: async () => ({
-            data: {
-              openai: [{ type: "api", authenticated: true }],
-            },
-          }),
-        },
-      },
+      request: async () => Response.json({ openai: [{ type: "api", authenticated: true }] }),
     })
 
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providerAuth", "central", "opencode"])
@@ -222,14 +208,10 @@ describe("control-plane query helpers", () => {
     expect((await query.queryFn()).openai?.[0]?.authenticated).toBe(true)
   })
 
-  // Auth is the MACHINE's, not the harness name's: the same harness on the
-  // central runtime and on a workspace holds different credentials.
   test("provider auth for a workspace is a different entry from the central runtime's", () => {
-    const client = { provider: { auth: async () => ({ data: {} }) } }
-    const central = providerAuthQuery({ baseUrl: "http://x", client, harnessType: "claude-sdk" }).queryKey
+    const central = providerAuthQuery({ baseUrl: "http://x", harnessType: "claude-sdk" }).queryKey
     const workspace = providerAuthQuery({
       baseUrl: "http://x",
-      client,
       directory: "workspace:ws_1",
       harnessType: "claude-sdk",
     }).queryKey
@@ -238,13 +220,12 @@ describe("control-plane query helpers", () => {
     // ...and the same machine answering a different harness is a third entry.
     expect(workspace).not.toEqual(providerAuthQuery({
       baseUrl: "http://x",
-      client,
       directory: "workspace:ws_1",
       harnessType: "codex-app-server",
     }).queryKey)
   })
 
-  test("provider auth reaches the machine serving the scope, carrying both", async () => {
+  test("provider auth stays on the control plane without workspace routing", async () => {
     const calls: string[] = []
     const query = providerAuthQuery({
       baseUrl: "http://example.test",
@@ -257,13 +238,11 @@ describe("control-plane query helpers", () => {
     })
     await query.queryFn()
     expect(calls).toEqual([
-      "http://example.test/provider/auth?harness=claude-sdk&directory=workspace%3Aws_1",
+      "http://example.test/api/claxedo/agent-config/providers/auth?nativeHarness=claude-sdk",
     ])
   })
 
-  // Harness catalogs belong to the runtime identified by `directory`, so the
-  // same stable scope qualifies both the request and its cache entry.
-  test("Pi provider queries use a harness-qualified cache key and a scope-qualified raw route", async () => {
+  test("Pi catalog keeps workspace cache isolation but reads from the control plane", async () => {
     const calls: string[] = []
     const query = providerListQuery({
       baseUrl: "http://example.test",
@@ -273,12 +252,11 @@ describe("control-plane query helpers", () => {
         calls.push(String(url))
         return Response.json({ all: [], connected: [], default: {} })
       },
-      client: { provider: { list: async () => { throw new Error("SDK route must not be used") } } },
     })
 
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "workspace:ws_1", "pi"])
     await query.queryFn()
-    expect(calls).toEqual(["http://example.test/provider?harness=pi&directory=workspace%3Aws_1"])
+    expect(calls).toEqual(["http://example.test/api/claxedo/agent-config/providers?nativeHarness=pi"])
   })
 
   test("provider detail queries qualify the canonical provider route", async () => {
@@ -301,7 +279,7 @@ describe("control-plane query helpers", () => {
     expect(query.queryKey).toEqual(["controlPlane", "http://example.test", "providers", "workspace:ws_1", "pi"])
     expect((await query.queryFn()).all.has("anthropic")).toBe(true)
     expect(calls).toEqual([
-      "http://example.test/provider?provider=anthropic&harness=pi&directory=workspace%3Aws_1",
+      "http://example.test/api/claxedo/agent-config/providers?provider=anthropic&nativeHarness=pi",
     ])
   })
 })
@@ -310,26 +288,25 @@ describe("provider cache identity", () => {
   // Every catalog names BOTH the scope it belongs to and the harness that
   // serves it. There is no unqualified entry to fall into: an unstated harness
   // is an unresolved question, not the OpenCode catalog.
-  const client = {} as Parameters<typeof providerListQuery>[0]["client"]
 
   test("a catalog key carries the scope and the harness", () => {
-    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "opencode" }).queryKey)
+    expect(providerListQuery({ baseUrl: "http://x", directory: "/repo", harnessType: "opencode" }).queryKey)
       .toEqual(["controlPlane", "http://x", "providers", "/repo", "opencode"])
   })
 
   test("the central runtime's own catalog is its own scope, not a workspace's", () => {
-    expect(providerListQuery({ baseUrl: "http://x", client, harnessType: "opencode" }).queryKey)
+    expect(providerListQuery({ baseUrl: "http://x", harnessType: "opencode" }).queryKey)
       .toEqual(["controlPlane", "http://x", "providers", "central", "opencode"])
-    expect(providerListQuery({ baseUrl: "http://x", client, harnessType: "opencode" }).queryKey)
-      .not.toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "opencode" }).queryKey)
+    expect(providerListQuery({ baseUrl: "http://x", harnessType: "opencode" }).queryKey)
+      .not.toEqual(providerListQuery({ baseUrl: "http://x", directory: "/repo", harnessType: "opencode" }).queryKey)
   })
 
   test("every OTHER harness keeps its own key, because it serves a different catalog", () => {
-    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "pi" }).queryKey)
-      .not.toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "opencode" }).queryKey)
+    expect(providerListQuery({ baseUrl: "http://x", directory: "/repo", harnessType: "pi" }).queryKey)
+      .not.toEqual(providerListQuery({ baseUrl: "http://x", directory: "/repo", harnessType: "opencode" }).queryKey)
     // ...and two non-default harnesses stay distinct from each other.
-    expect(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "pi" }).queryKey)
-      .not.toEqual(providerListQuery({ baseUrl: "http://x", client, directory: "/repo", harnessType: "codex" }).queryKey)
+    expect(providerListQuery({ baseUrl: "http://x", directory: "/repo", harnessType: "pi" }).queryKey)
+      .not.toEqual(providerListQuery({ baseUrl: "http://x", directory: "/repo", harnessType: "codex" }).queryKey)
   })
 })
 

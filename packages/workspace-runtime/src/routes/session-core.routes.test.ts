@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
   SESSION_CORE_ROUTE_ACCESS,
-  SESSION_V2_PROXY_ROUTE_ACCESS,
   sessionAccessRequiresWrite,
 } from "../session-access-policy"
 
@@ -110,14 +109,4 @@ describe("Claxedo client-presentation session route inventory", () => {
     expect(notWriteGated).toEqual([])
   })
 
-  test("keeps the opaque Session V2 proxy behind a prefix-level decision", async () => {
-    const runtimeSource = await Bun.file(new URL("../workspace/runtime.ts", import.meta.url)).text()
-    const proxySource = await Bun.file(new URL("./session-v2-proxy.ts", import.meta.url)).text()
-    const routes = [...runtimeSource.matchAll(/app\.all\("(\/api\/session[^\"]*)"/g)]
-      .map((match) => `ALL ${match[1]}`)
-      .sort()
-
-    expect(Object.keys(SESSION_V2_PROXY_ROUTE_ACCESS).sort()).toEqual(routes)
-    expect(proxySource).toContain("policy.authorizePrefix({")
-  })
 })

@@ -136,7 +136,6 @@ const settingsThunks: Thunks<SettingsAppPorts> = {
   DialogConnectProvider: lazy("@/app/dialogs/connect-provider", "DialogConnectProvider"),
   DialogAIConnect: lazy("@/app/dialogs/connect-ai", "DialogAIConnect"),
   DialogSelectProvider: lazy("@/app/dialogs/select-provider", "DialogSelectProvider"),
-  DialogCustomProvider: lazy("@/app/dialogs/custom-provider", "DialogCustomProvider"),
   useModels: lazy("@/features/session/providers/models", "useModels"),
   formatKeybind: lazy("@/app/providers/command", "formatKeybind"),
   parseKeybind: lazy("@/app/providers/command", "parseKeybind"),

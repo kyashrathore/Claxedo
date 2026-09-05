@@ -1,4 +1,4 @@
-import type { AgentExecutionBinding, AgentExecutionBindingField } from "./sessions"
+import type { AgentExecutionBinding, AgentExecutionBindingExpectation, AgentExecutionBindingField } from "./sessions"
 
 export const AGENT_RUNTIME_ERROR_CODES = [
   "selection_required",
@@ -36,10 +36,18 @@ const BINDING_FIELDS = ["sessionId", "workspaceId", "directory", "connectionId",
 
 export function assertAgentExecutionBinding(
   binding: Readonly<AgentExecutionBinding>,
-  expected: Readonly<AgentExecutionBinding> = binding,
+  expected: AgentExecutionBindingExpectation = binding,
 ): AgentExecutionBinding {
+  if ((binding.scope ?? "workspace") !== (expected.scope ?? "workspace")) {
+    throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "scope", message: "execution binding scope mismatch" })
+  }
+  if (binding.scope === "central" && (binding.workspaceId !== undefined || binding.directory !== "")) {
+    throw new AgentRuntimeContractError({ code: "invalid_execution_binding", field: "scope", message: "central execution cannot own a workspace directory" })
+  }
   for (const field of BINDING_FIELDS) {
-    if (typeof binding[field] !== "string" || field !== "directory" && binding[field].trim() === "") {
+    if (field === "workspaceId" && binding.scope === "central") continue
+    const value = binding[field]
+    if (typeof value !== "string" || field !== "directory" && value.trim() === "") {
       throw new AgentRuntimeContractError({
         code: "invalid_execution_binding",
         field,

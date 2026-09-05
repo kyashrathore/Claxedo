@@ -15,8 +15,8 @@ export function workspaceRuntimeRoot() {
  * artifact Claxedo owns. build-sandbox-image.ts bundles it into sandbox
  * images; local placements run the runtime embedded/in-process instead
  * (embedded-workspace-runtime.ts), so there is no separate local launch path.
- * workspace-runtime itself ships no bin: it is a kit, and this entry composes
- * it via Claxedo's own boot policy (`runtime-boot.ts`).
+ * The package CLI is product-neutral; this entry composes the kit through
+ * Claxedo's own boot policy (`runtime-boot.ts`).
  */
 export function claxedoWorkspaceRuntimeEntry() {
   return path.resolve(import.meta.dirname, "host-entry.ts")

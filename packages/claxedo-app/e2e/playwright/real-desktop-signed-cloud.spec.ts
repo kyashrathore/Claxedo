@@ -39,7 +39,6 @@ import path from "node:path"
 import { expectServerReachable, launchPackagedApp, type PackagedApp } from "../helpers/electron-app"
 import {
   claudeScriptedEnv,
-  opencodeScriptedProviderConfig,
   startScriptedModelServer,
 } from "../helpers/scripted-model-server"
 import { startForwardedForProxy, startSignedFixture, type SignedFixtureInfo } from "../helpers/desktop-signed-server"
@@ -157,7 +156,6 @@ test.describe("real desktop signed cloud @core @tier-real @surface-desktop", () 
     const fixture = await startSignedFixture({
       access: "cloud",
       claudeScriptedEnv,
-      opencodeScriptedProviderConfig,
       startScriptedModelServer,
       logLabel: "desktop-signed-cloud",
       hostHeartbeatDelayMs: 2_000,

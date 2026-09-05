@@ -16,9 +16,7 @@ import type {
   ClaxedoMcpStatus,
   ClaxedoPath,
   ClaxedoProject,
-  ClaxedoProviderAuth,
   ClaxedoProviderAuthorization,
-  ClaxedoProviderList,
   ClaxedoVcsInfo,
 } from "./claxedo-api-types"
 
@@ -119,8 +117,6 @@ export type ClaxedoServerClient = {
     remove(input?: ServerScope & { worktreeRemoveInput?: { directory?: string } }, options?: ServerClientRequestOptions): Promise<ServerClientResponse<boolean>>
   }
   provider: {
-    list(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoProviderList>>
-    auth(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoProviderAuth>>
     oauth: {
       authorize(input: ServerScope & { providerID: string; method?: number; inputs?: Record<string, string> }, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoProviderAuthorization>>
       callback(input: ServerScope & { providerID: string; method?: number; code?: string }, options?: ServerClientRequestOptions): Promise<ServerClientResponse<boolean>>
@@ -128,7 +124,6 @@ export type ClaxedoServerClient = {
   }
   path: { get(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoPath>> }
   app: { agents(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoAgentProfile[]>> }
-  config: { get(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoConfig>> }
   command: { list(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoCommand[]>> }
   vcs: { get(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<ClaxedoVcsInfo>> }
   mcp: { status(input?: ServerScope, options?: ServerClientRequestOptions): Promise<ServerClientResponse<Record<string, ClaxedoMcpStatus>>> }
@@ -264,8 +259,6 @@ export function createClaxedoServerClient(options: CreateClaxedoServerClientOpti
       remove: (input, opts) => request("worktree.remove", "DELETE", "/experimental/worktree", input, { body: input?.worktreeRemoveInput ?? {}, options: opts }),
     },
     provider: {
-      list: (input, opts) => request("provider.list", "GET", "/provider", input, { options: opts }),
-      auth: (input, opts) => request("provider.auth", "GET", "/provider/auth", input, { options: opts }),
       oauth: {
         authorize: (input, opts) => request("provider.oauth.authorize", "POST", `/provider/${encodeURIComponent(input.providerID)}/oauth/authorize`, input, { body: body(input, ["providerID"]), options: opts }),
         callback: (input, opts) => request("provider.oauth.callback", "POST", `/provider/${encodeURIComponent(input.providerID)}/oauth/callback`, input, { body: body(input, ["providerID"]), options: opts }),
@@ -273,7 +266,6 @@ export function createClaxedoServerClient(options: CreateClaxedoServerClientOpti
     },
     path: { get: (input, opts) => request("path.get", "GET", "/path", input, { options: opts }) },
     app: { agents: (input, opts) => request("app.agents", "GET", "/app/agents", input, { options: opts }) },
-    config: { get: (input, opts) => request("config.get", "GET", "/config", input, { options: opts }) },
     command: { list: (input, opts) => request("command.list", "GET", "/command", input, { options: opts }) },
     vcs: { get: (input, opts) => request("vcs.get", "GET", "/vcs", input, { options: opts }) },
     mcp: { status: (input, opts) => request("mcp.status", "GET", "/mcp", input, { options: opts }) },

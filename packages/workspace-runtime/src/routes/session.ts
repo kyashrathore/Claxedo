@@ -20,7 +20,7 @@ import { workspaceRuntimeBus } from "../bus"
 import { withDir } from "../compat-events"
 import { createRuntimeEventHub, type RuntimeEventHub } from "../runtime-event-hub"
 import { assertTarget, registeredWorkspaceDirectory, workspaceId } from "../target"
-import { harnessQueryParam } from "./http"
+import { requestedSessionHarness } from "./config"
 import { sessionStatusSnapshot } from "./session-status-snapshot"
 import type { SessionPromptBody } from "../session/service"
 import type { SessionAccessPolicy } from "../session-access-policy"
@@ -108,6 +108,11 @@ export function SessionRoutes(
     sessionAccessPolicy?: SessionAccessPolicy
     beforeSessionOperation?: (input: { sessionId: string; operation: string }) => Response | undefined
     resolveRuntime?: (input?: { sessionId?: string; directory?: string; harness?: SessionHarness }) => AgentRuntime | Promise<AgentRuntime | undefined> | undefined
+    resolveExecutionBinding?: (input: {
+      adapter: AgentHarnessAdapter
+      directory: string
+      sessionId: string
+    }) => AgentExecutionBinding | Promise<AgentExecutionBinding>
     listPermissions?: (c: unknown, directory: string) => Promise<AgentPermission[]>
     listQuestions?: (c: unknown, directory: string) => Promise<AgentQuestion[]>
     listSessions?: (c: unknown, directory: string) => Promise<AgentSession[]>
@@ -116,7 +121,6 @@ export function SessionRoutes(
     getStatus?: (
       c: unknown,
       directory: string,
-      adapter: AgentHarnessAdapter,
     ) => Promise<Response | unknown> | Response | unknown
     /**
      * Own session creation instead of delegating straight to the adapter.
@@ -149,7 +153,6 @@ export function SessionRoutes(
       sessionId: string
     }) => Promise<MessageSnapshot | undefined> | MessageSnapshot | undefined
     getSession?: (input: {
-      adapter: AgentHarnessAdapter
       directory: string
       sessionId: string
     }) => Promise<AgentSession | null> | AgentSession | null
@@ -217,11 +220,7 @@ export function SessionRoutes(
   function requestedHarness(c: {
     req: { query: (k: string) => string | undefined; header: (k: string) => string | undefined }
   }) {
-    const raw = harnessQueryParam(c.req)
-    if (raw === undefined) return undefined
-    const identity = normalizeHarnessIdentity(raw)
-    if (!identity) throw new HTTPException(400, { message: `Unknown harness "${raw}"` })
-    return identity
+    return requestedSessionHarness(c.req)
   }
   return createSessionRoutes({
     requestedSessionHarness: (c) => requestedHarness(c as never),
@@ -290,8 +289,7 @@ export function SessionRoutes(
       ? (_c, directory, sessionId) => options.getMessageSnapshot!({ directory: requiredDirectory(directory), sessionId })
       : undefined,
     getSession: options?.getSession
-      ? (_c, directory, sessionId, adapter) => options.getSession!({
-          adapter,
+      ? (_c, directory, sessionId) => options.getSession!({
           directory: requiredDirectory(directory),
           sessionId,
         })
@@ -300,22 +298,8 @@ export function SessionRoutes(
       ? (_c, directory, sessionId) => options.getTodos!({ directory: requiredDirectory(directory), sessionId })
       : undefined,
     getStatus: options?.getStatus
-      ? (c, directory, adapter) => options.getStatus!(c, requiredDirectory(directory), adapter)
-      : async (_c, directory, adapter) => {
-          const target = requiredDirectory(directory)
-          if (!hasAdapterCapability(adapter, "http-proxy")) return sessionStatusSnapshot(await adapter.listSessions(target))
-          const url = await (adapter as AgentHarnessAdapter & HttpProxyAdapter).getServerUrl()
-          const headers = new Headers(options?.opencodeHeaders)
-          headers.set("x-opencode-directory", target)
-          const res = await fetch(`${url}/session/status`, {
-            headers,
-          })
-          return new Response(res.body, {
-            status: res.status,
-            statusText: res.statusText,
-            headers: res.headers,
-          })
-        },
+      ? (c, directory) => options.getStatus!(c, requiredDirectory(directory))
+      : undefined,
     sessionBus: workspaceRuntimeBus,
     publishGlobal: (event) => {
       eventHub.publishGlobal(event)

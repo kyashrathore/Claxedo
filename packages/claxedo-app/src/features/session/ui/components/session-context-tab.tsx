@@ -7,6 +7,7 @@ import { createMemo, createEffect, lazy, on, onCleanup, For, Show, Suspense } fr
 import type { JSX } from "solid-js"
 import { Dynamic } from "solid-js/web"
 import { useQuery } from "@tanstack/solid-query"
+import { useLocal } from "@/features/session/providers/session-selection"
 import { useLayout } from "@/features/session/app-ports"
 import { checksum } from "@/lib/encode"
 import { findLast } from "@/lib/array"
@@ -28,7 +29,6 @@ import type {
   AgentUserMessage as UserMessage,
 } from "@claxedo/agent-runtime-contract"
 import { useLanguage } from "@/platform/i18n/provider"
-import { useProviders } from "@/features/session/app-ports"
 import { getSessionContextMetrics } from "@/features/session/ui/components/session-context-metrics"
 import { estimateSessionContextBreakdown, type SessionContextBreakdownKey } from "@/features/session/ui/components/session-context-breakdown"
 import { createSessionContextFormatter } from "@/features/session/ui/components/session-context-format"
@@ -122,7 +122,7 @@ export function SessionContextTab() {
   const sessionParams = useSessionParams()
   const layout = useLayout()
   const language = useLanguage()
-  const providers = useProviders("opencode")
+  const local = useLocal()
   const paneActive = () => sessionParams.active?.() ?? true
 
   const sessionId = createMemo(() => sessionParams.sessionId())
@@ -180,7 +180,10 @@ export function SessionContextTab() {
       }),
   )
 
-  const readProviders = () => Array.from(providers.all().values())
+  const readProviders = () => {
+    const provider = local.model.current()?.provider
+    return provider ? [provider] : []
+  }
   const activeProviders = createActivePaneProjection({
     active: paneActive,
     read: readProviders,

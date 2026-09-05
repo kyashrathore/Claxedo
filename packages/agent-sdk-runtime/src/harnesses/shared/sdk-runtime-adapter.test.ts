@@ -1,4 +1,8 @@
 import path from "node:path"
+import { mkdtempSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { removeTestTempDir } from "./test-temp-dir"
+import { createSqliteRuntimeStore } from "../../stores/sqlite"
 import { describe, expect, test } from "bun:test"
 import { executeTestTurn, executionBinding } from "../../test-utils/execution-binding"
 import type { WithInternals } from "../../test-utils/class-internals"
@@ -60,6 +64,59 @@ function projectedGoal() {
 }
 
 describe("SdkRuntimeAdapter", () => {
+  test.each(["prompt", "goal"] as const)("disposal awaits the full committing %s producer after its driver stops", async (kind) => {
+    const root = mkdtempSync(path.join(tmpdir(), "sdk-shutdown-"))
+    const store = storeRows(createSqliteRuntimeStore({ root }))
+    let closed = 0
+    const close = store.close!.bind(store)
+    store.close = () => { closed++; close() }
+    let release!: () => void
+    const held = new Promise<void>((resolve) => { release = resolve })
+    let start!: () => void
+    const started = new Promise<void>((resolve) => { start = resolve })
+    const adapter = new SdkRuntimeAdapter({
+      createStore: () => store,
+      driver: () => ({
+        ...minimalSdkRuntimeDriver(),
+        runTurn: async () => { start(); await held; throw new Error("driver shutdown tail") },
+        nativeGoal: {
+          ...nativeGoalStub(),
+          run: async (_turn, _objective, onGoal) => {
+            onGoal({ sessionId: "session-1", objective: "goal", status: "active", createdAt: 1, updatedAt: 1 })
+            start()
+            await held
+            throw new Error("driver shutdown tail")
+          },
+        },
+      }),
+    })
+    let consume = Promise.resolve()
+    try {
+      await adapter.createSession(root, undefined, "session-1")
+      if (kind === "goal") await adapter.goals!.start("session-1", { objective: "goal" }, root)
+      else consume = (async () => { for await (const _event of executeTestTurn(adapter, "session-1", {
+        parts: [], userMessageId: "user-1", assistantMessageId: "assistant-1", agent: "build",
+        model: { providerID: "codex", modelID: "test" },
+      }, root)) {} })()
+      await started
+      const shutdown = adapter.dispose()
+      expect(adapter.dispose()).toBe(shutdown)
+      expect(closed).toBe(0)
+      release()
+      await consume
+      await shutdown
+      expect(closed).toBe(1)
+      const reopened = storeRows(createSqliteRuntimeStore({ root }))
+      try { expect(JSON.stringify(reopened.getMessages("session-1"))).toContain("driver shutdown tail") }
+      finally { reopened.close?.() }
+    } finally {
+      release()
+      await consume
+      await adapter.dispose()
+      removeTestTempDir(root)
+    }
+  })
+
   test("disables native Goal continuation before aborting its active turn", async () => {
     const order: string[] = []
     let publishActive: ((goal: ReturnType<typeof activeGoal>) => void) | undefined

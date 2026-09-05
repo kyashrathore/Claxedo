@@ -7,6 +7,7 @@ type ClaxedoRuntimeConfigInput = {
   workspaceDir?: string
   workspaceId?: string
   secretScope?: "local" | "shared"
+  orgId?: string
   workspaceInstalls?: WorkspaceAgentExtensionRecord[]
   policyOverrides?: AgentExtensionPolicyOverride[]
 }

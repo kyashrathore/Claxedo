@@ -23,7 +23,7 @@ import {
   sessionConfigSelectionQueryKey,
 } from "@/features/session/store/session-config-selection"
 import { decodeSessionConfig } from "@/features/session/harness/profile"
-import { agentListQuery, configQuery, type Agent } from "../data/query/directory"
+import { agentListQuery, type Agent } from "../data/query/directory"
 import { useWorkspaceQuery } from "@/features/session/app-ports"
 import { createAgentRuntimeClient, type AgentRuntimeDirectory } from "@/platform/runtime/agent/agent-runtime-client"
 import type { SessionRef } from "@/platform/identity/session-ref"
@@ -39,7 +39,6 @@ import {
   selectionProviderDetailNeeded,
   type ModelKey,
 } from "@/features/session/composer/model-strategy"
-import { isSignedWorkspaceDefaultModel } from "@/features/session/composer/signed-workspace-model"
 import { isRelayBackedWorkspaceKind } from "@/platform/runtime/agent/workspace-kind"
 
 type State = LocalSelectionState
@@ -113,7 +112,6 @@ const localContextInput = {
     agents?: Accessor<Agent[]>
   } = {}) => {
     const sdk = useSDK()
-    const providers = useProviders("opencode")
     const models = useModels()
     const platform = usePlatform()
 
@@ -129,20 +127,6 @@ const localContextInput = {
       afterPaint: false,
     })
     const hydrationSession = () => hydrationReady() ? id() : undefined
-    const hydrateDirectoryConfig = createDeferredDirectoryResourceGate({
-      scope: () => `${sdk.url ?? ""}:${sdk.directory}:config`,
-      active: input.active,
-    })
-    const directoryConfigQuery = useQuery(() => ({
-      ...configQuery({
-        baseUrl: sdk.url,
-        directory: sdk.directory,
-        workspace: sdk.workspace(sdk.directory),
-        client: sdk.client,
-      }),
-      enabled: hydrateDirectoryConfig(),
-    }))
-
     const workspaceClientOptions = () => {
       const workspace = sdk.workspace(sdk.directory)
       if (!workspace) return {}
@@ -178,7 +162,8 @@ const localContextInput = {
     // The session's own harness, including "opencode": the agent-profile and
     // catalog reads key on it, and an UNRESOLVED harness is unknown — never
     // OpenCode by omission.
-    const harnessType = currentSessionHarnessId
+    const harnessType = () => { const selection = currentSessionHarnessId(); return selection ? harnessSelectionValue(selection) : undefined }
+    const providers = useProviders(() => currentSessionHarnessId()?.kind === "native" ? harnessType() ?? "" : "")
 
     // agentListQuery routes to the workspace runtime for relay-backed scopes —
     // gate on the authority so it cannot fire while that workspace is offline.

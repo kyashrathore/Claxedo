@@ -195,5 +195,6 @@ function runtime(input: {
       typeof input.useLocal === "function" ? input.useLocal(params) : input.useLocal ?? true,
     harnessSessionFetch: () => input.sessionFetch ?? fetch,
     workspaceRef: (params?: HarnessScopeInput) => harnessWorkspaceRuntimeRef(params),
+    agentRuntimeClientOptions: (params?: HarnessScopeInput) => input.clientOptions?.(params) ?? { request: input.sessionFetch ?? fetch },
   }
 }

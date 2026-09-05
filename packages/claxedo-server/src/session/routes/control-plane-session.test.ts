@@ -807,11 +807,16 @@ describe("control plane session routes", () => {
       messages: [{ info: { id: "msg_1" } }],
       maxEventOrdinal: 7,
     })
-    expect(capabilities.status).toBe(200)
+    expect(capabilities.status).toBe(409)
     await expect(capabilities.json()).resolves.toMatchObject({
-      transport: "opencode",
-      replay: true,
+      error: { code: "session_harness_missing" },
     })
+    svc.projectionStore.session_meta = vi.fn(async () => ({ host: "workspace", tags: ["harness:pi"] }) as never)
+    const boundCapabilities = await app.request("https://control.example.test/sessions/session-1/capabilities?workspaceId=ws_1", {
+      headers: { Authorization: "Bearer user_1" },
+    })
+    expect(boundCapabilities.status).toBe(200)
+    await expect(boundCapabilities.json()).resolves.toMatchObject({ transport: "pi", replay: true })
     expect(authority.listSessions).toHaveBeenCalledWith(expect.objectContaining({ token: "user_1" }), {
       workspaceId: "ws_1",
     })

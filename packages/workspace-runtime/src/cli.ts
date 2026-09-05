@@ -15,6 +15,7 @@ import {
   relayWorkspaceRuntimeExposure,
 } from "./exposure"
 import { runtimeEnvText } from "./env"
+import { RUNTIME_NATIVE_HARNESS_IDS, type RuntimeNativeHarnessId } from "./routes/config"
 
 const pkg = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")) as { version: string }
 
@@ -32,7 +33,9 @@ const port = parseInt(runtimeEnvText(process.env, "WORKSPACE_RUNTIME_PORT") ?? "
 const hostname = workspaceRuntimeListenHostname(process.env)
 const relay = await workspaceRelayRuntimeOptionsFromEnv(process.env, port)
 const nativeHarness = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_NATIVE_HARNESS")
-if (nativeHarness && !["claude", "codex", "cursor", "pi"].includes(nativeHarness)) {
+const connectionId = runtimeEnvText(process.env, "WORKSPACE_RUNTIME_CONNECTION_ID")
+if (nativeHarness && connectionId) throw new Error("Select either WORKSPACE_RUNTIME_NATIVE_HARNESS or WORKSPACE_RUNTIME_CONNECTION_ID")
+if (nativeHarness && !RUNTIME_NATIVE_HARNESS_IDS.some((id) => id === nativeHarness)) {
   throw new Error(`Unsupported WORKSPACE_RUNTIME_NATIVE_HARNESS: ${nativeHarness}`)
 }
 const server = startServer(port, {
@@ -45,14 +48,8 @@ const server = startServer(port, {
       : privateNetworkDevUnsafeWorkspaceRuntimeExposure(
         "WORKSPACE_RUNTIME_ALLOW_UNAUTHENTICATED_NON_LOOPBACK managed runtime",
       ),
-  harness: {
-    id: identity.id,
-    access: identity.access,
-    ...(acpBinary ? { connection: { kind: "process" as const, binary: acpBinary } } : {}),
-  },
-  ...(runtimeEnvText(process.env, "OPENCODE_URL")
-    ? { opencodeUrl: runtimeEnvText(process.env, "OPENCODE_URL") }
-    : {}),
+  ...(nativeHarness ? { harness: { kind: "native" as const, harnessId: nativeHarness as RuntimeNativeHarnessId } }
+    : connectionId ? { harness: { kind: "connection" as const, connectionId } } : {}),
   // The kit CLI mounts NO route contributions. Host-supplied tool brokers are a
   // hosted capability supplied by a host launcher
   // (`claxedoWorkspaceRuntimeBootFromEnv`), not something a generic runtime

@@ -283,7 +283,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
               <span class="setup-row-copy">
                 <span class="text-13-medium text-text-strong">Something else</span>
                 <span class="setup-row-consequence text-12-regular">
-                  Copilot, Gemini, or any other provider — sign in or paste a key.
+                  Configure a provider supported by the native Pi runtime.
                 </span>
               </span>
               <Icon name="chevron-right" size="small" class="setup-row-chevron" />
@@ -316,8 +316,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
 
       <Show when={props.view.kind === "providers"}>
         <ProviderList
-          harness="opencode"
-          hideCustom
+          harness="pi"
           onSelect={(providerId: string) => props.onViewChange({ kind: "connect", providerId })}
         />
       </Show>
@@ -377,7 +376,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
                 */}
                 <ProviderConnectForm
                   provider="anthropic"
-                  harness="opencode"
+                  harness="pi"
                   scope="shared"
                   hideHeading
                   onConnected={async () => {
@@ -396,7 +395,7 @@ export const AIConnectSurface: Component<AIConnectSurfaceProps> = (props) => {
         {(view) => (
           <ProviderConnectForm
             provider={view().providerId}
-            harness="opencode"
+            harness="pi"
             scope={scope()}
             hideHeading
             onConnected={async () => {

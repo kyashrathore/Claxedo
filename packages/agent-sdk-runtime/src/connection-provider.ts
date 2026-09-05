@@ -1,35 +1,9 @@
-import type { ModelSelection } from "@claxedo/agent-runtime-contract"
+import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
+export type { ConnectionReadiness, HarnessConnectionCapabilities, HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import type { RuntimeEventHub } from "./runtime-event-hub"
 import type { AgentRuntimeStoreWithRecovery } from "./harnesses/shared/runtime-store"
 import type { AgentProcessObserver } from "./process-observer"
-
-export type ConnectionReadiness = "ready" | "unavailable" | "disabled"
-
-export type HarnessConnectionCapabilities = {
-  abort: boolean
-  reconnect: boolean
-  replay: boolean
-  permissions: boolean
-  questions: boolean
-  todos: boolean
-  commands: boolean
-  fork: boolean
-  revert: boolean
-  unrevert: boolean
-  configOptions: boolean
-  subagents: boolean
-}
-
-/** Browser-safe connection projection. Provider config and credentials never enter this shape. */
-export type HarnessConnectionRef = {
-  connectionId: string
-  label: string
-  enabled: boolean
-  readiness: ConnectionReadiness
-  capabilities: HarnessConnectionCapabilities
-  modelSelection?: ModelSelection
-}
 
 /** Authenticated operator configuration. `config` is visible only to its installed provider. */
 export type HarnessConnectionDescriptor<TConfig = unknown> = {

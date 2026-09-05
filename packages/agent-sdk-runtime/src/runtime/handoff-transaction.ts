@@ -83,6 +83,7 @@ async function rollbackHandoff(
     ))
   }
   input.store.bindSession({
+    scope: input.binding.scope,
     sessionId: input.sessionId,
     workspaceId: input.binding.workspaceId,
     directory: input.session.directory ?? "",
@@ -145,6 +146,7 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
       { system: transcript },
     )
     input.store.bindSession({
+      scope: input.binding.scope,
       sessionId: input.sessionId,
       workspaceId: input.binding.workspaceId,
       directory: targetDirectory ?? "",
@@ -155,8 +157,9 @@ export async function executeHandoffTransaction(input: HandoffTransactionInput):
       ownerKey: prepared.ownerKey ?? null,
     })
     const targetBinding: AgentExecutionBinding = {
-      ...input.binding,
-      directory: targetDirectory ?? "",
+      ...(input.binding.scope === "central"
+        ? { ...input.binding, directory: "" as const }
+        : { ...input.binding, directory: targetDirectory ?? "" }),
       connectionId: connectionIdForHarness(input.update.harness),
       upstreamSessionId: prepared.agentSessionId ?? prepared.id,
     }

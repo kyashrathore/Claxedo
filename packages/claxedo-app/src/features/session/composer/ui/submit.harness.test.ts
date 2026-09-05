@@ -32,6 +32,8 @@
 import { expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
 import { normalizeHarnessIdentity } from "../../../../../../agent-sdk-runtime/src/harness-types"
+import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import { configureAppPortsForTest } from "@/app/integrations/test-support/app-ports-stub"
 import type { Prompt } from "@/features/session/providers/prompt"
 import { createMockApi } from "@/architecture/test-support/mock-api"
@@ -275,13 +277,7 @@ export function localSessionRef(sessionID: string) {
 
 export function testHarnessController(): HarnessSubmitController {
   return {
-    // `claude-acp` was a bundled vendor ACP identity and that whole class is
-    // gone: a harness key is now either a built-in id or an operator
-    // connection key (`acp:<slug>`, `isAcpConnectionHarnessId`). This suite's
-    // harness mode drives the native `claude-sdk` path; the ACP connection
-    // key is exercised through the session-config fixtures in
-    // `submit.upstream-contract.test.ts`.
-    harness: () => (state.harnessMode ? "claude-sdk" : "opencode"),
+    harness: (): HarnessSelection => state.harnessMode ? { kind: "native", harnessId: "claude" } : PI,
     isHarnessMode: () => state.harnessMode,
     readiness: () => "ready",
     readyForSubmit: () => !!(state.harnessMode ? state.harnessSubmitModel : state.piSubmitModel),
@@ -326,28 +322,13 @@ let rawCreatePromptSubmit: typeof import("./submit").createPromptSubmit
 let clearRuntimeQueries: (() => void) | undefined
 let resetRuntimeEnsureCache: (() => void) | undefined
 
-/**
- * Wrapped `createPromptSubmit` that injects the composerMode + harnessController
- * + model-selection defaults.
- *
- * `selectedModelForSubmit` is the composer's authoritative model choice
- * (`composer.tsx` passes `toolbarState.currentModel`, which is
- * `local.model.current()` minus the "fallback" source). Submit reads ONLY that
- * accessor — there is no `?? local.model.current()` fallback, and
- * `workspace-runtime-route-audit.test.ts` pins that. So the harness has to feed
- * the same `state.localCurrentModel` it already feeds `useLocal().model.current`,
- * and it has to do it here rather than in `createSubmit`: the carved suites call
- * this wrapper directly too, and a default that lived only in `createSubmit`
- * would silently turn every one of those submits into a
- * `modelAgentRequired` no-op.
- */
+/** Installs the same draft selection controller supplied by the composer. */
 export function createPromptSubmit(
   input: Parameters<typeof import("./submit").createPromptSubmit>[0],
 ): ReturnType<typeof import("./submit").createPromptSubmit> {
   return rawCreatePromptSubmit({
     composerMode: defaultComposerMode,
     harnessController: testHarnessController(),
-    selectedModelForSubmit: () => state.localCurrentModel,
     ...input,
   })
 }
@@ -1056,8 +1037,13 @@ export function resetSubmitHarness() {
   state.commandError = undefined
   state.commandListResponse = []
   state.runtimeProviderResponse = undefined
-  state.runtimeSessionConfig = undefined
-  state.localSessionConfig = undefined
+  const sessionConfig = {
+    harness: { id: "pi", access: "native" },
+    agent: "agent",
+    model: { providerID: "provider", modelID: "model" },
+  } satisfies SessionConfig
+  state.runtimeSessionConfig = sessionConfig
+  state.localSessionConfig = sessionConfig
   state.goalCapabilities = {
     implemented: true,
     available: true,

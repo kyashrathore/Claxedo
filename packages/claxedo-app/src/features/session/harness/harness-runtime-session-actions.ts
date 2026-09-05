@@ -1,4 +1,3 @@
-import { createOpencodeClient as defaultCreateOpencodeClient } from "@opencode-ai/sdk/v2/client"
 import type { HarnessScopeInput } from "./store-policy"
 import type {
   PreparedRuntimeSession,
@@ -17,28 +16,32 @@ type HarnessRuntimeSessionRuntime<ScopeInput extends HarnessScopeInput> = {
   harnessSessionFetch(input?: ScopeInput): typeof fetch
   /** The relay-backed workspace the inventory describes for a scope, if any. */
   workspaceRef(input?: ScopeInput): { workspaceId: string } | undefined
+  agentRuntimeClientOptions(input?: HarnessScopeInput): Parameters<typeof createAgentRuntimeClient>[0]
 }
 
-export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig }>(input: {
+export function createHarnessRuntimeSessionActions<ScopeInput extends HarnessScopeInput & { sessionConfig: PreparedRuntimeSessionConfig; headers?: Record<string, string> }>(input: {
   base: string
-  runtime: HarnessRuntimeSessionRuntime
+  runtime: HarnessRuntimeSessionRuntime<HarnessScopeInput>
   createClient?: CreateHarnessRuntimeSessionClient
 }) {
   const createClient = input.createClient ?? createAgentRuntimeClient
 
-  const canUseRuntimeSession = (params?: ScopeInput) =>
+  const canUseRuntimeSession = (params?: HarnessScopeInput) =>
     input.runtime.useLocalHarnessConfig(params) || !!input.runtime.workspaceRef(params)
 
   const create = async (params: {
-    input: ScopeInput
+    input?: ScopeInput
     directory: PreparedSessionDirectory
     harness: HarnessType
   }) => {
+    if (!params.input?.sessionConfig) throw new Error("Session creation requires a resolved model and agent")
     const res = await createClient({
       serverUrl: input.base,
       ...input.runtime.agentRuntimeClientOptions(params.input),
     }).createSession({
       directory: params.directory,
+      id: params.input.sessionId,
+      headers: params.input.headers,
       harness: params.harness,
       agent: params.input.sessionConfig.agent,
       model: params.input.sessionConfig.model,

@@ -57,6 +57,7 @@ import { AgentMessagePageError } from "@claxedo/agent-sdk-runtime/message-page"
 import { messagePageCursor, parseMessagePageInput } from "../../session/message-page"
 import type { HostedControlPlane } from "../../authority/hosted-services"
 import { HostedWorkerCompositionError } from "../../authority/composition-error"
+import { hostedPiCredentials } from "../../credentials/worker/pi"
 import {
   liveSyncRoomNameForPrincipal,
   nudgeLiveSyncRoom,
@@ -260,6 +261,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
       ...(services.authority ? { resolveOrgId: (auth) => services.authority!.resolveOrgId(auth) } : {}),
       serviceCatalog: options.serviceCatalog,
       harnessStatus: hostedHarnessRuntimeStatus(services),
+      ...hostedPiCredentials({ resolveOrgId: (auth) => requireAuthority(services).resolveOrgId(auth), env: plane.env }),
     }),
   )
   app.route(

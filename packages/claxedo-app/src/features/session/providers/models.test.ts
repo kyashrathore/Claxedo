@@ -2,26 +2,26 @@ import { describe, expect, test } from "bun:test"
 import { decodeModelStoreRecord, resolveModelVisibility } from "./models"
 
 describe("decodeModelStoreRecord", () => {
-  test("re-homes the replaced global store under the harness it belonged to", () => {
+  test("does not import a legacy unscoped provider preference record", () => {
     expect(decodeModelStoreRecord({
       user: [{ providerID: "anthropic", modelID: "opus", visibility: "hide" }],
       recent: [{ providerID: "anthropic", modelID: "opus" }],
       variant: { "anthropic/opus": "thinking" },
-    }, "opencode")).toEqual({
-      user: { opencode: [{ providerID: "anthropic", modelID: "opus", visibility: "hide" }] },
-      recent: [{ providerID: "anthropic", modelID: "opus", harness: "opencode" }],
-      variant: { opencode: { "anthropic/opus": "thinking" } },
+    })).toEqual({
+      user: {},
+      recent: [],
+      variant: {},
     })
   })
 
-  test("reads the harness-keyed shape back unchanged, so the upgrade runs once", () => {
+  test("reads the harness-keyed shape back unchanged", () => {
     const record = {
       user: { "claude-sdk": [{ providerID: "anthropic", modelID: "opus", visibility: "show" as const }] },
       recent: [{ providerID: "anthropic", modelID: "opus", harness: "claude-sdk" }],
       variant: { "claude-sdk": { "anthropic/opus": "max" } },
     }
-    expect(decodeModelStoreRecord(record, "opencode")).toEqual(record)
-    expect(decodeModelStoreRecord(decodeModelStoreRecord(record, "opencode"), "opencode")).toEqual(record)
+    expect(decodeModelStoreRecord(record)).toEqual(record)
+    expect(decodeModelStoreRecord(decodeModelStoreRecord(record))).toEqual(record)
   })
 
   test("a recent entry with no harness names no harness, so it is dropped", () => {
@@ -29,16 +29,16 @@ describe("decodeModelStoreRecord", () => {
       user: {},
       recent: [{ providerID: "anthropic", modelID: "opus" }],
       variant: {},
-    }, "opencode").recent).toEqual([])
+    }).recent).toEqual([])
   })
 
   test("malformed payloads decode to an empty record rather than throwing", () => {
-    expect(decodeModelStoreRecord(undefined, "opencode")).toEqual({ user: {}, recent: [], variant: {} })
-    expect(decodeModelStoreRecord([1, 2], "opencode")).toEqual({ user: {}, recent: [], variant: {} })
-    expect(decodeModelStoreRecord({ user: [{ providerID: 1 }] }, "opencode")).toEqual({
-      user: { opencode: [] },
+    expect(decodeModelStoreRecord(undefined)).toEqual({ user: {}, recent: [], variant: {} })
+    expect(decodeModelStoreRecord([1, 2])).toEqual({ user: {}, recent: [], variant: {} })
+    expect(decodeModelStoreRecord({ user: [{ providerID: 1 }] })).toEqual({
+      user: {},
       recent: [],
-      variant: { opencode: {} },
+      variant: {},
     })
   })
 })

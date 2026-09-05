@@ -73,7 +73,6 @@ import {
 import { isServiceCatalogPath, serviceCatalogStateResponse } from "./contracts/service-catalog"
 import { isOrgListPath, orgListResponse } from "./contracts/org-list"
 import {
-  localHarnessOptionsResponse,
   runtimeHarnessOptionsResponse,
   type BoundHarnessConfigOption,
 } from "./contracts/harness-options"
@@ -85,7 +84,7 @@ import {
   WORKTREE_CREATE_SUCCESS_STATUS,
 } from "./contracts/worktrees"
 import { driveEmptyRuntimeDiffRoute } from "./contracts/runtime-diff"
-import { createRuntimeProviderConfig, type RuntimeProviderConfig } from "./contracts/provider-config"
+
 import { contractRoute } from "./contracts/contract-route"
 import {
   centralStreamHeartbeat,
@@ -583,13 +582,7 @@ export type MockRuntimeHandles = {
    * source of a row's status after a reload, when no SSE frame replays the live state.
    */
   setSessionStatus: (sessionId: string, status?: LiveSessionStatus) => void
-  /**
-   * The provider configuration this workspace's runtime owns, as
-   * `PATCH /api/wr/provider-config` leaves it. `disabled()` is what the catalog
-   * read filters its connected list by, so a spec that stubs `/provider` itself
-   * must apply the same filter.
-   */
-  providerConfig: RuntimeProviderConfig
+
   session: { id: string; dir: string; projectId: string }
 }
 
@@ -941,6 +934,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   const DIR = options.dir ?? "/tmp/e2e-mock-runtime"
   const SESSION_ID = options.sessionId ?? "ses_mock_runtime"
   const PROJECT_ID = options.projectId ?? "proj_mock_runtime"
+  const LOCAL_WORKSPACE_ID = options.workspaceId ?? "ws_mock_runtime"
   const PROJECT_NAME = options.projectName ?? "mock-runtime"
   // Every control-plane workspace row belongs to a tenant; the authority's row
   // projection makes `org_id` non-optional. One mock tenant owns them all.
@@ -995,10 +989,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
   // hydrate GET path (behaviors 2-9, which DO pre-seed) never sends a body, so this
   // reassignment is a no-op for every other scenario in this file.
   let harness = options.harness ?? "opencode"
-  // The provider configuration this workspace's runtime owns. Settings writes
-  // it through `PATCH /api/wr/provider-config`; `providerResponse()` below is
-  // derived from it, the way the engine derives its connected catalog.
-  const providerConfig = createRuntimeProviderConfig({ harness: () => harness })
+
   let savedModel: { providerID: string; modelID: string } | null | undefined
   let savedAgent: string | null | undefined
   let savedVariant: string | null | undefined
@@ -1342,10 +1333,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         },
       ],
       default: { [activeProviderID]: harnessModel().id },
-      // Same filter the engine applies: a provider this workspace's harness
-      // config disables is no longer connected, so a disconnect written through
-      // `PATCH /api/wr/provider-config` shows up in the very next catalog read.
-      connected: providerConfig.disabled().includes(activeProviderID) ? [] : [activeProviderID],
+      connected: [activeProviderID],
     }
   }
 
@@ -1650,38 +1638,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }
   }
 
-  function cloudProviderResponse(harness: Harness = cloudHarness) {
-    const activeProviderID = providerIdFor(harness)
-    const activeModels = harnessModels[harness] ?? [BIG_PICKLE]
-    return {
-      all: [
-        {
-          id: activeProviderID,
-          name: harness,
-          env: [],
-          models: Object.fromEntries(
-            activeModels.map((m) => [
-              m.id,
-              {
-                id: m.id,
-                name: m.name,
-                release_date: "2026-01-01",
-                attachment: true,
-                reasoning: true,
-                temperature: true,
-                tool_call: true,
-                limit: { context: 200000, output: 8192 },
-                cost: { input: 0, output: 0 },
-                options: {},
-              },
-            ]),
-          ),
-        },
-      ],
-      default: { [activeProviderID]: activeModels[0]?.id ?? BIG_PICKLE.id },
-      connected: [activeProviderID],
-    }
-  }
 
   function cloudSessionRow() {
     return {
@@ -2092,27 +2048,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     }).catch(() => {})
   }
   await contractRoute(page, "**/api/wr/events**", wrEventsHandler)
-  // `/api/claxedo/events` is the SAME stream, not a third one. Both real
-  // servers mount one handler on all three central spellings —
-  // claxedo-local-server/src/opencode/compat-routes/index.ts (`streamGlobalEvents` mounts)
-  // (`/global/event`, `/api/wr/events`, `/api/claxedo/events` -> the single
-  // `streamGlobalEvents`) and claxedo-server/src/routes/hosted/shell.ts (the `events` mounts)
-  // (the same three -> the single `events`) — so serving it anything other than
-  // this handler's body would be inventing a contract.
-  //
-  // It is the CENTRAL target of `ClaxedoEventsProvider`
-  // (`claxedoEventStreamTargets` -> `controlPlaneEventsUrl`,
-  // src/app/integrations/claxedo-events.tsx), opened whenever the account is
-  // signed — which every `CLAXEDO_E2E_AUTH_MODE=test-user` page is. That
-  // provider is the mock's only reader that understands FLAT frames
-  // (`emitFlat`, e.g. `worktree.ready`); `authFetch` rewrites the global-sdk
-  // compat loop's `/global/event` to `/api/wr/events` for a signed document
-  // (`signedRuntimeEventInput`, src/platform/api/api.ts), so the two readers
-  // share this route's log and each resumes from its own `Last-Event-ID` —
-  // exactly the case `EventBus`'s cursor resume exists for (see its comment).
-  // Unmocked, this request escaped to the central origin and the provider
-  // retried a rejected fetch for the life of every page.
-  await contractRoute(page, "**/api/claxedo/events**", wrEventsHandler)
+
   await contractRoute(page, "**/api/wr/runtime-events**", wrRuntimeEventsHandler)
 
   // ProcessPane reconciles once when a workspace shell mounts. The shared
@@ -2207,26 +2143,10 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     return json(r, [{ id: "build", name: "build", description: "Build agent" }])
   })
 
-  await page.route("**/provider", (r) => (api(r) ? json(r, providerResponse()) : r.continue()))
-  await page.route("**/provider?**", (r) => (api(r) ? json(r, providerResponse()) : r.continue()))
-  await page.route("**/provider/auth", (r) => (api(r) ? json(r, {}) : r.continue()))
-  await page.route("**/provider/auth?**", (r) => (api(r) ? json(r, {}) : r.continue()))
+  await page.route("**/api/claxedo/agent-config/providers?**", (r) => (api(r) ? json(r, providerResponse()) : r.continue()))
+  await page.route("**/api/claxedo/agent-config/providers/auth?**", (r) => (api(r) ? json(r, {}) : r.continue()))
 
-  // The write half of `/provider`, driven through the REAL workspace-runtime
-  // router: a config-declared provider disconnects by being disabled in this
-  // workspace's harness configuration, not by an auth DELETE.
-  const providerConfigHandler = async (r: Route) => {
-    if (!api(r)) return r.continue()
-    if (!new URL(r.request().url()).pathname.endsWith("/api/wr/provider-config")) return r.fallback()
-    const driven = await providerConfig.handle({
-      url: r.request().url(),
-      method: r.request().method(),
-      body: r.request().postData(),
-    })
-    return json(r, driven.body, driven.status)
-  }
-  await contractRoute(page, "**/api/wr/provider-config", providerConfigHandler)
-  await contractRoute(page, "**/api/wr/provider-config?**", providerConfigHandler)
+
 
   // Bare-path glob only (no query-string wildcard): Playwright's glob-to-regex
   // anchors the pattern's end, so `**/config` alone does NOT match the app's real
@@ -2701,7 +2621,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const type = harnessFixtureFromUrl(r.request().url(), harness)
     requests.harnessOptionsHarnesses.push(type)
     const model = harnessModels[type]?.[0] ?? BIG_PICKLE
-    return json(r, localHarnessOptionsResponse(harnessConfigOptions(type, model)))
+    return json(r, runtimeHarnessOptionsResponse(harnessConfigOptions(type, model)))
   })
 
   // Sanitized generic agent-connection discovery for the Connections screen.
@@ -2732,7 +2652,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
         modelSelection: { status: "optional" },
       }]
     })
-    return json(r, { connections })
+    return json(r, { status: "supported", connections })
   })
 
   // POST /api/claxedo/usage/sync — the usage outbox beacon
@@ -3266,14 +3186,6 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       return json(r, pendingPermissions)
     })
     await page.route(`${base}/question**`, (r) => json(r, pendingQuestions))
-    const cloudProviderHandler = (route: Route) => {
-      const harness = harnessFixtureFromUrl(route.request().url(), cloudHarness)
-      return json(route, cloudProviderResponse(harness))
-    }
-    await page.route(`${base}/provider`, cloudProviderHandler)
-    await page.route(`${base}/provider?**`, cloudProviderHandler)
-    await page.route(`${base}/provider/auth`, (r) => json(r, {}))
-    await page.route(`${base}/provider/auth?**`, (r) => json(r, {}))
     await contractRoute(page, `${base}/api/wr/health**`, (r) => json(r, readyRuntimeHealthResponse(cloudHarness)))
     // Worktree admission on the cloud draft-submit path
     // (prepareWorkspaceSessionWorktree, src/platform/runtime/cloud/workspace-runtime-store.ts):
@@ -3486,7 +3398,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     emitRuntime,
     releaseAbort: () => releaseAbort(),
     setSessionStatus,
-    providerConfig,
+
     session: { id: SESSION_ID, dir: DIR, projectId: PROJECT_ID },
   }
 }

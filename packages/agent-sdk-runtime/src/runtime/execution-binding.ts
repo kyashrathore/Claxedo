@@ -8,7 +8,7 @@ import type { RuntimeDirectory, SessionHarness } from "../index"
 import type { AgentRuntimeStoreWithRecovery } from "../harnesses/shared/runtime-store"
 import type { AgentRuntimeSessionCreateInput } from "./contracts"
 
-const normalizeDirectory = (directory: RuntimeDirectory) => directory ?? ""
+export const normalizeDirectory = (directory: RuntimeDirectory) => directory ?? ""
 
 export function requireExecutionBinding(
   store: AgentRuntimeStoreWithRecovery,
@@ -57,6 +57,7 @@ export function assertSessionCreateBindingScope(
   }
   assertAgentExecutionBinding(existing, {
     ...existing,
+    scope: "workspace",
     sessionId,
     workspaceId: create.workspaceId,
     directory: normalizeDirectory(create.directory),

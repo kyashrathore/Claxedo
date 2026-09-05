@@ -9,6 +9,9 @@ import { Tag } from "@opencode-ai/ui/tag"
 import { showToast } from "@opencode-ai/ui/toast"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { createIntegrationsRequest } from "@/platform/account/integrations-request"
+import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
+import { createHarnessConnectionsCatalog } from "@/platform/query/connection-catalog"
+import type { HarnessConnectionRef } from "@claxedo/agent-runtime-contract"
 import { DialogConnectIntegration } from "@/features/settings/app-ports"
 import {
   createConnectionsStore,
@@ -24,6 +27,9 @@ const STATUS_LABEL: Record<ConnectionInfo["status"], string> = {
   degraded: "Degraded",
   broken: "Broken",
 }
+
+const AGENT_READINESS_LABEL = { ready: "Ready", unavailable: "Unavailable", disabled: "Disabled" } as const
+const MODEL_SELECTION_LABEL = { required: "Model required", optional: "Model optional", unsupported: "Agent-managed model" } as const
 
 function StatusChip(props: { status: ConnectionInfo["status"] }) {
   return (
@@ -53,11 +59,24 @@ function StatusChip(props: { status: ConnectionInfo["status"] }) {
 export const SettingsConnections: Component = () => {
   const dialog = useDialog()
   const store = createConnectionsStore({ request: integrationsRequest })
+  const agentConnections = createHarnessConnectionsCatalog({ base: getClaxedoServerUrl(), request: authFetch })
+  const agentRows = createMemo(() => {
+    const catalog = agentConnections.data()
+    return catalog?.status === "supported" ? catalog.connections : undefined
+  })
+  const unsupportedReason = createMemo(() => {
+    const catalog = agentConnections.data()
+    if (catalog?.status !== "unsupported") return
+    return catalog.reason === "operator_local_configuration"
+      ? "Agent connections are configured by the operator on the local host."
+      : catalog.reason
+  })
   const [confirming, setConfirming] = createSignal<string | undefined>(undefined)
   const [confirmingAgent, setConfirmingAgent] = createSignal<string | undefined>(undefined)
   const [busy, setBusy] = createSignal<string | undefined>(undefined)
 
   onMount(() => void store.load())
+  onMount(() => void agentConnections.refresh())
 
   const openConnect = (integration: IntegrationInfo, scope?: ConnectionInfo["scope"]) => {
     dialog.show(() => (
@@ -126,60 +145,68 @@ export const SettingsConnections: Component = () => {
           <Show when={agentConnections.error()}>
             {(error) => <div class="py-2 text-13-regular text-icon-critical-base">{error()}</div>}
           </Show>
-          <div class="bg-surface-raised-base px-4 rounded-lg">
-            <Show
-              when={agentConnections.rows().length > 0}
-              fallback={
-                <div class="py-4 text-14-regular text-text-weak">
-                  {agentConnections.loading() ? "Loading agent connections…" : "No agent connections configured."}
-                </div>
-              }
-            >
-              <For each={agentConnections.rows()}>
-                {(connection) => (
-                  <div class="flex flex-wrap items-center justify-between gap-4 min-h-16 py-3 border-b border-border-weak-base last:border-none">
-                    <div class="flex flex-col gap-1 min-w-0">
-                      <span class="text-14-medium text-text-strong">{connection.label}</span>
-                      <div class="flex flex-wrap items-center gap-2 text-12-regular text-text-weak">
-                        <span>{AGENT_READINESS_LABEL[connection.readiness]}</span>
-                        <Tag>{connection.modelSelection ? MODEL_SELECTION_LABEL[connection.modelSelection.status] : "Model policy unavailable"}</Tag>
-                        <Show when={connection.capabilities.configOptions}><Tag>Config</Tag></Show>
-                        <Show when={connection.capabilities.commands}><Tag>Commands</Tag></Show>
+          <Show when={agentConnections.loading()}>
+            <div class="py-4 text-14-regular text-text-weak">Loading agent connections…</div>
+          </Show>
+          <Show when={unsupportedReason()}>
+            {(reason) => <div class="py-4 text-14-regular text-text-weak">{reason()}</div>}
+          </Show>
+          <Show when={agentRows()}>
+            <div class="bg-surface-raised-base px-4 rounded-lg">
+              <Show
+                when={agentRows()!.length > 0}
+                fallback={
+                  <div class="py-4 text-14-regular text-text-weak">
+                    No agent connections configured.
+                  </div>
+                }
+              >
+                <For each={agentRows()}>
+                  {(connection) => (
+                    <div class="flex flex-wrap items-center justify-between gap-4 min-h-16 py-3 border-b border-border-weak-base last:border-none">
+                      <div class="flex flex-col gap-1 min-w-0">
+                        <span class="text-14-medium text-text-strong">{connection.label}</span>
+                        <div class="flex flex-wrap items-center gap-2 text-12-regular text-text-weak">
+                          <span>{AGENT_READINESS_LABEL[connection.readiness]}</span>
+                          <Tag>{connection.modelSelection ? MODEL_SELECTION_LABEL[connection.modelSelection.status] : "Model policy unavailable"}</Tag>
+                          <Show when={connection.capabilities.configOptions}><Tag>Config</Tag></Show>
+                          <Show when={connection.capabilities.commands}><Tag>Commands</Tag></Show>
+                        </div>
                       </div>
-                    </div>
-                    <div class="flex items-center gap-2 shrink-0">
-                      <Show
-                        when={confirmingAgent() === connection.connectionId}
-                        fallback={
+                      <div class="flex items-center gap-2 shrink-0">
+                        <Show
+                          when={confirmingAgent() === connection.connectionId}
+                          fallback={
+                            <Button
+                              size="small"
+                              variant="ghost"
+                              disabled={busy() === connection.connectionId}
+                              onClick={() => setConfirmingAgent(connection.connectionId)}
+                            >
+                              Remove
+                            </Button>
+                          }
+                        >
+                          <span class="text-12-regular text-text-weak">Remove?</span>
                           <Button
                             size="small"
-                            variant="ghost"
+                            variant="primary"
                             disabled={busy() === connection.connectionId}
-                            onClick={() => setConfirmingAgent(connection.connectionId)}
+                            onClick={() => void removeAgentConnection(connection)}
                           >
-                            Remove
+                            Confirm
                           </Button>
-                        }
-                      >
-                        <span class="text-12-regular text-text-weak">Remove?</span>
-                        <Button
-                          size="small"
-                          variant="primary"
-                          disabled={busy() === connection.connectionId}
-                          onClick={() => void removeAgentConnection(connection)}
-                        >
-                          Confirm
-                        </Button>
-                        <Button size="small" variant="ghost" onClick={() => setConfirmingAgent()}>
-                          Cancel
-                        </Button>
-                      </Show>
+                          <Button size="small" variant="ghost" onClick={() => setConfirmingAgent()}>
+                            Cancel
+                          </Button>
+                        </Show>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </For>
-            </Show>
-          </div>
+                  )}
+                </For>
+              </Show>
+            </div>
+          </Show>
         </div>
 
         <div class="flex flex-col gap-1" data-component="connections-section">

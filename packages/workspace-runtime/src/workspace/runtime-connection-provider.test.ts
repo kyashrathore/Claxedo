@@ -30,6 +30,7 @@ const capabilities: HarnessConnectionCapabilities = {
 
 function adapter(): AgentHarnessAdapter {
   return {
+    async *executeTurn() {},
     async createSession() { return { id: "session-1" } },
     async getSession(binding: AgentExecutionBinding) { return { id: binding.sessionId } },
     async updateSession(binding: AgentExecutionBinding) { return { id: binding.sessionId } },
@@ -39,12 +40,55 @@ function adapter(): AgentHarnessAdapter {
       return { harness: update.harness ?? { id: "fixture-primary", access: "connection" }, variant: null, agent: null }
     },
     async getMessages() { return [] },
-    readHarnessCapabilities() { return { ...capabilities, harness: "fixture-primary" } },
+    readHarnessCapabilities() { return { ...capabilities, goals: false, harness: "fixture-primary" } },
     dispose() {},
   }
 }
 
 describe("WorkspaceRuntime generic connection selection", () => {
+  test("concurrent duplicate resolutions await rejected loser teardown without returning the cached adapter", async () => {
+    const root = await mkdtemp(join(tmpdir(), "workspace-runtime-loser-"))
+    roots.push(root)
+    let created = 0
+    let canonicalDisposed = 0
+    const provider: ConnectionProvider<Record<string, never>> = {
+      providerKey: "fixture",
+      validateConfig: () => ({}),
+      project: () => ({ label: "Fixture", readiness: "ready", capabilities }),
+      resolve: () => ({ config: {} }),
+      createAdapter() {
+        const instance = ++created
+        return {
+          ...adapter(),
+          dispose() {
+            if (instance === 1) { canonicalDisposed++; return }
+            const rejected = Promise.reject(new Error("Loser teardown failed"))
+            void rejected.catch(() => {})
+            return rejected
+          },
+        }
+      },
+    }
+    const target = { workspaceId: "ws-loser", directory: root }
+    const host = createWorkspaceHost({ target, storeRoot: join(root, "store"), connectionProviders: [provider] })
+    const app = new Hono()
+    host.mount(app, { exposure: loopbackWorkspaceRuntimeExposure() })
+    try {
+      await host.apply({ version: 3, mcp: {}, auth: {}, connections: [{
+        connectionId: "fixture-primary", providerKey: "fixture", configRevision: 1, enabled: true, config: {},
+      }], defaultHarness: { kind: "connection", connectionId: "fixture-primary" } })
+      const request = (id: string) => withWorkspaceTarget(target, () => app.request(
+        `http://runtime.test/session?directory=${encodeURIComponent(root)}&connectionId=fixture-primary`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) },
+      ))
+      const responses = await Promise.all([request("one"), request("two")])
+      expect(responses.map((response) => response.status)).toEqual([500, 500])
+      expect(created).toBe(3)
+      expect(canonicalDisposed).toBe(0)
+    } finally { await host.dispose() }
+    expect(canonicalDisposed).toBe(1)
+  })
+
   test("resolves a host-owned secret lease and reports only the public selection", async () => {
     const root = await mkdtemp(join(tmpdir(), "workspace-runtime-provider-"))
     roots.push(root)
@@ -84,7 +128,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     })
     expect(resolvedSecrets).toEqual({ token: "runtime-only" })
     expect(host.detail().harness).toEqual({ kind: "connection", connectionId: "fixture-primary" })
-    host.dispose()
+    await host.dispose()
   })
 
   test("fails closed when a selected connection has unresolved secret references", async () => {
@@ -105,7 +149,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
       defaultHarness: { kind: "connection", connectionId: "acp-primary" },
       auth: {},
     })).rejects.toBeInstanceOf(WorkspaceHarnessUnavailableError)
-    host.dispose()
+    await host.dispose()
   })
 
   test("materializes VM connection secrets from the consent-filtered runtime snapshot", async () => {
@@ -143,7 +187,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
     })
     expect(resolvedSecrets).toEqual({ token: "vm-runtime-secret" })
     expect(JSON.stringify(host.detail())).not.toContain("vm-runtime-secret")
-    host.dispose()
+    await host.dispose()
   })
 
   test("rotates connection adapters when a VM secret lease changes", async () => {
@@ -160,6 +204,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
         const token = resolved.config.token
         return {
           sessionConfigOwner: "runtime" as const,
+          async *executeTurn() {},
           async createSession(_directory, _title, id) {
             createdWith.push(token)
             return { id: id ?? `session-${createdWith.length}` }
@@ -170,7 +215,7 @@ describe("WorkspaceRuntime generic connection selection", () => {
           async getSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
           async updateSessionConfig() { throw new Error("runtime-owned config must not reach the adapter") },
           async getMessages() { return [] },
-          readHarnessCapabilities() { return { ...capabilities, harness: "fixture-primary" } },
+          readHarnessCapabilities() { return { ...capabilities, goals: false, harness: "fixture-primary" } },
           dispose() { disposed.push(token) },
         }
       },
@@ -214,13 +259,13 @@ describe("WorkspaceRuntime generic connection selection", () => {
     expect(second.status, await second.clone().text()).toBe(201)
     expect(createdWith).toEqual(["lease-one", "lease-two"])
     expect(disposed).toContain("lease-one")
-    host.dispose()
+    await host.dispose()
   })
 
   test("leaves default selection unresolved when policy omits it", async () => {
     const host = createWorkspaceHost()
     await host.apply({ version: 3, mcp: {}, connections: [], auth: {} })
     expect(host.detail().harness).toBeUndefined()
-    host.dispose()
+    await host.dispose()
   })
 })

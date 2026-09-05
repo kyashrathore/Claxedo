@@ -5,6 +5,7 @@ import type { WorkspaceCapabilities } from "../capabilities"
 import type { WorkspaceProfile } from "../profile"
 import type { AgentHarnessAdapterHealth } from "@claxedo/agent-sdk-runtime/adapters"
 import type { WorkspaceRuntimeExposure } from "../exposure"
+import type { SessionConfig } from "@claxedo/agent-sdk-runtime"
 
 export type RuntimeConfigApplyStatus = {
   state: "idle" | "applying" | "applied" | "failed"
@@ -57,6 +58,8 @@ export type WorkspaceCheckpointControl = {
 export type WorkspaceHost = {
   mount: (app: Hono, options: WorkspaceHostMountOptions) => void
   hasSession: (sessionId: string) => boolean
+  /** In-process consumers read the same committed configuration as the session API. */
+  getSessionConfig: (sessionId: string) => SessionConfig | undefined
   parentSessionIdFor: (sessionId: string) => string | undefined
   apply: (snapshot: RuntimeSnapshot) => Promise<void>
   detail: () => {
@@ -85,5 +88,5 @@ export type WorkspaceHost = {
   }) => Promise<void>
   unregisterSessionTools: (sessionId: string) => Promise<void>
   checkpoint: WorkspaceCheckpointControl
-  dispose: () => void
+  dispose: () => Promise<void>
 }

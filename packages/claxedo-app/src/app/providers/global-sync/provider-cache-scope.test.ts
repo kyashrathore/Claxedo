@@ -6,12 +6,8 @@ import { normalizeProviderList } from "@/platform/query/provider-list"
 
 const baseUrl = "http://localhost:4096"
 
-const emptyClient = {
-  provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
-}
-
 const readerKey = (scope: string | null, harness: string) =>
-  providerListQuery({ baseUrl, client: emptyClient, directory: scope, harnessType: harness }).queryKey
+  providerListQuery({ baseUrl, directory: scope, harnessType: harness }).queryKey
 
 describe("provider catalog cache ownership", () => {
   test("the central runtime's own catalog is one scope among many", () => {

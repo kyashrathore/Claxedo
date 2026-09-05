@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { decodeHarnessConnectionsCatalog } from "@claxedo/agent-runtime-contract"
 import type { AgentHarnessAdapter } from "./adapter-contract"
 import {
   ConnectionProviderError,
@@ -108,6 +109,9 @@ describe("connection provider registry", () => {
     expect(ref).not.toHaveProperty("providerKey")
     expect(ref).not.toHaveProperty("configRevision")
     expect(ref).not.toHaveProperty("config")
+    expect(decodeHarnessConnectionsCatalog(JSON.parse(JSON.stringify({ status: "supported", connections: [ref] })))).toEqual({
+      status: "supported", connections: [ref],
+    })
   })
 
   test("resolves generic remote ACP without a process command or fake binary", async () => {

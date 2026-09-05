@@ -1,332 +1,13 @@
 /**
- * SPEC: Per-harness message-part rendering matrix
+ * Renderer-only replay of canonical presentation fixtures.
  *
- * PURPOSE — every harness family (external OpenCode/ACP connections,
- * claude-sdk, codex-app-server, cursor-sdk, pi) ultimately streams its own raw event
- * shape into ONE canonical timeline. This spec proves that the timeline's dedicated
- * part renderers (`PART_MAPPING`/`ToolRegistry` in
- * packages/session-ui/src/components/message-part.tsx) are selected correctly no
- * matter which harness produced the part, and that harness-specific translation
- * quirks (name normalization, snapshot dedup, transport sentinels, fake tools) land on
- * the right visual outcome. Every other core-loop spec fixes the harness to
- * `opencode`; this is the one spec that varies it.
- *
- * STATE MODEL — a message's rendered parts live in the client SSE-fed store
- * (`data.store.part[messageID]`), populated by `message.part.updated` /
- * `message.part.delta` events over `/global/event`. Nothing here is harness-specific
- * at the STORE layer — by the time a part reaches the client it is already in the
- * `@opencode-ai/sdk/v2` `Part` shape (text | reasoning | tool | file | compaction |
- * patch | agent | step-*). The harness-specific work happens upstream, OUTSIDE this
- * app, in `@claxedo/agent-event-runtime`'s per-harness adapters
- * (`packages/agent-event-runtime/src/harnesses/{acp,claude,codex,cursor}`) which
- * translate each provider's raw wire events into `AgentRuntimeEvent`s, and the
- * `client-presentation` projection (`.../src/projections/client-presentation/projection.ts`)
- * which turns those into the exact `message.part.updated`/`.../delta` envelopes this
- * spec replays. Nothing in this app re-derives that translation; the client is a pure
- * function of the parts it receives. Fixtures for each harness are GENERATED (not
- * hand-invented) by `e2e/fixtures/generate-harness-fixtures.ts`, which runs the real
- * adapter + projection code over raw payloads harvested from
- * `packages/agent-event-runtime`'s own test suites, and commits the translated output
- * as JSON under `e2e/fixtures/harness-traces/<harness>.json`. This spec's job starts
- * AFTER that translation: replay the committed envelopes through the mock SSE stream
- * (`mock.emit(envelope.payload, envelope.directory)`,
- * `e2e/helpers/mock-runtime.ts`'s `emit` handle) and assert the DOM.
- *
- * ANATOMY (packages/session-ui/src/components/message-part.tsx unless noted) —
- *   `PART_MAPPING["text"|"reasoning"|"tool"|"compaction"|"file"]` — the 5 registered
- *     part-type components (message-part.tsx:1813,1924,1929,2041,2077 — each assigns the
- *     map directly; the exported `registerPartComponent` helper at :1020 still has ZERO
- *     call sites, verified by `grep -rn registerPartComponent`). CORRECTED (2026-07-25):
- *     this entry used to list only 4 and call `file` an unrendered gap — `file` was
- *     registered (and added to `message-timeline.data.ts:539`'s `renderableParts` set) as
- *     part of the same remediation the ADDENDUM below describes, and BEHAVIORS #6 is now
- *     a positive test. `renderable(part)` (message-part.tsx:791) hides a part entirely
- *     unless it is a non-empty text, a reasoning part with summaries ON, an unhidden
- *     tool, OR `PART_MAPPING[part.type]` exists — so `patch`/`agent`/`step-*` part types
- *     (still unregistered) remain silently dropped from the assistant timeline.
- *   `[data-component="text-part"]` / `[data-component="reasoning-part"]` — text and
- *     reasoning parts; reasoning is gated by `showReasoningSummaries`. CORRECTED
- *     (2026-07-25): session-ui's own PROP default is `true`
- *     (`session-turn.tsx:331`, `message-part.tsx:791` — `?? true`), but claxedo-app never
- *     lets that default apply: `message-timeline.tsx:634,1492` always passes
- *     `settings.general.showReasoningSummaries()`, whose default is `false`
- *     (`src/platform/settings/provider.tsx:120`). Reasoning summaries are therefore
- *     OPT-IN, and the reachable default path in this app is the HIDDEN one — the exact
- *     opposite of what this ANATOMY entry used to claim. A test that wants a reasoning
- *     part on screen must flip the setting on first; `enableReasoningSummaries()` below
- *     does it through the real settings UI (the setting is reactive, so already-streamed
- *     reasoning parts appear as soon as the dialog closes).
- *   `[data-component="tool-part-wrapper"]` — wraps every tool part; entirely absent
- *     (not just hidden) while `part.tool === "question"` and
- *     `state.status` is `"pending"`/`"running"` (`hideQuestion`, line ~1494).
- *     `todowrite` tool parts return `null` unconditionally (line ~1492) — never even a
- *     wrapper.
- *   `ToolRegistry` (`register`/`render`, line ~1438) — a plain string->component map
- *     keyed by EXACT, case-sensitive `part.tool`: `read, list, glob, grep, webfetch,
- *     websearch, task, bash, edit, write, apply_patch, todowrite, question, skill`.
- *     Any other `part.tool` string falls back to `GenericTool`
- *     (`packages/session-ui/src/components/basic-tool.tsx`, `icon="wrench"` unless
- *     the row is an MCP operation, which draws `icon="mcp"`; title interpolates
- *     the raw tool string verbatim).
- *   Per-tool DOM (all under `[data-component="tool-part-wrapper"]`):
- *     read/list/glob/grep: `[data-slot="basic-tool-tool-subtitle"]` (path/pattern),
- *       `[data-slot="basic-tool-tool-arg"]` (extra args) — hidden while pending.
- *     webfetch/websearch: `[data-slot="basic-tool-tool-subtitle"]` = literal
- *       url/query, hidden while pending.
- *     bash: `[data-slot="shell-submessage-value"]` = literal `input.command`, hidden
- *       while pending (`ShellSubmessage`).
- *     edit/write/apply_patch(single-file): `[data-slot="message-part-title-filename"]`
- *       = `getFilename(filePath)`, hidden while pending.
- *     apply_patch(multi-file, `metadata.files.length > 1`): renders an Accordion of
- *       `[data-slot="apply-patch-filename"]` rows instead.
- *     task: `[data-component="task-tool-card"]` with
- *       `[data-slot="basic-tool-tool-subtitle"]` = `input.description`. The host's
- *       durable subagent registry associates the tool `callID` with a subagent through
- *       an explicit spawn edge. A ready child Session renders inside an `<a>` trigger;
- *       `transcript: {kind:"none"}` renders an explicit unavailable subtitle and no
- *       navigation control. Provider ids and transcript refs remain opaque identity,
- *       not navigation targets.
- *     question: `[data-component="question-answers"]` with
- *       `[data-slot="question-answer-item"]` rows, rendered ONLY once
- *       `state.metadata.answers.length > 0` (`completed()`, line ~2527) — the outer
- *       wrapper is absent before that per `hideQuestion` above.
- *     skill: title = `input.name` verbatim (no translation) when present.
- *     GenericTool (unknown `tool`): `[data-slot="basic-tool-tool-title"]` contains the
- *       raw tool string; `[data-slot="basic-tool-tool-subtitle"]` = first of
- *       description/query/url/filePath/path/pattern/name in `input`.
- *   `[data-component="compaction-part"] [data-slot="compaction-part-divider"]` — the
- *     `compaction` part-type divider (distinct from `session-turn.tsx`'s own
- *     user-message-scoped `[data-slot="session-turn-compaction"]` divider, which reads
- *     `message.summary`/a `compaction` part on the TRIGGERING USER message, not this
- *     one — see OUT OF SCOPE).
- *
- * BEHAVIORS —
- *   1. Text parts (paced markdown) render per harness, verbatim content, and a
- *      `message.part.updated(text:"")` + N x `message.part.delta` sequence ACCUMULATES
- *      into exactly the concatenated text — once, with no re-appended prefix.
- *      SCOPE CORRECTION (2026-07-25): several tests label this "cumulative-snapshot
- *      dedup". It is not — see the FIXTURE-PRE-BAKING note under HARNESS NOTES. The
- *      snapshot->delta conversion happens UPSTREAM in the adapter; the committed
- *      fixtures already carry post-dedup INCREMENTAL deltas, so what the replay proves is
- *      the client's delta accumulation, not the dedup itself.
- *   2. Reasoning parts render once `settings.general.showReasoningSummaries` is turned
- *      ON. That setting DEFAULTS TO FALSE in this app (provider.tsx:120), so the
- *      out-of-the-box path is the hidden one; the test flips it through the real settings
- *      UI before asserting the `[data-component="reasoning-part"]` renderer — see ANATOMY.
- *   3. Each registered ToolRegistry renderer (read, list, glob, grep, webfetch,
- *      websearch, task, bash, edit, write, apply_patch, skill) renders via its
- *      dedicated component for a part carrying that exact `tool` string.
- *   4. An unregistered `tool` string falls back to `GenericTool` (wrench icon, raw name
- *      in the title) — proven both via a deliberately-unknown name AND via harnesses
- *      whose native (non-ACP) tool names don't happen to match the registry (Claude
- *      SDK's `"Grep"`, Codex app-server's `"command"`, Cursor SDK's `"shell"`).
- *   5. A tool part's `state.status` transitions pending -> running -> completed (or
- *      -> error) and the DOM reflects each stage (pending: no subtitle/detail;
- *      running: same as pending visually for most tools; completed: detail visible;
- *      error: `ToolErrorCard` instead of the tool body).
- *   6. `file`-type parts (image/audio data-url, resource links) on ASSISTANT messages
- *      reach `FilePartDisplay` (`PART_MAPPING["file"]`, message-part.tsx:2077): an image
- *      renders an inline `img[data-slot="file-part-image"]`, audio an
- *      `audio[data-slot="file-part-audio"]`, and anything else a resource-link row
- *      (`a[data-slot="file-part-link"]` + `[data-slot="file-part-link-name"]`).
- *      CORRECTED (2026-07-25): this entry used to read "NO renderer in this app today —
- *      REAL GAP, not exercised as a pass". That gap was closed (see the ADDENDUM); the
- *      test below is a positive assertion, not an absence assertion.
- *   7. A `compaction`-type part renders `MessageDivider` inline in the assistant
- *      timeline.
- *   8. A `session.diff` SSE event is consumed into a separate diff query cache
- *      (`directory-event-projector.ts`), NOT into `data.store.part`/`message` — it
- *      must never create a phantom timeline row.
- *   9. `todowrite` tool parts NEVER render a tool row, on every harness (Claude
- *      SDK intercepts `TodoWrite` before any tool-start; Cursor SDK intercepts
- *      `updateTodos`; every ACP family intercepts its title/name variant) — only
- *      `todo.updated` reaches the client, which this spec proves does not add a row
- *      (the todo dock itself is `core-docks`' territory).
- *  10. `question` tool parts are absent from the DOM while pending, and render
- *      `[data-component="question-answers"]` once `state.metadata.answers` exists.
- *  11. Codex's proposed-plan stream (`item/plan/delta` / `item/completed(type:"plan")`)
- *      renders as ordinary paced text — deliberately no plan part/dock exists.
- *  12. Codex ACP's fake "Permission" tool_call becomes a `permission.asked` event and
- *      renders `SessionPermissionDock`
- *      (`src/pages/session/composer/session-permission-dock.tsx`,
- *      `[data-slot="permission-header-title"]`) — NEVER a `[data-component=
- *      "tool-part-wrapper"]` row.
- *  13. Cursor ACP's cumulative full-text snapshot chunks (raw `"A"` then `"A1"`,
- *      `generate-harness-fixtures.ts:317-318`) are de-duplicated by the ACP adapter into
- *      incremental deltas (`'A'`, `'1'`) BEFORE they ever reach this app — the committed
- *      `cursor-acp.json` carries the deltas, not the snapshots (inspect it: two
- *      `message.part.delta` envelopes). What the replay proves is therefore the CLIENT
- *      half: those deltas accumulate to `"A1"` exactly once, with no `"AA1"`. The dedup
- *      itself is an `agent-event-runtime` concern and is covered by that package's own
- *      tests — see the FIXTURE-PRE-BAKING note under HARNESS NOTES.
- *  14. Cursor ACP's `"Error: RetriableError: WritableIterable is closed"` transport
- *      tail is swallowed. CORRECTED (2026-07-25): the swallow happens UPSTREAM, in
- *      `isCursorWritableIterableTail`
- *      (`packages/agent-event-runtime/src/harnesses/acp/translate-session-update.ts:152,
- *      216-223`, which returns `null` for that exact chunk) — NOT in this app, which
- *      faithfully renders whatever parts it is handed. The generator DOES feed the raw
- *      chunk through the real adapter (`generate-harness-fixtures.ts:324`), so the
- *      discriminating evidence is that the TRANSLATED trace this spec replays contains no
- *      trace of the sentinel at all. The test asserts that on the loaded trace; the old
- *      `expect(page.getByText("WritableIterable is closed")).toHaveCount(0)` was VACUOUS
- *      (the string is absent from the fixture, so it also passed on a blank page). It is
- *      kept only as a corollary.
- *  15. Cross-harness subagent task parts resolve only through explicit host-owned spawn
- *      edges. External OpenCode, Claude native/ACP, Codex native, valid Cursor native,
- *      and model-backed Pi foreground/background rows progress Working -> Completed and
- *      open a read-only child transcript without replacing the parent. Codex ACP,
- *      Cursor ACP, and invalid Cursor native rows say `Transcript unavailable` and
- *      expose no navigation control. Bare Pi creates no synthetic task card, and an
- *      unauthorized parent-scoped runtime stream is rejected before subscription.
- *      Wide layouts preserve parent and child panes together; a narrow layout shows
- *      explicit read-only copy instead of a composer, and Back restores focus to the
- *      originating spawn card.
- *  16. Per-client tool NAME normalization: Cursor/Claude/Codex ACP's `"Terminal"`
- *      title -> `bash`. SCOPE CORRECTION (2026-07-25): that mapping is performed
- *      UPSTREAM by `harnesses/acp/registry.ts`, and the committed ACP fixtures already
- *      carry the NORMALIZED names (`cursor-acp.json`/`claude-acp.json` contain
- *      `part.tool: "bash"`, `"read"`, `"task"`; `codex-acp.json` contains `"edit"` — no
- *      `"Terminal"`/`"Read File"`/`"Update TODOs"` string survives into the fixture).
- *      What the replay proves is the OTHER half — that a part carrying the canonical
- *      lowercase name reaches the matching dedicated ToolRegistry renderer — not the
- *      normalization step. See the FIXTURE-PRE-BAKING note under HARNESS NOTES.
- *      A companion, source-verified FINDING (not a failure — pinned
- *      as real, documented behavior): Codex ACP's `apply_patch` tool_call resolves to
- *      the generic `edit` renderer, not the dedicated `apply_patch` one, because
- *      `harnesses/acp/state.ts`'s `pick()` unconditionally overwrites
- *      `short = "edit"` whenever `intent === "edit"` (line ~496), AFTER the registry
- *      already set `short: "apply_patch"` — the dedicated `apply_patch` renderer is
- *      only reachable via opencode's own native `apply_patch` tool name, proven
- *      separately in this spec's opencode-native scenario.
- *  17. `runtime.diagnostic` events (unmapped provider events) never add a timeline row
- *      of any kind.
- *
- * INVARIANTS — inherits `e2e/INVARIANTS.md` #1 (harness ownership — not this spec's
- *   concern, see OUT OF SCOPE) and #2 (completed content never hidden by stale busy —
- *   every scenario here injects parts onto an ALREADY-settled assistant message, so
- *   this invariant is implicitly exercised on every send).
- *
- *   DECLARED DEVIATION from `e2e/INVARIANTS.md` "Authoring rules" #2 (per that file's
- *   "a spec that needs to violate one must say so explicitly in its own SPEC block's
- *   INVARIANTS section, with a reason", INVARIANTS.md:60-61) — added 2026-07-25, because
- *   this deviation was previously undeclared:
- *     Rule #2 bans `page.locator('[data-slot="session-turn-assistant-content"]')
- *     .getByText(...)` as a substitute for the `expectAssistantReplyVisible` oracle. This
- *     spec DOES use that shape (via `assistantContent()` =
- *     `SELECTORS.assistantContentVisible`, the oracle module's own exported selector)
- *     for essentially every fixture assertion below.
- *     WHY THE ORACLE DOES NOT APPLY: `expectAssistantReplyVisible(page, text)`
- *     (`e2e/helpers/turn-oracle.ts:153`) is a REPLY-TEXT oracle. It asserts that a
- *     *turn-level assistant reply* is visible, and its whole point is catching the class
- *     of bug where a reply never renders. Nothing this spec asserts is a reply: the
- *     subjects are per-PART renderer outputs — a tool subtitle
- *     (`[data-slot="basic-tool-tool-subtitle"]`), a shell command value, a filename slot,
- *     a task card, a reasoning accordion's body, a compaction divider, the ABSENCE of a
- *     `todowrite` row. The oracle has no vocabulary for any of these, and routing them
- *     through it would either assert the wrong thing or require widening the shared
- *     helper (a change this spec's phase forbids).
- *     WHAT THIS SPEC STILL OWES THE ORACLE: the one genuine assistant REPLY in each
- *     scenario — the priming turn's `ack 1: <prompt>` — IS asserted through
- *     `expectAssistantReplyVisible` (`primeHarness`, line ~532 below), so the
- *     "reply never rendered" failure mode the rule exists to catch is still covered
- *     before any part-level assertion runs. Part-level assertions are additionally
- *     scoped to `assistantContentVisible` (the `:not([aria-hidden="true"])` variant), so
- *     they cannot pass against an aria-hidden/offscreen duplicate row.
- *     REMEDIATION PATH (not taken here): extend `turn-oracle.ts` with a part-level
- *     oracle (e.g. `expectAssistantPartVisible(page, {slot, text})`) and migrate this
- *     spec onto it — a shared-helper change, out of scope for this pass.
- *
- *   Spec-local invariant: the
- *   rendering matrix is a pure function of `part.type`/`part.tool`/`state.status` —
- *   it must not depend on which harness produced the part once the part has reached
- *   the client store (this is what makes one shared PART_MAPPING/ToolRegistry safe
- *   across 8 harness families).
- *
- * HARNESS NOTES —
- *   FIXTURE PRE-BAKING (added 2026-07-25; the single most important limit on what this
- *   spec can prove). This spec replays TRANSLATED envelopes — the output of the real
- *   adapter + `client-presentation` projection, as committed under
- *   `e2e/fixtures/harness-traces/`. Every transformation that happens INSIDE that
- *   translation is therefore already applied in the committed JSON, and replaying it
- *   cannot re-prove it. Concretely, verified by inspecting the fixture files:
- *     - SNAPSHOT DEDUP (behaviors 1/13): the raw inputs in `generate-harness-fixtures.ts`
- *       are cumulative snapshots (`"A"`/`"A1"` at :317-318; `"Hel"`/`"Hello there"` at
- *       :350-351; `"Building the "`/`"Building the feature now."` at :155,160). The
- *       committed fixtures contain the POST-dedup INCREMENTAL deltas (`'A'`+`'1'`,
- *       `'Hel'`+`'lo there'`, `'Building the '`+`'feature now.'`). The replay proves the
- *       client accumulates deltas without re-appending a prefix; it does NOT prove the
- *       adapter's snapshot dedup.
- *     - TOOL-NAME NORMALIZATION (behavior 16): the committed ACP fixtures carry only
- *       canonical lowercase `part.tool` values (`bash`/`read`/`task`/`edit`) — the raw
- *       `"Terminal"`/`"Read File"`/`"Update TODOs"` titles never appear. The replay
- *       proves canonical-name -> renderer dispatch; it does NOT prove the registry's
- *       name mapping.
- *     - TRANSPORT-SENTINEL SWALLOW (behavior 14): the sentinel is absent from the
- *       fixture entirely, so no DOM assertion about it can discriminate anything (see
- *       behavior 14 for what the test asserts instead).
- *   Closing these gaps requires either regenerating fixtures with pre-translation
- *   payloads or asserting in `packages/agent-event-runtime`'s own suite (where
- *   `harnesses/acp/event-translator.test.ts` already covers the sentinel and the
- *   snapshot->delta conversion). Both are OUT OF SCOPE for this spec, which is forbidden
- *   from editing fixtures.
- *
- *   ACP families (claude-acp/codex-acp/cursor-acp) route every tool_call
- *   through `harnesses/acp/registry.ts`'s per-client rule table, which assigns a
- *   canonical lowercase `short` name (behavior 16) — this is why ACP tool names are
- *   consistently normalized. Native SDK families (claude-sdk/codex-app-server/
- *   cursor-sdk) have NO such registry — `projection.ts` passes the provider's raw tool
- *   name straight through (verified: zero `toLowerCase()`/name-map calls in
- *   `projections/client-presentation/projection.ts` for tool names), so their builtin
- *   tools (Claude's `"Grep"`/`"Task"`, Codex's `"command"`/`"file-change"`, Cursor's
- *   `"shell"`) mostly fall to `GenericTool` — this is real, current behavior, not a
- *   bug this spec works around. `opencode` (native) and `pi` have no
- *   `agent-event-runtime` adapter at all (confirmed: no `harnesses/opencode` or
- *   `harnesses/pi` directory exists) — their SSE events already ARE the target
- *   `Part` shape, so their fixture is authored directly as that shape (see
- *   `generate-harness-fixtures.ts`'s documented exception) rather than derived from a
- *   translation step; `pi`'s renderer scenario is deliberately reduced (text + one
- *   tool) since it shares the identical native rendering path. Subagent scenarios below
- *   extend the shared mock with host-shaped `GET /session/:parent/subagents` rows,
- *   child Session/message endpoints, and canonical runtime-event envelopes. Tool-to-
- *   child correlation therefore uses the production contract: explicit
- *   `toolCallEdges`, a host-minted `childSessionId`, and no fixture-injected session
- *   metadata or title matching.
- *
- * OUT OF SCOPE — harness selection/ownership/model/effort UI
- *   (`core-harness-ownership-local`/`-cloud`); the permission/question/todo DOCK
- *   interaction (Allow/Deny, answering, dock open/collapse — `core-docks` owns the
- *   dock; this spec only proves Codex's fake-Permission-tool routing reaches the dock
- *   component at all, behavior 12); the per-turn diff ACCORDION driven by
- *   `message.summary.diffs` and `session-turn.tsx`'s own compaction divider
- *   (`core-timeline-rendering-scroll`); tool-part expand/collapse defaults
- *   (`core-timeline-rendering-scroll`). CORRECTED (2026-07-25): `file`-type assistant
- *   parts are NO LONGER out of scope and are no longer "asserted ABSENT (a real gap)" —
- *   behavior 6 gives them positive rendering coverage. Still genuinely uncovered:
- *   `patch`/`agent`/`step-*` part types, which have no registered component.
- *
- * REMEDIATION ADDENDUM (2026-07-10, verified-green pass) — two real, source-verified
- * rendering behaviors this file's tests now account for, not previously documented
- * above:
- *   - Consecutive "context" tools (`read`/`glob`/`grep`/`list` — `CONTEXT_GROUP_TOOLS`,
- *     message-part.tsx ~line 614) render grouped under ONE `ContextToolGroup`
- *     collapsible (`[data-component="context-tool-group-trigger"]`/`[data-component=
- *     "context-tool-group-list"]`, ~line 1057), closed by default, EVEN for a single
- *     tool — an "Explored N read, N search, N list" summary line, not each tool's own
- *     always-visible subtitle. Tests that need a grouped tool's subtitle/arg click the
- *     trigger open first.
- *   - `ToolErrorCard` (packages/session-ui/src/components/tool-error-card.tsx) is ALSO
- *     closed by default (`defaultOpen ?? false`) — a tool part's `state.error` detail
- *     text is not in a visible DOM node until its own `Collapsible.Trigger` is expanded.
- *   The assistant-timeline `compaction` divider (behavior 7), the claude-sdk `reasoning`
- *   part (behavior 2/17), and assistant `file`-type parts (behavior 6) were previously
- *   deferred; live store inspection root-caused all three (compaction/file dropped in the
- *   raw-Part<->UIMessage projection; reasoning gated behind the opt-in
- *   `showReasoningSummaries` setting) and they are now covered by real tests — see each
- *   test's inline note.
- *   `e2e/fixtures/harness-traces/pi.json` carries its tool envelope — 4 envelopes:
- *   a text part, its delta, a reasoning part, and a `completed` `read` tool part — which
- *   the "pi — one dedicated tool renderer (config.json subtitle)" test below asserts
- *   against directly.
+ * These tests inject already-projected message parts, not raw provider traffic.
+ * They verify timeline renderers, lifecycle updates, and dock presentation, but
+ * do not prove adapter translation, authentication, or external connectivity.
+ * Fixture names describe provenance, not current provider capabilities: question
+ * and live subagent fixtures exercise generic rendering even when the external
+ * OpenCode adapter does not advertise those features. Protocol coverage belongs
+ * to the adapter tests in packages/opencode-server-adapter.
  */
 import { expect, test, type Page } from "@playwright/test"
 import { readFileSync } from "node:fs"
@@ -631,7 +312,7 @@ type SubagentHarnessCase = {
 }
 
 const subagentHarnessCases: SubagentHarnessCase[] = [
-  { name: "External OpenCode", harness: "opencode", providerKind: "opencode", providerId: "ses-child-opencode", transcript: { kind: "live", ref: "ses-child-opencode" }, openable: true },
+  { name: "Canonical live transcript fixture", harness: "opencode", providerKind: "opencode", providerId: "ses-child-opencode", transcript: { kind: "live", ref: "ses-child-opencode" }, openable: true },
   { name: "Claude native", harness: "claude-sdk", providerKind: "claude-agent", providerId: "agent-42", transcript: { kind: "messages", ref: "agent-42" }, openable: true },
   { name: "Claude ACP", harness: "claude-acp", transcript: { kind: "messages", ref: "acp:agent-42" }, openable: true },
   { name: "Codex native", harness: "codex-app-server", providerKind: "codex", providerId: "thread-child-1", transcript: { kind: "live", ref: "thread-child-1" }, openable: true },
@@ -856,7 +537,7 @@ async function revealTurn(page: Page) {
 }
 
 test.describe("core harness rendering matrix @core", () => {
-  test("external OpenCode connection — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill — behaviors 1,3", async ({ page }) => {
+  test("renderer-only canonical fixture — dedicated ToolRegistry renderers for read/list/glob/webfetch/websearch/write/skill — behaviors 1,3", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -902,7 +583,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-slot="basic-tool-tool-title"]').filter({ hasText: /pdf/i })).toBeVisible()
   })
 
-  test("external OpenCode connection — apply_patch dedicated renderer, GenericTool fallback, compaction divider — behaviors 3,4,7,16", async ({ page }) => {
+  test("renderer-only canonical fixture — apply_patch dedicated renderer, GenericTool fallback, compaction divider — behaviors 3,4,7,16", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -934,7 +615,7 @@ test.describe("core harness rendering matrix @core", () => {
   // and "file" gaps — the part never entered the TanStack UIMessage and thus never
   // reached `getMsgParts`/`renderablePart`/`PART_MAPPING["compaction"]`. Fixed by adding
   // the lossless compaction round-trip to the projection (both directions).
-  test("external OpenCode connection — compaction divider renders on the assistant timeline — behavior 7", async ({ page }) => {
+  test("renderer-only canonical fixture — compaction divider renders on the assistant timeline — behavior 7", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo)
@@ -949,7 +630,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-component="compaction-part"] [data-slot="compaction-part-divider"]')).toBeVisible({ timeout: 45_000 })
   })
 
-  test("external OpenCode connection — question tool hidden while pending, visible once answered — behavior 10", async ({ page }) => {
+  test("renderer-only canonical fixture — question tool hidden while pending, visible once answered — behavior 10", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const trace = loadTrace("opencode", assistantId)
     await replay(mock, dir, trace, assistantInfo) // ends with the question part PENDING
@@ -980,7 +661,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.locator('[data-slot="answer-text"]', { hasText: "staging" })).toBeVisible()
   })
 
-  test("external OpenCode connection — todowrite never renders a tool row — behavior 9", async ({ page }) => {
+  test("renderer-only canonical fixture — todowrite never renders a tool row — behavior 9", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"]').count()
@@ -997,7 +678,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect.poll(async () => content.locator('[data-component="tool-part-wrapper"]').count(), { timeout: 20_000 }).toBe(before)
   })
 
-  test("external OpenCode connection — tool lifecycle pending -> running -> completed -> error — behavior 5", async ({ page }) => {
+  test("renderer-only canonical fixture — tool lifecycle pending -> running -> completed -> error — behavior 5", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const fixture = loadFixtureFile("opencode", assistantId) as { lifecycle: Record<"pending" | "running" | "completed" | "error", Envelope> }
     const content = page.locator(assistantContent())
@@ -1025,7 +706,7 @@ test.describe("core harness rendering matrix @core", () => {
     await expect(content.getByText("exit code 1")).toBeVisible({ timeout: 30_000 })
   })
 
-  test("external OpenCode connection — session.diff routes to the diff cache, never a phantom message row — behavior 8", async ({ page }) => {
+  test("renderer-only canonical fixture — session.diff routes to the diff cache, never a phantom message row — behavior 8", async ({ page }) => {
     const { mock, dir, assistantId, assistantInfo } = await primeHarness(page, "opencode")
     const content = page.locator(assistantContent())
     const before = await content.locator('[data-component="tool-part-wrapper"], [data-component="text-part"], [data-component="reasoning-part"]').count()
@@ -1387,7 +1068,7 @@ test.describe("core harness rendering matrix @core", () => {
   test("subagents — narrow child surface is read-only and returns focus to its spawn card — behavior 15", async ({ page }) => {
     test.slow()
     await page.setViewportSize({ width: 700, height: 900 })
-    const input = subagentHarnessCases.find((item) => item.name === "External OpenCode")!
+    const input = subagentHarnessCases.find((item) => item.name === "Canonical live transcript fixture")!
     const scenario = subagentScenario(input)
     const primed = await primeHarness(page, input.harness, scenario.fixture)
     await replay(

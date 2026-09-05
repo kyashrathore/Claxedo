@@ -71,12 +71,8 @@
  *     through `PUT /api/claxedo/credentials` (`claxedoCredentialRequest`, see
  *     `src/utils/credential-request.ts`) for API-key and OAuth-callback via the
  *     SDK `provider.oauth.*` routes; disconnect issues `DELETE
- *     /api/claxedo/credentials/provider/:id`. A CONFIG-declared row has no
- *     credential behind it, so it disconnects through `PATCH
- *     /api/wr/provider-config?harness=<h>&directory=<scope>` — the workspace
- *     runtime's own `disabled_providers`, which the same scoped `GET /provider`
- *     is then filtered by. Custom providers additionally write `provider.<id>`
- *     into global config.
+ *     /api/claxedo/credentials/provider/:id`. Config-declared rows are managed
+ *     by the connected harness and offer no credential-disconnect action.
  *   Connections: `createConnectionsStore`/`createConnectFlow`
  *     (`src/components/settings-connections-core.ts`) own a small state
  *     machine (`"form" | "submitting" | "confirm-replace" | "oauth-waiting" |
@@ -418,9 +414,10 @@ function slug(value: string) {
   return Buffer.from(value, "utf-8").toString("base64").replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "")
 }
 
-function corsHeaders() {
+function corsHeaders(route: import("@playwright/test").Route) {
   return {
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": route.request().headers().origin ?? new URL(route.request().url()).origin,
+    "Access-Control-Allow-Credentials": "true",
     "Access-Control-Allow-Headers": "authorization,content-type,accept",
     "Access-Control-Allow-Methods": "GET,POST,PUT,PATCH,DELETE,OPTIONS",
   }
@@ -430,7 +427,7 @@ async function json(route: import("@playwright/test").Route, body: unknown, stat
   await route.fulfill({
     status,
     contentType: "application/json",
-    headers: corsHeaders(),
+    headers: corsHeaders(route),
     body: JSON.stringify(body),
   })
 }
@@ -451,7 +448,7 @@ async function json(route: import("@playwright/test").Route, body: unknown, stat
 function withCors(handler: (route: import("@playwright/test").Route) => Promise<void> | void) {
   return async (route: import("@playwright/test").Route) => {
     if (route.request().method() === "OPTIONS") {
-      await route.fulfill({ status: 204, headers: corsHeaders() })
+      await route.fulfill({ status: 204, headers: corsHeaders(route) })
       return
     }
     await handler(route)
@@ -705,12 +702,6 @@ type ProviderFixture = {
 async function mockProviderCatalog(page: Page, input: {
   connected: ProviderFixture[]
   popular: ProviderFixture[]
-  /**
-   * The workspace runtime's own `disabled_providers`, when the test writes it.
-   * The engine filters its connected list by exactly this, so the catalog read
-   * below does too — that is how a scoped disconnect becomes visible.
-   */
-  disabled?: () => readonly string[]
 }) {
   const all = [...input.connected, ...input.popular]
   const fullCatalog = {
@@ -748,10 +739,7 @@ async function mockProviderCatalog(page: Page, input: {
   // catalog comes from: `providerListQuery` reads that scoped route, and
   // `?provider=<id>` is its detail form. The index shape below is what the real
   // route answers.
-  const connectedNow = () => {
-    const disabled = new Set(input.disabled?.() ?? [])
-    return fullCatalog.connected.filter((id) => !disabled.has(id))
-  }
+  const connectedNow = () => fullCatalog.connected
   const fulfillProvider = (route: Parameters<Parameters<Page["route"]>[1]>[0]) => {
     if (route.request().method() !== "GET" && route.request().resourceType() !== "fetch" && route.request().resourceType() !== "xhr") {
       return route.continue()
@@ -768,8 +756,7 @@ async function mockProviderCatalog(page: Page, input: {
   }
   // Register both shapes last so they beat mock-runtime's `/provider` stubs
   // (Playwright tries the most recently registered matching route first).
-  await page.route("**/provider", fulfillProvider)
-  await page.route("**/provider?**", fulfillProvider)
+  await page.route("**/api/claxedo/agent-config/providers?**", fulfillProvider)
 }
 
 async function mockAuthAndGlobalConfigRoutes(page: Page, hits: { authDelete: string[]; configPatch: unknown[] }) {
@@ -881,7 +868,7 @@ function mockIntegrations(
           return json(route, { ok: true })
         }
 
-        return route.fulfill({ status: 404, contentType: "application/json", headers: corsHeaders(), body: "{}" })
+        return route.fulfill({ status: 404, contentType: "application/json", headers: corsHeaders(route), body: "{}" })
         }),
       )
     },
@@ -928,7 +915,7 @@ function mockSandboxDrivers(page: Page, initial: { default_driver: string; drive
           state = { ...state, drivers: state.drivers.map((p) => (p.id === driverId ? { ...p, configured: false } : p)) }
           return json(route, { ok: true })
         }
-        return route.fulfill({ status: 404, contentType: "application/json", headers: corsHeaders(), body: "{}" })
+        return route.fulfill({ status: 404, contentType: "application/json", headers: corsHeaders(route), body: "{}" })
         }),
       )
       // The Sandbox tab's Network Policy section (`network-policy.tsx`) fires its
@@ -1418,6 +1405,8 @@ test.describe("core settings + auth @core", () => {
       await selectTab(page, "providers")
 
       const harnessSection = page.locator('[data-component="harness-providers-section"]')
+      await page.locator('[data-action="settings-scope-harness"]').click()
+      await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       await expect(harnessSection.getByText("Anthropic")).toBeVisible()
       const row = harnessSection.locator("div.border-b").filter({ hasText: "Anthropic" })
       await row.getByRole("button", { name: "Connect" }).click()
@@ -1450,6 +1439,8 @@ test.describe("core settings + auth @core", () => {
       await selectTab(page, "providers")
 
       const harnessSection = page.locator('[data-component="harness-providers-section"]')
+      await page.locator('[data-action="settings-scope-harness"]').click()
+      await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       const envRow = harnessSection.locator('[data-provider="anthropic"]')
       await expect(envRow).toHaveCount(1)
       await expect(envRow.getByText("Environment", { exact: true })).toBeVisible()
@@ -1467,78 +1458,36 @@ test.describe("core settings + auth @core", () => {
       await expect(page.getByText("OpenAI disconnected")).toBeVisible()
     })
 
-    test("config custom provider Disconnect disables it in the scoped provider config, not through auth or a central global — behavior 14b", async ({ page }) => {
-      const runtime = await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
+    test("configuration-owned providers do not advertise unsupported disconnect writes", async ({ page }) => {
+      await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockProviderCatalog(page, {
-        connected: [{ id: "clinepass-2", name: "Cline pass 2", source: "config" }],
-        popular: [],
-        // The scoped catalog read is derived from the scoped config write, the
-        // way the engine derives its connected list from `disabled_providers`.
-        disabled: () => runtime.providerConfig.disabled(),
+        connected: [{ id: "clinepass-2", name: "Cline pass 2", source: "config" }], popular: [],
       })
-      const credHits = { put: [] as unknown[], delete: [] as string[] }
-      await mockCredentialRoutes(page, credHits)
-      // Records any central `PATCH /global/config`; the assertion below expects none.
+      const credentialHits = { put: [] as unknown[], delete: [] as string[] }
+      await mockCredentialRoutes(page, credentialHits)
       const authHits = { authDelete: [] as string[], configPatch: [] as unknown[] }
       await mockAuthAndGlobalConfigRoutes(page, authHits)
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "providers")
-
-      const section = page.locator('[data-component="harness-providers-section"]')
-      const row = section.locator('[data-provider="clinepass-2"]')
+      const row = page.locator('[data-component="harness-providers-section"] [data-provider="clinepass-2"]')
+      await page.locator('[data-action="settings-scope-harness"]').click()
+      await page.locator('[data-slot="select-select-item"][data-key="%7B%22kind%22%3A%22native%22%2C%22harnessId%22%3A%22pi%22%7D"]').click()
       await expect(row.getByText("Config", { exact: true })).toBeVisible()
-      await row.getByRole("button", { name: "Disconnect" }).click()
-
-      await expect.poll(() => runtime.providerConfig.requests.length, { timeout: 10_000 }).toBe(1)
-      // The write names the (workspace, harness) the scope selector resolved —
-      // the same pair `GET /provider` is read for — and carries one provider.
-      expect(runtime.providerConfig.requests[0]).toMatchObject({
-        harness: "opencode",
-        directory: DIR,
-        body: { provider: "clinepass-2", disabled: true },
-      })
-      // ...and it landed in the scoped config the runtime owns.
-      expect(runtime.providerConfig.disabled()).toEqual(["clinepass-2"])
-      expect(authHits.configPatch).toEqual([])
-      expect(authHits.authDelete).toEqual([])
-      expect(credHits.delete).toEqual([])
-      await expect(page.getByText("Cline pass 2 disconnected")).toBeVisible()
-      // The refetched scoped catalog no longer reports it connected, so the row
-      // offers Connect rather than Disconnect.
       await expect(row.getByRole("button", { name: "Disconnect" })).toHaveCount(0)
-      await expect(row.getByRole("button", { name: "Connect" })).toBeVisible()
+      expect(authHits).toEqual({ authDelete: [], configPatch: [] })
+      expect(credentialHits.delete).toEqual([])
     })
 
-    test("custom provider: submitting with an empty Provider ID shows an inline error and sends nothing — behavior 15", async ({ page }) => {
+    test("provider settings do not offer the removed embedded provider registry", async ({ page }) => {
       await installMockRuntime(page, { dir: DIR, sessionId: SESSION_ID })
       await seedProject(page, DIR)
       await mockProviderCatalog(page, { connected: [], popular: [] })
-      const credHits = { put: [] as unknown[], delete: [] as string[] }
-      await mockCredentialRoutes(page, credHits)
-      let configPatchCount = 0
-      await page.route("**/config", (route) => {
-        if (route.request().method() === "PATCH") configPatchCount += 1
-        return route.continue()
-      })
       await openWorkbench(page, DIR)
       await openSettings(page)
       await selectTab(page, "providers")
-
-      // Scoped to the custom-provider row: the Popular-providers list always
-      // renders its own always-on "opencode" promo entry (independent of this
-      // test's empty `popular` fixture) with its own "Connect" button, so an
-      // unscoped `getByRole("button", {name: "Connect"})` is ambiguous (strict
-      // mode violation, 2 matches).
-      await page.locator('[data-component="custom-provider-section"]').getByRole("button", { name: "Connect" }).click()
-      const dialog = page.locator('[data-slot="dialog-container"]').last()
-      await expect(dialog.getByText("Custom provider")).toBeVisible()
-      await dialog.getByRole("button", { name: "Submit" }).click()
-
-      await expect(dialog.getByText("Provider ID is required")).toBeVisible()
-      expect(credHits.put.length).toBe(0)
-      expect(configPatchCount).toBe(0)
+      await expect(page.locator('[data-component="custom-provider-section"]')).toHaveCount(0)
     })
   })
 
@@ -2129,7 +2078,7 @@ test.describe("core settings + auth @core", () => {
           route.fulfill({
             status: 401,
             contentType: "application/json",
-            headers: corsHeaders(),
+            headers: corsHeaders(route),
             body: JSON.stringify({ error: { message: "The browser session has expired." } }),
           }),
         ),

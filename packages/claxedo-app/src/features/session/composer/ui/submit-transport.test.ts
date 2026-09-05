@@ -17,7 +17,12 @@ describe("submit transport adapter", () => {
     queryClient.clear()
   })
 
-  const createAdapter = (response: Response | ((input: string | URL | Request, init?: RequestInit) => Response | Promise<Response>) = ((_input, init) => Response.json(JSON.parse(String(init?.body))))) =>
+  const createAdapter = (
+    response: Response | ((input: string | URL | Request, init?: RequestInit) => Response | Promise<Response>) = (
+      _input,
+      init,
+    ) => Response.json(JSON.parse(String(init?.body))),
+  ) =>
     createSubmitTransportAdapter({
       serverUrl: () => "https://control.example",
       signedControlPlane: () => false,
@@ -33,7 +38,6 @@ describe("submit transport adapter", () => {
         })
         return typeof response === "function" ? response(input, init) : response.clone()
       },
-      config: undefined,
       createClient: () => ({
         session: {
           get: async () => ({}),
@@ -42,42 +46,48 @@ describe("submit transport adapter", () => {
         },
       }),
       showToast: (toast) => toasts.push(toast),
-      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
       text: {
         configSaveFailedTitle: "Could not save session config",
       },
     })
 
   test("derives cache refresh backing from canonical signed workspace identity", () => {
-    expect(submitWorkspaceBacking({
-      workspaceId: "ws_explicit",
-      workspaceKind: "user-hosted",
-    })).toEqual({ workspaceId: "ws_explicit", kind: "user-hosted" })
+    expect(
+      submitWorkspaceBacking({
+        workspaceId: "ws_explicit",
+        workspaceKind: "user-hosted",
+      }),
+    ).toEqual({ workspaceId: "ws_explicit", kind: "user-hosted" })
 
-    expect(submitWorkspaceBacking({
-      sessionRef: {
-        sessionId: "ses_1",
-        host: "workspace",
-        toolSandbox: {
-          kind: "workspace",
-          workspaceId: "ws_ref",
-          hosting: "cloud",
-          hostId: "host_1",
+    expect(
+      submitWorkspaceBacking({
+        sessionRef: {
+          sessionId: "ses_1",
+          host: "workspace",
+          toolSandbox: {
+            kind: "workspace",
+            workspaceId: "ws_ref",
+            hosting: "cloud",
+            hostId: "host_1",
+          },
         },
-      },
-      workspaceId: "ws_explicit",
-      workspaceKind: "user-hosted",
-    })).toEqual({ workspaceId: "ws_ref", kind: "cloud", hostId: "host_1" })
+        workspaceId: "ws_explicit",
+        workspaceKind: "user-hosted",
+      }),
+    ).toEqual({ workspaceId: "ws_ref", kind: "cloud", hostId: "host_1" })
   })
 
   test("does not synthesize cache refresh backing for local or partial identity", () => {
-    expect(submitWorkspaceBacking({
-      sessionRef: {
-        sessionId: "ses_local",
-        host: "workspace",
-        toolSandbox: { kind: "local", cwd: "/repo/main" },
-      },
-    })).toBeUndefined()
+    expect(
+      submitWorkspaceBacking({
+        sessionRef: {
+          sessionId: "ses_local",
+          host: "workspace",
+          toolSandbox: { kind: "local", cwd: "/repo/main" },
+        },
+      }),
+    ).toBeUndefined()
     expect(submitWorkspaceBacking({ workspaceId: "ws_partial" })).toBeUndefined()
     expect(submitWorkspaceBacking({ workspaceKind: "cloud" })).toBeUndefined()
   })
@@ -102,69 +112,71 @@ describe("submit transport adapter", () => {
 
     expect(calls).toHaveLength(1)
     expect(calls[0]).toMatchObject({
-      url: "https://control.example/session/session-1/config?directory=%2Frepo%2Fmain&connectionId=external-opencode",
+      url: "https://control.example/session/session-1/config?directory=%2Frepo%2Fmain",
       method: "PATCH",
     })
     expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
-      harness: { id: "opencode", access: "native" },
+      harness: { id: "external-opencode", access: "connection" },
       agent: "review",
       model: { providerID: "provider", modelID: "model" },
     })
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
-      sessionID: "session-1",
-      directory: "/repo/main",
-      serverUrl: "https://control.example",
-    }))).toEqual(JSON.parse(calls[0]?.body ?? "{}"))
+    expect(
+      queryClient.getQueryData(
+        sessionConfigRawQueryKey({
+          sessionID: "session-1",
+          directory: "/repo/main",
+          serverUrl: "https://control.example",
+        }),
+      ),
+    ).toEqual(JSON.parse(calls[0]?.body ?? "{}"))
   })
 
   test("session config PATCH sends the canonical harness identity for every harness key", async () => {
     const adapter = createAdapter()
 
-    // An operator ACP connection: the app key is `acp:<slug>`, which the
-    // runtime's `normalizeHarnessIdentity` only accepts as `{ id, access }`.
-    // Sending `{ type: "acp:claude" }` made it drop the harness silently.
     await adapter.saveSessionConfig({
       sessionID: "session-acp",
       directory: "/repo/main",
-      harnessType: "acp:claude",
+      harnessType: { kind: "connection", connectionId: "team-claude" },
       agent: "build",
-      model: { providerID: "acp:claude", modelID: "opus" },
+      model: { providerID: "team-claude", modelID: "opus" },
     })
-    // A built-in native harness: the app key and the identity id differ
-    // ("claude-sdk" vs "claude"), which is what broke the dedupe below.
     await adapter.saveSessionConfig({
       sessionID: "session-sdk",
       directory: "/repo/main",
-      harnessType: "claude-sdk",
+      harnessType: { kind: "native", harnessId: "claude" },
       agent: "build",
     })
 
     expect(calls.map((call) => JSON.parse(call.body ?? "{}").harness)).toEqual([
-      { id: "claude", access: "acp" },
+      { id: "team-claude", access: "connection" },
       { id: "claude", access: "native" },
     ])
   })
 
-  test("session config dedupe matches a persisted identity for non-OpenCode harnesses", async () => {
+  test("session config dedupe matches the persisted native identity", async () => {
     const adapter = createAdapter()
 
     // Exactly what the runtime persists and `readSessionConfig` caches.
-    queryClient.setQueryData(sessionConfigRawQueryKey({
-      sessionID: "session-sdk",
-      directory: "/repo/main",
-      serverUrl: "https://control.example",
-    }), {
-      harness: { id: "claude", access: "native" },
-      agent: "build",
-      model: { providerID: "claude-sdk", modelID: "opus" },
-    })
+    queryClient.setQueryData(
+      sessionConfigRawQueryKey({
+        sessionID: "session-sdk",
+        directory: "/repo/main",
+        serverUrl: "https://control.example",
+      }),
+      {
+        harness: { id: "claude", access: "native" },
+        agent: "build",
+        model: { providerID: "claude", modelID: "opus" },
+      },
+    )
 
     await adapter.saveSessionConfig({
       sessionID: "session-sdk",
       directory: "/repo/main",
-      harnessType: "claude-sdk",
+      harnessType: { kind: "native", harnessId: "claude" },
       agent: "build",
-      model: { providerID: "claude-sdk", modelID: "opus" },
+      model: { providerID: "claude", modelID: "opus" },
     })
 
     expect(calls).toEqual([])
@@ -173,16 +185,16 @@ describe("submit transport adapter", () => {
     await adapter.saveSessionConfig({
       sessionID: "session-sdk",
       directory: "/repo/main",
-      harnessType: "claude-sdk",
+      harnessType: { kind: "native", harnessId: "claude" },
       agent: "plan",
-      model: { providerID: "claude-sdk", modelID: "opus" },
+      model: { providerID: "claude", modelID: "opus" },
     })
 
     expect(calls).toHaveLength(1)
     expect(JSON.parse(calls[0]?.body ?? "{}")).toEqual({
       harness: { id: "claude", access: "native" },
       agent: "plan",
-      model: { providerID: "claude-sdk", modelID: "opus" },
+      model: { providerID: "claude", modelID: "opus" },
     })
   })
 
@@ -194,16 +206,20 @@ describe("submit transport adapter", () => {
     await adapter.saveSessionConfig({
       sessionID: "session-failed",
       directory: "/repo/main",
-      harnessType: "codex-app-server",
+      harnessType: CODEX,
       agent: "build",
     })
 
     expect(calls).toHaveLength(1)
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
-      sessionID: "session-failed",
-      directory: "/repo/main",
-      serverUrl: "https://control.example",
-    }))).toBeUndefined()
+    expect(
+      queryClient.getQueryData(
+        sessionConfigRawQueryKey({
+          sessionID: "session-failed",
+          directory: "/repo/main",
+          serverUrl: "https://control.example",
+        }),
+      ),
+    ).toBeUndefined()
     expect(toasts).toEqual([
       {
         title: "Could not save session config",
@@ -219,16 +235,20 @@ describe("submit transport adapter", () => {
     await adapter.saveSessionConfig({
       sessionID: "session-http-failed",
       directory: "/repo/main",
-      harnessType: "codex-app-server",
+      harnessType: CODEX,
       agent: "build",
     })
 
     expect(calls).toHaveLength(1)
-    expect(queryClient.getQueryData(sessionConfigRawQueryKey({
-      sessionID: "session-http-failed",
-      directory: "/repo/main",
-      serverUrl: "https://control.example",
-    }))).toBeUndefined()
+    expect(
+      queryClient.getQueryData(
+        sessionConfigRawQueryKey({
+          sessionID: "session-http-failed",
+          directory: "/repo/main",
+          serverUrl: "https://control.example",
+        }),
+      ),
+    ).toBeUndefined()
     expect(toasts).toEqual([
       {
         title: "Could not save session config",
@@ -260,7 +280,6 @@ describe("submit transport adapter", () => {
         })
       },
       localRequest: fetch,
-      config: undefined,
       createClient: () => ({
         session: {
           get: async () => ({}),
@@ -269,17 +288,18 @@ describe("submit transport adapter", () => {
         },
       }),
       showToast: (toast) => toasts.push(toast),
-      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
       text: { configSaveFailedTitle: "Could not save session config" },
     })
 
-    await expect(adapter.readSessionConfig({
-      sessionID: "session-central",
-      directory: "/repo/main",
-      harnessType: PI,
-    })).resolves.toMatchObject({ harness: { id: "pi" } })
+    await expect(
+      adapter.readSessionConfig({
+        sessionID: "session-central",
+        directory: "/repo/main",
+      }),
+    ).resolves.toMatchObject({ harness: { id: "pi" } })
     expect(centralCalls).toEqual([
-      "GET http://127.0.0.1:3001/api/control/session/session-central/config?directory=%2Frepo%2Fmain&nativeHarness=pi",
+      "GET http://127.0.0.1:3001/api/control/session/session-central/config?directory=%2Frepo%2Fmain",
     ])
     expect(toasts).toEqual([])
   })
@@ -299,7 +319,6 @@ describe("submit transport adapter", () => {
       localRequest: async () => {
         throw new Error("filesystem workspace request bypassed the workspace runtime")
       },
-      config: undefined,
       createClient: () => ({
         session: {
           get: async () => ({}),
@@ -308,17 +327,18 @@ describe("submit transport adapter", () => {
         },
       }),
       showToast: (toast) => toasts.push(toast),
-      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
       text: { configSaveFailedTitle: "Could not save session config" },
     })
 
-    await expect(adapter.readSessionConfig({
-      sessionID: "session-workspace",
-      directory: "/repo/main",
-      harnessType: EXTERNAL_OPENCODE,
-    })).resolves.toMatchObject({ harness: { id: "external-opencode", access: "connection" } })
+    await expect(
+      adapter.readSessionConfig({
+        sessionID: "session-workspace",
+        directory: "/repo/main",
+      }),
+    ).resolves.toMatchObject({ harness: { id: "external-opencode", access: "connection" } })
     expect(runtimeCalls).toEqual([
-      "GET http://127.0.0.1:3001/workspaces/ws_1/session/session-workspace/config?connectionId=external-opencode",
+      "GET http://127.0.0.1:3001/workspaces/ws_1/session/session-workspace/config",
     ])
     expect(toasts).toEqual([])
   })
@@ -349,7 +369,6 @@ describe("submit transport adapter", () => {
       localRequest: async () => {
         throw new Error("signed workspace request bypassed the relay")
       },
-      config: undefined,
       createClient: ({ baseUrl, fetch: runtimeFetch, directory }) => ({
         session: {
           get: async () => ({}),
@@ -363,15 +382,16 @@ describe("submit transport adapter", () => {
         },
       }),
       showToast: (toast) => toasts.push(toast),
-      formatError: (err) => err instanceof Error ? err.message : "Request failed",
+      formatError: (err) => (err instanceof Error ? err.message : "Request failed"),
       text: { configSaveFailedTitle: "Could not save session config" },
     })
 
-    await expect(adapter.readSessionConfig({
-      sessionID: "session-signed",
-      directory: "/repo/main",
-      harnessType: EXTERNAL_OPENCODE,
-    })).resolves.toMatchObject({ harness: { id: "external-opencode", access: "connection" } })
+    await expect(
+      adapter.readSessionConfig({
+        sessionID: "session-signed",
+        directory: "/repo/main",
+      }),
+    ).resolves.toMatchObject({ harness: { id: "external-opencode", access: "connection" } })
 
     const promptClient = adapter.createRuntimePromptClient({
       signedControlPlane: true,
@@ -395,7 +415,7 @@ describe("submit transport adapter", () => {
 
     expect(runtimeCalls).toEqual([
       "GET http://127.0.0.1:4527/api/workspace/ws_signed/connection",
-      "GET https://relay.test/workspaces/ws_signed/session/session-signed/config?connectionId=external-opencode",
+      "GET https://relay.test/workspaces/ws_signed/session/session-signed/config",
       "POST https://relay.test/workspaces/ws_signed/session/session-signed/prompt_async",
       "GET https://relay.test/workspaces/ws_signed/session/status?connectionId=external-opencode",
     ])

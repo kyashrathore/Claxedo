@@ -4,13 +4,13 @@ import type * as QueryOptions from "@/app/integrations/sync/query-options"
 import type * as ConnectProvider from "@/app/dialogs/connect-provider"
 import type * as ConnectAI from "@/app/dialogs/connect-ai"
 import type * as SelectProvider from "@/app/dialogs/select-provider"
-import type * as CustomProvider from "@/app/dialogs/custom-provider"
 import type * as Models from "@/features/session/providers/models"
 import type * as Command from "@/app/providers/command"
 import type * as ConnectIntegration from "@/app/dialogs/connect-integration"
 import type * as ProviderConnectFormModule from "@/app/dialogs/provider-connect-form"
 import type * as LinkModule from "@/app/controls/link"
 import type * as SDK from "@/app/providers/sdk/sdk"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
 
 
 export type SettingsAppPorts = {
@@ -20,7 +20,6 @@ export type SettingsAppPorts = {
   DialogConnectProvider: typeof ConnectProvider.DialogConnectProvider
   DialogAIConnect: typeof ConnectAI.DialogAIConnect
   DialogSelectProvider: typeof SelectProvider.DialogSelectProvider
-  DialogCustomProvider: typeof CustomProvider.DialogCustomProvider
   useModels: typeof Models.useModels
   formatKeybind: typeof Command.formatKeybind
   parseKeybind: typeof Command.parseKeybind
@@ -35,7 +34,7 @@ export type SettingsAppPorts = {
   /** The operator ACP connections the picker offers alongside the built-in harnesses. */
   useEnabledAcpHarnesses: () => () => Array<{ key: string; label: string }>
   /** The harness a workspace was last used with, from its draft-default record. */
-  readWorkspaceHarnessDefault: (input: { serverUrl: string; workspaceKey: string }) => string | undefined
+  readWorkspaceHarnessDefault: (input: { serverUrl: string; workspaceKey: string }) => HarnessSelection | undefined
 }
 
 let ports: SettingsAppPorts | undefined
@@ -59,7 +58,6 @@ export const useShellQueryOptions = bind("useShellQueryOptions")
 export const DialogConnectProvider = bind("DialogConnectProvider")
 export const DialogAIConnect = bind("DialogAIConnect")
 export const DialogSelectProvider = bind("DialogSelectProvider")
-export const DialogCustomProvider = bind("DialogCustomProvider")
 export const useModels = bind("useModels")
 export const formatKeybind = bind("formatKeybind")
 export const parseKeybind = bind("parseKeybind")

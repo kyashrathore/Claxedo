@@ -101,25 +101,14 @@ describe("model selection policy", () => {
   })
 
   test("resolveSubmittedConfig refuses to submit without an explicit selected model", async () => {
-    let calls = 0
-    const result = await resolveSubmittedConfig({
-      harnessMode: false,
-      currentAgent: { name: "build" },
-      modelForSubmit: async (model) => {
-        calls++
-        return model
-      },
-    })
+    const result = await resolveSubmittedConfig({ currentAgent: { name: "build" } })
     expect(result).toBeUndefined()
-    expect(calls).toBe(0)
   })
 
   test("resolveSubmittedConfig keeps an explicit selected model", async () => {
     const result = await resolveSubmittedConfig({
-      harnessMode: false,
-      selectedModel: sonnet,
+      harnessModelKey: { providerID: sonnet.provider.id, modelID: sonnet.id },
       currentAgent: { name: "build" },
-      modelForSubmit: async (model) => model,
     })
     expect(result).toEqual({
       model: { providerID: "anthropic", modelID: "sonnet" },

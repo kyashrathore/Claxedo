@@ -59,6 +59,8 @@ export type AgentHarnessFactory = {
 export type CreateAgentRuntimeInput = {
   store: AgentRuntimeStore
   harnesses: AgentHarnessFactory[]
+  /** Caller-owned adapters may be shared by other runtimes and are never disposed here. */
+  adapterOwnership?: "runtime" | "caller"
   resolveHarness?: (harness: SessionHarness) => AgentHarnessAdapter | Promise<AgentHarnessAdapter>
   subscriberBufferSize?: number
   /** Per-subscriber authorization gate; requires each subscriber to carry an identity. */

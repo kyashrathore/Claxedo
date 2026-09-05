@@ -4,21 +4,18 @@ import { queryKeys } from "@/platform/query/keys"
 import { bootstrapDirectory, type DirectoryBootstrapSdk } from "./bootstrap"
 import type { NormalizedProviderListResponse } from "@/platform/query/provider-list"
 
-/**
- * Provider catalog routing for signed workspaces (hosted central).
- *
- * A hosted central (Cloudflare Worker) has no central harness and no
- * `/api/workspace/resolve`, so the boot provider fetch must reach the
- * workspace RUNTIME through the relay (`/workspaces/:id/provider`) whenever
- * the directory is a signed workspace ref. Plain directories are owned by
- * the central `/provider` route.
- */
+/** Native provider catalogs belong to the control plane, including VM sessions. */
 
 const CENTRAL = "https://central.test"
 const RELAY = "https://relay.test"
 const WS = "ws_relay1"
 
-afterEach(() => {
+async function settleWarmup() {
+  for (let frame = 0; frame < 4; frame++) await new Promise((resolve) => setTimeout(resolve, 0))
+}
+
+afterEach(async () => {
+  await settleWarmup()
   queryClient.clear()
 })
 
@@ -42,23 +39,20 @@ function connectionBody() {
 
 function providerCatalog() {
   return {
-    all: [{ id: "opencode", name: "OpenCode", models: { "model-1": { id: "model-1" } } }],
-    connected: ["opencode"],
-    default: { opencode: "model-1" },
+    all: [{ id: "openai", name: "OpenAI", source: "api", models: { "model-1": { id: "model-1" } } }],
+    connected: ["openai"],
+    default: { openai: "model-1" },
   }
 }
 
 function fakeSdk(): DirectoryBootstrapSdk {
   return {
-    project: { current: async () => ({ data: { id: "project" } }) },
-    provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
+    project: { current: async () => ({ data: { id: "project", worktree: "/work/project", sandboxes: [], time: { created: 1, updated: 1 } } }) },
     app: { agents: async () => ({ data: [] }) },
-    config: { get: async () => ({ data: {} }) },
     path: { get: async () => ({ data: { home: "", state: "", config: "", worktree: "", directory: "" } }) },
     command: { list: async () => ({ data: [] }) },
     vcs: { get: async () => ({ data: {} }) },
-    // as-any: test double implements only the API surface exercised by this test.
-  } as unknown as DirectoryBootstrapSdk
+  }
 }
 
 function trackingFetch(calls: string[]) {
@@ -71,18 +65,17 @@ function trackingFetch(calls: string[]) {
     if (url === `${CENTRAL}/api/workspace/${WS}/connection`) {
       return Response.json(connectionBody())
     }
-    if (url.startsWith(`${RELAY}/workspaces/${WS}/provider`)) {
+    if (url === `${CENTRAL}/api/claxedo/agent-config/providers?nativeHarness=pi`) {
       return Response.json(providerCatalog())
     }
-    if (url.startsWith(`${CENTRAL}/provider`)) {
-      return Response.json(providerCatalog())
-    }
+    if (url.startsWith(`${CENTRAL}/api/claxedo/agent-config/agents?`) ||
+      url === `${CENTRAL}/api/claxedo/agent-config/commands`) return Response.json([])
     return new Response("not found", { status: 404 })
   }) as typeof fetch
 }
 
-describe("bootstrapDirectory provider routing", () => {
-  test("signed workspace ref fetches the provider catalog through the relay, not the central global route", async () => {
+describe("bootstrapDirectory control-plane provider catalog", () => {
+  test("signed workspace fetches the control-plane catalog without forwarding credentials to its relay", async () => {
     const calls: string[] = []
     await bootstrapDirectory({
       directory: `workspace:${WS}`,
@@ -94,20 +87,21 @@ describe("bootstrapDirectory provider routing", () => {
       harnessType: "pi",
       quiet: true,
     })
+    await settleWarmup()
 
-    const relayProvider = calls.filter((url) => url.startsWith(`${RELAY}/workspaces/${WS}/provider`))
-    expect(relayProvider.length).toBeGreaterThan(0)
-    expect(relayProvider[0]).toContain("harness=pi")
-    // The central global /provider route (404 on hosted centrals) is never hit.
+    expect(calls.filter((url) => url.includes("agent-config/providers"))).toEqual([
+      `${CENTRAL}/api/claxedo/agent-config/providers?nativeHarness=pi`,
+    ])
+    expect(calls.filter((url) => url.startsWith(`${RELAY}/`))).toEqual([`${RELAY}/workspaces/${WS}/vcs`])
     expect(calls.filter((url) => url.startsWith(`${CENTRAL}/provider`))).toEqual([])
+    expect(calls.some((url) => new URL(url).pathname.endsWith("/config"))).toBe(false)
 
-    // Every harness — OpenCode included — owns its own provider cache key, and
-    // workspace catalogs are scoped to the workspace they were fetched for, so
-    // the relay catalog lands under the workspace-scoped, harness-qualified key.
+    // Workspace model choices remain isolated even though credentials are central.
     const providers = queryClient.getQueryData<NormalizedProviderListResponse>(
       queryKeys.controlPlane.providers(CENTRAL, `workspace:${WS}`, "pi"),
     )
-    expect([...(providers?.all.keys() ?? [])]).toEqual(["opencode"])
+    expect([...(providers?.all.keys() ?? [])]).toEqual(["openai"])
+    expect(providers?.all.get("openai")?.source).toBe("api")
   })
 
   test("plain directories use the central provider route", async () => {
@@ -122,8 +116,15 @@ describe("bootstrapDirectory provider routing", () => {
       harnessType: "pi",
       quiet: true,
     })
+    await settleWarmup()
 
-    expect(calls.filter((url) => url.startsWith(`${CENTRAL}/provider`)).length).toBeGreaterThan(0)
+    expect(calls.filter((url) => url.includes("agent-config/providers"))).toEqual([
+      `${CENTRAL}/api/claxedo/agent-config/providers?nativeHarness=pi`,
+    ])
     expect(calls.filter((url) => url.startsWith(`${RELAY}/`))).toEqual([])
+    expect(calls).toContain(`${CENTRAL}/api/claxedo/agent-config/commands`)
+    expect(queryClient.getQueryData(queryKeys.directory.project(CENTRAL, "/Users/someone/project"))).toBe("project")
+    expect(calls.some((url) => new URL(url).pathname.endsWith("/config"))).toBe(false)
+    expect(queryClient.getQueryCache().getAll().some((query) => query.queryKey[2] === "config")).toBe(false)
   })
 })

@@ -36,8 +36,6 @@ type SessionRow = SessionCacheValue["session"][number]
 type GlobalConfig = Config
 type QueryOptionsClient =
   Parameters<typeof workspaceCatalogQuery>[0]["client"] &
-  Parameters<typeof providerListQuery>[0]["client"] &
-  Parameters<typeof providerAuthQuery>[0]["client"] &
   Parameters<typeof pathQuery>[0]["client"] &
   Parameters<typeof agentListQuery>[0]["client"] & {
     global: { config: { get: () => Promise<{ data?: GlobalConfig }> } }
@@ -182,14 +180,12 @@ export function createQueryOptionsApi(input: {
     providers: (directory: DirectoryRef | null, harnessType: string) =>
       providerListQuery({
         baseUrl: input.baseUrl,
-        client: directory === null ? input.globalSDK() : input.sdkFor(directory),
         directory,
         harnessType,
         request: input.request,
       }),
     providerAuth: (harnessType: string) => providerAuthQuery({
       baseUrl: input.baseUrl,
-      client: input.globalSDK(),
       harnessType,
       request: input.request,
     }),

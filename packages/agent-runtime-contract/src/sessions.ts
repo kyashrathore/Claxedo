@@ -11,15 +11,35 @@ export type AgentWorkspaceIdentity = {
  * `upstreamSessionId` is opaque: Claxedo stores and forwards it but never
  * parses it or uses it to discover sessions.
  */
-export type AgentExecutionBinding = AgentWorkspaceIdentity & {
+export type AgentWorkspaceExecutionBinding = AgentWorkspaceIdentity & {
+  scope?: "workspace"
   sessionId: string
   connectionId: string
   upstreamSessionId: string
 }
 
+/** Central execution owns no filesystem workspace, even when its tools target one. */
+export type AgentCentralExecutionBinding = {
+  scope: "central"
+  workspaceId?: never
+  directory: ""
+  sessionId: string
+  connectionId: string
+  upstreamSessionId: string
+}
+
+export type AgentExecutionBinding = AgentWorkspaceExecutionBinding | AgentCentralExecutionBinding
+
 export type AgentExecutionBindingField = keyof AgentExecutionBinding
 
-export type AgentExecutionBindingExpectation = Readonly<AgentExecutionBinding>
+export type AgentExecutionBindingExpectation = Readonly<{
+  scope?: "workspace" | "central"
+  sessionId: string
+  workspaceId?: string
+  directory: string
+  connectionId: string
+  upstreamSessionId: string
+}>
 
 export type AgentSession = {
   id: string

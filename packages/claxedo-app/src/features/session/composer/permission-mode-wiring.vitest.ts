@@ -34,7 +34,10 @@ function wiringHarness(input: { signed?: boolean } = {}) {
       },
       directory: () => "/repo",
       harness,
-      client: {} as never,
+      harnessSelection: () => {
+        const connectionId = harness()
+        return connectionId ? { kind: "connection", connectionId } : undefined
+      },
       claxedoServerUrl: () => "http://127.0.0.1:3001",
       signedControlPlane: () => input.signed !== false,
       workspace: () => input.signed === false ? undefined : ({ workspaceId: "ws_signed", kind: "user-hosted" }),
@@ -83,7 +86,7 @@ describe("permission-mode wiring resource key", () => {
     await vi.advanceTimersByTimeAsync(1)
     await Promise.resolve()
     expect(fetchModes).toHaveBeenCalledTimes(1)
-    expect(fetchModes.mock.calls[0]?.[0]).toMatchObject({ harness: "codex-acp" })
+    expect(fetchModes.mock.calls[0]?.[0]).toMatchObject({ harness: { kind: "connection", connectionId: "codex-acp" } })
     dispose()
   })
 
@@ -105,12 +108,12 @@ describe("permission-mode wiring resource key", () => {
     const { setHarness, dispose } = wiringHarness()
     await flush()
     expect(fetchModes).toHaveBeenCalledTimes(1)
-    expect(fetchModes.mock.calls[0]?.[0]).toMatchObject({ harness: "opencode" })
+    expect(fetchModes.mock.calls[0]?.[0]).toMatchObject({ harness: { kind: "connection", connectionId: "opencode" } })
 
     setHarness("codex-acp")
     await flush()
     expect(fetchModes).toHaveBeenCalledTimes(2)
-    expect(fetchModes.mock.calls[1]?.[0]).toMatchObject({ harness: "codex-acp" })
+    expect(fetchModes.mock.calls[1]?.[0]).toMatchObject({ harness: { kind: "connection", connectionId: "codex-acp" } })
     dispose()
   })
 

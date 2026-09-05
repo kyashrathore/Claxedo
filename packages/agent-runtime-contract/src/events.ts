@@ -41,7 +41,7 @@ export type AgentPresentationEvent =
   | { id: string; type: "session.status"; properties: { sessionID: string; status: AgentRuntimeStatus } }
   | { id: string; type: "session.idle"; properties: { sessionID: string } }
   | { id: string; type: "session.error"; properties: { sessionID?: string; error?: { name: string; data: Record<string, unknown> & { message?: string } } } }
-  | { id: string; type: "session.updated"; properties: { sessionID: string; info: import("./sessions").AgentPresentationSession } }
+  | { id: string; type: "session.updated"; properties: { sessionID: string; info: import("./sessions").AgentSession } }
   | { id: string; type: "session.diff"; properties: { sessionID: string; diff: AgentSnapshotFileDiff[] } }
   | { id: string; type: "session.compacted"; properties: { sessionID: string } }
   | { type: "session.agent"; properties: { sessionID: string; agentId: string } }

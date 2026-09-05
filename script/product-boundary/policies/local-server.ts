@@ -79,7 +79,13 @@ export const localServer: Policy = {
   // imported only by `user-hosted-serving.ts`; no new package. Reviewed owner:
   // workspace domain.
   // Removing the retired local user-extension route subtracts one module.
-  ceilings: { modules: 60, packages: 21 },
+  // External OpenCode connections are registered by the local composition via
+  // @claxedo/opencode-server-adapter; this transport adds one package, not an
+  // embedded engine. AgentConfigRoutes also owns provider-routes.ts: the
+  // authenticated Pi catalog reads control-plane credentials, not a workspace
+  // engine. Shell project-routes.ts owns authorized project metadata reads and
+  // edits against the existing workspace store: exactly 57 modules, 22 packages.
+  ceilings: { modules: 57, packages: 22 },
 
   emitted: {
     file: "packages/claxedo-local-server/.artifacts/u8-package-split/manifests/local-server.json",
@@ -100,6 +106,7 @@ export const localServer: Policy = {
     // inside the isolated workspace so the Local Server bundle never consumes
     // outputs left behind by a developer's existing checkout.
     buildPackages: [
+      { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
       { packageDir: "packages/agent-extensions" },
       { packageDir: "packages/agent-sdk-runtime" },

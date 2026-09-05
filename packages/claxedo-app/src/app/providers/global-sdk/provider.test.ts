@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test"
+import { openWorkspaceRuntimeEventResponse } from "../global-sdk-event-fetch"
 import { sessionRowDirectory } from "@/platform/identity/workspace-address"
 import { AGENT_RUNTIME_EVENT_CONTRACT_VERSION } from "@claxedo/agent-event-runtime"
 import {
@@ -17,9 +18,9 @@ import {
   projectRuntimeEventEnvelope,
   resetRuntimeReplayGapState,
   runtimeEnvelope,
-  runtimeProjectionOwnsCompat,
   runtimeReplayGap,
   workspaceEventTransport,
+  sseJsonStream,
 } from "@/app/providers/global-sdk/provider"
 import {
   runtimeContractMismatch,
@@ -37,6 +38,15 @@ afterEach(() => {
 })
 
 describe("global sdk event fetch", () => {
+  test("aborting a retargeted stream discards buffered frames and their cursors", async () => {
+    const controller = new AbortController()
+    const cursors: string[] = []
+    const stream = sseJsonStream(new Response('id: 1\ndata: {"sessionId":"old"}\n\nid: 2\ndata: {"sessionId":"old"}\n\n'), controller.signal, (id) => cursors.push(id))
+    expect(await stream.next()).toEqual({ value: { sessionId: "old" }, done: false })
+    controller.abort()
+    expect((await stream.next()).done).toBe(true)
+    expect(cursors).toEqual(["1"])
+  })
   test("explicit workspace identity wins when the runtime directory is absent from inventory", () => {
     expect(globalSdkClientWorkspaceId([], {
       directory: "/runtime/repo",
@@ -406,19 +416,28 @@ describe("global sdk event fetch", () => {
     })
   })
 
-  test("runtime projection owns every canonical session id", () => {
-    expect(runtimeProjectionOwnsCompat({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "ses_1",
-      payload: { type: "text-delta", delta: "hello" },
-    })).toBe(true)
-    expect(runtimeProjectionOwnsCompat({
-      contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
-      directory: "/repo/main",
-      sessionId: "runtime-session-1",
-      payload: { type: "text-delta", delta: "hello" },
-    })).toBe(true)
+  test("global presentation events retain producer scope and use explicit central session identity", () => {
+    const payload = { type: "session.updated", properties: { sessionID: "central-one", info: { id: "central-one" } } }
+    expect(compatEventEnvelope({ directory: "", payload })?.directory).toBe("central-one")
+    expect(compatEventEnvelope({ directory: "workspace:another-workspace", payload })?.directory)
+      .toBe("workspace:another-workspace")
+    expect(compatEventEnvelope({ directory: "", payload: { type: "session.deleted", properties: { info: { id: "central-two" } } } })?.directory)
+      .toBe("central-two")
+    expect(compatEventEnvelope({ type: "pty.created", info: { id: "terminal-one" } })).toBeUndefined()
+  })
+
+  test("projects every canonical session id without a harness or prefix exception", () => {
+    for (const sessionId of ["ses_1", "runtime-session-1"]) {
+      const events = projectRuntimeEventEnvelope({
+        contractVersion: AGENT_RUNTIME_EVENT_CONTRACT_VERSION,
+        directory: "/repo/main",
+        sessionId,
+        assistantMessageId: "reply",
+        payload: { type: "text-delta", delta: "hello" },
+      })
+      expect(events.find((event) => event.payload.type === "message.part.delta")?.payload.properties)
+        .toMatchObject({ sessionID: sessionId, delta: "hello" })
+    }
   })
 
   test("detects runtime replay gap notices", () => {
@@ -695,394 +714,86 @@ describe("global sdk event fetch", () => {
     })).toBe(sessionRowDirectory({ workspaceId, hostDirectory: "/host/machine/worktree" }))
   })
 
-  test("signed mode sends idle global events to the control-plane lifecycle stream", async () => {
-    const calls: string[] = []
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => undefined,
-      setLiveSession: () => {},
-      fetch: recordingFetch(calls),
-    })("http://claxedo.test/global/event")
-
-    expect(calls).toEqual(["http://claxedo.test/api/wr/events"])
-    expect(calls.some(oldEventPath)).toBe(false)
+  test("central events use the session address without acquiring a workspace", () => {
+    const session = { sessionID: "central-session", host: "central" as const }
+    expect(runtimeEventLiveSession(session, [], "active-central")).toEqual({
+      sessionID: "active-central",
+      host: "central",
+    })
+    expect(eventDirectoryForLiveSession({ directory: "", liveSession: session })).toBe("central-session")
+    expect(eventDirectoryForLiveSession({ directory: "", sessionId: "central-child", liveSession: session })).toBe("central-child")
+    expect(eventDirectoryForLiveSession({ directory: "global", liveSession: session })).toBe("global")
   })
 
-  test("signed loopback idle global events route to the lifecycle stream", async () => {
-    const calls: string[] = []
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => undefined,
-      setLiveSession: () => {},
-      fetch: recordingFetch(calls),
-    })("http://localhost:3001/global/event")
-
-    expect(calls).toEqual(["http://localhost:3001/api/wr/events"])
-    expect(calls.some(oldEventPath)).toBe(false)
-  })
-
-  test("signed loopback cloud workspace routes idle global events to the lifecycle stream", async () => {
-    const calls: string[] = []
-    const previous = window.location.href
-    setHappyDomUrl(`http://localhost/${btoa("ws_1").replace(/=/g, "")}/session`)
-
-    try {
-      await createControlPlaneEventFetch({
-        signedControlPlane: () => true,
-        liveSession: () => undefined,
-        setLiveSession: () => {},
-        fetch: recordingFetch(calls),
-      })("http://localhost:3001/global/event")
-    } finally {
-      setHappyDomUrl(previous)
-    }
-
-    expect(calls).toEqual(["http://localhost:3001/api/wr/events"])
-    expect(calls.some(oldEventPath)).toBe(false)
-  })
-
-  test("signed session events resolve workspace and avoid OpenCode-compatible paths", async () => {
-    const calls: string[] = []
-    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
-    const request = recordingFetch(calls, (url) => {
-      if (url.includes("/workspace/resolve")) {
-        return new Response(JSON.stringify({ workspaceId: "ws_1", kind: "cloud" }), { status: 200 })
-      }
-      if (url.includes("/api/workspace/ws_1/connection")) {
-        return new Response(JSON.stringify({
+  test("runtime event transport sends the private parent and replay cursor through the relay", async () => {
+    const calls: Request[] = []
+    const controller = new AbortController()
+    const request = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const req = new Request(input, init)
+      calls.push(req)
+      if (new URL(req.url).pathname === "/api/workspace/ws_private/connection") {
+        return Response.json({
           access: "cloud",
           backing: "cloud-vm",
-          workspaceId: "ws_1",
+          workspaceId: "ws_private",
           role: "owner",
           relayUrl: "http://claxedo.test",
           runtimeAccessToken: "runtime-token",
           tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
+        })
       }
-      return eventResponse()
+      return new Response("data: {\"type\":\"heartbeat\"}\n\n")
+    }) as typeof fetch
+    await openWorkspaceRuntimeEventResponse({
+      serverUrl: "http://claxedo.test",
+      signedControlPlane: true,
+      session: { sessionID: "private-session", workspaceId: "ws_private", workspaceKind: "cloud" },
+      request,
+      init: { signal: controller.signal, headers: { "Last-Event-ID": "cursor-9" } },
     })
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => liveSession,
-      setLiveSession: (next) => Object.assign(liveSession, next),
-      fetch: request,
-    })("http://claxedo.test/global/event?sessionID=session-1")
-
-    expect(calls).toEqual([
-      "http://claxedo.test/api/workspace/resolve?directory=%2Frepo",
-      "http://claxedo.test/api/workspace/ws_1/connection",
-      "http://claxedo.test/workspaces/ws_1/global/event?sessionID=session-1",
-    ])
-    expect(calls.some((url) => oldEventPath(url) || new URL(url).pathname.startsWith("/session/"))).toBe(false)
+    const stream = calls.at(-1)!
+    expect(stream.url).toBe("http://claxedo.test/workspaces/ws_private/api/wr/runtime-events?parentSessionId=private-session")
+    expect(stream.headers.get("Last-Event-ID")).toBe("cursor-9")
+    expect(stream.headers.get("Authorization")).toBe("Bearer runtime-token")
+    controller.abort()
+    expect(stream.signal.aborted).toBe(true)
   })
 
-  test("signed loopback local session events stay on the local stream", async () => {
+  test("runtime event transport rejects route sentinels before requesting a private stream", () => {
     const calls: string[] = []
-    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
-    const request = recordingFetch(calls, (url) => {
-      if (url.includes("/workspace/resolve")) {
-        return new Response(JSON.stringify({ workspaceId: "ws_local", kind: "local" }), { status: 200 })
-      }
-      return eventResponse()
-    })
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => liveSession,
-      setLiveSession: (next) => Object.assign(liveSession, next),
-      fetch: request,
-    })("http://localhost:3001/global/event?sessionID=session-1")
-
-    expect(calls).toEqual([
-      "http://localhost:3001/api/claxedo/workspace/resolve?directory=%2Frepo",
-      "http://localhost:3001/global/event?sessionID=session-1",
-    ])
-    expect(liveSession.workspaceId).toBeUndefined()
-  })
-
-  test("signed loopback local session reconnects keep using the local stream", async () => {
-    const calls: string[] = []
-    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = { sessionID: "session-1", directory: "/repo" }
-    const request = recordingFetch(calls, (url) => {
-      if (url.includes("/workspace/resolve")) {
-        return new Response(JSON.stringify({ workspaceId: "ws_local", kind: "local" }), { status: 200 })
-      }
-      return eventResponse()
-    })
-    const eventFetch = createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => liveSession,
-      setLiveSession: (next) => Object.assign(liveSession, next),
-      fetch: request,
-    })
-
-    await eventFetch("http://localhost:3001/global/event?sessionID=session-1")
-    await eventFetch("http://localhost:3001/global/event?sessionID=session-1")
-
-    expect(calls).toEqual([
-      "http://localhost:3001/api/claxedo/workspace/resolve?directory=%2Frepo",
-      "http://localhost:3001/global/event?sessionID=session-1",
-      "http://localhost:3001/global/event?sessionID=session-1",
-    ])
-    expect(liveSession.workspaceId).toBeUndefined()
-  })
-
-  test("signed real-directory event workspace resolution is Query-owned across reconnects", async () => {
-    const calls: string[] = []
-    const request = recordingFetch(calls, (url) => {
-      if (url.includes("/workspace/resolve")) {
-        return new Response(JSON.stringify({ workspaceId: "ws_event_query", kind: "cloud" }), { status: 200 })
-      }
-      if (url.includes("/api/workspace/ws_event_query/connection")) {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_event_query",
-          role: "owner",
-          relayUrl: "http://claxedo.test",
-          runtimeAccessToken: "runtime-token",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
-      }
-      return eventResponse()
-    })
-    const eventFetch = createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => ({ sessionID: "session-query", directory: "/repo/query-owned-events" }),
-      setLiveSession: () => {},
-      fetch: request,
-    })
-
-    await eventFetch("http://claxedo.test/global/event?sessionID=session-query")
-    await eventFetch("http://claxedo.test/global/event?sessionID=session-query")
-
-    expect(calls.filter((url) => url.includes("/workspace/resolve"))).toEqual([
-      "http://claxedo.test/api/workspace/resolve?directory=%2Frepo%2Fquery-owned-events",
-    ])
-    expect(calls.filter((url) => url.includes("/workspaces/ws_event_query/global/event"))).toEqual([
-      "http://claxedo.test/workspaces/ws_event_query/global/event?sessionID=session-query",
-      "http://claxedo.test/workspaces/ws_event_query/global/event?sessionID=session-query",
-    ])
-  })
-
-  test("signed workspace-id session events use Workspace Relay even on loopback", async () => {
-    const calls: Array<{ url: string; authorization: string | null }> = []
-    const liveSession: { sessionID: string; directory: string; workspaceId?: string } = {
-      sessionID: "session-1",
-      directory: "ws_1",
+    const request = (async (input: RequestInfo | URL) => {
+      calls.push(String(input))
+      return new Response("")
+    }) as typeof fetch
+    for (const sessionID of ["route", "", " "]) {
+      expect(() => openWorkspaceRuntimeEventResponse({
+        request,
+        serverUrl: "http://claxedo.test",
+        session: { sessionID, workspaceId: "ws_private", workspaceKind: "cloud" },
+        signedControlPlane: true,
+        init: {},
+      })).toThrow("Runtime events require a session identity")
     }
-    const request = async (input: string | URL | Request, init?: RequestInit) => {
-      const req = input instanceof Request ? input : new Request(input, init)
-      calls.push({
-        url: req.url,
-        authorization: req.headers.get("authorization"),
-      })
-      if (req.url.includes("/workspace/resolve")) {
-        return new Response(JSON.stringify({ workspaceId: "ws_1", kind: "cloud" }), { status: 200 })
-      }
-      if (req.url.includes("/api/workspace/ws_1/connection")) {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_1",
-          role: "owner",
-          relayUrl: "http://localhost:3001",
-          runtimeAccessToken: "runtime-token",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
-      }
-      return eventResponse()
-    }
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => liveSession,
-      setLiveSession: (next) => Object.assign(liveSession, next),
-      fetch: request as typeof fetch,
-    })("http://localhost:3001/global/event?sessionID=session-1")
-
-    expect(calls).toEqual([
-      {
-        url: "http://localhost:3001/api/workspace/ws_1/connection",
-        authorization: null,
-      },
-      {
-        url: "http://localhost:3001/workspaces/ws_1/global/event?sessionID=session-1",
-        authorization: "Bearer runtime-token",
-      },
-    ])
+    expect(calls).toEqual([])
   })
 
-  test("unsigned workspace-id global events use the loopback workspace runtime proxy", async () => {
-    const calls: string[] = []
-    const request = recordingFetch(calls, (url) => {
-      if (url.includes("/api/workspace/ws_1/connection")) {
-        return new Response(JSON.stringify({
-          access: "cloud",
-          backing: "cloud-vm",
-          workspaceId: "ws_1",
-          role: "owner",
-          relayUrl: "http://localhost:3001",
-          runtimeAccessToken: "runtime-token",
-          tokenExpiresAt: Date.now() + 120_000,
-        }), { status: 200 })
-      }
-      return eventResponse()
+  test("local runtime events retain directory scope and parent identity", async () => {
+    const calls: Request[] = []
+    const request = (async (input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(new Request(input, init))
+      return new Response("")
+    }) as typeof fetch
+    await openWorkspaceRuntimeEventResponse({
+      request,
+      serverUrl: "http://localhost:3001",
+      session: { sessionID: "local-session", directory: "/repo/local", workspaceKind: "local" },
+      signedControlPlane: false,
+      init: {},
     })
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => false,
-      liveSession: () => ({ sessionID: "session-1", directory: "ws_1", workspaceId: "ws_1" }),
-      setLiveSession: () => {},
-      fetch: request,
-    })("http://localhost:3001/global/event")
-
-    expect(calls).toEqual([
-      "http://localhost:3001/workspaces/ws_1/global/event",
-    ])
-  })
-
-  test("signed-out local directory events stay on the canonical loopback stream", async () => {
-    const calls: string[] = []
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => false,
-      liveSession: () => ({ sessionID: "session-local", directory: "/repo/local" }),
-      setLiveSession: () => {},
-      fetch: recordingFetch(calls),
-    })("http://localhost:3001/global/event?sessionID=session-local")
-
-    expect(calls).toEqual([
-      "http://localhost:3001/global/event?sessionID=session-local",
-    ])
-    expect(calls.some((url) => url.includes("/api/workspace/resolve"))).toBe(false)
-  })
-
-  test("managed workspace runtime event reconnects preserve canonical session scope and Last-Event-ID", async () => {
-    const calls: Array<{ url: string; lastEventId: string | null }> = []
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => ({
-        sessionID: "session-1",
-        directory: "ws_1",
-        workspaceId: "ws_1",
-        workspaceKind: "cloud",
-      }),
-      setLiveSession: () => {},
-      fetch: recordingRequests(calls, (request) => {
-        if (request.url.includes("/api/workspace/ws_1/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_1",
-            role: "owner",
-            relayUrl: "http://localhost:3001",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 120_000,
-          }), { status: 200 })
-        }
-        return eventResponse()
-      }),
-    })(new Request("http://localhost:3001/global/event", {
-      headers: { "Last-Event-ID": "9" },
-    }))
-
-    expect(calls.at(-1)).toMatchObject({
-      url: "http://localhost:3001/workspaces/ws_1/global/event?sessionID=session-1",
-      lastEventId: "9",
-    })
-  })
-
-  test("signed session events rewrite sdk /event path to the workspace runtime", async () => {
-    const calls: string[] = []
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => ({ sessionID: "session-1", workspaceId: "ws_event_rewrite" }),
-      setLiveSession: () => {},
-      fetch: recordingFetch(calls, (url) => {
-        if (url.includes("/api/workspace/ws_event_rewrite/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_event_rewrite",
-            role: "owner",
-            relayUrl: "http://claxedo.test",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 120_000,
-          }), { status: 200 })
-        }
-        return eventResponse()
-      }),
-    })("http://claxedo.test/event?sessionID=session-1")
-
-    expect(calls).toEqual([
-      "http://claxedo.test/api/workspace/ws_event_rewrite/connection",
-      "http://claxedo.test/workspaces/ws_event_rewrite/event?sessionID=session-1",
-    ])
-    expect(calls.some(oldEventPath)).toBe(false)
-  })
-
-  test("signed global events append the canonical live session when sdk omits query params", async () => {
-    const calls: string[] = []
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => ({ sessionID: "session-2", workspaceId: "ws_2" }),
-      setLiveSession: () => {},
-      fetch: recordingFetch(calls, (url) => {
-        if (url.includes("/api/workspace/ws_2/connection")) {
-          return new Response(JSON.stringify({
-            access: "cloud",
-            backing: "cloud-vm",
-            workspaceId: "ws_2",
-            role: "owner",
-            relayUrl: "http://claxedo.test",
-            runtimeAccessToken: "runtime-token",
-            tokenExpiresAt: Date.now() + 120_000,
-          }), { status: 200 })
-        }
-        return eventResponse()
-      }),
-    })("http://claxedo.test/global/event")
-
-    expect(calls).toEqual([
-      "http://claxedo.test/api/workspace/ws_2/connection",
-      "http://claxedo.test/workspaces/ws_2/global/event?sessionID=session-2",
-    ])
-  })
-
-  test("workspace-route sentinels discard stale caller session scope and stay on the signed lifecycle stream", async () => {
-    const calls: string[] = []
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => true,
-      liveSession: () => ({
-        sessionID: "route",
-        workspaceId: "ws_route_only",
-        workspaceKind: "cloud",
-      }),
-      setLiveSession: () => {},
-      fetch: recordingFetch(calls),
-    })("http://claxedo.test/global/event?sessionID=stale-session")
-
-    expect(calls).toEqual(["http://claxedo.test/api/wr/events"])
-  })
-
-  test("unmanaged local event streams remain unscoped when the sdk omits a session query", async () => {
-    const calls: string[] = []
-
-    await createControlPlaneEventFetch({
-      signedControlPlane: () => false,
-      liveSession: () => ({ sessionID: "session-local", directory: "/repo/local" }),
-      setLiveSession: () => {},
-      fetch: recordingFetch(calls),
-    })("http://localhost:3001/global/event")
-
-    expect(calls).toEqual(["http://localhost:3001/global/event"])
+    const url = new URL(calls.at(-1)!.url)
+    expect(url.pathname).toBe("/api/wr/runtime-events")
+    expect(url.searchParams.get("directory")).toBe("/repo/local")
+    expect(url.searchParams.get("parentSessionId")).toBe("local-session")
+    expect(calls).toHaveLength(1)
   })
 })

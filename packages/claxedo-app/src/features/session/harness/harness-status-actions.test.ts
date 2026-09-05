@@ -23,7 +23,7 @@ let refreshes: { directory: string; harnessType?: string }[]
 beforeEach(() => {
   state = {
     harnessMode: "harness",
-    harness: "acp:claude",
+    harness: CLAUDE_CONNECTION,
     harnessBinary: "",
     selectedModel: "sonnet",
     dynamicModels: null,
@@ -68,32 +68,32 @@ describe("harness status actions", () => {
     })
 
     await subject.applyStatus(scope, {
-      type: "acp:codex",
-      activeType: "acp:codex",
+      type: CODEX_CONNECTION,
+      activeType: CODEX_CONNECTION,
       model: "gpt-5.5",
     }, { directory: "/repo", sessionId: "new" })
 
     expect(patches[0]).toMatchObject({
-      harness: "acp:codex",
+      harness: CODEX_CONNECTION,
       harnessMode: "harness",
       selectedModel: "gpt-5.5",
       readiness: "ready",
     })
-    expect(optionFetches).toEqual([{ scope, type: "acp:codex", directory: "/repo", sessionId: "new" }])
-    expect(ensures).toEqual([{ directory: "/repo", harnessType: "acp:codex", quiet: true }])
+    expect(optionFetches).toEqual([{ scope, type: CODEX_CONNECTION, directory: "/repo", sessionId: "new" }])
+    expect(ensures).toEqual([{ directory: "/repo", harnessType: undefined, quiet: true }])
     expect(order).toEqual(["options", "ensure"])
     expect(refreshes).toEqual([])
   })
 
   test("does not fetch options or refresh directory for failed existing-session status", async () => {
     await actions().applyStatus("session:ses_1", {
-      type: "acp:claude",
-      activeType: "acp:claude",
+      type: CLAUDE_CONNECTION,
+      activeType: CLAUDE_CONNECTION,
       error: "binary missing",
     }, { directory: "/repo", sessionId: "ses_1" })
 
     expect(patches[0]).toMatchObject({
-      harness: "acp:claude",
+      harness: CLAUDE_CONNECTION,
       readiness: "error",
       configError: "binary missing",
     })
@@ -120,7 +120,7 @@ describe("harness status actions", () => {
   })
 
   test("ignores failed status for a different harness in the same scope", async () => {
-    state.harness = "acp:cursor"
+    state.harness = CURSOR_CONNECTION
 
     await actions().applyStatus(scope, {
       type: NATIVE_CURSOR,
@@ -138,16 +138,16 @@ describe("harness status actions", () => {
     // (e.g. acp:claude with a missing binary) must be applied — treating the
     // seed as a confirmed different selection would silently swallow the error,
     // leaving submit unblocked with no red dot (core-harness-ownership-local).
-    state.harness = "opencode"
+    state.harness = undefined
 
     await actions().applyStatus(scope, {
-      type: "acp:claude",
-      activeType: "acp:claude",
+      type: CLAUDE_CONNECTION,
+      activeType: CLAUDE_CONNECTION,
       error: "claude binary not found",
     }, { directory: "/repo", sessionId: "new" })
 
     expect(patches[0]).toMatchObject({
-      harness: "acp:claude",
+      harness: CLAUDE_CONNECTION,
       readiness: "error",
       configError: "claude binary not found",
     })
@@ -164,7 +164,7 @@ describe("harness status actions", () => {
     const subject = actions()
 
     await subject.applyStatus(scope, {
-      type: "acp:claude",
+      type: CLAUDE_CONNECTION,
       status: "error",
       ready: false,
       error: "claude binary not found",
@@ -177,8 +177,8 @@ describe("harness status actions", () => {
   test("applies ready and polling hydration patches", () => {
     const subject = actions()
 
-    subject.setReadyHydration(scope, "acp:claude")
-    subject.setPollingHydration(scope, "codex-app-server")
+    subject.setReadyHydration(scope, CLAUDE_CONNECTION)
+    subject.setPollingHydration(scope, NATIVE_CODEX)
 
     expect(patches[0]).toMatchObject({
       harnessMode: "harness",

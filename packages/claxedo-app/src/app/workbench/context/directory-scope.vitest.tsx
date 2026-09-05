@@ -1,6 +1,7 @@
 import { cleanup, render, waitFor } from "@solidjs/testing-library"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { createSignal } from "solid-js"
+import { harnessSelectionKey, type HarnessSelection } from "@/platform/identity/harness-selection"
 
 const state = vi.hoisted(() => ({
   active: true,
@@ -37,6 +38,10 @@ const state = vi.hoisted(() => ({
   },
   promptProviderProps: undefined as undefined | {
     draftId?: () => string | undefined
+  },
+  modelsProviderProps: undefined as undefined | {
+    harness: () => string
+    nativeHarness: () => string | undefined
   },
 }))
 
@@ -161,7 +166,10 @@ vi.mock("@/features/session/providers/session-selection", () => ({
 }))
 
 vi.mock("@/features/session/providers/models", () => ({
-  ModelsProvider: (props: any) => <>{props.children}</>,
+  ModelsProvider: (props: any) => {
+    state.modelsProviderProps = props
+    return <>{props.children}</>
+  },
 }))
 
 vi.mock("@/features/terminal/providers/provider", () => ({
@@ -263,6 +271,7 @@ beforeEach(() => {
   state.queryData.clear()
   state.dataProviderProps = undefined
   state.promptProviderProps = undefined
+  state.modelsProviderProps = undefined
 })
 
 afterEach(() => {
@@ -272,6 +281,23 @@ afterEach(() => {
 })
 
 describe("DirectoryScope bootstrap gating", () => {
+  test("model preferences and native catalogs keep same-named connection identities separate", async () => {
+    const [selection, setSelection] = createSignal<HarnessSelection>({ kind: "connection", connectionId: "pi" })
+    state.queryData.set(JSON.stringify(["directory-session-cache", "/repo/local"]), readyStore)
+    render(() => (
+      <DirectoryScope {...directoryScopeProps} directory="/repo/local" harnessType={() => "pi"} harnessSelection={selection}>
+        <div>content</div>
+      </DirectoryScope>
+    ))
+    await waitFor(() => expect(state.modelsProviderProps).toBeDefined())
+    expect(state.modelsProviderProps?.harness()).toBe(harnessSelectionKey(selection()))
+    expect(state.modelsProviderProps?.nativeHarness()).toBeUndefined()
+    const connectionKey = state.modelsProviderProps?.harness()
+    setSelection({ kind: "native", harnessId: "pi" })
+    expect(state.modelsProviderProps?.harness()).not.toBe(connectionKey)
+    expect(state.modelsProviderProps?.nativeHarness()).toBe("pi")
+  })
+
   test("does not bootstrap a hidden inactive workbench session pane", async () => {
     state.active = false
 
@@ -800,7 +826,7 @@ describe("DirectoryScope bootstrap gating", () => {
       "http://localhost:4096",
       "agents",
       directory,
-      "",
+      "opencode",
       "cloud:ws_cloud",
     ])
 
@@ -810,7 +836,7 @@ describe("DirectoryScope bootstrap gating", () => {
     expect(state.agentResourceRequest).toHaveBeenCalledTimes(1)
     expect(state.agentResourceRequest).toHaveBeenCalledWith(expect.objectContaining({
       directory,
-      harnessType: undefined,
+      harnessType: "opencode",
       workspace,
     }))
   })

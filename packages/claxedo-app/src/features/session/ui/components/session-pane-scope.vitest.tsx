@@ -2,10 +2,11 @@ import { cleanup, render } from "@solidjs/testing-library"
 import { createSignal } from "solid-js"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { SessionPaneScope } from "./session-pane-scope"
+import type { HarnessSelection } from "@/platform/identity/harness-selection"
 
 const calls = vi.hoisted(() => ({
   /** What the harness store answers for a given pane scope. */
-  harnessByScope: {} as Record<string, string>,
+  harnessByScope: {} as Record<string, HarnessSelection>,
   scopeFor: vi.fn(),
   refreshDirectory: vi.fn(),
   directoryRefresh: vi.fn(),
@@ -26,6 +27,7 @@ const calls = vi.hoisted(() => ({
       sessionId?: () => string | undefined
       sessionRef?: () => unknown
       harnessType?: () => string | undefined
+      harnessSelection?: () => HarnessSelection | undefined
       workspaceReady?: () => boolean
       refreshDirectory?: unknown
     },
@@ -81,7 +83,7 @@ vi.mock("@/features/session/app-ports", () => ({
 // deriving a scope of its own.
 vi.mock("@/features/session/composer/ui/harness-controller", () => ({
   usePromptHarnessControllersOptional: () => ({
-    submit: { harness: (scope: string) => calls.harnessByScope[scope] ?? "opencode" },
+    submit: { harness: (scope: string) => calls.harnessByScope[scope] },
   }),
 }))
 
@@ -193,7 +195,7 @@ describe("SessionPaneScope", () => {
   // harness id. The draft's harness is the one its own scope resolved, read
   // from the store the composer's picker writes.
   test("a draft names the harness its own pane scope resolved", () => {
-    calls.harnessByScope["draft:surface-1"] = "codex-app-server"
+    calls.harnessByScope["draft:surface-1"] = { kind: "connection", connectionId: "pi" }
 
     render(() => (
       <SessionPaneScope
@@ -206,10 +208,11 @@ describe("SessionPaneScope", () => {
       </SessionPaneScope>
     ))
 
-    expect(calls.directoryScopeProps?.harnessType?.()).toBe("codex-app-server")
+    expect(calls.directoryScopeProps?.harnessType?.()).toBe("pi")
+    expect(calls.directoryScopeProps?.harnessSelection?.()).toEqual({ kind: "connection", connectionId: "pi" })
   })
 
-  test("a draft on a plain local directory resolves OpenCode, not an absent harness", () => {
+  test("an unconfigured draft has no harness selection", () => {
     render(() => (
       <SessionPaneScope
         directory="/repo/local"
@@ -221,7 +224,8 @@ describe("SessionPaneScope", () => {
       </SessionPaneScope>
     ))
 
-    expect(calls.directoryScopeProps?.harnessType?.()).toBe("opencode")
+    expect(calls.directoryScopeProps?.harnessType?.()).toBeUndefined()
+    expect(calls.directoryScopeProps?.harnessSelection?.()).toBeUndefined()
   })
 
   // OpenCode is a harness id here like every other. The session-list wire

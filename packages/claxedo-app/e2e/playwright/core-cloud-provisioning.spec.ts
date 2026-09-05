@@ -440,6 +440,7 @@ async function installCloudRuntimeMock(
     if (url.pathname === "/config") return json(route, { provider: { id: "opencode", model: BIG_PICKLE.id }, agent: { id: "build" } })
     if (url.pathname === "/api/claxedo/agent-config/connections") {
       return json(route, {
+        status: "supported",
         connections: [{
           connectionId: CONNECTION_ID,
           label: "Cloud agent",

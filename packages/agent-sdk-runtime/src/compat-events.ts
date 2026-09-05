@@ -6,6 +6,7 @@ import type {
   AgentPresentationEvent,
   AgentQuestion,
   AgentPresentationSession,
+  AgentSession,
   AgentTodo,
 } from "@claxedo/agent-runtime-contract"
 import { withClaxedoMessageAuthor } from "@claxedo/agent-event-runtime/client-presentation"
@@ -384,7 +385,7 @@ export function sessionError(message: string, sessionID?: string): EventSessionE
   }
 }
 
-export function sessionUpdated(info: AgentPresentationSession): EventSessionUpdated {
+export function sessionUpdated(info: AgentSession): EventSessionUpdated {
   return {
     id: `session.updated:${info.id}`,
     type: "session.updated",

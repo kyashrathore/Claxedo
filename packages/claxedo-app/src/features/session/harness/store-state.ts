@@ -54,8 +54,8 @@ export function initialHarnessStoreState(input: {
   return {
     harnessMode: harnessMode(type),
     harness: type,
-    selectedModel: effectiveHarnessModel(type, ""),
-    selectedModelProvider: type === "pi" ? undefined : type,
+    selectedModel: type ? effectiveHarnessModel(type, "") : "",
+    selectedModelProvider: type?.kind === "native" && type.harnessId !== "pi" ? type.harnessId : undefined,
     dynamicModels: null,
     thoughtLevels: null,
     selectedThoughtLevel: undefined,

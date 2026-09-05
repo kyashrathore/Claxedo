@@ -21,6 +21,7 @@ export {
   configureEmbeddedWorkspaceRuntime,
   embeddedWorkspaceRuntimeSessionAuthority,
   ensureEmbeddedWorkspaceRuntime,
+  readEmbeddedWorkspaceSessionConfig,
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimes,

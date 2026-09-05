@@ -53,6 +53,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { resolveWorkspaceRuntimeTarget } from "../../authority/runtime-target"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
 import type { RelayRole } from "@claxedo/workspace-relay"
+import type { RuntimeHarnessSelection } from "@claxedo/workspace-runtime/config"
 
 export type HostedShellRouteOptions = {
   authentication?: RequestAuthenticationAdapter
@@ -122,8 +123,8 @@ export type HostedShellRouteOptions = {
 export type HostedHarnessProbe = {
   ok?: boolean
   status?: string
-  agentType?: string
-  acpBinary?: string | null
+  harness?: RuntimeHarnessSelection
+  activeHarness?: RuntimeHarnessSelection
   model?: string | null
   error?: string
   harnessHealth?: { status: "ok" | "degraded" | "unavailable"; reason?: string }
@@ -167,17 +168,6 @@ function hostedProject(directory: string) {
     name: name || id,
     time: { created: now, updated: now },
     sandboxes: [] as string[],
-  }
-}
-
-// Empty-but-valid catalog — passes the app's `isProviderListResponse` guard
-// (`all` array + `connected` array + `default` record) so boot degrades
-// gracefully instead of raising the "Failed to load models" toast.
-function emptyProvider() {
-  return {
-    all: [],
-    default: {},
-    connected: [],
   }
 }
 
@@ -357,8 +347,8 @@ function decodeSandboxHealth(input: unknown): HostedHarnessProbe {
   return {
     ...(typeof row?.ok === "boolean" ? { ok: row.ok } : {}),
     ...(txt(row?.status) ? { status: txt(row?.status) } : {}),
-    ...(txt(row?.agentType) ? { agentType: txt(row?.agentType) } : {}),
-    ...(typeof row?.acpBinary === "string" || row?.acpBinary === null ? { acpBinary: row.acpBinary as string | null } : {}),
+    ...(decodeHarnessSelection(row?.harness) ? { harness: decodeHarnessSelection(row?.harness) } : {}),
+    ...(decodeHarnessSelection(row?.activeHarness) ? { activeHarness: decodeHarnessSelection(row?.activeHarness) } : {}),
     ...(typeof row?.model === "string" || row?.model === null ? { model: row.model as string | null } : {}),
     ...(txt(row?.error) ? { error: txt(row?.error) } : {}),
     ...(healthStatus === "ok" || healthStatus === "degraded" || healthStatus === "unavailable"
@@ -512,13 +502,14 @@ export function hostedHarnessRuntimeStatus(
   }
 }
 
-/**
- * The identity the daemon's own status route reports as `harness` /
- * `activeHarness`: the runtime health's `agentType` is the base harness id,
- * served natively unless the runtime is driving an ACP binary.
- */
-function hostedHarnessIdentity(probe: HostedHarnessProbe) {
-  return { id: probe.agentType, access: probe.acpBinary ? "acp" : "native" }
+function decodeHarnessSelection(input: unknown): RuntimeHarnessSelection | undefined {
+  const row = rec(input)
+  if (row?.kind === "connection" && typeof row.connectionId === "string" && row.connectionId.trim()) {
+    return { kind: "connection", connectionId: row.connectionId }
+  }
+  if (row?.kind === "native" && (row.harnessId === "claude" || row.harnessId === "codex" || row.harnessId === "cursor" || row.harnessId === "pi")) {
+    return { kind: "native", harnessId: row.harnessId }
+  }
 }
 
 function hostedHarnessStatusBody(probe: HostedHarnessProbe, workspaceId: string, sessionId?: string) {
@@ -528,15 +519,8 @@ function hostedHarnessStatusBody(probe: HostedHarnessProbe, workspaceId: string,
     ...(sessionId ? { sessionId } : {}),
     status: probe.ok ? "ready" : probe.status ?? "error",
     ready: probe.ok ?? false,
-    ...(probe.agentType
-      ? {
-          harness: hostedHarnessIdentity(probe),
-          activeHarness: hostedHarnessIdentity(probe),
-          agentType: probe.agentType,
-          activeType: probe.agentType,
-        }
-      : {}),
-    activeBinary: probe.acpBinary ?? null,
+    ...(probe.harness ? { harness: probe.harness } : {}),
+    ...(probe.activeHarness ? { activeHarness: probe.activeHarness } : {}),
     ...(probe.model !== undefined ? { model: probe.model } : {}),
     ...(probe.error ? { error: probe.error } : {}),
     ...(probe.harnessHealth ? { harnessHealth: probe.harnessHealth } : {}),
@@ -777,18 +761,27 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
       }
     })
     .get("/path", (c) => c.json(hostedPath(directoryInput(c))))
-    .get("/provider", async (c) => {
-      if (c.req.query("harness") !== "pi") return c.json(emptyProvider())
-      if (!options.piProviderCatalog) return c.json(emptyProvider())
+    .get("/api/claxedo/agent-config/providers", async (c) => {
       try {
         const auth = await signedAuth(c, options)
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        if (c.req.query("nativeHarness") !== "pi" || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi" } }, 400)
+        if (!options.piProviderCatalog) return c.json({ error: { code: "provider_catalog_unavailable", message: "Pi provider catalog is not configured" } }, 503)
         return c.json(await options.piProviderCatalog(auth) as never)
       } catch (err) {
         return authErrorResponse(c, err)
       }
     })
-    .get("/provider/auth", (c) => c.json(c.req.query("harness") === "pi" ? piProviderAuth() : {}))
+    .get("/api/claxedo/agent-config/providers/auth", async (c) => {
+      try {
+        const auth = await signedAuth(c, options)
+        if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
+        if (c.req.query("nativeHarness") !== "pi" || c.req.query("connectionId")) return c.json({ error: { code: "provider_catalog_unsupported", message: "Provider catalog requires nativeHarness=pi" } }, 400)
+        return c.json(piProviderAuth())
+      } catch (err) {
+        return authErrorResponse(c, err)
+      }
+    })
     .put("/auth/:providerID", async (c) => {
       if (c.req.query("harness") !== "pi" || !options.putPiCredential) return c.json({ error: { code: "pi_credentials_unavailable", message: "Pi credential storage is unavailable" } }, 503)
       try {
@@ -822,19 +815,12 @@ export function HostedShellRoutes(options: HostedShellRouteOptions) {
     // Machine-scan discovers extensions already installed under ~/.claude etc.
     // A hosted central has no such local machine, so it returns an empty set.
     .get("/api/claxedo/agent-config/extensions/machine-scan", (c) => c.json([]))
-    // Operator-configured ACP agents live in the local machine's
-    // `user-agent-config.json` (an fs-backed store the local/self-hosted roots
-    // own). A hosted central has no such machine, so it answers the valid
-    // empty shape rather than Hono's bare 404 — the app treats any non-ok as
-    // "no ACP group", so this only quiets a recurring console 404 that read
-    // as a broken deployment. Still per-caller data in shape (a future
-    // per-user store), so it requires the same signed bearer every other
-    // agent-config data route does.
-    .get("/api/claxedo/agent-config/harness/acp-connections", async (c) => {
+    // Connection configuration belongs to the operator's local host.
+    .get("/api/claxedo/agent-config/connections", async (c) => {
       try {
         const auth = await signedAuth(c, options)
         if (!auth) throw new ControlPlaneAuthError(401, "missing_bearer_token", "Authorization: Bearer token is required")
-        return c.json({ connections: [] })
+        return c.json({ status: "unsupported", reason: "operator_local_configuration" })
       } catch (err) {
         return authErrorResponse(c, err)
       }

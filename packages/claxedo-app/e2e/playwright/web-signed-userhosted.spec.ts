@@ -26,7 +26,7 @@
  * (`user-hosted-tunnel.ts`'s `tunnelTarget`, non-cloud branch ->
  * `workspaceSupervisorServerUrl()`). The ONE fake is the model HTTP endpoint
  * (`scripted-model-server.ts`) — wired into THIS fixture's own process env
- * (`OPENCODE_CONFIG_CONTENT` + `claudeScriptedEnv`), which is new relative to
+ * (the Pi model-backend seam + `claudeScriptedEnv`), which is new relative to
  * `live-user-hosted-relay.spec.ts`'s fixture: that spec's behavior 3
  * (`test.fixme`) was blocked specifically because "no provider credentials
  * ... are configured for packages/claxedo-server in this environment" — this
@@ -121,11 +121,13 @@ test.describe("web signed user-hosted @core @tier-real @surface-web", () => {
     fixture = await startSignedRelayFixture({
       access: "user-hosted",
       backendPort: BACKEND_PORT,
+      browserUrl: `http://app.localhost:${PREVIEW_PORT}`,
       scripted,
       claudeConfigDir: path.join(APP_DIR, "..", "..", "node_modules", ".cache", "web-signed-userhosted-claude"),
     })
     webApp = await buildAndServeWebApp({
       backendUrl: fixture.info.backendUrl,
+      relayUrl: fixture.info.relayUrl,
       outDir: OUT_DIR,
       previewPort: PREVIEW_PORT,
     })

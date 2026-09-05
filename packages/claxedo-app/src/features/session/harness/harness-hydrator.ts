@@ -74,6 +74,15 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
   const pendingByScope = new Map<string, { key: string; run: Promise<void> }>()
   let nextGeneration = 0
 
+  const hasConfigOptions = async (scope: string, type: HarnessType) => {
+    try {
+      return input.hasConfigOptions ? await input.hasConfigOptions(type) : harnessHasConfigOptions(type)
+    } catch (error) {
+      input.setCapabilityError?.(scope, error instanceof Error ? error.message : "Failed to load connection capabilities")
+      return undefined
+    }
+  }
+
   const status = async (
     params?: ScopeInput,
     known?: { workspaceRuntime: boolean; workspaceId?: string },
@@ -183,8 +192,6 @@ export function createHarnessHydrator<ScopeInput extends HarnessScopeInput>(inpu
           if (configOptions === undefined) return
           if (configOptions) input.fetchConfigOptions(scope, type, params)
           else input.setReadyHydration(scope, type, false)
-        } else {
-          input.resetWorkspaceDraftHarness(scope)
         }
         await input.refresh(params.directory, type ? refreshHarnessTypeForScope({ directory: params.directory, harness: type }) : undefined, { draft: true })
         if (active()) input.cache.setSeen(scope, key)

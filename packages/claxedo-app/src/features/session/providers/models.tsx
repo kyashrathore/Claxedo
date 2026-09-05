@@ -36,17 +36,6 @@ const STORE_KEY = "model"
  * first (server, workspace) bucket that reads it and removes it on the way, so
  * the global entry exists for exactly one read.
  */
-const LEGACY_GLOBAL_MODEL_KEY = "opencode.global.dat:model"
-
-function modelKeys(value: unknown): ModelKey[] {
-  if (!Array.isArray(value)) return []
-  return value.flatMap((item) => {
-    if (!item || typeof item !== "object") return []
-    const row = item as Partial<ModelKey>
-    if (typeof row.providerID !== "string" || typeof row.modelID !== "string") return []
-    return [{ providerID: row.providerID, modelID: row.modelID }]
-  })
-}
 
 function visibilityRows(value: unknown): User[] {
   if (!Array.isArray(value)) return []
@@ -66,26 +55,12 @@ function variantMap(value: unknown): Record<string, string | undefined> {
   )
 }
 
-/**
- * Read a stored payload in either shape.
- *
- * The replaced global store was OpenCode's alone — one flat `user` list, one
- * flat `variant` map, `recent` entries with no harness — so its rows are
- * re-homed under `opencode` and everything else starts empty.
- */
-export function decodeModelStoreRecord(value: unknown, legacyHarness: string): ModelStoreRecord {
+/** Validates the workspace-owned, harness-keyed preference record. */
+export function decodeModelStoreRecord(value: unknown): ModelStoreRecord {
   const empty: ModelStoreRecord = { user: {}, recent: [], variant: {} }
   if (!value || typeof value !== "object" || Array.isArray(value)) return empty
   const row = value as Record<string, unknown>
-  // The replaced shape is recognisable by its flat `user` LIST; the current one
-  // keys `user` by harness.
-  if (Array.isArray(row.user)) {
-    return {
-      user: { [legacyHarness]: visibilityRows(row.user) },
-      recent: modelKeys(row.recent).map((model) => ({ ...model, harness: legacyHarness })),
-      variant: { [legacyHarness]: variantMap(row.variant) },
-    }
-  }
+  if (Array.isArray(row.user)) return empty
   const user = row.user && typeof row.user === "object" && !Array.isArray(row.user)
     ? Object.fromEntries(Object.entries(row.user).map(([harness, rows]) => [harness, visibilityRows(rows)]))
     : {}
@@ -139,6 +114,8 @@ export type ModelsScope = {
   workspaceKey: Accessor<string>
   /** The harness whose catalog this store shows and whose maps it keys. */
   harness: Accessor<string>
+  /** Only native selections may read the control-plane provider catalog. */
+  nativeHarness?: Accessor<string | undefined>
   /** The server serving that workspace. */
   serverUrl: Accessor<string>
   /**
@@ -153,7 +130,7 @@ function createModelStoreRecord(target: ReturnType<typeof Persist.serverWorkspac
   return persisted(
     {
       ...target,
-      migrate: (value: unknown) => decodeModelStoreRecord(value, "opencode"),
+      migrate: decodeModelStoreRecord,
     },
     createStore<ModelStoreRecord>({
       user: {},
@@ -195,7 +172,7 @@ export const { use: useModelStoreRegistry, provider: ModelStoreRegistryProvider 
           // two callers can name one document with differently-spelled server
           // URLs (`sdk.url` in a pane, `getClaxedoServerUrl()` in Settings),
           // and the target is where that spelling is already normalized away.
-          const target = Persist.serverWorkspace(serverUrl, workspaceKey, STORE_KEY, [LEGACY_GLOBAL_MODEL_KEY])
+          const target = Persist.serverWorkspace(serverUrl, workspaceKey, STORE_KEY)
           const id = `${target.storage ?? ""}:${target.key}`
           const existing = records.get(id)
           if (existing) return existing
@@ -214,7 +191,7 @@ export const { use: useModelStoreRegistry, provider: ModelStoreRegistryProvider 
 const modelsContextInput = {
   name: "Models", gate: true,
   init: (input: ModelsScope) => {
-    const providers = useProviders(input.harness, input.scope ?? (() => undefined))
+    const providers = useProviders(() => input.nativeHarness?.() ?? "", input.scope ?? (() => undefined))
 
     const [store, setStore, _, ready] = useModelStoreRegistry().record(input.serverUrl(), input.workspaceKey())
 

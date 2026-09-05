@@ -25,7 +25,7 @@
  * The scripted model endpoint is the only fake, and no case here needs it.
  * Every negative assertion follows a positive mutation through the same server.
  *
- * HARNESS NOTES — The server is configured with the scripted OpenCode model so
+ * HARNESS NOTES — The server is configured with a scripted Pi model backend so
  * session creation never inherits a developer credential. These cases do not
  * prompt; first/multi-turn proof remains in `real-harness-local`.
  *
@@ -50,7 +50,7 @@ async function body(response: Response) {
 }
 
 async function createSession(workspace: { id: string; directory: string }, title: string) {
-  return await body(await fetch(`${real.url}/session?${query(workspace)}`, {
+  return await body(await fetch(`${real.url}/session?${query(workspace)}&nativeHarness=pi`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({ title }),
@@ -107,7 +107,8 @@ test.describe("server-mediated core promotions @core @tier-real @surface-web", (
     }).toBe(archivedAt)
 
     expect((await fetch(`${real.url}/session/${session.id}?${query(workspace)}`, { method: "DELETE" })).status).toBe(200)
-    expect((await fetch(`${real.url}/session/${session.id}?${query(workspace)}`)).status).toBe(404)
+    const deletedSession = await fetch(`${real.url}/session/${session.id}?${query(workspace)}`)
+    expect(deletedSession.status, await deletedSession.text()).toBe(404)
   })
 
   test("core-workspace-lifecycle: delete removes the canonical workspace and resolve recreates it", async () => {

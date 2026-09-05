@@ -60,7 +60,6 @@ export async function dispatchNormalPromptSubmit(input: {
   readonly format?: PromptDispatchPayload["format"]
   readonly targetCreated: boolean
   readonly replaceSession: boolean
-  readonly harnessMode: boolean
   readonly explicitExistingSession: boolean
   readonly draftId?: string
   readonly handoffCreatedSession: boolean

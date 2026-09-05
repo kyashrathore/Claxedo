@@ -5,7 +5,6 @@ export const WorkspaceRuntimeRoutes = {
   capabilities: `${WorkspaceRuntimeApiPrefix}/capabilities`,
   config: `${WorkspaceRuntimeApiPrefix}/config`,
   harnessConfigOptions: `${WorkspaceRuntimeApiPrefix}/harness-config-options`,
-  providerConfig: `${WorkspaceRuntimeApiPrefix}/provider-config`,
   pty: `${WorkspaceRuntimeApiPrefix}/pty`,
   process: `${WorkspaceRuntimeApiPrefix}/process`,
   events: `${WorkspaceRuntimeApiPrefix}/events`,

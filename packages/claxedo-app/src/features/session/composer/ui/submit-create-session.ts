@@ -11,7 +11,7 @@ import type {
   SubmitSessionTarget,
   SubmitSessionTargetResult,
 } from "../../submit/index"
-import { applyCreatedSessionTargetEffects, resolveSubmitSessionTarget } from "../../submit/index"
+import { applyCreatedSessionTargetEffects, createSessionWithLifecycle, resolveSubmitSessionTarget } from "../../submit/index"
 import type { HarnessRef, SessionRef } from "@/platform/identity/session-ref"
 import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import { sessionWorkspaceRuntimeRef } from "@/platform/runtime/session-workspace"
@@ -29,33 +29,17 @@ import { holdSessionEventScope } from "@/platform/runtime/session-event-scope"
 
 export type SubmitProjectionScheduler = typeof scheduleSessionProjectionPull
 
-export type SubmitSessionCreateClient = {
-  readonly session: SubmitSessionGetClient["session"] & {
-    create(
-      input: {
-        readonly id?: string
-        readonly directory: SubmitDirectory
-        readonly agent: string
-        readonly model: { readonly providerID: string; readonly id: string; readonly variant?: string }
-      },
-      init?: { readonly headers?: Record<string, string> },
-    ): Promise<{ readonly data?: SubmitSessionTarget }>
-  }
-}
-
 export type SubmitSessionTargetAcquisitionInput = {
   readonly session: SubmitSessionTarget | undefined
   readonly explicitSessionID: string | undefined
   readonly isNewSession: boolean
   readonly replaceSession: boolean
-  readonly harnessMode: boolean
   readonly signedControlPlane: boolean
   readonly workspaceId?: string
   readonly serverUrl?: string
   readonly request?: typeof fetch
   readonly reserveManagedSession?: typeof reservePrivateSession
   readonly sessionDirectory: SubmitDirectory
-  readonly client: SubmitSessionGetClient
   readonly sessionClient: () => SubmitSessionGetClient
   readonly scope: string
   readonly draftId: string | undefined
@@ -67,17 +51,14 @@ export type SubmitSessionTargetAcquisitionInput = {
   }
   readonly events: ClaxedoLifecycleListener | undefined
   readonly boot: (sessionID?: string) => void
-  readonly createSessionClient: (input: {
-    readonly directory: SubmitDirectory
-    readonly harnessType: HarnessSelection
-  }) => SubmitSessionCreateClient
   readonly claimHarnessSession: (input: {
     readonly scope: string
     readonly directory: SubmitDirectory
     readonly sessionID: string | undefined
+    readonly headers?: Record<string, string>
     readonly sessionConfig: SubmitSessionTargetAcquisitionInput["sessionConfig"]
   }) => Promise<SubmitSessionTarget | undefined>
-  /** Reports a session that could not be created, for either harness mode. */
+  /** Reports a session that could not be created. */
   readonly onCreateError: (err: unknown) => void
 }
 
@@ -143,10 +124,7 @@ export async function acquireSubmitSessionTarget(
   return await resolveSubmitSessionTarget({
     isNewSession: input.isNewSession,
     replaceSession: input.replaceSession,
-    harnessMode: input.harnessMode,
-    signedControlPlane: input.signedControlPlane,
     sessionDirectory: input.sessionDirectory,
-    client: input.client,
     sessionClient: input.sessionClient,
     createSessionTarget: () => createRuntimeSessionTarget(input),
     ...(input.session === undefined ? {} : { session: input.session }),
@@ -166,28 +144,31 @@ async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionI
         ...(input.request ? { request: input.request } : {}),
       })
     : undefined
-  if (input.harnessMode) {
-    const session = await input.claimHarnessSession({
-      scope: input.scope,
-      directory: input.sessionDirectory,
-      sessionID: reservation?.sessionId ?? input.explicitSessionID,
-      sessionConfig: input.sessionConfig,
-    }).catch((err) => {
-      input.onCreateError(err)
-      return undefined
-    })
-    if (session) {
-      input.boot(session.id)
-      openSessionEventStreams(session.id)
-    }
-    return session
-  }
-
-  const session = await createOpencodeSession(input, reservation).catch((err) => {
+  const headers: Record<string, string> = {}
+  if (input.draftId) headers["x-claxedo-draft-id"] = input.draftId
+  if (reservation) headers["x-claxedo-session-registration-operation"] = reservation.operationId
+  const session = await createSessionWithLifecycle({
+    draftId: input.draftId,
+    events: input.events,
+    perform: async () => {
+      const session = await input.claimHarnessSession({
+        scope: input.scope,
+        directory: input.sessionDirectory,
+        sessionID: reservation?.sessionId ?? input.explicitSessionID,
+        sessionConfig: input.sessionConfig,
+        headers,
+      })
+      if (!session) throw new Error("Failed to create session")
+      return session
+    },
+  }).catch((err) => {
     input.onCreateError(err)
     return undefined
   })
-  if (session) openSessionEventStreams(session.id)
+  if (session) {
+    input.boot(session.id)
+    openSessionEventStreams(session.id)
+  }
   return session
 }
 
@@ -208,40 +189,6 @@ async function createRuntimeSessionTarget(input: SubmitSessionTargetAcquisitionI
  */
 function openSessionEventStreams(sessionID: string) {
   holdSessionEventScope(sessionID)
-}
-
-async function createOpencodeSession(
-  input: SubmitSessionTargetAcquisitionInput,
-  reservation?: PrivateSessionReservation,
-) {
-  const headers: Record<string, string> = {}
-  if (input.draftId) headers["x-claxedo-draft-id"] = input.draftId
-  if (reservation) headers["x-claxedo-session-registration-operation"] = reservation.operationId
-  const client = input.createSessionClient({
-    directory: input.sessionDirectory,
-    harnessType: input.sessionHarnessType,
-  })
-  return await createOpencodeSessionWithLifecycle({
-    perform: async () => {
-      const res = await client.session.create(
-        {
-          ...(reservation ? { id: reservation.sessionId } : {}),
-          directory: input.sessionDirectory,
-          agent: input.sessionConfig.agent,
-          model: {
-            providerID: input.sessionConfig.model.providerID,
-            id: input.sessionConfig.model.modelID,
-            ...(input.sessionConfig.variant ? { variant: input.sessionConfig.variant } : {}),
-          },
-        },
-        Object.keys(headers).length > 0 ? { headers } : undefined,
-      )
-      if (!res.data?.id) throw new Error("Failed to create session")
-      return res.data
-    },
-    ...(input.draftId === undefined ? {} : { draftId: input.draftId }),
-    ...(input.events === undefined ? {} : { events: input.events }),
-  })
 }
 
 function requiredWorkspaceId(value: string | undefined) {
