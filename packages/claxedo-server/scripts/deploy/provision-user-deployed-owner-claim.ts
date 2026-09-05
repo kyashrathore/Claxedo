@@ -300,7 +300,7 @@ async function main() {
   const resolved = await resolveOwnerClaim(commandEnvironment)
   const provisioning = await ownerClaimProvisioning({
     env: commandEnvironment,
-    mode: selected[0]!,
+    mode: selected[0],
     claim: resolved.claim,
   })
   const temporary = await mkdtemp(path.join(os.tmpdir(), `claxedo-owner-claim-${environment}-`))
@@ -310,7 +310,7 @@ async function main() {
     for (const command of ownerClaimProvisioningCommands({
       env: { ...commandEnvironment, CLAXEDO_WRANGLER_CONFIG: config },
       staging,
-      mode: selected[0]!,
+      mode: selected[0],
       provisioning,
     })) {
       await run(command)

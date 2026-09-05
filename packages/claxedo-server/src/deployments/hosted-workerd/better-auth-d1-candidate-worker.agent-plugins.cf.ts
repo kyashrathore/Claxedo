@@ -40,7 +40,7 @@ export function composeBetterAuthD1AgentPluginsCandidate(
   const feature = createHostedAgentPluginsComposition({
     env,
     plane: base.plane,
-    database: env.CONTROL_PLANE_DB as D1Database,
+    database: env.CONTROL_PLANE_DB,
     authentication: base.options.authentication,
   })
   return {
@@ -50,7 +50,7 @@ export function composeBetterAuthD1AgentPluginsCandidate(
       routeContributions: feature.routeContributions,
       integrationRoutes: feature.integrationRoutes,
       productWorkspace: {
-        ...(base.options.productWorkspace ?? {}),
+        ...base.options.productWorkspace,
         prepareRuntime: feature.prepareRuntime,
         provisionRuntime: feature.provisionRuntime,
       },

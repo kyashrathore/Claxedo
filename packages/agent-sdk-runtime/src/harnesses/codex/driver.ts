@@ -215,7 +215,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
     const model = codexAppServerModel(input.model)
     // A thread created before the user has touched the picker still has to run
     // under the default rung rather than whatever `thread/start` would assume.
-    const settings = CODEX_SETTINGS[DEFAULT_CODEX_MODE]!
+    const settings = CODEX_SETTINGS[DEFAULT_CODEX_MODE]
     const result = await proc.request("thread/start", {
       cwd: input.directory,
       approvalPolicy: settings.approvalPolicy,
@@ -589,7 +589,7 @@ class CodexAppServerDriver implements SdkRuntimeDriver {
           await proc.request("account/logout", null)
         }
       } catch (err) {
-        throw new Error(`Codex auth could not initialize: ${errorMessage(err)}`)
+        throw new Error(`Codex auth could not initialize: ${errorMessage(err)}`, { cause: err })
       }
       if (this.process === proc) {
         this.processAuthWasExplicit = !!params

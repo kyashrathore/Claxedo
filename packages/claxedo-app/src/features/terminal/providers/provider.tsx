@@ -56,7 +56,7 @@ function decodeDirectory(value: string) {
 
 export function workspaceRelativeCwd(workspaceDir: string, cwd: string | undefined) {
   if (!cwd) return undefined
-  const windowsAbsolute = /^[A-Za-z]:[\\/]/.test(cwd) || /^\\\\/.test(cwd)
+  const windowsAbsolute = /^[A-Za-z]:[\\/]/.test(cwd) || cwd.startsWith('\\\\')
   const posixAbsolute = cwd.startsWith("/")
   if (!windowsAbsolute && !posixAbsolute) return cwd
 

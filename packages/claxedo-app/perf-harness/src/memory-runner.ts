@@ -366,7 +366,7 @@ export async function runMemorySweep(input: {
   await installSeedState(page, input.app, fixture)
 
   const mode = input.mode ?? "normal"
-  const first = fixture.sessions[0]!
+  const first = fixture.sessions[0]
   await page.goto(`${input.app.baseUrl}${sessionPath(first, first.id)}`, { waitUntil: "domcontentloaded" })
   await page.waitForSelector("[data-claxedo]", { timeout: 30_000 })
   await page.waitForTimeout(1_500)
@@ -413,7 +413,7 @@ export async function runMemorySweep(input: {
 function median(values: readonly number[]) {
   const sorted = values.toSorted((a, b) => a - b)
   const middle = Math.floor(sorted.length / 2)
-  return sorted.length % 2 === 0 ? (sorted[middle - 1]! + sorted[middle]!) / 2 : sorted[middle]!
+  return sorted.length % 2 === 0 ? (sorted[middle - 1] + sorted[middle]) / 2 : sorted[middle]
 }
 
 export function summarizeMemorySweeps(sweeps: readonly MemorySweep[]): MemorySweepSummary {
@@ -450,7 +450,7 @@ export function memoryRecords(summary: MemorySweepSummary, stack: string, profil
     {
       lane: "memory", flow: summary.flow, metric: "retained_heap_bytes_per_visit",
       value: summary.slopeBytesPerStep,
-      unit: METRICS.retained_heap_bytes_per_visit!.unit,
+      unit: METRICS.retained_heap_bytes_per_visit.unit,
       samples: slopes, stack, profile,
       ...(summary.slopeSupported ? {} : {
         absentReason: `Need at least ${MIN_SLOPE_POST_CLICK_SAMPLES} distinct post-click tail samples per repetition`,
@@ -458,7 +458,7 @@ export function memoryRecords(summary: MemorySweepSummary, stack: string, profil
     },
     {
       lane: "memory", flow: summary.flow, metric: "retained_heap_bytes",
-      value: summary.plateauBytes, unit: METRICS.retained_heap_bytes!.unit,
+      value: summary.plateauBytes, unit: METRICS.retained_heap_bytes.unit,
       samples: plateaus, stack, profile,
     },
   ]

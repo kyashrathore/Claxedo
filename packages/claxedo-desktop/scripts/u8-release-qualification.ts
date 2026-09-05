@@ -197,7 +197,7 @@ function readJson(file: string): unknown {
   try {
     return JSON.parse(fs.readFileSync(file, "utf8"))
   } catch (error) {
-    throw new Error(`U8 release qualification failed: could not parse ${file}: ${String(error)}`)
+    throw new Error(`U8 release qualification failed: could not parse ${file}: ${String(error)}`, { cause: error })
   }
 }
 
@@ -258,7 +258,7 @@ function validateBaseline(value: unknown): U8ReleaseBaseline {
 
 function median(values: number[]) {
   const sorted = [...values].sort((a, b) => a - b)
-  return sorted[Math.floor(sorted.length / 2)]!
+  return sorted[Math.floor(sorted.length / 2)]
 }
 
 function validateMemory(samples: unknown, label: string, profileIds: Set<string>) {
@@ -295,7 +295,7 @@ function validateHarnesses(value: unknown, baseline: U8ReleaseBaseline) {
       const sample = record(raw, `harness ${name}[${String(index)}]`)
       for (const metric of Object.keys(limits) as Array<keyof HarnessCeiling>) {
         finite(sample[metric], `harness ${name}[${String(index)}].${metric}`)
-        invariant((sample[metric] as number) <= limits[metric], `harness ${name}[${String(index)}].${metric} exceeds frozen ceiling`)
+        invariant((sample[metric]) <= limits[metric], `harness ${name}[${String(index)}].${metric} exceeds frozen ceiling`)
       }
       for (const gate of ["mutationSafe", "streamPassed", "idleExitPassed", "parentLossPassed"] as const) {
         invariant(sample[gate] === true, `harness ${name}[${String(index)}].${gate} did not pass`)
@@ -346,7 +346,7 @@ function validateFileReference(referenceValue: unknown, evidenceFile: string, la
   const file = resolveReferencedFile(evidenceFile, reference.file)
   invariant(fs.existsSync(file) && fs.statSync(file).isFile(), `${label} is missing at ${file}`)
   invariant(reference.sha256 === sha256(file), `${label} hash changed`)
-  return { file, sha256: reference.sha256 as string }
+  return { file, sha256: reference.sha256 }
 }
 
 const RELEASE_GATE_RESULT_FIELDS = {
@@ -495,7 +495,7 @@ export function qualifyU8Release(input: {
     evidenceFile,
     gateKey: "productBoundary",
     gateName: "product-boundary gate",
-    releaseSha: evidence.releaseSha as string,
+    releaseSha: evidence.releaseSha,
     manifestSetSha,
     artifactSha,
   })
@@ -540,7 +540,7 @@ export function qualifyU8Release(input: {
       evidenceFile,
       gateKey: platform,
       gateName: `native credential gate ${platform}`,
-      releaseSha: evidence.releaseSha as string,
+      releaseSha: evidence.releaseSha,
       manifestSetSha,
       artifactSha: nativeArtifactHashes[platform],
       nativePlatform: platform,
@@ -555,7 +555,7 @@ export function qualifyU8Release(input: {
       evidenceFile,
       gateKey: gate,
       gateName: `release gate ${gate}`,
-      releaseSha: evidence.releaseSha as string,
+      releaseSha: evidence.releaseSha,
       manifestSetSha,
     })
   }
@@ -566,7 +566,7 @@ export function qualifyU8Release(input: {
     qualifiedAt: (input.now ?? (() => new Date()))().toISOString(),
     artifact: { file: artifact, sha256: artifactSha },
     baseline: { file: baselineFile, sha256: baselineSha, sourceCommit: baseline.sourceCommit },
-    evidence: { file: evidenceFile, releaseSha: evidence.releaseSha as string },
+    evidence: { file: evidenceFile, releaseSha: evidence.releaseSha },
     boundaryManifestSetSha256: manifestSetSha,
     raw: { baseline, evidence: evidenceValue as U8ReleaseEvidence },
   }

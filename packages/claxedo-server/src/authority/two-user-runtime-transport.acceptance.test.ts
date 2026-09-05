@@ -282,7 +282,7 @@ function runtimeAdapter() {
         text: String((input.parts[0] as { text?: unknown } | undefined)?.text ?? ""),
       }
       const assistant = buildAssistantMessage({
-        id: input.assistantMessageId!,
+        id: input.assistantMessageId,
         sessionID: sessionId,
         parentID: input.userMessageId!,
         agent: input.agent,
@@ -292,7 +292,7 @@ function runtimeAdapter() {
       const assistantPart = {
         id: `${input.assistantMessageId}-text`,
         sessionID: sessionId,
-        messageID: input.assistantMessageId!,
+        messageID: input.assistantMessageId,
         type: "text" as const,
         text: "accepted",
       }
@@ -651,7 +651,7 @@ async function verifiedAuth(token: string) {
     services.auth,
   )
   if (auth.mode !== "signed") throw new Error("Expected signed auth")
-  return auth as SignedAuth
+  return auth
 }
 
 function signedInit(token: string, init: RequestInit = {}) {

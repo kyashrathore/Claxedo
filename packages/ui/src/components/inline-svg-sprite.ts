@@ -2,7 +2,7 @@ const symbolPattern = /<symbol\b[^>]*\bid="([^"]+)"[^>]*>[\s\S]*?<\/symbol>/g
 
 function parseSymbols(rootID: string, markup: string) {
   const symbols = new Map<string, string>()
-  for (const match of markup.matchAll(symbolPattern)) symbols.set(match[1]!, match[0])
+  for (const match of markup.matchAll(symbolPattern)) symbols.set(match[1], match[0])
   if (symbols.size === 0) throw new Error(`SVG sprite ${rootID} has no symbols`)
   return symbols
 }

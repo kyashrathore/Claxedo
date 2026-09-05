@@ -69,7 +69,7 @@ export {
 } from "./runtime-event-projection"
 type Event = GlobalSdkEvent
 
-export async function* sseJsonStream(response: Response, signal: AbortSignal, onEventId?: (id: string) => void): AsyncGenerator<unknown> {
+export async function* sseJsonStream(response: Response, signal: AbortSignal, onEventId?: (id: string) => void): AsyncGenerator {
   if (!response.ok) throw new Error(`runtime event stream failed: ${response.status}`)
   if (!response.body) return
   const reader = response.body.getReader()

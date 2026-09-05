@@ -188,7 +188,7 @@ try {
         await cdp.send("Profiler.start")
       },
       onPainted: async () => {
-        profile = (await stopProfiler(cdp)) as Profile
+        profile = (await stopProfiler(cdp))
         if (collectCoverage) coverage = await takeInvocationCounts(cdp, attributor, offsets)
       },
     })
@@ -408,7 +408,7 @@ function analyzeOccupancy(
     clock += deltas[index] ?? 0
     if (clock < window.startTime || clock > window.endTime) continue
     const micros = Math.max(0, deltas[index] ?? 0)
-    const name = byId.get(samples[index]!)?.callFrame.functionName
+    const name = byId.get(samples[index])?.callFrame.functionName
     if (name === "(idle)") {
       occupancy.idleMicros += micros
       if (inFlight(toPageMs(clock))) occupancy.networkBlockedIdleMicros += micros
@@ -493,7 +493,7 @@ function analyzeProfile(
   let rawProfiledMicros = 0
   let timestamp = profile.startTime
   for (let index = 0; index < samples.length; index++) {
-    const id = samples[index]!
+    const id = samples[index]
     const delta = Math.max(0, deltas[index] ?? 0)
     const previousTimestamp = timestamp
     timestamp += delta
@@ -665,8 +665,8 @@ function percentile(values: number[], quantile: number) {
   const index = (values.length - 1) * quantile
   const lower = Math.floor(index)
   const upper = Math.ceil(index)
-  if (lower === upper) return values[lower]!
-  return values[lower]! + (values[upper]! - values[lower]!) * (index - lower)
+  if (lower === upper) return values[lower]
+  return values[lower] + (values[upper] - values[lower]) * (index - lower)
 }
 
 /**

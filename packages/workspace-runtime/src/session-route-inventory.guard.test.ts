@@ -11,8 +11,8 @@ function source(relative: string) {
 function declaredRoutes(input: string, methods: readonly string[]) {
   const allowed = new Set(methods.map((method) => method.toLowerCase()))
   return [...input.matchAll(/\.(get|post|put|patch|delete|all)\(\s*"([^"]+)"/g)]
-    .filter((match) => allowed.has(match[1]!.toLowerCase()) && match[2]!.startsWith("/"))
-    .map((match) => `${match[1]!.toUpperCase()} ${match[2]!}`)
+    .filter((match) => allowed.has(match[1].toLowerCase()) && match[2].startsWith("/"))
+    .map((match) => `${match[1].toUpperCase()} ${match[2]}`)
     .sort()
 }
 

@@ -273,7 +273,7 @@ export function removeSessionInventoryRow<TSession extends SessionInventoryIdent
   item: SessionInventoryIdentity,
 ) {
   const beforeByWorkspace = draft.byWorkspace
-  draft.sessions = removeSessionIdentity(draft.sessions, item) as TSession[]
+  draft.sessions = removeSessionIdentity(draft.sessions, item)
   draft.workspaceMeta = Object.fromEntries(
     Object.entries(draft.workspaceMeta ?? {}).map(([key, meta]) => [
       key,
@@ -375,7 +375,7 @@ function setWorkspaceMeta(
   group: SessionInventoryWorkspaceGroup<SessionInventoryRow>,
 ) {
   draft.workspaceMeta = {
-    ...(draft.workspaceMeta ?? {}),
+    ...draft.workspaceMeta,
     [key]: workspaceMetaFromGroup(key, group),
   }
 }

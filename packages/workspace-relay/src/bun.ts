@@ -1242,7 +1242,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
 
   function pruneReconnects(tracker: HostTunnelRegistrationTracker, now: number) {
     const cutoff = now - HOST_TUNNEL_REGISTRATION_RECONNECT_WINDOW_MS
-    while (tracker.recent.length && tracker.recent[0]! < cutoff) {
+    while (tracker.recent.length && tracker.recent[0] < cutoff) {
       tracker.recent.shift()
     }
   }
@@ -1463,14 +1463,14 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           )
           if (parsed?.type === "ping") {
             options.directory?.recordPong(ws.data.hostId)
-            ws.send(JSON.stringify(makeTunnelPong(parsed as TunnelPing)))
+            ws.send(JSON.stringify(makeTunnelPong(parsed)))
           }
           if (parsed?.type === "pong") {
             ws.data.missedPongs = 0
             options.directory?.recordPong(ws.data.hostId)
           }
           if (parsed?.type === "host.registration.update") {
-            const update = parsed as TunnelHostRegistrationUpdate
+            const update = parsed
             const workspaceIds = [...new Set(update.workspace_ids)]
             const hostSocket = ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>
             const hostId = hostSocket.data.hostId
@@ -1508,7 +1508,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
           if (parsed?.type === "http.response.start") {
             const pending = ws.data.pending.get(parsed.request_id)
             if (pending) {
-              const response = parsed as TunnelHttpResponseStart
+              const response = parsed
               pending.responseStarted = true
               if (isEventStream(response.headers)) clearTimeout(pending.timeout)
               pending.resolve(new Response(pending.stream, {
@@ -1524,14 +1524,14 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
                 ws: ws as Bun.ServerWebSocket<RelayHostTunnelWebSocketData>,
                 requestId: parsed.request_id,
                 entry,
-                chunk: decoded((parsed as TunnelHttpResponseChunk).body_base64),
+                chunk: decoded((parsed).body_base64),
                 slowConsumerTimeoutMs: bunOptions.slowConsumerTimeoutMs ?? SLOW_CONSUMER_TIMEOUT_MS_DEFAULT,
                 slowConsumerStats,
               })
             }
           }
           if (parsed?.type === "http.response.end") {
-            const pending = ws.data.pending.get((parsed as TunnelHttpResponseEnd).request_id)
+            const pending = ws.data.pending.get((parsed).request_id)
             if (pending) {
               clearTimeout(pending.timeout)
               if (pending.slowConsumerTimeout) {
@@ -1560,11 +1560,11 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
               } catch {
                 // already closed/errored
               }
-              ws.data.pending.delete((parsed as TunnelHttpResponseEnd).request_id)
+              ws.data.pending.delete((parsed).request_id)
             }
           }
           if (parsed?.type === "ws.frame") {
-            const frame = parsed as TunnelWsFrame
+            const frame = parsed
             const channel = ws.data.channels.get(frame.channel_id)
             if (!channel || channel.readyState !== WebSocket.OPEN) {
               ws.data.channels.delete(frame.channel_id)
@@ -1578,7 +1578,7 @@ export function createWorkspaceRelayBun(options: WorkspaceRelayOptions, bunOptio
             channel.send(decodedFrame(frame))
           }
           if (parsed?.type === "ws.close") {
-            const close = parsed as TunnelWsClose
+            const close = parsed
             const channel = ws.data.channels.get(close.channel_id)
             if (channel) {
               ws.data.channels.delete(close.channel_id)

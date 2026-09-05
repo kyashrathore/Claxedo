@@ -125,7 +125,7 @@ const { expandCases, buildResourceSequence } = (await import(new URL("src/cases.
   buildResourceSequence(scenario: Scenario): DriverCase[]
 }
 const panelScenarioDefinition = await readScenario("workspace-panel-v1")
-const workspaceFixtureManifest = buildWorkspaceFixtureManifest(panelScenarioDefinition.cases.workspaceLoad!, "test")
+const workspaceFixtureManifest = buildWorkspaceFixtureManifest(panelScenarioDefinition.cases.workspaceLoad, "test")
 
 async function prepare(
   driver: ReturnType<typeof createClaxedoPublicDriver>,

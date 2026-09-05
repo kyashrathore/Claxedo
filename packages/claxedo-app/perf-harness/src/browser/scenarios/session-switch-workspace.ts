@@ -184,7 +184,7 @@ const SESSION_SWITCH_PANEL_CONTENT_SELECTOR = "[data-testid='review-pane-root']"
 
 export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
   const sessions = fixture.sessions
-  const home = sessions[0]!
+  const home = sessions[0]
   await launchTo(page, app, sessionPath(home, home.id))
   await waitForTranscript(page, fixture, home.id, home.title)
   await showSessionInventory(page, fixture, Math.min(sessions.length, 8), { settle: "frame" })
@@ -348,9 +348,9 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
 
   // Block A — workspace closed.
   await settleStabilityRequestStarts("session_switch_closed_precondition")
-  await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2]! })
+  await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2] })
   await runCell({ block: "closed", scope: "within", temperature: "warm", target: home })
-  await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1]! })
+  await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1] })
   await runCell({ block: "closed", scope: "across", temperature: "warm", target: home })
 
   // Block B — leave home's substantial file for a first-visit closed panel;
@@ -361,9 +361,9 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
   await openWorkspaceFileTab(page, fixture, SESSION_SWITCH_SUBSTANTIAL_FILE_PATH)
   await settleGate("session_switch_open_file_precondition")
   await settleStabilityRequestStarts("session_switch_open_file_precondition")
-  await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4]! })
+  await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4] })
   await runCell({ block: "open_file", scope: "within", temperature: "warm", target: home })
-  await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3]! })
+  await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3] })
   await runCell({ block: "open_file", scope: "across", temperature: "warm", target: home })
 
   // Block C — leave/restore home on a large review (500-file corpus, one
@@ -379,9 +379,9 @@ export async function sessionSwitchWorkspace(page: Page, app: BrowserTarget, fix
   await waitForReviewStable(page)
   await settleGate("session_switch_open_review_precondition")
   await settleStabilityRequestStarts("session_switch_open_review_precondition")
-  await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6]! })
+  await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6] })
   await runCell({ block: "open_review", scope: "within", temperature: "warm", target: home })
-  await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5]! })
+  await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5] })
   await runCell({ block: "open_review", scope: "across", temperature: "warm", target: home })
 
   // The workspace-open penalty, first-class per {within/across}x{cold/warm}

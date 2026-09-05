@@ -69,7 +69,7 @@ function routerLadder() {
   for (const match of source.matchAll(
     /error\.code === "(document_[a-z_]+)"(?:\s*\|\|\s*error\.code === "(document_[a-z_]+)")?\s*\?\s*(\d{3})/g,
   )) {
-    ladder.set(match[1]!, Number(match[3]))
+    ladder.set(match[1], Number(match[3]))
     if (match[2]) ladder.set(match[2], Number(match[3]))
   }
   // Codes handled by an `instanceof` branch ABOVE the ladder rather than inside
@@ -77,7 +77,7 @@ function routerLadder() {
   for (const match of source.matchAll(
     /error instanceof (Document[A-Za-z]+Error)\)\s*\{[\s\S]{0,400}?\{ status: (\d{3}) \}/g,
   )) {
-    const code = INSTANCEOF_CODES[match[1]!]
+    const code = INSTANCEOF_CODES[match[1]]
     if (code) ladder.set(code, Number(match[2]))
   }
   return ladder

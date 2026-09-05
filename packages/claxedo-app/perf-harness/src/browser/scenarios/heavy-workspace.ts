@@ -82,7 +82,7 @@ export async function heavyWorkspaceReopen(
   app: BrowserTarget,
   fixture: ReturnType<typeof fixtureFor>,
 ): Promise<FlowResult> {
-  const session = fixture.sessions[0]!
+  const session = fixture.sessions[0]
   await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
 

@@ -235,12 +235,12 @@ function assignTargets(sources: SourceSession[]): TargetAssignment[] {
     ...WORKSPACE_B_TARGETS.map((logicalSessionId) => ({ logicalSessionId, workspaceId: "workspace-b" as const })),
   ]
   const selected = quantileSample(sources, logicalTargets.length)
-  return logicalTargets.map((target, index) => ({ ...target, source: selected[index]! }))
+  return logicalTargets.map((target, index) => ({ ...target, source: selected[index] }))
 }
 
 function quantileSample(values: SourceSession[], count: number) {
-  if (count === 1) return [values[Math.floor(values.length / 2)]!]
-  return Array.from({ length: count }, (_, index) => values[Math.round((index * (values.length - 1)) / (count - 1))]!)
+  if (count === 1) return [values[Math.floor(values.length / 2)]]
+  return Array.from({ length: count }, (_, index) => values[Math.round((index * (values.length - 1)) / (count - 1))])
 }
 
 async function createWorkspaces(input: { dataDirectory: string; workspaceDirectory: string }) {
@@ -290,7 +290,7 @@ function copySession(input: {
   const latestTurnMessageIds = new Set(
     messages.flatMap((message, index) => (index >= latestUserIndex ? [messageIds.get(message.id)!] : [])),
   )
-  const latestUserMessageId = messageIds.get(messages[latestUserIndex]!.id)!
+  const latestUserMessageId = messageIds.get(messages[latestUserIndex].id)!
   const sourceOrdinal = input.sourceHasPartOrdinal
     ? "ordinal"
     : "ROW_NUMBER() OVER (PARTITION BY message_id ORDER BY rowid) - 1"
@@ -324,7 +324,7 @@ function copySession(input: {
   let latestAssistant: { messageId: string; createdAt: number; finished: boolean } | undefined
   let payloadBytes = 0
   for (const [messageIndex, message] of messages.entries()) {
-    const data = parsedMessages[messageIndex]!
+    const data = parsedMessages[messageIndex]
     const parentID = typeof data.parentID === "string" ? messageIds.get(data.parentID) : undefined
     if (parentID) data.parentID = parentID
     if (data.path && typeof data.path === "object") {

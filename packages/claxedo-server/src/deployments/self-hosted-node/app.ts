@@ -940,9 +940,7 @@ export function createSelfHostedApp(
         ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
         telemetry: services.telemetry,
       }),
-      localTargetExists: localRelayTargetExists({
-        ...(services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {}),
-      }),
+      localTargetExists: localRelayTargetExists((services.sandbox.sandboxManager ? { sandboxManager: services.sandbox.sandboxManager } : {})),
     }),
   )
   app.route(

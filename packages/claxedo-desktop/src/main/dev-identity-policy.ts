@@ -90,7 +90,7 @@ export function deriveDevIdentity(probe: DevLabelProbe): DevIdentity {
 export function tintBitmap(bitmap: Buffer, hue: number): Buffer {
   const [tr, tg, tb] = hueToRgb(hue)
   for (let i = 0; i < bitmap.length; i += 4) {
-    const luminance = (bitmap[i + 2]! * 0.299 + bitmap[i + 1]! * 0.587 + bitmap[i]! * 0.114) / 255
+    const luminance = (bitmap[i + 2] * 0.299 + bitmap[i + 1] * 0.587 + bitmap[i] * 0.114) / 255
     bitmap[i + 2] = Math.round(tr * luminance)
     bitmap[i + 1] = Math.round(tg * luminance)
     bitmap[i] = Math.round(tb * luminance)

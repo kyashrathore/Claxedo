@@ -125,7 +125,7 @@ function connectorState(value: unknown): HostConnectorChildState | undefined {
     }
     const shared = Array.isArray(input.sharedWorkspaceIds)
       && input.sharedWorkspaceIds.every((entry) => nonemptyString(entry))
-      ? (input.sharedWorkspaceIds as string[])
+      ? (input.sharedWorkspaceIds)
       : undefined
     if (input.sharedWorkspaceIds !== undefined && !shared) return
     return {

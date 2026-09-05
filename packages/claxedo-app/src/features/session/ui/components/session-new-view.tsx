@@ -37,7 +37,7 @@ type SessionGitMetadata = {
 function parseOwnerRepo(remote: string | undefined): string | undefined {
   if (!remote) return
   // git@github.com:owner/repo.git or ssh://git@github.com/owner/repo.git
-  const ssh = remote.match(/[:\/]([^/]+\/[^/]+?)(?:\.git)?$/)
+  const ssh = remote.match(/[:/]([^/]+\/[^/]+?)(?:\.git)?$/)
   if (ssh?.[1]) return ssh[1]
   return
 }

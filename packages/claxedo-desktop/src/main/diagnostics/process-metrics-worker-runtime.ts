@@ -72,7 +72,7 @@ export function createPosixProcessMetricsWorker(options: {
       )
       const entries = uniqueEntries(
         settled.flatMap((result, index) =>
-          result.status === "fulfilled" ? result.value : [{ pid: roots[index]!, ppid: 0, rootPid: roots[index]! }],
+          result.status === "fulfilled" ? result.value : [{ pid: roots[index], ppid: 0, rootPid: roots[index] }],
         ),
       ).slice(0, MAX_DIAGNOSTICS_PIDS)
       if (settled.some((result) => result.status === "rejected")) {

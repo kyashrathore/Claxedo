@@ -28,7 +28,7 @@ let previousRelayHostPublicKey: string | undefined
 let previousRelayJwtAlg: string | undefined
 
 async function run(cwd: string, ...args: string[]) {
-  await execFileAsync(args[0]!, args.slice(1), { cwd })
+  await execFileAsync(args[0], args.slice(1), { cwd })
 }
 
 async function closeServer(server: { close(callback?: (err?: Error) => void): unknown }) {

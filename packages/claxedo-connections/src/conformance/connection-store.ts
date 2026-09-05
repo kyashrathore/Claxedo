@@ -285,10 +285,10 @@ export function connectionStoreConformance(
       ] as const) {
         const found = await read()
         assert(!!found, `${reader}() did not resolve the seeded row`)
-        found!.integrationId = "mutated-by-caller"
-        found!.owner = CONFORMANCE_OWNERS.second
-        found!.grantedCapabilities.push("work-source")
-        found!.fields.injected = "yes"
+        found.integrationId = "mutated-by-caller"
+        found.owner = CONFORMANCE_OWNERS.second
+        found.grantedCapabilities.push("work-source")
+        found.fields.injected = "yes"
         const reread = await store.getById("row-alpha-notion")
         assertEqual(reread?.integrationId, "notion", `mutating the row from ${reader}() rewrote the stored integration`)
         assertEqual(reread?.owner, CONFORMANCE_OWNERS.first, `mutating the row from ${reader}() moved the stored partition`)

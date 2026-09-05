@@ -70,6 +70,6 @@ function productionFiles(directory: string): string[] {
   return fs.readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const file = path.join(directory, entry.name)
     if (entry.isDirectory()) return productionFiles(file)
-    return /\.ts$/.test(entry.name) && !/\.(?:test|spec)\.ts$/.test(entry.name) ? [file] : []
+    return entry.name.endsWith('.ts') && !/\.(?:test|spec)\.ts$/.test(entry.name) ? [file] : []
   })
 }

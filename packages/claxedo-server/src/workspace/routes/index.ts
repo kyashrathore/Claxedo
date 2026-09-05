@@ -456,9 +456,7 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
             if (body.orgId && !authority.authorizeWorkspaceCreate) {
               throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace creation authorization is unavailable")
             }
-            await authority.authorizeWorkspaceCreate?.(authResult.auth, {
-              ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
-            })
+            await authority.authorizeWorkspaceCreate?.(authResult.auth, (body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}))
           } catch (err) {
             if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
             throw err

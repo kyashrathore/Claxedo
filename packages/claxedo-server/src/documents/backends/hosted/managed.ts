@@ -578,7 +578,7 @@ function snapshotState(value: unknown, snapshotId: SnapshotID, maxDocumentBytes:
   if (typeof record.createdAt !== "number" || !validTimestamp(record.createdAt)) return
   if (record.sessionId !== undefined && (typeof record.sessionId !== "string" || !record.sessionId.trim())) return
   if (!Array.isArray(record.pins) || !record.pins.every((pin) => typeof pin === "string")) return
-  const pinValues = record.pins as string[]
+  const pinValues = record.pins
   const state = record.state ?? "active"
   if (!isSnapshotState(state)) return
   if (record.leaseUntil !== undefined && !validTimestamp(record.leaseUntil)) return

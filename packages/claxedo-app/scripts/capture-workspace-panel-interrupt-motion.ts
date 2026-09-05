@@ -436,7 +436,7 @@ async function measureRapidOpenCloseOpen(
       name: "rapid open-close-open reversal",
       frames,
       clickEvents,
-      clickIntervalsMs: clickEvents.slice(1).map((event, index) => event.atMs - clickEvents[index]!.atMs),
+      clickIntervalsMs: clickEvents.slice(1).map((event, index) => event.atMs - clickEvents[index].atMs),
       keySamples: {
         openingBeforeClose,
         closingBeforeReopen,

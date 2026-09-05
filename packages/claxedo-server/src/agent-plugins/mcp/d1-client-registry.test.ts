@@ -49,7 +49,7 @@ function secretStore(): McpOAuthClientSecretStore & { rows: Map<string, string> 
 const rows = (target: D1Database) =>
   target
     .prepare("select issuer, client_id, client_secret_ref, registration_json, registered_at from mcp_oauth_clients")
-    .all<Record<string, unknown>>()
+    .all()
 
 describe("D1 MCP OAuth client registry", () => {
   test("registers a public client once and answers every later lookup from the row", async () => {

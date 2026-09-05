@@ -261,7 +261,7 @@ test("a goal accounts for work and evaluator usage before its single terminal ev
     expect(usage).toHaveLength(2)
     expect(usage.map((event) => event.properties.observation?.tokens.input)).toEqual([11, 5])
     expect(recorded.filter((event) => event.type === "session.idle")).toHaveLength(1)
-    expect(recorded.indexOf(usage[1]!)).toBeLessThan(recorded.findIndex((event) => event.type === "session.idle"))
+    expect(recorded.indexOf(usage[1])).toBeLessThan(recorded.findIndex((event) => event.type === "session.idle"))
     expect(JSON.stringify(f.store.getMessages(f.binding.sessionId))).not.toContain('"met"')
   } finally {
     await f.cleanup()

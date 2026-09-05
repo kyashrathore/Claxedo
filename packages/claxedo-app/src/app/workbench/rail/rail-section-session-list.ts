@@ -104,7 +104,7 @@ export function createRailSectionSessionList(input: {
           baseUrl: input.baseUrl(),
           source: input.source(),
           query: { ...input.query(), cursor, limit: pageSize },
-        })) as SessionListResponse
+        }))
         if (requested !== signature()) return
         const next = appendSessionListPageQueryData({
           baseUrl: input.baseUrl(),

@@ -3,7 +3,7 @@ import { discoverMcpOAuth, McpOAuthDiscoveryError } from "./discovery"
 
 const json = (value: unknown, init: ResponseInit = {}) => new Response(JSON.stringify(value), {
   status: 200,
-  headers: { "content-type": "application/json", ...(init.headers ?? {}) },
+  headers: { "content-type": "application/json", ...init.headers },
   ...init,
 })
 

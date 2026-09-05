@@ -90,7 +90,7 @@ function declarationClosureHash(entryFile: string) {
     const source = fs.readFileSync(file, "utf8").replace(/\r\n/g, "\n").trim()
     declarations.push(`${path.relative(root, file)}\n${source}`)
     for (const match of source.matchAll(/(?:from\s+|import\s*\(\s*)["'](\.[^"']+)["']/g)) {
-      const dependency = resolveDeclaration(path.dirname(file), match[1]!)
+      const dependency = resolveDeclaration(path.dirname(file), match[1])
       if (dependency) queue.push(dependency)
     }
   }

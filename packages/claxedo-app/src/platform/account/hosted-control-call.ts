@@ -60,7 +60,7 @@ export function parseHostedHttpError(error: unknown): {
   if (!match) return undefined
   const status = Number(match[1])
   try {
-    const parsed = JSON.parse(match[2]!) as { detail?: unknown; body?: unknown }
+    const parsed = JSON.parse(match[2]) as { detail?: unknown; body?: unknown }
     return {
       status,
       detail: typeof parsed.detail === "string" ? parsed.detail : message,

@@ -15,7 +15,7 @@ const runtimeDataDir = () => dataDir()
 const overridesFile = () => path.join(runtimeDataDir(), "managed-mcp-overrides.json")
 
 function isManagedMcpServer(value: string): value is ManagedMcpServer {
-  return MANAGED_MCP_SERVERS.includes(value as ManagedMcpServer)
+  return MANAGED_MCP_SERVERS.includes(value)
 }
 
 function apply(
@@ -25,7 +25,7 @@ function apply(
   return Object.fromEntries(
     Object.entries(defaults).map(([server, agents]) => [
       server,
-      { ...agents, ...(overrides[server] ?? {}) },
+      { ...agents, ...overrides[server] },
     ]),
   ) as Record<ManagedMcpServer, Record<McpCapableAgent, boolean>>
 }
@@ -88,12 +88,12 @@ export async function setManagedMcpOverride(server: ManagedMcpServer, agent: Mcp
   const next = base[agent]
   if (enabled === next) {
     delete state.overrides[server]?.[agent]
-    if (state.overrides[server] && Object.keys(state.overrides[server]!).length === 0) {
+    if (state.overrides[server] && Object.keys(state.overrides[server]).length === 0) {
       delete state.overrides[server]
     }
   } else {
     state.overrides[server] ??= {}
-    state.overrides[server]![agent] = enabled
+    state.overrides[server][agent] = enabled
   }
   state.port = port ?? state.port
   state.servers = apply(state.defaults, state.overrides)

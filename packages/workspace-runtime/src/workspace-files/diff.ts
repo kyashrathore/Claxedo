@@ -70,7 +70,7 @@ function parseNumstat(output: string) {
   const stats = new Map<string, { additions: number; deletions: number }>()
   const parts = output.split("\0").filter(Boolean)
   for (let i = 0; i < parts.length; i++) {
-    const [adds, dels, ...pathParts] = parts[i]!.split("\t")
+    const [adds, dels, ...pathParts] = parts[i].split("\t")
     const file = pathParts.join("\t")
     const targetFile = file || parts[i + 2]
     if (!file) i += 2
@@ -91,7 +91,7 @@ async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T) => Promis
       while (true) {
         const current = index++
         if (current >= items.length) return
-        results[current] = await fn(items[current]!)
+        results[current] = await fn(items[current])
       }
     }),
   )
@@ -298,7 +298,7 @@ function parseNameStatus(output: string) {
   const parts = output.split("\0").filter(Boolean)
   const files: NameStatusFile[] = []
   for (let i = 0; i < parts.length; i++) {
-    const status = parts[i]!.trim()
+    const status = parts[i].trim()
     if (!status) continue
 
     const statusChar = status[0] ?? ""

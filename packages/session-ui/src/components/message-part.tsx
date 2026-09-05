@@ -477,7 +477,7 @@ function taskAgent(
   const color = agentColor(item?.color, agentThemeColors) ?? agentTones[key] ?? tone(key)
   const v2Color = agentColor(item?.color, v2AgentThemeColors) ?? v2Tone ?? color
   return {
-    name: item?.name ?? `${raw[0]!.toUpperCase()}${raw.slice(1)}`,
+    name: item?.name ?? `${raw[0].toUpperCase()}${raw.slice(1)}`,
     color,
     v2Color,
   }
@@ -695,7 +695,7 @@ function sameRef(a: PartRef, b: PartRef) {
 
 function sameRefs(a: PartRef[], b: PartRef[]) {
   if (a.length !== b.length) return false
-  return a.every((ref, i) => sameRef(ref, b[i]!))
+  return a.every((ref, i) => sameRef(ref, b[i]))
 }
 
 function sameGroup(a: PartGroup, b: PartGroup) {
@@ -723,7 +723,7 @@ export function sameGroups(a: readonly PartGroup[] | undefined, b: readonly Part
   if (a === b) return true
   if (!a || !b) return false
   if (a.length !== b.length) return false
-  return a.every((item, i) => sameGroup(item, b[i]!))
+  return a.every((item, i) => sameGroup(item, b[i]))
 }
 
 export function groupParts(parts: { messageID: string; part: AgentContentPart }[]) {
@@ -919,7 +919,7 @@ function contextToolDetail(part: AgentToolPart): string | undefined {
 }
 
 function contextToolTrigger(part: AgentToolPart, i18n: ReturnType<typeof useI18n>) {
-  const input = (part.state.input ?? {}) as Record<string, unknown>
+  const input = (part.state.input ?? {})
   const path = typeof input.path === "string" ? input.path : "/"
   const filePath = typeof input.filePath === "string" ? input.filePath : undefined
   const pattern = typeof input.pattern === "string" ? input.pattern : undefined
@@ -1316,8 +1316,8 @@ function clampLabel(value: string, max = 72) {
 function workGroupActiveLabel(parts: AgentToolPart[]): string | undefined {
   const active = parts.find((part) => part.state.status === "pending" || part.state.status === "running")
   if (!active) return undefined
-  const input = (active.state.input ?? {}) as Record<string, unknown>
-  const text = (key: string) => (typeof input[key] === "string" ? (input[key] as string) : undefined)
+  const input = (active.state.input ?? {})
+  const text = (key: string) => (typeof input[key] === "string" ? (input[key]) : undefined)
 
   switch (active.tool) {
     case "bash":
@@ -1684,7 +1684,7 @@ function HighlightedText(props: { text: string; references: AgentFilePart[]; age
     const allRefs: { start: number; end: number; type: "file" | "agent" }[] = [
       ...props.references
         .filter((r) => r.source?.text?.start !== undefined && r.source?.text?.end !== undefined)
-        .map((r) => ({ start: r.source!.text!.start, end: r.source!.text!.end, type: "file" as const })),
+        .map((r) => ({ start: r.source!.text.start, end: r.source!.text.end, type: "file" as const })),
       ...props.agents
         .filter((a) => a.source?.start !== undefined && a.source?.end !== undefined)
         .map((a) => ({ start: a.source!.start, end: a.source!.end, type: "agent" as const })),
@@ -2581,7 +2581,7 @@ ToolRegistry.register({
       <Show when={localUrl()}>
         <a
           data-component="local-preview-row"
-          href={localUrl()!}
+          href={localUrl()}
           target="_blank"
           rel="noopener noreferrer"
         >
@@ -2664,7 +2664,7 @@ ToolRegistry.register({
                 </div>
                 <Show when={!pending() && props.input.filePath?.includes("/")}>
                   <div data-slot="message-part-path">
-                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
+                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath)}</span>
                   </div>
                 </Show>
               </div>
@@ -2681,7 +2681,7 @@ ToolRegistry.register({
               path={path()}
               actions={
                 <Show when={!pending() && props.metadata.filediff}>
-                  <DiffChanges changes={props.metadata.filediff!} />
+                  <DiffChanges changes={props.metadata.filediff} />
                 </Show>
               }
             >
@@ -2740,7 +2740,7 @@ ToolRegistry.register({
                 </div>
                 <Show when={!pending() && props.input.filePath?.includes("/")}>
                   <div data-slot="message-part-path">
-                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath!)}</span>
+                    <span data-slot="message-part-directory">{getDirectory(props.input.filePath)}</span>
                   </div>
                 </Show>
               </div>

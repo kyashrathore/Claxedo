@@ -70,7 +70,7 @@ export async function runBrowser(options: RunOptions) {
     browsers.push(await launchBenchmarkBrowser(options))
     if (options.suite === "diagnostics") browsers.push(await launchBenchmarkBrowser(options))
     const captureProvenance = () => captureMeasurementProvenance({
-      browserVersion: browsers[0]!.version(),
+      browserVersion: browsers[0].version(),
       appCommand: target.command,
       artifactMode: builtArtifact ? "built" : "source-only",
     })
@@ -80,10 +80,10 @@ export async function runBrowser(options: RunOptions) {
         const startProvenance = await captureProvenance()
         const modeRuns = options.suite === "diagnostics"
           ? [
-              ...await executeBrowserScenarioPair(options, target, scenario, browsers[0]!, diagnosticsPairModeOrder.slice(0, 2)),
-              ...await executeBrowserScenarioPair(options, target, scenario, browsers[1]!, diagnosticsPairModeOrder.slice(2)),
+              ...await executeBrowserScenarioPair(options, target, scenario, browsers[0], diagnosticsPairModeOrder.slice(0, 2)),
+              ...await executeBrowserScenarioPair(options, target, scenario, browsers[1], diagnosticsPairModeOrder.slice(2)),
             ]
-          : [{ label: options.suite, enabled: false, result: await executeBrowserScenarioMode(options, target, scenario, browsers[0]!, false) }]
+          : [{ label: options.suite, enabled: false, result: await executeBrowserScenarioMode(options, target, scenario, browsers[0], false) }]
         const controls = modeRuns.filter((item) => !item.enabled)
         const enabled = modeRuns.filter((item) => item.enabled)
         const selected = enabled.length ? enabled : controls
@@ -115,9 +115,9 @@ export async function runBrowser(options: RunOptions) {
           diagnostics,
           provenance,
           context: browserContext({ suite: options.suite, profile: options.profile, workload: measuredRun.seed,
-            browserVersion: selected[0]!.result.browserVersion, instrumentation, headless: options.headless }),
+            browserVersion: selected[0].result.browserVersion, instrumentation, headless: options.headless }),
           attribution: runAttribution({
-            browserVersion: selected[0]!.result.browserVersion,
+            browserVersion: selected[0].result.browserVersion,
             server: { baseUrl: target.baseUrl, mockPort: target.mockPort, command: target.command },
           }),
         }
@@ -377,11 +377,11 @@ export async function executeBrowserScenario(
 export function mergeBrowserRuns(rawRuns: BrowserRun[]): BrowserRun {
   if (rawRuns.length === 0) throw new Error("Cannot merge an empty browser run")
   return {
-    ...rawRuns[0]!,
+    ...rawRuns[0],
     repetitions: rawRuns.flatMap((run) => run.repetitions ?? [{ headline: run.headline, vitals: run.vitals }]),
     duration_ms: rawRuns.reduce((sum, result) => sum + result.duration_ms, 0),
-    headline: mergeFrameMetrics(rawRuns[0]!.headline.label, rawRuns.map((result) => result.headline)),
-    metrics: rawRuns[0]!.metrics.map((metric, index) =>
+    headline: mergeFrameMetrics(rawRuns[0].headline.label, rawRuns.map((result) => result.headline)),
+    metrics: rawRuns[0].metrics.map((metric, index) =>
       summarize({
         ...metric,
         samples: rawRuns.flatMap((result) => result.metrics[index]?.samples ?? []),

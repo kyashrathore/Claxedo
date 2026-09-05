@@ -34,7 +34,7 @@ function emptyHistoryMeta(): HistoryMeta {
 }
 
 export function createHistoryMetaState(): HistoryMetaState {
-  const [meta, setMeta] = createSignal<HistoryMeta>(emptyHistoryMeta())
+  const [meta, setMeta] = createSignal(emptyHistoryMeta())
   const setValue = <T extends keyof HistoryMeta>(field: T, key: string, value: HistoryMeta[T][string]) =>
     setMeta((current) =>
       current[field][key] === value

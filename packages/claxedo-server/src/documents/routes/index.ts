@@ -124,9 +124,7 @@ type AuthenticatedScope = Readonly<{
 type DirectScope = AuthenticatedScope & Readonly<{ entry: DocumentIndexEntry }>
 
 export function DocumentsRoutes<H extends DocumentHandle>(options: DocumentsRouteOptions<H> = {}) {
-  const documents = () => createDocumentsService(requireBackend(options), {
-    ...(options.documentChangedSink ? { documentChangedSink: options.documentChangedSink } : {}),
-  })
+  const documents = () => createDocumentsService(requireBackend(options), (options.documentChangedSink ? { documentChangedSink: options.documentChangedSink } : {}))
   return new Hono()
     .onError((error) => errorResponse(error))
     .get("/statuses", async (context) => {

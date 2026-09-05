@@ -634,7 +634,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
     expect(upstreams[0]?.headers.authorization).toStartWith("Bearer ")
     expect(upstreams[0]?.headers["sec-websocket-protocol"]).toBeUndefined()
     const clientSocket = harness.pairs[0]?.server as FakeSocket
-    const upstreamSocket = upstreams[0]!.socket
+    const upstreamSocket = upstreams[0].socket
 
     upstreamSocket.message("from-upstream")
     expect(clientSocket.sent).toEqual(["from-upstream"])
@@ -1996,7 +1996,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
         authorization: `Bearer ${await harness.hostTunnelToken()}`,
       },
     }))
-    const hostSocket = harness.hibernatedSockets[0]!
+    const hostSocket = harness.hibernatedSockets[0]
     const realFrame = () => harness.room.webSocketMessage(hostSocket, JSON.stringify({
       // An http response for an unknown request id is a no-op beyond the
       // presence touch — a stand-in for ordinary host->relay traffic.
@@ -2048,7 +2048,7 @@ describe("workspace relay Cloudflare Durable Object room", () => {
       },
     }))
     expect(host.status).toBe(101)
-    const hostSocket = harness.hibernatedSockets[0]!
+    const hostSocket = harness.hibernatedSockets[0]
 
     hostSocket.close()
     clock += 90_000
@@ -2915,9 +2915,7 @@ describe("workspace relay Durable Object location hint", () => {
   }) {
     const { namespace, routed } = fakeNamespace()
     const gateway = createWorkspaceRelayDurableObjectGateway({ namespace })
-    const request = new Request(`https://relay.test/workspaces/ws_1/api/wr/health${input.search ?? ""}`, {
-      ...(input.headers ? { headers: input.headers } : {}),
-    })
+    const request = new Request(`https://relay.test/workspaces/ws_1/api/wr/health${input.search ?? ""}`, (input.headers ? { headers: input.headers } : {}))
     if (input.cf) Object.defineProperty(request, "cf", { value: input.cf })
     const res = await gateway.fetch(request, input.env ?? {})
     return { res, routed, hint: routed[0]?.options?.locationHint }

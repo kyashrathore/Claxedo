@@ -129,7 +129,7 @@ export function createHttpTokenVerifier(options: HttpTokenVerifierOptions): Toke
           method: "POST",
           headers: {
             "content-type": "application/json",
-            ...(options.headers ?? {}),
+            ...options.headers,
           },
           body: JSON.stringify({ token }),
           signal: controller.signal,

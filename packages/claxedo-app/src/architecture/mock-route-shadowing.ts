@@ -159,10 +159,10 @@ export function mockRoutes(appRoot: string): MockRoute[] {
   const routes: MockRoute[] = []
   const call = /(page\.route|contractRoute)\(\s*(?:page\s*,\s*)?(`[^`]*`|"[^"]*")/g
   for (const match of source.matchAll(call)) {
-    const open = source.indexOf("(", match.index!)
-    const raw = match[2]!.slice(1, -1)
+    const open = source.indexOf("(", match.index)
+    const raw = match[2].slice(1, -1)
     routes.push({
-      line: source.slice(0, match.index!).split("\n").length,
+      line: source.slice(0, match.index).split("\n").length,
       raw,
       resolved: resolveTemplate(raw),
       body: balancedCall(source, open),
@@ -176,13 +176,13 @@ export function routeShadows(routes: MockRoute[]): RouteShadow[] {
   const compiled = routes.map((route) => ({ route, re: new RegExp(globToRegexPattern(route.resolved)) }))
   const shadows: RouteShadow[] = []
   for (let i = 0; i < compiled.length; i++) {
-    const earlier = compiled[i]!
+    const earlier = compiled[i]
     const urls = witnesses(earlier.route.resolved).filter((url) => earlier.re.test(url))
     if (!urls.length) continue
     for (let j = i + 1; j < compiled.length; j++) {
-      const later = compiled[j]!
+      const later = compiled[j]
       if (!urls.every((url) => later.re.test(url))) continue
-      shadows.push({ shadowed: earlier.route, shadower: later.route, sample: urls[0]! })
+      shadows.push({ shadowed: earlier.route, shadower: later.route, sample: urls[0] })
     }
   }
   return shadows
@@ -232,7 +232,7 @@ function witnesses(glob: string) {
 function balancedCall(source: string, open: number) {
   let depth = 0
   for (let i = open; i < source.length; i++) {
-    const c = source[i]!
+    const c = source[i]
     if (c === '"' || c === "'" || c === "`") {
       i = skipString(source, i)
       continue
@@ -254,7 +254,7 @@ function balancedCall(source: string, open: number) {
 }
 
 function skipString(source: string, start: number) {
-  const quote = source[start]!
+  const quote = source[start]
   for (let i = start + 1; i < source.length; i++) {
     if (source[i] === "\\") {
       i++
@@ -276,9 +276,9 @@ export function globToRegexPattern(glob: string) {
   const tokens = ["^"]
   let inGroup = false
   for (let i = 0; i < glob.length; ++i) {
-    const c = glob[i]!
+    const c = glob[i]
     if (c === "\\" && i + 1 < glob.length) {
-      const char = glob[++i]!
+      const char = glob[++i]
       tokens.push(escaped.has(char) ? "\\" + char : char)
       continue
     }

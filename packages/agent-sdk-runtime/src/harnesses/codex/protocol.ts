@@ -116,7 +116,7 @@ export async function startTurnWithThreadRecovery(input: {
         lastError = retryErr
       }
     }
-    throw new Error(sessionLostMessage(lastError))
+    throw new Error(sessionLostMessage(lastError), { cause: err })
   }
 }
 

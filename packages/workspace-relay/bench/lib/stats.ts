@@ -14,7 +14,7 @@ export function percentile(samples: readonly Sample[], p: number): number {
   const sorted = [...samples].sort((a, b) => a - b)
   const rank = Math.ceil((p / 100) * sorted.length)
   const index = Math.min(sorted.length - 1, Math.max(0, rank - 1))
-  return sorted[index]!
+  return sorted[index]
 }
 
 export function mean(samples: readonly Sample[]): number {

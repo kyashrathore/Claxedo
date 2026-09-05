@@ -111,7 +111,7 @@ describe("workspace checkpoint service", () => {
       released: true,
     })
     expect(sandboxManager.destroy.mock.invocationCallOrder[0]).toBeLessThan(
-      sandboxManager.release.mock.invocationCallOrder[0]!,
+      sandboxManager.release.mock.invocationCallOrder[0],
     )
   })
 

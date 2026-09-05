@@ -558,7 +558,7 @@ describe("DocumentsRoutes", () => {
     await expect(pinned.json()).resolves.toMatchObject({ pins: ["work:source_1:revision_1"] })
     expect(pinSnapshot).toHaveBeenCalledTimes(1)
     expect(unpinSnapshot).toHaveBeenCalledTimes(1)
-    expect(pinSnapshot.mock.invocationCallOrder[0]).toBeLessThan(unpinSnapshot.mock.invocationCallOrder[0]!)
+    expect(pinSnapshot.mock.invocationCallOrder[0]).toBeLessThan(unpinSnapshot.mock.invocationCallOrder[0])
   })
 
   test("enforces signed read/write/admin actions and hides unauthorized ids", async () => {
@@ -1049,7 +1049,7 @@ describe("DocumentsRoutes", () => {
     const rows = (await snapshots.json()) as { id: string }[]
     expect(rows.length).toBeGreaterThan(0)
 
-    const conflict = await app.request(`http://localhost/documents/${created.id}/snapshots/${rows[0]!.id}/restore`, {
+    const conflict = await app.request(`http://localhost/documents/${created.id}/snapshots/${rows[0].id}/restore`, {
       method: "POST",
       headers: { "content-type": "application/json", "if-match": created.last_known_file_version },
       body: "{}",
@@ -1112,7 +1112,7 @@ describe("DocumentsRoutes", () => {
     }[]
     expect(
       (
-        await app.request(`http://localhost/documents/${document.id}/snapshots/${snapshots[0]!.id}/restore`, {
+        await app.request(`http://localhost/documents/${document.id}/snapshots/${snapshots[0].id}/restore`, {
           method: "POST",
           headers: { "content-type": "application/json", "if-match": current.version },
           body: "{}",

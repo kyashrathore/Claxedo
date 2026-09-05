@@ -25,7 +25,7 @@ export interface TurnFoldStore {
 }
 
 export function createTurnFoldStore(sessionKey: string): TurnFoldStore {
-  const [state, setState] = createStore<FoldState>({ ...(turnFoldCache.get(sessionKey) ?? {}) })
+  const [state, setState] = createStore<FoldState>({ ...turnFoldCache.get(sessionKey) })
 
   return {
     isFolded(userMessageID) {

@@ -26,10 +26,10 @@ const verifier = async (token: string) => {
   return {
     mode: "signed" as const,
     user: {
-      subject: subject!,
+      subject: subject,
       tokenIdentifier: `https://issuer.test|${subject}`,
       issuer: "https://issuer.test",
-      ...(org ? { orgId: org.split("/")[0]! } : {}),
+      ...(org ? { orgId: org.split("/")[0] } : {}),
     },
   }
 }
@@ -93,7 +93,7 @@ async function webhookRequest(payload: string, options: { secret?: string; heade
       "webhook-id": "msg_1",
       "webhook-timestamp": String(timestampSeconds),
       "webhook-signature": signature,
-      ...(options.headers ?? {}),
+      ...options.headers,
     },
   })
 }
@@ -123,7 +123,7 @@ describe("POST /polar/webhook", () => {
     const res = await app({ store }).request(await webhookRequest(stateChangedPayload))
     expect(res.status).toBe(200)
     expect(store.applyPolarState).toHaveBeenCalledTimes(1)
-    const args = store.applyPolarState.mock.calls[0]![0]
+    const args = store.applyPolarState.mock.calls[0][0]
     expect(args).toMatchObject({
       polar_customer_id: "cus_1",
       source: "customer_state",

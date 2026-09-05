@@ -57,7 +57,7 @@ const installMeter = async (page: Page) =>
         document.documentElement.style.removeProperty("--claxedo-floor-probe")
         void getComputedStyle(document.body).color
         values.sort((a, b) => a - b)
-        return { min: values[0]!, median: values[Math.floor(values.length / 2)]! }
+        return { min: values[0], median: values[Math.floor(values.length / 2)] }
       },
       count: () => {
         let total = document.querySelectorAll("*").length
@@ -78,7 +78,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -167,9 +167,9 @@ if (shape.wrappers === 0) {
     void getComputedStyle(document.body).color
     deltas.sort((a, b) => a - b)
     return {
-      saved: deltas[Math.floor(deltas.length / 2)]!,
-      low: deltas[0]!,
-      high: deltas[deltas.length - 1]!,
+      saved: deltas[Math.floor(deltas.length / 2)],
+      low: deltas[0],
+      high: deltas[deltas.length - 1],
       deltas,
       wrappedElements,
       flatElements,
@@ -237,9 +237,9 @@ const synthetic = await page.evaluate(async ({ rounds, count }) => {
   void getComputedStyle(document.body).color
   deltas.sort((a, b) => a - b)
   return {
-    saved: deltas[Math.floor(deltas.length / 2)]!,
-    low: deltas[0]!,
-    high: deltas[deltas.length - 1]!,
+    saved: deltas[Math.floor(deltas.length / 2)],
+    low: deltas[0],
+    high: deltas[deltas.length - 1],
     wrappedElements,
     flatElements,
   }

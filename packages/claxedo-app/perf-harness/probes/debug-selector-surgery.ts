@@ -55,7 +55,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -73,7 +73,7 @@ await page.evaluate(() => {
     let quote = ""
     let cut = 0
     for (let index = 0; index < sel.length; index++) {
-      const ch = sel[index]!
+      const ch = sel[index]
       if (quote) {
         if (ch === quote && sel[index - 1] !== "\\") quote = ""
         continue
@@ -95,7 +95,7 @@ await page.evaluate(() => {
     let quote = ""
     let cur = ""
     for (let index = 0; index < sel.length; index++) {
-      const ch = sel[index]!
+      const ch = sel[index]
       if (quote) { cur += ch; if (ch === quote && sel[index - 1] !== "\\") quote = ""; continue }
       if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue }
       if (ch === "(") depth++
@@ -112,14 +112,14 @@ await page.evaluate(() => {
   /** Shape of the rightmost compound — what decides the Blink rule bucket. */
   const shapeOf = (sel: string): string => {
     const rc = sel.slice(rightmostCut(sel))
-    if (/^\*/.test(rc)) return "universal"
+    if (rc.startsWith('*')) return "universal"
     if (/^:is\(|^:where\(/.test(rc)) return "is-where"
-    if (/^:has\(/.test(rc)) return "has"
-    if (/^:not\(/.test(rc)) return "not"
-    if (/^:/.test(rc)) return "pseudo"
-    if (/^#/.test(rc)) return "id"
-    if (/^\./.test(rc)) return "class"
-    if (/^\[/.test(rc)) return `attr:${/^\[([-\w]+)/.exec(rc)?.[1] ?? "?"}`
+    if (rc.startsWith(':has(')) return "has"
+    if (rc.startsWith(':not(')) return "not"
+    if (rc.startsWith(':')) return "pseudo"
+    if (rc.startsWith('#')) return "id"
+    if (rc.startsWith('.')) return "class"
+    if (rc.startsWith('[')) return `attr:${/^\[([-\w]+)/.exec(rc)?.[1] ?? "?"}`
     return `tag:${/^([-\w]+)/.exec(rc)?.[1] ?? "?"}`
   }
 
@@ -140,7 +140,7 @@ await page.evaluate(() => {
   const isImmovableUniversal = (sel: string): boolean => {
     const rc = sel.slice(rightmostCut(sel))
     if (/^\*$/.test(rc)) return true
-    return /^::/.test(rc)
+    return rc.startsWith('::')
   }
 
   /**
@@ -307,7 +307,7 @@ await page.evaluate(() => {
   w.__surgery = {
     /** Build the variant text once; returns stats. */
     build: (name: string) => {
-      const transform = transforms[name]!
+      const transform = transforms[name]
       const seen = new Set<string>()
       let text = ""
       for (const sheet of sheetNodes()) text += serialize(sheet.cssRules, transform, seen)
@@ -353,7 +353,7 @@ await page.evaluate(() => {
         document.documentElement.style.removeProperty("--claxedo-surgery-probe")
         void getComputedStyle(document.body).color
         values.sort((a, b) => a - b)
-        return values[0]!
+        return values[0]
       }
 
       const on = () => {
@@ -383,12 +383,12 @@ await page.evaluate(() => {
       off()
       style.remove()
       void getComputedStyle(document.body).color
-      const median = (list: number[]) => [...list].sort((a, b) => a - b)[Math.floor(list.length / 2)]!
+      const median = (list: number[]) => [...list].sort((a, b) => a - b)[Math.floor(list.length / 2)]
       deltas.sort((a, b) => a - b)
       return {
         saved: median(deltas),
-        low: deltas[0]!,
-        high: deltas[deltas.length - 1]!,
+        low: deltas[0],
+        high: deltas[deltas.length - 1],
         base: median(bases),
         variant: median(variants),
         elements: document.querySelectorAll("*").length,

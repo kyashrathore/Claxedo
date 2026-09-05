@@ -189,7 +189,7 @@ export function UsageDashboard() {
             <i />
             <span>
               {query.isError
-                ? `Usage unavailable · ${(query.error as Error).message}`
+                ? `Usage unavailable · ${(query.error).message}`
                 : selected() === "total"
                   ? "Scanning local usage history…"
                   : selected() === "quota"

@@ -228,7 +228,7 @@ export function createAccountService(options: AccountServiceOptions) {
       // validated must not keep being used, and the Host Connector suspends
       // on exactly this transition. What differs is the future: silence is
       // retried by the callers below, a refusal is not.
-      return { ok: false as const, transient: transient as boolean }
+      return { ok: false as const, transient: transient }
     }
   }
 
@@ -664,7 +664,7 @@ export function createAccountService(options: AccountServiceOptions) {
             headers: {
               authorization: `Bearer ${token}`,
               ...(request.body ? { "content-type": "application/json" } : {}),
-              ...(request.headers ?? {}),
+              ...request.headers,
             },
             ...(request.body ? { body: JSON.stringify(request.body) } : {}),
           },
@@ -772,7 +772,7 @@ export function createAccountService(options: AccountServiceOptions) {
             headers: {
               authorization: `Bearer ${token}`,
               Accept: "text/event-stream",
-              ...(request.headers ?? {}),
+              ...request.headers,
             },
           },
           (attempt) => {

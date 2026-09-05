@@ -78,7 +78,7 @@ for (const [run, digest] of digests) {
 }
 const requested = process.argv.find((value) => value.startsWith("--digest="))?.slice("--digest=".length)
 const groups = [...byDigest.entries()].toSorted((left, right) => right[1].length - left[1].length)
-const chosen = requested ?? groups[0]![0]
+const chosen = requested ?? groups[0][0]
 console.log(`runs=${digests.size}  activations=${samples.length}  sourceGroups=${groups.length}`)
 for (const [digest, runs] of groups) {
   console.log(`  ${digest === chosen ? "USING " : "      "}${digest}  ${runs.length} run(s): ${runs.join(", ")}`)
@@ -110,8 +110,8 @@ function percentile(values: readonly number[], quantile: number) {
   const index = (sorted.length - 1) * quantile
   const lower = Math.floor(index)
   const upper = Math.ceil(index)
-  if (lower === upper) return sorted[lower]!
-  return sorted[lower]! + (sorted[upper]! - sorted[lower]!) * (index - lower)
+  if (lower === upper) return sorted[lower]
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower)
 }
 
 const mean = (values: readonly number[]) =>

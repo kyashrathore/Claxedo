@@ -148,7 +148,7 @@ export function createConnectionsHost(options: ConnectionsHostOptions) {
   }
 
   return {
-    service: service as ConnectionsService,
+    service: service,
     routes: createIntegrationsRoutes(service, {
       gate,
       tokenGate,

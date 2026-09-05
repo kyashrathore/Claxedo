@@ -31,7 +31,7 @@ function decodedWorkspaceRoute(parts: string[]): ShellRoute | undefined {
   const marker = parts.findIndex((part) => part === "session" || part === "page" || part === "terminal")
   if (marker <= 2) return
   const workspaceId = `/${parts.slice(1, marker).map(segment).join("/")}`
-  const id = parts[marker + 1] ? segment(parts[marker + 1]!) : undefined
+  const id = parts[marker + 1] ? segment(parts[marker + 1]) : undefined
   if (parts[marker] === "session") return { kind: "workspace-session", workspaceId, ...(id ? { sessionId: id } : {}) }
   if (!id) return
   return parts[marker] === "page"
@@ -127,9 +127,9 @@ export function parseShellRoute(pathname: string): ShellRoute {
     }
     return decodedWorkspaceRoute(parts) ?? { kind: "unknown" }
   }
-  if (RESERVED_ROOTS.has(parts[0]!)) return { kind: "unknown" }
+  if (RESERVED_ROOTS.has(parts[0])) return { kind: "unknown" }
 
-  const directory = legacyDirectoryFromRouteKey(parts[0]!)
+  const directory = legacyDirectoryFromRouteKey(parts[0])
   if (directory) {
     return {
       kind: "legacy-directory",

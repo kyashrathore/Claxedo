@@ -561,7 +561,7 @@ if (!READ_ONLY) {
           delivery = await httpRequest(
             `/session/${encodeURIComponent(sessionId)}/prompt_async`,
             { method: "POST", body: JSON.stringify({ messageID: `mcp:${toolConnectionId}:${extra.requestId}`, parts: [{ type: "text", text: prompt }] }) },
-            "json", workspaceRef(workspaceId!),
+            "json", workspaceRef(workspaceId),
           )
         }
         return {

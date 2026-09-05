@@ -246,7 +246,7 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
             status: "unavailable",
             error: "runtime_target_missing",
             epoch: lease?.epoch,
-            homeRegion: (lease?.home_region ?? input.homeRegion) as SandboxLease["homeRegion"],
+            homeRegion: (lease?.home_region ?? input.homeRegion),
           }
         }
         return sandboxReadyResult(target, lease, input.homeRegion)
@@ -257,7 +257,7 @@ export function createWorkspaceSupervisorSandboxManager(): SandboxManager {
           retryAfterMs: lease?.next_retry_at ? Math.max(0, lease.next_retry_at - Date.now()) : undefined,
           error: err instanceof Error ? err.message : String(err),
           epoch: lease?.epoch,
-          homeRegion: (lease?.home_region ?? input.homeRegion) as SandboxLease["homeRegion"],
+          homeRegion: (lease?.home_region ?? input.homeRegion),
         }
       }
     },
@@ -375,7 +375,7 @@ function sandboxReadyResult(
     status: "ready",
     ...target,
     epoch: lease?.epoch ?? 0,
-    homeRegion: (lease?.home_region ?? fallbackHomeRegion) as SandboxLease["homeRegion"],
+    homeRegion: (lease?.home_region ?? fallbackHomeRegion),
   }
 }
 

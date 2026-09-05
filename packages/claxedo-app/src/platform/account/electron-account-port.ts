@@ -69,7 +69,7 @@ export function electronAccountPort(bridge: AccountBridge): AccountPort & { refr
   void refresh()
 
   return {
-    state: state as Accessor<AccountState>,
+    state: state,
     refresh,
     // The options (browser redirectUrl) are deliberately dropped: main owns
     // the desktop OAuth flow end to end, and the bridge takes no arguments.

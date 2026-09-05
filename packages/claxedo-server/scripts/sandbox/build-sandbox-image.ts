@@ -259,7 +259,7 @@ export function assertHostBundleDependencies(metafile: Metafile, dependencies: R
   for (const output of Object.values(metafile.outputs)) {
     for (const imported of output.imports) {
       if (!imported.external || isBuiltin(imported.path)) continue
-      const name = imported.path.startsWith("@") ? imported.path.split("/").slice(0, 2).join("/") : imported.path.split("/")[0]!
+      const name = imported.path.startsWith("@") ? imported.path.split("/").slice(0, 2).join("/") : imported.path.split("/")[0]
       if (!dependencies[name]) missing.add(imported.path)
     }
   }

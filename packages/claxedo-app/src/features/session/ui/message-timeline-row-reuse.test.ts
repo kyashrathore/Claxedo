@@ -56,7 +56,7 @@ describe("timeline row reuse", () => {
 
     const assistantRows = rows.filter((row) => row._tag === "AssistantPart")
     expect(assistantRows).toHaveLength(1)
-    expect(TimelineRow.contentMessageID(assistantRows[0]!)).toBe(final.id)
+    expect(TimelineRow.contentMessageID(assistantRows[0])).toBe(final.id)
     expect(rows.find((row) => row._tag === "Error")).toEqual(
       expect.objectContaining({ text: "hidden sibling failed" }),
     )

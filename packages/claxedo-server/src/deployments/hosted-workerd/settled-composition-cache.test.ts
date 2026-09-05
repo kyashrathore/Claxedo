@@ -37,12 +37,12 @@ describe("settledCompositionCache", () => {
     // request would hang every later caller.
     expect(second).not.toBe(first)
 
-    inits[1]!.resolve()
+    inits[1].resolve()
     await flush()
     const third = get(key)
     expect(third).toBe(second)
     // The settled instance stays cached even after other candidates fail.
-    inits[0]!.reject(new Error("constructor request canceled"))
+    inits[0].reject(new Error("constructor request canceled"))
     await flush()
     expect(get(key)).toBe(second)
   })

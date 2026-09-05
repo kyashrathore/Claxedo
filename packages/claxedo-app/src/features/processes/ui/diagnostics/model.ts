@@ -163,7 +163,7 @@ function last(values: Array<number | undefined>) {
 
 function change(values: Array<number | undefined>) {
   const available = values.filter((value): value is number => value !== undefined)
-  return available.length > 0 ? available.at(-1)! - available[0]! : undefined
+  return available.length > 0 ? available.at(-1)! - available[0] : undefined
 }
 
 function confidence(

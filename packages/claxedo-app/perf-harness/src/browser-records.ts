@@ -8,7 +8,7 @@ export function browserRecords(result: ScenarioResult, stack: string): PerfRecor
   const repetitions = result.repetitions ?? [{ headline: result.headline, vitals: result.vitals }]
   const base = { lane: "browser" as const, flow: result.id, stack, profile: result.environment?.profile ?? "unthrottled" }
   const record = (metric: string, value: number | undefined, samples: number[], method: string, absentReason = "measurement was unavailable"): PerfRecord => ({
-    ...base, metric, unit: METRICS[metric]!.unit, samples,
+    ...base, metric, unit: METRICS[metric].unit, samples,
     ...(value === undefined ? { absentReason } : { value }),
     ...(result.context ? { evidence: { definitionVersion: 2, method, context: result.context } } : {}),
   })

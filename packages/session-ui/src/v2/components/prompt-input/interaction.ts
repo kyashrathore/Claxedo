@@ -273,14 +273,14 @@ export function createPromptInputV2Controller(input: {
       }
       const index = state.historyIndex + 1
       setState("historyIndex", index)
-      applyHistory(entries[index]!, "start")
+      applyHistory(entries[index], "start")
       return true
     }
     if (state.historyIndex < 0) return false
     if (state.historyIndex > 0) {
       const index = state.historyIndex - 1
       setState("historyIndex", index)
-      applyHistory(entries[index]!, "end")
+      applyHistory(entries[index], "end")
       return true
     }
     const saved = state.savedHistory ?? { prompt: [{ type: "text", content: "", start: 0, end: 0 }] }

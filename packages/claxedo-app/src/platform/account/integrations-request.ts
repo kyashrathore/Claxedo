@@ -56,7 +56,7 @@ export function createIntegrationsRequest(baseUrl: string = getClaxedoServerUrl(
       if (connect && method === "POST") {
         const body = init?.body ? JSON.parse(String(init.body)) as Record<string, unknown> : {}
         return jsonResponse(await runOp("connections.connect", {
-          id: decodeURIComponent(connect[1]!),
+          id: decodeURIComponent(connect[1]),
           ...body,
         }))
       }
@@ -64,28 +64,28 @@ export function createIntegrationsRequest(baseUrl: string = getClaxedoServerUrl(
       const attempt = /^\/attempts\/([^/]+)$/.exec(path)
       if (attempt && method === "GET") {
         return jsonResponse(await runOp("connections.attempt", {
-          state: decodeURIComponent(attempt[1]!),
+          state: decodeURIComponent(attempt[1]),
         }))
       }
 
       const repositories = /^\/connections\/([^/]+)\/repositories$/.exec(path)
       if (repositories && method === "GET") {
         return jsonResponse(await runOp("connections.repositories", {
-          id: decodeURIComponent(repositories[1]!),
+          id: decodeURIComponent(repositories[1]),
         }))
       }
 
       const reverify = /^\/connections\/([^/]+)\/reverify$/.exec(path)
       if (reverify && method === "POST") {
         return jsonResponse(await runOp("connections.reverify", {
-          id: decodeURIComponent(reverify[1]!),
+          id: decodeURIComponent(reverify[1]),
         }))
       }
 
       const disconnect = /^\/connections\/([^/]+)$/.exec(path)
       if (disconnect && method === "DELETE") {
         return jsonResponse(await runOp("connections.disconnect", {
-          id: decodeURIComponent(disconnect[1]!),
+          id: decodeURIComponent(disconnect[1]),
         }))
       }
 

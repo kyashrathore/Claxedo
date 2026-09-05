@@ -20,8 +20,8 @@ describe("secureStorageVerdict", () => {
     const verdict = secureStorageVerdict(report({ backend: "basic_text" }))
 
     expect(verdict.usable).toBe(false)
-    expect(verdict.usable === false && verdict.reason).toBe("no-secure-storage")
-    expect(verdict.usable === false && verdict.detail).toContain("published key")
+    expect(!verdict.usable && verdict.reason).toBe("no-secure-storage")
+    expect(!verdict.usable && verdict.detail).toContain("published key")
   })
 
   test("refuses an unrecognised Linux backend", () => {

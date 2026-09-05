@@ -223,7 +223,7 @@ const serverContextInput = {
       const u = url()
       const connection = current()
       const server = {
-        ...(connection?.http ?? {}),
+        ...connection?.http,
         url: u ?? "",
       }
       return {

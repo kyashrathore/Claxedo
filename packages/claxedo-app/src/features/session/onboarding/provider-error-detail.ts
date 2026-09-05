@@ -121,7 +121,7 @@ export function providerUsageLimitDetail(
   const reset = message.match(/It will reset[^.]*\./i)?.[0]
   return {
     title: `${provider ?? "Model"} usage limit reached`,
-    description: `You've reached your ${match[1]!.trim()} limit.${reset ? ` ${reset}` : ""} Choose another model to continue.`,
+    description: `You've reached your ${match[1].trim()} limit.${reset ? ` ${reset}` : ""} Choose another model to continue.`,
   }
 }
 

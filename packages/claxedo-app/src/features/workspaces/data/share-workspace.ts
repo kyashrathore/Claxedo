@@ -105,9 +105,7 @@ export async function registerUserHostedWorkspace(input: {
       Accept: "application/json",
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      ...(input.displayName ? { displayName: input.displayName } : {}),
-    }),
+    body: JSON.stringify((input.displayName ? { displayName: input.displayName } : {})),
   })
   if (!response.ok) throw new Error(errorMessage(await responseJson(response), `Share workspace failed: ${response.status}`))
   return await responseJson(response)

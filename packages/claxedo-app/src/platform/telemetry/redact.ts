@@ -41,7 +41,7 @@ export function redactedPathValues(properties: Record<string, unknown>): Record<
   const redacted: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(properties)) {
     const pathShaped = typeof value === "string" && (value.includes("/") || value.includes("\\"))
-    redacted[key] = pathShaped ? fnv1aHex(value as string) : value
+    redacted[key] = pathShaped ? fnv1aHex(value) : value
   }
   return redacted
 }

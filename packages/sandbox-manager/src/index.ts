@@ -1155,7 +1155,7 @@ export function createSandboxManager(options: SandboxManagerOptions): SandboxMan
     if (current.epoch !== expectedEpoch) return { ok: false, reason: "runtime_lease_epoch_mismatch" }
     const timestamp = input.now ?? now()
     const status =
-      input.status === "unhealthy" || input.ok === false ? "unavailable" : input.ok ? "ready" : current.status
+      input.status === "unhealthy" || ! input.ok ? "unavailable" : input.ok ? "ready" : current.status
     const updated = await options.leaseStore.update(workspaceId, expectedEpoch, {
       status,
       ...(input.sandboxId ? { sandboxId: input.sandboxId } : {}),

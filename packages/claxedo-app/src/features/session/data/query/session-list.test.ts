@@ -101,7 +101,7 @@ describe("session list query cache", () => {
     // Lower-cased: the spec normalizes header names but Bun's Headers keeps
     // the casing the caller used, and this is about which headers are sent,
     // not how a runtime spells them.
-    expect([...calls[0]!.headers.keys()].map((name) => name.toLowerCase())).toEqual(["accept"])
+    expect([...calls[0].headers.keys()].map((name) => name.toLowerCase())).toEqual(["accept"])
   })
 
   test("uses the local product session-list route for loopback rail queries", async () => {

@@ -460,7 +460,7 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
     const stopMatch = pathname.match(/^\/api\/wr\/process\/([^/]+)\/stop$/)
     if (stopMatch && method === "POST") {
       requests.stop += 1
-      const proc = processes.get(stopMatch[1]!)
+      const proc = processes.get(stopMatch[1])
       if (proc) {
         proc.status = "stopped"
         proc.ptyId = undefined
@@ -507,13 +507,13 @@ async function installProcessMock(page: Page): Promise<ProcessMockHandle> {
     // /:id — update / delete ----------------------------------------------
     const idMatch = pathname.match(/^\/api\/wr\/process\/([^/]+)$/)
     if (idMatch) {
-      const id = idMatch[1]!
+      const id = idMatch[1]
       if (method === "PUT") {
         requests.update += 1
         const idx = configs.findIndex((c) => c.id === id)
         if (idx === -1) return json(route, { error: "not found" }, 404)
         const body = route.request().postDataJSON() as Partial<MockConfig>
-        configs[idx] = { ...configs[idx]!, ...body, id }
+        configs[idx] = { ...configs[idx], ...body, id }
         return json(route, configs[idx])
       }
       if (method === "DELETE") {
@@ -848,7 +848,7 @@ test.describe("core processes @core", () => {
     await expect.poll(() => mock.requests.start, { timeout: 10_000 }).toBe(2)
     // Sequential: the second start call did not begin until ~150ms after the first.
     expect(startTimes.length).toBe(2)
-    expect(startTimes[1]! - startTimes[0]!).toBeGreaterThanOrEqual(120)
+    expect(startTimes[1] - startTimes[0]).toBeGreaterThanOrEqual(120)
 
     await stopAll.click()
     await expect.poll(() => mock.requests.stop, { timeout: 10_000 }).toBe(2)
@@ -863,7 +863,7 @@ test.describe("core processes @core", () => {
 
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "broken", command: "nonexistent-binary" })
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     mock.setStartBehavior(configId, { kind: "failed", error: "spawn nonexistent-binary ENOENT" })
 
     const panel = await openProcessPanel(page, overlay, "broken")
@@ -888,7 +888,7 @@ test.describe("core processes @core", () => {
     await processAction(page, panel, "start").click()
     await expect(processAction(page, panel, "stop")).toBeVisible({ timeout: 10_000 })
 
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     mock.setProcessState(configId, { status: "crashed", ptyId: undefined, exitCode: 17, exitedAt: Date.now() })
 
     // Close the panel, then reload — the client only reconciles crashes it did
@@ -979,7 +979,7 @@ test.describe("core processes @core", () => {
     await openWorkspace(page, DIR)
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "flaky-dev", command: "exit 1" })
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     const panel = await openProcessPanel(page, overlay, "flaky-dev")
 
     // Delay the start HTTP response until well after the crash SSE lands —
@@ -1071,7 +1071,7 @@ test.describe("core processes @core", () => {
 
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "web", command: "node web.js" })
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     mock.setStartBehavior(configId, { kind: "port_conflict", port: 4100 })
 
     const panel = await openProcessPanel(page, overlay, "web")
@@ -1101,7 +1101,7 @@ test.describe("core processes @core", () => {
 
     const overlay = await openProcessesNavigator(page)
     await addProcess(page, overlay, { name: "web", command: "node web.js" })
-    const configId = mock.configs()[0]!.id
+    const configId = mock.configs()[0].id
     mock.setStartBehavior(configId, { kind: "route_conflict", hostname: "web.local" })
 
     const panel = await openProcessPanel(page, overlay, "web")

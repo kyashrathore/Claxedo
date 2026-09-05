@@ -79,7 +79,7 @@ function samePartRefs(
   a: ReadonlyArray<{ messageID: string; partID: string }>,
   b: ReadonlyArray<{ messageID: string; partID: string }>,
 ) {
-  return a.length === b.length && a.every((ref, index) => samePartRef(ref, b[index]!))
+  return a.length === b.length && a.every((ref, index) => samePartRef(ref, b[index]))
 }
 
 function samePartGroup(a: PartGroup, b: PartGroup) {

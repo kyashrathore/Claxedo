@@ -93,7 +93,7 @@ describe("verifyCredential — stale but refreshable", () => {
     // The regression: before the fix the local expiry short-circuited and the
     // provider was never contacted at all.
     expect(transports.probeCalls()).toHaveLength(1)
-    expect(transports.probeCalls()[0]!.authorization).toBe("Bearer access_new")
+    expect(transports.probeCalls()[0].authorization).toBe("Bearer access_new")
     expect(outcome.refreshed?.secret).toBeDefined()
     expect(JSON.parse(outcome.refreshed!.secret).access).toBe("access_new")
   })
@@ -175,7 +175,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
 
     expect(outcome).toEqual({ health: "ok" })
     expect(transports.tokenCalls()).toHaveLength(0)
-    expect(transports.probeCalls()[0]!.authorization).toBe("Bearer access_old")
+    expect(transports.probeCalls()[0].authorization).toBe("Bearer access_old")
   })
 
   test("maps provider failures without a refresh attempt", async () => {
@@ -205,9 +205,9 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
     )
 
     expect(outcome).toEqual({ health: "ok" })
-    expect(transports.probeCalls()[0]!.url).toBe("https://api.anthropic.com/v1/messages")
-    expect(transports.probeCalls()[0]!.headers["x-api-key"]).toBe("sk-ant-key")
-    expect(transports.probeCalls()[0]!.headers.Authorization).toBeUndefined()
+    expect(transports.probeCalls()[0].url).toBe("https://api.anthropic.com/v1/messages")
+    expect(transports.probeCalls()[0].headers["x-api-key"]).toBe("sk-ant-key")
+    expect(transports.probeCalls()[0].headers.Authorization).toBeUndefined()
   })
 
   /**
@@ -228,7 +228,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       { fetch: transports.stub, now: () => NOW },
     )
 
-    const probe = transports.probeCalls()[0]!
+    const probe = transports.probeCalls()[0]
     expect(outcome).toEqual({ health: "ok" })
     expect(probe.headers.Authorization).toBe("Bearer sk-ant-oat01-setup-token-value")
     expect(probe.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
@@ -251,7 +251,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       { fetch: transports.stub, now: () => NOW },
     )
 
-    const probe = transports.probeCalls()[0]!
+    const probe = transports.probeCalls()[0]
     expect(probe.headers.Authorization).toBe("Bearer sk-ant-oat01-setup-token-value")
     expect(probe.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
     expect(probe.headers["x-api-key"]).toBeUndefined()
@@ -271,7 +271,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       { fetch: transports.stub, now: () => NOW },
     )
 
-    expect(transports.probeCalls()[0]!.headers["x-api-key"]).toBe("sk-ant-api03-console-key")
+    expect(transports.probeCalls()[0].headers["x-api-key"]).toBe("sk-ant-api03-console-key")
   })
 
   test("a console API key is still sent as x-api-key, never as a bearer token", async () => {
@@ -283,7 +283,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       { fetch: transports.stub, now: () => NOW },
     )
 
-    const probe = transports.probeCalls()[0]!
+    const probe = transports.probeCalls()[0]
     expect(probe.headers["x-api-key"]).toBe("sk-ant-api03-console-key")
     expect(probe.headers.Authorization).toBeUndefined()
     expect(probe.headers["anthropic-beta"]).toBeUndefined()
@@ -298,7 +298,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       { fetch: transports.stub, now: () => NOW },
     )
 
-    const probe = transports.probeCalls()[0]!
+    const probe = transports.probeCalls()[0]
     expect(probe.headers.Authorization).toBe("Bearer sk-ant-oat01-keychain")
     expect(probe.headers["anthropic-beta"]).toBe("oauth-2025-04-20")
   })
@@ -317,7 +317,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       now: () => NOW,
     })
 
-    const probe = transports.probeCalls()[0]!
+    const probe = transports.probeCalls()[0]
     expect(probe.url).toBe("https://chatgpt.com/backend-api/codex/responses")
     expect(Array.isArray(probe.body!.input)).toBe(true)
     expect(probe.body!.stream).toBe(true)
@@ -333,7 +333,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       now: () => NOW,
     })
 
-    const probe = transports.probeCalls()[0]!
+    const probe = transports.probeCalls()[0]
     expect(probe.url).toBe("https://api.openai.com/v1/responses")
     expect(probe.body!.input).toBe("Reply with OK.")
     expect(probe.body!.max_output_tokens).toBe(1)
@@ -354,7 +354,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       { fetch: transports.stub, now: () => NOW },
     )
 
-    const probe = transports.probeCalls()[0]!
+    const probe = transports.probeCalls()[0]
     expect(outcome).toEqual({ health: "ok" })
     expect(probe.url).toBe("https://api.cursor.com/v1/me")
     expect(probe.headers.Authorization).toBe("Bearer cursor-dashboard-key")
@@ -415,7 +415,7 @@ describe("verifyCredential — unexpired credentials are untouched", () => {
       { fetch: transports.stub, now: () => NOW },
     )
 
-    expect(transports.probeCalls()[0]!.headers.Authorization).toBe("Bearer cursor-dashboard-key")
+    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer cursor-dashboard-key")
   })
 
   test("an unsupported provider is an error, not a health verdict", async () => {
@@ -447,8 +447,8 @@ describe("verifyCredential — sandbox providers", () => {
     )
 
     expect(outcome).toEqual({ health: "ok" })
-    expect(transports.probeCalls()[0]!.url).toBe("https://app.daytona.io/api/api-keys/current")
-    expect(transports.probeCalls()[0]!.headers.Authorization).toBe("Bearer dtn_key")
+    expect(transports.probeCalls()[0].url).toBe("https://app.daytona.io/api/api-keys/current")
+    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer dtn_key")
   })
 
   test("a rejected sandbox provider key is auth_failed, not an error", async () => {
@@ -479,7 +479,7 @@ describe("verifyCredential — sandbox providers", () => {
     )
 
     expect(outcome).toEqual({ health: "ok" })
-    expect(transports.probeCalls()[0]!.headers.Authorization).toBe("Bearer dtn_legacy_key")
+    expect(transports.probeCalls()[0].headers.Authorization).toBe("Bearer dtn_legacy_key")
   })
 
   test("a sandbox provider with no documented probe is an error, not a verdict", async () => {

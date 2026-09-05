@@ -206,7 +206,7 @@ function canonicalCounts(
   const expectedNames = Object.keys(expected).sort()
   const resultRows = d1Rows(output, `${binding} counts`)
   if (resultRows.length !== 1) throw new Error(`${binding} counts must return exactly one row`)
-  const result = resultRows[0]!
+  const result = resultRows[0]
   if (JSON.stringify(Object.keys(result).sort()) !== JSON.stringify(expectedNames)) {
     throw new Error(`${binding} counts do not cover the exact certified schema`)
   }

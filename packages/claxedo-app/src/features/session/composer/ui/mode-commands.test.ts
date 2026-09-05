@@ -38,7 +38,7 @@ describe("prompt mode commands", () => {
     expect(registrations).toHaveLength(1)
     expect(registrations[0]?.scope).toBe("prompt-input")
 
-    const normalCommands = registrations[0]!.commands()
+    const normalCommands = registrations[0].commands()
     expect(normalCommands.map((command) => command.id)).toEqual([
       "file.attach",
       "prompt.goal",
@@ -61,7 +61,7 @@ describe("prompt mode commands", () => {
     expect(armed).toEqual(["goal"])
     expect(mode).toBe("shell")
 
-    const shellCommands = registrations[0]!.commands()
+    const shellCommands = registrations[0].commands()
     expect(shellCommands[0]?.disabled).toBe(true)
     expect(shellCommands[1]?.disabled).toBe(true)
     expect(shellCommands[2]?.disabled).toBe(true)

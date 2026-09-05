@@ -654,7 +654,7 @@ describe("resolvePort via start()", () => {
       expect(result.kind).toBe("started")
 
       expect(created).toHaveLength(1)
-      expect(created[0]!.initialCommand).toBe("bun dev --port 19887; printf '\\033]777;process-exit;%d\\007' $?")
+      expect(created[0].initialCommand).toBe("bun dev --port 19887; printf '\\033]777;process-exit;%d\\007' $?")
       expect(write).not.toHaveBeenCalled()
     } finally {
       write.mockRestore()
@@ -984,10 +984,10 @@ describe("resolvePort via start()", () => {
       if (result.kind !== "started") return
 
       expect(created).toHaveLength(1)
-      expect(created[0]!.env?.NODE_OPTIONS).toBeUndefined()
-      expect(created[0]!.env?.SECRET_TOKEN).toBeUndefined()
-      expect(created[0]!.env?.UNRELATED_VENDOR_ALLOWED).toBeUndefined()
-      expect(created[0]!.env).toMatchObject({
+      expect(created[0].env?.NODE_OPTIONS).toBeUndefined()
+      expect(created[0].env?.SECRET_TOKEN).toBeUndefined()
+      expect(created[0].env?.UNRELATED_VENDOR_ALLOWED).toBeUndefined()
+      expect(created[0].env).toMatchObject({
         CLAXEDO_ALLOWED: "yes",
         PORT: "19878",
       })

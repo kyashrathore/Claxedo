@@ -152,11 +152,11 @@ export function hydrateConversationPage(input: {
   normalized.parts.forEach((row) => {
     if (row.parts.length === 0 && !canonicalIds?.has(row.id)) return
     parts[row.id] = canonicalIds?.has(row.id)
-      ? reconcileStoredParts(parts[row.id] as Part[] | undefined, row.parts)
+      ? reconcileStoredParts(parts[row.id], row.parts)
       : resolveStoredParts(parts[row.id], row.parts)
   })
   const messages = resolveStoredMessages({
-    existing: conversation.messages as Message[],
+    existing: conversation.messages,
     next: normalized.messages,
     completeness: input.messageCompleteness,
     mode: input.mode,

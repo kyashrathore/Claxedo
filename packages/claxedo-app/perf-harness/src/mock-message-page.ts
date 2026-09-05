@@ -169,9 +169,9 @@ export function projectMockSurfacePage<
   type Candidate = { messageIndex: number; partIndex: number; textBytes: number; partBytes: number }
   const candidates: Candidate[] = []
   for (let messageIndex = rows.length - 1; messageIndex >= 0; messageIndex--) {
-    const parts = rows[messageIndex]!.parts
+    const parts = rows[messageIndex].parts
     for (let partIndex = parts.length - 1; partIndex >= 0; partIndex--) {
-      const part = parts[partIndex]!
+      const part = parts[partIndex]
       if (part.type !== "text" || typeof part.text !== "string") continue
       const textBytes = utf8Bytes(part.text)
       if (textBytes > LATEST_SURFACE_MAX_TEXT_PART_BYTES) continue

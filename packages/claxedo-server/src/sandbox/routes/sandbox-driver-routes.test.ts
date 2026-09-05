@@ -115,7 +115,7 @@ describe("sandbox driver credential storage", () => {
     expect(stored).toMatchObject([{ provider_id: "daytona", kind: "sandbox_driver" }])
     // The codec JSON-wraps every driver uniformly (see the round-trip suite);
     // the secret is the encoded form, not the bare field value.
-    expect(stored[0]!.secret).toBe(JSON.stringify({ api_key: SECRET }))
+    expect(stored[0].secret).toBe(JSON.stringify({ api_key: SECRET }))
 
     const body = (await response.json()) as { drivers: { id: string; configured: boolean }[] }
     expect(body.drivers.find((item) => item.id === "daytona")?.configured).toBe(true)

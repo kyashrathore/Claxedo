@@ -61,11 +61,11 @@ export function splitSessionPrefetchPage(
   // deferring intermediate assistant/tool messages. A latest turn may contain
   // arbitrarily many assistant records, so walking back to the user and taking
   // the whole suffix would make the supposedly bounded first fold unbounded.
-  if (owningUser >= 0) selected.add(page.messages[owningUser]!.id)
+  if (owningUser >= 0) selected.add(page.messages[owningUser].id)
   selected.add(tail.id)
   for (let index = page.messages.length - 2; index >= 0 && selected.size < budget; index--) {
     if (index === owningUser) continue
-    selected.add(page.messages[index]!.id)
+    selected.add(page.messages[index].id)
   }
   const firstFoldMessages = page.messages.filter((message) => selected.has(message.id))
   const firstFoldIds = new Set(firstFoldMessages.map((message) => message.id))

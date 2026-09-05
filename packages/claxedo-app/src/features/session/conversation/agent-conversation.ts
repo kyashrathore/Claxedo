@@ -108,7 +108,7 @@ export function mergeConversationSnapshot(current: UIMessage[], snapshot: UIMess
       changed = true
       continue
     }
-    const existing = merged[index]!
+    const existing = merged[index]
     // Snapshot refetches mostly re-deliver identical settled content. Compare
     // one message at a time so unchanged rows preserve their object identity,
     // while equal-length text changes and same-rank tool updates still reach
@@ -188,8 +188,8 @@ function unchangedSnapshotMessage(existing: UIMessage, snapshot: UIMessage): boo
   }
   if (existing.parts.length !== snapshot.parts.length) return false
   for (let index = 0; index < snapshot.parts.length; index++) {
-    const left = existing.parts[index]!
-    const right = snapshot.parts[index]!
+    const left = existing.parts[index]
+    const right = snapshot.parts[index]
     if (!sameSerializableValue(left, right)) return false
   }
   return true
@@ -299,7 +299,7 @@ function mergeChatParts(current: MessagePart[], snapshot: MessagePart[]) {
       next.push(part)
       continue
     }
-    next[index] = mergeChatPart(part, next[index]!)
+    next[index] = mergeChatPart(part, next[index])
   }
   return next
 }
@@ -396,7 +396,7 @@ function assistantTurnIndex(
         ? [index]
         : []
     })
-    return candidates.length === 1 ? aliasIndex(candidates[0]!) : -1
+    return candidates.length === 1 ? aliasIndex(candidates[0]) : -1
   }
   return aliasIndex(indexById ? (indexById.get(announced) ?? -1) : current.findIndex((item) => item.id === announced))
 }
@@ -421,7 +421,7 @@ function upsertPart(chat: ConversationChatHandle, part: Part | undefined) {
   const current = chat.messages()
   const index = current.findIndex((message) => message.id === part.messageID)
   if (index === -1) return false
-  const message = current[index]!
+  const message = current[index]
   // A settled assistant message only accepts updates to parts it already has —
   // a late-delivered streamed part (delayed SSE batch arriving after the REST
   // history refetch landed the completed message) must not append a second
@@ -439,7 +439,7 @@ function removePart(chat: ConversationChatHandle, messageID: string | undefined,
   const current = chat.messages()
   const index = current.findIndex((message) => message.id === messageID)
   if (index === -1) return false
-  const message = current[index]!
+  const message = current[index]
   const nextParts = message.parts.filter((part) => agentPartId(part) !== partID)
   if (nextParts.length === message.parts.length) return false
   chat.setMessages(replaceAt(current, index, markUnpersistedLive({
@@ -459,7 +459,7 @@ function appendPartDelta(
   const current = chat.messages()
   const index = current.findIndex((message) => message.id === messageID)
   if (index === -1) return false
-  const message = current[index]!
+  const message = current[index]
   // Same settled-message guard as upsertPart: a delta for a part the settled
   // message does not have would create a fresh part and duplicate the reply.
   if (settledAssistantMessage(message) && !hasChatPart(message, partID)) return false
@@ -589,7 +589,7 @@ function appendTextDelta(parts: MessagePart[], partID: string, delta: string) {
       { type: "text" as const, content: delta, metadata: { agentPartId: partID } },
     ]
   }
-  const part = parts[index]!
+  const part = parts[index]
   if (part.type === "text") {
     return replaceAt(parts, index, {
       ...part,

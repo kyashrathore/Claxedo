@@ -67,7 +67,7 @@ const providerFetch = vi.fn(async (_input: RequestInfo | URL, _init?: RequestIni
   Response.json({ id: "response_1" }))
 
 function as(bearer: string, init: RequestInit = {}): RequestInit {
-  return { ...init, headers: { ...(init.headers ?? {}), authorization: `Bearer ${bearer}` } }
+  return { ...init, headers: { ...init.headers, authorization: `Bearer ${bearer}` } }
 }
 
 const signedApp = CredentialRoutes(defaultControlPlaneCredentials(), {

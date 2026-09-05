@@ -169,13 +169,13 @@ export async function publishRuntimePackages(options: {
     try {
       run("npm", ["run", "build", "--workspace", item.name], root)
     } catch (error) {
-      throw new Error(`build failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`)
+      throw new Error(`build failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`, { cause: error })
     }
     if (item.next.scripts?.["verify:publish"] && !options.dryRun) {
       try {
         run("npm", ["run", "verify:publish", "--workspace", item.name], root)
       } catch (error) {
-        throw new Error(`publish verification failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`)
+        throw new Error(`publish verification failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`, { cause: error })
       }
     }
   }
@@ -199,7 +199,7 @@ export async function publishRuntimePackages(options: {
           tag,
         ], root)
       } catch (error) {
-        throw new Error(`publish failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`)
+        throw new Error(`publish failed: ${item.name}@${options.version}: ${commandFailureReason(error)}`, { cause: error })
       }
     }
   }

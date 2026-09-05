@@ -70,7 +70,7 @@ export function createControlPlaneAccountFetch(fallback: typeof fetch = authFetc
       const messages = /^\/api\/control\/sessions\/([^/]+)\/messages$/.exec(url.pathname)
       if (messages && method === "GET") {
         return jsonResponse(await runOp("session.messages", {
-          sessionId: decodeURIComponent(messages[1]!),
+          sessionId: decodeURIComponent(messages[1]),
           ...queryRecord(url),
         }))
       }
@@ -78,7 +78,7 @@ export function createControlPlaneAccountFetch(fallback: typeof fetch = authFetc
       const gateway = /^\/api\/control\/sessions\/([^/]+)\/gateway$/.exec(url.pathname)
       if (gateway && method === "GET") {
         return jsonResponse(await runOp("session.gateway", {
-          sessionId: decodeURIComponent(gateway[1]!),
+          sessionId: decodeURIComponent(gateway[1]),
           ...queryRecord(url),
         }))
       }
@@ -102,8 +102,8 @@ export function createControlPlaneAccountFetch(fallback: typeof fetch = authFetc
               : "session.projection.repair"
         ) as HostedOperationName
         return jsonResponse(await runOp(opName, {
-          workspaceId: decodeURIComponent(projection[1]!),
-          sessionId: decodeURIComponent(projection[2]!),
+          workspaceId: decodeURIComponent(projection[1]),
+          sessionId: decodeURIComponent(projection[2]),
           ...body,
         }))
       }

@@ -261,7 +261,7 @@ function createLayoutContextValue() {
           return
         }
 
-        setStore("sessionView", sessionKey, "scroll", (prev) => ({ ...(prev ?? {}), ...next }))
+        setStore("sessionView", sessionKey, "scroll", (prev) => ({ ...prev, ...next }))
         prune(keep)
       },
     })
@@ -314,7 +314,7 @@ function createLayoutContextValue() {
         local?.icon?.color !== undefined
 
       const base = {
-        ...(metadata ?? {}),
+        ...metadata,
         ...project,
         icon: {
           url: metadata?.icon?.url,

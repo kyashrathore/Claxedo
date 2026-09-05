@@ -552,7 +552,7 @@ vi.mock("../../sandbox/stores/sqlite-supervisor-state", () => {
 })
 
 vi.mock("../../sandbox/driver-auth", () => ({
-  sandboxDriverAuthAsync: (...args: unknown[]) => (mockSandboxDriverAuthAsync as any)(...args),
+  sandboxDriverAuthAsync: (...args: unknown[]) => (mockSandboxDriverAuthAsync)(...args),
 }))
 
 vi.mock("@claxedo/sandbox-manager/drivers/daytona", () => ({

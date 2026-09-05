@@ -206,7 +206,7 @@ export class BrowserHandle {
     }
     this.#onDidNavigate = (_event, _url, _statusCode, _statusText, isMainFrame) => {
       // Non-main-frame navigations don't swap the RFH, so skip.
-      if (isMainFrame === false) return
+      if (!isMainFrame) return
       void this.#handleMainFrameNavigated()
     }
     this.#onRenderProcessGone = () => {

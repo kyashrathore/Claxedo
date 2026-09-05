@@ -281,7 +281,7 @@ async function openPanel() {
 function closePanel() {
   // Two toggles carry this label while the panel is open (the floating chrome
   // and the panel header); either drives the same close.
-  fireEvent.click(screen.getAllByRole("button", { name: "Close workspace panel" })[0]!)
+  fireEvent.click(screen.getAllByRole("button", { name: "Close workspace panel" })[0])
 }
 
 function delay(ms: number) {
@@ -294,8 +294,8 @@ describe("closed workspace disposal and reconstruction", () => {
     await openPanel()
 
     expect(mounts()).toHaveLength(1)
-    expect(mounts()[0]!.initialWorkingSet).toBeUndefined()
-    mounts()[0]!.publish(substantialWorkingSet)
+    expect(mounts()[0].initialWorkingSet).toBeUndefined()
+    mounts()[0].publish(substantialWorkingSet)
 
     closePanel()
     await waitFor(
@@ -310,7 +310,7 @@ describe("closed workspace disposal and reconstruction", () => {
     expect(mounts()).toHaveLength(2)
     // A disposed panel owns nothing, so this is a genuinely new mount — and it
     // still comes back on the user's exact tabs, active tab, and Review scroll.
-    expect(mounts()[1]!.initialWorkingSet).toEqual(substantialWorkingSet)
+    expect(mounts()[1].initialWorkingSet).toEqual(substantialWorkingSet)
     expect(screen.getAllByTestId("review-workspace")).toHaveLength(1)
     // Budgeted like the cross-workspace case below: this test's own waits allow
     // 10s for the close grace and the rebuild, which the 5s default cannot hold
@@ -328,9 +328,9 @@ describe("closed workspace disposal and reconstruction", () => {
       targetPaneId: "pane-1",
       focus: { kind: "file", path: "src/a.ts", intent: "tab" },
     })
-    await waitFor(() => expect(mounts()[0]!.focusPath()).toBe("src/a.ts"))
-    mounts()[0]!.consumeFocus()
-    mounts()[0]!.publish(substantialWorkingSet)
+    await waitFor(() => expect(mounts()[0].focusPath()).toBe("src/a.ts"))
+    mounts()[0].consumeFocus()
+    mounts()[0].publish(substantialWorkingSet)
 
     closePanel()
     await waitFor(() => expect(screen.queryByTestId("review-workspace")).toBeNull(), { timeout: 10_000 })
@@ -340,9 +340,9 @@ describe("closed workspace disposal and reconstruction", () => {
     // mount restores its active tab from the working set — the stale request
     // must not be delivered again and override it.
     expect(mounts()).toHaveLength(2)
-    expect(mounts()[1]!.initialWorkingSet?.activeTabId).toBe(substantialWorkingSet.activeTabId)
-    expect(mounts()[1]!.focusPath()).toBeUndefined()
-    expect(mounts()[1]!.focusVersion()).toBe(0)
+    expect(mounts()[1].initialWorkingSet?.activeTabId).toBe(substantialWorkingSet.activeTabId)
+    expect(mounts()[1].focusPath()).toBeUndefined()
+    expect(mounts()[1].focusVersion()).toBe(0)
 
     // The slice's focus version counter restarts once focus is cleared. A
     // brand-new request that happens to reuse the consumed request's version
@@ -357,7 +357,7 @@ describe("closed workspace disposal and reconstruction", () => {
       targetPaneId: "pane-1",
       focus: { kind: "file", path: "src/b.ts", intent: "tab" },
     })
-    await waitFor(() => expect(mounts()[1]!.focusPath()).toBe("src/b.ts"))
+    await waitFor(() => expect(mounts()[1].focusPath()).toBe("src/b.ts"))
   })
 
   test("still delivers a focus request the previous mount never consumed", async () => {
@@ -369,7 +369,7 @@ describe("closed workspace disposal and reconstruction", () => {
       targetPaneId: "pane-1",
       focus: { kind: "file", path: "src/pending.ts", intent: "tab" },
     })
-    await waitFor(() => expect(mounts()[0]!.focusPath()).toBe("src/pending.ts"))
+    await waitFor(() => expect(mounts()[0].focusPath()).toBe("src/pending.ts"))
     // No consumeFocus(): the request was issued but never acted on (e.g. the
     // lazy Review chunk had not loaded before the user closed the panel).
 
@@ -378,7 +378,7 @@ describe("closed workspace disposal and reconstruction", () => {
     await openPanel()
 
     expect(mounts()).toHaveLength(2)
-    expect(mounts()[1]!.focusPath()).toBe("src/pending.ts")
+    expect(mounts()[1].focusPath()).toBe("src/pending.ts")
   })
 
   test("builds the destination workspace scope exactly once across a cross-workspace switch", async () => {
@@ -459,7 +459,7 @@ describe("closed workspace disposal and reconstruction", () => {
   test("keeps the panel body mounted through a reopen inside the close grace", async () => {
     renderRail()
     await openPanel()
-    mounts()[0]!.publish(substantialWorkingSet)
+    mounts()[0].publish(substantialWorkingSet)
 
     closePanel()
     await delay(Math.floor(WORKSPACE_PANEL_CLOSE_GRACE_MS / 2))

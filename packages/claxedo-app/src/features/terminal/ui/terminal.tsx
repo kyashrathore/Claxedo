@@ -408,7 +408,7 @@ export const Terminal = (props: TerminalProps) => {
       const likelyTui =
         !isRecreatedPty &&
         isLikelyTui({
-          snapshotWasAltScreen: snapshotWasAltScreen === true,
+          snapshotWasAltScreen:  snapshotWasAltScreen,
           initialCommand: local.pty.initialCommand ?? "",
           title: local.pty.title ?? "",
         })
@@ -429,7 +429,7 @@ export const Terminal = (props: TerminalProps) => {
         splitWidthChanged,
         isReload,
         snapshotHasBuffer,
-        snapshotWasAltScreen: snapshotWasAltScreen === true,
+        snapshotWasAltScreen:  snapshotWasAltScreen,
         snapshotCursor,
       })
       const launch = initialDelay({ likelyTui })
@@ -1174,7 +1174,7 @@ export const Terminal = (props: TerminalProps) => {
         tabIndex={-1}
         style={{ "background-color": terminalColors().background }}
         classList={{
-          ...(local.classList ?? {}),
+          ...local.classList,
           "select-text": true,
           "h-full w-full overflow-hidden font-mono": true,
           [local.class ?? ""]: !!local.class,

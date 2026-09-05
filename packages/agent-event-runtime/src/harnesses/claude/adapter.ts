@@ -957,8 +957,7 @@ function translateSystemMessage(
     case "task_progress": {
       return {
         state,
-        events: [
-          ...(text(rawMessage.summary)
+        events: (text(rawMessage.summary)
             ? [{
               type: "diagnostic",
               diagnostic: runtimeDiagnostic({
@@ -971,7 +970,6 @@ function translateSystemMessage(
               }),
             } satisfies AgentRuntimeEvent]
             : []),
-        ],
       }
     }
 

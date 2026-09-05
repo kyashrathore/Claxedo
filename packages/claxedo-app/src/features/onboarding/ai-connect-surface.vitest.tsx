@@ -35,7 +35,7 @@ function stubPorts() {
 
 /** Drives `view` the way both real callers do, so Back and branching work. */
 function Harness(props: Partial<Parameters<typeof AIConnectSurface>[0]> & { initialView?: AIConnectView }) {
-  const [view, setView] = createSignal<AIConnectView>(props.initialView ?? { kind: "chooser" })
+  const [view, setView] = createSignal(props.initialView ?? { kind: "chooser" })
   return (
     <AIConnectSurface
       localDiscovery

@@ -79,10 +79,10 @@ describe("latest-surface first-paint projection", () => {
     ]
 
     expect(projectLatestSurfaceMessages(messages)).toEqual([
-      { info: messages[0]!.info, parts: [] },
-      { info: messages[1]!.info, parts: [messages[1]!.parts[0]] },
+      { info: messages[0].info, parts: [] },
+      { info: messages[1].info, parts: [messages[1].parts[0]] },
     ])
-    expect(messages[0]!.parts[0]!.text).toBe(oversized)
+    expect(messages[0].parts[0].text).toBe(oversized)
   })
 
   test("omits an oversized assistant text without truncating it", () => {
@@ -93,7 +93,7 @@ describe("latest-surface first-paint projection", () => {
     }
 
     expect(projectLatestSurfaceMessage(message)).toEqual({ info: message.info, parts: [] })
-    expect(message.parts[0]!.text).toBe(oversized)
+    expect(message.parts[0].text).toBe(oversized)
   })
 
   test("measures text in UTF-8 bytes and preserves the measured 25,115-byte corpus maximum", () => {
@@ -151,9 +151,9 @@ describe("latest-surface first-paint projection", () => {
     }
 
     const projected = projectLatestSurfaceMessages([user, assistant])
-    expect(projected[0]!.parts).toEqual([])
-    expect(projected[1]!.parts).toHaveLength(LATEST_SURFACE_MAX_TEXT_PARTS)
-    expect(projected[1]!.parts.map((part) => part.id)).toEqual(
+    expect(projected[0].parts).toEqual([])
+    expect(projected[1].parts).toHaveLength(LATEST_SURFACE_MAX_TEXT_PARTS)
+    expect(projected[1].parts.map((part) => part.id)).toEqual(
       Array.from({ length: LATEST_SURFACE_MAX_TEXT_PARTS }, (_, index) => `assistant-${index + 4}`),
     )
   })
@@ -177,6 +177,6 @@ describe("latest-surface first-paint projection", () => {
     ]
 
     expect(projectLatestSurfaceMessages(messages)).toEqual([])
-    expect((messages[1]!.info.structured as { canonical: string }).canonical).toHaveLength(20 * 1024)
+    expect((messages[1].info.structured as { canonical: string }).canonical).toHaveLength(20 * 1024)
   })
 })

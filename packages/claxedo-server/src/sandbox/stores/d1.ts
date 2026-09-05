@@ -242,7 +242,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     const row = await database
       .prepare(`select * from ${TABLE} where workspace_id = ?`)
       .bind(workspaceId)
-      .first<Record<string, unknown>>()
+      .first()
     return row ? toLeaseRow(row) : undefined
   }
 
@@ -370,7 +370,7 @@ export function createD1SandboxLeaseStore(input: { database: D1Database; now?: (
     },
 
     async list() {
-      const rows = await database.prepare(`select * from ${TABLE}`).all<Record<string, unknown>>()
+      const rows = await database.prepare(`select * from ${TABLE}`).all()
       return rows.results.map((row) => toSandboxLease(toLeaseRow(row)))
     },
   }

@@ -1204,7 +1204,7 @@ function isLoopbackAddress(address: string | undefined): boolean {
   const trimmed = address.trim()
   if (LOOPBACK_REMOTES.has(trimmed)) return true
   // 127.0.0.0/8 — anything starting with `127.` is loopback per RFC 5735.
-  if (/^127\./.test(trimmed)) return true
+  if (trimmed.startsWith('127.')) return true
   // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.99).
   if (/^::ffff:127\./i.test(trimmed)) return true
   return false

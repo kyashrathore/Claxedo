@@ -17,7 +17,7 @@ const appAliases = (() => {
   const source = readFileSync(new URL("../../../claxedo-app/src/ui/icons/codex.ts", import.meta.url), "utf8")
   const block = source.split("CODEX_ICON_ALIASES = {")[1]?.split("} as const")[0] ?? ""
   return Object.fromEntries(
-    [...block.matchAll(/^\s*"?([a-zA-Z0-9-]+)"?:\s*"([a-z0-9-]+)"/gm)].map((m) => [m[1]!, m[2]!]),
+    [...block.matchAll(/^\s*"?([a-zA-Z0-9-]+)"?:\s*"([a-z0-9-]+)"/gm)].map((m) => [m[1], m[2]]),
   )
 })()
 
@@ -25,7 +25,7 @@ const appTransforms = (() => {
   const source = readFileSync(new URL("../../../claxedo-app/src/ui/icons/codex.ts", import.meta.url), "utf8")
   const block = source.split("CODEX_ICON_TRANSFORMS = {")[1]?.split("} as const")[0] ?? ""
   return Object.fromEntries(
-    [...block.matchAll(/^\s*"?([a-zA-Z0-9-]+)"?:\s*"([^"]+)"/gm)].map((m) => [m[1]!, m[2]!]),
+    [...block.matchAll(/^\s*"?([a-zA-Z0-9-]+)"?:\s*"([^"]+)"/gm)].map((m) => [m[1], m[2]]),
   )
 })()
 
@@ -34,17 +34,17 @@ describe("every referenced glyph is renderable", () => {
   const drawn = new Set(
     [...(componentSource.split("const icons = {")[1]?.split(/^}/m)[0] ?? "").matchAll(
       /^\s*"?([a-zA-Z0-9-]+)"?:\s*`/gm,
-    )].map((m) => m[1]!),
+    )].map((m) => m[1]),
   )
   const customTable = Object.fromEntries(
     [...(componentSource.split("const CODEX_CUSTOM_GLYPHS = {")[1]?.split("} as const")[0] ?? "").matchAll(
       /"(codex-custom-[a-z0-9-]+)"\s*:\s*"([a-zA-Z0-9-]+)"/g,
-    )].map((m) => [m[1]!, m[2]!]),
+    )].map((m) => [m[1], m[2]]),
   )
   const spriteSymbols = new Set(
     [...readFileSync(new URL("../assets/icons/codex/sprite.svg", import.meta.url), "utf8").matchAll(
       /<symbol id="([^"]+)"/g,
-    )].map((m) => m[1]!),
+    )].map((m) => m[1]),
   )
 
   test("every codex-custom alias has an entry in CODEX_CUSTOM_GLYPHS", () => {

@@ -397,7 +397,7 @@ function installPtyMock(page: Page) {
   return page.route("**/api/wr/pty**", async (route) => {
     const request = route.request()
     const url = new URL(request.url())
-    if (request.method() === "POST" && /\/api\/wr\/pty$/.test(url.pathname)) {
+    if (request.method() === "POST" && url.pathname.endsWith('/api/wr/pty')) {
       counter += 1
       const body = request.postDataJSON?.() as { title?: string } | undefined
       await route.fulfill({

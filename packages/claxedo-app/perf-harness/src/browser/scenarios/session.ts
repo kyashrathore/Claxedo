@@ -24,7 +24,7 @@ import type { Page, BrowserContext } from "playwright-core"
 export async function launchProject(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
   await installPageLoadRecorder(page)
   const started = performance.now()
-  const session = fixture.sessions[0]!
+  const session = fixture.sessions[0]
   const launch = await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
   await waitForSessionComposer(page)
@@ -42,7 +42,7 @@ export async function launchProject(page: Page, app: BrowserTarget, fixture: Ret
 }
 
 export async function sessionSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  const first = fixture.sessions[0]!
+  const first = fixture.sessions[0]
   const second = fixture.sessions[1] ?? first
   const renderer = fixture.sessionRenderer
   const renderMermaid = process.env.CLAXEDO_PERF_MERMAID_EXPLICIT !== "0"

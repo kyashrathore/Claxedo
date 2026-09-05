@@ -41,7 +41,7 @@ function harness(input: {
   sessionId?: string
   failDelivery?: boolean
 }) {
-  const [selection, setSelection] = createSignal<PermissionSelection | undefined>(input.stored)
+  const [selection, setSelection] = createSignal(input.stored)
   const delivered: PermissionModeOption[] = []
   const errors: { error: unknown; option: PermissionModeOption }[] = []
 
@@ -179,7 +179,7 @@ describe("selecting", () => {
       await Promise.resolve()
       await Promise.resolve()
       expect(errors).toHaveLength(1)
-      expect(errors[0]!.option.id).toBe("auto")
+      expect(errors[0].option.id).toBe("auto")
       dispose()
     })
   })

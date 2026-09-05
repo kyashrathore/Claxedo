@@ -516,14 +516,14 @@ test.describe("real cloud relay @core @tier-real", () => {
     const runId = `${Date.now()}`.slice(-6)
     const markers = [`CLOUD-${runId}-T1`, `CLOUD-${runId}-T2`]
 
-    await sendPrompt(page, markers[0]!)
-    await expectAssistantReplyVisible(page, new RegExp(markers[0]!), {
+    await sendPrompt(page, markers[0])
+    await expectAssistantReplyVisible(page, new RegExp(markers[0]), {
       spec: "real-cloud-relay",
       scenario: "turn-1",
     })
 
-    await sendPrompt(page, markers[1]!)
-    await expectAssistantReplyVisible(page, new RegExp(markers[1]!), {
+    await sendPrompt(page, markers[1])
+    await expectAssistantReplyVisible(page, new RegExp(markers[1]), {
       spec: "real-cloud-relay",
       scenario: "turn-2",
     })
@@ -532,7 +532,7 @@ test.describe("real cloud relay @core @tier-real", () => {
     // Behavior 3: read back across the relay from the cloud runtime's own store.
     await page.reload({ waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 60_000 })
-    await expectAssistantReplyVisible(page, new RegExp(markers[1]!), {
+    await expectAssistantReplyVisible(page, new RegExp(markers[1]), {
       spec: "real-cloud-relay",
       scenario: "reload",
     })

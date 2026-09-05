@@ -33,7 +33,7 @@ describe("idle process-family sampling", () => {
       cpuSeconds: 62.5,
       command: "/Applications/Claxedo --flag value",
     })
-    expect(rows[1]!.cpuSeconds).toBe(183_845)
+    expect(rows[1].cpuSeconds).toBe(183_845)
   })
 
   test("discovers arbitrary-depth descendants and retains ownership after reparenting", () => {

@@ -104,7 +104,7 @@ export async function createSessionWithLifecycle(input: {
     ])
     if (settled) return settled
     if (input.draftId) markRolledBackDraft(input.draftId)
-    if (failure) throw new Error(failure)
+    if (failure) throw new Error(failure, { cause: err })
     throw err
   } finally {
     unsubscribe()

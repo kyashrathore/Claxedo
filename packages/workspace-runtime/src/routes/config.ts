@@ -209,13 +209,15 @@ async function authorize(c: AuthCtx, options: ConfigRouteOptions): Promise<AuthV
       relayAuth: c.get("relayHostAuth") ?? c.get("relayHostDirectAuth"),
     })
     if (
-      result.ok === true
+      
+      result.ok
       && typeof result.subject === "string"
       && Array.isArray(result.scopes)
       && result.scopes.every((item) => typeof item === "string")
     ) return { ok: true }
     if (
-      result.ok === false
+      !
+      result.ok
       && (result.status === 401 || result.status === 403)
       && typeof result.code === "string"
       && typeof result.message === "string"

@@ -293,7 +293,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       harnessController.promote(sourceScope, scope)
     }
     const existingSessionConfig = isNewSession ? undefined : await loadExistingSubmitConfig(
-      () => readSessionConfig({ sessionID: explicitSessionID!, directory: sessionDirectory }),
+      () => readSessionConfig({ sessionID: explicitSessionID, directory: sessionDirectory }),
       (err) => showToast({
         title: language.t("prompt.toast.promptSendFailed.title"),
         description: errorMessage(err),

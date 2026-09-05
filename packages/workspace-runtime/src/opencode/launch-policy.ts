@@ -116,13 +116,13 @@ export function parseSkill(id: string, location: string, text: string): Skill.In
   const frontmatter: Record<string, string> = {}
   for (const line of (match?.[1] ?? "").split(/\r?\n/)) {
     const field = /^([A-Za-z0-9_-]+):\s*(.*)$/.exec(line)
-    if (field) frontmatter[field[1]!] = field[2]!.trim().replace(/^(["'])(.*)\1$/, "$2")
+    if (field) frontmatter[field[1]] = field[2].trim().replace(/^(["'])(.*)\1$/, "$2")
   }
   return {
     id,
     name: frontmatter.name || id,
     ...(frontmatter.description ? { description: frontmatter.description } : {}),
     location,
-    content: match ? match[2]! : text,
+    content: match ? match[2] : text,
   } as Skill.Info
 }

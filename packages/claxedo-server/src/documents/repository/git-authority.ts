@@ -522,7 +522,7 @@ function snapshotRef(value: unknown, snapshotId: SnapshotID): SnapshotRef | unde
     return
   if (!Array.isArray(record.pins) || !record.pins.every((pin) => typeof pin === "string")) return
   if (record.sessionId !== undefined && (typeof record.sessionId !== "string" || !record.sessionId.trim())) return
-  const pinValues = record.pins as string[]
+  const pinValues = record.pins
 
   try {
     const pins = boundedSnapshotPins(pinValues, Number.NEGATIVE_INFINITY)

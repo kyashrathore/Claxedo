@@ -381,7 +381,7 @@ export function NewSessionDesignView(props: {
         ) : (
           <SemanticIcon concept="isolationWorktree" size="small" />
         ),
-      label: creatingWorkspace() ? createActionLabel() : currentWorktree() ? worktreeLabel(currentWorktree()!) : "",
+      label: creatingWorkspace() ? createActionLabel() : currentWorktree() ? worktreeLabel(currentWorktree()) : "",
       ariaLabel: "Workspace",
       search: { placeholder: "Search workspaces" },
       emptyMessage: props.workspaceKind === "cloud" ? "No cloud workspace" : "No local workspace",

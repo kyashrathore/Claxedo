@@ -12,7 +12,7 @@ test("catalog entries resolve to real owners and package entrypoints", async () 
     const owner = path.join(repoRoot, "packages", entry.owner)
     const manifest = await Bun.file(path.join(owner, "package.json")).json()
     if (entry.entrypoint.startsWith("bun run ")) {
-      expect(manifest.scripts[entry.entrypoint.slice(8).split(" ")[0]!]).toBeDefined()
+      expect(manifest.scripts[entry.entrypoint.slice(8).split(" ")[0]]).toBeDefined()
     } else if (!entry.entrypoint.startsWith("bun ")) {
       expect(await Bun.file(path.join(owner, entry.entrypoint)).exists()).toBe(true)
     }

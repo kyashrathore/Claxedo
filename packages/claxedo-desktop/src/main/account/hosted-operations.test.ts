@@ -25,7 +25,7 @@ const matrix = readFileSync(
 /** `| \`name\` | owner | \`METHOD /path\` |` rows from the matrix. */
 function matrixRows() {
   return [...matrix.matchAll(/^\| `([a-zA-Z][\w.]*)` \|[^|]*\| `(GET|POST|PUT|PATCH|DELETE) ([^`]+)` \|/gm)].map(
-    (match) => ({ name: match[1]!, method: match[2]!, path: match[3]! }),
+    (match) => ({ name: match[1], method: match[2], path: match[3] }),
   )
 }
 

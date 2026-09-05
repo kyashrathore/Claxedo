@@ -379,9 +379,7 @@ export function composeProviderNeutralHostedControlPlane(
       runtimeAccessTokenSigner: runtimeAccessSigner,
       hostTunnelTokenSigner: hostTunnelSigner,
     },
-    sandbox: {
-      ...(manager ? { sandboxManager: manager } : {}),
-    },
+    sandbox: (manager ? { sandboxManager: manager } : {}),
     telemetry,
     localExecution: { enabled: false },
     defaultHomeRegion: homeRegion,

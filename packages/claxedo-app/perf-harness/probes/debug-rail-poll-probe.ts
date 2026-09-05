@@ -75,7 +75,7 @@ page.on("console", (message) => {
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
 
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 console.log(`[probe] scenario=${SCENARIO} observe=${OBSERVE_MS}ms`)
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)

@@ -53,7 +53,7 @@ function makeFetch(responses: Record<string, { status: number; body: unknown }>)
     if (!match) {
       return new Response(`no route for ${url}`, { status: 404 })
     }
-    const { status, body: respBody } = responses[match]!
+    const { status, body: respBody } = responses[match]
     return new Response(JSON.stringify(respBody), {
       status,
       headers: { "Content-Type": "application/json" },

@@ -1,7 +1,7 @@
 import path from "path"
 
 export function shell(input: string) {
-  return `'${input.replace(/'/g, `'\"'\"'`)}'`
+  return `'${input.replace(/'/g, `'"'"'`)}'`
 }
 
 export function file(...parts: string[]) {

@@ -50,7 +50,7 @@ describe("dev worktree identity", () => {
     expect(out[3]).toBe(255)
     expect(out[7]).toBe(0)
     // Hue 0 is red-dominant: R > G and R > B at full luminance.
-    expect(out[2]!).toBeGreaterThan(out[1]!)
-    expect(out[2]!).toBeGreaterThan(out[0]!)
+    expect(out[2]).toBeGreaterThan(out[1])
+    expect(out[2]).toBeGreaterThan(out[0])
   })
 })

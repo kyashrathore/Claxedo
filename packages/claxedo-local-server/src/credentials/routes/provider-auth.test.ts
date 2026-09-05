@@ -130,7 +130,7 @@ describe("control-plane provider auth", () => {
       account_id: "acct_123",
       expires_at: 3_601_000,
     })
-    expect(JSON.parse(c.writes[0]!.secret)).toMatchObject({
+    expect(JSON.parse(c.writes[0].secret)).toMatchObject({
       type: "codex_auth",
       tokens: {
         access_token: "access_token",

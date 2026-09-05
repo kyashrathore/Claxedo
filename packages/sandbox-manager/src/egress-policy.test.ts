@@ -258,10 +258,10 @@ describe("manager: document where we can't", () => {
     })
     // The message has to be usable on its own — a sink that only forwards text
     // must still convey what is wrong and what to do about it.
-    expect(ensure[0]!.message).toContain("UNRESTRICTED")
-    expect(ensure[0]!.message).toContain("cloudflare")
-    expect(ensure[0]!.message).toContain("ws_abc")
-    expect(ensure[0]!.message).toContain("public-docs/sandbox-egress.md")
+    expect(ensure[0].message).toContain("UNRESTRICTED")
+    expect(ensure[0].message).toContain("cloudflare")
+    expect(ensure[0].message).toContain("ws_abc")
+    expect(ensure[0].message).toContain("public-docs/sandbox-egress.md")
   })
 
   test("composition warns at boot, before any workspace exists", async () => {
@@ -282,7 +282,7 @@ describe("manager: document where we can't", () => {
       reason: "sandbox_egress_uncontained",
       driver: "boot-warn-driver",
     })
-    expect(events[0]!.workspaceId).toBeUndefined()
+    expect(events[0].workspaceId).toBeUndefined()
   })
 
   test("composing a capable driver warns about nothing", () => {
@@ -407,7 +407,7 @@ function documentedEgressControls(markdown: string) {
   const rows = new Map<string, string>()
   for (const line of markdown.split("\n")) {
     const match = /^\|\s*`([a-z-]+)`\s*\|\s*`(none|hosts|hosts-and-cidrs)`\s*\|/.exec(line.trim())
-    if (match) rows.set(match[1]!, match[2]!)
+    if (match) rows.set(match[1], match[2])
   }
   return rows
 }
@@ -496,7 +496,7 @@ describe("daytona egress translation", () => {
       labels: {},
       ...(net ? { net } : {}),
     })
-    return created[0]!
+    return created[0]
   }
 
   test("a host allowlist reaches daytona's domainAllowList", async () => {

@@ -440,7 +440,7 @@ test.describe("desktop unsigned embedded @core @tier-real @surface-desktop", () 
       }),
     )
     expect(diagnosticsTabs.every((button) => button.scrollWidth <= button.clientWidth + 1)).toBe(true)
-    expect(diagnosticsTabs.slice(1).every((button, index) => diagnosticsTabs[index]!.right <= button.left)).toBe(true)
+    expect(diagnosticsTabs.slice(1).every((button, index) => diagnosticsTabs[index].right <= button.left)).toBe(true)
     const diagnosticsDesign = await workspacePageDesignSignature(diagnostics)
     expect(diagnosticsDesign).toEqual(usageDesign)
 
@@ -1064,7 +1064,7 @@ child.on("exit", (code, signal) => signal ? process.kill(process.pid, signal) : 
     // sessionIds[0] is the OLDEST of the four — three newer rows now outrank
     // it, i.e. index 3, matching the plan's B5 row ("re-prompt an older row
     // (index >= 3)").
-    const target = sessionIds[0]!
+    const target = sessionIds[0]
     await expectRailRowVisible({ page: packaged.page, sessionId: target, index: 3 })
 
     // Re-prompt it: focus its row, then send another message. Switching to an

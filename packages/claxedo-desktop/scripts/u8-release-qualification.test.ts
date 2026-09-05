@@ -302,39 +302,39 @@ describe("U8 release qualification", () => {
 
   test("rejects failed correctness gates and browser order drift", () => {
     const correctness = fixture()
-    correctness.evidence.memory.postSessionIdle[2]!.ptyReady = false
+    correctness.evidence.memory.postSessionIdle[2].ptyReady = false
     correctness.writeEvidence()
     expect(() => qualify(correctness)).toThrow("post-session-idle[2].ptyReady did not pass")
 
     const browser = fixture()
-    browser.evidence.browser["session-switch"]!.positions[0]!.label = "candidate"
+    browser.evidence.browser["session-switch"].positions[0].label = "candidate"
     browser.writeEvidence()
     expect(() => qualify(browser)).toThrow("order must be baseline,candidate,candidate,baseline")
   })
 
   test("rejects a reused temporary profile", () => {
     const profile = fixture()
-    profile.evidence.memory.postSessionIdle[0]!.profileId = profile.evidence.memory.freshIdle[0]!.profileId
+    profile.evidence.memory.postSessionIdle[0].profileId = profile.evidence.memory.freshIdle[0].profileId
     profile.writeEvidence()
     expect(() => qualify(profile)).toThrow("reused profile")
   })
 
   test("rejects a non-fresh profile and a shortened settle", () => {
     const stale = fixture()
-    stale.evidence.memory.freshIdle[0]!.freshProfile = false as true
+    stale.evidence.memory.freshIdle[0].freshProfile = false as true
     stale.writeEvidence()
     expect(() => qualify(stale)).toThrow("profile was not fresh")
 
     const short = fixture()
-    short.evidence.memory.postSessionIdle[0]!.settleMs = 59_999
+    short.evidence.memory.postSessionIdle[0].settleMs = 59_999
     short.writeEvidence()
     expect(() => qualify(short)).toThrow("did not settle for 60000 ms")
   })
 
   test("rejects a reused browser context", () => {
     const browser = fixture()
-    browser.evidence.browser["workspace-switch"]!.positions[1]!.samples[0]!.contextId =
-      browser.evidence.browser["workspace-switch"]!.positions[0]!.samples[0]!.contextId
+    browser.evidence.browser["workspace-switch"].positions[1].samples[0].contextId =
+      browser.evidence.browser["workspace-switch"].positions[0].samples[0].contextId
     browser.writeEvidence()
     expect(() => qualify(browser)).toThrow("reused context")
   })
@@ -367,7 +367,7 @@ describe("U8 release qualification", () => {
     const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"))
     gate.results = { completed: true }
     fs.writeFileSync(gateFile, `${JSON.stringify(gate)}\n`)
-    input.evidence.releaseGates.selfHostedUpgrade!.sha256 = hash(gateFile)
+    input.evidence.releaseGates.selfHostedUpgrade.sha256 = hash(gateFile)
     input.writeEvidence()
 
     expect(() => qualify(input)).toThrow("release gate selfHostedUpgrade.results keys differ")
@@ -403,7 +403,7 @@ describe("U8 release qualification", () => {
     const gate = JSON.parse(fs.readFileSync(gateFile, "utf8"))
     gate.provenance.commitSha = "f".repeat(40)
     fs.writeFileSync(gateFile, `${JSON.stringify(gate)}\n`)
-    input.evidence.releaseGates.hostedDevelopmentIdentity!.sha256 = hash(gateFile)
+    input.evidence.releaseGates.hostedDevelopmentIdentity.sha256 = hash(gateFile)
     input.writeEvidence()
 
     expect(() => qualify(input)).toThrow("provenance commit does not match release SHA")

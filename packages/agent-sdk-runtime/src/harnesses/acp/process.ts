@@ -319,7 +319,7 @@ export class ACPProcess {
   }
 
   private waitForExit() {
-    if (this.exitReason) return Promise.reject(this.exitReason) as Promise<never>
+    if (this.exitReason) return Promise.reject(this.exitReason)
     return new Promise<never>((_, reject) => {
       this.exitWaiters.push(reject)
     })
@@ -393,7 +393,7 @@ export class ACPProcess {
     if (!this.goal?.methods.has(method)) throw new Error(`ACP Goal method ${method} was not negotiated`)
     const response = await this.agent.request<unknown, Record<string, unknown>>(method, {
       sessionId: agentSessionId,
-      ...(input ?? {}),
+      ...input,
     })
     return this.normalizeGoal(response, localSessionId)
   }

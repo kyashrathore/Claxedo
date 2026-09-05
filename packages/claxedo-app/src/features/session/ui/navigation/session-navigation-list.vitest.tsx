@@ -343,7 +343,7 @@ describe("SessionNavigation", () => {
     ))
     const firstRow = view.getAllByTestId("rail-sidebar-session-row")[0]
     const secondRow = view.getAllByTestId("rail-sidebar-session-row")[1]
-    engageRow(firstRow!)
+    engageRow(firstRow)
     const firstArchive = view.getByRole("button", { name: "Archive Session 1" })
     const firstTitleClass = firstRow.querySelector('[data-slot="session-navigation-title"]')?.getAttribute("class")
     const firstTimeClass = firstRow.querySelector('[data-slot="session-navigation-time"]')?.getAttribute("class")

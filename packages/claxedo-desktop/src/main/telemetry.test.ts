@@ -221,7 +221,7 @@ describe("registerFatalHandlers", () => {
 
     // Remove only what this test added — never disturb bun:test's own
     // handlers, which the rest of this run's files depend on.
-    addedUncaught.forEach((l) => process.removeListener("uncaughtException", l as NodeJS.UncaughtExceptionListener))
-    addedRejection.forEach((l) => process.removeListener("unhandledRejection", l as NodeJS.UnhandledRejectionListener))
+    addedUncaught.forEach((l) => process.removeListener("uncaughtException", l))
+    addedRejection.forEach((l) => process.removeListener("unhandledRejection", l))
   })
 })

@@ -132,7 +132,7 @@ export async function callDocuments(
       "document_name_ambiguous",
       `More than one document is named '${idOrName}'`,
     )
-  const document = matches[0]!
+  const document = matches[0]
   if (document.archived_at)
     throw new DocumentToolError(410, "document_archived", `Document '${idOrName}' is archived`)
   const documentId = string(document.id)
@@ -205,7 +205,7 @@ function withDefaults(input: Record<string, unknown>, defaults?: { directory?: s
 export function documentReferenceId(value: string) {
   const match = /^claxedo:\/\/document\/([^/?#]+)\/?(?:[?#].*)?$/i.exec(value.trim())
   if (!match) return value.trim()
-  return decodeURIComponent(match[1]!)
+  return decodeURIComponent(match[1])
 }
 
 function metadata(document: DocumentRow) {

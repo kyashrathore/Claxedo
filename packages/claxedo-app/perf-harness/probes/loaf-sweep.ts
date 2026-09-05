@@ -90,8 +90,8 @@ try {
       });
     console.log("turns | switch-ms | LoAF n | longest | total-loaf-ms | script-attributed-ms");
     for (let index = 0; index < plan.measured.length; index++) {
-      const target = plan.measured[index]!;
-      const turns = TURNS[targets.indexOf(target)]!;
+      const target = plan.measured[index];
+      const turns = TURNS[targets.indexOf(target)];
       await armObserver();
       const result = await measureSessionActivation(launch.page, target);
       if (result.state !== "exact") throw new Error(`switch ${turns}t failed: ${result.reason}`);

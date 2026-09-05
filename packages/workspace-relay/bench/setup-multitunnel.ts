@@ -37,7 +37,7 @@ const BUNDLE_PATH = join(REPORTS_DIR, "dialin-agent.bundle.cjs")
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
-  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1]!.startsWith("--") ? process.argv[i + 1] : fallback
+  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith("--") ? process.argv[i + 1] : fallback
 }
 
 // Same pure-node WS+HTTP echo server as setup-target.ts, parametrized by port so
@@ -209,10 +209,10 @@ async function main() {
   while (Date.now() < deadline && manifest.some((m) => !m.registered)) {
     await new Promise((r) => setTimeout(r, 2000))
     for (let i = 0; i < count; i++) {
-      if (manifest[i]!.registered) continue
+      if (manifest[i].registered) continue
       const tail = await sandbox.process.executeCommand(`bash -lc 'cat /tmp/dialin-${i}.log 2>/dev/null || true'`)
       const log = String((tail as any).result ?? (tail as any).stdout ?? "")
-      if (/"type":"open"/.test(log)) manifest[i]!.registered = true
+      if (/"type":"open"/.test(log)) manifest[i].registered = true
     }
   }
   const registered = manifest.filter((m) => m.registered).length

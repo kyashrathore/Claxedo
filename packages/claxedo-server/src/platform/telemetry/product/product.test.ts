@@ -36,7 +36,7 @@ describe("captureProduct", () => {
       { org_id: "org_1", user_id: "user_1", surface: "composer", deployment_mode: "self-host" },
       { org_id: "spoofed", surface: "spoofed" } as Record<string, unknown>,
     )
-    const properties = sink.capture.mock.calls[0]![2] as Record<string, unknown>
+    const properties = sink.capture.mock.calls[0][2] as Record<string, unknown>
     expect(properties.org_id).toBe("org_1")
     expect(properties.surface).toBe("composer")
   })
@@ -50,7 +50,7 @@ describe("captureProduct", () => {
       {},
       { groups: { project: "project_1", org: "spoofed" } },
     )
-    expect((sink.capture.mock.calls[0]![2] as { $groups: unknown }).$groups).toEqual({
+    expect((sink.capture.mock.calls[0][2] as { $groups: unknown }).$groups).toEqual({
       project: "project_1",
       org: "org_1",
     })

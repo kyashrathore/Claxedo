@@ -377,7 +377,7 @@ async function processSeparatedRelayHarness() {
     await stopChild(child)
     authority.stop()
     await fs.rm(workspaceDir, { recursive: true, force: true })
-    throw new Error(`${err instanceof Error ? err.message : String(err)}\n${logs.join("")}`)
+    throw new Error(`${err instanceof Error ? err.message : String(err)}\n${logs.join("")}`, { cause: err })
   }
 
   const relayAudits: WorkspaceRelayAuditEvent[] = []

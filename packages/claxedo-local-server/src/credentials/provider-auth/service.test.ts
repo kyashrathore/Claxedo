@@ -89,7 +89,7 @@ describe("OAuth pending state is keyed by tenant", () => {
     // Org A's authorization is untouched and still completes.
     expect(await auth.callback({ providerId: "codex-app-server", org: "org-a" })).toBe(true)
     expect(c.writes).toHaveLength(1)
-    expect(c.writes[0]!.org).toBe("org-a")
+    expect(c.writes[0].org).toBe("org-a")
   })
 
   test("two orgs hold concurrent authorizations for the same provider without crossing", async () => {
@@ -140,7 +140,7 @@ describe("OAuth pending state is keyed by tenant", () => {
     // deleteCredentialsByProvider wipes every credential for the provider; run
     // unscoped it would wipe every OTHER tenant's login for that provider too.
     expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: "org-a" }])
-    expect(c.writes[0]!.org).toBe("org-a")
+    expect(c.writes[0].org).toBe("org-a")
   })
 
   test("POSITIVE CONTROL: the single-tenant (unsigned self-host) flow still completes", async () => {
@@ -154,8 +154,8 @@ describe("OAuth pending state is keyed by tenant", () => {
     // A blank org is NOT a wildcard: it collapses to the named single-tenant
     // partition, the same one the credential router resolves unsigned to.
     expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: SINGLE_TENANT_ORG }])
-    expect(c.writes[0]!.org).toBe(SINGLE_TENANT_ORG)
-    expect(c.writes[0]!.input).toMatchObject({ provider_id: "codex-app-server", kind: "oauth_token" })
+    expect(c.writes[0].org).toBe(SINGLE_TENANT_ORG)
+    expect(c.writes[0].input).toMatchObject({ provider_id: "codex-app-server", kind: "oauth_token" })
   })
 
   test("an unclaimed authorization expires instead of lingering forever", async () => {
@@ -209,7 +209,7 @@ describe("provider-auth routes resolve the tenant the same way credential routes
     org = "org-a"
     const rightful = await routes.request("/provider/codex-app-server/oauth/callback", post())
     expect(rightful.status).toBe(200)
-    expect(c.writes[0]!.org).toBe("org-a")
+    expect(c.writes[0].org).toBe("org-a")
   })
 
   test("POSITIVE CONTROL: unsigned local requests complete and land in the single-tenant partition", async () => {
@@ -224,7 +224,7 @@ describe("provider-auth routes resolve the tenant the same way credential routes
     const done = await routes.request("/provider/codex-app-server/oauth/callback", post())
     expect(done.status).toBe(200)
     expect(await done.json()).toBe(true)
-    expect(c.writes[0]!.org).toBe(SINGLE_TENANT_ORG)
+    expect(c.writes[0].org).toBe(SINGLE_TENANT_ORG)
     expect(c.deletes).toEqual([{ providerId: "codex-app-server", org: SINGLE_TENANT_ORG }])
   })
 })

@@ -305,7 +305,7 @@ export async function launchPackagedClaxedo(input: {
       CLAXEDO_SERVER_PORT: String(serverPort),
       CLAXEDO_DEVTOOLS: "0",
       GOMAXPROCS: process.env.GOMAXPROCS ?? "2",
-      ...(input.extraEnv ?? {}),
+      ...input.extraEnv,
     },
     stdout: "pipe",
     stderr: "pipe",
@@ -561,9 +561,9 @@ export async function launchPackagedClaxedo(input: {
   } catch (error) {
     try {
       const result = await shutdown();
-      if (result.survivors.length) throw new Error(`Claxedo failed launch left ${result.survivors.length} application processes`);
+      if (result.survivors.length) throw new Error(`Claxedo failed launch left ${result.survivors.length} application processes`, { cause: error });
     } catch (cleanupError) {
-      throw new AggregateError([error, cleanupError], `Claxedo launch failed: ${String(error)}; cleanup failed: ${String(cleanupError)}`);
+      throw new AggregateError([error, cleanupError], `Claxedo launch failed: ${String(error)}; cleanup failed: ${String(cleanupError)}`, { cause: cleanupError });
     }
     throw error;
   }

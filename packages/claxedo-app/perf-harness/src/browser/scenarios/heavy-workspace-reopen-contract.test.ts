@@ -68,7 +68,7 @@ describe("heavy workspace reopen benchmark contract", () => {
     expect(HEAVY_WORKSPACE_CLOSE_DWELL_MS).toBeGreaterThan(140)
     expect(HEAVY_WORKSPACE_REVIEW_SCROLL_SELECTOR).toContain("[data-scrollable]")
 
-    const expanded = fixtureFor("heavy-workspace-reopen", seed).changedFiles[0]!
+    const expanded = fixtureFor("heavy-workspace-reopen", seed).changedFiles[0]
     expect(expanded.additions).toBe(HEAVY_WORKSPACE_EXPANDED_DIFF_LINES)
     expect(expanded.deletions).toBe(HEAVY_WORKSPACE_EXPANDED_DIFF_LINES)
     expect(expanded.patch.split("\n")).toHaveLength(HEAVY_WORKSPACE_EXPANDED_DIFF_LINES * 2 + 1)

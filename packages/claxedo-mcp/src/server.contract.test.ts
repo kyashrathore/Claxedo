@@ -31,10 +31,10 @@ test("spawn_session requires a machine and reports the actual initial prompt adm
     const result = await client.callTool({ name: "spawn_session", arguments: { workspace_id: "workspace", harness: "pi", prompt: "Write a file" } })
     expect(result.isError).not.toBe(true)
     const content = result.content as Array<{ text: string }>
-    expect(JSON.parse(content[0]!.text)).toMatchObject({ session_id: "canonical-session", workspace_id: "workspace", delivery: { status: "admitted" } })
+    expect(JSON.parse(content[0].text)).toMatchObject({ session_id: "canonical-session", workspace_id: "workspace", delivery: { status: "admitted" } })
     expect(requests[0]).toMatchObject({ path: "/api/control/sessions", body: { workspaceId: "workspace", harness: "pi" } })
-    expect(requests[1]!.path).toContain("canonical-session/prompt_async")
-    expect(requests[1]!.body.messageID).toMatch(/^mcp:/)
+    expect(requests[1].path).toContain("canonical-session/prompt_async")
+    expect(requests[1].body.messageID).toMatch(/^mcp:/)
     rejectPrompt = true
     expect((await client.callTool({ name: "spawn_session", arguments: { workspace_id: "workspace", harness: "pi", prompt: "Denied" } })).isError).toBe(true)
     expect(requests).toHaveLength(4)

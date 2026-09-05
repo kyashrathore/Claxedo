@@ -67,10 +67,10 @@ export function decodeSourceMap(raw: string): DecodedMap {
         const fields = decodeVlq(segment)
         generatedColumn += fields[0] ?? 0
         if (fields.length >= 4) {
-          sourceIndex += fields[1]!
-          sourceLine += fields[2]!
-          sourceColumn += fields[3]!
-          if (fields.length >= 5) nameIndex += fields[4]!
+          sourceIndex += fields[1]
+          sourceLine += fields[2]
+          sourceColumn += fields[3]
+          if (fields.length >= 5) nameIndex += fields[4]
           segments.push({
             generatedColumn,
             sourceIndex,
@@ -133,14 +133,14 @@ export function originalPositionFor(
   let found = -1
   while (low <= high) {
     const middle = (low + high) >> 1
-    if (segments[middle]!.generatedColumn <= column) {
+    if (segments[middle].generatedColumn <= column) {
       found = middle
       low = middle + 1
     } else {
       high = middle - 1
     }
   }
-  const segment = segments[found === -1 ? 0 : found]!
+  const segment = segments[found === -1 ? 0 : found]
   const source = map.sources[segment.sourceIndex]
   if (!source) return undefined
   return {
@@ -218,7 +218,7 @@ export function normalizeSourcePath(source: string): string {
   const packaged = cleaned.match(/(node_modules\/(?:@[^/]+\/)?[^/]+)\/(.*)$/u)
   if (packaged) return `${packaged[1]}/${packaged[2]}`
   const inRepo = cleaned.match(/(?:^|\/)(packages\/[^/]+\/.*)$/u)
-  if (inRepo) return inRepo[1]!
+  if (inRepo) return inRepo[1]
   return cleaned.replace(/^(\.\.\/)+/u, "")
 }
 
@@ -270,14 +270,14 @@ export async function loadBuildOffsetResolver(buildDirectory: string): Promise<O
       let line = 0
       while (low <= high) {
         const middle = (low + high) >> 1
-        if (starts[middle]! <= offset) {
+        if (starts[middle] <= offset) {
           line = middle
           low = middle + 1
         } else {
           high = middle - 1
         }
       }
-      return { line, column: offset - starts[line]! }
+      return { line, column: offset - starts[line] }
     },
   }
 }

@@ -92,9 +92,7 @@ export function WorkspaceCheckpointRoutes(
         const lifecycle = service(access.auth, access.role, access.orgId, services!, options)
         if (operation === "stop") return c.json(await lifecycle.stop(c.req.param("id")))
         if (operation === "replace") {
-          return c.json(await lifecycle.replace(c.req.param("id"), {
-            ...(typeof body.checkpointId === "string" ? { checkpointId: body.checkpointId } : {}),
-          }))
+          return c.json(await lifecycle.replace(c.req.param("id"), (typeof body.checkpointId === "string" ? { checkpointId: body.checkpointId } : {})))
         }
         if (operation === "cleanup") return c.json(await lifecycle.cleanup(c.req.param("id")))
         return c.json(await lifecycle.destroy(c.req.param("id")))

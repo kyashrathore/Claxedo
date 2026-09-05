@@ -61,7 +61,7 @@ const installMeter = async (page: Page) =>
         document.documentElement.style.removeProperty("--claxedo-floor-probe")
         void getComputedStyle(document.body).color
         values.sort((a, b) => a - b)
-        return { min: values[0]!, median: values[Math.floor(values.length / 2)]! }
+        return { min: values[0], median: values[Math.floor(values.length / 2)] }
       },
       count: () => {
         let total = document.querySelectorAll("*").length
@@ -98,7 +98,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -431,9 +431,9 @@ for (const region of regions.filter((candidate) => candidate.present)) {
     void getComputedStyle(document.body).color
     deltas.sort((a, b) => a - b)
     return {
-      saved: deltas[Math.floor(deltas.length / 2)]!,
-      low: deltas[0]!,
-      high: deltas[deltas.length - 1]!,
+      saved: deltas[Math.floor(deltas.length / 2)],
+      low: deltas[0],
+      high: deltas[deltas.length - 1],
       elements: w.__floor.count(),
     }
   }, { selector: region.selector, rounds: REGION_ROUNDS })
@@ -499,7 +499,7 @@ for (const region of regions.filter((candidate) => candidate.present && candidat
     restore()
     void getComputedStyle(document.body).color
     deltas.sort((a, b) => a - b)
-    return { saved: deltas[Math.floor(deltas.length / 2)]!, classes, nodes: nodes.length }
+    return { saved: deltas[Math.floor(deltas.length / 2)], classes, nodes: nodes.length }
   }, { selector: region.selector, rounds: 5 })
   console.log(
     `  ${region.selector.padEnd(46)} els=${String(region.elements).padStart(5)}` +
@@ -590,7 +590,7 @@ for (const entry of acts) {
       void getComputedStyle(document.body).color
     }
     samples.sort((a, b) => a - b)
-    return { min: samples[0]!, median: samples[Math.floor(samples.length / 2)]!, elements: w.__floor.count() }
+    return { min: samples[0], median: samples[Math.floor(samples.length / 2)], elements: w.__floor.count() }
   }, entry.act)
   report(entry.name, measured)
 }

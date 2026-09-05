@@ -238,7 +238,7 @@ async function bundleWorker() {
       ),
     },
   })
-  return bundled.outputFiles[0]!.text
+  return bundled.outputFiles[0].text
 }
 
 /** One browser page holding a live subscription, plus its recorded video. */

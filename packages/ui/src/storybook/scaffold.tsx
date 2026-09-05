@@ -33,7 +33,7 @@ export function create(input: {
   name?: string
   args?: Record<string, unknown>
 }) {
-  const component = pick(input.mod, input.name) as unknown as ValidComponent
+  const component = pick(input.mod, input.name) as ValidComponent
 
   return {
     meta: {

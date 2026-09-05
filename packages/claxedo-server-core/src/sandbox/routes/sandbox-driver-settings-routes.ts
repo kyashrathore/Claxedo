@@ -157,9 +157,7 @@ async function verifySandboxDriverKey(
     return { state: "unknown", reason: "Claxedo can't check this provider yet — the key was saved as-is." }
   }
   try {
-    const health = await verifySandboxDriverAuth(id, auth, {
-      ...(options.fetch ? { fetch: options.fetch } : {}),
-    })
+    const health = await verifySandboxDriverAuth(id, auth, (options.fetch ? { fetch: options.fetch } : {}))
     if (health === "ok" || health === "rate_capped") return { state: "working" }
     if (health === "no_billing") {
       return {
@@ -188,7 +186,7 @@ function inconclusiveCopy(message: string) {
 }
 
 function apiError(code: string, message: string, extra?: Record<string, unknown>) {
-  return { code, message, ...(extra ?? {}) }
+  return { code, message, ...extra }
 }
 
 function parseDefaultBody(input: unknown) {

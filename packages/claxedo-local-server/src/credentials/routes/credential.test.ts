@@ -170,7 +170,7 @@ describe("credential routes", () => {
 
   test("verifies a credential with a one-token provider call and lists the persisted health", async () => {
     const row: CredentialMetadata = {
-      ...(await credentials().listCredentials())[0]!,
+      ...(await credentials().listCredentials())[0],
       health: null,
     }
     const registry = Object.assign(credentials(), {
@@ -202,7 +202,7 @@ describe("credential routes", () => {
   })
 
   test("timestamps health when provider verification completes", async () => {
-    const row = { ...(await credentials().listCredentials())[0]!, health: null }
+    const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
       getCredential: vi.fn(async () => row),
       resolveCredentialSecretById: vi.fn(async () => "sk-timestamp-secret"),
@@ -224,7 +224,7 @@ describe("credential routes", () => {
   })
 
   test("classifies provider authentication failures without returning provider or secret text", async () => {
-    const row = { ...(await credentials().listCredentials())[0]!, health: null }
+    const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
       getCredential: vi.fn(async () => row),
       resolveCredentialSecretById: vi.fn(async () => "sk-auth-secret"),
@@ -246,7 +246,7 @@ describe("credential routes", () => {
   })
 
   test("classifies forbidden provider credentials as authentication failures", async () => {
-    const row = { ...(await credentials().listCredentials())[0]!, health: null }
+    const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
       getCredential: vi.fn(async () => row),
       resolveCredentialSecretById: vi.fn(async () => "sk-forbidden-secret"),
@@ -264,7 +264,7 @@ describe("credential routes", () => {
   })
 
   test("classifies a provider quota response caused by missing billing", async () => {
-    const row = { ...(await credentials().listCredentials())[0]!, health: null }
+    const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
       getCredential: vi.fn(async () => row),
       resolveCredentialSecretById: vi.fn(async () => "sk-billing-secret"),
@@ -287,7 +287,7 @@ describe("credential routes", () => {
   })
 
   test("classifies a temporary provider rate cap", async () => {
-    const row = { ...(await credentials().listCredentials())[0]!, health: null }
+    const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
       getCredential: vi.fn(async () => row),
       resolveCredentialSecretById: vi.fn(async () => "sk-rate-secret"),
@@ -306,7 +306,7 @@ describe("credential routes", () => {
   })
 
   test("classifies an expired provider token", async () => {
-    const row = { ...(await credentials().listCredentials())[0]!, health: null }
+    const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
       getCredential: vi.fn(async () => row),
       resolveCredentialSecretById: vi.fn(async () => "sk-expired-secret"),
@@ -325,7 +325,7 @@ describe("credential routes", () => {
   })
 
   test("does not contact a provider for metadata that is already expired", async () => {
-    const row = { ...(await credentials().listCredentials())[0]!, expires_at: 0, health: null }
+    const row = { ...(await credentials().listCredentials())[0], expires_at: 0, health: null }
     const registry = Object.assign(credentials(), {
       getCredential: vi.fn(async () => row),
       resolveCredentialSecretById: vi.fn(async () => "sk-expired-metadata-secret"),
@@ -343,7 +343,7 @@ describe("credential routes", () => {
 
   test("verifies Anthropic credentials with a one-token Messages request", async () => {
     const row = {
-      ...(await credentials().listCredentials())[0]!,
+      ...(await credentials().listCredentials())[0],
       provider_id: "claude-sdk",
       kind: "api_key" as const,
       health: null,
@@ -360,7 +360,7 @@ describe("credential routes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ result: "ok", health: "ok" })
-    const [url, init] = request.mock.calls[0]!
+    const [url, init] = request.mock.calls[0]
     expect(String(url)).toBe("https://api.anthropic.com/v1/messages")
     expect(new Headers(init?.headers).get("x-api-key")).toBe("sk-ant-route-secret")
     expect(JSON.parse(String(init?.body))).toMatchObject({ max_tokens: 1 })
@@ -368,7 +368,7 @@ describe("credential routes", () => {
 
   test("verifies Codex subscription credentials through the ChatGPT responses endpoint", async () => {
     const row = {
-      ...(await credentials().listCredentials())[0]!,
+      ...(await credentials().listCredentials())[0],
       provider_id: "codex-app-server",
       kind: "oauth_token" as const,
       health: null,
@@ -388,7 +388,7 @@ describe("credential routes", () => {
 
     expect(response.status).toBe(200)
     await expect(response.json()).resolves.toMatchObject({ result: "ok", health: "ok" })
-    const [url, init] = request.mock.calls[0]!
+    const [url, init] = request.mock.calls[0]
     expect(String(url)).toBe("https://chatgpt.com/backend-api/codex/responses")
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer codex-access-secret")
     expect(new Headers(init?.headers).get("chatgpt-account-id")).toBe("account_1")
@@ -404,7 +404,7 @@ describe("credential routes", () => {
   test("redacts credential and provider secrets from every verification response", async () => {
     const secret = "adversarial-super-secret"
     const row = {
-      ...(await credentials().listCredentials())[0]!,
+      ...(await credentials().listCredentials())[0],
       provider_id: "unsupported-provider",
       secure_ref: `local:${secret}`,
       health: null,
@@ -462,7 +462,7 @@ describe("credential routes", () => {
 
   test("returns a secret-safe upstream error when the provider request fails", async () => {
     const secret = "network-failure-secret"
-    const row = { ...(await credentials().listCredentials())[0]!, health: null }
+    const row = { ...(await credentials().listCredentials())[0], health: null }
     const registry = Object.assign(credentials(), {
       getCredential: vi.fn(async () => row),
       resolveCredentialSecretById: vi.fn(async () => secret),
@@ -524,7 +524,7 @@ describe("credential routes", () => {
    */
   test("every serialized credential carries its kind, on the list and by-provider routes", async () => {
     const row = {
-      ...(await credentials().listCredentials())[0]!,
+      ...(await credentials().listCredentials())[0],
       provider_id: "claude-sdk",
       kind: "oauth_token" as const,
     }

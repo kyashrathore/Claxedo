@@ -378,9 +378,9 @@ export function createSessionController(input: {
     if (!sessionID || sessionID === "new") return undefined
     const snapshot = activeConversation()
     if (!snapshot) return
-    if (snapshot.messages.length > 0) return snapshot.messages as Message[]
+    if (snapshot.messages.length > 0) return snapshot.messages
     if (historyMeta().limit[sessionHistoryKey({ sessionID, directory: input.directory() })] !== undefined) {
-      return snapshot.messages as Message[]
+      return snapshot.messages
     }
     return undefined
   })

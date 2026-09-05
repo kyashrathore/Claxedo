@@ -84,7 +84,7 @@ function sameSnapshots(left: Record<string, Snapshot>, right: Record<string, Sna
   const leftKeys = Object.keys(left)
   const rightKeys = Object.keys(right)
   return leftKeys.length === rightKeys.length &&
-    leftKeys.every((key) => !!right[key] && sameSnapshot(left[key]!, right[key]!))
+    leftKeys.every((key) => !!right[key] && sameSnapshot(left[key], right[key]))
 }
 
 const safeStorage = (): Storage | undefined => {

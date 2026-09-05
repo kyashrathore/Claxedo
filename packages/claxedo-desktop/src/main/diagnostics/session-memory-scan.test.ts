@@ -54,6 +54,6 @@ describe("session memory store scan", () => {
       expect.objectContaining({ sessionId: "ses_claxedo", title: "Claxedo task", harness: "claxedo" }),
     ])
     expect(result.stored).toEqual({ chatBytes: 100, imageBytes: 20, compactionBytes: 30, totalBytes: 150 })
-    expect(result.resident).toEqual(warm[0]!.buckets)
+    expect(result.resident).toEqual(warm[0].buckets)
   })
 })

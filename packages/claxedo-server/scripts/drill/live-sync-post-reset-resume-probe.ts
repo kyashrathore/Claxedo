@@ -80,7 +80,7 @@ const bundled = await build({
 const miniflare = new Miniflare({
   compatibilityDate: "2025-05-01",
   compatibilityFlags: ["nodejs_compat"],
-  modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0]!.text }],
+  modules: [{ type: "ESModule", path: "index.mjs", contents: bundled.outputFiles[0].text }],
   durableObjects: { LIVE_SYNC_ROOM: "LiveSyncRoom" },
 })
 await miniflare.ready
@@ -102,7 +102,7 @@ async function open(lastEventId?: string) {
     while (true) {
       const next = await reader.read().catch(() => ({ done: true, value: undefined }))
       if (next.done) break
-      buffer += decoder.decode(next.value!, { stream: true })
+      buffer += decoder.decode(next.value, { stream: true })
       const chunks = buffer.split("\n\n")
       buffer = chunks.pop() ?? ""
       for (const chunk of chunks) {

@@ -571,7 +571,7 @@ type AnnotationListItem = {
 function sameAnnotationLists(previous: AnnotationListItem[], next: AnnotationListItem[]) {
   if (previous.length !== next.length) return false
   return previous.every((item, index) => {
-    const other = next[index]!
+    const other = next[index]
     return (
       item.lineNumber === other.lineNumber &&
       item.side === other.side &&

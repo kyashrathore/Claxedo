@@ -126,7 +126,7 @@ test("turn lease responses are validated and renewals send only the bound lease 
   expect(await policy.renewTurn!({ ...turn, leaseId: lease.leaseId, fencingToken: 3 })).toEqual({ allowed: true, ...lease })
   expect(await policy.releaseTurn!({ ...turn, leaseId: lease.leaseId, fencingToken: 3 })).toEqual({ released: true })
   expect(requests.map((request) => request.headers.get("authorization"))).toEqual(["Bearer signed-rht", null, null])
-  expect(requests[1]!.body).toEqual({
+  expect(requests[1].body).toEqual({
     sessionId: "ses_private", action: "turn_renew", turnId: "turn_1", leaseId: "signed-lease", fencingToken: 3,
   })
 

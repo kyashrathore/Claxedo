@@ -95,7 +95,7 @@ export function PrivateSessionRegistrationRoutes(options: PrivateSessionRegistra
       return context.json(result, result.changed ? 201 : 200)
     } catch (error) {
       if (error instanceof ControlPlaneAuthError) {
-        return context.json(controlPlaneAuthErrorBody(error), error.status as 400 | 401 | 403 | 503)
+        return context.json(controlPlaneAuthErrorBody(error), error.status)
       }
       const code = errorCode(error)
       if (code) {

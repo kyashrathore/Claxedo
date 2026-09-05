@@ -93,7 +93,5 @@ export async function startSelfHostedServer(options: SelfHostedStartOptions) {
         .then(({ createLocalAgentPluginsComposition }) => createLocalAgentPluginsComposition(env))
     : undefined
   await agentPlugins?.ready
-  return startServer(options.port, {
-    ...(agentPlugins ? { routeContributions: agentPlugins.routeContributions } : {}),
-  })
+  return startServer(options.port, (agentPlugins ? { routeContributions: agentPlugins.routeContributions } : {}))
 }

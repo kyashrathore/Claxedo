@@ -48,7 +48,7 @@ function panelBodyState(text: string) {
     inertMarker: host.getAttribute("data-panel-body-inert"),
     ariaHidden: host.getAttribute("aria-hidden"),
     contentVisibility: host.style.getPropertyValue("content-visibility"),
-    inert: host.inert === true,
+    inert:  host.inert,
   }
 }
 const DISPLAYED_BODY = { inertMarker: null, ariaHidden: null, contentVisibility: "visible", inert: false }

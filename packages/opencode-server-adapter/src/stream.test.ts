@@ -68,7 +68,7 @@ async function run(input: {
   if (!(adapter instanceof OpenCodeServerAdapter)) throw new Error("Provider returned a different adapter")
   const events = []
   try {
-    for await (const value of adapter.executeTurn!(binding, prompt)) events.push(value)
+    for await (const value of adapter.executeTurn(binding, prompt)) events.push(value)
   } finally { adapter.dispose() }
   return { events, userId, prompts }
 }
@@ -225,7 +225,7 @@ test.each(["reconnect", "heartbeats", "busy heartbeats"] as const)("observes com
   const adapter = provider.createAdapter({ descriptor, resolved, context: {} as never })
   const observed: unknown[] = []
   const collect = (async () => {
-    for await (const value of adapter.executeTurn!(binding, prompt)) {
+    for await (const value of adapter.executeTurn(binding, prompt)) {
       observed.push(value)
       if (scenario === "busy heartbeats" && value.type === "text-delta" && value.delta === " without idle") {
         // A healthy stream must still deliver live deltas; periodic busy checks

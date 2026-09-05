@@ -165,7 +165,7 @@ export function heartbeatPayloadV2(input: {
  */
 export function createMachineIdentity() {
   const pair = generateKeyPairSync("ec", { namedCurve: "P-256" })
-  const publicJwk = pair.publicKey.export({ format: "jwk" }) as JsonWebKey
+  const publicJwk = pair.publicKey.export({ format: "jwk" })
   return {
     publicKey: JSON.stringify(publicJwk),
     sign(payload: string) {
@@ -188,7 +188,7 @@ function selectedStage(argv: readonly string[]): Stage {
   if (selected.length !== 1) {
     throw new Error(`select exactly one stage: ${stages.map((stage) => `--${stage}`).join(", ")}`)
   }
-  return selected[0]!
+  return selected[0]
 }
 
 function record(value: unknown, name: string): JsonRecord {

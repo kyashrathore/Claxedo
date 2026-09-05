@@ -54,7 +54,7 @@ const namesForbiddenPackage = (ids: readonly unknown[]) =>
  * default would deploy the local UI to a hosted surface.
  */
 export default defineConfig((env) => {
-  const base = (typeof cloud === "function" ? cloud(env as never) : cloud) as UserConfig
+  const base = (typeof cloud === "function" ? cloud(env as never) : cloud)
   const workspaceRoot = fileURLToPath(new URL("../..", import.meta.url))
 
   // Refused rather than worked around. Both shapes are expressible and neither

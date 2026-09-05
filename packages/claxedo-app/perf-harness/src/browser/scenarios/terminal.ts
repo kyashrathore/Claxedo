@@ -10,11 +10,11 @@ import { sessionPath } from "../state"
 import type { Page } from "playwright-core"
 
 export async function liveTerminalSwitch(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  const session = fixture.sessions[0]!
+  const session = fixture.sessions[0]
   await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
-  await navigateToTerminalRoute(page, app, fixture, fixture.terminals[0]!, true)
-  await navigateToTerminalRoute(page, app, fixture, fixture.terminals[1]!, false)
+  await navigateToTerminalRoute(page, app, fixture, fixture.terminals[0], true)
+  await navigateToTerminalRoute(page, app, fixture, fixture.terminals[1], false)
   await openTerminalSurface(page, fixture, fixture.terminals[0])
   await openTerminalSurface(page, fixture, fixture.terminals[1])
   let switchMs = 0
@@ -22,9 +22,9 @@ export async function liveTerminalSwitch(page: Page, app: BrowserTarget, fixture
   // proves websocket attachment with one seeded line; continuous output stress
   // belongs in a separate flow.
   const headline = await measureInteraction(page, "live-terminal-switch", async () => {
-    switchMs = await measureInPageTerminalSwitch(page, fixture.terminals[0]!.id)
-    await measureInPageTerminalSwitch(page, fixture.terminals[1]!.id)
-    await measureInPageTerminalSwitch(page, fixture.terminals[0]!.id)
+    switchMs = await measureInPageTerminalSwitch(page, fixture.terminals[0].id)
+    await measureInPageTerminalSwitch(page, fixture.terminals[1].id)
+    await measureInPageTerminalSwitch(page, fixture.terminals[0].id)
   })
   if (switchMs >= 4_900) recordVisualFailure(fixture, "terminal switch did not settle before timeout")
   await settleForVideo(page)

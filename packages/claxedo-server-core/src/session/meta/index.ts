@@ -393,7 +393,7 @@ export function applySessionMeta(input: Array<Record<string, unknown>>) {
         ...(hit?.projectID ? { projectID: hit.projectID } : {}),
         ...(parentID ? { parentID } : {}),
         rootID: root(id, links),
-        ...(archived !== undefined ? { time: { ...(rec(item.time) ?? {}), archived } } : {}),
+        ...(archived !== undefined ? { time: { ...rec(item.time), archived } } : {}),
         tags: hit?.tags ?? [],
         attachments: hit?.attachments ?? [],
       }

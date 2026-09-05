@@ -26,7 +26,7 @@ process.env.CLAXEDO_DATA_DIR = root
 /** Resolved before the shim goes on PATH, so the shim can exec the real git. */
 const realGit = execFileSync(process.platform === "win32" ? "where.exe" : "which", ["git"], { encoding: "utf-8" })
   .trim()
-  .split(/\r?\n/, 1)[0]!
+  .split(/\r?\n/, 1)[0]
 const spawnLog = path.join(root, "git-spawns.log")
 process.env.GIT_TRACE2_EVENT = spawnLog
 

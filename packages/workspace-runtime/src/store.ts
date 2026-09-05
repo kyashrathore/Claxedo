@@ -393,7 +393,7 @@ function preserveClaxedoAuthor(
   return {
     ...next,
     claxedo: {
-      ...(nextClaxedo ?? {}),
+      ...nextClaxedo,
       author: prevClaxedo.author,
     },
   }
@@ -428,7 +428,7 @@ function sessionHandoff(input: string | null | undefined): SessionConfig["handof
   if (!input) return
   try {
     const value = JSON.parse(input) as SessionConfig["handoff"]
-    if (!value || value.pending !== true || !value.from?.id || typeof value.transcript !== "string") return
+    if (!value || ! value.pending || !value.from?.id || typeof value.transcript !== "string") return
     const from = normalizeHarnessIdentity(value.from)
     if (!from) return
     return { from, pending: true, transcript: value.transcript }
@@ -2193,7 +2193,7 @@ export class RuntimeStore {
           .get(event.properties.messageID) as { info_json: string } | null
         if (!rowInfo) return
         const info = JSON.parse(rowInfo.info_json) as Record<string, unknown>
-        info.time = { ...(rec(info.time) ?? {}), completed: row.ts }
+        info.time = { ...rec(info.time), completed: row.ts }
         this.upsertMessage(info, row.ts)
         return
       }
@@ -2428,9 +2428,7 @@ export class RuntimeStore {
         ...(input.author ? { author: input.author } : {}),
       },
     }
-    const committed = this.commit(row, {
-      ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken, advance: true } : {}),
-    })
+    const committed = this.commit(row, (input.fencingToken !== undefined ? { fencingToken: input.fencingToken, advance: true } : {}))
     return {
       sessionId: committed.sessionId,
       seq: committed.seq,
@@ -2543,9 +2541,7 @@ export class RuntimeStore {
       payload: input.payload,
       ...(input.source ? { source: input.source } : {}),
     }
-    const committed = this.commit(row, {
-      ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
-    })
+    const committed = this.commit(row, (input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}))
     if (committed.kind !== "event") throw new Error("Expected event journal row")
     return {
       sessionId: committed.sessionId,
@@ -2640,9 +2636,7 @@ export class RuntimeStore {
         assistantMessageId: active.assistant_message_id,
         outcome: { ...input.outcome, assistantMessageId: active.assistant_message_id },
       },
-    }, {
-      ...(input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}),
-    })
+    }, (input.fencingToken !== undefined ? { fencingToken: input.fencingToken } : {}))
     return { events }
   }
 
@@ -3183,7 +3177,7 @@ export class RuntimeStore {
     const selectedIndexes = selectLatestSurfaceTextCandidateIndexes(
       candidates.map((candidate) => ({ textBytes: candidate.text_bytes, partBytes: candidate.part_bytes })),
     )
-    const selectedIds = selectedIndexes.map((index) => candidates[index]!.part_id)
+    const selectedIds = selectedIndexes.map((index) => candidates[index].part_id)
     if (selectedIds.length === 0) {
       return msgs.map((msg) => ({
         info: JSON.parse(msg.info_json) as AgentMessage["info"],
@@ -3347,7 +3341,7 @@ export class RuntimeStore {
         `,
         )
         .all(sessionId, boundary.ord) as MessageProjectionRow[]
-      const user = JSON.parse(turn[0]!.info_json) as AgentMessage["info"]
+      const user = JSON.parse(turn[0].info_json) as AgentMessage["info"]
       const contiguous =
         turn.length > 0 &&
         turn.every((row, index) => {

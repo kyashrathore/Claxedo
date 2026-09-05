@@ -690,7 +690,7 @@ test.describe("core harness ownership (local) @core", () => {
     // cache is warm; doing both in one browser task guarantees the session
     // composer mounts while that production quiet window is active.
     await row.evaluate((element, id) => {
-      ;(element.querySelector("button") as HTMLButtonElement | null)?.click()
+      ;(element.querySelector("button"))?.click()
       const now = Date.now()
       ;(window as typeof window & {
         __claxedoFastSessionSwitch?: { sessionId: string; until: number; networkQuietUntil?: number }

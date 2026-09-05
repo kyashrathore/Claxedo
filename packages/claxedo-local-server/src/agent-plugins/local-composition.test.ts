@@ -67,7 +67,7 @@ describe("local Agent Plugins composition", () => {
       revision: number
       candidates: Array<{ pluginInstanceId: string }>
     }
-    const candidate = body.candidates[0]!
+    const candidate = body.candidates[0]
 
     const activation = await app.request("http://local.test/api/claxedo/plugins/activation", {
       method: "POST",
@@ -84,7 +84,7 @@ describe("local Agent Plugins composition", () => {
     const launch = await composition.harnessLaunch()
     const config = launch.opencode?.config as { skills?: string[] }
     expect(config.skills).toHaveLength(1)
-    const skills = config.skills![0]!
+    const skills = config.skills![0]
     expect(skills).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(skills).not.toContain(collection)
     await expect(fs.readFile(path.join(skills, "review", "SKILL.md"), "utf8"))
@@ -98,7 +98,7 @@ describe("local Agent Plugins composition", () => {
     const manifest = JSON.parse(await fs.readFile(manifestPath, "utf8")) as {
       projections: { opencode: { pluginRoots: Array<{ root: string }> } }
     }
-    manifest.projections.opencode.pluginRoots[0]!.root = "../../../../escaped"
+    manifest.projections.opencode.pluginRoots[0].root = "../../../../escaped"
     await fs.writeFile(manifestPath, JSON.stringify(manifest))
     const restarted = createLocalAgentPluginsComposition({
       CODEX_HOME: path.join(root, "codex-home"),
@@ -117,7 +117,7 @@ describe("local Agent Plugins composition", () => {
     })
     await restarted.ready
     const relaunch = await restarted.harnessLaunch()
-    const reprojected = (relaunch.opencode?.config as { skills: string[] }).skills[0]!
+    const reprojected = (relaunch.opencode?.config as { skills: string[] }).skills[0]
     expect(reprojected).toContain(path.join(data, "runtime", "agent-plugins", "generations", "generation-1-"))
     expect(reprojected.startsWith(generationRoot + path.sep)).toBe(false)
     await expect(fs.readFile(path.join(reprojected, "review", "SKILL.md"), "utf8")).resolves.toContain("name: review")
@@ -228,7 +228,7 @@ describe("local Agent Plugins composition", () => {
       body: JSON.stringify({ ...signedWorld, secrets: [{ name: "CLAXEDO_MCP_ABC", value: "Bearer rotated-token" }] }),
     })
     expect(refreshed.status).toBe(200)
-    const rotatedRoot = ((await composition.harnessLaunch()).claude?.pluginRoots as string[])[0]!
+    const rotatedRoot = ((await composition.harnessLaunch()).claude?.pluginRoots as string[])[0]
     const rotated = JSON.parse(await fs.readFile(path.join(rotatedRoot, ".mcp.json"), "utf8")) as {
       mcpServers: { context7: { headers?: { Authorization?: string } } }
     }

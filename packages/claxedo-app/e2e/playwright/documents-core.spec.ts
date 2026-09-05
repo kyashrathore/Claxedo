@@ -754,7 +754,7 @@ test.describe.serial("Documents core deterministic journeys @core", () => {
     await page.getByRole("button", { name: "New document" }).click()
     await page.locator('.documents-new-list-host [data-slot="list-item"]').first().click()
     await expect(page.getByRole("main", { name: "Document editor" })).toBeVisible()
-    const created = [...runtime.documents.values()][0]!
+    const created = [...runtime.documents.values()][0]
     const exact = "---\ntitle: Exact bytes\n---\n\nManaged\n=======\n\n- alpha\n- beta\n"
     runtime.externalEdit(created.summary.id, exact)
     await openDocument(page, created.summary.id)

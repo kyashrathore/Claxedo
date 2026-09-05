@@ -60,7 +60,7 @@ export function sandboxTargetFromLease(lease: SandboxLeaseRow | undefined): Sand
 export function sandboxLeaseFromRow(lease: SandboxLeaseRow): SandboxLease {
   return {
     workspaceId: lease.workspace_id,
-    homeRegion: (lease.home_region ?? "us-east") as SandboxLease["homeRegion"],
+    homeRegion: (lease.home_region ?? "us-east"),
     driver: lease.driver,
     epoch: lease.epoch,
     status: sandboxLeaseStatus(lease.status),

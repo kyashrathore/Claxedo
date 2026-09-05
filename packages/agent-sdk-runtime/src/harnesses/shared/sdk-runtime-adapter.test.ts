@@ -68,7 +68,7 @@ describe("SdkRuntimeAdapter", () => {
     const root = mkdtempSync(path.join(tmpdir(), "sdk-shutdown-"))
     const store = storeRows(createSqliteRuntimeStore({ root }))
     let closed = 0
-    const close = store.close!.bind(store)
+    const close = store.close.bind(store)
     store.close = () => { closed++; close() }
     let release!: () => void
     const held = new Promise<void>((resolve) => { release = resolve })

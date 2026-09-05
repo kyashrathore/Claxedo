@@ -322,7 +322,7 @@ function decodeSandboxHealth(input: unknown): HostedHarnessProbe {
     ...(txt(row?.status) ? { status: txt(row?.status) } : {}),
     ...(decodeHarnessSelection(row?.harness) ? { harness: decodeHarnessSelection(row?.harness) } : {}),
     ...(decodeHarnessSelection(row?.activeHarness) ? { activeHarness: decodeHarnessSelection(row?.activeHarness) } : {}),
-    ...(typeof row?.model === "string" || row?.model === null ? { model: row.model as string | null } : {}),
+    ...(typeof row?.model === "string" || row?.model === null ? { model: row.model } : {}),
     ...(txt(row?.error) ? { error: txt(row?.error) } : {}),
     ...(healthStatus === "ok" || healthStatus === "degraded" || healthStatus === "unavailable"
       ? { harnessHealth: { status: healthStatus, ...(txt(health?.reason) ? { reason: txt(health?.reason) } : {}) } }

@@ -528,7 +528,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       }
       const stop = (stopReason: StopReason) => {
         log.info("sendMessage: prompt resolved", { stopReason, ms: Date.now() - t0 })
-        for (const runtimeEvent of translateStopReason(stopReason as Parameters<typeof translateStopReason>[0], id)) {
+        for (const runtimeEvent of translateStopReason(stopReason, id)) {
           router.project(runtimeEvent, {
             dir: "in",
             method: "prompt.stop",
@@ -753,7 +753,7 @@ export abstract class AcpTurnRunner extends AcpProcessManager {
       ...(input.variant ? { variant: input.variant } : {}),
     })
     return [
-      ...(recoveryMessage ? [start[0]!] : []),
+      ...(recoveryMessage ? [start[0]] : []),
       ...committed.events.filter((event) => !recoveryMessage || event.type !== "session.status"),
     ]
   }

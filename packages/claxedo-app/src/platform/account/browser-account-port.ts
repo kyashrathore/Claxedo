@@ -39,7 +39,7 @@ function accountState(auth: AuthSession): AccountState {
   if (auth.status() === "loading") return { status: "pending" }
   if (auth.status() !== "signed") return { status: "unsigned" }
 
-  const user = auth.user() as AuthDisplayUser | null
+  const user = auth.user()
   const organization = auth.organization()
   return {
     status: "signed",

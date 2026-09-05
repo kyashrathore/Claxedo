@@ -285,7 +285,7 @@ export async function readWebVitals(page: Page): Promise<WebVitals> {
   const frozen = trusted === undefined ? undefined : candidates.filter((c) => c.t <= trusted).pop()
 
   return {
-    lcpElement: candidates.length ? candidates[candidates.length - 1]!.el : undefined,
+    lcpElement: candidates.length ? candidates[candidates.length - 1].el : undefined,
     lcpCandidateCount: candidates.length,
     lcpAtFirstTrustedInputMs: frozen?.t,
     lcpAtFirstTrustedInputElement: frozen?.el,
@@ -351,7 +351,7 @@ export function mergeWebVitals(runs: readonly WebVitals[]): WebVitals {
   // another run's timing would invent a story no single run told. So the whole
   // attribution set comes from the one run that produced the reported LCP.
   const lcpMs = p75((item) => item.lcpMs)
-  const lcpRun = present.find((item) => item.lcpMs === lcpMs) ?? present[present.length - 1]!
+  const lcpRun = present.find((item) => item.lcpMs === lcpMs) ?? present[present.length - 1]
   const frozenLcpMs = p75((item) => item.lcpAtFirstTrustedInputMs)
   const frozenRun = frozenLcpMs === undefined ? undefined : present.find((item) => item.lcpAtFirstTrustedInputMs === frozenLcpMs)
   return {

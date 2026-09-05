@@ -64,8 +64,8 @@ describe("Claxedo terminal workload", () => {
       expect(result.expectedSha256).toBe("f43e5bf0baeade571dec6540f3e7e827077ba171836bef63b1b0bf3ea77f518b")
       expect(result.expectedModelHash).toBe("8d7e396ae2659a881ed49361466059d43ea3b1dba210b9499e610b0be12aa330")
       expect(result.inputByteThresholds).toHaveLength(2)
-      expect(result.inputByteThresholds[0]!).toBeGreaterThan(70 * 1024 * 1024)
-      expect(result.inputByteThresholds[1]!).toBeGreaterThan(140 * 1024 * 1024)
+      expect(result.inputByteThresholds[0]).toBeGreaterThan(70 * 1024 * 1024)
+      expect(result.inputByteThresholds[1]).toBeGreaterThan(140 * 1024 * 1024)
     } finally {
       await rm(root, { recursive: true, force: true })
     }

@@ -377,7 +377,7 @@ async function installLifecycleMock(page: Page, project: SeedProject = {}) {
     const url = new URL(r.request().url())
     const wantedId = url.searchParams.get("workspaceId") ?? undefined
     const wantedDir = url.searchParams.get("directory") ?? undefined
-    const hit = Object.entries(proj.workspaces as NonNullable<SeedProject["workspaces"]>).find(([key, ws]) =>
+    const hit = Object.entries(proj.workspaces).find(([key, ws]) =>
       (wantedId && (ws.workspaceId === wantedId || ws.id === wantedId || key === wantedId)) ||
       (wantedDir && ((ws.directory ?? key) === wantedDir)),
     )

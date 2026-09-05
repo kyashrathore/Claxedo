@@ -92,7 +92,7 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
     read(input: DraftDefaultScope): DraftDefault | undefined {
       const record = load(input)
       if (!record) return undefined
-      return { harness: record.lastHarness, ...(record.byHarness[harnessSelectionKey(record.lastHarness)] ?? {}) }
+      return { harness: record.lastHarness, ...record.byHarness[harnessSelectionKey(record.lastHarness)] }
     },
     /** What ONE harness remembers here, whichever harness was last used. */
     readHarness(input: DraftDefaultScope, harness: HarnessSelection): DraftDefaultHarnessChoice | undefined {
@@ -104,7 +104,7 @@ export function createDraftDefaultPreferences(storage: DraftDefaultStorage) {
       const current = load(input)
       const record = decodeRecord({
         version: VERSION,
-        byHarness: { ...(current?.byHarness ?? {}), [harnessSelectionKey(value.harness)]: choice },
+        byHarness: { ...current?.byHarness, [harnessSelectionKey(value.harness)]: choice },
         lastHarness: value.harness,
       })
       if (!record) return false

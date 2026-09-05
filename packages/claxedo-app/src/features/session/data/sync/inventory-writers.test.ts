@@ -32,7 +32,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    expect(readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" }).sessionOrder).toEqual([
+    expect(readSessionInventoryQueryData({ baseUrl: "http://test" }).sessionOrder).toEqual([
       "ses_new",
       "ses_mid",
       "ses_old",
@@ -64,14 +64,14 @@ describe("session inventory writers", () => {
       },
     })
 
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         upsertSessionInventoryRow(draft, session("ses_1", 5, { title: "New" }))
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions).toMatchObject([{ id: "ses_1", title: "New" }])
     expect(inventory.byProject.project_a).toMatchObject([{ id: "ses_1", title: "New" }])
     expect(inventory.byWorkspace["/repo/a"].sessions).toMatchObject([{ id: "ses_1", title: "New" }])
@@ -100,14 +100,14 @@ describe("session inventory writers", () => {
       },
     })
 
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         upsertSessionInventoryRow(draft, session("ses_2", 2, { workspaceId: "ws_1", workspaceName: "Workspace" }))
       },
     })
 
-    const group = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" }).byWorkspace.ws_1
+    const group = readSessionInventoryQueryData({ baseUrl: "http://test" }).byWorkspace.ws_1
     expect(group.sessions.map((item) => item.id)).toEqual(["ses_2", "ses_1"])
     expect(group.workspaceName).toBe("Workspace")
     expect(group.hasMore).toBe(true)
@@ -128,7 +128,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions.map((item) => `${item.workspaceId}:${item.id}`)).toEqual([
       "ws_2:ses_shared",
       "ws_1:ses_shared",
@@ -152,7 +152,7 @@ describe("session inventory writers", () => {
       session: { id: "ses_1", directory: "/repo/a", projectID: "project_a" },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions.map((item) => item.id)).toEqual(["ses_2"])
     expect(inventory.byProject.project_a.map((item) => item.id)).toEqual(["ses_2"])
     expect(inventory.byWorkspace["/repo/a"].sessions.map((item) => item.id)).toEqual(["ses_2"])
@@ -173,14 +173,14 @@ describe("session inventory writers", () => {
       session: { id: "ses_only", directory: "/repo/a", projectID: "project_a" },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions).toEqual([])
     expect(inventory.byProject.project_a ?? []).toEqual([])
     expect(inventory.byWorkspace["/repo/a"]?.sessions ?? []).toEqual([])
   })
 
   test("lifecycle upserts root project sessions and ignores child sessions", () => {
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         applySessionInventoryLifecycle(draft, session("ses_root", 2), "created")
@@ -188,7 +188,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions.map((item) => item.id)).toEqual(["ses_root"])
     expect(inventory.byProject.project_a.map((item) => item.id)).toEqual(["ses_root"])
     expect(inventory.byWorkspace["/repo/a"].sessions.map((item) => item.id)).toEqual(["ses_root"])
@@ -202,7 +202,7 @@ describe("session inventory writers", () => {
     // ANY lifecycle event (created or updated) with an unresolved projectID,
     // so a harness session's title update silently never reached the sidebar
     // inventory even though the row already existed there.
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         applySessionInventoryLifecycle(draft, session("ses_harness", 2), "created")
@@ -214,7 +214,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions.map((item) => item.id)).toEqual(["ses_harness"])
     expect(inventory.sessions[0]?.title).toBe("fix the flaky retry test")
     // The row keeps its originally-known projectID/grouping rather than being
@@ -223,7 +223,7 @@ describe("session inventory writers", () => {
   })
 
   test("lifecycle update cannot invent a row before its canonical create or snapshot", () => {
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         applySessionInventoryLifecycle(
@@ -238,11 +238,11 @@ describe("session inventory writers", () => {
       },
     })
 
-    expect(readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" }).sessions).toEqual([])
+    expect(readSessionInventoryQueryData({ baseUrl: "http://test" }).sessions).toEqual([])
   })
 
   test("lifecycle update projects canonical machine identity and preserves unchanged row fields", () => {
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         upsertSessionInventoryRow(draft, session("ses_machine", 2, {
@@ -266,7 +266,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions).toHaveLength(1)
     expect(inventory.sessions[0]).toMatchObject({
       id: "ses_machine",
@@ -280,19 +280,19 @@ describe("session inventory writers", () => {
   })
 
   test("lifecycle drops a created event with no resolvable projectID (nowhere to place a brand-new row)", () => {
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         applySessionInventoryLifecycle(draft, session("ses_unplaced", 2, { projectID: "" }), "created")
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions).toEqual([])
   })
 
   test("lifecycle keeps only visible global-tagged sessions", () => {
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         applySessionInventoryLifecycle(
@@ -308,13 +308,13 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions.map((item) => item.id)).toEqual(["ses_visible"])
     expect(inventory.global.map((item) => item.id)).toEqual(["ses_visible"])
   })
 
   test("lifecycle deletes through the shared inventory remove path", () => {
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         applySessionInventoryLifecycle(draft, session("ses_root", 2), "created")
@@ -322,14 +322,14 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessions).toEqual([])
     expect(inventory.byProject.project_a ?? []).toEqual([])
     expect(inventory.byWorkspace["/repo/a"]?.sessions ?? []).toEqual([])
   })
 
   test("workspace group replacement stores canonical rows and replaces stale metadata", () => {
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         replaceSessionInventoryWorkspaceGroups(draft, {
@@ -349,7 +349,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessionOrder).toEqual(["ses_b"])
     expect(inventory.byProject.project_b.map((item) => item.id)).toEqual(["ses_b"])
     expect(inventory.byWorkspace["/repo/b"].total).toBe(7)
@@ -436,7 +436,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         mergeSessionInventoryWorkspaceGroups(draft, {
@@ -450,7 +450,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.byWorkspace["/repo/a"].sessions.map((item) => item.id)).toEqual(["ses_new", "ses_old"])
     expect(inventory.byWorkspace["/repo/a"].total).toBe(5)
     expect(inventory.byWorkspace["/repo/b"].sessions.map((item) => item.id)).toEqual(["ses_other"])
@@ -476,7 +476,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         mergeSessionInventoryProjectPage(draft, {
@@ -492,7 +492,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.byProject.project_a.map((item) => item.id)).toEqual(["ses_new", "ses_old"])
     expect(inventory.byWorkspace["/repo/a"].sessions.map((item) => item.id)).toEqual(["ses_new", "ses_old"])
     expect(inventory.byWorkspace["/repo/a"].hasMore).toBe(true)
@@ -513,7 +513,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    updateSessionInventoryQueryData<SessionInventoryRow>({
+    updateSessionInventoryQueryData({
       baseUrl: "http://test",
       mutate: (draft) => {
         replaceSessionInventoryWorkspaceRows(draft, {
@@ -527,7 +527,7 @@ describe("session inventory writers", () => {
       },
     })
 
-    const inventory = readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })
+    const inventory = readSessionInventoryQueryData({ baseUrl: "http://test" })
     expect(inventory.sessionOrder).toEqual(["ses_new", "ses_other"])
     expect(inventory.byWorkspace.ws_1.sessions.map((item) => item.id)).toEqual(["ses_new"])
     expect(inventory.byWorkspace.ws_1.total).toBe(4)
@@ -558,7 +558,7 @@ describe("session inventory writers", () => {
       expect(notifications).toEqual([["ses_1"]])
       notifications.length = 0
 
-      updateSessionInventoryQueryData<SessionInventoryRow>({
+      updateSessionInventoryQueryData({
         baseUrl: "http://test",
         mutate: (draft) => {
           upsertSessionInventoryRow(draft, session("ses_2", 2))
@@ -573,7 +573,7 @@ describe("session inventory writers", () => {
   })
 
   test("read returns an empty compatible value before the query cache is populated", () => {
-    expect(readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: "http://test" })).toEqual(
+    expect(readSessionInventoryQueryData({ baseUrl: "http://test" })).toEqual(
       emptySessionInventory<SessionInventoryRow>(),
     )
   })

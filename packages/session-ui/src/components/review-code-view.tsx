@@ -57,7 +57,7 @@ export type ReviewCodeViewProps = {
 
 export function ReviewCodeView(props: ReviewCodeViewProps) {
   let root: HTMLDivElement | undefined
-  let view: CodeView<undefined> | undefined
+  let view: CodeView | undefined
   let generation = 0
   let stampFrame: number | undefined
 
@@ -81,7 +81,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     return host
   }
 
-  const buildItems = (): CodeViewDiffItem<undefined>[] => {
+  const buildItems = (): CodeViewDiffItem[] => {
     const open = openSet()
     return props.diffs.map((diff) => ({
       id: diff.file,
@@ -265,7 +265,7 @@ export function ReviewCodeView(props: ReviewCodeViewProps) {
     >
       <For each={headerFiles()}>
         {(file) => (
-          <Portal mount={headerHosts.get(file)!}>
+          <Portal mount={headerHosts.get(file)}>
             {/* The accordion structure the review header CSS is written
                 against; the engine's slot replaces the accordion's layout
                 role, this chain only carries the styling contract. */}

@@ -187,7 +187,7 @@ describe("channels ingress", () => {
     const claim = await app.request("https://core.test/api/channels/pairing/claim", {
       method: "POST",
       headers: { authorization: "Bearer account-token", "content-type": "application/json" },
-      body: JSON.stringify({ code: pending!.code }),
+      body: JSON.stringify({ code: pending.code }),
     })
     expect(claim.status).toBe(200)
     expect(bindChannelIdentity).toHaveBeenCalledWith(

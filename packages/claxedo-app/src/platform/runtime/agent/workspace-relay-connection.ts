@@ -345,9 +345,7 @@ async function fetchConnectionBody(
     ? {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...(params.previousJti ? { previousJti: params.previousJti } : {}),
-        }),
+        body: JSON.stringify((params.previousJti ? { previousJti: params.previousJti } : {})),
       }
     : undefined
 

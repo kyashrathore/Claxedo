@@ -938,7 +938,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       `,
         )
         .bind(sessionId, workspaceId)
-        .all<Record<string, unknown>>(),
+        .all(),
       this.database
         .prepare(
           `
@@ -949,7 +949,7 @@ export class D1SessionAuthority implements D1SessionAuthorityPort, PrivateSessio
       `,
         )
         .bind(sessionId, workspaceId)
-        .all<Record<string, unknown>>(),
+        .all(),
       this.database
         .prepare(
           `

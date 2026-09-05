@@ -83,5 +83,5 @@ function singleFieldLegacyValues(
 ): Record<string, string> {
   if (fields.length !== 1) return {}
   const value = clean(secret)
-  return value ? { [fields[0]!.key]: value } : {}
+  return value ? { [fields[0].key]: value } : {}
 }

@@ -91,7 +91,7 @@ function storedAuth(id: SandboxDriverID, secret: string): Record<string, string 
   } catch {
     // Falls through to the legacy bare reading below.
   }
-  return fields.length === 1 ? { [fields[0]!.key]: secret } : {}
+  return fields.length === 1 ? { [fields[0].key]: secret } : {}
 }
 
 const VERIFIABLE = new Set<SandboxDriverID>(["daytona", "vercel", "cloudflare", "box", "exe"])
@@ -138,7 +138,7 @@ function sandboxDriverProbe(
   // failure this whole probe exists to move earlier.
   if (id === "vercel") {
     return {
-      url: `https://api.vercel.com/v9/projects/${encodeURIComponent(auth.project_id!)}?teamId=${encodeURIComponent(auth.team_id!)}`,
+      url: `https://api.vercel.com/v9/projects/${encodeURIComponent(auth.project_id)}?teamId=${encodeURIComponent(auth.team_id)}`,
       init: { method: "GET", signal: signal(), headers: { Authorization: `Bearer ${auth.access_token}` } },
       // 404 is a verdict, not a miss: the token authenticated and the project
       // it names is unreachable, so this credential set cannot launch anything.
@@ -154,7 +154,7 @@ function sandboxDriverProbe(
   // the deployed Worker, and its `GET /sandboxes` is the only non-mutating
   // route behind the same admin gate as the control actions.
   if (id === "cloudflare") {
-    const base = workerBase(auth.worker_url!)
+    const base = workerBase(auth.worker_url)
     if (!base) return
     return {
       url: `${base}/sandboxes`,

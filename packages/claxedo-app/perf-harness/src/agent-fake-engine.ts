@@ -228,7 +228,7 @@ export async function startFakeEngine(input: {
       if (path === "/permission" || path === "/question") return json([])
       const sessionMatch = /^\/session\/([^/]+)(.*)$/u.exec(path)
       if (sessionMatch) {
-        const id = decodeURIComponent(sessionMatch[1]!)
+        const id = decodeURIComponent(sessionMatch[1])
         const suffix = sessionMatch[2] ?? ""
         const row = sessionById.get(id)
         if (suffix === "" && request.method === "GET") {

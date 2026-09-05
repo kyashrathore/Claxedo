@@ -87,7 +87,7 @@ export function mirrorCodexTokens(next: RenewedCodexTokens, homeDir = home()): s
     const updated: JsonRecord = {
       ...current,
       tokens: {
-        ...(tokens ?? {}),
+        ...tokens,
         access_token: next.access,
         refresh_token: next.refresh,
         // Codex (>=0.143) requires `tokens.id_token`; never regress it to absent.

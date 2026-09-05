@@ -89,7 +89,7 @@ describe("relay connection grain", () => {
 
   test("a connection answers only for its own workspace", async () => {
     await serve([WS_A, WS_B])
-    const first = live()[0]!
+    const first = live()[0]
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/api/wr/health" })?.pathname).toBe(
       `/workspaces/${WS_A}/api/wr/health`,
     )
@@ -109,7 +109,7 @@ describe("relay connection grain", () => {
    */
   test("lets the relay reach the workspace catalog, provider auth/OAuth via the daemon root, and nothing of the daemon's own", async () => {
     await serve([WS_A])
-    const first = live()[0]!
+    const first = live()[0]
     expect(first.resolveLocalUrl({ workspaceId: WS_A, path: "/provider?harness=opencode" })?.pathname).toBe(
       `/workspaces/${WS_A}/provider`,
     )
@@ -156,7 +156,7 @@ describe("relay connection grain", () => {
    */
   test("reaches workspace-runtime routes the old allow-list had never heard of", async () => {
     await serve([WS_A])
-    const first = live()[0]!
+    const first = live()[0]
     for (const path of [
       "/path",
       "/api/wr/worktrees",
@@ -181,7 +181,7 @@ describe("relay connection grain", () => {
 
   test("a changed set opens and closes only the difference", async () => {
     await serve([WS_A])
-    const first = live()[0]!
+    const first = live()[0]
     await serve([WS_A, WS_B])
     expect(live()).toHaveLength(2)
     expect(first.closed).toBe(false)
@@ -195,16 +195,16 @@ describe("relay connection grain", () => {
     await serve([WS_A, WS_B])
     expect(userHostedServingState()).toMatchObject({ serving: true, connected: false, connectedWorkspaceIds: [] })
 
-    live()[0]!.onEvent({ type: "open" })
+    live()[0].onEvent({ type: "open" })
     expect(
       userHostedServingState(),
       "one of two rooms reachable is not a reachable machine",
     ).toMatchObject({ connected: false, connectedWorkspaceIds: [WS_A] })
 
-    live()[1]!.onEvent({ type: "open" })
+    live()[1].onEvent({ type: "open" })
     expect(userHostedServingState()).toMatchObject({ connected: true, connectedWorkspaceIds: [WS_A, WS_B] })
 
-    live()[1]!.onEvent({ type: "reconnecting" })
+    live()[1].onEvent({ type: "reconnecting" })
     expect(userHostedServingState()).toMatchObject({ connected: false, connectedWorkspaceIds: [WS_A] })
   })
 

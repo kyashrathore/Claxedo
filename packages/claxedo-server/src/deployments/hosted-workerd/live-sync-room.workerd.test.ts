@@ -60,7 +60,7 @@ beforeAll(async () => {
     target: "es2022",
     write: false,
   })
-  workerModule = bundled.outputFiles[0]!.text
+  workerModule = bundled.outputFiles[0].text
   miniflare = new Miniflare({
     compatibilityDate: "2026-07-18",
     modules: [{ type: "ESModule", path: "index.mjs", contents: workerModule }],
@@ -176,7 +176,7 @@ describe("LiveSyncRoom workerd integration", () => {
     const gapped = room("gapped")
     const first = await gapped.connect()
     const opened = await first.until(1, "no bootstrap frame")
-    const cursor = opened[0]!.id!
+    const cursor = opened[0].id!
     expect(cursor).toBe("0")
     await first.cancel()
 
@@ -258,7 +258,7 @@ describe("LiveSyncRoom workerd integration", () => {
     })
     // The notice is per-connection: it carries only cursor ids, so it never
     // takes an id of its own and cannot advance a reader past real frames.
-    expect(frames[1]!.id).toBeUndefined()
+    expect(frames[1].id).toBeUndefined()
     await stream.cancel()
   })
 

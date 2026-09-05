@@ -27,7 +27,7 @@ const REPORTS_DIR = join(PACKAGE_ROOT, "bench/reports")
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
-  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1]!.startsWith("--") ? process.argv[i + 1] : fallback
+  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith("--") ? process.argv[i + 1] : fallback
 }
 
 async function main() {

@@ -453,8 +453,8 @@ describe("agent conversation chat adapter", () => {
       parts: { msg_user: [textPart("part_text", "msg_user", "hello")] },
     })
     const optimistic = [{
-      ...snapshot[0]!,
-      metadata: { ...snapshot[0]!.metadata, optimistic: true },
+      ...snapshot[0],
+      metadata: { ...snapshot[0].metadata, optimistic: true },
     }] as UIMessage[]
 
     const merged = mergeConversationSnapshot(optimistic, snapshot)
@@ -493,7 +493,7 @@ describe("agent conversation chat adapter", () => {
       ...message("msg_user", "user"),
       claxedo: { author: { id: "usr_alice", name: "Alice", kind: "human" } },
     } as Message
-    const engine = message("msg_user", "user") as Message
+    const engine = message("msg_user", "user")
 
     const handle = chat()
     applyAgentConversationEvent(handle, event("message.updated", { info: attributed }))

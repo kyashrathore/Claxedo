@@ -43,7 +43,7 @@ export function renderSessionHandoff(messages: unknown[], from: SessionHarness) 
   const bounded: string[] = []
   let chars = 0
   for (let index = turns.length - 1; index >= 0; index--) {
-    const turn = turns[index]!
+    const turn = turns[index]
     const separator = bounded.length ? 7 : 0
     if (bounded.length && chars + separator + turn.length > MAX_TRANSCRIPT_CHARS) break
     bounded.unshift(turn)

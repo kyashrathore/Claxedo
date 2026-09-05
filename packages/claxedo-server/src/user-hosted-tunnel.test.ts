@@ -100,7 +100,7 @@ describe("user-hosted Workspace Relay tunnel manager", () => {
       hostTunnelToken: "htt_1",
     })).resolves.toEqual({ reused: false, connectionCount: 1, workspaceIds: ["ws_a", "ws_b"] })
 
-    const options = mocks.startWorkspaceRelayHostTunnel.mock.calls[0]![0] as {
+    const options = mocks.startWorkspaceRelayHostTunnel.mock.calls[0][0] as {
       workspaceIds: string[]
       localBaseUrl: string
       resolveLocalUrl: (input: { workspaceId: string; path: string }) => URL | undefined
@@ -163,7 +163,7 @@ describe("user-hosted Workspace Relay tunnel manager", () => {
       pingIntervalMs: 15_000,
       reconnectIntervalMs: 1_000,
     })
-    await expect((mocks.startWorkspaceRelayHostTunnel.mock.calls[0]![0] as {
+    await expect((mocks.startWorkspaceRelayHostTunnel.mock.calls[0][0] as {
       tokenProvider: () => Promise<string>
     }).tokenProvider()).resolves.toBe("htt_1")
   })
@@ -247,7 +247,7 @@ describe("user-hosted Workspace Relay tunnel manager", () => {
     })
 
     expect(mocks.startWorkspaceRelayHostTunnel).toHaveBeenCalledTimes(1)
-    await expect((mocks.startWorkspaceRelayHostTunnel.mock.calls[0]![0] as {
+    await expect((mocks.startWorkspaceRelayHostTunnel.mock.calls[0][0] as {
       tokenProvider: () => Promise<string>
     }).tokenProvider()).resolves.toBe("htt_2")
     expect(mocks.close).not.toHaveBeenCalled()
@@ -265,7 +265,7 @@ describe("user-hosted Workspace Relay tunnel manager", () => {
       hostTunnelToken: "htt_1",
     })
 
-    const { onEvent } = mocks.startWorkspaceRelayHostTunnel.mock.calls[0]![0] as {
+    const { onEvent } = mocks.startWorkspaceRelayHostTunnel.mock.calls[0][0] as {
       onEvent: (event: Record<string, unknown>) => void
     }
     mocks.log.info.mockClear()

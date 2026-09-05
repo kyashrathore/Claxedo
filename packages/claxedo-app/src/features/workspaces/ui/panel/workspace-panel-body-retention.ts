@@ -55,7 +55,7 @@ export function createPanelBodyRetention(input?: { limit?: number }) {
   // own methods run inside the panel's construction effect, and reading a
   // signal there would subscribe that effect to its own writes.
   let held: RetainedPanelBody[] = []
-  const [entries, setEntries] = createSignal<RetainedPanelBody[]>(held)
+  const [entries, setEntries] = createSignal(held)
   const commit = (next: RetainedPanelBody[]) => {
     held = next
     setEntries(next)

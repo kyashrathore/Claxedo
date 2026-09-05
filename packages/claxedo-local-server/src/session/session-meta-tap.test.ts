@@ -68,7 +68,7 @@ describe("session meta projection tap", () => {
 
     expect(response.status).toBe(200)
     expect(projection.put_session_meta).toHaveBeenCalledTimes(1)
-    const [id, meta] = projection.put_session_meta.mock.calls[0]!
+    const [id, meta] = projection.put_session_meta.mock.calls[0]
     expect(id).toBe("ses_1")
     expect(meta).toMatchObject({ title: "First", directory: "/work" })
   })

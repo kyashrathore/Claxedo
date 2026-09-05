@@ -27,7 +27,7 @@ export type RetirementFinding = { file: string; token: string }
 export function retiredAgentExtensionFindings(files: Array<{ file: string; text: string }>): RetirementFinding[] {
   return files.flatMap(({ file, text }) => RETIRED.flatMap((pattern) => {
     const flags = pattern.flags.includes("g") ? pattern.flags : `${pattern.flags}g`
-    return [...text.matchAll(new RegExp(pattern.source, flags))].map((match) => ({ file, token: match[0]! }))
+    return [...text.matchAll(new RegExp(pattern.source, flags))].map((match) => ({ file, token: match[0] }))
   }))
 }
 

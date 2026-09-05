@@ -57,8 +57,8 @@ describe("deployments/local is retired", () => {
       ]
         // `@claxedo/local-server` has its own `deployments/local`, and modules
         // here import from it on purpose. Only THIS package's path is retired.
-        .filter((match) => !match[1]!.includes("@claxedo/local-server"))
-        .filter((match) => !match[1]!.includes("claxedo-local-server"))
+        .filter((match) => !match[1].includes("@claxedo/local-server"))
+        .filter((match) => !match[1].includes("claxedo-local-server"))
       return matches.map((match) => `${path.relative(SRC, file)}: ${match[1]}`)
     })
 
@@ -91,7 +91,7 @@ describe("deployments/local is retired", () => {
     // Mutation check for the matcher, without recreating the directory.
     const pattern = /from\s*["']([^"']*\/deployments\/local\/[^"']*)["']/g
     const sample = `from "../deployments/local/server"\nfrom "@claxedo/local-server/deployments/local/embedded-workspace-runtime"`
-    const found = [...sample.matchAll(pattern)].map((match) => match[1]!)
+    const found = [...sample.matchAll(pattern)].map((match) => match[1])
 
     expect(found).toHaveLength(2)
     expect(found.filter((specifier) => !specifier.includes("@claxedo/local-server"))).toEqual([

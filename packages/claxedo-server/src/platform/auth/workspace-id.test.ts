@@ -78,7 +78,7 @@ describe("workspace id minting", () => {
 
     // Every alphabet position should be exercised across a large sample; a
     // constant or low-entropy suffix collapses this to a handful of symbols.
-    const symbols = new Set([...Array.from({ length: 200 }, () => randomIdSuffix()).join("")])
+    const symbols = new Set(Array.from({ length: 200 }, () => randomIdSuffix()).join(""))
     expect(symbols.size).toBeGreaterThan(24)
   })
 

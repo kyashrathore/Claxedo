@@ -200,7 +200,7 @@ describe("user_activated fires exactly once", () => {
       record: { ...record, turn_status: "ok" },
     })
     expect(captured.only(USER_ACTIVATED)).toHaveLength(1)
-    expect(captured.only(USER_ACTIVATED)[0]!.properties).toMatchObject({
+    expect(captured.only(USER_ACTIVATED)[0].properties).toMatchObject({
       org_id: "org_1",
       user_id: "user_sub_1",
       session_id: "s_1",
@@ -237,7 +237,7 @@ describe("user_activated fires exactly once", () => {
     expect(result).toMatchObject({ activated: false, ledger_write: "failed" })
     // The analytics view still gets the turn, flagged so the gap is visible in
     // the data rather than only in a log line.
-    expect(captured.only(LLM_TURN_COMPLETED)[0]!.properties.ledger_write).toBe("failed")
+    expect(captured.only(LLM_TURN_COMPLETED)[0].properties.ledger_write).toBe("failed")
     expect(captured.only(USER_ACTIVATED)).toHaveLength(0)
   })
 })
@@ -250,7 +250,7 @@ describe("sandbox lease events", () => {
       sink: captured.sink,
       lease: { workspace_id: "ws_1", driver: "daytona", started_at: 1_000 },
     })
-    expect(captured.only(SANDBOX_LEASE_OPENED)[0]!.properties).toMatchObject({
+    expect(captured.only(SANDBOX_LEASE_OPENED)[0].properties).toMatchObject({
       workspace_id: "ws_1",
       driver: "daytona",
       started_at: 1_000,
@@ -296,7 +296,7 @@ describe("sandbox lease events", () => {
       lease: { workspace_id: "ws_1", driver: "daytona", ended_at: 5, reason: "gc" },
       systemReason: "internal_admin_token_has_no_user",
     })
-    const event = captured.only(SANDBOX_LEASE_CLOSED)[0]!
+    const event = captured.only(SANDBOX_LEASE_CLOSED)[0]
     expect(event.distinctId).toBe("system")
     expect(event.properties.system_reason).toBe("internal_admin_token_has_no_user")
     expect(event.properties.org_id).toBeUndefined()

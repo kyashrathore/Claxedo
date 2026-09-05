@@ -40,7 +40,7 @@ describe("claudeAgentPluginAdapter", () => {
       plugins: [{ pluginInstanceId: "claxedo/review", artifactDigest: "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", plugin: validated.plugin, root: pluginRoot, dataRoot }],
     })
 
-    const view = result.pluginRoots[0]!.root
+    const view = result.pluginRoots[0].root
     expect(JSON.parse(await fs.readFile(path.join(view, ".claude-plugin", "plugin.json"), "utf8"))).toEqual({
       name: "review",
       version: "1.0.0",

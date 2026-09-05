@@ -110,7 +110,7 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
                       <a
                         data-slot="basic-tool-tool-subtitle"
                         class="clickable subagent-link"
-                        href={split.href!}
+                        href={split.href}
                         onClick={(e) => e.stopPropagation()}
                       >
                         {subtitle()}

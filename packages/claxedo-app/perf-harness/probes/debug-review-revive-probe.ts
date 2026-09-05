@@ -114,7 +114,7 @@ await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("
 await installSeedState(page, app, fixture)
 
 const sessions = fixture.sessions
-const home = sessions[0]!
+const home = sessions[0]
 console.log(`[probe] app=${app.baseUrl} mock=${app.mockPort} corpus=${expectedTotal} files`)
 console.log(`[probe] workspace A=${fixture.workspaceDirectories[0]}  workspace B=${fixture.workspaceDirectories[1]}`)
 
@@ -199,11 +199,11 @@ await page.waitForTimeout(500)
 // In-app switch via the rail, exactly like the scenario driver — a page
 // reload would reset the in-memory panel state and prove nothing.
 {
-  const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessions[2]!.id}"]`).first()
+  const row = page.locator(`[data-testid="rail-sidebar-session-row"][data-session-id="${sessions[2].id}"]`).first()
   const activate = row.locator('[data-slot="navigation-row-activate"]').first()
   await ((await activate.count()) ? activate : row).click()
 }
-await waitForTranscript(page, fixture, sessions[2]!.id, sessions[2]!.title)
+await waitForTranscript(page, fixture, sessions[2].id, sessions[2].title)
 console.log(`[repro] switched to session 2 (${elapsed()})`)
 const tabStrip = await page.evaluate(() => {
   const visible = (element: Element) => {
@@ -250,11 +250,11 @@ const railSwitch = async (target: (typeof sessions)[number]) => {
   await waitForTranscript(page, fixture, target.id, target.title)
   await page.waitForTimeout(400)
 }
-await railSwitch(sessions[4]!)
+await railSwitch(sessions[4])
 console.log(`[repro] within cold done (${elapsed()})`)
 await railSwitch(home)
 console.log(`[repro] within warm done (${elapsed()})`)
-await railSwitch(sessions[3]!)
+await railSwitch(sessions[3])
 console.log(`[repro] ACROSS cold done (${elapsed()})`)
 await railSwitch(home)
 console.log(`[repro] ACROSS warm done (${elapsed()})`)

@@ -45,12 +45,12 @@ describe("the sandbox provider catalog", () => {
     // The circularity fix: the step exists precisely for a provider with no key.
     const catalog = parseCatalog({ default_driver: "daytona", drivers: [driver({ configured: false })] })
     expect(catalog.providers).toHaveLength(1)
-    expect(catalog.providers[0]!.configured).toBe(false)
+    expect(catalog.providers[0].configured).toBe(false)
   })
 
   test("falls back to the driver flagged default when the field is absent", () => {
     const catalog = parseCatalog({ drivers: [driver({ id: "e2b", label: "E2B" })] })
-    expect(catalog.providers[0]!.isDefault).toBe(true)
+    expect(catalog.providers[0].isDefault).toBe(true)
     expect(catalog.defaultProviderId).toBeUndefined()
   })
 
@@ -61,7 +61,7 @@ describe("the sandbox provider catalog", () => {
 
   test("malformed fields are dropped, not rendered as blank inputs", () => {
     const catalog = parseCatalog({ drivers: [driver({ fields: [{ label: "no key" }, { key: "token" }] })] })
-    expect(catalog.providers[0]!.fields).toEqual([{ key: "token", label: "token", secret: false }])
+    expect(catalog.providers[0].fields).toEqual([{ key: "token", label: "token", secret: false }])
   })
 })
 
@@ -83,7 +83,7 @@ describe("saving a provider key", () => {
       url: "https://server/api/workspace/drivers/daytona/auth",
       body: { auth: { apiKey: "dtn_live_123" }, default: true },
     }])
-    expect(outcome.ok && outcome.catalog.providers[0]!.configured).toBe(true)
+    expect(outcome.ok && outcome.catalog.providers[0].configured).toBe(true)
   })
 
   test("a rejection comes back as a sentence, never as a server code", async () => {
@@ -97,10 +97,10 @@ describe("saving a provider key", () => {
     })
 
     expect(outcome.ok).toBe(false)
-    expect(outcome.ok === false && outcome.reason).toBe(
+    expect(!outcome.ok && outcome.reason).toBe(
       "That provider still has no working key. Check the value and save it again.",
     )
-    expect(outcome.ok === false && outcome.reason).not.toContain("sandbox_driver")
+    expect(!outcome.ok && outcome.reason).not.toContain("sandbox_driver")
   })
 })
 
@@ -124,7 +124,7 @@ describe("the provider's verdict", () => {
       default_driver: "daytona",
       drivers: [driver({ verification: { state: "working" } })],
     })
-    expect(catalog.providers[0]!.verification).toEqual({ state: "working" })
+    expect(catalog.providers[0].verification).toEqual({ state: "working" })
   })
 
   test("an unknown verdict keeps the server's sentence to render verbatim", () => {
@@ -135,7 +135,7 @@ describe("the provider's verdict", () => {
         verification: { state: "unknown", reason: "Claxedo can't check this provider yet — the key was saved as-is." },
       })],
     })
-    expect(catalog.providers[0]!.verification).toEqual({
+    expect(catalog.providers[0].verification).toEqual({
       state: "unknown",
       reason: "Claxedo can't check this provider yet — the key was saved as-is.",
     })
@@ -144,7 +144,7 @@ describe("the provider's verdict", () => {
   test("a row from a server without verdicts has none, which is not the same as unknown", () => {
     // Absent means "this server never said"; unknown means "it tried and
     // couldn't". Inventing the latter would put copy on screen nobody wrote.
-    expect(parseCatalog({ drivers: [driver()] }).providers[0]!.verification).toBeUndefined()
+    expect(parseCatalog({ drivers: [driver()] }).providers[0].verification).toBeUndefined()
     expect(parseVerification(undefined)).toBeUndefined()
     expect(parseVerification({ state: "made_up" })).toBeUndefined()
   })
@@ -182,8 +182,8 @@ describe("the provider's verdict", () => {
     })
 
     expect(outcome.ok).toBe(false)
-    expect(outcome.ok === false && outcome.reason).toContain("no active billing")
-    expect(outcome.ok === false && outcome.reason).not.toContain("sandbox_driver_key_rejected")
+    expect(!outcome.ok && outcome.reason).toContain("no active billing")
+    expect(!outcome.ok && outcome.reason).not.toContain("sandbox_driver_key_rejected")
   })
 
   test("a rejection with no structured reason still falls back to a repair", async () => {
@@ -195,7 +195,7 @@ describe("the provider's verdict", () => {
         throw new Error("Request failed: 401")
       },
     })
-    expect(outcome.ok === false && outcome.reason).toContain("copied whole")
+    expect(!outcome.ok && outcome.reason).toContain("copied whole")
   })
 })
 

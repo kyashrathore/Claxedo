@@ -157,7 +157,7 @@ export abstract class WrappedLineLinkProvider implements ILinkProvider {
 		matchEnd: number,
 	): ILink["range"] {
 		const locate = (offset: number) => {
-			let row = ctx.rows[0]!;
+			let row = ctx.rows[0];
 			for (const candidate of ctx.rows) {
 				if (offset >= candidate.start) {
 					row = candidate;

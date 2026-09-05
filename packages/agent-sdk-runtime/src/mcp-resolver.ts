@@ -109,7 +109,7 @@ const apply = (
 }
 
 export const isManagedMcpServer = (value: string): value is ManagedMcpServer =>
-  MANAGED_MCP_SERVERS.includes(value as ManagedMcpServer)
+  MANAGED_MCP_SERVERS.includes(value)
 
 export const mcpControl = (agent: McpCapableAgent): ManagedMcpControl => {
   if (agent === "gemini") return "generated-config"

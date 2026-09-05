@@ -282,8 +282,8 @@ describe("conversation hydrator", () => {
       sessionID: "ses_1",
       ...fragmentPage,
       rows: [
-        { info: userMessage(ids[1]!), parts: [part("surface-user", ids[1]!)] },
-        { info: { ...settledMessage(ids[3]!), finish: "stop" }, parts: [part("surface-final", ids[3]!)] },
+        { info: userMessage(ids[1]), parts: [part("surface-user", ids[1])] },
+        { info: { ...settledMessage(ids[3]), finish: "stop" }, parts: [part("surface-final", ids[3])] },
       ],
     })
 

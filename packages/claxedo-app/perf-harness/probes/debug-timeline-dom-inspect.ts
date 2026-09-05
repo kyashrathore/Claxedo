@@ -21,7 +21,7 @@ const browser = await chromium.launch({ headless: true, args: frameSamplingLaunc
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } })
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const home = fixture.sessions[0]!
+const home = fixture.sessions[0]
 await launchTo(page, app, sessionPath(home, home.id))
 await waitForTranscript(page, fixture, home.id, home.title)
 await page.waitForTimeout(1_500)

@@ -106,7 +106,7 @@ export function createTerminalSlice(input: {
   const ownedIdSignal = (contentId: string) => {
     const existing = ownedIdSignals.get(contentId)
     if (existing) return existing
-    const created = createSignal<readonly string[]>(ownedIdsByContent.get(contentId) ?? [])
+    const created = createSignal(ownedIdsByContent.get(contentId) ?? [])
     ownedIdSignals.set(contentId, created)
     return created
   }

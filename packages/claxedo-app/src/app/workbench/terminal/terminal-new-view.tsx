@@ -62,7 +62,7 @@ export function TerminalNewView(props: TerminalNewViewProps) {
   const provisioning = useTerminalWorkspaceProvisioning()
   const projectsQuery = useQuery(() => queryOptions.projects())
 
-  const [worktree, setWorktree] = createSignal<string>(MAIN_WORKTREE)
+  const [worktree, setWorktree] = createSignal(MAIN_WORKTREE)
   const [workspaceKind, setWorkspaceKind] = createSignal<NewSessionWorkspaceKind>("local")
   const [selectedProject, setSelectedProject] = createSignal<NewSessionProjectSelection>()
   /** The launcher id currently starting, so only that row shows progress. */

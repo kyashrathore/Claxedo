@@ -106,7 +106,7 @@ await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("
 await installSeedState(page, app, fixture)
 
 const sessions = fixture.sessions
-const home = sessions[0]!
+const home = sessions[0]
 console.log(`[probe] app=${app.baseUrl} mock=${app.mockPort} sessions=${sessions.length}`)
 
 await launchTo(page, app, sessionPath(home, home.id))
@@ -319,8 +319,8 @@ await page.evaluate(() => {
         .filter((entry) => entry.r.height > 4 && entry.r.bottom > viewport.top && entry.r.top < viewport.bottom)
         .sort((a, b) => a.r.top - b.r.top)
       for (let i = 0; i < boxes.length - 1 && !rowOverlap; i++) {
-        const a = boxes[i]!
-        const b = boxes[i + 1]!
+        const a = boxes[i]
+        const b = boxes[i + 1]
         const by = a.r.bottom - b.r.top
         if (by > 1) rowOverlap = `${a.id}@${a.r.top.toFixed(0)}/${b.id}@${b.r.top.toFixed(0)} by ${by.toFixed(0)}px`
       }
@@ -386,7 +386,7 @@ const results: RoundResult[] = []
 for (let round = 0; round < ROUNDS; round++) {
   const chain: typeof sessions = []
   for (let i = 0; i < SWITCHES_PER_ROUND; i++) {
-    chain.push(sessions[(round * 3 + i + 1) % sessions.length]!)
+    chain.push(sessions[(round * 3 + i + 1) % sessions.length])
   }
   await page.evaluate(() => {
     ;(window as unknown as { __overlayProbe: { start: () => void } }).__overlayProbe.start()
@@ -430,13 +430,13 @@ for (let round = 0; round < ROUNDS; round++) {
     `frames with >1 UNSUPPRESSED slot=${multiLive.length}  frames with assigned>panes=${multiAssigned.length}`)
   const rowOverlaps = captured.frames.filter((f) => f.rowOverlap)
   console.log(`  frames with overlapping message rows inside one timeline=${rowOverlaps.length}` +
-    (rowOverlaps.length ? ` first=${rowOverlaps[0]!.rowOverlap}` : ""))
+    (rowOverlaps.length ? ` first=${rowOverlaps[0].rowOverlap}` : ""))
   if (multiLive.length) {
-    const worst = multiLive[0]!
+    const worst = multiLive[0]
     console.log(`  !! ${worst.liveSlots.length} unsuppressed slots at t=${worst.t.toFixed(1)}: ${worst.liveSlots.join(", ")}`)
   }
   for (let c = 0; c < captured.clicks.length; c++) {
-    const click = captured.clicks[c]!
+    const click = captured.clicks[c]
     const nextClick = captured.clicks[c + 1]?.t ?? click.t + 1_500
     const window = captured.frames.filter((f) => f.t >= click.t && f.t < nextClick)
     if (!window.length) continue
@@ -448,7 +448,7 @@ for (let round = 0; round < ROUNDS; round++) {
     const destMs = firstDest ? firstDest.t - click.t : -1
     const skeletonFrames = window.filter((f) =>
       f.hit === click.sessionId && f.painting.some((p) => p.sessionId === click.sessionId && p.messageCount === "0"))
-    const skeletonMs = skeletonFrames.length ? skeletonFrames.at(-1)!.t - skeletonFrames[0]!.t : 0
+    const skeletonMs = skeletonFrames.length ? skeletonFrames.at(-1)!.t - skeletonFrames[0].t : 0
     const railMoves = window.filter((f, i) => {
       const prev = i === 0 ? previous : window[i - 1]
       return !!prev?.railFirstRect && !!f.railFirstRect && Math.abs(prev.railFirstRect.y - f.railFirstRect.y) > 0.5
@@ -477,7 +477,7 @@ for (let round = 0; round < ROUNDS; round++) {
     console.log(`    shift source x${seen.count} val=${seen.value.toFixed(4)}  ${node}`)
   }
   if (overlapFrames.length) {
-    const first = overlapFrames[0]!
+    const first = overlapFrames[0]
     console.log(`  !! OVERLAP reason=${first.overlap}`)
     for (const p of first.painting) {
       console.log(

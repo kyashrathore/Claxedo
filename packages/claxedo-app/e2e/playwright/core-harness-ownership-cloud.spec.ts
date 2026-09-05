@@ -517,7 +517,7 @@ test.describe("core harness ownership (cloud) @core", () => {
     const localDraftDefaults = await readDraftDefaults(page)
     const localKeys = Object.keys(localDraftDefaults)
     expect(localKeys).toHaveLength(1)
-    const localDraftDefaultKey = localKeys[0]!
+    const localDraftDefaultKey = localKeys[0]
 
     // Client-side navigate the SAME pane to the cloud workspace's own top-level project
     // entry via the empty-draft header's project picker (no page reload).

@@ -138,7 +138,7 @@ async function retrySessionRevocationOperation<T>(
       return { completed: true, value: await operation() }
     } catch (error) {
       if (!shouldContinue()) return { completed: false }
-      const delay = delays[Math.min(attempt, delays.length - 1)]!
+      const delay = delays[Math.min(attempt, delays.length - 1)]
       if (attempt === 0 || (attempt + 1) % 12 === 0) {
         console.error("Retrying revoked session reconciliation", error)
       }
@@ -562,7 +562,7 @@ function applyClaxedoSessionLifecycleToSync(input: EventIngressInput, event: Cla
  */
 function addressedWorkspaceId(value: string | undefined, projects: GlobalProject[]) {
   if (!value) return undefined
-  if (/^ws_/.test(value)) return value
+  if (value.startsWith('ws_')) return value
   return sessionWorkspaceRuntimeRef({ directory: `workspace:${value}`, projects })?.workspaceId
 }
 

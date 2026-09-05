@@ -49,7 +49,7 @@ export function safeRawOutput(value: unknown, ctx: ValidationContext) {
 }
 
 export function safeLocations(value: unknown, ctx: ValidationContext) {
-  if (value === undefined || value === null) return value as undefined | null
+  if (value === undefined || value === null) return value
   if (!Array.isArray(value)) {
     diagnoseTranslation(ctx.diagnostics, "acp.malformed_location", {
       ...details(ctx),
@@ -61,7 +61,7 @@ export function safeLocations(value: unknown, ctx: ValidationContext) {
   const out = value.flatMap((item) => {
     const row = object(item)
     if (typeof row?.path === "string" && (row.line === undefined || row.line === null || typeof row.line === "number")) {
-      return [{ path: row.path, ...(row.line !== undefined ? { line: row.line as number | null } : {}) }]
+      return [{ path: row.path, ...(row.line !== undefined ? { line: row.line } : {}) }]
     }
     diagnoseTranslation(ctx.diagnostics, "acp.malformed_location", {
       ...details(ctx),
@@ -74,7 +74,7 @@ export function safeLocations(value: unknown, ctx: ValidationContext) {
 }
 
 export function safeContent(value: unknown, ctx: ValidationContext) {
-  if (value === undefined || value === null) return value as undefined | null
+  if (value === undefined || value === null) return value
   if (!Array.isArray(value)) {
     diagnoseTranslation(ctx.diagnostics, "acp.dropped_content", {
       ...details(ctx),

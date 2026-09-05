@@ -28,7 +28,7 @@ const PACKAGE_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..")
 
 function stringArg(name: string, fallback: string): string {
   const index = process.argv.indexOf(`--${name}`)
-  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]!
+  if (index >= 0 && process.argv[index + 1]) return process.argv[index + 1]
   return fallback
 }
 
@@ -74,7 +74,7 @@ async function main() {
 
   const identity = await createBenchIdentity({ workspaceId })
   const signing = await generateKeyPair("EdDSA", { extractable: true })
-  const signingPem = await exportPKCS8(signing.privateKey as CryptoKey)
+  const signingPem = await exportPKCS8(signing.privateKey)
 
   const echo = startEchoTarget()
   const resolverToken = "bench-resolver-token"

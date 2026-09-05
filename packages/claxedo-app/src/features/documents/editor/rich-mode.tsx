@@ -178,8 +178,8 @@ export function RichMode(props: {
     const points = (() => {
       try {
         return {
-          start: editor!.view.coordsAtPos(selection.from),
-          end: editor!.view.coordsAtPos(selection.to),
+          start: editor.view.coordsAtPos(selection.from),
+          end: editor.view.coordsAtPos(selection.to),
         }
       } catch {
         // DOM implementations without layout (the component-test runtime)

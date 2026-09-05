@@ -92,7 +92,7 @@ function bumpSessionListActivity(input: { event: DirectoryEvent; directory: Work
       const fromInfo = info?.workspaceID ?? info?.workspaceId
       return typeof fromInfo === "string" && fromInfo.length > 0 ? fromInfo : undefined
     })()
-  const signedWorkspaceId = typeof eventWorkspaceId === "string" && /^ws_/.test(eventWorkspaceId)
+  const signedWorkspaceId = typeof eventWorkspaceId === "string" && eventWorkspaceId.startsWith('ws_')
     ? eventWorkspaceId
     : undefined
   reconcileUpdatedSessionListQueryData({

@@ -185,8 +185,8 @@ export function createDirectoryCacheManager(input: {
   function projectMeta(directory: string, patch: ProjectMeta) {
     for (const alias of aliasesFor(directory)) {
       queryClient.setQueryData<ProjectMeta>(queryKeys.directory.projectMeta(alias), (previous = {}) => {
-        const icon = patch.icon ? { ...(previous.icon ?? {}), ...patch.icon } : previous.icon
-        const commands = patch.commands ? { ...(previous.commands ?? {}), ...patch.commands } : previous.commands
+        const icon = patch.icon ? { ...previous.icon, ...patch.icon } : previous.icon
+        const commands = patch.commands ? { ...previous.commands, ...patch.commands } : previous.commands
         return {
           ...previous,
           ...patch,

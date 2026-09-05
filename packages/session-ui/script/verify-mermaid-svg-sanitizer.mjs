@@ -123,8 +123,8 @@ const results = await page.evaluate(
 
     // NB: needles are matched as substrings, so a bare "script" would false-positive
     // on mermaid's own `aria-roledescription` attribute. Match the tag, not the word.
-    add("script-tag", inject(`<script>__xss('script-tag')<\/script>`), ["<script", "__xss"])
-    add("script-tag-nested-g", inject(`<g><script>__xss('nested')<\/script></g>`), ["<script", "__xss"])
+    add("script-tag", inject(`<script>__xss('script-tag')</script>`), ["<script", "__xss"])
+    add("script-tag-nested-g", inject(`<g><script>__xss('nested')</script></g>`), ["<script", "__xss"])
     add("on-handler/onload", inject(`<rect width="5" height="5" onload="__xss('onload')"/>`), ["onload"])
     add("on-handler/onerror", inject(`<image href="x" onerror="__xss('onerror')"/>`), ["onerror"])
     add("on-handler/onclick", inject(`<rect width="99" height="99" onclick="__xss('onclick')"/>`), ["onclick"])
@@ -147,7 +147,7 @@ const results = await page.evaluate(
       "foreignObject",
       inject(
         `<foreignObject width="200" height="50"><div xmlns="http://www.w3.org/1999/xhtml">` +
-          `LEAKED<img src=x onerror="__xss('fo-img')"><\/div></foreignObject>`,
+          `LEAKED<img src=x onerror="__xss('fo-img')"></div></foreignObject>`,
       ),
       ["foreignObject", "foreignobject", "LEAKED", "<img", "onerror"],
     )

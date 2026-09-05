@@ -66,11 +66,11 @@ export function parseCompileCacheDebugOutput(stderr: string): ObservedEntry[] {
     const match = WRITING.exec(line.trim())
     if (!match) continue
     const [, rawType, source, tempFile] = match
-    const type = DEBUG_TYPES[rawType!]
+    const type = DEBUG_TYPES[rawType]
     // TypeScript variants exist in the enum but never occur for this artifact.
     if (!type || !source || !tempFile) continue
     // `<dir>/<key>.<random>` — the key is the basename up to the first dot.
-    observed.push({ type, source, key: path.basename(tempFile).split(".")[0]! })
+    observed.push({ type, source, key: path.basename(tempFile).split(".")[0] })
   }
   return observed
 }

@@ -26,7 +26,7 @@ import type { RelayRole } from "../src/auth"
 
 function arg(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`)
-  if (index >= 0 && process.argv[index + 1] && !process.argv[index + 1]!.startsWith("--")) {
+  if (index >= 0 && process.argv[index + 1] && !process.argv[index + 1].startsWith("--")) {
     return process.argv[index + 1]
   }
   return undefined

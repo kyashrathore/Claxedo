@@ -15,7 +15,7 @@ function authorized(request: Request, expected: string | undefined) {
     if (!header) return false
     const match = /^Bearer\s+(.+)$/i.exec(header.trim())
     if (!match) return false
-    return timingSafeEqualStrings(match[1]!.trim(), expected)
+    return timingSafeEqualStrings(match[1].trim(), expected)
   }
   // Without a configured token, only loopback callers may use the resolver routes.
   return isLoopbackLocalRequest(request)

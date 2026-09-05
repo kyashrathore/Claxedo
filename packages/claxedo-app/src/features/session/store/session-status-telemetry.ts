@@ -60,7 +60,7 @@ function statusFingerprint(status: SessionStatus | undefined) {
 
 function trimSnapshots(entries: StatusSnapshot[], now: number) {
   // Keep only entries within the rolling window. Mutates the array in place.
-  while (entries.length > 0 && now - entries[0]!.at > T_WINDOW_MS) entries.shift()
+  while (entries.length > 0 && now - entries[0].at > T_WINDOW_MS) entries.shift()
 }
 
 function eventSnapshot(key: string) {

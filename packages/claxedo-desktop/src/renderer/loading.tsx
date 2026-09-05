@@ -26,7 +26,7 @@ render(() => {
     return Math.max(25, Math.min(100, percent()))
   })
 
-  desktopApi().awaitInitialization((next) => setStep(next as InitStep)).then(() => {
+  desktopApi().awaitInitialization((next) => setStep(next)).then(() => {
     setStep({ phase: "done" })
     const currentOpacity = getComputedStyle(splash).opacity
 

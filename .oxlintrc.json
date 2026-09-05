@@ -41,5 +41,21 @@
   "options": {
     "typeAware": true
   },
+  "overrides": [
+    {
+      // Test code: type narrowing at fixture/JSON boundaries is deliberate, and
+      // bun:test types `expect(...).rejects.*` as non-thenable although awaiting
+      // it is required at runtime. Everything else stays enforced in tests.
+      "files": [
+        "**/*.test.ts", "**/*.test.tsx", "**/*.test.mjs",
+        "**/*.vitest.ts", "**/*.vitest.tsx", "**/*.spec.ts",
+        "**/e2e/**", "**/test-support/**", "**/__tests__/**", "**/tests/**"
+      ],
+      "rules": {
+        "typescript/no-unsafe-type-assertion": "off",
+        "typescript/await-thenable": "off"
+      }
+    }
+  ],
   "ignorePatterns": ["**/node_modules", "**/dist", "**/.build", "**/*.astro", "**/*.d.ts", "**/sdk.gen.ts"]
 }

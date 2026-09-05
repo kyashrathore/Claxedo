@@ -706,7 +706,7 @@ export async function listProjects() {
     .filter(([, rows]) => !rows.every((row) => row.kind !== "cloud" && isRejectedDir(row.directory)))
     .map(async ([id, rows]) => {
       const all = [...rows].sort((a, b) => a.created_at - b.created_at)
-      const root = main(all)!
+      const root = main(all)
       const repoRoot = root.repo_root ?? workspaceKey(root)
       const others = all.filter((row) => {
         if (row.id === root.id) return false

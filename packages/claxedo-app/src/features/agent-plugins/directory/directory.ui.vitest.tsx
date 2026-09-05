@@ -403,7 +403,7 @@ describe("Agent Plugin Directory actions", () => {
     await fireEvent.click(within(pane).getByRole("button", { name: "Enable" }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
-    expect(posted(recorded, "/api/claxedo/plugins/activation")[0]!.body).toEqual({
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toEqual({
       pluginInstanceId: '["claxedo","clangd"]',
       harnessIds: ["opencode", "claude", "codex", "cursor"],
       choice: true,
@@ -419,7 +419,7 @@ describe("Agent Plugin Directory actions", () => {
     await fireEvent.click(within(pane).getByRole("button", { name: "Disable" }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
-    expect(posted(recorded, "/api/claxedo/plugins/activation")[0]!.body).toMatchObject({
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toMatchObject({
       pluginInstanceId: '["claxedo","context7"]',
       choice: false,
       expectedRevision: 4,
@@ -449,7 +449,7 @@ describe("Agent Plugin Directory actions", () => {
     await fireEvent.click(within(pane).getByRole("menuitem", { name: /Clear my override/ }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
-    expect(posted(recorded, "/api/claxedo/plugins/activation")[0]!.body).toMatchObject({ choice: null })
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toMatchObject({ choice: null })
   })
 
   test("Update posts the user authority when signed", async () => {
@@ -459,7 +459,7 @@ describe("Agent Plugin Directory actions", () => {
     await fireEvent.click(within(pane).getByRole("menuitem", { name: "Update to 1.0.0" }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/update")).toHaveLength(1))
-    expect(posted(recorded, "/api/claxedo/plugins/update")[0]!.body).toEqual({
+    expect(posted(recorded, "/api/claxedo/plugins/update")[0].body).toEqual({
       pluginInstanceId: '["claxedo","context7"]',
       expectedRevision: 4,
       authority: "user",
@@ -473,7 +473,7 @@ describe("Agent Plugin Directory actions", () => {
     await fireEvent.click(within(pane).getByRole("menuitem", { name: "Make organization default (admin)" }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/organization-default")).toHaveLength(1))
-    expect(posted(recorded, "/api/claxedo/plugins/organization-default")[0]!.body).toEqual({
+    expect(posted(recorded, "/api/claxedo/plugins/organization-default")[0].body).toEqual({
       pluginInstanceId: '["claxedo","context7"]',
       harnessIds: ["opencode", "claude", "codex", "cursor"],
       choice: true,
@@ -529,7 +529,7 @@ describe("Agent Plugin Directory unsigned mode", () => {
     await fireEvent.click(within(pane).getByRole("button", { name: "Disable" }))
 
     await waitFor(() => expect(posted(recorded, "/api/claxedo/plugins/activation")).toHaveLength(1))
-    expect(posted(recorded, "/api/claxedo/plugins/activation")[0]!.body).toEqual({
+    expect(posted(recorded, "/api/claxedo/plugins/activation")[0].body).toEqual({
       pluginInstanceId: '["claxedo","context7"]',
       harnessIds: ["opencode", "claude", "codex", "cursor"],
       choice: false,

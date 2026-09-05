@@ -6,7 +6,7 @@ import { projectForDirectory, projectId, type ProjectCatalogItem } from "../work
 type SessionDirectory = string
 
 function publicWorkspaceId(value: string | undefined): string | undefined {
-  return value && /^ws_/.test(value) ? value : undefined
+  return value && value.startsWith('ws_') ? value : undefined
 }
 
 /**

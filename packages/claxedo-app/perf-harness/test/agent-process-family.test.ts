@@ -63,9 +63,9 @@ describe("physical-footprint observation recorded beside summed RSS", () => {
 
   test("attaches readings per process without disturbing any existing field", () => {
     const family = withPhysFootprint(table, new Map([[101, 195_200_000]]))
-    expect(family[0]).toEqual({ ...table[0]!, physFootprintBytes: 195_200_000 })
-    expect(family[1]).toEqual(table[1]!)
-    expect("physFootprintBytes" in family[1]!).toBe(false)
+    expect(family[0]).toEqual({ ...table[0], physFootprintBytes: 195_200_000 })
+    expect(family[1]).toEqual(table[1])
+    expect("physFootprintBytes" in family[1]).toBe(false)
   })
 
   test("reports a family total only when every member was read", () => {
@@ -95,7 +95,7 @@ describe("physical-footprint observation recorded beside summed RSS", () => {
     const decoded = JSON.parse(JSON.stringify({ processOwnership: { snapshots: [snapshot] } })) as {
       processOwnership: { snapshots: Array<{ processes: ProcessSnapshot[] }> }
     }
-    const processes = decoded.processOwnership.snapshots[0]!.processes
+    const processes = decoded.processOwnership.snapshots[0].processes
     expect(processes.map((row) => row.physFootprintBytes)).toEqual([195_200_000, 277_800_000])
     expect(processes.map((row) => row.rssBytes)).toEqual([2_048 * 1_024, 4_096 * 1_024])
     expect(totalPhysFootprintBytes(processes)).toBe(473_000_000)

@@ -18,7 +18,7 @@ describe("document discovery tools", () => {
     ])
 
     const result = await callDocuments(request, "documents_list", { project_id: "project-1" })
-    const body = JSON.parse(result.content[0]!.text) as { documents: Record<string, unknown>[] }
+    const body = JSON.parse(result.content[0].text) as { documents: Record<string, unknown>[] }
     expect(body.documents).toEqual([
       {
         id: "document-1",
@@ -58,7 +58,7 @@ describe("document discovery tools", () => {
       project_id: "project-1",
       session_id: "session-1",
     })
-    expect(JSON.parse(result.content[0]!.text)).toEqual({
+    expect(JSON.parse(result.content[0].text)).toEqual({
       document_id: "document-1",
       display_name: "Plan",
       path: "/data/documents/project-1/document-1/plan.md",
@@ -79,7 +79,7 @@ describe("document discovery tools", () => {
       session_id: "session-1",
     })
 
-    expect(JSON.parse(result.content[0]!.text)).toMatchObject({ document_id: "document-1" })
+    expect(JSON.parse(result.content[0].text)).toMatchObject({ document_id: "document-1" })
   })
 
   it("prefers an exact stable id over another document whose display name collides with it", async () => {
@@ -109,7 +109,7 @@ describe("document discovery tools", () => {
       session_id: "session-1",
     })
 
-    expect(JSON.parse(result.content[0]!.text)).toMatchObject({
+    expect(JSON.parse(result.content[0].text)).toMatchObject({
       document_id: "document-1",
       path: "/data/documents/document-1/plan.md",
     })

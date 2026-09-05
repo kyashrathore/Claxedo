@@ -52,7 +52,7 @@ export function DiagnosticsTimeline(props: {
     const values = seriesPoints(field, top)
     if (values.length === 0) return ""
     const line = monotonePath(values)
-    return `${line} L${values.at(-1)!.x},${PLOT_BOTTOM} L${values[0]!.x},${PLOT_BOTTOM} Z`
+    return `${line} L${values.at(-1)!.x},${PLOT_BOTTOM} L${values[0].x},${PLOT_BOTTOM} Z`
   }
   const xTicks = createMemo(() =>
     Array.from({ length: X_TICKS + 1 }, (_, index) => props.bounds.startAt + (index / X_TICKS) * span()),
@@ -79,7 +79,7 @@ export function DiagnosticsTimeline(props: {
     const times = props.points.map((point) => point.at)
     const gaps = times
       .slice(1)
-      .map((time, index) => time - times[index]!)
+      .map((time, index) => time - times[index])
       .filter((gap) => gap > 0)
     return gaps.length > 0 ? Math.min(...gaps) : span()
   })
@@ -342,7 +342,7 @@ type ValueAxis = {
 
 /** The plotted maximum for a field, or 0 when the field was never sampled. */
 function peak(points: DiagnosticsSeriesPoint[], field: "cpu" | "memoryImpactBytes") {
-  return Math.max(0, ...points.flatMap((point) => (point[field] === undefined ? [] : [point[field]!])))
+  return Math.max(0, ...points.flatMap((point) => (point[field] === undefined ? [] : [point[field]])))
 }
 
 /** Rounds the observed peak up to a readable tick step so every gridline lands on a whole number. */

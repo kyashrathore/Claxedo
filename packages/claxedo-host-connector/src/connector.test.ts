@@ -329,13 +329,13 @@ describe("overlapping heartbeats", () => {
 
     // The second beat comes back first, rejected: the control plane no longer
     // recognises this machine.
-    gate.pending[1]!.reject(new Error(REVOCATION))
+    gate.pending[1].reject(new Error(REVOCATION))
     await late
     expect(instance.state()).toMatchObject({ status: "stopped", reason: "revoked" })
 
     // Now the older request finally answers, successfully. It was issued
     // against an enrollment that no longer exists.
-    gate.pending[0]!.resolve(2_000)
+    gate.pending[0].resolve(2_000)
     await early
 
     expect(instance.state()).toMatchObject({ status: "stopped", reason: "revoked" })
@@ -356,7 +356,7 @@ describe("overlapping heartbeats", () => {
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
     instance.close()
 
-    gate.pending[0]!.resolve(2_000)
+    gate.pending[0].resolve(2_000)
     await inFlight
 
     expect(instance.state()).toEqual({ status: "stopped", reason: "closed", detail: "connector closed" })
@@ -377,7 +377,7 @@ describe("overlapping heartbeats", () => {
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
     instance.close()
 
-    gate.pending[0]!.reject(new Error("404 unknown enrollment"))
+    gate.pending[0].reject(new Error("404 unknown enrollment"))
     await inFlight
 
     expect(instance.state()).toMatchObject({ status: "stopped", reason: "closed" })
@@ -411,7 +411,7 @@ describe("overlapping heartbeats", () => {
     await instance.start()
     expect(instance.state()).toMatchObject({ enrollment: { enrollment_id: "enr_2" } })
 
-    gate.pending[0]!.resolve(2_000)
+    gate.pending[0].resolve(2_000)
     await stale
 
     expect(instance.state()).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: "enr_2" } })
@@ -430,7 +430,7 @@ describe("overlapping heartbeats", () => {
     await instance.start()
     expect(instance.state()).toMatchObject({ enrollment: { enrollment_id: "enr_2" } })
 
-    gate.pending[0]!.resolve(2_000)
+    gate.pending[0].resolve(2_000)
     await stale
 
     expect(instance.state()).toMatchObject({ status: "enrolled", enrollment: { enrollment_id: "enr_2" } })
@@ -447,7 +447,7 @@ describe("overlapping heartbeats", () => {
     const inFlight = instance.beat()
     await vi.waitFor(() => expect(gate.pending).toHaveLength(1))
     instance.close()
-    gate.pending[0]!.resolve(2_000)
+    gate.pending[0].resolve(2_000)
     await inFlight
 
     expect(cancels.count).toBe(1)

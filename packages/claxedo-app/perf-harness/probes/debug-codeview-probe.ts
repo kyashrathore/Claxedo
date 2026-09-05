@@ -22,7 +22,7 @@ page.on("console", (message) => {
 page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0, 600)))
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(fixture, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -68,7 +68,7 @@ const state = await page.evaluate(() => {
     fdName: fd?.name,
     fdAdditionLines: fd?.additionLines?.length,
     fdDeletionLines: fd?.deletionLines?.length,
-    fdHunks: (fd?.hunks as unknown[] | undefined)?.length,
+    fdHunks: (fd?.hunks)?.length,
     instHeight: inst?.height,
     instCollapsed: inst?.options?.collapsed,
     instDisableHeader: inst?.options?.disableFileHeader,

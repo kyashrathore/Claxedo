@@ -30,7 +30,7 @@ describe("cloud workspace MCP tools", () => {
       "/api/workspace/ws_1/checkpoints",
       "/api/workspace/ws_1/lifecycle/stop",
     ])
-    expect(JSON.parse(String(fixture.request.mock.calls[1]![1]?.body))).toEqual({ policy: "interrupt" })
+    expect(JSON.parse(String(fixture.request.mock.calls[1][1]?.body))).toEqual({ policy: "interrupt" })
   })
 
   test("restore and destructive actions fail locally until explicitly approved", async () => {

@@ -220,9 +220,7 @@ export function createWhatsAppBaileysTransport(input: {
       state.running = true
       state.unsubscribeMessage = input.socket.onMessage(handleMessage) ?? undefined
       state.unsubscribeAuth = input.socket.onAuthState?.(queueAuthState) ?? undefined
-      await input.socket.start?.({
-        ...(input.authStateStore ? { authState: await input.authStateStore.load() } : {}),
-      })
+      await input.socket.start?.((input.authStateStore ? { authState: await input.authStateStore.load() } : {}))
     },
     async stop() {
       state.running = false

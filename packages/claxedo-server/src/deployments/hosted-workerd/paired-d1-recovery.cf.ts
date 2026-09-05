@@ -72,14 +72,14 @@ export async function requirePairedD1RecoveryEpoch(
          where "deploymentId" = ? and "releaseId" = ?`,
       )
       .bind(binding.deploymentId, binding.releaseId)
-      .first<RecoveryRow>(),
+      .first(),
     controlPlaneDatabase
       .prepare(
         `select deployment_id as "deploymentId", release_id as "releaseId", recovery_epoch as "recoveryEpoch"
          from control_plane_recovery_epochs where deployment_id = ? and release_id = ?`,
       )
       .bind(binding.deploymentId, binding.releaseId)
-      .first<RecoveryRow>(),
+      .first(),
   ])
   requireExactRow(auth, binding, "AUTH_DB")
   requireExactRow(controlPlane, binding, "CONTROL_PLANE_DB")

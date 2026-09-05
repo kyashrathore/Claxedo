@@ -86,7 +86,7 @@ describe("MCP OAuth Connections integration", () => {
       expiresAt: 61_000,
       fields: { resource: "https://mcp.example/mcp", issuer: "https://login.example" },
     })
-    const [url, init] = calls[0]!
+    const [url, init] = calls[0]
     expect(url).toBe("https://login.example/token")
     const body = new URLSearchParams(String(init?.body))
     expect(Object.fromEntries(body)).toEqual({

@@ -41,7 +41,7 @@ export function useCommand() {
         void bus.dispatch(legacyCommandTrigger(id, source))
       }
     },
-  }) as typeof command
+  })
 }
 
 function LegacyCommandBusBridge(props: { children: JSX.Element }): JSX.Element {

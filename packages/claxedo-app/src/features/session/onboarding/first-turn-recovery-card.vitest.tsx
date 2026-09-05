@@ -16,7 +16,7 @@ describe("FirstTurnRecoveryCard", () => {
     const buttons = view.container.querySelectorAll("button:not([aria-expanded])")
     expect(buttons).toHaveLength(1)
     expect(buttons[0]?.textContent).toContain(label)
-    fireEvent.click(buttons[0]!)
+    fireEvent.click(buttons[0])
     expect(action).toHaveBeenCalledWith(kind)
   })
 

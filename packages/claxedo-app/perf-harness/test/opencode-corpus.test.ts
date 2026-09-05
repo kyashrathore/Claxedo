@@ -33,7 +33,7 @@ test("the native SDK copy preserves transcript content and migrated snapshot met
     value.setPart("prt_patch", "msg_assistant", 1, { type: "patch", hash: "before", files: ["src/example.ts"] })
     value.setPart("prt_finish", "msg_assistant", 2, { type: "step-finish", snapshot: "after" })
     const restored = await value.persist(databasePath)
-    const assistant = restored[0]!.messages.find((message) => message.type === "assistant")
+    const assistant = restored[0].messages.find((message) => message.type === "assistant")
     expect(assistant?.snapshot).toEqual({ start: "before", end: "after", files: ["src/example.ts"] })
     const scope = authorizeWorkspace({ workspaceID: "fixture", directory })
     const session = await runtime.sessions.get(scope, "ses_corpus")

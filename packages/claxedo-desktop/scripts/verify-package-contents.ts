@@ -220,7 +220,7 @@ export function verifyPackageContents(
       failures.push(`${archive}: expected one packaged rich-content renderer in ${richContent}`)
       continue
     }
-    if (!binaries[0]!.endsWith(".exe") && (fs.statSync(binaries[0]!).mode & 0o111) === 0) {
+    if (!binaries[0].endsWith(".exe") && (fs.statSync(binaries[0]).mode & 0o111) === 0) {
       failures.push(`${archive}: packaged rich-content renderer is not executable: ${binaries[0]}`)
       continue
     }
@@ -229,14 +229,14 @@ export function verifyPackageContents(
     // permissions remain packaging invariants; the functional smoke belongs to
     // a host with the same OS and architecture as the target.
     if (!canSmokePackagedBinary(target)) continue
-    const markdown = spawnSync(binaries[0]!, ["markdown"], {
+    const markdown = spawnSync(binaries[0], ["markdown"], {
       input: JSON.stringify({ source: "# Packaged renderer\n\n| a | b |\n|---|---|\n| 1 | 2 |" }),
       encoding: "utf8",
     })
     if (markdown.status !== 0 || !markdown.stdout.includes("<table>")) {
       failures.push(`${archive}: packaged rich-content renderer failed its Markdown smoke`)
     }
-    const mermaid = spawnSync(binaries[0]!, ["mermaid"], {
+    const mermaid = spawnSync(binaries[0], ["mermaid"], {
       input: JSON.stringify({ source: "flowchart LR\nA --> B", theme: { primaryColor: "#123456" } }),
       encoding: "utf8",
     })
@@ -271,7 +271,7 @@ export function verifyPackageContents(
       .filter((entry) => entry.startsWith("node_modules/"))
       .map((entry) => {
         const parts = entry.split("/")
-        return parts[1]!.startsWith("@") ? parts.slice(1, 3).join("/") : parts[1]!
+        return parts[1].startsWith("@") ? parts.slice(1, 3).join("/") : parts[1]
       })
       .filter((top) => !ALLOWED_NATIVE_MODULES.has(top))
     for (const offender of new Set(offenders)) {
@@ -287,7 +287,7 @@ export function verifyPackageContents(
     const undeclared = new Set(
       entries
         .filter((entry) => !entry.startsWith("node_modules/") && !isDeclaredStructuralEntry(entry))
-        .map((entry) => entry.split("/")[0]!),
+        .map((entry) => entry.split("/")[0]),
     )
     for (const root of undeclared) {
       failures.push(

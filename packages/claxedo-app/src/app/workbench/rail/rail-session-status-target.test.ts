@@ -21,7 +21,7 @@ describe("rail session status targets", () => {
       directory: "/repo",
       sessionID: `ses_${index}`,
     }))
-    targets.splice(1, 0, targets[0]!)
+    targets.splice(1, 0, targets[0])
 
     const bounded = boundRailSessionStatusTargets(targets)
 
@@ -177,7 +177,7 @@ describe("rail session status targets", () => {
     groups.forEach((group, index) => {
       sidebarSessionStatusBatches.set(railSessionStatusBatchKey(group), {
         updatedAt: Date.now(),
-        controller: { abort: () => { aborts[index]!.called = true } } as AbortController,
+        controller: { abort: () => { aborts[index].called = true } } as AbortController,
       })
     })
 

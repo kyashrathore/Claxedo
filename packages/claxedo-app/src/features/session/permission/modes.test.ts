@@ -47,7 +47,7 @@ describe("harness modes are shown in the harness's own words", () => {
     const { modes } = harnessPermissionModes({ harness: "claude-sdk", report: THREE_MODES })
     expect(modes.map((mode) => mode.id)).toEqual(["default", "acceptEdits", "auto"])
     expect(modes.map((mode) => mode.name)).toEqual(["Default", "Accept edits", "Auto-review"])
-    expect(modes[2]!.description).toBe("A classifier decides")
+    expect(modes[2].description).toBe("A classifier decides")
     for (const mode of modes) expect(mode.origin).toBe("harness")
   })
 
@@ -159,8 +159,8 @@ describe("harness modes are shown in the harness's own words", () => {
       harness: "cursor-sdk",
       report: report({ modes: [{ id: "auto-review", name: "Auto-review" }], appliesFrom: "next-session" }),
     })
-    expect(modes[0]!.caveat).toMatch(/next .* agent/i)
-    const delivery = modes[0]!.delivery
+    expect(modes[0].caveat).toMatch(/next .* agent/i)
+    const delivery = modes[0].delivery
     if (delivery.kind !== "harness-permission-mode") throw new Error("expected a harness delivery")
     expect(delivery.appliesFrom).toBe("next-session")
   })
@@ -204,7 +204,7 @@ describe("harness modes are shown in the harness's own words", () => {
     expect(draft).not.toHaveProperty("claxedo")
     expect(live).not.toHaveProperty("claxedo")
     expect(draft.harness.modes).toEqual(live.harness.modes)
-    expect(draft.harness.modes[0]!.description).toContain("Read and edit files")
+    expect(draft.harness.modes[0].description).toContain("Read and edit files")
   })
 
   test("a next-turn harness adds no session caveat", () => {

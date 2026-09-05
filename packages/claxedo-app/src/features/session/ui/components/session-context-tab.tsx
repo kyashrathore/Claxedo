@@ -157,7 +157,7 @@ export function SessionContextTab() {
   const messages = createMemo(() => conversation()?.messages as Message[] ?? emptyMessages, emptyMessages, { equals: same })
 
   const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user") as UserMessage[],
+    () => messages().filter((m) => m.role === "user"),
     emptyUserMessages,
     { equals: same },
   )
@@ -238,7 +238,7 @@ export function SessionContextTab() {
         if (!c?.input || !snapshot) return []
         return estimateSessionContextBreakdown({
           messages: messages(),
-          parts: snapshot.parts as Record<string, Part[] | undefined>,
+          parts: snapshot.parts,
           input: c.input,
           systemPrompt: systemPrompt(),
         })
@@ -280,7 +280,7 @@ export function SessionContextTab() {
   let frame: number | undefined
   let restoreFrame: number | undefined
   let pending: { x: number; y: number } | undefined
-  const getParts = (id: string) => (conversation()?.parts[id] ?? []) as Part[]
+  const getParts = (id: string) => (conversation()?.parts[id] ?? [])
 
   const restoreScroll = () => {
     if (!paneActive()) return

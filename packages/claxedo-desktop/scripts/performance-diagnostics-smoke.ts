@@ -405,7 +405,7 @@ export function pairedCpuOverhead(measurements: number[]) {
   if (measurements.length !== 4 || measurements.some((value) => !Number.isFinite(value) || value < 0)) {
     throw new Error("Diagnostics CPU overhead requires four finite non-negative ABBA measurements")
   }
-  return Math.max(0, (measurements[1]! + measurements[2]! - measurements[0]! - measurements[3]!) / 2)
+  return Math.max(0, (measurements[1] + measurements[2] - measurements[0] - measurements[3]) / 2)
 }
 
 export async function runPackagedSmoke() {
@@ -1262,7 +1262,7 @@ function createCdpFlowSource(rootPids: number[]): DiagnosticsSource {
       // A malformed test feed remains unavailable; it never enters retained diagnostics.
     }
   })
-  const ownerId = `diagnostics-flow-root-${String(rootPids[0]!)}`
+  const ownerId = `diagnostics-flow-root-${String(rootPids[0])}`
   const logicalProcessors = Math.max(1, cpus().length)
   return {
     id: "electron",

@@ -302,7 +302,7 @@ describe("workspace runtime route audit", () => {
       for (const match of text.matchAll(
         /(?:import|export)\s+\{\s*([^}]+)\s*\}\s+from\s+["'][^"']*workspace-runtime-request["']/g,
       )) {
-        const unsafe = match[1]!
+        const unsafe = match[1]
           .split(",")
           .map((item) => item.trim().replace(/\s+as\s+\w+$/, ""))
           .filter(
@@ -430,7 +430,7 @@ describe("workspace runtime route audit", () => {
       for (const match of text.matchAll(
         /(?:import|export)\s*(?:type\s*)?\{([^}]+)\}\s*from\s*["'][^"']*legacy-resolver["']/g,
       )) {
-        for (const spec of match[1]!.split(",")) {
+        for (const spec of match[1].split(",")) {
           const name = spec.trim().replace(/\s+as\s+\w+$/, "")
           if (name) importedFromResolver.add(name)
         }
@@ -2102,7 +2102,7 @@ describe("workspace runtime route audit", () => {
       const file = canonicalRelativePath(discovered)
       if (file.endsWith(".test.ts") || file.endsWith(".test.tsx") || file.endsWith(".vitest.tsx")) continue
       const text = await Bun.file(path.join(root, file)).text()
-      for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute)|canonicalWorkspaceRoute|surfaceRoute)\(\s*([^,\)\n]+)/g)) {
+      for (const match of text.matchAll(/\b(?:workspace(?:Route|SessionRoute|PageRoute|TerminalRoute)|canonicalWorkspaceRoute|surfaceRoute)\(\s*([^,)\n]+)/g)) {
         const argument = match[1]?.trim() ?? ""
         if (argument === '""') continue
         if (/workspace.*id|routeId/i.test(argument)) continue
@@ -2513,9 +2513,9 @@ describe("workspace runtime route audit", () => {
     expect(directoryCacheManager).not.toMatch(/session_(?:agent|config|usage)/)
     expect(cache).not.toMatch(/session_(?:agent|config|usage)/)
     expect(types).not.toMatch(/\b(?:mcp_ready|lsp_ready|vcs):/)
-    expect(types).not.toMatch(/\b(?:mcp|lsp):\s*[\{\[]/)
+    expect(types).not.toMatch(/\b(?:mcp|lsp):\s*[{[]/)
     expect(directoryCacheManager).not.toMatch(/\b(?:mcp_ready|lsp_ready|vcs):/)
-    expect(directoryCacheManager).not.toMatch(/\b(?:mcp|lsp):\s*[\{\[]/)
+    expect(directoryCacheManager).not.toMatch(/\b(?:mcp|lsp):\s*[{[]/)
     expect(types).not.toMatch(/\bcommand:\s*Command\[\]/)
     expect(directoryCacheManager).not.toMatch(/\bcommand:\s*\[\]/)
     expect(context).not.toMatch(/setStore\("command"/)

@@ -91,7 +91,7 @@ try {
     const loafByTurn = new Map<number, Array<{ duration: number; source: string }>>();
     for (let pass = 0; pass < passes; pass++) {
       for (let index = 0; index < plan.measured.length; index++) {
-        const target = plan.measured[index]!;
+        const target = plan.measured[index];
         const turns = TURNS_BY_ORDER[targets.indexOf(target)] ?? -1;
         if (wantLoaf) {
           await launch.page.evaluate(() => {
@@ -140,13 +140,13 @@ try {
     const median = (ms: number[]) => {
       if (!ms.length) return NaN;
       const ordered = [...ms].sort((a, b) => a - b);
-      return ordered[Math.floor(ordered.length / 2)]!;
+      return ordered[Math.floor(ordered.length / 2)];
     };
     const bucketMedian = (predicate: (turns: number) => boolean) =>
       median(rows.filter((row) => predicate(row.turns)).map((row) => row.ms)).toFixed(1);
     const perTurnPooled = rows.map((row) => row.ms);
     const orderedAll = [...perTurnPooled].sort((a, b) => a - b);
-    const p95 = orderedAll[Math.min(orderedAll.length - 1, Math.ceil(orderedAll.length * 0.95) - 1)]!;
+    const p95 = orderedAll[Math.min(orderedAll.length - 1, Math.ceil(orderedAll.length * 0.95) - 1)];
     console.log(
       `buckets light/mid/heavy MEDIAN over ${passes} passes: ${bucketMedian((t) => t <= 40)}/${bucketMedian((t) => t > 40 && t <= 160)}/${bucketMedian((t) => t > 160)}`,
     );
@@ -155,7 +155,7 @@ try {
       const totals = new Map<string, { count: number; ms: number }>();
       for (const entries of loafByTurn.values()) {
         for (const entry of entries) {
-          const key = entry.source.split("|")[0]!.slice(0, 80);
+          const key = entry.source.split("|")[0].slice(0, 80);
           const hit = totals.get(key) ?? { count: 0, ms: 0 };
           hit.count += 1;
           hit.ms += entry.duration;

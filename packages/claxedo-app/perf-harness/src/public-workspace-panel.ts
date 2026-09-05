@@ -243,12 +243,12 @@ export async function executeWorkspacePanelAction(input: {
     case "switch-file-tab": {
       await ensureFilesOpen(page, fixture)
       const [first, second] = fixture.openFiles
-      await clickFileTab(page, first!)
-      await waitForPaintedFile(page, first!)
+      await clickFileTab(page, first)
+      await waitForPaintedFile(page, first)
       return measurePrearmedSettledAction(
         page,
-        async () => waitForPaintedFile(page, second!, true),
-        async () => clickFileTab(page, second!),
+        async () => waitForPaintedFile(page, second, true),
+        async () => clickFileTab(page, second),
       )
     }
     case "expand-all":
@@ -1029,7 +1029,7 @@ async function revealFileInNavigator(page: Page, file: string) {
   if (clear) await clear.click()
   const segments = file.split("/")
   for (let index = 0; index < segments.length - 1; index += 1) {
-    const directory = await directoryRowLocator(page, segments[index]!, index + 1)
+    const directory = await directoryRowLocator(page, segments[index], index + 1)
     if ((await directory.getAttribute("aria-expanded")) !== "true") await directory.click()
   }
   await waitForTreePath(page, file)
@@ -1296,7 +1296,7 @@ async function optionalVisibleLocator(page: Page, selector: string) {
   const index = await page.evaluate((query) => {
     const elements = Array.from(document.querySelectorAll<HTMLElement>(query))
     for (let index = elements.length - 1; index >= 0; index -= 1) {
-      const element = elements[index]!
+      const element = elements[index]
       const rect = element.getBoundingClientRect()
       const style = getComputedStyle(element)
       if (rect.width > 0 && rect.height > 0 && style.display !== "none" && style.visibility !== "hidden") return index

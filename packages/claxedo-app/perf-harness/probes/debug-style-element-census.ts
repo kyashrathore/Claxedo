@@ -79,7 +79,7 @@ const installMeter = async (page: Page) =>
       document.documentElement.style.removeProperty("--claxedo-census-probe")
       void getComputedStyle(document.body).color
       values.sort((a, b) => a - b)
-      return { min: values[0]!, median: values[Math.floor(values.length / 2)]! }
+      return { min: values[0], median: values[Math.floor(values.length / 2)] }
     }
 
     const rootsOf = (node: Element): Array<Element | ShadowRoot> => {
@@ -188,7 +188,7 @@ const installMeter = async (page: Page) =>
           lockedBy,
           display: style.display,
           visibility: style.visibility,
-          inert: (node as HTMLElement).inert === true,
+          inert:  (node as HTMLElement).inert,
           ariaHidden: node.getAttribute("aria-hidden") ?? "",
           offscreen: rect.width === 0 || rect.height === 0 || rect.bottom <= 0 || rect.right <= 0
             || rect.top >= innerHeight || rect.left >= innerWidth,
@@ -219,7 +219,7 @@ const installMeter = async (page: Page) =>
       }
       if (previous) node.style.setProperty("content-visibility", previous)
       else node.style.removeProperty("content-visibility")
-      const best = (values: number[]) => values.sort((a, b) => a - b)[0]!
+      const best = (values: number[]) => values.sort((a, b) => a - b)[0]
       const a = best(withSubtree)
       const b = best(lockedTimes)
       return { withSubtree: a, locked: b, delta: a - b, elements }
@@ -268,7 +268,7 @@ const installMeter = async (page: Page) =>
           after.push(time(5).min)
         }
         for (const row of offscreen) row.style.removeProperty("content-visibility")
-        const best = (values: number[]) => values.sort((a, b) => a - b)[0]!
+        const best = (values: number[]) => values.sort((a, b) => a - b)[0]
         return { before: best(before), after: best(after) }
       }
       return {
@@ -325,7 +325,7 @@ const installMeter = async (page: Page) =>
           after.push(time(5).min)
         }
         for (const root of roots) root.style.removeProperty("content-visibility")
-        const best = (values: number[]) => values.sort((a, b) => a - b)[0]!
+        const best = (values: number[]) => values.sort((a, b) => a - b)[0]
         return { before: best(before), after: best(after) }
       }
       const sample = roots
@@ -516,7 +516,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -587,7 +587,7 @@ const slots = await page.evaluate(() => {
       opacity: style.opacity,
       display: style.display,
       contain: style.contain,
-      inert: (child as HTMLElement).inert === true,
+      inert:  (child as HTMLElement).inert,
       ariaHidden: child.getAttribute("aria-hidden") ?? "",
       rect: `${Math.round(rect.width)}x${Math.round(rect.height)}`,
     }

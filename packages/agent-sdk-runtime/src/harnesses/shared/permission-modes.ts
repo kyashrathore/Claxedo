@@ -177,7 +177,7 @@ export const CODEX_SETTINGS: Record<string, CodexPermissionSettings> = {
 export const DEFAULT_CODEX_MODE = "workspace-write"
 
 export const codexSettingsFor = (modeId: string | undefined): CodexPermissionSettings =>
-  CODEX_SETTINGS[modeId ?? ""] ?? CODEX_SETTINGS[DEFAULT_CODEX_MODE]!
+  CODEX_SETTINGS[modeId ?? ""] ?? CODEX_SETTINGS[DEFAULT_CODEX_MODE]
 
 /**
  * `turn/start` takes a structured sandbox policy while `thread/start` takes the

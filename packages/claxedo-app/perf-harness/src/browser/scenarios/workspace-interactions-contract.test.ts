@@ -53,11 +53,11 @@ describe("workspace interactions benchmark contract", () => {
     const seed = seedForScenario("workspace-interactions")
     expect(seed.changed_files).toBe(500)
     const fixture = fixtureFor("workspace-interactions", seed)
-    expect(fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX]!.additions)
+    expect(fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX].additions)
       .toBe(WORKSPACE_INTERACTIONS_EXPAND_DIFF_LINES)
-    expect(fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX]!.additions)
+    expect(fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX].additions)
       .toBe(WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES)
-    expect(fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX]!.patch.split("\n"))
+    expect(fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX].patch.split("\n"))
       .toHaveLength(WORKSPACE_INTERACTIONS_LARGE_DIFF_LINES * 2 + 1)
 
     const largeFile = fileContent(

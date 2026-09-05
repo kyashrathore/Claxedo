@@ -30,15 +30,15 @@ function parseImports(source: string): ImportRef[] {
   const refs: ImportRef[] = []
   const fromRe = /(?:^|\n)\s*(import|export)\s+(type\s+)?[\s\S]*?\sfrom\s+["']([^"']+)["']/g
   for (let m = fromRe.exec(source); m; m = fromRe.exec(source)) {
-    refs.push({ spec: m[3]!, typeOnly: !!m[2] })
+    refs.push({ spec: m[3], typeOnly: !!m[2] })
   }
   const sideRe = /(?:^|\n)\s*import\s+["']([^"']+)["']/g
   for (let m = sideRe.exec(source); m; m = sideRe.exec(source)) {
-    refs.push({ spec: m[1]!, typeOnly: false })
+    refs.push({ spec: m[1], typeOnly: false })
   }
   const dynRe = /import\(\s*["']([^"']+)["']\s*\)/g
   for (let m = dynRe.exec(source); m; m = dynRe.exec(source)) {
-    refs.push({ spec: m[1]!, typeOnly: false })
+    refs.push({ spec: m[1], typeOnly: false })
   }
   return refs
 }

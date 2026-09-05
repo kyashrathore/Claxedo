@@ -491,7 +491,7 @@ export function RailSidebar(props: RailSidebarProps) {
     })
   })
 
-  const [view, setView] = createSignal<View>(loadView() ?? defaultView())
+  const [view, setView] = createSignal(loadView() ?? defaultView())
 
   createEffect(() => {
     saveView(view())

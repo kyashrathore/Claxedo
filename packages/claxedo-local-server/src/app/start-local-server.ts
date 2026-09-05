@@ -194,7 +194,7 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
         await projectLocalSessionMetaFromEvent(services.projectionStore, event)
       }
       if (typeof event.payload.type === "string" && event.payload.properties) {
-        await turnMeter.consume(event as CompatEnvelope)
+        await turnMeter.consume(event)
       }
     }).catch((error) => log.warn("local runtime event projection degraded", { error: String(error) }))
   }

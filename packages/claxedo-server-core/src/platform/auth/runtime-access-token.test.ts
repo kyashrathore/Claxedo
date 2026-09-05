@@ -77,7 +77,7 @@ describe("runtimeAccessTokenSigner", () => {
     expect(typeof header.kid).toBe("string")
     expect((header.kid as string).length).toBeGreaterThan(0)
     expect(header.alg).toBe("EdDSA")
-    const claims = JSON.parse(Buffer.from(result.runtimeAccessToken.split(".")[1]!, "base64url").toString("utf8"))
+    const claims = JSON.parse(Buffer.from(result.runtimeAccessToken.split(".")[1], "base64url").toString("utf8"))
     expect(claims).toMatchObject({
       principal_kind: "user",
       actor_id: "actor_1",

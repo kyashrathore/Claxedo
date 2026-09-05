@@ -8,7 +8,7 @@ import type { RelayHostAuthContext } from "../workspace-host-service-auth"
 import { denyWorkspaceViewers } from "./workspace-role"
 
 function error(code: string, message: string, extra?: Record<string, unknown>) {
-  return Response.json({ error: { code, message, ...(extra ?? {}) } }, { status: code === "git_source_conflict" ? 409 : 400 })
+  return Response.json({ error: { code, message, ...extra } }, { status: code === "git_source_conflict" ? 409 : 400 })
 }
 
 function clean(input?: string | null) {

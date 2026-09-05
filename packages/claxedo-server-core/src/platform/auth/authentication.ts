@@ -388,9 +388,12 @@ function assertDescriptor(descriptor: AuthAdapterDescriptor, now: number) {
       !present(cookie?.name) ||
       !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(cookie.name) ||
       cookie.path !== "/" ||
-      cookie.secure !== true ||
-      cookie.httpOnly !== true ||
-      cookie.hostOnly !== true ||
+      !
+      cookie.secure ||
+      !
+      cookie.httpOnly ||
+      !
+      cookie.hostOnly ||
       (cookie.sameSite !== "lax" && cookie.sameSite !== "strict")
     ) {
       throw new AuthenticationError(503, "auth_configuration_invalid", "Cookie authentication posture is insecure")

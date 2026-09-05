@@ -74,7 +74,7 @@ export function probeWebGL(
   doc: Pick<Document, "createElement"> | undefined = typeof document !== "undefined" ? document : undefined,
 ): boolean {
   if (!doc) return false
-  const el = doc.createElement("canvas") as HTMLCanvasElement
+  const el = doc.createElement("canvas")
   if (typeof el.getContext !== "function") return false
   try {
     const gl = el.getContext("webgl2") || el.getContext("webgl")

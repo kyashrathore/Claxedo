@@ -52,8 +52,8 @@ describe("reading a project's derived remote", () => {
       },
     })
 
-    expect(new URL(seen[0]!).searchParams.get("directory")).toBe("/Users/me/my repo")
-    expect(new URL(seen[0]!).pathname).toBe("/api/claxedo/project/remote")
+    expect(new URL(seen[0]).searchParams.get("directory")).toBe("/Users/me/my repo")
+    expect(new URL(seen[0]).pathname).toBe("/api/claxedo/project/remote")
   })
 
   test.each(["no_remote", "not_a_repo", "git_timeout"] as const)("passes %s through", async (kind) => {

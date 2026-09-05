@@ -140,7 +140,7 @@ export function PtyRoutes(
       if (
         access.authority
         && input.env?.previousPtyId
-        && await readHistorySessionId(cwd!, input.env.previousPtyId) !== input.sessionId
+        && await readHistorySessionId(cwd, input.env.previousPtyId) !== input.sessionId
       ) {
         return sessionAccessDenied({
           allowed: false,
@@ -182,7 +182,7 @@ export function PtyRoutes(
           ...input,
           ...(cwd ? { cwd } : {}),
           env: {
-            ...(input.env ?? {}),
+            ...input.env,
             ...(port ? { CLAXEDO_PORT: port } : {}),
             ...(workspaceId ? { CLAXEDO_WORKSPACE_ID: workspaceId } : {}),
             ...(agentHookAccess ? { CLAXEDO_AGENT_HOOK_TOKEN: agentHookAccess.token } : {}),
@@ -254,7 +254,7 @@ export function PtyRoutes(
         return next()
       },
       upgradeWebSocket((c) => {
-        const id = c.req.param("ptyID")!
+        const id = c.req.param("ptyID")
         const cursor = (() => {
           const value = c.req.query("cursor")
           if (!value) return

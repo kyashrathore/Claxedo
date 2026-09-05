@@ -38,7 +38,7 @@ export interface TranslatorContext {
  * Rejects empty objects sent as placeholders.
  */
 function hasStructuredInput(raw: unknown): raw is Record<string, unknown> {
-  return raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw as object).length > 0
+  return raw !== null && raw !== undefined && typeof raw === "object" && !Array.isArray(raw) && Object.keys(raw).length > 0
 }
 
 function emitInput(
@@ -219,12 +219,12 @@ function flattenSelectOptions(
     // Array<SessionConfigSelectGroup>
     const groups = options as SessionConfigSelectGroup[]
     return groups.flatMap((g) =>
-      g.options.map((o) => ({ id: o.value as string, name: o.name })),
+      g.options.map((o) => ({ id: o.value, name: o.name })),
     )
   }
   // Array<SessionConfigSelectOption>
   return (options as SessionConfigSelectOption[]).map((o) => ({
-    id: o.value as string,
+    id: o.value,
     name: o.name,
   }))
 }
@@ -239,20 +239,20 @@ function mapConfigOptions(
         rawOpts as SessionConfigSelectOption[] | SessionConfigSelectGroup[],
       )
       return {
-        id: opt.id as string,
+        id: opt.id,
         name: opt.name,
         category: opt.category ?? undefined,
         type: "select" as const,
-        currentValue: opt.currentValue as string,
+        currentValue: opt.currentValue,
         selectOptions,
       }
     } else {
       return {
-        id: opt.id as string,
+        id: opt.id,
         name: opt.name,
         category: opt.category ?? undefined,
         type: "boolean" as const,
-        currentValue: opt.currentValue as boolean,
+        currentValue: opt.currentValue,
       }
     }
   })
@@ -579,7 +579,7 @@ export function translateSessionUpdate(
     case "available_commands_update": {
       return [{
         type: "available-commands-update",
-        commands: Array.isArray(update.availableCommands) ? update.availableCommands as AvailableCommand[] : [],
+        commands: Array.isArray(update.availableCommands) ? update.availableCommands : [],
       }]
     }
 

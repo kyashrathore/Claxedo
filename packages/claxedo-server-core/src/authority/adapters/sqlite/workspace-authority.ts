@@ -607,7 +607,7 @@ export function createSqliteWorkspaceAuthority(
         SELECT o.org_id, o.name, m.role FROM org_memberships m
         JOIN orgs o ON o.org_id = m.org_id
         WHERE m.token_identifier = ? AND o.deleted_at IS NULL
-      `).all(who.token_identifier) as unknown[]
+      `).all(who.token_identifier)
     },
     async createOrg(auth: SignedControlPlaneAuth, args: { name: string }) {
       const db = database()
@@ -712,13 +712,13 @@ export function createSqliteWorkspaceAuthority(
         for (const member of orgMembers) {
           const existing = db.prepare(`
             SELECT 1 FROM team_memberships WHERE team_id = ? AND user_token_identifier = ?
-          `).get(defaultTeam!.team_id, member.token_identifier)
+          `).get(defaultTeam.team_id, member.token_identifier)
           if (existing) continue
           const role = member.role === "owner" || member.role === "admin" ? member.role : "member"
           db.prepare(`
             INSERT INTO team_memberships (team_id, user_token_identifier, role, created_at, updated_at)
             VALUES (?, ?, ?, ?, ?)
-          `).run(defaultTeam!.team_id, member.token_identifier, role, now, now)
+          `).run(defaultTeam.team_id, member.token_identifier, role, now, now)
         }
         const projects = db.prepare(`
           SELECT project_id FROM projects WHERE org_id = ? AND deleted_at IS NULL
@@ -726,17 +726,17 @@ export function createSqliteWorkspaceAuthority(
         for (const project of projects) {
           const grant = db.prepare(`
             SELECT revoked_at FROM team_project_grants WHERE team_id = ? AND project_id = ?
-          `).get(defaultTeam!.team_id, project.project_id) as { revoked_at: number | null } | undefined
+          `).get(defaultTeam.team_id, project.project_id) as { revoked_at: number | null } | undefined
           if (grant) continue
           db.prepare(`
             INSERT INTO team_project_grants (
               team_id, project_id, role, created_by_token_identifier, created_at
             ) VALUES (?, ?, 'editor', ?, ?)
-          `).run(defaultTeam!.team_id, project.project_id, who.token_identifier, now)
+          `).run(defaultTeam.team_id, project.project_id, who.token_identifier, now)
         }
 
         // D18: retarget interim org-scoped shares onto the default team.
-        const teamTargetKey = `team:${defaultTeam!.team_id}`
+        const teamTargetKey = `team:${defaultTeam.team_id}`
         let workspaceSharesRetargeted = 0
         const orgWorkspaceShares = db.prepare(`
           SELECT grant_id, workspace_id FROM workspace_share_grants
@@ -746,7 +746,7 @@ export function createSqliteWorkspaceAuthority(
           const existingTeam = db.prepare(`
             SELECT grant_id FROM workspace_share_grants
             WHERE workspace_id = ? AND granted_to_team_id = ? AND revoked_at IS NULL
-          `).get(share.workspace_id, defaultTeam!.team_id) as { grant_id: string } | undefined
+          `).get(share.workspace_id, defaultTeam.team_id) as { grant_id: string } | undefined
           if (existingTeam) {
             db.prepare(`UPDATE workspace_share_grants SET revoked_at = ? WHERE grant_id = ?`)
               .run(now, share.grant_id)
@@ -756,7 +756,7 @@ export function createSqliteWorkspaceAuthority(
             UPDATE workspace_share_grants
             SET granted_to_org_id = NULL, granted_to_team_id = ?, target_key = ?
             WHERE grant_id = ?
-          `).run(defaultTeam!.team_id, teamTargetKey, share.grant_id)
+          `).run(defaultTeam.team_id, teamTargetKey, share.grant_id)
           workspaceSharesRetargeted += 1
         }
 
@@ -769,7 +769,7 @@ export function createSqliteWorkspaceAuthority(
           const existingTeam = db.prepare(`
             SELECT grant_id FROM session_share_grants
             WHERE session_id = ? AND granted_to_team_id = ? AND revoked_at IS NULL
-          `).get(share.session_id, defaultTeam!.team_id) as { grant_id: string } | undefined
+          `).get(share.session_id, defaultTeam.team_id) as { grant_id: string } | undefined
           if (existingTeam) {
             db.prepare(`UPDATE session_share_grants SET revoked_at = ? WHERE grant_id = ?`)
               .run(now, share.grant_id)
@@ -779,12 +779,12 @@ export function createSqliteWorkspaceAuthority(
             UPDATE session_share_grants
             SET granted_to_org_id = NULL, granted_to_team_id = ?
             WHERE grant_id = ?
-          `).run(defaultTeam!.team_id, share.grant_id)
+          `).run(defaultTeam.team_id, share.grant_id)
           sessionSharesRetargeted += 1
         }
 
         return {
-          team_id: defaultTeam!.team_id,
+          team_id: defaultTeam.team_id,
           org_id: args.orgId,
           workspace_shares_retargeted: workspaceSharesRetargeted,
           session_shares_retargeted: sessionSharesRetargeted,
@@ -867,7 +867,7 @@ export function createSqliteWorkspaceAuthority(
         LEFT JOIN users u ON u.token_identifier = m.user_token_identifier
         WHERE m.team_id = ?
         ORDER BY m.role DESC, m.user_token_identifier ASC
-      `).all(args.teamId) as unknown[]
+      `).all(args.teamId)
     },
     async grantTeamProject(auth: SignedControlPlaneAuth, args: {
       teamId: string

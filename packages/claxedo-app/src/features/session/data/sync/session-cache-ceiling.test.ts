@@ -246,7 +246,7 @@ describe("session cache ceiling", () => {
       // A new authoritative write updates the protected target but cannot move
       // the already-fixed maintenance deadline and starve the global ceiling.
       scheduleSessionCacheCeiling(`ses_timeout_${total - 1}`)
-      idleCallbacks[0]!({ didTimeout: true, timeRemaining: () => 0 })
+      idleCallbacks[0]({ didTimeout: true, timeRemaining: () => 0 })
       expect(cached("ses_timeout_0")).toBe(false)
       expect(cached(`ses_timeout_${total - 1}`)).toBe(true)
     } finally {

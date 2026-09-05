@@ -368,7 +368,7 @@ export async function syncEmbeddedWorkspaceRuntimes() {
 export function shutdownEmbeddedWorkspaceRuntimes(): Promise<void> {
   shutdownGeneration++
   for (const runtime of hosts.values()) disposeRuntime(runtime)
-  const done = Promise.all([...retiring.values()]).then(() => {})
+  const done = Promise.all(retiring.values()).then(() => {})
   void done.catch(() => {})
   return done
 }

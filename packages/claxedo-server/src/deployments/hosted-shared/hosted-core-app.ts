@@ -224,7 +224,7 @@ export function createHostedCoreApp(plane: HostedControlPlane, options: HostedCo
   const workspaceOptions: HostedWorkspaceRouteOptions = {
     authentication: options.authentication,
     requireCloudWorkspaceEntitlement: options.cloudWorkspaceAdmission,
-    ...(options.productWorkspace ?? {}),
+    ...options.productWorkspace,
     authConfig,
     ...(services.relay.relayUrl ? { relayUrl: services.relay.relayUrl } : {}),
     ...(services.relay.relayUrls ? { relayUrls: services.relay.relayUrls } : {}),
@@ -549,7 +549,7 @@ function mountSessionReadRoutes(app: Hono, plane: HostedControlPlane, authentica
       body = await services.authority.readSessionMessages(authResult.auth, {
         sessionId: context.req.param("sessionId"),
         workspaceId,
-        ...(page ?? {}),
+        ...page,
       })
     } catch (error) {
       if (error instanceof AgentMessagePageError) {

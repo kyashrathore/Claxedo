@@ -168,13 +168,13 @@ describe("local performance diagnostics dialog", () => {
     expect(rows[0]).toHaveAttribute("data-warm", "true")
     expect(rows[0]).toHaveTextContent("Large Codex task")
     expect(rows[0]).toHaveTextContent("70.0 MiB")
-    expect(within(rows[0]!).getByTestId("diagnostics-session-tag")).toHaveTextContent("Mounted")
+    expect(within(rows[0]).getByTestId("diagnostics-session-tag")).toHaveTextContent("Mounted")
     expect(rows[0]).toHaveTextContent("120 messages")
     expect(rows[1]).not.toHaveAttribute("data-warm")
     expect(rows[2]).toHaveAttribute("data-warm", "true")
-    expect(within(rows[2]!).getByTestId("diagnostics-session-tag")).toHaveTextContent("Cached")
+    expect(within(rows[2]).getByTestId("diagnostics-session-tag")).toHaveTextContent("Cached")
     expect(rows[2]).toHaveTextContent("42 messages")
-    expect(within(rows[1]!).queryByTestId("diagnostics-session-tag")).not.toBeInTheDocument()
+    expect(within(rows[1]).queryByTestId("diagnostics-session-tag")).not.toBeInTheDocument()
     expect(screen.getByText(/serialized payload, not exact JavaScript heap/)).toBeInTheDocument()
   })
 
@@ -183,7 +183,7 @@ describe("local performance diagnostics dialog", () => {
     state.scanSessionMemory.mockResolvedValue({
       ...base,
       sessions: Array.from({ length: 40 }, (_, index) => ({
-        ...base.sessions[0]!,
+        ...base.sessions[0],
         sessionId: `ses_${String(index).padStart(3, "0")}`,
         title: `Session ${String(index)}`,
         buckets: {
@@ -289,7 +289,7 @@ describe("local performance diagnostics dialog", () => {
       capturedAt: 5_000,
       sources: [
         {
-          ...snapshot().sources[0]!,
+          ...snapshot().sources[0],
           state: "degraded",
           reason: "source-timeout",
         },
@@ -345,23 +345,23 @@ function taskSnapshot(): LocalDiagnostics.RetainedSnapshot {
       `host:${String(10 + index)}:${String(100 + index)}`,
       10 + index,
       item.id,
-      roles[index]!,
+      roles[index],
       item.label,
     ),
   )
   const samples = [
-    taskPoint(1_000, processes[0]!.identity.id, 75, 20_000),
-    taskPoint(1_000, processes[1]!.identity.id, 15, 30_000),
-    taskPoint(1_000, processes[2]!.identity.id, 5, 10_000),
-    taskPoint(1_000, processes[3]!.identity.id, 10, 1_000),
-    taskPoint(2_000, processes[0]!.identity.id, 5, 22_000),
-    taskPoint(2_000, processes[1]!.identity.id, 60, 42_000),
-    taskPoint(2_000, processes[2]!.identity.id, 35, 16_000),
-    taskPoint(2_000, processes[3]!.identity.id, 20, 40_000),
-    taskPoint(3_000, processes[0]!.identity.id, 2, 23_000),
-    taskPoint(3_000, processes[1]!.identity.id, 3, 44_000),
-    taskPoint(3_000, processes[2]!.identity.id, 2, 17_000),
-    taskPoint(3_000, processes[3]!.identity.id, 1, 65_000),
+    taskPoint(1_000, processes[0].identity.id, 75, 20_000),
+    taskPoint(1_000, processes[1].identity.id, 15, 30_000),
+    taskPoint(1_000, processes[2].identity.id, 5, 10_000),
+    taskPoint(1_000, processes[3].identity.id, 10, 1_000),
+    taskPoint(2_000, processes[0].identity.id, 5, 22_000),
+    taskPoint(2_000, processes[1].identity.id, 60, 42_000),
+    taskPoint(2_000, processes[2].identity.id, 35, 16_000),
+    taskPoint(2_000, processes[3].identity.id, 20, 40_000),
+    taskPoint(3_000, processes[0].identity.id, 2, 23_000),
+    taskPoint(3_000, processes[1].identity.id, 3, 44_000),
+    taskPoint(3_000, processes[2].identity.id, 2, 17_000),
+    taskPoint(3_000, processes[3].identity.id, 1, 65_000),
   ]
   return {
     ...snapshot(),
@@ -370,7 +370,7 @@ function taskSnapshot(): LocalDiagnostics.RetainedSnapshot {
     samples,
     sources: [
       {
-        ...snapshot().sources[0]!,
+        ...snapshot().sources[0],
         state: "degraded",
         reason: "source-timeout",
       },
@@ -578,7 +578,7 @@ function sessionMemoryScan(): LocalDiagnostics.SessionMemoryScanResult {
       compactionBytes: 10 * 1024 ** 2,
       totalBytes: 112 * 1024 ** 2,
     },
-    resident: warmSnapshot[1]!.buckets,
+    resident: warmSnapshot[1].buckets,
     sources: [
       {
         harness: "claxedo",

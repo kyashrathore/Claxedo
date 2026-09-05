@@ -156,7 +156,7 @@ export async function resetWorktree(c: Context) {
   const branch = await defaultBranch(root.directory)
   if (!branch) return c.json(errorBody("claxedo_default_branch_not_found", "Default branch not found"), 400)
   if (branch.target !== branch.local) {
-    const fetched = await gitRun(root.directory, ["fetch", branch.target.split("/")[0]!, branch.local])
+    const fetched = await gitRun(root.directory, ["fetch", branch.target.split("/")[0], branch.local])
     if (!fetched.ok) return c.json(errorBody("claxedo_worktree_fetch_failed", fetched.err || fetched.out || `Failed to fetch ${branch.target}`), 400)
   }
   const reset = await gitRun(target, ["reset", "--hard", branch.target])

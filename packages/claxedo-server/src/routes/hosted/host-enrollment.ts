@@ -192,10 +192,10 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
       if (!parsed.ok) return c.json({ error: parsed.error }, parsed.status)
 
       try {
-        return c.json((await run({ body: parsed.body as Body, auth, authority: requireAuthority(services) })) as never)
+        return c.json((await run({ body: parsed.body, auth, authority: requireAuthority(services) })) as never)
       } catch (err) {
         if (err instanceof ControlPlaneAuthError) {
-          return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
+          return c.json(controlPlaneAuthErrorBody(err), err.status)
         }
         throw err
       }
@@ -286,7 +286,7 @@ export function HostEnrollmentRoutes(services: ControlPlaneServices, options: Ho
         })
         await authority.auditAllow(auth, {
           action: body.paused ? "host_enrollment.paused" : "host_enrollment.resumed",
-          metadata: { ...(body.hostId ? { hostId: body.hostId } : {}) },
+          metadata: (body.hostId ? { hostId: body.hostId } : {}),
         })
         return result
       }, "POST", {

@@ -51,7 +51,7 @@ describe("ProjectRemoteSurface", () => {
 
     expect(screen.getByText(/no remote named origin/i)).toBeInTheDocument()
     expect(screen.getAllByRole("button", { name: /Clone this one/i })).toHaveLength(2)
-    screen.getAllByRole("button", { name: /Clone this one/i })[0]!.click()
+    screen.getAllByRole("button", { name: /Clone this one/i })[0].click()
     expect(onConfirm).toHaveBeenCalledWith(upstream)
   })
 

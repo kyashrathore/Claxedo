@@ -191,7 +191,7 @@ export function reviewWindowSegments<T>(input: {
   }
 
   for (let index = 0; index < input.items.length; index++) {
-    const item = input.items[index]!
+    const item = input.items[index]
     const height = input.rowHeight(item, index) ?? estimate
     const inWindow = degenerate
       ? windowRows < maxRows && offset < degenerateSpan
@@ -261,7 +261,7 @@ export function createReviewWindowSegments<T>() {
     const nextGaps: ReviewWindowGapSegment[] = []
 
     for (let index = 0; index < segments.length; index++) {
-      const segment = segments[index]!
+      const segment = segments[index]
       if (segment.kind === "row") {
         const previous = rows.get(segment.item)
         const stable = previous?.index === segment.index ? previous : segment

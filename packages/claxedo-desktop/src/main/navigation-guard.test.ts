@@ -8,7 +8,7 @@ import { isSafeExternalUrl, navigationDecision, windowOpenDecision } from "./nav
 // navigation-UX question. These pin the policy that keeps it pinned.
 
 const APP_URL = "file:///Applications/Claxedo.app/Contents/renderer/index.local.html"
-const isTrusted = (input: string) => input.split("#")[0]!.split("?")[0] === APP_URL
+const isTrusted = (input: string) => input.split("#")[0].split("?")[0] === APP_URL
 
 describe("isSafeExternalUrl", () => {
   test("allows the schemes a clicked link legitimately means", () => {

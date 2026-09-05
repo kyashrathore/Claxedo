@@ -374,7 +374,7 @@ export function createHostedDocumentsBackend(
         if (entry.archived_at) throw new Error("Document renewal job is inactive")
         const live = await liveEntry(entry.id, input)
         const job = live.job
-        const currentEntry = live.entry as DocumentIndexEntry
+        const currentEntry = live.entry
         if (currentEntry.archived_at || job.value.jobExpiresAt <= Math.floor(Date.now() / 1000)) throw new Error("Document renewal job is inactive")
         if (options.resolveSessionWorkspace &&
           await options.resolveSessionWorkspace(job.auth, input.sessionId) !== job.value.cloudWorkspaceId) throw new Error("Session placement changed")

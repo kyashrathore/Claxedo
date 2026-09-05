@@ -691,14 +691,14 @@ describe("repository document recovery and Git contracts", () => {
       await value.workspace.pinSnapshot(handle, snapshot.id, `lease:${Date.now() + 60_000 + index}:work-source`)
     }
     expect(
-      (await value.workspace.listSnapshots(handle))[0]!.pins.filter((pin) => pin.startsWith("lease:")),
+      (await value.workspace.listSnapshots(handle))[0].pins.filter((pin) => pin.startsWith("lease:")),
     ).toHaveLength(1)
     for (let index = 0; index < 127; index++) {
       await value.workspace.pinSnapshot(handle, snapshot.id, `permanent:${index}`)
     }
     await expect(value.workspace.pinSnapshot(handle, snapshot.id, "permanent:overflow")).rejects.toThrow("pin limit")
     await expect(value.workspace.pinSnapshot(handle, snapshot.id, "x".repeat(513))).rejects.toThrow("invalid or too large")
-    expect((await value.workspace.listSnapshots(handle))[0]!.pins).toHaveLength(128)
+    expect((await value.workspace.listSnapshots(handle))[0].pins).toHaveLength(128)
   })
 
   test("repository snapshot GC prunes expired leases and collects snapshots they no longer pin", async () => {
@@ -716,7 +716,7 @@ describe("repository document recovery and Git contracts", () => {
     await value.workspace.collectSnapshots(handle)
     const retained = await value.workspace.listSnapshots(handle)
     expect(retained.map((snapshot) => snapshot.id)).toEqual([second.id])
-    expect(retained[0]!.pins).toEqual([])
+    expect(retained[0].pins).toEqual([])
   })
 
   test("repository snapshot metadata reads are bounded without truncating ordered or pinned results", async () => {
@@ -729,7 +729,7 @@ describe("repository document recovery and Git contracts", () => {
       await fs.writeFile(path.join(value.root, "doc.md"), `snapshot ${index}\n`)
       created.push(await value.workspace.snapshot(handle, { reason: `snapshot ${index}`, actor }))
     }
-    await value.workspace.pinSnapshot(handle, created[0]!.id, "work-source:metadata-concurrency")
+    await value.workspace.pinSnapshot(handle, created[0].id, "work-source:metadata-concurrency")
 
     let active = 0
     let maximum = 0
@@ -754,7 +754,7 @@ describe("repository document recovery and Git contracts", () => {
     expect(snapshots.map((snapshot) => snapshot.createdAt)).toEqual(
       [...snapshots].map((snapshot) => snapshot.createdAt).sort((left, right) => right - left),
     )
-    expect(snapshots.find((snapshot) => snapshot.id === created[0]!.id)?.pins).toEqual([
+    expect(snapshots.find((snapshot) => snapshot.id === created[0].id)?.pins).toEqual([
       "work-source:metadata-concurrency",
     ])
   })

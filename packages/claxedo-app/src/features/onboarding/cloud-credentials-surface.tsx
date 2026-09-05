@@ -112,7 +112,7 @@ export const CloudCredentialsSurface: Component<CloudCredentialsSurfaceProps> = 
                     <Checkbox
                       class="setup-row-copy"
                       checked={isSelected(credential.id)}
-                      disabled={busy() || outcome()?.ok === true}
+                      disabled={busy() ||  outcome()?.ok}
                       description={credential.verification === "rate_capped"
                         ? "At its usage limit right now — it will work again when the limit resets."
                         : "Stored on this machine only."}
@@ -122,7 +122,7 @@ export const CloudCredentialsSurface: Component<CloudCredentialsSurfaceProps> = 
                       {credentialName(credential)}
                     </Checkbox>
                     {/* Per-credential outcome: one failure never hides the rest. */}
-                    <Show when={outcome()?.ok === true}>
+                    <Show when={outcome()?.ok}>
                       <span class="setup-verified text-12-regular">
                         <Icon name="circle-check" size="small" />
                         Shared

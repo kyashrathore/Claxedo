@@ -27,7 +27,7 @@ describe("usage API", () => {
       limit: 25,
       refreshNonce: 42,
     })
-    const url = new URL(authFetch.mock.calls[0]![0])
+    const url = new URL(authFetch.mock.calls[0][0])
     expect(url.pathname).toBe("/api/claxedo/usage")
     expect(Object.fromEntries(url.searchParams)).toMatchObject({
       since: "1",
@@ -49,8 +49,8 @@ describe("usage API", () => {
     authFetch.mockResolvedValue(new Response(JSON.stringify({ attempted: 1, pending: 0 }), { status: 200 }))
     const { syncUsageOutbox } = await import("./usage-api")
     await expect(syncUsageOutbox()).resolves.toMatchObject({ attempted: 1, pending: 0 })
-    expect(new URL(authFetch.mock.calls[0]![0]).pathname).toBe("/api/claxedo/usage/sync")
-    expect(authFetch.mock.calls[0]![1]).toMatchObject({ method: "POST" })
+    expect(new URL(authFetch.mock.calls[0][0]).pathname).toBe("/api/claxedo/usage/sync")
+    expect(authFetch.mock.calls[0][1]).toMatchObject({ method: "POST" })
   })
 
   // Falsifier for a duplicated usage-outbox wakeup: it has no UI dependency,

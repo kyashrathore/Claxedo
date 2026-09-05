@@ -135,7 +135,7 @@ await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("
 await installSeedState(page, app, fixture)
 
 const sessions = fixture.sessions
-const home = sessions[0]!
+const home = sessions[0]
 console.log(`[probe] app=${app.baseUrl} mock=${app.mockPort} corpus=${expectedTotal} files`)
 console.log(`[probe] workspace A=${fixture.workspaceDirectories[0]}  workspace B=${fixture.workspaceDirectories[1]}`)
 
@@ -306,9 +306,9 @@ if (process.env.PROBE_SKIP_STALE_IDLE !== "1") {
 // --- Block A: panel CLOSED. Cheap, and it owns stability gate (a) plus the
 // closed baseline the workspace-open penalty is measured against.
 console.log("\n=== Block A: workspace panel CLOSED ===")
-await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2]!, panelOpen: false })
+await runCell({ block: "closed", scope: "within", temperature: "cold", target: sessions[2], panelOpen: false })
 await runCell({ block: "closed", scope: "within", temperature: "warm", target: home, panelOpen: false })
-await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1]!, panelOpen: false })
+await runCell({ block: "closed", scope: "across", temperature: "cold", target: sessions[1], panelOpen: false })
 await runCell({ block: "closed", scope: "across", temperature: "warm", target: home, panelOpen: false })
 
 // --- Block B: panel OPEN on a substantial file, exactly as the driver stages
@@ -324,9 +324,9 @@ const openFilePrecondition = await settleBeforeNextInteraction(page)
 console.log(`[probe] open_file precondition settle=${round(openFilePrecondition.waitedMs)}ms settled=${openFilePrecondition.settled} (${elapsed()})`)
 
 console.log("\n=== Block B: workspace panel OPEN on a substantial file ===")
-await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4]!, panelOpen: true })
+await runCell({ block: "open_file", scope: "within", temperature: "cold", target: sessions[4], panelOpen: true })
 await runCell({ block: "open_file", scope: "within", temperature: "warm", target: home, panelOpen: true })
-await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3]!, panelOpen: true })
+await runCell({ block: "open_file", scope: "across", temperature: "cold", target: sessions[3], panelOpen: true })
 await runCell({ block: "open_file", scope: "across", temperature: "warm", target: home, panelOpen: true })
 
 // --- Precondition for Block C, identical to the driver's: the review tab back
@@ -341,9 +341,9 @@ console.log(`[probe] review warm + first diff expanded; settle=${round(precondit
 // --- Block C: Review OPEN. The within cells own stability gate (b); the final
 // across/warm cell is the measured switch this probe exists for.
 console.log("\n=== Block C: Review OPEN on the large corpus ===")
-await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6]!, panelOpen: true })
+await runCell({ block: "open_review", scope: "within", temperature: "cold", target: sessions[6], panelOpen: true })
 await runCell({ block: "open_review", scope: "within", temperature: "warm", target: home, panelOpen: true })
-await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5]!, panelOpen: true })
+await runCell({ block: "open_review", scope: "across", temperature: "cold", target: sessions[5], panelOpen: true })
 const measured = await runCell({ block: "open_review", scope: "across", temperature: "warm", target: home, panelOpen: true })
 
 // --- Rank-7 attribution cell. The first-fold reveal's pre-paint work reads
@@ -363,7 +363,7 @@ const suppressed = await runCell({
   block: "open_review",
   scope: "across",
   temperature: "cold",
-  target: sessions[7]!,
+  target: sessions[7],
   panelOpen: true,
   sessionClockOnly: true,
   label: "attribution_open_review_cold_corpus_hidden",
@@ -378,7 +378,7 @@ console.log(
 // for during this run, which is precisely what the panel body LRU retains. On
 // a build that disposes the outgoing body these three are three more full
 // constructions; on a retaining build they are display flips.
-const awayTarget = sessions[5]!
+const awayTarget = sessions[5]
 console.log(
   `\n=== Ping-pong A-B-A-B (return switches; A=${home.directory} B=${awayTarget.directory}) ===`,
 )
@@ -508,7 +508,7 @@ console.log("\n================ READY-GATE STAGES PER CELL ================")
 for (const result of results) {
   const stages = result.observation.stageMs ?? {}
   const rendered = READY_STAGES
-    .map((name) => `${name}=${stages[name] === undefined ? "never" : `${round(stages[name]!)}ms`}`)
+    .map((name) => `${name}=${stages[name] === undefined ? "never" : `${round(stages[name])}ms`}`)
     .join(" ")
   console.log(`  ${result.cell.padEnd(42)} ${rendered}`)
 }

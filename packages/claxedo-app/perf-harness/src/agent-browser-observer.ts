@@ -169,7 +169,7 @@ export function seededSwitchSequence<T>(values: readonly T[], seed: number) {
   };
   for (let index = result.length - 1; index > 0; index--) {
     const swap = Math.floor(random() * (index + 1));
-    [result[index], result[swap]] = [result[swap]!, result[index]!];
+    [result[index], result[swap]] = [result[swap], result[index]];
   }
   return result;
 }
@@ -730,7 +730,7 @@ async function clickVisibleSessionActivation(page: Page, sessionId: string) {
     const elements = Array.from(document.querySelectorAll<HTMLElement>(query));
     const candidates: Array<Record<string, unknown>> = [];
     for (let index = 0; index < elements.length; index++) {
-      const element = elements[index]!;
+      const element = elements[index];
       element.scrollIntoView({ block: "center", inline: "center" });
       await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const rect = element.getBoundingClientRect();
@@ -1167,7 +1167,7 @@ function installBrowserBenchmark() {
   const finishTerminalHash = async (current: NonNullable<typeof terminal>) => {
     if (current.acceptedHashLength > 0) {
       const block = current.acceptedHashBuffer.slice(0, current.acceptedHashLength);
-      current.acceptedHashDigests.push(crypto.subtle.digest("SHA-256", block.buffer as ArrayBuffer));
+      current.acceptedHashDigests.push(crypto.subtle.digest("SHA-256", block.buffer));
       current.acceptedHashLength = 0;
     }
     const digests = await Promise.all(current.acceptedHashDigests);
@@ -1349,8 +1349,8 @@ function installBrowserBenchmark() {
         echoTailMisses: current.echoTailMisses,
         inputDurationsMs: current.inputDurationsMs,
         inputWindows: current.inputDurationsMs.map((_, index) => ({
-          startTimestamp: current.inputStarts[index]!,
-          endTimestamp: current.inputPaintedAtMs[index]!,
+          startTimestamp: current.inputStarts[index],
+          endTimestamp: current.inputPaintedAtMs[index],
         })),
       };
     },
@@ -1457,7 +1457,7 @@ function installBrowserBenchmark() {
         )
           continue;
         current.inputPaintPending.add(echoIndex);
-        const startedAtMs = current.inputStarts[echoIndex]!;
+        const startedAtMs = current.inputStarts[echoIndex];
         void afterPaint().then((paintedAtMs) => {
           current.inputPaintPending.delete(echoIndex);
           current.inputPaintedAtMs[echoIndex] = paintedAtMs;

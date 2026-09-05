@@ -64,7 +64,7 @@ async function drive(
   let allowed = 0
   let rejected = 0
   for (let i = 0; i < input.total; i += 1) {
-    const result = await limiters[i % limiters.length]!.check({ key: input.key })
+    const result = await limiters[i % limiters.length].check({ key: input.key })
     if (result.allowed) allowed += 1
     else rejected += 1
   }

@@ -673,7 +673,7 @@ export const __workspaceConnectionInternals = {
       for (const id of Object.keys(map)) delete map[id]
     }))
   },
-  setState: setConnections as SetStoreFunction<Record<string, WorkspaceConnectionState>>,
+  setState: setConnections,
   snapshot: () => connections,
   classifyOffline,
   isTerminalReason,

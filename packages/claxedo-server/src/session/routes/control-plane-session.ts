@@ -243,7 +243,7 @@ export function ControlPlaneSessionRoutes(services: ControlPlaneServices, option
         const body = await requireAuthority(services).readSessionMessages(auth, {
           sessionId,
           workspaceId,
-          ...(page ?? {}),
+          ...page,
         })
         const messages = authorityMessages(body)
         if (page) return messagePageJson(c, body, messages, maxEventOrdinal)

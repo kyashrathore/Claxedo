@@ -1892,7 +1892,7 @@ export function inlineCodeKind(text: string): "path" | "path-candidate" | "url" 
   if (/^https?:\/\//i.test(text)) return "url"
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return
   if (/\s/.test(text)) return
-  if (/[()\[\]{}*+=<>|&^"';]/.test(text)) return
+  if (/[()[\]{}*+=<>|&^"';]/.test(text)) return
   // `~/…` can't be expanded client-side, so the file panel refuses it
   // (workspace-file-focus.ts). Marking it a path is a dead affordance.
   if (text.startsWith("~")) return

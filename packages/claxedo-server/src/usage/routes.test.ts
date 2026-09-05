@@ -134,7 +134,7 @@ describe("usage routes", () => {
     })
 
     const response = await app.request("/?since=1&until=2&group=app", { headers: { authorization: "Bearer valid" } })
-    const body = (await response.json()) as any
+    const body = (await response.json())
     expect(body.breakdown).toEqual({
       dimension: "app",
       rows: [expect.objectContaining({ value: "Claxedo", turnCount: 2, input: 12 })],
@@ -173,7 +173,7 @@ describe("usage routes", () => {
       await app.request("/?since=1&until=2&view=claxedo&group=harness&limit=1", {
         headers: { authorization: "Bearer valid" },
       })
-    ).json()) as any
+    ).json())
     expect(body.breakdown).toMatchObject({
       dimension: "harness",
       rows: [expect.objectContaining({ value: "b", input: 7, estimatedUsd: expect.any(Number), status: "partial" })],
@@ -221,7 +221,7 @@ describe("usage routes", () => {
       },
     })
     const headers = { authorization: "Bearer valid" }
-    const first = (await (await app.request("/?since=1&until=2&group=provider&limit=10", { headers })).json()) as any
+    const first = (await (await app.request("/?since=1&until=2&group=provider&limit=10", { headers })).json())
     expect(first.modelBreakdown.rows).toHaveLength(10)
     expect(first.modelBreakdown.rows.map((row: any) => row.value)).toEqual(
       Array.from({ length: 10 }, (_, index) => `openai/model-${String(11 - index).padStart(2, "0")}`),
@@ -229,7 +229,7 @@ describe("usage routes", () => {
     expect(first.modelBreakdown.next).toBe("openai/model-02")
     const second = (await (
       await app.request("/?since=1&until=2&group=provider&limit=10&model_after=openai%2Fmodel-02", { headers })
-    ).json()) as any
+    ).json())
     expect(second.modelBreakdown.rows.map((row: any) => row.value)).toEqual(["openai/model-01", "openai/model-00"])
     expect(second.modelBreakdown.next).toBeUndefined()
   })
@@ -261,26 +261,26 @@ describe("usage routes", () => {
     const headers = { authorization: "Bearer valid" }
     const tokensFirst = (await (
       await app.request("/?since=1&until=2&group=harness&metric=tokens&limit=1", { headers })
-    ).json()) as any
+    ).json())
     expect(tokensFirst.breakdown).toMatchObject({ rows: [{ value: "cheap" }], next: "cheap" })
     const tokensSecond = (await (
       await app.request("/?since=1&until=2&group=harness&metric=tokens&limit=1&after=cheap", { headers })
-    ).json()) as any
+    ).json())
     expect(tokensSecond.breakdown).toMatchObject({ rows: [{ value: "expensive" }] })
 
     const costFirst = (await (
       await app.request("/?since=1&until=2&group=harness&metric=cost&limit=1", { headers })
-    ).json()) as any
+    ).json())
     expect(costFirst.breakdown).toMatchObject({ rows: [{ value: "expensive" }], next: "expensive" })
     expect(costFirst.breakdown.rows[0].estimatedUsd).toBeGreaterThan(tokensFirst.breakdown.rows[0].estimatedUsd)
     const costSecond = (await (
       await app.request("/?since=1&until=2&group=harness&metric=cost&limit=1&after=expensive", { headers })
-    ).json()) as any
+    ).json())
     expect(costSecond.breakdown).toMatchObject({ rows: [{ value: "cheap" }] })
 
     const excluded = (await (
       await app.request("/?since=1&until=2&group=app&filter_app=claude", { headers })
-    ).json()) as any
+    ).json())
     expect(excluded.claxedo.totals.turnCount).toBe(0)
     expect(excluded.breakdown.rows).toEqual([])
   })
@@ -374,12 +374,12 @@ describe("local unified usage route", () => {
 
     const tokens = (await (
       await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider&metric=tokens")
-    ).json()) as any
+    ).json())
     expect(tokens.breakdown.rows.map((row: any) => row.value)).toEqual(["codex", "claude"])
 
     const cost = (await (
       await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider&metric=cost")
-    ).json()) as any
+    ).json())
     expect(cost.breakdown.rows.map((row: any) => row.value)).toEqual(["claude", "codex"])
     expect(cost.breakdown.rows[0].estimatedUsd).toBeGreaterThan(cost.breakdown.rows[1].estimatedUsd)
     expect(
@@ -426,7 +426,7 @@ describe("local unified usage route", () => {
       },
     })
     const response = await app.request("/?since=0&until=20&timezone=UTC&view=total")
-    const body = (await response.json()) as any
+    const body = (await response.json())
     expect(body.claxedo.totals.input).toBe(30)
     expect(body.total.totals.input).toBe(15)
     expect(body.claxedo.scope).toBe("cross-machine")
@@ -456,7 +456,7 @@ describe("local unified usage route", () => {
     })
 
     const response = await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider")
-    const body = (await response.json()) as any
+    const body = (await response.json())
     expect(body.externalLocal.totals.input).toBe(0)
     expect(body.total.totals).toMatchObject({ turnCount: 123, input: 50, output: 5, reasoning: 2, cacheRead: 100 })
     expect(body.breakdown.rows).toEqual([
@@ -477,7 +477,7 @@ describe("local unified usage route", () => {
         throw new Error("scanner unavailable")
       },
     })
-    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total")).json()) as any
+    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total")).json())
     expect(body.claxedo.totals.input).toBe(10)
     expect(body.externalLocal.status).toBe("degraded")
     expect(body.sync.pending).toBe(1)
@@ -520,11 +520,11 @@ describe("local unified usage route", () => {
       outbox: outbox({ attempted: 0, delivered: 0, conflicts: 0, pending: 0 }),
       history,
     })
-    const first = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app")).json()) as any
+    const first = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app")).json())
     expect(first.total.totals).toMatchObject({ input: 5, output: 2, reasoning: 1, cacheRead: 7 })
     const stale = (await (
       await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app&refresh_nonce=1")
-    ).json()) as any
+    ).json())
     expect(stale.externalLocal).toMatchObject({
       status: "degraded",
       error: "scanner offline",
@@ -576,7 +576,7 @@ describe("local unified usage route", () => {
     await app.request("/?since=0&until=20&timezone=UTC&view=total")
     const shifted = (await (
       await app.request("/?since=20&until=40&timezone=UTC&view=total&refresh_nonce=2")
-    ).json()) as any
+    ).json())
     expect(shifted.externalLocal).toMatchObject({ status: "degraded", totals: { input: 0 } })
     expect(shifted.filterOptions.total.app ?? []).not.toContain("codex")
   })
@@ -591,8 +591,8 @@ describe("local unified usage route", () => {
       quota,
     })
     const request = "/?since=0&until=20&timezone=UTC&view=quota"
-    expect(((await (await app.request(request)).json()) as any).quota).toEqual({ status: "available", snapshot })
-    expect(((await (await app.request(`${request}&refresh_nonce=3`)).json()) as any).quota).toEqual({
+    expect(((await (await app.request(request)).json())).quota).toEqual({ status: "available", snapshot })
+    expect(((await (await app.request(`${request}&refresh_nonce=3`)).json())).quota).toEqual({
       status: "degraded",
       snapshot,
       error: "quota offline",
@@ -674,8 +674,8 @@ describe("local unified usage route", () => {
       central: { recordLlmTurn: async () => ({ activated: false }), usageDashboard },
     })
     const request = "/?since=0&until=20&timezone=UTC&view=claxedo"
-    expect(((await (await app.request(request)).json()) as any).claxedo.totals.input).toBe(25)
-    const stale = (await (await app.request(request)).json()) as any
+    expect(((await (await app.request(request)).json())).claxedo.totals.input).toBe(25)
+    const stale = (await (await app.request(request)).json())
     expect(stale.claxedo).toMatchObject({ status: "stale", error: "central offline", totals: { input: 25 } })
   })
 
@@ -732,7 +732,7 @@ describe("local unified usage route", () => {
       }),
     })
 
-    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app")).json()) as any
+    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=app")).json())
     expect(pendingOutbox).toHaveBeenCalledWith({ since: 0, until: 20, all: true })
     expect(body.claxedo.totals.input).toBe(20)
     expect(body.breakdown.rows).toEqual(
@@ -758,7 +758,7 @@ describe("local unified usage route", () => {
 
     const provider = (await (
       await app.request("/?since=0&until=20&timezone=UTC&view=total&group=provider")
-    ).json()) as any
+    ).json())
     expect(provider.breakdown).toMatchObject({
       dimension: "provider",
       rows: [expect.objectContaining({ value: "anthropic", turnCount: 2, input: 25 })],
@@ -769,7 +769,7 @@ describe("local unified usage route", () => {
       series: [expect.objectContaining({ value: "anthropic" })],
     })
 
-    const model = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=model")).json()) as any
+    const model = (await (await app.request("/?since=0&until=20&timezone=UTC&view=total&group=model")).json())
     expect(model.breakdown.rows).toEqual([expect.objectContaining({ value: "anthropic/m", label: "m", input: 25 })])
   })
 
@@ -815,7 +815,7 @@ describe("local unified usage route", () => {
       },
     })
 
-    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo&group=model")).json()) as any
+    const body = (await (await app.request("/?since=0&until=20&timezone=UTC&view=claxedo&group=model")).json())
     expect(body.claxedo.totals).toMatchObject({ turnCount: 1, input: 20, output: 2 })
     expect(body.breakdown.rows).toEqual([
       expect.objectContaining({ value: "anthropic/m", turnCount: 1, input: 20, output: 2 }),
@@ -851,7 +851,7 @@ describe("local unified usage route", () => {
         }),
       },
     })
-    const body = (await (await app.request("/?since=0&until=20&timezone=UTC")).json()) as any
+    const body = (await (await app.request("/?since=0&until=20&timezone=UTC")).json())
     expect(body.claxedo.totals.input).toBe(10)
     expect(body.sync).toEqual({ attempted: 1, delivered: 0, conflicts: 0, pending: 1 })
   })
@@ -871,7 +871,7 @@ describe("local unified usage route", () => {
     })
     const body = (await (
       await app.request("/?since=0&until=20&timezone=UTC&view=claxedo&group=harness&filter_harness=codex&limit=1")
-    ).json()) as any
+    ).json())
     expect(body.claxedo.totals.input).toBe(30)
     expect(body.breakdown).toMatchObject({
       dimension: "harness",

@@ -127,11 +127,11 @@ export function useRailHeaderSurfaces(input: {
     const item = {} as SwitcherItem
     Object.defineProperties(item, {
       contentId: { enumerable: true, get: () => contentId },
-      kind: { enumerable: true, get: () => base()!.kind },
-      title: { enumerable: true, get: () => base()!.title },
-      workspaceDir: { enumerable: true, get: () => base()!.workspaceDir },
+      kind: { enumerable: true, get: () => base().kind },
+      title: { enumerable: true, get: () => base().title },
+      workspaceDir: { enumerable: true, get: () => base().workspaceDir },
       active: { enumerable: true, get: () => isHeaderContentActive(contentId) },
-      closable: { enumerable: true, get: () => base()!.closable },
+      closable: { enumerable: true, get: () => base().closable },
       status: { enumerable: true, get: status },
       projectLabel: { enumerable: true, get: () => info()?.projectName },
       projectWorktree: { enumerable: true, get: () => info()?.projectWorktree },

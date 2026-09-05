@@ -50,7 +50,7 @@ const normalizeAgentEventType = (value: unknown): AgentEventType | undefined => 
   if (parsed.data === "Stop" || parsed.data === "SessionEnd") return "Idle"
   if (parsed.data === "PermissionRequest" || parsed.data === "QuestionRequest") return "UserActionRequired"
   if (parsed.data === "Failed") return "Error"
-  return parsed.data as AgentEventType
+  return parsed.data
 }
 
 const lifecycleId = z.string().max(512)

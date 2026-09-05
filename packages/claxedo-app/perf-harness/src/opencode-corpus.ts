@@ -84,7 +84,7 @@ export class OpenCodeCorpus {
     })) satisfies OpenCodeFixtureSession[]
     const restored = await importOpenCodeFixtureSessions(databasePath, transfers)
     for (const [index, actual] of restored.entries()) {
-      const expected = transfers[index]!
+      const expected = transfers[index]
       if (
         actual.info.id !== expected.info.id ||
         actual.info.title !== expected.info.title ||

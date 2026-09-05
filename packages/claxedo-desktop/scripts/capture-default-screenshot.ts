@@ -87,7 +87,7 @@ try {
   await client.send("Page.bringToFront")
   await delay(1_000)
 
-  const screenshot = asObject<ScreenshotResult>(await client.send("Page.captureScreenshot", {
+  const screenshot = asObject(await client.send("Page.captureScreenshot", {
     format: "png",
     captureBeyondViewport: false,
   }))
@@ -214,7 +214,7 @@ async function evaluateReadiness(client: Awaited<ReturnType<typeof connectCdp>>)
     })()`,
     returnByValue: true,
   }))
-  return asObject<Readiness>(asObject(asObject(result).result).value)
+  return asObject(asObject(asObject(result).result).value)
 }
 
 function isTarget(input: unknown): input is DevtoolsTarget {

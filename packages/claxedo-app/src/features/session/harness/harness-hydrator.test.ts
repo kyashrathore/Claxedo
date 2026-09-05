@@ -176,7 +176,7 @@ describe("harness hydrator", () => {
     ])
     expect(subject.cache.getSeen("scope")).toBeDefined()
     // The status request names the workspace by id; the directory is only what the client shows.
-    expect(new URL(subject.statusUrls[0]!).searchParams.get("workspaceId")).toBe("5f39af3e-75c4-4392-baaf-574acbbf9db9")
+    expect(new URL(subject.statusUrls[0]).searchParams.get("workspaceId")).toBe("5f39af3e-75c4-4392-baaf-574acbbf9db9")
   })
 
   test("a draft in a filesystem directory never resolves a workspace record", async () => {

@@ -619,7 +619,7 @@ function render(definition: SqlDefinition) {
   let index = 0
   const sql = definition.sql.replaceAll("?", () => {
     if (index >= definition.values.length) throw new Error("Release provisioning statement is missing a value")
-    return sqliteLiteral(definition.values[index++]!)
+    return sqliteLiteral(definition.values[index++])
   })
   if (index !== definition.values.length) throw new Error("Release provisioning statement has unused values")
   return `${sql};`
@@ -647,7 +647,7 @@ export function lockedDeploymentReleaseActivationStatement(
   now = new Date(),
   transition?: DeploymentReleaseTransition,
 ) {
-  return render(definitions(identity, now, transition)[2]!)
+  return render(definitions(identity, now, transition)[2])
 }
 
 /**
@@ -729,7 +729,7 @@ export async function activateLockedDeploymentReleaseCandidate(
   now = new Date(),
   transition?: DeploymentReleaseTransition,
 ) {
-  const statement = definitions(identity, now, transition)[2]!
+  const statement = definitions(identity, now, transition)[2]
   const result = await database
     .prepare(statement.sql)
     .bind(...statement.values)

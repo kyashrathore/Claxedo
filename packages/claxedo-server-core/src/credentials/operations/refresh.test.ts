@@ -94,12 +94,12 @@ describe("refreshCredentialSecret", () => {
     await refreshCredentialSecret(credential(), codexSecret(), { fetch: stub, now: () => NOW })
 
     expect(calls).toHaveLength(1)
-    expect(calls[0]!.url).toBe("https://auth.openai.com/oauth/token")
-    expect(calls[0]!.init.method).toBe("POST")
-    expect((calls[0]!.init.headers as Record<string, string>)["Content-Type"]).toBe(
+    expect(calls[0].url).toBe("https://auth.openai.com/oauth/token")
+    expect(calls[0].init.method).toBe("POST")
+    expect((calls[0].init.headers as Record<string, string>)["Content-Type"]).toBe(
       "application/x-www-form-urlencoded",
     )
-    const body = new URLSearchParams(String(calls[0]!.init.body))
+    const body = new URLSearchParams(String(calls[0].init.body))
     expect(body.get("grant_type")).toBe("refresh_token")
     expect(body.get("refresh_token")).toBe("refresh_old")
     expect(body.get("client_id")).toBe("app_EMoamEEZ73f0CkXaXp7hrann")

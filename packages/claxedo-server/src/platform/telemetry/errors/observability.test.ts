@@ -216,7 +216,7 @@ describe("report seam", () => {
     setErrorReporterSink(sink)
     reportPaymentError(new Error("webhook signature failed"), { tags: { route: "polar_webhook" } })
     expect(sink).toHaveBeenCalledTimes(1)
-    expect(sink.mock.calls[0]![1]).toEqual({
+    expect(sink.mock.calls[0][1]).toEqual({
       tags: { route: "polar_webhook", page_class: "payment" },
       extra: {},
     })
@@ -267,7 +267,7 @@ describe("initNodeObservability", () => {
   test("I-5: the exception payload is exactly the explicit properties — nothing is auto-attached", () => {
     initNodeObservability({ ...ON, CLAXEDO_POSTHOG_KEY: "phc_server" })
     reportError(new Error("boom"), { tags: { source: "server_route" }, extra: { path: "/x" } })
-    const properties = postHogMock.captureException.mock.calls[0]![2] as Record<string, unknown>
+    const properties = postHogMock.captureException.mock.calls[0][2] as Record<string, unknown>
     // Exact key set: base tags + caller tags/extra. If an SDK upgrade or a
     // future integration ever starts attaching request context (headers,
     // cookies, bodies — where live credentials ride), this fails loudly.

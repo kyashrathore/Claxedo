@@ -93,7 +93,7 @@ describe("local managed document file semantics", () => {
     expect(error).toMatchObject({ code: "document_not_text", currentVersion: expect.any(String) })
 
     const [latest] = await value.workspace.listSnapshots(handle)
-    await value.workspace.restore(handle, latest!.id, {
+    await value.workspace.restore(handle, latest.id, {
       expectedVersion: error.currentVersion,
       actor,
     })
@@ -194,7 +194,7 @@ describe("local managed document file semantics", () => {
     await fs.unlink(handle.canonicalPath)
 
     await expect(value.workspace.read(handle)).rejects.toBeInstanceOf(DocumentNotFoundError)
-    const restored = await value.workspace.restore(handle, latest!.id, { expectedVersion: null, actor })
+    const restored = await value.workspace.restore(handle, latest.id, { expectedVersion: null, actor })
     expect(restored.markdown).toBe("# Initial\n")
     expect((await value.workspace.read(handle)).markdown).toBe("# Initial\n")
   })
@@ -587,7 +587,7 @@ describe("local managed history", () => {
         }),
       )
     }
-    await history.pin("document_metadata", created[0]!.id, "work-source:metadata-concurrency")
+    await history.pin("document_metadata", created[0].id, "work-source:metadata-concurrency")
 
     let active = 0
     let maximum = 0
@@ -613,7 +613,7 @@ describe("local managed history", () => {
     expect(snapshots.map((snapshot) => snapshot.createdAt)).toEqual(
       [...snapshots].map((snapshot) => snapshot.createdAt).sort((left, right) => right - left),
     )
-    expect(snapshots.find((snapshot) => snapshot.id === created[0]!.id)?.pins).toEqual([
+    expect(snapshots.find((snapshot) => snapshot.id === created[0].id)?.pins).toEqual([
       "work-source:metadata-concurrency",
     ])
   })
@@ -623,27 +623,27 @@ describe("local managed history", () => {
     const handle = await value.workspace.resolve(value.entry)
     const [snapshot] = await value.workspace.listSnapshots(handle)
     for (let index = 0; index < 200; index++) {
-      await value.workspace.pinSnapshot(handle, snapshot!.id, `lease:${Date.now() + 60_000 + index}:work-source`)
+      await value.workspace.pinSnapshot(handle, snapshot.id, `lease:${Date.now() + 60_000 + index}:work-source`)
     }
     expect(
-      (await value.workspace.listSnapshots(handle))[0]!.pins.filter((pin) => pin.startsWith("lease:")),
+      (await value.workspace.listSnapshots(handle))[0].pins.filter((pin) => pin.startsWith("lease:")),
     ).toHaveLength(1)
     for (let index = 0; index < 127; index++)
-      await value.workspace.pinSnapshot(handle, snapshot!.id, `permanent:${index}`)
-    await expect(value.workspace.pinSnapshot(handle, snapshot!.id, "permanent:overflow")).rejects.toThrow("pin limit")
-    expect((await value.workspace.listSnapshots(handle))[0]!.pins).toHaveLength(128)
+      await value.workspace.pinSnapshot(handle, snapshot.id, `permanent:${index}`)
+    await expect(value.workspace.pinSnapshot(handle, snapshot.id, "permanent:overflow")).rejects.toThrow("pin limit")
+    expect((await value.workspace.listSnapshots(handle))[0].pins).toHaveLength(128)
   })
 
   test("snapshots are immutable and content-hash verified", async () => {
     const value = await fixture()
     const handle = await value.workspace.resolve(value.entry)
     const [snapshot] = await value.workspace.listSnapshots(handle)
-    const snapshotPath = path.join(value.dataRoot, "document-history", handle.documentId, `${snapshot!.id}.md`)
+    const snapshotPath = path.join(value.dataRoot, "document-history", handle.documentId, `${snapshot.id}.md`)
 
     await expect(fs.writeFile(snapshotPath, "mutated", { flag: "wx" })).rejects.toMatchObject({ code: "EEXIST" })
     await fs.chmod(snapshotPath, 0o600)
     await fs.writeFile(snapshotPath, "mutated")
-    await expect(value.workspace.readSnapshot(handle, snapshot!.id)).rejects.toMatchObject({
+    await expect(value.workspace.readSnapshot(handle, snapshot.id)).rejects.toMatchObject({
       code: "document_snapshot_corrupt",
     })
   })
@@ -652,7 +652,7 @@ describe("local managed history", () => {
     const value = await fixture({ history: { maxSnapshots: 2, maxAgeMs: Number.POSITIVE_INFINITY } })
     const handle = await value.workspace.resolve(value.entry)
     const [initial] = await value.workspace.listSnapshots(handle)
-    await value.workspace.pinSnapshot(handle, initial!.id, "work-source:1")
+    await value.workspace.pinSnapshot(handle, initial.id, "work-source:1")
 
     const first = await value.workspace.read(handle)
     const second = await value.workspace.write(handle, { markdown: "second", expectedVersion: first.version, actor })
@@ -660,9 +660,9 @@ describe("local managed history", () => {
 
     const retained = await value.workspace.listSnapshots(handle)
     expect(retained).toHaveLength(3)
-    expect(retained.find((snapshot) => snapshot.id === initial!.id)?.pins).toEqual(["work-source:1"])
+    expect(retained.find((snapshot) => snapshot.id === initial.id)?.pins).toEqual(["work-source:1"])
 
-    await value.workspace.unpinSnapshot(handle, initial!.id, "work-source:1")
+    await value.workspace.unpinSnapshot(handle, initial.id, "work-source:1")
     await value.workspace.collectSnapshots(handle)
     expect(await value.workspace.listSnapshots(handle)).toHaveLength(2)
   })

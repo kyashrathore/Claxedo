@@ -80,7 +80,7 @@ function benchmarkFacts() {
   const rows: TurnUsageRevision[] = []
   for (let day = 0; day < 90; day += 1) {
     for (let turn = 0; turn < 120; turn += 1) {
-      const harness = HARNESSES[turn % HARNESSES.length]!
+      const harness = HARNESSES[turn % HARNESSES.length]
       rows.push(fact({
         harness,
         hostId: `host-${turn % 3}`,
@@ -182,7 +182,7 @@ export async function runUsageMeteringSmoke() {
   invariant(total.totals.turnCount === projection.totals.turnCount + 1, "Total double-counted a Claxedo history event")
   invariant(new Set(exact.map((row) => row.hostId)).size === 2, "cross-machine fixture lost a host")
 
-  await assertOfflineConvergence(exact[0]!)
+  await assertOfflineConvergence(exact[0])
   assertPrivacy(exact)
 
   const rows = benchmarkFacts()

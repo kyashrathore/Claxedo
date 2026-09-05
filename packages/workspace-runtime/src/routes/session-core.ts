@@ -678,7 +678,7 @@ async function compensateRegistration(input: {
     await input.adapter.deleteSession(await requireExecutionBinding(input.opts, input.c, input.directory, input.sessionId, input.adapter))
     await input.opts.afterDeleteSession?.(input.c, input.directory, input.sessionId)
   } catch (error) {
-    throw new AggregateError([error], "Session compensation could not delete runtime state")
+    throw new AggregateError([error], "Session compensation could not delete runtime state", { cause: error })
   }
   const completed = await policy.completeRegistrationCompensation({ ...registration, reason: input.reason })
   if (!completed.allowed) throw new Error(`Session compensation completion was denied: ${completed.code}`)
@@ -825,7 +825,7 @@ async function rollbackCreatedSession(
   } catch (cleanupError) {
     throw new AggregateError(
       [cause, cleanupError],
-      "Session creation failed and runtime rollback also failed",
+      "Session creation failed and runtime rollback also failed", { cause: cleanupError },
     )
   }
 }

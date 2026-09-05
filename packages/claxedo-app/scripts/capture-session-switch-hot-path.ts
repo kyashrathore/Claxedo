@@ -92,7 +92,7 @@ try {
   const firstRows = await waitForSessionRows(page)
   if (firstRows.length < 2) throw new Error(`Need at least two visible session rows, found ${firstRows.length}`)
 
-  const initialActive = firstRows.find((row) => row.active) ?? firstRows[0]!
+  const initialActive = firstRows.find((row) => row.active) ?? firstRows[0]
   if (
     !initialActive.active ||
     !await hasVisibleSessionContent(page, initialActive.sessionId)

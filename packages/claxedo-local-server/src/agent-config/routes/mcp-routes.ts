@@ -55,7 +55,7 @@ export function agentConfigMcpRoutes(options: AgentConfigRouteOptions = {}) {
 
       const config = await loadUserConfig()
       config.mcp[name] = {
-        type: type as "stdio" | "remote",
+        type: type,
         ...(type === "stdio"
           ? {
               command: command as string,
@@ -72,7 +72,7 @@ export function agentConfigMcpRoutes(options: AgentConfigRouteOptions = {}) {
       fanOutConfig().catch(() => {})
 
       if (type === "remote" && typeof url === "string") {
-        ensureHostForUrl(url as string, `mcp:${name}`)
+        ensureHostForUrl(url, `mcp:${name}`)
       }
 
       return c.json({ ok: true, name })

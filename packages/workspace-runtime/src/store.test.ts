@@ -1316,7 +1316,7 @@ describe("RuntimeStore", () => {
       )
       .all("s1", "streaming-part") as Array<{ payload_json: string }>
     assert.equal(snapshots.length, 1)
-    assert.equal(JSON.parse(snapshots[0]!.payload_json).properties.part.text, "latest")
+    assert.equal(JSON.parse(snapshots[0].payload_json).properties.part.text, "latest")
     store.close()
 
     const reopened = new RuntimeStore(root)

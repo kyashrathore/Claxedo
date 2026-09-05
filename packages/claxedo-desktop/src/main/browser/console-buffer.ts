@@ -123,7 +123,7 @@ export function sanitizeConsoleString(input: string): string {
         }
         // Preserve non-tag supplementary planes verbatim.
         out += input[i]
-        out += input[i + 1]!
+        out += input[i + 1]
         i++
         continue
       }

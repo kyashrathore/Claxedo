@@ -5,7 +5,7 @@ export async function mapBounded<T, R>(values: readonly T[], transform: (value: 
     Array.from({ length: Math.min(8, values.length) }, async () => {
       while (next < values.length) {
         const index = next++
-        result[index] = await transform(values[index]!)
+        result[index] = await transform(values[index])
       }
     }),
   )

@@ -147,7 +147,7 @@ export function projectLatestSurfaceMessages<
 
   const candidates: SurfaceTextCandidate[] = []
   for (let messageIndex = messages.length - 1; messageIndex >= 0; messageIndex--) {
-    const message = messages[messageIndex]!
+    const message = messages[messageIndex]
     for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex--) {
       const candidate = surfaceTextCandidate(message.parts[partIndex], messageIndex, partIndex)
       if (candidate) candidates.push(candidate)
@@ -156,7 +156,7 @@ export function projectLatestSurfaceMessages<
 
   const selected = new Set(
     selectLatestSurfaceTextCandidateIndexes(candidates)
-      .map((index) => candidates[index]!)
+      .map((index) => candidates[index])
       .map((candidate) => `${candidate.messageIndex}:${candidate.partIndex}`),
   )
 

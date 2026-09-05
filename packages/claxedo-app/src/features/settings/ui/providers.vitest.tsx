@@ -169,7 +169,7 @@ function renderedProviderIds() {
 }
 
 function select(testId: string) {
-  return screen.getByTestId(testId) as HTMLSelectElement
+  return screen.getByTestId(testId)
 }
 
 function choose(testId: string, value: string) {

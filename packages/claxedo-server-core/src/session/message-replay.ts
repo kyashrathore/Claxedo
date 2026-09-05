@@ -412,7 +412,7 @@ export function readSessionMessagePage(sessionId: string, input: AgentMessagePag
             .all(
               sessionId,
               ...selectedCandidateIndexes.flatMap((index) => {
-                const candidate = candidates[index]!
+                const candidate = candidates[index]
                 return [candidate.message_ordinal, candidate.part_ordinal]
               }),
             ) as Array<{ message_ordinal: number; part_ordinal: number; part_json: string }>
@@ -588,9 +588,9 @@ export function subscribeMessageReplay(bus: {
     const props = rec(properties)
     const sessionId =
       type === "message.updated"
-        ? txt((rec(props?.info) as Record<string, unknown> | undefined)?.sessionID)
+        ? txt((rec(props?.info))?.sessionID)
         : type === "message.part.updated"
-          ? (txt(props?.sessionID) ?? txt((rec(props?.part) as Record<string, unknown> | undefined)?.sessionID))
+          ? (txt(props?.sessionID) ?? txt((rec(props?.part))?.sessionID))
           : txt(props?.sessionID)
     if (!sessionId) return
 

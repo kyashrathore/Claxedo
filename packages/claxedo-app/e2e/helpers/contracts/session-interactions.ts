@@ -340,7 +340,7 @@ export class QuestionRejectContractError extends Error {
  */
 export function parseQuestionRejectRequest(rawBody: unknown, url: string): void {
   if (rawBody === undefined || rawBody === null) return
-  if (typeof rawBody === "object" && !Array.isArray(rawBody) && Object.keys(rawBody as object).length === 0) return
+  if (typeof rawBody === "object" && !Array.isArray(rawBody) && Object.keys(rawBody).length === 0) return
   throw new QuestionRejectContractError(url, [
     `this route reads no body at all (nothing between :871 and :893 calls c.req.json()), so `
       + `${JSON.stringify(rawBody)} is discarded in full. If the caller needs to convey something `

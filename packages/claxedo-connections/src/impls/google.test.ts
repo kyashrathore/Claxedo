@@ -40,15 +40,15 @@ describe("google integration (vendored arctic)", () => {
     const { impl } = googleIntegration({ ...OPTS, fetchImpl })
     const tokens = await impl.callback!("the-code", "the-verifier")
     expect(tokens).toEqual({ accessToken: "at", refreshToken: "rt", expiresAt: 1_000_000 + 3600 * 1000 })
-    expect(seen[0]!.url).toBe("https://oauth2.googleapis.com/token")
-    const body = new URLSearchParams(seen[0]!.body)
+    expect(seen[0].url).toBe("https://oauth2.googleapis.com/token")
+    const body = new URLSearchParams(seen[0].body)
     expect(body.get("grant_type")).toBe("authorization_code")
     expect(body.get("code")).toBe("the-code")
     expect(body.get("code_verifier")).toBe("the-verifier")
     expect(body.get("redirect_uri")).toBe(OPTS.redirectUri)
-    expect(seen[0]!.auth).toBe(`Basic ${Buffer.from("cid:csecret").toString("base64")}`)
+    expect(seen[0].auth).toBe(`Basic ${Buffer.from("cid:csecret").toString("base64")}`)
     // The OAuth exchange is bounded like every other provider call.
-    expect(seen[0]!.timed).toBe(true)
+    expect(seen[0].timed).toBe(true)
   })
 
   test("refresh golden request shape; 4xx maps to OAuth2RequestError", async () => {

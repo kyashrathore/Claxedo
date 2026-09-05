@@ -2030,7 +2030,8 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     const url = new URL(request.url())
     const workspaceScoped = url.pathname.startsWith("/workspaces/") ||
       url.searchParams.has("directory") ||
-      request.headers()["x-claxedo-directory"]?.startsWith("workspace:") === true
+      
+      request.headers()["x-claxedo-directory"]?.startsWith("workspace:")
     const cursor = workspaceStreamCursor(route, busWrEvents)
     const batch = await busWrEvents.drain(sseIdleTimeoutMs, cursor)
     const now = Date.now()
@@ -2321,7 +2322,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
     },
   }
   const modeTableFor = (harness: string) => {
-    if (harness === "opencode") return MODES_BY_HARNESS.opencode!
+    if (harness === "opencode") return MODES_BY_HARNESS.opencode
     // Each ACP connection has its own table: an unknown one surfaces as a
     // missing fixture rather than borrowing another agent's modes.
     if (harness.startsWith("acp:")) {
@@ -2329,7 +2330,7 @@ export async function installMockRuntime(page: Page, options: MockRuntimeOptions
       if (!table) throw new Error(`mock-runtime: no permission modes recorded for ${harness}`)
       return table
     }
-    return MODES_BY_HARNESS[harness.replace(/-sdk|-app-server$/, "")] ?? MODES_BY_HARNESS.opencode!
+    return MODES_BY_HARNESS[harness.replace(/-sdk|-app-server$/, "")] ?? MODES_BY_HARNESS.opencode
   }
   const modeState = (harness: string) => {
     const table = modeTableFor(harness)

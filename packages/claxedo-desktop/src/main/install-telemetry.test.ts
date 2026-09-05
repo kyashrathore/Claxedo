@@ -73,7 +73,7 @@ describe("reportInstall", () => {
 
     await reportInstall(client, input)
     expect(captured).toHaveLength(1)
-    expect(captured[0]!.event).toBe("app_installed")
+    expect(captured[0].event).toBe("app_installed")
 
     await reportInstall(client, input)
     await reportInstall(client, input)
@@ -85,7 +85,7 @@ describe("reportInstall", () => {
     const { client, captured } = fakeClient()
     await reportInstall(client, { userDataDir: dir, appVersion: "0.0.64", channel: "prod" })
     const marker = readFileSync(join(dir, ".install-id-v1"), "utf8")
-    expect(captured[0]!.distinctId).toBe(marker)
+    expect(captured[0].distinctId).toBe(marker)
   })
 
   /**
@@ -97,7 +97,7 @@ describe("reportInstall", () => {
     const dir = scratch()
     const { client, captured } = fakeClient()
     await reportInstall(client, { userDataDir: dir, appVersion: "0.0.64", channel: "beta" })
-    expect(Object.keys(captured[0]!.properties).sort()).toEqual([
+    expect(Object.keys(captured[0].properties).sort()).toEqual([
       "app_version",
       "arch",
       "channel",
@@ -107,9 +107,9 @@ describe("reportInstall", () => {
       "os_version",
       "unit",
     ])
-    expect(captured[0]!.properties.channel).toBe("beta")
-    expect(captured[0]!.properties.app_version).toBe("0.0.64")
-    expect(captured[0]!.properties.deployment_mode).toBe("desktop-local")
+    expect(captured[0].properties.channel).toBe("beta")
+    expect(captured[0].properties.app_version).toBe("0.0.64")
+    expect(captured[0].properties.deployment_mode).toBe("desktop-local")
   })
 
   test("no country or location is ever sent from the client", async () => {
@@ -118,7 +118,7 @@ describe("reportInstall", () => {
     const dir = scratch()
     const { client, captured } = fakeClient()
     await reportInstall(client, { userDataDir: dir, appVersion: "0.0.64", channel: "prod" })
-    const keys = Object.keys(captured[0]!.properties).join(" ")
+    const keys = Object.keys(captured[0].properties).join(" ")
     expect(keys).not.toMatch(/country|region|city|locale|timezone|tz|geo|ip/i)
   })
 

@@ -591,9 +591,9 @@ describe("AcpHarnessAdapter active turn cleanup", () => {
 
     expect(descriptors.map((descriptor) => [descriptor.role, descriptor.pid, descriptor.parentOwnerId])).toEqual([
       ["harness", 456, undefined],
-      ["mcp", undefined, descriptors[0]!.ownerId],
+      ["mcp", undefined, descriptors[0].ownerId],
       ["probe", 456, undefined],
-      ["mcp", undefined, descriptors[2]!.ownerId],
+      ["mcp", undefined, descriptors[2].ownerId],
     ])
     expect(JSON.stringify(descriptors)).not.toContain(sentinel)
     harness.dispose()

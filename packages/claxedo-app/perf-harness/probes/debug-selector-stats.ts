@@ -44,7 +44,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -89,7 +89,7 @@ const timings = await page.evaluate((recalcs) => {
   document.documentElement.style.removeProperty("--claxedo-selstat-probe")
   void getComputedStyle(document.body).color
   values.sort((a, b) => a - b)
-  return { min: values[0]!, median: values[Math.floor(values.length / 2)]!, samples: values.length }
+  return { min: values[0], median: values[Math.floor(values.length / 2)], samples: values.length }
 }, RECALCS)
 
 await client.send("Tracing.end")
@@ -205,7 +205,7 @@ const rightmostShape = (selector: string): string => {
   let bracket = 0
   let cut = 0
   for (let index = 0; index < sel.length; index++) {
-    const ch = sel[index]!
+    const ch = sel[index]
     if (ch === "(") depth++
     else if (ch === ")") depth--
     else if (ch === "[") bracket++
@@ -215,14 +215,14 @@ const rightmostShape = (selector: string): string => {
   const rc = sel.slice(cut)
   const complex = cut > 0
   const label = (base: string) => `${base}${complex ? "   (with combinator)" : ""}`
-  if (/^\*/.test(rc)) return label("UNIVERSAL *")
+  if (rc.startsWith('*')) return label("UNIVERSAL *")
   if (/^:is\(|^:where\(/.test(rc)) return label("rightmost :is()/:where()")
-  if (/^:has\(/.test(rc)) return label("rightmost :has()")
-  if (/^:not\(/.test(rc)) return label("rightmost :not()")
-  if (/^:/.test(rc)) return label("rightmost bare pseudo")
-  if (/^#/.test(rc)) return label("#id")
-  if (/^\./.test(rc)) return label(".class")
-  if (/^\[/.test(rc)) {
+  if (rc.startsWith(':has(')) return label("rightmost :has()")
+  if (rc.startsWith(':not(')) return label("rightmost :not()")
+  if (rc.startsWith(':')) return label("rightmost bare pseudo")
+  if (rc.startsWith('#')) return label("#id")
+  if (rc.startsWith('.')) return label(".class")
+  if (rc.startsWith('[')) {
     const name = /^\[([-\w]+)/.exec(rc)?.[1] ?? "?"
     return label(`[${name}]`)
   }

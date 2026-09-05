@@ -117,7 +117,7 @@ async function bundleWorker() {
     target: "es2022",
     write: false,
   })
-  return bundled.outputFiles[0]!.text
+  return bundled.outputFiles[0].text
 }
 
 type Held = {
@@ -304,7 +304,7 @@ async function measureStep(miniflare: Miniflare, target: number, held: Held[], o
 function percentile(sorted: number[], fraction: number) {
   if (sorted.length === 0) return Number.NaN
   const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(fraction * sorted.length) - 1))
-  return sorted[index]!
+  return sorted[index]
 }
 
 async function main() {

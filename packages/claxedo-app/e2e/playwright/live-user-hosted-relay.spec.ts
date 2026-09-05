@@ -1196,7 +1196,7 @@ test.describe("live user-hosted relay @live", () => {
     // diagnostic a failure needs, in one line.
     const growth = samples
       .map((sample) => ({ at: sample.at - turn.at, length: sample.text.length }))
-      .filter((sample, index, all) => index === 0 || sample.length !== all[index - 1]!.length)
+      .filter((sample, index, all) => index === 0 || sample.length !== all[index - 1].length)
       .map((sample) => `+${sample.at}ms:${sample.length}`)
     const final = samples.at(-1)
     expect(
@@ -1233,7 +1233,7 @@ test.describe("live user-hosted relay @live", () => {
     // and one of those pairs races the host's prompt; a fetch that settled
     // before a single character was on screen delivered none of them.
     const partialSamples = samples.filter((sample) => sample.text.length > 0 && !sample.text.includes(marker))
-    const firstPartialAt = partialSamples[0]!.at
+    const firstPartialAt = partialSamples[0].at
     const lastPartialAt = partialSamples.at(-1)!.at
     const refetches = relayCalls.filter((call) =>
       call.url.startsWith("GET ") && call.url.includes(`/session/${encodeURIComponent(sessionId)}/message`))

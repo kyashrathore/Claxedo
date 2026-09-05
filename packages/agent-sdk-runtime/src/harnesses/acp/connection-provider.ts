@@ -148,5 +148,5 @@ function materializedBindings(
   bindings: Readonly<Record<string, string>> | undefined,
   secrets: Readonly<Record<string, string>>,
 ) {
-  return Object.fromEntries(Object.entries(bindings ?? {}).map(([target, name]) => [target, secrets[name]!]))
+  return Object.fromEntries(Object.entries(bindings ?? {}).map(([target, name]) => [target, secrets[name]]))
 }

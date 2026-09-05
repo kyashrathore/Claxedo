@@ -607,7 +607,7 @@ export function SessionEnvironmentCardMount(props: {
     return {
       ...workspaceVcsQuery({
         baseUrl: sdk.url,
-        directory: directory()!,
+        directory: directory(),
         client: sdk.client,
         workspaceId: workspace?.workspaceId,
         workspace,
@@ -654,7 +654,7 @@ export function SessionEnvironmentCardMount(props: {
     // freshness contract this view already promises while continuously shown.
     staleTime: PROCESS_POLL_MS,
     refetchInterval: processesActive() ? PROCESS_POLL_MS : false,
-    queryFn: () => processClientFor(directory()!).list(),
+    queryFn: () => processClientFor(directory()).list(),
   }))
   const processes = createMemo<EnvironmentProcesses | undefined>(() => {
     const data = processesQuery.data

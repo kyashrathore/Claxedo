@@ -72,8 +72,8 @@ function openDatabase(file: string) {
     const drizzle = (require("drizzle-orm/bun-sqlite") as BunDrizzleModule).drizzle
     const sqlite = new bun.Database(file)
     return {
-      sqlite: sqlite as CompatibleSqlite,
-      db: drizzle({ client: sqlite }) as unknown as ClaxedoDB.Client,
+      sqlite: sqlite,
+      db: drizzle({ client: sqlite }) as ClaxedoDB.Client,
     }
   }
 
@@ -207,7 +207,7 @@ export namespace ClaxedoDB {
   // (connections, channels, documents), into the closure of every module that
   // opens the database. The barrel stays where the product tables are, as the
   // migration generator's input; this module knows nothing about them.
-  export type Client = BetterSQLite3Database<Record<string, never>>
+  export type Client = BetterSQLite3Database
 
   const state = {
     sqlite: undefined as CompatibleSqlite | undefined,

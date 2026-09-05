@@ -57,7 +57,7 @@ const comparePixels = async (a: string, b: string) =>
       for (let index = 0; index < first.length; index += 4) {
         let delta = 0
         for (let channel = 0; channel < 4; channel++) {
-          delta = Math.max(delta, Math.abs(first[index + channel]! - second[index + channel]!))
+          delta = Math.max(delta, Math.abs(first[index + channel] - second[index + channel]))
         }
         if (delta === 0) continue
         differing += 1

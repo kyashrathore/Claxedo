@@ -241,7 +241,7 @@ export function mergeRailRequestRead<P extends { id: string; sessionID: string }
     const questionsChanged = nextQuestions !== undefined && !sameRequestIds(previous?.questions, nextQuestions)
     if (!permissionsChanged && !questionsChanged) continue
     const value = {
-      ...(previous ?? {}),
+      ...previous,
       ...(nextPermissions !== undefined ? { permissions: nextPermissions } : {}),
       ...(nextQuestions !== undefined ? { questions: nextQuestions } : {}),
     }

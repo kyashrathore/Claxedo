@@ -45,7 +45,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -63,9 +63,9 @@ const measured = await page.evaluate((samples) => {
   void getComputedStyle(document.body).color
   values.sort((a, b) => a - b)
   return {
-    min: values[0]!,
-    p25: values[Math.floor(values.length * 0.25)]!,
-    median: values[Math.floor(values.length / 2)]!,
+    min: values[0],
+    p25: values[Math.floor(values.length * 0.25)],
+    median: values[Math.floor(values.length / 2)],
     elements: document.querySelectorAll("*").length,
     dataSlot: document.querySelectorAll("[data-slot]").length,
     dataComponent: document.querySelectorAll("[data-component]").length,
@@ -87,7 +87,7 @@ const parity = await page.evaluate((selftest) => {
       if (grouped) walk(grouped)
       const selector = (rule as CSSStyleRule).selectorText
       if (!selector) continue
-      for (const match of selector.matchAll(/\.(ui-[\w-]+)/g)) tokens.add(match[1]!)
+      for (const match of selector.matchAll(/\.(ui-[\w-]+)/g)) tokens.add(match[1])
     }
   }
   for (const sheet of Array.from(document.styleSheets)) {

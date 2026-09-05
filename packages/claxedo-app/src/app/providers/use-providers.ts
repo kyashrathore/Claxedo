@@ -45,7 +45,7 @@ function providerFromUnknown(input: unknown): Provider | undefined {
     ...provider,
     id: provider.id,
     models: provider.models && typeof provider.models === "object" && !Array.isArray(provider.models)
-      ? provider.models as Provider["models"]
+      ? provider.models
       : {},
   } as Provider
 }

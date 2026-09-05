@@ -259,7 +259,7 @@ test("a quiescent daemon exits after its bounded idle grace", async () => {
     expect(child.exitCode).toBe(0)
     expect(fs.existsSync(discoveryPath)).toBe(false)
   } catch (error) {
-    throw new Error(`${String(error)}\n${stderr.slice(-4000)}`)
+    throw new Error(`${String(error)}\n${stderr.slice(-4000)}`, { cause: error })
   } finally {
     if (child.exitCode === null && child.signalCode === null) child.kill()
     fs.rmSync(root, { recursive: true, force: true })

@@ -63,8 +63,8 @@ const EXPECTED_SESSION_CORE_ROUTES = [
 describe("Claxedo client-presentation session route inventory", () => {
   test("keeps the externally consumed route and method set explicit", async () => {
     const source = await Bun.file(new URL("./session-core.ts", import.meta.url)).text()
-    const routes = [...source.matchAll(/\.(get|post|patch|put|delete)\(\"([^\"]+)\"/g)]
-      .map((match) => `${match[1]!.toUpperCase()} ${match[2]}`)
+    const routes = [...source.matchAll(/\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+      .map((match) => `${match[1].toUpperCase()} ${match[2]}`)
       .sort()
 
     expect(routes).toEqual(EXPECTED_SESSION_CORE_ROUTES)
@@ -72,8 +72,8 @@ describe("Claxedo client-presentation session route inventory", () => {
 
   test("assigns every route an explicit session-policy or workspace decision", async () => {
     const source = await Bun.file(new URL("./session-core.ts", import.meta.url)).text()
-    const routes = [...source.matchAll(/\.(get|post|patch|put|delete)\(\"([^\"]+)\"/g)]
-      .map((match) => `${match[1]!.toUpperCase()} ${match[2]}`)
+    const routes = [...source.matchAll(/\.(get|post|patch|put|delete)\("([^"]+)"/g)]
+      .map((match) => `${match[1].toUpperCase()} ${match[2]}`)
       .sort()
 
     expect(Object.keys(SESSION_CORE_ROUTE_ACCESS).sort()).toEqual(routes)
@@ -90,18 +90,18 @@ describe("Claxedo client-presentation session route inventory", () => {
 
   test("requires workspace write authority for every mutating route", () => {
     const mutating = Object.entries(SESSION_CORE_ROUTE_ACCESS)
-      .filter(([route]) => MUTATING_METHODS.has(route.split(" ")[0]!))
+      .filter(([route]) => MUTATING_METHODS.has(route.split(" ")[0]))
 
     // Guards the guard: if the route table or its key shape ever changes, an
     // empty match must not silently pass this assertion.
     expect(mutating.length).toBe(
-      EXPECTED_SESSION_CORE_ROUTES.filter((route) => MUTATING_METHODS.has(route.split(" ")[0]!)).length,
+      EXPECTED_SESSION_CORE_ROUTES.filter((route) => MUTATING_METHODS.has(route.split(" ")[0])).length,
     )
     expect(mutating.length).toBeGreaterThan(0)
 
     const notWriteGated = mutating.flatMap(([route, decision]) => {
       if (MUTATING_ROUTES_CLASSIFIED_AS_READS.includes(route)) return []
-      const method = route.split(" ")[0]!
+      const method = route.split(" ")[0]
       if (decision.kind === "workspace") return [route]
       return sessionAccessRequiresWrite({ operation: decision.operation, method }) ? [] : [route]
     })

@@ -253,7 +253,7 @@ function scanKeybindTokens(text: string): string[] {
   const re = /keybind:\s*(?:"([^"]+)"|'([^']+)'|`([^`]+)`)/g
   const tokens: string[] = []
   let m: RegExpExecArray | null
-  while ((m = re.exec(text)) !== null) tokens.push(m[1] ?? m[2] ?? m[3]!)
+  while ((m = re.exec(text)) !== null) tokens.push(m[1] ?? m[2] ?? m[3])
   return tokens
 }
 

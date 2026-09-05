@@ -148,15 +148,15 @@ describe("hosted managed documents and session write-back", () => {
     const handle = await value.workspace.resolve(value.entry)
     const [snapshot] = await value.workspace.listSnapshots(handle)
     for (let index = 0; index < 200; index++) {
-      await value.workspace.pinSnapshot(handle, snapshot!.id, `lease:${Date.now() + 60_000 + index}:work-source`)
+      await value.workspace.pinSnapshot(handle, snapshot.id, `lease:${Date.now() + 60_000 + index}:work-source`)
     }
     expect(
-      (await value.workspace.listSnapshots(handle))[0]!.pins.filter((pin) => pin.startsWith("lease:")),
+      (await value.workspace.listSnapshots(handle))[0].pins.filter((pin) => pin.startsWith("lease:")),
     ).toHaveLength(1)
     for (let index = 0; index < 127; index++)
-      await value.workspace.pinSnapshot(handle, snapshot!.id, `permanent:${index}`)
-    await expect(value.workspace.pinSnapshot(handle, snapshot!.id, "permanent:overflow")).rejects.toThrow("pin limit")
-    expect((await value.workspace.listSnapshots(handle))[0]!.pins).toHaveLength(128)
+      await value.workspace.pinSnapshot(handle, snapshot.id, `permanent:${index}`)
+    await expect(value.workspace.pinSnapshot(handle, snapshot.id, "permanent:overflow")).rejects.toThrow("pin limit")
+    expect((await value.workspace.listSnapshots(handle))[0].pins).toHaveLength(128)
   })
 
   const roots: string[] = []
@@ -298,7 +298,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     await value.workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await value.workspace.resolve(value.entry)
-    const snapshot = (await value.workspace.listSnapshots(handle))[0]!
+    const snapshot = (await value.workspace.listSnapshots(handle))[0]
     const key = [...value.storage.objects.keys()].find(
       (candidate) => candidate.startsWith("document-history/") && candidate.endsWith(`${snapshot.id}.json`),
     )!
@@ -335,7 +335,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     await value.workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await value.workspace.resolve(value.entry)
-    const snapshot = (await value.workspace.listSnapshots(handle))[0]!
+    const snapshot = (await value.workspace.listSnapshots(handle))[0]
     const key = [...value.storage.objects.keys()].find(
       (candidate) => candidate.startsWith("document-history/") && candidate.endsWith(`${snapshot.id}.json`),
     )!
@@ -572,7 +572,7 @@ describe("hosted managed documents and session write-back", () => {
     const canonical = await workspace.read(handle)
     const snapshots = await workspace.listSnapshots(handle)
     expect(snapshots).toHaveLength(1)
-    expect((await workspace.readSnapshot(handle, snapshots[0]!.id)).markdown).toBe(canonical.markdown)
+    expect((await workspace.readSnapshot(handle, snapshots[0].id)).markdown).toBe(canonical.markdown)
   })
 
   test("a sequential duplicate create cannot publish or collect losing history", async () => {
@@ -587,7 +587,7 @@ describe("hosted managed documents and session write-back", () => {
     const handle = await value.workspace.resolve(value.entry)
     const snapshots = await value.workspace.listSnapshots(handle)
     expect(snapshots).toHaveLength(1)
-    expect((await value.workspace.readSnapshot(handle, snapshots[0]!.id)).markdown).toBe("winner")
+    expect((await value.workspace.readSnapshot(handle, snapshots[0].id)).markdown).toBe("winner")
   })
 
   test("snapshot collection cannot delete a snapshot pinned during its GC claim race", async () => {
@@ -639,7 +639,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     const created = await workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await workspace.resolve(value.entry)
-    const first = (await workspace.listSnapshots(handle))[0]!
+    const first = (await workspace.listSnapshots(handle))[0]
     await workspace.pinSnapshot(handle, first.id, "lease:1500:work-source")
     clock = 2_000
     await workspace.write(handle, {
@@ -667,7 +667,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     const created = await workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await workspace.resolve(value.entry)
-    const first = (await workspace.listSnapshots(handle))[0]!
+    const first = (await workspace.listSnapshots(handle))[0]
     await workspace.pinSnapshot(handle, first.id, "lease:1500:work-source")
     clock = 2_000
     await workspace.write(handle, {
@@ -730,7 +730,7 @@ describe("hosted managed documents and session write-back", () => {
     const value = fixture()
     const created = await workspace.create(value.entry, { markdown: "one", actor: { type: "user", id: "user" } })
     const handle = await workspace.resolve(value.entry)
-    const first = (await workspace.listSnapshots(handle))[0]!
+    const first = (await workspace.listSnapshots(handle))[0]
     const writing = workspace.write(handle, {
       markdown: "two",
       expectedVersion: created.version,

@@ -17,8 +17,8 @@ import { sessionPath } from "../state"
 import type { Page } from "playwright-core"
 
 export async function largeDiffToggle(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  await launchTo(page, app, sessionPath(fixture.sessions[0]!, fixture.sessions[0]!.id))
-  await waitForTranscript(page, fixture, fixture.sessions[0]!.id, fixture.sessions[0]!.title)
+  await launchTo(page, app, sessionPath(fixture.sessions[0], fixture.sessions[0].id))
+  await waitForTranscript(page, fixture, fixture.sessions[0].id, fixture.sessions[0].title)
   const reviewPanelOpenMs = await measureWorkspacePanelOpen(page, fixture)
   const vcsLoadMs = await measureReviewChangedFileReady(page, fixture)
   await waitForReviewChangedFiles(page, fixture, { timeout: 2_000 })

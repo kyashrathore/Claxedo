@@ -44,7 +44,7 @@ export function isEventStreamPath(input?: string | URL | Request): boolean {
   return /^\/workspaces\/[^/]+\/(global\/)?event$/.test(pathname)
 }
 
-function isEventStreamRequest(init?: RequestInit | undefined, input?: string | URL | Request): boolean {
+function isEventStreamRequest(init?: RequestInit  , input?: string | URL | Request): boolean {
   if (isEventStreamPath(input)) return true
   const accept = (() => {
     const h = init?.headers
@@ -54,7 +54,7 @@ function isEventStreamRequest(init?: RequestInit | undefined, input?: string | U
       const row = h.find(([k]) => k.toLowerCase() === "accept")
       return row?.[1]
     }
-    const rec = h as Record<string, string>
+    const rec = h
     return rec["Accept"] ?? rec["accept"] ?? undefined
   })()
   if (accept && accept.includes("text/event-stream")) return true
@@ -147,7 +147,7 @@ export function __resetFetchThrottleForTests() {
  */
 export async function throttledFetch(
   underlying: () => Promise<Response>,
-  init?: RequestInit | undefined,
+  init?: RequestInit  ,
   input?: string | URL | Request,
 ): Promise<Response> {
   if (isEventStreamRequest(init, input) || isFetchThrottleBypassed(init)) {

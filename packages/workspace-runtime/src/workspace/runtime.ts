@@ -790,7 +790,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
     if (adapterConfigStamps.get(next) === stamp) return
     if (runtimeConfigurable) {
-      ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
+      ;(next).setAuth(
         configuredConnection(nextRunner)
           ? {}
           : runtimeAuthForAdapter(currentAuth),
@@ -1079,7 +1079,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           return true
         })
         .map((item) => item.listPermissions?.(directory) ?? Promise.resolve([])),
-    )).flat() as AgentPermission[]
+    )).flat()
   }
 
   async function listQuestions(input: {
@@ -1097,7 +1097,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           return true
         })
         .map((item) => item.listQuestions?.(directory) ?? Promise.resolve([])),
-    )).flat() as AgentQuestion[]
+    )).flat()
   }
 
   async function clear() {
@@ -1274,7 +1274,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     let revision = configApplyRevision
     let acceptedAt: string | undefined
     const currentKey = runner ? adapterKey(runner) : undefined
-    appliedConnections = nextConnections as Map<string, RuntimeConnectionDescriptor>
+    appliedConnections = nextConnections
     const nextKey = nextRunner ? adapterKey(nextRunner) : undefined
     const replacing = nextKey !== currentKey
     const nextAuth = runtimeAuth(next.auth)
@@ -1338,7 +1338,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
         && (activeTurns.get(adapter)?.size ?? 0) > 0
 
       if (!deferDefaultAdapterConfig && adapter && hasAdapterCapability(adapter, "runtime-config")) {
-        ;(adapter as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
+        ;(adapter).setAuth(
           nextRunner && configuredConnection(nextRunner)
             ? {}
             : runtimeAuthForAdapter(nextAuth),
@@ -1644,7 +1644,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
             } catch (cleanupError) {
               throw new AggregateError(
                 [cause, cleanupError],
-                "Session creation failed and provider rollback also failed",
+                "Session creation failed and provider rollback also failed", { cause: cleanupError },
               )
             }
             throw cause

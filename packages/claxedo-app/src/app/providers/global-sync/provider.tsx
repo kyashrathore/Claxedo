@@ -102,7 +102,7 @@ function createGlobalSync(input: { flushNavigationPersistence: () => Promise<voi
   const sessionAuthorityRevision = createSessionAuthorityRevision()
   const sdkClientCacheOwner = Math.random().toString(36).slice(2, 7)
 
-  const sessionInventory = () => readSessionInventoryQueryData<SessionInventoryRow>({ baseUrl: globalSDK.url })
+  const sessionInventory = () => readSessionInventoryQueryData({ baseUrl: globalSDK.url })
   const publishSessionTitles = () => sessionTitles.replaceInventory(sessionInventory().sessions)
   const setSessionInventory = (value: SessionInventoryStoredValue<SessionInventoryRow> | SessionInventoryValue<SessionInventoryRow>) => {
     setSessionInventoryQueryData({ baseUrl: globalSDK.url, value })

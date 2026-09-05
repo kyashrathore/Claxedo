@@ -35,7 +35,7 @@ export function createRuntimeLifecycle() {
         const stopped = Promise.resolve().then(stop)
         // Observe early teardown failure while admitted producers drain.
         void stopped.catch(() => {})
-        while (pendingTasks.size) await Promise.all([...pendingTasks])
+        while (pendingTasks.size) await Promise.all(pendingTasks)
         await stopped
         cleanup()
       })()

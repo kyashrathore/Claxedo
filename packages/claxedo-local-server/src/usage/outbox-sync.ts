@@ -108,7 +108,7 @@ export function createUsageOutboxSync(input: {
     const outcomes = { accepted: 0, duplicates: 0, stale: 0, conflicts: 0 }
     const acknowledged: Array<Pick<TurnUsageRevision, "hostId" | "sessionRef" | "messageId" | "revision">> = []
     for (const [index, result] of results.entries()) {
-      const fact = pending[index]!
+      const fact = pending[index]
       acknowledged.push({ hostId: fact.hostId, sessionRef: fact.sessionRef, messageId: fact.messageId, revision: fact.revision })
       if (result.status === "accepted") outcomes.accepted += 1
       if (result.status === "duplicate") outcomes.duplicates += 1

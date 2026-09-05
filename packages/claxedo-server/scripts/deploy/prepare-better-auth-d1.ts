@@ -517,7 +517,7 @@ async function main() {
   for (const command of await betterAuthD1PreparationCommands({
     env: process.env,
     staging: process.argv.includes("--staging"),
-    mode: selected[0]!,
+    mode: selected[0],
   }))
     await run(command)
   console.log(`Better Auth D1 ${selected[0]} verified`)

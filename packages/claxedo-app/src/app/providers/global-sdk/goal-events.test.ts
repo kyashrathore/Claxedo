@@ -49,13 +49,13 @@ describe("live session Goal scope", () => {
   test("keys the same authority the unsigned read side writes", () => {
     const scope = liveSessionGoalScope({ live, serverUrl, signedControlPlane: false })
     expect(scope).toBeDefined()
-    expect(sessionGoalKey(scope!)).toEqual(sessionGoalKey(readScope))
+    expect(sessionGoalKey(scope)).toEqual(sessionGoalKey(readScope))
   })
 
   test("still carries the workspace identity under the signed control plane", () => {
     const scope = liveSessionGoalScope({ live, serverUrl, signedControlPlane: true })
     expect(scope).toMatchObject({ workspaceId: "ws_1", workspaceKind: "cloud" })
-    expect(sessionGoalKey(scope!)).not.toEqual(sessionGoalKey(readScope))
+    expect(sessionGoalKey(scope)).not.toEqual(sessionGoalKey(readScope))
   })
 
   test("a goal-updated event reaches the cache entry the reader owns", () => {

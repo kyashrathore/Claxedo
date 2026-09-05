@@ -96,9 +96,7 @@ const webServer =
 export default defineConfig({
   testDir: "./e2e",
   testMatch: "**/*.spec.ts",
-  testIgnore: [
-    ...(process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts", "**/real-desktop-*.spec.ts"]),
-  ],
+  testIgnore: (process.env.CLAXEDO_E2E_DESKTOP === "1" ? [] : ["**/desktop-*.spec.ts", "**/real-desktop-*.spec.ts"]),
   grep,
   outputDir: "./e2e/playwright/test-results",
   timeout: 60_000,

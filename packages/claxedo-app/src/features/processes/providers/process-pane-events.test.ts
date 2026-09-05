@@ -99,7 +99,7 @@ describe("process.status handler", () => {
     h.crashed({ configId: "web", exitCode: 1, restartCount: 0, ptyId: "pty_1" })
     const before = store.processes.web?.status
     h.status({ configId: "web", status: "stopping" })
-    expect(store.processes.web?.status).toBe(before!)
+    expect(store.processes.web?.status).toBe(before)
   })
 
   test("a crashed status re-fetches to pick up conflict fields", () => {

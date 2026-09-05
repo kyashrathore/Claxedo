@@ -97,7 +97,7 @@ describe("readCodexInstalled", () => {
 
     const entries = await readCodexInstalled({ home })
     expect(entries).toHaveLength(1)
-    expect(entries[0]!.name).toBe("chrome")
+    expect(entries[0].name).toBe("chrome")
   })
 
   test("tolerates a missing config.toml and a missing cache directory", async () => {

@@ -205,7 +205,7 @@ describe("Agent Plugins MCP gateway protocol", () => {
         "gateway",
         "--stored-auth-only",
         "--method",
-        method!,
+        method,
         ...args,
         "--format",
         "json",

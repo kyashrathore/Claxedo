@@ -727,7 +727,7 @@ export class MemoryRuntimeStore implements AgentRuntimeStoreWithRecovery {
     const info = event.properties.info as unknown as Record<string, unknown>
     const messageId = typeof info.id === "string" ? info.id : undefined
     const previous = messageId ? this.ensureMessage(sessionId, messageId) : undefined
-    const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info as Record<string, unknown> | undefined, info)
+    const preservedInfo = preserveClaxedoAuthorOnInfo(previous?.info, info)
     this.upsertMessage(sessionId, { info: preservedInfo, parts: previous?.parts ?? [] })
   }
 
@@ -832,7 +832,7 @@ function preserveClaxedoAuthorOnInfo(
   return {
     ...next,
     claxedo: {
-      ...(nextClaxedo ?? {}),
+      ...nextClaxedo,
       author: prevClaxedo.author,
     },
   }

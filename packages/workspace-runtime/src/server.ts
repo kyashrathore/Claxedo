@@ -586,7 +586,7 @@ export function createWorkspaceRuntimeApp(options: WorkspaceRuntimeServerOptions
     await host.registerSessionTools({
       sessionId,
       ...(registrations[0]?.harness ? { harness: registrations[0].harness } : {}),
-      callbackUrl: registrations[0]!.callbackUrl,
+      callbackUrl: registrations[0].callbackUrl,
       tools: registrations.flatMap((value) => value.tools.map((tool) => ({
         ...tool,
         callbackUrl: value.callbackUrl,

@@ -84,7 +84,7 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
     if (!unique.every(isAgentPluginHarnessId)) {
       throw new AgentPluginActivationStoreError("unsupported-harness", "Unsupported Agent Plugins harness")
     }
-    return unique as AgentPluginHarnessId[]
+    return unique
   }
 
   private writablePin(pluginInstanceId: string) {
@@ -113,7 +113,7 @@ class MemorySignedActivations implements SignedAgentPluginActivationStore {
     for (const key of this.organizationDefaults) ids.add(JSON.parse(key)[1])
     return [...ids].sort().map((pluginInstanceId) => ({
       pluginInstanceId,
-      pins: { ...(this.pins.get(pluginInstanceId) ?? {}) },
+      pins: { ...this.pins.get(pluginInstanceId) },
     }))
   }
 
@@ -365,7 +365,7 @@ describe("hosted Agent Plugins routes", () => {
       integrationId: `${pluginInstanceId}:${server.name}`,
     }))
     const subject = await fixture({ mcp: true, mcpAuthentication })
-    const catalog = await (await request(subject.app, "/")).json() as any
+    const catalog = await (await request(subject.app, "/")).json()
 
     expect(catalog.candidates[0].mcpServers).toEqual([{
       name: "docs",
@@ -382,7 +382,7 @@ describe("hosted Agent Plugins routes", () => {
   test("projects the icon, skills, and named source of every candidate instead of a free-text label", async () => {
     const subject = await fixture()
 
-    const catalog = await (await request(subject.app, "/")).json() as any
+    const catalog = await (await request(subject.app, "/")).json()
 
     expect(catalog.candidates[0]).toMatchObject({
       icon: { kind: "url", url: "https://cdn.example/review.png" },
@@ -395,7 +395,7 @@ describe("hosted Agent Plugins routes", () => {
   test("reads the caller's retained plugins once per catalog request", async () => {
     const subject = await fixture()
 
-    const catalog = await (await request(subject.app, "/")).json() as any
+    const catalog = await (await request(subject.app, "/")).json()
 
     expect(catalog.candidates.length).toBeGreaterThan(0)
     expect(subject.activations.listKnownCalls).toBe(1)
@@ -403,7 +403,7 @@ describe("hosted Agent Plugins routes", () => {
 
   test("serves a skill's retained markdown and reports the plugin's source is gone with its skills intact", async () => {
     const subject = await fixture()
-    const catalog = await (await request(subject.app, "/")).json() as any
+    const catalog = await (await request(subject.app, "/")).json()
     const pluginInstanceId = catalog.candidates[0].pluginInstanceId as string
     const skillPath = (skill: string) => `/${encodeURIComponent(pluginInstanceId)}/skills/${encodeURIComponent(skill)}`
 
@@ -439,7 +439,7 @@ describe("hosted Agent Plugins routes", () => {
     expect((await request(subject.app, `/projects/forbidden${skillPath("triage")}`)).status).toBe(403)
 
     await fs.rm(subject.collection, { recursive: true })
-    const gone = await (await request(subject.app, "/refresh")).json() as any
+    const gone = await (await request(subject.app, "/refresh")).json()
     expect(gone.candidates[0]).toMatchObject({
       sourceAvailable: false,
       source: null,
@@ -463,7 +463,7 @@ describe("hosted Agent Plugins routes", () => {
 
     const first = await request(subject.app, "/projects/project-a")
     expect(first.status).toBe(200)
-    const firstBody = await first.json() as any
+    const firstBody = await first.json()
     const plugin = firstBody.candidates[0]
 
     let response = await request(subject.app, "/activation", "member", {
@@ -479,7 +479,7 @@ describe("hosted Agent Plugins routes", () => {
     expect(response.status).toBe(200)
     expect(subject.artifacts.values.size).toBe(1)
 
-    const future = await (await request(subject.app, "/projects/future-project")).json() as any
+    const future = await (await request(subject.app, "/projects/future-project")).json()
     expect(future.candidates[0].harnesses.codex).toMatchObject({
       projectOverride: null,
       userDefault: true,
@@ -497,19 +497,19 @@ describe("hosted Agent Plugins routes", () => {
       }),
     })
     expect(response.status).toBe(200)
-    const current = await (await request(subject.app, "/projects/project-a")).json() as any
+    const current = await (await request(subject.app, "/projects/project-a")).json()
     expect(current.candidates[0].harnesses.codex).toMatchObject({
       projectOverride: false,
       userDefault: true,
       effective: { effective: false, winner: "project" },
     })
-    const stillFuture = await (await request(subject.app, "/projects/future-project")).json() as any
+    const stillFuture = await (await request(subject.app, "/projects/future-project")).json()
     expect(stillFuture.candidates[0].harnesses.codex.effective.effective).toBe(true)
   })
 
   test("authorizes an entire project batch before writing and never accepts caller owner IDs", async () => {
     const subject = await fixture()
-    const catalog = await (await request(subject.app, "/projects/project-a")).json() as any
+    const catalog = await (await request(subject.app, "/projects/project-a")).json()
     const pluginInstanceId = catalog.candidates[0].pluginInstanceId
 
     let response = await request(subject.app, "/activation", "member", {
@@ -542,7 +542,7 @@ describe("hosted Agent Plugins routes", () => {
 
   test("keeps retained metadata usable after the collection disappears and updates only explicitly", async () => {
     const subject = await fixture()
-    const first = await (await request(subject.app, "/projects/project-a")).json() as any
+    const first = await (await request(subject.app, "/projects/project-a")).json()
     const plugin = first.candidates[0]
     await request(subject.app, "/activation", "member", {
       method: "POST",
@@ -555,7 +555,7 @@ describe("hosted Agent Plugins routes", () => {
       }),
     })
     await fs.writeFile(path.join(subject.plugin, "marker.txt"), "version two")
-    const refreshed = await (await request(subject.app, "/projects/project-a/refresh")).json() as any
+    const refreshed = await (await request(subject.app, "/projects/project-a/refresh")).json()
     expect(refreshed.revision).toBe(1)
     expect(refreshed.candidates[0]).toMatchObject({ updateAvailable: true, sourceAvailable: true })
     expect(subject.reconcile.reconcile).toHaveBeenCalledTimes(1)
@@ -565,14 +565,14 @@ describe("hosted Agent Plugins routes", () => {
       body: JSON.stringify({ pluginInstanceId: plugin.pluginInstanceId, authority: "user", expectedRevision: 1 }),
     })
     expect(response.status).toBe(200)
-    const updateBody = await response.json() as any
+    const updateBody = await response.json()
     expect(updateBody.revision).toBe(2)
-    const afterUpdate = await (await request(subject.app, "/projects/project-a")).json() as any
+    const afterUpdate = await (await request(subject.app, "/projects/project-a")).json()
     expect(afterUpdate.candidates[0]).toMatchObject({ updateAvailable: false })
     expect(afterUpdate.candidates[0].harnesses.opencode.effective.effective).toBe(true)
 
     await fs.rm(subject.collection, { recursive: true })
-    const gone = await (await request(subject.app, "/projects/project-a/refresh")).json() as any
+    const gone = await (await request(subject.app, "/projects/project-a/refresh")).json()
     expect(gone.candidates).toHaveLength(1)
     expect(gone.candidates[0]).toMatchObject({
       pluginInstanceId: plugin.pluginInstanceId,
@@ -584,12 +584,12 @@ describe("hosted Agent Plugins routes", () => {
 
   test("allows only an admin and a non-personal source to write or update an organization default", async () => {
     const subject = await fixture()
-    const adminCatalog = await (await request(subject.app, "/", "admin")).json() as any
+    const adminCatalog = await (await request(subject.app, "/", "admin")).json()
     expect(adminCatalog).toMatchObject({
       canManageOrganizationDefaults: true,
       canManageOrganizationConnections: true,
     })
-    const first = await (await request(subject.app, "/projects/project-a")).json() as any
+    const first = await (await request(subject.app, "/projects/project-a")).json()
     const pluginInstanceId = first.candidates[0].pluginInstanceId
 
     let response = await request(subject.app, "/organization-default", "member", {

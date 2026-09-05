@@ -59,7 +59,7 @@ describe("build-sandbox-image", () => {
     expect(options.platform).toBe("node")
     expect(options.outfile).toBe(`/out/${HOST_BUNDLE_FILENAME}`)
     // The workspace-only plugin externalizes every non-@claxedo import.
-    const plugin = options.plugins[0]!
+    const plugin = options.plugins[0]
     expect(plugin.name).toBe("claxedo-workspace-only")
     let resolver: ((args: { path: string }) => { path: string; external: boolean } | undefined) | undefined
     plugin.setup({ onResolve: (_opts, cb) => { resolver = cb } })
@@ -90,7 +90,7 @@ describe("build-sandbox-image", () => {
     const deps = hostBundleDependencies((dir) => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))
       if (!key) throw new Error(`unexpected package dir: ${dir}`)
-      return packages[key]!
+      return packages[key]
     }, runtimeRoots)
     expect(deps).toEqual({
       "better-sqlite3": "12.10.0",
@@ -266,8 +266,8 @@ describe("build-sandbox-image", () => {
       if (!key) throw new Error(`unexpected package dir: ${dir}`)
       return key
     }
-    const order = workspacePackageBuildOrder((dir) => packages[dirKey(dir)]!, runtimeRoots)
-    const names = order.map((dir) => packages[dirKey(dir)]!.name)
+    const order = workspacePackageBuildOrder((dir) => packages[dirKey(dir)], runtimeRoots)
+    const names = order.map((dir) => packages[dirKey(dir)].name)
 
     // Every dependency comes before its dependent.
     const before = (a: string, b: string) => names.indexOf(a) < names.indexOf(b)
@@ -294,11 +294,11 @@ describe("build-sandbox-image", () => {
     const order = workspacePackageBuildOrder((dir) => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))
       if (!key) throw new Error(`unexpected package dir: ${dir}`)
-      return packages[key]!
+      return packages[key]
     }, runtimeRoots)
     const names = order.map((dir) => {
       const key = Object.keys(packages).find((name) => dir.endsWith(name))!
-      return packages[key]!.name
+      return packages[key].name
     })
     expect(names.filter((n) => n === "@claxedo/shared")).toHaveLength(1)
     expect(names.indexOf("@claxedo/shared")).toBe(0)
@@ -313,7 +313,7 @@ describe("build-sandbox-image", () => {
       workspacePackageBuildOrder((dir) => {
         const key = Object.keys(packages).find((name) => dir.endsWith(name))
         if (!key) throw new Error(`unexpected package dir: ${dir}`)
-        return packages[key]!
+        return packages[key]
       }, runtimeRoots),
     ).toThrow("cycle")
   })

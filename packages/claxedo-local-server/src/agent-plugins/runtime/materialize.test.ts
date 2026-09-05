@@ -44,7 +44,7 @@ describe("materializeAgentPluginGeneration", () => {
       adapters: [nativeAgentPluginAdapter("cursor")],
     })
 
-    expect(await fs.readFile(path.join(result.projections.cursor!.pluginRoots[0]!.root, "marker.txt"), "utf8")).toBe("v1")
+    expect(await fs.readFile(path.join(result.projections.cursor!.pluginRoots[0].root, "marker.txt"), "utf8")).toBe("v1")
     expect(result.projections.claude).toBeUndefined()
     expect(await readActiveGeneration(runtimeRoot)).toMatchObject({ revision: 1 })
   })
@@ -77,7 +77,7 @@ describe("materializeAgentPluginGeneration", () => {
     })
 
     expect(two.generationId).not.toBe(one.generationId)
-    expect(await fs.readFile(path.join(two.projections.cursor!.pluginRoots[0]!.root, "marker.txt"), "utf8")).toBe("v2")
+    expect(await fs.readFile(path.join(two.projections.cursor!.pluginRoots[0].root, "marker.txt"), "utf8")).toBe("v2")
     expect(await fs.readFile(path.join(persistent, "state.txt"), "utf8")).toBe("keep")
   })
 
@@ -158,9 +158,9 @@ describe("materializeAgentPluginGeneration", () => {
 
     expect(materialized.projections.opencode?.pluginRoots[0]?.root)
       .not.toBe(materialized.projections.claude?.pluginRoots[0]?.root)
-    expect(await fs.readFile(path.join(materialized.projections.opencode!.pluginRoots[0]!.root, "marker.txt"), "utf8"))
+    expect(await fs.readFile(path.join(materialized.projections.opencode!.pluginRoots[0].root, "marker.txt"), "utf8"))
       .toContain("personal")
-    expect(await fs.readFile(path.join(materialized.projections.claude!.pluginRoots[0]!.root, "marker.txt"), "utf8"))
+    expect(await fs.readFile(path.join(materialized.projections.claude!.pluginRoots[0].root, "marker.txt"), "utf8"))
       .toContain("organization")
   })
 
@@ -214,7 +214,7 @@ describe("materializeAgentPluginGeneration", () => {
       artifacts,
       adapters: [openCodeAgentPluginAdapter(), cursorAgentPluginAdapter({ userHomeDirectory: home })],
     })
-    const cursorRoot = materialized.projections.cursor!.pluginRoots[0]!.root
+    const cursorRoot = materialized.projections.cursor!.pluginRoots[0].root
     expect(cursorRoot.startsWith(path.join(home, ".cursor", "plugins", "local"))).toBe(true)
 
     const restored = await readMaterializedAgentPluginGeneration(runtimeRoot)

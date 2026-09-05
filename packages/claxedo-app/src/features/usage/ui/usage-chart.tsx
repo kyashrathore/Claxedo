@@ -158,9 +158,9 @@ export function UsageChart(props: {
     if (index === undefined) return
     return {
       index,
-      date: dates()[index]!,
+      date: dates()[index],
       x: rendered()[0]?.points[index]?.x ?? 0,
-      rows: rendered().map((series) => ({ ...series, point: series.points[index]! })),
+      rows: rendered().map((series) => ({ ...series, point: series.points[index] })),
     }
   })
   const valueLabel = (value: number) =>
@@ -182,7 +182,7 @@ export function UsageChart(props: {
     setActiveIndex(
       dates().reduce(
         (nearest, date, index) =>
-          Math.abs(toX(date) - target) < Math.abs(toX(dates()[nearest]!) - target) ? index : nearest,
+          Math.abs(toX(date) - target) < Math.abs(toX(dates()[nearest]) - target) ? index : nearest,
         0,
       ),
     )
@@ -256,11 +256,11 @@ export function UsageChart(props: {
                       <Show when={series.points.length === 1}>
                         <circle
                           class={`workspace-data-chart-point usage-chart-point usage-chart-series-${series.brand}`}
-                          cx={series.points[0]!.x}
-                          cy={series.points[0]!.y}
+                          cx={series.points[0].x}
+                          cy={series.points[0].y}
                           r="3"
-                          data-stack-bottom={series.points[0]!.bottom}
-                          data-stack-top={series.points[0]!.top}
+                          data-stack-bottom={series.points[0].bottom}
+                          data-stack-top={series.points[0].top}
                         />
                       </Show>
                     </>

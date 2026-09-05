@@ -139,8 +139,8 @@ const commandPathPattern = /(^|[\s"'=,;(])((?:\/|~\/|\.\.?\/|\$HOME\/|\$\{HOME\}
 
 function commandPathReferences(input: string) {
   return [...input.matchAll(commandPathPattern)].map((match) => ({
-    value: match[2]!.replace(/[\]}]+$/, ""),
-    offset: match.index + match[1]!.length,
+    value: match[2].replace(/[\]}]+$/, ""),
+    offset: match.index + match[1].length,
   }))
 }
 

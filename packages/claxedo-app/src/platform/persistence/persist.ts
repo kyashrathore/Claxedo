@@ -48,7 +48,7 @@ function cacheDelete(key: string) {
 function cachePrune() {
   for (;;) {
     if (cache.size <= CACHE_MAX_ENTRIES && cacheTotal.bytes <= CACHE_MAX_BYTES) return
-    const oldest = cache.keys().next().value as string | undefined
+    const oldest = cache.keys().next().value
     if (!oldest) return
     cacheDelete(oldest)
   }
@@ -181,9 +181,9 @@ function merge(defaults: unknown, value: unknown): unknown {
     const result: Record<string, unknown> = { ...defaults }
     for (const key of Object.keys(value)) {
       if (key in defaults) {
-        result[key] = merge((defaults as Record<string, unknown>)[key], (value as Record<string, unknown>)[key])
+        result[key] = merge((defaults)[key], (value)[key])
       } else {
-        result[key] = (value as Record<string, unknown>)[key]
+        result[key] = (value)[key]
       }
     }
     return result

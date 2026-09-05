@@ -345,5 +345,5 @@ export function decodeHostedResult<T = unknown>(name: HostedOperationName, raw: 
 
 /** Whether the renderer may retry this operation on its own. */
 export function isSafeOperation(name: HostedOperationName) {
-  return HOSTED_OPERATIONS[name]?.safe === true
+  return  HOSTED_OPERATIONS[name]?.safe
 }

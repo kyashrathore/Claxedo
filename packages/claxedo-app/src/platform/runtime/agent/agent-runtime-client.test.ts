@@ -7,7 +7,7 @@ import { AgentRuntimeRequestError } from "./agent-runtime-request-error"
 function ok(body: unknown, init?: ResponseInit) {
   return new Response(JSON.stringify(body), {
     status: 200,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: { "Content-Type": "application/json", ...init?.headers },
     ...init,
   })
 }
@@ -26,7 +26,7 @@ describe("AgentRuntimeClient", () => {
     await client.getPermissionModes({ directory: "/repo", sessionID: "", harness: { kind: "native", harnessId: "pi" } })
     await client.getPermissionModes({ directory: "/repo", sessionID: "", harness: { kind: "connection", connectionId: "pi" } })
     expect(calls[0]?.pathname).toBe("/session/session-1/permission-mode")
-    expect([...calls[0]!.searchParams]).toEqual([["directory", "/repo"]])
+    expect([...calls[0].searchParams]).toEqual([["directory", "/repo"]])
     expect(calls[1]?.searchParams.get("nativeHarness")).toBe("pi")
     expect(calls[1]?.searchParams.has("connectionId")).toBe(false)
     expect(calls[2]?.searchParams.get("connectionId")).toBe("pi")

@@ -301,7 +301,7 @@ export function Icon(props: IconProps) {
           {...others}
         >
           <use
-            href={codex().custom ? `#${symbol(codex().custom!)}` : codexIconSprite.href(codex().glyph)}
+            href={codex().custom ? `#${symbol(codex().custom)}` : codexIconSprite.href(codex().glyph)}
             transform={codexTransform(local.name)}
           />
         </svg>

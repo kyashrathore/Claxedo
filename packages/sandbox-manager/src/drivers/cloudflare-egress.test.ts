@@ -64,11 +64,11 @@ describe("cloudflare egress broker", () => {
     )
 
     expect(res.status).toBe(200)
-    expect(forwarded[0]!.url).toBe("https://api.notion.com/v1/users/me")
+    expect(forwarded[0].url).toBe("https://api.notion.com/v1/users/me")
     // Credential injected on the upstream request…
-    expect(forwarded[0]!.headers.get("authorization")).toBe("Bearer ntn-secret")
+    expect(forwarded[0].headers.get("authorization")).toBe("Bearer ntn-secret")
     // …and the sandbox-facing egress token/target headers are stripped.
-    expect(forwarded[0]!.headers.get(EGRESS_TARGET_HEADER)).toBeNull()
+    expect(forwarded[0].headers.get(EGRESS_TARGET_HEADER)).toBeNull()
   })
 
   test("rejects a host outside the token's allowlist", async () => {

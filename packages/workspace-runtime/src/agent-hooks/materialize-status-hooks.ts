@@ -59,7 +59,7 @@ async function readJson(filePath: string) {
     return JSON.parse(raw) as unknown
   } catch (err) {
     throw new Error(
-      `Hook target config ${filePath} contains invalid JSON; fix it before materializing hooks (refusing to rewrite a file that cannot be parsed): ${err instanceof Error ? err.message : String(err)}`,
+      `Hook target config ${filePath} contains invalid JSON; fix it before materializing hooks (refusing to rewrite a file that cannot be parsed): ${err instanceof Error ? err.message : String(err)}`, { cause: err },
     )
   }
 }

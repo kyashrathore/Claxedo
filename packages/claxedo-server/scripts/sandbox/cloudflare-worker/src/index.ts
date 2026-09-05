@@ -400,7 +400,7 @@ export default {
 
     const sandboxId = parts[1]
     const action = parts[2] || ""
-    const sandbox = getSandbox(env.Sandbox, sandboxId, SANDBOX_OPTIONS) as ReturnType<typeof getSandbox> & ManagedSandbox
+    const sandbox = getSandbox(env.Sandbox, sandboxId, SANDBOX_OPTIONS)
 
     try {
       // DELETE /sandbox/:id

@@ -122,8 +122,8 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
       expect(nativeId).not.toBe(session.id)
       await turn(session.id, "first")
       expect(await fs.readFile(path.join(directory, "proof.txt"), "utf8")).toBe("written by native Pi")
-      expect(JSON.stringify(requests[0]!.messages)).toContain("data:image/png;base64,")
-      expect(requests[1]!.messages.some((message) => message.role === "tool")).toBe(true)
+      expect(JSON.stringify(requests[0].messages)).toContain("data:image/png;base64,")
+      expect(requests[1].messages.some((message) => message.role === "tool")).toBe(true)
       expect(JSON.stringify(rows.getMessages(session.id))).toContain("Native work complete")
       expect(usage).toHaveLength(2)
       expect(usage.every((event) => event.messageID === "first_r")).toBe(true)
@@ -251,7 +251,7 @@ test.skipIf(!process.env.PI_EXECUTABLE)(
         await new Promise((resolve) => setTimeout(resolve, 10))
       }
       expect(pending).toHaveLength(1)
-      await adapter.replyQuestion(binding, pending[0]!.id, [["native answer"]])
+      await adapter.replyQuestion(binding, pending[0].id, [["native answer"]])
       const answerFile = path.join(directory, "extension-answer.txt")
       for (let attempt = 0; attempt < 200; attempt++) {
         if (

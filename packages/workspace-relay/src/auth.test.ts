@@ -212,7 +212,7 @@ describe("workspace relay auth", () => {
     const key = await keys()
     const token = await mintRuntimeAccessToken(base, key.privateKey, "EdDSA")
     const [header, payload, signature] = token.split(".")
-    const claims = JSON.parse(Buffer.from(payload!, "base64url").toString("utf8")) as Record<string, unknown>
+    const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Record<string, unknown>
     const tampered = [
       header,
       Buffer.from(JSON.stringify({ ...claims, role: "owner" })).toString("base64url"),

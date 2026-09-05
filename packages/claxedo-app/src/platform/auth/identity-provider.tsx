@@ -37,7 +37,7 @@ export function IdentityProvider(props: {
   children: JSX.Element
 }) {
   const principal = typeof props.principal === "function"
-    ? props.principal as Accessor<Principal>
+    ? props.principal
     : () => props.principal as Principal
   return (
     <IdentityContext.Provider value={{ principal }}>

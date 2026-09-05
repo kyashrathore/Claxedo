@@ -57,7 +57,7 @@ export default function DocumentEditor(props: DocumentEditorProps) {
     reportError,
   })
   const [snapshot, setSnapshot] = createSignal(controller.snapshot())
-  const [detection, setDetection] = createSignal<MarkdownDetection>(detectMarkdown(snapshot().draft.markdown))
+  const [detection, setDetection] = createSignal(detectMarkdown(snapshot().draft.markdown))
   const [editorError, setEditorError] = createSignal<string>()
   const [richUnavailable, setRichUnavailable] = createSignal(false)
   const unsubscribe = controller.subscribe(setSnapshot)

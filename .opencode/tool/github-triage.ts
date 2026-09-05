@@ -10,7 +10,7 @@ const TEAM = {
 } as const
 
 function pick<T>(items: readonly T[]) {
-  return items[Math.floor(Math.random() * items.length)]!
+  return items[Math.floor(Math.random() * items.length)]
 }
 
 function getIssueNumber(): number {

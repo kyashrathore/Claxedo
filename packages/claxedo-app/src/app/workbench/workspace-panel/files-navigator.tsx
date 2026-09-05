@@ -271,7 +271,7 @@ export function WorkspaceFilesNavigator(props: {
     props.mode === "files" && !pendingFilesShell() && !(!!query() && searchResults.loading) && !emptySearch()
   )
   /** Has the tree ever been shown? Nothing is retained before it is built. */
-  const fileTreeVisited = createMemo<boolean>((previous) => previous === true || showFileTree(), false)
+  const fileTreeVisited = createMemo<boolean>((previous) =>  previous || showFileTree(), false)
 
   return (
     <div

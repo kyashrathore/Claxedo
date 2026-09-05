@@ -193,7 +193,7 @@ export function createHostedContributionPort<T extends { id: string }>(
       const removing = installed
       installed = []
       for (let index = removing.length - 1; index >= 0; index -= 1) {
-        input.unregister(removing[index]!)
+        input.unregister(removing[index])
       }
     },
   }

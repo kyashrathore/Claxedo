@@ -217,7 +217,7 @@ export interface AgentGoalResource {
   pause(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
   resume(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot>>
   /** Disable future continuation before interrupting active work. */
-  stop(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<RuntimeGoalSnapshot | null>>
+  stop(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult>
   delete(sessionId: string, directory: RuntimeDirectory): Promise<AgentGoalMutationResult<null>>
 }
 

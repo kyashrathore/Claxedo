@@ -48,7 +48,7 @@ const BUNDLE_PATH = join(REPORTS_DIR, "dialin-agent.bundle.cjs")
 
 function arg(name: string, fallback?: string) {
   const i = process.argv.indexOf(`--${name}`)
-  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1]!.startsWith("--") ? process.argv[i + 1] : fallback
+  return i >= 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith("--") ? process.argv[i + 1] : fallback
 }
 
 function flag(name: string) {

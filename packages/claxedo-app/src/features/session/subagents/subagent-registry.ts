@@ -224,11 +224,11 @@ export function createSubagentRegistry(): SubagentRegistry {
         if (released) return
         released = true
         options?.signal?.removeEventListener("abort", release)
-        flight!.consumers.delete(consumer)
-        if (flight!.consumers.size > 0 || hydrationInFlight.get(parentSessionId) !== flight) return
+        flight.consumers.delete(consumer)
+        if (flight.consumers.size > 0 || hydrationInFlight.get(parentSessionId) !== flight) return
         hydrationInFlight.delete(parentSessionId)
         bumpHydrationEpoch(parentSessionId)
-        flight!.controller.abort()
+        flight.controller.abort()
       }
       Object.assign(consumer, { signal: options?.signal, release })
       flight.consumers.add(consumer)

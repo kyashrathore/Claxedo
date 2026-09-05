@@ -63,7 +63,7 @@ describe("SQLite workspace session authority", () => {
       sessionId: "ses_1",
       kind: "create",
     })
-    await authority.registerRuntimeSession!({
+    await authority.registerRuntimeSession({
       principalKind: "user",
       actorId: "creator",
       actorKind: "human",
@@ -114,7 +114,7 @@ describe("SQLite workspace session authority", () => {
       sessionId: "ses_1",
       kind: "create",
     })
-    await authority.registerRuntimeSession!({
+    await authority.registerRuntimeSession({
       principalKind: "user",
       actorId: "creator",
       actorKind: "human",

@@ -404,8 +404,8 @@ function digest(value: string) {
   let forward = 0x811c9dc5
   let backward = 0x01000193
   for (let position = 0; position < bytes.length; position++) {
-    forward = Math.imul(forward ^ bytes[position]!, 0x01000193) >>> 0
-    backward = Math.imul(backward ^ bytes[bytes.length - 1 - position]!, 0x811c9dc5) >>> 0
+    forward = Math.imul(forward ^ bytes[position], 0x01000193) >>> 0
+    backward = Math.imul(backward ^ bytes[bytes.length - 1 - position], 0x811c9dc5) >>> 0
   }
   return `${forward.toString(16).padStart(8, "0")}${backward.toString(16).padStart(8, "0")}${bytes.length.toString(16)}`
 }
@@ -481,7 +481,7 @@ function parseLocator(body: Uint8Array, orgId: string, documentId: string): Loca
 
 function documentIdFromKey(objectKey: string, scope: DocumentIndexScope) {
   const relative = objectKey.slice(prefix(scope.orgId, scope.projectId).length)
-  return relative.includes("/") ? relative.split("/", 1)[0]! : relative.slice(0, -5)
+  return relative.includes("/") ? relative.split("/", 1)[0] : relative.slice(0, -5)
 }
 
 function duplicate(documentId: string) {

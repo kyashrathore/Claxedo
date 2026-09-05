@@ -109,7 +109,7 @@ describe("Agent SDK Runtime: HarnessCapabilities contract", () => {
       ...(["claude", "codex", "cursor"] as const).map((type) => sdkAdapterWithDriver(type).readHarnessCapabilities()),
     ]
 
-    expect(unsupported.every((item) => item.goals === false)).toBe(true)
+    expect(unsupported.every((item) => ! item.goals)).toBe(true)
     expect((await new PiHarnessAdapter({ store: storeRows(createMemoryRuntimeStore()) }).readHarnessCapabilities()).goals).toBe(true)
   })
 

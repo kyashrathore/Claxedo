@@ -35,7 +35,7 @@ describe("MCP transport gateway", () => {
     })
 
     expect(fetch).toHaveBeenCalledTimes(1)
-    const [url, init] = fetch.mock.calls[0]!
+    const [url, init] = fetch.mock.calls[0]
     expect(url).toBe("https://mcp.example/mcp")
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer connection-token")
     expect(new Headers(init?.headers).get("cookie")).toBeNull()

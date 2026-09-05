@@ -229,19 +229,19 @@ const localContextInput = {
 
     const selectionCatalogPending = (model: ModelKey | undefined) => {
       if (!isUsableSelection(model)) return false
-      if (validModel(model) || models.find(model!)) return false
+      if (validModel(model) || models.find(model)) return false
       return selectionProviderDetailNeeded({
         model,
         connected: connected(),
-        provider: providers.all().get(model!.providerID),
+        provider: providers.all().get(model.providerID),
       }) !== undefined
     }
 
     const resolveExplicitSelection = (selectedState: State | undefined): ModelKey | undefined => {
       const raw = selectedState?.model
       if (!isUsableSelection(raw)) return undefined
-      if (validModel(raw!)) return raw
-      if (models.find(raw!)) return raw
+      if (validModel(raw)) return raw
+      if (models.find(raw)) return raw
       if (selectionCatalogPending(raw)) return raw
       return undefined
     }

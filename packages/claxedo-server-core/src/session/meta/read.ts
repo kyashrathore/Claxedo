@@ -134,7 +134,7 @@ function hydrateSessionRows(
     })
   }
   const links = new Map<string, { parentID?: string }>(
-    [...by.values()].map((item) => [item.sessionID, { ...(item.parentID ? { parentID: item.parentID } : {}) }]),
+    [...by.values()].map((item) => [item.sessionID, (item.parentID ? { parentID: item.parentID } : {})]),
   )
   for (const item of by.values()) {
     item.rootID = root(item.sessionID, links)

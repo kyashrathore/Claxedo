@@ -64,8 +64,8 @@ describe("reading code-host status", () => {
   test("carries the prompts the connect form has to render", async () => {
     const status = await readCodeHostStatus(responding({ integrations: [github], connections: [] }))
 
-    expect(status.integrations[0]!.methods).toEqual(["key"])
-    expect(status.integrations[0]!.prompts).toEqual([
+    expect(status.integrations[0].methods).toEqual(["key"])
+    expect(status.integrations[0].prompts).toEqual([
       { id: "token", label: "Fine-grained personal access token", secret: true },
     ])
   })
@@ -178,8 +178,8 @@ describe("connecting a code host", () => {
     })
 
     expect(outcome.ok).toBe(false)
-    expect(outcome.ok === false && outcome.reason).toContain("copied whole")
-    expect(outcome.ok === false && outcome.reason).not.toContain("verify_failed")
+    expect(!outcome.ok && outcome.reason).toContain("copied whole")
+    expect(!outcome.ok && outcome.reason).not.toContain("verify_failed")
   })
 
   test("an unreachable server is a sentence, not an exception", async () => {
@@ -192,7 +192,7 @@ describe("connecting a code host", () => {
     })
 
     expect(outcome.ok).toBe(false)
-    expect(outcome.ok === false && outcome.reason).toContain("Couldn't reach the server")
+    expect(!outcome.ok && outcome.reason).toContain("Couldn't reach the server")
   })
 })
 

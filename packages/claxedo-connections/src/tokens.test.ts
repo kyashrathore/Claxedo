@@ -27,7 +27,7 @@ function oauthHarness(input: {
   const registry = createIntegrationRegistry()
   registry.register(
     { id: "oauthy", name: "OAuthy", methods: ["oauth"], capabilities: ["docs"] },
-    { ...(input.refresh ? { refresh: input.refresh } : {}) },
+    (input.refresh ? { refresh: input.refresh } : {}),
   )
   const credentials = createMemoryCredentialStore()
   const seed = async () =>

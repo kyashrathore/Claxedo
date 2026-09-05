@@ -476,7 +476,7 @@ export function createControlPlaneChannels(input: {
             ok: false as const,
             message: error instanceof Error ? error.message : "Unable to authorize channel approval.",
           }))
-          if (auth.ok === false) return auth
+          if (!auth.ok) return auth
         }
         const res = await input.runtime.request(request.sessionId, `permissions/${encodeURIComponent(request.callId)}`, {
           method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ response: decision.approved ? "once" : "deny" }),

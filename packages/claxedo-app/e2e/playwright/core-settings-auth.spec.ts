@@ -717,7 +717,7 @@ async function mockProviderCatalog(page: Page, input: {
     default: Object.fromEntries(
       all.map((p) => {
         const models = p.models ?? { "m-1": { id: "m-1", name: "Model 1", cost: {} } }
-        return [p.id, Object.keys(models)[0]!]
+        return [p.id, Object.keys(models)[0]]
       }),
     ),
     connected: input.connected.map((p) => p.id),

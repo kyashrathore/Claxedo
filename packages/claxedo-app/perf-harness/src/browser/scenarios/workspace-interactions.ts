@@ -266,7 +266,7 @@ async function readWorkspaceTabSnapshot(page: Page): Promise<WorkspaceTabSnapsho
 }
 
 export async function workspaceInteractions(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  const session = fixture.sessions[0]!
+  const session = fixture.sessions[0]
   await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
   const expectedTotal = fixture.changedFiles.length
@@ -378,21 +378,21 @@ export async function workspaceInteractions(page: Page, app: BrowserTarget, fixt
   }
 
   // Switching among open file tabs — both directions, each isolated + zero requests.
-  const tabIdA = await tabIdForFile(fileA!)
-  const tabIdB = await tabIdForFile(fileB!)
+  const tabIdA = await tabIdForFile(fileA)
+  const tabIdB = await tabIdForFile(fileB)
   let before = await readWorkspaceTabSnapshot(page)
   const toA = await runPanelInteraction({
     prefix: "workspace_interactions_tab_switch_to_a",
-    control: fileTabButton(fileA!),
-    mode: { kind: "activate-file", filePath: fileA! },
+    control: fileTabButton(fileA),
+    mode: { kind: "activate-file", filePath: fileA },
     hardZeroRequests: true,
   })
   gateTabSwitch("workspace_interactions_tab_switch_to_a", before, toA.observation.tabs, tabIdA)
   before = toA.observation.tabs
   const toB = await runPanelInteraction({
     prefix: "workspace_interactions_tab_switch_to_b",
-    control: fileTabButton(fileB!),
-    mode: { kind: "activate-file", filePath: fileB! },
+    control: fileTabButton(fileB),
+    mode: { kind: "activate-file", filePath: fileB },
     hardZeroRequests: true,
   })
   gateTabSwitch("workspace_interactions_tab_switch_to_b", before, toB.observation.tabs, tabIdB)
@@ -413,7 +413,7 @@ export async function workspaceInteractions(page: Page, app: BrowserTarget, fixt
   // collapsing unmounts already-mounted DOM and is a hard zero. Collapse is
   // proven structurally (content unmounted): the rendered-hunks counter is
   // the app's monotonic render counter and never decreases.
-  const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX]!.file
+  const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX].file
   const diffTrigger = page
     .locator(`[data-testid='review-pane-root'] [data-review-file="${expandPath}"]`)
     .locator("[data-testid$='-trigger']")
@@ -483,7 +483,7 @@ export async function workspaceInteractions(page: Page, app: BrowserTarget, fixt
   // designed above-ceiling response, no hunks and no content fetch), and the
   // explicit "render anyway" force then renders the large hunks (fetching
   // content on demand, so its request count is reported, not gated).
-  const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX]!.file
+  const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX].file
   const largeDiffTrigger = page
     .locator(`[data-testid='review-pane-root'] [data-review-file="${largeDiffPath}"]`)
     .locator("[data-testid$='-trigger']")
@@ -520,8 +520,8 @@ export async function workspaceInteractions(page: Page, app: BrowserTarget, fixt
   before = await readWorkspaceTabSnapshot(page)
   const backToFiles = await runPanelInteraction({
     prefix: "workspace_interactions_review_to_files",
-    control: fileTabButton(fileB!),
-    mode: { kind: "activate-file", filePath: fileB! },
+    control: fileTabButton(fileB),
+    mode: { kind: "activate-file", filePath: fileB },
     hardZeroRequests: true,
   })
   gateTabSwitch("workspace_interactions_review_to_files", before, backToFiles.observation.tabs, tabIdB)

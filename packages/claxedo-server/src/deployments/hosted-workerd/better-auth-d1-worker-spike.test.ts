@@ -176,7 +176,7 @@ describe("Better Auth + D1 inside Workerd", () => {
     )
     const clients = await database
       .prepare(`select "clientId", "redirectUris", "grantTypes", "requirePKCE" from "oauthClient" order by "clientId"`)
-      .all<Record<string, unknown>>()
+      .all()
     expect(clients.results).toEqual([
       expect.objectContaining({ clientId: "claxedo-cli", requirePKCE: 1 }),
       expect.objectContaining({
@@ -193,7 +193,7 @@ describe("Better Auth + D1 inside Workerd", () => {
     ])
     const links = await database
       .prepare(`select "clientId", "resourceId" from "oauthClientResource" order by "clientId"`)
-      .all<Record<string, unknown>>()
+      .all()
     expect(links.results).toEqual([
       { clientId: "claxedo-cli", resourceId: NATIVE_RESOURCE },
       { clientId: "claxedo-control-plane", resourceId: NATIVE_RESOURCE },
@@ -333,7 +333,7 @@ describe("Better Auth + D1 inside Workerd", () => {
       expect(failed.status).toBe(500)
       const rows = await database.prepare(`select "id", "revoked", "rotatedAt", "rotationNonce"
         from "oauthRefreshToken" where "familyId" = ?`).bind("refresh-fault-family")
-        .all<Record<string, unknown>>()
+        .all()
       expect(rows.results).toEqual([expect.objectContaining({
         id: "refresh-fault-parent",
         revoked: null,
@@ -954,7 +954,7 @@ describe("Better Auth + D1 inside Workerd", () => {
     const afterSignOut = await miniflare.dispatchFetch(`${API_ORIGIN}/api/auth/get-session`, {
       headers: { cookie: sessionCookie.value, origin: APP_ORIGIN },
     })
-    expect((await afterSignOut.json()) as unknown).toBeNull()
+    expect((await afterSignOut.json())).toBeNull()
 
     const database = await miniflare.getD1Database("AUTH_DB")
     const counts = await database

@@ -88,7 +88,7 @@ export async function bundleClaxedoServer(source: string, destination: string) {
   // so cursor-sdk session create fails at runtime until they sit beside the entry.
   copyCursorSdkLazyChunks(path.join(pending, "chunks"))
   const [platform, arch] = resolveTargetOsArch().split("-")
-  stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform!, arch: arch! })
+  stageOpenCodeSdk(path.join(pending, "node_modules"), { platform: platform, arch: arch })
 
   fs.rmSync(destination, { recursive: true, force: true })
   fs.renameSync(pending, destination)
@@ -128,14 +128,14 @@ export async function bundleClaxedoServer(source: string, destination: string) {
  */
 export function resolveDeferredServerEntry(entry: string) {
   const source = fs.readFileSync(entry, "utf8")
-  const specifiers = [...source.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((match) => match[1]!)
+  const specifiers = [...source.matchAll(/\bimport\(\s*["']([^"']+)["']\s*\)/g)].map((match) => match[1])
   if (specifiers.length !== 1) {
     throw new Error(
       `expected exactly one dynamic import in ${entry}, found ${specifiers.length}: ${specifiers.join(", ")}. ` +
         `The compile cache is generated from the chunk behind it; see scripts/claxedo-server-boot.ts.`,
     )
   }
-  const resolved = path.resolve(path.dirname(entry), specifiers[0]!)
+  const resolved = path.resolve(path.dirname(entry), specifiers[0])
   if (!fs.existsSync(resolved)) throw new Error(`deferred server entry ${specifiers[0]} does not exist at ${resolved}`)
   return resolved
 }

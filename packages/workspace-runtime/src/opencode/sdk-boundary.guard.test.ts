@@ -104,7 +104,7 @@ describe("public SDK boundary", () => {
         search('from "@opencode-ai/core')
           .filter((line) => !line.includes("packages/workspace-runtime/src/opencode/sdk-boundary.guard.test.ts"))
           .filter((line) => line.startsWith("./packages/workspace-runtime/src/opencode/"))
-          .map((line) => line.split(":")[0]!),
+          .map((line) => line.split(":")[0]),
       ),
     ].sort()
     expect(files).toEqual([])
@@ -116,7 +116,7 @@ describe("public SDK boundary", () => {
     const hits = search('from "@opencode-ai/sdk"')
       .filter((line) => !isSelfReference(line))
       .filter((line) => !line.startsWith("./packages/workspace-runtime/src/opencode/"))
-    const files = [...new Set(hits.map((line) => line.split(":")[0]!))].sort()
+    const files = [...new Set(hits.map((line) => line.split(":")[0]))].sort()
     expect(files).toEqual([...LEGACY_SDK_CONSUMERS].sort())
   })
 })

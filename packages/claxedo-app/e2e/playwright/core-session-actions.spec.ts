@@ -868,8 +868,8 @@ test.describe("core session actions: subagent (child session) @core", () => {
       if (route.request().method() !== "POST") return route.fallback()
       const url = new URL(route.request().url())
       const parts = url.pathname.split("/")
-      const sessionID = parts[2]!
-      const requestID = parts[4]!
+      const sessionID = parts[2]
+      const requestID = parts[4]
       await route.fulfill({ status: 200, contentType: "application/json", body: "{}" })
       replied = { sessionID, requestID }
       mock.emit({ type: "permission.replied", properties: { sessionID, requestID } })

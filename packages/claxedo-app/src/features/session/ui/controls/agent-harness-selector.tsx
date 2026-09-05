@@ -341,7 +341,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const picked = createMemo(() => {
     const selected = selection().selectedModelKey
     const next = rows().find((item) => item.id === selected?.modelID && item.provider.id === selected.providerID)
-      ?? (harness() && isCatalogHarness(harness()!) ? undefined : rows().find((item) => item.id === selection().selectedModel))
+      ?? (harness() && isCatalogHarness(harness()) ? undefined : rows().find((item) => item.id === selection().selectedModel))
     return next
   })
   // OpenCode submits through the provider catalog, while the unified selector keeps
@@ -395,11 +395,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       if (!modelKey) return
       const hit = rows().find((row) => row.id === modelKey.modelID && row.provider.id === modelKey.providerID)
       if (!hit) return
-      if (harness() && isCatalogHarness(harness()!) && hit.connected === false) {
+      if (harness() && isCatalogHarness(harness()) && hit.connected === false) {
         openProviders()
         return
       }
-      if (harness() && isCatalogHarness(harness()!)) {
+      if (harness() && isCatalogHarness(harness())) {
         props.providerModel?.().set({ providerID: hit.provider.id, modelID: hit.id }, options)
       }
       void modelSelection().set({
@@ -416,7 +416,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   }))
 
   const harnessDisabled = createMemo(() => isPolling() || harnessSwitching())
-  const modelLoading = createMemo(() => harness() && isCatalogHarness(harness()!) ? catalogProviders.loading() : optionsLoading())
+  const modelLoading = createMemo(() => harness() && isCatalogHarness(harness()) ? catalogProviders.loading() : optionsLoading())
   const hasModelOptions = createMemo(() => {
     return rows().length > 0
   })
@@ -435,7 +435,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     return !modelLoading() && !hasModelOptions() && !managedDefaultModel()
   })
   const modelOptionsFailed = createMemo(() => {
-    if (harness() && isCatalogHarness(harness()!)) return !!catalogProviders.error() && !modelLoading()
+    if (harness() && isCatalogHarness(harness())) return !!catalogProviders.error() && !modelLoading()
     const error = selection().configError
     if (!error || error === "Loading model options..." || error === "Selected model unavailable") return false
     return !optionsLoading() && !hasModelOptions()
@@ -455,8 +455,8 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
     }
     if (managedDefaultModel()) return `${harnessOptionLabel(harness()!)} default`
     if (!harness()) return "Select agent"
-    if (isCatalogHarness(harness()!) && selection().selectedModel) return selection().selectedModel
-    if (!hasModelOptions()) return isCatalogHarness(harness()!) ? `No ${harnessDisplayLabel(harnessSelectionId(harness()!))} models available` : "Select model"
+    if (isCatalogHarness(harness()) && selection().selectedModel) return selection().selectedModel
+    if (!hasModelOptions()) return isCatalogHarness(harness()) ? `No ${harnessDisplayLabel(harnessSelectionId(harness()!))} models available` : "Select model"
     return selection().selectedModel || "Select model"
   })
   // Soft, non-actionable reasons the control itself is inert. These stay ON the
@@ -470,7 +470,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   // One row, one message, one action — see `harness-notice.ts` for the ordering.
   const needsProviderSetup = createMemo(() => {
     if (modelOptionsFailed()) return false
-    if (harness() && isCatalogHarness(harness()!)) {
+    if (harness() && isCatalogHarness(harness())) {
       return !catalogProviders.loading() && !catalogProviders.error() && catalogProviders.connected().length === 0
     }
     return !managedDefaultModel() && !modelLoading() && !hasModelOptions() && !isPolling() && !isError()
@@ -483,11 +483,11 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       runtimeUnavailable: isError(),
       optionsFailed: modelOptionsFailed(),
       noModels: !hasModelOptions() && !modelLoading(),
-      configError: (harness() && isCatalogHarness(harness()!) ? catalogProviders.error() : undefined) ?? selection().configError,
+      configError: (harness() && isCatalogHarness(harness()) ? catalogProviders.error() : undefined) ?? selection().configError,
       savedModelUnavailable:
         selection().draftDefaultState === "saved-model-unavailable"
           ? selection().draftDefaultLabels?.model || selection().selectedModel || "Saved model"
-          : harness() && isCatalogHarness(harness()!) && selection().selectedModel && !picked()
+          : harness() && isCatalogHarness(harness()) && selection().selectedModel && !picked()
             ? selection().selectedModel
             : undefined,
       setupRequired: needsProviderSetup(),
@@ -501,9 +501,9 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
       ...rest,
       action: {
         label: "Retry",
-        ariaLabel: harness() && isCatalogHarness(harness()!) ? `Retry loading ${harnessDisplayLabel(harnessSelectionId(harness()!))} models` : "Retry loading harness models",
+        ariaLabel: harness() && isCatalogHarness(harness()) ? `Retry loading ${harnessDisplayLabel(harnessSelectionId(harness()!))} models` : "Retry loading harness models",
         run: () => {
-          if (harness() && isCatalogHarness(harness()!)) {
+          if (harness() && isCatalogHarness(harness())) {
             void catalogProviders.refresh()
             return
           }
@@ -570,7 +570,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
   const activePicker = model
   const activeModelLabel = createMemo(() => modelLabel() || "Select model")
   const harnessThoughtLevels = createMemo(() => selection().thoughtLevels ?? [])
-  const catalogSelected = createMemo(() => !!harness() && isCatalogHarness(harness()!))
+  const catalogSelected = createMemo(() => !!harness() && isCatalogHarness(harness()))
   const activeVariants = createMemo(() =>
     catalogSelected()
       ? props.providerVariants?.() ?? []
@@ -609,7 +609,7 @@ export function AgentHarnessSelector(props: AgentHarnessSelectorProps) {
         harnessHint={() => (sessionLocked() ? "Continue this conversation with another harness" : undefined)}
         harnessIcon={(option) => <HarnessOptionIcon harness={option} />}
         onHarnessSelect={applyHarness}
-        showManageModels={() => !!harness() && isCatalogHarness(harness()!)}
+        showManageModels={() => !!harness() && isCatalogHarness(harness())}
         modelError={() => {
           // The SAME resolved notice the composer row shows, rendered inside
           // the Model section too. The row explains the failure globally; the

@@ -137,7 +137,7 @@ export function resourceMetrics(input: {
 
   const ordered = input.samples.toSorted((a, b) => a.atMs - b.atMs)
   for (let index = 0; index < ordered.length; index++) {
-    const sample = ordered[index]!
+    const sample = ordered[index]
     if (
       !Number.isFinite(sample.atMs) ||
       !Number.isFinite(sample.rssBytes) || sample.rssBytes < 0 ||
@@ -165,7 +165,7 @@ export function percentile(values: number[], rank: number) {
   if (values.length === 0 || !Number.isFinite(rank) || rank < 0 || rank > 100) return Number.NaN
   const sorted = values.toSorted((a, b) => a - b)
   const index = Math.max(0, Math.ceil((rank / 100) * sorted.length) - 1)
-  return sorted[Math.min(index, sorted.length - 1)]!
+  return sorted[Math.min(index, sorted.length - 1)]
 }
 
 function exact(value: number, unit: string): ExactMetric {

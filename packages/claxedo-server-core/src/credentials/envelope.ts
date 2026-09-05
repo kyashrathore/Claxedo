@@ -245,7 +245,7 @@ function parseEnvelope(stored: string): ParsedEnvelope {
   }
   let packed: Uint8Array
   try {
-    packed = fromBase64(match[2]!)
+    packed = fromBase64(match[2])
   } catch {
     throw new Error("credential envelope payload is not valid base64 — refusing to return it")
   }
@@ -253,7 +253,7 @@ function parseEnvelope(stored: string): ParsedEnvelope {
   if (packed.length < IV_LEN + 16) {
     throw new Error("credential envelope payload is truncated — refusing to return it")
   }
-  return { keyId: match[1]!, iv: packed.subarray(0, IV_LEN), ciphertext: packed.subarray(IV_LEN) }
+  return { keyId: match[1], iv: packed.subarray(0, IV_LEN), ciphertext: packed.subarray(IV_LEN) }
 }
 
 /**

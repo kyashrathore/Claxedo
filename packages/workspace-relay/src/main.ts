@@ -281,7 +281,7 @@ export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv)
   let privateKey: CryptoKey
   let derivedPublicKey: CryptoKey | undefined
   if (privatePem) {
-    privateKey = (await importPKCS8(privatePem, "EdDSA", { extractable: true })) as CryptoKey
+    privateKey = (await importPKCS8(privatePem, "EdDSA", { extractable: true }))
   } else {
     // T7: refuse to boot in production with an ephemeral key. Each instance
     // would generate a different key, so RHTs minted by one instance would
@@ -294,15 +294,15 @@ export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv)
       process.exit(2)
     }
     const pair = await generateKeyPair("EdDSA", { extractable: true })
-    privateKey = pair.privateKey as CryptoKey
-    derivedPublicKey = pair.publicKey as CryptoKey
+    privateKey = pair.privateKey
+    derivedPublicKey = pair.publicKey
     console.log("[workspace-relay] generated ephemeral relay-host signing key (no PEM provided)")
   }
 
   const explicitPublicPem = pem(env.CLAXEDO_RELAY_HOST_PUBLIC_KEY_PEM)
   let publicKey: CryptoKey
   if (explicitPublicPem) {
-    publicKey = (await importSPKI(explicitPublicPem, "EdDSA", { extractable: true })) as CryptoKey
+    publicKey = (await importSPKI(explicitPublicPem, "EdDSA", { extractable: true }))
   } else if (derivedPublicKey) {
     publicKey = derivedPublicKey
   } else {
@@ -321,7 +321,7 @@ export async function loadRelayHostKeyMaterial(env: LoadRelayHostKeyMaterialEnv)
   const nextPem = pem(env.CLAXEDO_RELAY_HOST_NEXT_PUBLIC_KEY_PEM)
   let next: RelayHostPublicKey | undefined
   if (nextPem) {
-    const nextPublicKey = (await importSPKI(nextPem, "EdDSA", { extractable: true })) as CryptoKey
+    const nextPublicKey = (await importSPKI(nextPem, "EdDSA", { extractable: true }))
     const explicitNextKid = clean(env.CLAXEDO_RELAY_HOST_NEXT_KID)
     next = {
       publicKey: nextPublicKey,
@@ -726,9 +726,7 @@ async function main() {
         )
       }
     },
-  }, {
-    ...(directHttpConcurrency ? { directHttpConcurrency } : {}),
-  })
+  }, (directHttpConcurrency ? { directHttpConcurrency } : {}))
 
   const server = Bun.serve({
     port,

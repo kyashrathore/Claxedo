@@ -260,7 +260,7 @@ function reconnectDelay(input: WorkspaceRelayHostTunnelOptions, attempt: number)
 }
 
 function tunnelHeaders(input: WorkspaceRelayHostTunnelOptions, token: string) {
-  const result = { ...(input.headers ?? {}) }
+  const result = { ...input.headers }
   for (const key of Object.keys(result)) {
     if (key.toLowerCase() === "authorization") delete result[key]
   }
@@ -669,7 +669,7 @@ export function startWorkspaceRelayHostTunnel(options: WorkspaceRelayHostTunnelO
         return
       }
       if (parsed.type === "ws.close") {
-        const close = parsed as TunnelWsClose
+        const close = parsed
         const channel = channels.get(close.channel_id)
         if (channel) closeSocket(channel.upstream, close.code, close.reason)
         channels.delete(close.channel_id)

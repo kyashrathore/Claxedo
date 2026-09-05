@@ -506,14 +506,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     if (!session) throw new Error(`Session ${sessionId} not found`)
     if (session.status === "busy") throw new Error("Wait for the current turn to finish before switching harness")
     const targetDirectory = directory ?? session.directory
-    const previousBinding = executionBinding(sessionId, targetDirectory, current!.harness)
-    const source = await adapterFor(current!.harness)
+    const previousBinding = executionBinding(sessionId, targetDirectory, current.harness)
+    const source = await adapterFor(current.harness)
     const target = await adapterFor(update.harness!)
     return executeHandoffTransaction({
       sessionId,
       directory: targetDirectory,
       session,
-      current: current!,
+      current: current,
       update: { ...update, harness: update.harness! },
       binding: previousBinding,
       store,
@@ -692,14 +692,14 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
       },
       async update(sessionId: string, updates: { title?: string; time?: { archived?: number } }, directory?: RuntimeDirectory) {
         const adapter = await adapterForSession(sessionId)
-        const updated = await adapter.updateSession(executionBinding(sessionId, directory), updates) as AgentSession | null
+        const updated = await adapter.updateSession(executionBinding(sessionId, directory), updates)
         if (!updated) throw new Error(`Session ${sessionId} not found`)
         const persisted = store.updateSession(sessionId, {
           ...(updated.title !== undefined ? { title: updated.title ?? undefined } : {}),
           ...(updated.time?.archived !== undefined ? { time: { archived: updated.time.archived } } : {}),
         })
         if (!persisted) throw new Error(`Session ${sessionId} not found`)
-        return persisted as AgentSession
+        return persisted
       },
       async updateConfig(sessionId: string, update: SessionConfigUpdate, directory?: RuntimeDirectory) {
         return await updateSessionConfig(sessionId, update, directory)
@@ -869,10 +869,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     },
     permissions: resource({
       async list(directory: RuntimeDirectory): Promise<AgentPermission[]> {
-        return merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as Promise<AgentPermission[]>
+        return merge(adapters, (adapter) => adapter.listPermissions?.(directory))
       },
       async respond(permissionId: string, decision: AgentRuntimePermissionDecision, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
-        const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)) as AgentPermission[])
+        const permission = (await merge(adapters, (adapter) => adapter.listPermissions?.(directory)))
           .find((item) => item.id === permissionId)
         if (!permission) throw new Error(`Permission ${permissionId} not found`)
         const adapter = await interactionAdapter("respondPermission", permission?.sessionID)
@@ -884,10 +884,10 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
     }),
     questions: resource({
       async list(directory: RuntimeDirectory): Promise<AgentQuestion[]> {
-        return merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as Promise<AgentQuestion[]>
+        return merge(adapters, (adapter) => adapter.listQuestions?.(directory))
       },
       async answer(questionId: string, answers: AgentQuestionAnswer[], directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
-        const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
+        const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)))
           .find((item) => item.id === questionId)
         if (!question) throw new Error(`Question ${questionId} not found`)
         const adapter = await interactionAdapter("replyQuestion", question?.sessionID)
@@ -897,7 +897,7 @@ export function createAgentRuntime(input: CreateAgentRuntimeInput) {
         return result
       },
       async reject(questionId: string, directory: RuntimeDirectory): Promise<AgentRuntimeInteractionResult | void> {
-        const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)) as AgentQuestion[])
+        const question = (await merge(adapters, (adapter) => adapter.listQuestions?.(directory)))
           .find((item) => item.id === questionId)
         if (!question) throw new Error(`Question ${questionId} not found`)
         const adapter = await interactionAdapter("rejectQuestion", question?.sessionID)

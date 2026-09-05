@@ -112,7 +112,7 @@ function pick(cfg: SessionConfigOption[] | null, kind: "mode" | "model" | "thoug
 function match(opt: SessionConfigOption | null, ids: string[]) {
   if (!opt || opt.type !== "select") return null
   const set = new Set(ids)
-  return flat(opt.options ?? []).find((item) => set.has(item.value as string))?.value as string | undefined
+  return flat(opt.options ?? []).find((item) => set.has(item.value))?.value
 }
 
 function currentValue(opt: SessionConfigOption | null): string | undefined {

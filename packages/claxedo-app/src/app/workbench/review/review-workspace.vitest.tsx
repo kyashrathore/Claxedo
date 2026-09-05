@@ -287,8 +287,8 @@ describe("review surface ownership across tab deactivation", () => {
   test("deactivating Review disposes its viewport and remounts it from retained state", () => {
     const { container } = renderWorkspace({ initialWorkingSet: workingSetWithFileTab })
 
-    const firstViewport = mounts()[0]!.viewport!
-    const firstObserver = FakeResizeObserver.instances[0]!
+    const firstViewport = mounts()[0].viewport!
+    const firstObserver = FakeResizeObserver.instances[0]
     expect(firstObserver.observed).toContain(firstViewport)
     expect(firstObserver.disconnected).toBe(false)
     expect(Object.getOwnPropertyDescriptor(firstViewport, REVIEW_SCROLL_DIAGNOSTIC_PROPERTY)).toBeTruthy()
@@ -301,13 +301,13 @@ describe("review surface ownership across tab deactivation", () => {
 
     tabButton(container, "review").click()
     expect(mounts()).toHaveLength(2)
-    expect(mounts()[1]!.viewport).not.toBe(firstViewport)
+    expect(mounts()[1].viewport).not.toBe(firstViewport)
     expect(FakeResizeObserver.instances).toHaveLength(2)
   })
 
   test("the viewport binding still dies with the surface's DOM", () => {
     renderWorkspace({ initialWorkingSet: workingSetWithFileTab })
-    const observer = FakeResizeObserver.instances[0]!
+    const observer = FakeResizeObserver.instances[0]
     expect(observer.disconnected).toBe(false)
 
     // Closing the panel disposes the whole workspace — the one disposal the
@@ -326,10 +326,10 @@ describe("the working-set boundary retains the latest Review state", () => {
     })
 
     expect(mounts()).toHaveLength(1)
-    expect(mounts()[0]!.retained).toMatchObject({ mode: "unstaged" })
+    expect(mounts()[0].retained).toMatchObject({ mode: "unstaged" })
 
     // The user changes the surface while Review is open…
-    mounts()[0]!.publishSurface({ mode: "staged", openDiffs: ["src/x.ts"], diffStyle: "split" })
+    mounts()[0].publishSurface({ mode: "staged", openDiffs: ["src/x.ts"], diffStyle: "split" })
 
     // …leaves it for a file tab, then comes back. The surface remounts while
     // the boundary supplies the same canonical state.
@@ -337,7 +337,7 @@ describe("the working-set boundary retains the latest Review state", () => {
     tabButton(container, "review").click()
 
     expect(mounts()).toHaveLength(2)
-    expect(mounts()[1]!.retained).toMatchObject({
+    expect(mounts()[1].retained).toMatchObject({
       mode: "staged",
       openDiffs: ["src/x.ts"],
       diffStyle: "split",

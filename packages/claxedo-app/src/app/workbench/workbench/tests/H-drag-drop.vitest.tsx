@@ -18,7 +18,7 @@ function stubRect(el: Element, width: number, height: number) {
  *  own implementation always returns null. */
 function withElementFromPoint<T>(el: Element, run: () => T): T {
   const original = document.elementFromPoint
-  document.elementFromPoint = () => el as Element
+  document.elementFromPoint = () => el
   try {
     return run()
   } finally {
@@ -55,8 +55,8 @@ describe("H. drag & drop (pointer)", () => {
     h.api().contents.add("a")
     h.api().navigation.show("a")
     const paneId = h.api().selectors.contentPane("a")!
-    const grip = h.utils.queryByTestId(`pane-handle-${paneId}`)! as HTMLElement
-    const zone = h.utils.queryByTestId(`pane-handle-zone-${paneId}`)! as HTMLElement
+    const grip = h.utils.queryByTestId(`pane-handle-${paneId}`)!
+    const zone = h.utils.queryByTestId(`pane-handle-zone-${paneId}`)!
 
     // The grip (the element carrying the drag source) is hit-testable...
     expect(grip.style.pointerEvents).toBe("auto")

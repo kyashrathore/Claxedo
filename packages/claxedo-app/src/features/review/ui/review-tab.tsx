@@ -255,12 +255,12 @@ export function ReviewTab(props: ReviewTabProps) {
   const seededDiffs = peekReviewVcsDiff(seededTarget)
   const [store, setStore] = createStore({
     openDiffs: [] as string[],
-    diffStyle: (retained.diffStyle ?? initialDiffStyle()) as ReviewDiffStyle,
+    diffStyle: (retained.diffStyle ?? initialDiffStyle()),
     focusedFile: retained.focusedFile,
     forcedDiffPaths: retained.forcedDiffPaths ?? [],
     loading: false,
     remoteDiffKey: seededDiffs ? seededDiffKey : "",
-    remoteDiffs: (seededDiffs ?? []) as VcsFileDiff[],
+    remoteDiffs: (seededDiffs ?? []),
   })
   const [renderedHunks, setRenderedHunks] = createSignal(0)
 

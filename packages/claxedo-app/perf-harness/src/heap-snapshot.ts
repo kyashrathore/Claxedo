@@ -85,8 +85,8 @@ export function analyzeDetachedRetainers(raw: RawSnapshot, limit = 15): Retainer
   const edgeTypeNames = (edge_types[0] ?? []) as string[]
 
   const nodeCount = raw.snapshot.node_count
-  const nodeName = (index: number) => raw.strings[raw.nodes[index * nodeFieldCount + nameOffset]!] ?? "?"
-  const nodeKind = (index: number) => nodeTypeNames[raw.nodes[index * nodeFieldCount + typeOffset]!] ?? "?"
+  const nodeName = (index: number) => raw.strings[raw.nodes[index * nodeFieldCount + nameOffset]] ?? "?"
+  const nodeKind = (index: number) => nodeTypeNames[raw.nodes[index * nodeFieldCount + typeOffset]] ?? "?"
   const detached = (index: number) =>
     detachOffset >= 0 && raw.nodes[index * nodeFieldCount + detachOffset] === 2
 
@@ -94,7 +94,7 @@ export function analyzeDetachedRetainers(raw: RawSnapshot, limit = 15): Retainer
   // the running total of every previous node's edge_count.
   const firstEdge = new Uint32Array(nodeCount + 1)
   for (let i = 0; i < nodeCount; i++) {
-    firstEdge[i + 1] = firstEdge[i]! + raw.nodes[i * nodeFieldCount + edgeCountOffset]!
+    firstEdge[i + 1] = firstEdge[i] + raw.nodes[i * nodeFieldCount + edgeCountOffset]
   }
 
   // A node's own retainer. Enough to climb toward a named owner without a full
@@ -106,10 +106,10 @@ export function analyzeDetachedRetainers(raw: RawSnapshot, limit = 15): Retainer
   // empty retainer and the climb silently gave up at depth 0.
   const retainerOf = new Uint32Array(nodeCount)
   for (let source = 0; source < nodeCount; source++) {
-    const start = firstEdge[source]!
-    const end = firstEdge[source + 1]!
+    const start = firstEdge[source]
+    const end = firstEdge[source + 1]
     for (let e = start; e < end; e++) {
-      const target = raw.edges[e * edgeFieldCount + edgeToOffset]! / nodeFieldCount
+      const target = raw.edges[e * edgeFieldCount + edgeToOffset] / nodeFieldCount
       // Stored one-based: node index 0 is a real node, so a plain index would
       // make "retained by node 0" indistinguishable from "no retainer" and
       // stop every climb at its first step.
@@ -146,18 +146,18 @@ export function analyzeDetachedRetainers(raw: RawSnapshot, limit = 15): Retainer
   // the source is what keeps it alive.
   for (let source = 0; source < nodeCount; source++) {
     if (detached(source)) continue
-    const start = firstEdge[source]!
-    const end = firstEdge[source + 1]!
+    const start = firstEdge[source]
+    const end = firstEdge[source + 1]
     for (let e = start; e < end; e++) {
       const base = e * edgeFieldCount
-      const target = raw.edges[base + edgeToOffset]! / nodeFieldCount
+      const target = raw.edges[base + edgeToOffset] / nodeFieldCount
       if (!detached(target)) continue
       // Native DOM internals (SVGAnimatedLength, ShadowRoot, CSSStyleDeclaration)
       // are ATTRIBUTES of the detached node, not references keeping it alive.
       // They dominated the first version of this table and named nothing.
       if (nodeKind(source) === "native") continue
-      const isIndexed = edgeTypeNames[raw.edges[base + edgeTypeOffset]!] === "element"
-      const edgeLabel = isIndexed ? "[index]" : raw.strings[raw.edges[base + edgeNameOffset]!] ?? "?"
+      const isIndexed = edgeTypeNames[raw.edges[base + edgeTypeOffset]] === "element"
+      const edgeLabel = isIndexed ? "[index]" : raw.strings[raw.edges[base + edgeNameOffset]] ?? "?"
       const owner = namedOwner(source)
       const key = `${owner.kind} ${owner.name} ${edgeLabel}`
       const group = groups.get(key) ?? {
@@ -167,7 +167,7 @@ export function analyzeDetachedRetainers(raw: RawSnapshot, limit = 15): Retainer
         bytes: 0,
       }
       group.detachedNodes += 1
-      group.bytes += raw.nodes[target * nodeFieldCount + sizeOffset]!
+      group.bytes += raw.nodes[target * nodeFieldCount + sizeOffset]
       groups.set(key, group)
     }
   }

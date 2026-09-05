@@ -50,7 +50,7 @@ export function parseStackFrames(stack: unknown): ExceptionFrame[] {
     if (!match) continue
     frames.push({
       platform: "web:javascript",
-      filename: match[2]!,
+      filename: match[2],
       function: match[1] ?? "<anonymous>",
       in_app: true,
       lineno: Number(match[3]),

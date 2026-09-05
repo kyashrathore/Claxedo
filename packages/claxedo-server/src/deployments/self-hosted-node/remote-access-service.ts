@@ -97,7 +97,7 @@ export function createRemoteAccessService(input: {
     if (!method) {
       throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", `This control plane does not support ${what}`)
     }
-    return method as NonNullable<T>
+    return method
   }
 
   async function localWorkspaces() {

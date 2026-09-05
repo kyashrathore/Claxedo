@@ -279,7 +279,7 @@ function parseArgs(argv: string[]): { config: LoadgenConfig; outDir?: string } {
   const map = new Map<string, string>()
   const flags = new Set<string>()
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i]!
+    const arg = argv[i]
     if (!arg.startsWith("--")) continue
     const key = arg.slice(2)
     const value = argv[i + 1]

@@ -45,7 +45,7 @@ export function mountWorkspaceEvents(app: Hono, options: {
   app.get(WorkspaceRuntimeRoutes.runtimeEvents, runtimeEventsHandler(options.eventHub, {
     policy,
     sessionAccessPolicy: options.sessionAccessPolicy,
-    ...(options.runtimeEventAuthorization ?? {}),
+    ...options.runtimeEventAuthorization,
   }))
 }
 

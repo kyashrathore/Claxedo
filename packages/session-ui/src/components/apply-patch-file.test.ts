@@ -19,8 +19,8 @@ describe("apply patch file", () => {
     expect(file).toBeDefined()
     expect(file?.view.fileDiff.name).toBe("a.ts")
     expect(file?.view.fileDiff.isPartial).toBe(false)
-    expect(text(file!.view, "deletions")).toBe("one\ntwo\n")
-    expect(text(file!.view, "additions")).toBe("one\nthree\n")
+    expect(text(file.view, "deletions")).toBe("one\ntwo\n")
+    expect(text(file.view, "additions")).toBe("one\nthree\n")
   })
 
   test("keeps legacy before and after payloads working", () => {
@@ -37,7 +37,7 @@ describe("apply patch file", () => {
     ])[0]
 
     expect(file).toBeDefined()
-    expect(text(file!.view, "deletions")).toBe("one\n")
-    expect(text(file!.view, "additions")).toBe("two\n")
+    expect(text(file.view, "deletions")).toBe("one\n")
+    expect(text(file.view, "additions")).toBe("two\n")
   })
 })

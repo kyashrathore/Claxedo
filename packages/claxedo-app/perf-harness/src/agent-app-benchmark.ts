@@ -219,7 +219,7 @@ export async function runAgentAppBenchmark(options: Options) {
     hostAfter = await captureHostState();
     const transitionFailures = validateHostTransition(hostBefore, hostAfter);
     if (transitionFailures.length) {
-      for (let index = 0; index < samples.length; index++) samples[index] = applyValidity(samples[index]!, transitionFailures.map((check) => ({ check, passed: false })));
+      for (let index = 0; index < samples.length; index++) samples[index] = applyValidity(samples[index], transitionFailures.map((check) => ({ check, passed: false })));
     }
   } catch (error) {
     failure = error instanceof Error ? error.message : String(error);
@@ -235,7 +235,7 @@ export async function runAgentAppBenchmark(options: Options) {
   const survivorCount = shutdown && typeof shutdown === "object" && "survivors" in shutdown && Array.isArray((shutdown as { survivors: unknown[] }).survivors) ? (shutdown as { survivors: unknown[] }).survivors.length : runtime ? 1 : 0;
   if (survivorCount > 0) {
     failure ??= `${survivorCount} owned process survivor(s)`;
-    for (let index = 0; index < samples.length; index++) samples[index] = applyValidity(samples[index]!, [{ check: "zero-process-survivors", expectedCount: 0, actualCount: survivorCount, passed: false }]);
+    for (let index = 0; index < samples.length; index++) samples[index] = applyValidity(samples[index], [{ check: "zero-process-survivors", expectedCount: 0, actualCount: survivorCount, passed: false }]);
   }
   if (failure || samples.length !== selectedMetrics(options.profiles).length) {
     const existing = new Set(samples.map((sample) => sample.metric));
@@ -331,7 +331,7 @@ export function summarizeAgentMetrics(samples: RawMetricSample[], profiles: Agen
     const raw = samples.filter((sample) => sample.metric === metric);
     const valid = raw.filter((sample) => sample.validity.status === "valid" && (sample.observation.state === "exact" || sample.observation.state === "bounded"));
     const values = valid.flatMap((sample) => sample.observation.state === "exact" ? [sample.observation.value] : sample.observation.state === "bounded" ? [sample.observation.upperBound] : []);
-    const value = values.length ? values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)]! : undefined;
+    const value = values.length ? values.toSorted((a, b) => a - b)[Math.floor(values.length / 2)] : undefined;
     const target = targets?.absoluteBudgets[metric];
     return { metric, target, totalSamples: raw.length, validSamples: valid.length, excludedInvalidSamples: raw.length - valid.length, value, passed: value !== undefined && !!target && evaluateTarget(target, value) };
   });
@@ -352,7 +352,7 @@ async function resolveExecutable(app: string) {
   await access(executable);
   return await realpath(executable);
 }
-function isT3Path(value: string) { return /(^|[\/\\])(?:t3|t3code)(?=$|[\/\\.:-])/iu.test(value); }
+function isT3Path(value: string) { return /(^|[/\\])(?:t3|t3code)(?=$|[/\\.:-])/iu.test(value); }
 async function sha256File(file: string) { return createHash("sha256").update(await readFile(file)).digest("hex"); }
 async function hashDriverClosure() {
   const files = (await readdir(import.meta.dir)).filter((name) => name.startsWith("agent-") && name.endsWith(".ts")).toSorted();

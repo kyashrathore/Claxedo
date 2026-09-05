@@ -379,7 +379,7 @@ describe("eventStreamFetch", () => {
   test("opens the per-workspace stream through the relay with the Runtime Access Token (NOT central)", async () => {
     const seen: Array<{ url: string; auth: string | null; accept: string | null }> = []
     const request = fetchDouble(async (input, init) => {
-      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url
+      const url = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input).url
       const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
       // Mint the relay connection for the workspace.
       if (url.includes("/api/workspace/ws_events_relay/connection")) {
@@ -415,16 +415,16 @@ describe("eventStreamFetch", () => {
     expect(res.status).toBe(200)
     // The stream request hit the relay (NOT central) with the RAT bearer.
     expect(seen).toHaveLength(1)
-    expect(seen[0]!.url).toBe("https://relay.events.test/workspaces/ws_events_relay/api/wr/events?sessionID=session-events")
-    expect(seen[0]!.url).not.toContain("control.example.test")
-    expect(seen[0]!.auth).toBe("Bearer rat_events")
-    expect(seen[0]!.accept).toBe("text/event-stream")
+    expect(seen[0].url).toBe("https://relay.events.test/workspaces/ws_events_relay/api/wr/events?sessionID=session-events")
+    expect(seen[0].url).not.toContain("control.example.test")
+    expect(seen[0].auth).toBe("Bearer rat_events")
+    expect(seen[0].accept).toBe("text/event-stream")
   })
 
   test("fetches the central global stream directly (no relay)", async () => {
     let hit: string | undefined
     const request = fetchDouble(async (input) => {
-      hit = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input as Request).url
+      hit = typeof input === "string" ? input : input instanceof URL ? input.toString() : (input).url
       return new Response("data: {\"type\":\"heartbeat\"}\n\n", { status: 200 })
     })
 

@@ -79,7 +79,7 @@ export function fixtureFor(scenario: ScenarioId, seed: SeedManifest) {
     // session-switch-workspace needs sessions distributed across two distinct
     // workspace directories, exactly like the workspace-switch flow.
     directory: scenario === "workspace-switch" || scenario === "session-switch-workspace"
-      ? workspaceDirectories[index % workspaceDirectories.length]!
+      ? workspaceDirectories[index % workspaceDirectories.length]
       : directory,
     title: `${scenario} session ${index + 1}`,
     version: "dev",

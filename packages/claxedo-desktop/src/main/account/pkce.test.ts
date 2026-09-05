@@ -110,7 +110,7 @@ describe("readCallback", () => {
     const result = ok("?code=abc&state=someone-elses")
 
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.reason).toContain("state did not match")
+    expect(!result.ok && result.reason).toContain("state did not match")
   })
 
   test("rejects a callback with no state at all", () => {
@@ -127,7 +127,7 @@ describe("readCallback", () => {
     const result = ok(`?error=access_denied&state=${expectedState}`)
 
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.reason).toContain("access_denied")
+    expect(!result.ok && result.reason).toContain("access_denied")
   })
 
   test("rejects a request to any other path on the listener", () => {
@@ -136,7 +136,7 @@ describe("readCallback", () => {
     const result = readCallback({ url: `/other?code=abc&state=${expectedState}`, expectedState, redirectPath: REDIRECT_PATH })
 
     expect(result.ok).toBe(false)
-    expect(result.ok === false && result.reason).toContain("unexpected callback path")
+    expect(!result.ok && result.reason).toContain("unexpected callback path")
   })
 })
 

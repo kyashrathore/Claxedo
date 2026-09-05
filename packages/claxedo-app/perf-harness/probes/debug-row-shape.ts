@@ -40,7 +40,7 @@ page.on("pageerror", (error) => console.log("[pageerror]", String(error).slice(0
 
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 await launchTo(page, app, sessionPath(session, session.id))
 await waitForTranscript(page, fixture, session.id, session.title)
 await openReviewSurface(page, fixture, { settle: "frame" })
@@ -137,9 +137,9 @@ const rebuild = await page.evaluate(async () => {
   // is the comparable number and p25 shows whether the whole distribution moved.
   return {
     rows: rows(),
-    min: samples[0]!,
-    p25: samples[Math.floor(samples.length / 4)]!,
-    median: samples[Math.floor(samples.length / 2)]!,
+    min: samples[0],
+    p25: samples[Math.floor(samples.length / 4)],
+    median: samples[Math.floor(samples.length / 2)],
     max: samples.at(-1)!,
   }
 })

@@ -732,7 +732,7 @@ async function fetchHttpsAddress(url: string, address: string, init: RequestInit
         response.on("end", () => {
           const headers = new Headers()
           for (let index = 0; index < response.rawHeaders.length; index += 2) {
-            headers.append(response.rawHeaders[index]!, response.rawHeaders[index + 1]!)
+            headers.append(response.rawHeaders[index], response.rawHeaders[index + 1])
           }
           resolve(
             new Response(Buffer.concat(chunks), {
@@ -777,7 +777,7 @@ export async function fetchReleaseProbe(
       }
     }
     throw new Error("release probe failed through normal and authoritative DNS resolution", {
-      cause: lastFailure,
+      cause: primaryFailure,
     })
   }
 }
@@ -935,7 +935,7 @@ export function recoverCandidateVersion(input: {
   const matching = versions.filter((version) => version.annotations?.["workers/tag"] === input.tag)
   if (matching.length === 0) return undefined
   if (matching.length !== 1) throw new Error("candidate version tag resolves to more than one Worker version")
-  const version = matching[0]!
+  const version = matching[0]
   if (!version.id || !VERSION_ID.test(version.id) || !Array.isArray(version.resources?.bindings)) {
     throw new Error("tagged candidate version has invalid resource metadata")
   }
@@ -1057,7 +1057,7 @@ async function ensureCutoverLiveSyncLifecycle(input: {
   if (status.versions.length !== 1) {
     throw new Error("the LiveSyncRoom lifecycle bridge refuses an existing split deployment")
   }
-  const incumbentVersionId = status.versions[0]!.version_id
+  const incumbentVersionId = status.versions[0].version_id
   requireDeploymentTraffic(status, [{ versionId: incumbentVersionId, percentage: 100 }])
   const incumbent = await run(["wrangler", "versions", "view", incumbentVersionId, ...input.configArgs, "--json"], {
     capture: true,
@@ -1099,7 +1099,7 @@ async function ensureCutoverLiveSyncLifecycle(input: {
   if (installedStatus.versions.length !== 1) {
     throw new Error("the LiveSyncRoom lifecycle bridge did not produce one atomic deployment")
   }
-  const bridgeVersionId = installedStatus.versions[0]!.version_id
+  const bridgeVersionId = installedStatus.versions[0].version_id
   requireDeploymentTraffic(installedStatus, [{ versionId: bridgeVersionId, percentage: 100 }])
   const bridgeVersion = await run(["wrangler", "versions", "view", bridgeVersionId, ...bridgeConfigArgs, "--json"], {
     capture: true,

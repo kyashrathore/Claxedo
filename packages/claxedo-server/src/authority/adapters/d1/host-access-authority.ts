@@ -286,7 +286,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       `).bind(workspaceId),
       this.database.prepare(retireUserHostedWorkspaceSql("workspace_id = ?")).bind(now, now, workspaceId),
     ])
-    return { unassigned: changes(result!) > 0 }
+    return { unassigned: changes(result) > 0 }
   }
 
   /** Routable host: owner-assigned AND machine-acked AND live lease. */
@@ -624,7 +624,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
         now,
       ),
     ])
-    return { revoked: changes(results[0]!), runtime_tokens_revoked: changes(results[3]!) }
+    return { revoked: changes(results[0]), runtime_tokens_revoked: changes(results[3]) }
   }
 
   async grantWorkspaceShare(
@@ -731,7 +731,7 @@ export class D1HostAccessAuthority implements D1HostAccessAuthorityPort {
       `).bind(assertionId, grant.grant_id, workspaceId, now),
       this.deleteAssertion(assertionId),
     ], "Workspace share revocation raced with an authority change")
-    return { revoked: true, runtime_tokens_revoked: changes(results[1]!) }
+    return { revoked: true, runtime_tokens_revoked: changes(results[1]) }
   }
 
   async recordRuntimeAccessToken(

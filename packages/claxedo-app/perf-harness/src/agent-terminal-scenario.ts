@@ -196,8 +196,8 @@ export async function createTerminalWorkload(
     for (let completed = 1; completed <= repeatCount; completed += 1) {
       yield cycle
       if (sentinelAfterCycles[sentinelIndex] !== completed) continue
-      yield readyMarkers[sentinelIndex]!
-      yield echoes[sentinelIndex]!
+      yield readyMarkers[sentinelIndex]
+      yield echoes[sentinelIndex]
       sentinelIndex += 1
     }
     yield complete

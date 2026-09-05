@@ -186,7 +186,7 @@ export function verifyDesktopBoundaryManifestSet(root = DEFAULT_DESKTOP_ROOT) {
   if (fs.existsSync(rendererDocument)) {
     const html = fs.readFileSync(rendererDocument, "utf8")
     const preloads = [...html.matchAll(/<link\b[^>]*\brel=["']modulepreload["'][^>]*\bhref=["']([^"']+)["'][^>]*>/gi)]
-      .map((match) => match[1]!)
+      .map((match) => match[1])
     const eagerHosted = preloads.filter((entry) => entry.includes("desktop-hosted-contributions-"))
     if (eagerHosted.length > 0) {
       throw new Error(

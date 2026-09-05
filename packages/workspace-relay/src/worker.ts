@@ -87,7 +87,7 @@ async function relayHostJwksResponse(env: WorkspaceRelayWorkerEnv) {
   })
 }
 
-function requireText(env: WorkspaceRelayWorkerEnv, name: keyof WorkspaceRelayWorkerEnv & string) {
+function requireText(env: WorkspaceRelayWorkerEnv, name: keyof WorkspaceRelayWorkerEnv  ) {
   const value = clean(env[name])
   if (!value) throw new Error(`${name} is required`)
   return value
@@ -179,12 +179,8 @@ export function workspaceRelayWorkerResolverClient(env: WorkspaceRelayWorkerEnv,
   }
   const targetCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_TARGET_CACHE_TTL_MS)
   const revocationCacheTtlMs = positiveInteger(env.CLAXEDO_RELAY_REVOCATION_CACHE_TTL_MS)
-  const target = createCachedTargetClient(targetUncached, {
-    ...(targetCacheTtlMs ? { ttlMs: targetCacheTtlMs } : {}),
-  })
-  const revocation = createCachedRevocationClient(revocationUncached, {
-    ...(revocationCacheTtlMs ? { ttlMs: revocationCacheTtlMs } : {}),
-  })
+  const target = createCachedTargetClient(targetUncached, (targetCacheTtlMs ? { ttlMs: targetCacheTtlMs } : {}))
+  const revocation = createCachedRevocationClient(revocationUncached, (revocationCacheTtlMs ? { ttlMs: revocationCacheTtlMs } : {}))
   return {
     target: (workspaceId, hostId) => target({ workspaceId, hostId }),
     revocation,

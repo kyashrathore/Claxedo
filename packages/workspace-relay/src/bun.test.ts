@@ -193,7 +193,7 @@ describe("workspace relay Bun adapter", () => {
 
       await expect(message).resolves.toBe("host:ping")
       expect(hostAuthorizations[0]?.startsWith("Bearer ")).toBe(true)
-      await expect(verifyRelayHostToken(hostAuthorizations[0]!.replace(/^Bearer\s+/i, ""), relayHost.publicKey, {
+      await expect(verifyRelayHostToken(hostAuthorizations[0].replace(/^Bearer\s+/i, ""), relayHost.publicKey, {
         workspaceId: "ws_1",
         hostId: "host_1",
       })).resolves.toMatchObject({
@@ -499,7 +499,7 @@ describe("workspace relay Bun adapter", () => {
       })
       ws.send("queued-before-upstream")
       const received = await messages
-      const trace = JSON.parse(received[0]!) as {
+      const trace = JSON.parse(received[0]) as {
         type?: string
         wsUpstreamOpenMs?: number
         queuedFrames?: number
@@ -509,7 +509,7 @@ describe("workspace relay Bun adapter", () => {
       expect(trace.wsUpstreamOpenMs).toBeGreaterThanOrEqual(0)
       expect(trace.queuedFrames).toBe(1)
       expect(trace.maxQueuedDelayMs).toBeGreaterThanOrEqual(0)
-      expect(JSON.parse(received[1]!) as { type?: string }).toMatchObject({ type: "ready" })
+      expect(JSON.parse(received[1]) as { type?: string }).toMatchObject({ type: "ready" })
       expect(SlowOpenUpstreamWebSocket.instances[0]?.sent).toEqual(["queued-before-upstream"])
     } finally {
       ws.close()
@@ -2475,7 +2475,7 @@ describe("workspace relay Bun adapter", () => {
           request_id: message.request_id,
         }))
       }
-      await waitForOpen(second!)
+      await waitForOpen(second)
       await observer.waitForPresence()
 
       first.close()

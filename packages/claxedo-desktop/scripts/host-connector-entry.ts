@@ -336,9 +336,9 @@ export function runHostConnectorChild(port: ChildPort) {
 
 if (process.parentPort) {
   runHostConnectorChild({
-    postMessage: (message) => process.parentPort!.postMessage(message),
+    postMessage: (message) => process.parentPort.postMessage(message),
     onMessage: (listener) => {
-      process.parentPort!.on("message", (event) => listener(event.data))
+      process.parentPort.on("message", (event) => listener(event.data))
     },
   })
 }

@@ -457,7 +457,7 @@ async function persistFromPath(document: RuntimeDocument) {
   if (!isCurrent(document)) return
   const parts = document.path.split(path.sep)
   const sessions = parts.lastIndexOf("sessions")
-  await persist(parts[sessions + 1]!, parts[sessions + 3]!, document)
+  await persist(parts[sessions + 1], parts[sessions + 3], document)
 }
 
 async function persist(sessionId: string, documentId: string, document: RuntimeDocument) {

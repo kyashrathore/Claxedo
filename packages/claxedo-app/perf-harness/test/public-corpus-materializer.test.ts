@@ -117,7 +117,7 @@ describe("public OpenCode corpus materialization", () => {
             expect(messages.map((row) => row.info.id)).toEqual(["msg_user", "msg_assistant"])
             const assistant = messages.find((row) => row.info.id === "msg_assistant")!
             expect(assistant.parts).toEqual([expect.objectContaining({ id: "prt_assistant", text: "world" })])
-            expect(assistant.parts.map((part) => part.id)).toEqual([...target.expectedPartIds!])
+            expect(assistant.parts.map((part) => part.id)).toEqual([...target.expectedPartIds])
           }
           const journal = new Database(path.join(dataDirectory, "agent-core", workspaceId, "state.db"), { readonly: true })
           try {

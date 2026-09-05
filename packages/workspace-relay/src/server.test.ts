@@ -902,7 +902,7 @@ describe("workspace relay server", () => {
       const body = (await res.json()) as { keys: Array<Record<string, unknown>> }
       expect(Array.isArray(body.keys)).toBe(true)
       expect(body.keys.length).toBe(1)
-      const key = body.keys[0]!
+      const key = body.keys[0]
       expect(key.kty).toBe("OKP")
       expect(key.crv).toBe("Ed25519")
       expect(key.alg).toBe("EdDSA")
@@ -1249,13 +1249,13 @@ describe("workspace relay server", () => {
       expect(res.status).toBe(200)
       const upstream = relay.forwarded[0]?.request
       expect(upstream).toBeDefined()
-      expect(upstream!.headers.get("x-forwarded-for")).toBeNull()
-      expect(upstream!.headers.get("x-forwarded-host")).toBeNull()
-      expect(upstream!.headers.get("x-forwarded-proto")).toBeNull()
-      expect(upstream!.headers.get("x-real-ip")).toBeNull()
-      expect(upstream!.headers.get("x-claxedo-internal-actor")).toBeNull()
-      expect(upstream!.headers.get("x-supervisor-backplane-token")).toBeNull()
-      expect(upstream!.headers.get("x-forwarded-by")).toBe("workspace-relay")
+      expect(upstream.headers.get("x-forwarded-for")).toBeNull()
+      expect(upstream.headers.get("x-forwarded-host")).toBeNull()
+      expect(upstream.headers.get("x-forwarded-proto")).toBeNull()
+      expect(upstream.headers.get("x-real-ip")).toBeNull()
+      expect(upstream.headers.get("x-claxedo-internal-actor")).toBeNull()
+      expect(upstream.headers.get("x-supervisor-backplane-token")).toBeNull()
+      expect(upstream.headers.get("x-forwarded-by")).toBe("workspace-relay")
     })
   })
 
@@ -1590,7 +1590,7 @@ describe("workspace relay audit sampling (T16)", () => {
       counter += 1
       // Cycle: 0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6, 0.45, 0.55 ... half below 0.5
       const seq = [0.1, 0.9, 0.2, 0.8, 0.3, 0.7, 0.4, 0.6, 0.45, 0.55]
-      return seq[counter % seq.length]!
+      return seq[counter % seq.length]
     }
     const harness = await samplingHarness({ auditAcceptSampleRate: 0.5, random })
     const originalFetch = globalThis.fetch

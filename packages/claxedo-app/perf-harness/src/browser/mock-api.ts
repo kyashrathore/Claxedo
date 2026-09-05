@@ -176,7 +176,7 @@ export async function installMockApi(
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      headers: { ...mockCorsHeaders(route), ...(envelope?.headers ?? {}) },
+      headers: { ...mockCorsHeaders(route), ...envelope?.headers },
       body: JSON.stringify(envelope ? envelope.body : body),
     })
   })
@@ -378,7 +378,7 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   const session = pathName.match(/^\/session\/([^/]+)$/)
   if (session) return fixture.sessions.find((item) => item.id === session[1]) ?? {}
   const sessionConfig = pathName.match(/^\/session\/([^/]+)\/config$/)
-  if (sessionConfig) return configForSession(sessionConfig[1]!, fixture)
+  if (sessionConfig) return configForSession(sessionConfig[1], fixture)
   const goalState = pathName.match(/^\/session\/([^/]+)\/goal\/state$/)
   if (goalState && method === "GET") {
     return fixture.sessions.some((session) => session.id === goalState[1]) ? fixture.goalState : UNMATCHED_MOCK_PATH
@@ -391,8 +391,8 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
   const messages = pathName.match(/^\/session\/([^/]+)\/message$/)
   if (messages) {
     fixture.requestCounts.messages += 1
-    fixture.requestCounts.messagesBySession[messages[1]!] = (fixture.requestCounts.messagesBySession[messages[1]!] ?? 0) + 1
-    return sessionMessagePage(messages[1]!, url, fixture)
+    fixture.requestCounts.messagesBySession[messages[1]] = (fixture.requestCounts.messagesBySession[messages[1]] ?? 0) + 1
+    return sessionMessagePage(messages[1], url, fixture)
   }
 
   return UNMATCHED_MOCK_PATH
@@ -690,8 +690,8 @@ function permissionModeReport() {
 // serves): one `model` select whose current value matches the fixture's
 // provider/model pair so the composer never renders a missing-model state.
 function harnessOptions(fixture: ReturnType<typeof fixtureFor>) {
-  const provider = fixture.provider.all[0]!
-  const model = Object.values(provider.models)[0]!
+  const provider = fixture.provider.all[0]
+  const model = Object.values(provider.models)[0]
   return {
     source: "runner",
     stale: false,

@@ -132,7 +132,7 @@ export function apiError(code: string, message: string, extra?: Record<string, u
   return {
     code,
     message,
-    ...(extra ?? {}),
+    ...extra,
   }
 }
 
@@ -169,7 +169,7 @@ export function captureWorkspaceTelemetry(input: {
       input.event,
       {
         ...(input.workspaceId ? { workspaceId: input.workspaceId } : {}),
-        ...(input.properties ?? {}),
+        ...input.properties,
       },
     )
   } catch {

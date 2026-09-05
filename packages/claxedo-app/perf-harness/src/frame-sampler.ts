@@ -378,7 +378,7 @@ export async function startRecorder(
               .filter((entry) => entry.startTime < endedAt)
               .map((entry) => "duration" in entry && typeof entry.duration === "number"
                 ? { ...entry, duration: Math.min(entry.duration, endedAt - entry.startTime) }
-                : entry) as T[]
+                : entry)
             entries.splice(0, entries.length, ...retained)
           }
           retain(frames)
@@ -777,8 +777,8 @@ function intersectIntervals(left: TraceInterval[], right: TraceInterval[]) {
   let leftIndex = 0
   let rightIndex = 0
   while (leftIndex < left.length && rightIndex < right.length) {
-    const a = left[leftIndex]!
-    const b = right[rightIndex]!
+    const a = left[leftIndex]
+    const b = right[rightIndex]
     const start = Math.max(a.start, b.start)
     const end = Math.min(a.end, b.end)
     if (end > start) intersections.push({ start, end })
@@ -1258,7 +1258,7 @@ function timingsOverlap(left: TimedDuration, right: TimedDuration) {
 }
 
 export function mergeFrameMetrics(label: string, metrics: FrameMetric[]): FrameMetric {
-  if (metrics.length === 1) return metrics[0]!
+  if (metrics.length === 1) return metrics[0]
   const worstFrameMs = Math.max(0, ...metrics.map((metric) => metric.worstFrameMs))
   const observedFrameIntervalsMs = metrics.flatMap((metric) => metric.observedFrameIntervalsMs ?? [])
   const mainThreadTasksMs = metrics.flatMap((metric) => metric.mainThreadTasksMs ?? [])
@@ -1382,7 +1382,7 @@ function percentile(values: number[], rank: number) {
   if (values.length === 0) return 0
   const sorted = values.toSorted((a, b) => a - b)
   const index = Math.ceil((rank / 100) * sorted.length) - 1
-  return sorted[Math.max(0, Math.min(sorted.length - 1, index))]!
+  return sorted[Math.max(0, Math.min(sorted.length - 1, index))]
 }
 
 function round(value: number) {

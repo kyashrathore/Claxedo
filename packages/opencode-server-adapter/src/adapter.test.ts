@@ -305,7 +305,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     })
     const adapter = await connect({ descriptor: descriptor(baseUrl) })
 
-    const events = await collect(adapter.executeTurn!(binding(), prompt()))
+    const events = await collect(adapter.executeTurn(binding(), prompt()))
     expect(events.filter((event) => event.type === "text-delta").map((event) => event.delta).join("")).toBe("hello world")
     expect(events.filter((event) => event.type !== "text-delta")).toEqual([{ type: "finish", sessionId: "claxedo_ses_1" }])
     expect(events.at(-1)).toEqual({ type: "finish", sessionId: "claxedo_ses_1" })
@@ -328,7 +328,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     })
     const adapter = await connect({ descriptor: descriptor(baseUrl) })
 
-    await expect(collect(adapter.executeTurn!(binding(), prompt()))).rejects.toMatchObject({ code: "invalid_event" })
+    await expect(collect(adapter.executeTurn(binding(), prompt()))).rejects.toMatchObject({ code: "invalid_event" })
   })
 
   test("returns a typed gap instead of stale success when authoritative reconciliation cannot scope status", async () => {
@@ -348,7 +348,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     })
     const adapter = await connect({ descriptor: descriptor(baseUrl) })
 
-    await expect(collect(adapter.executeTurn!(binding(), prompt()))).rejects.toMatchObject({ code: "reconciliation_gap" })
+    await expect(collect(adapter.executeTurn(binding(), prompt()))).rejects.toMatchObject({ code: "reconciliation_gap" })
   })
 
   test("fails unsupported interactive events instead of yielding a request that cannot be answered", async () => {
@@ -372,7 +372,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
     })
     const adapter = await connect({ descriptor: descriptor(baseUrl) })
 
-    await expect(collect(adapter.executeTurn!(binding(), prompt()))).rejects.toMatchObject({ code: "unsupported_interaction" })
+    await expect(collect(adapter.executeTurn(binding(), prompt()))).rejects.toMatchObject({ code: "unsupported_interaction" })
     expect(aborts).toBe(1)
   })
 
@@ -414,7 +414,7 @@ describe("OpenCodeServerAdapter real HTTP/SSE protocol", () => {
       return new Response("missing", { status: 404 })
     })
     const adapter = await connect({ descriptor: descriptor(baseUrl) })
-    const stream = adapter.executeTurn!(binding(), prompt())[Symbol.asyncIterator]()
+    const stream = adapter.executeTurn(binding(), prompt())[Symbol.asyncIterator]()
     const next = stream.next()
     try {
       await prompted

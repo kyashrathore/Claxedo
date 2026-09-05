@@ -62,7 +62,7 @@ export type WorkspaceRuntimeHealth = {
 export type WorkspaceRuntimeClient = {
   health: () => Promise<WorkspaceRuntimeHealth>
   capabilities: () => Promise<WorkspaceCapabilities>
-  applyConfig: (snapshot: RuntimeSnapshot | AppliedRuntimeSnapshot, options?: WorkspaceRuntimeConfigApplyOptions) => Promise<void>
+  applyConfig: (snapshot: RuntimeSnapshot  , options?: WorkspaceRuntimeConfigApplyOptions) => Promise<void>
   runtimeEventsUrl: () => URL
   eventsUrl: () => URL
   files: {

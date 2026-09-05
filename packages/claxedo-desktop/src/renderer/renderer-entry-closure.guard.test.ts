@@ -87,7 +87,7 @@ function dynamicSpecifiers(text: string) {
   const found = new Set<string>()
   let match: RegExpExecArray | null
   dynamicPattern.lastIndex = 0
-  while ((match = dynamicPattern.exec(stripComments(text)))) found.add(match[1]!)
+  while ((match = dynamicPattern.exec(stripComments(text)))) found.add(match[1])
   return found
 }
 

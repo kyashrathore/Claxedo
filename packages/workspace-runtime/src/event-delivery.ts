@@ -432,13 +432,13 @@ export function createIdentityAwareEventSource<T>(input: {
           while (Date.now() < deadlineAt) {
             const index = cursor++
             if (index >= retainedEvents.length) return
-            results[index] = await decideBeforeDeadline(retainedEvents[index]!.payload)
+            results[index] = await decideBeforeDeadline(retainedEvents[index].payload)
           }
         }))
         for (let index = 0; index < retainedEvents.length; index += 1) {
           if (results[index] !== "deliver") continue
-          replay.push(retainedEvents[index]!.payload)
-          created.retainedCursor = retainedEvents[index]!.id
+          replay.push(retainedEvents[index].payload)
+          created.retainedCursor = retainedEvents[index].id
         }
       })()
       void created.tail.finally(() => {

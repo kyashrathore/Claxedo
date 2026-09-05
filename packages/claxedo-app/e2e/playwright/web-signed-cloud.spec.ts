@@ -174,7 +174,7 @@ test.describe("web signed cloud @core @tier-real @surface-web", () => {
         `ready cloud workspace) against a BUILT web bundle instead of that spec's dev-server one, ruling out the ` +
         `build-vs-dev-server axis as the cause. See docs/plans/2026-08-06-001-test-full-matrix-real-e2e-plan.md, ` +
         `real-cloud-relay.spec.ts's HARNESS NOTES "REMAINING BLOCKER".`
-      throw new Error(`GATING: ${gateProbeError}`)
+      throw new Error(`GATING: ${gateProbeError}`, { cause: err })
     }
   })
 

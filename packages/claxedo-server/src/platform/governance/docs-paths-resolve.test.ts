@@ -75,7 +75,7 @@ function unresolvedRefs() {
       const parent = rowParent(line)
       let first = true
       for (const match of line.matchAll(CODE_SPAN)) {
-        const ref = match[1]!
+        const ref = match[1]
         const isParent = first
         first = false
         // Not a path: a package specifier, a URL, a glob, or an env var.

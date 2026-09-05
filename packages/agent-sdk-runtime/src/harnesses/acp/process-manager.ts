@@ -522,7 +522,7 @@ export abstract class AcpProcessManager {
       const message = errorMessage(err)
       const detail = proc.failureDetail?.()
       if (message === "ACP connection closed" && detail) {
-        throw new Error(`ACP connection closed: ${detail}`)
+        throw new Error(`ACP connection closed: ${detail}`, { cause: err })
       }
       throw err
     } finally {

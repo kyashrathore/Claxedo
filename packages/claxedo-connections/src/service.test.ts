@@ -356,8 +356,8 @@ describe("connections service", () => {
     expect(await service.resolveForCapability("channel")).toHaveLength(0)
     const handles = await service.resolveForCapability("docs")
     expect(handles).toHaveLength(1)
-    expect(handles[0]!.integrationId).toBe("fake")
-    expect(await handles[0]!.getToken()).toEqual({ token: "good", tokenType: "bearer" })
+    expect(handles[0].integrationId).toBe("fake")
+    expect(await handles[0].getToken()).toEqual({ token: "good", tokenType: "bearer" })
     expect(await service.resolveForCapability("docs", { integration: "other" })).toHaveLength(0)
   })
 

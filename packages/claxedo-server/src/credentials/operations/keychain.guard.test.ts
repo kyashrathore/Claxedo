@@ -43,7 +43,7 @@ describe("Keychain access guard", () => {
     const spawners = sources.filter((file) => /\b(execFileSync|execSync|execFile|spawnSync|spawn)\(/.test(source(file)))
 
     expect(spawners.map(named)).toEqual(["sync.ts"])
-    expect(source(spawners[0]!).match(/\bexecFileSync\(/g)).toHaveLength(1)
+    expect(source(spawners[0]).match(/\bexecFileSync\(/g)).toHaveLength(1)
   })
 
   test("no credentials module can write to or delete the Keychain item", () => {

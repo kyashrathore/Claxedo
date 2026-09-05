@@ -250,7 +250,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
       return c.json(result.connection)
     } catch (err) {
       if (err instanceof ControlPlaneAuthError)
-        return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
+        return c.json(controlPlaneAuthErrorBody(err), err.status)
       throw err
     }
   }
@@ -293,7 +293,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             })
           } catch (err) {
             if (err instanceof ControlPlaneAuthError)
-              return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
+              return c.json(controlPlaneAuthErrorBody(err), err.status)
             throw err
           }
         }
@@ -349,9 +349,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           if (body.orgId && !authority.authorizeWorkspaceCreate) {
             throw new ControlPlaneAuthError(503, "workspace_authority_unavailable", "Workspace creation authorization is unavailable")
           }
-          await authority.authorizeWorkspaceCreate?.(auth, {
-            ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
-          })
+          await authority.authorizeWorkspaceCreate?.(auth, (body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}))
         } catch (err) {
           if (err instanceof ControlPlaneAuthError) return c.json(controlPlaneAuthErrorBody(err), err.status)
           throw err
@@ -677,7 +675,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         } catch (err) {
           if (isWorkspaceBackingConflict(err)) return c.json(workspaceBackingConflictBody(), 409)
           if (err instanceof ControlPlaneAuthError)
-            return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
+            return c.json(controlPlaneAuthErrorBody(err), err.status)
           throw err
         }
       })
@@ -705,7 +703,7 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           return c.json(result)
         } catch (err) {
           if (err instanceof ControlPlaneAuthError)
-            return c.json(controlPlaneAuthErrorBody(err), err.status as 400 | 401 | 403 | 503)
+            return c.json(controlPlaneAuthErrorBody(err), err.status)
           throw err
         }
       })

@@ -333,7 +333,7 @@ export class AcpHarnessAdapter extends AcpTurnRunner implements AgentHarnessAdap
 
   async updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }): Promise<AgentSession | null> {
     assertAgentExecutionBinding(binding)
-    return this.store.updateSession(binding.sessionId, updates) as AgentSession | null
+    return this.store.updateSession(binding.sessionId, updates)
   }
 
   async getSessionConfig(binding: AgentExecutionBinding): Promise<SessionConfig> {

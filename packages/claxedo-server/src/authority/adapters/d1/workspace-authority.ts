@@ -671,7 +671,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
       user_id: who.userId,
       actor_id: who.actorId,
       actor_kind: "human" as const,
-      ...(orgs.length === 1 ? { org_id: orgs[0]!.org_id } : {}),
+      ...(orgs.length === 1 ? { org_id: orgs[0].org_id } : {}),
     }
   }
 
@@ -945,7 +945,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
     `,
       )
       .bind(team.org_id, teamId)
-      .all<Record<string, unknown>>()
+      .all()
     return result.results
   }
 
@@ -1024,7 +1024,7 @@ export class D1WorkspaceAuthority implements D1WorkspaceAuthorityCore {
           : "An explicit application organization selection is required",
       )
     }
-    return orgs[0]!.org_id as OrgId
+    return orgs[0].org_id as OrgId
   }
 
   async projectRole(

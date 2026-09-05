@@ -27,7 +27,7 @@ function compatibility(target: WorkerdBoundaryTarget) {
   if (!date || flags === undefined) throw new Error(`built Workerd config declares no compatibility contract: ${target.configFile}`)
   return {
     compatibilityDate: date,
-    compatibilityFlags: [...flags.matchAll(/"([^"]+)"/g)].map((match) => match[1]!),
+    compatibilityFlags: [...flags.matchAll(/"([^"]+)"/g)].map((match) => match[1]),
   }
 }
 

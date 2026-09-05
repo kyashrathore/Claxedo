@@ -45,7 +45,7 @@ describe("bootstrap owner page", () => {
     fireEvent.click(screen.getByRole("button", { name: "Activate owner" }))
 
     await waitFor(() => expect(state.authFetch).toHaveBeenCalledOnce())
-    const [url, init] = state.authFetch.mock.calls[0]!
+    const [url, init] = state.authFetch.mock.calls[0]
     expect(String(url)).toBe("https://api.example.test/api/claxedo/auth/bootstrap-owner")
     expect(String(url)).not.toContain("claim-secret")
     expect(init?.method).toBe("POST")

@@ -56,24 +56,24 @@ test("real streams expose headers immediately and preserve route-specific heartb
       expect(response.headers.get("access-control-allow-origin")).toBe(lease.headers.origin)
     }
     const [central, bus, runtime] = responses.map((response) => response.body!.getReader())
-    const connected = frame((await central!.read()).value)
+    const connected = frame((await central.read()).value)
     expect(connected.text).toContain("id: 0\n")
     expect(connected.payload).toMatchObject({ directory: "global", payload: { type: "server.connected", properties: {} } })
-    const initialBus = frame((await bus!.read()).value)
+    const initialBus = frame((await bus.read()).value)
     expect(initialBus.text).toContain("id: 0\n")
     expect(initialBus.payload).toEqual({ type: "heartbeat" })
 
-    const runtimeFlush = frame((await runtime!.read()).value)
+    const runtimeFlush = frame((await runtime.read()).value)
     expect(runtimeFlush.text).toBe(":\n\n")
     expect(runtimeFlush.payload).toBeUndefined()
     expect(runtimeFlush.text).not.toContain("id:")
 
     let runtimeYielded = false
-    const runtimeRead = runtime!.read().then((result) => { runtimeYielded = true; return result })
+    const runtimeRead = runtime.read().then((result) => { runtimeYielded = true; return result })
     await Bun.sleep(30)
     expect(runtimeYielded).toBe(false)
     const [centralHeartbeat, busHeartbeat, runtimeHeartbeat] = await Promise.all([
-      central!.read(), bus!.read(), runtimeRead,
+      central.read(), bus.read(), runtimeRead,
     ])
     for (const result of [centralHeartbeat, busHeartbeat, runtimeHeartbeat]) {
       expect(result.done).toBe(false)
@@ -108,7 +108,7 @@ test("page leases isolate scopes, reject unknown clients, and release streams in
   await Promise.all(readers.map((reader) => reader.read()))
   expect(target.activeConnections).toBe(2)
   first.close()
-  expect((await readers[0]!.read()).done).toBe(true)
+  expect((await readers[0].read()).done).toBe(true)
   expect(target.activeConnections).toBe(1)
   expect((await fetch(url, { headers: first.headers })).status).toBe(403)
   abort.abort()

@@ -117,7 +117,7 @@ describe("v3 harness connections", () => {
 
     const retargeted = {
       ...previous,
-      "conn-primary": { ...previous["conn-primary"]!, providerKey: "fixture", configRevision: 2 },
+      "conn-primary": { ...previous["conn-primary"], providerKey: "fixture", configRevision: 2 },
     }
     expect(schema.revisionProblems(previous, retargeted)).toEqual([{
       connectionId: "conn-primary",

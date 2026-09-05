@@ -443,7 +443,7 @@ export async function runMemoryLane(options: {
         slopeBytesPerStep: Math.round(summary.slopeBytesPerStep!),
         slopeRangeBytesPerStep: [Math.round(summary.slopeMinBytesPerStep!), Math.round(summary.slopeMaxBytesPerStep!)],
         ...(snapshot?.status === "captured" ? { v8DetachedNodes: snapshot.detachedNodes } : {}),
-        listenerGrowth: lastObserved.liveListeners - sweep.samples[0]!.liveListeners,
+        listenerGrowth: lastObserved.liveListeners - sweep.samples[0].liveListeners,
         cacheCeilingSatisfied: summary.cacheCeilingSatisfied,
         settled: summary.allSettled,
         sourceStable: provenance.sourceStable,
@@ -464,7 +464,7 @@ export async function runMemoryLane(options: {
     const rows = observedSamples.map((item) =>
       `| ${item.step} | ${(item.heapBytes / MB).toFixed(1)} | ${item.documentElements} | ${item.liveDomNodes} | ` +
       `${item.liveListeners} | ${item.queries} | ${item.cachedSessions} | ${item.lightweightSessions} |`)
-    const firstSample = sweep.samples[0]!
+    const firstSample = sweep.samples[0]
     const listenerGrowth = lastObserved.liveListeners - firstSample.liveListeners
     // Did the sweep actually exercise the app? The false pass this lane exists
     // to avoid looks like every counter frozen at its boot value.

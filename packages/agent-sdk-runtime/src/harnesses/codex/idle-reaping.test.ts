@@ -177,7 +177,7 @@ describe("Codex app-server idle reaping", () => {
 
     const first = pids[0]
     expect(typeof first).toBe("number")
-    expect(await until(() => !alive(first!), 3_000)).toBe(true)
+    expect(await until(() => !alive(first), 3_000)).toBe(true)
 
     // The next turn transparently starts a NEW child rather than failing.
     const second = await adapter.createSession(fake.dir)

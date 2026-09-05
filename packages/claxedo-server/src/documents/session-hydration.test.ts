@@ -186,8 +186,8 @@ describe("managed document session hydration", () => {
       syncHydratedSessionDocuments("session-two"),
     ])
     expect(settled.map((result) => result.status).sort()).toEqual(["fulfilled", "rejected"])
-    await disposeHydratedSessionDocuments(settled[0]!.status === "fulfilled" ? "session-one" : "session-two")
-    expect(await exists(settled[0]!.status === "fulfilled" ? second : first)).toBe(true)
+    await disposeHydratedSessionDocuments(settled[0].status === "fulfilled" ? "session-one" : "session-two")
+    expect(await exists(settled[0].status === "fulfilled" ? second : first)).toBe(true)
     forgetHydratedSessionRuntime("session-one")
     forgetHydratedSessionRuntime("session-two")
     await fs.rm(root, { recursive: true, force: true })

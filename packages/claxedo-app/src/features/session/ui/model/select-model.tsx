@@ -122,10 +122,10 @@ export const ModelList: Component<{
         return (
           <div class="w-full flex items-center justify-between gap-2">
             <span class="truncate">{item.provider.name}</span>
-            <Show when={item.connected === true}>
+            <Show when={item.connected}>
               <Tag>Configured</Tag>
             </Show>
-            <Show when={item.connected === false}>
+            <Show when={!item.connected}>
               <Tag>{language.t("command.provider.connect")}</Tag>
             </Show>
           </div>

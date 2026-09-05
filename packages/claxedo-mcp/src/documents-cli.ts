@@ -29,7 +29,7 @@ export async function runDocumentsCli(
       ? { project_id: flags.project }
       : { directory: flags.directory ?? defaults?.directory }
     if (command === "list") {
-      io.stdout((await callDocuments(request, "documents_list", scope)).content[0]!.text)
+      io.stdout((await callDocuments(request, "documents_list", scope)).content[0].text)
       return 0
     }
     if (command !== "open") throw new Error(`Unknown documents command '${command}'`)
@@ -41,7 +41,7 @@ export async function runDocumentsCli(
       ...scope,
       id_or_name: reference,
       session_id: sessionId,
-    })).content[0]!.text)
+    })).content[0].text)
     return 0
   } catch (error) {
     io.stderr(error instanceof DocumentToolError ? `${error.code}: ${error.message}` : error instanceof Error ? error.message : String(error))
@@ -54,7 +54,7 @@ function parseFlags(args: string[]) {
   const values = new Map<string, string>()
   const positionals: string[] = []
   for (let index = 0; index < args.length; index += 1) {
-    const arg = args[index]!
+    const arg = args[index]
     if (!arg.startsWith("--")) {
       positionals.push(arg)
       continue

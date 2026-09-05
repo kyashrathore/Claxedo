@@ -29,7 +29,7 @@ function transport(input: { ok?: boolean; status?: number; body?: string } = {})
       body: undefined,
     } as unknown as Response
   }) as unknown as typeof fetch
-  return { stub, calls, first: () => calls[0]! }
+  return { stub, calls, first: () => calls[0] }
 }
 
 const offline = (async () => {

@@ -458,7 +458,7 @@ describe("createSessionRoutes private-session lifecycle", () => {
     } as AgentMessage
     const fixture = adapter({
       events: [
-        messageUpdated(assistant.info as Message),
+        messageUpdated(assistant.info),
         sessionIdle("ses_private"),
       ],
       messages: [assistant],
@@ -1781,7 +1781,7 @@ describe("createSessionRoutes directory-less sessions", () => {
           time: { created: 1 },
         })
         yield messageUpdated({
-          id: prompt.assistantMessageId!,
+          id: prompt.assistantMessageId,
           sessionID: id,
           parentID: prompt.userMessageId,
           role: "assistant",

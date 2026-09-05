@@ -497,7 +497,7 @@ async function runRealHarnessJourney(page: Page, dir: string, harness: HarnessCa
   await expect(modelLabel, `${harness.id} lost its model label after reload`).toHaveText(selectedModelPattern, {
     timeout: 20_000,
   })
-  await expectAssistantReplyVisible(page, new RegExp(markers[TURNS - 1]!), {
+  await expectAssistantReplyVisible(page, new RegExp(markers[TURNS - 1]), {
     spec: "real-harness-local",
     scenario: `${harness.id}-reload`,
   })
@@ -1071,7 +1071,7 @@ test.describe("real harness journeys @core @tier-real", () => {
       turns.push(await seedPickerTurn(dir, session.id, turn))
     }
 
-    await page.goto(`/s/${session.id}#message-${turns[0]!.messageID}`, { waitUntil: "domcontentloaded" })
+    await page.goto(`/s/${session.id}#message-${turns[0].messageID}`, { waitUntil: "domcontentloaded" })
     await expect(page.locator("[data-claxedo]")).toBeVisible({ timeout: 30_000 })
     const sessionRoot = page
       .locator(`[data-testid="session-page-root"][data-session-id="${session.id}"][data-session-messages-ready="true"]`)
@@ -1105,14 +1105,14 @@ test.describe("real harness journeys @core @tier-real", () => {
       await ticks.nth(index).hover()
       const preview = page.locator('[data-slot="message-nav-turn-preview"]:visible')
       await expect(preview, `turn ${index + 1} preview did not open`).toHaveCount(1)
-      await expect(preview.locator('[data-slot="message-nav-preview-user"]')).toContainText(turns[index]!.prompt)
-      await expect(preview.locator('[data-slot="message-nav-preview-assistant"]')).toContainText(turns[index]!.marker)
+      await expect(preview.locator('[data-slot="message-nav-preview-user"]')).toContainText(turns[index].prompt)
+      await expect(preview.locator('[data-slot="message-nav-preview-assistant"]')).toContainText(turns[index].marker)
       return preview
     }
 
     await ticks.nth(1).focus()
     const focusedPreview = page.locator('[data-slot="message-nav-turn-preview"]:visible')
-    await expect(focusedPreview.locator('[data-slot="message-nav-preview-user"]')).toContainText(turns[1]!.prompt)
+    await expect(focusedPreview.locator('[data-slot="message-nav-preview-user"]')).toContainText(turns[1].prompt)
     await page.keyboard.press("Escape")
     await expect(focusedPreview).toHaveCount(0)
     await expect(ticks.nth(1)).toBeFocused()
@@ -1139,14 +1139,14 @@ test.describe("real harness journeys @core @tier-real", () => {
           getComputedStyle(item.querySelector<HTMLElement>('[data-slot="message-nav-tick-line"]')!),
         )
         return styles.flatMap((style, index) =>
-          style.backgroundColor === styles[4]!.backgroundColor && style.height === styles[4]!.height ? [index] : [],
+          style.backgroundColor === styles[4].backgroundColor && style.height === styles[4].height ? [index] : [],
         )
       }),
     ).toEqual([4])
     await demoBeat(page)
     await ticks.nth(4).click()
     await expect(
-      page.locator(SELECTORS.userMessageContent).filter({ hasText: turns[4]!.prompt }).last(),
+      page.locator(SELECTORS.userMessageContent).filter({ hasText: turns[4].prompt }).last(),
       "clicked turn did not scroll into the timeline viewport",
     ).toBeInViewport()
     await demoBeat(page)
@@ -1258,7 +1258,7 @@ test.describe("real harness journeys @core @tier-real", () => {
     const history = await response.json() as Array<{ parts: Array<{ type: string; tool?: string; state?: { status: string; output?: string } }> }>
     const bash = history.flatMap((message) => message.parts).find((part) => part.type === "tool" && part.tool === "bash")
     expect(bash?.state).toMatchObject({ status: "completed", output: "PI_BASH_TOOL_OUTPUT" })
-    const advertisedTools = scripted!.requests[0]!.tools.map((tool) => tool.name)
+    const advertisedTools = scripted!.requests[0].tools.map((tool) => tool.name)
     expect(advertisedTools).toContain("bash")
     expect(advertisedTools).not.toContain("subagent")
     expect(scripted!.requests.filter((request) => request.reply.kind === "tool")).toHaveLength(1)

@@ -150,19 +150,19 @@ export function createCredentialDiscovery(input: {
       const credentials = await Promise.all(selected.map((item, index) => input.save({
         provider_id: item!.provider_id,
         kind: item!.kind,
-        source: request.items[index]!.scope === "shared" ? "managed" : "local_only",
+        source: request.items[index].scope === "shared" ? "managed" : "local_only",
         label: item!.label,
         ...(item!.account_id ? { account_id: item!.account_id } : {}),
         secret: item!.secret,
         ...(item!.fresh_until ? { expires_at: item!.fresh_until } : {}),
-        scope: request.items[index]!.scope,
+        scope: request.items[index].scope,
         consent: { at: now(), surface: "desktop_discovery" },
       }, org)))
       stash.delete(request.discovery_id)
 
       return {
         saved: request.items.map((item, index) => ({
-          credential_id: credentials[index]!.id,
+          credential_id: credentials[index].id,
           provider_id: item.provider_id,
           ...(item.account_id ? { account_id: item.account_id } : {}),
         })),

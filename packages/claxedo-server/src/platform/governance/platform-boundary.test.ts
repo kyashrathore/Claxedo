@@ -40,7 +40,7 @@ function escapes(file: string) {
   const rel = path.relative(SRC, file)
   const out: string[] = []
   for (const match of text.matchAll(RELATIVE_IMPORT)) {
-    const target = path.relative(SRC, path.resolve(path.dirname(file), match[1]!))
+    const target = path.relative(SRC, path.resolve(path.dirname(file), match[1]))
     // Leaves src/ entirely (sibling packages) — not a domain.
     if (target.startsWith("..")) continue
     if (target.split(path.sep)[0] === "platform") continue

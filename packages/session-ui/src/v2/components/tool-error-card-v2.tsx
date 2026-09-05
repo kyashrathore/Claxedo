@@ -141,7 +141,7 @@ export function ToolErrorCardV2(props: ToolErrorCardV2Props) {
             >
               <a
                 data-slot="tool-error-card-subtitle"
-                href={local.subtitleHref!}
+                href={local.subtitleHref}
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
               >

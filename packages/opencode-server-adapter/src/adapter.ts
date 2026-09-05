@@ -46,7 +46,7 @@ export class OpenCodeServerAdapter implements AgentHarnessAdapter {
     await this.ensureCompatible()
     const data = await this.json("session.create", "/session", {
       method: "POST",
-      body: JSON.stringify({ ...(title ? { title } : {}) }),
+      body: JSON.stringify((title ? { title } : {})),
     })
     const session = this.session("session.create", data)
     return { id: id ?? session.id, agentSessionId: session.id }

@@ -22,7 +22,7 @@ const TURNS = [12, 14, 17, 21, 25, 30, 36, 44, 53, 63, 76, 91, 110, 132, 159, 19
 function argValue(flag: string) {
   const index = process.argv.indexOf(flag);
   if (index < 0 || !process.argv[index + 1]) throw new Error(`missing ${flag} <path>`);
-  return process.argv[index + 1]!;
+  return process.argv[index + 1];
 }
 
 // --- Claxedo plan (perf-harness/src/agent-browser-observer.ts) ---
@@ -38,7 +38,7 @@ function clxSeededSequence<T>(values: readonly T[], seed: number) {
   };
   for (let index = result.length - 1; index > 0; index--) {
     const swap = Math.floor(random() * (index + 1));
-    [result[index], result[swap]] = [result[swap]!, result[index]!];
+    [result[index], result[swap]] = [result[swap], result[index]];
   }
   return result;
 }
@@ -61,13 +61,13 @@ function t3SeededOrder(length: number, seed: string) {
   for (let index = order.length - 1; index > 0; index -= 1) {
     state = (Math.imul(state, 1_664_525) + 1_013_904_223) >>> 0;
     const selected = state % (index + 1);
-    [order[index], order[selected]] = [order[selected]!, order[index]!];
+    [order[index], order[selected]] = [order[selected], order[index]];
   }
   return order;
 }
 function t3Plan<T extends { sessionId: string }>(targets: readonly T[], seed: string) {
   const warmup = [...targets];
-  const measured = t3SeededOrder(targets.length, seed).map((index) => targets[index]!);
+  const measured = t3SeededOrder(targets.length, seed).map((index) => targets[index]);
   if (measured[0]?.sessionId === warmup.at(-1)?.sessionId) measured.push(measured.shift()!);
   return { warmup, measured };
 }
@@ -84,8 +84,8 @@ function walk(node: unknown, visit: (value: Record<string, unknown>) => void) {
 
 function switchTrend(app: string, measuredIds: string[], durations: number[]) {
   const rows = measuredIds.map((sessionId, sequence) => ({
-    turns: TURNS[Number(sessionId.slice(1))]!,
-    ms: durations[sequence]!,
+    turns: TURNS[Number(sessionId.slice(1))],
+    ms: durations[sequence],
   }));
   rows.sort((a, b) => a.turns - b.turns);
   console.log(`\n${app} warm-switch by session size (turns -> ms):`);

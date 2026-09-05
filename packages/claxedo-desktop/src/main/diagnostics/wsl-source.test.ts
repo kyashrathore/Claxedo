@@ -31,7 +31,7 @@ describe("WSL diagnostics source", () => {
       enabled: true,
       collect: async (roots) => {
         if (reject) throw new Error("secret WSL failure")
-        return [{ pid: roots[0]!.pid, ppid: 1, rootPid: roots[0]!.pid, startTicks: "100", rssBytes: 8_192 }]
+        return [{ pid: roots[0].pid, ppid: 1, rootPid: roots[0].pid, startTicks: "100", rssBytes: 8_192 }]
       },
     })
     source.requestCollection(0)

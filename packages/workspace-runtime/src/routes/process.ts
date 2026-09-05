@@ -149,7 +149,7 @@ function createFullProcessRoutes(policy: SessionAccessPolicy) {
     })
     .post("/", async (c) => {
       const directory = await init(c)
-      const body = await boundedJsonBody<Omit<Process.ProcessConfig, "id"> & { id?: string }>(
+      const body = await boundedJsonBody(
         c,
         {} as Omit<Process.ProcessConfig, "id"> & { id?: string },
       )

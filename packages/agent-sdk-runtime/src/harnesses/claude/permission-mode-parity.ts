@@ -44,7 +44,7 @@ type SdkCoversMirror = Exclude<ClaudeSdkPermissionModeMirror, PermissionMode> ex
  * initialiser is a type error. Exported so the value is used and cannot be
  * dropped as dead code.
  */
-export const CLAUDE_SDK_PERMISSION_MODE_PARITY: MirrorCoversSdk & SdkCoversMirror = true
+export const CLAUDE_SDK_PERMISSION_MODE_PARITY: MirrorCoversSdk   = true
 
 /**
  * Guards against the degenerate case where `PermissionMode` resolves to `any`

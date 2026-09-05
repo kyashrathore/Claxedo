@@ -75,7 +75,7 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     expect(first.status).toBe(200)
     const applied = await first.json() as { generationId: string; harnessLaunch: { claude: { pluginRoots: string[] } } }
     expect(applied.harnessLaunch.claude.pluginRoots).toHaveLength(1)
-    expect(await fs.readFile(path.join(applied.harnessLaunch.claude.pluginRoots[0]!, "plugin.json"), "utf8")).toContain("review")
+    expect(await fs.readFile(path.join(applied.harnessLaunch.claude.pluginRoots[0], "plugin.json"), "utf8")).toContain("review")
 
     const second = await app.request(AGENT_PLUGINS_RUNTIME_APPLY_PATH, {
       method: "POST",
@@ -130,7 +130,7 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
     })
     expect(response.status).toBe(200)
     const body = await response.json() as { harnessLaunch: { claude: { pluginRoots: string[] } } }
-    const config = JSON.parse(await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0]!, ".mcp.json"), "utf8"))
+    const config = JSON.parse(await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0], ".mcp.json"), "utf8"))
     expect(config.mcpServers.docs).toEqual({
       type: "http",
       url: "https://mcp-abc.gateway.example/api/claxedo/plugins/mcp/id",
@@ -171,7 +171,7 @@ describe("agentPluginWorkspaceRuntimeContribution", () => {
       }),
     })
     const body = await response.json() as { harnessLaunch: { claude: { pluginRoots: string[] } } }
-    const config = JSON.parse(await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0]!, ".mcp.json"), "utf8"))
+    const config = JSON.parse(await fs.readFile(path.join(body.harnessLaunch.claude.pluginRoots[0], ".mcp.json"), "utf8"))
     expect(config.mcpServers.docs).toMatchObject({
       url: "https://sandbox-worker.example/egress",
       headers: {

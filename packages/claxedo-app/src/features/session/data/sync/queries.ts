@@ -180,7 +180,7 @@ export function deriveSessionInventoryIndexes<TSession extends SessionInventoryI
   const global = sessions.filter(sessionShouldShowInGlobalChat)
   const byProject: Record<string, TSession[]> = {}
   const byWorkspace: Record<string, SessionInventoryWorkspaceGroup<TSession>> = {}
-  const workspaceMeta: Record<string, SessionInventoryWorkspaceMeta> = { ...(input.workspaceMeta ?? {}) }
+  const workspaceMeta: Record<string, SessionInventoryWorkspaceMeta> = { ...input.workspaceMeta }
   const workspaceOrder = [...input.workspaceOrder]
 
   for (const session of sessions) {

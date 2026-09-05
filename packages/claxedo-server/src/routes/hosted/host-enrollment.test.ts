@@ -46,7 +46,7 @@ function routes(overrides: Record<string, unknown> = {}, routeOptions: Record<st
   const app = HostEnrollmentRoutes(services, { authConfig, verifier, ...routeOptions } as never)
   const call = (path: string, init: RequestInit = {}) =>
     app.request(`http://control.test${path}`, {
-      headers: { authorization: "Bearer user_1", "content-type": "application/json", ...(init.headers ?? {}) },
+      headers: { authorization: "Bearer user_1", "content-type": "application/json", ...init.headers },
       ...init,
     })
   const post = (path: string, body: unknown) => call(path, { method: "POST", body: JSON.stringify(body) })

@@ -38,7 +38,7 @@ export function resolveWorkspaceFileFocus(
   const suffix = path.match(/:(\d+)(?::(\d+))?$/)
   if (suffix) {
     path = path.slice(0, -suffix[0].length)
-    line = Number.parseInt(suffix[1]!, 10)
+    line = Number.parseInt(suffix[1], 10)
     if (suffix[2]) col = Number.parseInt(suffix[2], 10)
   }
 

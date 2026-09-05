@@ -133,11 +133,11 @@ export type HostedOperationName =
   | "team.members.add"
   | "team.members.remove"
   | "team.projects.grant"
-  | "connections.list"
-  | "connections.connect"
-  | "connections.attempt"
+   
+   
+   
   | "connections.repositories"
-  | "connections.disconnect"
+   
   | "connections.reverify"
   | "documents.list"
   | "documents.get"

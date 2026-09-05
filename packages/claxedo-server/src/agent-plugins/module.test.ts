@@ -25,7 +25,7 @@ describe("hostedAgentPluginsModule", () => {
       reconcile: {} as never,
       mcpGatewayRoutes: new Hono().post("/:id", (c) => c.text(c.req.param("id"))),
     })
-    const routes = module.routeContributions[0]!.routes as Hono
+    const routes = module.routeContributions[0].routes
     expect(await (await routes.request("/mcp/integration-1", { method: "POST" })).text()).toBe("integration-1")
   })
 })

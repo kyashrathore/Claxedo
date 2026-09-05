@@ -11,7 +11,7 @@ import type { ThreadSource } from "./ThreadSource";
 import type { ThreadStartSource } from "./ThreadStartSource";
 import type { TurnEnvironmentParams } from "./TurnEnvironmentParams";
 
-export type ThreadStartParams = { model?: string | null, modelProvider?: string | null, serviceTier?: string | null | null, cwd?: string | null,
+export type ThreadStartParams = { model?: string | null, modelProvider?: string | null, serviceTier?: string | null  , cwd?: string | null,
 /**
  * Replace the thread's runtime workspace roots. Relative paths are
  * resolved against the effective cwd for the thread.

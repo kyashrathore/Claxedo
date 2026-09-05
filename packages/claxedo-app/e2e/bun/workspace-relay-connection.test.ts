@@ -15,7 +15,7 @@ GlobalRegistrator.unregister()
 async function generateEdDsaKeyPair() {
   return await crypto.subtle.generateKey({
     name: "Ed25519",
-  }, true, ["sign", "verify"]) as CryptoKeyPair
+  }, true, ["sign", "verify"])
 }
 
 async function runtimeToken(input: {

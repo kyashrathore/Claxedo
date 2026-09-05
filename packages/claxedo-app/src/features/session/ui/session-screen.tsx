@@ -486,7 +486,7 @@ export default function SessionPage() {
 
   const revertMessageID = createMemo(() => info()?.revert?.messageID)
   const messageState = createMemo((prev: ReturnType<typeof stableSessionMessages> | undefined) =>
-    stableSessionMessages(prev as Parameters<typeof stableSessionMessages>[0], sessionKey(), sessionController.messages()),
+    stableSessionMessages(prev, sessionKey(), sessionController.messages()),
   )
   const messages = createMemo(() => messageState()?.value ?? [])
   const conversation = createActiveConversationSnapshot({ directory: dir, sessionID, active: paneActive })

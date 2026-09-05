@@ -25,6 +25,6 @@ describe("document mention integration", () => {
       },
     ])
     expect(list).toHaveBeenCalledWith({ directory: "/repo" })
-    expect(documentMentionText(documents[0]!)).toBe("claxedo://document/doc-1")
+    expect(documentMentionText(documents[0])).toBe("claxedo://document/doc-1")
   })
 })

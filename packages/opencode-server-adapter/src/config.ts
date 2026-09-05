@@ -107,7 +107,7 @@ export function resolveOpenCodeServerConnection(input: {
     throw invalid("Resolved secret names do not match configured secret references")
   }
   for (const name of required) {
-    if (typeof input.secrets[name] !== "string" || input.secrets[name]!.length === 0) throw invalid(`Resolved secret ${name} is missing`)
+    if (typeof input.secrets[name] !== "string" || input.secrets[name].length === 0) throw invalid(`Resolved secret ${name} is missing`)
   }
   const auth = input.config.auth?.type === "basic"
     ? { type: "basic" as const, username: input.config.auth.username ?? "opencode", password: input.secrets[input.config.auth.passwordSecret]! }

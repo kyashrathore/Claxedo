@@ -267,6 +267,6 @@ function percentile(values: number[], quantile: number) {
   const index = (values.length - 1) * quantile
   const lower = Math.floor(index)
   const upper = Math.ceil(index)
-  if (lower === upper) return values[lower]!
-  return values[lower]! + (values[upper]! - values[lower]!) * (index - lower)
+  if (lower === upper) return values[lower]
+  return values[lower] + (values[upper] - values[lower]) * (index - lower)
 }

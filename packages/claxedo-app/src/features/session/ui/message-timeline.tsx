@@ -567,9 +567,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
     }
 
     if (hold.visible && !wantThinking) {
-      const previousThinking = previous?.find((row) => row._tag === "Thinking") as
-        | TimelineRow.Thinking
-        | undefined
+      const previousThinking = previous?.find((row) => row._tag === "Thinking")
       if (previousThinking) {
         const withoutTrailingThinking = rows.filter((row) => row._tag !== "Thinking")
         return TimelineRow.reuse(previous, [...withoutTrailingThinking, previousThinking])
@@ -1811,7 +1809,7 @@ export function MessageTimeline(props: MessageTimelineProps) {
                           event.stopPropagation()
                           if (event.key === "Enter") {
                             event.preventDefault()
-                            void saveTitleEditor()
+                             saveTitleEditor()
                             return
                           }
                           if (event.key === "Escape") {

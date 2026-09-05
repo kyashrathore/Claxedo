@@ -428,8 +428,8 @@ async function openWorkspaceFileTab(page: Page, filePath: string) {
 const app = await startApp()
 const fixture = fixtureFor(SCENARIO, seedForScenario(SCENARIO))
 const expectedTotal = fixture.changedFiles.length
-const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX]!.file
-const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX]!.file
+const expandPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_EXPAND_DIFF_INDEX].file
+const largeDiffPath = fixture.changedFiles[WORKSPACE_INTERACTIONS_LARGE_DIFF_INDEX].file
 const [fileA, fileB] = WORKSPACE_INTERACTIONS_PRELOADED_FILE_PATHS
 const browser = await chromium.launch({ headless: true, args: frameSamplingLaunchArgs, timeout: 30_000 })
 const page = await browser.newPage({ viewport: { width: 1440, height: 960 } })
@@ -444,7 +444,7 @@ const elapsed = () => `${Math.round(performance.now() - probeStarted)}ms`
 await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
 await installSeedState(page, app, fixture)
 
-const session = fixture.sessions[0]!
+const session = fixture.sessions[0]
 console.log(`[probe] app=${app.baseUrl} mock=${app.mockPort} corpus=${expectedTotal} files expand=${expandPath}`)
 
 await launchTo(page, app, sessionPath(session, session.id))
@@ -527,7 +527,7 @@ await waitForWorkspaceReviewContent(page, expectedTotal)
 
 // --- Precondition: two file tabs open (the driver's Files<->Review material).
 await openFilesNavigator(page)
-for (const filePath of [fileA!, fileB!]) await openWorkspaceFileTab(page, filePath)
+for (const filePath of [fileA, fileB]) await openWorkspaceFileTab(page, filePath)
 await settleBeforeNextInteraction(page)
 console.log(`[probe] file tabs open, active=${fileB} (${elapsed()})`)
 
@@ -609,8 +609,8 @@ if (guard.observation.rowLargeDiffGuard) {
 // --- 5. Review -> Files, back onto an open, already-loaded file tab.
 await runCell({
   cell: "review_to_files",
-  control: fileTabButton(fileB!),
-  mode: { kind: "activate-file", filePath: fileB! },
+  control: fileTabButton(fileB),
+  mode: { kind: "activate-file", filePath: fileB },
 })
 
 // --- Per-click attribution.

@@ -85,7 +85,7 @@ for (const scheme of ["light", "dark"] as const) {
 
   await installMockApi(page, app, fixture, monitorPage(page), environmentProfile("unthrottled"))
   await installSeedState(page, app, fixture)
-  const session = fixture.sessions[0]!
+  const session = fixture.sessions[0]
   await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
   await openReviewSurface(page, fixture, { settle: "frame" })

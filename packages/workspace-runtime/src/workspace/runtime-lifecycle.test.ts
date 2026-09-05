@@ -249,7 +249,7 @@ describe("workspace runtime public lifecycle", () => {
   test("retiring a used connection preserves the host store and other sessions", async () => {
     const f = await fixture({ runtimeConfig: true })
     const first = f.snapshot()
-    first.connections[0]!.secretRefs = { token: "credential" }
+    first.connections[0].secretRefs = { token: "credential" }
     first.auth = { credential: "one" }
     await f.host.apply(first)
     await f.request("/session", "POST", { id: "local" })
@@ -309,7 +309,7 @@ describe("workspace runtime public lifecycle", () => {
     const f = await fixture({ runtimeConfig: true, hold: true })
     cleanups.push(f.release)
     const first = f.snapshot()
-    first.connections[0]!.secretRefs = { token: "credential" }
+    first.connections[0].secretRefs = { token: "credential" }
     first.auth = { credential: "one" }
     await f.host.apply(first)
     await f.request("/session", "POST", { id: "local" })
@@ -462,7 +462,7 @@ describe("workspace runtime public lifecycle", () => {
     const f = await fixture()
     await f.host.apply(f.snapshot("valid"))
     const invalid = f.snapshot("invalid", 2)
-    invalid.connections[0]!.config = {}
+    invalid.connections[0].config = {}
     await expect(f.host.apply(invalid)).rejects.toThrow()
     expect(f.host.detail().harness).toEqual({ kind: "connection", connectionId: "primary" })
     expect((await f.request("/session", "POST", { id: "after-error" })).status).toBe(201)

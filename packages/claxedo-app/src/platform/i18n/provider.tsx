@@ -104,7 +104,7 @@ const languageContextInput = {
     const locale = createMemo<Locale>(() => normalizeLocale(store.locale))
     const intl = createMemo(() => INTL[locale()])
 
-    const [loaded, setLoaded] = createSignal<Dictionary>(dicts.get(initial) ?? base)
+    const [loaded, setLoaded] = createSignal(dicts.get(initial) ?? base)
     createEffect(() => {
       const current = locale()
       void loadDict(current).then((next) => {
@@ -114,7 +114,7 @@ const languageContextInput = {
 
     const dict = createMemo<Dictionary>(() => {
       const current = locale()
-      return { ...loaded(), ...(props.strings?.[current] ?? {}) }
+      return { ...loaded(), ...props.strings?.[current] }
     })
     const t = i18n.translator(dict, i18n.resolveTemplate) as (
       key: keyof Dictionary,

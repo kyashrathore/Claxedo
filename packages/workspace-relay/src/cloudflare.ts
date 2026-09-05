@@ -1393,7 +1393,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
         .filter(([id, entry]) => entry.startedSeq !== undefined && id !== keepRequestId)
         .sort((a, b) => (a[1].startedSeq ?? 0) - (b[1].startedSeq ?? 0))
       if (started.length + 1 <= cap) return
-      const [oldestId, oldest] = started[0]!
+      const [oldestId, oldest] = started[0]
       failPendingTunnelResponse(tunnel, oldestId, oldest, new Error("stream_evicted: tunnel started-stream cap reached"))
     }
   }
@@ -1697,11 +1697,11 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
     // refresh an active host's process-local presence.
     directory.recordPong(tunnel.hostId)
     if (parsed.message.type === "ping") {
-      tunnel.socket.send?.(JSON.stringify(makeTunnelPong(parsed.message as TunnelPing)))
+      tunnel.socket.send?.(JSON.stringify(makeTunnelPong(parsed.message)))
       return
     }
     if (parsed.message.type === "host.registration.update") {
-      const update = parsed.message as TunnelHostRegistrationUpdate
+      const update = parsed.message
       const workspaceIds = [...new Set(update.workspace_ids)]
       try {
         await verifyHostTunnelToken(update.token, options.runtimeAccessKey, { hostId, workspaceIds })
@@ -1727,7 +1727,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "http.response.start") {
-      const message = parsed.message as TunnelHttpResponseStart
+      const message = parsed.message
       const pending = tunnel.pending.get(message.request_id)
       if (!pending) return
       pending.status = message.status
@@ -1737,7 +1737,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "http.response.chunk") {
-      const message = parsed.message as TunnelHttpResponseChunk
+      const message = parsed.message
       const pending = tunnel.pending.get(message.request_id)
       if (!pending) return
       const chunk = base64ToBytes(message.body_base64)
@@ -1750,7 +1750,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "http.response.end") {
-      const message = parsed.message as TunnelHttpResponseEnd
+      const message = parsed.message
       const pending = tunnel.pending.get(message.request_id)
       if (!pending) return
       tunnel.pending.delete(message.request_id)
@@ -1777,7 +1777,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "ws.frame") {
-      const message = parsed.message as TunnelWsFrame
+      const message = parsed.message
       const channel = tunnel.channels.get(message.channel_id)
       if (!channel) return
       const token = await runtimeAccessTokenActive(channel)
@@ -1798,7 +1798,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "ws.close") {
-      const message = parsed.message as TunnelWsClose
+      const message = parsed.message
       const channel = tunnel.channels.get(message.channel_id)
       if (!channel) return
       tunnel.channels.delete(message.channel_id)
@@ -1807,7 +1807,7 @@ export function createWorkspaceRelayDurableObjectRoom(options: WorkspaceRelayDur
       return
     }
     if (parsed.message.type === "error" && parsed.message.channel_id) {
-      const message = parsed.message as TunnelError
+      const message = parsed.message
       const channelId = parsed.message.channel_id
       const channel = tunnel.channels.get(channelId)
       if (!channel) return

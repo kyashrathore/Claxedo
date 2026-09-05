@@ -135,7 +135,7 @@ export async function expectRowGeometry({ page, evidence }: { page: Page; eviden
     // invariant ("dot left of its own title") holds for both row kinds identically.
     const rowTitleX = await dot.evaluate(
       (el, sel) => {
-        const row = (el.closest(sel.sessionRow) ?? el.closest(sel.terminalRow)) as HTMLElement | null
+        const row = (el.closest(sel.sessionRow) ?? el.closest(sel.terminalRow))
         if (!row) return null
         const title = row.querySelector(sel.sessionTitle) ?? row.querySelector(".flex-1")
         return title ? title.getBoundingClientRect().left : null

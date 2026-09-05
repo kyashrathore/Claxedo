@@ -53,7 +53,7 @@ export async function up(args: string[], internalHost = false) {
   if (options.detach && !internalHost) {
     const child = spawn(
       process.execPath,
-      [process.argv[1]!, "host", options.path, ...(options.name ? ["--name", options.name] : [])],
+      [process.argv[1], "host", options.path, ...(options.name ? ["--name", options.name] : [])],
       {
         detached: true,
         stdio: "ignore",

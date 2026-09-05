@@ -21,7 +21,7 @@ describe("createMarkerScanner", () => {
     for (const ch of chars.slice(0, -1)) {
       expect(scanner.scan(ch)).toBe(false)
     }
-    expect(scanner.scan(chars[chars.length - 1]!)).toBe(true)
+    expect(scanner.scan(chars[chars.length - 1])).toBe(true)
   })
 
   test("detects a marker split across three chunks", () => {

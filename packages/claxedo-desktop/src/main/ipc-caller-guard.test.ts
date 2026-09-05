@@ -65,7 +65,7 @@ describe("createIpcCallerGuard", () => {
 
     const verdict = guard.check({ senderId: MAIN_RENDERER, isMainFrame: false })
     expect(verdict.allowed).toBe(false)
-    expect(verdict.allowed === false && verdict.reason).toContain("subframe")
+    expect(!verdict.allowed && verdict.reason).toContain("subframe")
   })
 
   test("rejects everything before anything is trusted", () => {

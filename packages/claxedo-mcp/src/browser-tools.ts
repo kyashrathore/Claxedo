@@ -151,8 +151,8 @@ export async function handleBrowserScreenshot(
   )
   if (!res.ok) return errorResult(res.error)
   const data = res.data
-  if (!data || data.ok === false) {
-    const message = data && data.ok === false ? data.error.message ?? data.error.code : "unknown screenshot error"
+  if (!data || ! data.ok) {
+    const message = data && ! data.ok ? data.error.message ?? data.error.code : "unknown screenshot error"
     return errorResult(`browser_screenshot failed: ${message}`)
   }
   const { dataUrl, mimeType } = data
@@ -274,16 +274,16 @@ export async function handleBrowserEvaluateJs(
   )
   if (!res.ok) return errorResult(res.error)
   const data = res.data
-  if (!data || data.ok === false) {
-    if (data && data.ok === false && data.error.code === "eval-denied") {
+  if (!data || ! data.ok) {
+    if (data && ! data.ok && data.error.code === "eval-denied") {
       return errorResult(
         `browser_evaluate_js is disabled for pane ${paneId}. ` +
           `Ask the user to enable "Allow agent to run JS" on this browser tab and retry.`,
       )
     }
-    const code = data && data.ok === false ? data.error.code : "unknown"
-    const message = data && data.ok === false ? data.error.message ?? "" : ""
-    const stack = data && data.ok === false ? data.error.stack ?? "" : ""
+    const code = data && ! data.ok ? data.error.code : "unknown"
+    const message = data && ! data.ok ? data.error.message ?? "" : ""
+    const stack = data && ! data.ok ? data.error.stack ?? "" : ""
     return errorResult(
       `browser_evaluate_js failed (${code})${message ? `: ${message}` : ""}${stack ? `\n\n${stack}` : ""}`,
     )
@@ -325,9 +325,9 @@ export async function handleBrowserNavigate(
   )
   if (!res.ok) return errorResult(res.error)
   const data = res.data
-  if (!data || data.ok === false) {
-    const code = data && data.ok === false ? data.error.code : "unknown"
-    const message = data && data.ok === false ? data.error.message ?? "" : ""
+  if (!data || ! data.ok) {
+    const code = data && ! data.ok ? data.error.code : "unknown"
+    const message = data && ! data.ok ? data.error.message ?? "" : ""
     return errorResult(`browser_navigate failed (${code})${message ? `: ${message}` : ""}`)
   }
   return textResult(`Navigated pane ${paneId} to ${target}.`)

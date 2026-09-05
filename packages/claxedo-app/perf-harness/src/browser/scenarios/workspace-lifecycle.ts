@@ -51,7 +51,7 @@ import { sessionPath } from "../state"
 import type { Page } from "playwright-core"
 
 export async function workspaceLifecycle(page: Page, app: BrowserTarget, fixture: ReturnType<typeof fixtureFor>): Promise<FlowResult> {
-  const session = fixture.sessions[0]!
+  const session = fixture.sessions[0]
   await launchTo(page, app, sessionPath(session, session.id))
   await waitForTranscript(page, fixture, session.id, session.title)
   const expectedTotal = fixture.changedFiles.length

@@ -41,7 +41,7 @@ const composition = settledCompositionCache(
     return composeBetterAuthD1AgentPluginsCandidate(env, {
       sandbox: {
         driver,
-        leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB as D1Database }),
+        leaseStore: createD1SandboxLeaseStore({ database: env.CONTROL_PLANE_DB }),
       },
     })
   },
