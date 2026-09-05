@@ -34,8 +34,8 @@ const port = parseInt(process.env.CLAXEDO_SERVER_PORT ?? String(DEFAULT_CLAXEDO_
 // The self-hosted single binary's one way in. It validates the self-hosted
 // posture — deployment mode, embedded auth, SQLite authority, local execution,
 // a static bundle if one is configured — before composing anything.
-startSelfHostedServer({ port })
-
-console.log(
-  `[claxedo-server] listening on http://${process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1"}:${port}`,
-)
+void startSelfHostedServer({ port }).then(() => {
+  console.log(
+    `[claxedo-server] listening on http://${process.env.CLAXEDO_SERVER_HOST?.trim() || "127.0.0.1"}:${port}`,
+  )
+})

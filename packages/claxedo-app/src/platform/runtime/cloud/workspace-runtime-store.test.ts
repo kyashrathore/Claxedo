@@ -8,6 +8,7 @@ import {
 } from "./workspace-runtime-store"
 import type { WorkspaceProvisionEvent } from "@/platform/runtime/workspace-startup-port"
 import { queryClient } from "@/platform/query/query-client"
+import { configureWorkspaceConnectionAuthority } from "@/platform/runtime/agent/workspace-relay-connection"
 import { isFetchThrottleBypassed } from "@/lib/fetch-throttle"
 
 // happy-dom's preloaded window must survive this suite: deleting it without
@@ -16,6 +17,7 @@ import { isFetchThrottleBypassed } from "@/lib/fetch-throttle"
 const preloadedWindow = (globalThis as typeof globalThis & { window?: unknown }).window
 
 afterEach(() => {
+  configureWorkspaceConnectionAuthority(undefined)
   queryClient.clear()
   resetWorkspaceRuntimeEnsureCache()
   delete (globalThis as typeof globalThis & { __claxedoFastSessionSwitch?: unknown }).__claxedoFastSessionSwitch
@@ -96,6 +98,62 @@ describe("cloud workspace startup", () => {
       "starting_runtime:booting runtime",
       "ready:",
     ])
+  })
+
+  test("prepareWorkspaceRuntime mints when hosted resolve returns null for a workspace id", async () => {
+    const seen: string[] = []
+    const request: typeof fetch = mock(async (input, init) => {
+      const url = requestUrl(input)
+      seen.push(url)
+      if (url === "http://runtime.test/api/workspace/resolve?workspaceId=ws_hosted_null") {
+        return new Response("null", { status: 200 })
+      }
+      if (url === "http://runtime.test/api/workspace/ws_hosted_null/connection") {
+        return new Response(JSON.stringify(connectionBody("ws_hosted_null")), { status: 200 })
+      }
+      throw new Error(`unexpected request: ${url} ${init?.method ?? "GET"}`)
+    })
+    const logs: string[] = []
+    const resolved: Array<{ workspaceId?: string; status?: string | null } | null> = []
+
+    const result = await prepareWorkspaceRuntime({
+      directory: "ws_hosted_null",
+      baseUrl: "http://runtime.test",
+      request,
+      onResolved: (workspace) => resolved.push(workspace ? { workspaceId: workspace.workspaceId, status: workspace.status } : null),
+      onLog: (log) => logs.push(log.step),
+    })
+
+    expect(result).toMatchObject({ ok: true, startup: true, workspace: { workspaceId: "ws_hosted_null", kind: "cloud" } })
+    expect(resolved).toEqual([{ workspaceId: "ws_hosted_null", status: "acquiring_sandbox" }])
+    expect(logs).toEqual(["acquiring_sandbox", "ready"])
+    expect(seen).toContain("http://runtime.test/api/workspace/ws_hosted_null/connection")
+  })
+
+  test("prepareWorkspaceRuntime surfaces a mint failure instead of skipping startup", async () => {
+    const request: typeof fetch = mock(async (input, init) => {
+      const url = requestUrl(input)
+      if (url === "http://runtime.test/api/workspace/resolve?workspaceId=ws_hosted_denied") {
+        return new Response("null", { status: 200 })
+      }
+      if (url === "http://runtime.test/api/workspace/ws_hosted_denied/connection") {
+        return new Response(JSON.stringify({ error: { code: "workspace_authorization_denied" } }), { status: 403 })
+      }
+      throw new Error(`unexpected request: ${url} ${init?.method ?? "GET"}`)
+    })
+    const logs: string[] = []
+
+    const result = await prepareWorkspaceRuntime({
+      directory: "ws_hosted_denied",
+      baseUrl: "http://runtime.test",
+      request,
+      onLog: (log) => logs.push(`${log.step}:${log.message ?? ""}`),
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.message).toContain("403")
+    expect(logs.at(0)).toBe("acquiring_sandbox:")
+    expect(logs.at(-1)).toMatch(/^error:Workspace connection failed: 403$/)
   })
 
   test("prepareWorkspaceRuntime coalesces duplicate workspace ensure calls", async () => {

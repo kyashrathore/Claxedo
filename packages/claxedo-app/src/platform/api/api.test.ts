@@ -539,6 +539,14 @@ describe("getClaxedoServerUrl on the packaged desktop renderer", () => {
     setServerEnv({ claxedo: undefined })
     expect(getClaxedoServerUrl()).toBe("http://127.0.0.1:2593")
   })
+
+  test("the sidecar URL bound by Electron main wins over a stale compiled Vite port", () => {
+    asPackagedDesktopRenderer()
+    setServerEnv({ claxedo: "http://127.0.0.1:2593", legacy: undefined })
+    configureApiRuntime({ baseUrl: "http://127.0.0.1:64144/" })
+
+    expect(getClaxedoServerUrl()).toBe("http://127.0.0.1:64144")
+  })
 })
 
 describe("configured server env", () => {

@@ -15,7 +15,7 @@
 // controller here would fork a solved problem, so the only piece of upstream's
 // controller we vendor is `handleDocumentSearchKeydown` -- see the comment on
 // the document listener below for what it buys.
-import { Index, Show, createEffect, onCleanup, type JSX } from "solid-js"
+import { createEffect, Index, Show, onCleanup, type JSX, createSignal } from "solid-js"
 import { Popover as Kobalte } from "@kobalte/core/popover"
 import { createStore } from "solid-js/store"
 import { Icon } from "@opencode-ai/ui/icon"
@@ -63,6 +63,27 @@ export type ContextChip = {
   groupLabel?: string
   emptyMessage: string
   action?: ContextChipAction
+  /**
+   * A form the chip opens in place of its list: the footer row switches the
+   * popover to `render`, and the panel closes the popover itself when done.
+   * The Project chip's "Create project…" is this.
+   */
+  panel?: {
+    label: string
+    /**
+     * `hold(true)` keeps the popover open while the panel has handed focus to
+     * something outside it — a dialog it opened, such as the directory picker —
+     * so the dismiss-on-outside rules do not tear the panel (and its form state)
+     * down underneath that dialog. `hold(false)` restores them.
+     */
+    render: (input: { close: () => void; back: () => void; hold: (active: boolean) => void }) => JSX.Element
+  }
+  /**
+   * A counter; each new value opens the popover straight onto `panel`. The
+   * Project chip listens to the app-wide "create a project" intent this way,
+   * so the rail's "New Project" lands in the composer instead of a dialog.
+   */
+  openPanelRequest?: () => number
   /** Explicitly unavailable state; an empty option list alone never disables a chip. */
   disabled?: boolean
 }
@@ -82,14 +103,29 @@ function ChipAvatar(props: { avatar: ContextChipAvatar }) {
 }
 
 function ContextChipPicker(props: { chip: ContextChip }) {
-  const [store, setStore] = createStore({ open: false })
+  const [store, setStore] = createStore({ open: false, panel: false, hold: false })
   const chip = () => props.chip
+  // An open-panel request counts as "open on the panel" until the user closes
+  // or backs out of it; `consumed` remembers the last request answered, so the
+  // state is derived from the counter rather than written by an effect.
+  const [consumed, setConsumed] = createSignal(chip().openPanelRequest?.() ?? 0)
+  const requested = () => !!chip().panel && (chip().openPanelRequest?.() ?? 0) > consumed()
+  const consume = () => setConsumed(chip().openPanelRequest?.() ?? 0)
+  const isOpen = () => store.open || requested()
+  const panelShown = () => store.panel || requested()
   const options = () => chip().options
   const current = () => options().find((option) => option.value === chip().current)
   let contentRef: HTMLDivElement | undefined
   let listRef: ListRef | undefined
 
-  const close = () => setStore("open", false)
+  const close = () => {
+    consume()
+    setStore({ open: false, panel: false, hold: false })
+  }
+  const back = () => {
+    consume()
+    setStore({ open: true, panel: false })
+  }
 
   const searchInput = () =>
     contentRef?.querySelector<HTMLInputElement>('[data-slot="list-search"] input') ?? undefined
@@ -123,14 +159,14 @@ function ContextChipPicker(props: { chip: ContextChip }) {
   }
 
   createEffect(() => {
-    if (!store.open) return
+    if (!isOpen()) return
     if (!chip().search) return
     bindSearchTypeahead()
   })
 
   return (
     <Kobalte
-      open={store.open}
+      open={isOpen()}
       onOpenChange={(next) => (next ? setStore("open", true) : close())}
       modal={false}
       placement="bottom-start"
@@ -188,14 +224,23 @@ function ContextChipPicker(props: { chip: ContextChip }) {
             background: "var(--overlay-surface)",
           }}
           onEscapeKeyDown={(event) => {
-            close()
             event.preventDefault()
             event.stopPropagation()
+            if (store.hold) return
+            close()
           }}
-          onPointerDownOutside={close}
-          onFocusOutside={close}
+          onPointerDownOutside={(event) => (store.hold ? event.preventDefault() : close())}
+          onFocusOutside={(event) => (store.hold ? event.preventDefault() : close())}
         >
           <Kobalte.Title class="sr-only">{chip().ariaLabel}</Kobalte.Title>
+          <Show when={panelShown() && chip().panel}>
+            {(panel) => (
+              <div data-slot="context-chip-panel" class="flex min-h-0 flex-col p-2">
+                {panel().render({ close, back, hold: (active) => setStore("hold", active) })}
+              </div>
+            )}
+          </Show>
+          <Show when={!panelShown()}>
           <List
             ref={(ref) => (listRef = ref)}
             class="flex-1 min-h-0 p-1 [&_[data-slot=list-scroll]]:flex-1 [&_[data-slot=list-scroll]]:min-h-0"
@@ -263,6 +308,22 @@ function ContextChipPicker(props: { chip: ContextChip }) {
                 </button>
               </div>
             )}
+          </Show>
+          <Show when={chip().panel}>
+            {(panel) => (
+              <div class="mt-1 shrink-0 border-t border-v2-border-border-muted p-1 pt-1">
+                <button
+                  data-slot="context-chip-panel-open"
+                  type="button"
+                  class="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-13-regular text-text-weak transition-colors duration-150 hover:bg-[var(--overlay-surface-hover)] hover:text-text-base"
+                  onClick={() => setStore("panel", true)}
+                >
+                  <Icon name="plus-small" size="small" class="shrink-0" />
+                  <span class="truncate">{panel().label}</span>
+                </button>
+              </div>
+            )}
+          </Show>
           </Show>
         </Kobalte.Content>
       </Kobalte.Portal>

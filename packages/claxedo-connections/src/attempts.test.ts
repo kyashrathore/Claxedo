@@ -2,6 +2,18 @@ import { describe, expect, test } from "bun:test"
 import { createAttempts } from "./attempts.js"
 
 describe("attempt machine", () => {
+  test("freezes public attempt context and returns a copy on consume", () => {
+    const attempts = createAttempts({ sweepIntervalMs: 0 })
+    const context = { issuer: "https://issuer.example" }
+    const { state } = attempts.create({ integrationId: "mcp", scope: "personal", owner: "user:1", context })
+    context.issuer = "https://mutated.example"
+    const pending = attempts.consume(state)
+    expect(pending?.context).toEqual({ issuer: "https://issuer.example" })
+    if (pending?.context) pending.context.issuer = "https://also-mutated.example"
+    expect(pending?.context).toEqual({ issuer: "https://also-mutated.example" })
+    attempts.dispose()
+  })
+
   test("consume is single-use and atomic", () => {
     const attempts = createAttempts({ sweepIntervalMs: 0 })
     const { state, verifier } = attempts.create({ integrationId: "fake", scope: "team" })

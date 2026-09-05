@@ -7,7 +7,12 @@ import { fileURLToPath } from "node:url"
 import { isBuiltin } from "node:module"
 import { build as esbuildBuild, type Metafile } from "esbuild"
 import { defaultSandboxImage, defaultSnapshotName, SANDBOX_IMAGE_REPOSITORY } from "@claxedo/sandbox-manager/image"
-import { claxedoWorkspaceRuntimeEntry, workspaceRuntimeRoot, workspaceRuntimeVersion } from "../../src/hosts/workspace-runtime/startup"
+import {
+  claxedoAgentPluginsWorkspaceRuntimeEntry,
+  claxedoWorkspaceRuntimeEntry,
+  workspaceRuntimeRoot,
+  workspaceRuntimeVersion,
+} from "../../src/hosts/workspace-runtime/startup"
 
 type Exec = (cmd: string, args: string[], opts?: { cwd?: string; env?: NodeJS.ProcessEnv }) => void
 
@@ -32,6 +37,50 @@ function packagesRoot() {
   return path.resolve(workspaceRuntimeRoot(), "..")
 }
 
+function workspacePackageRoot(name: string) {
+  const suffix = name.slice("@claxedo/".length)
+  const direct = path.join(packagesRoot(), suffix)
+  if (fs.existsSync(path.join(direct, "package.json"))) return direct
+  const prefixed = path.join(packagesRoot(), `claxedo-${suffix}`)
+  if (fs.existsSync(path.join(prefixed, "package.json"))) return prefixed
+  // Synthetic graph tests use logical package-directory names without
+  // creating them on disk; retain that deterministic fallback.
+  return direct
+}
+
+type WorkspaceCatalog = Record<string, string>
+
+function record(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
+}
+
+function workspaceCatalog(value: unknown): value is WorkspaceCatalog {
+  return record(value) && Object.values(value).every((entry) => typeof entry === "string")
+}
+
+function rootWorkspaceCatalog(): WorkspaceCatalog {
+  const root: unknown = JSON.parse(fs.readFileSync(path.resolve(packagesRoot(), "../package.json"), "utf8"))
+  if (!record(root) || !record(root.workspaces) || !workspaceCatalog(root.workspaces.catalog)) return {}
+  return root.workspaces.catalog
+}
+
+function standaloneDependencyVersion(name: string, version: string, catalog: WorkspaceCatalog): string | undefined {
+  // Workspace packages are bundled into workspace-runtime-host.mjs. npm cannot
+  // resolve this monorepo-only protocol inside the standalone image context,
+  // and copying it would make an otherwise valid Docker build fail before the
+  // runtime starts.
+  if (version.startsWith("workspace:")) return undefined
+  if (version === "catalog:") {
+    const resolved = catalog[name]
+    if (!resolved) throw new Error(`workspace catalog has no concrete version for image dependency: ${name}`)
+    return resolved
+  }
+  if (version.startsWith("catalog:")) {
+    throw new Error(`sandbox image dependency ${name} uses unsupported named workspace catalog specifier: ${version}`)
+  }
+  return version
+}
+
 /**
  * Merge external runtime dependencies of the host's workspace package roots. The
  * @claxedo code itself ships inside the esbuild bundle; everything else is
@@ -39,7 +88,8 @@ function packagesRoot() {
  */
 export function hostBundleDependencies(
   readPackageJson: (dir: string) => PackageJson = readPackageJsonFromDisk,
-  roots = hostBundlePackageRoots(),
+  roots: readonly string[] = hostBundlePackageRoots(),
+  catalog: WorkspaceCatalog = rootWorkspaceCatalog(),
 ) {
   const dependencies: Record<string, string> = {}
   const visited = new Set<string>()
@@ -51,19 +101,21 @@ export function hostBundleDependencies(
     const pkg = readPackageJson(dir)
     for (const [name, version] of Object.entries(pkg.dependencies ?? {})) {
       if (name.startsWith("@claxedo/")) {
-        queue.push(path.join(packagesRoot(), name.slice("@claxedo/".length)))
+        queue.push(workspacePackageRoot(name))
         continue
       }
+      const standaloneVersion = standaloneDependencyVersion(name, version, catalog)
+      if (!standaloneVersion) continue
       const existing = dependencies[name]
       if (existing) {
-        if (existing !== version) {
+        if (existing !== standaloneVersion) {
           // BFS from workspace-runtime: its own pin wins. The image installs
           // one flat dependency set, mirroring what bundling would pick.
-          console.warn(`[build-sandbox-image] dependency pin conflict for ${name}: keeping ${existing}, ignoring ${version} (${pkg.name ?? dir})`)
+          console.warn(`[build-sandbox-image] dependency pin conflict for ${name}: keeping ${existing}, ignoring ${standaloneVersion} (${pkg.name ?? dir})`)
         }
         continue
       }
-      dependencies[name] = version
+      dependencies[name] = standaloneVersion
     }
   }
   for (const name of IMAGE_REQUIRED_DEPENDENCIES) {
@@ -85,9 +137,15 @@ const readPackageJsonFromDisk = (dir: string): PackageJson =>
  * The host registers the external adapter itself; workspace-runtime does not
  * depend on it. Keep runtime last for builds and first for dependency-pin priority.
  * Pure server-core source helpers are bundled directly, not package build roots.
+ * The Agent Plugins image also bundles the local-server module that owns the
+ * runtime apply route (`host-entry.agent-plugins.ts`).
  */
-function hostBundlePackageRoots() {
-  return [path.join(packagesRoot(), "opencode-server-adapter"), workspaceRuntimeRoot()]
+export function hostBundlePackageRoots(agentPlugins = false) {
+  return [
+    path.join(packagesRoot(), "opencode-server-adapter"),
+    ...(agentPlugins ? [path.join(packagesRoot(), "claxedo-local-server")] : []),
+    workspaceRuntimeRoot(),
+  ]
 }
 
 /**
@@ -100,7 +158,7 @@ function hostBundlePackageRoots() {
  */
 export function workspacePackageBuildOrder(
   readPackageJson: (dir: string) => PackageJson = readPackageJsonFromDisk,
-  roots = hostBundlePackageRoots(),
+  roots: readonly string[] = hostBundlePackageRoots(),
 ): string[] {
   const order: string[] = []
   const visited = new Set<string>()
@@ -116,7 +174,7 @@ export function workspacePackageBuildOrder(
     const pkg = readPackageJson(dir)
     for (const name of Object.keys(pkg.dependencies ?? {})) {
       if (name.startsWith("@claxedo/")) {
-        visit(path.join(packagesRoot(), name.slice("@claxedo/".length)))
+        visit(workspacePackageRoot(name))
       }
     }
     visiting.delete(dir)
@@ -134,8 +192,12 @@ export function workspacePackageBuildOrder(
  * checkout must produce those dists before bundling. Idempotent: re-running
  * simply rebuilds. workspace-runtime is built last.
  */
-export function buildClaxedoWorkspacePackages(exec: Exec = defaultExec, readPackageJson: (dir: string) => PackageJson = readPackageJsonFromDisk) {
-  for (const dir of workspacePackageBuildOrder(readPackageJson)) {
+export function buildClaxedoWorkspacePackages(
+  exec: Exec = defaultExec,
+  readPackageJson: (dir: string) => PackageJson = readPackageJsonFromDisk,
+  roots: readonly string[] = hostBundlePackageRoots(),
+) {
+  for (const dir of workspacePackageBuildOrder(readPackageJson, roots)) {
     const pkg = readPackageJson(dir)
     if (!pkg.scripts?.build) {
       console.log(`[build-sandbox-image] skip ${pkg.name ?? path.basename(dir)} (no build script)`)
@@ -212,7 +274,11 @@ export function assertHostBundleDependencies(metafile: Metafile, dependencies: R
  * `@claxedo/workspace-runtime` to npm is a separate release concern and no
  * longer gates image builds.
  */
-export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Exec = defaultExec) {
+export async function bundleClaxedoWorkspaceRuntimeHost(
+  outDir: string,
+  exec: Exec = defaultExec,
+  options: { agentPlugins?: boolean } = {},
+) {
   fs.rmSync(outDir, { recursive: true, force: true })
   fs.mkdirSync(outDir, { recursive: true })
   // The esbuild host bundle resolves @claxedo/workspace-runtime AND every
@@ -220,11 +286,12 @@ export async function bundleClaxedoWorkspaceRuntimeHost(outDir: string, exec: Ex
   // (all gitignored). Build the whole graph dependencies-first so a fresh CI
   // checkout ships the current checkout — not stale local dist, not a missing
   // one. workspace-runtime is the last package built.
-  buildClaxedoWorkspacePackages(exec)
+  const roots = hostBundlePackageRoots(options.agentPlugins)
+  buildClaxedoWorkspacePackages(exec, readPackageJsonFromDisk, roots)
   const versionFile = writeWorkspaceRuntimeVersion(outDir)
-  const dependencies = hostBundleDependencies()
+  const dependencies = hostBundleDependencies(readPackageJsonFromDisk, roots)
   const result = await esbuildBuild(esbuildHostBundleOptions({
-    entry: claxedoWorkspaceRuntimeEntry(),
+    entry: options.agentPlugins ? claxedoAgentPluginsWorkspaceRuntimeEntry() : claxedoWorkspaceRuntimeEntry(),
     outfile: path.join(outDir, HOST_BUNDLE_FILENAME),
   }))
   assertHostBundleDependencies(result.metafile!, dependencies)
@@ -306,6 +373,7 @@ async function main() {
   const push = process.argv.includes("--push")
   const latest = process.argv.includes("--latest")
   const bundleOnly = process.argv.includes("--bundle-only")
+  const agentPlugins = process.argv.includes("--agent-plugins")
   const outFlag = process.argv.find((arg) => arg.startsWith("--out="))?.slice("--out=".length)
   const version = process.env.WORKSPACE_RUNTIME_VERSION?.trim() || workspaceRuntimeVersion()
 
@@ -320,7 +388,7 @@ async function main() {
     : path.resolve(import.meta.dirname, ".build")
 
   console.log(`bundling claxedo workspace-runtime host (core ${version})`)
-  const bundle = await bundleClaxedoWorkspaceRuntimeHost(outDir)
+  const bundle = await bundleClaxedoWorkspaceRuntimeHost(outDir, defaultExec, { agentPlugins })
   console.log(`host bundle: ${bundle.bundle}`)
 
   const imageTag = defaultSandboxImage(version, bundle.buildId)
@@ -333,7 +401,7 @@ async function main() {
   fs.mkdirSync(buildInfoDir, { recursive: true })
   fs.writeFileSync(
     path.join(buildInfoDir, "build-info.json"),
-    JSON.stringify({ imageTag, snapshotName, buildId: bundle.buildId, coreVersion: version }, null, 2),
+    JSON.stringify({ imageTag, snapshotName, buildId: bundle.buildId, coreVersion: version, agentPlugins }, null, 2),
   )
 
   console.log("")

@@ -513,56 +513,6 @@ export type WorkspaceAuthority = {
     args: { workspaceId: string },
   ) => Promise<unknown>
 
-  // agent extensions
-  listWorkspaceAgentExtensions: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
-  listWorkspaceAgentExtensionsForRuntime: (args: { workspaceId: string }) => Promise<unknown>
-  authorizeWorkspaceAgentExtensionsAdmin: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<void>
-  upsertWorkspaceAgentExtension: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      extensionId: string
-      packageName: string
-      desired: unknown
-      lock: unknown
-    },
-  ) => Promise<unknown>
-  setWorkspaceAgentExtensionEnabled: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      extensionId: string
-      enabled: boolean
-    },
-  ) => Promise<unknown>
-  deleteWorkspaceAgentExtension: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      extensionId: string
-    },
-  ) => Promise<unknown>
-  listAgentExtensionPolicyOverrides: (auth: SignedControlPlaneAuth, args: { workspaceId: string }) => Promise<unknown>
-  listAgentExtensionPolicyOverridesForRuntime: (args: { workspaceId: string }) => Promise<unknown>
-  setAgentExtensionPolicyOverride: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      extensionId: string
-      scope: "org" | "user" | "workspace"
-      enabled: boolean
-      reason?: string
-    },
-  ) => Promise<unknown>
-  deleteAgentExtensionPolicyOverride: (
-    auth: SignedControlPlaneAuth,
-    args: {
-      workspaceId: string
-      extensionId: string
-      scope: "org" | "user" | "workspace"
-    },
-  ) => Promise<unknown>
-
   // audit
   auditDeny: (
     auth: SignedControlPlaneAuth | undefined,

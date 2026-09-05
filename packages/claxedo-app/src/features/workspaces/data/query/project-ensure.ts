@@ -28,3 +28,13 @@ export async function ensureLocalProject(input: {
   queryClient.invalidateQueries({ queryKey: input.projectsQuery.queryKey })
   return queryClient.fetchQuery(input.projectsQuery)
 }
+
+/**
+ * The project inventory after the server has changed it — a project the
+ * create route just made is not in the cached list, and routing to it needs
+ * the fresh one.
+ */
+export async function refreshProjectInventory(projectsQuery: FetchQueryInput) {
+  queryClient.invalidateQueries({ queryKey: projectsQuery.queryKey })
+  return queryClient.fetchQuery(projectsQuery)
+}

@@ -10,6 +10,7 @@ import { same } from "@/lib/same"
 import { createScrollPersistence, type SessionScroll } from "@/app/providers/layout-scroll"
 import { validProjectRef } from "@/platform/sync/worktree"
 import {
+  createLayoutProjectsApi,
   planProjectColorAssignment,
   projectCatalog,
   resolveSandboxRootActions,
@@ -471,45 +472,7 @@ function createLayoutContextValue() {
           setStore("handoff", "tabs", undefined)
         },
       },
-      projects: {
-        list,
-        open(directory: string) {
-          const root = rootFor(directory)
-          if (!validProjectRef(root)) return
-          ensureDirectorySessionCache(root)
-          if (!shouldStoreOpenedProject({ root, sidebar: sidebarProjects(), isLocal: server.isLocal(), valid: validProjectRef })) return
-          server.projects.open(root)
-        },
-        close(directory: string) {
-          if (!server.isLocal()) return
-          server.projects.close(directory)
-        },
-        isClosed(directory: string) {
-          if (!server.isLocal()) return false
-          return server.projects.isClosed(directory)
-        },
-        remove(directory: string) {
-          server.projects.remove(directory)
-        },
-        expand(directory: string) {
-          server.projects.expand(directory)
-        },
-        collapse(directory: string) {
-          server.projects.collapse(directory)
-        },
-        toggle(directory: string) {
-          const project = sidebarProjects().find((p) => p.worktree === directory)
-          if (!project) return
-          if (project.expanded) {
-            server.projects.collapse(directory)
-          } else {
-            server.projects.expand(directory)
-          }
-        },
-        move(directory: string, toIndex: number) {
-          server.projects.move(directory, toIndex)
-        },
-      },
+      projects: createLayoutProjectsApi({ list, server, rootFor, validProjectRef, ensureDirectorySessionCache, sidebarProjects }),
       sidebar: {
         opened: createMemo(() => store.sidebar.opened),
         open() {

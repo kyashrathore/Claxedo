@@ -164,6 +164,16 @@ function connection(raw: unknown): DecodeResult<Record<string, unknown>> {
   return withStrings("relayUrl")(raw)
 }
 
+function statusResult(raw: unknown): DecodeResult<{ status: number; body?: unknown }> {
+  const shape = object(raw)
+  if (!shape.ok) return shape
+  const status = shape.value.status
+  if (typeof status !== "number" || !Number.isSafeInteger(status) || status < 100 || status > 599) {
+    return { ok: false, reason: "expected a response status" }
+  }
+  return { ok: true, value: { status, ...(Object.hasOwn(shape.value, "body") ? { body: shape.value.body } : {}) } }
+}
+
 export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec> = {
   "account.mode": { safe: true, decode: object },
   "account.compatibility": { safe: true, decode: object },
@@ -173,6 +183,27 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // here in any case; Electron main refuses this operation to the renderer
   // (`RENDERER_WITHHELD_OPERATIONS`).
   "account.cliExchange": { safe: false, decode: object },
+  "agentPlugins.catalog": { safe: true, decode: statusResult },
+  "agentPlugins.catalog.refresh": { safe: true, decode: statusResult },
+  "agentPlugins.catalog.project": { safe: true, decode: statusResult },
+  "agentPlugins.catalog.project.refresh": { safe: true, decode: statusResult },
+  "agentPlugins.activation": { safe: false, decode: statusResult },
+  "agentPlugins.organizationDefault": { safe: false, decode: statusResult },
+  "agentPlugins.update": { safe: false, decode: statusResult },
+  // One retained SKILL.md, project-scoped or not. Read-only, so both are safe
+  // to retry.
+  "agentPlugins.skill": { safe: true, decode: statusResult },
+  // Main-only (withheld from the renderer in account-ipc.ts): listed so the two
+  // registries name the same operations; the channel refuses a page.
+  "agentPlugins.runtimeSelf": { safe: true, decode: statusResult },
+  "agentPlugins.skill.project": { safe: true, decode: statusResult },
+  // Directory sources: listing and removal are idempotent reads/deletes
+  // (`remove` treats a 404 as success, so a retried delete is still correct);
+  // adding a source is not — a repeated POST with the same owner/repository is
+  // main's call, like every other creating mutation in this table.
+  "agentPlugins.sources.list": { safe: true, decode: statusResult },
+  "agentPlugins.sources.add": { safe: false, decode: statusResult },
+  "agentPlugins.sources.remove": { safe: true, decode: statusResult },
   // An ENVELOPE, not a bare array: `GET /api/workspace` answers
   // `{ workspaces: [...] }`, the same shape the local server's list handler
   // uses. Validated and passed through rather than unwrapped, because every
@@ -208,6 +239,9 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   // asserting the absence of one that must not.
   "workspace.connection.mint": { safe: true, decode: connection },
   "workspace.connection.refresh": { safe: true, decode: connection },
+  // Signed desktop Share cannot hit the sidecar: that process does not mount
+  // the register route. The AccountPort carries the same displayName-only body
+  // share-workspace.ts already posts. Declared once, with billing below.
   // Wrapped: the route returns `{ enrollment }`. Reading `host_id` off the
   // envelope finds nothing, which is exactly what this decoder existed to
   // prevent and exactly what it did.
@@ -282,8 +316,6 @@ export const HOSTED_OPERATIONS: Record<HostedOperationName, HostedOperationSpec>
   "documents.runtimeConflictResolve": { safe: false, decode: object },
   "documents.moveToRepository": { safe: false, decode: object },
   "documents.fromRepo": { safe: false, decode: object },
-  "agentConfig.extensions.read": { safe: true, decode: object },
-  "agentConfig.extensions.write": { safe: false, decode: object },
   "session.create": { safe: false, decode: object },
   "session.messages": { safe: true, decode: object },
   "session.gateway": { safe: true, decode: object },

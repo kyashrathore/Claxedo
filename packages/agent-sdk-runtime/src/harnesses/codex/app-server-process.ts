@@ -12,7 +12,14 @@ import { isWindowsShimBinary, killHarnessProcess } from "../shared/windows-proce
 
 const log = Log.create({ service: "codex-app-server-process" })
 
-function commandFor(binary: string) {
+/**
+ * The argv a Codex app-server launch uses. Named and exported so the Agent
+ * Plugins launch check can assert that activating a marketplace adds no argv
+ * overrides — the generated marketplace is read from the managed Codex home
+ * instead. It lives here, beside the only spawn site, so the guard cannot
+ * drift from what actually launches.
+ */
+export function codexAppServerCommand(binary: string) {
   const args = ["app-server", "--listen", "stdio://"]
   if (/\.(?:cjs|mjs|js)$/i.test(binary)) return { command: process.execPath, args: [binary, ...args] }
   return { command: binary, args }
@@ -102,7 +109,7 @@ export class CodexAppServerProcess {
     processObserver?: AgentProcessObserver,
     mcp: Record<string, ResolvedMcpServer> = {},
   ) {
-    const command = commandFor(binary)
+    const command = codexAppServerCommand(binary)
     const windowsShim = isWindowsShimBinary(command.command)
     this.proc = spawn(windowsShim ? `"${command.command}"` : command.command, command.args, {
       cwd: directory,

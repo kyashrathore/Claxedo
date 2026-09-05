@@ -2,7 +2,7 @@
 // mechanism: it reads no env, holds no module-global state, and reaches a
 // host only through the store ports below.
 
-export type IntegrationCapability = "docs" | "work-source" | "channel" | "code-host"
+export type IntegrationCapability = "docs" | "work-source" | "channel" | "code-host" | "mcp"
 export type IntegrationMethodKind = "key" | "oauth"
 
 export type IntegrationPrompt = {
@@ -65,6 +65,8 @@ export type OAuthTokens = {
   accessToken: string
   refreshToken?: string
   expiresAt?: number
+  /** Canonical public connection metadata learned during the grant. */
+  fields?: ConnectionFields
 }
 
 export type CodeHostRepository = {
@@ -109,10 +111,23 @@ export type DeviceAuth = {
 }
 
 export type IntegrationImpl = {
+  /**
+   * Public fields learned by an OAuth callback that may be persisted even
+   * though they are not user-facing prompts. This keeps discovery metadata
+   * out of connect forms while preserving the declaration allowlist rule.
+   */
+  canonicalFields?: readonly string[]
   verify?: (fields: ConnectionFields, secret: string) => Promise<VerifyResult>
   listRepositories?: (fields: ConnectionFields, secret: string) => Promise<CodeHostRepository[]>
   authorize?: (state: string, codeVerifier: string) => URL | Promise<URL>
-  callback?: (code: string, codeVerifier: string) => Promise<OAuthTokens>
+  /** Public, non-secret values frozen into the one-time OAuth attempt. */
+  attemptContext?: Readonly<Record<string, string>>
+  callback?: (
+    code: string,
+    codeVerifier: string,
+    context?: Readonly<Record<string, string>>,
+    response?: { issuer?: string },
+  ) => Promise<OAuthTokens>
   device?: DeviceAuth
   refresh?: (refreshToken: string) => Promise<OAuthTokens>
 }

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { sessionPaneWorkspaceKey, sessionWorkspaceRuntimeRef } from "./session-workspace"
+import { sessionPaneWorkspaceConnection, sessionPaneWorkspaceKey, sessionWorkspaceRuntimeRef } from "./session-workspace"
 
 describe("session workspace key", () => {
   test("keys a directory-less central pane by its canonical session id", () => {
@@ -27,6 +27,29 @@ describe("session workspace key", () => {
       kind: "cloud",
     })
     expect(sessionPaneWorkspaceKey({ directory: "/repo/local", sessionRef: ref })).toBe("ws_cloud_1")
+  })
+
+  test("uses a draft pane's explicit workspace route over its local provider directory", () => {
+    const projects = [{
+      workspaces: {
+        ws_cloud_route: { workspaceId: "ws_cloud_route", kind: "cloud", directory: "/runtime/repo" },
+      },
+    }]
+    const input = {
+      directory: "/local/project",
+      workspaceId: "ws_cloud_route",
+      sessionRef: {
+        sessionId: "new",
+        host: "workspace" as const,
+        cwd: "/local/project",
+        toolSandbox: { kind: "local" as const, cwd: "/local/project" },
+      },
+      projects,
+    }
+
+    expect(sessionWorkspaceRuntimeRef(input)).toEqual({ workspaceId: "ws_cloud_route", kind: "cloud" })
+    expect(sessionPaneWorkspaceConnection(input)).toEqual({ workspaceId: "ws_cloud_route", kind: "cloud" })
+    expect(sessionPaneWorkspaceKey(input)).toBe("ws_cloud_route")
   })
 
   test("does not treat central virtual authz scope as real workspace backing", () => {
@@ -205,5 +228,60 @@ describe("session workspace key", () => {
     // the default mock `/api/workspace/resolve` produced before the harness was
     // made faithful to the cloud inventory.
     expect(sessionWorkspaceRuntimeRef({ directory: "local-ses_cloud_1", projects })).toBeUndefined()
+  })
+
+  test("does not mint a local project UUID as a user-hosted relay workspace", () => {
+    const projectId = "c4955849-a3c1-4f3e-8481-1fd1bdec3962"
+    const directory = "/private/tmp/claxedo-agent-plugins-real-app/plugins-e2e"
+    const projects = [{
+      id: projectId,
+      worktree: directory,
+      workspaces: {
+        [directory]: { id: projectId, directory, kind: "local" },
+      },
+    }]
+
+    expect(sessionWorkspaceRuntimeRef({
+      directory,
+      workspaceId: projectId,
+      projects,
+    })).toBeUndefined()
+    expect(sessionPaneWorkspaceConnection({
+      directory,
+      workspaceId: projectId,
+      projects,
+    })).toEqual({ workspaceId: undefined, kind: "local" })
+
+    // Stale session rows used to claim user-hosted hosting for the local UUID.
+    expect(sessionWorkspaceRuntimeRef({
+      directory,
+      workspaceId: projectId,
+      projects,
+      sessionRef: {
+        sessionId: "new",
+        host: "workspace",
+        workspaceId: projectId,
+        toolSandbox: { kind: "workspace", workspaceId: projectId, hosting: "user-hosted" },
+      },
+    })).toBeUndefined()
+
+    // Even before inventory loads, a bare UUID is the local route id — not a ws_ relay.
+    expect(sessionWorkspaceRuntimeRef({
+      directory,
+      workspaceId: projectId,
+      sessionRef: {
+        sessionId: "new",
+        host: "workspace",
+        workspaceId: projectId,
+        toolSandbox: { kind: "workspace", workspaceId: projectId, hosting: "user-hosted" },
+      },
+    })).toBeUndefined()
+  })
+
+  test("keeps optimistic relay backing for ws_ ids before inventory loads", () => {
+    expect(sessionWorkspaceRuntimeRef({
+      directory: "/local/project",
+      workspaceId: "ws_cloud_route",
+    })).toEqual({ workspaceId: "ws_cloud_route", kind: "user-hosted" })
   })
 })

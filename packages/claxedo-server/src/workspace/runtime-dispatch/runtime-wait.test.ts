@@ -9,7 +9,6 @@ const mocks = {
   getSupervisorSandboxTarget: vi.fn(() => undefined),
   getSandbox: vi.fn(),
   broadcastRuntimeConfig: vi.fn(async () => {}),
-  syncWorkspaceRuntimeAgentExtensions: vi.fn(async () => {}),
   discardSupervisorSandbox: vi.fn(async () => {}),
   getSupervisorSandboxStatus: vi.fn(() => undefined),
   verifyWorkspaceRuntimeControlToken: vi.fn(() => false),
@@ -32,7 +31,6 @@ vi.mock("../../workspace/supervisor", () => ({
   getSupervisorSandboxTarget: mocks.getSupervisorSandboxTarget,
   getSandbox: mocks.getSandbox,
   broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
-  syncWorkspaceRuntimeAgentExtensions: mocks.syncWorkspaceRuntimeAgentExtensions,
   discardSupervisorSandbox: mocks.discardSupervisorSandbox,
   getSupervisorSandboxStatus: mocks.getSupervisorSandboxStatus,
   verifyWorkspaceRuntimeControlToken: mocks.verifyWorkspaceRuntimeControlToken,
@@ -135,7 +133,6 @@ describe("workspaceRuntimeProxy startup wait", () => {
       markUse: mocks.markSupervisorSandboxUse,
       touch: mocks.touchSupervisorSandbox,
       broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
-      syncAgentExtensions: mocks.syncWorkspaceRuntimeAgentExtensions,
     })
     resolveWorkspace.mockResolvedValue({
       id: "ws_1",

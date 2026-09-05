@@ -12,6 +12,7 @@ import { EMPTY_SERVICE_MANIFEST_ID } from "@claxedo/service-contract"
 import {
   composeBetterAuthD1UserDeployedControlPlane,
   type BetterAuthD1UserDeployedComposition,
+  type BetterAuthD1UserDeployedCompositionInput,
 } from "../../authority/adapters/worker/better-auth-d1-compose"
 import {
   USER_DEPLOYED_OWNER_CLAIM_HEADER,
@@ -98,39 +99,40 @@ function futureTimestamp(value: string | undefined, name: string) {
   return parsed
 }
 
+/** The base user-deployed composition input; feature entries extend the result, never this. */
+export function betterAuthD1CandidateCompositionInput(env: BetterAuthD1CandidateWorkerEnv): BetterAuthD1UserDeployedCompositionInput {
+  return {
+    env: stringEnvironment(env),
+    authDatabase: env.AUTH_DB,
+    controlPlaneDatabase: env.CONTROL_PLANE_DB,
+    environmentId: requiredReleaseIdentifier(env.CLAXEDO_ENVIRONMENT_ID, "CLAXEDO_ENVIRONMENT_ID"),
+    descriptorExpiresAt: futureTimestamp(env.CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT, "CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT"),
+    product: {
+      kind: "user-deployed",
+      organization: {
+        id: requiredReleaseIdentifier(
+          env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID,
+          "CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID",
+        ),
+        name: requiredReleaseIdentifier(
+          env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME,
+          "CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME",
+        ),
+      },
+      ownerBootstrap: "one-use-claim",
+    },
+  }
+}
+
 // Reused across requests only once Better Auth's init has settled; until
 // then every request builds its own instance so a canceled first request
 // cannot wedge the isolate (see settled-composition-cache.ts).
-const composition = settledCompositionCache(
+const defaultComposition = settledCompositionCache(
   (env: BetterAuthD1CandidateWorkerEnv): BetterAuthD1UserDeployedComposition =>
-    composeBetterAuthD1UserDeployedControlPlane({
-      env: stringEnvironment(env),
-      authDatabase: env.AUTH_DB,
-      controlPlaneDatabase: env.CONTROL_PLANE_DB,
-      environmentId: requiredReleaseIdentifier(env.CLAXEDO_ENVIRONMENT_ID, "CLAXEDO_ENVIRONMENT_ID"),
-      descriptorExpiresAt: futureTimestamp(env.CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT, "CLAXEDO_AUTH_DESCRIPTOR_EXPIRES_AT"),
-      product: {
-        kind: "user-deployed",
-        organization: {
-          id: requiredReleaseIdentifier(
-            env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID,
-            "CLAXEDO_USER_DEPLOYED_ORGANIZATION_ID",
-          ),
-          name: requiredReleaseIdentifier(
-            env.CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME,
-            "CLAXEDO_USER_DEPLOYED_ORGANIZATION_NAME",
-          ),
-        },
-        ownerBootstrap: "one-use-claim",
-      },
-    }),
+    composeBetterAuthD1UserDeployedControlPlane(betterAuthD1CandidateCompositionInput(env)),
   (created) => created.authReady,
 )
 
-const core = createHostedCoreWorker<BetterAuthD1CandidateWorkerEnv>((env) => {
-  const selected = composition(env)
-  return { plane: selected.plane, options: selected.options }
-})
 
 function authRoute(pathname: string) {
   return (
@@ -236,251 +238,274 @@ function available(request: Request, body: unknown) {
   )
 }
 
-const handler = {
-  async fetch(request: Request, env: BetterAuthD1CandidateWorkerEnv, context?: ExecutionContext) {
-    const cors = phaseGateCorsEntries(request, env)
-    try {
-      if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
-      assertOperatorSecretIsolation(env)
-      const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env) })
-      const url = new URL(request.url)
-      if (url.origin !== configured.public.apiOrigin)
-        throw new Error("observed request origin does not match BETTER_AUTH_URL")
-      const identity = await betterAuthD1ReleaseIdentity(env, configured, {
-        browserBuildId: requiredReleaseIdentifier(env.CLAXEDO_BROWSER_BUILD_ID, "CLAXEDO_BROWSER_BUILD_ID"),
-        relayBuildId: requiredReleaseIdentifier(env.CLAXEDO_RELAY_BUILD_ID, "CLAXEDO_RELAY_BUILD_ID"),
-        serviceManifestId: EMPTY_SERVICE_MANIFEST_ID,
-      })
-      const recovery = {
-        deploymentId: identity.deploymentId,
-        releaseId: identity.releaseId,
-        recoveryEpoch: requiredReleaseIdentifier(env.CLAXEDO_RECOVERY_EPOCH, "CLAXEDO_RECOVERY_EPOCH"),
-      }
-      if (url.pathname === "/__release/candidate-health" && (request.method === "GET" || request.method === "HEAD")) {
-        const candidate = await requireDeploymentReleaseCandidateAtRevision(
-          env.AUTH_DB,
-          identity,
-          Number(requiredReleaseIdentifier(env.CLAXEDO_CANDIDATE_STATE_REVISION, "CLAXEDO_CANDIDATE_STATE_REVISION")),
-          requiredReleaseIdentifier(env.CLAXEDO_CANDIDATE_OPERATION_ID, "CLAXEDO_CANDIDATE_OPERATION_ID"),
-        )
-        await requirePairedD1RecoveryEpoch(env.AUTH_DB, env.CONTROL_PLANE_DB, recovery)
-        await requireBetterAuthDatabaseSchema(env.AUTH_DB)
-        await requireBetterAuthNativeClientClosure(
-          env.AUTH_DB,
-          configured.public.apiOrigin,
-          requiredReleaseIdentifier(env.BETTER_AUTH_SECRET, "BETTER_AUTH_SECRET"),
-          requiredReleaseIdentifier(env.CLAXEDO_AUTH_INTROSPECTION_SECRET, "CLAXEDO_AUTH_INTROSPECTION_SECRET"),
-        )
-        composition(env)
-        const version = cloudflarePlatformVersion(env)
-        return available(request, {
-          status: "candidate-locked",
-          platformVersionId: version.id,
-          platformVersionTag: version.tag,
-          release: {
-            deploymentId: candidate.deploymentId,
-            releaseId: candidate.releaseId,
-            workerBuildId: candidate.workerBuildId,
-            authConfigurationId: candidate.authConfigurationId,
-            stateRevision: candidate.stateRevision,
-          },
-        })
-      }
-      let release = await requireDeploymentReleaseState(env.AUTH_DB, identity)
-      await requirePairedD1RecoveryEpoch(env.AUTH_DB, env.CONTROL_PLANE_DB, recovery)
+/**
+ * One phase-gated candidate Worker over a statically selected composition.
+ *
+ * The base artifact passes the plain user-deployed composition; a feature
+ * artifact (Agent Plugins) passes the same composition extended with its
+ * route contributions and runtime hooks. Everything the release ledger gates
+ * on — candidate health, canary admission, multiplayer validation — is shared
+ * here so a feature entry cannot drift from the certified release protocol.
+ */
+export function createBetterAuthD1CandidateWorker(input: {
+  composition: (env: BetterAuthD1CandidateWorkerEnv) => BetterAuthD1UserDeployedComposition
+}) {
+  const composition = input.composition
+  const core = createHostedCoreWorker<BetterAuthD1CandidateWorkerEnv>((env) => {
+    const selected = composition(env)
+    return { plane: selected.plane, options: selected.options }
+  })
 
-      const operator = await operatorResponse(request, env, identity, configured.public.appOrigin, url, {
-        canBeginCanary: true,
-        expectedCanaryJourneyId: requiredReleaseIdentifier(
-          env.CLAXEDO_CANARY_JOURNEY_ID,
-          "CLAXEDO_CANARY_JOURNEY_ID",
-        ),
-      })
-      if (operator) return operator
-      if (url.pathname === "/health" && (request.method === "GET" || request.method === "HEAD")) {
-        const version = cloudflarePlatformVersion(env)
-        return available(request, {
-          status: release.phase,
-          platformVersionId: version.id,
-          platformVersionTag: version.tag,
-          release: {
-            deploymentId: release.deploymentId,
-            releaseId: release.releaseId,
-            workerBuildId: release.workerBuildId,
-            browserBuildId: release.browserBuildId,
-            relayBuildId: release.relayBuildId,
-            authConfigurationId: release.authConfigurationId,
-            stateRevision: release.stateRevision,
-            phase: release.phase,
-            phaseRevision: release.phaseRevision,
-          },
+  const handler = {
+    async fetch(request: Request, env: BetterAuthD1CandidateWorkerEnv, context?: ExecutionContext) {
+      const cors = phaseGateCorsEntries(request, env)
+      try {
+        if (!env.AUTH_DB || !env.CONTROL_PLANE_DB) throw new Error("AUTH_DB and CONTROL_PLANE_DB are required")
+        assertOperatorSecretIsolation(env)
+        const configured = resolveBetterAuthConfiguration({ env: stringEnvironment(env) })
+        const url = new URL(request.url)
+        if (url.origin !== configured.public.apiOrigin)
+          throw new Error("observed request origin does not match BETTER_AUTH_URL")
+        const identity = await betterAuthD1ReleaseIdentity(env, configured, {
+          browserBuildId: requiredReleaseIdentifier(env.CLAXEDO_BROWSER_BUILD_ID, "CLAXEDO_BROWSER_BUILD_ID"),
+          relayBuildId: requiredReleaseIdentifier(env.CLAXEDO_RELAY_BUILD_ID, "CLAXEDO_RELAY_BUILD_ID"),
+          serviceManifestId: EMPTY_SERVICE_MANIFEST_ID,
         })
-      }
-      const selected = composition(env)
-      // Dev deployments opt out of release-phase gating entirely (see the
-      // env field's doc): they serve exactly like an "open" release.
-      const releaseGatesDisabled =
-        env.CLAXEDO_DEV_DISABLE_RELEASE_GATES === "1" || env.CLAXEDO_DEV_DISABLE_RELEASE_GATES === "true"
-      if (releaseGatesDisabled || release.phase === "open") {
-        if (authRoute(url.pathname)) return await selected.authHandler(request)
-        return await core.fetch(request, env, context)
-      }
-      if (release.phase === "locked") {
-        const journeyId = requiredReleaseIdentifier(env.CLAXEDO_CANARY_JOURNEY_ID, "CLAXEDO_CANARY_JOURNEY_ID")
-        if (request.headers.get("x-claxedo-canary-journey-id") !== journeyId) {
-          return unavailable(request, cors, "deployment_phase_denied")
+        const recovery = {
+          deploymentId: identity.deploymentId,
+          releaseId: identity.releaseId,
+          recoveryEpoch: requiredReleaseIdentifier(env.CLAXEDO_RECOVERY_EPOCH, "CLAXEDO_RECOVERY_EPOCH"),
         }
-        if (authRoute(url.pathname)) return await selected.authHandler(request)
-        if (url.pathname === "/__release/canary/identity" && request.method === "GET") {
-          const providerIdentity = await selected.verifyIdentity(request)
+        if (url.pathname === "/__release/candidate-health" && (request.method === "GET" || request.method === "HEAD")) {
+          const candidate = await requireDeploymentReleaseCandidateAtRevision(
+            env.AUTH_DB,
+            identity,
+            Number(requiredReleaseIdentifier(env.CLAXEDO_CANDIDATE_STATE_REVISION, "CLAXEDO_CANDIDATE_STATE_REVISION")),
+            requiredReleaseIdentifier(env.CLAXEDO_CANDIDATE_OPERATION_ID, "CLAXEDO_CANDIDATE_OPERATION_ID"),
+          )
+          await requirePairedD1RecoveryEpoch(env.AUTH_DB, env.CONTROL_PLANE_DB, recovery)
+          await requireBetterAuthDatabaseSchema(env.AUTH_DB)
+          await requireBetterAuthNativeClientClosure(
+            env.AUTH_DB,
+            configured.public.apiOrigin,
+            requiredReleaseIdentifier(env.BETTER_AUTH_SECRET, "BETTER_AUTH_SECRET"),
+            requiredReleaseIdentifier(env.CLAXEDO_AUTH_INTROSPECTION_SECRET, "CLAXEDO_AUTH_INTROSPECTION_SECRET"),
+          )
+          composition(env)
+          const version = cloudflarePlatformVersion(env)
           return available(request, {
-            identity: providerIdentity,
-            identityHash: await userDeployedOwnerIdentityHash(providerIdentity),
+            status: "candidate-locked",
+            platformVersionId: version.id,
+            platformVersionTag: version.tag,
+            release: {
+              deploymentId: candidate.deploymentId,
+              releaseId: candidate.releaseId,
+              workerBuildId: candidate.workerBuildId,
+              authConfigurationId: candidate.authConfigurationId,
+              stateRevision: candidate.stateRevision,
+            },
           })
         }
-        return unavailable(request, cors, "deployment_phase_denied")
-      }
-      if (release.phase === "provider_sync") {
-        return unavailable(request, cors, "deployment_phase_denied")
-      }
-      if (release.phase === "multiplayer_validation") {
-        // Browser OAuth bootstrap cannot carry the validation-operation
-        // header through provider redirects, and a CORS preflight deliberately
-        // carries no user credential. The shell's connection gate also probes
-        // `/api/claxedo/health` before it mounts the login route, so requiring
-        // an authenticated multiplayer receipt there creates an impossible
-        // health-before-login cycle. These requests expose no product data:
-        // the descriptor is a public deployment contract, the health route is
-        // a public liveness probe, auth routes only establish an identity, and
-        // OPTIONS is answered by the core CORS middleware. Every ordinary
-        // product request remains identity- and operation-receipt-gated below.
-        if (authDescriptorRoute(url.pathname) || healthProbeRoute(url.pathname)) {
+        let release = await requireDeploymentReleaseState(env.AUTH_DB, identity)
+        await requirePairedD1RecoveryEpoch(env.AUTH_DB, env.CONTROL_PLANE_DB, recovery)
+  
+        const operator = await operatorResponse(request, env, identity, configured.public.appOrigin, url, {
+          canBeginCanary: true,
+          expectedCanaryJourneyId: requiredReleaseIdentifier(
+            env.CLAXEDO_CANARY_JOURNEY_ID,
+            "CLAXEDO_CANARY_JOURNEY_ID",
+          ),
+        })
+        if (operator) return operator
+        if (url.pathname === "/health" && (request.method === "GET" || request.method === "HEAD")) {
+          const version = cloudflarePlatformVersion(env)
+          return available(request, {
+            status: release.phase,
+            platformVersionId: version.id,
+            platformVersionTag: version.tag,
+            release: {
+              deploymentId: release.deploymentId,
+              releaseId: release.releaseId,
+              workerBuildId: release.workerBuildId,
+              browserBuildId: release.browserBuildId,
+              relayBuildId: release.relayBuildId,
+              authConfigurationId: release.authConfigurationId,
+              stateRevision: release.stateRevision,
+              phase: release.phase,
+              phaseRevision: release.phaseRevision,
+            },
+          })
+        }
+        const selected = composition(env)
+        // Dev deployments opt out of release-phase gating entirely (see the
+        // env field's doc): they serve exactly like an "open" release.
+        const releaseGatesDisabled =
+          env.CLAXEDO_DEV_DISABLE_RELEASE_GATES === "1" || env.CLAXEDO_DEV_DISABLE_RELEASE_GATES === "true"
+        if (releaseGatesDisabled || release.phase === "open") {
+          if (authRoute(url.pathname)) return await selected.authHandler(request)
           return await core.fetch(request, env, context)
         }
-        if (request.method === "OPTIONS") {
-          return authRoute(url.pathname)
-            ? await selected.authHandler(request)
-            : await core.fetch(request, env, context)
+        if (release.phase === "locked") {
+          const journeyId = requiredReleaseIdentifier(env.CLAXEDO_CANARY_JOURNEY_ID, "CLAXEDO_CANARY_JOURNEY_ID")
+          if (request.headers.get("x-claxedo-canary-journey-id") !== journeyId) {
+            return unavailable(request, cors, "deployment_phase_denied")
+          }
+          if (authRoute(url.pathname)) return await selected.authHandler(request)
+          if (url.pathname === "/__release/canary/identity" && request.method === "GET") {
+            const providerIdentity = await selected.verifyIdentity(request)
+            return available(request, {
+              identity: providerIdentity,
+              identityHash: await userDeployedOwnerIdentityHash(providerIdentity),
+            })
+          }
+          return unavailable(request, cors, "deployment_phase_denied")
         }
+        if (release.phase === "provider_sync") {
+          return unavailable(request, cors, "deployment_phase_denied")
+        }
+        if (release.phase === "multiplayer_validation") {
+          // Browser OAuth bootstrap cannot carry the validation-operation
+          // header through provider redirects, and a CORS preflight deliberately
+          // carries no user credential. The shell's connection gate also probes
+          // `/api/claxedo/health` before it mounts the login route, so requiring
+          // an authenticated multiplayer receipt there creates an impossible
+          // health-before-login cycle. These requests expose no product data:
+          // the descriptor is a public deployment contract, the health route is
+          // a public liveness probe, auth routes only establish an identity, and
+          // OPTIONS is answered by the core CORS middleware. Every ordinary
+          // product request remains identity- and operation-receipt-gated below.
+          if (authDescriptorRoute(url.pathname) || healthProbeRoute(url.pathname)) {
+            return await core.fetch(request, env, context)
+          }
+          if (request.method === "OPTIONS") {
+            return authRoute(url.pathname)
+              ? await selected.authHandler(request)
+              : await core.fetch(request, env, context)
+          }
+          if (authRoute(url.pathname)) return await selected.authHandler(request)
+        }
+        // The same bootstrap cycle the multiplayer_validation branch documents,
+        // for the phase that comes before it: a canary client must read the
+        // descriptor to learn how to authenticate, and the shell probes health
+        // before it mounts a login route — so gating these made canary sign-in
+        // impossible and left the real app cycling Sign in → Signing… → Sign in,
+        // then the consent page reporting "Claxedo failed to start".
+        //
+        // Deliberately NOT journey-gated, unlike product routes: the OAuth leg
+        // runs in a browser, and a browser cannot put a header on a navigation
+        // or on the consent page's own bootstrap. Neither route exposes product
+        // data — the descriptor is a public deployment contract and health is a
+        // liveness probe — and every product request below still requires the
+        // journey header AND the admitted canary identity.
+        if (release.phase === "canary" && (authDescriptorRoute(url.pathname) || healthProbeRoute(url.pathname))) {
+          return await core.fetch(request, env, context)
+        }
+        // Auth routes establish an identity; they grant no product access. A
+        // browser cannot put a header on its own navigations, so requiring the
+        // canary journey here made the provider redirect — the one step of
+        // sign-in the client does not control — answer canary_journey_denied,
+        // and no canary could be driven through the real product at all. The
+        // canary stays exclusive where it matters: every product request below
+        // still needs the journey header AND an authenticated principal whose
+        // identity hash equals the admitted canary identity.
         if (authRoute(url.pathname)) return await selected.authHandler(request)
-      }
-      // The same bootstrap cycle the multiplayer_validation branch documents,
-      // for the phase that comes before it: a canary client must read the
-      // descriptor to learn how to authenticate, and the shell probes health
-      // before it mounts a login route — so gating these made canary sign-in
-      // impossible and left the real app cycling Sign in → Signing… → Sign in,
-      // then the consent page reporting "Claxedo failed to start".
-      //
-      // Deliberately NOT journey-gated, unlike product routes: the OAuth leg
-      // runs in a browser, and a browser cannot put a header on a navigation
-      // or on the consent page's own bootstrap. Neither route exposes product
-      // data — the descriptor is a public deployment contract and health is a
-      // liveness probe — and every product request below still requires the
-      // journey header AND the admitted canary identity.
-      if (release.phase === "canary" && (authDescriptorRoute(url.pathname) || healthProbeRoute(url.pathname))) {
-        return await core.fetch(request, env, context)
-      }
-      // Auth routes establish an identity; they grant no product access. A
-      // browser cannot put a header on its own navigations, so requiring the
-      // canary journey here made the provider redirect — the one step of
-      // sign-in the client does not control — answer canary_journey_denied,
-      // and no canary could be driven through the real product at all. The
-      // canary stays exclusive where it matters: every product request below
-      // still needs the journey header AND an authenticated principal whose
-      // identity hash equals the admitted canary identity.
-      if (authRoute(url.pathname)) return await selected.authHandler(request)
-      const claimPresent = request.headers.has(USER_DEPLOYED_OWNER_CLAIM_HEADER)
-      if (claimPresent && !unsafe(request.method)) return unavailable(request, cors, "bootstrap_owner_claim_method_denied")
-
-      if (release.phase === "canary") {
-        const admission = await requireDeploymentCanaryAdmission(env.AUTH_DB, identity)
-        const canaryIdentityHash = admission.canaryIdentityHash
-        const journeyId = admission.journeyId
-        if (request.headers.get("x-claxedo-canary-journey-id") !== journeyId) {
-          return unavailable(request, cors, "canary_journey_denied")
-        }
-        const mutationOperationId = unsafe(request.method)
-          ? requiredReleaseIdentifier(
-              request.headers.get("x-claxedo-canary-mutation-operation-id") ?? undefined,
-              "x-claxedo-canary-mutation-operation-id",
-            )
-          : undefined
-        if (mutationOperationId && release.firstTargetWriteAt === null) {
-          release = await recordDeploymentCanaryFirstWrite(env.AUTH_DB, identity, {
+        const claimPresent = request.headers.has(USER_DEPLOYED_OWNER_CLAIM_HEADER)
+        if (claimPresent && !unsafe(request.method)) return unavailable(request, cors, "bootstrap_owner_claim_method_denied")
+  
+        if (release.phase === "canary") {
+          const admission = await requireDeploymentCanaryAdmission(env.AUTH_DB, identity)
+          const canaryIdentityHash = admission.canaryIdentityHash
+          const journeyId = admission.journeyId
+          if (request.headers.get("x-claxedo-canary-journey-id") !== journeyId) {
+            return unavailable(request, cors, "canary_journey_denied")
+          }
+          const mutationOperationId = unsafe(request.method)
+            ? requiredReleaseIdentifier(
+                request.headers.get("x-claxedo-canary-mutation-operation-id") ?? undefined,
+                "x-claxedo-canary-mutation-operation-id",
+              )
+            : undefined
+          if (mutationOperationId && release.firstTargetWriteAt === null) {
+            release = await recordDeploymentCanaryFirstWrite(env.AUTH_DB, identity, {
+              binding: deploymentAdmissionBinding(release),
+              operation: {
+                kind: "canary_journey",
+                canaryIdentityHash,
+                journeyId,
+                access: "mutation",
+                mutationOperationId,
+              },
+            })
+          }
+          const principal = await selected.options.authentication.authenticate(request)
+          if ((await userDeployedOwnerIdentityHash(principal.identity)) !== canaryIdentityHash) {
+            return unavailable(request, cors, "canary_identity_denied")
+          }
+          await admitDeploymentOperation(env.AUTH_DB, identity, {
             binding: deploymentAdmissionBinding(release),
             operation: {
               kind: "canary_journey",
               canaryIdentityHash,
               journeyId,
-              access: "mutation",
-              mutationOperationId,
+              access: unsafe(request.method) ? "mutation" : "read",
+              ...(mutationOperationId ? { mutationOperationId } : {}),
             },
           })
+          return await core.fetch(request, env, context)
         }
-        const principal = await selected.options.authentication.authenticate(request)
-        if ((await userDeployedOwnerIdentityHash(principal.identity)) !== canaryIdentityHash) {
-          return unavailable(request, cors, "canary_identity_denied")
+  
+        // The deployed relay is part of the multiplayer-validation path, not a
+        // browser actor. Its target and revocation probes authenticate at the
+        // canonical internal routes with CLAXEDO_RELAY_RESOLVER_TOKEN, so they
+        // cannot carry a user identity hash or one of the six browser operation
+        // headers. Let the core route perform that service-token check; keeping
+        // these probes behind user admission makes every real relay request fail
+        // closed before the two-user journey can be exercised.
+        if (internalRelayRoute(url.pathname)) return await core.fetch(request, env, context)
+  
+        const validationOperation = request.headers.get("x-claxedo-multiplayer-validation-operation")
+        if (!multiplayerValidationOperation(validationOperation))
+          return unavailable(request, cors, "multiplayer_validation_operation_denied")
+        if (url.pathname === "/__release/multiplayer/identity" && request.method === "GET") {
+          const providerIdentity = await selected.verifyIdentity(request)
+          const identityHash = await userDeployedOwnerIdentityHash(providerIdentity)
+          // This is the release-bound discovery seam that gives the operator the
+          // hash it must register. Receipt-gating it would require the hash to be
+          // registered before the caller can learn it. The endpoint exposes only
+          // the currently verified provider identity; every ordinary product
+          // request below remains gated by admitDeploymentOperation.
+          return available(request, { identity: providerIdentity, identityHash })
         }
+        // Runtime-session requests carry a relay-host or stream-lease bearer
+        // credential for the inner authority route while the multiplayer gate
+        // authenticates the browser actor from its Better Auth cookie. Presenting
+        // both to the control-plane authentication adapter is deliberately
+        // rejected as ambiguous. Strip only the inner route's credential for the
+        // outer admission check, then dispatch the original request so the
+        // runtime authority still verifies the canonical bearer token and reads
+        // the untouched request body.
+        const principal = await selected.options.authentication.authenticate(
+          multiplayerAdmissionAuthenticationRequest(request, url.pathname),
+        )
         await admitDeploymentOperation(env.AUTH_DB, identity, {
           binding: deploymentAdmissionBinding(release),
           operation: {
-            kind: "canary_journey",
-            canaryIdentityHash,
-            journeyId,
-            access: unsafe(request.method) ? "mutation" : "read",
-            ...(mutationOperationId ? { mutationOperationId } : {}),
+            kind: "multiplayer_validation",
+            operation: validationOperation,
+            identityHash: await userDeployedOwnerIdentityHash(principal.identity),
           },
         })
         return await core.fetch(request, env, context)
+      } catch (error) {
+        console.error("[better-auth-d1-candidate] deployment is unavailable", error)
+        return unavailable(request, cors)
       }
+    },
+  }
 
-      // The deployed relay is part of the multiplayer-validation path, not a
-      // browser actor. Its target and revocation probes authenticate at the
-      // canonical internal routes with CLAXEDO_RELAY_RESOLVER_TOKEN, so they
-      // cannot carry a user identity hash or one of the six browser operation
-      // headers. Let the core route perform that service-token check; keeping
-      // these probes behind user admission makes every real relay request fail
-      // closed before the two-user journey can be exercised.
-      if (internalRelayRoute(url.pathname)) return await core.fetch(request, env, context)
-
-      const validationOperation = request.headers.get("x-claxedo-multiplayer-validation-operation")
-      if (!multiplayerValidationOperation(validationOperation))
-        return unavailable(request, cors, "multiplayer_validation_operation_denied")
-      if (url.pathname === "/__release/multiplayer/identity" && request.method === "GET") {
-        const providerIdentity = await selected.verifyIdentity(request)
-        const identityHash = await userDeployedOwnerIdentityHash(providerIdentity)
-        // This is the release-bound discovery seam that gives the operator the
-        // hash it must register. Receipt-gating it would require the hash to be
-        // registered before the caller can learn it. The endpoint exposes only
-        // the currently verified provider identity; every ordinary product
-        // request below remains gated by admitDeploymentOperation.
-        return available(request, { identity: providerIdentity, identityHash })
-      }
-      // Runtime-session requests carry a relay-host or stream-lease bearer
-      // credential for the inner authority route while the multiplayer gate
-      // authenticates the browser actor from its Better Auth cookie. Presenting
-      // both to the control-plane authentication adapter is deliberately
-      // rejected as ambiguous. Strip only the inner route's credential for the
-      // outer admission check, then dispatch the original request so the
-      // runtime authority still verifies the canonical bearer token and reads
-      // the untouched request body.
-      const principal = await selected.options.authentication.authenticate(
-        multiplayerAdmissionAuthenticationRequest(request, url.pathname),
-      )
-      await admitDeploymentOperation(env.AUTH_DB, identity, {
-        binding: deploymentAdmissionBinding(release),
-        operation: {
-          kind: "multiplayer_validation",
-          operation: validationOperation,
-          identityHash: await userDeployedOwnerIdentityHash(principal.identity),
-        },
-      })
-      return await core.fetch(request, env, context)
-    } catch (error) {
-      console.error("[better-auth-d1-candidate] deployment is unavailable", error)
-      return unavailable(request, cors)
-    }
-  },
+  return handler
 }
+
+const handler = createBetterAuthD1CandidateWorker({ composition: defaultComposition })
 
 export default handler

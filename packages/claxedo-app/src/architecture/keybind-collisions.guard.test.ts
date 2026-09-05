@@ -157,7 +157,6 @@ const DECLARED_SOURCES: DeclaredSource[] = [
       { commandId: "message.previous", raw: "mod+arrowup", evidence: `"mod+arrowup"` },
       { commandId: "message.next", raw: "mod+arrowdown", evidence: `"mod+arrowdown"` },
       { commandId: "model.choose", raw: "mod+'", evidence: `"mod+'"` },
-      { commandId: "mcp.toggle", raw: "mod+;", evidence: `"mod+;"` },
       { commandId: "agent.cycle", raw: "mod+.", evidence: `"mod+."` },
       { commandId: "agent.cycle.reverse", raw: "shift+mod+.", evidence: `"shift+mod+."` },
       { commandId: "model.variant.cycle", raw: "shift+mod+d", evidence: `"shift+mod+d"` },

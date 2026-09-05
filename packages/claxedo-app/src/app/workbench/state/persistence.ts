@@ -214,9 +214,13 @@ export function validate(input: unknown): { state: ClaxedoState; dirty: boolean 
   const wbResult = validateWorkbench(input.workbench)
   if (wbResult.dirty) dirty = true
   const metaIn = obj(input.meta)
+  // Contents that do not survive a relaunch: the retired process surface, and
+  // the marketplace, which is a place you go rather than work you left open —
+  // restoring it made the store the app's landing page and its slow signed
+  // reads the first thing every launch waited on.
   const deprecatedContentIds = new Set(
     Object.entries(metaIn)
-      .filter(([, raw]) => isObject(raw) && raw.type === "process")
+      .filter(([, raw]) => isObject(raw) && (raw.type === "process" || raw.type === "marketplace"))
       .map(([id]) => id),
   )
   let workbench: WorkbenchState = dropContents(wbResult.state, deprecatedContentIds)

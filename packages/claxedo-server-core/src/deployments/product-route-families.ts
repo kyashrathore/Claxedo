@@ -135,6 +135,12 @@ export const PRODUCT_ROUTE_FAMILIES: RouteFamily[] = [
     paths: ["/api/claxedo/workspace", "/api/claxedo/workspace/resolve"],
   },
   {
+    id: "local-projects",
+    owner: "local-server",
+    serves: "Local project records (name, environment, clone source) that composer-native project creation registers workspaces under.",
+    paths: ["/api/claxedo/projects", "/api/claxedo/projects/"],
+  },
+  {
     id: "network-policy",
     owner: "local-server",
     serves: "Local egress policy groups applied to harness and sandbox traffic.",

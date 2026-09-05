@@ -1,8 +1,55 @@
 import { describe, expect, test } from "bun:test"
-import { createCursorSdkDriver, cursorTurnPrompt, ingestCursorSdkMessage } from "./driver"
+import {
+  createCursorSdkDriver,
+  cursorPluginLocalOptions,
+  cursorPluginRoots,
+  cursorTurnPrompt,
+  ingestCursorSdkMessage,
+} from "./driver"
 import type { AgentProcessDescriptor, AgentProcessObserver } from "../../process-observer"
 
 describe("Cursor SDK driver", () => {
+  test("enables Cursor's native plugin setting source only for materialized plugin roots", () => {
+    expect(cursorPluginRoots({ pluginRoots: ["/managed/one", "/managed/one", "/managed/two"] }))
+      .toEqual(["/managed/one", "/managed/two"])
+    expect(cursorPluginLocalOptions(["/managed/one"])).toEqual({ settingSources: ["plugins"] })
+    expect(cursorPluginLocalOptions([])).toEqual({})
+    expect(() => cursorPluginRoots({ pluginRoots: [""] })).toThrow("non-empty paths")
+  })
+
+  test("passes the plugin setting source through the real create-session driver entrypoint", async () => {
+    const created: unknown[] = []
+    const agent = {
+      agentId: "cursor-agent-1",
+      close() {},
+    }
+    const driver = createCursorSdkDriver({
+      lifecycle: () => ({ set() {}, delete() {}, get() {}, activeTurns: new Map() }),
+      pendingPermissions: new Map(),
+      pendingQuestions: new Map(),
+      bindSession() {},
+    } as never, {
+      loadSdk: async () => ({
+        Agent: {
+          async create(options: unknown) {
+            created.push(options)
+            return agent
+          },
+        },
+        Cursor: { models: { list: async () => [] } },
+      } as never),
+    })
+    await driver.applyConfig({ launch: { pluginRoots: ["/managed/cursor/plugin"] } })
+    await driver.createAgentSession({ directory: "/workspace", model: "auto" })
+
+    expect(created).toMatchObject([{
+      local: {
+        cwd: "/workspace",
+        settingSources: ["plugins"],
+      },
+    }])
+  })
+
   test("places a handoff transcript before the first Cursor prompt", () => {
     expect(cursorTurnPrompt([{ type: "text", text: "continue" }], "prior conversation"))
       .toBe("prior conversation\n\ncontinue")

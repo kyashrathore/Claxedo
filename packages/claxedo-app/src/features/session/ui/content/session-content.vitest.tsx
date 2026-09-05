@@ -8,6 +8,7 @@ const calls = vi.hoisted(() => ({
   openSession: vi.fn(),
   sessionPage: vi.fn(),
   pendingTranscript: vi.fn<() => Promise<unknown> | undefined>(() => undefined),
+  workspaceId: undefined as string | undefined,
 }))
 
 // The mount gate asks this whether the activating click already has a
@@ -57,8 +58,10 @@ vi.mock("../components/session-pane-scope", () => ({
 	    active?: () => boolean
 	    sessionId?: () => string | undefined
 	    onNavigateToSession?: (sessionId: string) => void
+	    workspaceId?: () => string | undefined
 	  }) => {
 	    calls.directoryScope()
+	    calls.workspaceId = props.workspaceId?.()
 	    return (
       <div
 	        data-testid="session-pane-scope"
@@ -86,10 +89,34 @@ afterEach(() => {
   calls.sessionPage.mockReset()
   calls.pendingTranscript.mockReset()
   calls.pendingTranscript.mockReturnValue(undefined)
+  calls.workspaceId = undefined
   cleanup()
 })
 
 describe("SessionContent", () => {
+  test("passes the workspace route identity into a draft pane scope", () => {
+    render(() => (
+      <SessionContent
+        meta={{
+          id: "workspace-draft",
+          type: "session",
+          scope: "directory",
+          directory: "/local/project",
+          sessionId: "new",
+          content: {
+            type: "session",
+            directory: "/local/project",
+            sessionId: "new",
+            workspaceRouteId: "ws_cloud_route",
+          },
+        }}
+        ctx={{ paneId: "pane-1", isVisible: () => true }}
+      />
+    ))
+
+    expect(calls.workspaceId).toBe("ws_cloud_route")
+  })
+
   test("does not invent a directory for workspace-less non-Pi central sessions", () => {
     render(() => (
       <SessionContent

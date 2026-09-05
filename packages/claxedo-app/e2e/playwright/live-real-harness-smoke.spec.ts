@@ -232,8 +232,7 @@
  * OUT OF SCOPE — the full per-harness ownership/model/effort/payload matrix against
  *   a pinned mock (`core-harness-ownership-local`, `core-harness-ownership-cloud`);
  *   per-harness event/tool-rendering fidelity (`core-harness-rendering-matrix`);
- *   extensions marketplace materialization (`live-agent-extensions-
- *   materialization`); `claxedo-mcp` tool wiring (`live-claxedo-mcp-tools`); the
+ *   Agent Plugins materialization and MCP Inspector coverage; the
  *   user-hosted relay (`live-user-hosted-relay`); cloud/sandbox provisioning
  *   (`core-cloud-provisioning` and friends); busy/abort/error escalation UI
  *   (`core-busy-abort-errors`) — this spec's turns are deliberately short and

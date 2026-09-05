@@ -26,7 +26,6 @@ bun install --frozen-lockfile
 npm install -g @anthropic-ai/claude-code@2.1.150
 bun turbo build \
   --filter=@claxedo/agent-event-runtime \
-  --filter=@claxedo/agent-extensions \
   --filter=@claxedo/agent-sdk-runtime \
   --filter=@claxedo/channels \
   --filter=@claxedo/connections \

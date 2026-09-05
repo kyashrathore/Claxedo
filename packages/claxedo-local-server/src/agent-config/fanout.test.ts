@@ -31,7 +31,6 @@ beforeEach(() => {
     markUse() {},
     touch() {},
     broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
-    async syncAgentExtensions() {},
   })
   mocks.broadcastRuntimeConfig.mockResolvedValue(undefined)
   mocks.syncEmbeddedWorkspaceRuntimes.mockResolvedValue(undefined)

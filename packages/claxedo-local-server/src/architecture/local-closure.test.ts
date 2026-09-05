@@ -213,9 +213,17 @@ describe("@claxedo/local-server closure", () => {
     // unsigned desktop now carries and is worth reading before it is bumped.
     // AgentConfigRoutes owns the authenticated Pi catalog in provider-routes.ts;
     // shell project-routes owns authorized metadata edits and catalog replay.
-    // The reviewed closure contains exactly 57 modules.
+    //
+    // Agent Plugins adds its feature-owned modules — activation routes/store,
+    // retained artifact storage, composition, generation, materialization,
+    // plugin data, and the harness projections — reaching this package through
+    // the composition's route contributions and the agent-config launch
+    // projection. They use packages already present in this closure. The
+    // numbers below are the last MEASURED values (79 modules after the
+    // generic-harness + Agent Plugins merge) and must be re-run, never summed
+    // from increments.
     const { modules, packages } = closure({ runtimeOnly: true })
-    expect(modules.size).toBeLessThanOrEqual(57)
+    expect(modules.size).toBeLessThanOrEqual(79)
     expect(packages.size).toBeLessThanOrEqual(22)
   })
 })

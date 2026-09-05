@@ -78,8 +78,7 @@ describe("hosts boundary", () => {
       .map((entry) => entry.name)
 
     // A directory here composes nothing external, so it is domain code that
-    // drifted in — `agent-extensions/{catalog,scan,machine-scan}.ts` were
-    // exactly that, and moved to agent-config/ where their consumer lives.
+    // drifted in rather than composing an external host capability.
     expect(offenders.toSorted()).toEqual([])
   })
 })

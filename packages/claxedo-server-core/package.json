@@ -40,17 +40,18 @@
   },
   "dependencies": {
     "@claxedo/agent-event-runtime": "workspace:0.7.0",
-    "@claxedo/agent-extensions": "workspace:0.7.0",
     "@claxedo/agent-sdk-runtime": "workspace:*",
     "@claxedo/sandbox-contract": "workspace:0.7.0",
     "@claxedo/usage-contract": "workspace:0.7.0",
     "@claxedo/workspace-relay": "workspace:0.7.0",
     "@claxedo/workspace-relay-protocol": "workspace:0.7.0",
     "@claxedo/workspace-runtime": "workspace:*",
+    "@zip.js/zip.js": "2.7.62",
     "better-sqlite3": "13.0.1",
     "drizzle-orm": "catalog:",
     "hono": "4.10.7",
     "jose": "6.2.4",
-    "tokentracker-cli": "0.91.0"
+    "tokentracker-cli": "0.91.0",
+    "yaml": "2.9.0"
   }
 }

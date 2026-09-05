@@ -123,6 +123,9 @@ export const RENDERER_WITHHELD_OPERATIONS: readonly HostedOperationName[] = [
   // renderer's reviewed route.
   "workspace.assignHost",
   "workspace.unassignHost",
+  // The signed Agent Plugins world carries MCP gateway bearer credentials;
+  // main pulls it and hands it to the daemon, never to a page.
+  "agentPlugins.runtimeSelf",
 ]
 
 /**

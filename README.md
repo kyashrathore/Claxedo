@@ -5,7 +5,7 @@
 
 **[claxedo.com](https://claxedo.com) · [npm: @claxedo/*](https://www.npmjs.com/search?q=%40claxedo)**
 
-Claxedo is an open-source coding-agent workspace for running OpenCode, Claude, Codex, Cursor, Pi, and other coding agents against your own projects. It combines first-class chat and terminal sessions, remote workspace access, sandbox management, MCP tooling, and portable Agent Extensions.
+Claxedo is an open-source coding-agent workspace for running OpenCode, Claude, Codex, Cursor, Pi, and other coding agents against your own projects. It combines first-class chat and terminal sessions, remote workspace access, sandbox management, MCP tooling, and an optional standards-based Agent Plugins catalog.
 
 ## Quickstart
 
@@ -38,7 +38,6 @@ All 11 are published on npm under [`@claxedo/*`](https://www.npmjs.com/search?q=
 | [`@claxedo/workspace-runtime`](https://www.npmjs.com/package/@claxedo/workspace-runtime)               | Per-workspace host runtime for agent sessions, terminals, processes, files, diffs, and relay attachment                                 |
 | [`@claxedo/agent-sdk-runtime`](https://www.npmjs.com/package/@claxedo/agent-sdk-runtime)               | Runtime facade over coding-agent harnesses (Claude, Codex, Cursor, OpenCode, Pi): sessions, turns, SSE routes, pluggable stores         |
 | [`@claxedo/agent-event-runtime`](https://www.npmjs.com/package/@claxedo/agent-event-runtime)           | Canonical agent event contracts and harness adapters normalizing Claude SDK, Codex, Cursor, and ACP event streams into one event model  |
-| [`@claxedo/agent-extensions`](https://www.npmjs.com/package/@claxedo/agent-extensions)                 | Install and materialize reusable agent capabilities (skills, MCP configs, plugins) into Codex, Claude, OpenCode, and Cursor             |
 | [`@claxedo/workspace-relay`](https://www.npmjs.com/package/@claxedo/workspace-relay)                   | Relay/tunnel server that routes authenticated traffic to workspace runtimes, with Bun and Cloudflare adapters                           |
 | [`@claxedo/workspace-relay-protocol`](https://www.npmjs.com/package/@claxedo/workspace-relay-protocol) | Wire types, message validation, and token verifier interfaces for the workspace relay tunnel protocol                                   |
 | [`@claxedo/sandbox-manager`](https://www.npmjs.com/package/@claxedo/sandbox-manager)                   | Sandbox lifecycle manager with epoch-based leases and pluggable drivers for Daytona, Modal, Vercel Sandbox, Cloudflare, Box, and Docker |

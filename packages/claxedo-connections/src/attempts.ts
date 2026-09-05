@@ -14,6 +14,8 @@ type PendingEntry = {
   integrationId: string
   owner?: string
   scope: "team" | "personal"
+  context?: Record<string, string>
+  routing?: Record<string, string>
   // Present only for device grants: the provider-issued code the host polls
   // with. A redirect attempt has no equivalent — its code arrives on the
   // callback instead.
@@ -30,8 +32,16 @@ type TerminalEntry = {
 }
 type AttemptEntry = PendingEntry | TerminalEntry
 
-export type AttemptPending = { integrationId: string; owner?: string; scope: "team" | "personal"; verifier: string }
+export type AttemptPending = { integrationId: string; owner?: string; scope: "team" | "personal"; verifier: string; context?: Record<string, string> }
 export type AttemptDevicePending = { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode: string }
+export type AttemptRouting = {
+  integrationId: string
+  owner?: string
+  scope: "team" | "personal"
+  routing?: Record<string, string>
+  /** Public integration metadata frozen into the attempt; never credential material. */
+  context?: Record<string, string>
+}
 export type AttemptSummary = { status: AttemptStatus; integrationId: string; scope: "team" | "personal"; message?: string }
 
 /**
@@ -51,11 +61,13 @@ export type AttemptSummary = { status: AttemptStatus; integrationId: string; sco
 export type MaybePromise<T> = T | Promise<T>
 
 export type Attempts = {
-  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string }): MaybePromise<{ state: string; verifier: string }>
+  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string; context?: Record<string, string>; routing?: Record<string, string> }): MaybePromise<{ state: string; verifier: string }>
   // Atomic consume: returns the pending entry exactly once (flips
   // `completing`); unknown, expired, terminal, or already-consuming states
   // return undefined.
   consume(state: string): MaybePromise<AttemptPending | undefined>
+  /** Safe callback routing only; never returns the verifier. */
+  inspect(state: string): MaybePromise<AttemptRouting | undefined>
   // Non-consuming read for device grants, which poll the SAME attempt many
   // times before it settles. `consume` cannot serve this: it is single-use by
   // design, so the second poll would report a lost attempt.
@@ -81,8 +93,9 @@ export type Attempts = {
  * durable store a seat without making every existing caller `await`.
  */
 export type SyncAttempts = {
-  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string }): { state: string; verifier: string }
+  create(input: { integrationId: string; owner?: string; scope: "team" | "personal"; deviceCode?: string; context?: Record<string, string>; routing?: Record<string, string> }): { state: string; verifier: string }
   consume(state: string): AttemptPending | undefined
+  inspect(state: string): AttemptRouting | undefined
   peek(state: string): AttemptDevicePending | undefined
   settle(state: string, ok: boolean, message?: string): void
   expire(state: string): void
@@ -138,10 +151,23 @@ export function createAttempts(options: {
         integrationId: input.integrationId,
         ...(input.owner !== undefined ? { owner: input.owner } : {}),
         scope: input.scope,
+        ...(input.context ? { context: { ...input.context } } : {}),
+        ...(input.routing ? { routing: { ...input.routing } } : {}),
         ...(input.deviceCode !== undefined ? { deviceCode: input.deviceCode } : {}),
         expiresAt: now() + ttlMs,
       })
       return { state, verifier }
+    },
+    inspect(state) {
+      const entry = map.get(state)
+      if (!entry || entry.status !== "pending" || entry.completing || entry.expiresAt <= now()) return undefined
+      return {
+        integrationId: entry.integrationId,
+        ...(entry.owner !== undefined ? { owner: entry.owner } : {}),
+        scope: entry.scope,
+        ...(entry.routing ? { routing: { ...entry.routing } } : {}),
+        ...(entry.context ? { context: { ...entry.context } } : {}),
+      }
     },
     peek(state) {
       const entry = map.get(state)
@@ -182,6 +208,7 @@ export function createAttempts(options: {
         ...(entry.owner !== undefined ? { owner: entry.owner } : {}),
         scope: entry.scope,
         verifier: entry.verifier,
+        ...(entry.context ? { context: { ...entry.context } } : {}),
       }
     },
     settle(state, ok, message) {

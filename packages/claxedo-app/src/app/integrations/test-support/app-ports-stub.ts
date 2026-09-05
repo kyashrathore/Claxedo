@@ -56,6 +56,9 @@ function portsFromThunks<P extends object>(thunks: Thunks<P>, overrides: Partial
 
 const sessionThunks: Thunks<SessionAppPorts> = {
   useSDK: lazy("@/app/providers/sdk/sdk", "useSDK"),
+  checkServerHealth: lazy("@/app/connection/server-health", "checkServerHealthCached"),
+  ProjectCreateForm: lazy("@/features/workspaces/ui/project-create-form", "ProjectCreateForm"),
+  DialogSelectDirectory: lazy("@/app/dialogs/select-directory", "DialogSelectDirectory"),
   useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   useLayout: lazy("@/app/providers/layout", "useLayout"),
   useServer: lazy("@/app/connection/server", "useServer"),
@@ -103,14 +106,6 @@ const sessionThunks: Thunks<SessionAppPorts> = {
     const { openSettingsProviders } = require("@/features/settings/open-settings-providers") as typeof import("@/features/settings/open-settings-providers")
     return openSettingsProviders(dialog, () => import("@/app/dialogs/settings"))
   },
-  filterMcpCatalogEntries: lazy("@/features/extensions/marketplace/api", "filterMcpCatalogEntries"),
-  installDisabledReasonForEntry: lazy("@/features/extensions/marketplace/api", "installDisabledReasonForEntry"),
-  installMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "installMcpDialogEntry"),
-  isEntryInstalled: lazy("@/features/extensions/marketplace/api", "isEntryInstalled"),
-  loadMcpDialogData: lazy("@/features/extensions/marketplace/api", "loadMcpDialogData"),
-  sourceLabel: lazy("@/features/extensions/marketplace/api", "sourceLabel"),
-  targetLabel: lazy("@/features/extensions/marketplace/api", "targetLabel"),
-  uninstallMcpDialogEntry: lazy("@/features/extensions/marketplace/api", "uninstallMcpDialogEntry"),
   listDocumentMentions: lazy("@/app/integrations/document-mentions", "listDocumentMentions"),
   documentMentionText: lazy("@/app/integrations/document-mentions", "documentMentionText"),
 }
@@ -171,6 +166,7 @@ const reviewThunks: Thunks<ReviewAppPorts> = {
 
 const workspacesThunks: Thunks<WorkspacesAppPorts> = {
   useServer: lazy("@/app/connection/server", "useServer"),
+  checkServerHealth: lazy("@/app/connection/server-health", "checkServerHealthCached"),
   useGlobalSDK: lazy("@/app/providers/global-sdk/provider", "useGlobalSDK"),
   getAvatarColors: lazy("@/app/providers/layout", "getAvatarColors"),
   useClaxedoEventsOptional: lazy("@/app/integrations/claxedo-events", "useClaxedoEventsOptional"),

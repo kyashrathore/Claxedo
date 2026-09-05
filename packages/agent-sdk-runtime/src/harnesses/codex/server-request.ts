@@ -4,6 +4,7 @@ import type { JsonRecord, SdkRuntimeDriverHost } from "../shared/sdk-runtime-dri
 import { record, text } from "../shared/sdk-runtime-values"
 import type { CodexActiveThread } from "./active-thread"
 import { spawnDynamicCodexAgent } from "./dynamic-agent"
+import { codexMcpElicitationQuestion, codexMcpElicitationResponse } from "./mcp-elicitation"
 
 /** A refreshed ChatGPT credential, in the app-server's own field names below. */
 type RefreshedTokens = { access: string; accountId?: string; planType?: string }
@@ -44,6 +45,27 @@ export async function handleCodexServerRequest(input: {
         (ids[0] ? ids : ["answer"]).map((id, index) => [id, { answers: answers[index] ?? [] }]),
       ),
     }
+  }
+
+  // A plugin's remote MCP server asking the user to finish an authorization.
+  // Projected as an ordinary question so it reaches the same approval surface
+  // every other Codex prompt uses, rather than a plugin-specific one.
+  if (method === "mcpServer/elicitation/request") {
+    if (!active) return { action: "cancel" }
+
+    const question = codexMcpElicitationQuestion(params)
+    active.project("item/tool/requestUserInput", { ...params, requestId, questions: [question] }, input.message)
+    const answers = await new Promise<AgentQuestionAnswer[] | undefined>((resolve) => {
+      input.host.pendingQuestions.set(requestId, {
+        sessionId: active.sessionId,
+        agentSessionId: active.agentSessionId,
+        questions: [question],
+        resolve,
+        reject: () => resolve(undefined),
+      })
+    })
+    // One projected question, so its first selected answer is the elicitation result.
+    return codexMcpElicitationResponse(params, answers?.[0]?.[0])
   }
 
   if (method === "item/tool/call") {

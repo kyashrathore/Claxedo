@@ -1,4 +1,6 @@
 import { rendererTraceEnabled } from "@/platform/performance/renderer-trace"
+import { checkServerHealthCached } from "@/app/connection/server-health"
+import { ProjectCreateForm } from "@/features/workspaces/ui/project-create-form"
 import { configureSessionAppPorts } from "@/features/session/app-ports"
 import { configureDocumentsAppPorts } from "@/features/documents/app-ports"
 import { configureWorkspacesAppPorts } from "@/features/workspaces/app-ports"
@@ -30,7 +32,6 @@ import * as SurfaceStatus from "@/app/workbench/compact-switcher/surface-status"
 import * as Navigation from "@/app/workbench/navigation/navigation-row"
 import * as LayoutActions from "@/app/workbench/actions/shared"
 import * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
-import * as Marketplace from "@/features/extensions/marketplace/api"
 import * as SessionScope from "@/features/session/ui/components/session-pane-scope"
 import * as SessionSync from "@/features/session/providers/session-sync"
 import * as MarkdownTab from "@/app/workbench/lib/open-markdown-page-tab"
@@ -83,6 +84,9 @@ configureSessionAppPorts({
   useGlobalSDK: GlobalSDK.useGlobalSDK,
   useLayout: Layout.useLayout,
   useServer: Server.useServer,
+  checkServerHealth: checkServerHealthCached,
+  ProjectCreateForm,
+  DialogSelectDirectory,
   formatKeybind: Command.formatKeybind,
   useCommand: Command.useCommand,
   useFile: FileContext.useFile,
@@ -121,14 +125,6 @@ configureSessionAppPorts({
   recoverMissingWorkspace: WorkspaceRecovery.recoverMissingWorkspace,
   loadManageModelsDialog: () => import("@/app/dialogs/manage-models"),
   openSettingsProviders: (dialog) => showProvidersSettings(dialog, () => import("@/app/dialogs/settings")),
-  filterMcpCatalogEntries: Marketplace.filterMcpCatalogEntries,
-  installDisabledReasonForEntry: Marketplace.installDisabledReasonForEntry,
-  installMcpDialogEntry: Marketplace.installMcpDialogEntry,
-  isEntryInstalled: Marketplace.isEntryInstalled,
-  loadMcpDialogData: Marketplace.loadMcpDialogData,
-  sourceLabel: Marketplace.sourceLabel,
-  targetLabel: Marketplace.targetLabel,
-  uninstallMcpDialogEntry: Marketplace.uninstallMcpDialogEntry,
   listDocumentMentions: DocumentMentions.listDocumentMentions,
   documentMentionText: DocumentMentions.documentMentionText,
 })
@@ -146,6 +142,7 @@ configureDocumentsAppPorts({
 
 configureWorkspacesAppPorts({
   useServer: Server.useServer,
+  checkServerHealth: checkServerHealthCached,
   useGlobalSDK: GlobalSDK.useGlobalSDK,
   getAvatarColors: Layout.getAvatarColors,
   useClaxedoEventsOptional: Events.useClaxedoEventsOptional,

@@ -113,12 +113,6 @@ packages/claxedo-server/scripts/sandbox/cloudflare-worker/.build/
 # they are multi-megabyte third-party application code.
 app-initial-*.js
 
-# Materialized Agent Extension skill symlinks (absolute paths into ~/.claxedo;
-# committing one pins other checkouts to a nonexistent path and 503s every
-# workspace-runtime route — see memory reference_agent_extension_symlinks_break_sessions)
-# The ownership record is runtime state too: it contains absolute target paths
-# and timestamps, so every materialization rewrites it for one machine.
-**/.agent-extensions/materialized.json
 .agents/skills/pdf
 .agents/skills/figma
 .claude/skills/pdf

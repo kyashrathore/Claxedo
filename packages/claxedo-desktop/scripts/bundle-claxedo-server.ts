@@ -34,6 +34,13 @@ export async function bundleClaxedoServer(source: string, destination: string) {
       chunk: "chunks/[name]-[hash].[ext]",
     },
     external: EXTERNAL,
+    define: {
+      // This is a build-composition switch, not a runtime flag. The disabled
+      // artifact has no import edge, chunk, route, or deployable plugin code.
+      "process.env.CLAXEDO_AGENT_PLUGINS_BUILD": JSON.stringify(
+        process.env.CLAXEDO_AGENT_PLUGINS?.trim() === "1" ? "1" : "0",
+      ),
+    },
     plugins: [
       {
         name: "jsonc-parser-esm",

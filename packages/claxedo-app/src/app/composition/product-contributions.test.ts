@@ -18,6 +18,7 @@ function surface(id: string, type: string): ContentSurfaceContribution {
 function composition(options: {
   local?: readonly ContentSurfaceContribution[]
   hosted?: () => Promise<readonly ContentSurfaceContribution[]>
+  agentPlugins?: () => Promise<readonly ContentSurfaceContribution[]>
   hostedComposition?: boolean
 } = {}) {
   const registered = (options.local ?? []).map((item) => item.id)
@@ -39,6 +40,9 @@ function composition(options: {
           : [surface("surface.content.page", "page")],
       }
     },
+    loadAgentPlugins: options.agentPlugins
+      ? async () => ({ contentSurfaces: await options.agentPlugins!() })
+      : undefined,
     hostedComposition: () => hostedComposition,
   })
 
@@ -128,6 +132,36 @@ describe("product contributions", () => {
     await app.contributions.activateHosted().catch(() => {})
 
     expect(app.registered).toEqual(["surface.content.session"])
+  })
+})
+
+describe("optional Agent Plugins composition", () => {
+  test("is absent from products without a loader", async () => {
+    const app = composition({ local: [surface("surface.content.session", "session")] })
+
+    expect(app.contributions.agentPluginsExpected()).toBe(false)
+    expect(app.contributions.availableContentTypes()).toEqual(["session"])
+    await expect(app.contributions.activateAgentPlugins()).rejects.toThrow(HostedContributionError)
+    expect(app.registered).toEqual(["surface.content.session"])
+  })
+
+  test("declares the restored type before loading and activates once", async () => {
+    let loads = 0
+    const app = composition({
+      local: [surface("surface.content.session", "session")],
+      agentPlugins: async () => {
+        loads += 1
+        return [surface("surface.content.agent-plugins", "marketplace")]
+      },
+    })
+
+    app.contributions.expectAgentPlugins()
+    expect(app.contributions.availableContentTypes()).toContain("marketplace")
+    await Promise.all([app.contributions.activateAgentPlugins(), app.contributions.activateAgentPlugins()])
+
+    expect(loads).toBe(1)
+    expect(app.contributions.agentPluginsActive()).toBe(true)
+    expect(app.registered).toEqual(["surface.content.session", "surface.content.agent-plugins"])
   })
 })
 

@@ -13,6 +13,7 @@ import { useLanguage } from "@/platform/i18n/provider"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { cachedDirectoryChildrenRequest } from "@/platform/query/directory-search-cache"
 import { ClaxedoIconV2 } from "@/ui/controls/claxedo-icon"
+import { useCheckServerHealth } from "@/app/connection/server-health"
 import {
   workspaceRuntimeFilePath,
   workspaceRuntimeFindFilePath,
@@ -152,12 +153,19 @@ function useDirectorySearch(args: {
   request?: typeof fetch
   start: () => string | undefined
   home: () => string
+  /**
+   * Whether the server runs workspaces on its own filesystem (its health
+   * report). A signed self-hosted server on `https://localhost` — or on a VM —
+   * is not a loopback URL, yet its folders are exactly what this picker is
+   * for; the URL shape alone only recognises the unsigned local product.
+   */
+  localExecution: () => Promise<boolean | undefined>
 }) {
   let current = 0
 
   const json = async <T,>(pathname: string, params: Record<string, string | number | undefined>, fallback: T) => {
     const serverUrl = args.serverUrl()
-    if (!isLoopbackUrl(serverUrl)) return fallback
+    if (!isLoopbackUrl(serverUrl) && !(await args.localExecution())) return fallback
     const url = new URL(pathname, serverUrl)
     for (const [key, value] of Object.entries(params)) {
       if (value === undefined) continue
@@ -276,7 +284,14 @@ export function DialogSelectDirectory(props: DialogSelectDirectoryProps) {
   const pathQuery = useQuery(() => queryOptions.path(null))
   const home = createMemo(() => pathQuery.data?.home || "")
   const start = createMemo(() => pathQuery.data?.home || pathQuery.data?.directory)
-  const directories = useDirectorySearch({ serverUrl: () => sdk.url, request: platform.fetch, home, start })
+  const checkServerHealth = useCheckServerHealth()
+  const directories = useDirectorySearch({
+    serverUrl: () => sdk.url,
+    request: platform.fetch,
+    home,
+    start,
+    localExecution: () => checkServerHealth({ url: sdk.url }).then((health) => health?.localExecution).catch(() => undefined),
+  })
   const recentProjects = createMemo(() =>
     layout.projects.list().slice(0, 5).map((project) => {
       const row = toRow(project.worktree, home(), "recent")

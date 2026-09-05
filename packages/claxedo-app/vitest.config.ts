@@ -8,6 +8,7 @@ const normalizePath = (p: string) => p.replace(/\\/g, "/")
 export default defineConfig({
   define: {
     __DEMO_ENABLED__: "false",
+    __CLAXEDO_AGENT_PLUGINS_ENABLED__: "false",
   },
   plugins: [solid() as unknown as NonNullable<UserConfig["plugins"]>[number]] satisfies UserConfig["plugins"],
   resolve: {

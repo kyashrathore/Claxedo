@@ -2,7 +2,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { submitErrorMessage } from "./submit-error-message"
 import { useNavigate } from "@solidjs/router"
 import {
-  createCloudWorkspace, isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState,
+  isWorkspaceReady, useClaxedoEventsOptional, useClaxedoState,
   useGlobalBootstrapActions, useGlobalSDK, useLayout, useSDK, useShellQueryOptions as useQueryOptions,
 } from "@/features/session/app-ports"
 import { useLanguage } from "@/platform/i18n/provider"
@@ -12,7 +12,7 @@ import { usePermission } from "@/features/session/providers/permission"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { formatServerError } from "@/lib/server-errors"
 import { Worktree as WorktreeState } from "@/platform/sync/worktree"
-import { authFetch, getClaxedoServerUrl, getDefaultBaseUrl, isDemoMode } from "@/platform/api/api"
+import { authFetch, getClaxedoServerUrl, isDemoMode } from "@/platform/api/api"
 import { capture as phCapture, identityProps } from "@/platform/telemetry/analytics"
 import { panePreferenceScope } from "@/features/session/preferences/pane"
 import { queryClient } from "@/platform/query/query-client"
@@ -30,7 +30,7 @@ import {
   setPromptSessionStatus,
   type SubmitMode,
 } from "../../submit/index"
-import { knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
+import { cloudWorkspaceCreateInput, knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-machine"
 import { createSubmitAbort } from "./submit-abort"
 import { createSubmitHarnessSelection } from "./mode-commands"
@@ -49,8 +49,9 @@ import { createSubmitTransportAdapter, signedSubmitWorkspaceId, submitWorkspaceB
 import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-workspace"
 import { createSubmitCommentActions } from "./comment-routing"
 import { createSubmitOptimisticTimeline } from "./submit-ui-state"
-import type { CreateWorkspaceResult, PromptSubmitInput } from "./submit-input"
+import type { PromptSubmitInput } from "./submit-input"
 import { harnessSelectionValue, type HarnessSelection } from "@/platform/identity/harness-selection"
+import { createHostedWorkspace } from "@/platform/runtime/agent/workspace-create-authority"
 
 export type { FollowupDraft } from "./submit-input"
 
@@ -262,11 +263,10 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       onCloudStartup: input.onCloudStartup,
       rememberCloudStartup,
       publishCloudHandoff,
-      createCloudWorkspace: async (projectId) => createCloudWorkspace({
-        baseUrl: getDefaultBaseUrl(),
-        projectId,
-        ...(sourceBranch ? { gitBranch: sourceBranch } : {}),
-      }),
+      createCloudWorkspace: async (projectId) =>
+        (input.createCloudWorkspace ?? createHostedWorkspace)(
+          cloudWorkspaceCreateInput(projectCatalog(), projectId, sourceBranch),
+        ),
       createLocalWorktree: (directory) => sdk.client.worktree.create({
         directory,
         ...(baseRef ? { worktreeCreateInput: { baseRef } } : {}),

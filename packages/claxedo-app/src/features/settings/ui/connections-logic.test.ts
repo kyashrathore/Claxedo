@@ -159,6 +159,24 @@ describe("connect flow: key method", () => {
     expect(unsignedFlow.state.scope).toBe("team")
   })
 
+  test("a non-admin signed surface cannot switch its personal connection flow to team scope", async () => {
+    const subject = scriptedRequest([{ status: 200, body: { ok: true } }])
+    const flow = createConnectFlow({
+      integration: notion,
+      request: subject.request,
+      personalScopeEnabled: true,
+      teamScopeEnabled: false,
+      initialScope: "team",
+    })
+
+    expect(flow.state.scope).toBe("personal")
+    flow.setScope("team")
+    expect(flow.state.scope).toBe("personal")
+    flow.setSecret("ntn_secret")
+    await flow.submitKey()
+    expect(subject.calls[0]?.body).toMatchObject({ scope: "personal" })
+  })
+
   test("submitKey refuses an empty secret without hitting the network", async () => {
     const { request, calls } = scriptedRequest([])
     const flow = createConnectFlow({ integration: notion, request })
@@ -294,6 +312,26 @@ describe("connect flow: oauth method", () => {
     ])
     expect(flow.state.phase).toBe("done")
     expect(connected).toBe(1)
+  })
+
+  test("oauthFields are sent only when starting OAuth", async () => {
+    const { request, calls } = scriptedRequest([
+      { status: 200, body: { ok: true, url: "https://accounts.example/authorize", attemptId: "state-issuer" } },
+      { status: 200, body: { status: "complete", integrationId: "google" } },
+    ])
+    const flow = createConnectFlow({
+      integration: google,
+      request,
+      oauthFields: { issuer: "https://login.example/tenant" },
+      sleep: () => Promise.resolve(),
+    })
+
+    await flow.startOAuth()
+
+    expect(calls[0]?.body).toEqual({
+      method: "oauth",
+      issuer: "https://login.example/tenant",
+    })
   })
 
   test("failed and expired attempts return to the form with an error", async () => {

@@ -36,6 +36,10 @@ import { controlPlaneAuthContext, ControlPlaneAuthError } from "@claxedo/server-
 import { getHarnessMode, getWorkspaceProfile } from "@claxedo/server-core/platform/runtime/profile"
 import type { ControlPlaneServicesContract } from "@claxedo/server-core/authority/control-plane-contract"
 import type { Workspace } from "@claxedo/server-core/workspace/store/index"
+import {
+  mountControlPlaneRouteContributions,
+  type ControlPlaneRouteContribution,
+} from "@claxedo/server-core/platform/http/route-contribution"
 import { normalizeHarnessIdentity } from "@claxedo/agent-sdk-runtime"
 import type { RuntimeProxyOptions } from "../workspace/runtime-dispatch/internals"
 import { createWorkspaceRuntimeProxy } from "../workspace/runtime-dispatch/middleware"
@@ -44,6 +48,7 @@ import { AgentConfigRoutes } from "../agent-config/routes/index"
 import { SessionMetaRoutes } from "../session/routes/meta-routes"
 import { LocalWorkspaceRoutes } from "../workspace/routes/resolve-route"
 import { ShellRoutes } from "../shell/routes"
+import { LocalProjectRoutes } from "../workspace/routes/projects-route"
 import { CredentialRoutes } from "../credentials/routes/credential"
 import { ProviderAuthRoutes } from "../credentials/routes/provider-auth"
 import { NetworkPolicyRoutes } from "../sandbox/network/network-policy-routes"
@@ -91,6 +96,8 @@ export type LocalAppOptions = {
   refreshSessionProjection?: (workspace: Workspace) => Promise<void>
   env?: NodeJS.ProcessEnv
   usage?: Parameters<typeof LocalUsageRoutes>[0]
+  /** Explicit build/composition contributions; absent in the disabled product. */
+  routeContributions?: readonly ControlPlaneRouteContribution[]
   /** Machine-local daemon control surface. Never exposed to the renderer. */
   daemon?: {
     identity: {
@@ -295,7 +302,6 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
     ...(options.updateCentralSessionModel ? { updateCentralSessionModel: options.updateCentralSessionModel } : {}),
     ...(options.invalidateCentralSession ? { invalidateCentralSession: options.invalidateCentralSession } : {}),
     ...authRouteOptions(services),
-    agentExtensionPolicyOverrides: services.extensionPolicy.agentExtensionPolicyOverrides,
   }))
   app.route("/", SessionMetaRoutes({
     services,
@@ -310,6 +316,7 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   })
   app.route("/api/claxedo/workspace", localWorkspaceRoutes)
   app.route("/api/claxedo/workspace", sandboxDriverSettingsRoutes)
+  app.route("/api/claxedo/projects", LocalProjectRoutes(authRouteOptions(services)))
   // The renderer's inventory contract uses the hosted-compatible list path in
   // every product. On desktop, the authoritative local workspace store answers
   // it; this avoids treating an intentionally absent hosted router as a 404.
@@ -317,6 +324,13 @@ export function mountLocalRouteFamilies(app: Hono, options: LocalAppOptions) {
   app.route("/api/workspace", sandboxDriverSettingsRoutes)
   app.route("/api/claxedo/network-policy", NetworkPolicyRoutes(authRouteOptions(services)))
   app.route("/api/claxedo/host-serving", UserHostedServingRoutes())
+  // Optional product route families (Agent Plugins today) arrive as
+  // contributions from the composition rather than as imports here, so this
+  // module keeps one mounting path and no knowledge of which products exist.
+  mountControlPlaneRouteContributions({
+    contributions: options.routeContributions ?? [],
+    mount: (contribution) => app.route(contribution.path, contribution.routes),
+  })
 
   return { injectWebSocket }
 }

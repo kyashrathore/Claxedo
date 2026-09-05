@@ -33,7 +33,6 @@ function services(authority: Partial<WorkspaceAuthority>): ControlPlaneServices 
     auth: localOnlyAuthAdapter(),
     authority: authority as WorkspaceAuthority,
     credentials: {} as never,
-    extensionPolicy: {},
     relay: {},
     sandbox: {},
     telemetry: { capture: vi.fn() },

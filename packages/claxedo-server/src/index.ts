@@ -22,7 +22,6 @@ export {
   createHostedControlPlaneServices,
   defaultControlPlaneCredentials,
   type ControlPlaneCredentials,
-  type ControlPlaneExtensionPolicy,
   type ControlPlaneRelay,
   type ControlPlaneSandbox,
   type ControlPlaneServices,

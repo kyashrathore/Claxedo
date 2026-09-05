@@ -18,12 +18,14 @@ import {
   ensureWorkspace,
   getProjectWorkspace,
   listProjects,
+  projectEnv,
   resolveWorkspace,
   workspaceIdFromDirectoryRef,
   type Workspace,
 } from "@claxedo/server-core/workspace/store/index"
 import { discardSupervisorSandbox } from "../../workspace/supervisor"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
+import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { isLoopbackLocalRequest } from "@claxedo/server-core/platform/http/peer-address"
 import { ControlPlaneAuthError, bearerToken, controlPlaneAuthErrorBody } from "@claxedo/server-core/platform/auth/auth"
 import { createFixedWindowConnectionRateLimiter } from "../../platform/auth/rate-limit"
@@ -33,7 +35,7 @@ import { controlPlaneRateLimitError } from "../runtime-token-guards"
 import { addWorktree, cloneRepo, repoNameFromUrl } from "../git"
 import { openSignedWorkspaceByDirectory, openSignedWorkspaceJson } from "../signed-access"
 import { workspaceConnectionRoutes } from "../../connections/routes/connection-routes"
-import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/routes/sandbox-driver-routes"
+import { sandboxDriverCredentials, sandboxDriverRoutes } from "../../sandbox/sandbox-driver-routes"
 import { workspaceShareRoutes } from "./share-routes"
 import { authenticatedGitHubCloneSource } from "../repository-clone"
 import { workspaceResponse } from "../workspace-response"
@@ -88,6 +90,10 @@ function startCloudWorkspaceProvisioning(input: {
   provisionSecrets?: Array<{ name: string; value: string; hosts: string[]; header?: string }>
   gitBranch?: string
   remoteDirectory: string
+  /** The project's environment (`projectEnv`); every sandbox of the project starts with it. */
+  env?: Record<string, string>
+  /** Holds the provisioning open past the response (Workers cancel detached work). */
+  keepAlive: (work: Promise<unknown>) => void
 }) {
   const sandboxManager = input.services?.sandbox.sandboxManager
   const work = sandboxManager?.ensure(input.ws.id, {
@@ -96,6 +102,7 @@ function startCloudWorkspaceProvisioning(input: {
       projectId: input.ws.project_id ?? "",
     },
     workspaceRoot: input.remoteDirectory,
+    ...(input.env && Object.keys(input.env).length ? { env: input.env } : {}),
     source: input.provisionRepoUrl
       ? {
           kind: "git",
@@ -106,7 +113,7 @@ function startCloudWorkspaceProvisioning(input: {
     ...(input.provisionSecrets?.length ? { secrets: input.provisionSecrets } : {}),
   }) ?? Promise.reject(new Error(`sandbox manager unavailable: ${input.ws.id}`))
 
-  void work.catch(async (err) => {
+  input.keepAlive(work.catch(async (err) => {
     log.warn("Create cloud workspace provisioning failed", {
       workspaceId: input.ws.id,
       driver: input.driver,
@@ -114,7 +121,7 @@ function startCloudWorkspaceProvisioning(input: {
     })
     await discardSupervisorSandbox(input.ws.id, "provision_failed").catch(() => {})
     await deleteWorkspace(input.ws.id).catch(() => {})
-  })
+  }))
 }
 
 export function WorkspaceRoutes(services?: ControlPlaneServices, options: WorkspaceRouteOptions = {}) {
@@ -652,6 +659,8 @@ export function WorkspaceRoutes(services?: ControlPlaneServices, options: Worksp
           provisionSecrets,
           gitBranch,
           remoteDirectory: remote_directory,
+          env: await projectEnv(ws.project_id),
+          keepAlive: (work) => keepAlivePastResponse(c, work),
         })
 
         return c.json(workspaceResponse(ws))

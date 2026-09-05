@@ -42,16 +42,17 @@ describe("startBrowserAuth", () => {
   test.each([
     ["the e2e and dev composition", "http://127.0.0.1:3001"],
     ["a loopback self-host over TLS", "https://localhost:3001"],
-  ])("reports a loopback central plane to the adapter it starts (%s)", (_, apiOrigin) => {
-    // A loopback central authenticates by loopback: it has no accounts, so
-    // there is nothing to ask it. Decided from the same
-    // `centralTransportForServer` reading `CloudAuthGate` uses to decide
+  ])("reports a signed central plane for an auth-enabled build even on a loopback server (%s)", (_, apiOrigin) => {
+    // A build with auth enabled talks to a server that issues sessions — the
+    // self-hosted server with its embedded issuer runs on localhost too — so
+    // it is signed web wherever the server lives. Decided from the same
+    // `centralTransportForDeployment` reading `CloudAuthGate` uses to decide
     // whether a signed session is required, so the two cannot disagree — the
     // adapter is told, it does not go and find out.
     const { calls, adapter } = recordingAdapter()
 
     startBrowserAuth({ authEnabled: true, adapter, apiOrigin, appOrigin: "http://localhost:4455" })
 
-    expect(calls).toEqual([{ apiOrigin, appOrigin: "http://localhost:4455", centralTransport: "loopback" }])
+    expect(calls).toEqual([{ apiOrigin, appOrigin: "http://localhost:4455", centralTransport: "signed-web" }])
   })
 })

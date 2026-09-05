@@ -46,6 +46,10 @@ export function agentRuntimeEventsUrl(input: {
   return url
 }
 
+export function centralClaxedoEventsUrl(input: { serverUrl?: string }) {
+  return new URL("/api/claxedo/events", agentRuntimeBaseUrl(input.serverUrl))
+}
+
 export function agentRuntimeSessionResourceUrl(input: {
   serverUrl?: string
   sessionID: string

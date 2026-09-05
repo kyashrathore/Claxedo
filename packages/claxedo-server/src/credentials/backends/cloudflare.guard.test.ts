@@ -30,6 +30,7 @@ describe("cloudflare KV backend guard", () => {
     // return a stored value reopens the plaintext hole.
     expect(Object.keys(cloudflare).sort()).toEqual([
       "createEncryptedCloudflareBackend",
+      "createEncryptedCloudflareBindingBackend",
       "listCloudflareCredentialRefs",
     ])
     expect((cloudflare as Record<string, unknown>)["createCloudflareBackend"]).toBeUndefined()
@@ -116,5 +117,29 @@ describe("cloudflare KV backend guard", () => {
 
     expect(await backend.get(ref)).toBe("top-secret-provider-token")
     expect(await backend.get("cf:absent")).toBeNull()
+  })
+
+  test("native Worker KV binding sees ciphertext and needs no account API token", async () => {
+    const kv = new Map<string, string>()
+    const binding: cloudflare.CloudflareKvNamespaceBinding = {
+      put: async (key, value) => { kv.set(key, value) },
+      get: async (key) => kv.get(key) ?? null,
+      delete: async (key) => { kv.delete(key) },
+      list: async () => ({
+        keys: [...kv.keys()].map((name) => ({ name })),
+        list_complete: true,
+      }),
+    }
+    const backend = cloudflare.createEncryptedCloudflareBindingBackend({
+      orgId: "org-a",
+      binding,
+      env: { [CREDENTIALS_KEK_ENV]: FULL_ENV[CREDENTIALS_KEK_ENV] },
+    })
+
+    const ref = await backend.put("cred-native", "native-binding-secret")
+    expect(kv.get(ref)).toMatch(/^cenc1:/)
+    expect(kv.get(ref)).not.toContain("native-binding-secret")
+    expect(await backend.get(ref)).toBe("native-binding-secret")
+    expect(await backend.probe()).toBe(true)
   })
 })

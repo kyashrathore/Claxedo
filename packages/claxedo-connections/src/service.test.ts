@@ -38,10 +38,37 @@ function harness(input: { impl?: IntegrationImpl; decl?: IntegrationDeclaration 
   const attempts = createAttempts({ sweepIntervalMs: 0 })
   let nextId = 0
   const service = createConnectionsService({ registry, credentials, connections, attempts, newId: () => `connection-${++nextId}` })
-  return { registry, credentials, connections, service }
+  return { registry, credentials, connections, attempts, service }
 }
 
 describe("connections service", () => {
+  test("freezes OAuth integration context and forwards authorization-response issuer validation", async () => {
+    const seen: unknown[][] = []
+    const callback: NonNullable<IntegrationImpl["callback"]> = async (...args) => {
+      seen.push(args)
+      return { accessToken: "oauth-access" }
+    }
+    const { service, attempts, registry } = harness()
+    registry.register(
+      { id: "mcp-test", name: "MCP", methods: ["oauth"], capabilities: ["mcp"] },
+      {
+        attemptContext: { issuer: "https://issuer.example" },
+        authorize: (state) => new URL(`https://issuer.example/authorize?state=${state}`),
+        callback,
+      },
+    )
+    const started = await service.connectOAuth({ integrationId: "mcp-test", owner: "user:1" })
+    expect(started.ok).toBe(true)
+    if (!started.ok) return
+    await expect(service.handleCallback(started.attemptId, "code", { issuer: "https://issuer.example" })).resolves.toEqual({ ok: true })
+    expect(seen).toHaveLength(1)
+    expect(seen[0]?.[0]).toBe("code")
+    expect(seen[0]?.[1]).toEqual(expect.any(String))
+    expect(seen[0]?.[2]).toEqual({ issuer: "https://issuer.example" })
+    expect(seen[0]?.[3]).toEqual({ issuer: "https://issuer.example" })
+    attempts.dispose()
+  })
+
   test("lists code-host repositories through the connection secret without returning the token", async () => {
     const seen: string[] = []
     const { service } = harness({
@@ -445,10 +472,21 @@ describe("connections service", () => {
   test("oauth connect/callback stores envelope and replay is rejected", async () => {
     const registry = createIntegrationRegistry()
     registry.register(
-      { id: "oauthy", name: "OAuthy", methods: ["oauth"], capabilities: ["docs"] },
+      {
+        id: "oauthy",
+        name: "OAuthy",
+        methods: ["oauth"],
+        capabilities: ["docs"],
+        prompts: [{ id: "resource", label: "Resource" }],
+      },
       {
         authorize: (state) => new URL(`https://provider.test/auth?state=${state}`),
-        callback: async (code) => ({ accessToken: `at-${code}`, refreshToken: "rt-1", expiresAt: 111 }),
+        callback: async (code) => ({
+          accessToken: `at-${code}`,
+          refreshToken: "rt-1",
+          expiresAt: 111,
+          fields: { resource: "https://resource.test/mcp", undeclared: "discard" },
+        }),
       },
     )
     const credentials = createMemoryCredentialStore()
@@ -462,12 +500,45 @@ describe("connections service", () => {
 
     expect(await service.handleCallback(state, "code-1")).toEqual({ ok: true })
     expect(await credentials.readSecret("integration:connection-1")).toBe(JSON.stringify({ access: "at-code-1", refresh: "rt-1" }))
-    expect(await connections.get("oauthy", "user-a")).toMatchObject({ id: "connection-1", owner: "user-a" })
+    expect(await connections.get("oauthy", "user-a")).toMatchObject({
+      id: "connection-1",
+      owner: "user-a",
+      fields: { resource: "https://resource.test/mcp" },
+    })
     expect(await service.attemptStatus(state)).toMatchObject({ status: "complete" })
 
     // Replay: same state again must be rejected before the impl runs.
     expect(await service.handleCallback(state, "code-2")).toEqual({ ok: false })
     expect(await credentials.readSecret("integration:connection-1")).toBe(JSON.stringify({ access: "at-code-1", refresh: "rt-1" }))
+  })
+
+  test("OAuth integrations persist allowlisted callback metadata without rendering it as a prompt", async () => {
+    const registry = createIntegrationRegistry()
+    registry.register(
+      { id: "mcp", name: "MCP", methods: ["oauth"], capabilities: ["mcp"] },
+      {
+        canonicalFields: ["resource"],
+        authorize: (state) => new URL(`https://provider.test/auth?state=${state}`),
+        callback: async () => ({
+          accessToken: "access",
+          fields: { resource: "https://resource.test/mcp", untrusted: "discard" },
+        }),
+      },
+    )
+    const connections = createMemoryConnectionStore()
+    const service = createConnectionsService({
+      registry,
+      connections,
+      credentials: createMemoryCredentialStore(),
+      attempts: createAttempts({ sweepIntervalMs: 0 }),
+      newId: () => "connection-1",
+    })
+
+    const started = await service.connectOAuth({ integrationId: "mcp", owner: "user-a" })
+    expect(started.ok).toBe(true)
+    await service.handleCallback((started as { attemptId: string }).attemptId, "code")
+    expect((await connections.get("mcp", "user-a"))?.fields).toEqual({ resource: "https://resource.test/mcp" })
+    expect(registry.list()[0]?.prompts).toBeUndefined()
   })
 
   test("missing OAuth callback code settles and releases the consumed attempt", async () => {

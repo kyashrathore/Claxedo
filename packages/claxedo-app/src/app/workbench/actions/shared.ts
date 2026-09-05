@@ -47,6 +47,12 @@ export type ActionProps = {
   workspaceRouteId: (dir: string) => string | undefined
   workspaceKindForRoute: (routeId: string) => "cloud" | "user-hosted" | "local" | undefined
   canUseDocuments?: Accessor<boolean>
+  /**
+   * What the connected server says about itself; today whether it runs
+   * workspaces on its own filesystem (`localExecution`). Injected by the app
+   * layer from the server health document so features never reach into it.
+   */
+  serverHealth: () => Promise<{ localExecution?: boolean } | undefined>
   flowLog: (...args: unknown[]) => void
 }
 

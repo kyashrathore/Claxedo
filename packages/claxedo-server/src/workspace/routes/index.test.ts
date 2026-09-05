@@ -16,6 +16,7 @@ const mocks = {
   putCredential: vi.fn(async () => ({})),
   deleteCredentialsByProvider: vi.fn(async () => 0),
   ensureHostForRepo: vi.fn(),
+  projectEnv: vi.fn(async (): Promise<Record<string, string> | undefined> => undefined),
   workspaceRows: new Map<string, Record<string, unknown>>(),
   resolveWorkspace: vi.fn(
     async (input: { workspaceId?: string; directory?: string }) =>
@@ -51,7 +52,6 @@ const mocks = {
   getSupervisorSandboxTarget: vi.fn(() => undefined),
   holdSupervisorSandbox: vi.fn(),
   releaseSupervisorSandbox: vi.fn(),
-  syncWorkspaceRuntimeAgentExtensions: vi.fn(async () => {}),
   broadcastRuntimeConfig: vi.fn(async () => {}),
   configureWorkspaceSupervisor: vi.fn(),
   shutdownWorkspaceSupervisor: vi.fn(async () => {}),
@@ -124,6 +124,7 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
     return value && /^ws_[A-Za-z0-9_-]+$/.test(value) ? value : undefined
   },
   ensureWorkspace: mocks.ensureWorkspace,
+  projectEnv: mocks.projectEnv,
   getWorkspaceByDirectory: vi.fn(async (directory: string) => mocks.workspaceRows.get(directory)),
   getWorkspace: vi.fn(async (id: string) => mocks.workspaceRows.get(id)),
   getProjectWorkspace: mocks.getProjectWorkspace,
@@ -140,9 +141,6 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   deleteWorkspaceByDirectory: vi.fn(async (directory: string) => mocks.workspaceRows.delete(directory)),
 }))
 
-// Agent-extension sync reaches the supervisor through the composed port now,
-// so the same spy is installed there. Mocking the module alone would leave the
-// assertion below passing against a call nothing makes.
 const { configureWorkspaceSupervisorPort } = await import("@claxedo/server-core/workspace/supervisor-port")
 configureWorkspaceSupervisorPort({
   hold() {},
@@ -150,7 +148,6 @@ configureWorkspaceSupervisorPort({
   markUse() {},
   touch() {},
   async broadcastRuntimeConfig() {},
-  syncAgentExtensions: async (...args) => { await mocks.syncWorkspaceRuntimeAgentExtensions(...(args as unknown as [])) },
 })
 
 vi.mock("../../workspace/supervisor", () => ({
@@ -164,7 +161,6 @@ vi.mock("../../workspace/supervisor", () => ({
   getSupervisorSandboxTarget: mocks.getSupervisorSandboxTarget,
   holdSupervisorSandbox: mocks.holdSupervisorSandbox,
   releaseSupervisorSandbox: mocks.releaseSupervisorSandbox,
-  syncWorkspaceRuntimeAgentExtensions: mocks.syncWorkspaceRuntimeAgentExtensions,
   broadcastRuntimeConfig: mocks.broadcastRuntimeConfig,
   configureWorkspaceSupervisor: mocks.configureWorkspaceSupervisor,
   shutdownWorkspaceSupervisor: mocks.shutdownWorkspaceSupervisor,
@@ -217,7 +213,6 @@ function services(): ControlPlaneServices {
       updateCredentialStatus: vi.fn(async () => {}),
       syncLocalCredentials: vi.fn(async () => ({ synced: [], existing: [], missing: [], failed: [] })),
     },
-    extensionPolicy: {},
     relay: {},
     sandbox: {},
     telemetry: { capture: vi.fn() },
@@ -300,16 +295,6 @@ function services(): ControlPlaneServices {
       runtimeAccessTokenActive: vi.fn(async () => ({ active: true })),
       revokeRuntimeAccessToken: vi.fn(async () => ({})),
       revokeRuntimeAccessTokensForWorkspaceUser: vi.fn(async () => ({})),
-      listWorkspaceAgentExtensions: vi.fn(async () => []),
-      listWorkspaceAgentExtensionsForRuntime: vi.fn(async () => []),
-      authorizeWorkspaceAgentExtensionsAdmin: vi.fn(async () => {}),
-      upsertWorkspaceAgentExtension: vi.fn(async () => ({})),
-      setWorkspaceAgentExtensionEnabled: vi.fn(async () => ({})),
-      deleteWorkspaceAgentExtension: vi.fn(async () => ({})),
-      listAgentExtensionPolicyOverrides: vi.fn(async () => []),
-      listAgentExtensionPolicyOverridesForRuntime: vi.fn(async () => []),
-      setAgentExtensionPolicyOverride: vi.fn(async () => ({})),
-      deleteAgentExtensionPolicyOverride: vi.fn(async () => ({})),
       auditDeny: vi.fn(async () => {}),
       auditAllow: vi.fn(async () => {}),
     },
@@ -345,6 +330,51 @@ const verifier: ControlPlaneTokenVerifier = async (token, config) => ({
     tokenIdentifier: `${config.issuer}|${token}`,
     issuer: config.issuer,
   },
+})
+
+describe("workspace create environment", () => {
+  beforeEach(async () => {
+    vi.clearAllMocks()
+    resetWorkspaceStoreMocks()
+  })
+
+  test("starts the sandbox with the project's environment", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    mocks.projectEnv.mockResolvedValue({ DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" })
+    const app = WorkspaceRoutes(svc, { authConfig, verifier: vi.fn(verifier) })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", projectName: "Demo" }),
+    })
+
+    expect(res.status).toBe(200)
+    expect(sandbox.ensure).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.objectContaining({ env: { DATABASE_URL: "postgres://localhost/demo", NODE_ENV: "development" } }),
+    )
+  })
+
+  test("a project without an environment starts a sandbox without one", async () => {
+    const svc = services()
+    const sandbox = readySandboxManager()
+    svc.sandbox.sandboxManager = sandbox.manager
+    mocks.projectEnv.mockResolvedValue(undefined)
+    const app = WorkspaceRoutes(svc, { authConfig, verifier: vi.fn(verifier) })
+
+    const res = await app.request("http://localhost/create", {
+      method: "POST",
+      headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+      body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git" }),
+    })
+
+    expect(res.status).toBe(200)
+    const input = (sandbox.ensure.mock.calls[0] as unknown as [string, Record<string, unknown>])[1]
+    expect(input).not.toHaveProperty("env")
+  })
 })
 
 describe("workspace routes signed control plane authority", () => {
@@ -657,6 +687,28 @@ describe("workspace routes signed control plane authority", () => {
       }],
     }))
     expect(JSON.stringify(mocks.ensureWorkspace.mock.calls)).not.toContain("github-secret")
+  })
+
+  test("signed cloud create holds provisioning open past the response on Workers", async () => {
+    const svc = services()
+    const ensure = vi.fn(async () => ({ status: "ready", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
+    svc.sandbox.sandboxManager = { ensure } as never
+    const app = WorkspaceRoutes(svc, { authConfig, verifier })
+    const waitUntil = vi.fn()
+    const res = await app.request(
+      "http://localhost/create",
+      {
+        method: "POST",
+        headers: { Authorization: "Bearer user_1", "Content-Type": "application/json" },
+        body: JSON.stringify({ repoUrl: "https://github.com/acme/demo.git", remoteDirectory: "/work/demo" }),
+      },
+      undefined,
+      { waitUntil, passThroughOnException() {}, props: {} } as never,
+    )
+    expect(res.status).toBe(200)
+    expect(waitUntil).toHaveBeenCalledTimes(1)
+    await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
+    expect(ensure).toHaveBeenCalledWith("ws_1", expect.objectContaining({ workspaceRoot: "/work/demo" }))
   })
 
   test("signed cloud create provisions through SandboxManager when composed", async () => {
@@ -1807,35 +1859,6 @@ describe("workspace routes signed control plane authority", () => {
     const svc = services()
     const sandbox = readySandboxManager()
     svc.sandbox.sandboxManager = sandbox.manager
-    svc.authority!.listWorkspaceAgentExtensions = vi.fn(async () => [
-      {
-        desired: {
-          id: "review",
-          package_name: "review",
-          source: { type: "github", owner: "acme", repo: "review" },
-          scope: "workspace",
-          enabled: true,
-          targets: ["cursor"],
-          installed_at: 1,
-          updated_at: 1,
-        },
-        lock: {
-          source: { type: "github", owner: "acme", repo: "review" },
-          resolved_sha: "abcdef1234567890",
-          manifest_digests: { package: "abc" },
-          component_digests: { package: "abc" },
-          targets: ["cursor"],
-        },
-      },
-    ])
-    svc.authority!.listAgentExtensionPolicyOverrides = vi.fn(async () => [
-      {
-        id: "review",
-        scope: "user" as const,
-        enabled: false,
-        reason: "disabled by user",
-      },
-    ])
     const signer = vi.fn(async () => ({
       runtimeAccessToken: "rat_123",
       tokenExpiresAt: 123_000,
@@ -1911,24 +1934,6 @@ describe("workspace routes signed control plane authority", () => {
           hostId: "ws_1",
           expiresAt: 123_000,
         },
-      },
-    )
-    expect(mocks.syncWorkspaceRuntimeAgentExtensions).toHaveBeenCalledWith(
-      "ws_1",
-      [
-        expect.objectContaining({
-          desired: expect.objectContaining({ id: "review" }),
-        }),
-      ],
-      {
-        policyOverrides: [
-          {
-            id: "review",
-            scope: "user",
-            enabled: false,
-            reason: "disabled by user",
-          },
-        ],
       },
     )
     expect(svc.telemetry.capture).toHaveBeenCalledWith("user_1", "control_plane.auth.signed", {

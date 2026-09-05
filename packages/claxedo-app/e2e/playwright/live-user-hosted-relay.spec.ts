@@ -301,7 +301,7 @@
  *   full DOM/lifecycle matrix (`core-terminal` already pins it against a mock —
  *   restore-on-reload, rename, split/refit, the whole launcher roster), of which behavior 9
  *   drives only the single open-run-read path that a real host and a real tunnel are the
- *   point of; claxedo-mcp / agent-extensions over a user-hosted workspace (out of this
+ *   point of; MCP/plugin materialization over a user-hosted workspace (out of this
  *   spec's fixture's capability).
  */
 import { expect, test, type Page, type Request } from "@playwright/test"

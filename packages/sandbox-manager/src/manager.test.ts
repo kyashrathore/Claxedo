@@ -1104,6 +1104,27 @@ describe("sandbox manager", () => {
     expect(JSON.stringify(seen?.labels)).not.toContain("NOTION_TOKEN")
     expect(seen?.env).toEqual({ MODEL_KEY: "sk-model" })
   })
+
+  test("adds brokered destinations to an enforced host allowlist", async () => {
+    let seen: Parameters<SandboxDriver["ensureHost"]>[0] | undefined
+    const driver = fakeDriver({
+      metadata: { secretBrokering: "native", egressControl: "hosts-and-cidrs" } as never,
+      ensureHost: vi.fn(async (input) => {
+        seen = input
+        return { sandboxId: "sandbox_1", url: "https://runtime.test", hostId: "host_1", labels: input.labels }
+      }),
+    })
+    const manager = createSandboxManager({ leaseStore: createMemoryLeaseStore(), driver })
+    await manager.ensure("ws_1", {
+      homeRegion: "us-east",
+      net: { mode: "restricted", hosts: ["registry.npmjs.org"] },
+      secrets: [{ name: "MCP_GATEWAY", value: "Bearer token", hosts: ["mcp-a.gateway.example"], header: "Authorization" }],
+    })
+    expect(seen?.net).toEqual({
+      mode: "restricted",
+      hosts: ["mcp-a.gateway.example", "registry.npmjs.org"],
+    })
+  })
 })
 
 describe("sandbox garbage collection visibility (W1)", () => {

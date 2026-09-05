@@ -49,7 +49,7 @@ import { useCheckServerHealth } from "@/app/connection/server-health"
 import { ClaxedoSplash } from "@/ui/controls/claxedo-logo"
 import { markShellRevealed, shellRevealedOnce } from "@/app/shell-revealed"
 import { useConfigOptional } from "@/app/providers/config"
-import { centralTransportForServer } from "@/platform/runtime/transport"
+import { centralTransportForDeployment } from "@/platform/runtime/transport"
 import { useAuthSession } from "@/platform/auth/auth-session"
 import { PrincipalProvider } from "@/platform/auth/principal-provider"
 import { AccountPortProvider, useAccountPort } from "@/platform/account/account-provider"
@@ -61,6 +61,7 @@ import { getExtensions } from "@/features/extensions"
 import { RemoteAccessMarkerRecorder } from "@/features/onboarding/remote-access-marker"
 import { TelemetryIdentityRecorder } from "@/app/integrations/telemetry-identity"
 import { HostedContributionSync } from "@/app/composition/hosted-contribution-sync"
+import { WorkspaceConnectionAuthoritySync } from "@/app/composition/workspace-connection-authority-sync"
 import { ClaxedoEventsProvider } from "@/app/integrations/claxedo-events"
 import { loadFileComponent } from "@/ui/session-kit-loaders"
 
@@ -374,7 +375,8 @@ function CloudAuthGate(props: ParentProps) {
   const location = useLocation()
   const navigate = useNavigate()
   const authEnabled = () => config?.authEnabled === true
-  const needsSignedAuth = () => authEnabled() && centralTransportForServer(server.url) !== "loopback"
+  const needsSignedAuth = () =>
+    centralTransportForDeployment({ serverUrl: server.url, authEnabled: authEnabled() }) !== "loopback"
   const canRender = () => !needsSignedAuth() || session.status() === "signed"
 
   createEffect(() => {
@@ -435,6 +437,7 @@ function AuthenticatedProviders(props: ParentProps) {
       {/* Removes the hosted contribution set when the account signs out.
           Before this, hosted surfaces stayed registered until a reload. */}
       <HostedContributionSync />
+      <WorkspaceConnectionAuthoritySync />
       <RoutedClaxedoEventsProvider>
         <CloudAuthGate>
           <Show when={config?.authEnabled} fallback={props.children}>

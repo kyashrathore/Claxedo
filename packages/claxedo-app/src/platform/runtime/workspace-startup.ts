@@ -9,10 +9,11 @@ import type { WorkspaceStartupPort } from "./workspace-startup-port"
  * runs inside a submit, not inside a render), so the binding is module-scoped
  * and composition installs it once at boot.
  *
- * The hosted entry (`app/entry/main.tsx`) binds `cloudWorkspaceStartup`. The
- * local entry (`app/entry/local.tsx`) binds nothing, deliberately: a local
- * build has no sandbox to wake and no Relay to reach, and that entry exists so
- * the hosted implementation is not in its bundle at all.
+ * The hosted browser entry (`app/entry/main.tsx`) and the desktop's optional
+ * signed activation bind `cloudWorkspaceStartup`. The local browser and the
+ * desktop's unsigned base bind nothing, deliberately: those products have no
+ * sandbox to wake and no Relay to reach, so the hosted implementation stays
+ * out of their base bundles.
  */
 let boundPort: WorkspaceStartupPort | undefined
 

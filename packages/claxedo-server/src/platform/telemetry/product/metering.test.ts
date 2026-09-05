@@ -97,7 +97,6 @@ function services(telemetry: { capture: (id: string, event: string, props?: Reco
     },
     auth: localOnlyAuthAdapter(),
     credentials: {} as never,
-    extensionPolicy: {},
     relay: {},
     sandbox: {},
     telemetry,

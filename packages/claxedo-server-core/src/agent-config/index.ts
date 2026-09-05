@@ -23,21 +23,6 @@ import {
 } from "@claxedo/workspace-runtime/config"
 import { resolveSecretsForScope, resolveCredentialReferencesForScope } from "@claxedo/server-core/credentials/registry"
 import {
-  getRuntimeAgentExtensionsSnapshot,
-  resolveProjectExtensionTrust,
-  type AgentExtensionPolicyOverride,
-  type RuntimeAgentExtensionsSnapshot,
-} from "../hosts/agent-extensions/runtime-config"
-import {
-  readMirroredWorkspaceAgentExtensions,
-  sameSource,
-  workspaceAgentExtensionRecords,
-  type WorkspaceAgentExtensionRecord,
-} from "../hosts/agent-extensions/workspace"
-import { ControlPlaneAuthError } from "@claxedo/server-core/platform/auth/auth"
-import type { WorkspaceAuthority } from "@claxedo/server-core/platform/auth/authority"
-import { createSqliteWorkspaceAuthority } from "../authority/adapters/sqlite/workspace-authority"
-import {
   createHarnessConnectionSchema,
   explicitDefaultHarness,
   isConnectionId,
@@ -139,14 +124,11 @@ export interface RuntimeConfigSnapshot {
   connections: HarnessConnectionDescriptor[]
   defaultHarness?: RuntimeHarnessSelection
   auth: Record<string, string>
-  agent_extensions?: RuntimeAgentExtensionsSnapshot
+  /** Opaque per-harness launch options contributed by the product composition. */
+  harnessLaunch?: Record<string, Record<string, unknown>>
 }
 
 export type RuntimeConfigSecretScope = "local" | "shared"
-type RuntimeWorkspaceAuthority = Pick<
-  WorkspaceAuthority,
-  "listWorkspaceAgentExtensionsForRuntime" | "listAgentExtensionPolicyOverridesForRuntime"
->
 
 export interface CommandItem {
   name: string
@@ -154,29 +136,20 @@ export interface CommandItem {
 }
 
 export type AgentConfigOptions = {
-  /**
-   * Authority used to hydrate workspace Agent Extensions into the runtime
-   * snapshot pushed to sandboxes.
-   *
-   * A composition supplies its canonical authority; agent-config does not
-   * choose between local and cloud adapters from ambient environment state.
-   * When mounted standalone, the local SQLite authority answers.
-   */
-  workspaceAuthority?: RuntimeWorkspaceAuthority
   /** Providers installed by this product composition. */
   connectionProviders?: readonly ConnectionProvider<unknown, unknown>[]
+  /**
+   * Opaque per-harness launch options an optional product module (Agent
+   * Plugins) projects into every runtime snapshot. Read on each snapshot so
+   * a re-projection after activation reaches the next config push.
+   */
+  harnessLaunch?: () => Promise<Record<string, Record<string, unknown>>>
 }
 
 let agentConfigOptions: AgentConfigOptions = {}
-let localRuntimeWorkspaceAuthority: {
-  dataRoot: string
-  authority: ReturnType<typeof createSqliteWorkspaceAuthority>
-} | undefined
 
 /** Release process-owned agent configuration and its lazily opened resources. */
 export function disposeAgentConfig() {
-  localRuntimeWorkspaceAuthority?.authority.close()
-  localRuntimeWorkspaceAuthority = undefined
   agentConfigOptions = {}
   harnessConnectionSchema = createHarnessConnectionSchema()
 }
@@ -470,100 +443,6 @@ async function runtimeMcp(
   }).mcp
 }
 
-// Default workspace authority for RUNTIME snapshot hydration (sandbox
-// provisioning / broadcast config pushes). The composition supplies the
-// authority it already selected; otherwise the local SQLite authority answers.
-function defaultRuntimeWorkspaceAuthority(): RuntimeWorkspaceAuthority {
-  if (agentConfigOptions.workspaceAuthority) return agentConfigOptions.workspaceAuthority
-  // Memoized per data root so repeated config pushes reuse one SQLite
-  // connection (same authority.db file the server composition opens).
-  const dataRoot = dataDir()
-  if (localRuntimeWorkspaceAuthority?.dataRoot !== dataRoot) {
-    localRuntimeWorkspaceAuthority = { dataRoot, authority: createSqliteWorkspaceAuthority() }
-  }
-  return localRuntimeWorkspaceAuthority.authority
-}
-
-// Authority-less mounts (routes composed without control-plane services)
-// record workspace Agent Extensions in the local mirror instead of an
-// authority. Fold those records in so a sandbox re-provision does not lose
-// extensions that only the live `syncWorkspaceRuntimeAgentExtensions` push
-// knew about. Authority records win on id conflicts — and on source
-// conflicts, because a same-source record under another id (legacy
-// manifest-derived vs catalog id) is the same install and would replay onto
-// the same package_name-derived artifact paths.
-async function mirroredRuntimeWorkspaceAgentExtensions(workspaceId: string) {
-  try {
-    return await readMirroredWorkspaceAgentExtensions({ workspaceId })
-  } catch {
-    return []
-  }
-}
-
-function mergeWorkspaceAgentExtensionRecords(
-  primary: WorkspaceAgentExtensionRecord[],
-  fallback: WorkspaceAgentExtensionRecord[],
-) {
-  const seen = new Set(primary.map((item) => item.desired.id))
-  return [...primary, ...fallback.filter((item) =>
-    !seen.has(item.desired.id)
-    && !primary.some((record) => sameSource(record.desired.source, item.desired.source)))]
-}
-
-async function runtimeWorkspaceAgentExtensions(workspaceId: string, input: {
-  required: boolean
-  authority?: RuntimeWorkspaceAuthority
-}) {
-  try {
-    const records = workspaceAgentExtensionRecords(await (input.authority ?? defaultRuntimeWorkspaceAuthority()).listWorkspaceAgentExtensionsForRuntime({
-      workspaceId,
-    }))
-    return mergeWorkspaceAgentExtensionRecords(records, await mirroredRuntimeWorkspaceAgentExtensions(workspaceId))
-  } catch (err) {
-    if (err instanceof ControlPlaneAuthError && err.code === "workspace_authority_unavailable") {
-      if (input.required) throw err
-      log.warn("Workspace Agent Extensions hydration unavailable; continuing with mirrored runtime installs", {
-        workspaceId,
-        required: input.required,
-        error: err.message,
-      })
-      const mirrored = await mirroredRuntimeWorkspaceAgentExtensions(workspaceId)
-      return mirrored.length > 0 ? mirrored : undefined
-    }
-    log.warn("Failed to hydrate workspace Agent Extensions from the workspace authority", {
-      workspaceId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    throw err
-  }
-}
-
-async function runtimeWorkspaceAgentExtensionPolicyOverrides(workspaceId: string, input: {
-  required: boolean
-  authority?: RuntimeWorkspaceAuthority
-}) {
-  try {
-    return await (input.authority ?? defaultRuntimeWorkspaceAuthority()).listAgentExtensionPolicyOverridesForRuntime({
-      workspaceId,
-    }) as AgentExtensionPolicyOverride[]
-  } catch (err) {
-    if (err instanceof ControlPlaneAuthError && err.code === "workspace_authority_unavailable") {
-      if (input.required) throw err
-      log.warn("Workspace Agent Extension policy hydration unavailable; continuing with empty policy overrides", {
-        workspaceId,
-        required: input.required,
-        error: err.message,
-      })
-      return undefined
-    }
-    log.warn("Failed to hydrate workspace Agent Extension policy from the workspace authority", {
-      workspaceId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-    throw err
-  }
-}
-
 function codexCompatible(input: string | undefined): input is string {
   if (!input) return false
   try {
@@ -588,10 +467,6 @@ export async function getRuntimeConfigSnapshot(
     orgId?: string
     workspaceDir?: string
     workspaceId?: string
-    workspaceInstalls?: WorkspaceAgentExtensionRecord[]
-    policyOverrides?: AgentExtensionPolicyOverride[]
-    authority?: RuntimeWorkspaceAuthority
-    requireWorkspaceAgentExtensions?: boolean
   } = {},
 ): Promise<RuntimeConfigSnapshot> {
   const config = await loadUserConfig()
@@ -620,44 +495,14 @@ export async function getRuntimeConfigSnapshot(
   Object.assign(auth, await resolveCredentialReferencesForScope(references, scope, options.orgId))
   const codexAppServerAuth = auth.openai
   if (!auth["codex-app-server"] && codexAppServerAuth) auth["codex-app-server"] = codexAppServerAuth
-  const workspaceInstalls = options.workspaceDir && options.workspaceId
-    ? options.workspaceInstalls ?? await runtimeWorkspaceAgentExtensions(options.workspaceId, {
-        required: options.requireWorkspaceAgentExtensions ?? false,
-        authority: options.authority,
-      })
-    : undefined
-  const workspaceAgentExtensions = options.workspaceDir && options.workspaceId
-    ? {
-        workspaceInstalls: workspaceInstalls ?? [],
-        policyOverrides: options.policyOverrides
-          ?? await runtimeWorkspaceAgentExtensionPolicyOverrides(options.workspaceId, {
-            required: options.requireWorkspaceAgentExtensions ?? false,
-            authority: options.authority,
-          })
-          ?? [],
-      }
-    : undefined
+  const harnessLaunch = await agentConfigOptions.harnessLaunch?.()
   return {
     version: 3,
     mcp,
     connections: Object.values(config.connections),
     ...(selected ? { defaultHarness: selected } : {}),
     auth,
-    ...(options.workspaceDir ? { agent_extensions: await getRuntimeAgentExtensionsSnapshot({
-      projectDir: options.workspaceDir,
-    }, {
-      ...(workspaceAgentExtensions ?? {}),
-      // The checkout is repo-controlled input: its extension declarations
-      // apply only as far as this host's consent ledger currently vouches —
-      // per install id, plus an explicit first-party flag (see
-      // @claxedo/agent-extensions trust). Drifted or unconsented declarations
-      // contribute nothing; control-plane workspace installs above are
-      // unaffected.
-      projectStateTrusted: await resolveProjectExtensionTrust({
-        dataRoot: claxedoDir(),
-        projectDir: options.workspaceDir,
-      }),
-    }) } : {}),
+    ...(harnessLaunch && Object.keys(harnessLaunch).length ? { harnessLaunch } : {}),
   }
 }
 

@@ -73,13 +73,22 @@ const ENTRIES = [
   // No new package.
   // +4 modules (151 -> 155): the same workspace SessionEnv split into focused
   // factory, protocol, runtime-env, and admission owners. No new package.
-  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 155, packages: 35 },
+  // +2 packages (35 -> 37) on 2026-09-05, the generic-harness + Agent Plugins
+  // merge: `@claxedo/opencode-server-adapter` (the self-hosted composition
+  // registers it for operator-configured external OpenCode connections; no
+  // engine is bundled) and the local signed web composition's Better Auth
+  // native-client reach. Measured, not summed.
+  { name: "self-hosted-node", entry: "src/deployments/self-hosted-node/index.ts", modules: 155, packages: 37 },
 ] as const
 
 /** The remaining cloud compositions. */
 const CLOUD_ENTRIES = ENTRIES.filter((item) => item.name !== "self-hosted-node")
 const BETTER_AUTH_D1_LOCKED_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-locked-worker.cf.ts"
 const BETTER_AUTH_D1_CANDIDATE_ENTRY = "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.cf.ts"
+const BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY =
+  "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.full-hosted.cf.ts"
+const BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY =
+  "src/deployments/hosted-workerd/better-auth-d1-candidate-worker.agent-plugins.cf.ts"
 const HOSTED_CORE_WORKER_ROOT = "src/deployments/hosted-workerd/core-worker.cf.ts"
 
 function closure(entry: string, options: { runtimeOnly?: boolean } = {}) {
@@ -183,6 +192,66 @@ describe("server deployment entry closures", () => {
           "@claxedo/wakes",
           "@polar-sh/sdk",
         ].includes(name),
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps the plain candidate free of Agent Plugins and the feature candidate closed over exactly it", () => {
+    const plain = closure(BETTER_AUTH_D1_CANDIDATE_ENTRY, { runtimeOnly: true })
+    const plainFiles = plain.modules.map((module) => module.relative)
+    expect(plainFiles.filter((file) => file.includes("src/agent-plugins/") || file.includes("connections/hosted-d1/"))).toEqual([])
+
+    const feature = closure(BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY, { runtimeOnly: true })
+    const files = feature.modules.map((module) => module.relative)
+    expect(feature.unresolved).toEqual([])
+    expect(feature.opaque).toEqual([])
+    expect(files).toContain(BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY)
+    expect(files).toContain(BETTER_AUTH_D1_CANDIDATE_ENTRY)
+    expect(files).toContain("src/agent-plugins/hosted-composition.ts")
+    expect(files).toContain("src/agent-plugins/activation/d1-store.ts")
+    expect(files).toContain("src/connections/hosted-d1/setup.ts")
+    // The feature adds routes, storage adapters, and the hosted Connections
+    // family — never the desktop product, a sandbox provider SDK, or billing.
+    expect(
+      files.filter((file) =>
+        [
+          "better-auth-d1-locked-worker",
+          "packages/claxedo-local-server/src",
+          "billing/",
+          "documents/",
+          "convex",
+        ].some((value) => file.toLowerCase().includes(value)),
+      ),
+    ).toEqual([])
+    expect(
+      feature.packages.filter((name) =>
+        ["@claxedo/local-server", "@claxedo/documents-service", "@claxedo/wakes", "@polar-sh/sdk", "convex"].includes(name),
+      ),
+    ).toEqual([])
+  })
+
+  it("keeps sandbox providers out of every control-plane-only candidate and inside the full-hosted one", () => {
+    const providerMarkers = ["sandbox-manager/src/drivers/", "src/sandbox/stores/d1.ts", "hosted-sandbox-driver.ts"]
+    for (const entry of [BETTER_AUTH_D1_CANDIDATE_ENTRY, BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY]) {
+      const files = closure(entry, { runtimeOnly: true }).modules.map((module) => module.relative)
+      expect(files.filter((file) => providerMarkers.some((marker) => file.includes(marker)))).toEqual([])
+    }
+    const fullHosted = closure(BETTER_AUTH_D1_AGENT_PLUGINS_FULL_HOSTED_ENTRY, { runtimeOnly: true })
+    const files = fullHosted.modules.map((module) => module.relative)
+    expect(fullHosted.unresolved).toEqual([])
+    expect(fullHosted.opaque).toEqual([])
+    expect(files).toContain(BETTER_AUTH_D1_AGENT_PLUGINS_ENTRY)
+    expect(files).toContain("src/authority/adapters/worker/hosted-sandbox-driver.ts")
+    expect(files).toContain("src/sandbox/stores/d1.ts")
+    // The provider SDKs are package edges of the driver composer, not source
+    // files of this package; the composer itself is the edge that matters.
+    expect(fullHosted.packages).toContain("@claxedo/sandbox-manager")
+    // Still no desktop product, billing, or the retired stack.
+    expect(
+      files.filter((file) =>
+        ["better-auth-d1-locked-worker", "packages/claxedo-local-server/src", "billing/", "convex"].some((value) =>
+          file.toLowerCase().includes(value),
+        ),
       ),
     ).toEqual([])
   })

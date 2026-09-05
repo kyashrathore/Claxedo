@@ -6,6 +6,7 @@ import {
 import { createAcpConnectionProvider } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
 import { isNativeHarnessId } from "@claxedo/server-core/agent-config/connections"
+import type { WorkspaceRuntimeRouteContribution } from "@claxedo/workspace-runtime/route-contribution"
 import { workspaceDir, workspaceId } from "@claxedo/workspace-runtime/host"
 import {
   loopbackWorkspaceRuntimeExposure,
@@ -114,6 +115,7 @@ export function claxedoRuntimeHarnessFromEnv(env: NodeJS.ProcessEnv = process.en
  */
 export async function claxedoWorkspaceRuntimeBootFromEnv(
   env: NodeJS.ProcessEnv = process.env,
+  input: { routeContributions?: readonly WorkspaceRuntimeRouteContribution[] } = {},
 ): Promise<ClaxedoWorkspaceRuntimeBoot> {
   const rawPort = text(env, "WORKSPACE_RUNTIME_PORT") ?? "3002"
   if (!/^\d+$/.test(rawPort)) throw new Error(`WORKSPACE_RUNTIME_PORT must be an integer: ${rawPort}`)
@@ -137,6 +139,10 @@ export async function claxedoWorkspaceRuntimeBootFromEnv(
     harness: claxedoRuntimeHarnessFromEnv(env),
     connectionProviders: [createAcpConnectionProvider(), createOpenCodeServerConnectionProvider()],
     corsOrigin: claxedoCorsOrigin,
+    // The host entry's route contributions (the Agent Plugins VM image mounts
+    // its apply route this way). Accepting them without forwarding them left
+    // the sandbox image answering 404 to the provisioner.
+    ...(input.routeContributions?.length ? { routeContributions: input.routeContributions } : {}),
   }
   return { port, hostname, options }
 }

@@ -51,12 +51,10 @@ export async function betterAuthD1ReleaseIdentity(
     CLAXEDO_SANDBOX_POSTURE: env.CLAXEDO_SANDBOX_POSTURE,
     CLAXEDO_SANDBOX_DRIVER: env.CLAXEDO_SANDBOX_DRIVER,
   })
-  if (
-    profile.adapterProfile !== "better-auth-d1" ||
-    profile.productPosture !== "user-deployed" ||
-    profile.sandboxPosture !== "control-plane-only"
-  ) {
-    throw new Error("the Better Auth D1 release certifies only user-deployed control-plane-only")
+  // Both sandbox postures are certified artifacts of this product; which one a
+  // release carries is part of its identity below, not a reason to refuse.
+  if (profile.adapterProfile !== "better-auth-d1" || profile.productPosture !== "user-deployed") {
+    throw new Error("the Better Auth D1 release certifies only user-deployed Better Auth D1 profiles")
   }
   const authConfigurationId = await betterAuthDeploymentConfigurationId({
     methods: configured.public.methods,

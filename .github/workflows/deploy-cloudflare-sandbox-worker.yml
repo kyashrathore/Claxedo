@@ -25,6 +25,11 @@ on:
         required: false
         type: boolean
         default: true
+      agent_plugins:
+        description: "Include the optional Agent Plugins runtime materializer"
+        required: false
+        type: boolean
+        default: false
   # Uncomment to auto-deploy on worker changes merged to dev:
   # push:
   #   branches: [dev]
@@ -53,14 +58,24 @@ jobs:
       - name: Install worker dependencies
         run: npm install
 
+      # sandbox-manager resolves @claxedo/sandbox-contract through its dist, which
+      # a fresh runner does not have; build the contract first.
+      - name: Build sandbox contract
+        run: bun run --cwd ../../../../sandbox-contract build
+
       - name: Build sandbox manager
         run: bun run --cwd ../../../../sandbox-manager build
 
       # The image ships the in-repo workspace-runtime host bundle (COPY .build/)
       # instead of npm-installing @claxedo/workspace-runtime — publishing is a
       # separate release concern and no longer gates image builds.
-      - name: Bundle workspace-runtime host into the wrangler build context
+      - name: Bundle workspace-runtime host without Agent Plugins
+        if: ${{ !inputs.agent_plugins }}
         run: npx tsx ../build-sandbox-image.ts --bundle-only --out=.build
+
+      - name: Bundle Agent Plugins workspace-runtime host into the wrangler build context
+        if: ${{ inputs.agent_plugins }}
+        run: npx tsx ../build-sandbox-image.ts --agent-plugins --bundle-only --out=.build
 
       # The bundle step also writes scripts/sandbox/.build/build-info.json with
       # the content build-id / snapshot name. Surface it so operators can wire
@@ -108,4 +123,4 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           SANDBOX_CONTROL_TOKEN: ${{ secrets.CLAXEDO_RUNTIME_ADMIN_TOKEN }}
-        run: printf '%s' "$SANDBOX_CONTROL_TOKEN" | npx --yes wrangler@4.50.0 secret put API_TOKEN
+        run: printf '%s' "$SANDBOX_CONTROL_TOKEN" | npx --yes wrangler@4.127.1 secret put API_TOKEN

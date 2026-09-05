@@ -42,6 +42,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
     const content = meta().content
     return content?.type === "session" ? content.sessionRef : undefined
   })
+  const workspaceRouteId = createMemo(() => meta().content?.workspaceRouteId)
   const effectiveSessionRef = createMemo(() => sessionRef() ?? localSessionRefForDirectory({
     sessionId: sessionId(),
     directory: directory(),
@@ -184,6 +185,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
         {(dir) => (
           <SessionPaneScope
             directory={dir()}
+            workspaceId={workspaceRouteId}
             active={activeForHydration}
             sessionId={() => "new"}
             paneId={() => props.ctx.paneId}
@@ -233,6 +235,7 @@ export function SessionContent(props: { meta: ContentMeta; ctx: PaneCtx; fallbac
               <SessionPaneScope
                 directory={dir().value}
                 sessionRef={effectiveSessionRef}
+                workspaceId={workspaceRouteId}
                 active={activeForHydration}
                 sessionId={() => sessionId()}
                 paneId={() => props.ctx.paneId}

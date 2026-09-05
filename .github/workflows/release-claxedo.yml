@@ -94,7 +94,6 @@ jobs:
         run: >-
           bun turbo build
           --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
           --filter=@claxedo/agent-sdk-runtime
           --filter=@claxedo/channels
           --filter=@claxedo/connections
@@ -243,7 +242,6 @@ jobs:
         run: >-
           bun turbo build
           --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
           --filter=@claxedo/agent-sdk-runtime
           --filter=@claxedo/channels
           --filter=@claxedo/connections

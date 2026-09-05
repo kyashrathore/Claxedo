@@ -48,6 +48,38 @@ describe("runtime config v3", () => {
     expect(applied).toEqual(snapshot())
   })
 
+  test("preserves only known harness-owned opaque launch options", async () => {
+    let seen: unknown
+    const app = ConfigRoutes(async (value) => { seen = value }, {
+      managementAuth,
+      managementTarget: { workspaceId: "ws-1", hostId: "host-1" },
+    })
+    const headers = {
+      "content-type": "application/json",
+      [WORKSPACE_RUNTIME_MANAGEMENT_TOKEN_HEADER]: managementToken,
+    }
+    const body = {
+      ...snapshot(),
+      harnessLaunch: { claude: { pluginRoots: ["/runtime/plugins/review"] } },
+    }
+    const accepted = await app.request("http://localhost/api/wr/config", { method: "POST", headers, body: JSON.stringify(body) })
+    expect(accepted.status).toBe(200)
+    expect(seen).toMatchObject({ harnessLaunch: body.harnessLaunch })
+
+    const rejected = await app.request("http://localhost/api/wr/config", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ ...body, harnessLaunch: { arbitrary: {} } }),
+    })
+    expect(rejected.status).toBe(400)
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), harnessLaunch: {} })).not.toHaveProperty("harnessLaunch")
+  })
+
+  test("rejects unknown runtime snapshot fields instead of silently ignoring them", () => {
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), unexpected: { value: true } })).toBeUndefined()
+    expect(normalizeRuntimeSnapshot({ ...snapshot(), runner: { type: "opencode" } })).toBeUndefined()
+  })
+
   test("rejects v1/v2 compatibility snapshots", () => {
     expect(normalizeRuntimeSnapshot({ version: 1, mcp: {}, auth: {}, runner: { type: "opencode" } })).toBeUndefined()
     expect(normalizeRuntimeSnapshot({ version: 2, mcp: {}, auth: {}, runners: [] })).toBeUndefined()

@@ -64,6 +64,7 @@ type Platform = AppPlatform & {
 export type DesktopRendererOptions = {
   loadHostedContributions?: ReturnType<typeof getDefaultConfig>["loadHostedContributions"]
   serviceContributionLoaders?: ReturnType<typeof getDefaultConfig>["serviceContributionLoaders"]
+  loadAgentPluginContributions?: ReturnType<typeof getDefaultConfig>["loadAgentPluginContributions"]
 }
 
 export function startDesktopRenderer(options: DesktopRendererOptions = {}) {
@@ -106,14 +107,14 @@ const encode = (reason: unknown) => {
 
 /**
  * Deliberately NOT a UI overlay: uncaught errors are recorded on
- * `window.__OPENCODE__.lastError` (readable over CDP / from the console) and
+ * `window.__CLAXEDO__.lastError` (readable over CDP / from the console) and
  * logged with `console.error`, which the main process relays into main.log.
  * A fixed on-screen panel over the running app added no information beyond
  * those two sinks and constantly covered the sidebar during development.
  */
 const recordFatal = (label: string, payload: unknown) => {
-  window.__OPENCODE__ ??= {}
-  ;(window.__OPENCODE__ as unknown as { lastError?: { label: string; payload: unknown } }).lastError = {
+  window.__CLAXEDO__ ??= {}
+  ;(window.__CLAXEDO__ as unknown as { lastError?: { label: string; payload: unknown } }).lastError = {
     label,
     payload,
   }
@@ -157,6 +158,11 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
   const config = {
     ...baseConfig,
     authEnabled: false,
+    // Signed-capable desktop builds own cloud sandbox creation and Connections.
+    // `getDefaultConfig()` follows Vite product-UI env, which the inner desktop
+    // bundle does not load, so composition derives them from the hosted loader.
+    sandboxEnabled: Boolean(options.loadHostedContributions),
+    settingsConnectionsEnabled: Boolean(options.loadHostedContributions),
     // On desktop the optional hosted loader is the build-time proof that main
     // owns a configured account client. Requiring a second renderer flag hid
     // the only sign-in entry point in exactly the build that could sign in,
@@ -166,6 +172,7 @@ function bootstrapDesktop(options: DesktopRendererOptions, root: HTMLElement) {
       baseConfig.accountSignInEnabled === true || options.loadHostedContributions !== undefined,
     loadHostedContributions: options.loadHostedContributions,
     serviceContributionLoaders: options.serviceContributionLoaders,
+    loadAgentPluginContributions: options.loadAgentPluginContributions,
   }
   initClaxedo(config)
 

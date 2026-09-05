@@ -1,4 +1,5 @@
 import type * as Server from "@/app/connection/server"
+import type * as ServerHealth from "@/app/connection/server-health"
 import type * as GlobalSDK from "@/app/providers/global-sdk/provider"
 import type * as Layout from "@/app/providers/layout"
 import type * as Events from "@/app/integrations/claxedo-events"
@@ -17,6 +18,7 @@ import type * as CloudStartup from "@/features/session/ui/components/cloud-start
 
 export type WorkspacesAppPorts = {
   useServer: typeof Server.useServer
+  checkServerHealth: typeof ServerHealth.checkServerHealthCached
   useGlobalSDK: typeof GlobalSDK.useGlobalSDK
   getAvatarColors: typeof Layout.getAvatarColors
   useClaxedoEventsOptional: typeof Events.useClaxedoEventsOptional
@@ -63,6 +65,7 @@ function bind<K extends keyof WorkspacesAppPorts>(key: K) {
 }
 
 export const useServer = bind("useServer")
+export const checkServerHealth = bind("checkServerHealth")
 export const useGlobalSDK = bind("useGlobalSDK")
 export const getAvatarColors = bind("getAvatarColors")
 export const useClaxedoEventsOptional = bind("useClaxedoEventsOptional")

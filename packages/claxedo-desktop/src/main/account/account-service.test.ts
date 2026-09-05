@@ -286,6 +286,38 @@ describe("bound desktop account lifecycle", () => {
     expect(service.state()).toEqual({ status: "signed", identity: { userId: "" }, identityLookup: "failed" })
   })
 
+  test("a failed identity lookup is retried with backoff and the name lands when the network recovers", async () => {
+    const h = harness({ store: memoryStore(CREDENTIAL) })
+    const scheduled: Array<{ run: () => void; delayMs: number }> = []
+    let attempts = 0
+    const service = createAccountService({
+      auth: h.auth.auth,
+      store: h.store,
+      now: () => 1_000,
+      fetch: async () => Response.json({ ok: true }),
+      resolveIdentity: async () => {
+        attempts += 1
+        if (attempts === 1) throw new Error("userinfo timed out")
+        return { userId: "user-1", displayName: "Yash" }
+      },
+      scheduleRevalidation: (run, delayMs) => {
+        scheduled.push({ run, delayMs })
+        return setTimeout(() => {}, 0)
+      },
+    })
+    await service.restore()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(service.state()).toMatchObject({ status: "signed", identityLookup: "failed" })
+    const retry = scheduled.find((entry) => entry.delayMs === 15_000)
+    expect(retry, "the first retry is scheduled 15 s out").toBeDefined()
+    retry!.run()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    expect(service.state()).toMatchObject({ status: "signed", identity: { userId: "user-1", displayName: "Yash" } })
+    expect(attempts).toBe(2)
+  })
+
   test("a blip while already signed suspends, then returns to signed on the next success", async () => {
     let reachable = true
     const h = harness({
@@ -515,7 +547,11 @@ describe("bound desktop account lifecycle", () => {
     await expect(service.run("org.list")).rejects.toThrow("could not renew the session")
     expect(refreshAttempts).toBe(1)
 
-    clock += 21_000
+    // The clock is Unix seconds: the cool-down is 20 of them, not 20,000.
+    clock += 19
+    await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
+    expect(refreshAttempts).toBe(1)
+    clock += 2
     await expect(service.run("account.mode")).rejects.toThrow("could not renew the session")
     expect(refreshAttempts).toBe(2)
   })
@@ -588,6 +624,70 @@ describe("bound desktop account lifecycle", () => {
     await expect(h.service.run("account.mode")).resolves.toMatchObject({ ok: true })
     expect(seen.length).toBe(2)
     expect(h.service.state()).toMatchObject({ status: "signed" })
+  })
+
+  test("preserves status and canonical JSON for operations with expected non-success outcomes", async () => {
+    const body = { error: { code: "agent_plugins_revision_conflict", message: "revision changed" } }
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => Response.json(body, { status: 409 }),
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("agentPlugins.activation", {
+      pluginInstanceId: "claxedo/composio",
+      harnessIds: ["codex"],
+      choice: true,
+      expectedRevision: 1,
+      target: { scope: "all-projects" },
+    })).resolves.toEqual({ status: 409, body })
+    expect(h.store.held()).toBeDefined()
+  })
+
+  test("preserves a body-controlled cloud connection retry across the account boundary", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => Response.json({
+        error: {
+          code: "cloud_runtime_unavailable",
+          message: "Cloud runtime is unavailable",
+          retryAfterMs: 1_500,
+        },
+      }, { status: 409 }),
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("workspace.connection.mint", { id: "ws_1" })).resolves.toEqual({
+      status: "provisioning",
+      retryAfterMs: 1_500,
+    })
+  })
+
+  test("preserves a Retry-After cloud connection retry across the account boundary", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => new Response("slow down", { status: 429, headers: { "Retry-After": "2" } }),
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("workspace.connection.refresh", { id: "ws_1" })).resolves.toEqual({
+      status: "provisioning",
+      retryAfterMs: 2_000,
+    })
+  })
+
+  test("does not turn a terminal cloud connection conflict into a retry", async () => {
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => Response.json({
+        error: { code: "runtime_prepare_failed", message: "plugin artifact is invalid" },
+      }, { status: 409 }),
+    })
+    await h.service.restore()
+
+    await expect(h.service.run("workspace.connection.mint", { id: "ws_1" })).rejects.toThrow(
+      'failed: 409 (runtime_prepare_failed: plugin artifact is invalid)',
+    )
   })
 
   test("envelopes binary exports without exposing the authenticated response", async () => {

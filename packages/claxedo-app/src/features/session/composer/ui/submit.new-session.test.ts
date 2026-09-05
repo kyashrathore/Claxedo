@@ -13,6 +13,7 @@ const {
   harnessClaimCalls,
   promptCalls, optimisticAdds, optimisticRemoves, promptContextItems, promptContextAdds,
   promptContextRemoves, refreshCalls, bootstrapCalls, worktreeCreateCalls, enabledAutoAccept,
+  hostedOperationCalls,
 } = h
 
 beforeAll(async () => {
@@ -200,9 +201,11 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    const createCall = apiCalls.find((item) => new URL(item.url).pathname === "/api/workspace/create")
-    expect(createCall?.method).toBe("POST")
-    expect(JSON.parse(createCall?.body ?? "{}")).toEqual({ projectId: "project-1", gitBranch: "release/next" })
+    expect(hostedOperationCalls).toContainEqual({
+      operation: "workspace.create",
+      input: { projectId: "project-1", gitBranch: "release/next" },
+    })
+    expect(apiCalls.some((item) => new URL(item.url).pathname === "/api/workspace/create")).toBe(false)
     expect(bootstrapCalls).toEqual(["bootstrap"])
     expect(optimisticAdds.map((item) => ({ directory: item.directory, sessionID: item.sessionID }))).toContainEqual({
       directory: "ws_1",
@@ -558,9 +561,10 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    const createCall = apiCalls.find((item) => new URL(item.url).pathname === "/api/workspace/create")
-    expect(createCall?.method).toBe("POST")
-    expect(JSON.parse(createCall?.body ?? "{}")).toEqual({ projectId: "project-formlink" })
+    expect(hostedOperationCalls).toContainEqual({
+      operation: "workspace.create",
+      input: { projectId: "project-formlink" },
+    })
     expect(toasts.find((toast) => toast.title === "Failed to create cloud workspace")).toBeUndefined()
   })
 
@@ -672,9 +676,10 @@ describe("New-session creation: cloud, worktree, and tab handoff", () => {
     await submit.handleSubmit(submitEvent())
     await new Promise<void>((r) => setTimeout(r, 0))
 
-    const createCall = apiCalls.find((item) => new URL(item.url).pathname === "/api/workspace/create")
-    expect(createCall?.method).toBe("POST")
-    expect(JSON.parse(createCall?.body ?? "{}")).toEqual({ projectId: "project-1" })
+    expect(hostedOperationCalls).toContainEqual({
+      operation: "workspace.create",
+      input: { projectId: "project-1" },
+    })
     expect(optimisticAdds.map((item) => item.directory)).toContain("ws_1")
     expect(optimisticAdds.map((item) => item.directory)).not.toContain("/repo/main")
   })

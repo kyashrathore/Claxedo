@@ -9,14 +9,12 @@ import { ClaxedoIcon as Icon } from "@/ui/controls/claxedo-icon"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { formatRelativeTime } from "@/lib/relative-time"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
-import { DialogSelectDirectory } from "@/app/dialogs/select-directory"
+import { useConfigOptional } from "@/app/providers/config"
 import { useServer } from "@/app/connection/server"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
 import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 import { useLanguage } from "@/platform/i18n/provider"
-import { DialogCreateCloudProject } from "@/features/workspaces/ui/dialogs/create-cloud-project"
-import { useConfigOptional } from "@/app/providers/config"
-import { ensureLocalProject } from "../../features/workspaces/data/query/project-ensure"
+import { ensureLocalProject, refreshProjectInventory } from "../../features/workspaces/data/query/project-ensure"
 import { workspaceRoute } from "@/platform/identity/route"
 import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 import { centralTransportForServer } from "@/platform/runtime/transport"
@@ -31,8 +29,8 @@ export default function Home() {
   const navigate = useNavigate()
   const server = useServer()
   const language = useLanguage()
-  const config = useConfigOptional()
   const projectsQuery = useQuery(() => queryOptions.projects())
+  const config = useConfigOptional()
   const pathQuery = useQuery(() => queryOptions.path(null))
   const homedir = createMemo(() => pathQuery.data?.home ?? "")
   const recent = createMemo(() => {
@@ -51,6 +49,10 @@ export default function Home() {
         projectsQuery: queryOptions.projects(),
       })
       if (Array.isArray(ensured)) projects = ensured
+    } else {
+      // A project the create dialog just made is not in the cached list yet.
+      const refreshed = await refreshProjectInventory(queryOptions.projects()).catch(() => undefined)
+      if (Array.isArray(refreshed)) projects = refreshed
     }
     const workspaceId = workspaceRouteId(selectedProject ? [selectedProject] : projects, directory)
     if (!workspaceId) return
@@ -59,38 +61,9 @@ export default function Home() {
     navigate(workspaceRoute(workspaceId))
   }
 
-  async function chooseProject() {
-    async function resolve(result: string | string[] | null) {
-      if (Array.isArray(result)) {
-        for (const directory of result) {
-          await openProject(directory)
-        }
-      } else if (result) {
-        await openProject(result)
-      }
-    }
-
-    if (platform.platform === "web" && config?.sandboxEnabled) {
-      dialog.show(
-        () => <DialogCreateCloudProject onSelect={resolve} />,
-        () => void resolve(null),
-      )
-      return
-    }
-
-    if (platform.openDirectoryPickerDialog && server.isLocal()) {
-      const result = await platform.openDirectoryPickerDialog?.({
-        title: language.t("command.project.open"),
-        multiple: true,
-      })
-      resolve(result)
-    } else {
-      dialog.show(
-        () => <DialogSelectDirectory multiple={true} onSelect={resolve} />,
-        () => void resolve(null),
-      )
-    }
-  }
+  // Creation lives in the composer's Project chip (the empty canvas mounts
+  // one); this only raises the intent.
+  const chooseProject = () => layout.projects.requestCreate()
 
   return (
     <div class="mx-auto mt-55 w-full md:w-auto px-4">

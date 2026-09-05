@@ -6,7 +6,7 @@
 
 import * as fs from "fs"
 import * as os from "os"
-import { materializeAgentHooks } from "@claxedo/agent-extensions"
+import { materializeAgentHooks } from "./materialize-status-hooks"
 import { Log } from "../log"
 import {
   BIN_DIR,

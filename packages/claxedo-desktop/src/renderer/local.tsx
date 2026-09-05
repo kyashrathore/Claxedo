@@ -41,4 +41,8 @@ const serviceContributionLoaders = __CLAXEDO_HOSTED_ACTIVATION_ENABLED__
     }
   : undefined
 
-startDesktopRenderer({ loadHostedContributions, serviceContributionLoaders })
+const loadAgentPluginContributions = __CLAXEDO_AGENT_PLUGINS_ENABLED__
+  ? async () => (await import("@/app/composition/agent-plugin-contribution-loader")).agentPluginContributions()
+  : undefined
+
+startDesktopRenderer({ loadHostedContributions, serviceContributionLoaders, loadAgentPluginContributions })

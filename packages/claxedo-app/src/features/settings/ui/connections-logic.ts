@@ -177,7 +177,11 @@ export type ConnectFlowOptions = {
   maxPolls?: number
   /** Signed hosts enable a user choice; unsigned-local stays team-only. */
   personalScopeEnabled?: boolean
+  /** Organization/team writes may be hidden for non-admin signed callers. */
+  teamScopeEnabled?: boolean
   initialScope?: "team" | "personal"
+  /** Public provider-selection fields appended only to OAuth start requests. */
+  oauthFields?: Readonly<Record<string, string>>
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
@@ -190,12 +194,17 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   const sleep = options.sleep ?? defaultSleep
   const pollIntervalMs = options.pollIntervalMs ?? 2000
   const maxPolls = options.maxPolls ?? 150
+  const initialScope = () => {
+    if (!options.personalScopeEnabled) return "team" as const
+    if (options.teamScopeEnabled === false) return "personal" as const
+    return options.initialScope ?? "team"
+  }
   const [state, setState] = createStore<ConnectFlowState>({
     phase: "form",
     error: undefined,
     fields: {},
     secret: "",
-    scope: options.personalScopeEnabled ? options.initialScope ?? "team" : "team",
+    scope: initialScope(),
     pendingMode: undefined,
     userCode: undefined,
     verificationUrl: undefined,
@@ -207,6 +216,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
   const setSecret = (value: string) => setState("secret", value)
   const setScope = (scope: "team" | "personal") => {
     if (scope === "personal" && !options.personalScopeEnabled) return
+    if (scope === "team" && options.teamScopeEnabled === false) return
     setState("scope", scope)
   }
 
@@ -271,6 +281,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
     }
     if (mode === "oauth") {
       body.method = "oauth"
+      Object.assign(body, options.oauthFields)
     } else {
       const fields: Record<string, string> = {}
       for (const prompt of options.integration.prompts ?? []) {
@@ -359,7 +370,7 @@ export function createConnectFlow(options: ConnectFlowOptions) {
       error: undefined,
       fields: {},
       secret: "",
-      scope: options.personalScopeEnabled ? options.initialScope ?? "team" : "team",
+      scope: initialScope(),
       pendingMode: undefined,
       userCode: undefined,
       verificationUrl: undefined,

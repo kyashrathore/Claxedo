@@ -133,4 +133,23 @@ describe("hosted deploy command selection", () => {
       }),
     ).toThrow(/custom API origin/)
   })
+
+  test("selects the Agent Plugins artifact through the one release script flag", () => {
+    const commands = hostedDeployCommands({
+      staging: true,
+      dryRun: true,
+      targets: ["central"],
+      agentPlugins: true,
+      env: { ...betterAuthD1Env, CLAXEDO_STAGING_CREDENTIALS_KV_NAMESPACE_ID: "8ba5baa64c82449080d36d3008208fa9" },
+    })
+
+    expect(commands.map((command) => command.name)).toEqual(["better_auth_d1.release.preflight"])
+    expect(commands[0]?.args).toEqual([
+      "run",
+      "scripts/deploy/release-better-auth-d1.ts",
+      "--staging",
+      "--agent-plugins",
+    ])
+    expect(JSON.stringify(commands)).not.toContain("convex")
+  })
 })

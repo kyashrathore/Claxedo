@@ -29,7 +29,6 @@ PKG_DIR="$ROOT/packages"
 
 DEFAULT_PACKAGES=(
   agent-event-runtime
-  agent-extensions
   agent-sdk-runtime
   sandbox-contract
   sandbox-manager

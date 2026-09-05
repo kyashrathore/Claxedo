@@ -226,11 +226,12 @@ describe("the unsigned desktop renderer entry", () => {
     for (const [name, pattern] of Object.entries(BINDINGS)) {
       expect(pattern.test(entry), `the unsigned entry must not bind ${name}`).toBe(false)
     }
-    // `startDesktopRenderer()` with no argument is what makes the platform
-    // descriptor omit `getAuthToken` and `authEnabled` resolve false; an
-    // argument here would compose hosted contributions in a build with no
-    // provider to sign into.
-    expect(entry).toMatch(/startDesktopRenderer\(\{\s*loadHostedContributions,\s*serviceContributionLoaders\s*\}\)/)
+    // Every value is an optional build-composition loader. In the unsigned,
+    // feature-disabled artifact the compile-time defines make them undefined;
+    // none of them is an identity port or carries a bearer.
+    expect(entry).toMatch(
+      /startDesktopRenderer\(\{\s*loadHostedContributions,\s*serviceContributionLoaders,\s*loadAgentPluginContributions\s*\}\)/,
+    )
   })
 })
 
@@ -243,11 +244,24 @@ describe("the optional signed activation", () => {
     const activation = stripComments(read("src/renderer/hosted-contributions.ts"))
     expect(activation).toMatch(/^\s*configureDesktopMachineRemoteAccess\(\)$/m)
     expect(activation).toContain("contentSurfaces: []")
+    // The only desktop binding of the cloud startup port; shared composer
+    // code calls `workspaceStartup()` on desktop too.
+    expect(activation).toMatch(/^\s*configureWorkspaceStartup\(cloudWorkspaceStartup\)$/m)
+    expect(activation).not.toContain("hosted-content-surfaces")
     expect(activation).not.toContain("documents-content-surfaces")
     expect(activation).not.toContain("configureHttpMachineRemoteAccess")
     expect(activation).not.toContain("configureApiRuntime")
     expect(activation).not.toContain("configureAuthSession")
-    expect(hostedModules(HOSTED_ACTIVATION.modules)).toEqual([])
+    // Exactly the cloud-startup path the binding above needs, and nothing
+    // else: no content surfaces, no WorkGraph, no Documents. Measured, so a
+    // sixth module here means a new edge to review rather than a number to bump.
+    expect(hostedModules(HOSTED_ACTIVATION.modules)).toEqual([
+      "platform/account/control-plane-account-fetch.ts",
+      "platform/account/hosted-control-call.ts",
+      "platform/account/hosted-operations.ts",
+      "platform/runtime/agent/workspace-relay-connection.ts",
+      "platform/runtime/cloud/workspace-runtime-store.ts",
+    ])
   })
 
   test("keeps Documents in its own catalog-driven module", () => {

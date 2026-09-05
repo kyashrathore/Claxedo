@@ -1,12 +1,9 @@
-import type { AgentExtensionPolicyOverride } from "@claxedo/server-core/hosts/agent-extensions/runtime-config"
-import type { WorkspaceAgentExtensionRecord } from "@claxedo/server-core/hosts/agent-extensions/workspace"
 import { Log } from "@claxedo/server-core/platform/runtime/lib/log"
 import { configureWorkspaceStore, updateWorkspace, getWorkspace, type Workspace } from "@claxedo/server-core/workspace/store/index"
 import { configureWorkspaceSupervisorPort } from "@claxedo/server-core/workspace/supervisor-port"
 import { IDLE_MS, now } from "./clock"
 import {
   pushRuntimeConfig,
-  runtimeConfigSnapshot,
   runtimeHasActiveWork,
 } from "./config-sync"
 import {
@@ -72,7 +69,6 @@ export function configureWorkspaceSupervisor(input: WorkspaceSupervisorOptions) 
     markUse: markSupervisorSandboxUse,
     touch: touchSupervisorSandbox,
     broadcastRuntimeConfig,
-    syncAgentExtensions: syncWorkspaceRuntimeAgentExtensions,
   })
 }
 
@@ -113,28 +109,6 @@ async function ensureRelayProtectedSandbox(
   started.used_at = now()
   scheduleStop(started)
   return started
-}
-
-export async function syncWorkspaceRuntimeAgentExtensions(
-  workspaceId: string,
-  installs: WorkspaceAgentExtensionRecord[],
-  options: {
-    policyOverrides?: AgentExtensionPolicyOverride[]
-  } = {},
-) {
-  const entry = runtimes.get(workspaceId)
-  if (!entry || entry.status !== "ready" || !entry.url) return
-  try {
-    await pushRuntimeConfig(entry, await runtimeConfigSnapshot(entry, {
-      workspaceInstalls: installs,
-      ...(options.policyOverrides ? { policyOverrides: options.policyOverrides } : {}),
-    }))
-  } catch (err) {
-    log.warn("Failed to push agent-extensions snapshot to workspace runtime", {
-      workspaceId,
-      error: err instanceof Error ? err.message : String(err),
-    })
-  }
 }
 
 export async function broadcastRuntimeConfig() {

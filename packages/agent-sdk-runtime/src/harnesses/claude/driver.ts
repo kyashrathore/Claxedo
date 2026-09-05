@@ -24,6 +24,7 @@ import {
   type SessionStoreEntry,
   type SpawnOptions,
   type SpawnedProcess,
+  type SdkPluginConfig,
 } from "@anthropic-ai/claude-agent-sdk"
 import type { AgentConfigOption } from "../../index"
 import type { AgentHarnessAdapterHealth } from "../../adapter-contract"
@@ -138,6 +139,17 @@ export function claudeTranscriptGoalSnapshot(
   }
 }
 
+/**
+ * The Agent Plugins launch payload names the plugin roots materialized on disk
+ * for this workspace; the SDK takes them as local plugin configs.
+ */
+export function claudePluginConfigs(input: unknown): SdkPluginConfig[] {
+  const launch = record(input)
+  if (!Array.isArray(launch?.pluginRoots)) return []
+  return [...new Set(launch.pluginRoots.filter((item): item is string => typeof item === "string" && Boolean(item.trim())))]
+    .map((pluginPath) => ({ type: "local", path: pluginPath }))
+}
+
 export type ClaudeSdkDriverOptions = {
   query?: typeof query
   executable?: () => string
@@ -175,6 +187,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
   }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
+  private currentPlugins: SdkPluginConfig[] = []
   private readonly modelSource = createLiveModelSource({
     harness: "claude",
     fetchModels: (directory) => this.fetchModels(directory),
@@ -218,6 +231,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
       anthropic: claudeAuthValue(auth),
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
+    this.currentPlugins = claudePluginConfigs(config.launch)
     if (this.auth.anthropic !== previous) this.modelSource.invalidate()
     // Held, not applied here: the SDK takes `effort` as a per-query option, so
     // it is read when the next session is created rather than pushed at the
@@ -374,6 +388,7 @@ class ClaudeSdkDriver implements SdkRuntimeDriver {
           ? {}
           : { resume: input.getAgentSessionId() }),
         ...(Object.keys(this.currentMcp).length ? { mcpServers: claudeMcpServers(this.currentMcp) } : {}),
+        ...(this.currentPlugins.length ? { plugins: this.currentPlugins } : {}),
         env: claudeSpawnEnv({
           ...process.env,
           ...claudeAuthEnv(this.auth.anthropic),

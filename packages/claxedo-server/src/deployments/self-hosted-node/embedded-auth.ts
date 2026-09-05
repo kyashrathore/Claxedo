@@ -36,6 +36,25 @@ import { DEFAULT_CLAXEDO_SERVER_PORT } from "@claxedo/local-server/self-hosted-e
 
 export const EMBEDDED_AUTH_ISSUER = "claxedo-embedded"
 
+/**
+ * The public origin the embedded issuer mints sessions for: `BETTER_AUTH_URL`
+ * when set (the HTTPS dev origin that fronts this server), else this server's
+ * own loopback origin. Cookie security follows it: an HTTPS origin gets the
+ * `__Secure-` cookie the browser client's descriptor contract requires.
+ */
+export function embeddedAuthPublicOrigin(env: NodeJS.ProcessEnv = process.env): string {
+  const configured = env.BETTER_AUTH_URL?.trim()
+  return new URL(configured || `http://localhost:${DEFAULT_CLAXEDO_SERVER_PORT}`).origin
+}
+
+const EMBEDDED_AUTH_COOKIE_PREFIX = "claxedo"
+
+/** The session cookie name Better Auth derives from the prefix and the secure flag. */
+export function embeddedAuthSessionCookieName(env: NodeJS.ProcessEnv = process.env): string {
+  const secure = embeddedAuthPublicOrigin(env).startsWith("https:")
+  return `${secure ? "__Secure-" : ""}${EMBEDDED_AUTH_COOKIE_PREFIX}.session_token`
+}
+
 function flagEnabled(input?: string) {
   return ["1", "true", "yes"].includes((input ?? "").trim().toLowerCase())
 }
@@ -76,8 +95,9 @@ function trustedOrigins(env: NodeJS.ProcessEnv): string[] {
     .map((o) => o.trim())
     .filter(Boolean)
   // Wildcards are supported by better-auth's origin matcher; localhost dev
-  // (vite :4444 → local control plane) must pass the CSRF origin check.
-  return ["http://localhost:*", "http://127.0.0.1:*", ...extra]
+  // (vite :4444 → local control plane) must pass the CSRF origin check. The
+  // public origin is the HTTPS dev origin that fronts this server when set.
+  return [...new Set(["http://localhost:*", "http://127.0.0.1:*", "https://localhost:*", "https://127.0.0.1:*", embeddedAuthPublicOrigin(env), ...extra])]
 }
 
 export function createEmbeddedAuth(
@@ -99,9 +119,22 @@ export function createEmbeddedAuth(
     secret: resolveSecret(env, path.dirname(dbPath)),
     // Only used for redirect-style flows; email+password + bearer verification
     // are origin-relative. Overridable via the standard better-auth env.
-    baseURL: env.BETTER_AUTH_URL?.trim() || `http://localhost:${DEFAULT_CLAXEDO_SERVER_PORT}`,
+    baseURL: embeddedAuthPublicOrigin(env),
     emailAndPassword: { enabled: true },
     trustedOrigins: trustedOrigins(env),
+    // Same cookie shape as the hosted issuer (better-auth-d1-foundation.ts) so
+    // the browser client's descriptor contract holds against this issuer too;
+    // `useSecureCookies` follows the public origin's scheme.
+    advanced: {
+      useSecureCookies: embeddedAuthPublicOrigin(env).startsWith("https:"),
+      cookiePrefix: EMBEDDED_AUTH_COOKIE_PREFIX,
+      defaultCookieAttributes: {
+        secure: embeddedAuthPublicOrigin(env).startsWith("https:"),
+        httpOnly: true,
+        sameSite: "lax",
+        path: "/",
+      },
+    },
     // The bearer plugin issues a signed session token via the
     // `set-auth-token` response header and accepts `Authorization: Bearer`
     // on any endpoint — this is what non-cookie clients (CLI, extension,

@@ -51,7 +51,33 @@ type CursorEntry = {
   observation: AgentProcessObserverHandle
 }
 
+/**
+ * The Agent Plugins launch payload names the plugin roots materialized on disk
+ * for this workspace. Cursor reads them through its own `plugins` setting
+ * source, so the driver only has to name the roots and turn the source on.
+ */
+export function cursorPluginRoots(launch: unknown) {
+  const roots = record(record(launch)?.config)?.pluginRoots ?? record(launch)?.pluginRoots
+  if (roots === undefined) return []
+  if (!Array.isArray(roots) || roots.some((root) => typeof root !== "string" || root.trim().length === 0)) {
+    throw new Error("Cursor Agent Plugins launch config requires pluginRoots to be an array of non-empty paths")
+  }
+  return [...new Set(roots)] as string[]
+}
+
+export function cursorPluginLocalOptions(pluginRoots: readonly string[]) {
+  return pluginRoots.length ? { settingSources: ["plugins" as const] } : {}
+}
+
+type CursorSdkModule = Pick<typeof import("@cursor/sdk"), "Agent" | "Cursor">
+
 export type CursorSdkDriverOptions = {
+  /**
+   * Injects the whole `@cursor/sdk` surface this driver touches. The model
+   * catalog probe needs `Cursor`, so only this form can stand in for it.
+   */
+  loadSdk?: () => Promise<CursorSdkModule>
+  /** The narrower form, for callers that only exercise agent creation. */
   loadAgent?: () => Promise<Pick<typeof import("@cursor/sdk"), "Agent">>
 }
 
@@ -96,6 +122,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
   }
   private auth: SdkRuntimeAuth = {}
   private currentMcp: Record<string, ResolvedMcpServer> = {}
+  private currentPluginRoots: string[] = []
   private agents = new Map<string, CursorEntry>()
   private processError: string | null = null
   private readonly modelSource = createLiveModelSource({
@@ -128,6 +155,17 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     }
     this.currentMcp = (record(config.mcp) as Record<string, ResolvedMcpServer> | undefined) ?? {}
     if (this.auth.cursor !== previous) this.modelSource.invalidate()
+    // Plugin roots are read by `Agent.create`, so a changed set only reaches
+    // Cursor through a new agent — the live ones are disposed to force it.
+    const nextPluginRoots = cursorPluginRoots(config.launch)
+    if (JSON.stringify(nextPluginRoots) !== JSON.stringify(this.currentPluginRoots)) {
+      for (const item of this.agents.values()) {
+        item.observation.exit({ reason: "disposed" })
+        item.agent.close()
+      }
+      this.agents.clear()
+      this.currentPluginRoots = nextPluginRoots
+    }
   }
 
   /**
@@ -162,6 +200,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
         ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
         local: {
           cwd: input.directory,
+          ...cursorPluginLocalOptions(this.currentPluginRoots),
           // Cursor reads permission policy while creating the local agent, so
           // mode changes apply to the next session.
           ...cursorPermissionOptions(this.permissionSelection.currentId(input.directory)),
@@ -355,7 +394,7 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     })
     observation.update({ lifecycle: "ready" })
     try {
-      const { Cursor } = await import("@cursor/sdk")
+      const { Cursor } = await this.loadSdk()
       const listed = await Cursor.models.list(this.auth.cursor ? { apiKey: this.auth.cursor } : undefined)
       const models: SdkModelEntry[] = listed.map((model) => ({
         id: model.id,
@@ -385,12 +424,14 @@ class CursorSdkDriver implements SdkRuntimeDriver {
             ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
             local: {
               cwd: directory,
+              ...cursorPluginLocalOptions(this.currentPluginRoots),
             },
           })
         : await Agent.resume(agentSessionId, {
             ...(this.auth.cursor ? { apiKey: this.auth.cursor } : {}),
             local: {
               cwd: directory,
+              ...cursorPluginLocalOptions(this.currentPluginRoots),
             },
           })
     } catch (cause) {
@@ -406,8 +447,14 @@ class CursorSdkDriver implements SdkRuntimeDriver {
     return agent
   }
 
+  /** Everything `Agent.create`/`Agent.resume` needs; the narrow injection wins. */
   private loadAgent() {
-    return this.driverOptions.loadAgent?.() ?? import("@cursor/sdk")
+    return this.driverOptions.loadAgent?.() ?? this.loadSdk()
+  }
+
+  /** The full module, required by the `Cursor.models.list` catalog probe. */
+  private loadSdk(): Promise<CursorSdkModule> {
+    return this.driverOptions.loadSdk?.() ?? import("@cursor/sdk")
   }
 
   private observeAgent(directory: string, sessionId?: string): AgentProcessObserverHandle {

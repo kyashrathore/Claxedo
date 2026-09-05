@@ -27,6 +27,7 @@ export type RailWorkbenchShellProps = {
   onDiagnostics?: () => void
   onNewPage?: () => void
   onNewProject?: () => void
+  onProjectCreated?: (project: { worktree: string }) => void
   onNewSession: () => void
   onNewTerminalDraft: () => void
   onWorkspacePanelFloatingChromeRef: (element: HTMLElement | undefined) => void
@@ -139,6 +140,7 @@ export function RailWorkbenchShell(props: RailWorkbenchShellProps) {
           onCloseFocusedPane={props.onCloseFocusedPane}
           onDiagnostics={props.onDiagnostics}
           onNewProject={props.onNewProject}
+          onProjectCreated={props.onProjectCreated}
         />
       </div>
       <Show when={props.mountWorkspacePanel !== false && props.workspacePanelMounted()}>

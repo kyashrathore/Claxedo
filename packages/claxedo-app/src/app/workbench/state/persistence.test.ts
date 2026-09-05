@@ -237,7 +237,7 @@ describe("state/persistence", () => {
     expect(result.state.meta.content_1?.sessionId).toBe("ses_1")
   })
 
-  test("preserves marketplace content on validation", () => {
+  test("the marketplace does not survive a relaunch (owner decision 2026-09-04)", () => {
     const input = emptyClaxedoState()
     input.workbench = {
       panes: [{ id: "pane_1", contentId: "marketplace_1" }],
@@ -261,9 +261,12 @@ describe("state/persistence", () => {
 
     const result = validate(input)
 
-    expect(result.dirty).toBe(false)
-    expect(result.state.meta.marketplace_1?.type).toBe("marketplace")
-    expect(result.state.meta.marketplace_1?.content?.type).toBe("marketplace")
+    // A place you go, not work you left open: it is reopened from the rail,
+    // never restored as the landing surface.
+    expect(result.dirty).toBe(true)
+    expect(result.state.meta.marketplace_1).toBeUndefined()
+    expect(result.state.workbench.contentIds).toEqual([])
+    expect(result.state.workbench.panes[0]?.contentId ?? null).toBeNull()
   })
 
   describe("surface budget", () => {

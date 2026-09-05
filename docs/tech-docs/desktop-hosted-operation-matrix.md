@@ -118,7 +118,7 @@ is the authoritative source for this column.
 | `workspace.list.cloud` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?access=cloud` | unary | safe | The access kind is fixed in the path, not a parameter — see below. |
 | `workspace.list.userHosted` | `features/workspaces/data/workspace-catalog.ts` | `GET /api/workspace?access=user-hosted` | unary | safe | The laptop rows. A caller wanting the whole picture runs both operations and merges, which is what `controlPlaneCatalog` already does. |
 | `workspace.resolve` | `platform/runtime/workspace-runtime-record.ts` | `GET /api/workspace/resolve` | unary | safe | Optional query: `workspaceId`, `directory`, `create`. Desktop signed mode calls through AccountPort. |
-| `workspace.create` | `features/workspaces/data/workspace-create-api.ts` | `POST /api/workspace/create` | unary | unsafe | Provisions a cloud VM. Without a key, an uncertain response creates a second VM — and there is no key to replay. `createCloudBody` in `claxedo-server/src/routes/hosted/workspace.ts` is `.strict()` with no idempotency field, so a key sent from a client 400s the whole request. Classified `unsafe` until the route accepts one; an uncertain response must be surfaced, never retried. Desktop signed mode calls this through AccountPort; browser keeps `api.post`. |
+| `workspace.create` | `features/workspaces/data/workspace-create-api.ts`, `platform/runtime/agent/workspace-create-authority.ts` (bound in `app/composition/workspace-connection-authority-sync.tsx`) | `POST /api/workspace/create` | unary | unsafe | Provisions a cloud VM. Without a key, an uncertain response creates a second VM — and there is no key to replay. `createCloudBody` in `claxedo-server/src/routes/hosted/workspace.ts` is `.strict()` with no idempotency field, so a key sent from a client 400s the whole request. Classified `unsafe` until the route accepts one; an uncertain response must be surfaced, never retried. TWO owners today, which is the open question on this row: the create authority (composer + cloud-project dialog) reaches AccountPort only, and `workspace-create-api.ts` (project actions) prefers AccountPort and falls back to HTTP so it also serves unsigned and browser callers. Either way the connected-repository source travels as the declared `repoFullName` scalar and main re-nests it into `repo: { fullName }`. |
 | `workspace.lifecycle` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/lifecycle/:operation` | unary | unsafe | Stop/replace/cleanup/destroy. The route reads only `approved` and `checkpointId` and accepts no key. `stop`, `cleanup` and `destroy` converge on a state and tolerate a retry; `replace` provisions, so it does not — classified by its worst member. Every operation but `stop` refuses with 409 unless `approved: true` is in the body. |
 | `workspace.checkpoints.list` | `features/workspaces/actions/project-actions.tsx` | `GET /api/workspace/:id/checkpoints` | unary | safe | |
 | `workspace.checkpoints.create` | `features/workspaces/actions/project-actions.tsx` | `POST /api/workspace/:id/checkpoints` | unary | unsafe | Creates a checkpoint snapshot. |
@@ -205,9 +205,27 @@ Unit 6 moves the laptop side of this into Host Connector. The rows below are the
 | `connections.list` | `features/settings/ui/connections.tsx` | `GET /api/claxedo/integrations` | unary | safe | |
 | `connections.connect` | `features/settings/ui/connections.tsx` | `POST /api/claxedo/integrations/:id/connect` | unary | unsafe | Starts an OAuth attempt or key connect. |
 | `connections.attempt` | `features/settings/ui/connections.tsx` | `GET /api/claxedo/integrations/attempts/:state` | unary | safe | |
-| `connections.repositories` | `features/workspaces/ui/dialogs/repository-picker.ts` | `GET /api/claxedo/integrations/connections/:id/repositories` | unary | safe | |
 | `connections.disconnect` | `features/settings/ui/connections.tsx` | `DELETE /api/claxedo/integrations/connections/:id` | unary | safe | |
 | `connections.reverify` | `features/settings/ui/connections.tsx` | `POST /api/claxedo/integrations/connections/:id/reverify` | unary | unsafe | Re-checks stored credentials. |
+| `connections.repositories` | `platform/account/integrations-request.ts` | `GET /api/claxedo/integrations/connections/:id/repositories` | unary | safe | |
+
+### Agent Plugins
+
+| Operation ID | Owner module | Method + path | Transport | Retry | Notes |
+|---|---|---|---|---|---|
+| `agentPlugins.catalog` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins` | unary | safe | Cross-project effective defaults from the signed durable authority. |
+| `agentPlugins.catalog.refresh` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/refresh` | unary | safe | Explicit source refresh; never mutates activation state. |
+| `agentPlugins.catalog.project` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/projects/:projectId` | unary | safe | Effective state for one authorized project. |
+| `agentPlugins.catalog.project.refresh` | `app/composition/agent-plugin-contribution-loader.tsx` | `GET /api/claxedo/plugins/projects/:projectId/refresh` | unary | safe | Project view plus explicit source refresh. |
+| `agentPlugins.activation` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/activation` | unary | unsafe | Writes user all-project or explicit-project choices at an optimistic revision. |
+| `agentPlugins.organizationDefault` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/organization-default` | unary | unsafe | Organization-admin positive default mutation. |
+| `agentPlugins.update` | `app/composition/agent-plugin-contribution-loader.tsx` | `POST /api/claxedo/plugins/update` | unary | unsafe | Explicitly acquires and pins changed bytes. |
+| `agentPlugins.skill` | `app/composition/agent-plugin-account-api.ts` | `GET /api/claxedo/plugins/:pluginInstanceId/skills/:skill` | unary | safe | One retained SKILL.md for the marketplace detail pane. |
+| `agentPlugins.skill.project` | `app/composition/agent-plugin-account-api.ts` | `GET /api/claxedo/plugins/projects/:projectId/:pluginInstanceId/skills/:skill` | unary | safe | The same document through a project the caller administers. |
+| `agentPlugins.sources.list` | `app/composition/agent-plugin-account-directory-api.ts` | `GET /api/claxedo/plugins/sources` | unary | safe | Marketplaces the signed user or organization added from GitHub. |
+| `agentPlugins.sources.add` | `app/composition/agent-plugin-account-directory-api.ts` | `POST /api/claxedo/plugins/sources` | unary | unsafe | Registers a GitHub repository as a source after it serves at least one valid plugin; 422/409 carry diagnostics. |
+| `agentPlugins.sources.remove` | `app/composition/agent-plugin-account-directory-api.ts` | `DELETE /api/claxedo/plugins/sources/:id` | unary | safe | Idempotent removal; 404 is already removed. |
+| `agentPlugins.runtimeSelf` | `main/agent-plugins-signed-sync.ts` | `GET /api/claxedo/plugins/runtime/self` | unary | safe | The signed user's own runtime world plus gateway credentials; main-only, handed to the daemon's loopback signed-runtime surface. Withheld from the renderer. |
 
 ### Provisioning and sandbox
 
@@ -233,8 +251,6 @@ see "What is deliberately NOT an account operation". Cloud create listens for
 
 | Operation ID | Owner module | Method + path | Transport | Retry | Notes |
 |---|---|---|---|---|---|
-| `agentConfig.extensions.read` | `features/extensions/marketplace/panel.tsx` | `GET /api/claxedo/agent-config/extensions/*` | unary | safe | `subpath` may be empty (list) or a relative suffix (`catalog`, `machine-scan`, …). Declared optional query: `scope`, `directory`, `workspaceId`. |
-| `agentConfig.extensions.write` | `features/extensions/marketplace/panel.tsx` | `POST /api/claxedo/agent-config/extensions/*` | unary | unsafe | Install/enable/disable/uninstall/adopt/ignore/detach. `httpMethod` selects POST\|PUT\|DELETE; body via `payload`. |
 
 ## Operations that are not yet platform-neutral
 

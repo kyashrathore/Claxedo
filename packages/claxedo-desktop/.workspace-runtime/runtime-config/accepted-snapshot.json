@@ -12,11 +12,6 @@
     },
     "auth": {
       "keys": []
-    },
-    "agent_extensions": {
-      "version": 1,
-      "installCount": 0,
-      "installIds": []
     }
   }
 }

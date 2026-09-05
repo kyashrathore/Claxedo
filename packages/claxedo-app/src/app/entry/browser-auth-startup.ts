@@ -1,5 +1,5 @@
 import type { BrowserAuthAdapter } from "@/platform/auth/browser-auth"
-import { centralTransportForServer } from "@/platform/runtime/transport"
+import { centralTransportForDeployment } from "@/platform/runtime/transport"
 
 /**
  * Start the identity provider a build selected, without letting it gate the
@@ -19,7 +19,7 @@ import { centralTransportForServer } from "@/platform/runtime/transport"
  * session signals, and this function only has to start it and get out of the
  * way.
  *
- * It reads `centralTransportForServer` once here and hands the answer down.
+ * It reads `centralTransportForDeployment` once here and hands the answer down.
  * That is the same call `CloudAuthGate` makes to decide whether a signed
  * session is required at all, so the gate and the adapter cannot disagree
  * about which deployment this is; a loopback central is then anonymous by
@@ -40,6 +40,6 @@ export function startBrowserAuth(input: {
   void input.adapter.initialize({
     apiOrigin: input.apiOrigin,
     appOrigin: input.appOrigin,
-    centralTransport: centralTransportForServer(input.apiOrigin),
+    centralTransport: centralTransportForDeployment({ serverUrl: input.apiOrigin, authEnabled: input.authEnabled }),
   })
 }

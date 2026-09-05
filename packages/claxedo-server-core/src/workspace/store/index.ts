@@ -69,9 +69,26 @@ export type Workspace = {
   updated_at: number
 }
 
+/**
+ * A project: a repository and a name. Where it executes is a workspace
+ * (local worktree or cloud sandbox) that carries this project's id; the
+ * project itself never runs anything. `env` is the environment every cloud
+ * sandbox of the project starts with — plaintext by design, see
+ * `SandboxHostInput.env`; credentials the agent must not read belong in
+ * Connections.
+ */
+export type Project = {
+  id: string
+  name: string
+  env?: Record<string, string>
+  created_at: number
+  updated_at: number
+}
+
 type State = {
   version: 4
   workspaces: Workspace[]
+  projects?: Project[]
 }
 
 type StoredWorkspace = Omit<Workspace, "driver"> & {
@@ -80,6 +97,7 @@ type StoredWorkspace = Omit<Workspace, "driver"> & {
 
 const byId = new Map<string, Workspace>()
 const byDir = new Map<string, string>()
+const projectsById = new Map<string, Project>()
 const listeners = new Set<() => void | Promise<void>>()
 const localFirstTouch = new Map<string, Promise<Workspace | undefined>>()
 
@@ -218,6 +236,18 @@ async function load(target: string) {
   try {
     const raw = JSON.parse(await fs.readFile(target, "utf-8"))
     const state = raw as Partial<Omit<State, "workspaces"> & { workspaces: StoredWorkspace[] }>
+    for (const item of state.projects ?? []) {
+      const id = trim(item.id)
+      const name = trim(item.name)
+      if (!id || !name) continue
+      projectsById.set(id, {
+        id,
+        name,
+        env: envRecord(item.env),
+        created_at: item.created_at ?? Date.now(),
+        updated_at: item.updated_at ?? Date.now(),
+      })
+    }
     for (const item of state.workspaces ?? []) {
       const id = item.id
       const kind = item.kind === "cloud" ? "cloud" : "local"
@@ -255,6 +285,7 @@ async function save() {
   const state: State = {
     version: 4,
     workspaces: [...byId.values()].sort((a, b) => a.created_at - b.created_at),
+    projects: [...projectsById.values()].sort((a, b) => a.created_at - b.created_at),
   }
   const contents = JSON.stringify(state, null, 2) + "\n"
   const pending = saving.catch(() => undefined).then(async () => {
@@ -278,6 +309,7 @@ async function boot() {
     loaded = target
     byId.clear()
     byDir.clear()
+    projectsById.clear()
     ready = load(target).catch((err) => {
       log.warn("Failed to load workspaces", { error: err instanceof Error ? err.message : String(err) })
     })
@@ -360,6 +392,19 @@ type EnsureWorkspaceInput = {
   git_branch?: string
   remote_directory?: string
   status?: string
+}
+
+function envRecord(value: unknown): Record<string, string> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined
+  const entries = Object.entries(value as Record<string, unknown>)
+    .filter((entry): entry is [string, string] => typeof entry[1] === "string")
+  return entries.length ? Object.fromEntries(entries) : undefined
+}
+
+function sameEnv(left: Record<string, string> | undefined, right: Record<string, string> | undefined) {
+  const a = Object.entries(left ?? {}).toSorted()
+  const b = Object.entries(right ?? {}).toSorted()
+  return a.length === b.length && a.every(([key, value], index) => b[index]![0] === key && b[index]![1] === value)
 }
 
 export async function ensureWorkspace(input: EnsureWorkspaceInput) {
@@ -714,3 +759,50 @@ export async function listProjects() {
 
   return list.sort((a, b) => b.time.updated - a.time.updated)
 }
+
+// ── Projects ────────────────────────────────────────────────────────────────
+
+export async function listProjectRecords(): Promise<Project[]> {
+  await boot()
+  return [...projectsById.values()].sort((a, b) => a.created_at - b.created_at)
+}
+
+export async function getProjectRecord(id: string | undefined): Promise<Project | undefined> {
+  await boot()
+  const key = trim(id)
+  return key ? projectsById.get(key) : undefined
+}
+
+/** Names are unique per server, compared case-insensitively. */
+export async function findProjectRecordByName(name: string): Promise<Project | undefined> {
+  await boot()
+  const wanted = name.trim().toLowerCase()
+  return [...projectsById.values()].find((project) => project.name.toLowerCase() === wanted)
+}
+
+/** Creates or renames a project record; the workspace rows carrying `id` are its executions. */
+export async function upsertProjectRecord(input: { id: string; name: string; env?: Record<string, string> }): Promise<Project> {
+  await boot()
+  const id = trim(input.id)
+  const name = trim(input.name)
+  if (!id || !name) throw new Error("project id and name are required")
+  const now = Date.now()
+  const existing = projectsById.get(id)
+  const next: Project = {
+    id,
+    name,
+    env: input.env === undefined ? existing?.env : envRecord(input.env),
+    created_at: existing?.created_at ?? now,
+    updated_at: now,
+  }
+  projectsById.set(id, next)
+  await save()
+  notifyWorkspaceChanges()
+  return next
+}
+
+/** The environment every cloud sandbox of the project starts with. */
+export async function projectEnv(projectId: string | undefined): Promise<Record<string, string> | undefined> {
+  return (await getProjectRecord(projectId))?.env
+}
+

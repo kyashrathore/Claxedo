@@ -36,6 +36,43 @@ describe("conversation principal isolation", () => {
     expect(conversationPersistenceKey("scope")).toBe(key("org-member:user_b:org_b\0scope"))
   })
 
+  test("the local device becoming the signed user keeps its data and revalidates", async () => {
+    const calls: string[] = []
+    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    transition({ kind: "local", deviceId: "device_a" })
+    transition({ kind: "signed", userId: "user_a" })
+    // The first transition after boot is the usual namespace clear; the flip to the signed user is a refresh.
+    expect(calls).toEqual(["clear", "refresh"])
+    expect(conversationPersistenceKey("scope")).toBe(key("signed:user_a\0scope"))
+    // Leaving the signed user (sign-out, or another person) is a real change of principal.
+    transition({ kind: "local", deviceId: "device_a" })
+    transition({ kind: "signed", userId: "user_b" })
+    expect(calls).toEqual(["clear", "refresh", "clear", "refresh"])
+  })
+
+  test("a signed user whose organization resolves keeps its data; another user or an org switch wipes", async () => {
+    const calls: string[] = []
+    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    transition({ kind: "signed", userId: "user_a" })
+    transition({ kind: "org-member", userId: "user_a", orgId: "org_a", memberships: [] })
+    expect(calls).toEqual(["clear", "refresh"])
+    transition({ kind: "org-member", userId: "user_a", orgId: "org_b", memberships: [] })
+    transition({ kind: "org-member", userId: "user_b", orgId: "org_b", memberships: [] })
+    expect(calls).toEqual(["clear", "refresh", "clear", "clear"])
+  })
+
+  test("the unnamed signed principal published at sign-in becoming the named one is enrichment, not a new person", async () => {
+    const calls: string[] = []
+    const transition = createPrincipalDataIsolation({ clear: () => calls.push("clear"), refresh: () => calls.push("refresh") })
+    transition({ kind: "local", deviceId: "device_a" })
+    transition({ kind: "signed", userId: "signed-user" })
+    transition({ kind: "signed", userId: "user_a" })
+    transition({ kind: "org-member", userId: "user_a", orgId: "org_a", memberships: [] })
+    expect(calls).toEqual(["clear", "refresh", "refresh", "refresh"])
+    transition({ kind: "signed", userId: "user_b" })
+    expect(calls.at(-1)).toBe("clear")
+  })
+
   test("does not clear again for a reactive refresh of the same principal", async () => {
     const cleared: string[] = []
 

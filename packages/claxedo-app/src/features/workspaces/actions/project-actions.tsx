@@ -18,19 +18,17 @@ import type { ActionProps, Nav } from "../../../app/workbench/actions/shared"
 import { workspaceSessionRoute } from "@/platform/identity/route"
 import { workspaceRouteId as routeIdFromProjects } from "@/platform/identity/workspace-route"
 import { createLocalWorkspace, type LocalWorkspaceProps } from "./workspace-recovery"
-import { DialogCreateCloudProject } from "../ui/dialogs/create-cloud-project"
-import { centralTransportForServer } from "@/platform/runtime/transport"
 import type { ClaxedoEvent } from "../../../app/integrations/claxedo-events"
 import { queryClient } from "@/platform/query/query-client"
 import { shellDataKeys } from "@/platform/sync/keys"
 import type { DirectorySessionCacheValue } from "../../session/data/sync/queries"
-import { ensureLocalProject } from "../data/query/project-ensure"
-import { createCloudWorkspace } from "../data/workspace-create-api"
+import { ensureLocalProject, refreshProjectInventory } from "../data/query/project-ensure"
 import {
   controlWorkspaceUrl,
   experimentalSandboxPath,
   workspaceResolveUrl,
 } from "@/platform/runtime/agent/workspace-control-routes"
+import { createCloudWorkspace } from "../data/workspace-create-api"
 
 type ProvisionEvent = Extract<ClaxedoEvent, { type: "provision" }>
 type WorkspaceDirectoryRef = string
@@ -66,6 +64,7 @@ export type ProjectActionProps = Pick<
   | "globalBootstrapActions"
   | "projectInventoryActions"
   | "config"
+  | "serverHealth"
   | "projects"
   | "routeDirectory"
   | "activeDirectory"
@@ -104,7 +103,7 @@ export type ProjectActionProps = Pick<
     }
   }
   layout: {
-    projects: Pick<ActionProps["layout"]["projects"], "open" | "close" | "remove">
+    projects: Pick<ActionProps["layout"]["projects"], "open" | "close" | "remove" | "requestCreate">
   }
   platform: Pick<ActionProps["platform"], "platform" | "fetch" | "openLink">
 }
@@ -130,86 +129,47 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
     }
     return props.state.layout.openSession(workspaceDir, "new", "New Session", { workspaceRouteId })
   }
-  const handleNewProject = () => {
-    async function handleProjectSelected(workspaceDir: string) {
-      props.flowLog("new project selected", {
-        workspaceDir,
-        routeDir: props.activeDirectory(),
-        routeSession: props.params.id,
+  /**
+   * A project the create route just made (from the composer's Project chip):
+   * refresh the inventory it is not in yet, open it, and land on a draft there.
+   */
+  const handleProjectCreated = async (project: { worktree: string }) => {
+    const workspaceDir = project.worktree
+    props.flowLog("new project selected", {
+      workspaceDir,
+      routeDir: props.activeDirectory(),
+      routeSession: props.params.id,
+    })
+
+    if (!validWorktree(workspaceDir)) {
+      showToast({
+        title: "Invalid project path",
+        description: workspaceDir,
+        variant: "error",
       })
-
-      if (!validWorktree(workspaceDir)) {
-        showToast({
-          title: "Invalid project path",
-          description: workspaceDir,
-          variant: "error",
-        })
-        return
-      }
-
-      let routeId = props.workspaceRouteId(workspaceDir)
-      if (props.platform.platform !== "web") {
-        try {
-          const projects = await ensureLocalProject({
-            baseUrl: props.globalSDK.url,
-            request: props.platform.fetch,
-            directory: workspaceDir,
-            projectsQuery: props.projectInventoryActions.query(),
-          })
-          routeId = Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : routeId
-        } catch {
-          showToast({
-            title: "Not a git repository",
-            description: "Only git repositories can be added as projects",
-            variant: "error",
-          })
-          return
-        }
-      }
-      if (!routeId) return
-      props.layout.projects.open(workspaceDir)
-      void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
-      const id = openProjectSessionSurface(workspaceDir, routeId)
-      if (id)
-        nav(workspaceSessionRoute(routeId), "new-project-selected", {
-          workspaceDir,
-          surfaceId: id,
-        })
-      props.dialog.close()
-    }
-
-    // On HOSTED web there is no local filesystem behind the directory picker —
-    // it routes through the loopback bridge and dead-ends. The hosted-web path
-    // is the cloud create flow: pick a connected GitHub repository (or paste a
-    // URL, with a connect-GitHub path inside the dialog), provision a sandbox,
-    // and open the resulting workspace directory like any other selection.
-    // Web against a LOOPBACK server (self-host localhost) keeps the directory
-    // picker — the local filesystem is right there, same discriminator the
-    // home route uses.
-    if (props.platform.platform === "web" && centralTransportForServer(props.globalSDK.url) !== "loopback") {
-      void props.dialog.show(() => (
-        <DialogCreateCloudProject
-          onSelect={(result) => {
-            const directory = Array.isArray(result) ? result[0] : result
-            if (typeof directory === "string" && directory) {
-              void handleProjectSelected(directory)
-            }
-          }}
-        />
-      ))
       return
     }
 
-    void props.dialog.show(() => (
-      <DialogSelectDirectory
-        onSelect={(dir) => {
-          if (typeof dir === "string") {
-            void handleProjectSelected(dir)
-          }
-        }}
-      />
-    ))
+    const projects = await refreshProjectInventory(props.projectInventoryActions.query()).catch(() => undefined)
+    const routeId = (Array.isArray(projects) ? routeIdFromProjects(projects, workspaceDir) : undefined)
+      ?? props.workspaceRouteId(workspaceDir)
+    if (!routeId) return
+    props.layout.projects.open(workspaceDir)
+    void ensureDirectorySessionCache(props.directorySessionCacheActions, workspaceDir)
+    const id = openProjectSessionSurface(workspaceDir, routeId)
+    if (id)
+      nav(workspaceSessionRoute(routeId), "new-project-selected", {
+        workspaceDir,
+        surfaceId: id,
+      })
   }
+
+  /**
+   * "New Project" is not a dialog: creation lives in the composer's Project
+   * chip, so this only raises the intent and the mounted composer (a draft's,
+   * or the empty canvas's) opens its create panel.
+   */
+  const handleNewProject = () => props.layout.projects.requestCreate()
 
   /** Create a local worktree directly — no dialog */
   const handleNewLocalWorkspace = async (
@@ -285,6 +245,9 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
         })
       }
 
+      // Not the create authority: this action also runs unsigned, and
+      // `createHostedWorkspace` refuses without a signed account. This helper
+      // already prefers AccountPort when signed and falls back to HTTP.
       const result = await createCloudWorkspace({
         baseUrl,
         projectId: project.id,
@@ -574,6 +537,7 @@ export function createProjectActions(props: ProjectActionProps, nav: Nav) {
 
   return {
     handleNewProject,
+    handleProjectCreated,
     handleNewLocalWorkspace,
     handleNewCloudWorkspace,
     createWorkspaceDirectory,

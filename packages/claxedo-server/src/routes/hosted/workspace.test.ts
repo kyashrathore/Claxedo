@@ -775,12 +775,50 @@ describe("hosted workspace list (GET /api/workspace)", () => {
 })
 
 describe("hosted cloud workspace create (POST /create)", () => {
+  test("on Workers the provisioning is held open past the response via waitUntil", async () => {
+    // workerd cancels detached promises once the response returns, so the
+    // route hands the whole chain — ensure AND the runtime provisioning that
+    // follows a ready lease — to executionCtx.waitUntil.
+    const authority = fakeAuthority({ createCloudWorkspace: vi.fn(async () => ({ workspace_id: "ignored" })) })
+    const ensure = vi.fn(async () => ({ status: "ready", epoch: 1, homeRegion: "us-east", sandboxId: "sb_1", url: "https://sb.test" }))
+    const provisionRuntime = vi.fn(async () => undefined)
+    const { app } = buildApp({ authority, sandboxManager: { ensure } as unknown as SandboxManager, options: { provisionRuntime } })
+    const waitUntil = vi.fn()
+    const res = await app.fetch(
+      post("/create", { workspaceName: "Held open", repoUrl: "https://github.com/a/b" }),
+      undefined,
+      { waitUntil, passThroughOnException() {}, props: {} } as never,
+    )
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as { workspaceId: string }
+    expect(waitUntil).toHaveBeenCalledTimes(1)
+    await (waitUntil.mock.calls[0] as unknown as [Promise<unknown>])[0]
+    expect(ensure).toHaveBeenCalledWith(body.workspaceId, expect.objectContaining({ homeRegion: "us-east" }))
+    expect(provisionRuntime).toHaveBeenCalledWith(body.workspaceId, undefined)
+  })
+
   test("503 sandbox_driver_unavailable when no sandbox driver is composed", async () => {
     const authority = fakeAuthority()
     const { app } = buildApp({ authority: authority })
     const res = await app.fetch(post("/create", { projectId: "proj_1" }))
     expect(res.status).toBe(503)
     expect(await res.json()).toMatchObject({ error: { code: "sandbox_driver_unavailable" } })
+  })
+
+  test("lets the authority derive the project when the caller names none", async () => {
+    // A fresh id passed as the project would be one the caller cannot
+    // administer; the D1 authority refuses that, so the route must leave the
+    // project to the authority's repository-keyed derivation.
+    const createCloudWorkspace = vi.fn(async () => ({ workspace_id: "ignored" }))
+    const authority = fakeAuthority({ createCloudWorkspace })
+    const ensure = vi.fn(async () => ({ status: "provisioning", retryAfterMs: 2_000, epoch: 1, homeRegion: "us-east" }))
+    const sandboxManager = { ensure } as unknown as SandboxManager
+    const { app } = buildApp({ authority: authority, sandboxManager })
+    const res = await app.fetch(post("/create", { workspaceName: "First cloud", repoUrl: "https://github.com/a/b" }))
+    expect(res.status).toBe(200)
+    const args = (createCloudWorkspace.mock.calls[0] as unknown[])[1] as Record<string, unknown>
+    expect(args).not.toHaveProperty("projectId")
+    expect(args).toMatchObject({ repoUrl: "https://github.com/a/b", displayName: "First cloud" })
   })
 
   test("creates the cloud workspace doc and kicks off provisioning", async () => {

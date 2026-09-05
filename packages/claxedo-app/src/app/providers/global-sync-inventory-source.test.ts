@@ -5,6 +5,7 @@ import {
   workspaceScopedCacheKey,
 } from "@/app/boot/data/bootstrap-orchestrator"
 import {
+  shouldDiscoverSignedWorkspaceSnapshot,
   shouldUseSignedControlPlaneInventory,
   shouldUseSignedSessionInventory,
   shouldUseSignedProjectSessionInventory,
@@ -34,27 +35,31 @@ describe("global sync inventory source", () => {
   })
 
   test("uses local inventory for signed-in loopback local directories", () => {
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:3001",
-      directory: "/Users/yashvardhansingh/test/opencode",
-    })).toBe(false)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "http://127.0.0.1:3001",
+        directory: "/Users/yashvardhansingh/test/opencode",
+      }),
+    ).toBe(false)
   })
 
   test("maps a signed workspace directory to its owning inventory project", () => {
-    const projects = [{
-      id: "proj_signed",
-      worktree: "ws_signed",
-      sandboxes: [],
-      time: { created: 0, updated: 0 },
-      workspaces: {
-        ws_signed: {
-          workspaceId: "ws_signed",
-          kind: "cloud",
-          directory: "/runtime/signed-workspace",
+    const projects = [
+      {
+        id: "proj_signed",
+        worktree: "ws_signed",
+        sandboxes: [],
+        time: { created: 0, updated: 0 },
+        workspaces: {
+          ws_signed: {
+            workspaceId: "ws_signed",
+            kind: "cloud",
+            directory: "/runtime/signed-workspace",
+          },
         },
       },
-    }]
+    ]
 
     expect(projectForDirectory(projects, "/runtime/signed-workspace")?.id).toBe("proj_signed")
     expect(projectWorktreeForDirectory(projects, "/runtime/signed-workspace")).toBe("ws_signed")
@@ -79,12 +84,14 @@ describe("global sync inventory source", () => {
   })
 
   test("keeps ordinary local worktree and sandbox ownership", () => {
-    const projects = [{
-      id: "proj_local",
-      worktree: "/repo/local",
-      sandboxes: ["/repo/local-sandbox"],
-      time: { created: 0, updated: 0 },
-    }]
+    const projects = [
+      {
+        id: "proj_local",
+        worktree: "/repo/local",
+        sandboxes: ["/repo/local-sandbox"],
+        time: { created: 0, updated: 0 },
+      },
+    ]
 
     expect(projectForDirectory(projects, "/repo/local")?.id).toBe("proj_local")
     expect(projectForDirectory(projects, "/repo/local-sandbox")?.id).toBe("proj_local")
@@ -108,83 +115,106 @@ describe("global sync inventory source", () => {
       },
     ])
 
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:3001",
-      directory: "/Users/yashvardhansingh/test/opencode",
-    })).toBe(true)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "http://127.0.0.1:3001",
+        directory: "/Users/yashvardhansingh/test/opencode",
+      }),
+    ).toBe(true)
   })
 
   test("uses signed inventory for signed-in loopback cloud workspace refs", () => {
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:3001",
-      directory: "workspace:ws_123",
-    })).toBe(true)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "http://127.0.0.1:3001",
+        directory: "workspace:ws_123",
+      }),
+    ).toBe(true)
   })
 
   test("uses local inventory for signed-in loopback global workspace lists (Local Personal Mode)", () => {
     // Loopback global queries (no directory) must stay on the unsigned local
     // path so Local Personal Mode does not bounce against an empty control-plane
     // workspace list and lose the local session inventory.
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:3001",
-    })).toBe(false)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "http://127.0.0.1:3001",
+      }),
+    ).toBe(false)
+
+    // Session reads stay local, but hosted-workspace discovery must still run;
+    // otherwise the first cloud workspace can never enter the project cache.
+    expect(shouldDiscoverSignedWorkspaceSnapshot({ hasHostedAccount: true })).toBe(true)
+    expect(shouldDiscoverSignedWorkspaceSnapshot({ hasHostedAccount: false })).toBe(false)
   })
 
   test("uses signed project session inventory for loopback cloud workspaces", () => {
-    expect(shouldUseSignedSessionInventory({
-      hasSignedAccess: true,
-      signedRoute: false,
-      baseUrl: "http://127.0.0.1:3001",
-    })).toBe(false)
-    expect(shouldUseSignedProjectSessionInventory({
-      hasSignedAccess: true,
-      baseUrl: "http://127.0.0.1:3001",
-      project: {
-        worktree: "/Users/yashvardhansingh/test/opencode",
-        sandboxes: ["workspace:ws_123"],
-        workspaces: {
-          "workspace:ws_123": { kind: "cloud" },
+    expect(
+      shouldUseSignedSessionInventory({
+        hasSignedAccess: true,
+        signedRoute: false,
+        baseUrl: "http://127.0.0.1:3001",
+      }),
+    ).toBe(false)
+    expect(
+      shouldUseSignedProjectSessionInventory({
+        hasSignedAccess: true,
+        baseUrl: "http://127.0.0.1:3001",
+        project: {
+          worktree: "/Users/yashvardhansingh/test/opencode",
+          sandboxes: ["workspace:ws_123"],
+          workspaces: {
+            "workspace:ws_123": { kind: "cloud" },
+          },
         },
-      },
-    })).toBe(true)
+      }),
+    ).toBe(true)
   })
 
   test("uses signed global session inventory for loopback workspace routes", () => {
-    expect(shouldUseSignedSessionInventory({
-      hasSignedAccess: true,
-      signedRoute: true,
-      baseUrl: "http://127.0.0.1:3001",
-    })).toBe(true)
+    expect(
+      shouldUseSignedSessionInventory({
+        hasSignedAccess: true,
+        signedRoute: true,
+        baseUrl: "http://127.0.0.1:3001",
+      }),
+    ).toBe(true)
   })
 
   test("uses signed global session inventory for hosted workspace lists", () => {
-    expect(shouldUseSignedSessionInventory({
-      hasSignedAccess: true,
-      signedRoute: false,
-      baseUrl: "https://app.claxedo.test",
-    })).toBe(true)
-    expect(shouldUseSignedProjectSessionInventory({
-      hasSignedAccess: true,
-      baseUrl: "https://app.claxedo.test",
-      project: {
-        worktree: "workspace:ws_123",
-        sandboxes: ["workspace:ws_456"],
-        workspaces: {
-          "workspace:ws_123": { kind: "cloud" },
+    expect(
+      shouldUseSignedSessionInventory({
+        hasSignedAccess: true,
+        signedRoute: false,
+        baseUrl: "https://app.claxedo.test",
+      }),
+    ).toBe(true)
+    expect(
+      shouldUseSignedProjectSessionInventory({
+        hasSignedAccess: true,
+        baseUrl: "https://app.claxedo.test",
+        project: {
+          worktree: "workspace:ws_123",
+          sandboxes: ["workspace:ws_456"],
+          workspaces: {
+            "workspace:ws_123": { kind: "cloud" },
+          },
         },
-      },
-    })).toBe(true)
+      }),
+    ).toBe(true)
   })
 
   test("uses signed inventory for non-loopback deployments", () => {
-    expect(shouldUseSignedControlPlaneInventory({
-      hasSignedAccess: true,
-      baseUrl: "https://app.claxedo.test",
-      directory: "/workspace",
-    })).toBe(true)
+    expect(
+      shouldUseSignedControlPlaneInventory({
+        hasSignedAccess: true,
+        baseUrl: "https://app.claxedo.test",
+        directory: "/workspace",
+      }),
+    ).toBe(true)
   })
 
   test("uses local loopback fetch for localhost bootstrap even when platform auth fetch exists", () => {
@@ -194,41 +224,53 @@ describe("global sync inventory source", () => {
   })
 
   test("keys workspace-backed SDK cache by workspaceId instead of directory aliases", () => {
-    expect(workspaceScopedCacheKey({
-      directory: "/Users/me/repo",
-      workspaceId: "ws_cloud",
-    })).toBe("ws_cloud")
-    expect(workspaceScopedCacheKey({
-      directory: "ws_cloud",
-      workspaceId: "ws_cloud",
-    })).toBe("ws_cloud")
-    expect(workspaceScopedCacheKey({
-      directory: "workspace:ws_cloud",
-      workspaceId: "ws_cloud",
-    })).toBe("ws_cloud")
-    expect(workspaceScopedCacheKey({
-      directory: "/Users/me/local",
-    })).toBe("/Users/me/local")
+    expect(
+      workspaceScopedCacheKey({
+        directory: "/Users/me/repo",
+        workspaceId: "ws_cloud",
+      }),
+    ).toBe("ws_cloud")
+    expect(
+      workspaceScopedCacheKey({
+        directory: "ws_cloud",
+        workspaceId: "ws_cloud",
+      }),
+    ).toBe("ws_cloud")
+    expect(
+      workspaceScopedCacheKey({
+        directory: "workspace:ws_cloud",
+        workspaceId: "ws_cloud",
+      }),
+    ).toBe("ws_cloud")
+    expect(
+      workspaceScopedCacheKey({
+        directory: "/Users/me/local",
+      }),
+    ).toBe("/Users/me/local")
   })
 
   test("does not force signed workspace-route bootstrap on loopback", () => {
     const platformFetch = (async () => new Response()) as typeof fetch
 
-    expect(shouldUseSignedRouteBootstrap({
-      signedRoute: true,
-      baseUrl: "http://127.0.0.1:3001",
-      platformFetch,
-    })).toBe(false)
+    expect(
+      shouldUseSignedRouteBootstrap({
+        signedRoute: true,
+        baseUrl: "http://127.0.0.1:3001",
+        platformFetch,
+      }),
+    ).toBe(false)
   })
 
   test("uses signed workspace-route bootstrap only for hosted URLs", () => {
     const platformFetch = (async () => new Response()) as typeof fetch
 
-    expect(shouldUseSignedRouteBootstrap({
-      signedRoute: true,
-      baseUrl: "https://app.claxedo.test",
-      platformFetch,
-    })).toBe(true)
+    expect(
+      shouldUseSignedRouteBootstrap({
+        signedRoute: true,
+        baseUrl: "https://app.claxedo.test",
+        platformFetch,
+      }),
+    ).toBe(true)
   })
 
   test("uses platform fetch for non-loopback bootstrap", () => {
@@ -280,13 +322,15 @@ describe("global sync inventory source", () => {
   })
 
   test("rejects created Claxedo session lifecycle events without session info", () => {
-    expect(normalizeClaxedoSessionLifecycleEvent({
-      type: "session.lifecycle",
-      phase: "created",
-      directory: "workspace:ws_123",
-      sessionID: "ses_1",
-      info: { id: "ses_1" },
-      ts: 3,
-    })).toBeUndefined()
+    expect(
+      normalizeClaxedoSessionLifecycleEvent({
+        type: "session.lifecycle",
+        phase: "created",
+        directory: "workspace:ws_123",
+        sessionID: "ses_1",
+        info: { id: "ses_1" },
+        ts: 3,
+      }),
+    ).toBeUndefined()
   })
 })

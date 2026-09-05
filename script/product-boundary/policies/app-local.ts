@@ -147,11 +147,9 @@ export const appLocal: Policy = {
   // Goal authority cache/query/controller, runtime Goal client/event ingress,
   // the active-Goal dock, and the review-pass Stop fallback + shared JSON
   // reader: thirteen modules.
-  // Plan 150 section E: `features/extensions/marketplace/transport.ts` — the
-  // one module that decides WHICH MACHINE answers an extensions request, so the
-  // marketplace stops asking `getClaxedoServerUrl()` for a workspace served
-  // elsewhere. Owned by the extensions feature, reachable only through the
-  // already-lazy marketplace panel: one module, no package edge.
+  // Plan 150 section E named a machine-routing module owned by the retired
+  // marketplace feature; that whole feature is gone, so it contributes nothing
+  // to this closure any more.
   // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
   // catalog owner) in the same slice: one more module, no package edge.
   // Plan 150 section C makes Settings a (workspace, harness) surface: the
@@ -190,7 +188,21 @@ export const appLocal: Policy = {
   // hosted content-surface module, its app-ports seam, the shared rich-text
   // editor (its only consumer), the document work-source action chain, and the
   // service package itself out of this closure. Re-measured, no headroom.
-  ceilings: { modules: 957, packages: 37 },
+  // +6 modules / 0 packages (2026-09-04): the Agent Plugins marketplace became a
+  // Directory (search, source chips, cards, detail pane, add-source form) plus
+  // an install sheet, the shared connections helper, and the signed desktop's
+  // DirectoryApi over hosted operations, replacing the single catalog surface.
+  // Reviewed owner: features/agent-plugins (this product's own surface); every
+  // edge stays inside packages already in the closure. Re-measured, no headroom.
+  // +7 modules / 0 packages (2026-09-04, polish): the Directory split into status,
+  // facts, actions, MCP rows, skill view, overflow menu, pane width, and chrome
+  // modules; every edge stays inside packages already in the closure. Re-measured, no headroom.
+    // +1 module (2026-09-04): the Personal entry pane. Re-measured, no headroom.
+  // +2 modules (2026-09-05): New Project now evaluates the server-mode flow
+  // rule (`features/workspaces/actions/new-project-flow.ts`) and can reach the
+  // folder-versus-cloud chooser (`ui/dialogs/new-project-kind.tsx`); the local
+  // product opens the folder picker, the chooser only appears once signed.
+  ceilings: { modules: 973, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-app/.artifacts/u8-package-split/manifests/app-local.json",

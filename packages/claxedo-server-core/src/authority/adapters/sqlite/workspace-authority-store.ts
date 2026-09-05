@@ -305,29 +305,6 @@ CREATE TABLE IF NOT EXISTS runtime_access_tokens (
   revoked_at INTEGER,
   created_at INTEGER NOT NULL
 );
-CREATE TABLE IF NOT EXISTS agent_extension_installs (
-  workspace_id TEXT NOT NULL,
-  extension_id TEXT NOT NULL,
-  package_name TEXT NOT NULL,
-  desired TEXT NOT NULL,
-  lock TEXT,
-  enabled INTEGER NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  deleted_at INTEGER,
-  PRIMARY KEY (workspace_id, extension_id)
-);
-CREATE TABLE IF NOT EXISTS agent_extension_policy_overrides (
-  scope TEXT NOT NULL,
-  scope_key TEXT NOT NULL,
-  extension_id TEXT NOT NULL,
-  enabled INTEGER NOT NULL,
-  reason TEXT,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL,
-  deleted_at INTEGER,
-  PRIMARY KEY (scope, scope_key, extension_id)
-);
 CREATE TABLE IF NOT EXISTS session_history (
   session_id TEXT PRIMARY KEY,
   workspace_id TEXT NOT NULL,

@@ -1,7 +1,6 @@
 import { lazy, Suspense } from "solid-js"
 import { SessionContent } from "../../features/session/ui/content/session-content"
 import { createContributionRegistry, type ContributionGateContext, type SurfaceContribution } from "./registry"
-import { usePlatform } from "@/platform/runtime/platform-provider"
 import type { ContentMeta } from "../workbench/state/index"
 import { SurfaceFallback } from "./surface-fallback"
 import type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./content-surface-contract"
@@ -11,12 +10,13 @@ export type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./
 /**
  * LOCAL content surfaces.
  *
- * Sessions, terminals, drafts, context, and the marketplace — everything the
- * unsigned desktop renders. Documents used to live here too, which made its
- * implementation a static import of the app's only entry. It now lives in
+ * Sessions, terminals, drafts, and context — everything the unsigned desktop
+ * renders. Documents used to live here too, which made its implementation a
+ * static import of the app's only entry. It now lives in
  * `documents-content-surfaces.tsx` and reaches the registry through
  * `app/composition/product-contributions.ts` after an account adapter reports
- * signed state.
+ * signed state. The `marketplace` surface left for the same reason: Agent
+ * Plugins contributes it from `app/composition/agent-plugin-contribution-loader.tsx`.
  *
  * A surface added here is available to every build, signed or not. That is the
  * decision this file's boundary now forces someone to make explicitly.
@@ -27,11 +27,6 @@ export type { ContentSurfaceContribution, ContentSurfaceRenderContext } from "./
 // composer cannot bubble to a top-level Suspense fallback and blank the pane.
 const TerminalContent = lazy(() => import("../../features/terminal/ui/content/terminal-content").then((m) => ({ default: m.TerminalContent })))
 const ContextContent = lazy(() => import("../workbench/content/context-content").then((m) => ({ default: m.ContextContent })))
-const MarketplaceContent = lazy(() => import("@/features/extensions/marketplace").then((m) => ({ default: m.MarketplaceContent })))
-function MarketplaceSurface(props: { context: ContentSurfaceRenderContext }) {
-  const platform = usePlatform()
-  return <MarketplaceContent directory={props.context.meta.directory} request={platform.fetch} />
-}
 
 export const localContentSurfaces: ContentSurfaceContribution[] = [
   {
@@ -67,17 +62,6 @@ export const localContentSurfaces: ContentSurfaceContribution[] = [
     renderer: (context) => (
       <Suspense fallback={<SurfaceFallback />}>
         <ContextContent meta={context.meta} ctx={context.ctx} />
-      </Suspense>
-    ),
-  },
-  {
-    id: "surface.content.marketplace",
-    tier: "claxedo-first-party",
-    surface: "marketplace",
-    slot: "workbench",
-    renderer: (context) => (
-      <Suspense fallback={<SurfaceFallback />}>
-        <MarketplaceSurface context={context} />
       </Suspense>
     ),
   },

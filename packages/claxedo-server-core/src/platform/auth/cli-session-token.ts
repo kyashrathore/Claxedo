@@ -284,14 +284,6 @@ export function isCliAccessAuth(input: SignedControlPlaneAuth) {
   return input.tokenKind === "cli"
 }
 
-export function cliServiceUser(input: SignedControlPlaneAuth): CliServiceUser {
-  return {
-    token_identifier: input.user.tokenIdentifier,
-    subject: input.user.subject,
-    issuer: input.user.issuer,
-  }
-}
-
 /**
  * Sign one access/refresh pair and describe the registry rows it needs.
  *

@@ -40,6 +40,12 @@ export type HostedContributionSet = {
 
 export type HostedContributionLoader = () => Promise<HostedContributionSet>
 
+export type AgentPluginContributionSet = {
+  contentSurfaces: readonly ContentSurfaceContribution[]
+}
+
+export type AgentPluginContributionLoader = () => Promise<AgentPluginContributionSet>
+
 /**
  * The one app-layer binding of the generic account-owned activation mechanism.
  *
@@ -68,12 +74,17 @@ export const HOSTED_CONTENT_TYPES = [
   "pages-index",
 ] as const
 
+/** Known synchronously so restored plugin-catalog tabs survive async module loading. */
+export const AGENT_PLUGIN_CONTENT_TYPES = ["marketplace"] as const
+
 export type ProductContributionsInput = {
   local: readonly ContentSurfaceContribution[]
   register: (surface: ContentSurfaceContribution) => void
   unregister: (surface: ContentSurfaceContribution) => void
   /** Loads the hosted set. Absent from a composition that cannot host it. */
   loadHosted?: HostedContributionLoader
+  /** Absent from a product build that must not contain Agent Plugins. */
+  loadAgentPlugins?: AgentPluginContributionLoader
   /**
    * Whether this composition may hold hosted contributions at all.
    *
@@ -106,6 +117,12 @@ export type ProductContributions = {
   hostedActive(): boolean
   /** Load and register the hosted set, at most once. */
   activateHosted(): Promise<void>
+  /** Declare that this product artifact contains the optional Agent Plugins module. */
+  expectAgentPlugins(): void
+  agentPluginsExpected(): boolean
+  agentPluginsActive(): boolean
+  /** Load and register the feature-owned contribution set, at most once. */
+  activateAgentPlugins(): Promise<void>
   /**
    * Follow the account: activate while it is signed, remove on sign-OUT.
    *
@@ -130,6 +147,7 @@ export type ProductContributions = {
 export function createProductContributions(input: ProductContributionsInput): ProductContributions {
   const local = input.local
   let expectsHosted = false
+  let expectsAgentPlugins = false
   let held = false
 
   const hosted = createContentSurfaceActivation({
@@ -149,6 +167,19 @@ export function createProductContributions(input: ProductContributionsInput): Pr
     registeredIds: () => local.map((surface) => surface.id),
   })
 
+  const agentPlugins: HostedContributionPort = createHostedContributionPort<ContentSurfaceContribution>({
+    signedIn: () => input.loadAgentPlugins !== undefined,
+    load: async () => {
+      if (!input.loadAgentPlugins) {
+        throw new Error("Agent Plugins contribution loader is not configured for this product composition")
+      }
+      return (await input.loadAgentPlugins()).contentSurfaces
+    },
+    register: input.register,
+    unregister: input.unregister,
+    registeredIds: () => local.map((surface) => surface.id),
+  })
+
   return {
     localContentSurfaces: () => local,
     expectHosted() {
@@ -158,11 +189,21 @@ export function createProductContributions(input: ProductContributionsInput): Pr
     availableContentTypes: () => [
       ...local.map((surface) => String(surface.surface)),
       ...(expectsHosted ? HOSTED_CONTENT_TYPES : []),
+      ...(expectsAgentPlugins ? AGENT_PLUGIN_CONTENT_TYPES : []),
     ],
     hostedActive: () => hosted.active(),
     activateHosted() {
       expectsHosted = true
       return hosted.activate()
+    },
+    expectAgentPlugins() {
+      expectsAgentPlugins = true
+    },
+    agentPluginsExpected: () => expectsAgentPlugins,
+    agentPluginsActive: () => agentPlugins.active(),
+    activateAgentPlugins() {
+      expectsAgentPlugins = true
+      return agentPlugins.activate()
     },
     followAccount(account) {
       if (account.status === "signed") {

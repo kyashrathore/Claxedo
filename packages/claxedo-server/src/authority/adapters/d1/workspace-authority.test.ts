@@ -102,6 +102,43 @@ async function signed(
 }
 
 describe("D1 hosted workspace authority", () => {
+  test("reads the principal's identity row once per request auth object", async () => {
+    const { authority: seeded, database } = await setup({ kind: "claxedo-hosted" })
+    let identityReads = 0
+    const counted = new Proxy(database, {
+      get(target, key, receiver) {
+        if (key === "prepare") {
+          return (sql: string) => {
+            if (sql.includes("from auth_identities ai")) identityReads += 1
+            return target.prepare(sql)
+          }
+        }
+        const value: unknown = Reflect.get(target, key, receiver)
+        return typeof value === "function" ? value.bind(target) : value
+      },
+    })
+    const authority = new D1WorkspaceAuthority(counted, {
+      deploymentId: "deployment-a",
+      product: { kind: "claxedo-hosted" },
+      now: () => 1_800_000_000_000,
+      randomId: (prefix) => `${prefix}_memo`,
+    })
+    const auth = await signed(seeded, identity("alice"))
+
+    await authority.usersMe(auth)
+    await Promise.all([authority.listOrgs(auth), authority.resolveOrgId(auth), authority.listWorkspaces(auth)])
+    expect(identityReads).toBe(1)
+
+    const next = await signed(seeded, identity("alice"))
+    await authority.usersMe(next)
+    expect(identityReads).toBe(2)
+
+    const stale = { ...next, principal: { ...next.principal!, actorId: "actor_unknown" } }
+    await expect(authority.usersMe(stale)).rejects.toThrow(/stale or unlinked/)
+    await expect(authority.usersMe(stale)).rejects.toThrow(/stale or unlinked/)
+    expect(identityReads).toBe(4)
+  })
+
   test("converges concurrent provider mapping and never accepts a token-only synthetic identity", async () => {
     const { authority, database } = await setup({ kind: "claxedo-hosted" })
     const aliceIdentity = identity("alice")

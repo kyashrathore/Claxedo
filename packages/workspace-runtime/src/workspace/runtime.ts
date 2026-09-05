@@ -24,7 +24,6 @@ import {
   type AgentProcessObserver,
   type AgentTurnOutcome,
 } from "@claxedo/agent-sdk-runtime"
-import { applyRuntimeAgentExtensions } from "@claxedo/agent-extensions"
 import {
   ClaudeHarnessAdapter,
   CodexHarnessAdapter,
@@ -163,18 +162,6 @@ export type WorkspaceHostOptions = {
   resolveConnectionSecrets?: ConnectionSecretResolver
   target?: WorkspaceTarget
   storeRoot?: string
-  /**
-   * Host-owned root for Agent Extension runtime replay state (the ownership
-   * ledger, lock, and fetch cache). A peer of `storeRoot`: the workspace
-   * directory says WHERE generated skills/MCP/plugins materialize, this says
-   * where the bookkeeping about them lives. Hosts that manage many workspaces
-   * key it by workspace id so the ledger survives the user moving or
-   * re-cloning their checkout.
-   *
-   * Unset falls back to the package's machine-scoped default — correct for
-   * one-workspace-per-machine runtimes (a sandbox), never the project tree.
-   */
-  agentExtensionStateRoot?: string
   /**
    * Durable config-apply receipts (`accepted-snapshot.json`,
    * `apply-status.json`). OFF by default: the live `configApply` status is
@@ -359,36 +346,6 @@ function harnessConfigOptionsErrorMessage(input: {
   return message
 }
 
-function agentExtensionApplyFailureReason(input: unknown) {
-  const message = errorMessage(input).toLowerCase()
-  if (message.includes("unsupported agent extension source")) return "unsupported_source"
-  if (message.includes("package path must stay inside")) return "invalid_package_path"
-  if (message.includes("missing resolved sha")) return "missing_resolved_sha"
-  if (message.includes("checksum mismatch")) return "checksum_mismatch"
-  if (message.includes("root does not exist")) return "project_root_missing"
-  return "materialization_failed"
-}
-
-// `directory` stays the workspace checkout — generated skills/MCP/plugins MUST
-// materialize into the runner-native paths inside it. Only `stateRoot` (the
-// ownership ledger, lock, and fetch cache) moves to host-owned storage.
-async function applyAgentExtensionsSnapshot(
-  snapshot: AppliedRuntimeSnapshot["agent_extensions"],
-  directory: string,
-  stateRoot?: string,
-) {
-  try {
-    await applyRuntimeAgentExtensions(snapshot, directory, stateRoot ? { stateRoot } : {})
-  } catch (cause) {
-    throw new RuntimeConfigApplyError(
-      "runtime_config_agent_extensions_apply_failed",
-      "Runtime agent extension snapshot replay failed",
-      500,
-      { reason: agentExtensionApplyFailureReason(cause) },
-    )
-  }
-}
-
 function runtimeConfigSnapshotMetadata(snapshot: AppliedRuntimeSnapshot) {
   return {
     version: snapshot.version,
@@ -401,16 +358,7 @@ function runtimeConfigSnapshotMetadata(snapshot: AppliedRuntimeSnapshot) {
     })),
     mcp: { keys: Object.keys(snapshot.mcp).sort() },
     auth: { keys: Object.keys(snapshot.auth).sort() },
-    ...(snapshot.agent_extensions ? {
-      agent_extensions: {
-        version: snapshot.agent_extensions.version,
-        installCount: snapshot.agent_extensions.installs.length,
-        installIds: snapshot.agent_extensions.installs
-          .map((install) => install.desired.id)
-          .filter((id): id is string => typeof id === "string")
-          .sort(),
-      },
-    } : {}),
+    ...(snapshot.harnessLaunch ? { harnessLaunch: Object.keys(snapshot.harnessLaunch).sort() } : {}),
     ...(snapshot.workspaceHarnessEnabled !== undefined ? { workspaceHarnessEnabled: snapshot.workspaceHarnessEnabled } : {}),
     ...(snapshot.commands ? { commands: snapshot.commands.map((command) => command.name).sort() } : {}),
   }
@@ -717,7 +665,7 @@ function sameRuntimeMcp(a: Record<string, unknown>, b: Record<string, unknown>) 
  * `JSON.stringify` would report a difference where none exists.
  *
  * Everything the apply path acts on is included — harness, model, mcp, auth,
- * agent extensions, commands, and `workspaceHarnessEnabled`. Nothing else is:
+ * harness launch options, commands, and `workspaceHarnessEnabled`. Nothing else is:
  * the signature deliberately carries no revision, timestamp, or apply state, or
  * it could never compare equal to itself.
  */
@@ -776,6 +724,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   let currentMcp: Record<string, unknown> = {}
   let currentAuth: RuntimeAuth = {}
   let currentAuthRaw: Record<string, string> = {}
+  let currentHarnessLaunch: Record<string, Record<string, unknown>> = {}
   let applyQueue = Promise.resolve()
   const storeFactory = resolveStoreFactory(options)
   // Resolved once and reused: the registry must be stable for the host lifetime
@@ -820,31 +769,44 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     return runner
   }
 
+  function adapterConfigStamp(nextRunner: RuntimeRunner, auth: Record<string, string>, mcp: Record<string, unknown>, launch: Record<string, unknown>) {
+    return `${adapterKey(nextRunner)}\n${JSON.stringify(auth)}\n${JSON.stringify(mcp)}\n${JSON.stringify(launch)}`
+  }
+
   async function configureAdapter(next: AgentHarnessAdapter, nextRunner: RuntimeRunner) {
-    if (!hasAdapterCapability(next, "runtime-config") || !next.applyConfig) return
+    // `applyConfig` is its own adapter contract: an adapter may take MCP and the
+    // per-harness launch payload without advertising the separate
+    // runtime-config capability (auth mutation).
+    if (!next.applyConfig) return
+    const runtimeConfigurable = hasAdapterCapability(next, "runtime-config")
+    const launch = currentHarnessLaunch[nextRunner.id] ?? {}
     if (
       Object.keys(currentAuthRaw).length === 0
       && Object.keys(currentMcp).length === 0
+      && Object.keys(launch).length === 0
       && adapterConfigStamps.get(next) === undefined
     ) {
-      adapterConfigStamps.set(next, `${adapterKey(nextRunner)}\n\n{}\n{}`)
+      adapterConfigStamps.set(next, adapterConfigStamp(nextRunner, {}, {}, {}))
       return
     }
     const adapterAuth = configuredConnection(nextRunner) ? {} : currentAuthRaw
-    const stamp = `${adapterKey(nextRunner)}\n${JSON.stringify(adapterAuth)}\n${JSON.stringify(currentMcp)}`
+    const stamp = adapterConfigStamp(nextRunner, adapterAuth, currentMcp, launch)
     if (adapterConfigStamps.get(next) === stamp) return
     const turns = configuredConnection(nextRunner) ? activeTurns.get(next) : undefined
     if (turns?.size) await Promise.all([...turns].map((turn) => turn.done))
     if (adapterConfigStamps.get(next) === stamp) return
-    ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
-      configuredConnection(nextRunner)
-        ? {}
-        : runtimeAuthForAdapter(currentAuth),
-    )
+    if (runtimeConfigurable) {
+      ;(next as AgentHarnessAdapter & RuntimeConfigurableAdapter).setAuth(
+        configuredConnection(nextRunner)
+          ? {}
+          : runtimeAuthForAdapter(currentAuth),
+      )
+    }
     await next.applyConfig({
       mcp: currentMcp,
       auth: adapterAuth,
       harness: nextRunner,
+      launch,
     })
     await (next as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
     adapterConfigStamps.set(next, stamp)
@@ -1276,7 +1238,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
   async function applySnapshot(next: AppliedRuntimeSnapshot) {
     // Config fan-out re-pushes the same snapshot constantly (most proxied
     // routes sync on the way through), and a full apply restarts adapters,
-    // re-materializes auth, and replays Agent Extensions. When nothing
+    // and re-materializes auth. When nothing
     // changed, all of that is waste — so a re-apply of already-live config is
     // a no-op that leaves the revision, the receipts, and the ownership ledger
     // exactly as they are.
@@ -1314,7 +1276,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       state = "ready"
       throw error
     }
-    const directory = options.target?.directory ?? workspaceDir()
     const receiptDir = options.configApplyReceiptDir
     let revision = configApplyRevision
     let acceptedAt: string | undefined
@@ -1323,7 +1284,9 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
     const nextKey = nextRunner ? adapterKey(nextRunner) : undefined
     const replacing = nextKey !== currentKey
     const nextAuth = runtimeAuth(next.auth)
+    const nextHarnessLaunch = next.harnessLaunch ?? {}
     const configChangesActiveConnection = !sameRuntimeMcp(currentMcp, next.mcp)
+      || JSON.stringify(currentHarnessLaunch) !== JSON.stringify(nextHarnessLaunch)
 
     function assertSafeAcpTarget(target: AgentHarnessAdapter | undefined) {
       if (
@@ -1374,6 +1337,7 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       currentMcp = next.mcp
       currentAuth = nextAuth
       currentAuthRaw = next.auth
+      currentHarnessLaunch = nextHarnessLaunch
       const deferDefaultAdapterConfig = adapter
         && nextRunner
         && configuredConnection(nextRunner)
@@ -1390,18 +1354,18 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       if (!replacing) runner = nextRunner
       if (!adapter && nextRunner) adapter = await ensureSessionAdapter(nextRunner)
       if (!deferDefaultAdapterConfig && adapter?.applyConfig && nextRunner) {
+        const launch = nextHarnessLaunch[nextRunner.id] ?? {}
         await adapter.applyConfig({
           mcp: next.mcp,
           auth: configuredConnection(nextRunner) ? {} : next.auth,
           harness: nextRunner,
+          launch,
         })
         await (adapter as AgentHarnessAdapter & { waitForConfigReady?: () => Promise<void> }).waitForConfigReady?.()
-        if (hasAdapterCapability(adapter, "runtime-config")) {
-          adapterConfigStamps.set(
-            adapter,
-            `${adapterKey(nextRunner)}\n${JSON.stringify(configuredConnection(nextRunner) ? {} : next.auth)}\n${JSON.stringify(next.mcp)}`,
-          )
-        }
+        adapterConfigStamps.set(
+          adapter,
+          adapterConfigStamp(nextRunner, configuredConnection(nextRunner) ? {} : next.auth, next.mcp, launch),
+        )
       }
       await Promise.all([...sessionAdapters.entries()].map(([key, nextAdapter]) => {
         const selection = sessionAdapterRunners.get(key)!
@@ -1409,7 +1373,6 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
           ? Promise.resolve()
           : configureAdapter(nextAdapter, selection)
       }))
-      await applyAgentExtensionsSnapshot(next.agent_extensions, directory, options.agentExtensionStateRoot)
       state = "ready"
       err = ""
       // Recorded only here, once every side effect above has succeeded.
@@ -1447,6 +1410,15 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       err = errorMessage(cause)
       throw cause
     }
+  }
+
+  async function apply(next: RuntimeSnapshot) {
+    if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
+    const normalized = normalizeRuntimeSnapshot(next)
+    if (!normalized) throw new RuntimeConfigApplyError("runtime_config_invalid", "Invalid runtime config snapshot", 409)
+    const pending = applyQueue.then(() => applySnapshot(normalized), () => applySnapshot(normalized))
+    applyQueue = pending.catch(() => {})
+    return pending
   }
 
   return {
@@ -1770,13 +1742,17 @@ export function createWorkspaceHost(options: WorkspaceHostOptions = {}): Workspa
       const session = store().getSession(sessionId) as { parentID?: string | null } | null
       return session?.parentID ?? undefined
     },
-    async apply(next: RuntimeSnapshot) {
-      if (closing) throw new HTTPException(503, { message: "Workspace runtime is disposed" })
-      const normalized = normalizeRuntimeSnapshot(next)
-      if (!normalized) throw new RuntimeConfigApplyError("runtime_config_invalid", "Invalid runtime config snapshot", 409)
-      const pending = applyQueue.then(() => applySnapshot(normalized), () => applySnapshot(normalized))
-      applyQueue = pending.catch(() => {})
-      return pending
+    apply,
+    applyHarnessLaunch(harnessLaunch: Record<string, Record<string, unknown>>) {
+      return apply({
+        version: 3,
+        mcp: currentMcp,
+        connections: [...appliedConnections.values()],
+        ...(runner ? { defaultHarness: selectionForRunner(runner) } : {}),
+        auth: currentAuthRaw,
+        workspaceHarnessEnabled: enabled,
+        harnessLaunch,
+      })
     },
     detail() {
       const health = runnerHealth()

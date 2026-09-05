@@ -31,6 +31,10 @@ import { initNodeObservability } from "../../platform/telemetry/errors/node"
 import { reportError } from "../../platform/telemetry/errors/report"
 import { requestIsHttps, securityHeaderEntries, withSecurityHeaders } from "@claxedo/server-core/platform/http/security-headers"
 import { configureAgentConfig, defaultHarness, loadUserConfig } from "@claxedo/server-core/agent-config/index"
+import {
+  mountControlPlaneRouteContributions,
+  type ControlPlaneRouteContribution,
+} from "@claxedo/server-core/platform/http/route-contribution"
 import { peerAddressStamp } from "@claxedo/server-core/platform/http/peer-address"
 import { createConnectionsHost } from "../../connections"
 import { createConnectionTurnCredentials } from "../../connections/turn-credentials"
@@ -40,7 +44,7 @@ import { DocumentsRoutes } from "../../documents/routes/index"
 import { AgentConfigRoutes, sessionMetaProjectionTap } from "@claxedo/local-server/self-hosted-execution"
 import { SessionMetaRoutes } from "@claxedo/local-server/self-hosted-execution"
 import { LocalWorkspaceRoutes } from "@claxedo/local-server/self-hosted-execution"
-import { ShellRoutes } from "@claxedo/local-server/self-hosted-execution"
+import { LocalProjectRoutes, ShellRoutes, githubCloneAuthorization } from "@claxedo/local-server/self-hosted-execution"
 import { WorkspaceRoutes } from "../../workspace/routes/index"
 import { AGENT_HARNESS_IDS, createAcpConnectionProvider, type CompatEnvelope } from "@claxedo/agent-sdk-runtime"
 import { createOpenCodeServerConnectionProvider } from "@claxedo/opencode-server-adapter"
@@ -85,12 +89,13 @@ import {
 } from "@claxedo/server-core/authority/deployment-mode"
 import { assertSelfHostedPosture, type SelfHostedPosture } from "./posture"
 import { EMBEDDED_AUTH_ISSUER, embeddedAuthEnabled, getEmbeddedAuth } from "./embedded-auth"
+import { embeddedBrowserAuthDescriptor, embeddedBrowserAuthSecurity, embeddedBrowserSessionBearer } from "./embedded-browser-auth"
 import { createSqliteWorkspaceAuthority } from "@claxedo/server-core/authority/adapters/sqlite/workspace-authority"
 import { ControlPlaneHttpRoutes } from "../../authority/http"
 import { OrgTeamControlRoutes } from "../../session/routes/org-team-routes"
 import { createCentralControlApp } from "../../central-runtime"
 import { JwksRoutes } from "../../authority/routes/jwks"
-import { createRouteOwnership, withRouteOwnership } from "../route-ownership"
+import { createRouteOwnership, mountOwnedRoute, withRouteOwnership } from "../route-ownership"
 import { InternalRelayResolverRoutes } from "../shared-routes/internal-relay"
 import { localRelayTargetExists, localRelayTargetLookup } from "./internal-relay-node"
 import { BootstrapRoutes } from "@claxedo/local-server/self-hosted-execution"
@@ -668,6 +673,8 @@ export function createSelfHostedApp(
     resolveUsageHostIdentity?: () => Promise<{ hostId: string }>
     /** Composition seam for tests/load fixtures; production keeps the default limiter. */
     connectionRateLimiter?: ConnectionRateLimiter
+    /** Explicit build/composition contributions; absent in the disabled product. */
+    routeContributions?: readonly ControlPlaneRouteContribution[]
   } = {},
 ) {
   if (options.posture) assertSelfHostedPosture(options.posture)
@@ -921,6 +928,20 @@ export function createSelfHostedApp(
     // ones the signed control-plane routes accept.
     const embedded = getEmbeddedAuth()
     app.all("/api/auth/*", (c) => embedded.handler(c.req.raw))
+    // The browser half (embedded-browser-auth.ts): the descriptor the signed
+    // web app validates first, the guard cookie-authenticated mutations must
+    // pass, and the bridge that lets a session cookie reach the bearer
+    // verifier every signed route already uses. Present only behind an HTTPS
+    // public origin, which is what makes the session cookie `Secure`. Mounted
+    // on every route, not only `/api/*`: the signed web app reaches the
+    // engine-compat surface (`/find`, `/file`, `/path`, `/session`) with the
+    // same cookie, and in signed mode those routes verify a bearer too.
+    const browserDescriptor = embeddedBrowserAuthDescriptor()
+    if (browserDescriptor) {
+      app.use("*", embeddedBrowserAuthSecurity(browserDescriptor))
+      app.use("*", embeddedBrowserSessionBearer(browserDescriptor))
+      app.get("/api/claxedo/auth/descriptor", (c) => c.json(embeddedBrowserAuthDescriptor()))
+    }
   }
   app.route("/", JwksRoutes(process.env))
   app.route(
@@ -1063,11 +1084,46 @@ export function createSelfHostedApp(
       updateCentralSessionModel: centralControl.runtime.updateSessionModel,
       invalidateCentralSession: centralControl.runtime.invalidateSession,
       ...authRouteOptions(services),
-      agentExtensionPolicyOverrides: services.extensionPolicy.agentExtensionPolicyOverrides,
     }),
   )
   app.route("/", SessionMetaRoutes({ services, ...authRouteOptions(services) }))
   app.route("/api/claxedo/workspace", LocalWorkspaceRoutes(authRouteOptions(services)))
+  // Projects on this server's filesystem: a folder here, or a repository cloned
+  // under the data directory. The same routes the desktop's server mounts.
+  // A folder project on a signed server is a local worktree this server hosts:
+  // the same authority row the desktop's sharing flow creates, in the caller's
+  // org, so `resolveRelayActor` above can authorise engine calls against it.
+  // A private GitHub repository clones with the caller's connected GitHub
+  // account — the same token `repositoryForAuth` hands the cloud clone — and
+  // anonymously when they have none.
+  const projectAuthority = services.authority
+  app.route(
+    "/api/claxedo/projects",
+    LocalProjectRoutes(authRouteOptions(services), {
+      cloneCredential: async (auth, repoUrl) => {
+        if (!repoUrl.startsWith("https://github.com/")) return
+        const connections = await connectionsHost.service.list({ owner: auth.user.subject })
+        const github = connections.find((row) => row.integrationId === "github" && row.status === "connected")
+        if (!github) return
+        const token = await connectionsHost.service.getToken(github.id, "code-host")
+        return token.ok ? { authorization: githubCloneAuthorization(token.response.token) } : undefined
+      },
+      ...(projectAuthority
+        ? {
+            registerWorkspace: async (auth, workspace) => {
+              const known = await projectAuthority.openWorkspace(auth, { workspaceId: workspace.workspaceId }).catch(() => undefined)
+              if (known?.allowed) return
+              await projectAuthority.registerLocalForSharing(auth, {
+                workspaceId: workspace.workspaceId,
+                displayName: workspace.displayName,
+                remoteDirectory: workspace.directory,
+                ...(workspace.repoUrl ? { repoUrl: workspace.repoUrl } : {}),
+              })
+            },
+          }
+        : {}),
+    }),
+  )
   app.route("/api/workspace", WorkspaceRoutes(
     services,
     {
@@ -1180,6 +1236,17 @@ export function createSelfHostedApp(
     channels: controlPlaneChannels,
   })
 
+  mountControlPlaneRouteContributions({
+    contributions: options.routeContributions ?? [],
+    mount: (contribution) => mountOwnedRoute(
+      app,
+      routeOwnership,
+      `feature:${contribution.id}`,
+      contribution.path,
+      contribution.routes as never,
+    ),
+  })
+
   // Web UI parity: serve a built claxedo-app bundle from the box when
   // CLAXEDO_APP_DIST_DIR points at one (self-host single-process deploys).
   // Mounted LAST so every API route wins; unmatched GETs fall through to the
@@ -1228,6 +1295,8 @@ export type ControlPlaneStackOptions = {
   services: ControlPlaneServices
   port?: number
   processObserver?: ProcessObserver
+  /** Explicit build/composition contributions (Agent Plugins); absent in the disabled product. */
+  routeContributions?: readonly ControlPlaneRouteContribution[]
 }
 
 export function captureControlPlaneStartupTelemetry(
@@ -1454,13 +1523,10 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
         .map((workspace) => ensureEmbeddedWorkspaceRuntime(workspace, { config: "skip" })),
     )
   }
-  configureAgentConfig({
-    ...(process.env.CLAXEDO_ACP_DIR ? { acpDir: process.env.CLAXEDO_ACP_DIR } : {}),
-    // Reuse the authority selected by this composition (always SQLite;
-    // hosted trust fails closed above).
-    ...(services.authority ? { workspaceAuthority: services.authority } : {}),
-    connectionProviders,
-  })
+  // The per-harness launch projection is the one other agent-config option;
+  // this deployment does not contribute it. The former `workspaceAuthority`
+  // input went with the retired agent-extensions hydration.
+  configureAgentConfig({ connectionProviders })
   configureWorkspaceSupervisor({
     server_url: `http://127.0.0.1:${port}`,
     ...(services.relay.relayUrl ? { relay_url: services.relay.relayUrl } : {}),
@@ -1486,6 +1552,7 @@ function startOwnedControlPlaneStack(options: ControlPlaneStackOptions, releaseD
     usageOutbox,
     ...(usageLedger ? { usageLedger } : {}),
     resolveUsageHostIdentity: localHostIdentity,
+    ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
     beforeLocalSessionList: async () => {
       if (localSessionProjectionReady) return
       localSessionProjectionReady = new Promise((resolve) => {
@@ -1535,11 +1602,13 @@ export function startServer(
   port = DEFAULT_CLAXEDO_SERVER_PORT,
   options: {
     processObserver?: ProcessObserver
+    routeContributions?: readonly ControlPlaneRouteContribution[]
   } = {},
 ) {
   return startControlPlaneStack({
     services: createDefaultLocalControlPlaneServices(),
     port,
     ...(options.processObserver ? { processObserver: options.processObserver } : {}),
+    ...(options.routeContributions ? { routeContributions: options.routeContributions } : {}),
   })
 }

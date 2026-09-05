@@ -60,6 +60,8 @@ export type StartLocalServerOptions = Omit<LocalAppOptions, "onError" | "service
   onError?: LocalAppOptions["onError"]
   /** Desktop diagnostics observer for spawned harness processes. */
   processObserver?: Parameters<typeof configureEmbeddedWorkspaceRuntime>[0]["processObserver"]
+  /** Opaque launch options supplied by an optional harness feature module. */
+  harnessLaunch?: NonNullable<Parameters<typeof configureAgentConfig>[0]>["harnessLaunch"]
 }
 
 export type LocalServer = {
@@ -133,10 +135,8 @@ function startOwned(options: StartLocalServerOptions, release: () => void): Loca
     },
   })
   configureAgentConfig({
-    // Reuse the local product's canonical SQLite authority. Ambient hosted
-    // configuration cannot replace a product-owned authority choice.
-    ...(services.authority ? { workspaceAuthority: services.authority } : {}),
     connectionProviders,
+    ...(options.harnessLaunch ? { harnessLaunch: options.harnessLaunch } : {}),
   })
 
   // Opened here so the first session-list request does not pay for migrations,

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  accountCanShareWorkspace,
   localWorkspaceShareTarget,
   registerUserHostedWorkspace,
   unregisterUserHostedWorkspace,
@@ -77,6 +78,13 @@ describe("share workspace helpers", () => {
         expanded: true,
       } as never,
     })).toBeUndefined()
+  })
+
+  test("share is available only for a signed account", () => {
+    expect(accountCanShareWorkspace("signed")).toBe(true)
+    expect(accountCanShareWorkspace("unsigned")).toBe(false)
+    expect(accountCanShareWorkspace("pending")).toBe(false)
+    expect(accountCanShareWorkspace(undefined)).toBe(false)
   })
 
   test("builds a stable workspace share URL", () => {

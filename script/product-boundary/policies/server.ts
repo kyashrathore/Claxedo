@@ -54,10 +54,20 @@ export const serverSelfHosted: Policy = {
   // -32 modules / -3 packages: retiring the hosted work-ledger service took its
   // host composition, the self-hosted capability seam, and the service package
   // with its transitive pins out of the single binary. Re-measured, no
-  // headroom: 123 modules and 32 packages.
-  // The self-hosted composition registers @claxedo/opencode-server-adapter for
-  // operator-configured external connections; no OpenCode engine is bundled.
-  ceilings: { modules: 123, packages: 33 },
+  // headroom. The self-hosted composition registers
+  // @claxedo/opencode-server-adapter for operator-configured external
+  // connections; no OpenCode engine is bundled. The local signed web
+  // composition (2026-09-05) adds the embedded issuer's browser descriptor and
+  // cookie bridge (`self-hosted-node/embedded-browser-auth.ts` over the shared
+  // `browser-auth-security` guard and the Better Auth native-client constants)
+  // and the local Agent Plugins module the self-hosted entry mounts from
+  // `@claxedo/local-server/agent-plugins/local-composition`, the same module
+  // the desktop's server entry mounts. The 37th package is
+  // @claxedo/opencode-server-adapter, registered by the self-hosted
+  // composition for operator-configured external OpenCode connections; no
+  // OpenCode engine is bundled. Re-measured after the generic-harness merge;
+  // the values below are exact, not summed.
+  ceilings: { modules: 129, packages: 37 },
 
   emitted: {
     file: "packages/claxedo-server/.artifacts/u8-package-split/manifests/server-self-hosted.json",
@@ -77,7 +87,6 @@ export const serverSelfHosted: Policy = {
     buildPackages: [
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
-      { packageDir: "packages/agent-extensions" },
       { packageDir: "packages/agent-sdk-runtime" },
       { packageDir: "packages/opencode-server-adapter" },
       { packageDir: "packages/workspace-relay-protocol" },

@@ -100,6 +100,7 @@ describe("ClaxedoIcon", () => {
     expect(view.container.querySelector('use[href="#claxedo-icon-diff-unified"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-worktree"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-marketplace"]')).toBeTruthy()
+    expect(document.querySelectorAll("#claxedo-icon-marketplace rect")).toHaveLength(3)
     expect(view.container.querySelector('use[href="#claxedo-icon-providers"]')).toBeTruthy()
     expect(view.container.querySelector('use[href="#claxedo-icon-models"]')).toBeTruthy()
   })

@@ -19,6 +19,22 @@ const FULL_ENV = {
   [HOSTED_CREDENTIALS_FLAG]: "1",
 }
 
+function nativeKv() {
+  const values = new Map<string, string>()
+  return {
+    values,
+    binding: {
+      put: async (key: string, value: string) => { values.set(key, value) },
+      get: async (key: string) => values.get(key) ?? null,
+      delete: async (key: string) => { values.delete(key) },
+      list: async () => ({
+        keys: [...values.keys()].map((name) => ({ name })),
+        list_complete: true,
+      }),
+    },
+  }
+}
+
 const write = {
   provider_id: "github",
   kind: "api_key" as const,
@@ -85,6 +101,15 @@ describe("workerCredentials (flag on)", () => {
     await expect(credentials.deleteCredential("id")).rejects.toThrow(/org-partitioned/)
     await expect(credentials.updateCredentialStatus("id", "revoked")).rejects.toThrow(/org-partitioned/)
   })
+
+  test("accepts a native KV binding without REST credentials", () => {
+    const { binding } = nativeKv()
+    expect(() => workerCredentials({
+      [HOSTED_CREDENTIALS_FLAG]: "1",
+      [CREDENTIALS_KEK_ENV]: FULL_ENV[CREDENTIALS_KEK_ENV],
+      CLAXEDO_CREDENTIALS: binding,
+    })).not.toThrow()
+  })
 })
 
 describe("createHostedOrgSecretBackend", () => {
@@ -120,6 +145,22 @@ describe("createHostedOrgSecretBackend", () => {
 
     const orgB = createHostedOrgSecretBackend("org-b", { ...FULL_ENV })
     await expect(orgB.get(ref)).rejects.toThrow(/failed authentication/)
+  })
+
+  test("uses the native binding when present and never requires a REST API token", async () => {
+    const { binding, values } = nativeKv()
+    const env = {
+      [HOSTED_CREDENTIALS_FLAG]: "1",
+      [CREDENTIALS_KEK_ENV]: FULL_ENV[CREDENTIALS_KEK_ENV],
+      CLAXEDO_CREDENTIALS: binding,
+    }
+    const credentials = hostedOrgCredentials("org-a", env)
+    await credentials.putCredential({ ...write, provider_id: "integration:native", secret: "native-secret" })
+
+    const stored = values.get("cf:org/org-a/credential/integration:native")
+    expect(stored).toMatch(/^cenc1:/)
+    expect(stored).not.toContain("native-secret")
+    expect(await credentials.resolveCredentialSecret?.("integration:native")).toBe("native-secret")
   })
 })
 

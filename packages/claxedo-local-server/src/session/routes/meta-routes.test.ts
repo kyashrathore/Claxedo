@@ -45,7 +45,6 @@ function services(input: { workspaces?: unknown[] } = {}): ControlPlaneServicesC
     durableSessionLog: {} as never,
     auth: localOnlyAuthAdapter(),
     credentials: {} as never,
-    extensionPolicy: {},
     relay: {},
     sandbox: {},
     telemetry: { capture: vi.fn() },

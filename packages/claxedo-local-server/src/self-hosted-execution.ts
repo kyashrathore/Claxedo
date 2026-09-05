@@ -25,7 +25,6 @@ export {
   releaseEmbeddedWorkspaceRuntime,
   shutdownEmbeddedWorkspaceRuntimes,
   syncEmbeddedWorkspaceRuntimes,
-  syncEmbeddedWorkspaceRuntimeAgentExtensions,
   connectEmbeddedWorkspacePty,
 } from "./deployments/local/embedded-workspace-runtime"
 
@@ -34,6 +33,7 @@ export { AgentConfigRoutes } from "./agent-config/routes/index"
 export { SessionMetaRoutes } from "./session/routes/meta-routes"
 export { LocalWorkspaceRoutes } from "./workspace/routes/resolve-route"
 export { ShellRoutes } from "./shell/routes"
+export { LocalProjectRoutes, githubCloneAuthorization } from "./workspace/routes/projects-route"
 export { CredentialRoutes } from "./credentials/routes/credential"
 export { ProviderAuthRoutes } from "./credentials/routes/provider-auth"
 export { NetworkPolicyRoutes } from "./sandbox/network/network-policy-routes"

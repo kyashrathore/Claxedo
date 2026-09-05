@@ -8,12 +8,8 @@ import {
 import { runtimeWorkspaceDir } from "./state"
 import type { WorkspaceRuntimeState } from "./store"
 
-export async function runtimeConfigSnapshot(
-  state: WorkspaceRuntimeState,
-  extensions: Pick<NonNullable<Parameters<typeof createClaxedoRuntimeConfig>[0]>, "workspaceInstalls" | "policyOverrides"> = {},
-) {
+export async function runtimeConfigSnapshot(state: WorkspaceRuntimeState) {
   return createClaxedoRuntimeConfig({
-    ...extensions,
     secretScope: state.remote || state.ws.kind === "cloud" ? "shared" : "local",
     orgId: state.ws.org_id,
     workspaceDir: runtimeWorkspaceDir(state.ws),

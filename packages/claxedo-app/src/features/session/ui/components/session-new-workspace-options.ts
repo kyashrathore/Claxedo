@@ -28,18 +28,20 @@ export type ProjectInventoryEntry = {
 /**
  * The environment options the composer may offer.
  *
- * On the web build there is no local machine to run on — the renderer has no
- * filesystem and no loopback runtime — so offering "Local" produced a chip that
- * could be selected but never resolved to a workspace. Desktop keeps both.
- * `signedControlPlane` (transport !== loopback) is what distinguishes a hosted
- * web session from a desktop app pointed at its own embedded server.
+ * The server's mode decides: a server that runs workspaces on its own
+ * filesystem (`localExecution` from its health document — the self-host
+ * binary, which is also the desktop's server) offers "Local", signed in or
+ * not; the hosted plane has no filesystem and offers none. A server that
+ * says nothing about its filesystem is taken as the local product when
+ * unsigned and the hosted product when signed. "Cloud" is offered wherever
+ * sandbox creation is enabled.
  */
 export function newSessionEnvironmentOptions(input: {
-  platform: "web" | "desktop"
-  signedControlPlane: boolean
+  localExecution: boolean | undefined
+  signed: boolean
   sandboxEnabled?: boolean
 }): Array<"local" | "cloud"> {
-  const options: Array<"local" | "cloud"> = input.platform === "web" && input.signedControlPlane ? [] : ["local"]
+  const options: Array<"local" | "cloud"> = (input.localExecution ?? !input.signed) ? ["local"] : []
   if (input.sandboxEnabled !== false) options.push("cloud")
   return options
 }

@@ -7,12 +7,14 @@ import {
   type WorkspaceRuntimeSnapshotLike,
 } from "@/platform/runtime/agent/workspace-runtime-request"
 import {
+  centralTransportForDeployment,
   centralTransportForServer,
   isLocalPersonalScope,
 } from "@/platform/runtime/server-transport"
 import { authFetch, getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
 
 export {
+  centralTransportForDeployment,
   centralTransportForServer,
   isLocalPersonalScope,
   unsignedLocalFetch,

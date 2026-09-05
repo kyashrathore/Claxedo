@@ -3,6 +3,7 @@ import { configureApiRuntime, resetApiRuntime } from "@/platform/api/api"
 import { queryClient } from "@/platform/query/query-client"
 import {
   createWorkspaceRelayConnection,
+  configureWorkspaceConnectionAuthority,
   forgetWorkspaceConnection,
   openWorkspaceConnection,
   refreshWorkspaceConnection,
@@ -18,6 +19,7 @@ afterEach(() => {
   resetApiRuntime()
   setWorkspaceConnectionObserver(undefined)
   delete (globalThis as { api?: unknown }).api
+  configureWorkspaceConnectionAuthority(undefined)
 })
 
 function token(jti: string, payload: Record<string, unknown> = {}) {
@@ -48,6 +50,34 @@ function requestUrl(input: string | URL | Request) {
 }
 
 describe("workspace relay connection", () => {
+  test("uses the signed account authority without exposing a renderer bearer", async () => {
+    const calls: string[] = []
+    configureWorkspaceConnectionAuthority({
+      mint: async (workspaceId) => {
+        calls.push(`mint:${workspaceId}`)
+        return calls.length === 1
+          ? { status: "provisioning", retryAfterMs: 500 }
+          : connection({ workspaceId })
+      },
+      refresh: async (workspaceId) => {
+        calls.push(`refresh:${workspaceId}`)
+        return connection({ workspaceId, runtimeAccessToken: token("jti_refreshed") })
+      },
+    })
+    const request = (async () => {
+      throw new Error("generic HTTP must not run")
+    }) as typeof fetch
+
+    const opened = await openWorkspaceConnection("ws_account", {
+      request,
+      sleep: async () => {},
+    })
+    const refreshed = await refreshWorkspaceConnection(opened, { request })
+
+    expect(runtimeAccessTokenJti(refreshed.runtimeAccessToken)).toBe("jti_refreshed")
+    expect(calls).toEqual(["mint:ws_account", "mint:ws_account", "refresh:ws_account"])
+  })
+
   test("opens workspace connection info through the Control Plane", async () => {
     const calls: string[] = []
     const result = await openWorkspaceConnection("ws_1", {

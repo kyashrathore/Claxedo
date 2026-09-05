@@ -16,11 +16,6 @@ const examples = [
     dir: "examples/headless-client",
     packageImports: ["@claxedo/server"],
   },
-  {
-    dir: "examples/extension-client",
-    packageImports: ["@claxedo/agent-extensions"],
-    forbiddenImports: ["@claxedo/server"],
-  },
 ] as const
 
 function fail(message: string): never {

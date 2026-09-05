@@ -1,0 +1,1 @@
+declare const __CLAXEDO_AGENT_PLUGINS_ENABLED__: boolean

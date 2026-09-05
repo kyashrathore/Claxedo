@@ -5,7 +5,7 @@ import { resolveWorkspace } from "@claxedo/server-core/workspace/store/index"
 import { errorBody } from "@claxedo/server-core/platform/http/http"
 import { sandboxFetch } from "@claxedo/server-core/workspace/http/sandbox-target-fetch"
 import { localAgentConfigAllowed } from "../local-auth"
-import type { AgentConfigRouteOptions } from "../extension-support"
+import type { AgentConfigRouteOptions } from "../route-options"
 import { sandboxFetchOptionsForRequest } from "../../workspace/sandbox-fetch-options"
 
 export function agentConfigHarnessRoutes(options: AgentConfigRouteOptions = {}) {

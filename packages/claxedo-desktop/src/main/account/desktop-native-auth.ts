@@ -37,6 +37,7 @@ type SelectedDesktopAdapter = {
 }
 
 const DESCRIPTOR_PATH = "/api/claxedo/auth/descriptor"
+const DESCRIPTOR_MEMO_MS = 5 * 60_000
 const NETWORK_TIMEOUT_MS = 30_000
 
 /**
@@ -88,6 +89,15 @@ export async function revocationRejectedTheToken(response: Response) {
   )
 }
 
+/** A failure before any HTTP response: the socket, not the server, said no. */
+function isConnectionLevelFailure(error: unknown): boolean {
+  if (!(error instanceof Error)) return false
+  if (error.name === "AbortError" || error.name === "TimeoutError") return false
+  const cause = (error as { cause?: unknown }).cause
+  const code = cause && typeof cause === "object" && "code" in cause ? String((cause as { code: unknown }).code) : ""
+  return error.message.includes("fetch failed") || /ECONNRESET|ECONNREFUSED|EPIPE|ETIMEDOUT|EAI_AGAIN/.test(code + error.message)
+}
+
 export function createDesktopNativeAuth(input: {
   coreOrigin: string
   seams: OAuthSeams
@@ -101,15 +111,43 @@ export function createDesktopNativeAuth(input: {
   const timeoutMs = input.timeoutMs ?? NETWORK_TIMEOUT_MS
   let activeFlow: ReturnType<typeof createOAuthFlow> | undefined
 
+  const request = () => fetchImpl(`${input.coreOrigin}${DESCRIPTOR_PATH}`, {
+    method: "GET",
+    headers: { accept: "application/json" },
+    redirect: "manual",
+    signal: AbortSignal.timeout(timeoutMs),
+  })
+  // One descriptor per validity window, not one per hosted operation. Every
+  // signed request validates the credential's binding first, and fetching the
+  // descriptor each time doubled every round trip through the edge (the
+  // catalog took 5–20 s on a slow edge). The descriptor carries its own
+  // `expiresAt`, which already is the freshness rule; a short ceiling keeps a
+  // long-lived descriptor from outliving a redeploy for more than minutes.
+  let remembered: { descriptor: DesktopAuthDescriptor; until: number } | undefined
+  // Callers receive a copy: the descriptor's binding becomes the stored
+  // credential's binding, and a shared object would let a mutated credential
+  // rewrite what the next validation compares it against.
   const discover = async () => {
+    if (!remembered || now() >= remembered.until) {
+      const descriptor = await load()
+      remembered = { descriptor, until: Math.min(descriptor.expiresAt, now() + DESCRIPTOR_MEMO_MS) }
+    }
+    return structuredClone(remembered.descriptor)
+  }
+  const load = async () => {
     let response: Response
     try {
-      response = await fetchImpl(`${input.coreOrigin}${DESCRIPTOR_PATH}`, {
-        method: "GET",
-        headers: { accept: "application/json" },
-        redirect: "manual",
-        signal: AbortSignal.timeout(timeoutMs),
-      })
+      try {
+        response = await request()
+      } catch (first) {
+        // One retry on a fresh connection. The edge in front of the control
+        // plane occasionally resets a warm connection (ECONNRESET, "fetch
+        // failed") and the very next attempt succeeds; without this, that one
+        // reset failed the session renewal and every hosted operation behind
+        // it for the whole refresh cooldown.
+        if (!isConnectionLevelFailure(first)) throw first
+        response = await request()
+      }
     } catch (error) {
       throw new DesktopAuthDescriptorError(
         "descriptor_unavailable",

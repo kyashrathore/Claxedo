@@ -7,7 +7,7 @@ describe("pre-push architecture ratchet", () => {
     const manifest = await Bun.file(new URL("package.json", root)).json()
 
     expect(manifest.scripts["test:architecture-ratchets"]).toBe(
-      "bun ./script/product-boundary/verify.ts --all --source-only",
+      "BUN_CONFIG_FILE=./script/architecture-ratchets.bunfig.toml bun test ./script/agent-plugins-retirement.test.ts && bun ./script/product-boundary/verify.ts --all --source-only",
     )
     expect(manifest.scripts.prepush).toBe(
       "bun run typecheck && bun run test:architecture-ratchets",

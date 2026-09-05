@@ -209,7 +209,7 @@ test("keeps hero tabs, sessions, transcripts, drafts, context, and selectors in 
   await hero.locator(".review-toolbar").getByRole("button", { name: "Open review" }).click()
   await expect(hero.getByText(".github/workflows/docs-links.yml")).toBeVisible()
   if (page.viewportSize()!.width >= 768) {
-    const folder = hero.locator("[data-repo-folder='.agent-extensions']")
+    const folder = hero.locator("[data-repo-folder='.agents']")
     await folder.click()
     await expect(folder).toHaveAttribute("aria-expanded", "true")
     await expect(hero.locator("[data-repo-children]")).toBeVisible()

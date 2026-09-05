@@ -2,7 +2,7 @@ import { getClaxedoServerUrl } from "@/platform/api/api"
 import { readProjectCatalog } from "@/platform/query/control-plane"
 import { resolveWorkspaceRef } from "@/platform/identity/resolve-workspace-ref"
 import type { SessionRef } from "@/platform/identity/session-ref"
-import { localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
+import { isWorkspaceIdRef, localWorkspaceAssociationId, workspaceIdFromRef } from "@/platform/identity/legacy-resolver"
 import { localWorkspaceInProjects, signedWorkspaceFromProjects } from "@/platform/runtime/agent/signed-workspace"
 
 // The signed project inventory (carries the real cloud-vs-user-hosted `kind` for
@@ -13,6 +13,8 @@ type WorkspaceInventory = Parameters<typeof signedWorkspaceFromProjects>[0]
 export type SessionWorkspaceRuntimeInput = {
   directory: string
   sessionRef?: SessionRef
+  /** Explicit workspace identity carried by the pane's workspace route. */
+  workspaceId?: string
   /**
    * The inventory to classify against. OMITTED means "the catalog this app has
    * already resolved" — not "no inventory".
@@ -26,11 +28,25 @@ export type SessionWorkspaceRuntimeInput = {
   projects?: WorkspaceInventory
 }
 
+function optimisticRelayRef(workspaceId: string, kind: "cloud" | "user-hosted" = "user-hosted") {
+  // ws_ ids can exist before signed inventory loads. Bare project UUIDs cannot:
+  // they are the desktop local route id, and minting them 403s Convex.
+  if (isWorkspaceIdRef(workspaceId) || workspaceIdFromRef(workspaceId)) {
+    return { workspaceId, kind }
+  }
+  return undefined
+}
+
 export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) {
   const projects = input.projects ?? readProjectCatalog(getClaxedoServerUrl())
   if (input.sessionRef) {
     const backing = resolveWorkspaceRef(input.sessionRef)
     if (backing.kind === "cloud" || backing.kind === "user-hosted") {
+      // The inventory's answer wins when it has one: it carries the real
+      // cloud-vs-user-hosted kind, which the ref alone cannot.
+      const signed = signedWorkspaceFromProjects(projects, backing.workspaceId)
+        ?? signedWorkspaceFromProjects(projects, input.directory)
+      if (signed) return { workspaceId: signed.workspaceId, kind: signed.kind }
       // Route activation can briefly carry a stale/legacy workspace-backed ref.
       // A loaded project catalog that positively identifies either the backing
       // id or its directory as local is the canonical owner and must win before
@@ -38,11 +54,10 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
       if (
         localWorkspaceInProjects(projects, backing.workspaceId) ||
         localWorkspaceInProjects(projects, input.directory)
-      ) return undefined
-      return {
-        workspaceId: backing.workspaceId,
-        kind: backing.kind,
+      ) {
+        return undefined
       }
+      return optimisticRelayRef(backing.workspaceId, backing.kind)
     }
     // A central/virtual ref (`none` backing) stays unbacked — its workspaceId
     // is an authz-only scope, never a runtime target. But a `local` backing
@@ -51,6 +66,22 @@ export function sessionWorkspaceRuntimeRef(input: SessionWorkspaceRuntimeInput) 
     // `local` even for relay-backed workspaces. Fall through to the
     // directory/inventory resolution below instead of concluding local here.
     if (backing.kind !== "local") return undefined
+  }
+  // Draft panes begin with a local SessionRef because no runtime session exists
+  // yet. Once the user opens/selects a workspace route, that route is the
+  // authoritative runtime target even though the draft's provider directory is
+  // still the local project checkout. Resolve its real kind from inventory so
+  // the pane SDK, model catalog, composer and WorkspaceGate share one relay.
+  if (input.workspaceId) {
+    const workspace = signedWorkspaceFromProjects(projects, input.workspaceId)
+    if (workspace) return { workspaceId: workspace.workspaceId, kind: workspace.kind }
+    if (
+      localWorkspaceInProjects(projects, input.workspaceId) ||
+      localWorkspaceInProjects(projects, input.directory)
+    ) {
+      return undefined
+    }
+    return optimisticRelayRef(input.workspaceId)
   }
   const workspaceId = workspaceIdFromRef(input.directory)
   if (!workspaceId) {

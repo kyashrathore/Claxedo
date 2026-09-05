@@ -22,6 +22,7 @@ import type { ControlPlaneServices } from "../../authority/services"
 import { requireAuthority } from "@claxedo/server-core/platform/auth/authority"
 import { createFixedWindowConnectionRateLimiter, type ConnectionRateLimiter } from "../../platform/auth/rate-limit"
 import { newWorkspaceId } from "../../platform/auth/workspace-id"
+import { keepAlivePastResponse } from "@claxedo/server-core/platform/http/background-work"
 import { hostedConnectionInfo } from "../../connections/hosted-connection-info"
 import { apiError, captureWorkspaceTelemetry, configuredRelayUrl, hostTunnelCredential, parsedBody, rec, signedOrError, txt, type WorkspaceRouteOptions } from "../../workspace/route-support"
 import { workspaceShareRoutes } from "../../workspace/routes/share-routes"
@@ -448,10 +449,15 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           })
           if (leaseCapped) return c.json(leaseCapped.body, leaseCapped.status)
           await authority.usersMe(auth)
+          // Only a project the caller named is handed to the authority. Without
+          // one the authority derives the project from the repository (reusing
+          // the org's existing project for that repo, else creating it); a
+          // fresh id here would be an unknown project the caller cannot
+          // administer, which the D1 authority rightly refuses.
           await authority.createCloudWorkspace(auth, {
             workspaceId,
             ...(body.orgId?.trim() ? { orgId: body.orgId.trim() } : {}),
-            projectId,
+            ...(body.projectId?.trim() ? { projectId: body.projectId.trim() } : {}),
             displayName,
             repoUrl,
             ...(body.repoName?.trim() ? { repoName: body.repoName.trim() } : {}),
@@ -488,10 +494,17 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
         }
 
         // Kick off provisioning. The lease state machine + driver.ensureHost are
-        // idempotent and re-polled by the app via /connection, so this is
-        // fire-and-forget: a slow cold-start must not block the create response.
-        void sandboxManager
-          .ensure(workspaceId, {
+        // idempotent and re-polled by the app via /connection, so the response
+        // does not wait for it: a slow cold-start must not block the create.
+        // It is held open past the response (`waitUntil` on Workers) because
+        // workerd cancels detached work with the request, which left the first
+        // `ensure` — and the Agent Plugins runtime provisioning behind it — to
+        // whichever `/connection` poll came next.
+        keepAlivePastResponse(c, Promise.resolve()
+          .then(async () => {
+            const runtimePreparation = await options.prepareRuntime?.(workspaceId)
+            const runtimeSecrets = runtimePreparation?.secrets ?? []
+            const result = await sandboxManager.ensure(workspaceId, {
             homeRegion,
             labels: {
               projectId,
@@ -501,7 +514,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             // Clone token for connected private repos — rides the brokered
             // secret channel (fail-closed in the manager for drivers that
             // cannot broker), never labels or env.
-            ...(provisionSecrets?.length ? { secrets: provisionSecrets } : {}),
+            ...((provisionSecrets?.length || runtimeSecrets.length)
+              ? { secrets: [...(provisionSecrets ?? []), ...runtimeSecrets] }
+              : {}),
             // Security review 2026-07-27 §6.14 — this is the hosted, multi-tenant
             // create path, so the sandbox it provisions runs agent-authored code
             // over someone's private checkout. `net` was omitted here, and an
@@ -540,6 +555,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
               source,
               ...(options.sandboxEgressExtraHosts ? { extraHosts: options.sandboxEgressExtraHosts } : {}),
             }),
+            })
+            return { result, runtimePreparation }
           })
           // The lease row exists once `ensure` has acquired it, so the tenant is
           // stamped here rather than before: the sandbox manager's acquire port
@@ -547,7 +564,8 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
           // point that holds both the verified tenant and a lease to attach it
           // to. Metering attribution never gates provisioning, so a deployment
           // with no workspace authority configured simply records nothing.
-          .then((result) => {
+          .then(async ({ result, runtimePreparation }) => {
+            if (result.status === "ready") await options.provisionRuntime?.(workspaceId, runtimePreparation)
             // Since the 2026-07-28 inversion the only refusal that can land here
             // is `sandbox_egress_policy_unenforceable`: a driver that DOES
             // enforce egress, handed an encoding it cannot express (hosts-only
@@ -586,9 +604,9 @@ export function HostedWorkspaceRoutes(services?: ControlPlaneServices, options: 
             //    `personal:<subject>`) would corrupt every per-org aggregate
             //    downstream, which is why the owner is a separate column rather
             //    than an org id we invent to make the count work.
-            void options.sandboxUsage?.recordLeaseTenant({ auth, workspaceId })
+            await Promise.resolve(options.sandboxUsage?.recordLeaseTenant({ auth, workspaceId })).catch(() => undefined)
           })
-          .catch(() => undefined)
+          .catch(() => undefined))
 
         return c.json({ workspaceId, directory })
       })

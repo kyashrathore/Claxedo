@@ -70,7 +70,12 @@ export const desktopMainComposition: Policy = {
   // per-instance app name, icon tint and userData suffix, reached from
   // `main/index.ts` and `main/windows.ts`. Electron and node:fs/path only, so
   // no package edge: 87/24.
-  ceilings: { modules: 87, packages: 24 },
+  // +1 `main/agent-plugins-signed-sync.ts` — the one owner of how the daemon's
+  // signed Agent Plugins world follows the account: main pulls the signed
+  // user's runtime with the credential only it holds and hands it to the
+  // daemon's loopback surface. Reached from `main/index.ts`; timers and fetch
+  // only, so no package edge: 88/24.
+  ceilings: { modules: 88, packages: 24 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-main.json",
     minModules: 35,
@@ -259,11 +264,9 @@ export const desktopRendererUnsigned: Policy = {
   // (composer intent/submission/draft, authority cache/query/controller,
   // runtime client/ingress, dock, Stop fallback + shared JSON reader):
   // thirteen modules.
-  // Plan 150 section E: `features/extensions/marketplace/transport.ts` — the
-  // one module that decides WHICH MACHINE answers an extensions request, so the
-  // marketplace stops asking `getClaxedoServerUrl()` for a workspace served
-  // elsewhere. Owned by the extensions feature, reachable only through the
-  // already-lazy marketplace panel: one module, no package edge.
+  // Plan 150 section E named a machine-routing module owned by the retired
+  // marketplace feature; that whole feature is gone, so it contributes nothing
+  // to this closure any more.
   // Plan 149 adds `features/workspaces/data/workspace-catalog.ts` (the single
   // catalog owner) in the same slice: one more module, no package edge.
   // Plan 150 section C: the same three Settings scope modules app-local
@@ -294,7 +297,20 @@ export const desktopRendererUnsigned: Policy = {
   // -46 modules / -3 packages: retiring the hosted work-ledger service took its
   // renderer contribution loader and the whole app-side surface graph out of
   // the unsigned renderer. Re-measured, no headroom.
-  ceilings: { modules: 1007, packages: 56 },
+  // +6 modules / 0 packages (2026-09-04): the Agent Plugins marketplace became a
+  // Directory (search, source chips, cards, detail pane, add-source form) plus
+  // an install sheet, the shared connections helper, and the signed desktop's
+  // DirectoryApi over hosted operations, replacing the single catalog surface.
+  // Reviewed owner: features/agent-plugins (this product's own surface); every
+  // edge stays inside packages already in the closure. Re-measured, no headroom.
+  // +7 modules / 0 packages (2026-09-04, polish): the Directory split into status,
+  // facts, actions, MCP rows, skill view, overflow menu, pane width, and chrome
+  // modules; every edge stays inside packages already in the closure. Re-measured, no headroom.
+    // +1 module (2026-09-04): the Personal entry pane. Re-measured, no headroom.
+  // +2 modules (2026-09-05): the New Project flow rule and the
+  // folder-versus-cloud chooser reached through the shared project actions
+  // (see app-local.ts for the owner).
+  ceilings: { modules: 1023, packages: 56 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-local.json",
     minModules: 700,
@@ -345,10 +361,22 @@ export const desktopHostedContribution: Policy = {
   },
   // Optional service renderers now have independent catalog-driven roots. This
   // activation entry owns only desktop machine remote access and its shared
-  // contract, so the reviewed closure deliberately shrinks from 322/40 to 4/0:
-  // the Goal-mode session owners the monolithic loader used to drag in are
-  // reached from their own service roots, not from this activation entry.
-  ceilings: { modules: 4, packages: 0 },
+  // contract, so the reviewed closure deliberately shrinks from 322/40: the
+  // Goal-mode session owners the monolithic loader used to drag in are reached
+  // from their own service roots, not from this activation entry.
+  //
+  // It also binds the cloud workspace-startup port, because this is the only
+  // desktop binding of it and shared composer code (`submit-directory.ts`,
+  // `session-actions.tsx`) calls `workspaceStartup()` on desktop too. That
+  // reaches the canonical cloud-startup owners — `workspace-runtime-store`,
+  // `workspace-relay-connection`, and the AccountPort call/decode pair — and
+  // through the store's query cache the one package edge, `@tanstack/solid-query`.
+  // Measured at 43/1; `renderer-entry-closure.guard.test.ts` pins the exact
+  // hosted module set so a sixth is a new edge to review, not a number to bump.
+  // The 43rd module is `platform/identity/harness-selection.ts`, reached from
+  // `agent-runtime-client.ts` since the generic-harness cutover made the
+  // selection (native harness vs configured connection) a typed value.
+  ceilings: { modules: 43, packages: 1 },
   emitted: {
     file: "packages/claxedo-desktop/out/product-boundary/desktop-renderer-hosted-contributions.json",
     minModules: 4,

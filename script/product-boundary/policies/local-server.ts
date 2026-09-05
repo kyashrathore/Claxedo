@@ -108,7 +108,6 @@ export const localServer: Policy = {
     buildPackages: [
       { packageDir: "packages/agent-runtime-contract" },
       { packageDir: "packages/agent-event-runtime" },
-      { packageDir: "packages/agent-extensions" },
       { packageDir: "packages/agent-sdk-runtime" },
       { packageDir: "packages/opencode-server-adapter" },
       { packageDir: "packages/workspace-relay-protocol" },

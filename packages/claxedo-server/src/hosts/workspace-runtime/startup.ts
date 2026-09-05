@@ -22,6 +22,11 @@ export function claxedoWorkspaceRuntimeEntry() {
   return path.resolve(import.meta.dirname, "host-entry.ts")
 }
 
+/** Selected only by the Agent Plugins sandbox-image build profile. */
+export function claxedoAgentPluginsWorkspaceRuntimeEntry() {
+  return path.resolve(import.meta.dirname, "host-entry.agent-plugins.ts")
+}
+
 export function workspaceRuntimeVersion() {
   if (versionCache) return versionCache
   versionCache = readWorkspaceRuntimeVersion(workspaceRuntimeRoot())

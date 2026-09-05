@@ -39,7 +39,7 @@ export type FeatureKey =
   | "layoutModes"
   | "managedProcesses"
   | "remote"
-  | "agentExtensions"
+  | "agentPlugins"
   | "channels"
   | "connections"
   | "documents"
@@ -58,7 +58,7 @@ export const featureRows: readonly { key: FeatureKey; label: string; description
   { key: "layoutModes", label: "Configurable layout", description: "Switch the workspace between horizontal tabs and a vertical sidebar — your layout, not a fixed shell." },
   { key: "managedProcesses", label: "Managed processes", description: "Dev servers and watchers the workspace starts, restarts, and streams logs from — agents can read them too." },
   { key: "remote", label: "Remote access", description: "Reach the same live session from another device — browser or phone — not just start a new one." },
-  { key: "agentExtensions", label: "Agent extensions", description: "Author skills and MCP config once; synced into every harness's native format on every workspace." },
+  { key: "agentPlugins", label: "Agent Plugins", description: "Enable standard plugins and project them into each selected harness." },
   { key: "channels", label: "Channels", description: "Drive sessions from Slack, Telegram, or WhatsApp — messages route into agent work." },
   { key: "connections", label: "Connections", description: "Link GitHub, Jira, or Linear once; features consume the account by capability without re-auth." },
   { key: "documents", label: "Document authoring", description: "First-class rich documents authored alongside the code — not just markdown preview." },
@@ -78,7 +78,7 @@ export const claxedoFeatures: Record<FeatureKey, FeatureState> = {
   layoutModes: "yes",
   managedProcesses: "yes",
   remote: "yes",
-  agentExtensions: "yes",
+  agentPlugins: "yes",
   channels: "yes",
   connections: "yes",
   documents: "yes",
@@ -135,10 +135,10 @@ export const competitors: readonly Competitor[] = [
     tagline: "Open-source agent orchestration across your own machines, desktop, web, CLI, and native mobile apps.",
     verdict:
       "Paseo is a genuine self-hosted peer with broad agent support, split workspaces, managed services, native mobile, and an optional team Hub. Claxedo differs most clearly on its permissive license and integrated organization scoping.",
-    features: { team: "partial", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "yes", remote: "yes", agentExtensions: "partial", channels: "partial", connections: "yes", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "yes" },
+    features: { team: "partial", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "yes", remote: "yes", agentPlugins: "partial", channels: "partial", connections: "yes", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "yes" },
     featureNotes: {
       team: "The optional self-hosted Hub adds organizations, accounts, credentials, and team access; the core daemon still has no forced Paseo login.",
-      agentExtensions: "Paseo installs shared orchestration skills and injects its tools through native interfaces or MCP; it does not document a general cross-harness extension-format synchronizer.",
+      agentPlugins: "Paseo installs shared orchestration skills and injects its tools through native interfaces or MCP; it does not document Agent Plugins support.",
       channels: "Paseo Hub supports Slack and Discord triggers and replies, but not Telegram or WhatsApp.",
     },
     capabilities: {
@@ -187,7 +187,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "A local-first workspace for nine coding-agent runtimes, durable tasks, review, automation, and self-hosted remote access.",
     verdict:
       "Synara is a capable MIT-licensed personal control plane: it now combines nine runtimes with durable tasks and goals, automations, managed worktrees, a shared browser, and authenticated self-hosted remote access. Claxedo differs on multi-user organization scoping and portable agent setup across sandboxes.",
-    features: { team: "no", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "yes", remote: "yes", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "no" },
+    features: { team: "no", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "yes", remote: "yes", agentPlugins: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "no" },
     capabilities: {
       what: "Local-first personal desktop workspace and self-hostable web control plane",
       team: "Personal — no Synara account or organization model is required or documented",
@@ -234,10 +234,10 @@ export const competitors: readonly Competitor[] = [
     tagline: "A macOS and hosted-cloud workspace for parallel Claude Code, Codex, Cursor, and OpenCode agents.",
     verdict:
       "Conductor now spans local Mac workspaces and a paid hosted Cloud with Multiplayer, four integrated harnesses, managed scripts, API access, persistent review state, and an experimental browser preview. Claxedo differs on open self-hosting, cross-platform desktop clients, and generic ACP support.",
-    features: { team: "yes", openSource: "no", selfHost: "no", harnessNeutral: "partial", terminalFirstClass: "yes", splitPanes: "no", layoutModes: "no", managedProcesses: "yes", remote: "yes", agentExtensions: "partial", channels: "no", connections: "partial", documents: "no", inAppBrowser: "partial", byokSandboxes: "no", crossPlatform: "no", nativeMobile: "no" },
+    features: { team: "yes", openSource: "no", selfHost: "no", harnessNeutral: "partial", terminalFirstClass: "yes", splitPanes: "no", layoutModes: "no", managedProcesses: "yes", remote: "yes", agentPlugins: "partial", channels: "no", connections: "partial", documents: "no", inAppBrowser: "partial", byokSandboxes: "no", crossPlatform: "no", nativeMobile: "no" },
     featureNotes: {
       harnessNeutral: "Claude Code, Codex, Cursor, and OpenCode are integrated harnesses; Big Terminal can launch other CLIs, but Conductor does not document a generic integrated ACP or Gemini harness.",
-      agentExtensions: "Claude Code, Codex, and OpenCode can reuse skills, while MCP and project configuration remain harness-specific rather than being converted into every native format.",
+      agentPlugins: "Claude Code, Codex, and OpenCode can reuse skills, while MCP and project configuration remain harness-specific.",
       connections: "Conductor integrates GitHub organizations and GitHub or Linear issues, but does not document a generic capability connection layer or Jira support.",
       inAppBrowser: "An experimental in-app browser preview ships with Agentation annotations; first-party docs do not show coding agents directly driving it.",
     },
@@ -290,7 +290,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "A source-available, macOS-primary terminal-first IDE built to orchestrate 100+ coding agents in parallel.",
     verdict:
       "Superset combines extensive agent support with worktrees, tasks, managed scripts, integrations, and an SDK. Its team and remote-workspace features remain part of a paid hosted tier, the project uses Elastic License 2.0, and macOS is its only fully supported desktop platform.",
-    features: { team: "partial", openSource: "partial", selfHost: "partial", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "yes", remote: "partial", agentExtensions: "no", channels: "yes", connections: "yes", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "partial", nativeMobile: "no" },
+    features: { team: "partial", openSource: "partial", selfHost: "partial", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "yes", remote: "partial", agentPlugins: "no", channels: "yes", connections: "yes", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "partial", nativeMobile: "no" },
     featureNotes: {
       team: "The free tier is for one user; paid Pro adds unlimited users and team collaboration.",
       openSource: "Elastic License 2.0 — source-available, not OSI-approved open source.",
@@ -345,7 +345,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "A free, MIT agent-harness control plane with web, desktop, headless-server, and native mobile clients.",
     verdict:
       "T3 Code is a free, MIT, self-hostable control plane for five coding harnesses, with remote access, source-control workflows, a built-in terminal and preview, and native mobile clients. Claxedo differs on organization-scoped teams, generic ACP and Gemini support, and portable agent setup across sandboxes.",
-    features: { team: "no", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "partial", remote: "yes", agentExtensions: "no", channels: "no", connections: "yes", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "yes" },
+    features: { team: "no", openSource: "yes", selfHost: "yes", harnessNeutral: "yes", terminalFirstClass: "yes", splitPanes: "yes", layoutModes: "no", managedProcesses: "partial", remote: "yes", agentPlugins: "no", channels: "no", connections: "yes", documents: "no", inAppBrowser: "yes", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "yes" },
     featureNotes: {
       managedProcesses: "Project scripts and server-owned terminal/provider processes are documented, but restart and log-management parity with a dedicated process manager is not.",
     },
@@ -392,7 +392,7 @@ export const competitors: readonly Competitor[] = [
     tagline: "An open-source, provider-agnostic coding agent with terminal, web, desktop, and IDE clients — and one of the harnesses Claxedo runs.",
     verdict:
       "OpenCode is an MIT coding-agent engine with 75+ model providers, terminal, web, desktop, and IDE clients, plus network-accessible self-hosted server modes. Claxedo is the multi-harness workspace around that class of engine, adding a managed relay and organization-scoped collaboration.",
-    features: { team: "partial", openSource: "yes", selfHost: "partial", harnessNeutral: "no", terminalFirstClass: "yes", splitPanes: "no", layoutModes: "no", managedProcesses: "no", remote: "yes", agentExtensions: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "no", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "no" },
+    features: { team: "partial", openSource: "yes", selfHost: "partial", harnessNeutral: "no", terminalFirstClass: "yes", splitPanes: "no", layoutModes: "no", managedProcesses: "no", remote: "yes", agentPlugins: "no", channels: "no", connections: "no", documents: "no", inAppBrowser: "no", byokSandboxes: "no", crossPlatform: "yes", nativeMobile: "no" },
     featureNotes: {
       team: "Enterprise adds central configuration and SSO, and Zen workspaces have roles; no shared live multi-user coding workspace is documented, while `/share` publishes conversation history by link.",
       selfHost: "The core server and web client can be self-run; public sharing uses OpenCode's hosted service, while first-party enterprise material is not yet consistent about a supported self-hosted share/control-plane path.",

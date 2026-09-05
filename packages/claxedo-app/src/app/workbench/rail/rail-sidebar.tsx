@@ -429,6 +429,7 @@ function replaceSessionUrl(session: Row) {
   window.history.replaceState(window.history.state, "", route)
   window.dispatchEvent(new PopStateEvent("popstate"))
 }
+
 export function RailSidebar(props: RailSidebarProps) {
   if (!railBodyMarked) {
     railBodyMarked = true

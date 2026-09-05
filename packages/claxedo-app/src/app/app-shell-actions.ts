@@ -1,19 +1,15 @@
 import type { Navigator, Params } from "@solidjs/router"
+import { checkServerHealthCached } from "@/app/connection/server-health"
 
 import { createClaxedoLayoutActions } from "./workbench/actions/index"
 import { useClaxedoEventsOptional } from "./integrations/claxedo-events"
 import { useCommand } from "@/app/providers/command"
-import { ADD_PROJECT_COMMAND_ID } from "@/features/session/ui/components/session-add-project-action"
 import { useLanguage } from "@/platform/i18n/provider"
 import { marketplaceRoute } from "@/platform/identity/route"
 import type { AppShellState } from "./app-shell-state"
 import { workspaceConnection } from "@/features/workspaces/data/workspace-connection"
 
-export function useAppShellActions(input: {
-  shell: AppShellState
-  params: Params
-  navigate: Navigator
-}) {
+export function useAppShellActions(input: { shell: AppShellState; params: Params; navigate: Navigator }) {
   const events = useClaxedoEventsOptional()
   const handleOpenMarketplace = () => {
     input.shell.state.layout.openMarketplace()
@@ -56,21 +52,26 @@ export function useAppShellActions(input: {
     workspaceRouteId: input.shell.routeIdForDirectory,
     workspaceKindForRoute: (routeId) => workspaceConnection(routeId)?.kind,
     canUseDocuments: input.shell.canUseDocuments,
+    // The server's own account of itself (local execution), read from its
+    // health document; features take it as a port rather than reaching in.
+    serverHealth: () => {
+      const url = input.shell.globalSDK.url
+      return url
+        ? checkServerHealthCached({ url }, input.shell.platform.fetch ?? globalThis.fetch)
+        : Promise.resolve(undefined)
+    },
     flowLog: input.shell.flowLog,
   })
 
-  // `handleNewProject` (directory picker -> ensureLocalProject -> open project ->
-  // open a session surface on it) is only reachable from here, but two surfaces
-  // outside the rail want it: the desktop menu's "Open Project..." entry, which
-  // already declares `project.open` (app/entry/desktop-menu.ts) and was
-  // permanently disabled because nothing registered that id, and the new-session
-  // project chip's "Add project" footer row. Registering it once here is what
-  // makes both real -- see features/session/ui/components/session-add-project-action.ts.
+  // `handleNewProject` raises the create-project intent the mounted composer's
+  // Project chip answers (its create panel). The desktop menu's "Open
+  // Project..." entry declares `project.open` (app/entry/desktop-menu.ts) and
+  // was permanently disabled while nothing registered that id.
   const command = useCommand()
   const language = useLanguage()
   command.register("claxedo-project", () => [
     {
-      id: ADD_PROJECT_COMMAND_ID,
+      id: "project.open",
       title: language.t("command.project.open"),
       category: language.t("command.category.project"),
       onSelect: () => actions.handleNewProject(),

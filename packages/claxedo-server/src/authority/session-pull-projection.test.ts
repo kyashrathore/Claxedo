@@ -56,7 +56,6 @@ function services(): ControlPlaneServices {
     },
     auth: localOnlyAuthAdapter("test"),
     credentials: {} as never,
-    extensionPolicy: {},
     relay: {},
     sandbox: {},
     telemetry: { capture: vi.fn() },

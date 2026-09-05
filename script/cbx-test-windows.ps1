@@ -43,7 +43,6 @@ $env:CLAXEDO_DIAGNOSTICS_DEBUG = "1"
 
 bun turbo build `
   --filter=@claxedo/agent-event-runtime `
-  --filter=@claxedo/agent-extensions `
   --filter=@claxedo/agent-sdk-runtime `
   --filter=@claxedo/channels `
   --filter=@claxedo/connections `

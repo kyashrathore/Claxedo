@@ -6,10 +6,53 @@ import {
   resolveWorkspaceSubmitPlan,
   sessionRefForSubmitTarget,
   signedWorkspaceForDirectory,
+  selectedNewSessionWorkspace,
   submitSessionDirectory,
   workspaceForDirectory,
   type ProjectCatalogItem,
+  projectRepoUrl,
 } from "./workspace-resolver"
+
+describe("projectRepoUrl", () => {
+  test("reads the repository source owned by project inventory", () => {
+    expect(projectRepoUrl({
+      id: "project-1",
+      workspaces: {
+        local: {
+          kind: "local",
+          git_remote: " https://github.com/kyashrathore/plugins.git ",
+        },
+      },
+    })).toBe("https://github.com/kyashrathore/plugins.git")
+  })
+
+  test("does not synthesize a source when inventory has none", () => {
+    expect(projectRepoUrl({ id: "project-1", workspaces: {} })).toBeUndefined()
+  })
+})
+
+describe("selectedNewSessionWorkspace", () => {
+  test("carries an explicitly selected cloud workspace into submit authority", () => {
+    expect(selectedNewSessionWorkspace({
+      newSession: true,
+      kind: "cloud",
+      worktree: "ws_cloud",
+    })).toEqual({ kind: "cloud", workspaceId: "ws_cloud" })
+  })
+
+  test("marks new cloud provisioning as signed without inventing a workspace id", () => {
+    expect(selectedNewSessionWorkspace({
+      newSession: true,
+      kind: "cloud",
+      worktree: "create",
+    })).toEqual({ kind: "cloud" })
+  })
+
+  test("does not classify local or existing-session input as remote", () => {
+    expect(selectedNewSessionWorkspace({ newSession: true, kind: "local", worktree: "main" })).toBeUndefined()
+    expect(selectedNewSessionWorkspace({ newSession: false, kind: "cloud", worktree: "ws_cloud" })).toBeUndefined()
+  })
+})
 
 const projects = [
   {

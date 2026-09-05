@@ -82,7 +82,6 @@ export function createLocalControlPlaneServices(
     // a bearer against, so the loopback guard is the boundary.
     auth: localOnlyAuthAdapter(),
     credentials: defaultControlPlaneCredentials(),
-    extensionPolicy: {},
     // No relay provider and no sandbox manager: this product provisions
     // nothing and reaches no Relay. Both are the empty shape rather than a
     // stub that pretends.

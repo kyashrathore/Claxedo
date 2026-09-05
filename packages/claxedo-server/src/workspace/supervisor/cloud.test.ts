@@ -308,6 +308,8 @@ vi.mock("@claxedo/server-core/workspace/store/index", () => ({
   updateWorkspace: (...args: unknown[]) => (mockUpdateWorkspace as any)(...args),
   // The supervisor composition teaches the store to read sandbox leases.
   configureWorkspaceStore: vi.fn(),
+  // Sandboxes start with the project's environment; these projects have none.
+  projectEnv: vi.fn(async () => undefined),
 }))
 
 vi.mock("@claxedo/server-core/sandbox/network/policy", () => ({
@@ -1086,7 +1088,7 @@ describe("workspace-supervisor", () => {
       })
     })
 
-    test("cloud runtime config uses shared credentials and workspace Agent Extension scope", async () => {
+    test("cloud runtime config uses shared credentials and workspace identity", async () => {
       store.set("ws-hosted-config", {
         ...workspace("ws-hosted-config"),
         remote_directory: "/remote/app",

@@ -16,7 +16,6 @@ describe("workspace supervisor port", () => {
     expect(workspaceSupervisorInstalled()).toBe(false)
     expect(() => workspaceSupervisor().hold("ws_1")).not.toThrow()
     await expect(workspaceSupervisor().broadcastRuntimeConfig()).resolves.toBeUndefined()
-    await expect(workspaceSupervisor().syncAgentExtensions("ws_1", [])).resolves.toBeUndefined()
   })
 
   it("routes every call to the installed supervisor", async () => {
@@ -27,7 +26,6 @@ describe("workspace supervisor port", () => {
       markUse: (id) => calls.push(`markUse:${id}`),
       touch: (id) => calls.push(`touch:${id}`),
       broadcastRuntimeConfig: async () => { calls.push("broadcast") },
-      syncAgentExtensions: async (id) => { calls.push(`sync:${id}`) },
     })
 
     workspaceSupervisor().hold("ws_1")
@@ -35,9 +33,8 @@ describe("workspace supervisor port", () => {
     workspaceSupervisor().markUse("ws_1")
     workspaceSupervisor().touch("ws_1")
     await workspaceSupervisor().broadcastRuntimeConfig()
-    await workspaceSupervisor().syncAgentExtensions("ws_1", [])
 
-    expect(calls).toEqual(["hold:ws_1", "release:ws_1", "markUse:ws_1", "touch:ws_1", "broadcast", "sync:ws_1"])
+    expect(calls).toEqual(["hold:ws_1", "release:ws_1", "markUse:ws_1", "touch:ws_1", "broadcast"])
   })
 
   it("is installed by the supervisor composition, so a cloud deployment never silently no-ops", async () => {

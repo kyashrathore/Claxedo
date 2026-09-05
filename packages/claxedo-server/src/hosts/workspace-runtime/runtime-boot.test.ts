@@ -86,6 +86,15 @@ describe("claxedo workspace-runtime boot policy", () => {
     expect(boot.options.hostTunnel).toBeUndefined()
   })
 
+  test("forwards the host entry's route contributions into the server options", async () => {
+    const contribution = { id: "agent-plugins", mount: () => ({ path: "/", routes: {} as never, dispose() {} }) }
+    const env = { WORKSPACE_RUNTIME_WORKSPACE_ID: "ws_test", WORKSPACE_RUNTIME_DIRECTORY: process.cwd() }
+    const boot = await claxedoWorkspaceRuntimeBootFromEnv(env, { routeContributions: [contribution as never] })
+    expect(boot.options.routeContributions).toEqual([contribution])
+    const plain = await claxedoWorkspaceRuntimeBootFromEnv(env)
+    expect(plain.options.routeContributions).toBeUndefined()
+  })
+
   test("selects either an explicit native harness or a configured connection", () => {
     expect(claxedoRuntimeHarnessFromEnv({})).toBeUndefined()
     expect(claxedoRuntimeHarnessFromEnv({ WORKSPACE_RUNTIME_NATIVE_HARNESS: "codex" })).toEqual({ kind: "native", harnessId: "codex" })

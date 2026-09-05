@@ -2,6 +2,9 @@ import type * as SDK from "@/app/providers/sdk/sdk"
 import type * as GlobalSDK from "@/app/providers/global-sdk/provider"
 import type * as Layout from "@/app/providers/layout"
 import type * as Server from "@/app/connection/server"
+import type * as ServerHealth from "@/app/connection/server-health"
+import type * as ProjectCreateFormModule from "@/features/workspaces/ui/project-create-form"
+import type * as DialogSelectDirectoryModule from "@/app/dialogs/select-directory"
 import type * as Command from "@/app/providers/command"
 import type * as FileContext from "@/app/providers/file"
 import type * as Providers from "@/app/providers/use-providers"
@@ -29,7 +32,6 @@ import type * as Navigation from "@/app/workbench/navigation/navigation-row"
 import type * as RailTypes from "@/app/workbench/rail/domain-types"
 import type * as LayoutActions from "@/app/workbench/actions/shared"
 import type * as WorkspaceRecovery from "@/features/workspaces/actions/workspace-recovery"
-import type * as Marketplace from "@/features/extensions/marketplace/api"
 import type * as ManageModels from "@/app/dialogs/manage-models"
 import type * as DocumentMentions from "@/app/integrations/document-mentions"
 import type { JSX } from "solid-js"
@@ -41,6 +43,9 @@ export type SessionAppPorts = {
   useGlobalSDK: typeof GlobalSDK.useGlobalSDK
   useLayout: typeof Layout.useLayout
   useServer: typeof Server.useServer
+  checkServerHealth: typeof ServerHealth.checkServerHealthCached
+  ProjectCreateForm: typeof ProjectCreateFormModule.ProjectCreateForm
+  DialogSelectDirectory: typeof DialogSelectDirectoryModule.DialogSelectDirectory
   formatKeybind: typeof Command.formatKeybind
   useCommand: typeof Command.useCommand
   useFile: typeof FileContext.useFile
@@ -78,14 +83,6 @@ export type SessionAppPorts = {
   recoverMissingWorkspace: typeof WorkspaceRecovery.recoverMissingWorkspace
   loadManageModelsDialog: () => Promise<typeof ManageModels>
   openSettingsProviders: (dialog: { show: (element: () => JSX.Element) => unknown }) => Promise<void>
-  filterMcpCatalogEntries: typeof Marketplace.filterMcpCatalogEntries
-  installDisabledReasonForEntry: typeof Marketplace.installDisabledReasonForEntry
-  installMcpDialogEntry: typeof Marketplace.installMcpDialogEntry
-  isEntryInstalled: typeof Marketplace.isEntryInstalled
-  loadMcpDialogData: typeof Marketplace.loadMcpDialogData
-  sourceLabel: typeof Marketplace.sourceLabel
-  targetLabel: typeof Marketplace.targetLabel
-  uninstallMcpDialogEntry: typeof Marketplace.uninstallMcpDialogEntry
   listDocumentMentions: typeof DocumentMentions.listDocumentMentions
   documentMentionText: typeof DocumentMentions.documentMentionText
   useFirstTurnFunnel: () => {
@@ -117,6 +114,9 @@ export const useSDK = bind("useSDK")
 export const useGlobalSDK = bind("useGlobalSDK")
 export const useLayout = bind("useLayout")
 export const useServer = bind("useServer")
+export const checkServerHealth = bind("checkServerHealth")
+export const ProjectCreateForm = bind("ProjectCreateForm")
+export const DialogSelectDirectory = bind("DialogSelectDirectory")
 export const formatKeybind = bind("formatKeybind")
 export const useCommand = bind("useCommand")
 export type CommandOption = Command.CommandOption
@@ -165,17 +165,6 @@ export const sessionRefForActionWorkspace = bind("sessionRefForActionWorkspace")
 export const recoverMissingWorkspace = bind("recoverMissingWorkspace")
 export const loadManageModelsDialog = bind("loadManageModelsDialog")
 export const openSettingsProviders = bind("openSettingsProviders")
-export const filterMcpCatalogEntries = bind("filterMcpCatalogEntries")
-export const installDisabledReasonForEntry = bind("installDisabledReasonForEntry")
-export const installMcpDialogEntry = bind("installMcpDialogEntry")
-export const isEntryInstalled = bind("isEntryInstalled")
-export const loadMcpDialogData = bind("loadMcpDialogData")
-export const sourceLabel = bind("sourceLabel")
-export const targetLabel = bind("targetLabel")
-export const uninstallMcpDialogEntry = bind("uninstallMcpDialogEntry")
 export const listDocumentMentions = bind("listDocumentMentions")
 export const documentMentionText = bind("documentMentionText")
 export type DocumentMentionOption = DocumentMentions.DocumentMentionOption
-export type CatalogEntry = Marketplace.CatalogEntry
-export type InstalledRecord = Marketplace.InstalledRecord
-export type RequestFn = Marketplace.RequestFn

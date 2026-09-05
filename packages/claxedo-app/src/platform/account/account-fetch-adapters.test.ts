@@ -1,5 +1,4 @@
 import { afterEach, describe, expect, test } from "bun:test"
-import { createAgentConfigAccountFetch } from "./agent-config-account-fetch"
 import { createControlPlaneAccountFetch } from "./control-plane-account-fetch"
 import { createIntegrationsRequest } from "./integrations-request"
 
@@ -53,12 +52,6 @@ function recordingAccountBridge() {
 
 describe("AccountPort fetch adapters", () => {
   test("preserves the caught bridge-unavailable response after the initial availability check", async () => {
-    bridgeThatDisappearsAfterAvailabilityCheck()
-    await expectBridgeUnavailable(await createAgentConfigAccountFetch(
-      async () => new Response("fallback"),
-      "https://control.example.test",
-    )("https://control.example.test/api/claxedo/agent-config/extensions"))
-
     bridgeThatDisappearsAfterAvailabilityCheck()
     await expectBridgeUnavailable(await createControlPlaneAccountFetch(
       async () => new Response("fallback"),

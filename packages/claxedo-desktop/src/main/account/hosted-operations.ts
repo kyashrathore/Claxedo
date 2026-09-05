@@ -47,6 +47,8 @@ export type HostedOperation = {
    * Map of parameter name → HTTP header name (e.g. `{ ifMatch: "If-Match" }`).
    */
   headers?: Record<string, string>
+  /** Preserve status plus the canonical JSON body for callers with expected non-2xx outcomes. */
+  response?: "http"
 }
 
 export const HOSTED_OPERATIONS = {
@@ -62,6 +64,66 @@ export const HOSTED_OPERATIONS = {
   // renderer cannot reach it — see `RENDERER_WITHHELD_OPERATIONS` — and no
   // main-side caller exists.
   "account.cliExchange": { method: "POST", path: "/api/auth/cli/exchange", body: ["code"] },
+  "agentPlugins.catalog": { method: "GET", path: "/api/claxedo/plugins", response: "http" },
+  "agentPlugins.catalog.refresh": { method: "GET", path: "/api/claxedo/plugins/refresh", response: "http" },
+  "agentPlugins.catalog.project": { method: "GET", path: "/api/claxedo/plugins/projects/:projectId", response: "http" },
+  "agentPlugins.catalog.project.refresh": { method: "GET", path: "/api/claxedo/plugins/projects/:projectId/refresh", response: "http" },
+  "agentPlugins.activation": {
+    method: "POST",
+    path: "/api/claxedo/plugins/activation",
+    body: ["pluginInstanceId", "harnessIds", "choice", "expectedRevision", "target"],
+    response: "http",
+  },
+  "agentPlugins.organizationDefault": {
+    method: "POST",
+    path: "/api/claxedo/plugins/organization-default",
+    body: ["pluginInstanceId", "harnessIds", "choice", "expectedRevision"],
+    response: "http",
+  },
+  "agentPlugins.update": {
+    method: "POST",
+    path: "/api/claxedo/plugins/update",
+    body: ["pluginInstanceId", "expectedRevision", "authority"],
+    response: "http",
+  },
+  // One retained SKILL.md, decoded by the renderer (`agentPluginSkillResult`)
+  // like every other `agentPlugins.*` row. Two names for the same document,
+  // not one row with an optional `:projectId`, because a `:name` segment that
+  // is sometimes present and sometimes absent cannot be expressed as a single
+  // path template here — `resolveHostedOperation` fills every `:name` it finds
+  // or throws `MissingOperationParameter`, so a project-scoped call must be its
+  // own row with its own fixed shape.
+  "agentPlugins.skill": {
+    method: "GET",
+    path: "/api/claxedo/plugins/:pluginInstanceId/skills/:skill",
+    response: "http",
+  },
+  "agentPlugins.skill.project": {
+    method: "GET",
+    path: "/api/claxedo/plugins/projects/:projectId/:pluginInstanceId/skills/:skill",
+    response: "http",
+  },
+  // Source registrations (`sources.md`): the Directory's add/remove/list over
+  // repository sources, machine-wide for unsigned, per-owner for signed. Same
+  // `:id`-style encoded substitution as `workspace.checkpoints.list`'s `:id` —
+  // a slash in the parameter becomes one literal `%2F` component, never a new
+  // segment.
+  "agentPlugins.sources.list": { method: "GET", path: "/api/claxedo/plugins/sources", response: "http" },
+  "agentPlugins.sources.add": {
+    method: "POST",
+    path: "/api/claxedo/plugins/sources",
+    body: ["owner", "repository", "ref", "authority"],
+    response: "http",
+  },
+  "agentPlugins.sources.remove": {
+    method: "DELETE",
+    path: "/api/claxedo/plugins/sources/:id",
+    response: "http",
+  },
+  // Main's own pull of the signed world for this machine. The answer carries
+  // gateway bearer credentials, so it is withheld from the renderer
+  // (`RENDERER_WITHHELD_OPERATIONS`) and handed only to the daemon.
+  "agentPlugins.runtimeSelf": { method: "GET", path: "/api/claxedo/plugins/runtime/self", response: "http" },
   // TWO operations, one per access kind, each with the access FIXED in the path.
   //
   // `GET /api/workspace` with no `?access=` is not a broader list — it is
@@ -108,13 +170,15 @@ export const HOSTED_OPERATIONS = {
   // would 400 every create rather than dedupe a retry. That is the same failure
   // `displayName` caused above. Until the route accepts one, this operation is
   // genuinely `unsafe`: an uncertain response must be surfaced, never retried,
-  // because a retry provisions a second billable sandbox. `account-service.run`
-  // performs exactly one fetch. `isSafeOperation` in the app registry already
-  // answers false for it, and that is the property a retry loop must consult.
+  // because a retry provisions a second billable sandbox. Nothing retries it
+  // today — `account-service.run` performs exactly one fetch, and the composer
+  // surfaces an uncertain response rather than provisioning again.
+  // `isSafeOperation` in the app registry already answers false for it, and
+  // that is the property a retry loop must consult.
   "workspace.create": {
     method: "POST",
     path: "/api/workspace/create",
-    body: ["projectId", "projectName", "workspaceName", "repoUrl", "connectionId", "repoFullName"],
+    body: ["projectId", "projectName", "workspaceName", "repoUrl", "gitBranch", "driver", "connectionId", "repoFullName"],
   },
   // `approved` is not decoration. Every lifecycle operation except `stop`
   // refuses with 409 unless the caller states the approval explicitly, and an
@@ -301,7 +365,10 @@ export const HOSTED_OPERATIONS = {
   "connections.connect": {
     method: "POST",
     path: "/api/claxedo/integrations/:id/connect",
-    body: ["method", "fields", "secret", "confirmReplace", "scope"],
+    // `issuer` carries a tenant-specific OAuth authority for integrations that
+    // have one; declared here so the signed desktop path does not silently drop
+    // it the way an undeclared field would.
+    body: ["method", "fields", "secret", "confirmReplace", "scope", "issuer"],
   },
   "connections.attempt": {
     method: "GET",
@@ -434,19 +501,6 @@ export const HOSTED_OPERATIONS = {
     path: "/documents/from-repo",
     body: ["project_id", "directory", "workspace_id", "path", "display_name", "status", "session_id"],
   },
-  // Marketplace / agent-config extensions. `subpath` may be empty (list at
-  // `/extensions`) or a relative suffix (`catalog`, `:id`, `:id/enable`, …).
-  "agentConfig.extensions.read": {
-    method: "GET",
-    path: "/api/claxedo/agent-config/extensions/*",
-    optionalQuery: ["scope", "directory", "workspaceId"],
-  },
-  "agentConfig.extensions.write": {
-    method: "POST",
-    path: "/api/claxedo/agent-config/extensions/*",
-    body: ["payload"],
-    optionalQuery: ["scope", "directory", "workspaceId"],
-  },
 } as const satisfies Record<string, HostedOperation>
 
 export type HostedOperationName = keyof typeof HOSTED_OPERATIONS
@@ -470,6 +524,8 @@ export type ResolvedRequest = {
   path: string
   body?: Record<string, unknown>
   headers?: Record<string, string>
+  /** Preserve status plus the canonical JSON body for callers with expected non-2xx outcomes. */
+  response?: "http"
 }
 
 export class UnknownHostedOperation extends Error {}
@@ -489,14 +545,7 @@ export function resolveHostedOperation(
   const operation = (HOSTED_OPERATIONS as Record<string, HostedOperation | undefined>)[name]
   if (!operation) throw new UnknownHostedOperation(`no hosted operation named "${name}"`)
 
-  let method = operation.method
-  if (name === "agentConfig.extensions.write") {
-    const requested = String(input.httpMethod ?? "POST").toUpperCase()
-    if (requested !== "POST" && requested !== "PUT" && requested !== "DELETE") {
-      throw new MissingOperationParameter(`operation "${name}" requires httpMethod POST|PUT|DELETE`)
-    }
-    method = requested
-  }
+  const method = operation.method
 
   let path = operation.path
   if (path.endsWith("/*")) {
@@ -545,10 +594,15 @@ export function resolveHostedOperation(
     headers[headerName] = String(value)
   }
 
+  // Only carried when actually present, so a resolved request keeps the exact
+  // shape the operation declares — no empty `headers`, no absent `response`.
+  const extra: Pick<ResolvedRequest, "headers" | "response"> = {
+    ...(Object.keys(headers).length > 0 ? { headers } : {}),
+    ...(operation.response ? { response: operation.response } : {}),
+  }
+
   if (!operation.body) {
-    return Object.keys(headers).length > 0
-      ? { method, path, headers }
-      : { method, path }
+    return { method, path, ...extra }
   }
 
   // Only the declared fields. A caller passing extra keys is not an error worth
@@ -564,21 +618,7 @@ export function resolveHostedOperation(
     body.repo = { fullName: body.repoFullName }
     delete body.repoFullName
   }
-  // agent-config writes pass an opaque JSON object as `payload`.
-  if (name === "agentConfig.extensions.write") {
-    const payload = body.payload
-    if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-      return Object.keys(headers).length > 0
-        ? { method, path, body: {}, headers }
-        : { method, path, body: {} }
-    }
-    return Object.keys(headers).length > 0
-      ? { method, path, body: payload as Record<string, unknown>, headers }
-      : { method, path, body: payload as Record<string, unknown> }
-  }
-  return Object.keys(headers).length > 0
-    ? { method, path, body, headers }
-    : { method, path, body }
+  return { method, path, body, ...extra }
 }
 
 /** The IPC channel a named operation travels on. One per operation, by name. */

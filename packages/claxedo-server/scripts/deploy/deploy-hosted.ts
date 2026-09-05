@@ -42,6 +42,7 @@ export function hostedDeployCommands(input: {
   staging: boolean
   dryRun: boolean
   targets: Target[]
+  agentPlugins?: boolean
   env?: NodeJS.ProcessEnv
 }): Command[] {
   const env = input.env ?? process.env
@@ -51,8 +52,15 @@ export function hostedDeployCommands(input: {
   }
   return input.targets.flatMap((target): Command[] => {
     if (target === "central") {
-      betterAuthD1ReleaseInputs(env, input.staging ? "staging" : "production")
+      betterAuthD1ReleaseInputs(env, input.staging ? "staging" : "production", {
+        mode: "locked",
+        ...(input.agentPlugins ? { agentPlugins: true } : {}),
+      })
       return [
+        // The Agent Plugins product is one build profile, not a runtime flag:
+        // the certified Worker artifact, its R2/KV bindings, its feature
+        // variables and secrets, and the browser build all follow the same
+        // `--agent-plugins` selection inside the release script.
         {
           name: input.dryRun ? "better_auth_d1.release.preflight" : "better_auth_d1.release.deploy",
           cwd: serverRoot,
@@ -61,6 +69,7 @@ export function hostedDeployCommands(input: {
             "run",
             "scripts/deploy/release-better-auth-d1.ts",
             ...(input.staging ? ["--staging"] : []),
+            ...(input.agentPlugins ? ["--agent-plugins"] : []),
             ...(!input.dryRun ? ["--deploy"] : []),
           ],
         },
@@ -77,7 +86,13 @@ export function hostedDeployCommands(input: {
         name: "cloudflare_sandbox.bundle_host",
         cwd: sandboxScriptsRoot,
         cmd: "npx",
-        args: ["tsx", "build-sandbox-image.ts", "--bundle-only", `--out=${path.join(cloudflareSandboxRoot, ".build")}`],
+        args: [
+          "tsx",
+          "build-sandbox-image.ts",
+          "--bundle-only",
+          ...(input.agentPlugins ? ["--agent-plugins"] : []),
+          `--out=${path.join(cloudflareSandboxRoot, ".build")}`,
+        ],
       }
       return input.dryRun
         ? [
@@ -160,6 +175,7 @@ async function main() {
     staging: process.argv.includes("--staging"),
     dryRun,
     targets: requestedTargets,
+    agentPlugins: process.argv.includes("--agent-plugins"),
   })
   for (const command of commands) {
     await run(command)

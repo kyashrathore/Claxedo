@@ -22,7 +22,7 @@ import { WorkspaceScopeHost } from "../features/workspaces/data/workspace-scope"
 import { ClaxedoRouteStateBridge } from "./workbench/state/route-bridge"
 import { routeSuppressesEmptyDraftSession } from "./workbench/state/provider"
 import { useClaxedoAppShellCommands } from "./app-shell-commands"
-import { applySessionAccessRevocation, useAppShellRouteSync } from "./app-shell-route-sync"
+import { applySessionAccessRevocation, useAppShellRouteSync, applyStaleWorkspaceSweep } from "./app-shell-route-sync"
 import { useAppShellState } from "./app-shell-state"
 import { useAppShellActions } from "./app-shell-actions"
 import {
@@ -53,6 +53,16 @@ function ClaxedoAppShellContent(props: ParentProps) {
   useGlobalSessionAccessRevocations((event) => {
     applySessionAccessRevocation({
       ...event,
+      activeSurfaceId: shell.state.wb.selectors.focusedContent,
+      surfaces: shell.state.meta.all,
+      closeContent: shell.state.layout.closeContent,
+      navigate,
+    })
+  })
+  createEffect(() => {
+    applyStaleWorkspaceSweep({
+      inventoryReady: shell.inventoryReady(),
+      inventory: shell.inventory(),
       activeSurfaceId: shell.state.wb.selectors.focusedContent,
       surfaces: shell.state.meta.all,
       closeContent: shell.state.layout.closeContent,
@@ -119,6 +129,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
     handleWorkspaceSelect,
     handleSessionSelect,
     handleNewProject,
+    handleProjectCreated,
     handleSettings,
     handleUsage,
     handleHelp,
@@ -152,6 +163,7 @@ function ClaxedoAppShellContent(props: ParentProps) {
         onWorkspaceSelect={handleWorkspaceSelect}
         onSessionSelect={handleSessionSelect}
         onNewProject={handleNewProject}
+        onProjectCreated={handleProjectCreated}
         onSettings={handleSettings}
         onUsage={handleUsage}
         onHelp={handleHelp}

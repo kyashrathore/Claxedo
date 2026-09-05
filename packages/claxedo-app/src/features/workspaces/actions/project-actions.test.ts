@@ -106,7 +106,7 @@ beforeAll(async () => {
   }))
 
   mock.module("@/app/dialogs/select-directory", () => ({
-    DialogSelectDirectory: () => null,
+    DialogSelectDirectory: () => "select-directory",
   }))
 
   mock.module("../../workspaces/ui/dialogs/delete-workspace-dialog", () => ({
@@ -304,6 +304,20 @@ function make(dir: string) {
 
   return { props, adds, acts, navs, nav, worktreeReady, routes, closes, removes, workspaceDeletes, worktreeRemoves, cleaned, metas, closedContents, shows, data, projectsQueryKey, cacheEnsures, cacheRefreshes, bootstraps, paneWorktrees }
 }
+
+describe("createProjectActions New Project", () => {
+  test("raises the create-project intent on the layout instead of showing a dialog", () => {
+    const fixture = make("/repo/one")
+    let requests = 0
+    const props = {
+      ...fixture.props,
+      layout: { ...fixture.props.layout, projects: { ...fixture.props.layout.projects, requestCreate: () => { requests += 1 } } },
+    }
+    createProjectActions(props as never, fixture.nav).handleNewProject()
+    expect(requests).toBe(1)
+    expect(fixture.shows).toEqual([])
+  })
+})
 
 describe("createProjectActions", () => {
   // NOTE: handleNewWorkspace (the Local/Cloud picker behind onNewWorkspace) was

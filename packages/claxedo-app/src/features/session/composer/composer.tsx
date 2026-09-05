@@ -51,7 +51,7 @@ import { showToast } from "@opencode-ai/ui/toast"
 import { applyPermissionMode } from "@/features/session/permission/apply"
 import type { PromptInputProps } from "./prompt-input-props"
 import { createPromptToolbarState } from "./toolbar-state"
-import { composerUsesSignedTransport, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
+import { composerUsesSignedTransport, selectedNewSessionWorkspace, submitSessionDirectory as resolveSubmitSessionDirectory, type ProjectCatalogItem } from "./workspace-resolver"
 import { createModelSelectionPicker } from "@/features/session/commands/model-selection"
 import { firstConnectedModel } from "./model-strategy"
 import { harnessSelectionValue } from "@/platform/identity/harness-selection"
@@ -218,6 +218,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
   const projectsQuery = useQuery(() => queryOptions.projects())
   const projectCatalog = () => (projectsQuery.data ?? []) as ProjectCatalogItem[]
+  const selectedRemoteWorkspace = () => selectedNewSessionWorkspace({
+    newSession: isNewSessionVariant(),
+    kind: props.newSessionWorkspaceKind,
+    worktree: props.newSessionWorktree,
+  })
   const submitSessionDirectory = () => {
     if (props.sessionRef?.()?.host === "central") return resolvedSessionDirectory() ?? sdk.directory
     const routeRef = sessionWorkspaceRuntimeRef({ directory: sessionParams.directory() })
@@ -235,6 +240,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     })
   }
   const signedControlPlane = createMemo(() => {
+    if (selectedRemoteWorkspace()) return true
     const directory = resolvedSessionDirectory() ?? sdk.directory
     return composerUsesSignedTransport({
       explicit: props.signedControlPlane?.(), directory, projects: projectCatalog(), sdkWorkspace: sdk.workspace(directory),

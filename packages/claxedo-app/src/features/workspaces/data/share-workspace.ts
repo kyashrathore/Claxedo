@@ -21,6 +21,11 @@ type ShareableProject = {
   workspaces?: Record<string, ProjectWorkspace>
 }
 
+/** Share registers a user-hosted workspace on the signed control plane. */
+export function accountCanShareWorkspace(status: string | undefined) {
+  return status === "signed"
+}
+
 export function localWorkspaceShareTarget(input: {
   project: ShareableProject
   directory: string

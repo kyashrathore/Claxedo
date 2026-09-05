@@ -535,6 +535,7 @@ describe("global sync event ingress", () => {
       title: "Retitled on the workspace stream",
       updatedAt: 50,
     })
+
     dispose()
   })
 

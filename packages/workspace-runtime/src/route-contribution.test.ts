@@ -10,6 +10,9 @@ import {
 function context(): WorkspaceRuntimeRouteContext {
   return {
     workspaceId: "ws_1",
+    directory: "/workspace",
+    stateDirectory: "/runtime-state",
+    applyHarnessLaunch: async () => {},
     registerSessionTools: () => async () => {},
     unregisterSessionTools: () => async () => {},
   }

@@ -51,6 +51,9 @@ async function packageDirectories(name: string, version: string) {
 
   const glob = new Bun.Glob(`**/node_modules/${name}/package.json`)
   for await (const item of glob.scan({ cwd: root, absolute: true, onlyFiles: true, dot: true })) {
+    // Linked git worktrees under `.worktrees/` carry their own installs (and
+    // built desktop resources) that this checkout's postinstall must not touch.
+    if (path.relative(root, item).split(path.sep).includes(".worktrees")) continue
     manifests.add(item)
   }
 

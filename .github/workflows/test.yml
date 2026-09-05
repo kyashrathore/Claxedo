@@ -169,7 +169,6 @@ jobs:
         run: >-
           bun turbo build
           --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
           --filter=@claxedo/agent-sdk-runtime
           --filter=@claxedo/channels
           --filter=@claxedo/connections
@@ -301,7 +300,6 @@ jobs:
         run: >-
           bun turbo build
           --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
           --filter=@claxedo/agent-sdk-runtime
           --filter=@claxedo/channels
           --filter=@claxedo/connections
@@ -319,7 +317,6 @@ jobs:
           name: claxedo-e2e-workspace-dist-${{ github.sha }}-${{ github.run_attempt }}
           path: |
             packages/agent-event-runtime/dist
-            packages/agent-extensions/dist
             packages/agent-sdk-runtime/dist
             packages/claxedo-channels/dist
             packages/claxedo-connections/dist
@@ -520,7 +517,6 @@ jobs:
         run: >-
           bun turbo build
           --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
           --filter=@claxedo/agent-sdk-runtime
           --filter=@claxedo/channels
           --filter=@claxedo/connections
@@ -614,7 +610,6 @@ jobs:
         run: >-
           bun turbo build
           --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-extensions
           --filter=@claxedo/agent-sdk-runtime
           --filter=@claxedo/channels
           --filter=@claxedo/connections

@@ -44,10 +44,6 @@ export function createClaxedoClient(options: ClaxedoClientOptions) {
     })
   }
 
-  async function del(path: string) {
-    return await request(path, { method: "DELETE" })
-  }
-
   return {
     health: async () => await request("/api/claxedo/health"),
     listWorkspaces: async (access?: "cloud" | "user-hosted") => await request(
@@ -69,26 +65,5 @@ export function createClaxedoClient(options: ClaxedoClientOptions) {
     readSessionMessages: async (input: { directory: string; sessionId: string }) => await request(
       `/session/${encodeURIComponent(input.sessionId)}/message?${query({ directory: input.directory })}`,
     ),
-    agentExtensions: {
-      catalog: async () => await request("/api/claxedo/agent-config/extensions/catalog"),
-      list: async (input: { directory: string }) => await request(
-        `/api/claxedo/agent-config/extensions?${query({ directory: input.directory })}`,
-      ),
-      install: async (input: { directory: string; source: string; id: string; targets: string[] }) =>
-        await post(`/api/claxedo/agent-config/extensions?${query({ directory: input.directory })}`, {
-          source: input.source,
-          id: input.id,
-          targets: input.targets,
-        }),
-      disable: async (input: { directory: string; id: string }) => await post(
-        `/api/claxedo/agent-config/extensions/${encodeURIComponent(input.id)}/disable?${query({ directory: input.directory })}`,
-      ),
-      enable: async (input: { directory: string; id: string }) => await post(
-        `/api/claxedo/agent-config/extensions/${encodeURIComponent(input.id)}/enable?${query({ directory: input.directory })}`,
-      ),
-      remove: async (input: { directory: string; id: string }) => await del(
-        `/api/claxedo/agent-config/extensions/${encodeURIComponent(input.id)}?${query({ directory: input.directory })}`,
-      ),
-    },
   }
 }

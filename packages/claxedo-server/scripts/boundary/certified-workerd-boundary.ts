@@ -45,6 +45,10 @@ export const WORKERD_BOUNDARY_MANIFEST_ARTIFACT: CertifiedHostedWorkerArtifactId
 const FAIL_CLOSED: Readonly<Record<CertifiedHostedWorkerArtifactId, { status: number; code: string }>> = Object.freeze({
   "user-deployed-better-auth-d1-locked": { status: 503, code: "deployment_unavailable" },
   "user-deployed-better-auth-d1-candidate": { status: 503, code: "deployment_candidate_unavailable" },
+  // Both Agent Plugins entries wrap the candidate handler
+  // (`createBetterAuthD1CandidateWorker`), so they refuse the same way.
+  "user-deployed-better-auth-d1-candidate-agent-plugins": { status: 503, code: "deployment_candidate_unavailable" },
+  "user-deployed-better-auth-d1-candidate-agent-plugins-full-hosted": { status: 503, code: "deployment_candidate_unavailable" },
   "user-deployed-better-auth-d1-live-sync-migration-bridge": { status: 503, code: "deployment_bootstrap" },
 })
 

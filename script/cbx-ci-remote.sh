@@ -130,7 +130,6 @@ install_root() {
 build_dist_packages() {
   bun turbo build \
     --filter=@claxedo/agent-event-runtime \
-    --filter=@claxedo/agent-extensions \
     --filter=@claxedo/agent-sdk-runtime \
     --filter=@claxedo/channels \
     --filter=@claxedo/connections \

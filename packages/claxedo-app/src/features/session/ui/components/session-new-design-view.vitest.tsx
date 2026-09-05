@@ -2,7 +2,6 @@ import { cleanup, render } from "@solidjs/testing-library"
 import { afterEach, describe, expect, test, vi } from "vitest"
 import type { ContextChip } from "@/features/session/ui/components/session-context-row"
 import { NewSessionDesignView } from "./session-new-design-view"
-import { ADD_PROJECT_COMMAND_ID, addProjectAction } from "./session-add-project-action"
 
 const captured = vi.hoisted(() => ({ chips: [] as ContextChip[] }))
 const state = vi.hoisted(() => ({ projects: [] as unknown[] }))
@@ -14,16 +13,27 @@ vi.mock("@/features/session/ui/components/session-context-row", () => ({
   },
 }))
 
+const sdkDirectory = vi.hoisted(() => ({ value: "/repo" }))
 vi.mock("@/features/session/app-ports", () => ({
   useShellQueryOptions: () => ({ projects: () => ({ queryKey: ["projects"], queryFn: () => [] }) }),
-  useLayout: () => ({ projects: { list: () => [], open: () => {} } }),
-  useSDK: () => ({ directory: "/repo" }),
+  useLayout: () => ({ projects: { list: () => [], open: () => {}, createRequests: () => 0, requestCreate: () => {} } }),
+  useSDK: () => ({ get directory() { return sdkDirectory.value } }),
   useServer: () => ({ projects: { touch: () => {} } }),
+  // The local product's server answers no `localExecution` field; the view
+  // then falls back to "unsigned means local".
+  checkServerHealth: async () => undefined,
+  ProjectCreateForm: (props: { localExecution: boolean }) => (
+    <div data-testid="project-create-form" data-local-execution={String(props.localExecution)} />
+  ),
 }))
 
 vi.mock("@tanstack/solid-query", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@tanstack/solid-query")>()),
-  useQuery: () => ({ get data() { return state.projects } }),
+  useQuery: () => ({
+    get data() {
+      return state.projects
+    },
+  }),
 }))
 
 vi.mock("@solidjs/router", () => ({
@@ -48,46 +58,60 @@ vi.mock("@/platform/i18n/provider", () => ({
 const projectChip = () => captured.chips.find((chip) => chip.slot === "context-chip-project")
 const branchChip = () => captured.chips.find((chip) => chip.slot === "context-chip-branch")
 
-const renderView = (onAddProject?: () => void) =>
+const renderView = () =>
   render(() => (
     <NewSessionDesignView
       worktree="/repo"
       workspaceKind="local"
       onWorktreeChange={() => {}}
       onWorkspaceKindChange={() => {}}
-      onAddProject={onAddProject}
     >
       <div />
     </NewSessionDesignView>
   ))
 
 afterEach(() => {
+  sdkDirectory.value = "/repo"
   captured.chips = []
   state.projects = []
   cleanup()
 })
 
-describe("NewSessionDesignView project chip footer action", () => {
+describe("NewSessionDesignView project chip create panel", () => {
   test("labels the project option group", () => {
     renderView()
     expect(projectChip()?.groupLabel).toBe("Projects")
   })
 
-  test("omits the footer row when no add-project capability is supplied", () => {
-    renderView(undefined)
+  // Creation lives IN the chip: the footer opens a panel with the create
+  // form, so there is no separate "add project" action to dispatch.
+  test("offers 'Create project…' as the chip's panel, not a footer action", () => {
+    renderView()
     expect(projectChip()?.action).toBeUndefined()
+    expect(projectChip()?.panel?.label).toBe("Create project…")
   })
 
-  test("labels the footer row from the locale table, not a hardcoded string", () => {
-    renderView(() => {})
-    expect(projectChip()?.action?.label).toBe("t:home.project.add")
+  // The empty canvas mounts the composer with no project at all.
+  test("with no project the chip reads Select project and is the only chip", () => {
+    sdkDirectory.value = ""
+    render(() => (
+      <NewSessionDesignView worktree="" workspaceKind="local" onWorktreeChange={() => {}} onWorkspaceKindChange={() => {}}>
+        <div />
+      </NewSessionDesignView>
+    ))
+    expect(captured.chips.map((chip) => chip.slot)).toEqual(["context-chip-project"])
+    expect(projectChip()?.label).toBe("Select project")
+    expect(projectChip()?.panel?.label).toBe("Create project…")
   })
 
-  test("footer row onSelect invokes the supplied capability", () => {
-    const addProject = vi.fn()
-    renderView(addProject)
-    projectChip()?.action?.onSelect()
-    expect(addProject).toHaveBeenCalledTimes(1)
+  test("the panel renders the project create form for a local server", async () => {
+    renderView()
+    const panel = projectChip()?.panel
+    expect(panel).toBeDefined()
+    const host = render(() => <>{panel!.render({ close: () => {}, back: () => {}, hold: () => {} })}</>)
+    await vi.waitFor(() => {
+      expect(host.getByTestId("project-create-form").getAttribute("data-local-execution")).toBe("true")
+    })
   })
 
   test("project selection carries its opaque identity with the directory", () => {
@@ -195,21 +219,5 @@ describe("NewSessionDesignView branch chip", () => {
   test("does not render a decorative branch control without a selection owner", () => {
     renderView()
     expect(branchChip()).toBeUndefined()
-  })
-})
-
-describe("addProjectAction", () => {
-  test("returns nothing when the app shell has not registered project.open", () => {
-    const trigger = vi.fn()
-    expect(addProjectAction({ has: () => false, trigger })).toBeUndefined()
-    expect(trigger).not.toHaveBeenCalled()
-  })
-
-  test("triggers the registered project.open command", () => {
-    const trigger = vi.fn()
-    const action = addProjectAction({ has: (id) => id === ADD_PROJECT_COMMAND_ID, trigger })
-    expect(action).toBeTypeOf("function")
-    action?.()
-    expect(trigger).toHaveBeenCalledWith(ADD_PROJECT_COMMAND_ID)
   })
 })

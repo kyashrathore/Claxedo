@@ -1,4 +1,5 @@
 import { isRelayBackedWorkspaceKind, workspaceKind, type SignedWorkspaceKind } from "./workspace-kind"
+import { isFilesystemDirectory } from "@/platform/identity/legacy-resolver"
 export type { SignedWorkspaceKind }
 
 export type SignedWorkspaceInfo = {
@@ -18,6 +19,8 @@ export type WorkspaceInventoryEntry = {
 }
 
 export type WorkspaceInventoryProject = {
+  /** Desktop local projects route by this UUID; see `localWorkspaceInProjects`. */
+  id?: string | null
   worktree?: string
   sandboxes?: string[]
   workspaces?: Record<string, WorkspaceInventoryEntry>
@@ -76,6 +79,16 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
         !sameWorkspaceDirectory(key, ref) &&
         !sameWorkspaceDirectory(workspace.directory, ref)
       ) continue
+      return true
+    }
+    // Desktop local projects use the project UUID as the workspace route id.
+    // That UUID is not relay-backed unless a signed cloud/user-hosted row also
+    // claims it — routing it at Convex mints 403 `workspace_authorization_denied`.
+    if (
+      isFilesystemDirectory(project.worktree ?? undefined) &&
+      (sameWorkspaceId(project.id, ref) || sameWorkspaceDirectory(project.worktree, ref)) &&
+      !findSignedWorkspaceFromProjects(projects, ref)
+    ) {
       return true
     }
   }
