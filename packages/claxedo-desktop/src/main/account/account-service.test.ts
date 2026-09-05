@@ -739,4 +739,79 @@ describe("bound desktop account lifecycle", () => {
     expect(chunks.join("")).toBe("event: ready\n\n")
     await expect(h.service.run("session.events")).rejects.toThrow("is a stream")
   })
+
+  test("stream opens renew a rejected token once before delivering chunks", async () => {
+    const tokens: string[] = []
+    const chunks: string[] = []
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async (_url, init) => {
+        tokens.push(init.headers.authorization)
+        return tokens.length === 1
+          ? Response.json({ error: { code: "invalid_bearer_token" } }, { status: 401 })
+          : new Response("event: ready\n\n")
+      },
+    })
+    await h.service.restore()
+    await h.service.openStream({ name: "session.events", onChunk: (text) => chunks.push(text) })
+    expect(tokens).toEqual(["Bearer at_1", "Bearer at_2"])
+    expect(chunks).toEqual(["event: ready\n\n"])
+    expect(h.service.state()).toMatchObject({ status: "signed" })
+  })
+
+  test("stream opens stop after one rejected retry and invalidate the session", async () => {
+    const auth = authHarness()
+    let attempts = 0
+    const h = harness({
+      auth,
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => {
+        attempts++
+        return Response.json({ error: { code: "invalid_bearer_token" } }, { status: 401 })
+      },
+    })
+    await h.service.restore()
+    await expect(h.service.openStream({ name: "session.events", onChunk: () => {} })).rejects.toThrow("session rejected")
+    expect(attempts).toBe(2)
+    expect(auth.refreshes()).toBe(1)
+    expect(h.store.held()).toBeUndefined()
+  })
+
+  test("stream requests with missing credentials do not renew or erase a bound session", async () => {
+    const auth = authHarness()
+    const h = harness({
+      auth,
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => Response.json({ error: { code: "missing_bearer_token", message: "Bearer required" } }, { status: 401 }),
+    })
+    await h.service.restore()
+    await expect(h.service.openStream({ name: "session.events", onChunk: () => {} })).rejects.toThrow("Bearer required")
+    expect(auth.refreshes()).toBe(0)
+    expect(h.store.held()).toBeDefined()
+  })
+
+  test("a rejected stream from a signed-out era cannot invalidate a new sign-in", async () => {
+    let retryStarted!: () => void
+    const started = new Promise<void>((resolve) => { retryStarted = resolve })
+    let finishRetry!: (response: Response) => void
+    let attempts = 0
+    const h = harness({
+      store: memoryStore(CREDENTIAL),
+      fetch: async () => {
+        if (++attempts === 1) return Response.json({ error: { code: "invalid_bearer_token" } }, { status: 401 })
+        retryStarted()
+        return new Promise<Response>((resolve) => { finishRetry = resolve })
+      },
+    })
+    await h.service.restore()
+    const opening = h.service.openStream({ name: "session.events", onChunk: () => {} })
+    const result = opening.then(() => undefined, (error: unknown) => error)
+    await started
+    await h.service.signOut()
+    await h.service.signIn()
+    finishRetry(new Response(null, { status: 401 }))
+    expect(await result).toBeInstanceOf(Error)
+    expect(h.service.state()).toMatchObject({ status: "signed" })
+    expect(h.store.held()).toBeDefined()
+  })
 })
