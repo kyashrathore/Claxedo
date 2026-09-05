@@ -3896,15 +3896,8 @@ function responseFor(url: URL, fixture: ReturnType<typeof fixtureFor>, method = 
     return method === "POST" ? { ok: true } : { type: "opencode", ok: true }
   }
   if (pathName === "/api/claxedo/agent-config/harness/options") return harnessOptions(fixture)
-  // The per-harness permission-mode report, fetched on every composer mount
-  // (directory-scoped draft form and the per-session form). Serving anything
-  // that is not a well-formed report here blanks the WHOLE app: the readers
-  // in features/session/permission/modes.ts run inside a Solid memo during
-  // the composer's render, and `claxedoPermissionModes` still dereferences
-  // `report?.modes.length` unguarded (modes.ts:284) — a 200 `{}` throws
-  // straight into the app-level ErrorBoundary. That was this harness's
-  // root failure; the shape below is the opencode row from the e2e mock's
-  // MODES_BY_HARNESS table.
+  // Directory and session composers consume the same runtime-reported mode
+  // contract. Keep this fixture aligned with the e2e mock's opencode report.
   if (pathName === "/permission/modes") return permissionModeReport()
   if (/^\/session\/[^/]+\/permission-mode$/.test(pathName)) return permissionModeReport()
   // Session meta for the workbench route bridge (route-bridge-resolution.ts)

@@ -1586,7 +1586,7 @@ describe("workspace runtime route audit", () => {
     expect(input).not.toMatch(/writeOpenCodeDraftModel/)
     expect(input).not.toMatch(/fallbackModel/)
     expect(strategy).toMatch(/export function selectRuntimeModel/)
-    expect(submit).toMatch(/resolveSubmittedConfig/)
+    expect(submit).toMatch(/resolvePromptSubmitConfig/)
     expect(submit).toMatch(/harnessController\.modelKeyForSubmit\(scope\)/)
     expect(submit).not.toMatch(/local\.model\.current\(\)/)
     expect(submit).not.toMatch(/allowModelFallback/)
@@ -1601,6 +1601,7 @@ describe("workspace runtime route audit", () => {
     const submit = await Bun.file(path.join(root, promptSubmit)).text()
     const submitTypes = await Bun.file(path.join(root, "features/session/submit/types.ts")).text()
     const submitResolve = await Bun.file(path.join(root, "features/session/submit/resolve.ts")).text()
+    const modelGate = await Bun.file(path.join(root, "features/session/composer/ui/submit-model-gate.ts")).text()
     const strategy = await Bun.file(path.join(root, promptModelStrategy)).text()
 
     expect(harness).toMatch(/harnessModelKeyForSubmit/)
@@ -1609,8 +1610,10 @@ describe("workspace runtime route audit", () => {
     expect(harness).not.toMatch(/harnessModelForSubmit/)
 
     expect(submit).toMatch(
-      /harnessModelKey:\s*harnessController\.modelKeyForSubmit\(scope\)/,
+      /modelKey:\s*\(\) => harnessController\.modelKeyForSubmit\(scope\)/,
     )
+    expect(modelGate).toMatch(/resolveSubmittedConfig/)
+    expect(modelGate).toMatch(/harnessModelKey:\s*input\.modelKey\(\)/)
     expect(submit).not.toMatch(/harnessModel:\s*/)
     expect(submit).not.toMatch(/submitModelFromModelKey/)
 

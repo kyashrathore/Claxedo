@@ -20,10 +20,10 @@ import { queryKeys } from "@/platform/query/keys"
 import { provisionalSessionTitle } from "../../lib/session-title-sync"
 import { useSessionTitleProjection } from "@/features/session/providers/session-title-projection-provider"
 import { useDirectorySessionCacheActions } from "../../data/sync/directory-session-cache"
-import { harnessProfile, isCatalogHarness } from "@/features/session/harness/profile"
-import { cloudSubmitMissingModel } from "./submit-model-gate"
+import { harnessProfile } from "@/features/session/harness/profile"
+import { cloudSubmitMissingModel, resolvePromptSubmitConfig } from "./submit-model-gate"
 import { createHarnessSubmitController } from "@/features/session/harness/controller"
-import { resolveSubmitMode, resolveSubmittedConfig, setPromptSessionStatus, type SubmitMode } from "../../submit/index"
+import { resolveSubmitMode, setPromptSessionStatus, type SubmitMode } from "../../submit/index"
 import { cloudWorkspaceCreateInput, knownWorkspaceKind, type ProjectCatalogItem } from "../workspace-resolver"
 import { admitPromptSubmission } from "../../commands/prompt-machine"
 import { createSubmitAbort } from "./submit-abort"
@@ -34,15 +34,15 @@ import { dispatchNormalPromptSubmit } from "./submit-normal-prompt"
 import { dispatchGoalSubmit, prepareGoalComposerIntent } from "./submit-goal"
 import { createSubmitDraftLifecycle } from "./submit-draft-lifecycle"
 import { promptHarnessDirectory } from "./harness-directory"
-import { promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
+import { capturePromptSubmitScope, promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
 import {
-  parseExistingSessionConfig,
+  loadExistingSubmitConfig,
   sameExistingSessionConfig,
 } from "./submit-session-config"
 import { createSubmitTransportAdapter, signedSubmitWorkspaceId, submitWorkspaceBacking, workspaceRuntimeRef } from "./submit-transport"
 import { bumpCreatedSessionRail, bumpExistingSessionRail } from "./submit-rail-workspace"
 import { createSubmitCommentActions } from "./comment-routing"
-import { createSubmitOptimisticTimeline } from "./submit-ui-state"
+import { createSubmitBootWriter, createSubmitOptimisticTimeline } from "./submit-ui-state"
 import type { PromptSubmitInput } from "./submit-input"
 import { harnessSelectionValue, type HarnessSelection } from "@/platform/identity/harness-selection"
 import { createHostedWorkspace } from "@/platform/runtime/agent/workspace-create-authority"
@@ -148,23 +148,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
   const handleSubmit = async (event: Event) => {
     event.preventDefault()
 
-    const submitBootScope = input.bootScope?.()
-    const setBooting = (value?: { harness: string; sessionID?: string; phase?: "booting" | "sending" }) => {
-      if (input.bootScope && input.bootScope() !== submitBootScope) return
-      input.setBooting?.(value)
-    }
+    const setBooting = createSubmitBootWriter(input)
     const currentPrompt = prompt.current()
     const text = currentPrompt.map((part) => ("content" in part ? part.content : "")).join("")
     const images = input.imageAttachments().slice()
     const permissionMode = input.permissionMode?.()
-    // `userMode` is the raw input-toggle value (never widens to "slash");
-    // `mode` is the resolved branch the dispatcher switches on after
-    // `resolveSubmitMode` runs. The two diverge when the resolver promotes
-    // a leading "/" into a slash dispatch (rubric A3).
     const userMode: SubmitMode = input.mode()
     let mode = userMode
-    const projectDirectory = input.sessionDirectory?.(), explicitSessionID = input.sessionID?.(), draftId = input.draftId?.()
-    const mountedConversationDirectory = input.conversationDirectory?.() ?? sdk.directory
+    const { projectDirectory, explicitSessionID, draftId, mountedConversationDirectory, fallbackDirectory } =
+      capturePromptSubmitScope(input, sdk.directory)
 
     const admission = admitPromptSubmission({
       mode: input.composerMode(),
@@ -186,7 +178,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     input.addToHistory(currentPrompt, userMode)
     input.resetHistoryNavigation()
 
-    const fallbackDirectory = draftId ? undefined : sdk.directory
     // Match PromptProvider.session() keying exactly: restoring a submitted draft
     // must not mutate another draft opened while this submission was in flight.
     const promptScope = promptViewScope({
@@ -301,24 +292,14 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       // Cloud workspace creation changes submit directory; carry draft harness ownership.
       harnessController.promote(sourceScope, scope)
     }
-    const existingSessionConfig = await (async () => {
-      if (isNewSession) return undefined
-      try {
-        const config = parseExistingSessionConfig(await readSessionConfig({
-          sessionID: explicitSessionID!,
-          directory: sessionDirectory,
-        }))
-        if (!config?.model) throw new Error("The session configuration is not available yet. Try again after it loads.")
-        return config
-      } catch (err) {
-        showToast({
-          title: language.t("prompt.toast.promptSendFailed.title"),
-          description: errorMessage(err),
-          variant: "error",
-        })
-        return undefined
-      }
-    })()
+    const existingSessionConfig = isNewSession ? undefined : await loadExistingSubmitConfig(
+      () => readSessionConfig({ sessionID: explicitSessionID!, directory: sessionDirectory }),
+      (err) => showToast({
+        title: language.t("prompt.toast.promptSendFailed.title"),
+        description: errorMessage(err),
+        variant: "error",
+      }),
+    )
     if (!isNewSession && !existingSessionConfig) return
     const sessionHarnessType = isNewSession ? selectedHarnessType(scope) : existingSessionConfig?.harnessType
     if (!sessionHarnessType) {
@@ -350,30 +331,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         phase: "sending",
       })
     }
-    // The composer's local-provider variant rides the next prompt; a persisted
-    // session variant is only the fallback for an unset picker. In harness
-    // mode the harness model key owns the variant (thought level), so the
-    // local picker's value must not leak into a connection-backed session —
-    // except for a catalog harness, whose effort IS the provider picker's
-    // variant (the selector shows `providerVariant` there, never a thought level).
-    const harnessType = selectedHarnessType(scope)
-    const providerVariantOwnsEffort = !selectedHarnessMode(scope) || (harnessType !== undefined && isCatalogHarness(harnessType))
-    const selectedVariant = providerVariantOwnsEffort ? input.variant?.() : undefined
-    const submittedConfig = existingSessionConfig?.model
-      ? {
-          model: existingSessionConfig.model,
-          agent: input.agent?.() || existingSessionConfig.agent || local.agent.current()?.name || "build",
-          ...(selectedVariant ?? existingSessionConfig.variant
-            ? { variant: selectedVariant ?? existingSessionConfig.variant }
-            : {}),
-        }
-      : resolveSubmittedConfig({
-          harnessModelKey: harnessController.modelKeyForSubmit(scope),
-          ...(selectedVariant ? { variant: selectedVariant } : {}),
-          currentAgent: local.agent.current(),
-          defaultAgent: local.agent.list()[0] ?? (usesWorkspaceRuntimeSession(sessionDirectory) ? { name: "build" } : undefined),
-          agentOverride: input.agent?.(),
-        })
+    const submittedConfig = resolvePromptSubmitConfig({
+      existing: existingSessionConfig,
+      harnessMode: selectedHarnessMode(scope),
+      selection: selectedHarnessType(scope),
+      variant: () => input.variant?.(),
+      modelKey: () => harnessController.modelKeyForSubmit(scope),
+      currentAgent: () => local.agent.current(),
+      defaultAgent: () => local.agent.list()[0] ?? (usesWorkspaceRuntimeSession(sessionDirectory) ? { name: "build" } : undefined),
+      agent: () => input.agent?.(),
+    })
     if (!submittedConfig) {
       clearBoot()
       return rejectModelRequired()

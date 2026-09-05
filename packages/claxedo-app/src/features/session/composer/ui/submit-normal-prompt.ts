@@ -138,6 +138,13 @@ export async function dispatchNormalPromptSubmit(input: {
   }
   const send = (promptRequest: ReturnType<typeof preparePromptRequest>) => {
     const timeline = timelineFor(promptRequest)
+    const abortCleanup = () => {
+        setPromptSessionStatus({ sessionID: input.session.id, status: { type: "idle" } })
+        input.clearBoot()
+        timeline.removeSubmittedPrompt()
+        input.restoreCommentItems(promptRequest.submittedCommentItems)
+        input.restoreInput()
+    }
     input.showSendingFirstMessage()
     return {
       sessionID: input.session.id,
@@ -150,13 +157,7 @@ export async function dispatchNormalPromptSubmit(input: {
         onPending: () => {
           setPromptSessionStatus({ sessionID: input.session.id, status: { type: "busy" } })
         },
-        onAbortCleanup: () => {
-          setPromptSessionStatus({ sessionID: input.session.id, status: { type: "idle" } })
-          input.clearBoot()
-          timeline.removeSubmittedPrompt()
-          input.restoreCommentItems(promptRequest.submittedCommentItems)
-          input.restoreInput()
-        },
+        onAbortCleanup: abortCleanup,
       }),
       refreshDirectory: input.refreshDirectory,
       prepareLiveEvents: input.globalSDK ? () => {
@@ -187,13 +188,7 @@ export async function dispatchNormalPromptSubmit(input: {
       onDemoReply: timeline.addDemoReply,
       clearBoot: input.clearBoot,
       clearCloudStartup: input.clearCloudStartup,
-      onAbortCleanup: () => {
-        setPromptSessionStatus({ sessionID: input.session.id, status: { type: "idle" } })
-        input.clearBoot()
-        timeline.removeSubmittedPrompt()
-        input.restoreCommentItems(promptRequest.submittedCommentItems)
-        input.restoreInput()
-      },
+      onAbortCleanup: abortCleanup,
     }
   }
   const buildPayload = (promptRequest: ReturnType<typeof preparePromptRequest>) => ({

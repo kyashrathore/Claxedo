@@ -35,11 +35,6 @@ export type PermissionModeApplied =
       kept?: string
     }
   /**
-   * Claxedo answers prompts itself for this delivery; there is nothing to send. Not
-   * a failure — it is how ACP and pi work.
-   */
-  | { kind: "answered-locally" }
-  /**
    * A real delivery that this module does not implement yet. Deliberately explicit:
    * silently returning success here is how a picker ends up claiming a mode is
    * active when nothing was ever sent.
@@ -55,22 +50,11 @@ export type PermissionModeApplied =
  * the precise failure `not-wired` exists to make visible, and it would be
  * reintroduced by a picker that lists everything.
  *
- * `claxedo-auto-answer` counts as deliverable: nothing is sent, but the mode IS in
- * effect — Claxedo answers the prompts itself.
- *
  * Pinned against `applyPermissionMode` by a test that walks every delivery kind, so
  * implementing one without flipping this here fails.
  */
 export function permissionModeDeliverable(kind: PermissionModeDelivery["kind"]) {
-  switch (kind) {
-    case "claxedo-auto-answer":
-      return true
-    case "harness-permission-mode":
-      // Deliverable: the runtime owns the translation, so the app only has to
-      // hand back an id the harness gave it. This returned false while the app
-      // held per-harness delivery shapes it had no implementation for.
-      return true
-  }
+  return kind === "harness-permission-mode"
 }
 
 /**
@@ -88,9 +72,6 @@ export async function applyPermissionMode(input: {
   const { delivery } = input
 
   switch (delivery.kind) {
-    case "claxedo-auto-answer":
-      return { kind: "answered-locally" }
-
     case "harness-permission-mode": {
       if (!input.client.setPermissionMode) return { kind: "not-wired", delivery: delivery.kind }
       const state = await input.client.setPermissionMode({

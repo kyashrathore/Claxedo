@@ -147,3 +147,15 @@ export function createPromptInputSubmitRetry(input: {
     onRetry: createMemo<(() => void) | undefined>(() => (lastSubmitted() ? () => void retryPrompt() : undefined)),
   }
 }
+
+/** Ignore late boot updates after the composer has switched to another draft. */
+export function createSubmitBootWriter(input: {
+  bootScope?: Accessor<string>
+  setBooting?: (value?: PromptBootState) => void
+}) {
+  const scope = input.bootScope?.()
+  return (value?: PromptBootState) => {
+    if (input.bootScope && input.bootScope() !== scope) return
+    input.setBooting?.(value)
+  }
+}

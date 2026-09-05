@@ -4,7 +4,6 @@ import { Tooltip } from "@opencode-ai/ui/tooltip"
 import { COMPOSER_MENU_CLASS } from "@/features/session/composer/ui/menu-metrics"
 import type { PermissionModeGroups, PermissionModeRow } from "@/features/session/composer/permission-mode"
 import {
-  CLAXEDO_ASK_ALWAYS_ID,
   type PermissionModeOption,
 } from "@/features/session/permission/modes"
 // Both icon exports render a single `<svg>`, so both satisfy the menu's
@@ -14,36 +13,7 @@ import {
 // the shared primitive's 16px.
 import { ClaxedoIcon as Icon, ClaxedoIconV2 as BareIcon } from "@/ui/controls/claxedo-icon"
 
-/**
- * The composer's permission-mode picker.
- *
- * ONE flat list, and which list it is depends on who enforces: a harness that
- * advertises modes contributes all of them, IN THE HARNESS'S OWN WORDS, and
- * Claxedo contributes nothing; a harness that advertises none gets Claxedo's own
- * two options instead. An earlier design mapped a single five-mode vocabulary onto
- * every harness and was dropped as lossy by construction — cursor-sdk has no
- * permission surface at all, pi cannot restrict ahead of time, Codex has no plan
- * mode — so it named capabilities that did not exist. Showing the harness's own
- * names means the picker cannot lie about what a mode does, because it is not
- * paraphrasing.
- *
- * A later design opened on a single collapsed Claxedo "Auto" row with the
- * harness's real modes behind a "N more …" disclosure. It is gone: Auto was only
- * ever a label over whichever row carried `level: "auto"`, and on Claude that row
- * is itself named "Auto" — so the menu opened on a paraphrase of a row it was
- * hiding, and put the actual list one click away for nothing.
- *
- * Three states are surfaced rather than hidden, because each is a different thing
- * and collapsing them is how a user comes to believe a policy is active when it is
- * not:
- *   - a harness that offers nothing shows WHY (`unavailable`), not an empty list;
- *   - a mode we cannot deliver yet is visible but NOT selectable, and says so;
- *   - a caveat that can withdraw a mode at runtime (Claude's auto needs a model that
- *     supports it, and org policy can still force prompts) rides on its row.
- *
- * `data-what` on each row carries the delivery kind — that is the honest answer to
- * "what does this map to in the harness", and it is what the tooltip explains.
- */
+/** Runtime-reported modes, their delivery caveats, and explicit unavailable states. */
 export function PromptPermissionControl(props: {
   enabled: Accessor<boolean>
   disabled: Accessor<boolean>
@@ -108,15 +78,6 @@ export function PromptPermissionControl(props: {
               {(groups) => (
                 <>
                   {/*
-                    Claxedo's own options, which exist ONLY where the harness
-                    reported none — so this and the harness group below never
-                    render together, and no group label is needed to tell them
-                    apart.
-                  */}
-                  <For each={groups().claxedo}>
-                    {(item) => <ModeRow row={item} current={props.current} onSelect={props.onSelect} />}
-                  </For>
-                  {/*
                     A REASON is prose, not a row.
 
                     This was a `MenuV2.Item disabled`, and menu items are a
@@ -137,7 +98,6 @@ export function PromptPermissionControl(props: {
                       <p
                         data-slot="permission-modes-unavailable"
                         class="text-balance px-2.5 py-2 text-sm leading-[var(--line-height-prose-compact)] text-v2-text-text-faint"
-                        classList={{ "mt-1 border-t border-border-base pt-2.5": groups().claxedo.length > 0 }}
                       >
                         {groups().harness.unavailable}
                       </p>
@@ -227,7 +187,7 @@ function ModeRow(props: {
       >
         <span class="flex w-full min-w-0 items-start gap-2">
           <Icon
-            name={option().id === CLAXEDO_ASK_ALWAYS_ID ? "hand" : "shield"}
+            name="shield"
             size="small"
             /*
              * Nudges the glyph down 1px to optically centre it against the 16px

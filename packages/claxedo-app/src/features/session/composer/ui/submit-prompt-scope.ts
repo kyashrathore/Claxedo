@@ -1,3 +1,5 @@
+import type { PromptSubmitInput } from "./submit-input"
+
 // `promptScopeKey` lives next to `sessionViewKey` (the neutral shell/identity
 // layer) so BOTH the context layer (`context/prompt.tsx`) and this component
 // layer share the one canonical derivation without a cross-layer import cycle.
@@ -21,5 +23,22 @@ export function promptViewScope(input: { directory?: string; sessionId?: string;
     dir: input.directory ?? "",
     id: input.sessionId,
     ...(input.draftId ? { draftId: input.draftId } : {}),
+  }
+}
+
+/** Capture the mounted draft identity before any asynchronous provisioning. */
+export function capturePromptSubmitScope(
+  input: Pick<PromptSubmitInput, "sessionDirectory" | "sessionID" | "draftId" | "conversationDirectory">,
+  sdkDirectory: string,
+) {
+  const projectDirectory = input.sessionDirectory?.()
+  const explicitSessionID = input.sessionID?.()
+  const draftId = input.draftId?.()
+  return {
+    projectDirectory,
+    explicitSessionID,
+    draftId,
+    mountedConversationDirectory: input.conversationDirectory?.() ?? sdkDirectory,
+    fallbackDirectory: draftId ? undefined : sdkDirectory,
   }
 }

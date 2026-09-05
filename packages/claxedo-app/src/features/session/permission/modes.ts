@@ -1,40 +1,10 @@
 import type { HarnessId } from "@/platform/identity/session-ref"
 import {
   harnessPermissionLabel,
-  harnessUsesClaxedoPermissionPicker,
   permissionMechanism,
 } from "@/features/session/permission/mechanisms"
 
-/**
- * Permission modes, named by whoever enforces them.
- *
- * The harness's OWN modes — its ids, its names, its descriptions, fetched per
- * session from the runtime, which reads them off the installed SDK. Where a
- * harness reports any, they are the WHOLE picker and Claxedo names nothing.
- *
- * Claxedo's own two options ("Auto", "Ask for everything") appear only where the
- * harness reports none, so that a picker is never empty on a harness that still
- * has a real policy to set.
- *
- * Three designs have been tried here and the reasoning is worth keeping. The
- * first invented five abstract modes and mapped them onto every harness, naming
- * capabilities that did not exist. The third put a single Claxedo "Auto" above
- * every harness's own list as a collapsed LABEL over whichever rung enforced it.
- * That reads well in the abstract and was noise in practice: on a harness whose
- * own auto rung is literally called "Auto" — Claude's classifier — the label
- * duplicated the row it pointed at, so the menu opened on a summary of one of
- * its own hidden rows and made the real list a click away for no gain.
- *
- * So the second design is the one that stands: the two groups are mutually
- * exclusive. A harness either enforces its own modes, in which case those are
- * what the user picks from, or it enforces none, in which case Claxedo's do the
- * work. Nothing sits above a list summarising it.
- *
- * The rule that survives all of them: a name the user reads must come from
- * whoever enforces the behaviour. Names we write can drift from what the harness
- * does; names the harness reports cannot.
- */
-
+/** Picker options come from the runtime report; local auto-answer is a separate preference. */
 
 /**
  * Tool tiers Claxedo's own Auto mode uses. Shared with permission-auto-respond.
@@ -117,67 +87,24 @@ export function permissionDecidedProperties(input: {
   }
 }
 
-/**
- * What the user picked.
- *
- * `kind` records WHO owns the id, and it is not decoration: the same id string
- * can exist in both groups, and resolving a claxedo id against the harness's
- * list (or the reverse) would silently return the wrong option. Both carry a
- * plain `modeId` because neither set is closed — the harness's ids come off the
- * wire, and Claxedo's are matched by id for symmetry rather than special-cased.
- *
- * There is no module-level default constant. The default depends on what the
- * harness reported for THIS session, so it is a function — see
- * `defaultPermissionSelection`. A constant here was previously unreachable in
- * the running app while appearing to define its behaviour.
- */
+/** Runtime mode selection. Retired local selections are accepted only as stale input
+ * and rejected by findPermissionModeOption, even when a harness reuses the id. */
 export type PermissionSelection =
   | { kind: "claxedo"; modeId: string }
   | { kind: "harness"; modeId: string }
 
 /** The concrete call Claxedo makes for a given option. */
-export type PermissionModeDelivery =
-  | {
-      kind: "claxedo-auto-answer"
-      autoAnswer: readonly string[]
-      /**
-       * How to answer. `always` asks the harness to PERSIST the grant, so the
-       * same permission is answered once and never asked again; `once` re-answers
-       * every occurrence forever.
-       */
-      respondWith: "once" | "always"
-    }
-  /**
-   * ONE delivery for every harness that has a real mode surface — ACP, Claude,
-   * Codex and Cursor alike.
-   *
-   * This replaced four sibling variants, one per harness, each carrying that
-   * harness's own parameters (`permissionMode`, `approvalPolicy` + `sandbox`,
-   * `sandboxOptions` + `autoReview`, `modeId`). Those existed while the app was
-   * deciding what to send. It no longer does: the runtime owns each harness's
-   * translation now, and the app's whole job is to pass back an id it was given.
-   *
-   * Keeping the per-harness shapes would mean the app re-deriving, from a
-   * `HarnessId`, facts the runtime already knows — which is precisely how the
-   * mechanism table came to assert things that were not true of the installed
-   * SDKs.
-   */
-  | {
-      kind: "harness-permission-mode"
-      modeId: string
-      /**
-       * Straight from the harness, never assumed. `next-session` is real and
-       * only Cursor reports it: its options are read by `Agent.create`, so a
-       * change cannot reach the session on screen at all.
-       */
-      appliesFrom: "next-turn" | "next-session"
-    }
+export type PermissionModeDelivery = {
+  kind: "harness-permission-mode"
+  modeId: string
+  appliesFrom: "next-turn" | "next-session"
+}
 
 export type PermissionModeOption = {
   id: string
   name: string
   description?: string
-  origin: "claxedo" | "harness"
+  origin: "harness"
   /** A condition the user must know about, shown alongside the option. */
   caveat?: string
   /** How this option reaches the harness. Drives the per-item info. */
@@ -193,28 +120,6 @@ export const CLAXEDO_AUTO_ANSWERS = [
 ] as const
 
 /**
- * Answer with `always`, not `once`.
- *
- * ACP exposes `allow_always` as a `PermissionOptionKind`, and the harness persists
- * it — so a safe permission is answered ONE time and never asked about again.
- * Answering `once` instead means the harness keeps asking forever and Claxedo keeps
- * silently replying, which looks identical to the user but leaves the permission
- * ungranted and dies the moment Claxedo is not there to answer.
- *
- * Scope is the harness's to decide: the option it advertises for `allow_always`
- * carries whatever granularity it intends (this tool, this command pattern, this
- * directory). Claxedo does not widen it.
- */
-const CLAXEDO_LOCAL_AUTO: PermissionModeDelivery = {
-  kind: "claxedo-auto-answer",
-  autoAnswer: CLAXEDO_AUTO_ANSWERS,
-  respondWith: "always",
-}
-
-export const CLAXEDO_ALLOW_SAFE_ID = "claxedo-allow-safe"
-export const CLAXEDO_ASK_ALWAYS_ID = "claxedo-ask-always"
-
-/**
  * The whole picker, for a harness whose tools cannot reach anything real.
  *
  * States the two facts that make a permission mode unnecessary rather than
@@ -224,86 +129,6 @@ export const CLAXEDO_ASK_ALWAYS_ID = "claxedo-ask-always"
  */
 export const SANDBOXED_NO_POLICY_REASON =
   "No permission mode applies — Pi's shell is simulated (just-bash, in memory) and its tools run in Pi's cloud, so nothing reaches your machine."
-
-/**
- * Claxedo's own two options, for the harnesses that have no modes of their own.
- *
- * These appear ONLY where the harness has nothing of its own. Everywhere else the
- * harness's own names are shown, because a name we did not write cannot drift
- * from what the harness does — and a Claxedo option beside a harness's own list
- * is a second control over one behaviour with no way to tell which wins.
- */
-export function claxedoPermissionModes(input: {
-  harness: HarnessId
-  report?: HarnessModeReport
-  hasSession?: boolean
-}): readonly PermissionModeOption[] {
-  // A harness whose tools cannot reach anything real gets NO options, not even
-  // Claxedo's own. Offering one would put a choosable control over a policy that
-  // does not exist — the same defect as offering an option under a harness that
-  // failed to start. `SANDBOXED_NO_POLICY_REASON` is shown in its place.
-  if (permissionMechanism(input.harness).kind === "sandboxed-no-policy") return []
-  // The harness reported modes, so it enforces its own policy and the picker is
-  // its list alone. Claxedo previously added an "Auto" row above it that merely
-  // pointed at whichever of those rows carried `level: "auto"` — on Claude that
-  // row is itself named "Auto", so the menu opened showing a paraphrase of a row
-  // it was hiding.
-  // `readJson` does no shape validation (same constraint as the Array.isArray
-  // guard in harnessPermissionModes): a 200 whose body lacks a `modes` array
-  // must read as "no modes reported", not throw — this runs in a composer
-  // render memo, and a render-time throw blanks the whole shell.
-  const reportedModes = input.report?.modes
-  if (Array.isArray(reportedModes) && reportedModes.length > 0) return []
-  return [localAnswerAutoOption(), localAnswerAskOption()]
-}
-
-/**
- * Claxedo answers the safe permissions itself.
- *
- * Extracted so the unidentified-harness path can reach it WITHOUT naming a
- * harness. That path used to build its options by calling
- * `permissionModeOptions({ harness: "pi" })` — pi being, at the time, the one
- * harness that reached this rung. That coupling broke the moment pi stopped
- * offering options at all, and it was always a misuse: the unknown-harness case
- * wants "the rung that assumes nothing about the harness", which is this one,
- * not "whatever pi happens to do".
- */
-function localAnswerAutoOption(): PermissionModeOption {
-  return {
-    id: CLAXEDO_ALLOW_SAFE_ID,
-    name: "Auto",
-    origin: "claxedo",
-    // Same shape as every other rung — CLAXEDO_AUTO_ANSWERS is exactly the
-    // complement of DANGER_GATED_PERMISSIONS — but answered locally, which is
-    // what the caveat is for.
-    description: "Everything runs without asking except shell, network and anything outside the project",
-    caveat: "Claxedo answers these prompts on your behalf; the harness enforces nothing",
-    delivery: CLAXEDO_LOCAL_AUTO,
-  }
-}
-
-/**
- * What to offer while the session's harness is still unidentified.
- *
- * Both options are Claxedo's own and assume nothing about the harness, so
- * neither can produce a ruleset write to the wrong engine. Withholding them
- * would leave a user with no permission control at all on a session whose
- * harness we merely failed to name yet.
- */
-export function unidentifiedHarnessModes(): readonly PermissionModeOption[] {
-  return [localAnswerAutoOption(), localAnswerAskOption()]
-}
-
-/** The off switch where Claxedo, not the harness, is the one answering. */
-function localAnswerAskOption(): PermissionModeOption {
-  return {
-    id: CLAXEDO_ASK_ALWAYS_ID,
-    name: "Ask for everything",
-    description: "Every tool call waits for you",
-    origin: "claxedo",
-    delivery: { kind: "claxedo-auto-answer", autoAnswer: [], respondWith: "once" },
-  }
-}
 
 /**
  * What the harness itself reported, as served by the runtime.
@@ -391,15 +216,7 @@ export function harnessPermissionModes(input: {
   }
 }
 
-/**
- * Everything the picker shows.
- *
- * The two groups are mutually exclusive by design: a harness either has modes of
- * its own or it does not. Showing Claxedo's options ALONGSIDE a harness's own
- * would put two controls over the same behaviour in one menu with no way to tell
- * which wins — and on every harness that has modes, the harness's are strictly
- * better, because they are enforced where the tools actually run.
- */
+/** Only the runtime-reported list is a picker authority. */
 export function permissionModeOptions(input: {
   harness: HarnessId
   report?: HarnessModeReport
@@ -412,19 +229,8 @@ export function permissionModeOptions(input: {
    * the mode up, so on a draft the choice is simply in force.
    */
   hasSession?: boolean
-}): { claxedo: readonly PermissionModeOption[]; harness: HarnessPermissionModes } {
-  const harness = harnessPermissionModes(input)
-  const reportReady = !!input.report && Array.isArray(input.report.modes)
-  // Exactly one of these is non-empty. `claxedoPermissionModes` returns nothing
-  // once the harness has reported modes of its own, so the picker never renders
-  // a Claxedo row above a list that already contains the mode it would apply.
-  // Loading/unreadable reports are a rendering state, not a delivery contract.
-  // Harnesses must never flash Claxedo rows while their own list
-  // is still loading or empty — an empty `modes: []` report is not permission
-  // to paraphrase Codex/Claude modes as Claxedo "Ask for everything".
-  const claxedo =
-    reportReady && harnessUsesClaxedoPermissionPicker(input.harness) ? claxedoPermissionModes(input) : []
-  return { claxedo, harness }
+}): { harness: HarnessPermissionModes } {
+  return { harness: harnessPermissionModes(input) }
 }
 
 /**
@@ -432,13 +238,13 @@ export function permissionModeOptions(input: {
  *
  * Prefers what the HARNESS says is current — it is the truth about the session,
  * and on a resumed session it is the mode already in force. Only when the harness
- * reports no current mode does this fall to the `auto` rung, and then to the
- * first option, so a picker is never blank while a real mode is running.
+ * reports no current mode does this choose its `auto` rung or first option.
+ * Without reported modes there is no default to invent.
  */
 export function defaultPermissionSelection(input: {
   harness: HarnessId
   report?: HarnessModeReport
-}): PermissionSelection {
+}): PermissionSelection | undefined {
   const report = input.report
   // `Array.isArray` for the same reason as `harnessPermissionModes` above: this
   // runs inside the composer's `selection` memo, so an unreadable report would
@@ -456,7 +262,7 @@ export function defaultPermissionSelection(input: {
     // own word for it would now name a row the picker does not contain.
     return { kind: "harness", modeId: chosen.id }
   }
-  return { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID }
+  return undefined
 }
 
 /** Resolve a selection to the option it refers to, or undefined if it is stale. */
@@ -469,12 +275,6 @@ export function findPermissionModeOption(input: {
   // Bound to a local before the callback: TypeScript discards narrowing on a
   // property access once it is read inside a closure.
   const modeId = selection.modeId
-  if (selection.kind === "claxedo") {
-    // A stored local choice is not display authority while a known harness's
-    // report is still loading. Resolve it only after the report proves that the
-    // harness contributes no competing policy rows.
-    if (!input.report || !Array.isArray(input.report.modes)) return
-    return claxedoPermissionModes(input).find((mode) => mode.id === modeId)
-  }
+  if (selection.kind !== "harness") return
   return harnessPermissionModes(input).modes.find((mode) => mode.id === modeId)
 }

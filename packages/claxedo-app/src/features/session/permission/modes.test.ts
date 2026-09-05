@@ -3,9 +3,7 @@ import { HARNESS_IDS } from "@/platform/identity/session-ref"
 import type { AgentPermissionModeState } from "@claxedo/agent-sdk-runtime/adapter-contract"
 import { PERMISSION_MECHANISMS } from "./mechanisms"
 import {
-  CLAXEDO_ALLOW_SAFE_ID,
   SANDBOXED_NO_POLICY_REASON,
-  claxedoPermissionModes,
   classifyToolKind,
   defaultPermissionSelection,
   findPermissionModeOption,
@@ -59,16 +57,16 @@ describe("harness modes are shown in the harness's own words", () => {
       // could only be a label over one of those same rows — on Claude, over a
       // row already named "Auto" — so the menu would open on a paraphrase of
       // something it was hiding.
-      expect(claxedoPermissionModes({ harness, report: THREE_MODES }), harness).toEqual([])
+      expect(permissionModeOptions({ harness, report: THREE_MODES }), harness).not.toHaveProperty("claxedo")
     }
   })
 
-  test("a harness reporting nothing also gets an off switch", () => {
+  test("a harness reporting nothing gets no invented picker options", () => {
     for (const harness of POLICY_HARNESS_IDS) {
       // Nothing to switch TO otherwise — Auto alone would be a one-item picker
       // with no way back.
-      const options = claxedoPermissionModes({ harness })
-      expect(options.map((option) => option.name), harness).toEqual(["Auto", "Ask for everything"])
+      const options = permissionModeOptions({ harness }).harness.modes
+      expect(options.map((option) => option.name), harness).toEqual([])
     }
   })
 
@@ -79,8 +77,8 @@ describe("harness modes are shown in the harness's own words", () => {
     // memo, and a throw there takes the whole shell into the ErrorBoundary.
     const malformed = {} as HarnessModeReport
     for (const harness of POLICY_HARNESS_IDS) {
-      const options = claxedoPermissionModes({ harness, report: malformed })
-      expect(options.map((option) => option.name), harness).toEqual(["Auto", "Ask for everything"])
+      const options = permissionModeOptions({ harness, report: malformed }).harness.modes
+      expect(options.map((option) => option.name), harness).toEqual([])
     }
   })
 
@@ -95,8 +93,8 @@ describe("harness modes are shown in the harness's own words", () => {
    * unchecked. The control described a policy that did not exist.
    */
   test("a sandboxed harness gets no options at all, and says why", () => {
-    expect(claxedoPermissionModes({ harness: "pi" })).toEqual([])
-    expect(claxedoPermissionModes({ harness: "pi", report: THREE_MODES })).toEqual([])
+    expect(permissionModeOptions({ harness: "pi" }).harness.modes).toEqual([])
+    expect(permissionModeOptions({ harness: "pi", report: THREE_MODES }).harness.modes).toEqual([])
     expect(harnessPermissionModes({ harness: "pi", report: THREE_MODES }).modes).toEqual([])
     expect(harnessPermissionModes({ harness: "pi" }).unavailable).toBe(SANDBOXED_NO_POLICY_REASON)
     // Names both facts, so an empty menu never reads as broken or still loading.
@@ -105,12 +103,6 @@ describe("harness modes are shown in the harness's own words", () => {
     // Never the loading or the not-reported copy: pi is not slow and will not
     // report later.
     expect(SANDBOXED_NO_POLICY_REASON).not.toMatch(/loading|has not reported/i)
-  })
-
-  test("Claxedo-owned fallback modes are answered locally", () => {
-    const [localAuto] = claxedoPermissionModes({ harness: "configured-connection" })
-    expect(localAuto!.delivery.kind).toBe("claxedo-auto-answer")
-    expect(localAuto!.caveat).toMatch(/harness enforces nothing/i)
   })
 
   test("a reported auto rung is offered as the harness's own row, not relabelled", () => {
@@ -163,11 +155,11 @@ describe("harness modes are shown in the harness's own words", () => {
 
   // Same body, the other entry point on the same render path. Guarding only
   // `harnessPermissionModes` left this one still able to blank the app.
-  test("an unreadable report falls back to a Claxedo default instead of throwing", () => {
+  test("an unreadable report has no default and does not throw", () => {
     const unreadable: HarnessModeReport = JSON.parse(`{"appliesFrom":"next-turn"}`)
     const selection = defaultPermissionSelection({ harness: "claude-sdk", report: unreadable })
 
-    expect(selection.kind).toBe("claxedo")
+    expect(selection).toBeUndefined()
   })
 
   // Cursor's options are read by Agent.create, so a change cannot reach the
@@ -220,8 +212,8 @@ describe("harness modes are shown in the harness's own words", () => {
     })
     const draft = permissionModeOptions({ harness: "codex-acp", report: codexAcp, hasSession: false })
     const live = permissionModeOptions({ harness: "codex-acp", report: codexAcp, hasSession: true })
-    expect(draft.claxedo).toEqual([])
-    expect(live.claxedo).toEqual([])
+    expect(draft).not.toHaveProperty("claxedo")
+    expect(live).not.toHaveProperty("claxedo")
     expect(draft.harness.modes).toEqual(live.harness.modes)
     expect(draft.harness.modes[0]!.description).toContain("Read and edit files")
   })
@@ -239,13 +231,13 @@ describe("the two groups are mutually exclusive", () => {
   // screen twice under two names.
   test("a harness with modes contributes them and nothing else", () => {
     const options = permissionModeOptions({ harness: "claude-sdk", report: THREE_MODES })
-    expect(options.claxedo).toEqual([])
+    expect(options).not.toHaveProperty("claxedo")
     expect(options.harness.modes).toHaveLength(3)
   })
 
   test("a policy harness with an empty report does not flash Claxedo rows in the picker", () => {
     const options = permissionModeOptions({ harness: "codex-app-server", report: report() })
-    expect(options.claxedo).toEqual([])
+    expect(options).not.toHaveProperty("claxedo")
     expect(options.harness.modes).toEqual([])
     expect(options.harness.unavailable).toMatch(/has not reported any permission modes/i)
   })
@@ -292,11 +284,8 @@ describe("choosing a default", () => {
     expect(selection).toEqual({ kind: "harness", modeId: "only" })
   })
 
-  test("with no harness modes, Claxedo's permissive option is the default", () => {
-    expect(defaultPermissionSelection({ harness: "opencode", report: report() })).toEqual({
-      kind: "claxedo",
-      modeId: CLAXEDO_ALLOW_SAFE_ID,
-    })
+  test("with no harness modes, no permission policy is invented", () => {
+    expect(defaultPermissionSelection({ harness: "opencode", report: report() })).toBeUndefined()
   })
 })
 
@@ -304,9 +293,9 @@ describe("resolving a stored selection", () => {
   // `kind` is not decoration. The same id can exist in both groups, and resolving
   // one against the other's list would silently return the wrong option.
   test("a claxedo id is never resolved against the harness list", () => {
-    const collide = report({ modes: [{ id: CLAXEDO_ALLOW_SAFE_ID, name: "A harness mode that shares the id" }] })
+    const collide = report({ modes: [{ id: "claxedo-allow-safe", name: "A harness mode that shares the id" }] })
     const asHarness = findPermissionModeOption({
-      selection: { kind: "harness", modeId: CLAXEDO_ALLOW_SAFE_ID },
+      selection: { kind: "harness", modeId: "claxedo-allow-safe" },
       harness: "claude-acp",
       report: collide,
     })
@@ -319,27 +308,26 @@ describe("resolving a stored selection", () => {
     // row for a selection that says claxedo, which would put a harness mode's
     // name on a Claxedo write.
     const asClaxedo = findPermissionModeOption({
-      selection: { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID },
+      selection: { kind: "claxedo", modeId: "claxedo-allow-safe" },
       harness: "claude-acp",
       report: collide,
     })
     expect(asClaxedo).toBeUndefined()
 
-    // And with no harness list in play, the claxedo id resolves to the Claxedo
-    // option — so the branch is doing real work rather than always failing.
+    // A retired local choice remains unresolved even without a harness list.
     const alone = findPermissionModeOption({
-      selection: { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID },
+      selection: { kind: "claxedo", modeId: "claxedo-allow-safe" },
       harness: "claude-acp",
       report: report(),
     })
-    expect(alone?.origin).toBe("claxedo")
+    expect(alone).toBeUndefined()
 
     const unsupported = findPermissionModeOption({
-      selection: { kind: "claxedo", modeId: CLAXEDO_ALLOW_SAFE_ID },
+      selection: { kind: "claxedo", modeId: "claxedo-allow-safe" },
       harness: "opencode",
       report: report({ unsupported: "opencode has no permission modes of its own" }),
     })
-    expect(unsupported?.origin).toBe("claxedo")
+    expect(unsupported).toBeUndefined()
   })
 
   // A mode the harness stopped advertising must read as unresolved, not wear

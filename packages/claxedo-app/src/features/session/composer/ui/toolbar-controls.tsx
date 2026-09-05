@@ -107,9 +107,8 @@ export function PromptToolbarControls(props: {
           const current = props.permissionCurrent()
           if (!current?.id) return false
           // Hide the trigger until the offered rows include the resolved mode.
-          // Otherwise a default Claxedo id can flash while runtime modes are still loading
-          // while Codex modes are still loading (tier-real behavior 13).
-          const offered = [...groups.claxedo, ...groups.harness.rows]
+          // A stale selection must not flash while runtime modes are loading.
+          const offered = groups.harness.rows
           if (offered.length === 0) return false
           return offered.some((row) => row.option.id === current.id)
         }}

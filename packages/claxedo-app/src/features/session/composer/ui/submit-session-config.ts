@@ -43,3 +43,15 @@ function record(input: unknown) {
 function string(input: unknown) {
   return typeof input === "string" && input.length > 0 ? input : undefined
 }
+
+/** Existing sessions must load their authoritative binding before a turn is sent. */
+export async function loadExistingSubmitConfig(read: () => Promise<unknown>, onError: (error: unknown) => void) {
+  try {
+    const config = parseExistingSessionConfig(await read())
+    if (!config?.model) throw new Error("The session configuration is not available yet. Try again after it loads.")
+    return config
+  } catch (error) {
+    onError(error)
+    return undefined
+  }
+}

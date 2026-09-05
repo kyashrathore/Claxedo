@@ -1,4 +1,4 @@
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import {
   createRemoteJWKSet,
@@ -160,126 +160,132 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
   const env = options.env ?? process.env
   const limitedBody = bodyLimit({
     maxSize: bodyLimitBytes,
-    onError: (context) => context.json({
-      error: {
-        code: "request_body_too_large",
-        message: `Request body exceeds the ${bodyLimitBytes}-byte limit`,
-      },
-    }, 413),
+    onError: (context) =>
+      context.json(
+        {
+          error: {
+            code: "request_body_too_large",
+            message: `Request body exceeds the ${bodyLimitBytes}-byte limit`,
+          },
+        },
+        413,
+      ),
   })
 
-  return new Hono().post("/session-authorize", limitedBody, async (context) => {
-    const body = await context.req.json().catch(() => undefined) as Record<string, unknown> | undefined
-    const sessionId = text(body?.sessionId)
-    const action = body?.action
-    const operationId = text(body?.operationId)
-    const reason = optionalText(body?.reason)
-    const title = optionalText(body?.title)
-    const stream = body?.stream === true
-    const lease = text(body?.lease)
-    const turnId = text(body?.turnId)
-    const turnLeaseId = text(body?.leaseId)
-    const fencingToken = positiveInteger(body?.fencingToken)
-    if (isHostAuthorityAction(action)) {
-      if (body && Object.keys(body).some((key) => key !== "action")) {
-        return context.json({
+  async function authorizeHost(
+    context: Context,
+    action: HostAuthorityAction,
+    body: Record<string, unknown> | undefined,
+  ) {
+    if (body && Object.keys(body).some((key) => key !== "action")) {
+      return context.json(
+        {
           error: { code: "host_authority_request_invalid", message: "Host authority accepts only its action" },
-        }, 400)
-      }
-      const token = bearerToken(context.req.header("authorization") ?? null)
-      if (!token) {
-        return context.json({ error: { code: "relay_host_token_required", message: "Relay Host Token is required" } }, 401)
-      }
-      const verified = await (options.verifyRelayProof ?? relayProofVerifier(env))(token).catch(() => undefined)
-      if (!verified) {
-        return context.json({ error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" } }, 401)
-      }
-      const minimumRole = action === "host_admin" ? "admin" as const : "viewer" as const
-      if (!verified.role || roleRank(verified.role) < roleRank(minimumRole)) {
-        return context.json({
+        },
+        400,
+      )
+    }
+    const token = bearerToken(context.req.header("authorization") ?? null)
+    if (!token) {
+      return context.json(
+        { error: { code: "relay_host_token_required", message: "Relay Host Token is required" } },
+        401,
+      )
+    }
+    const verified = await (options.verifyRelayProof ?? relayProofVerifier(env))(token).catch(() => undefined)
+    if (!verified) {
+      return context.json(
+        { error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" } },
+        401,
+      )
+    }
+    const minimumRole = action === "host_admin" ? ("admin" as const) : ("viewer" as const)
+    if (!verified.role || roleRank(verified.role) < roleRank(minimumRole)) {
+      return context.json(
+        {
           error: { code: "host_authority_denied", message: `Workspace ${minimumRole} authority is required` },
-        }, 403)
-      }
-      const proof = privateSessionRuntimeProof(verified)
-      const active = asRecord(await options.authority.runtimeAccessTokenActive({
+        },
+        403,
+      )
+    }
+    const proof = privateSessionRuntimeProof(verified)
+    const active = asRecord(
+      await options.authority.runtimeAccessTokenActive({
         jti: proof.parentRuntimeAccessTokenJti,
         workspaceId: proof.workspaceId,
         hostId: proof.hostId,
         minimumRole,
-      }))
-      if (active?.active !== true) {
-        return context.json({
+      }),
+    )
+    if (active?.active !== true) {
+      return context.json(
+        {
           error: {
             code: text(active?.code) ?? "runtime_access_token_inactive",
             message: text(active?.reason) ?? "Runtime Access Token is inactive",
           },
-        }, 401)
-      }
-      return context.json({ allowed: true })
-    }
-    if (
-      !sessionId
-      || !isAuthorityAction(action)
-      || (isRegistrationAction(action) && !operationId)
-      || (isTransitionAction(action) && !reason)
-      || (body?.title !== undefined && title === undefined)
-      || (body?.reason !== undefined && reason === undefined)
-      || (body?.stream !== undefined && typeof body.stream !== "boolean")
-      || (body?.lease !== undefined && !lease)
-      || (!!lease && !stream)
-      || (stream && action !== "read" && action !== "write")
-      || (isTurnAction(action) && !turnId)
-      || ((action === "turn_renew" || action === "turn_release") && (!turnLeaseId || !fencingToken))
-      || (action === "turn_acquire" && (body?.leaseId !== undefined || body?.fencingToken !== undefined))
-    ) {
-      return context.json({
-        error: {
-          code: "session_authority_request_invalid",
-          message: "sessionId, action, and exact registration operation fields are required",
         },
-      }, 400)
+        401,
+      )
     }
+    return context.json({ allowed: true })
+  }
 
+  async function verifySessionProof(context: Context, request: SessionAuthorityRequest) {
+    const { sessionId, action, lease, turnId, turnLeaseId, fencingToken } = request
     let claims: SessionStreamLeaseClaims
     let ownedTurn: TurnLeaseClaims | undefined
     if ((action === "turn_renew" || action === "turn_release") && turnLeaseId) {
       const verified = await (options.verifyTurnLease ?? turnLeaseVerifier(env))(turnLeaseId).catch(() => undefined)
       if (
-        !verified
-        || verified.sessionId !== sessionId
-        || verified.turnId !== turnId
-        || verified.fencingToken !== fencingToken
+        !verified ||
+        verified.sessionId !== sessionId ||
+        verified.turnId !== turnId ||
+        verified.fencingToken !== fencingToken
       ) {
-        return context.json({
-          error: { code: "session_turn_lease_invalid", message: "Session turn lease is invalid or mismatched" },
-        }, 401)
+        return context.json(
+          {
+            error: { code: "session_turn_lease_invalid", message: "Session turn lease is invalid or mismatched" },
+          },
+          401,
+        )
       }
       ownedTurn = verified
       claims = verified
     } else if (lease) {
       const verified = await (options.verifyStreamLease ?? streamLeaseVerifier(env))(lease).catch(() => undefined)
       if (!verified || verified.sessionId !== sessionId || verified.action !== action) {
-        return context.json({
-          error: { code: "session_stream_lease_invalid", message: "Session stream lease is invalid or mismatched" },
-        }, 401)
+        return context.json(
+          {
+            error: { code: "session_stream_lease_invalid", message: "Session stream lease is invalid or mismatched" },
+          },
+          401,
+        )
       }
       claims = verified
     } else {
       const token = bearerToken(context.req.header("authorization") ?? null)
       if (!token) {
-        return context.json({ error: { code: "relay_host_token_required", message: "Relay Host Token is required" } }, 401)
+        return context.json(
+          { error: { code: "relay_host_token_required", message: "Relay Host Token is required" } },
+          401,
+        )
       }
       const verified = await (options.verifyRelayProof ?? relayProofVerifier(env))(token).catch(() => undefined)
       if (!verified) {
-        return context.json({
-          error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" },
-        }, 401)
+        return context.json(
+          {
+            error: { code: "relay_host_token_invalid", message: "Relay Host Token is invalid or expired" },
+          },
+          401,
+        )
       }
       try {
         const proof = privateSessionRuntimeProof(verified)
-        const principal: PrivateSessionRuntimePrincipal = proof.principalKind === "user"
-          ? { principalKind: "user", actorId: proof.actorId, actorKind: "human" }
-          : { principalKind: "service", actorId: proof.actorId, actorKind: "agent" }
+        const principal: PrivateSessionRuntimePrincipal =
+          proof.principalKind === "user"
+            ? { principalKind: "user", actorId: proof.actorId, actorKind: "human" }
+            : { principalKind: "service", actorId: proof.actorId, actorKind: "agent" }
         claims = {
           ...principal,
           transport: "relay-host",
@@ -291,31 +297,130 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
           action: action === "write" ? "write" : "read",
         }
       } catch {
-        return context.json({
-          error: { code: "relay_host_token_invalid", message: "Relay Host Token claims are invalid" },
-        }, 401)
+        return context.json(
+          {
+            error: { code: "relay_host_token_invalid", message: "Relay Host Token claims are invalid" },
+          },
+          401,
+        )
       }
     }
+
+    return { claims, ownedTurn }
+  }
+
+  async function applyTurnAction(
+    context: Context,
+    request: SessionAuthorityRequest,
+    claims: SessionStreamLeaseClaims,
+    ownedTurn: TurnLeaseClaims | undefined,
+  ) {
+    const { sessionId, action, turnId } = request
+    const principal = sessionLeasePrincipal(claims)
+    // Turn admission is reached only over the Relay Host Token chain: the
+    // request validation above accepts a lease only together with
+    // `stream`, and `stream` is only ever a read/write action.
+    if (claims.transport !== "relay-host") {
+      return context.json(
+        {
+          error: {
+            code: "session_turn_lease_invalid",
+            message: "Session turn admission requires a Relay Host Token chain",
+          },
+        },
+        401,
+      )
+    }
+    const denial = await runtimeAccessTokenDenial(options.authority, claims)
+    if (denial) return context.json({ error: denial }, 401)
+    if (!options.turnAuthority) {
+      return context.json(
+        {
+          error: {
+            code: "session_turn_authority_unavailable",
+            message: "Durable session turn authority is not configured",
+          },
+        },
+        503,
+      )
+    }
+    const turn = {
+      ...principal,
+      sessionId,
+      workspaceId: claims.workspaceId,
+      turnId: turnId!,
+    }
+    if (action === "turn_acquire") {
+      const acquired = await options.turnAuthority.acquireSessionTurn(turn)
+      const proof = await (options.mintTurnLease ?? turnLeaseMinter(env))({
+        ...claims,
+        action: "write",
+        turnId: acquired.turnId,
+        authorityLeaseId: acquired.leaseId,
+        fencingToken: acquired.fencingToken,
+        acquiredAt: acquired.acquiredAt,
+        expiresAt: acquired.expiresAt,
+      })
+      return context.json({ ...acquired, leaseId: proof.lease, expiresAt: proof.expiresAt })
+    }
+    const owned = {
+      ...turn,
+      leaseId: ownedTurn!.authorityLeaseId,
+      fencingToken: ownedTurn!.fencingToken,
+    }
+    if (action === "turn_renew") {
+      const renewed = await options.turnAuthority.renewSessionTurn(owned)
+      const proof = await (options.mintTurnLease ?? turnLeaseMinter(env))({
+        ...ownedTurn!,
+        authorityLeaseId: renewed.leaseId,
+        fencingToken: renewed.fencingToken,
+        acquiredAt: renewed.acquiredAt,
+        expiresAt: renewed.expiresAt,
+      })
+      return context.json({ ...renewed, leaseId: proof.lease, expiresAt: proof.expiresAt })
+    }
+    return context.json(await options.turnAuthority.releaseSessionTurn(owned))
+  }
+
+  return new Hono().post("/session-authorize", limitedBody, async (context) => {
+    const body = (await context.req.json().catch(() => undefined)) as Record<string, unknown> | undefined
+    if (isHostAuthorityAction(body?.action)) return authorizeHost(context, body.action, body)
+    const request = parseSessionAuthorityRequest(body)
+    if (!request) {
+      return context.json(
+        {
+          error: {
+            code: "session_authority_request_invalid",
+            message: "sessionId, action, and exact registration operation fields are required",
+          },
+        },
+        400,
+      )
+    }
+    const { sessionId, action, operationId, reason, title, stream } = request
+    const verified = await verifySessionProof(context, request)
+    if (verified instanceof Response) return verified
+    const { claims, ownedTurn } = verified
 
     try {
       const principal = sessionLeasePrincipal(claims)
       if (action === "register") {
         await options.authority.registerRuntimeSession({
           ...principal,
-          operationId: operationId!,
+          operationId,
           sessionId,
           workspaceId: claims.workspaceId,
           ...(title ? { title } : {}),
         })
         return context.json({ allowed: true })
       }
-      if (isTransitionAction(action)) {
+      if (action === "registration_ambiguous" || action === "compensation_begin" || action === "compensation_complete") {
         const input = {
           ...principal,
-          operationId: operationId!,
+          operationId,
           sessionId,
           workspaceId: claims.workspaceId,
-          reason: reason!,
+          reason,
         }
         if (action === "registration_ambiguous") {
           await options.authority.markSessionRegistrationAmbiguous(input)
@@ -327,72 +432,17 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
         return context.json({ allowed: true })
       }
 
-      if (isTurnAction(action)) {
-        // Turn admission is reached only over the Relay Host Token chain: the
-        // request validation above accepts a lease only together with
-        // `stream`, and `stream` is only ever a read/write action.
-        if (claims.transport !== "relay-host") {
-          return context.json({
-            error: {
-              code: "session_turn_lease_invalid",
-              message: "Session turn admission requires a Relay Host Token chain",
-            },
-          }, 401)
-        }
-        const denial = await runtimeAccessTokenDenial(options.authority, claims)
-        if (denial) return context.json({ error: denial }, 401)
-        if (!options.turnAuthority) {
-          return context.json({
-            error: {
-              code: "session_turn_authority_unavailable",
-              message: "Durable session turn authority is not configured",
-            },
-          }, 503)
-        }
-        const turn = {
-          ...principal,
-          sessionId,
-          workspaceId: claims.workspaceId,
-          turnId: turnId!,
-        }
-        if (action === "turn_acquire") {
-          const acquired = await options.turnAuthority.acquireSessionTurn(turn)
-          const proof = await (options.mintTurnLease ?? turnLeaseMinter(env))({
-            ...claims,
-            action: "write",
-            turnId: acquired.turnId,
-            authorityLeaseId: acquired.leaseId,
-            fencingToken: acquired.fencingToken,
-            acquiredAt: acquired.acquiredAt,
-            expiresAt: acquired.expiresAt,
-          })
-          return context.json({ ...acquired, leaseId: proof.lease, expiresAt: proof.expiresAt })
-        }
-        const owned = {
-          ...turn,
-          leaseId: ownedTurn!.authorityLeaseId,
-          fencingToken: ownedTurn!.fencingToken,
-        }
-        if (action === "turn_renew") {
-          const renewed = await options.turnAuthority.renewSessionTurn(owned)
-          const proof = await (options.mintTurnLease ?? turnLeaseMinter(env))({
-            ...ownedTurn!,
-            authorityLeaseId: renewed.leaseId,
-            fencingToken: renewed.fencingToken,
-            acquiredAt: renewed.acquiredAt,
-            expiresAt: renewed.expiresAt,
-          })
-          return context.json({ ...renewed, leaseId: proof.lease, expiresAt: proof.expiresAt })
-        }
-        return context.json(await options.turnAuthority.releaseSessionTurn(owned))
-      }
+      if (isTurnAction(action)) return await applyTurnAction(context, request, claims, ownedTurn)
 
       if (stream) {
-        const decision = await authorizeRuntimeSessionStream({
-          authority: options.authority,
-          ...(options.mintStreamLease ? { mintStreamLease: options.mintStreamLease } : {}),
-          env,
-        }, claims)
+        const decision = await authorizeRuntimeSessionStream(
+          {
+            authority: options.authority,
+            ...(options.mintStreamLease ? { mintStreamLease: options.mintStreamLease } : {}),
+            env,
+          },
+          claims,
+        )
         if (!decision.allowed) {
           return context.json({ error: { code: decision.code, message: decision.message } }, decision.status)
         }
@@ -407,25 +457,75 @@ export function RuntimeSessionAuthorityRoutes(options: RuntimeSessionAuthorityOp
       return context.json({ allowed: true })
     } catch (error) {
       if (error instanceof SessionTurnConflictError || error instanceof SessionTurnLeaseLostError) {
-        return context.json({
-          error: {
-            code: error.code,
-            message: error.message,
-            ...(error instanceof SessionTurnConflictError && error.activeUntil !== undefined
-              ? { activeUntil: error.activeUntil }
-              : {}),
+        return context.json(
+          {
+            error: {
+              code: error.code,
+              message: error.message,
+              ...(error instanceof SessionTurnConflictError && error.activeUntil !== undefined
+                ? { activeUntil: error.activeUntil }
+                : {}),
+            },
           },
-        }, 409)
+          409,
+        )
       }
       if (error instanceof ControlPlaneAuthError) {
         return context.json(controlPlaneAuthErrorBody(error), error.status as 401 | 403 | 503)
       }
-      return context.json({
-        error: { code: "session_authority_unavailable", message: "Session authority is temporarily unavailable" },
-      }, 503)
+      return context.json(
+        {
+          error: { code: "session_authority_unavailable", message: "Session authority is temporarily unavailable" },
+        },
+        503,
+      )
     }
   })
 }
+
+function parseSessionAuthorityRequest(body: Record<string, unknown> | undefined) {
+  const sessionId = text(body?.sessionId)
+  const action = body?.action
+  const operationId = text(body?.operationId)
+  const reason = optionalText(body?.reason)
+  const title = optionalText(body?.title)
+  const stream = body?.stream === true
+  const lease = text(body?.lease)
+  const turnId = text(body?.turnId)
+  const turnLeaseId = text(body?.leaseId)
+  const fencingToken = positiveInteger(body?.fencingToken)
+  if (!sessionId || !isAuthorityAction(action)) return
+  if (
+    (body?.title !== undefined && title === undefined)
+    || (body?.reason !== undefined && reason === undefined)
+    || (body?.stream !== undefined && typeof body.stream !== "boolean")
+    || (body?.lease !== undefined && !lease)
+    || (!!lease && !stream)
+    || (stream && action !== "read" && action !== "write")
+  ) return
+  const fields = { sessionId, operationId, reason, title, stream, lease, turnId, turnLeaseId, fencingToken }
+  switch (action) {
+    case "register":
+      if (!operationId) return
+      return { ...fields, action, operationId }
+    case "registration_ambiguous":
+    case "compensation_begin":
+    case "compensation_complete":
+      if (!operationId || !reason) return
+      return { ...fields, action, operationId, reason }
+    case "turn_acquire":
+      if (!turnId || body?.leaseId !== undefined || body?.fencingToken !== undefined) return
+      return { ...fields, action, turnId }
+    case "turn_renew":
+    case "turn_release":
+      if (!turnId || !turnLeaseId || !fencingToken) return
+      return { ...fields, action, turnId, turnLeaseId, fencingToken }
+    default:
+      return { ...fields, action }
+  }
+}
+
+type SessionAuthorityRequest = NonNullable<ReturnType<typeof parseSessionAuthorityRequest>>
 
 type AuthorityAction =
   | "read"
@@ -454,14 +554,6 @@ function isAuthorityAction(value: unknown): value is AuthorityAction {
     || value === "turn_acquire"
     || value === "turn_renew"
     || value === "turn_release"
-}
-
-function isTransitionAction(value: AuthorityAction): value is Exclude<AuthorityAction, "read" | "write" | "register"> {
-  return value === "registration_ambiguous" || value === "compensation_begin" || value === "compensation_complete"
-}
-
-function isRegistrationAction(value: AuthorityAction) {
-  return value === "register" || isTransitionAction(value)
 }
 
 function isTurnAction(value: AuthorityAction): value is "turn_acquire" | "turn_renew" | "turn_release" {

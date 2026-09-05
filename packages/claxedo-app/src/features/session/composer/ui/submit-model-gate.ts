@@ -1,3 +1,7 @@
+import { isCatalogHarness } from "../../harness/profile"
+import { resolveSubmittedConfig } from "../../submit/resolve"
+import type { ResolveSubmittedConfigContext } from "../../submit/types"
+import type { ExistingSessionConfig } from "./submit-session-config"
 import type { HarnessSelection } from "@/platform/identity/harness-selection"
 import type { ModelKey } from "../model-strategy"
 
@@ -17,4 +21,35 @@ export function cloudSubmitMissingModel(input: {
 }) {
   if (!input.isNewSession || input.workspaceKind !== "cloud") return false
   return !input.selection || !input.modelKey
+}
+
+/** Resolve effort and model ownership for a draft or an already-bound session. */
+export function resolvePromptSubmitConfig(input: {
+  existing?: ExistingSessionConfig
+  harnessMode: boolean
+  selection?: HarnessSelection
+  variant: () => string | undefined
+  modelKey: () => ModelKey | undefined
+  currentAgent: () => ResolveSubmittedConfigContext["currentAgent"]
+  defaultAgent: () => ResolveSubmittedConfigContext["defaultAgent"]
+  agent: () => string | undefined
+}) {
+  const providerOwnsEffort = !input.harnessMode || (input.selection !== undefined && isCatalogHarness(input.selection))
+  const selectedVariant = providerOwnsEffort ? input.variant() : undefined
+  const existing = input.existing
+  if (existing?.model) {
+    const variant = selectedVariant ?? existing.variant
+    return {
+      model: existing.model,
+      agent: input.agent() || existing.agent || input.currentAgent()?.name || "build",
+      ...(variant ? { variant } : {}),
+    }
+  }
+  return resolveSubmittedConfig({
+    harnessModelKey: input.modelKey(),
+    ...(selectedVariant ? { variant: selectedVariant } : {}),
+    currentAgent: input.currentAgent(),
+    defaultAgent: input.defaultAgent(),
+    agentOverride: input.agent(),
+  })
 }

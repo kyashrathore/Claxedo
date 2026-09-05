@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { sessionViewKey } from "@/platform/identity/session-view-key"
-import { promptScopeKey, promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
+import { capturePromptSubmitScope, promptScopeKey, promptViewScope, uniquePromptScopes } from "./submit-prompt-scope"
 
 // The composer reads its draft through `PromptProvider.session()`, which keys the
 // prompt cache/persist on `sessionViewKey({ directory, sessionId, draftId })`.
@@ -80,5 +80,22 @@ describe("prompt submit/clear scope derivation", () => {
     const draftB = promptViewScope({ directory: "/proj/alpha", sessionId: "new", draftId: "draft-b" })
 
     expect(uniquePromptScopes([draftA, draftB, draftA])).toEqual([draftA, draftB])
+  })
+})
+
+test("submission captures draft identity separately from its transport and mounted conversation", () => {
+  let draftId = "draft-a"
+  let directory = "/mounted/a"
+  const captured = capturePromptSubmitScope({
+    sessionDirectory: () => "ws_remote",
+    conversationDirectory: () => directory,
+    sessionID: () => "new",
+    draftId: () => draftId,
+  }, "/sdk")
+  draftId = "draft-b"
+  directory = "/mounted/b"
+  expect(captured).toEqual({
+    projectDirectory: "ws_remote", mountedConversationDirectory: "/mounted/a",
+    explicitSessionID: "new", draftId: "draft-a", fallbackDirectory: undefined,
   })
 })
