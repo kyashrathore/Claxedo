@@ -675,12 +675,16 @@ export const api = {
   },
 }
 
+/** The loopback hostnames a URL parser can hand back, IPv6 bracketed or not. */
+export function isLoopbackHostname(hostname: string) {
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]"
+}
+
 function loopbackHttpUrl(input: string | undefined) {
   if (!input) return false
   try {
     const url = new URL(input)
-    return (url.protocol === "http:" || url.protocol === "https:")
-      && (url.hostname === "localhost" || url.hostname === "127.0.0.1" || url.hostname === "::1" || url.hostname === "[::1]")
+    return (url.protocol === "http:" || url.protocol === "https:") && isLoopbackHostname(url.hostname)
   } catch {
     return false
   }

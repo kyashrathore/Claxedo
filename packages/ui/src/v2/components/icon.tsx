@@ -1,4 +1,5 @@
 import { onMount, type ComponentProps, splitProps } from "solid-js"
+import { ensureSvgSpriteHost } from "../../components/inline-svg-sprite"
 
 const icons = {
   edit: {
@@ -157,28 +158,19 @@ let spriteInserted = false
 
 function ensureSprite() {
   if (spriteInserted) return
-  if (typeof document === "undefined") return
-  if (document.getElementById(spriteID)) {
-    spriteInserted = true
-    return
+  const host = ensureSvgSpriteHost(spriteID)
+  if (!host) return
+  if (host.childElementCount === 0) {
+    host.innerHTML = Object.entries(icons)
+      .map(
+        ([name, icon]) =>
+          `<symbol id="${symbol(name as keyof typeof icons)}" viewBox="${icon.viewBox}">${icon.body}</symbol>`,
+      )
+      .join("")
   }
-
-  const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg")
-  svg.id = spriteID
-  svg.setAttribute("aria-hidden", "true")
-  svg.setAttribute("width", "0")
-  svg.setAttribute("height", "0")
-  svg.style.position = "absolute"
-  svg.style.overflow = "hidden"
-  svg.innerHTML = Object.entries(icons)
-    .map(
-      ([name, icon]) =>
-        `<symbol id="${symbol(name as keyof typeof icons)}" viewBox="${icon.viewBox}">${icon.body}</symbol>`,
-    )
-    .join("")
-  document.body.insertBefore(svg, document.body.firstChild)
   spriteInserted = true
 }
+
 
 export interface IconProps extends ComponentProps<"svg"> {
   name: keyof typeof icons | (string & {})

@@ -470,9 +470,8 @@ The runtime contract must land before the current UI fallback is removed. The cl
 - **Requirements:** R5-R10, R17-R20
 - **Files:**
   - `packages/agent-event-runtime/src/contracts/agent-runtime-event.ts`
-  - `packages/agent-event-runtime/src/projections/opencode-compat/runtime-event.ts`
-  - `packages/agent-event-runtime/src/projections/opencode-compat/projection.ts`
-  - `packages/agent-event-runtime/src/projections/opencode-compat/projection.test.ts`
+  - `packages/agent-event-runtime/src/projections/client-presentation/projection.ts` (the retired opencode-compat projection's successor)
+  - `packages/agent-event-runtime/src/projections/client-presentation/projection.test.ts`
   - `packages/agent-sdk-runtime/src/runtime-event-hub.ts`
   - `packages/agent-sdk-runtime/src/harnesses/shared/turn-projection.ts`
   - `packages/workspace-runtime/src/routes/session.ts`
@@ -600,7 +599,7 @@ The runtime contract must land before the current UI fallback is removed. The cl
 | App lifecycle and UI | From `packages/claxedo-app`: `bun test --conditions=browser --preload ./happydom.ts ./src/features/session/store/turn-lifecycle.test.ts ./src/features/session/store/session-controller.test.ts ./src/features/session/store/session-status-dispatcher.test.ts ./src/features/session/store/session-store.test.ts ./src/features/session/ui/view-state.test.ts ./src/features/session/ui/message-timeline-row-reuse.test.ts` | Reducer invariants, recovery semantics, active selectors, and terminal rendering. |
 | App component tests | From `packages/claxedo-app`: `bun run test:vitest -- ./src/features/session/composer/ui/submit-control.vitest.tsx ./src/features/session/ui/components/session-status-stage.vitest.tsx ./src/app/workbench/compact-switcher/surface-status.integration.test.ts` | Stop/Send, active phases, and surface parity. |
 | App architecture | From `packages/claxedo-app`: `bun test ./src/architecture ./src/platform/runtime/workspace-runtime-route-audit.test.ts` | Single lifecycle writer and package boundaries. |
-| Agent event projection | From `packages/agent-event-runtime`: `bun test src/projections/opencode-compat/projection.test.ts src/harnesses/codex/adapter.test.ts src/harnesses/claude/adapter.test.ts` | Progress/terminal separation and harness normalization. |
+| Agent event projection | From `packages/agent-event-runtime`: `bun test src/projections/client-presentation/projection.test.ts src/harnesses/codex/adapter.test.ts src/harnesses/claude/adapter.test.ts` | Progress/terminal separation and harness normalization. |
 | Agent runtime | From `packages/agent-sdk-runtime`: `bun test src/runtime.test.ts src/harnesses/shared/sdk-runtime-adapter.test.ts` | Stable current identity, terminal outcome, abort ordering, and adapter parity. |
 | Workspace runtime | From `packages/workspace-runtime`: `bun test src/routes/session-status-snapshot.test.ts src/routes/session.test.ts src/routes/runtime-events.test.ts` and the package's store test command | Durable snapshot, route correlation, replay, and persistence. |
 

@@ -36,7 +36,7 @@ import { HostedBrowserFrame } from "./hosted-browser-frame"
 /**
  * Element-comment payload routed up to the parent (WorkspaceBrowserPanel).
  * Shape preserved from the deleted pane-bus PageElementCommentPayload so
- * downstream consumers (browser-comments store, prompt.context.add) keep
+ * the downstream consumer (prompt.context.add) keeps
  * the same fields without re-deriving them.
  */
 export type BrowserPaneCommentPayload = {

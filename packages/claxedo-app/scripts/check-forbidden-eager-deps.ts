@@ -22,6 +22,7 @@ import { existsSync, readFileSync, statSync } from "node:fs"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { FORBIDDEN_DEPS, type ForbiddenDep } from "./forbidden-eager-deps.config.ts"
+import { stripComments } from "../src/architecture/import-graph"
 
 const here = path.dirname(fileURLToPath(import.meta.url))
 const appRoot = path.resolve(here, "..")
@@ -193,11 +194,6 @@ function resolveToFile(rawSpec: string, fromFile: string): string | null {
 // ---------------------------------------------------------------------------
 // Import scanning (static edges only)
 // ---------------------------------------------------------------------------
-
-/** Strip block + line comments so we don't read commented-out imports. */
-function stripComments(src: string): string {
-  return src.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
-}
 
 const STATIC_IMPORT_RE =
   // captures the FULL clause so we can inspect the import-clause text:

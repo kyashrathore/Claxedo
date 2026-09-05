@@ -13,12 +13,12 @@ the operation through `workspaceStartup()`.
 
 Reading the workspace runtime RECORD is NOT here — see
 `platform/runtime/workspace-runtime-record.ts`. Distinct from `agent/` (general
-session routing) and from `context/` providers.
+session routing).
 
 ```json
 {
   "owns": "Hosted cloud/user-hosted workspace startup (WorkspaceStartupPort implementation)",
   "writerOf": [],
-  "mustNotImport": ["@/claxedo-ui/*", "@claxedo/claxedo-ui/*", "../claxedo-ui/*", "@/pages/*", "../pages/*", "@opencode-ai/ui/*", "@/features/agent-plugins/*"]
+  "mustNotImport": ["@/ui/*", "@opencode-ai/ui/*", "@/features/agent-plugins/*"]
 }
 ```

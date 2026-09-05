@@ -30,7 +30,7 @@ export type SessionWorkspaceRuntimeInput = {
 
 function optimisticRelayRef(workspaceId: string, kind: "cloud" | "user-hosted" = "user-hosted") {
   // ws_ ids can exist before signed inventory loads. Bare project UUIDs cannot:
-  // they are the desktop local route id, and minting them 403s Convex.
+  // they are the desktop local route id, and minting them 403s at the control plane.
   if (isWorkspaceIdRef(workspaceId) || workspaceIdFromRef(workspaceId)) {
     return { workspaceId, kind }
   }

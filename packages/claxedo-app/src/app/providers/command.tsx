@@ -7,14 +7,11 @@ import {
 } from "./command-palette"
 import { CommandBusProvider, useCommandBus, useCommandBusOptional } from "@/app/integrations/command-bus-provider"
 import {
-  agentCommandFromEvent,
   legacyCommandTrigger,
   legacyCommandTriggerType,
-  serverCommandTriggerFromEvent,
   type CommandTriggerCompatSource,
   type LegacyCommandTriggerCommand,
 } from "@/app/integrations/compat-command-trigger"
-import { useGlobalSDK } from "@/app/providers/global-sdk/provider"
 
 export * from "./command-palette"
 
@@ -23,9 +20,7 @@ export function CommandProvider(props: { children: JSX.Element }): JSX.Element {
     <CommandBusProvider>
       <UpstreamCommandProvider>
         <LegacyCommandBusBridge>
-          <ServerCommandBusBridge>
-            {props.children}
-          </ServerCommandBusBridge>
+          {props.children}
         </LegacyCommandBusBridge>
       </UpstreamCommandProvider>
     </CommandBusProvider>
@@ -57,34 +52,6 @@ function LegacyCommandBusBridge(props: { children: JSX.Element }): JSX.Element {
       command.trigger(event.payload.id, event.payload.legacySource)
     })
     onCleanup(unregister)
-  })
-  return props.children
-}
-
-function ServerCommandBusBridge(props: { children: JSX.Element }): JSX.Element {
-  const bus = useCommandBus()
-  const globalSDK = useGlobalSDK()
-  createEffect(() => {
-    const dispatch = (event: unknown) => {
-      const command = serverCommandTriggerFromEvent(event)
-      if (!command) return
-      void bus.dispatch(command)
-    }
-    const dispatchAgentCommand = (event: unknown) => {
-      const command = agentCommandFromEvent(event)
-      if (!command) return
-      void bus.dispatch(command)
-    }
-    const unsubscribeCompat = globalSDK.event.on(legacyCommandTriggerType, dispatch)
-    const unsubscribeTui = globalSDK.event.on("tui.command.execute", dispatch)
-    const unsubscribeRemoteAgent = globalSDK.event.on("remote-agent.command.execute", dispatchAgentCommand)
-    const unsubscribeVoiceAgent = globalSDK.event.on("voice-agent.command.execute", dispatchAgentCommand)
-    onCleanup(() => {
-      unsubscribeCompat()
-      unsubscribeTui()
-      unsubscribeRemoteAgent()
-      unsubscribeVoiceAgent()
-    })
   })
   return props.children
 }

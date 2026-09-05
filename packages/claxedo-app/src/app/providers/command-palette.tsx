@@ -258,24 +258,6 @@ export function parseKeybind(config: string): Keybind[] {
   })
 }
 
-export function matchKeybind(keybinds: Keybind[], event: KeyboardEvent): boolean {
-  const eventKey = normalizeKey(event.key)
-
-  for (const kb of keybinds) {
-    const keyMatch = kb.key === eventKey
-    const ctrlMatch = kb.ctrl === (event.ctrlKey || false)
-    const metaMatch = kb.meta === (event.metaKey || false)
-    const shiftMatch = kb.shift === (event.shiftKey || false)
-    const altMatch = kb.alt === (event.altKey || false)
-
-    if (keyMatch && ctrlMatch && metaMatch && shiftMatch && altMatch) {
-      return true
-    }
-  }
-
-  return false
-}
-
 function displayKeybindParts(kb: Keybind, t?: (key: KeyLabel) => string) {
   const parts: string[] = []
 
@@ -331,11 +313,6 @@ export function formatKeybind(config: string, t?: (key: KeyLabel) => string): st
   const parts = formatKeybindParts(config, t)
   if (parts.length === 0) return ""
   return IS_MAC ? parts.join("") : parts.join("+")
-}
-
-// KeybindV2 takes an array instead of a string
-export function formatKeybindKeys(config: string, t?: (key: KeyLabel) => string): string[] {
-  return formatKeybindParts(config, t)
 }
 
 function isEditableTarget(target: EventTarget | null) {

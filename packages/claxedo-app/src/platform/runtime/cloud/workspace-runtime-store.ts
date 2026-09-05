@@ -214,7 +214,7 @@ export async function prepareUserHostedRuntime(
 function hostedCloudRuntimeWithoutRecord(workspaceId: string | undefined): WorkspaceRuntimeSnapshot | null {
   if (!workspaceId) return null
   // Hosted `/api/workspace/resolve` is documented to return `null` on every
-  // call (no Convex round-trip). Provisioning is observed through connection
+  // call (no control-plane round-trip). Provisioning is observed through connection
   // mint, not the record. A `ws_` id with no snapshot is still a sandbox to
   // wait for — treating that null as "already ready" skipped mint and left
   // the composer overlay on Acquiring sandbox while session create hung.

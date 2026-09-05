@@ -184,10 +184,8 @@ no test, fails review.
      fakes nothing at all — real models, real credentials. A missing credential/binary
      **fails** the test with a clear setup message (loud-skip) — silent `test.skip()` is
      forbidden in Tier L.
-7. **Legacy suite.** `packages/claxedo-app/e2e-legacy/**` is retained for reference during
-   the migration (salvageable scenarios, known-good route shapes) but is not part of the
-   Playwright `testDir` (`./e2e`) and must never be re-wired into `playwright.config.ts`.
-   Once every spec in the plan's spec list is ported, delete it.
+7. **Legacy suite — retired.** `e2e-legacy/` was ported and deleted; the number is kept
+   so the invariants below keep their citations.
 8. **The DEV direct-bus test seam is not a transport.** `window.__claxedoEmitTestEvent` /
    `emitClaxedoEvent` hands an event straight to the client-side bus — it MUST NOT be the
    sole delivery path for any assertion that claims a transport works. The incident:

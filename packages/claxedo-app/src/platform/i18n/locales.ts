@@ -24,8 +24,8 @@ export type LocaleEntry = {
   code: LocaleCode
   /**
    * Loads this locale's flat string dictionary, merged from BOTH this
-   * package's `src/i18n/<file>.ts` and `@/ui`'s
-   * `src/i18n/<code>.ts` (the ui package's strings win on key collision,
+   * package's `src/platform/i18n/<file>.ts` and `@/ui`'s
+   * `src/platform/i18n/<code>.ts` (the ui package's strings win on key collision,
    * matching pre-manifest behavior).
    */
   loader: () => Promise<LocaleSource>
@@ -188,7 +188,7 @@ export const LOCALE_ENTRIES: readonly LocaleEntry[] = [
 ] as const
 
 // Compile-time exhaustiveness check: fails to type-check if a LocaleCode
-// member has no entry above (mirrors src/i18n/locale-parity.test.ts's
+// member has no entry above (mirrors src/platform/i18n/locale-parity.test.ts's
 // runtime check of the same invariant).
 type _MissingLocaleEntries = Exclude<LocaleCode, (typeof LOCALE_ENTRIES)[number]["code"]>
 const _localeEntriesCoverAllCodes: _MissingLocaleEntries extends never

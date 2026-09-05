@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { HARNESS_IDS } from "@/platform/identity/session-ref"
-import type { AgentPermissionModeState } from "@claxedo/agent-sdk-runtime/adapter-contract"
+import type { AgentPermissionModeState } from "@claxedo/agent-sdk-runtime"
 import { PERMISSION_MECHANISMS } from "./mechanisms"
 import {
   NATIVE_NO_POLICY_REASON,

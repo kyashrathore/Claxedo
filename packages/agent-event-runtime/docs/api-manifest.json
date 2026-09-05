@@ -6,9 +6,7 @@
     "stable": "Intended public API for external hosts.",
     "integration": "Public harness-adapter/projection API. Import from explicit subpaths.",
     "compatibility": "Bridge for OpenCode or legacy Claxedo shapes.",
-    "experimental": "Public but may change before 1.0.",
-    "internal": "Not a supported public import.",
-    "deprecated": "Old API kept temporarily."
+    "internal": "Not a supported public import."
   },
   "entrypoints": {
     "@claxedo/agent-event-runtime": {

@@ -1,6 +1,6 @@
 # Cloudflare Hosted Path — Reliability & Scalability Review
 
-**Date:** 2026-07-28 · **Branch reviewed:** `security/pre-launch-remediation-2026-07-28` (~`ae4f2f0dc`, with uncommitted live-sync edits) · **Method:** four parallel code sweeps (control-plane request path, Durable Object topology, relay worker, control-plane data layer), cross-checked against `docs/deployment-feasibility-2026-07-22.md` and `docs/plans/2026-07-18-001-cf-deployment-hardening.md`.
+**Date:** 2026-07-28 · **Branch reviewed:** `security/pre-launch-remediation-2026-07-28` (~`ae4f2f0dc`, with uncommitted live-sync edits) · **Method:** four parallel code sweeps (control-plane request path, Durable Object topology, relay worker, control-plane data layer), cross-checked against the 2026-07-22 deployment feasibility note and the 2026-07-18 CF deployment hardening plan (both since removed in 7795fc191a).
 
 **The two questions this answers:**
 

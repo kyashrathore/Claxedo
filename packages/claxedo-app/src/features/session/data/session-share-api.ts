@@ -100,30 +100,3 @@ export async function revokeSessionShare(input: {
     })),
   )
 }
-
-export async function addSessionParticipant(input: {
-  sessionId: string
-  workspaceId: string
-  participantActorId: string
-}) {
-  return hostedControlCall(
-    "session.participants.add",
-    {
-      sessionId: input.sessionId,
-      workspaceId: input.workspaceId,
-      participantActorId: input.participantActorId,
-    },
-    async () => json<unknown>(await authFetch(controlSessionUrl({
-      baseUrl: getClaxedoServerUrl(),
-      sessionID: input.sessionId,
-      suffix: "/participants",
-    }), {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        workspaceId: input.workspaceId,
-        participantActorId: input.participantActorId,
-      }),
-    })),
-  )
-}

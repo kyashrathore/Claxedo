@@ -1,5 +1,6 @@
 import { readdirSync, statSync } from "node:fs"
 import path from "node:path"
+import { stripComments } from "../src/architecture/import-graph"
 
 type Finding = {
   file: string
@@ -223,12 +224,6 @@ function walk(dir: string): string[] {
     if (file.endsWith("styles/tailwind/colors.css")) return []
     return [file]
   })
-}
-
-function stripComments(content: string) {
-  return content
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/^\s*\/\/.*$/gm, "")
 }
 
 function scanClasses(file: string, content: string) {

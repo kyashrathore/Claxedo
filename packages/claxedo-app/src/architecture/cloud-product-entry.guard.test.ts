@@ -32,7 +32,11 @@ const DESKTOP_PACKAGES = [
   "@lydell/node-pty",
 ]
 
-/** In-package source roots that will own Electron-specific adapters. */
+/**
+ * In-package source roots reserved for Electron-specific adapters. Both are
+ * empty today — the desktop's adapters live under `platform/account` (the
+ * Electron account port) — so this list currently classifies nothing.
+ */
 const DESKTOP_SOURCE_ROOTS = [
   "platform/desktop/electron",
   "platform/desktop/preload",

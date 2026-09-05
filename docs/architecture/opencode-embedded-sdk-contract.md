@@ -896,3 +896,13 @@ resolution.
    native SQLite from the SDK's packaging requirements (§2.1).
 5. **Unit 2a's definition of green** should name the bundle path explicitly:
    the `jsonc-parser` ESM resolve plugin plus a Node target (§2).
+
+## Open release gates (from the 2026-09-05 node cutover validation)
+
+- Release maintainer: run native/runtime checks on Windows, Linux x64 and
+  macOS x64; this workstation validated macOS and Linux arm64 only.
+- Release maintainer: build/run the Cloudflare base image and a signed final
+  Electron installer. Neither was deployed or signed in this task.
+- Provider integration owner: run a credentialed live-model turn. This
+  continuation exercised real SDK/host entries and controlled provider
+  failure, not a paid provider response.

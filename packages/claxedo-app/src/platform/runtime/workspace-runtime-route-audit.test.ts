@@ -1703,12 +1703,6 @@ describe("workspace runtime route audit", () => {
     expect(await Bun.file(path.join(root, commandContext)).exists()).toBe(true)
     expect(command).toMatch(/CommandBusProvider/)
     expect(command).toMatch(/legacyCommandTrigger/)
-    expect(command).toMatch(/serverCommandTriggerFromEvent/)
-    expect(command).toMatch(/agentCommandFromEvent/)
-    expect(command).toMatch(/remote-agent\.command\.execute/)
-    expect(command).toMatch(/voice-agent\.command\.execute/)
-    expect(command).toMatch(/tui\.command\.execute/)
-    expect(command).toMatch(/useGlobalSDK/)
     // 007 Tier E: upstream command definitions are now vendored in-repo as
     // ./command-palette (packages/app coupling removed), not re-exported from
     // ../../../app/src/context/command.

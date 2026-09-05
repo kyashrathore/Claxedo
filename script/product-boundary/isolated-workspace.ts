@@ -33,8 +33,8 @@ function copy(source: string, destination: string) {
 /**
  * Every workspace the root manifest declares, so the isolated install sees the
  * same workspace set `bun install --frozen-lockfile` expects. Bun's workspace
- * globs here are either `<parent>/*` or one literal package directory (the
- * SDK's nested `packages/sdk/js` shape); a declared workspace that is missing
+ * globs here are either `<parent>/*` or one literal package directory; a
+ * declared workspace that is missing
  * from the stub set fails the frozen install with "Workspace not found".
  */
 function workspacePackageDirs(root: string): string[] {

@@ -13,8 +13,8 @@ type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
 
 // Every one of LOCALES/INTL/LABEL_KEY/localeMatchers below is derived from
-// LOCALE_ENTRIES (src/i18n/locales.ts) — that manifest is the only place a
-// contributor edits to add a language. See src/i18n/locale-parity.test.ts for
+// LOCALE_ENTRIES (src/platform/i18n/locales.ts) — that manifest is the only place a
+// contributor edits to add a language. See src/platform/i18n/locale-parity.test.ts for
 // the tests that keep the manifest, en.ts, and @/ui's i18n in sync.
 const ENTRY_BY_CODE = new Map(LOCALE_ENTRIES.map((entry) => [entry.code, entry]))
 

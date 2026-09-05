@@ -83,7 +83,7 @@ export function localWorkspaceInProjects(projects: readonly WorkspaceInventoryPr
     }
     // Desktop local projects use the project UUID as the workspace route id.
     // That UUID is not relay-backed unless a signed cloud/user-hosted row also
-    // claims it — routing it at Convex mints 403 `workspace_authorization_denied`.
+    // claims it — routing it at the control plane mints 403 `workspace_authorization_denied`.
     if (
       isFilesystemDirectory(project.worktree ?? undefined) &&
       (sameWorkspaceId(project.id, ref) || sameWorkspaceDirectory(project.worktree, ref)) &&

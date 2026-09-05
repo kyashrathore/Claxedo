@@ -16,16 +16,3 @@ export function allowWorkspaceRuntimeManagementAuth(subject = "test"): Workspace
     },
   }
 }
-
-export function denyWorkspaceRuntimeManagementAuth(status: 401 | 403 = 401): WorkspaceRuntimeManagementAuth {
-  return {
-    async authorize() {
-      return {
-        ok: false,
-        status,
-        code: status === 401 ? "unauthorized" : "forbidden",
-        message: status === 401 ? "Unauthorized" : "Forbidden",
-      }
-    },
-  }
-}

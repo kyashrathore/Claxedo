@@ -5,6 +5,7 @@ In August 2026 we tried to make Claxedo feel light. The product is a coding-agen
 This is not the experiment log. Hundreds of agents ran packaged builds, ablations, and false wins. Most of that work was thrown away. What follows is what actually changed, and what we learned about making a workbench like this cheaper to hold.
 
 Agents looking for what we already tried — and should not try again without a new reason — should read [AGENTS.md](./AGENTS.md).
+The account-port bench and its numbers live in [account-port-overhead.md](./account-port-overhead.md).
 
 ## The weight was not one thing
 

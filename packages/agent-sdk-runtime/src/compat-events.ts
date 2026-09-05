@@ -420,18 +420,3 @@ export function runtimeDiagnostic(properties: EventRuntimeDiagnostic["properties
     properties,
   }
 }
-
-export function serverConnected(): EventServerConnected {
-  return {
-    id: "server.connected",
-    type: "server.connected",
-    properties: {},
-  }
-}
-
-export function serverHeartbeat(): EventServerHeartbeat {
-  return {
-    type: "server.heartbeat",
-    properties: {},
-  }
-}

@@ -1,5 +1,4 @@
 import type { SandboxDriverID } from "@claxedo/sandbox-contract"
-import { workspaceRuntimeServiceExposureEnv } from "./runtime-env"
 
 export type SandboxServiceUrlExposure = {
   source: "driver-service-url"
@@ -32,8 +31,4 @@ export function sandboxServiceUrlExposure(driver: SandboxDriverID): SandboxServi
     access: "public",
     driver,
   }
-}
-
-export function sandboxServiceUrlExposureEnv(driver: SandboxDriverID) {
-  return workspaceRuntimeServiceExposureEnv(sandboxServiceUrlExposure(driver))
 }

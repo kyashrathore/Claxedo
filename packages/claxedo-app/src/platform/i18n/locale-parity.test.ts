@@ -20,7 +20,7 @@ function tokenSet(value: string): string[] {
 
 async function loadAppDict(code: LocaleCode): Promise<Record<string, string>> {
   // The app-side dictionary file backing locale "br" is pt-BR.ts (see
-  // src/i18n/locales.ts's file header) — every other code matches its file 1:1.
+  // src/platform/i18n/locales.ts's file header) — every other code matches its file 1:1.
   // Provider settings are a separate feature dictionary so the already-large
   // base locale files stay inside their size ratchets.
   const filename = code === "br" ? "pt-BR" : code

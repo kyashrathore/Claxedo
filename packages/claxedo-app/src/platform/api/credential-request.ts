@@ -1,8 +1,4 @@
-import { getClaxedoServerUrl, normalizeUrl } from "@/platform/api/api"
-
-function loopbackHost(hostname: string) {
-  return hostname === "localhost" || hostname === "127.0.0.1"
-}
+import { getClaxedoServerUrl, isLoopbackHostname, normalizeUrl } from "@/platform/api/api"
 
 /** Same-origin in desktop dev so Vite can proxy credential routes (no CORS). */
 export function credentialRequestOrigin(input?: ClaxedoCredentialRequestInput): string {
@@ -12,7 +8,7 @@ export function credentialRequestOrigin(input?: ClaxedoCredentialRequestInput): 
     const page = new URL(window.location.href)
     if (page.protocol !== "http:" && page.protocol !== "https:") return configured
     const server = new URL(configured)
-    if (loopbackHost(page.hostname) && loopbackHost(server.hostname) && page.origin !== server.origin) {
+    if (isLoopbackHostname(page.hostname) && isLoopbackHostname(server.hostname) && page.origin !== server.origin) {
       return page.origin
     }
   } catch {

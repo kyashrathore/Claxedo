@@ -26,10 +26,6 @@ export function clearSessionQuestionDockSnapshot(requestID: string) {
   queryClient.removeQueries({ queryKey: sessionQuestionDockQueryKey(requestID), exact: true })
 }
 
-export function resetSessionQuestionDockSnapshotsForTest() {
-  queryClient.removeQueries({ queryKey: sessionQuestionDockQueryRoot })
-}
-
 function clone(snapshot: SessionQuestionDockSnapshot | undefined) {
   if (!snapshot) return undefined
   return {

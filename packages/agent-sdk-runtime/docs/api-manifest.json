@@ -6,9 +6,7 @@
     "stable": "Intended public API for external hosts.",
     "integration": "Public harness/transport adapter API. Import from explicit subpaths.",
     "compatibility": "Bridge for OpenCode or legacy Claxedo shapes.",
-    "experimental": "Public but may change before 1.0.",
-    "advanced": "Public advanced API for host integrations that need lower-level runtime surfaces.",
-    "deprecated": "Kept temporarily to avoid abrupt ecosystem breaks."
+    "advanced": "Public advanced API for host integrations that need lower-level runtime surfaces."
   },
   "entrypoints": {
     "@claxedo/agent-sdk-runtime": {
@@ -93,24 +91,24 @@
     "recipes": "docs/recipes.md"
   },
   "declarationHashes": {
-    "@claxedo/agent-sdk-runtime": "37516b2aaa30801f094935efb4e6db7c5081caac4779faef01a153a9a89b021d",
-    "@claxedo/agent-sdk-runtime/compat-events": "249c82ecd76368f43830fd415d244b06bb54cd798e155181f42ff7675278ad2c",
+    "@claxedo/agent-sdk-runtime": "8b32ac230386044e92408a8439ccb3448385dea332777bd6a2346b88231354d0",
+    "@claxedo/agent-sdk-runtime/compat-events": "49503182d232cfbed3dce5b9ba0ff33bbde6f6636ce6389fcf0c16700fe2dea4",
     "@claxedo/agent-sdk-runtime/status": "1cdf36244f79cd16df67b7183738572553a75282907cad9aefe54d2e487574a3",
     "@claxedo/agent-sdk-runtime/capabilities": "9ec52dd8e7dfd34f453ecf61acacf308659ccfa672045dd3ca9cdbb726907c74",
-    "@claxedo/agent-sdk-runtime/runtime-event-hub": "fe78c092061dca900542af9c27afb862a44c980c625f15aabedc60df5b7c300b",
+    "@claxedo/agent-sdk-runtime/runtime-event-hub": "8fad896f07787fa649c54add3ff5fe78d4daa17f17422ed01ade721e5fd80f1e",
     "@claxedo/agent-sdk-runtime/sse": "bbb71767f0a9f6a46336f5f11ddafc79b94eb8302460681d26c1f3f5028b9757",
     "@claxedo/agent-sdk-runtime/mcp-resolver": "bab027282963a8bb9a8b379122b0164f6d42c58509c8f63c4eee7f47959ef6e4",
     "@claxedo/agent-sdk-runtime/subagent-admission": "fa6c050e07f8eee32decc98140c764669181e3429ccad8be98e3bbfd03a2d284",
-    "@claxedo/agent-sdk-runtime/harnesses": "f66aedcccaf920cf7dddc8f023aa0da88ed0a45e48a430eb11a28dede9040abc",
-    "@claxedo/agent-sdk-runtime/harnesses/acp": "f2e5cbf52cc0f009009cbbc3303f2e67f1944a35ecd5a41bc83bea43d76fbd7f",
-    "@claxedo/agent-sdk-runtime/harnesses/claude": "173db693682fdc0f5a57664da0a8e5a985626f7a81dc883bfe2826749ea38a99",
-    "@claxedo/agent-sdk-runtime/harnesses/codex": "6109608b9d8f11ab54409ecbddc2ae3358c74e2d89d91f9673289ea9a97a6040",
-    "@claxedo/agent-sdk-runtime/harnesses/cursor": "ba1fbe64909c7a2051fae6ebb157cd122331b363accee26898c328cbf2e530ea",
-    "@claxedo/agent-sdk-runtime/harnesses/pi": "17b7aa423bef284a08222846098b765dda6acef8dc63279cf77c3498be36a257",
-    "@claxedo/agent-sdk-runtime/adapters": "440d8dc0aef4568f974271f5d5ec9eb8abfd6856fd3e9c2489b2d3357ee84654",
-    "@claxedo/agent-sdk-runtime/message-page": "37516b2aaa30801f094935efb4e6db7c5081caac4779faef01a153a9a89b021d",
-    "@claxedo/agent-sdk-runtime/stores/memory": "8f57ca2443011948c3c8d4d65f753cbe191a12f4e4a6ccd27504466e4d56c70b",
-    "@claxedo/agent-sdk-runtime/stores/sqlite": "b9433665ada2b2b1764aeeaba19c5f7625d29d6dae064b8836b1e44c68594a7a"
+    "@claxedo/agent-sdk-runtime/harnesses": "21f74392be60bf8243c2024b30c9063a29b9a7a8c6f3774a92572b4f2c46f1ff",
+    "@claxedo/agent-sdk-runtime/harnesses/acp": "d7d05eb1511343db54e58456cc958bce53b806455c82cfdbd02aa9cb0738f03a",
+    "@claxedo/agent-sdk-runtime/harnesses/claude": "7cdf1ea2236455af3fe3195b4d709d61e752246fe4abd0cb1b8afcf51e72e80a",
+    "@claxedo/agent-sdk-runtime/harnesses/codex": "caf746dc4ecac272c9f83b01dd1da36da801a8e4d9c63bf3ecd0360ca7eaf263",
+    "@claxedo/agent-sdk-runtime/harnesses/cursor": "e995fa4f59e3cca4dd56caf3e5a4e2eff48b0848e028956c7e2f89dc1d77a076",
+    "@claxedo/agent-sdk-runtime/harnesses/pi": "73cb8d3f9f5dabbff9d2e01e761c529e271b5363ed3901fcf87391d8693c6b05",
+    "@claxedo/agent-sdk-runtime/adapters": "22fdc52867c6a85da33f8d01264f69ba1bc5385e6dafa2e37fb6740b251f091c",
+    "@claxedo/agent-sdk-runtime/message-page": "8b32ac230386044e92408a8439ccb3448385dea332777bd6a2346b88231354d0",
+    "@claxedo/agent-sdk-runtime/stores/memory": "494b757573b4711b80930469bf73ae02f04d8c0a1e9f23dc4f4e85e995a9f0ef",
+    "@claxedo/agent-sdk-runtime/stores/sqlite": "68e12cdc0ab1978e12a8b3098dbb2314423897922ffa06949814b2e25f73d316"
   },
   "valueExports": {
     "@claxedo/agent-sdk-runtime": [

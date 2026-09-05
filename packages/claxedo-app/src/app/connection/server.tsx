@@ -63,7 +63,7 @@ export function serverName(conn?: ServerConnection.Any, ignoreDisplayName = fals
 }
 
 // Web app connections are HTTP; the desktop app (claxedo-desktop
-// src/renderer/index.tsx) additionally constructs a "sidecar" connection for
+// src/renderer/shell.tsx) additionally constructs a "sidecar" connection for
 // its embedded server, so the Sidecar variant is load-bearing cross-package.
 function projectsKey(key: ServerConnection.Key) {
   if (!key) return ""

@@ -169,9 +169,8 @@ one scanner rule per invariant, each paired with a `*-baseline.json` or
 `*-allowlist.json` that records the currently-tolerated violations. New
 violations fail CI; existing ones are **shrink-only** — they may be removed as
 the underlying code is fixed but never added back, ratcheting the codebase's
-debt toward zero. The directional-layering guard (`layering.ts` +
-`layering-baseline.json`), god-file size ratchet, orphan-module detector, and
-retired-vocabulary guard all live here. Run them with `bun run test:architecture`.
+debt toward zero. The ownership guard (`ownership.ts`), god-file size ratchet,
+orphan-module detector, and retired-vocabulary guard all live here. Run them with `bun run test:architecture`.
 
 ## Where to look next
 

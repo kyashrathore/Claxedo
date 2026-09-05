@@ -1,4 +1,3 @@
-import { useBrowserComments } from "@/features/browser"
 import { BrowserPane, type BrowserPaneCommentPayload } from "@/features/browser"
 import { usePrompt, type ImageAttachmentPart } from "@/features/session/providers/prompt"
 
@@ -23,16 +22,14 @@ export function buildScreenshotAttachment(payload: BrowserPaneCommentPayload): I
 export type WorkspaceBrowserPanelProps = {
   /**
    * Stable identifier for the panel mount. Used as the BrowserPane's
-   * `paneId` (the desktop main process keys CDP attaches by it) and as the
-   * tabId for the local browser-comments store. The workspace panel is a
-   * singleton per directory, so a stable string per directory is fine.
+   * `paneId` (the desktop main process keys CDP attaches by it). The workspace
+   * panel is a singleton per directory, so a stable string per directory is fine.
    */
   panelKey: string
   /**
    * Active session id resolved by the parent WorkspacePanelBody. May be
-   * "new" if no session is focused — comments still land in
-   * prompt.context, but the user must commit them to a session via the
-   * usual "send" affordance.
+   * "new" if no session is focused — a page comment then has no session to
+   * land in and the pane reports it as unsent.
    */
   sessionId: string
   initialUrl?: string
@@ -50,26 +47,7 @@ export function WorkspaceBrowserPanel(props: WorkspaceBrowserPanelProps) {
     prompt = undefined
   }
 
-  let comments: ReturnType<typeof useBrowserComments> | undefined
-  try {
-    comments = useBrowserComments()
-  } catch {
-    comments = undefined
-  }
-
   const handlePageComment = (payload: BrowserPaneCommentPayload): boolean => {
-    // Local-history record under the producing tab so the comment shows
-    // up in any future "recent comments" UI even if no session was
-    // focused at the moment of submit.
-    comments?.add({
-      tabId: payload.tabId,
-      pageUrl: payload.pageUrl,
-      selector: payload.selector,
-      comment: payload.comment,
-      noteText: payload.noteText,
-      outerHTML: payload.outerHTML,
-      boundingBox: payload.boundingBox,
-    })
     if (!prompt || props.sessionId === "new" || !props.sessionId) return false
     // Use the FileContextItem shape with a URL-shaped path. The
     // submit.ts override on dev splits these out of the file-fetch path

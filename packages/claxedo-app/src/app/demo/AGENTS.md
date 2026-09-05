@@ -10,6 +10,6 @@ strict. Demo code must not leak into production feature layers.
 {
   "owns": "Demo MSW mock server, fixtures, tour controller, tour-origin allow-list",
   "writerOf": [],
-  "mustNotImport": ["@opencode-ai/ui/*", "@/components/*", "../components/*", "@/pages/*", "../pages/*"]
+  "mustNotImport": ["@opencode-ai/ui/*", "@/ui/*", "@/features/*"]
 }
 ```

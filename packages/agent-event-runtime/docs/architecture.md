@@ -51,8 +51,6 @@ A snapshot is a serializable checkpoint for resuming one state boundary:
 - `HarnessEventAdapter` is the TypeScript name for the harness event adapter
   boundary.
 - `RuntimeProjection` is the boundary each output projection implements.
-- `createAdapterRegistry()` is a small name-to-adapter registry for hosts that
-  select harness event adapters dynamically.
 
 The runtime stamps emitted events with `harness`, `threadId`, and `raw`.
 `harness` is the current API field for the external harness/source id. The

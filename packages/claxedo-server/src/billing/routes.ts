@@ -63,17 +63,17 @@ export type BillingEnv = Record<string, string | undefined>
  * used here instead of wrapping the promise: a cancelled Polar call cannot land
  * later, so nothing downstream has to be idempotent against it.
  *
- * Two budgets, because the paths have different callers:
+ * One budget serves both kinds of caller today:
  *
  *   - user-facing (checkout, portal): a person is waiting on a redirect, so the
  *     deadline is short enough to fail visibly rather than hang the tab.
  *   - cron sweeps (reconcile, deleted-org cancel): these iterate SERIALLY over
  *     flagged orgs, so one untimed call stalls the whole sweep and every org
- *     behind it — the reason these were the genuine gap the review found. A
- *     slightly longer per-call budget is fine; an unbounded one is not.
+ *     behind it — the reason these were the genuine gap the review found. They
+ *     share the interactive budget; a separate, longer sweep budget was declared
+ *     once but never threaded, so it was removed rather than left as a promise.
  */
 export const POLAR_INTERACTIVE_TIMEOUT_MS = 10_000
-export const POLAR_SWEEP_TIMEOUT_MS = 15_000
 
 /** The SDK's per-call request options; only the deadline is used here. */
 export type PolarRequestOptions = { timeoutMs?: number }

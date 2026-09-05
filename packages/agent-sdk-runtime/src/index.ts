@@ -90,6 +90,7 @@ export type {
 export { requireGoalResource } from "./adapter-contract"
 export type {
   AgentConfigOptions,
+  AgentPermissionModeState,
   ResolvedHarnessModel,
   AgentGoalMutationFailure,
   AgentGoalMutationResult,

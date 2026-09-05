@@ -1,14 +1,8 @@
 /**
- * Local dispatch/listen helpers for the terminal-fit event used inside
- * `src/terminal/**`.
- *
- * The event name must stay byte-identical to FIT_EVENT in
- * `claxedo-ui/terminal/terminal-fit.ts` (the canonical cross-app
- * definition). It is intentionally re-declared here rather than imported:
- * `src/terminal/** -> src/claxedo-ui/**` would create a new
- * claxedo-ui<->terminal import cycle not present in
- * `src/architecture/layering-baseline.json`. A test-only drift check
- * (exempt from the layering scan) asserts the two literals stay equal.
+ * The DOM event the terminal surface dispatches when its host resized. The
+ * canonical consumer is `features/terminal/workbench/terminal-fit.ts`, which
+ * re-declares the literal as `FIT_EVENT`; `fit-event.test.ts` welds the two
+ * together so they cannot drift.
  */
 export const TERMINAL_FIT_EVENT = "claxedo:terminal-fit"
 
