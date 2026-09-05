@@ -84,6 +84,7 @@ type TimedDuration = {
 // population; `worstFrameMs` and `framesOver1667` enforce the strict 60hz
 // renderer-deadline floor.
 export type FrameMetric = {
+  method?: "renderer-task-v1" | "renderer-interval-v1" | "mixed"
   label: string
   worstFrameMs: number
   p95FrameMs: number
@@ -1207,6 +1208,7 @@ export function buildFrameMetric(
   const framesOver1667 = intervals.filter((value) => value > FRAME_60HZ_MS).length
   return {
     label,
+    method: tracedTasks.length > 0 ? "renderer-task-v1" : "renderer-interval-v1",
     worstFrameMs: round(worstFrameMs),
     p95FrameMs: round(p95FrameMs),
     framesOver833,
@@ -1276,6 +1278,7 @@ export function mergeFrameMetrics(label: string, metrics: FrameMetric[]): FrameM
     : metrics.reduce((sum, metric) => sum + metric.framesOver1667, 0)
   return {
     label,
+    method: new Set(metrics.map((metric) => metric.method)).size === 1 ? metrics[0]?.method : "mixed",
     worstFrameMs: round(worstFrameMs),
     p95FrameMs: round(p95FrameMs),
     framesOver833,
@@ -1344,7 +1347,9 @@ function mergePerformanceMeasurement(metrics: FrameMetric[]): Pick<
     performance: Object.fromEntries(
       [...new Set(entries.map(([name]) => name))].map((name) => [
         name,
-        round(entries.filter(([key]) => key === name).reduce((sum, [, value]) => sum + value, 0)),
+        name === "jsHeapUsedBytes"
+          ? Math.max(...entries.filter(([key]) => key === name).map(([, value]) => value))
+          : round(entries.filter(([key]) => key === name).reduce((sum, [, value]) => sum + value, 0)),
       ]),
     ),
     performanceSource: sources[0],
@@ -1354,6 +1359,7 @@ function mergePerformanceMeasurement(metrics: FrameMetric[]): Pick<
 function frameRunMetric(metric: FrameMetric): FrameRunMetric {
   return {
     label: metric.label,
+    method: metric.method,
     worstFrameMs: metric.worstFrameMs,
     p95FrameMs: metric.p95FrameMs,
     framesOver833: metric.framesOver833,

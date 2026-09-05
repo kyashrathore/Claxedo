@@ -9,7 +9,15 @@
     "target": "ESNext",
     "strict": true,
     "skipLibCheck": true,
-    "types": ["bun"]
+    "types": [
+      "bun"
+    ]
   },
-  "include": ["src/**/*.ts", "test/**/*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "test/**/*.ts",
+    "probes/**/*.ts",
+    "compare/**/*.ts",
+    "scripts/**/*.ts"
+  ]
 }

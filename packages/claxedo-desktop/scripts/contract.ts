@@ -105,6 +105,11 @@ export function spec(root = ROOT): Spec {
     "electron.vite.config.ts",
     "icons",
     "package.json",
+    // Bun's installed dependency graph and the patched packaging collector
+    // decide the artifact just as the desktop builder configuration does.
+    "../../package.json",
+    "../../bun.lock",
+    "../../patches/app-builder-lib@26.8.1.patch",
     "scripts/build.ts",
     "scripts/build-memory-impact-helper.ts",
     "scripts/bundle-claxedo-server.ts",

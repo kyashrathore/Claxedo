@@ -126,7 +126,7 @@ describe("Claxedo agent-app corpus materializer", () => {
       const database = new Database(result.dbPath, { readonly: true })
       const sessionId = result.materializedSessions.get("session-1")!
       expect(sessionId).toMatch(/^ses_[0-9a-f]{12}[0-9A-Za-z]{14}$/)
-      expect(result.readinessTargets).toEqual([
+      expect(structuredClone(result.readinessTargets)).toEqual([
         {
           sessionId,
           title: "1. Fixture",
@@ -164,8 +164,8 @@ describe("Claxedo agent-app corpus materializer", () => {
           },
         ],
       })
-      expect(result.materializedParts.get("reason")).toMatchObject({
-        partId: expect.stringMatching(/^msg_.*:000000$/),
+      expect(structuredClone(result.materializedParts.get("reason"))).toMatchObject({
+        partId: expect.stringMatching(/^prt_/),
         messageId: expect.stringMatching(/^msg_/),
         sessionId,
         payload: { type: "reasoning", text: "think" },
@@ -175,6 +175,34 @@ describe("Claxedo agent-app corpus materializer", () => {
         callID: "call",
         tool: "read",
       })
+      const journal = new Database(
+        path.join(root, "data", "agent-core", result.workspaces.get("")!.projectId, "state.db"),
+        { readonly: true },
+      )
+      try {
+        const rows = journal.query("SELECT payload_json FROM runtime_journal WHERE kind = 'event' ORDER BY seq").all() as Array<{ payload_json: string }>
+        const events = rows.map((row) => JSON.parse(row.payload_json))
+        expect(events.filter((event) => event.type === "message.updated")).toHaveLength(2)
+        const parts = events.filter((event) => event.type === "message.part.updated")
+        expect(parts).toHaveLength(4)
+        expect(parts.map((event) => event.properties.part.id)).toEqual(
+          [...result.materializedParts.values()].map((source) => source.partId),
+        )
+        for (const source of result.materializedParts.values()) {
+          const event = parts.find((event) => event.properties.part.id === source.partId)
+          expect(event.properties.part).toEqual({
+            ...source.payload,
+            id: source.partId,
+            messageID: source.messageId,
+            sessionID: source.sessionId,
+          })
+        }
+        expect(parts.map((event) => event.properties.part.id).filter((id) =>
+          result.readinessTargets[0]!.expectedPartIds!.includes(id),
+        )).toEqual([...result.readinessTargets[0]!.expectedPartIds!])
+      } finally {
+        journal.close()
+      }
     } finally {
       await rm(root, { recursive: true, force: true })
     }

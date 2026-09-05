@@ -6,6 +6,7 @@
   "type": "module",
   "packageManager": "bun@1.3.14",
   "scripts": {
+    "build:claxedo-runtime-deps": "bun turbo build --filter=@claxedo/agent-event-runtime --filter=@claxedo/agent-sdk-runtime --filter=@claxedo/channels --filter=@claxedo/connections --filter=@claxedo/mcp --filter=@claxedo/opencode-server-adapter --filter=@claxedo/sandbox-contract --filter=@claxedo/sandbox-manager --filter=@claxedo/wakes --filter=@claxedo/workspace-relay-protocol --filter=@claxedo/workspace-relay --filter=@claxedo/workspace-runtime",
     "dev": "bun run dev:desktop",
     "dev:desktop": "bun --cwd packages/claxedo-desktop dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
@@ -18,7 +19,7 @@
     "prepare": "husky",
     "test": "echo 'do not run tests from root' && exit 1",
     "docs:check-links": "bun ./script/check-doc-links.ts",
-    "diagnostics:verify": "bun --cwd packages/claxedo-desktop run test:diagnostics-release && bun --cwd packages/claxedo-app run test:diagnostics-release && bun --cwd packages/claxedo-app/perf-harness test"
+    "diagnostics:verify": "bun run --cwd packages/claxedo-desktop test:diagnostics-release && bun run --cwd packages/claxedo-app test:diagnostics-release && bun run --cwd packages/claxedo-app/perf-harness verify"
   },
   "workspaces": {
     "packages": [
@@ -113,6 +114,7 @@
     "dompurify": "3.4.12"
   },
   "claxedoDependencyPatches": {
+    "app-builder-lib@26.8.1": "patches/app-builder-lib@26.8.1.patch",
     "better-auth@1.7.1": "patches/better-auth@1.7.1.patch",
     "@better-auth/oauth-provider@1.7.1": "patches/@better-auth%2Foauth-provider@1.7.1.patch",
     "@npmcli/agent@4.0.2": "patches/@npmcli%2Fagent@4.0.2.patch",

@@ -139,8 +139,11 @@ const ROUTE_RULES = [
     runtime,
     "Phase 2 moves canonical config ownership fully into Agent Config Registry.",
   ),
+  // `mountWorkspaceFiles` (workspace-runtime) serves the file and search
+  // routes at both the bare root and the `/api/wr` prefix; the typed
+  // `@claxedo/workspace-runtime/client` only ever requests the prefixed form.
   prefix(
-    ["/api/wr/pty", "/api/wr/process", "/api/wr/diff", "/api/wr/git", "/find", "/file"],
+    ["/api/wr/pty", "/api/wr/process", "/api/wr/diff", "/api/wr/git", "/api/wr/file", "/api/wr/find", "/find", "/file"],
     RouteDomain.SandboxRuntime,
     runtime,
   ),

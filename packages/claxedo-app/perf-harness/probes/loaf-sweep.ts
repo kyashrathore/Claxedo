@@ -52,7 +52,7 @@ try {
     }
     const armObserver = () =>
       launch.page.evaluate(() => {
-        const host = window as unknown as { __loaf: Array<Record<string, unknown>> };
+        const host = window as unknown as { __loafObserver?: PerformanceObserver; __loaf: Array<Record<string, unknown>> };
         host.__loaf = [];
         host.__loafObserver?.disconnect();
         const observer = new PerformanceObserver((list) => {
@@ -63,7 +63,7 @@ try {
               blockingDuration: loaf.blockingDuration,
               styleAndLayoutStart: loaf.styleAndLayoutStart,
               renderStart: loaf.renderStart,
-              scripts: ((loaf.scripts as Array<{ invoker?: string; duration: number }> ?? []) ?? []).map(
+              scripts: (loaf.scripts as Array<{ invoker?: string; duration: number }> ?? []).map(
                 (script) => `${Math.round(script.duration)}ms ${script.invoker ?? "?"}`,
               ),
             });

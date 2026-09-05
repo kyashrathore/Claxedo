@@ -4,20 +4,7 @@ import type { MetricComparison } from "./baseline-store"
 
 export type { FrameMetric, FrameVerdict } from "./frame-sampler"
 
-// The five surviving, user-observable flows. Adding a flow = add an id here and
-// a registry entry in flows.ts — no engine changes.
-export type ScenarioId =
-  | "launch-project"
-  | "session-switch"
-  | "live-terminal-switch"
-  | "large-diff-toggle"
-  | "heavy-workspace-reopen"
-  | "heavy-workspace-review-resume"
-  | "heavy-workspace-close"
-  | "workspace-switch"
-  | "workspace-lifecycle"
-  | "workspace-interactions"
-  | "session-switch-workspace"
+export type ScenarioId = (typeof import("./flows").FLOWS)[number]["id"]
 
 // We only ever measure our own app, in a real browser. Kept as single literals
 // (rather than removed) so storage paths and attribution stay stable.
@@ -70,6 +57,7 @@ export type ScenarioResult = {
   headline: FrameMetric
   /** Core Web Vitals for this run, and the reference machine that produced them. */
   vitals?: WebVitals
+  repetitions?: Array<{ headline: FrameMetric; vitals?: WebVitals }>
   environment?: { profile: string; label: string }
   metrics: MetricSummary[]
   budget: Budget
@@ -78,8 +66,10 @@ export type ScenarioResult = {
   warnings: string[]
   /** Per-metric movement against the tracked baseline for this profile+stack. */
   comparison?: MetricComparison[]
+  context?: import("./measurement-context").MeasurementContext
   diagnostics?: DiagnosticsOverheadEvidence
   attribution?: RunAttribution
+  provenance?: import("./measurement-provenance").MeasurementProvenanceEvidence
   artifacts?: {
     video?: string
   }
@@ -94,33 +84,15 @@ export type DiagnosticsOverheadEvidence = {
   collections: number
   sampleCount: number
   controlHeadline: FrameMetric
+  controlRepetitions?: Array<{ headline: FrameMetric; vitals?: WebVitals }>
   enabledHeadline: FrameMetric
 }
 
-// Regression budget: a ceiling on the headline worst renderer interval, auto-calibrated from
-// the first accepted run. The 8.33/16.67 renderer-proxy thresholds are enforced
-// separately and are not stored.
+// Explicit caller-owned ceiling. No budget is calibrated from a measured result.
+// Baseline acceptance and comparison are owned by baseline-store.ts.
 export type Budget = {
   scenario: ScenarioId
   worst_frame_ms?: number
-}
-
-export type Baseline = {
-  scenario: ScenarioId
-  accepted_at: string
-  worst_frame_ms: number
-  p95_frame_ms: number
-}
-
-export type TrendRecord = {
-  scenario: ScenarioId
-  recorded_at: string
-  status: RunStatus
-  seed?: SeedManifest
-  attribution?: RunAttribution
-  worst_frame_ms: number
-  p95_frame_ms: number
-  verdict: FrameMetric["verdict"]
 }
 
 export type RunAttribution = {
@@ -159,7 +131,7 @@ export type RunOptions = {
   accept_baseline: boolean
   iterations: number
   output: string
-  update_baseline: boolean
+  suite: import("./execution-profile").ExecutionSuite
   append_trend: boolean
   headless: boolean
   debug: boolean

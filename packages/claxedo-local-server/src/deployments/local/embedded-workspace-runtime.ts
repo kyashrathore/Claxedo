@@ -1,3 +1,4 @@
+import { embeddedConfigModeForPath } from "../../workspace/runtime-dispatch/internals"
 import path from "path"
 import fs from "fs/promises"
 import os from "node:os"
@@ -257,9 +258,13 @@ function disposeRuntime(runtime: EmbeddedRuntime): Promise<void> {
 // beside the runtimes it serves — means any composition that can create an
 // embedded runtime can also be reached through one, with no import from the
 // shared side back into this deployment.
+
 configureLocalWorkspaceRuntime({
   async fetch(workspace: Workspace, request: Request) {
-    const runtime = await ensureEmbeddedWorkspaceRuntime(workspace)
+    // Same policy as the proxy path: a read never waits for a config sync.
+    const runtime = await ensureEmbeddedWorkspaceRuntime(workspace, {
+      config: embeddedConfigModeForPath(new URL(request.url).pathname, request.method),
+    })
     return runtime.app.fetch(request)
   },
 })

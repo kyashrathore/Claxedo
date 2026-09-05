@@ -128,18 +128,7 @@ install_root() {
 }
 
 build_dist_packages() {
-  bun turbo build \
-    --filter=@claxedo/agent-event-runtime \
-    --filter=@claxedo/agent-sdk-runtime \
-    --filter=@claxedo/channels \
-    --filter=@claxedo/connections \
-    --filter=@claxedo/mcp \
-    --filter=@claxedo/sandbox-contract \
-    --filter=@claxedo/sandbox-manager \
-    --filter=@claxedo/wakes \
-    --filter=@claxedo/workspace-relay-protocol \
-    --filter=@claxedo/workspace-relay \
-    --filter=@claxedo/workspace-runtime
+  bun run build:claxedo-runtime-deps
 }
 
 install_chromium() {
@@ -190,15 +179,11 @@ run_diagnostics() {
     bun run test:diagnostics-release
   )
   (cd packages/claxedo-app && bun run test:diagnostics-release)
-  (cd packages/claxedo-app/perf-harness && bun test)
   (cd packages/claxedo-app && bun run build && bun run verify:closure)
   install_chromium
   (
     cd packages/claxedo-app/perf-harness
-    CLAXEDO_PERF_APP_SCRIPT=serve \
-    CLAXEDO_PERF_CAUSAL=1 \
-    CLAXEDO_PERF_HEADROOM=1.0 \
-      bun run run:all
+    CLAXEDO_PERF_APP_SCRIPT=serve bun run ci:diagnostics
   )
   (
     cd packages/claxedo-desktop

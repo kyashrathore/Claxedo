@@ -4,14 +4,8 @@ import path from "node:path"
 import { Database as SQLiteDatabase } from "bun:sqlite"
 import { OpenCodeCorpus } from "./opencode-corpus"
 import type { SessionReadinessTarget } from "./agent-browser-observer"
-import {
-  initializeWorkspace,
-  registerSessionInventory,
-  registerWorkspace,
-  seedSessionMeta,
-  type MaterializedSession,
-  type Workspace,
-} from "./public-corpus-materializer"
+import { initializeWorkspace, type MaterializedWorkspace } from "./workspace-fixture"
+import { persistClaxedoCorpus, registerWorkspace } from "./fixture-registration"
 
 type SourceSession = {
   id: string
@@ -99,7 +93,6 @@ export async function materializeActualSessions(input: {
       source.query<{ name: string }, []>("SELECT name FROM pragma_table_info('part') WHERE name = 'ordinal'").get(),
     )
     const workspaces = await createWorkspaces(input)
-    const destinationPath = path.join(input.dataDirectory, "opencode-engine", "opencode.db")
     const destination = new OpenCodeCorpus()
     const readinessTargets = new Map<
       string,
@@ -108,7 +101,6 @@ export async function materializeActualSessions(input: {
         eventualFullPartIds: readonly string[]
       }
     >()
-    const materializedSessions: MaterializedSession[] = []
     const contentDigests = new Map<string, string>()
     let messageCount = 0
     let transcriptBytes = 0
@@ -119,17 +111,12 @@ export async function materializeActualSessions(input: {
       const copied = copySession({ source, sourceHasPartOrdinal, destination, assignment, workspace, index })
       readinessTargets.set(assignment.logicalSessionId, copied.readinessTarget)
       contentDigests.set(assignment.logicalSessionId, copied.contentDigestSha256)
-      materializedSessions.push(copied.session)
       messageCount += copied.messageCount
       transcriptBytes += copied.transcriptBytes
       payloadBytes += copied.payloadBytes
     }
 
-    await destination.persist(destinationPath)
-    for (const [id, target] of readinessTargets) readinessTargets.set(id, destination.remapReadiness(target))
-
-    await registerSessionInventory({ dataDirectory: input.dataDirectory, workspaces, sessions: materializedSessions })
-    await seedSessionMeta({ dataDirectory: input.dataDirectory, workspaces, sessions: materializedSessions })
+    await persistClaxedoCorpus({ dataDirectory: input.dataDirectory, corpus: destination })
     source.exec("COMMIT")
     const sourceInfoAfter = await stat(input.sourceDatabasePath)
     if (
@@ -257,17 +244,19 @@ function quantileSample(values: SourceSession[], count: number) {
 }
 
 async function createWorkspaces(input: { dataDirectory: string; workspaceDirectory: string }) {
-  await Promise.all([
-    mkdir(path.join(input.dataDirectory, "opencode-engine"), { recursive: true, mode: 0o700 }),
-    mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 }),
-  ])
+  await mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 })
   const root = await realpath(input.workspaceDirectory)
-  const workspaces = new Map<string, Workspace>()
+  const workspaces = new Map<string, MaterializedWorkspace>()
   for (const workspaceId of ["workspace-a", "workspace-b"] as const) {
     const directory = path.join(root, workspaceId)
     await mkdir(directory, { recursive: true, mode: 0o700 })
     const projectId = await initializeWorkspace(directory, workspaceId)
-    await registerWorkspace({ dataDirectory: input.dataDirectory, directory, projectId, workspaceId })
+    await registerWorkspace({
+      dataDirectory: input.dataDirectory,
+      directory,
+      projectId,
+      projectName: `Benchmark ${workspaceId}`,
+    })
     workspaces.set(workspaceId, { directory, projectId })
   }
   return workspaces
@@ -278,7 +267,7 @@ function copySession(input: {
   sourceHasPartOrdinal: boolean
   destination: OpenCodeCorpus
   assignment: TargetAssignment
-  workspace: Workspace
+  workspace: MaterializedWorkspace
   index: number
 }) {
   const { assignment } = input
@@ -364,7 +353,7 @@ function copySession(input: {
     const id = partIds.get(part.id)!
     const messageId = messageIds.get(part.message_id)
     if (!messageId) throw new Error("actual-session part references an unknown message")
-    input.destination.setPart(id, messageId, part.ordinal, data)
+    input.destination.setPart(id, messageId, part.ordinal, data, part.time_updated)
     if (latestTurnMessageIds.has(messageId)) eventualFullPartIds.push(id)
     const retainedSurfaceMessage = messageId === latestUserMessageId || messageId === latestAssistant.messageId
     if (!retainedSurfaceMessage || data.type !== "text" || typeof data.text !== "string" || !data.text.trim()) continue
@@ -378,14 +367,6 @@ function copySession(input: {
     throw new Error("actual-session selection lost its renderable final surface")
   }
   return {
-    session: {
-      logicalSessionId: assignment.logicalSessionId,
-      nativeSessionId: sessionId,
-      workspaceId: assignment.workspaceId,
-      title,
-      createdAt: assignment.source.time_created,
-      updatedAt: assignment.source.time_updated,
-    },
     readinessTarget: {
       logicalSessionId: assignment.logicalSessionId,
       sessionId,

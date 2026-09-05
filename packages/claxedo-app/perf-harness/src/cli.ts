@@ -1,10 +1,10 @@
 import path from "node:path"
 import { flag as optionFlag, option as optionValue, scenarioIds } from "./cli-options"
 import { DEFAULT_PROFILE_ID } from "./environment-profile"
-import { DEFAULT_STACK_ID } from "./stacks"
+import { DEFAULT_STACK_ID, requireSupportedStack } from "./stacks"
 import { FLOWS } from "./flows"
 import { markdownReport } from "./report"
-import { run } from "./runner"
+import { executionSuite } from "./execution-profile"
 import { reportsRoot } from "./storage"
 import { app } from "./targets"
 import type { ScenarioResult } from "./types"
@@ -28,6 +28,14 @@ function numericOption(name: string, fallback: string, minimum: number) {
   return value
 }
 
+if (command === "catalog") {
+  const { performanceCatalog } = await import("./catalog")
+  const entries = await performanceCatalog()
+  if (flag("json")) console.log(JSON.stringify(entries, null, 2))
+  else for (const entry of entries) console.log(`${entry.id}\t${entry.kind}\tpackages/${entry.owner}\t${entry.entrypoint}\t${entry.purpose}`)
+  process.exit(0)
+}
+
 if (command === "list") {
   for (const flow of FLOWS) console.log(`${flow.id}\t${flow.name}`)
   process.exit(0)
@@ -48,7 +56,7 @@ if (command === "memory") {
   if (mode !== "normal" && mode !== "rapid") throw new Error(`Invalid memory mode: ${mode}. Use normal or rapid.`)
   const summary = await runMemoryLane({
     profile: option("profile", DEFAULT_PROFILE_ID)!,
-    stack: option("stack", DEFAULT_STACK_ID)!,
+    stack: requireSupportedStack(option("stack", DEFAULT_STACK_ID)!),
     sessions: parseMemoryInteger("--sessions", option("sessions", "60"), 2),
     accept_baseline: flag("accept-baseline"),
     headless: !flag("headed"),
@@ -66,14 +74,16 @@ if (command === "memory") {
 }
 
 if (command === "run") {
-  const results = await run({
+  if (flag("update-baseline")) throw new Error("--update-baseline was removed; use --accept-baseline")
+  const { runBrowser } = await import("./browser-runner")
+  const results = await runBrowser({
     scenarios: scenarioIds(args),
     profile: option("profile", DEFAULT_PROFILE_ID)!,
-    stack: option("stack", DEFAULT_STACK_ID)!,
+    stack: requireSupportedStack(option("stack", DEFAULT_STACK_ID)!),
     accept_baseline: flag("accept-baseline"),
-    iterations: Number(option("iterations", "1")),
+    iterations: numericOption("iterations", "1", 1),
     output: option("output", "run.json")!,
-    update_baseline: flag("update-baseline"),
+    suite: executionSuite(option("suite")),
     append_trend: !flag("no-trend"),
     headless: !flag("headed"),
     debug: flag("debug"),
@@ -83,4 +93,4 @@ if (command === "run") {
   process.exit(results.some((result) => result.status === "fail") ? 1 : 0)
 }
 
-throw new Error(`Unknown command: ${command}. Use: run, list, report (target: ${app.label}).`)
+throw new Error(`Unknown command: ${command}. Use: run, memory, list, catalog, report (target: ${app.label}).`)

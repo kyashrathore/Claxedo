@@ -1,4 +1,5 @@
 import { createEffect, createMemo, createSignal, on, type Accessor } from "solid-js"
+import { sessionPerf } from "@/platform/performance/session-perf"
 
 import { isGlobalContent, type ContentMeta } from "../state/index"
 
@@ -69,8 +70,15 @@ export function useRailEmptyDraftController(input: {
   // Keep later re-open requests queued below: closing the last tab and applying
   // blockNextAutoOpen happen in the same user-action turn, and that cancellation
   // window must remain observable before a replacement draft is opened.
+  const recordDraftOpen = (reason: "construct" | "effect") => sessionPerf.event("shell.empty-draft-open", {
+    reason,
+    directory: emptyDraftDirectory() ?? "",
+    visibleSurfaces: visibleRenderableSurfaceIds().length,
+    focused: focusedSurface()?.id ?? "",
+  })
   if (shouldOpenEmptyDraftSession()) {
     didRequestEmptyDraftSession = true
+    recordDraftOpen("construct")
     input.onNewSession?.(emptyDraftDirectory())
   }
 
@@ -87,6 +95,7 @@ export function useRailEmptyDraftController(input: {
           didRequestEmptyDraftSession = false
           return
         }
+        recordDraftOpen("effect")
         input.onNewSession?.(emptyDraftDirectory())
       })
     }),

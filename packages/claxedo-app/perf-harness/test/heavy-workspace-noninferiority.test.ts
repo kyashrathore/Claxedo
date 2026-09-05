@@ -40,12 +40,12 @@ function report(overrides: Record<string, Partial<HeavyWorkspaceMetric>> = {}): 
     "workspace_closed_navigators_after_dwell",
     "workspace_closed_review_roots_after_dwell",
     "workspace_closed_review_files_after_dwell",
-    "workspace_reopen_inactive_review_roots",
-    "workspace_reopen_inactive_review_files",
+    "workspace_file_restore_inactive_review_roots",
+    "workspace_file_restore_inactive_review_files",
     "workspace_review_resume_inactive_file_roots",
   ]) add(metric, 0)
   add("workspace_disposal_required", 1)
-  add("workspace_reopen_file_roots", 1)
+  add("workspace_file_restore_file_roots", 1)
   return { flows: [{ metrics: rows }] }
 }
 

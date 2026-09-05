@@ -112,3 +112,16 @@ test("a shift BEFORE the input it precedes is not excused", () => {
   // cannot have been caused by it.
   expect(shiftsExcludingRecentInput([{ t: 900, value: 0.2 }], [1000])).toHaveLength(1)
 })
+
+
+test("frozen LCP aggregates its own population and carries that observation's element", () => {
+  const merged = mergeWebVitals([
+    vitals({ lcpMs: 9000, lcpAtFirstTrustedInputMs: 100, lcpAtFirstTrustedInputElement: "a" }),
+    vitals({ lcpMs: 1000, lcpAtFirstTrustedInputMs: 900, lcpAtFirstTrustedInputElement: "b", firstTrustedInputMs: 950 }),
+    vitals({ lcpMs: 8000, lcpAtFirstTrustedInputMs: 200, lcpAtFirstTrustedInputElement: "c" }),
+  ])
+  expect(merged.lcpMs).toBe(9000)
+  expect(merged.lcpAtFirstTrustedInputMs).toBe(900)
+  expect(merged.lcpAtFirstTrustedInputElement).toBe("b")
+  expect(merged.firstTrustedInputMs).toBe(950)
+})

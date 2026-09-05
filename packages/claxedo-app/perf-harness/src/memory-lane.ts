@@ -1,6 +1,9 @@
+import { configureExecution } from "./execution-profile"
+import { hostFingerprint } from "./measurement-context"
+import { requireSupportedStack } from "./stacks"
 import { chromium, type Browser } from "playwright-core"
 import type { ChildProcess } from "node:child_process"
-import { startApp, stopApp } from "./browser-runner"
+import { startApp, stopApp } from "./browser/environment"
 import { environmentProfile } from "./environment-profile"
 import {
   memoryRecords,
@@ -20,7 +23,7 @@ import { compareToBaseline, readBaselineFor, writeBaselineFor } from "./baseline
 import { stackLabel } from "./stacks"
 import path from "node:path"
 import { reportsRoot, writeJson } from "./storage"
-import { authoritativeSourceIdentity, captureMemoryProvenance, memoryProvenanceStable } from "./memory-provenance"
+import { authoritativeSourceIdentity, captureMeasurementProvenance, captureSourceProvenance, measurementProvenanceStable, sourceProvenanceStable } from "./measurement-provenance"
 
 const MB = 1024 * 1024
 const MEMORY_BROWSER_CLOSE_TIMEOUT_MS = 5_000
@@ -278,13 +281,16 @@ export async function runMemoryLane(options: {
   settleTimeoutMs?: number
 }) {
   const profile = environmentProfile(options.profile)
+  requireSupportedStack(options.stack)
+  const instrumentation = configureExecution("memory")
+  const buildSource = await captureSourceProvenance()
   const app = await startApp()
   try {
     const snapshotPath = options.snapshot ? path.join(reportsRoot, "heap.heapsnapshot") : undefined
     const iterations = parseMemoryInteger("iterations", options.iterations ?? 1, 1)
     const sweeps: MemorySweep[] = []
     const browserTeardowns: Array<MemoryBrowserTeardown & { iteration: number }> = []
-    let startProvenance: Awaited<ReturnType<typeof captureMemoryProvenance>> | undefined
+    let startProvenance: Awaited<ReturnType<typeof captureMeasurementProvenance>> | undefined
     let browserVersion = "unknown"
     for (let index = 0; index < iterations; index++) {
       const server = await chromium.launchServer({
@@ -296,7 +302,7 @@ export async function runMemoryLane(options: {
       try {
         browser = await chromium.connect(server.wsEndpoint(), { timeout: 30_000 })
         browserVersion = browser.version()
-        startProvenance ??= await captureMemoryProvenance({ browserVersion, appCommand: app.command })
+        startProvenance ??= await captureMeasurementProvenance({ browserVersion, appCommand: app.command })
         sweeps.push(await runMemorySweep({
           browser,
           app,
@@ -330,11 +336,12 @@ export async function runMemoryLane(options: {
     }
     const summary = summarizeMemorySweeps(sweeps)
     const snapshot: SnapshotAnalysis | undefined = snapshotPath ? await readRetainers(snapshotPath) : undefined
-    const endProvenance = await captureMemoryProvenance({ browserVersion, appCommand: app.command })
+    const endProvenance = await captureMeasurementProvenance({ browserVersion, appCommand: app.command })
     const provenance = {
+      buildSource,
       start: startProvenance!,
       end: endProvenance,
-      sourceStable: memoryProvenanceStable(startProvenance!, endProvenance),
+      sourceStable: sourceProvenanceStable(buildSource, startProvenance!) && measurementProvenanceStable(startProvenance!, endProvenance),
     }
     const sourceIdentity = authoritativeSourceIdentity(startProvenance!)
     const repetitionsSufficient = iterations >= 5
@@ -353,9 +360,25 @@ export async function runMemoryLane(options: {
         reasons: [...measuredValidity.reasons, "browser-cleanup-unverified"],
       }
     const valid = memoryComparisonPublishable(validity)
-    const records = memoryRecords(summary, options.stack, profile.id)
+    const records = memoryRecords(summary, options.stack, profile.id).map((record) => ({
+      ...record,
+      evidence: {
+        definitionVersion: 2 as const,
+        method: record.metric === "retained_heap_bytes_per_visit" ? "forced-gc-visit-slope-v1" : "forced-gc-settled-heap-v1",
+        context: {
+          version: 1 as const, suite: "memory" as const, host: hostFingerprint(), environment: { ...profile, headless: String(options.headless),
+            ...Object.fromEntries(Object.entries(process.env).filter((entry): entry is [string, string] => entry[0].startsWith("VITE_") && entry[1] !== undefined)),
+          },
+          workload: JSON.stringify({ sessions: options.sessions, mode: summary.mode, normalDwellMs: options.normalDwellMs ?? 750,
+            rapidDwellMs: options.rapidDwellMs ?? 120, cacheCeiling: options.cacheCeiling ?? PRODUCT_SESSION_CACHE_LIMIT,
+            settleMinimumMs: options.settleMinimumMs ?? 2500, settleTimeoutMs: options.settleTimeoutMs ?? 8000 }),
+          instrumentation: [...instrumentation, ...(options.snapshot ? ["heap-snapshot"] : [])], browserVersion,
+          appMode: process.env.CLAXEDO_PERF_APP_SCRIPT ?? "serve",
+        },
+      },
+    }))
     const baseline = valid
-      ? await readBaselineFor({ profile: profile.id, stack: options.stack, lane: "memory", flow: summary.flow })
+      ? await readBaselineFor({ profile: profile.id, stack: options.stack, lane: "memory", flow: summary.flow, suite: "memory" })
       : undefined
     const comparison = valid ? compareToBaseline(records, baseline) : []
     // Persist the sweep. The family table is the actionable part and it is the

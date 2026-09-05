@@ -1,3 +1,4 @@
+import type { OpenCodeLaunchDocument } from "./launch-policy"
 import type {
   AgentAgent,
   AgentCommand,
@@ -243,10 +244,42 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   private readonly directory: string
   private readonly configs = new Map<string, SessionConfig>()
 
+  /**
+   * The launch document `applyConfig` last accepted, and the single-flight
+   * application of it to the engine. The runtime configures adapters on the
+   * request path — reads included — while the engine's per-location setup
+   * (`launch-policy`: SDK boot, then a `model.list` that installs the skill
+   * and MCP registries) is the most expensive thing this process does. A read
+   * that never touches the engine must not pay for it, so the document is
+   * applied lazily: immediately when the host is already serving, otherwise
+   * on the first engine operation, which observes the document before it runs.
+   */
+  private launchDocument?: OpenCodeLaunchDocument
+  private launched?: Promise<void>
+
   constructor(options: AdapterOptions) {
     this.runtime = options.runtime
     this.workspaceID = options.workspaceID
     this.directory = options.directory
+  }
+
+  /** The engine with the accepted launch document applied. Every engine operation goes through here. */
+  private async engine(): Promise<OpenCodeRuntime> {
+    await this.ensureLaunched()
+    return this.runtime
+  }
+
+  private ensureLaunched(): Promise<void> {
+    const document = this.launchDocument
+    if (!document) return Promise.resolve()
+    this.launched ??= (async () => {
+      const store = await this.runtime.launch(this.scope(this.directory))
+      await store.write(document)
+    })().catch((error) => {
+      this.launched = undefined
+      throw error
+    })
+    return this.launched
   }
 
   private scope(directory: RuntimeDirectory): WorkspaceScope {
@@ -274,12 +307,14 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async listSessions(directory: RuntimeDirectory) {
-    return (await this.runtime.sessions.list(this.scope(directory))).sessions.map(session)
+    const runtime = await this.engine()
+    return (await runtime.sessions.list(this.scope(directory))).sessions.map(session)
   }
 
   async getSession(binding: AgentExecutionBinding) {
+    const runtime = await this.engine()
     try {
-      return session(await this.runtime.sessions.get(this.scope(binding.directory), binding.sessionId))
+      return session(await runtime.sessions.get(this.scope(binding.directory), binding.sessionId))
     } catch (error) {
       if (record(error)._tag === "SessionNotFoundError") return null
       throw error
@@ -287,20 +322,23 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async createSession(directory: RuntimeDirectory, title?: string, id?: string) {
-    const created = await this.runtime.sessions.create(this.scope(directory), { ...(id ? { id } : {}), ...(title ? { title } : {}) })
+    const runtime = await this.engine()
+    const created = await runtime.sessions.create(this.scope(directory), { ...(id ? { id } : {}), ...(title ? { title } : {}) })
     return { id: created.id }
   }
 
   async updateSession(binding: AgentExecutionBinding, updates: { title?: string; time?: { archived?: number } }) {
+    const runtime = await this.engine()
     const scope = this.scope(binding.directory)
-    if (updates.title !== undefined) await this.runtime.sessions.rename(scope, binding.sessionId, updates.title)
+    if (updates.title !== undefined) await runtime.sessions.rename(scope, binding.sessionId, updates.title)
     // Archive is a Claxedo projection concern. It must not be written into the
     // SDK and allowed to become a second authority.
-    return session(await this.runtime.sessions.get(scope, binding.sessionId))
+    return session(await runtime.sessions.get(scope, binding.sessionId))
   }
 
   async deleteSession(binding: AgentExecutionBinding) {
-    await this.runtime.sessions.remove(this.scope(binding.directory), binding.sessionId)
+    const runtime = await this.engine()
+    await runtime.sessions.remove(this.scope(binding.directory), binding.sessionId)
     this.configs.delete(binding.sessionId)
   }
 
@@ -309,6 +347,7 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async updateSessionConfig(binding: AgentExecutionBinding, update: SessionConfigUpdate): Promise<SessionConfig> {
+    const runtime = await this.engine()
     const previous = await this.getSessionConfig(binding)
     const next: SessionConfig = {
       harness: update.harness ?? previous.harness,
@@ -317,8 +356,8 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       agent: update.agent === undefined ? previous.agent : update.agent,
     }
     const scope = this.scope(binding.directory)
-    if (update.agent) await this.runtime.sessions.switchAgent(scope, binding.sessionId, update.agent)
-    if (update.model) await this.runtime.sessions.switchModel(scope, binding.sessionId, update.model)
+    if (update.agent) await runtime.sessions.switchAgent(scope, binding.sessionId, update.agent)
+    if (update.model) await runtime.sessions.switchModel(scope, binding.sessionId, update.model)
     this.configs.set(binding.sessionId, next)
     return next
   }
@@ -328,18 +367,19 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   private async *turn(id: string, input: PromptInput, directory: RuntimeDirectory): AsyncIterable<AgentRuntimeStreamEvent> {
+    const runtime = await this.engine()
     const scope = this.scope(directory)
     const queue = new EventQueue()
-    const unsubscribe = this.runtime.events.subscribe((event) => {
+    const unsubscribe = runtime.events.subscribe((event) => {
       // Execution lifecycle events are session-scoped but have no location.
       // The typed mutations below prove ownership before any event is yielded.
       if (eventSessionID(event) === id && (event.directory === undefined || event.directory === scope.directory)) queue.push(event)
     })
     try {
-      await this.runtime.events.ready()
-      await this.runtime.sessions.switchAgent(scope, id, input.agent)
-      await this.runtime.sessions.switchModel(scope, id, input.model)
-      await this.runtime.sessions.prompt(scope, id, prompt(input))
+      await runtime.events.ready()
+      await runtime.sessions.switchAgent(scope, id, input.agent)
+      await runtime.sessions.switchModel(scope, id, input.model)
+      await runtime.sessions.prompt(scope, id, prompt(input))
       while (true) {
         const event = await queue.next()
         const projected = projectTurnEvent(event, id)
@@ -354,13 +394,15 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async getMessages(binding: AgentExecutionBinding) {
-    const rows = await this.runtime.sessions.messages(this.scope(binding.directory), binding.sessionId, { order: "asc" })
+    const runtime = await this.engine()
+    const rows = await runtime.sessions.messages(this.scope(binding.directory), binding.sessionId, { order: "asc" })
     return rows.messages.map((row) => message(binding.sessionId, row))
   }
 
   async getMessagePage(binding: AgentExecutionBinding, input: AgentMessagePageInput): Promise<AgentMessagePage> {
+    const runtime = await this.engine()
     if (input.view) throw new Error(`OpenCode SDK does not expose the ${input.view} transcript view`)
-    const page = await this.runtime.sessions.messages(this.scope(binding.directory), binding.sessionId, {
+    const page = await runtime.sessions.messages(this.scope(binding.directory), binding.sessionId, {
       limit: input.limit,
       ...(input.before ? { cursor: input.before } : {}),
       order: "desc",
@@ -372,34 +414,46 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async abort(binding: AgentExecutionBinding) {
-    await this.runtime.sessions.interrupt(this.scope(binding.directory), binding.sessionId)
+    const runtime = await this.engine()
+    await runtime.sessions.interrupt(this.scope(binding.directory), binding.sessionId)
     return { ok: true as const, status: "cancelled" as const }
   }
 
   async forkSession(binding: AgentExecutionBinding, messageId: string) {
-    const forked = await this.runtime.sessions.fork(this.scope(binding.directory), binding.sessionId, { type: "before", messageID: messageId })
+    const runtime = await this.engine()
+    const forked = await runtime.sessions.fork(this.scope(binding.directory), binding.sessionId, { type: "before", messageID: messageId })
     return { id: forked.id }
   }
 
   async executeCommand(binding: AgentExecutionBinding, command: string) {
-    await this.runtime.sessions.command(this.scope(binding.directory), binding.sessionId, { command })
+    const runtime = await this.engine()
+    await runtime.sessions.command(this.scope(binding.directory), binding.sessionId, { command })
   }
 
   async listCommands(directory: RuntimeDirectory): Promise<AgentCommand[]> {
-    return (await this.runtime.catalog.commands(this.scope(directory))).map((row) => ({
+    const runtime = await this.engine()
+    return (await runtime.catalog.commands(this.scope(directory))).map((row) => ({
       name: row.name,
       ...(row.description === undefined ? {} : { description: row.description }),
     }))
   }
 
   async listAgents(directory: RuntimeDirectory): Promise<AgentAgent[]> {
-    return (await this.runtime.catalog.agents(this.scope(directory))).map((row) => ({
+    const runtime = await this.engine()
+    return (await runtime.catalog.agents(this.scope(directory))).map((row) => ({
       name: row.name,
       ...(row.description === undefined ? {} : { description: row.description }),
       ...(row.mode === undefined ? {} : { mode: row.mode }),
     }))
   }
 
+  /**
+   * Pending interactions are read without applying the launch document: a
+   * permission or form request exists only inside a turn this engine is
+   * already running, and that turn applied the document before it started.
+   * Applying it here would cost the location's launch (model catalog, skill
+   * and MCP reloads) on a read the rail issues for every workspace at startup.
+   */
   async listPermissions(directory: RuntimeDirectory): Promise<AgentPermission[]> {
     return (await this.runtime.interactions.permissions(this.scope(directory))).map((row) => ({
       id: `${row.sessionID}:${row.id}`,
@@ -414,8 +468,9 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async respondPermission(binding: AgentExecutionBinding, permId: string, decision: "allow_once" | "allow_always" | "deny" | "reject_always") {
+    const runtime = await this.engine()
     const { sessionID, requestID } = scopedId(permId, "permission replies")
-    await this.runtime.interactions.replyPermission(this.scope(binding.directory), {
+    await runtime.interactions.replyPermission(this.scope(binding.directory), {
       sessionID,
       requestID,
       reply: decision === "allow_once" ? "once" : decision === "allow_always" ? "always" : "reject",
@@ -431,9 +486,10 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
   }
 
   async replyQuestion(binding: AgentExecutionBinding, qId: string, answers: AgentQuestionAnswer[]) {
+    const runtime = await this.engine()
     const { sessionID, requestID: formID } = scopedId(qId, "form replies")
     const scope = this.scope(binding.directory)
-    const form = (await this.runtime.interactions.forms(scope)).find((row) => row.id === formID && row.sessionID === sessionID)
+    const form = (await runtime.interactions.forms(scope)).find((row) => row.id === formID && row.sessionID === sessionID)
     const fields = form?.fields?.map(record) ?? []
     if (fields.length === 0) throw new Error("OpenCode form has no fields to answer")
     const answer: Record<string, string | readonly string[]> = {}
@@ -442,12 +498,13 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
       const selected = answers[index] ?? []
       answer[key] = field.multiple === true ? selected : selected[0] ?? ""
     })
-    await this.runtime.interactions.replyForm(scope, { sessionID, formID, answer })
+    await runtime.interactions.replyForm(scope, { sessionID, formID, answer })
   }
 
   async rejectQuestion(binding: AgentExecutionBinding, qId: string) {
+    const runtime = await this.engine()
     const { sessionID, requestID: formID } = scopedId(qId, "form cancellation")
-    await this.runtime.interactions.cancelForm(this.scope(binding.directory), { sessionID, formID })
+    await runtime.interactions.cancelForm(this.scope(binding.directory), { sessionID, formID })
   }
 
   /**
@@ -459,13 +516,19 @@ export class OpenCodeSdkHarnessAdapter implements AgentHarnessAdapter {
    * bridge.
    */
   async applyConfig(config: Record<string, unknown>) {
-    const scope = this.scope(this.directory)
+    this.scope(this.directory)
     const plugins = record(record(config.launch).config)
-    const store = await this.runtime.launch(scope)
-    await store.write({
+    this.launchDocument = {
       skills: stringList(plugins.skills),
       mcp: { ...snapshotMcpServers(record(config.mcp)), ...pluginMcpServers(record(plugins.mcp)) },
-    })
+    }
+    // A newer document supersedes any earlier application; the next engine
+    // operation writes the current one before it runs. Configuration is a
+    // read-path event (every adapter resolution re-applies the workspace
+    // snapshot), so applying here — even on a serving host — would pay the
+    // location's launch (model catalog, skill and MCP reloads) for every
+    // workspace the rail lists at startup.
+    this.launched = undefined
   }
 
   readRuntimeHealth() {

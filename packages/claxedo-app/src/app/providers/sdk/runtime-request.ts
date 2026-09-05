@@ -97,3 +97,17 @@ export function cachedSdkRuntimeRequest(input: SdkRuntimeRequestInput & { owner:
   queryClient.setQueryData(queryKey, next)
   return next
 }
+
+/**
+ * Workspace runtime routes are resolved by the requesting scope (query
+ * `directory`, or the `x-claxedo-directory` header the server-side runtime
+ * clients send). The typed `@claxedo/workspace-runtime/client` builds route
+ * paths only, so the SDK scope — the one owner that knows which directory a
+ * file request belongs to — stamps its runtime-request scope here. A caller
+ * that already scoped the request explicitly keeps its own value.
+ */
+export function scopeRuntimeRequestUrl(input: RequestInfo | URL, scope: Pick<SdkRuntimeRequestInput, "directory">): URL {
+  const url = new URL(input instanceof Request ? input.url : String(input))
+  if (scope.directory && !url.searchParams.has("directory")) url.searchParams.set("directory", scope.directory)
+  return url
+}

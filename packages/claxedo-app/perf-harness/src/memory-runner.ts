@@ -1,11 +1,8 @@
 import type { Browser, CDPSession, Page } from "playwright-core"
-import {
-  fixtureFor,
-  installMockApi,
-  installSeedState,
-  sessionPath,
-  type BrowserTarget,
-} from "./browser-runner"
+import { fixtureFor } from "./browser/fixtures"
+import { installMockApi } from "./browser/mock-api"
+import { installSeedState, sessionPath } from "./browser/state"
+import { type BrowserTarget } from "./browser/environment"
 import { applyCpuProfile, applyNetworkProfile, type EnvironmentProfile } from "./environment-profile"
 import { METRICS, type PerfRecord } from "./perf-record"
 import { captureHeapSnapshot } from "./heap-snapshot"

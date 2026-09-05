@@ -1,414 +1,168 @@
-# Claxedo Performance Harness
+# Claxedo performance tools
 
-Renderer-performance harness for the Claxedo app. It launches the production web
-bundle in headless Chromium, supplies deterministic synthetic API responses,
-drives user-observable flows, and measures renderer main-thread scheduling plus
-semantic readiness.
+Start with `bun run catalog` in this directory. It lists browser flows, packaged drivers,
+package-owned regression suites, infrastructure benchmarks, and attribution probes.
+`bun run catalog --json` emits the same registry for tooling. Package-local tests remain
+with their production owners; the catalog makes them discoverable without coupling
+relay or runtime measurements to Electron.
 
-## Public multi-harness GUI comparison
+## Install and verify
 
-Claxedo also implements an app-owned driver for the public
-[Agent App Benchmark](https://github.com/kyashrathore/agent-app-benchmark). That public V1 is narrower
-than this internal diagnostic harness: it measures application start, four session-switch lanes, and
-process-family CPU/RSS while loading completed 1–32 MiB historical transcripts. It does not measure
-Web Vitals, streaming, live agent runs, or terminal coding agents.
+From the repository root, install with `bun install --frozen-lockfile` and build the
+workspace dependencies with `bun run build:claxedo-runtime-deps`. This shared build
+recipe prepares the complete diagnostics lane in both GitHub and Crabbox.
 
-`src/public-corpus-materializer.ts` validates the pinned OpenCode event corpus and converts it through
-`src/opencode-corpus.ts` to the current SDK session-import format. Workspace-runtime owns the published
-SDK import, closes it, and reopens it to verify durable session and message readback before timing.
-The materializers also populate Claxedo's workspace inventory and session metadata. Transcript part
-identities follow the live runtime projection; multiple user text parts become the SDK's single user
-text field. Step and patch records map to the SDK's assistant snapshot fields; usage stays on the
-assistant message. Shapes the current SDK/runtime cannot represent are rejected before import rather than
-written into obsolete tables. `src/public-agent-app-driver.ts` owns packaged Electron automation and reports one raw
-duration per action; the public framework owns ordering, repetitions, resources, aggregation, and the
-comparison website.
-
-After building and packaging Claxedo, run the public framework with:
+This nested harness has its own manifest and lockfile; the root workspace install does
+not install it:
 
 ```sh
-node /absolute/path/to/agent-app-benchmark/bin/agent-app-benchmark.mjs run \
-  --driver /absolute/path/to/Claxedo/packages/claxedo-app/perf-harness/src/public-agent-app-driver.ts \
-  --app claxedo \
-  --scenario session-switch-v1 \
-  --run-profile smoke \
-  --resource-monitor /absolute/path/to/agent-app-resource-monitor \
-  --output /absolute/path/to/run-output
+cd packages/claxedo-app/perf-harness
+bun install --frozen-lockfile
+bun run verify
+bunx playwright install chromium
 ```
 
-The public driver uses only disposable state below the framework-provided run directory. Publish a
-result or propose another metric by opening a pull request against the public benchmark repository.
+`verify` typechecks core source, tests, probes, comparison analysis and scripts, then
+runs both `test/` and colocated `src/` tests. Browser automation is a separate check.
+GitHub release CI and Crabbox use the same `bun run ci:diagnostics` command after
+building the app and desktop diagnostics helper.
 
-- Target: **120hz-capable** — pooled p95 renderer interval ≤ 8.33ms.
-- Floor: **60hz-capable** — zero observed renderer intervals > 16.67ms.
+## Choose the measurement
 
-The browser runs the real compiled application code. Project, session, message,
-terminal, file, and diff data come from the harness's route-level fixture, with no
-real Claxedo server, workspace harness, filesystem, or network latency in the
-measured path. This lane is a repeatable renderer proxy, not evidence of actual FPS
-or frames presented by packaged Electron on a physical display. Set
-`CLAXEDO_PERF_RECORD_VIDEO=1` for non-gating visual recordings; release
-measurements leave capture off so video encoding cannot distort scheduling evidence.
-
-## Quick start
-
-```sh
-bun run list            # list the measured flows
-bun run run             # production build, then run launch-project headless
-bun run run:all         # run every flow
-bun run run:debug       # run every flow and print the debug sub-metrics
-bun run run:headed      # watch it drive the app
-bun run report          # re-render the last run's markdown (add --debug for subs)
-bun run test            # unit tests (pure frame/gate logic, no browser)
-```
-
-Every release flow runs in four isolated browser contexts using an ABBA order:
-disabled, enabled, enabled, disabled. The suite keeps two benchmark Chromium
-processes alive: one executes each flow control→enabled and the other executes
-enabled→control. This gives each side one early and one late run so warm/cold
-position cannot be mistaken for profiler overhead, while avoiding heavyweight
-browser-process churn between flows. Finished pages are closed before the next
-flow. Enabled runs start the production diagnostics profiler against that
-browser's real process tree. The gate compares pooled p95 intervals, the worst
-interval, and every 60hz deadline miss. It also requires real retained process
-samples from both profiler runs. Raw per-run headline measurements and intervals
-remain in JSON under `headline.runs` and `headline.frameIntervalsMs`. The strict
-worst-interval gate keeps an isolated stall visible even when it does not move
-pooled p95.
-
-The harness builds and serves the production Vite bundle by default. Repeated
-local experiments may set `CLAXEDO_PERF_SKIP_BUILD=1` only after building the
-current source once. `CLAXEDO_PERF_APP_SCRIPT=dev` is an explicit diagnostic mode;
-its Vite transforms and HMR traffic are not release evidence.
-
-Run a single flow:
-
-```sh
-bun src/cli.ts run --scenario workspace-switch --headed
-```
-
-For causal size-scaling experiments, enable diagnostic seed overrides without
-changing the release fixtures:
-
-```sh
-CLAXEDO_PERF_DIAGNOSTIC=1 \
-CLAXEDO_PERF_SEED_MESSAGES=1 \
-CLAXEDO_PERF_SEED_CHANGED_FILES=1 \
-CLAXEDO_PERF_CAUSAL=1 \
-bun src/cli.ts run --scenario workspace-switch --iterations 3 --no-trend
-```
-
-The diagnostic seed accepts `SESSIONS`, `MESSAGES`, `TERMINALS`,
-`CHANGED_FILES`, and `PROJECTS` using the same `CLAXEDO_PERF_SEED_` prefix.
-`CLAXEDO_PERF_CAUSAL=1` adds action-scoped long-frame attribution, long tasks,
-event/resource timing, DOM mutation counts, and an 8ms event-loop heartbeat
-correlated with each rAF deadline miss. The heartbeat
-distinguishes main-thread unavailability from headless frame-scheduler gaps.
-Neither flag changes a normal release or CI run.
-
-`CLAXEDO_PERF_CPU_PROFILE=1` adds the sampled CPU profile. It is deliberately
-separate because Chrome's sampler perturbs short frame measurements; profile
-runs provide attribution and never provide gating timing evidence.
-
-For a targeted packaged-Electron Long Animation Frame probe, pass the generated
-corpus explicitly. The optional app argument defaults to the repo-owned macOS
-package at `packages/claxedo-desktop/dist/mac-arm64/Claxedo Dev.app`:
-
-```sh
-bun probes/loaf-check.ts /absolute/path/to/corpus.json [/absolute/path/to/Claxedo.app]
-bun probes/loaf-sweep.ts /absolute/path/to/corpus.json [/absolute/path/to/Claxedo.app]
-```
-
-The corpus is a generated, gitignored external input, so the probes deliberately
-have no developer-machine fallback path. Build the packaged app first or pass
-the exact bundle being investigated.
-
-`CLAXEDO_PERF_STYLE_DUMP=<path>` writes `<path>.<flow>.jsonl` with Blink's raw
-style/layout invalidation trace — `ScheduleStyleInvalidationTracking` (the node
-and the changed attribute/class/pseudo that scheduled an invalidation, plus the
-JS stack that wrote it), `StyleInvalidatorInvalidationTracking` (every element
-the resulting set swept, with the selector part that matched), and
-`UpdateLayoutTree` element counts. Join the two tracking events on their shared
-`invalidationSet` id to turn a large `recalcStyleMs` into a named cause. It is
-attribution-only: the tracking category emits one event per invalidated element,
-so its own overhead inflates the run's timings — read the counts, not the clock.
-Off (and zero-cost) unless set.
-
-`CLAXEDO_PERF_REQUEST_LOG=<path>` appends one JSONL row per mocked API request
-(ms since page setup, method, path+query, status, plus a `boot` marker per
-page), for diffing the boot/interaction request graph across runs — serial
-waterfalls, duplicate fetches, 404 storms. `CLAXEDO_PERF_FETCH_STACKS=1`
-additionally records the in-page `fetch` initiator stack for
-resolve/provider/session-shaped requests into the same log, attributing each
-duplicate to its call site. Both are off (and zero-cost) unless set; neither
-changes a normal release or CI run.
-
-The 8ms event-loop heartbeat runs in every release and diagnostic measurement.
-It distinguishes application main-thread unavailability from the headless
-browser's own rAF cadence without enabling mutation observers or CPU sampling.
-
-`CLAXEDO_PERF_WARM_SESSION_SWITCH=1` pre-activates both session surfaces before
-the measured stress loop. It is a diagnostic comparison for retained-pane layout
-cost; the normal release flow deliberately includes the first cold mount.
-`CLAXEDO_PERF_SESSION_PREFETCH_SETTLE_MS=<ms>` adds an unmeasured delay before
-that loop to distinguish incomplete adjacent-session data prefetch from DOM mount
-and layout cost.
-
-`CLAXEDO_PERF_SESSION_SWITCH_ROUNDS=<count>` changes the default three
-back-and-forth rounds for causal isolation. Release gates keep the default.
-
-`CLAXEDO_PERF_SESSION_RENDERER=plain|markdown|code|mermaid|diff` selects one
-semantically verified rich row in the session-switch fixture. Markdown waits
-for its table, code waits for completed highlighting, Mermaid explicitly starts
-the diagram and waits for its SVG, and diff expands the edit tool and waits for
-its file viewer. This is a causal profiling control; the release fixture uses
-`diff`.
-
-## How it measures frame rate
-
-The harness launches Chromium with vsync and the frame-rate cap disabled
-(`--disable-gpu-vsync --disable-frame-rate-limit`) and records both rAF cadence
-and an 8ms event-loop heartbeat. Headless Chromium can still emit 17.8ms rAF
-intervals on `about:blank` while the heartbeat remains at 8ms, so rAF cadence
-alone is not treated as application work. A sub-50ms rAF deadline miss enters the
-application gate only when it overlaps an event-loop interval above 16.67ms. A
-`PerformanceObserver('long-animation-frame')` attributes animation work at or
-above 50ms. Timestamp overlap identifies which rAF gap each entry replaces rather
-than duplicating it. Unattributed gaps remain in raw evidence and produce a
-measurement-quality warning.
-
-This catches renderer event-loop stalls from JavaScript, style, and layout that
-can make a 60/120Hz presentation deadline impossible. It does not observe
-Electron's compositor, GPU raster/presentation, monitor vsync, OS input delivery,
-or input-to-photon latency. Interactions use DOM `click()` inside the page so the
-measured window includes application handlers and rendering, but excludes native
-mouse dispatch and Playwright's locator/actionability overhead. A packaged-desktop
-trace lane is required before the project can claim displayed 60Hz.
-
-| Claim | Supported by this lane? | Reason |
+| Command in this directory | What runs | Acceptance |
 | --- | --- | --- |
-| Production renderer code avoids >16.67ms main-thread unavailability in these flows | Yes | Production bundle, semantic readiness, 8ms heartbeat, Long Animation Frames, raw rAF intervals, and strict worst-interval gate |
-| Synthetic data scale mounts and updates the intended UI | Yes | Fixture request counts plus transcript, review-hunk, terminal, and navigator readiness checks |
-| A packaged desktop presents 60 FPS | No | Headless Chromium does not expose Electron compositor or physical-display presentation |
-| GPU raster and compositing stay within budget | No | Vsync and the frame-rate cap are disabled; no presentation trace is collected |
-| Real server, filesystem, sandbox, relay, or network latency is fast | No | Deterministic fixtures are fulfilled through Playwright route interception over loopback; their routing time is included, but production infrastructure is absent |
-| Native click-to-photon latency is fast | No | The measured action starts with an in-page DOM click |
-| Diagnostics do not materially disturb the renderer proxy | Partly | Enabled/control ABBA runs compare profiler overhead against the same synthetic flow |
+| `bun run run` | Production renderer, launch-project | Absolute renderer deadline and semantic readiness |
+| `bun run run:all` | All cataloged renderer flows | Same renderer policy |
+| `bun run run:diagnostics` | Disabled/enabled/enabled/disabled pairs | Fixed diagnostics overhead policy plus real process samples |
+| `bun src/cli.ts run --scenario session-switch --suite attribution --no-trend` | One instrumented experiment | Raw report; no baseline or durable comparison |
+| `bun src/cli.ts memory --iterations 5` | Repeated session visits and forced GC | Settlement, cache ceiling, source stability and verified process exit |
+| `bun run list` | Browser flow names | Discovery only |
+| `bun run catalog` | All performance owners and entrypoints | Discovery only |
 
-For each flow, `measureInteraction()` records every frame produced while the real
-interaction runs, then reports:
+`--profile` selects `unthrottled`, `laptop-broadband`, or `lighthouse-mobile` emulation.
+It is separate from `--suite`, which selects measurement policy. `--stack` accepts only
+`solid-1`, the implementation with a real driver. Adding a label does not create a port.
+Use `--iterations N` for whole-flow repetitions, `--headed` to view the browser, and
+`--debug` to print detailed submetrics. Headed/headless mode is part of comparison identity.
 
-| Field | Meaning |
+Renderer and diagnostics runs always build and serve the production app. Required causal
+observers are configured before startup. Optional CPU profiling, video, trace dumps,
+request instrumentation, workload overrides, dev serving and skipped builds require
+`--suite attribution`. Attribution cannot accept a baseline. Memory rejects those
+ambient overrides too; its optional `--snapshot` is recorded explicitly.
+
+For example:
+
+```sh
+CLAXEDO_PERF_CPU_PROFILE=1 bun src/cli.ts run \
+  --scenario session-switch --suite attribution --no-trend
+
+CLAXEDO_PERF_DIAGNOSTIC=1 CLAXEDO_PERF_SEED_MESSAGES=1 \
+  bun src/cli.ts run --scenario workspace-switch --suite attribution --no-trend
+```
+
+Independent exploratory scripts live under `probes/`. The catalog discovers that directory.
+Their timings do not promote baselines. Packaged probes require an explicit corpus and
+an existing app bundle; see each script's usage. Public comparative research remains in
+`compare/`, with its own runbook and framework-owned acceptance.
+
+## What a number means
+
+`src/perf-record.ts` defines metric units and meanings. Every comparable record carries
+a definition version, method, host, environment, workload and instrumentation context.
+
+- `renderer_task_worst_ms` and `renderer_task_p95_ms` measure traced Chromium renderer
+  tasks. `renderer_interval_*` measures the rAF/LoAF population attributed by the heartbeat.
+  These are distinct instruments. A mixed or empty repetition is invalid evidence.
+- `flow_complete_ms` measures the scenario's readiness predicate. Portable samples are
+  complete flow repetitions, not the thousands of tasks or nested clicks within them.
+- `largest_content_ms` uses LCP frozen at trusted input. Its percentile and element are
+  selected from the frozen observations, independently of later paint candidates.
+- `interaction_latency_ms` requires trusted input. Unsupported values remain absent.
+- `observed_js_heap_bytes` is an uncollected heap gauge. `retained_heap_bytes` and
+  `retained_heap_bytes_per_visit` belong to the forced-GC memory lane.
+- Internal process-family CPU can exceed 100% because it counts CPU cores. The desktop
+  diagnostics normalized CPU value, native physical footprint and summed RSS retain
+  their separate definitions; they are not interchangeable measurements.
+
+The browser uses the real compiled renderer and synthetic API fixtures. It measures
+renderer work and readiness; it cannot establish physical display FPS, packaged Electron
+presentation, live server latency or authenticated multiplayer behavior. Package-owned
+and packaged acceptance remain necessary for those claims.
+
+## Evidence and baselines
+
+Raw attempts are saved to `reports/latest.json`, `reports/latest.md`, and `--output`.
+Reports include repetition evidence and source/build provenance even when acceptance fails.
+Source is checked before building and again during measurement; source or artifact changes
+invalidate publication. Dev attribution explicitly reports that no built artifact was measured.
+
+There is one baseline writer, `baseline-store.ts`, and one durable run log, `run-log.ts`:
+
+```text
+data/baselines/<profile>/<stack>/<lane>/<suite>/<flow>.json
+data/runs/<lane>.jsonl
+```
+
+`--accept-baseline` promotes an eligible run. Invalid, failed, attribution or unsound-control
+runs cannot promote. Browser `--no-trend` suppresses durable logging. Diagnostics and renderer
+baselines have different paths. Comparison refuses unknown or mismatched definitions,
+methods, hosts, workloads, browser modes, instrumentation or environment settings.
+
+Old `data/baselines/<flow>.json`, `data/budgets/`, and `data/trends/` are historical evidence.
+No active code writes or calibrates them. Old values are not converted into the new metric
+semantics; capture new comparable baselines explicitly. `--update-baseline` was removed.
+
+Tolerance uses repeated baseline samples: two relative standard deviations with a 5%
+floor, or a provisional 15% band for one sample. It is not a significance test. A current
+result can be incompatible with a baseline without either result being a regression.
+
+## Ownership
+
+| Responsibility | Owner |
 | --- | --- |
-| `observedFrameIntervalsMs` | every raw rAF interval, including browser-scheduler cadence |
-| `p95FrameMs` | p95 of all retained rAF intervals across the merged repetitions |
-| `worstFrameMs` | the worst rAF or Long Animation Frame duration |
-| `framesOver1667` | count of renderer intervals over the 16.67ms deadline |
-| `sampleCount` | total retained rAF intervals used by the merged result |
-| `longAnimationFrameMs` | Chromium-attributed main-thread animation frames at or above 50ms |
-| `unattributedSchedulingGapsMs` | rAF pauses excluded from the app gate because neither the heartbeat nor Chromium LoAF evidence attributes them to main-thread work |
-| `completionMs` | how long the interaction took end-to-end |
+| Browser flow identifiers and discovery | `src/flows.ts`, `src/catalog.ts` |
+| Scheduling, aggregation and result assembly | `src/browser-runner.ts` |
+| Browser lifecycle and package build/serve entrypoints | `src/browser/environment.ts` |
+| Synthetic corpus and browser persistence | `src/browser/fixtures.ts`, `src/browser/state.ts` |
+| Route contracts and transport | `src/browser/mock-api.ts` |
+| Persistent fixture event streams and page lifetimes | `src/browser/mock-streams.ts` |
+| User interactions and scenario acceptance | `src/browser/actions/`, `src/browser/scenarios/` |
+| Diagnostics process lifecycle | `src/browser/diagnostics.ts` |
+| Measurement vocabulary and comparison identity | `src/perf-record.ts`, `src/measurement-context.ts` |
+| Source and artifact authority | `src/measurement-provenance.ts` |
+| Browser publication policy | `src/browser-publication.ts` |
+| Durable SDK transcript import | `src/opencode-corpus.ts` through workspace-runtime's testing port |
+| Disposable Git fixtures and runtime inventory registration | `src/workspace-fixture.ts`, `src/fixture-registration.ts` |
 
-Short interactions can produce only a few dozen intervals. The JSON retains each
-raw interval so percentile rank and isolated misses are auditable. The report does
-not call an interval a displayed frame and does not derive an FPS number from these
-uncapped samples.
+To add a browser flow, add one `FLOWS` entry (the ID type derives from it), a seed,
+and a scenario driver registered by `flowDrivers`. Keep the scenario's acceptance
+contract and tests beside it. Reuse the action owners instead of importing the runner.
 
-### Gate
+The app's production session recorder stays under `src/platform/performance/` in the
+app package. It retains at most 400 events and 400 opens, cleans its own User Timing
+entries on eviction/reset, and requires the session UI to produce the authoritative
+start before phase events. It does not import the benchmark harness.
 
-- 🟢 **120hz-capable** — `p95 ≤ 8.33ms` and no interval misses 16.67ms.
-- 🟡 **60hz-capable** (warn) — `8.33ms < p95 ≤ 16.67ms` and no interval misses 16.67ms.
-- 🔴 **missed-60hz** (fail) — `p95 > 16.67ms`, any interval over 16.67ms, or the
-  worst interval regressed past the stored budget.
+## Packaged drivers and the public framework
 
-A `warn` does not fail CI; a `fail` does. In the paired diagnostics gate, a stored
-budget fails only when the disabled control satisfies it and diagnostics causes
-the enabled run to cross it. A control that already exceeds the stored budget is
-reported as a base-app warning with both measurements, rather than attributed to
-diagnostics. The 8.33/16.67 renderer-proxy thresholds are fixed — only the per-flow
-worst-interval regression budget is stored (`data/budgets/<flow>.json`,
-auto-calibrated from the first accepted run).
+The internal `src/agent-app-benchmark.ts` runs selected packaged profiles and scores only
+their required metrics. Missing selected evidence still fails; unselected profiles are
+not failures. Its typed samples retain exact/bounded/unsupported/invalid states.
 
-## Flows
+`src/public-agent-app-driver.ts` implements the public framework contract pinned in
+`package.json` and `bun.lock`. Conformance tests expand the installed framework's actual
+cases across every advertised scenario. Framework ordering, resource monitoring,
+aggregation and scoring remain independent of Claxedo's driver.
 
-User-observable flows, each frame-gated:
+All three materializers use the same Git fixture preparation and runtime registration.
+SDK transcript import is verified by durable readback; session titles, timestamps and
+workspace kinds come from those canonical records. Each run uses disposable isolated state.
 
-| Flow | Headline interaction |
-| --- | --- |
-| `launch-project` | launch into a 20-session project |
-| `session-switch` | rapid cold/warm switching between two 80-message first folds; the fixture's 10k history length exercises pagination metadata, not 10k mounted rows |
-| `live-terminal-switch` | switch between three attached, already-open terminal surfaces after one seeded websocket line; continuous-output stress is not part of this flow |
-| `large-diff-toggle` | toggle split/unified with a 500-file model; the first 20 file headers and visible diff body mount initially, then headers render progressively |
-| `workspace-switch` | switch to another workspace and into a session |
-| `workspace-lifecycle` | seven separately clocked workspace-panel phases: cold open (with click→fetch-start, fetch→data, data→above-fold sub-clocks), open→close and close→reopen mid-motion interruptions, warm reopen (shell and content clocked separately), and close with the disposal ownership inspection |
-| `workspace-interactions` | isolated interactions inside a loaded workspace: tab switches, Files↔Review, diff expand/collapse, an above-ceiling large diff measured as guard pane + "render anyway" force, a much-larger-than-median file open, split↔unified both ways, navigator mode changes, file open/close, panel resize (narrowing drag) |
-| `session-switch-workspace` | session switching measured per {within,across}×{cold,warm} cell with the workspace closed, open on a substantial file, and open on a large review; reports the workspace-open penalty per cell |
+After building and packaging the app, run the public framework as documented by its
+installed CLI and `compare/README.md`. Unit conformance does not prove a live packaged
+run or framework resource scoring.
 
-The three `workspace-*`/`session-switch-workspace` families measure ISOLATED
-interactions: every interaction gets its own clock started at a trusted
-pointerdown (or the flow's triggering event) and its own settle gate before
-the next interaction starts — no cumulative timing across interactions. They
-require `CLAXEDO_PERF_CAUSAL=1` so per-interaction JS/style/layout
-attribution and resource-request evidence exist; a run without that evidence
-records a validation failure. Per-interaction renderer intervals over 16.67ms
-are reported as metrics; the absolute frame gate stays with the paired
-base-app gate so a noisy host degrades to reported numbers rather than
-spurious per-interaction failures. Request counts are hard-gated at zero only
-for interactions whose data is genuinely already loaded (tab switches,
-Files↔Review, collapse, style toggles, resize, interruption recoveries,
-same-workspace switches for VCS/file/workspace classes).
-
-Headline = the frame timing of the flow's primary interaction. Each flow also
-captures debug sub-metrics (panel-open ms, file-tree load ms, …) that are stored
-but only printed with `--debug`.
-
-## Adding a flow
-
-The framework keeps flows cheap to add. To add one:
-
-1. Add its id to `ScenarioId` in `src/types.ts`.
-2. Add a metadata entry to `FLOWS` in `src/flows.ts`.
-3. Add a seed in `src/seed.ts`.
-4. Add a driver in `src/browser-runner.ts`'s `flowDrivers`, returning a
-   `FlowResult` whose `headline` comes from `measureInteraction(page, id, action)`
-   wrapping the real interaction (reuse the existing navigation/wait helpers).
-
-No engine, report, or budget changes are needed.
-
-## Outputs
-
-- `reports/latest.json` / `latest.md` — the last run.
-- `reports/videos/<flow>-<n>.webm` — one video per flow run.
-- `data/budgets/<flow>.json` — regression budget on the worst frame.
-- `data/baselines/<flow>.json`, `data/trends/<flow>.jsonl` — with
-  `--update-baseline` / trend appends.
-
-## Core Web Vitals and the reference machine
-
-`--profile <id>` selects the hardware and network the flows are measured ON.
-Every timing here is a property of the machine as much as of the code, so the
-profile travels with the result (`environment` in the JSON, and the header of
-the Core Web Vitals table).
-
-| profile | CPU | network | notes |
-| --- | --- | --- | --- |
-| `unthrottled` (default) | host | host | What the stored worst-frame budgets were captured on. Keeps existing baselines comparable. |
-| `laptop-broadband` | 4x slowdown | 10/3 Mbps, 40ms | The reference profile: a mid-range developer laptop on ordinary broadband. |
-| `lighthouse-mobile` | 4x slowdown | 1.6/0.75 Mbps, 150ms | Comparable to public Lighthouse/CWV numbers. Models a phone this app never runs on — compare against the industry with it, do not gate on it. |
-
-Alongside the renderer-scheduling proxy, runs now collect **Core Web Vitals**:
-LCP, INP, CLS, FCP and TTFB, using the platform's own definitions (LCP from the
-last `largest-contentful-paint` entry, CLS as the heaviest session window, INP
-as the p98-style worst interaction). Across iterations they merge at p75, which
-is how CWV is scored in the field.
-
-Three limits worth knowing before reading the numbers:
-
-- **INP needs trusted input.** Flows that click through Playwright
-  (`locator.click`, `page.mouse.click`) produce interactions; flows that click
-  synthetically inside `page.evaluate` do not, because a synthetic event carries
-  no `interactionId`. Those flows report `n/a` and an interaction count of 0
-  rather than a misleadingly good INP.
-- **TTFB is a local-server artifact.** Throughput emulation demonstrably
-  applies (see `environment-profile.ts` for the measured evidence), but the
-  `latency` term never landed on the loopback document: TTFB stayed at 4-13ms
-  under every profile. Read it as noise, not as a vital.
-- **API latency is simulated, not real.** Every API/SSE response is fulfilled
-  in-process from fixtures, which CDP emulation cannot slow, so the profile's
-  `mockLatencyMs` is added by hand. Asset delivery is genuinely throttled.
-
-## Running an experiment (Solid 2, a native port, any rewrite)
-
-The harness is built so a rewrite is measurable rather than merely describable.
-An experiment holds the **flow** and the **profile** fixed and varies the
-**stack**:
-
-```
-bun src/cli.ts run --all --profile laptop-broadband --stack solid-1 --accept-baseline
-bun src/cli.ts run --all --profile laptop-broadband --stack solid-2
-```
-
-The second command prints an "Against baseline" table comparing like with like.
-Baselines live at `data/baselines/<profile>/<stack>/<lane>/<flow>.json`, are
-tracked in git, and carry the commit they describe.
-
-### What a new stack has to supply
-
-Not new benchmarks — the existing ones. Three things:
-
-1. **Drive the same `FLOWS`.** The ids in `flows.ts` name user tasks ("switch
-   between two sessions"), never code paths, so they survive a rewrite intact.
-   A stack that needs a new flow id to look good is not being compared.
-2. **Emit `PerfRecord`s** using the vocabulary in `perf-record.ts`. Each metric
-   is defined by what the user experiences, with a per-stack source: the web
-   sources `largest_content_ms` from LCP, a native stack from the frame at
-   which its primary surface stops growing. Mirror `browser-records.ts`.
-3. **Report absent metrics as absent.** A native stack has no Cumulative Layout
-   Shift. Reporting `visual_stability` as 0 there would show the port winning a
-   metric it never measured; the comparison refuses to score `absent`, which is
-   the behaviour you want when the whole question is "did this actually get
-   better".
-
-### Reading a result honestly
-
-- **Tolerance is derived from the baseline's own samples**, two standard
-  deviations, floored at 5%. A move inside it prints as `unchanged`, not as a
-  win — this machine's spread is wide enough to manufacture one.
-- **A baseline accepted from a single run has n=1** and falls back to a flat
-  15% band. Accept over several `--iterations` before trusting a close call.
-- **`retained_heap_bytes` is absent on the browser lane** unless causal
-  diagnostics ran, and there is no memory lane yet — memory ceilings are
-  currently proven by unit tests, not measured end to end.
-- **TTFB and API latency are simulated**, per the caveats above.
-
-### Naming a memory leak
-
-`memory --snapshot` captures a V8 heap snapshot after the sweep settles and
-groups detached DOM by what still points at it. Counters can say a leak exists;
-only the object graph says who holds it.
-
-Detachedness is read from the heap's own per-node flag (0 unknown, 1 attached,
-2 detached) rather than inferred by diffing counts, and native DOM internals
-are excluded as retainers — a `CSSStyleDeclaration` pointing at its own
-detached element is part of the corpse, not the reference keeping it alive.
-
-**The results are only as legible as the build.** Against the minified
-production bundle the chain resolves to generic containers (`Array`, `Object`)
-and mangled closure names (`s`, `ref`, `get role`), which identify the
-mechanism but not the source line. To pin a leak to a component, run the sweep
-against an unminified build so constructor and closure names survive.
-
-## The experiment log
-
-Every `run` and `memory` invocation appends one line to
-`data/runs/<lane>.jsonl`, tracked in git. A baseline says what the numbers
-ARE; this says what was RUN — and without it the only record of a measurement
-is a commit message, which is how a result gets re-measured by someone who had
-no way to know it was already done.
-
-Each line carries the commit, the reference machine and the stack, because a
-number without those cannot be compared to anything later: the same flow on
-the same code reads ~3x differently on a cold container.
-
-Heavy artifacts stay out. Heap snapshots, CPU profiles and invalidation traces
-run to hundreds of megabytes and version control is the wrong home for them,
-so `reports/` remains ignored. What the log keeps is the FINDING those
-artifacts produced — top heap retainers, query-family growth, detached-node
-and listener deltas — which is the part anyone reads and costs a few hundred
-bytes:
-
-```
-{"at":"...","commit":"b4d58cf","lane":"memory","flow":"session-accumulation",
- "profile":"laptop-broadband","stack":"solid-1",
- "metrics":{"retained_heap_bytes":83011312},
- "evidence":{"slopeBytesPerStep":1014726,"detachedNodesGrowth":7938,
-             "listenerGrowth":4879,"topRetainers":[...]}}
-```
-
-An absent metric is recorded as `null`, never omitted: dropping it would make
-a metric the stack could not supply indistinguishable from one that was never
-in the vocabulary, which is exactly the confusion a Solid 2 or native-port
-comparison has to avoid.
-
-The log starts from the commit that introduced it. Earlier campaign narrative
-is in `docs/perf/README.md`; what not to retry is in `docs/perf/AGENTS.md`.
+For previous performance findings and rejected approaches, read
+[the performance overview](../../../docs/perf/README.md) and
+[the attempt ledger](../../../docs/perf/AGENTS.md). Do not reconstruct retired experiment logs.

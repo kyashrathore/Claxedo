@@ -5,7 +5,7 @@ import { useQuery } from "@tanstack/solid-query"
 import { type Accessor, createEffect, createMemo } from "solid-js"
 import { useGlobalSDK, type GlobalSdkEvent } from "@/app/providers/global-sdk/provider"
 import { useShellQueryOptions as useQueryOptions } from "@/app/integrations/sync/query-options"
-import { cachedSdkRuntimeRequest, sdkWorkspaceTransport } from "./runtime-request"
+import { cachedSdkRuntimeRequest, scopeRuntimeRequestUrl, sdkWorkspaceTransport } from "./runtime-request"
 import { usePlatform } from "@/platform/runtime/platform-provider"
 import { signedWorkspaceFromProjects, type SignedWorkspaceInfo } from "@/platform/runtime/agent/signed-workspace"
 import { authFetch, getClaxedoServerUrl } from "@/platform/api/api"
@@ -124,7 +124,7 @@ const sDKContextInput = {
       const runtimeClient = (dir: string, onResponse: (response: Response) => void) => createWorkspaceRuntimeClient({
         baseUrl: globalSDK.url,
         fetch: async (request, init) => {
-          const response = await runtime(dir).sdkFetch(request, init)
+          const response = await runtime(dir).sdkFetch(scopeRuntimeRequestUrl(request, { directory: dir }), init)
           onResponse(response)
           return response
         },

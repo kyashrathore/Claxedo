@@ -1,0 +1,59 @@
+diff --git a/out/node-module-collector/bunNodeModulesCollector.js b/out/node-module-collector/bunNodeModulesCollector.js
+--- a/out/node-module-collector/bunNodeModulesCollector.js
++++ b/out/node-module-collector/bunNodeModulesCollector.js
+@@ -2,6 +2,7 @@
+ Object.defineProperty(exports, "__esModule", { value: true });
+ exports.BunNodeModulesCollector = void 0;
+ const builder_util_1 = require("builder-util");
++const path = require("path");
+ const packageManager_1 = require("./packageManager");
+ const traversalNodeModulesCollector_1 = require("./traversalNodeModulesCollector");
+ class BunNodeModulesCollector extends traversalNodeModulesCollector_1.TraversalNodeModulesCollector {
+@@ -11,8 +12,46 @@
+     }
+     async getDependenciesTree(pm) {
+         builder_util_1.log.info(null, "note: bun does not support any CLI for dependency tree extraction, utilizing file traversal collector instead");
++        this.bunRootManifest = await this.readBunRootManifest();
+         return super.getDependenciesTree(pm);
+     }
++    async readBunRootManifest() {
++        // Bun applies overrides from the install root, never a workspace package.
++        for (let directory = this.rootDir; ; directory = path.dirname(directory)) {
++            if (await this.cache.exists[path.join(directory, "bun.lock")] || await this.cache.exists[path.join(directory, "bun.lockb")]) {
++                const manifest = await this.cache.json[path.join(directory, "package.json")];
++                if (!manifest) {
++                    throw new Error(`Bun install root package.json not found at ${directory}`);
++                }
++                return manifest;
++            }
++            if (path.dirname(directory) === directory) {
++                // Standalone projects may omit their lockfile.
++                return await this.cache.json[path.join(this.rootDir, "package.json")];
++            }
++        }
++    }
++    async locatePackageWithVersion(depTree) {
++        const root = this.bunRootManifest;
++        const override = root?.overrides?.[depTree.name];
++        if (override !== undefined && typeof override !== "string") {
++            throw new Error(`Unsupported Bun override for ${depTree.name}: expected a string`);
++        }
++        let version = override ?? depTree.version;
++        if (typeof version === "string" && version.startsWith("catalog:")) {
++            const catalogName = version.slice("catalog:".length);
++            const catalog = catalogName
++                ? (root?.workspaces?.catalogs ?? root?.catalogs)?.[catalogName]
++                : (root?.workspaces?.catalog ?? root?.catalog);
++            version = catalog?.[depTree.name];
++            if (typeof version !== "string" || version.startsWith("catalog:")) {
++                throw new Error(`Bun catalog entry ${depTree.name} not found for ${catalogName || "default"}`);
++            }
++        }
++        // Retain the collector's version and missing-dependency checks using
++        // the range Bun actually installed, not the overridden parent range.
++        return super.locatePackageWithVersion({ ...depTree, version });
++    }
+ }
+ exports.BunNodeModulesCollector = BunNodeModulesCollector;
+ //# sourceMappingURL=bunNodeModulesCollector.js.map
+\ No newline at end of file

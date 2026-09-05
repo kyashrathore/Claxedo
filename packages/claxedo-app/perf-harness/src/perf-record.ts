@@ -1,26 +1,6 @@
-/**
- * The portable measurement contract.
- *
- * Everything this harness measures — today's Solid renderer, a Solid 2 port, a
- * native GPUI build, the desktop shell, memory ceilings — reduces to one record
- * shape. The point is comparability across IMPLEMENTATIONS, not just across
- * commits: an experiment like "is Solid 2 faster" is answered by holding
- * `flow` and `profile` fixed and varying `stack`, which only works if the
- * vocabulary on both sides means the same thing.
- *
- * That forces two rules on everything below:
- *
- *  1. A `flow` names a USER TASK ("switch between two sessions"), never a code
- *     path. A flow id has to survive a total rewrite of the thing that
- *     implements it, or the rewrite has nothing to compare against.
- *  2. A `metric` is defined by what the USER experiences, not by the API that
- *     happens to report it. `largest_content_ms` is "when the primary content
- *     finished appearing"; on the web that is sourced from LCP, on a native
- *     stack from its own first-full-paint signal. Naming the metric `lcp_ms`
- *     would have hard-coded a web API into a contract meant to outlive it.
- *
- * A stack that genuinely cannot supply a metric reports it as absent. Absent is
- * a distinct state from zero and from "good": comparisons refuse to score it.
+/** Shared record envelope with explicit metric semantics and measurement evidence.
+ * Different instruments use distinct metric identifiers. A common unit alone does
+ * not make observations comparable. Unsupported values are absent, never zero.
  */
 
 /** Which implementation produced the numbers. The axis an experiment varies. */
@@ -46,13 +26,7 @@ export type MetricDefinition = {
   thresholds?: { good: number; poor: number }
 }
 
-/**
- * The metric vocabulary.
- *
- * Deliberately small. Every entry has to be answerable by any UI stack that
- * draws pixels and responds to input; anything that can only be expressed in
- * one stack's terms belongs in a lane's debug output, not here.
- */
+/** Definitions for records produced by the browser and memory lanes. */
 export const METRICS: Record<string, MetricDefinition> = {
   time_to_first_content_ms: {
     id: "time_to_first_content_ms",
@@ -108,21 +82,30 @@ export const METRICS: Record<string, MetricDefinition> = {
     },
     thresholds: { good: 0.1, poor: 0.25 },
   },
-  worst_frame_ms: {
-    id: "worst_frame_ms",
-    unit: "ms",
-    direction: "lower",
-    definition: "The single longest interval the UI thread was unavailable to draw.",
-    sources: { web: "longest renderer task", native: "longest frame interval" },
-    thresholds: { good: 16.67, poor: 50 },
+  renderer_task_worst_ms: {
+    id: "renderer_task_worst_ms", unit: "ms", direction: "lower",
+    definition: "Longest CrRendererMain RunTask in the measured interaction trace.",
+    sources: { web: "CDP trace CrRendererMain RunTask" },
   },
-  frame_p95_ms: {
-    id: "frame_p95_ms",
-    unit: "ms",
-    direction: "lower",
-    definition: "95th percentile UI-thread interval — the texture of the flow rather than its worst moment.",
-    sources: { web: "pooled p95 renderer task", native: "p95 frame interval" },
-    thresholds: { good: 16.67, poor: 33.34 },
+  renderer_task_p95_ms: {
+    id: "renderer_task_p95_ms", unit: "ms", direction: "lower",
+    definition: "95th percentile of CrRendererMain RunTask durations in the measured interaction trace.",
+    sources: { web: "CDP trace CrRendererMain RunTask" },
+  },
+  renderer_interval_worst_ms: {
+    id: "renderer_interval_worst_ms", unit: "ms", direction: "lower",
+    definition: "Longest rAF/LoAF interval attributed to renderer unavailability using the event-loop heartbeat.",
+    sources: { web: "rAF, LoAF and event-loop heartbeat" },
+  },
+  renderer_interval_p95_ms: {
+    id: "renderer_interval_p95_ms", unit: "ms", direction: "lower",
+    definition: "95th percentile of rAF/LoAF intervals attributed to renderer unavailability.",
+    sources: { web: "rAF, LoAF and event-loop heartbeat" },
+  },
+  observed_js_heap_bytes: {
+    id: "observed_js_heap_bytes", unit: "bytes", direction: "lower",
+    definition: "Observed JavaScript heap usage without forcing collection; not retained heap.",
+    sources: { web: "CDP Performance.JSHeapUsedSize" },
   },
   retained_heap_bytes: {
     id: "retained_heap_bytes",
@@ -172,6 +155,7 @@ export type PerfRecord = {
   commit?: string
   /** Why a value is absent, when it is. Blank absences are indistinguishable from bugs. */
   absentReason?: string
+  evidence?: import("./measurement-context").MeasurementEvidence
 }
 
 export function metricDefinition(metric: string): MetricDefinition | undefined {

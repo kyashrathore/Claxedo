@@ -322,6 +322,18 @@ export const SPAWN_INVENTORY: readonly SpawnInventoryRow[] = [
     source: { file: "packages/agent-sdk-runtime/src/harnesses/cursor/driver.ts", callee: "agentCreate", calls: 2 },
   }),
   product({
+    id: "pi-version-probe",
+    family: "Pi executable version probe",
+    owner: "harness",
+    linkage: "harness",
+    observation: "lifecycle-only",
+    stop: "unsupported",
+    kill: "unsupported",
+    // The cached --version check has a 10s timeout, but exposes no process
+    // observer or owner action. Its parent supplies descendant ownership.
+    source: { file: "packages/agent-sdk-runtime/src/harnesses/pi/executable.ts", callee: "execFile", calls: 1 },
+  }),
+  product({
     id: "pi-rpc",
     family: "Pi native RPC",
     classification: "registered-root",

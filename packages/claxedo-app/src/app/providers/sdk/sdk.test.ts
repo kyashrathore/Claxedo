@@ -8,6 +8,7 @@ import {
   resetSdkRuntimeRequestCacheForTest,
   sdkRuntimeRequestQueryKey,
   sdkWorkspaceTransport,
+  scopeRuntimeRequestUrl,
 } from "./runtime-request"
 
 afterEach(() => {
@@ -133,6 +134,25 @@ describe("sdk runtime request cache", () => {
 
       expect(source).not.toContain("RuntimeGateway.")
     }
+  })
+
+  test("stamps the SDK directory scope onto typed runtime file requests", () => {
+    const scoped = scopeRuntimeRequestUrl(new URL("http://127.0.0.1:3001/api/wr/file?path=src"), { directory: "/repo/main" })
+    expect(scoped.pathname).toBe("/api/wr/file")
+    expect(scoped.searchParams.get("path")).toBe("src")
+    expect(scoped.searchParams.get("directory")).toBe("/repo/main")
+
+    const explicit = scopeRuntimeRequestUrl("http://127.0.0.1:3001/api/wr/file/status?directory=%2Fother", { directory: "/repo/main" })
+    expect(explicit.searchParams.get("directory")).toBe("/other")
+
+    const request = scopeRuntimeRequestUrl(new Request("http://127.0.0.1:3001/api/wr/find/file?query=a"), { directory: "/repo/main" })
+    expect(request.searchParams.get("directory")).toBe("/repo/main")
+  })
+
+  test("routes typed runtime file requests through the directory scope", async () => {
+    const source = await Bun.file(new URL("./sdk.tsx", import.meta.url)).text()
+
+    expect(source).toContain("sdkFetch(scopeRuntimeRequestUrl(request, { directory: dir }), init)")
   })
 
   test("uses the typed workspace runtime file client without SDK proxies", async () => {

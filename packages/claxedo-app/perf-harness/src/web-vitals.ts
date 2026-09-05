@@ -352,12 +352,14 @@ export function mergeWebVitals(runs: readonly WebVitals[]): WebVitals {
   // attribution set comes from the one run that produced the reported LCP.
   const lcpMs = p75((item) => item.lcpMs)
   const lcpRun = present.find((item) => item.lcpMs === lcpMs) ?? present[present.length - 1]!
+  const frozenLcpMs = p75((item) => item.lcpAtFirstTrustedInputMs)
+  const frozenRun = frozenLcpMs === undefined ? undefined : present.find((item) => item.lcpAtFirstTrustedInputMs === frozenLcpMs)
   return {
     lcpElement: lcpRun.lcpElement,
     lcpCandidateCount: lcpRun.lcpCandidateCount,
-    lcpAtFirstTrustedInputMs: lcpRun.lcpAtFirstTrustedInputMs,
-    lcpAtFirstTrustedInputElement: lcpRun.lcpAtFirstTrustedInputElement,
-    firstTrustedInputMs: lcpRun.firstTrustedInputMs,
+    lcpAtFirstTrustedInputMs: frozenLcpMs,
+    lcpAtFirstTrustedInputElement: frozenRun?.lcpAtFirstTrustedInputElement,
+    firstTrustedInputMs: frozenRun?.firstTrustedInputMs,
     firstUntrustedInputMs: lcpRun.firstUntrustedInputMs,
     lcpMs,
     fcpMs: p75((item) => item.fcpMs),

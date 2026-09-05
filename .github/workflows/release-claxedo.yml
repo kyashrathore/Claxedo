@@ -90,20 +90,12 @@ jobs:
       - name: Setup Bun
         uses: ./.github/actions/setup-bun
 
+      - name: Install performance harness
+        working-directory: packages/claxedo-app/perf-harness
+        run: bun install --frozen-lockfile
+
       - name: Build diagnostics package dependencies
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
+        run: bun run build:claxedo-runtime-deps
 
       - name: Build desktop diagnostics helper
         working-directory: packages/claxedo-desktop
@@ -121,7 +113,7 @@ jobs:
         working-directory: packages/claxedo-app/perf-harness
         env:
           CLAXEDO_PERF_APP_SCRIPT: serve
-        run: bun run run:all
+        run: bun run ci:diagnostics
 
       - name: Upload diagnostics performance evidence
         if: always()
@@ -239,19 +231,7 @@ jobs:
       # imports them. Same list as test.yml's dist-resolved build step.
       - name: Build dist-resolved workspace packages
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform
-        run: >-
-          bun turbo build
-          --filter=@claxedo/agent-event-runtime
-          --filter=@claxedo/agent-sdk-runtime
-          --filter=@claxedo/channels
-          --filter=@claxedo/connections
-          --filter=@claxedo/mcp
-          --filter=@claxedo/sandbox-contract
-          --filter=@claxedo/sandbox-manager
-          --filter=@claxedo/wakes
-          --filter=@claxedo/workspace-relay-protocol
-          --filter=@claxedo/workspace-relay
-          --filter=@claxedo/workspace-runtime
+        run: bun run build:claxedo-runtime-deps
 
       - name: Pin release version
         if: github.event_name == 'push' || github.event.inputs.platforms == 'all' || github.event.inputs.platforms == matrix.platform

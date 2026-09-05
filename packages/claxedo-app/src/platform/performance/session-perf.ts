@@ -3,9 +3,9 @@
  *
  * Always on, because the questions it answers ("why did opening this session
  * take 9 s from the phone?") are asked about production sessions after the
- * fact, when nobody armed a harness. Recording is cheap: a `performance.mark`
- * per phase, a `performance.measure` per completed span (both visible in the
- * DevTools Performance panel), and a bounded ring buffer of plain records.
+ * fact, when nobody armed a harness. Recording retains the newest 400 plain
+ * records and 400 session opens. Each retained open owns its User Timing
+ * marks and phase measures; eviction and clear release them together.
  *
  * Read it from the console:
  *   __claxedoSessionPerf.summary()          — the last session opens, by phase
@@ -43,12 +43,19 @@ export type SessionOpenSummary = {
   phases: Partial<Record<Exclude<SessionOpenPhase, "started">, number>>
 }
 
-const RING_LIMIT = 400
+const RETENTION_LIMIT = 400
 const MARK_PREFIX = "claxedo:session"
+let recorderSequence = 0
 
-type Clock = { now: () => number; mark?: (name: string) => unknown; measure?: (name: string, start: string, end: string) => unknown }
+type Clock = {
+  now: () => number
+  mark?: (name: string) => unknown
+  measure?: (name: string, start: string, end: string) => unknown
+  clearMarks?: (name: string) => void
+  clearMeasures?: (name: string) => void
+}
 
-type Open = { sessionId: string; from: string; previousSessionId?: string; startedAt: number; startMark: string; phases: SessionOpenSummary["phases"] }
+type Open = { id: string; sessionId: string; from: string; previousSessionId?: string; startedAt: number; startMark: string; phases: SessionOpenSummary["phases"] }
 
 export type SessionPerf = ReturnType<typeof createSessionPerf>
 
@@ -58,15 +65,19 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
       now: () => performance.now(),
       mark: (name) => performance.mark(name),
       measure: (name, start, end) => performance.measure(name, start, end),
+      clearMarks: (name) => performance.clearMarks(name),
+      clearMeasures: (name) => performance.clearMeasures(name),
     }
     : { now: () => Date.now() })
   const ring: PerfRecord[] = []
   /** The open currently collecting phases, per session. */
   const opens = new Map<string, Open>()
-  /** Every open, oldest first — a return to a session is a new entry. */
+  /** Retained opens, oldest first — a return to a session is a new entry. */
   const history: Open[] = []
+  const recorderId = ++recorderSequence
   let lastOpened: string | undefined
   let sequence = 0
+  let generation = 0
 
   const enabled = input.logEnabled ?? (() => {
     try {
@@ -77,7 +88,7 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
   })
   const emit = (record: PerfRecord) => {
     ring.push(record)
-    if (ring.length > RING_LIMIT) ring.splice(0, ring.length - RING_LIMIT)
+    if (ring.length > RETENTION_LIMIT) ring.splice(0, ring.length - RETENTION_LIMIT)
     if (input.log) input.log(record)
     else if (enabled()) console.info("[claxedo:perf]", record.kind, record.name, record)
   }
@@ -95,15 +106,37 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
       // Same: a missing mark must not turn instrumentation into a failure.
     }
   }
+  const release = (open: Open) => {
+    // Every name is unique to this recorder and open. Clearing a shared phase
+    // name would also erase evidence belonging to another retained open.
+    try {
+      clock.clearMarks?.(open.startMark)
+    } catch {
+      // User Timing support must not affect the operation being measured.
+    }
+    for (const phase of Object.keys(open.phases)) {
+      try {
+        clock.clearMarks?.(`${open.startMark}.${phase}`)
+      } catch {
+        // Same as above.
+      }
+      try {
+        clock.clearMeasures?.(`${MARK_PREFIX}.${phase}.${open.id}`)
+      } catch {
+        // Same as above.
+      }
+    }
+  }
 
   return {
     /** Time an operation. `end` records the span; call it exactly once. */
     span(name: string, attrs: PerfAttributes = {}) {
       const started = clock.now()
+      const startedGeneration = generation
       let done = false
       return {
         end: (more: PerfAttributes = {}) => {
-          if (done) return
+          if (done || startedGeneration !== generation) return
           done = true
           emit({ kind: "span", name, at: started, ms: Math.round((clock.now() - started) * 10) / 10, attrs: { ...attrs, ...more } })
         },
@@ -134,9 +167,11 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
      */
     openStart(sessionId: string, from: string) {
       const current = opens.get(sessionId)
-      if (current && !current.phases["messages-ready"] && !current.phases["first-fold-ready"]) return
-      const startMark = `${MARK_PREFIX}.open.${sessionId}.${++sequence}`
+      if (current && lastOpened === sessionId && current.phases["messages-ready"] === undefined && current.phases["first-fold-ready"] === undefined) return
+      const id = `${recorderId}.${++sequence}`
+      const startMark = `${MARK_PREFIX}.open.${sessionId}.${id}`
       const open: Open = {
+        id,
         sessionId,
         from,
         ...(lastOpened && lastOpened !== sessionId ? { previousSessionId: lastOpened } : {}),
@@ -146,21 +181,26 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
       }
       opens.set(sessionId, open)
       history.push(open)
+      if (history.length > RETENTION_LIMIT) {
+        const expired = history.shift()!
+        if (opens.get(expired.sessionId) === expired) opens.delete(expired.sessionId)
+        release(expired)
+      }
       lastOpened = sessionId
       mark(startMark)
       emit({ kind: "phase", name: "started", at: open.startedAt, sessionId, sinceStartMs: 0, attrs: { from, ...(open.previousSessionId ? { previousSessionId: open.previousSessionId } : {}) } })
     },
-    /** A phase of an open completed. Without a recorded start, the mount starts one ("route"). */
+    /** A phase of a retained open completed. Late phases cannot recreate an evicted or cleared open. */
     openPhase(sessionId: string, phase: Exclude<SessionOpenPhase, "started">, attrs: PerfAttributes = {}) {
-      if (!opens.has(sessionId)) this.openStart(sessionId, "route")
-      const open = opens.get(sessionId)!
+      const open = opens.get(sessionId)
+      if (!open) return
       if (open.phases[phase] !== undefined) return
       const now = clock.now()
       const since = Math.round((now - open.startedAt) * 10) / 10
       open.phases[phase] = since
       const endMark = `${open.startMark}.${phase}`
       mark(endMark)
-      measure(`${MARK_PREFIX}.${phase}`, open.startMark, endMark)
+      measure(`${MARK_PREFIX}.${phase}.${open.id}`, open.startMark, endMark)
       emit({ kind: "phase", name: phase, at: now, sessionId, sinceStartMs: since, attrs })
     },
     /** The last N session opens with their phase timings, newest first. */
@@ -185,8 +225,10 @@ export function createSessionPerf(input: { clock?: Clock; log?: (record: PerfRec
         && (!filter.failed || record.attrs.ok === false || (typeof record.attrs.status === "number" && record.attrs.status >= 400)))
     },
     clear() {
+      generation += 1
       ring.length = 0
       opens.clear()
+      for (const open of history) release(open)
       history.length = 0
       lastOpened = undefined
     },

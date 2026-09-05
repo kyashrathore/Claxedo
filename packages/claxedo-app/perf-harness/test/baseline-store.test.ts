@@ -1,16 +1,19 @@
 import { describe, expect, test } from "bun:test"
 import { baselineFromRecords, compareToBaseline, toleranceFor, type Baseline } from "../src/baseline-store"
+import { context } from "../src/measurement-fixture.test-support"
 import type { PerfRecord } from "../src/perf-record"
 
 const record = (metric: string, value: number | undefined, samples: number[] = []): PerfRecord => ({
   lane: "browser", flow: "session-switch", metric, unit: "ms", samples,
   stack: "solid-1", profile: "laptop-broadband",
   ...(value === undefined ? {} : { value }),
+  evidence: { definitionVersion: 2, method: metric, context },
 })
 
 const baselineWith = (metrics: Baseline["metrics"]): Baseline => ({
   profile: "laptop-broadband", stack: "solid-1", lane: "browser", flow: "session-switch",
-  accepted_at: "2026-08-18T00:00:00.000Z", metrics,
+  accepted_at: "2026-08-18T00:00:00.000Z", suite: "renderer",
+  metrics: Object.fromEntries(Object.entries(metrics).map(([metric, value]) => [metric, { ...value, evidence: { definitionVersion: 2, method: metric, context } }])),
 })
 
 describe("tolerance", () => {
@@ -60,8 +63,8 @@ describe("comparison", () => {
   test("higher-is-better metrics are not scored backwards", () => {
     // No such metric ships today, but the vocabulary allows one, and a
     // direction-blind comparison would silently invert it.
-    const baseline = baselineWith({ frame_p95_ms: { value: 10, samples: [10, 10, 10] } })
-    const [result] = compareToBaseline([record("frame_p95_ms", 20)], baseline)
+    const baseline = baselineWith({ renderer_task_p95_ms: { value: 10, samples: [10, 10, 10] } })
+    const [result] = compareToBaseline([record("renderer_task_p95_ms", 20)], baseline)
     expect(result.verdict).toBe("regressed")
   })
 })
@@ -75,4 +78,35 @@ test("accepted baselines persist the discriminated authoritative source identity
   const baseline = baselineFromRecords([record("retained_heap_bytes", 42)], undefined, sourceIdentity)!
   expect(baseline.commit).toBeUndefined()
   expect(baseline.sourceIdentity).toEqual(sourceIdentity)
+})
+
+
+test("comparisons refuse host, method, suite and legacy evidence mismatches", () => {
+  const current = record("flow_complete_ms", 200)
+  const baseline = baselineFromRecords([record("flow_complete_ms", 400)])!
+  for (const changed of [
+    { ...current, evidence: undefined },
+    { ...current, evidence: { ...current.evidence!, method: "new-method" } },
+    { ...current, evidence: { ...current.evidence!, context: { ...context, suite: "attribution" as const } } },
+    { ...current, evidence: { ...current.evidence!, context: { ...context, host: { ...context.host, cores: 99 } } } },
+    { ...current, evidence: { ...current.evidence!, context: { ...context, workload: "different-seed" } } },
+  ]) expect(compareToBaseline([changed], baseline)[0]!.verdict).toBe("incompatible")
+  const legacy = { ...baseline, metrics: { flow_complete_ms: { value: 400, samples: [400] } } }
+  expect(compareToBaseline([current], legacy)[0]!.verdict).toBe("incompatible")
+})
+
+test("zero baselines classify movement without NaN or Infinity", () => {
+  const baseline = baselineFromRecords([record("visual_stability", 0)])!
+  expect(compareToBaseline([record("visual_stability", 0)], baseline)[0]).toMatchObject({ verdict: "unchanged", deltaPct: 0 })
+  const regression = compareToBaseline([record("visual_stability", 0.1)], baseline)[0]!
+  expect(regression.verdict).toBe("regressed")
+  expect(regression.deltaPct).toBeUndefined()
+})
+
+test("promotion rejects unknown, instrumented, nonfinite and mixed context records", () => {
+  const valid = record("flow_complete_ms", 5)
+  expect(() => baselineFromRecords([{ ...valid, evidence: undefined }])).toThrow("evidence")
+  expect(() => baselineFromRecords([record("flow_complete_ms", NaN)])).toThrow("non-finite")
+  expect(() => baselineFromRecords([valid, { ...valid, flow: "another-flow" }])).toThrow("different flows")
+  expect(() => baselineFromRecords([{ ...valid, evidence: { ...valid.evidence!, context: { ...context, suite: "attribution" } } }])).toThrow("evidence")
 })

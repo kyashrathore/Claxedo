@@ -4,7 +4,8 @@ import path from "node:path"
 import { OpenCodeCorpus } from "./opencode-corpus"
 import { createOpenCodeFixtureIds } from "@claxedo/workspace-runtime/testing"
 import type { AgentAppProfile } from "./agent-driver-contract"
-import { withClaxedoDataDirectory } from "./with-claxedo-data-directory"
+import { initializeWorkspace, type MaterializedWorkspace } from "./workspace-fixture"
+import { persistClaxedoCorpus, registerWorkspace } from "./fixture-registration"
 
 export type CorpusPart = {
   id: string
@@ -80,13 +81,7 @@ export async function materializeClaxedoCorpus(input: {
   if (computedDigest !== input.corpusDigestSha256 || computedDigest !== corpus.manifest.hashes.corpusSha256) {
     throw new Error("corpus digest does not match the canonical v1 payload")
   }
-  await Promise.all([
-    mkdir(path.join(input.dataDirectory, "opencode-engine"), {
-      recursive: true,
-      mode: 0o700,
-    }),
-    mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 }),
-  ])
+  await mkdir(input.workspaceDirectory, { recursive: true, mode: 0o700 })
   const workspaceDirectory = await realpath(input.workspaceDirectory)
   // Multi-workspace corpora carry a per-session workspace assignment; give
   // each its own git-rooted directory and registration so warm switching
@@ -94,20 +89,19 @@ export async function materializeClaxedoCorpus(input: {
   // workspace id — the deterministic commit would otherwise produce the SAME
   // sha (= project id) for every workspace.
   const workspaceIds = [...new Set(corpus.sessions.map((session) => session.workspaceId ?? ""))].sort()
-  const workspaces = new Map<string, { directory: string; projectId: string }>()
+  const workspaces = new Map<string, MaterializedWorkspace>()
   for (const workspaceId of workspaceIds) {
     const directory = workspaceId ? path.join(workspaceDirectory, workspaceId) : workspaceDirectory
     if (workspaceId) await mkdir(directory, { recursive: true, mode: 0o700 })
     const projectId = await initializeWorkspace(directory, workspaceId)
     await registerWorkspace({
       dataDirectory: input.dataDirectory,
-      workspaceDirectory: directory,
+      directory,
       projectId,
       projectName: workspaceId ? `Benchmark ${corpus.corpusId} ${workspaceId}` : `Benchmark ${corpus.corpusId}`,
     })
     workspaces.set(workspaceId, { directory, projectId })
   }
-  const dbPath = path.join(input.dataDirectory, "opencode-engine", "opencode.db")
   const { createId } = await createOpenCodeFixtureIds()
 
   const database = new OpenCodeCorpus()
@@ -211,7 +205,7 @@ export async function materializeClaxedoCorpus(input: {
           if (part.type === "text" && payload.type === "text" && typeof payload.text === "string") {
             turnTextPartSha256[partId] = createHash("sha256").update(payload.text.trim()).digest("hex")
           }
-          database.setPart(partId, messageId, part.order, payload)
+          database.setPart(partId, messageId, part.order, payload, at + part.order)
           materializedParts.set(part.id, {
             corpusPartId: part.id,
             corpusMessageId: message.id,
@@ -240,29 +234,7 @@ export async function materializeClaxedoCorpus(input: {
     })
   }
 
-  await database.persist(dbPath)
-  for (let index = 0; index < readinessTargets.length; index++)
-    readinessTargets[index] = database.remapReadiness(readinessTargets[index]!)
-  for (const part of materializedParts.values()) part.partId = database.partIds.get(part.partId)!
-  await registerSessionInventory({
-    dataDirectory: input.dataDirectory,
-    workspaces,
-    sessions: corpus.sessions,
-    materializedSessions,
-  })
-  // Finish the control-plane inventory import at materialization time. The
-  // rail lists sessions from `claxedo_session_meta` (claxedo.db), and a
-  // workspace's sessions are imported only when ITS runtime first starts —
-  // on a virgin multi-workspace boot the inactive workspaces would list
-  // nothing (and nothing re-renders when the import later lands). A real
-  // user's app has already imported every workspace they use; seed the same
-  // rows through the server's own meta API.
-  await seedSessionMeta({
-    dataDirectory: input.dataDirectory,
-    workspaces,
-    sessions: corpus.sessions,
-    materializedSessions,
-  })
+  const dbPath = await persistClaxedoCorpus({ dataDirectory: input.dataDirectory, corpus: database })
   const coverage = input.profiles.map((profile) => {
     const unsupportedShapes = profileCoverageFailures(corpus, profile)
     return {
@@ -286,192 +258,6 @@ export async function materializeClaxedoCorpus(input: {
     readinessTargets,
     materializedSessions,
     materializedParts,
-  }
-}
-
-async function initializeWorkspace(workspaceDirectory: string, marker = "") {
-  await runGit(["init", "--initial-branch=main", workspaceDirectory])
-  await runGit(
-    [
-      "-C",
-      workspaceDirectory,
-      "commit",
-      "--allow-empty",
-      "--no-gpg-sign",
-      "-m",
-      marker ? `Agent app benchmark corpus ${marker}` : "Agent app benchmark corpus",
-    ],
-    {
-      GIT_AUTHOR_NAME: "Agent App Benchmark",
-      GIT_AUTHOR_EMAIL: "benchmark@localhost",
-      GIT_AUTHOR_DATE: "2020-01-01T00:00:00Z",
-      GIT_COMMITTER_NAME: "Agent App Benchmark",
-      GIT_COMMITTER_EMAIL: "benchmark@localhost",
-      GIT_COMMITTER_DATE: "2020-01-01T00:00:00Z",
-    },
-  )
-  const rootCommit = (await runGit(["-C", workspaceDirectory, "rev-list", "--max-parents=0", "HEAD"])).trim()
-  if (!/^[0-9a-f]{40}$/u.test(rootCommit)) throw new Error("git did not produce a canonical root commit project ID")
-  return rootCommit
-}
-
-async function runGit(args: string[], env?: Record<string, string>) {
-  const child = Bun.spawn({
-    cmd: ["git", ...args],
-    env: env ? { ...process.env, ...env } : process.env,
-    stdout: "pipe",
-    stderr: "pipe",
-  })
-  const [stdout, stderr, exitCode] = await Promise.all([
-    new Response(child.stdout).text(),
-    new Response(child.stderr).text(),
-    child.exited,
-  ])
-  if (exitCode !== 0) throw new Error(`benchmark git preparation failed: ${(stderr || stdout).trim()}`)
-  return stdout
-}
-
-async function registerWorkspace(input: {
-  dataDirectory: string
-  workspaceDirectory: string
-  projectId: string
-  projectName: string
-}) {
-  const workspaceStoreModule = "../../../claxedo-server-core/src/workspace/store/index.ts"
-  const { ensureWorkspace } = (await import(workspaceStoreModule)) as {
-    ensureWorkspace(input: {
-      workspaceId: string
-      project_id: string
-      project_name: string
-      workspace_name: string
-      directory: string
-    }): Promise<{ id: string } | undefined>
-  }
-  await withClaxedoDataDirectory(input.dataDirectory, async () => {
-    const workspace = await ensureWorkspace({
-      workspaceId: input.projectId,
-      project_id: input.projectId,
-      project_name: input.projectName,
-      workspace_name: "main",
-      directory: input.workspaceDirectory,
-    })
-    if (!workspace) throw new Error("production workspace store rejected the benchmark workspace")
-  })
-}
-
-async function seedSessionMeta(input: {
-  dataDirectory: string
-  workspaces: Map<string, { directory: string; projectId: string }>
-  sessions: CorpusSession[]
-  materializedSessions: Map<string, string>
-}) {
-  const metaModule = "../../../claxedo-server-core/src/session/meta/index.ts"
-  const { putSessionMeta } = (await import(metaModule)) as {
-    putSessionMeta(
-      sessionID: string,
-      value: {
-        ws?: { id: string; project_id: string; directory: string }
-        workspaceID?: string | null
-        directory?: string | null
-        host?: "central" | "workspace"
-        title?: string | null
-        createdAt?: number
-        updatedAt?: number
-      },
-    ): Promise<unknown>
-  }
-  await withClaxedoDataDirectory(input.dataDirectory, async () => {
-    const baseTime = Date.parse("2020-01-01T00:00:00.000Z")
-    for (const session of input.sessions.toSorted((left, right) => left.order - right.order)) {
-      const workspace = input.workspaces.get(session.workspaceId ?? "")
-      const sessionId = input.materializedSessions.get(session.id)
-      if (!workspace || !sessionId) throw new Error(`session meta seed is missing ${session.id}`)
-      const createdAt = baseTime + session.order * 1_000_000
-      const displayTitle = /^\d+\.\s/.test(session.title) ? session.title : `${session.order + 1}. ${session.title}`
-      await putSessionMeta(sessionId, {
-        // The project-scoped rail query filters on project_id, which only
-        // input.ws carries.
-        ws: {
-          id: workspace.projectId,
-          project_id: workspace.projectId,
-          directory: workspace.directory,
-        },
-        workspaceID: workspace.projectId,
-        directory: workspace.directory,
-        host: "workspace",
-        title: displayTitle,
-        createdAt,
-        updatedAt: createdAt + 999_999 + session.order * 60_000,
-      })
-    }
-  })
-}
-
-async function registerSessionInventory(input: {
-  dataDirectory: string
-  workspaces: Map<string, { directory: string; projectId: string }>
-  sessions: CorpusSession[]
-  materializedSessions: Map<string, string>
-}) {
-  const runtimeStoreModule = "../../../workspace-runtime/src/store.ts"
-  const { RuntimeStore } = (await import(runtimeStoreModule)) as {
-    RuntimeStore: new (root: string) => {
-      bindSession(input: {
-        sessionId: string
-        directory: string
-        title: string
-        agentSessionId: string
-        createdAt: number
-        updatedAt?: number
-      }): void
-      updateSessionConfig(
-        id: string,
-        update: {
-          harness: { id: "opencode"; access: "native" }
-          variant: null
-          agent: null
-        },
-        input: { directory: string },
-      ): unknown
-      flush(): void
-      close(): void
-    }
-  }
-  const baseTime = Date.parse("2020-01-01T00:00:00.000Z")
-  // One runtime store per workspace: the inventory is project-scoped, and a
-  // multi-workspace corpus binds every session inside its own workspace so
-  // warm switching crosses real project boundaries.
-  for (const [workspaceId, workspace] of input.workspaces) {
-    const store = new RuntimeStore(path.join(input.dataDirectory, "agent-core", workspace.projectId))
-    try {
-      // Reverse order makes corpus item zero the most recently updated row and
-      // therefore present in Claxedo's initial five-row sidebar page.
-      for (const session of input.sessions.toSorted((left, right) => right.order - left.order)) {
-        if ((session.workspaceId ?? "") !== workspaceId) continue
-        const sessionId = input.materializedSessions.get(session.id)
-        if (!sessionId) throw new Error(`session inventory is missing materialized ID for ${session.id}`)
-        store.bindSession({
-          sessionId,
-          directory: workspace.directory,
-          title: /^\d+\.\s/.test(session.title) ? session.title : `${session.order + 1}. ${session.title}`,
-          agentSessionId: sessionId,
-          createdAt: baseTime + session.order * 1_000_000,
-          updatedAt: baseTime + session.order * 1_000_000 + 999_999 + session.order * 60_000,
-        })
-        store.updateSessionConfig(
-          sessionId,
-          {
-            harness: { id: "opencode", access: "native" },
-            variant: null,
-            agent: null,
-          },
-          { directory: workspace.directory },
-        )
-      }
-      store.flush()
-    } finally {
-      store.close()
-    }
   }
 }
 

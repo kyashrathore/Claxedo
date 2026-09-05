@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from "node:util"
+import type { EventMessagePartUpdated, EventMessageUpdated } from "@claxedo/agent-event-runtime/client-presentation"
 import {
   importOpenCodeFixtureSessions,
   openCodePartId,
@@ -9,17 +10,20 @@ import {
 type Data = Record<string, unknown>
 type Session = { id: string; projectId: string; directory: string; title: string; created: number; updated: number }
 type Message = { id: string; sessionId: string; data: Data }
-type Part = { id: string; messageId: string; ordinal: number; data: Data }
+type Part = { id: string; messageId: string; ordinal: number; data: Data; updatedAt?: number }
+type TranscriptEvent = EventMessageUpdated | EventMessagePartUpdated
 
-/** Converts the benchmark's pinned V1 corpus format into current SDK transfers. */
+/** Holds the pinned transcript records and converts their native SDK copy. */
 export class OpenCodeCorpus {
   sessions = new Map<string, Session>()
   messages = new Map<string, Message>()
   parts = new Map<string, Part>()
-  readonly partIds = new Map<string, string>()
-  private readonly metadataPartIds = new Set<string>()
   private readonly sessionMessages = new Map<string, Message[]>()
   private readonly messageParts = new Map<string, Map<string, Part>>()
+  private readonly recordedEvents = new Map<string, TranscriptEvent[]>()
+  private readonly recordedIds = new Set<string>()
+
+  constructor(private readonly source: "snapshot" | "recorded-events" = "snapshot") {}
 
   addSession(value: Session) {
     if (this.sessions.has(value.id)) throw new Error(`Duplicate corpus session: ${value.id}`)
@@ -35,15 +39,34 @@ export class OpenCodeCorpus {
     this.sessionMessages.set(sessionId, rows)
   }
 
-  setPart(id: string, messageId: string, ordinal: number, data: Data) {
+  setPart(id: string, messageId: string, ordinal: number, data: Data, updatedAt?: number) {
     if (!this.messages.has(messageId)) throw new Error(`Unknown corpus message: ${messageId}`)
     const previous = this.parts.get(id)
     if (previous && previous.messageId !== messageId) throw new Error(`Corpus part changed its message: ${id}`)
-    const part = { id, messageId, ordinal: previous?.ordinal ?? ordinal, data }
+    const part = { id, messageId, ordinal: previous?.ordinal ?? ordinal, data, updatedAt }
     this.parts.set(id, part)
     const rows = this.messageParts.get(messageId) ?? new Map<string, Part>()
     rows.set(id, part)
     this.messageParts.set(messageId, rows)
+  }
+
+  recordEvent(event: { id: string; type: TranscriptEvent["type"]; properties: Data }) {
+    if (this.source !== "recorded-events") throw new Error("Snapshot corpus cannot claim recorded event provenance")
+    const sessionId = text(event.properties.sessionID)
+    const key = `${sessionId}:${event.id}`
+    if (!text(event.id) || !this.sessions.has(sessionId) || this.recordedIds.has(key)) {
+      throw new Error("Invalid corpus event identity")
+    }
+    const value = record(event.type === "message.updated" ? event.properties.info : event.properties.part)
+    const message = this.messages.get(text(event.type === "message.updated" ? value.id : value.messageID))
+    if (value.sessionID !== sessionId || message?.sessionId !== sessionId) {
+      throw new Error("Corpus event disagrees with its transcript owner")
+    }
+    if (event.type === "message.part.updated") number(event.properties.time)
+    this.recordedIds.add(key)
+    const events = this.recordedEvents.get(sessionId) ?? []
+    events.push(structuredClone(event) as TranscriptEvent)
+    this.recordedEvents.set(sessionId, events)
   }
 
   async persist(databasePath: string): Promise<OpenCodeFixtureReadback[]> {
@@ -76,32 +99,47 @@ export class OpenCodeCorpus {
     return restored
   }
 
-  remapReadiness<
-    T extends {
-      expectedPartIds?: readonly string[]
-      expectedTextPartSha256?: Record<string, string>
-      eventualFullPartIds?: readonly string[]
-    },
-  >(target: T): T {
-    const remap = (id: string) => {
-      const value = this.partIds.get(id)
-      if (!value) throw new Error(`Corpus part has no runtime identity: ${id}`)
-      return value
+  /** Replay only the validated corpus records into Claxedo's transcript owner. */
+  *events(sessionId: string): Generator<TranscriptEvent> {
+    if (!this.sessions.has(sessionId)) throw new Error(`Unknown corpus session: ${sessionId}`)
+    if (this.source === "recorded-events") {
+      const events = this.recordedEvents.get(sessionId) ?? []
+      const expected = (this.sessionMessages.get(sessionId) ?? []).reduce(
+        (count, message) => count + 1 + (this.messageParts.get(message.id)?.size ?? 0),
+        0,
+      )
+      if (events.length !== expected) throw new Error(`Incomplete recorded corpus events: ${sessionId}`)
+      yield* events
+      return
     }
-    const visible = (ids: readonly string[]) => [
-      ...new Set(ids.filter((id) => !this.metadataPartIds.has(id)).map(remap)),
-    ]
-    return {
-      ...target,
-      ...(target.expectedPartIds ? { expectedPartIds: visible(target.expectedPartIds) } : {}),
-      ...(target.eventualFullPartIds ? { eventualFullPartIds: visible(target.eventualFullPartIds) } : {}),
-      ...(target.expectedTextPartSha256
-        ? {
-            expectedTextPartSha256: Object.fromEntries(
-              Object.entries(target.expectedTextPartSha256).map(([id, hash]) => [remap(id), hash]),
-            ),
-          }
-        : {}),
+    // Snapshot inputs have no transport envelopes. Import their records through
+    // the journal API using stable record keys and the source part timestamp.
+    for (const message of this.sessionMessages.get(sessionId) ?? []) {
+      yield {
+        id: `message.updated:${message.id}`,
+        type: "message.updated",
+        properties: {
+          sessionID: sessionId,
+          info: { ...message.data, id: message.id, sessionID: sessionId } as EventMessageUpdated["properties"]["info"],
+        },
+      }
+      const parts = [...(this.messageParts.get(message.id)?.values() ?? [])].sort((a, b) => a.ordinal - b.ordinal)
+      for (const part of parts) {
+        yield {
+          id: `message.part.updated:${part.id}`,
+          type: "message.part.updated",
+          properties: {
+            sessionID: sessionId,
+            time: number(part.updatedAt),
+            part: {
+              ...part.data,
+              id: part.id,
+              messageID: message.id,
+              sessionID: sessionId,
+            } as EventMessagePartUpdated["properties"]["part"],
+          },
+        }
+      }
     }
   }
 
@@ -114,7 +152,6 @@ export class OpenCodeCorpus {
       if (parts.some((part) => part.data.type !== "text")) {
         throw new Error("The runtime transcript projection cannot represent non-text user corpus parts")
       }
-      for (const part of parts) this.partIds.set(part.id, openCodePartId(message.id, "user", {}, 0))
       return {
         id: message.id,
         type: "user",
@@ -149,7 +186,6 @@ export class OpenCodeCorpus {
     for (const part of parts) {
       const value = part.data
       if (["step-start", "step-finish", "snapshot", "patch"].includes(String(value.type))) {
-        this.metadataPartIds.add(part.id)
         continue
       }
       const id = openCodePartId(
@@ -186,7 +222,6 @@ export class OpenCodeCorpus {
       } else {
         throw new Error(`Unsupported assistant corpus part: ${value.type}`)
       }
-      this.partIds.set(part.id, id)
     }
     return {
       id: message.id,
